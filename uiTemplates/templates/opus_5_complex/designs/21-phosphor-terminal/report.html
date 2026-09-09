@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>21 · 效能統計報表 — SYSOPS TERMINAL</title>
+<style>
+:root{--p:#33ff66;--pd:#149c36;--pdd:#0a4d1c;--bg:#040a05;--amber:#ffcc33;--red:#ff5b4a;--sec:#6fe38b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--p);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","Courier New","Noto Sans Mono",monospace;font-size:13px;line-height:1.45;
+  text-shadow:0 0 4px rgba(51,255,102,.55)}
+.crt{position:fixed;inset:0;z-index:100;pointer-events:none}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px)}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(110% 90% at 50% 50%,transparent 52%,rgba(0,0,0,.85));
+  box-shadow:inset 0 0 130px rgba(51,255,102,.10)}
+.flick{position:fixed;inset:0;z-index:101;pointer-events:none;background:rgba(51,255,102,.03);
+  animation:fl .14s steps(2) infinite}
+@keyframes fl{50%{opacity:.35}}
+.scan{position:fixed;left:0;right:0;height:90px;z-index:99;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(51,255,102,.06),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-100px}to{top:100%}}
+
+.home{position:fixed;right:12px;top:12px;z-index:110;text-decoration:none;color:var(--bg);
+  background:var(--p);padding:6px 13px;font-size:11px;letter-spacing:.14em;text-shadow:none;
+  box-shadow:0 0 18px rgba(51,255,102,.6)}
+.home:hover{background:var(--amber);box-shadow:0 0 22px rgba(255,204,51,.7)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+.term{position:relative;z-index:5;padding:14px;max-width:1220px;margin:0 auto}
+.head{border:1px solid var(--pd);padding:8px 130px 8px 12px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px}
+.head b{color:var(--amber);text-shadow:0 0 6px rgba(255,204,51,.6)}
+.topnav{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;background:rgba(0,10,2,.5)}
+.topnav span{font-size:10px;letter-spacing:.24em;color:#3f8f56;padding:8px 12px;border-right:1px solid var(--pdd)}
+.topnav a{padding:8px 14px;color:var(--sec);text-decoration:none;font-size:12px;letter-spacing:.06em;
+  border-right:1px solid var(--pdd);transition:.15s}
+.topnav a:hover{color:var(--p);background:rgba(51,255,102,.09)}
+.topnav a.on{color:var(--bg);background:var(--p);text-shadow:none}
+
+/* ---------- print job control ---------- */
+.job{border:1px solid var(--pd);margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:stretch}
+.job .lb{font-size:10px;letter-spacing:.22em;color:#3f8f56;padding:9px 12px;border-right:1px solid var(--pdd);
+  display:flex;align-items:center}
+.job button{appearance:none;background:transparent;border:0;border-right:1px solid var(--pdd);cursor:pointer;
+  font:inherit;font-size:11.5px;letter-spacing:.1em;color:var(--sec);padding:9px 16px;transition:.15s;text-shadow:inherit}
+.job button:hover{background:rgba(51,255,102,.1);color:var(--p)}
+.job button[aria-pressed="true"]{background:var(--p);color:var(--bg);text-shadow:none}
+.job .sp{flex:1 1 40px;border-right:1px solid var(--pdd)}
+.job .stat{padding:9px 14px;font-size:11px;color:var(--amber)}
+
+/* ---------- continuous-form paper ---------- */
+.paper{position:relative;border:1px solid var(--pd);background:#050f07;
+  padding:0 30px;overflow:hidden}
+.paper::before,.paper::after{content:"";position:absolute;top:0;bottom:0;width:30px;
+  background-image:radial-gradient(circle at 50% 8px,#040a05 0 3.4px,transparent 3.6px);
+  background-size:30px 26px;background-repeat:repeat-y;
+  box-shadow:inset 0 0 0 1px rgba(20,156,54,.35)}
+.paper::before{left:0;border-right:1px dashed rgba(20,156,54,.5)}
+.paper::after{right:0;border-left:1px dashed rgba(20,156,54,.5)}
+.sheet{padding:16px 14px 22px;position:relative}
+.sheet + .sheet{border-top:2px dashed rgba(20,156,54,.55)}
+.perf{text-align:center;font-size:9px;letter-spacing:.5em;color:#2f7a45;padding:4px 0 0}
+
+.rhead{border-bottom:1px solid var(--pdd);padding-bottom:10px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.rhead h1{font-size:clamp(14px,2.4vw,21px);letter-spacing:.14em;font-weight:normal}
+.rhead h1 em{font-style:normal;color:var(--amber)}
+.rhead .rm{font-size:10.5px;color:var(--sec);text-align:right;line-height:1.85}
+.rhead .rm b{color:var(--p);font-weight:normal}
+.pgno{font-size:10px;letter-spacing:.24em;color:#3f8f56;margin-bottom:10px}
+
+.summary{font-size:12px;line-height:1.85}
+.summary .ln{display:grid;grid-template-columns:minmax(0,1fr) 150px 96px;gap:10px;
+  padding:4px 8px;align-items:baseline}
+.summary .ln:nth-child(odd){background:rgba(51,255,102,.055)}
+.summary .ln .k{color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.summary .ln .v{text-align:right;font-size:13.5px}
+.summary .ln .d{text-align:right;font-size:11px;color:#3f8f56}
+.summary .ln .d.up{color:var(--p)}
+.summary .ln .d.dn{color:var(--red)}
+.rule{border-top:1px dashed rgba(20,156,54,.5);margin:12px 0}
+.subhd{font-size:10.5px;letter-spacing:.22em;color:var(--amber);margin:14px 0 8px}
+
+/* ASCII bar block */
+.ascii{font-size:11.5px;line-height:1.5;white-space:pre;overflow-x:auto;padding:2px 8px}
+.ascii .band{display:block}
+.ascii .band:nth-child(odd){background:rgba(51,255,102,.055)}
+.ascii b{color:var(--amber);font-weight:normal}
+.ascii i{font-style:normal;color:#1e6b34}
+
+/* SVG charts */
+.chartwrap{overflow-x:auto;padding:6px 4px 2px}
+.chart{display:block;width:100%;min-width:620px;height:auto}
+.gl{stroke:rgba(20,156,54,.45);stroke-width:1;stroke-dasharray:2 4}
+.axis{stroke:var(--pd);stroke-width:1.4}
+.tk{font-size:9.5px;fill:#3f8f56;letter-spacing:.06em}
+.s50{fill:none;stroke:var(--p);stroke-width:2}
+.s95{fill:none;stroke:var(--amber);stroke-width:2;stroke-dasharray:6 3}
+.s99{fill:none;stroke:var(--red);stroke-width:1.6;stroke-dasharray:2 3}
+.area{fill:rgba(51,255,102,.14);stroke:var(--p);stroke-width:1.6}
+.slo{stroke:var(--red);stroke-width:1;stroke-dasharray:5 4}
+.slolbl{font-size:9.5px;fill:var(--red)}
+.lg{display:flex;flex-wrap:wrap;gap:18px;font-size:10.5px;color:#3f8f56;padding:6px 8px 0}
+.lg s{display:inline-block;width:16px;height:0;border-top:2px solid var(--p);
+  margin-right:7px;vertical-align:4px;text-decoration:none}
+.lg s.a{border-top-style:dashed;border-top-color:var(--amber)}
+.lg s.r{border-top-style:dotted;border-top-color:var(--red)}
+
+/* detail table */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:660px}
+th{text-align:left;color:var(--sec);font-weight:normal;padding:6px 8px;
+  border-bottom:1px solid var(--pd);white-space:nowrap}
+th button{appearance:none;background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;
+  padding:0;text-shadow:inherit;letter-spacing:.06em}
+th button:hover{color:var(--p)}
+th button[aria-pressed="true"]{color:var(--amber)}
+td{padding:5px 8px;border-bottom:1px dotted rgba(20,156,54,.35);white-space:nowrap}
+tbody tr:nth-child(odd){background:rgba(51,255,102,.055)}
+tbody tr:hover td{background:rgba(51,255,102,.14)}
+td.n{text-align:right}
+td.bad{color:var(--red)}
+td.warn{color:var(--amber)}
+.spark{display:inline-flex;gap:1px;align-items:flex-end;height:14px;vertical-align:-2px}
+.spark i{width:3px;background:var(--pd);display:block}
+.rfoot{border-top:1px solid var(--pdd);margin-top:14px;padding-top:8px;
+  font-size:10px;letter-spacing:.16em;color:#2f7a45;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.ftr{margin-top:12px;border-top:1px solid var(--pdd);padding-top:8px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  font-size:10px;letter-spacing:.24em;color:#3f8f56}
+
+@media(max-width:760px){
+  .paper{padding:0 16px}
+  .paper::before,.paper::after{width:16px;background-size:16px 22px;
+    background-image:radial-gradient(circle at 50% 7px,#040a05 0 2.6px,transparent 2.8px)}
+  .summary .ln{grid-template-columns:minmax(0,1fr) 100px;row-gap:0}
+  .summary .ln .d{grid-column:2;text-align:right}
+  .rhead .rm{text-align:left}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="flick"></div><div class="scan"></div>
+<a class="home" href="../../index.html">[ESC] INDEX</a>
+
+<div class="term">
+  <div class="head">
+    <span>SYSOPS TERMINAL v4.12 — MODULE <b>perfrep</b></span>
+    <span>列印佇列 <b>lp0 / greenbar 132col</b></span>
+    <span>產製 <b>2026-08-28 19:47:12</b></span>
+  </div>
+
+  <nav class="topnav" aria-label="模組導覽">
+    <span>MODULES</span>
+    <a href="index.html">▶ 系統監控主頁</a>
+    <a href="list.html">▶ 服務進程管理</a>
+    <a href="logs.html">▶ 系統日誌查詢</a>
+    <a href="users.html">▶ 帳號權限管理</a>
+    <a href="report.html" class="on" aria-current="page">▶ 效能統計報表</a>
+  </nav>
+
+  <div class="job" role="group" aria-label="報表期間">
+    <span class="lb">REPORT PERIOD</span>
+    <button type="button" data-p="day" aria-pressed="true">本日 24H</button>
+    <button type="button" data-p="week" aria-pressed="false">本週 7D</button>
+    <button type="button" data-p="month" aria-pressed="false">本月 30D</button>
+    <div class="sp"></div>
+    <span class="stat" id="jobstat" role="status">LP0 READY — 3 SHEETS / 132 COL</span>
+  </div>
+
+  <div class="paper">
+    <!-- ================= SHEET 1 ================= -->
+    <div class="sheet">
+      <div class="rhead">
+        <h1>PERFORMANCE SUMMARY — <em id="h-period">2026-08-28 00:00 → 19:47</em></h1>
+        <div class="rm">
+          REPORT-ID <b>PERF-<span id="h-id">D20260828</span></b> · REV 4<br>
+          叢集 <b>PRD-TAIPEI-A</b> · 節點 <b>14</b> · 服務 <b>12</b>
+        </div>
+      </div>
+      <div class="pgno">PAGE 001 OF 003 — 摘要與每桶請求量</div>
+
+      <div class="summary" id="sum"></div>
+
+      <div class="subhd">■ REQUESTS PER BUCKET — 1 字元 ≒ <span id="unit">—</span></div>
+      <div class="ascii" id="hist" role="img" aria-label="每時段請求量 ASCII 長條圖"></div>
+
+      <div class="rfoot"><span id="f1">—</span><span>CONTINUED ON PAGE 002 ▸</span></div>
+    </div>
+    <div class="perf">· · · · · · · · · · · · · · · · · · · · · · · · · · · ·</div>
+
+    <!-- ================= SHEET 2 ================= -->
+    <div class="sheet">
+      <div class="rhead">
+        <h1>LATENCY &amp; THROUGHPUT — <em>API GATEWAY</em></h1>
+        <div class="rm">量測點 <b>lb-edge-01 / haproxy</b><br>SLO 目標 <b>P95 ≤ 250 ms</b> · 可用率 <b>99.90%</b></div>
+      </div>
+      <div class="pgno">PAGE 002 OF 003 — 延遲百分位與吞吐量曲線</div>
+
+      <div class="subhd">■ RESPONSE TIME PERCENTILES (ms)</div>
+      <div class="chartwrap">
+        <svg class="chart" id="c1" viewBox="0 0 760 250" role="img" aria-labelledby="c1t">
+          <title id="c1t">API 回應時間百分位折線圖，含 P50、P95、P99 三條序列與 250 毫秒 SLO 門檻線</title>
+          <g id="c1g"></g>
+        </svg>
+      </div>
+      <div class="lg">
+        <span><s></s>P50 中位數</span>
+        <span><s class="a"></s>P95</span>
+        <span><s class="r"></s>P99</span>
+        <span id="lg1"></span>
+      </div>
+
+      <div class="subhd">■ THROUGHPUT — 每桶成功請求數（面積）</div>
+      <div class="chartwrap">
+        <svg class="chart" id="c2" viewBox="0 0 760 190" role="img" aria-labelledby="c2t">
+          <title id="c2t">吞吐量面積圖，顯示各時段成功請求數與尖峰標記</title>
+          <g id="c2g"></g>
+        </svg>
+      </div>
+
+      <div class="rfoot"><span id="f2">—</span><span>CONTINUED ON PAGE 003 ▸</span></div>
+    </div>
+    <div class="perf">· · · · · · · · · · · · · · · · · · · · · · · · · · · ·</div>
+
+    <!-- ================= SHEET 3 ================= -->
+    <div class="sheet">
+      <div class="rhead">
+        <h1>SERVICE BREAKDOWN — <em>12 UNITS</em></h1>
+        <div class="rm">排序欄位可點擊表頭切換<br>錯誤率門檻 <b>0.50%</b> · 逾標以紅字列印</div>
+      </div>
+      <div class="pgno">PAGE 003 OF 003 — 服務別明細</div>
+
+      <div class="tw">
+        <table>
+          <thead><tr>
+            <th><button type="button" data-k="name" aria-pressed="false">SERVICE ▲</button></th>
+            <th>NODE</th>
+            <th class="n"><button type="button" data-k="req" aria-pressed="true">REQUESTS ▼</button></th>
+            <th class="n"><button type="button" data-k="p95" aria-pressed="false">P95 ms ▼</button></th>
+            <th class="n"><button type="button" data-k="err" aria-pressed="false">ERR % ▼</button></th>
+            <th class="n">AVAIL %</th>
+            <th>TREND</th>
+          </tr></thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+
+      <div class="rfoot"><span id="f3">—</span><span>◂ END OF REPORT ▸</span></div>
+    </div>
+  </div>
+
+  <div class="ftr">
+    <span>P H O S P H O R   C R T   T E R M I N A L</span>
+    <span>Report / Line-Printer Greenbar</span>
+    <span>D E S I G N   2 1 / 4 0</span>
+  </div>
+</div>
+
+<script>
+/* ---------- 三組資料集：所有摘要數字都由陣列算出來，不另外寫死 ---------- */
+function series(n, base, wave, noise, seed){
+  const out = [];
+  let s = seed;
+  for (let i = 0; i < n; i++){
+    s = (s * 1103515245 + 12345) % 2147483648;
+    const r = s / 2147483648;
+    out.push(Math.max(1, Math.round(base + wave(i) + (r - .5) * noise)));
+  }
+  return out;
+}
+const D = {
+  day: {
+    id:"D20260828", label:"2026-08-28 00:00 → 19:47", bucket:"每小時",
+    lab:Array.from({length:20},(_,i)=>String(i).padStart(2,"0")+":00"),
+    req:series(20, 210, i => i < 6 ? -150 : i < 9 ? 40 : i < 18 ? 190 : 90, 60, 7),
+    p50:series(20, 42, i => i < 6 ? -12 : i < 18 ? 14 : 4, 10, 11),
+    p95:series(20, 168, i => i < 6 ? -50 : i < 18 ? 62 : 22, 34, 13),
+    p99:series(20, 320, i => i < 6 ? -90 : i < 18 ? 140 : 40, 90, 17),
+    err:series(20, 520, i => i === 19 ? 900 : i < 6 ? -380 : 240, 260, 19)
+  },
+  week: {
+    id:"W20260822", label:"2026-08-22 → 2026-08-28", bucket:"每日",
+    lab:["08-22 五","08-23 六","08-24 日","08-25 一","08-26 二","08-27 三","08-28 四"],
+    req:series(7, 4200, i => (i === 1 || i === 2) ? -1600 : 300, 500, 23),
+    p50:series(7, 46, () => 0, 9, 29),
+    p95:series(7, 198, i => i === 6 ? 46 : 0, 30, 31),
+    p99:series(7, 388, i => i === 6 ? 120 : 0, 80, 37),
+    err:series(7, 7800, i => i === 6 ? 4000 : 0, 1800, 41)
+  },
+  month: {
+    id:"M202608", label:"2026-08-01 → 2026-08-28", bucket:"每日",
+    lab:Array.from({length:28},(_,i)=>"08-"+String(i+1).padStart(2,"0")),
+    req:series(28, 4000, i => ((i+2) % 7 < 2 ? -1500 : 0) + i * 22, 480, 43),
+    p50:series(28, 45, i => i > 20 ? 5 : 0, 10, 47),
+    p95:series(28, 192, i => i > 20 ? 22 : 0, 34, 53),
+    p99:series(28, 372, i => i > 20 ? 70 : 0, 90, 59),
+    err:series(28, 8200, i => i === 27 ? 4000 : 0, 2000, 61)
+  }
+};
+
+/* 12 個服務的請求占比（合計 1.000），P95 係數與錯誤率係數 */
+const SVCS = [
+  ["api-gateway","lb-edge-01",.212,1.00,0.9],
+  ["order-service","prd-core-01",.164,1.32,1.4],
+  ["catalog-service","prd-core-01",.148,0.74,0.4],
+  ["auth-service","prd-core-02",.116,0.58,0.6],
+  ["search-indexer","prd-core-02",.082,1.86,1.1],
+  ["cart-service","prd-core-01",.074,0.92,0.8],
+  ["payment-proxy","prd-core-01",.058,2.44,4.6],
+  ["notify-worker","prd-mq-01",.049,1.54,6.2],
+  ["media-resize","prd-core-02",.041,2.02,1.9],
+  ["report-builder","prd-db-01",.028,3.16,0.7],
+  ["etl-worker","prd-core-01",.017,4.10,2.2],
+  ["backup-agent","bkp-vault-01",.011,5.20,0.3]
+];
+
+let period = "day", sortKey = "req";
+const nf = n => n.toLocaleString("en-US");
+const sum = a => a.reduce((x, y) => x + y, 0);
+const mean = a => sum(a) / a.length;
+
+function paint(){
+  const d = D[period];
+  const totalReq = sum(d.req) * 1000;
+  const totalErr = sum(d.err);
+  const errRate = totalErr / totalReq * 100;
+  const avail = 100 - errRate * 0.42;
+  const peakI = d.req.indexOf(Math.max(...d.req));
+  const p95avg = mean(d.p95), p99max = Math.max(...d.p99);
+  const breach = d.p95.filter(v => v > 250).length;
+
+  document.getElementById("h-period").textContent = d.label;
+  document.getElementById("h-id").textContent = d.id;
+  document.getElementById("jobstat").textContent =
+    "LP0 PRINTING — " + d.lab.length + " 桶 / " + d.bucket + " / 3 SHEETS";
+
+  /* ---- 摘要行 ---- */
+  const lines = [
+    ["總請求數 TOTAL REQUESTS", nf(totalReq), (totalReq > 3e6 ? "up" : ""), period === "day" ? "▲ 8.4% vs 昨日" : period === "week" ? "▲ 3.1% vs 上週" : "▲ 11.6% vs 上月"],
+    ["成功請求 SUCCESSFUL", nf(totalReq - totalErr), "up", "佔 " + (100 - errRate).toFixed(3) + "%"],
+    ["錯誤請求 FAILED (5xx)", nf(totalErr), errRate > .5 ? "dn" : "", "錯誤率 " + errRate.toFixed(3) + "%"],
+    ["尖峰時段 PEAK BUCKET", d.lab[peakI], "", nf(d.req[peakI] * 1000) + " req"],
+    ["平均 P50 LATENCY", Math.round(mean(d.p50)) + " ms", "up", "門檻 80 ms"],
+    ["平均 P95 LATENCY", Math.round(p95avg) + " ms", p95avg > 250 ? "dn" : "up", "SLO ≤ 250 ms"],
+    ["最差 P99 LATENCY", p99max + " ms", p99max > 700 ? "dn" : "", "出現於 " + d.lab[d.p99.indexOf(p99max)]],
+    ["SLO 逾標桶數 BREACHES", breach + " / " + d.lab.length, breach ? "dn" : "up", breach ? "需檢附說明" : "全期達標"],
+    ["服務可用率 AVAILABILITY", avail.toFixed(3) + "%", avail >= 99.9 ? "up" : "dn", "目標 99.900%"],
+    ["節點數 / 服務數", "14 / 12", "", "見 PAGE 003"]
+  ];
+  document.getElementById("sum").innerHTML = lines.map(([k, v, c, dd]) =>
+    '<div class="ln"><span class="k">' + k + '</span><span class="v">' + v +
+    '</span><span class="d ' + c + '">' + dd + "</span></div>").join("");
+
+  /* ---- ASCII 長條圖 ---- */
+  const maxReq = Math.max(...d.req);
+  const unit = Math.round(maxReq * 1000 / 40);
+  document.getElementById("unit").textContent = nf(unit) + " req";
+  const wLab = Math.max(...d.lab.map(l => l.length));
+  document.getElementById("hist").innerHTML = d.lab.map((l, i) => {
+    const n = Math.max(1, Math.round(d.req[i] / maxReq * 40));
+    const hot = d.err[i] > mean(d.err) * 1.8;
+    return '<span class="band">' + l.padEnd(wLab, " ") + " │" +
+      (hot ? "<b>" : "") + "█".repeat(n) + (hot ? "</b>" : "") +
+      "<i>" + "░".repeat(40 - n) + "</i>│ " +
+      String(nf(d.req[i] * 1000)).padStart(9, " ") +
+      (hot ? "  ⚑ 錯誤偏高" : "") + "</span>";
+  }).join("");
+
+  /* ---- SVG 折線：延遲百分位 ---- */
+  const W = 694, H = 190, X0 = 52, Y0 = 22;
+  const yMax = Math.max(700, Math.ceil(p99max / 100) * 100);
+  const px = i => X0 + i / (d.lab.length - 1) * W;
+  const py = v => Y0 + H - v / yMax * H;
+  const poly = arr => arr.map((v, i) => px(i).toFixed(1) + "," + py(v).toFixed(1)).join(" ");
+  let g = "";
+  for (let k = 0; k <= 4; k++){
+    const v = yMax / 4 * k, y = py(v);
+    g += '<line class="gl" x1="' + X0 + '" y1="' + y.toFixed(1) + '" x2="' + (X0 + W) + '" y2="' + y.toFixed(1) + '"/>' +
+         '<text class="tk" x="' + (X0 - 8) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end">' + v + "</text>";
+  }
+  g += '<line class="axis" x1="' + X0 + '" y1="' + (Y0 + H) + '" x2="' + (X0 + W) + '" y2="' + (Y0 + H) + '"/>';
+  g += '<line class="slo" x1="' + X0 + '" y1="' + py(250).toFixed(1) + '" x2="' + (X0 + W) + '" y2="' + py(250).toFixed(1) + '"/>' +
+       '<text class="slolbl" x="' + (X0 + 6) + '" y="' + (py(250) - 5).toFixed(1) + '">SLO P95 ≤ 250 ms</text>';
+  g += '<polyline class="s99" points="' + poly(d.p99) + '"/>';
+  g += '<polyline class="s95" points="' + poly(d.p95) + '"/>';
+  g += '<polyline class="s50" points="' + poly(d.p50) + '"/>';
+  const step = Math.ceil(d.lab.length / 8);
+  d.lab.forEach((l, i) => {
+    if (i % step && i !== d.lab.length - 1) return;
+    g += '<text class="tk" x="' + px(i).toFixed(1) + '" y="' + (Y0 + H + 16) + '" text-anchor="middle">' + l + "</text>";
+  });
+  document.getElementById("c1g").innerHTML = g;
+  document.getElementById("lg1").textContent =
+    "縱軸 0 – " + yMax + " ms · 逾 SLO " + breach + " 桶";
+
+  /* ---- SVG 面積：吞吐量 ---- */
+  const H2 = 132, Y2 = 18;
+  const py2 = v => Y2 + H2 - v / maxReq * H2;
+  let a = 'M' + X0 + "," + (Y2 + H2);
+  d.req.forEach((v, i) => { a += " L" + px(i).toFixed(1) + "," + py2(v).toFixed(1) });
+  a += " L" + (X0 + W) + "," + (Y2 + H2) + " Z";
+  let g2 = "";
+  for (let k = 0; k <= 3; k++){
+    const y = Y2 + H2 / 3 * k;
+    g2 += '<line class="gl" x1="' + X0 + '" y1="' + y + '" x2="' + (X0 + W) + '" y2="' + y + '"/>';
+  }
+  g2 += '<path class="area" d="' + a + '"/>';
+  g2 += '<line class="axis" x1="' + X0 + '" y1="' + (Y2 + H2) + '" x2="' + (X0 + W) + '" y2="' + (Y2 + H2) + '"/>';
+  g2 += '<text class="tk" x="' + (X0 - 8) + '" y="' + (Y2 + 4) + '" text-anchor="end">' + nf(maxReq * 1000) + "</text>";
+  g2 += '<text class="tk" x="' + (X0 - 8) + '" y="' + (Y2 + H2 + 4) + '" text-anchor="end">0</text>';
+  g2 += '<circle cx="' + px(peakI).toFixed(1) + '" cy="' + py2(d.req[peakI]).toFixed(1) +
+        '" r="3.6" fill="#ffcc33"/><text class="tk" x="' + px(peakI).toFixed(1) +
+        '" y="' + (py2(d.req[peakI]) - 8).toFixed(1) + '" text-anchor="middle" fill="#ffcc33">尖峰 ' +
+        d.lab[peakI] + "</text>";
+  document.getElementById("c2g").innerHTML = g2;
+
+  document.getElementById("f1").textContent = "PERF-" + d.id + " · SHEET 1/3 · 產製 19:47:12";
+  document.getElementById("f2").textContent = "PERF-" + d.id + " · SHEET 2/3 · 資料點 " + d.lab.length + " × 4 序列";
+  document.getElementById("f3").textContent = "PERF-" + d.id + " · SHEET 3/3 · 12 服務";
+
+  /* ---- 服務明細（由總量分攤，數字自洽） ---- */
+  const rows = SVCS.map(([n, node, share, kp, ke]) => {
+    const req = Math.round(totalReq * share);
+    const p95 = Math.round(p95avg * kp);
+    const err = +(errRate * ke).toFixed(3);
+    return {n, node, req, p95, err, avail:+(100 - err * 0.42).toFixed(3), share};
+  });
+  rows.sort((a, b) => sortKey === "name" ? a.n.localeCompare(b.n) : b[sortKey] - a[sortKey]);
+  document.getElementById("tb").innerHTML = rows.map(r => {
+    const bars = d.req.slice(-12).map(v =>
+      '<i style="height:' + Math.max(2, Math.round(v / maxReq * 14)) + 'px"></i>').join("");
+    return "<tr><td>" + r.n + "</td><td>" + r.node +
+      '</td><td class="n">' + nf(r.req) +
+      '</td><td class="n' + (r.p95 > 250 ? " bad" : r.p95 > 200 ? " warn" : "") + '">' + r.p95 +
+      '</td><td class="n' + (r.err > .5 ? " bad" : "") + '">' + r.err.toFixed(3) +
+      '</td><td class="n">' + r.avail.toFixed(3) +
+      '</td><td><span class="spark" aria-hidden="true">' + bars + "</span></td></tr>";
+  }).join("");
+}
+
+document.querySelectorAll(".job button").forEach(b => b.addEventListener("click", () => {
+  period = b.dataset.p;
+  document.querySelectorAll(".job button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+  paint();
+}));
+document.querySelectorAll("th button").forEach(b => b.addEventListener("click", () => {
+  sortKey = b.dataset.k;
+  document.querySelectorAll("th button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+  paint();
+}));
+paint();
+</script>
+</body>
+</html>

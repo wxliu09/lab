@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 35 醫療白藍·病房管理
+  ─────────────────────────────────────────
+  風格定位：現代醫院護理站中控台，乾淨、可信賴、無菌感
+  配色：
+    醫療白 #f7fbff（背景）
+    群青藍 #1e5aa8（主色、導覽）
+    淺藍面 #e3eefb（卡片底色）
+    佔床藍 #4a8fd4  空床綠 #38b26b  隔離黃 #e8a020  異常紅 #d62828
+  字體：'Noto Sans TC'（無菌無襯線）
+  版面結構：左側群青藍側欄導覽 → 頂部 KPI 卡列（含心電圖波紋）→
+            左：病房平面圖（SVG 床位列）／右：生命徵象警示卡 + 交班事項
+  動態效果：1) 心電圖 SVG 波紋循環描線動畫（stroke-dashoffset）；
+            2) 異常生命徵象卡紅色脈動外暈；3) 床位 hover 浮出病患資訊卡；
+            4) 交班事項核取方塊勾選劃線互動
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>病房管理中心 · 護理站 MIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --white:#f7fbff; --blue:#1e5aa8; --blue-soft:#e3eefb;
+  --bed-occ:#4a8fd4; --bed-free:#38b26b; --bed-iso:#e8a020; --alert:#d62828;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--white);font-family:'Noto Sans TC',sans-serif;color:#22303f;display:flex;min-height:100vh}
+/* 側欄 */
+aside{
+  width:228px;background:linear-gradient(180deg,var(--blue),#16467f);
+  color:#fff;padding:26px 0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{padding:0 24px 22px;border-bottom:1px solid rgba(255,255,255,.18)}
+.brand .cross{
+  width:38px;height:38px;background:#fff;border-radius:10px;display:inline-flex;
+  align-items:center;justify-content:center;margin-bottom:10px;
+}
+.brand .cross::before{content:"+";color:var(--blue);font-size:30px;font-weight:900;line-height:1}
+.brand h1{font-size:17px;font-weight:700;letter-spacing:1px}
+.brand small{font-size:11px;opacity:.7;letter-spacing:2px}
+.side-nav{flex:1;padding:18px 0}
+.side-nav a{
+  display:flex;align-items:center;gap:12px;color:rgba(255,255,255,.82);text-decoration:none;
+  padding:12px 24px;font-size:14px;transition:.2s;border-left:3px solid transparent;
+}
+.side-nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+.side-nav a.active{background:rgba(255,255,255,.14);border-left-color:#fff;color:#fff;font-weight:700}
+.back-link{
+  margin:0 20px;padding:11px;text-align:center;color:#fff;text-decoration:none;font-size:14px;
+  border:1px solid rgba(255,255,255,.45);border-radius:8px;transition:.2s;letter-spacing:1px;
+}
+.back-link:hover{background:#fff;color:var(--blue)}
+main{flex:1;padding:28px 34px 50px}
+.page-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:22px}
+.page-head h2{font-size:24px;font-weight:900;letter-spacing:2px}
+.page-head .shift{font-size:13px;color:#5c7285}
+/* KPI */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:26px}
+.kpi{
+  background:#fff;border:1px solid #d7e6f5;border-radius:14px;padding:18px 20px;
+  box-shadow:0 4px 16px rgba(30,90,168,.07);position:relative;overflow:hidden;
+}
+.kpi h3{font-size:12px;color:#5c7285;letter-spacing:2px;font-weight:500}
+.kpi .val{font-size:40px;font-weight:900;color:var(--blue);line-height:1.2}
+.kpi .val small{font-size:14px;color:#8ba2b8;font-weight:400}
+.kpi.alert-k .val{color:var(--alert)}
+/* 心電圖 */
+.ecg{position:absolute;right:0;bottom:0;left:0;height:44px;opacity:.9}
+.ecg path{
+  fill:none;stroke:var(--alert);stroke-width:2;
+  stroke-dasharray:340;stroke-dashoffset:340;
+  animation:ecgDraw 2.6s linear infinite;
+}
+@keyframes ecgDraw{to{stroke-dashoffset:-340}}
+.mid{display:grid;grid-template-columns:1.35fr 1fr;gap:22px}
+.card{
+  background:#fff;border:1px solid #d7e6f5;border-radius:14px;padding:22px;
+  box-shadow:0 4px 16px rgba(30,90,168,.06);
+}
+.card h3{
+  font-size:15px;font-weight:700;letter-spacing:2px;color:var(--blue);margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;
+}
+.card h3::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--blue)}
+/* 病房平面圖 */
+.ward-svg text{font-family:'Noto Sans TC',sans-serif}
+.bed{cursor:pointer;transition:.2s}
+.bed:hover{filter:brightness(1.12)}
+.ward-legend{display:flex;gap:20px;margin-top:14px;font-size:13px;color:#5c7285}
+.ward-legend i{width:14px;height:14px;border-radius:4px;display:inline-block;margin-right:6px;vertical-align:-2px}
+/* 生命徵象卡 */
+.vitals{display:flex;flex-direction:column;gap:14px;margin-bottom:22px}
+.vital{
+  display:flex;align-items:center;gap:16px;background:var(--blue-soft);
+  border:1px solid #cfdfF2;border-radius:12px;padding:14px 18px;
+}
+.vital.bad{
+  background:#fdeeee;border-color:#f3b9b9;
+  animation:pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(214,40,40,.35)}
+  50%{box-shadow:0 0 0 9px rgba(214,40,40,0)}
+}
+.vital .who{width:86px}
+.vital .who b{display:block;font-size:15px}
+.vital .who span{font-size:12px;color:#5c7285}
+.vital .row2{flex:1;display:flex;gap:22px}
+.vital .m{font-size:12px;color:#5c7285}
+.vital .m b{display:block;font-size:22px;font-weight:900;color:#22303f}
+.vital.bad .m b.hr{color:var(--alert)}
+.vital.bad .m b.spo2{color:var(--alert)}
+.vital .st{font-size:12px;padding:3px 12px;border-radius:20px;font-weight:700}
+.vital .st.ok{background:#dff3e7;color:#1d7a46}
+.vital .st.warn{background:#fbe3c9;color:#a86510}
+.vital .st.crit{background:#fbd5d5;color:var(--alert)}
+/* 交班清單 */
+.handover li{
+  list-style:none;display:flex;gap:12px;align-items:flex-start;padding:11px 4px;
+  border-bottom:1px dashed #d7e6f5;font-size:14px;cursor:pointer;transition:.2s;
+}
+.handover li input{accent-color:var(--blue);width:17px;height:17px;margin-top:2px;cursor:pointer}
+.handover li.done label{text-decoration:line-through;color:#9db2c4}
+.handover .pri{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:700;flex-shrink:0;margin-top:2px}
+.pri.hi{background:#fbd5d5;color:var(--alert)} .pri.mid{background:#fbe3c9;color:#a86510} .pri.lo{background:#dff3e7;color:#1d7a46}
+@media (max-width:1020px){.mid{grid-template-columns:1fr}.kpi-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <div class="cross"></div>
+    <h1>病房管理中心</h1>
+    <small>WARD MANAGEMENT MIS</small>
+  </div>
+  <nav class="side-nav">
+    <a href="index.html" class="active">🏥 病房總覽</a>
+    <a href="beds.html">🛏️ 床位調度</a>
+    <a href="meds.html">💊 給藥排程</a>
+    <a href="labs.html">🧪 檢驗報告</a>
+    <a href="schedule.html">👩‍⚕️ 護理排班</a>
+    <a href="handover.html">📋 交班紀錄</a>
+  </nav>
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+</aside>
+<main>
+  <div class="page-head">
+    <h2>內科病房 7F · 即時總覽</h2>
+    <div class="shift">今日班別：白班 08:00–16:00 ｜ 護理長：林淑芬</div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><h3>總床位數</h3><div class="val">42 <small>床</small></div></div>
+    <div class="kpi"><h3>佔床率</h3><div class="val" id="occRate">0<small>%</small></div></div>
+    <div class="kpi"><h3>今日新入院</h3><div class="val">6 <small>人</small></div></div>
+    <div class="kpi alert-k"><h3>異常警示</h3><div class="val">2 <small>床</small></div>
+      <svg class="ecg" viewBox="0 0 340 44" preserveAspectRatio="none">
+        <path d="M0,22 L40,22 L52,22 L60,8 L70,36 L80,22 L130,22 L142,22 L150,4 L162,40 L172,22 L232,22 L244,22 L252,10 L262,34 L272,22 L340,22"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="mid">
+    <section class="card">
+      <h3>病房平面圖 — 701～710 室</h3>
+      <svg class="ward-svg" id="wardSvg" viewBox="0 0 640 330" width="100%"></svg>
+      <div class="ward-legend">
+        <span><i style="background:var(--bed-occ)"></i>佔床</span>
+        <span><i style="background:var(--bed-free)"></i>空床</span>
+        <span><i style="background:var(--bed-iso)"></i>隔離床</span>
+        <span><i style="background:var(--alert)"></i>異常警示</span>
+      </div>
+    </section>
+
+    <div>
+      <section class="card" style="margin-bottom:22px">
+        <h3>生命徵象警示</h3>
+        <div class="vitals">
+          <div class="vital bad">
+            <div class="who"><b>703-A 床</b><span>王大成 · 68 歲</span></div>
+            <div class="row2">
+              <div class="m">心率<b class="hr">128</b></div>
+              <div class="m">血氧<b class="spo2">89%</b></div>
+              <div class="m">體溫<b>38.6°</b></div>
+            </div>
+            <span class="st crit">危急</span>
+          </div>
+          <div class="vital bad" style="animation-delay:.4s">
+            <div class="who"><b>707-B 床</b><span>李陳素娥 · 74 歲</span></div>
+            <div class="row2">
+              <div class="m">心率<b class="hr">112</b></div>
+              <div class="m">血氧<b class="spo2">93%</b></div>
+              <div class="m">血壓<b>165/98</b></div>
+            </div>
+            <span class="st warn">注意</span>
+          </div>
+          <div class="vital">
+            <div class="who"><b>705-A 床</b><span>張志明 · 52 歲</span></div>
+            <div class="row2">
+              <div class="m">心率<b>76</b></div>
+              <div class="m">血氧<b>98%</b></div>
+              <div class="m">體溫<b>36.7°</b></div>
+            </div>
+            <span class="st ok">穩定</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>交班事項（白班 → 小夜）</h3>
+        <ul class="handover" id="handover">
+          <li><input type="checkbox" id="h1"><span class="pri hi">急</span><label for="h1">703-A 王大成 15:30 複測血氧，若低於 90% 通知主治醫師</label></li>
+          <li><input type="checkbox" id="h2"><span class="pri mid">中</span><label for="h2">705-B 預計明日出院，確認出院帶藥與衛教單已備妥</label></li>
+          <li><input type="checkbox" id="h3" checked><span class="pri lo">低</span><label for="h3">708 室更換隔離防護備品，已補充 N95 兩盒</label></li>
+          <li><input type="checkbox" id="h4"><span class="pri hi">急</span><label for="h4">707-B 李陳素娥 18:00 降血壓藥，給藥前再量一次血壓</label></li>
+          <li><input type="checkbox" id="h5"><span class="pri lo">低</span><label for="h5">710-A 家屬會客時間已申請延長至 21:00</label></li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+// 病房平面圖 SVG：10 間房 × 每房 2 床
+const svg=document.getElementById('wardSvg');
+const NS='http://www.w3.org/2000/svg';
+// 0 佔床 1 空床 2 隔離 3 異常
+const beds=[
+  ['701',0,0],['702',1,0],['703',3,1],['704',0,0],['705',0,1],
+  ['706',1,1],['707',0,3],['708',2,2],['709',0,0],['710',1,0]
+];
+const fills=['#4a8fd4','#38b26b','#e8a020','#d62828'];
+const names=[['周明輝','吳雅婷'],['—','郭柏宏'],['王大成','—'],['許文龍','賴怡君'],['張志明','—'],['—','—'],['高麗雲','李陳素娥'],['隔離','隔離'],['陳建宏','黃玉梅'],['—','蔡宗翰']];
+beds.forEach((b,i)=>{
+  const col=i%5, row=Math.floor(i/5);
+  const x=20+col*124, y=24+row*150;
+  // 房間框
+  const room=document.createElementNS(NS,'rect');
+  room.setAttribute('x',x);room.setAttribute('y',y);
+  room.setAttribute('width',112);room.setAttribute('height',136);
+  room.setAttribute('rx',10);room.setAttribute('fill','#f0f7ff');
+  room.setAttribute('stroke','#cfdfF2');
+  svg.appendChild(room);
+  const t=document.createElementNS(NS,'text');
+  t.setAttribute('x',x+10);t.setAttribute('y',y+22);
+  t.setAttribute('font-size','14');t.setAttribute('font-weight','700');
+  t.setAttribute('fill','#1e5aa8');t.textContent=b[0]+' 室';
+  svg.appendChild(t);
+  // 兩張床
+  [b[1],b[2]].forEach((st,j)=>{
+    const g=document.createElementNS(NS,'g');
+    g.setAttribute('class','bed');
+    const bx=x+12, by=y+38+j*48;
+    const r=document.createElementNS(NS,'rect');
+    r.setAttribute('x',bx);r.setAttribute('y',by);
+    r.setAttribute('width',88);r.setAttribute('height',38);
+    r.setAttribute('rx',6);r.setAttribute('fill',fills[st]);
+    r.setAttribute('opacity',st===1?'0.55':'0.92');
+    g.appendChild(r);
+    // 枕頭
+    const p=document.createElementNS(NS,'rect');
+    p.setAttribute('x',bx+5);p.setAttribute('y',by+7);
+    p.setAttribute('width',16);p.setAttribute('height',24);
+    p.setAttribute('rx',3);p.setAttribute('fill','rgba(255,255,255,.75)');
+    g.appendChild(p);
+    const nm=document.createElementNS(NS,'text');
+    nm.setAttribute('x',bx+28);nm.setAttribute('y',by+24);
+    nm.setAttribute('font-size','11');nm.setAttribute('fill','#fff');
+    nm.textContent=names[i][j];
+    g.appendChild(nm);
+    const tip=document.createElementNS(NS,'title');
+    tip.textContent=`${b[0]}-${j===0?'A':'B'} 床｜${names[i][j]==='—'?'空床':names[i][j]}｜${['佔床','空床','隔離','異常警示'][st]}`;
+    g.appendChild(tip);
+    svg.appendChild(g);
+  });
+});
+// 佔床率計數動畫
+const occ=document.getElementById('occRate');
+let t0=performance.now();
+(function tick(t){
+  const p=Math.min((t-t0)/1300,1), v=Math.round(78.6*(1-Math.pow(1-p,3)));
+  occ.innerHTML=v+'<small>%</small>';
+  if(p<1)requestAnimationFrame(tick);
+})(t0);
+// 交班勾選劃線
+document.querySelectorAll('.handover input').forEach(cb=>{
+  const li=cb.closest('li');
+  li.classList.toggle('done',cb.checked);
+  cb.addEventListener('change',()=>li.classList.toggle('done',cb.checked));
+});
+</script>
+</body>
+</html>

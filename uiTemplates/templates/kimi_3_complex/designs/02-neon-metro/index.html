@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<!--
+  設計規格｜02 霓虹站體·捷運動線
+  ─────────────────────────────────────
+  風格定位：深夜霓虹燈箱式的捷運路線圖，科技感、電光感
+  配色：深黑藍底 #0a0e1a、面板 #111831、霓虹紅 #ff2e88、霓虹藍 #00e5ff、
+        霓虹綠 #7cff00、霓虹橘 #ffb300、文字 #e8ecff、輔助灰 #6b7494
+  字體：Noto Sans TC（Google Fonts，離線退回 sans-serif），站名等寬數字用 monospace
+  版面結構：頂欄（標題+返回）→ 左側大型 SVG 四線路線圖 → 右側首末班車 / 票價 / 班次資訊欄
+            → 底部轉乘站速查橫條
+  動態效果：SVG 路線以 dasharray 描邊動畫繪出；懸停站點圓點發光放大並浮出站名標籤；
+            霓虹標題文字閃爍；跑動列車光點沿路線移動
+  圖形：全部 SVG 繪製（路線、站點、列車光點），無外部圖片
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>霓虹站體 · 都會捷運動線</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#111831; --red:#ff2e88; --blue:#00e5ff;
+    --green:#7cff00; --orange:#ffb300; --ink:#e8ecff; --mute:#6b7494;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:'Noto Sans TC',sans-serif;min-height:100vh;
+       background-image:radial-gradient(ellipse at 20% 0%,rgba(0,229,255,.06),transparent 55%),
+                        radial-gradient(ellipse at 85% 100%,rgba(255,46,136,.07),transparent 55%);}
+  /* 頂欄 */
+  .topbar{
+    display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+    padding:20px 34px;border-bottom:1px solid #1c2547;
+    position:sticky;top:0;background:rgba(10,14,26,.9);backdrop-filter:blur(8px);z-index:20;
+  }
+  .back{
+    color:var(--blue);text-decoration:none;font-size:13px;letter-spacing:.2em;
+    border:1px solid var(--blue);padding:7px 16px;border-radius:4px;
+    text-shadow:0 0 8px rgba(0,229,255,.8);box-shadow:0 0 12px rgba(0,229,255,.25) inset;
+    transition:.25s;white-space:nowrap;
+  }
+  .back:hover{background:var(--blue);color:var(--bg);box-shadow:0 0 26px rgba(0,229,255,.7)}
+  h1.neon{
+    font-weight:900;font-size:clamp(20px,3vw,30px);letter-spacing:.14em;
+    color:var(--red);text-shadow:0 0 6px var(--red),0 0 22px rgba(255,46,136,.65);
+    animation:flicker 4.5s infinite;
+  }
+  @keyframes flicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.35}94%{opacity:1}96%{opacity:.55}97%{opacity:1}}
+  .topbar .meta{margin-left:auto;font-size:12px;color:var(--mute);letter-spacing:.2em}
+  .topnav{display:flex;gap:12px;flex-wrap:wrap}
+  .topnav a{
+    color:var(--mute);text-decoration:none;font-size:12.5px;letter-spacing:.18em;
+    padding:6px 14px;border:1px solid #1c2547;border-radius:4px;transition:.25s;white-space:nowrap;
+  }
+  .topnav a:hover{color:var(--ink);border-color:var(--blue);box-shadow:0 0 14px rgba(0,229,255,.25)}
+  .card .more{
+    display:inline-block;margin-top:14px;font-size:12px;letter-spacing:.2em;color:var(--blue);
+    text-decoration:none;transition:.25s;
+  }
+  .card .more:hover{text-shadow:0 0 10px rgba(0,229,255,.8);letter-spacing:.3em}
+  a.t-chip{text-decoration:none;display:block}
+  /* 主體 */
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:26px;padding:26px 34px;max-width:1440px;margin:0 auto}
+  .map-panel{background:var(--panel);border:1px solid #1c2547;border-radius:14px;padding:20px;position:relative;overflow:hidden}
+  .map-panel::before{content:"";position:absolute;inset:0;background:
+    repeating-linear-gradient(0deg,transparent 0 39px,rgba(107,116,148,.06) 39px 40px),
+    repeating-linear-gradient(90deg,transparent 0 39px,rgba(107,116,148,.06) 39px 40px);pointer-events:none}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;letter-spacing:.15em}
+  .legend span{display:inline-flex;align-items:center;gap:8px}
+  .legend i{width:26px;height:4px;border-radius:2px;display:inline-block}
+  /* 站點互動 */
+  .stn{cursor:pointer}
+  .stn circle.core{fill:#0a0e1a;stroke-width:2.4;transition:.22s}
+  .stn text{fill:#9aa3c7;font-size:11.5px;letter-spacing:.08em;transition:.22s;pointer-events:none}
+  .stn:hover circle.core,.stn.lit circle.core{r:8.5}
+  .stn:hover text,.stn.lit text{fill:#fff;font-weight:700}
+  .tip{
+    position:absolute;pointer-events:none;background:#0d1428;border:1px solid var(--blue);
+    color:var(--ink);font-size:12.5px;padding:9px 13px;border-radius:8px;letter-spacing:.1em;line-height:1.8;
+    box-shadow:0 0 22px rgba(0,229,255,.35);opacity:0;transition:opacity .18s;z-index:5;white-space:nowrap;
+  }
+  .tip b{color:var(--blue)}
+  /* 路線描邊動畫 */
+  .line{fill:none;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;
+        stroke-dasharray:1400;stroke-dashoffset:1400;animation:draw 2.6s ease forwards}
+  .line.glow{stroke-width:11;opacity:.18;filter:blur(3px)}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  /* 跑動列車光點 */
+  .train{filter:drop-shadow(0 0 7px currentColor)}
+  /* 右欄 */
+  aside{display:flex;flex-direction:column;gap:18px}
+  .card{background:var(--panel);border:1px solid #1c2547;border-radius:14px;padding:20px 22px}
+  .card h2{font-size:14px;letter-spacing:.3em;color:var(--mute);margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  .card h2::after{content:"";flex:1;height:1px;background:#1c2547}
+  table.sched{width:100%;border-collapse:collapse;font-size:13.5px}
+  .sched td{padding:8px 2px;border-bottom:1px dashed #1c2547;letter-spacing:.06em}
+  .sched td:first-child{font-weight:700}
+  .sched td:last-child{text-align:right;font-family:ui-monospace,Consolas,monospace;color:var(--ink)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:1px}
+  .fare{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .fare div{background:#0d1428;border:1px solid #1c2547;border-radius:8px;padding:12px;text-align:center}
+  .fare .p{font-family:ui-monospace,Consolas,monospace;font-size:22px;color:var(--green);text-shadow:0 0 10px rgba(124,255,0,.5)}
+  .fare .l{font-size:11.5px;color:var(--mute);margin-top:4px;letter-spacing:.15em}
+  .freq li{list-style:none;display:flex;justify-content:space-between;font-size:13px;padding:7px 2px;border-bottom:1px dashed #1c2547}
+  .freq li b{color:var(--orange);font-family:ui-monospace,Consolas,monospace;text-shadow:0 0 8px rgba(255,179,0,.5)}
+  /* 轉乘速查 */
+  .transfer{max-width:1440px;margin:0 auto;padding:0 34px 40px}
+  .transfer .rail{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px}
+  .t-chip{flex:0 0 auto;background:var(--panel);border:1px solid #1c2547;border-radius:10px;padding:14px 18px;min-width:170px;transition:.25s}
+  .t-chip:hover{transform:translateY(-4px);border-color:var(--red);box-shadow:0 8px 26px rgba(255,46,136,.22)}
+  .t-chip .n{font-weight:900;letter-spacing:.1em;margin-bottom:6px}
+  .t-chip .ls{font-size:11.5px;color:var(--mute);letter-spacing:.12em}
+  @media(max-width:960px){.layout{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <h1 class="neon">霓虹站體 · 都會捷運動線</h1>
+  <nav class="topnav">
+    <a href="timetable.html">時刻表</a>
+    <a href="fares.html">票價</a>
+    <a href="stations.html">站點</a>
+    <a href="guide.html">搭乘指南</a>
+  </nav>
+  <span class="meta">NEON METRO GRID — 營運時間 06:00 – 24:00</span>
+</header>
+
+<main class="layout">
+  <section class="map-panel" id="mapPanel">
+    <div class="legend">
+      <span><i style="background:#ff2e88;box-shadow:0 0 8px #ff2e88"></i>紅線 淡水—南港</span>
+      <span><i style="background:#00e5ff;box-shadow:0 0 8px #00e5ff"></i>藍線 頂埔—象山</span>
+      <span><i style="background:#7cff00;box-shadow:0 0 8px #7cff00"></i>綠線 新店—松山</span>
+      <span><i style="background:#ffb300;box-shadow:0 0 8px #ffb300"></i>橘線 迴龍—南勢角</span>
+    </div>
+    <svg id="metroMap" viewBox="0 0 860 560" width="100%" role="img" aria-label="四線捷運路線示意圖">
+      <!-- 光暈層 -->
+      <path class="line glow" style="color:#ff2e88" stroke="#ff2e88" d="M70 90 H380 Q400 90 400 110 V470 Q400 490 420 490 H790"/>
+      <path class="line glow" style="color:#00e5ff" stroke="#00e5ff" d="M90 500 V210 Q90 190 110 190 H740 Q760 190 760 210 V430"/>
+      <path class="line glow" style="color:#7cff00" stroke="#7cff00" d="M180 40 V380 Q180 400 200 400 H640 Q660 400 660 380 V120"/>
+      <path class="line glow" style="color:#ffb300" stroke="#ffb300" d="M560 60 H300 Q280 60 280 80 V300 Q280 320 300 320 H520 Q540 320 540 340 V520"/>
+      <!-- 主線層 -->
+      <path id="L-red"    class="line" stroke="#ff2e88" d="M70 90 H380 Q400 90 400 110 V470 Q400 490 420 490 H790" style="animation-delay:.1s"/>
+      <path id="L-blue"   class="line" stroke="#00e5ff" d="M90 500 V210 Q90 190 110 190 H740 Q760 190 760 210 V430" style="animation-delay:.45s"/>
+      <path id="L-green"  class="line" stroke="#7cff00" d="M180 40 V380 Q180 400 200 400 H640 Q660 400 660 380 V120" style="animation-delay:.8s"/>
+      <path id="L-orange" class="line" stroke="#ffb300" d="M560 60 H300 Q280 60 280 80 V300 Q280 320 300 320 H520 Q540 320 540 340 V520" style="animation-delay:1.15s"/>
+      <!-- 列車光點 -->
+      <circle class="train" r="5" fill="#ff2e88" style="color:#ff2e88"><animateMotion dur="14s" repeatCount="indefinite"><mpath href="#L-red"/></animateMotion></circle>
+      <circle class="train" r="5" fill="#00e5ff" style="color:#00e5ff"><animateMotion dur="17s" repeatCount="indefinite"><mpath href="#L-blue"/></animateMotion></circle>
+      <circle class="train" r="5" fill="#7cff00" style="color:#7cff00"><animateMotion dur="15s" repeatCount="indefinite"><mpath href="#L-green"/></animateMotion></circle>
+      <circle class="train" r="5" fill="#ffb300" style="color:#ffb300"><animateMotion dur="13s" repeatCount="indefinite"><mpath href="#L-orange"/></animateMotion></circle>
+      <!-- 站點（JS 注入） -->
+      <g id="stations"></g>
+    </svg>
+    <div class="tip" id="tip"></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>首末班車</h2>
+      <table class="sched">
+        <tr><td><i class="dot" style="background:#ff2e88;box-shadow:0 0 7px #ff2e88"></i>紅線</td><td>首班 06:02</td><td>末班 00:18</td></tr>
+        <tr><td><i class="dot" style="background:#00e5ff;box-shadow:0 0 7px #00e5ff"></i>藍線</td><td>首班 06:00</td><td>末班 00:25</td></tr>
+        <tr><td><i class="dot" style="background:#7cff00;box-shadow:0 0 7px #7cff00"></i>綠線</td><td>首班 06:05</td><td>末班 00:12</td></tr>
+        <tr><td><i class="dot" style="background:#ffb300;box-shadow:0 0 7px #ffb300"></i>橘線</td><td>首班 06:03</td><td>末班 00:20</td></tr>
+      </table>
+      <a class="more" href="timetable.html">完整時刻表 · 全日班距 →</a>
+    </div>
+    <div class="card">
+      <h2>票價資訊</h2>
+      <div class="fare">
+        <div><div class="p">$20</div><div class="l">起跳價（5 km 內）</div></div>
+        <div><div class="p">$65</div><div class="l">全程上限</div></div>
+        <div><div class="p">$16</div><div class="l">悠遊卡優惠起跳</div></div>
+        <div><div class="p">$10</div><div class="l">敬老愛心單程</div></div>
+      </div>
+      <a class="more" href="fares.html">里程級距 · 定期票 · 轉乘優惠 →</a>
+    </div>
+    <div class="card">
+      <h2>尖峰班距</h2>
+      <ul class="freq">
+        <li>紅線（07–09 / 17–19）<b>3 分</b></li>
+        <li>藍線（尖峰）<b>3.5 分</b></li>
+        <li>綠線（尖峰）<b>4 分</b></li>
+        <li>橘線（尖峰）<b>4.5 分</b></li>
+        <li>全線離峰 <b>6–8 分</b></li>
+        <li>23 時後 <b>12 分</b></li>
+      </ul>
+      <a class="more" href="timetable.html">全日班距表 →</a>
+    </div>
+  </aside>
+</main>
+
+<section class="transfer">
+  <div class="rail">
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#ff2e88">中央樞紐站</div><div class="ls">紅 × 橘 交會 · 地下四層</div></a>
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#00e5ff">河濱光廊站</div><div class="ls">藍 × 紅 交會 · 出口 6 處</div></a>
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#7cff00">林蔭大道站</div><div class="ls">綠 × 橘 交會 · 共構商場</div></a>
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#ffb300">科技港站</div><div class="ls">橘線端點 · 接駁輕軌 L3</div></a>
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#00e5ff">山象站</div><div class="ls">藍線端點 · 登山步道口</div></a>
+    <a class="t-chip" href="stations.html"><div class="n" style="color:#7cff00">松山門站</div><div class="ls">綠線端點 · 轉乘臺鐵</div></a>
+  </div>
+</section>
+
+<script>
+  // 站點資料：[線色, x, y, 站名, 附加資訊]
+  const stations=[
+    ['#ff2e88',70,90,'北灣站','紅線起點 · 首班 06:02'],
+    ['#ff2e88',210,90,'白城門站','往 南港 方向'],
+    ['#ff2e88',400,90,'河濱光廊站','紅 × 藍 轉乘'],
+    ['#ff2e88',400,290,'中央樞紐站','紅 × 橘 轉乘 · 全網最忙'],
+    ['#ff2e88',400,490,'南港展館站','紅線終點 · 末班 00:18'],
+    ['#ff2e88',640,490,'東嶺站','紅線 · 2 號出口電梯'],
+    ['#00e5ff',90,500,'頂埔工業站','藍線起點 · 首班 06:00'],
+    ['#00e5ff',90,190,'西港站','藍線 · 月臺幕門'],
+    ['#00e5ff',280,190,'市府前站','藍 × 橘（站外轉乘）'],
+    ['#00e5ff',540,190,'林蔭大道站','藍 × 綠 轉乘'],
+    ['#00e5ff',760,190,'山象站','藍線終點 · 登山口'],
+    ['#7cff00',180,40,'松山門站','綠線起點 · 轉臺鐵'],
+    ['#7cff00',180,240,'大學城站','綠線 · 腳踏車租借'],
+    ['#7cff00',180,400,'南川站','綠 × 橘 交會'],
+    ['#7cff00',420,400,'植園站','綠線 · 溫室出口'],
+    ['#7cff00',660,400,'新店溪站','綠線終點'],
+    ['#ffb300',560,60,'迴龍站','橘線起點'],
+    ['#ffb300',420,60,'礦坑文化站','橘線 · 假日市集'],
+    ['#ffb300',280,120,'林蔭北門站','橘線 · 古蹟園區'],
+    ['#ffb300',280,300,'中央樞紐北站','橘線 · 與紅線地下連通'],
+    ['#ffb300',540,320,'科技港站','橘線 · 接駁輕軌 L3'],
+    ['#ffb300',540,520,'南勢角站','橘線終點 · 末班 00:20'],
+  ];
+  const g=document.getElementById('stations');
+  const tip=document.getElementById('tip');
+  const panel=document.getElementById('mapPanel');
+  const NS='http://www.w3.org/2000/svg';
+  stations.forEach(([c,x,y,name,info])=>{
+    const grp=document.createElementNS(NS,'g');
+    grp.setAttribute('class','stn');
+    grp.dataset.name=name;grp.dataset.info=info;grp.dataset.color=c;
+    const halo=document.createElementNS(NS,'circle');
+    halo.setAttribute('cx',x);halo.setAttribute('cy',y);halo.setAttribute('r',13);
+    halo.setAttribute('fill',c);halo.setAttribute('opacity',.0);halo.setAttribute('class','halo');
+    halo.style.transition='opacity .22s';
+    const core=document.createElementNS(NS,'circle');
+    core.setAttribute('cx',x);core.setAttribute('cy',y);core.setAttribute('r',6);
+    core.setAttribute('stroke',c);core.setAttribute('class','core');
+    const label=document.createElementNS(NS,'text');
+    label.setAttribute('x',x+12);label.setAttribute('y',y-10);
+    label.textContent=name;
+    grp.append(halo,core,label);
+    g.appendChild(grp);
+    grp.addEventListener('mouseenter',()=>{
+      halo.setAttribute('opacity',.28);
+      core.style.filter=`drop-shadow(0 0 9px ${c})`;
+      core.setAttribute('r',8.5);
+      tip.innerHTML=`<b>${name}</b><br>${info}`;
+      const pr=panel.getBoundingClientRect();
+      const sr=grp.getBoundingClientRect();
+      tip.style.left=(sr.left-pr.left+18)+'px';
+      tip.style.top=(sr.top-pr.top-14)+'px';
+      tip.style.borderColor=c;tip.style.boxShadow=`0 0 22px ${c}55`;
+      tip.style.opacity=1;
+    });
+    grp.addEventListener('mouseleave',()=>{
+      halo.setAttribute('opacity',0);
+      core.style.filter='';core.setAttribute('r',6);
+      tip.style.opacity=0;
+    });
+  });
+</script>
+</body>
+</html>

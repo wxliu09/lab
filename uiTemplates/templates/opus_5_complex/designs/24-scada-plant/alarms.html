@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>24 · 警報時序帶 — PLANT CONTROL</title>
+<style>
+:root{
+  --steel:#2b3238;--steel2:#353d44;--panel:#3d464e;--edge:#1c2126;
+  --amber:#ffb020;--amber-d:#8a5c00;--green:#4ade80;--red:#f4544c;--cyan:#39c8e0;
+  --txt:#d6dde3;--dim:#8d99a3;--well:#232a2f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--steel);color:var(--txt);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","DejaVu Sans Mono",monospace;font-size:13px;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,transparent 1px 3px);
+}
+a:focus-visible,button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+.home{
+  position:fixed;right:16px;bottom:16px;z-index:90;text-decoration:none;
+  background:linear-gradient(#4e5860,#333b42);color:var(--amber);
+  border:1px solid #5c666e;border-top-color:#6f7a83;border-radius:4px;
+  padding:11px 18px;font-weight:700;letter-spacing:.08em;font-size:12px;
+  box-shadow:0 4px 0 #1c2126,0 8px 16px rgba(0,0,0,.5)}
+.home:active{transform:translateY(3px);box-shadow:0 1px 0 #1c2126}
+
+.bar{background:linear-gradient(#454e56,#2f363c);border-bottom:2px solid var(--edge);
+  padding:9px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.bar h1{font-size:15px;letter-spacing:.12em;color:var(--amber);font-weight:700}
+.bar h1 span{color:var(--dim);font-weight:400;font-size:11px;letter-spacing:.2em;display:block;margin-top:2px}
+.clock{font-size:13px;color:var(--cyan);letter-spacing:.08em;padding:6px 12px;background:#1b2024;
+  border:1px solid var(--edge);border-radius:3px;margin-left:auto}
+
+.mode{display:flex;flex-wrap:wrap;background:#20262b;border-bottom:2px solid var(--edge)}
+.mode a{padding:8px 15px;font-size:11px;letter-spacing:.1em;background:#252b30;border:1px solid var(--edge);
+  color:var(--dim);text-decoration:none}
+.mode a:hover{color:var(--txt);background:#2e353b}
+.mode a[aria-current]{background:var(--amber-d);color:#ffe4a8;border-color:var(--amber)}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;
+  background:var(--edge);border-bottom:2px solid var(--edge)}
+.strip div{background:#333b42;padding:10px 14px}
+.strip .k{font-size:10px;letter-spacing:.16em;color:var(--dim)}
+.strip .v{font-size:22px;margin-top:4px;letter-spacing:.02em}
+.strip .v i{font-style:normal;font-size:10px;color:var(--dim);margin-left:5px;letter-spacing:.1em}
+.c-red{color:var(--red)}.c-amb{color:var(--amber)}.c-cy{color:var(--cyan)}.c-gr{color:var(--green)}
+.pulse{animation:bk 1s steps(2,end) infinite}
+@keyframes bk{50%{opacity:.25}}
+
+.wrap{padding:14px;max-width:1620px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.pnl{background:var(--panel);border:1px solid var(--edge);border-radius:3px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 3px 10px rgba(0,0,0,.35)}
+.pnl>h2{font-size:11px;letter-spacing:.18em;color:var(--amber);padding:9px 13px;
+  background:linear-gradient(#414a52,#343c43);border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.pnl>h2 em{font-style:normal;color:var(--dim);letter-spacing:.06em;font-size:10px}
+.pnl .in{padding:13px}
+
+/* ---------- toolbar ---------- */
+.tools{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:10px 13px;
+  border-bottom:1px solid var(--edge);background:#39424a}
+.grp{display:flex;align-items:center;gap:7px}
+.grp>span{font-size:10px;letter-spacing:.14em;color:var(--dim)}
+.btn{font-family:inherit;font-size:11px;letter-spacing:.08em;padding:6px 12px;cursor:pointer;
+  background:linear-gradient(#464f57,#333b42);color:var(--dim);border:1px solid var(--edge);
+  border-top-color:#5a646c;border-radius:3px}
+.btn:hover{color:var(--txt)}
+.btn[aria-pressed="true"]{background:var(--amber-d);color:#ffe4a8;border-color:var(--amber)}
+.btn.sm{padding:3px 8px;font-size:10px}
+
+/* ---------- timeline ribbon ---------- */
+.ribwrap{overflow-x:auto;padding:0 13px 13px}
+.rib{min-width:820px}
+.axis{display:grid;grid-template-columns:132px minmax(0,1fr);align-items:end;
+  border-bottom:1px solid #5b656d;padding-bottom:4px;margin-bottom:2px}
+.axis .sp{font-size:9.5px;letter-spacing:.16em;color:var(--dim)}
+.ticks{position:relative;height:16px}
+.ticks i{position:absolute;bottom:0;font-style:normal;font-size:9.5px;color:var(--dim);
+  transform:translateX(-50%);letter-spacing:.06em;white-space:nowrap}
+.lane{display:grid;grid-template-columns:132px minmax(0,1fr);align-items:center;
+  border-bottom:1px dashed #4b555d;min-height:30px}
+.lane:last-child{border-bottom:0}
+.lane .nm{font-size:11px;letter-spacing:.04em;padding-right:10px;display:flex;align-items:center;gap:6px}
+.lane .nm i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#5c666e}
+.lane .nm i.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.lane .nm i.al{background:var(--red);box-shadow:0 0 6px var(--red)}
+.lane .nm b{font-weight:400}
+.lane .nm em{font-style:normal;color:var(--dim);font-size:9.5px}
+.track{position:relative;height:22px;background:var(--well);border:1px solid var(--edge);
+  background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 8.3333%)}
+.ev{position:absolute;top:2px;bottom:2px;min-width:9px;border:0;padding:0;cursor:pointer;
+  border-radius:2px;font:inherit;transition:.12s}
+.ev:hover{filter:brightness(1.35)}
+.ev[data-sel="1"]{outline:2px solid #fff;outline-offset:1px;z-index:4}
+.ev.HH,.ev.FAULT{background:repeating-linear-gradient(90deg,var(--red) 0 5px,#c93b34 5px 8px)}
+.ev.WARN{background:repeating-linear-gradient(90deg,var(--amber) 0 5px,#e09a12 5px 8px)}
+.ev.INFO{background:repeating-linear-gradient(90deg,var(--cyan) 0 5px,#2596a8 5px 8px)}
+.ev.live{animation:evb 1.1s steps(2,end) infinite}
+@keyframes evb{50%{filter:brightness(1.6)}}
+.nowline{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;opacity:.75;z-index:3;pointer-events:none}
+.nowline::after{content:"NOW";position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  font-size:8.5px;letter-spacing:.14em;color:#fff}
+.legend{display:flex;flex-wrap:wrap;gap:14px;padding:9px 13px 0;font-size:10px;color:var(--dim)}
+.legend s{display:inline-block;width:16px;height:9px;text-decoration:none;margin-right:6px;vertical-align:-1px}
+
+/* ---------- register + side ---------- */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:14px}
+.reg{overflow-x:auto}
+.reg table{width:100%;border-collapse:collapse;min-width:720px;font-size:11.5px}
+.reg th{background:#2a3137;color:var(--dim);text-align:left;font-weight:400;font-size:9.5px;
+  letter-spacing:.16em;padding:8px 10px;border-bottom:1px solid var(--edge);white-space:nowrap}
+.reg td{padding:7px 10px;border-bottom:1px dashed #4b555d;vertical-align:middle}
+.reg tr:last-child td{border-bottom:0}
+.reg tbody tr{cursor:pointer}
+.reg tbody tr:hover td{background:#454f57}
+.reg tbody tr[data-sel="1"] td{background:#4d5860;box-shadow:inset 3px 0 0 var(--amber)}
+.reg td.t{color:var(--dim);white-space:nowrap}
+.reg td.tag{color:var(--cyan)}
+.lv{font-size:9px;letter-spacing:.14em;padding:2px 6px;border-radius:2px;white-space:nowrap}
+.lv-HH,.lv-FAULT{background:#5c1d19;color:#ff9a94}
+.lv-WARN{background:#5c4310;color:#ffcf74}
+.lv-INFO{background:#123f4a;color:#8fdcea}
+.ackbtn{font-family:inherit;font-size:9.5px;letter-spacing:.1em;padding:3px 9px;cursor:pointer;
+  background:linear-gradient(#5a4008,#3d2c05);color:#ffcf74;border:1px solid var(--amber-d);border-radius:2px}
+.ackbtn:hover{background:var(--amber-d)}
+.ackd{font-size:9.5px;color:var(--green);letter-spacing:.1em}
+
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.dt{font-size:11.5px}
+.dt .big{font-size:16px;color:var(--amber);letter-spacing:.04em;margin-bottom:3px}
+.dt .sub{color:var(--dim);font-size:10.5px;letter-spacing:.1em;margin-bottom:11px}
+.dt dl{display:grid;grid-template-columns:78px minmax(0,1fr);gap:6px 10px;font-size:11px}
+.dt dt{color:var(--dim);letter-spacing:.06em}
+.dt dd{color:var(--txt);word-break:break-word}
+.dt .act{margin-top:12px;background:var(--well);border:1px solid var(--edge);padding:9px;
+  font-size:11px;line-height:1.75;color:#c3ccd3}
+.dt .act b{color:var(--amber);font-weight:400;display:block;font-size:9.5px;letter-spacing:.16em;margin-bottom:5px}
+.hist{display:flex;flex-direction:column;gap:8px}
+.hrow{display:grid;grid-template-columns:74px minmax(0,1fr) 40px;gap:8px;align-items:center;font-size:10.5px}
+.hrow .trk2{height:11px;background:var(--well);border:1px solid var(--edge);position:relative}
+.hrow .trk2 b{position:absolute;inset:0 auto 0 0;display:block}
+.hrow .n{text-align:right;color:var(--dim)}
+.rose{width:100%;height:auto;display:block;background:var(--well);border:1px solid var(--edge)}
+.ftr{text-align:center;font-size:10px;color:#5f6b74;letter-spacing:.3em;padding:18px 0 70px}
+
+@media(max-width:900px){
+  .cols{grid-template-columns:1fr}
+  .strip .v{font-size:19px}
+}
+@media(max-width:640px){
+  .wrap{padding:9px}
+  .bar h1{font-size:13px}
+  .mode a{padding:7px 10px;font-size:10px}
+  .axis,.lane{grid-template-columns:96px minmax(0,1fr)}
+  .lane .nm{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<div class="bar">
+  <h1>永昌石化 · 第二廠區 SCADA<span>ALARM &amp; EVENT MANAGEMENT · ISA-18.2</span></h1>
+  <div class="clock" id="clk">19:52:40</div>
+</div>
+
+<nav class="mode" aria-label="子頁導覽">
+  <a href="index.html">總覽 OVERVIEW</a>
+  <a href="alarms.html" aria-current="page">警報 ALARMS</a>
+  <a href="equipment.html">設備 EQUIPMENT</a>
+  <a href="trends.html">趨勢 TRENDS</a>
+  <a href="report.html">報表 REPORT</a>
+</nav>
+
+<div class="strip">
+  <div><div class="k">UNACK 未確認</div><div class="v c-red pulse" id="k-unack">4</div></div>
+  <div><div class="k">ACTIVE 作用中</div><div class="v c-amb" id="k-live">4</div></div>
+  <div><div class="k">本班總計 08:00–</div><div class="v" id="k-total">18</div></div>
+  <div><div class="k">MTTA 平均確認</div><div class="v c-cy">3.4<i>MIN</i></div></div>
+  <div><div class="k">最高等級</div><div class="v c-red">HH</div></div>
+  <div><div class="k">警報密度</div><div class="v c-gr">1.5<i>件/小時</i></div></div>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ 主視覺：警報時序帶 ============ -->
+  <div class="pnl">
+    <h2>警報時序帶 ALARM TIMELINE RIBBON<em>甲班 2026-08-28 · 每列一個製程單元 · 長度＝持續時間</em></h2>
+    <div class="tools">
+      <div class="grp"><span>時窗</span>
+        <button class="btn" type="button" aria-pressed="true" data-win="720">12H 全班</button>
+        <button class="btn" type="button" aria-pressed="false" data-win="240">近 4H</button>
+        <button class="btn" type="button" aria-pressed="false" data-win="60">近 1H</button>
+      </div>
+      <div class="grp"><span>等級</span>
+        <button class="btn" type="button" aria-pressed="true" data-lv="ALL">ALL</button>
+        <button class="btn" type="button" aria-pressed="false" data-lv="CRIT">HH / FAULT</button>
+        <button class="btn" type="button" aria-pressed="false" data-lv="WARN">WARN</button>
+        <button class="btn" type="button" aria-pressed="false" data-lv="INFO">INFO</button>
+        <button class="btn" type="button" aria-pressed="false" data-lv="UNACK">未確認</button>
+      </div>
+    </div>
+    <div class="ribwrap">
+      <div class="rib" id="rib"></div>
+    </div>
+    <div class="legend">
+      <span><s style="background:#f4544c"></s>HH / FAULT 高高、跳脫</span>
+      <span><s style="background:#ffb020"></s>WARN 警告</span>
+      <span><s style="background:#39c8e0"></s>INFO 事件</span>
+      <span><s style="background:#fff"></s>NOW 目前時刻 19:52</span>
+      <span>點擊帶狀塊或下方登記簿列可載入右側詳情</span>
+    </div>
+  </div>
+
+  <div class="cols">
+    <!-- ============ 警報登記簿 ============ -->
+    <div class="pnl">
+      <h2>警報登記簿 ALARM REGISTER<em id="regcount">顯示 18 / 18 筆</em></h2>
+      <div class="reg">
+        <table>
+          <thead><tr>
+            <th>時間</th><th>編號</th><th>等級</th><th>單元</th><th>位號</th>
+            <th>訊息</th><th>量測</th><th>持續</th><th>確認</th>
+          </tr></thead>
+          <tbody id="regbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ 側欄 ============ -->
+    <div class="side">
+      <div class="pnl">
+        <h2>警報詳情 ALARM DETAIL<em id="dt-id">A-2841</em></h2>
+        <div class="in dt" id="detail"></div>
+      </div>
+
+      <div class="pnl">
+        <h2>逐時警報分佈<em>PER-HOUR COUNT</em></h2>
+        <div class="in">
+          <svg class="rose" viewBox="0 0 300 132" role="img"
+               aria-label="甲班 08:00 至 20:00 逐時警報數柱狀圖，19 時最多達 4 件">
+            <g stroke="#39424a" stroke-width="1">
+              <path d="M28 20 H292 M28 48 H292 M28 76 H292 M28 104 H292"/>
+            </g>
+            <g fill="#8d99a3" font-size="8" font-family="Consolas">
+              <text x="24" y="23" text-anchor="end">4</text>
+              <text x="24" y="51" text-anchor="end">3</text>
+              <text x="24" y="79" text-anchor="end">2</text>
+              <text x="24" y="107" text-anchor="end">1</text>
+            </g>
+            <g id="rosebars"></g>
+            <line x1="28" y1="104" x2="292" y2="104" stroke="#5b656d" stroke-width="1.5"/>
+            <g fill="#8d99a3" font-size="7.5" font-family="Consolas" id="roselab"></g>
+          </svg>
+          <p style="font-size:10.5px;color:var(--dim);line-height:1.8;margin-top:9px">
+            19 時單一小時湧入 4 件（含 1 件 HH），已逾 ISA-18.2 建議之每小時 2 件上限；
+            主因為 TK-203 液位上升連鎖觸發 P-105 與 CV-311 相關警報。
+          </p>
+        </div>
+      </div>
+
+      <div class="pnl">
+        <h2>重複警報排行<em>CHATTERING TOP 5</em></h2>
+        <div class="in hist">
+          <div class="hrow"><span>CT-01 補水低</span><span class="trk2"><b style="width:100%;background:var(--amber)"></b></span><span class="n">2</span></div>
+          <div class="hrow"><span>F-118 電流異常</span><span class="trk2"><b style="width:100%;background:var(--red)"></b></span><span class="n">2</span></div>
+          <div class="hrow"><span>E-402 溫升</span><span class="trk2"><b style="width:50%;background:var(--amber)"></b></span><span class="n">1</span></div>
+          <div class="hrow"><span>DC-301 壓力衝高</span><span class="trk2"><b style="width:50%;background:var(--amber)"></b></span><span class="n">1</span></div>
+          <div class="hrow"><span>C-201 振動</span><span class="trk2"><b style="width:50%;background:var(--amber)"></b></span><span class="n">1</span></div>
+          <p style="font-size:10.5px;color:var(--dim);line-height:1.8;margin-top:4px">
+            CT-01 與 F-118 於本班各觸發 2 次，已列入 08/29 停機檢修工單 WO-2026-0431。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ftr">INDUSTRIAL SCADA HMI · ALARMS / TIMELINE RIBBON · DESIGN 24 / 40</div>
+
+<script>
+/* ===== 資料：一份資料同時餵時序帶、登記簿、詳情與統計 ===== */
+const NOW = 712;                       /* 19:52 距 08:00 的分鐘數 */
+const LANES = [
+  ["SYS",   "SYS 系統",     "ok"],
+  ["TK201", "TK-201 原料槽", "ok"],
+  ["TK203", "TK-203 產品槽", "al"],
+  ["DC301", "DC-301 分餾塔", "ok"],
+  ["CV311", "CV-311 控制閥", "al"],
+  ["E402",  "E-402 冷凝器",  "ok"],
+  ["C201",  "C-201 壓縮機",  "ok"],
+  ["P105",  "P-105 主泵",    "al"],
+  ["P106",  "P-106/207 備泵","ok"],
+  ["F118",  "F-118 冷卻扇",  "al"],
+  ["CT01",  "CT-01 冷卻塔",  "ok"]
+];
+
+const ALARMS = [
+  {id:"A-2841",hm:"19:41:22",st:701.4,dur:11,lv:"HH",lane:"TK203",unit:"TK-203",tag:"LI-203",
+   msg:"儲槽液位超高高限",val:"92.4 %",lim:"HH 90.0 %",ack:false,live:true,op:"—",
+   act:"開啟 CV-315 轉輸至 TK-205，並將 P-105 排出量降至 360 m³/h；液位回落 88.0% 以下自動解除。"},
+  {id:"A-2840",hm:"19:38:07",st:698.1,dur:14,lv:"WARN",lane:"P105",unit:"P-105",tag:"TE-105",
+   msg:"泵浦驅動端軸承溫度偏高",val:"78.2 °C",lim:"WARN 75.0 / TRIP 82.0 °C",ack:false,live:true,op:"—",
+   act:"確認潤滑油位與冷卻水流量；若 5 分鐘內升至 80 °C 應手動切換 P-106 備泵接手。"},
+  {id:"A-2839",hm:"19:22:55",st:682.9,dur:29,lv:"WARN",lane:"CV311",unit:"CV-311",tag:"ZT-311",
+   msg:"控制閥開度回授偏差",val:"3.2 %",lim:"容差 2.0 %",ack:false,live:true,op:"—",
+   act:"檢查定位器供氣壓力（應 ≥ 0.45 MPa）與閥桿是否卡澀，必要時切手動旁通。"},
+  {id:"A-2838",hm:"19:04:11",st:664.2,dur:48,lv:"FAULT",lane:"F118",unit:"F-118",tag:"EM-118",
+   msg:"冷卻風扇過載跳脫 IOL",val:"27.4 A",lim:"熱動電驛 24.0 A",ack:false,live:true,op:"—",
+   act:"現場復歸熱動電驛前須量測三相電流平衡度；本班第二次跳脫，已開立工單 WO-2026-0431。"},
+  {id:"A-2837",hm:"18:47:30",st:647.5,dur:0.5,lv:"INFO",lane:"P106",unit:"P-106",tag:"XS-106",
+   msg:"備泵切換為 STANDBY",val:"STANDBY",lim:"—",ack:true,live:false,op:"陳彥廷",
+   act:"P-105 負載達 80% 時自動將 P-106 置於待命，屬正常聯鎖動作。"},
+  {id:"A-2836",hm:"18:31:02",st:631.0,dur:22,lv:"WARN",lane:"CT01",unit:"CT-01",tag:"LI-401",
+   msg:"冷卻水塔補水位低（第二次）",val:"12.8 %",lim:"LO 15.0 %",ack:true,live:false,op:"陳彥廷",
+   act:"手動開啟補水閥 6 分鐘後回升至 21.4%；補水浮球疑似黏滯，已排入 PM。"},
+  {id:"A-2835",hm:"18:12:03",st:612.1,dur:0.5,lv:"INFO",lane:"SYS",unit:"SYS",tag:"—",
+   msg:"班次交接檢點完成",val:"24 / 24 項",lim:"—",ack:true,live:false,op:"陳彥廷",
+   act:"交接單 SH-0828-A 已上傳，接班人員確認四件作用中警報之處置狀態。"},
+  {id:"A-2834",hm:"17:55:48",st:595.8,dur:9,lv:"WARN",lane:"CT01",unit:"CT-01",tag:"LI-401",
+   msg:"冷卻水塔補水位低（第一次）",val:"14.2 %",lim:"LO 15.0 %",ack:true,live:false,op:"陳彥廷",
+   act:"補水閥自動開啟後 9 分鐘解除，未達人工介入門檻。"},
+  {id:"A-2833",hm:"17:28:19",st:568.3,dur:6,lv:"WARN",lane:"DC301",unit:"DC-301",tag:"PI-301",
+   msg:"塔頂壓力短時衝高",val:"3.12 MPa",lim:"HI 3.05 MPa",ack:true,live:false,op:"林采薇",
+   act:"回流量由 118 調至 132 m³/h 後 6 分鐘內回穩至 2.84 MPa。"},
+  {id:"A-2832",hm:"16:54:37",st:534.6,dur:18,lv:"WARN",lane:"E402",unit:"E-402",tag:"TI-402",
+   msg:"冷凝器出口溫度偏高",val:"48.6 °C",lim:"HI 46.0 °C",ack:true,live:false,op:"林采薇",
+   act:"冷卻水入口溫度受午後氣溫影響上升 3.1 °C；加開 CT-01 第二台風扇後改善。"},
+  {id:"A-2831",hm:"16:12:58",st:493.0,dur:0.5,lv:"INFO",lane:"P105",unit:"P-105",tag:"FI-201",
+   msg:"進料流量設定值變更",val:"380 → 412 m³/h",lim:"—",ack:true,live:false,op:"林采薇",
+   act:"依生產排程 PO-26-0812 提高日產能，變更已記錄於操作日誌。"},
+  {id:"A-2830",hm:"15:47:11",st:467.2,dur:24,lv:"WARN",lane:"C201",unit:"C-201",tag:"VE-201",
+   msg:"壓縮機水平向振動偏高",val:"4.8 mm/s",lim:"警戒 4.5 mm/s",ack:true,live:false,op:"林采薇",
+   act:"降載至 82% 後振動回到 3.9 mm/s；已安排 09/02 現場動平衡量測。"},
+  {id:"A-2829",hm:"14:33:26",st:393.4,dur:0.5,lv:"INFO",lane:"TK201",unit:"TK-201",tag:"LI-201",
+   msg:"原料槽開始補槽",val:"41.2 → 58.7 %",lim:"—",ack:true,live:false,op:"林采薇",
+   act:"由 T-08 槽車卸料 320 kL，卸料完成時間 15:26。"},
+  {id:"A-2828",hm:"13:58:04",st:358.1,dur:7,lv:"HH",lane:"DC301",unit:"DC-301",tag:"TI-302",
+   msg:"塔頂溫度超高高限",val:"196.4 °C",lim:"HH 195.0 °C",ack:true,live:false,op:"林采薇",
+   act:"再沸器蒸汽閥自動關小 12%，7 分鐘內降至 184.6 °C；已檢討 PID 參數整定。"},
+  {id:"A-2827",hm:"12:41:39",st:281.7,dur:31,lv:"WARN",lane:"F118",unit:"F-118",tag:"EM-118",
+   msg:"風扇三相電流不平衡",val:"6.2 %",lim:"容許 5.0 %",ack:true,live:false,op:"黃仲鈞",
+   act:"當時未跳脫，現以事後回顧判定為 19:04 過載跳脫之前兆訊號。"},
+  {id:"A-2826",hm:"11:19:52",st:199.9,dur:0.5,lv:"INFO",lane:"P106",unit:"P-207",tag:"XS-207",
+   msg:"備援泵手動停機",val:"STOPPED",lim:"—",ack:true,live:false,op:"黃仲鈞",
+   act:"配合 P-207 機械軸封更換，預計 08/29 08:00 復機。"},
+  {id:"A-2825",hm:"10:36:14",st:156.2,dur:13,lv:"WARN",lane:"E402",unit:"E-402",tag:"FI-402",
+   msg:"冷卻水流量低",val:"118 m³/h",lim:"LO 120 m³/h",ack:true,live:false,op:"黃仲鈞",
+   act:"Y 型過濾器壓差 0.08 MPa，清洗後流量恢復 134 m³/h。"},
+  {id:"A-2824",hm:"09:05:47",st:65.8,dur:0.5,lv:"INFO",lane:"SYS",unit:"SYS",tag:"—",
+   msg:"甲班開工檢點完成",val:"24 / 24 項",lim:"—",ack:true,live:false,op:"黃仲鈞",
+   act:"巡檢路線 R-02 全數通過，安全閥鉛封與可燃氣偵測器功能測試正常。"}
+];
+
+/* ===== 狀態 ===== */
+let win = 720, lvFilter = "ALL", selId = "A-2841";
+const isCrit = a => a.lv === "HH" || a.lv === "FAULT";
+
+function pass(a){
+  if (lvFilter === "ALL")   return true;
+  if (lvFilter === "CRIT")  return isCrit(a);
+  if (lvFilter === "UNACK") return !a.ack;
+  return a.lv === lvFilter;
+}
+function inWin(a){ return a.st + Math.max(a.dur, 0.5) >= NOW - win; }
+
+/* ===== 時序帶 ===== */
+function drawRibbon(){
+  const t0 = NOW - win, span = win;
+  const pos = m => (m - t0) / span * 100;
+
+  /* 刻度：12H 每 2 小時、4H 每 30 分、1H 每 10 分 */
+  const step = win === 720 ? 120 : win === 240 ? 30 : 10;
+  let ticks = "";
+  for (let m = Math.ceil(t0 / step) * step; m <= NOW; m += step){
+    const abs = 480 + m;                                  /* 08:00 = 480 分 */
+    const hh = String(Math.floor(abs / 60) % 24).padStart(2, "0");
+    const mm = String(Math.round(abs % 60)).padStart(2, "0");
+    ticks += '<i style="left:' + pos(m).toFixed(2) + '%">' + hh + ":" + mm + "</i>";
+  }
+
+  let h = '<div class="axis"><span class="sp">UNIT / 製程單元</span><div class="ticks">' + ticks + "</div></div>";
+
+  LANES.forEach(([key, name, st]) => {
+    const evs = ALARMS.filter(a => a.lane === key && pass(a) && inWin(a));
+    const hot = evs.some(a => a.live);
+    let bars = "";
+    evs.forEach(a => {
+      const L = Math.max(pos(a.st), 0);
+      const R = Math.min(pos(a.st + Math.max(a.dur, 0.5)), 100);
+      const W = Math.max(R - L, 0.7);
+      bars += '<button class="ev ' + a.lv + (a.live ? " live" : "") + '" type="button"' +
+              ' style="left:' + L.toFixed(2) + '%;width:' + W.toFixed(2) + '%"' +
+              ' data-id="' + a.id + '" data-sel="' + (a.id === selId ? 1 : 0) + '"' +
+              ' aria-label="' + a.hm + " " + a.unit + " " + a.msg + " " + a.lv + '"></button>';
+    });
+    h += '<div class="lane"><div class="nm"><i class="' + (hot ? "al" : st === "al" ? "al" : "on") + '"></i>' +
+         "<b>" + name + "</b></div>" +
+         '<div class="track">' + bars +
+         (win === 720 ? '' : '') +
+         '<span class="nowline" style="left:100%"></span></div></div>';
+  });
+
+  document.getElementById("rib").innerHTML = h;
+  document.querySelectorAll(".ev").forEach(b =>
+    b.addEventListener("click", () => select(b.dataset.id)));
+}
+
+/* ===== 登記簿 ===== */
+function drawRegister(){
+  const rows = ALARMS.filter(a => pass(a) && inWin(a));
+  document.getElementById("regbody").innerHTML = rows.map(a =>
+    '<tr data-id="' + a.id + '" data-sel="' + (a.id === selId ? 1 : 0) + '">' +
+    '<td class="t">' + a.hm + "</td>" +
+    "<td>" + a.id + "</td>" +
+    '<td><span class="lv lv-' + a.lv + '">' + a.lv + "</span></td>" +
+    "<td>" + a.unit + "</td>" +
+    '<td class="tag">' + a.tag + "</td>" +
+    "<td>" + a.msg + "</td>" +
+    "<td>" + a.val + "</td>" +
+    '<td class="t">' + (a.live ? "進行中" : a.dur < 1 ? "瞬時" : a.dur + " 分") + "</td>" +
+    "<td>" + (a.ack
+      ? '<span class="ackd">✓ ' + a.op + "</span>"
+      : '<button class="ackbtn" type="button" data-ack="' + a.id + '">ACK</button>') +
+    "</td></tr>").join("");
+
+  document.getElementById("regcount").textContent = "顯示 " + rows.length + " / " + ALARMS.length + " 筆";
+
+  document.querySelectorAll("#regbody tr").forEach(tr =>
+    tr.addEventListener("click", e => {
+      if (e.target.dataset.ack) return;
+      select(tr.dataset.id);
+    }));
+  document.querySelectorAll("[data-ack]").forEach(b =>
+    b.addEventListener("click", e => {
+      e.stopPropagation();
+      const a = ALARMS.find(x => x.id === b.dataset.ack);
+      a.ack = true; a.op = "陳彥廷";
+      select(a.id);
+      render();
+    }));
+}
+
+/* ===== 詳情 ===== */
+function drawDetail(){
+  const a = ALARMS.find(x => x.id === selId) || ALARMS[0];
+  document.getElementById("dt-id").textContent = a.id;
+  document.getElementById("detail").innerHTML =
+    '<div class="big">' + a.unit + " · " + a.msg + "</div>" +
+    '<div class="sub">' + a.tag + " · " + a.lv + " · " + a.hm + "</div>" +
+    "<dl>" +
+    "<dt>量測值</dt><dd>" + a.val + "</dd>" +
+    "<dt>設定限值</dt><dd>" + a.lim + "</dd>" +
+    "<dt>持續時間</dt><dd>" + (a.live ? "進行中（" + a.dur + " 分）" : a.dur < 1 ? "瞬時事件" : a.dur + " 分鐘") + "</dd>" +
+    "<dt>狀態</dt><dd>" + (a.live ? "ACTIVE 作用中" : "RETURNED 已回復") + "</dd>" +
+    "<dt>確認</dt><dd>" + (a.ack ? "已確認 · " + a.op : "尚未確認") + "</dd>" +
+    "</dl>" +
+    '<div class="act"><b>建議處置 RECOMMENDED ACTION</b>' + a.act + "</div>";
+}
+
+/* ===== 頂部指標 ===== */
+function drawKpi(){
+  const un = ALARMS.filter(a => !a.ack).length;
+  const lv = ALARMS.filter(a => a.live).length;
+  const el = document.getElementById("k-unack");
+  el.textContent = un;
+  el.classList.toggle("pulse", un > 0);
+  el.classList.toggle("c-red", un > 0);
+  el.classList.toggle("c-gr", un === 0);
+  document.getElementById("k-live").textContent = lv;
+  document.getElementById("k-total").textContent = ALARMS.length;
+}
+
+/* ===== 逐時柱狀圖（靜態統計，一次繪製） ===== */
+(function(){
+  const counts = new Array(12).fill(0);
+  ALARMS.forEach(a => counts[Math.min(11, Math.floor(a.st / 60))]++);
+  const x0 = 30, w = (292 - x0) / 12;
+  let bars = "", labs = "";
+  counts.forEach((c, i) => {
+    const h = c * 28;
+    const col = i === 11 ? "#f4544c" : i === 10 ? "#ffb020" : "#39c8e0";
+    bars += '<rect x="' + (x0 + i * w + 2).toFixed(1) + '" y="' + (104 - h) +
+            '" width="' + (w - 4).toFixed(1) + '" height="' + h + '" fill="' + col + '" opacity=".85"/>';
+    if (c) bars += '<text x="' + (x0 + i * w + w / 2).toFixed(1) + '" y="' + (104 - h - 3) +
+            '" fill="#d6dde3" font-size="8" font-family="Consolas" text-anchor="middle">' + c + "</text>";
+    labs += '<text x="' + (x0 + i * w + w / 2).toFixed(1) + '" y="117" text-anchor="middle">' + (8 + i) + "</text>";
+  });
+  document.getElementById("rosebars").innerHTML = bars;
+  document.getElementById("roselab").innerHTML = labs +
+    '<text x="160" y="129" text-anchor="middle" fill="#5f6b74">HOUR OF SHIFT · 08 → 19</text>';
+})();
+
+function select(id){ selId = id; drawRibbon(); drawRegister(); drawDetail(); }
+function render(){ drawRibbon(); drawRegister(); drawDetail(); drawKpi(); }
+
+document.querySelectorAll("[data-win]").forEach(b =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-win]").forEach(o =>
+      o.setAttribute("aria-pressed", String(o === b)));
+    win = +b.dataset.win;
+    render();
+  }));
+document.querySelectorAll("[data-lv]").forEach(b =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-lv]").forEach(o =>
+      o.setAttribute("aria-pressed", String(o === b)));
+    lvFilter = b.dataset.lv;
+    render();
+  }));
+
+render();
+
+/* 時鐘由 19:52:40 起跳，維持與資料一致的敘事時間 */
+let sec = 19 * 3600 + 52 * 60 + 40;
+setInterval(() => {
+  sec++;
+  const p = n => String(n).padStart(2, "0");
+  document.getElementById("clk").textContent =
+    p(Math.floor(sec / 3600) % 24) + ":" + p(Math.floor(sec / 60) % 60) + ":" + p(sec % 60);
+}, 1000);
+</script>
+</body>
+</html>

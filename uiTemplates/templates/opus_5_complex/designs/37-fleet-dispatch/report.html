@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>37 · 里程油耗營運報表 — FLEET DISPATCH</title>
+<style>
+:root{
+  --map:#e8e4dc;--road:#ffffff;--road2:#f6f2ea;--water:#c6ddea;--park:#d6e6ce;
+  --ink:#1c2430;--dim:#6d7889;--panel:#ffffff;--edge:#e2e0da;
+  --go:#16b364;--busy:#f79009;--idle:#7f8b9c;--sos:#e5484d;--route:#3b6bff;
+  --rule:#cfcabd;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--map);color:var(--ink);min-height:100vh;font-size:13.5px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible{outline:2px solid var(--route);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:300;text-decoration:none;color:#fff;
+  background:var(--ink);padding:12px 22px;border-radius:999px;font-weight:600;font-size:13px;
+  box-shadow:0 6px 20px rgba(28,36,48,.4);transition:.22s}
+.home:hover{background:var(--route);transform:translateY(-3px)}
+
+.shell{max-width:1360px;margin:0 auto;padding:20px 20px 70px}
+.sheet{background:var(--panel);border:1px solid var(--edge);border-radius:14px;
+  box-shadow:0 8px 28px rgba(28,36,48,.10);overflow:hidden}
+.pagenav{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--edge);background:var(--road2);flex-wrap:wrap}
+.pagenav a{flex:1;min-width:110px;text-align:center;padding:9px 6px;border-radius:8px;text-decoration:none;
+  font-size:12px;font-weight:700;color:var(--dim);background:var(--panel);border:1px solid var(--edge);transition:.15s}
+.pagenav a:hover{color:var(--route);border-color:var(--route);box-shadow:0 2px 8px rgba(59,107,255,.18)}
+.pagenav a[aria-current]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* ---------- masthead ---------- */
+.mast{padding:30px 26px 20px;border-bottom:3px double var(--ink);
+  display:flex;justify-content:space-between;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.mast h1{font-size:clamp(26px,5vw,52px);font-weight:800;letter-spacing:-.04em;line-height:1.02}
+.mast h1 em{font-style:normal;color:var(--route)}
+.mast .sub{margin-top:10px;font-size:12.5px;color:var(--dim);letter-spacing:.06em}
+.mast .meta{text-align:right;font-size:10.5px;letter-spacing:.18em;color:var(--dim);line-height:2}
+.mast .meta b{color:var(--ink)}
+
+/* ---------- kpi band ---------- */
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));border-bottom:1px solid var(--rule)}
+.kpi > div{padding:18px 20px;border-right:1px solid var(--rule)}
+.kpi > div:last-child{border-right:0}
+.kpi small{display:block;font-size:10px;letter-spacing:.18em;color:var(--dim)}
+.kpi b{display:block;font-size:clamp(24px,3.4vw,34px);font-weight:800;letter-spacing:-.035em;margin-top:9px}
+.kpi b i{font-style:normal;font-size:.42em;font-weight:700;color:var(--dim);margin-left:4px}
+.kpi .d{font-size:11px;color:var(--dim);margin-top:7px}
+.kpi .d b{display:inline;font-size:11px;font-weight:700}
+.up{color:var(--go)}.dn{color:var(--sos)}
+
+/* ---------- section ---------- */
+.sec{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px;
+  padding:22px 26px 12px;border-bottom:1px solid var(--rule)}
+.sec h2{font-size:clamp(16px,2.2vw,23px);font-weight:800;letter-spacing:-.025em}
+.sec h2 i{font-style:normal;color:var(--route);margin-right:10px;font-size:.72em}
+.sec span{font-size:10.5px;letter-spacing:.2em;color:var(--dim)}
+
+.metrics{display:flex;gap:6px;flex-wrap:wrap;padding:16px 26px 0}
+.metrics button{appearance:none;font:inherit;font-size:12px;font-weight:700;padding:9px 16px;border-radius:999px;
+  border:1px solid var(--edge);background:var(--road2);color:var(--dim);cursor:pointer;transition:.15s}
+.metrics button:hover{color:var(--ink)}
+.metrics button[aria-selected="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+.block{padding:16px 26px 26px;border-bottom:1px solid var(--rule)}
+.chartbox{overflow-x:auto}
+.block svg{width:100%;min-width:600px;height:auto;display:block}
+.g{stroke:#eceae4;stroke-width:1}
+.g0{stroke:var(--ink);stroke-width:1.4}
+.t{fill:#9aa4b1;font-size:10px}
+.bar{transform-origin:center bottom;animation:rise .7s cubic-bezier(.2,.8,.3,1) both}
+@keyframes rise{from{transform:scaleY(0)}}
+.trend{fill:none;stroke:var(--ink);stroke-width:2;stroke-dasharray:5 4}
+.blabel{fill:var(--ink);font-size:10.5px;font-weight:700}
+.note{margin-top:16px;font-size:12.5px;line-height:1.95;color:var(--dim);max-width:80ch}
+.note b{color:var(--ink)}
+
+/* ---------- scatter ---------- */
+.sc{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0;border-bottom:1px solid var(--rule)}
+@media(max-width:980px){.sc{grid-template-columns:1fr}}
+.sc .plot{padding:16px 26px 26px;border-right:1px solid var(--rule)}
+@media(max-width:980px){.sc .plot{border-right:0;border-bottom:1px solid var(--rule)}}
+.sc .plot svg{min-width:520px}
+.dot{cursor:pointer;transition:.15s}
+.dot:hover{stroke:var(--ink);stroke-width:2}
+.dot.on{stroke:var(--ink);stroke-width:2.6}
+.sclg{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--dim)}
+.sclg span{display:flex;align-items:center;gap:7px}
+.sclg i{width:11px;height:11px;border-radius:50%;display:block}
+.sc .side{padding:20px}
+.sc .side .lbl{font-size:10px;letter-spacing:.2em;color:var(--route);font-weight:700;
+  border-bottom:1px solid var(--rule);padding-bottom:9px;margin-bottom:14px}
+.sc .side .big{font-size:30px;font-weight:800;letter-spacing:-.03em}
+.sc .side .sml{font-size:12px;color:var(--dim);margin-top:5px}
+.sc .side dl{margin-top:16px;font-size:12.5px}
+.sc .side dt{font-size:10.5px;letter-spacing:.14em;color:var(--dim);margin-top:11px}
+.sc .side dd{font-weight:700;margin-top:3px}
+.sc .side p{margin-top:16px;font-size:11.5px;line-height:1.9;color:var(--dim);
+  background:var(--road2);border-radius:10px;padding:12px 13px}
+
+/* ---------- ranked + table ---------- */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+.two>div{padding:16px 26px 26px;border-right:1px solid var(--rule)}
+.two>div:last-child{border-right:0}
+@media(max-width:900px){.two>div{border-right:0;border-bottom:1px solid var(--rule)}}
+.rank{display:grid;grid-template-columns:60px minmax(0,1fr) 74px;align-items:center;gap:12px;
+  padding:9px 0;border-bottom:1px solid #f1efe9;font-size:12.5px}
+.rank:last-child{border-bottom:0}
+.rank .id{font-weight:700}
+.rank .tr{position:relative;height:16px;background:#f2f0ea;border-radius:3px;overflow:hidden}
+.rank .tr i{position:absolute;inset:0 auto 0 0;border-radius:3px;transform-origin:left;
+  animation:grow .8s cubic-bezier(.2,.8,.3,1) both}
+@keyframes grow{from{transform:scaleX(0)}}
+.rank .v{text-align:right;font-weight:700}
+table.grp{width:100%;border-collapse:collapse;font-size:12.5px}
+table.grp th{text-align:left;font-size:10px;letter-spacing:.16em;color:var(--dim);font-weight:700;
+  padding:9px 10px;border-bottom:2px solid var(--ink);white-space:nowrap}
+table.grp th.r,table.grp td.r{text-align:right}
+table.grp td{padding:10px;border-bottom:1px solid #f1efe9}
+table.grp tbody tr:hover td{background:#f7f9fc}
+table.grp tfoot td{border-top:2px solid var(--ink);border-bottom:0;font-weight:700;background:var(--road2)}
+.chip{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:20px 26px;
+  font-size:10.5px;letter-spacing:.22em;color:rgba(28,36,48,.45)}
+
+@media(max-width:640px){
+  .shell{padding:14px 12px 70px}
+  .mast,.sec,.block,.metrics{padding-left:16px;padding-right:16px}
+  .sc .plot,.two>div{padding-left:16px;padding-right:16px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<div class="shell">
+  <div class="sheet">
+    <nav class="pagenav" aria-label="子頁導覽">
+      <a href="index.html">調度地圖</a>
+      <a href="list.html">車籍登記簿</a>
+      <a href="dispatch.html">派工看板</a>
+      <a href="detail.html">車輛詳情</a>
+      <a href="report.html" aria-current="page">營運報表</a>
+    </nav>
+
+    <div class="mast">
+      <div>
+        <h1>里程 · 油耗<br><em>營運統計報表</em></h1>
+        <div class="sub">迅捷車隊 FLEET OPERATIONS REVIEW · 36 輛車 · 統計期間 2025 / 11 – 2026 / 10</div>
+      </div>
+      <div class="meta">
+        報表編號 <b>FL-2610-A</b><br>
+        出表時間 <b>2026 / 10 / 12  16:20</b><br>
+        資料來源 <b>車機 OBU + 加油卡勾稽</b><br>
+        核發 <b>營運部 · 調度中心</b>
+      </div>
+    </div>
+
+    <div class="kpi">
+      <div><small>本月總里程</small><b>94,470<i>km</i></b><div class="d"><b class="up">↑ 4.8%</b> vs 上月 90,150</div></div>
+      <div><small>本月耗油</small><b>12,073<i>L</i></b><div class="d">加權平均 12.8 L/100km</div></div>
+      <div><small>燃料成本</small><b>380,300<i>元</i></b><div class="d">柴油均價 NT$31.5 / L</div></div>
+      <div><small>年度累計里程</small><b>1,070,130<i>km</i></b><div class="d">12 個月滾動</div></div>
+      <div><small>配送準時率</small><b>96.1<i>%</i></b><div class="d"><b class="up">↑ 0.3</b> 個百分點</div></div>
+      <div><small>每公里營運成本</small><b>13.44<i>元</i></b><div class="d"><b class="up">↓ 2.1%</b> 燃油效率改善</div></div>
+    </div>
+
+    <div class="sec"><h2><i>01</i>近 12 個月營運趨勢</h2><span>MONTHLY TREND · 切換指標即時重繪</span></div>
+    <div class="metrics" role="tablist" aria-label="指標切換">
+      <button role="tab" aria-selected="true" data-m="km">總里程 km</button>
+      <button role="tab" aria-selected="false" data-m="fuel">平均油耗 L/100km</button>
+      <button role="tab" aria-selected="false" data-m="cost">營運成本 萬元</button>
+      <button role="tab" aria-selected="false" data-m="otd">準時率 %</button>
+    </div>
+    <div class="block">
+      <div class="chartbox">
+        <svg viewBox="0 0 880 300" role="img" id="tsvg"
+          aria-label="近 12 個月車隊營運指標長條圖，虛線為 3 個月移動平均">
+          <g id="tg"></g>
+        </svg>
+      </div>
+      <p class="note" id="tnote"></p>
+    </div>
+
+    <div class="sec"><h2><i>02</i>單車效率散佈圖</h2><span>PER-VEHICLE SCATTER · 點選任一點查看車輛</span></div>
+    <div class="sc">
+      <div class="plot">
+        <div class="chartbox">
+          <svg viewBox="0 0 700 420" role="img" id="ssvg"
+            aria-label="36 輛車的月里程對百公里油耗散佈圖，依車型著色，圓點大小代表載重利用率">
+            <g id="sg"></g>
+          </svg>
+        </div>
+        <div class="sclg" id="sclg"></div>
+      </div>
+      <div class="side" id="sside"></div>
+    </div>
+
+    <div class="two">
+      <div>
+        <div class="sec" style="padding-left:0;padding-right:0;border-bottom:1px solid var(--rule)">
+          <h2><i>03</i>本月里程排行 TOP 10</h2><span>MILEAGE RANKING</span>
+        </div>
+        <div id="rank" style="margin-top:12px"></div>
+        <p class="note">前十名合計 <b id="r-sum">—</b> km，佔車隊總里程 <b id="r-pct">—</b>；其中 <b>貨車 5T</b> 佔據 5 席，反映大宗配送與跨區幹線仍是里程主要來源。排名末段的 <b>TR-30 工程車</b>（860 km）因引擎警示停用中，已列入本月維修預算。</p>
+      </div>
+      <div>
+        <div class="sec" style="padding-left:0;padding-right:0;border-bottom:1px solid var(--rule)">
+          <h2><i>04</i>車型分組彙總</h2><span>BY VEHICLE CLASS</span>
+        </div>
+        <table class="grp" style="margin-top:12px">
+          <thead><tr>
+            <th>車型</th><th class="r">輛數</th><th class="r">月里程 km</th>
+            <th class="r">平均油耗</th><th class="r">里程佔比</th>
+          </tr></thead>
+          <tbody id="grpbody"></tbody>
+          <tfoot><tr>
+            <td>車隊合計</td><td class="r">36</td><td class="r">94,470</td>
+            <td class="r">12.8</td><td class="r">100.0%</td>
+          </tr></tfoot>
+        </table>
+        <p class="note">機車快遞以 <b>6 輛</b>承擔 13.2% 的里程，卻僅消耗全隊 <b>3.5%</b> 的燃料，是市區短程件的最佳配置；反之 <b>貨車 5T</b> 以 25% 的車輛數消耗 40% 的燃料，建議將 3 噸以下訂單優先分派至 3.5T 車型。</p>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>迅捷車隊 · 營運部調度中心</span>
+      <span>REPORT / STATISTICAL BROADSHEET</span>
+      <span>DESIGN 37 / 40</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 車號, 車型, 車牌, 狀態, 駕駛, 年式, 今日km, 本月km, L/100km, 距保養km, 載重% */
+const F=[
+["TR-01","冷鏈 3.5T","KEB-2071","go","林志偉",2022,148,3240,13.6,1820,78],
+["TR-02","貨車 5T","RFC-8802","bs","楊文凱",2021,96,2860,16.4,640,84],
+["TR-03","冷鏈 3.5T","KEB-2073","go","周聖凱",2022,172,3410,13.9,2450,81],
+["TR-04","貨車 3.5T","RDA-4104","go","王建良",2023,134,3020,12.1,4180,72],
+["TR-05","貨車 3.5T","RDA-4105","go","徐志豪",2023,118,2940,12.6,3260,69],
+["TR-06","冷鏈 2T","KEA-1206","go","陳俊宏",2024,102,2410,11.2,5640,66],
+["TR-07","工程車","EGV-7007","so","何冠霖",2020,42,1180,15.1,120,31],
+["TR-08","貨車 5T","RFC-8808","go","蘇建成",2021,186,3980,16.8,980,88],
+["TR-09","貨車 5T","RFC-8809","go","李國華",2022,164,3720,16.1,2140,85],
+["TR-10","機車快遞","MKD-0110","go","張哲瑋",2024,88,2180,3.1,1460,54],
+["TR-11","機車快遞","MKD-0111","go","江明峰",2024,94,2260,3.3,1720,57],
+["TR-12","貨車 3.5T","RDA-4112","id","呂宗翰",2022,0,2640,12.8,2980,0],
+["TR-13","貨車 3.5T","RDA-4113","id","黃奕翔",2023,0,2510,12.2,3840,0],
+["TR-14","冷鏈 2T","KEA-1214","bs","馬紹群",2023,76,2320,11.6,2260,74],
+["TR-15","冷鏈 3.5T","KEB-2115","go","吳承翰",2021,158,3180,14.2,1340,79],
+["TR-16","貨車 5T","RFC-8816","id","傅奕辰",2020,0,3060,17.2,460,0],
+["TR-17","貨車 5T","RFC-8817","id","林俊傑",2022,0,3340,16.0,1880,0],
+["TR-18","工程車","EGV-7018","go","康仲平",2021,68,1640,14.8,2020,44],
+["TR-19","機車快遞","MKD-0119","go","蔡明宏",2023,106,2420,3.4,880,61],
+["TR-20","貨車 3.5T","RDA-4120","go","郭柏均",2024,126,2880,11.9,4960,71],
+["TR-21","機車快遞","MKD-0121","so","藍柏睿",2022,34,1940,3.6,540,48],
+["TR-22","工程車","EGV-7022","id","許家豪",2019,0,1020,15.6,240,0],
+["TR-23","冷鏈 2T","KEA-1223","go","溫子誠",2024,114,2560,11.0,5120,68],
+["TR-24","貨車 5T","RFC-8824","bs","潘威廷",2023,108,3220,15.8,3420,82],
+["TR-25","貨車 3.5T","RDA-4125","id","賴俊男",2021,0,2380,13.1,1640,0],
+["TR-26","機車快遞","MKD-0126","go","邱柏文",2025,82,1880,3.0,2880,52],
+["TR-27","冷鏈 3.5T","KEB-2127","go","石育誠",2023,144,3060,13.4,3760,76],
+["TR-28","貨車 5T","RFC-8828","id","高志遠",2020,0,2940,17.6,320,0],
+["TR-29","貨車 3.5T","RDA-4129","go","阮文龍",2022,138,3120,12.5,2540,74],
+["TR-30","工程車","EGV-7030","so","沈冠宇",2018,0,860,16.2,80,0],
+["TR-31","冷鏈 2T","KEA-1231","id","方彥廷",2022,0,2180,11.8,1120,0],
+["TR-32","貨車 5T","RFC-8832","bs","唐嘉偉",2024,92,3480,15.4,4640,86],
+["TR-33","機車快遞","MKD-0133","id","童偉倫",2021,0,1760,3.8,660,0],
+["TR-34","貨車 3.5T","RDA-4134","go","廖世傑",2023,130,2960,12.3,3180,73],
+["TR-35","冷鏈 3.5T","KEB-2135","id","簡育駿",2020,0,2740,14.6,720,0],
+["TR-36","貨車 5T","RFC-8836","id","范振豪",2021,0,3180,16.6,1540,0]
+];
+const TYPE={"貨車 5T":"#e5484d","貨車 3.5T":"#f79009","冷鏈 3.5T":"#3b6bff",
+            "冷鏈 2T":"#5aa9d6","機車快遞":"#16b364","工程車":"#7f8b9c"};
+const STL={go:"執勤中",bs:"裝卸中",id:"待命",so:"異常"};
+const fmt=n=>Math.round(n).toLocaleString("en-US");
+const TOTAL=F.reduce((s,v)=>s+v[7],0);
+
+/* ---------- 01 月趨勢 ---------- */
+const MON=["25/11","25/12","26/01","26/02","26/03","26/04","26/05","26/06","26/07","26/08","26/09","26/10"];
+const SERIES={
+ km:{lab:"總里程",unit:"km",color:"#3b6bff",dec:0,
+     v:[86240,92180,78460,71320,84900,88640,91270,95830,99410,97260,90150,94470],
+     note:"12 個月總里程 <b>1,070,130 km</b>，月均 <b>89,178 km</b>。2 月受農曆春節影響降至 <b>71,320 km</b> 為全期最低；7 月因夏季電商檔期衝上 <b>99,410 km</b> 高點。10 月截至 12 日已達 <b>94,470 km</b>，較上月成長 <b>4.8%</b>，主因新增內湖—南港園區線與兩台 2024 年式冷鏈車投入。"},
+ fuel:{lab:"平均油耗",unit:"L/100km",color:"#f79009",dec:1,
+     v:[13.4,13.2,13.6,13.8,13.1,12.9,12.9,12.7,12.6,12.7,12.9,12.8],
+     note:"車隊加權平均油耗自 2 月的 <b>13.8 L/100km</b> 逐步改善至 <b>12.8 L/100km</b>，累計降幅 <b>7.2%</b>。改善來自三項措施：汰換 3 輛 2018 年式舊車、全隊導入路徑最佳化派工、以及駕駛行為評分制度（急加速次數月均下降 41%）。9 月小幅回升至 12.9，係中秋連假重車滿載比例提高所致。"},
+ cost:{lab:"營運成本",unit:"萬元",color:"#16b364",dec:1,
+     v:[118.4,124.6,108.2,99.8,115.6,120.4,123.8,128.6,132.4,130.2,122.6,127.0],
+     note:"營運成本含燃料、維修、保險與人事分攤。7 月 <b>132.4 萬元</b>為全期最高，與里程高點一致。以每公里成本檢視，10 月為 <b>13.44 元/km</b>，較 2 月的 <b>13.99 元/km</b> 下降 <b>3.9%</b>，顯示規模效益與油耗改善同時發揮作用。"},
+ otd:{lab:"配送準時率",unit:"%",color:"#5aa9d6",dec:1,
+     v:[93.2,92.6,91.8,90.4,93.6,94.1,94.8,95.2,94.6,95.4,95.8,96.1],
+     note:"準時率自 2 月谷底 <b>90.4%</b> 連續 8 個月改善至 <b>96.1%</b>，已超越年度目標 95%。關鍵改善為派工看板導入後平均回應時間由 9.6 分縮短至 <b>4.2 分</b>，以及電子圍籬自動報到取消了人工回報環節。"}
+};
+let metric="km";
+function trend(){
+  const s=SERIES[metric],v=s.v;
+  const W=880,H=300,L=64,R=18,T=22,B=44;
+  const max=Math.max(...v)*1.12,min=metric==="otd"?85:0;
+  const bw=(W-L-R)/v.length;
+  const y=n=>H-B-((n-min)/(max-min))*(H-T-B);
+  let g="";
+  for(let i=0;i<=4;i++){
+    const val=min+(max-min)*i/4;
+    g+=`<line class="${i===0?"g0":"g"}" x1="${L}" y1="${y(val)}" x2="${W-R}" y2="${y(val)}"/>`;
+    g+=`<text class="t" x="${L-8}" y="${y(val)+3}" text-anchor="end">${val>=1000?fmt(val):val.toFixed(s.dec)}</text>`;
+  }
+  v.forEach((n,i)=>{
+    const x=L+i*bw+7,w=bw-14,h=Math.max(2,H-B-y(n));
+    const last=i===v.length-1;
+    g+=`<rect class="bar" x="${x}" y="${y(n)}" width="${w}" height="${h}" rx="3"
+        fill="${last?s.color:s.color+"66"}" style="animation-delay:${i*50}ms"/>`;
+    g+=`<text class="blabel" x="${x+w/2}" y="${y(n)-8}" text-anchor="middle"
+        fill="${last?s.color:"#7c8797"}">${s.dec?n.toFixed(s.dec):fmt(n)}</text>`;
+    g+=`<text class="t" x="${x+w/2}" y="${H-B+18}" text-anchor="middle">${MON[i]}</text>`;
+  });
+  const ma=v.map((_,i)=>{const a=v.slice(Math.max(0,i-2),i+1);return a.reduce((p,c)=>p+c,0)/a.length;});
+  g+=`<polyline class="trend" points="${ma.map((n,i)=>(L+i*bw+bw/2)+","+y(n)).join(" ")}"/>`;
+  g+=`<text class="t" x="${W-R}" y="${T+2}" text-anchor="end">${s.lab}（${s.unit}）· 虛線為 3 個月移動平均</text>`;
+  document.getElementById("tg").innerHTML=g;
+  document.getElementById("tnote").innerHTML=s.note;
+}
+document.querySelectorAll(".metrics button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".metrics button").forEach(o=>o.setAttribute("aria-selected",String(o===b)));
+  metric=b.dataset.m;trend();
+}));
+trend();
+
+/* ---------- 02 散佈圖 ---------- */
+let sel=F.findIndex(v=>v[0]==="TR-08");
+function scatter(){
+  const W=700,H=420,L=58,R=20,T=20,B=48;
+  const xmin=600,xmax=4200,ymin=0,ymax=19;
+  const X=v=>L+(v-xmin)/(xmax-xmin)*(W-L-R);
+  const Y=v=>H-B-(v-ymin)/(ymax-ymin)*(H-T-B);
+  let g="";
+  for(let v=0;v<=18;v+=3){
+    g+=`<line class="${v===0?"g0":"g"}" x1="${L}" y1="${Y(v)}" x2="${W-R}" y2="${Y(v)}"/>`;
+    g+=`<text class="t" x="${L-8}" y="${Y(v)+3}" text-anchor="end">${v}</text>`;
+  }
+  for(let v=1000;v<=4000;v+=1000){
+    g+=`<line class="g" x1="${X(v)}" y1="${T}" x2="${X(v)}" y2="${H-B}"/>`;
+    g+=`<text class="t" x="${X(v)}" y="${H-B+18}" text-anchor="middle">${fmt(v)}</text>`;
+  }
+  g+=`<text class="t" x="${(L+W-R)/2}" y="${H-8}" text-anchor="middle">本月里程 km →</text>`;
+  g+=`<text class="t" x="${14}" y="${(T+H-B)/2}" text-anchor="middle"
+      transform="rotate(-90 14 ${(T+H-B)/2})">百公里油耗 L →</text>`;
+  /* 車隊加權平均參考線 */
+  g+=`<line class="trend" x1="${L}" y1="${Y(12.8)}" x2="${W-R}" y2="${Y(12.8)}"/>`;
+  g+=`<text class="t" x="${W-R}" y="${Y(12.8)-6}" text-anchor="end">車隊加權平均 12.8</text>`;
+  F.forEach((v,i)=>{
+    const r=5+ (v[10]/100)*6;
+    g+=`<circle class="dot${i===sel?" on":""}" data-i="${i}" cx="${X(v[7]).toFixed(1)}" cy="${Y(v[8]).toFixed(1)}"
+        r="${r.toFixed(1)}" fill="${TYPE[v[1]]}" fill-opacity=".72" stroke="${TYPE[v[1]]}" stroke-width="1.4">
+        <title>${v[0]} ${v[1]} · ${fmt(v[7])} km · ${v[8].toFixed(1)} L/100km</title></circle>`;
+  });
+  document.getElementById("sg").innerHTML=g;
+  document.querySelectorAll("#sg .dot").forEach(d=>d.addEventListener("click",()=>{
+    sel=+d.dataset.i;scatter();side();
+  }));
+}
+function side(){
+  const v=F[sel];
+  const fuelL=v[7]*v[8]/100;
+  const share=v[7]/TOTAL*100;
+  document.getElementById("sside").innerHTML=`
+    <div class="lbl">VEHICLE FOCUS</div>
+    <div class="big" style="color:${TYPE[v[1]]}">${v[0]}</div>
+    <div class="sml">${v[1]} · ${v[2]} · ${v[5]} 年式</div>
+    <dl>
+      <dt>駕駛 / 狀態</dt><dd>${v[4]} · ${STL[v[3]]}</dd>
+      <dt>本月里程</dt><dd>${fmt(v[7])} km（佔車隊 ${share.toFixed(1)}%）</dd>
+      <dt>百公里油耗</dt><dd style="color:${v[8]>12.8?"var(--sos)":"var(--go)"}">${v[8].toFixed(1)} L
+        （${v[8]>12.8?"高於":"低於"}車隊均值 ${Math.abs(v[8]-12.8).toFixed(1)}）</dd>
+      <dt>本月耗油 / 燃料成本</dt><dd>${fmt(fuelL)} L · NT$${fmt(fuelL*31.5)}</dd>
+      <dt>載重利用率</dt><dd>${v[10]===0?"停用中":v[10]+"%"}</dd>
+      <dt>距下次保養</dt><dd style="color:${v[9]<500?"var(--sos)":v[9]<1500?"var(--busy)":"inherit"}">${fmt(v[9])} km</dd>
+    </dl>
+    <p>圓點半徑代表載重利用率，橫軸為本月里程、縱軸為百公里油耗。落在右下角者為「高里程、低油耗」的理想配置；右上角則是需要優先檢討的高耗能主力車。</p>`;
+}
+document.getElementById("sclg").innerHTML=Object.entries(TYPE).map(([k,c])=>{
+  const n=F.filter(v=>v[1]===k).length;
+  return `<span><i style="background:${c}"></i>${k}（${n}）</span>`;}).join("");
+scatter();side();
+
+/* ---------- 03 排行 ---------- */
+(function(){
+  const top=[...F].sort((a,b)=>b[7]-a[7]).slice(0,10);
+  const max=top[0][7];
+  document.getElementById("rank").innerHTML=top.map((v,i)=>`
+    <div class="rank">
+      <span class="id">${i+1}. ${v[0]}</span>
+      <span class="tr"><i style="width:${(v[7]/max*100).toFixed(1)}%;background:${TYPE[v[1]]};animation-delay:${i*60}ms"></i></span>
+      <span class="v">${fmt(v[7])}</span>
+    </div>`).join("");
+  const sum=top.reduce((s,v)=>s+v[7],0);
+  document.getElementById("r-sum").textContent=fmt(sum);
+  document.getElementById("r-pct").textContent=(sum/TOTAL*100).toFixed(1)+"%";
+})();
+
+/* ---------- 04 車型彙總 ---------- */
+(function(){
+  const rows=Object.keys(TYPE).map(k=>{
+    const g=F.filter(v=>v[1]===k);
+    const km=g.reduce((s,v)=>s+v[7],0);
+    const fuel=g.reduce((s,v)=>s+v[7]*v[8],0)/km;
+    return [k,g.length,km,fuel,km/TOTAL*100];
+  }).sort((a,b)=>b[2]-a[2]);
+  document.getElementById("grpbody").innerHTML=rows.map(r=>`
+    <tr><td><span class="chip" style="background:${TYPE[r[0]]}"></span>${r[0]}</td>
+      <td class="r">${r[1]}</td><td class="r">${fmt(r[2])}</td>
+      <td class="r">${r[3].toFixed(1)}</td><td class="r">${r[4].toFixed(1)}%</td></tr>`).join("");
+})();
+</script>
+</body>
+</html>

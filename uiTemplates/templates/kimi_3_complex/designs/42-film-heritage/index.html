@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 42 膠卷齒孔·文化資產
+  ─────────────────────────────────────────
+  風格定位：老式 35mm 電影膠卷 × 檔案館氛圍——深棕黑放映廳底、泛黃米色
+            卡面如老照片紙基，齒孔（方孔）橫幅貫穿全站，致敬影像修復。
+  配色：
+    深棕黑 #241c15（全域背景、油墨字）
+    泛黃米 #e8dcc0（卡面、齒孔帶紙基色）
+    焦糖金 #c19a5b（強調色、齒孔描邊、分隔線）
+    赭紅   #9e4a2f（印章、重要標記）
+    暗棕   #3a2d20（卡片內側陰影區）
+  字體：'Noto Serif TC' 復古襯線標題 + 'Noto Sans TC' 內文
+  版面結構：
+    1. 頂部齒孔橫幅（上下兩排方孔，中間跑馬燈式標語）＋導覽列（返回入口）
+    2. 主視覺：放映機光束 SVG＋局名銘版
+    3. 古蹟／歷史建築介紹：膠卷格橫向滑動列（照片位以 sepia 漸層佈景＋格線框）
+    4. 修復進度：膠卷齒孔刻度風進度條
+    5. 最新公告：檔案夾標籤式列表
+    6. 文資小教室：點擊翻面問答卡（JS flip）
+    7. 參觀資訊＋頁尾（齒孔收尾）
+  動態效果：
+    1) 膠卷格水平無限滑動（@keyframes filmRoll，hover 暫停）
+    2) 頂部齒孔橫幅標語水平捲動
+    3) 文資小教室卡片點擊 3D 翻面
+    4) 修復進度條進場時由 0 長至目標值（JS IntersectionObserver）
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>溪洲市文化資產局 · 膠卷記憶館</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700;900&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --dark:#241c15; --cream:#e8dcc0; --gold:#c19a5b;
+  --seal:#9e4a2f; --inner:#3a2d20;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--dark) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2"/><feColorMatrix values="0 0 0 0 0.08 0 0 0 0 0.06 0 0 0 0 0.04 0 0 0 0.05 0"/></filter><rect width="120" height="120" filter="url(%23n)"/></svg>');
+  color:var(--cream);font-family:'Noto Sans TC',sans-serif;font-weight:300;
+}
+h1,h2,h3,h4{font-family:'Noto Serif TC',serif}
+a{text-decoration:none;color:inherit}
+
+/* ── 齒孔帶 ── */
+.sprockets{
+  display:flex;gap:14px;padding:8px 0;background:var(--dark);
+  border-top:2px solid var(--gold);border-bottom:2px solid var(--gold);
+  overflow:hidden;flex-shrink:0;
+}
+.sprockets span{
+  flex-shrink:0;width:26px;height:18px;border-radius:3px;
+  background:var(--cream);opacity:.9;
+  box-shadow:inset 0 0 0 2px var(--dark), 0 0 0 1px var(--gold);
+}
+.film-strip-band{background:var(--dark)}
+.marquee{
+  overflow:hidden;white-space:nowrap;padding:12px 0;
+  border-top:1px dashed rgba(193,154,91,.4);border-bottom:1px dashed rgba(193,154,91,.4);
+}
+.marquee-track{
+  display:inline-block;animation:filmRoll 30s linear infinite;
+  font-family:'Noto Serif TC';font-size:14px;letter-spacing:6px;color:var(--gold);
+}
+.marquee-track em{color:var(--cream);font-style:normal}
+@keyframes filmRoll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── 導覽列 ── */
+.topbar{
+  display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+  max-width:1200px;margin:0 auto;padding:26px 28px;
+}
+.back-frame{
+  font-family:'Noto Serif TC';font-weight:700;font-size:15px;letter-spacing:3px;
+  color:var(--dark);background:var(--cream);padding:10px 22px;
+  border:3px double var(--gold);box-shadow:4px 4px 0 rgba(193,154,91,.35);
+  transition:.25s;
+}
+.back-frame:hover{background:var(--gold);box-shadow:2px 2px 0 rgba(193,154,91,.6);transform:translate(2px,2px)}
+.topbar .org{font-family:'Noto Serif TC';font-size:22px;font-weight:900;letter-spacing:6px}
+.topbar .org small{display:block;font-size:10px;letter-spacing:3px;color:var(--gold);font-weight:400}
+.topbar nav{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+.topbar nav a{
+  font-size:13px;letter-spacing:2px;padding:8px 16px;color:var(--cream);
+  border-bottom:1px solid transparent;transition:.2s;
+}
+.topbar nav a:hover{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* ── 主視覺 ── */
+.hero{max-width:1200px;margin:0 auto;padding:40px 28px 70px;display:grid;grid-template-columns:1.2fr .8fr;gap:50px;align-items:center}
+.hero h1{font-size:clamp(34px,4.6vw,56px);font-weight:900;letter-spacing:8px;line-height:1.5}
+.hero h1 b{color:var(--gold)}
+.hero .sub{margin-top:20px;font-size:15px;line-height:2.1;color:rgba(232,220,192,.75);letter-spacing:2px}
+.hero-seal{
+  display:inline-block;margin-top:26px;font-family:'Noto Serif TC';font-size:14px;font-weight:700;
+  color:#fff;background:var(--seal);padding:8px 18px;letter-spacing:4px;
+  transform:rotate(-2deg);box-shadow:3px 3px 0 rgba(0,0,0,.4);
+}
+.projector{position:relative;text-align:center}
+.projector svg{max-width:100%;height:auto}
+.projector figcaption{margin-top:10px;font-size:11px;letter-spacing:3px;color:var(--gold)}
+
+/* ── 區塊標題 ── */
+section{max-width:1200px;margin:0 auto;padding:56px 28px 10px}
+.sec-head{display:flex;align-items:baseline;gap:18px;margin-bottom:30px;border-bottom:2px solid var(--gold);padding-bottom:14px}
+.sec-head .no{font-family:'Noto Serif TC';font-size:15px;color:var(--gold);letter-spacing:2px}
+.sec-head h2{font-size:clamp(24px,3vw,34px);font-weight:900;letter-spacing:5px}
+.sec-head small{margin-left:auto;font-size:11px;letter-spacing:3px;color:rgba(193,154,91,.7)}
+
+/* ── 膠卷格橫向滑動 ── */
+.film-rail{overflow:hidden;border-top:14px solid var(--dark);border-bottom:14px solid var(--dark);position:relative}
+.film-rail::before,.film-rail::after{
+  content:"";position:absolute;left:0;right:0;height:10px;z-index:2;
+  background-image:repeating-linear-gradient(90deg,var(--cream) 0 22px,transparent 22px 38px);
+  opacity:.9;
+}
+.film-rail::before{top:2px}
+.film-rail::after{bottom:2px}
+.film-track{display:flex;gap:26px;width:max-content;animation:filmSlide 40s linear infinite;padding:26px 0}
+.film-rail:hover .film-track{animation-play-state:paused}
+@keyframes filmSlide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.frame-card{
+  width:300px;flex-shrink:0;background:var(--cream);color:var(--dark);
+  border:3px solid var(--gold);box-shadow:6px 6px 0 rgba(0,0,0,.45);
+  transition:.3s;
+}
+.frame-card:hover{transform:translateY(-6px) rotate(-.5deg)}
+.frame-photo{
+  height:170px;position:relative;display:flex;align-items:center;justify-content:center;
+  border-bottom:3px solid var(--gold);overflow:hidden;
+}
+.frame-photo::after{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,rgba(36,28,21,.08) 0 2px,transparent 2px 5px);
+}
+.frame-photo .glyph{font-size:56px;filter:sepia(.6) contrast(.95)}
+.ph1{background:linear-gradient(160deg,#d9c193 0%,#a97e4e 55%,#6e4b28 100%)}
+.ph2{background:linear-gradient(160deg,#e3cfa5 0%,#b08a58 50%,#7d5731 100%)}
+.ph3{background:linear-gradient(160deg,#d5bd8e 0%,#97744a 60%,#63431f 100%)}
+.ph4{background:linear-gradient(160deg,#e6d4ad 0%,#b99567 45%,#80603a 100%)}
+.frame-body{padding:18px 20px 20px}
+.frame-body .lv{font-size:10px;letter-spacing:2px;color:#fff;background:var(--seal);padding:3px 10px;font-weight:500}
+.frame-body .lv.hist{background:var(--inner)}
+.frame-body h3{font-size:19px;font-weight:700;letter-spacing:2px;margin:10px 0 6px}
+.frame-body p{font-size:12.5px;line-height:1.9;color:#4d3b28}
+.frame-body .yr{margin-top:10px;font-family:'Noto Serif TC';font-size:12px;letter-spacing:2px;color:var(--seal);border-top:1px dashed var(--gold);padding-top:8px}
+
+/* ── 修復進度 ── */
+.restore-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px}
+.restore-card{background:var(--inner);border:1px solid rgba(193,154,91,.35);padding:26px 28px}
+.restore-card h3{font-size:19px;font-weight:700;letter-spacing:2px;color:var(--cream)}
+.restore-card .phase{font-size:12px;color:var(--gold);letter-spacing:2px;margin:6px 0 16px}
+.ruler{
+  height:34px;position:relative;background:rgba(232,220,192,.08);
+  border:1px solid rgba(193,154,91,.4);
+}
+.ruler .fill{
+  position:absolute;left:0;top:0;bottom:0;width:0;
+  background:repeating-linear-gradient(90deg,var(--gold) 0 10px,rgba(193,154,91,.55) 10px 20px);
+  transition:width 1.6s cubic-bezier(.22,.8,.3,1);
+}
+.ruler .ticks{
+  position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg,transparent 0 9px,rgba(36,28,21,.6) 9px 10px);
+}
+.restore-card .pct{font-family:'Noto Serif TC';font-size:26px;color:var(--gold);font-weight:700;margin-top:12px}
+.restore-card .pct small{font-size:12px;color:rgba(232,220,192,.6);margin-left:10px;font-family:'Noto Sans TC';letter-spacing:1px}
+
+/* ── 公告：檔案夾標籤 ── */
+.archive-list{display:flex;flex-direction:column;gap:14px}
+.archive-item{
+  display:flex;align-items:center;gap:22px;background:var(--cream);color:var(--dark);
+  padding:18px 26px;position:relative;cursor:pointer;transition:.2s;
+  border-left:8px solid var(--gold);
+}
+.archive-item:hover{border-left-color:var(--seal);transform:translateX(6px)}
+.archive-item::before{
+  content:"";position:absolute;left:26px;top:-8px;width:90px;height:8px;
+  background:var(--cream);border:1px solid var(--gold);border-bottom:none;border-radius:6px 6px 0 0;
+}
+.archive-item .no{font-family:'Noto Serif TC';font-weight:700;font-size:15px;color:var(--seal);min-width:86px}
+.archive-item .date{font-size:12px;color:#6b563c;min-width:96px;letter-spacing:1px}
+.archive-item p{font-size:15px;font-weight:500;line-height:1.7;flex:1}
+.archive-item .arrow{color:var(--seal);font-size:18px}
+
+/* ── 文資小教室（翻面卡）── */
+.classroom-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+.flip{perspective:1200px;height:230px;cursor:pointer}
+.flip-inner{
+  position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.4,.1,.2,1);
+  transform-style:preserve-3d;
+}
+.flip.flipped .flip-inner{transform:rotateY(180deg)}
+.flip-face{
+  position:absolute;inset:0;backface-visibility:hidden;padding:28px;
+  display:flex;flex-direction:column;justify-content:center;gap:12px;
+}
+.flip-front{background:var(--cream);color:var(--dark);border:3px double var(--gold)}
+.flip-front .q-mark{font-family:'Noto Serif TC';font-size:13px;color:var(--seal);letter-spacing:3px;font-weight:700}
+.flip-front h3{font-size:18px;font-weight:700;line-height:1.8;letter-spacing:1px}
+.flip-front .hint{font-size:11px;color:#8a6c48;letter-spacing:2px}
+.flip-back{
+  background:var(--seal);color:#fff;transform:rotateY(180deg);
+  font-size:13.5px;line-height:2;letter-spacing:1px;
+}
+.flip-back b{font-family:'Noto Serif TC';letter-spacing:2px}
+
+/* ── 參觀資訊＋頁尾 ── */
+.visit{
+  margin-top:60px;background:var(--inner);border-top:2px solid var(--gold);border-bottom:2px solid var(--gold);
+  padding:50px 28px;
+}
+.visit-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:36px}
+.visit h4{font-size:17px;letter-spacing:3px;color:var(--gold);margin-bottom:14px;font-weight:700}
+.visit p{font-size:13.5px;line-height:2.2;color:rgba(232,220,192,.8)}
+footer{max-width:1200px;margin:0 auto;padding:34px 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+footer small{font-size:11px;letter-spacing:2px;color:rgba(193,154,91,.7);line-height:2}
+@media(max-width:820px){
+  .hero{grid-template-columns:1fr}
+  .archive-item{flex-wrap:wrap;gap:10px}
+}
+</style>
+</head>
+<body>
+
+<!-- 頂部齒孔橫幅 -->
+<div class="film-strip-band">
+  <div class="sprockets" id="sprTop"></div>
+  <div class="marquee">
+    <div class="marquee-track" id="marqueeTrack"></div>
+  </div>
+  <div class="sprockets" id="sprBottom"></div>
+</div>
+
+<header class="topbar">
+  <a class="back-frame" href="../../index.html">← 返回入口</a>
+  <div class="org">溪洲市文化資產局<small>XIZHOU BUREAU OF CULTURAL HERITAGE</small></div>
+  <nav>
+    <a href="monuments.html">古蹟導覽</a>
+    <a href="restoration.html">修復進度</a>
+    <a href="news.html">公告檔案</a>
+    <a href="#classroom">文資小教室</a>
+    <a href="#visit">參觀資訊</a>
+  </nav>
+</header>
+
+<!-- 主視覺 -->
+<div class="hero">
+  <div>
+    <h1>一格膠卷<br>一座城的<b>百年記憶</b></h1>
+    <p class="sub">溪洲市文化資產局致力於古蹟、歷史建築與影像檔案的調查、修復與活化。我們以修復師的手、放映師的光，讓被時間泛黃的記憶重新轉動。</p>
+    <span class="hero-seal">登錄在案・民國 114 年</span>
+  </div>
+  <figure class="projector">
+    <svg viewBox="0 0 320 260" role="img" aria-label="放映機光束示意">
+      <defs>
+        <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#e8dcc0" stop-opacity=".55"/>
+          <stop offset="1" stop-color="#e8dcc0" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points="120,95 310,30 310,230 120,135" fill="url(#beam)"/>
+      <rect x="52" y="70" width="86" height="86" rx="10" fill="#3a2d20" stroke="#c19a5b" stroke-width="3"/>
+      <circle cx="95" cy="113" r="30" fill="#241c15" stroke="#c19a5b" stroke-width="3"/>
+      <circle cx="95" cy="113" r="12" fill="#c19a5b"/>
+      <circle cx="70" cy="52" r="22" fill="#3a2d20" stroke="#c19a5b" stroke-width="3"/>
+      <circle cx="70" cy="52" r="7" fill="#241c15" stroke="#c19a5b" stroke-width="2"/>
+      <circle cx="118" cy="52" r="22" fill="#3a2d20" stroke="#c19a5b" stroke-width="3"/>
+      <circle cx="118" cy="52" r="7" fill="#241c15" stroke="#c19a5b" stroke-width="2"/>
+      <rect x="66" y="156" width="58" height="12" fill="#3a2d20" stroke="#c19a5b" stroke-width="2"/>
+      <rect x="72" y="168" width="10" height="46" fill="#3a2d20"/>
+      <rect x="108" y="168" width="10" height="46" fill="#3a2d20"/>
+      <rect x="58" y="214" width="74" height="8" fill="#c19a5b"/>
+    </svg>
+    <figcaption>35MM HERITAGE PROJECTOR · EST. 1987</figcaption>
+  </figure>
+</div>
+
+<!-- 古蹟／歷史建築：膠卷格滑動 -->
+<section id="heritage">
+  <div class="sec-head"><span class="no">REEL 01</span><h2>古蹟・歷史建築導覽</h2><small>滑鼠移入可暫停放映</small></div>
+</section>
+<div class="film-rail">
+  <div class="film-track" id="filmTrack">
+    <a class="frame-card" href="detail.html">
+      <div class="frame-photo ph1"><span class="glyph">⛩</span></div>
+      <div class="frame-body">
+        <span class="lv">國定古蹟</span>
+        <h3>溪洲城隍廟</h3>
+        <p>建於清光緒八年（1882），三川殿剪黏與木雕神龕保存完整，為本市信仰與工藝雙重瑰寶。</p>
+        <div class="yr">建於 1882 ・ 指定 1985</div>
+      </div>
+    </a>
+    <a class="frame-card" href="monuments.html">
+      <div class="frame-photo ph2"><span class="glyph">🏛</span></div>
+      <div class="frame-body">
+        <span class="lv">市定古蹟</span>
+        <h3>舊溪洲車站</h3>
+        <p>日治時期木造驛舍，檜木桁架與切妻造屋頂見證縱貫鐵道百年風華，現活化為鐵道記憶館。</p>
+        <div class="yr">建於 1912 ・ 指定 1999</div>
+      </div>
+    </a>
+    <a class="frame-card" href="monuments.html">
+      <div class="frame-photo ph3"><span class="glyph">🏚</span></div>
+      <div class="frame-body">
+        <span class="lv hist">歷史建築</span>
+        <h3>南橋製糖廠倉庫群</h3>
+        <p>戰後產業建築代表，紅磚拱廊與桁架倉庫共七座，轉型為文創園區並保留五分車軌道。</p>
+        <div class="yr">建於 1948 ・ 登錄 2007</div>
+      </div>
+    </a>
+    <a class="frame-card" href="monuments.html">
+      <div class="frame-photo ph4"><span class="glyph">⛲</span></div>
+      <div class="frame-body">
+        <span class="lv hist">歷史建築</span>
+        <h3>溪洲水道淨水場</h3>
+        <p>臺灣少數完整保存的慢濾池設施，磚造唧筒室與量水室仍運作中，兼具教育與景觀價值。</p>
+        <div class="yr">建於 1930 ・ 登錄 2011</div>
+      </div>
+    </a>
+    <a class="frame-card" href="monuments.html">
+      <div class="frame-photo ph2"><span class="glyph">🏠</span></div>
+      <div class="frame-body">
+        <span class="lv">市定古蹟</span>
+        <h3>林宅大夫第</h3>
+        <p>閩式二進四合院，燕尾脊、磚雕與彩繪門神為匠師陳氏一派代表作，宅內仍保留清代匾額三方。</p>
+        <div class="yr">建於 1875 ・ 指定 2003</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- 修復進度 -->
+<section id="restore">
+  <div class="sec-head"><span class="no">REEL 02</span><h2>修復工程進度</h2><small>114 年 8 月更新</small></div>
+  <div class="restore-grid">
+    <div class="restore-card">
+      <h3>溪洲城隍廟・三川殿屋瓦</h3>
+      <div class="phase">第貳期：剪黏仿作與防水層施作</div>
+      <div class="ruler"><div class="fill" data-pct="78"></div><div class="ticks"></div></div>
+      <div class="pct"><span class="pv">0</span>%<small>預計 115 年 3 月竣工</small></div>
+    </div>
+    <div class="restore-card">
+      <h3>舊溪洲車站・木構防蟲</h3>
+      <div class="phase">第壹期：檜木構件燻蒸與補強</div>
+      <div class="ruler"><div class="fill" data-pct="45"></div><div class="ticks"></div></div>
+      <div class="pct"><span class="pv">0</span>%<small>預計 115 年 9 月竣工</small></div>
+    </div>
+    <div class="restore-card">
+      <h3>南橋糖廠・三號倉庫</h3>
+      <div class="phase">第參期：桁架除鏽與屋頂更新</div>
+      <div class="ruler"><div class="fill" data-pct="92"></div><div class="ticks"></div></div>
+      <div class="pct"><span class="pv">0</span>%<small>預計 114 年 11 月竣工</small></div>
+    </div>
+    <div class="restore-card">
+      <h3>溪洲水道・慢濾池清淤</h3>
+      <div class="phase">前置作業：水下結構安全檢測</div>
+      <div class="ruler"><div class="fill" data-pct="18"></div><div class="ticks"></div></div>
+      <div class="pct"><span class="pv">0</span>%<small>預計 116 年 6 月竣工</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- 公告檔案 -->
+<section id="news">
+  <div class="sec-head"><span class="no">REEL 03</span><h2>公告檔案室</h2><small>ARCHIVE OF NOTICES</small></div>
+  <div class="archive-list">
+    <a class="archive-item" href="restoration.html">
+      <span class="no">資字第 114082 號</span><span class="date">114.08.21</span>
+      <p>公告「林宅大夫第」修復再利用計畫公開展覽，展期 30 日，歡迎各界提供意見。</p><span class="arrow">➤</span>
+    </a>
+    <a class="archive-item" href="news.html">
+      <span class="no">資字第 114079 號</span><span class="date">114.08.14</span>
+      <p>114 年度第 2 次古蹟歷史建築審議會會議紀錄公開，新增列冊追蹤建物 3 處。</p><span class="arrow">➤</span>
+    </a>
+    <a class="archive-item" href="news.html">
+      <span class="no">資字第 114071 號</span><span class="date">114.08.05</span>
+      <p>「膠卷裡的溪洲」老照片徵集活動開跑，凡捐贈 1970 年前本市影像者致贈數位修復拷貝。</p><span class="arrow">➤</span>
+    </a>
+    <a class="archive-item" href="news.html">
+      <span class="no">資字第 114066 號</span><span class="date">114.07.29</span>
+      <p>颱風季古蹟防災整備公告：各管理單位請於 8 月底前完成排水與門窗加固檢查。</p><span class="arrow">➤</span>
+    </a>
+    <a class="archive-item" href="news.html">
+      <span class="no">資字第 114058 號</span><span class="date">114.07.18</span>
+      <p>文資修復匠師培訓班第 6 期錄取名單揭曉，9 月 8 日於南橋園區開訓。</p><span class="arrow">➤</span>
+    </a>
+  </div>
+</section>
+
+<!-- 文資小教室 -->
+<section id="classroom">
+  <div class="sec-head"><span class="no">REEL 04</span><h2>文資小教室</h2><small>點擊卡片翻面看解答</small></div>
+  <div class="classroom-grid">
+    <div class="flip" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-face flip-front">
+          <span class="q-mark">QUESTION 01</span>
+          <h3>「古蹟」和「歷史建築」差在哪裡？</h3>
+          <span class="hint">▶ 點我翻面</span>
+        </div>
+        <div class="flip-face flip-back">
+          <p><b>古蹟</b>由中央或地方依文化價值指定，分國定、直轄市定、縣市定三級，保存標準最嚴格；<b>歷史建築</b>則指未達古蹟等級、但具歷史文化價值之建物，由地方政府登錄，保存方式較具彈性，可適度改建再利用。</p>
+        </div>
+      </div>
+    </div>
+    <div class="flip" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-face flip-front">
+          <span class="q-mark">QUESTION 02</span>
+          <h3>在古蹟旁蓋房子，有什麼限制？</h3>
+          <span class="hint">▶ 點我翻面</span>
+        </div>
+        <div class="flip-face flip-back">
+          <p>古蹟周邊依法劃設「保存區」或「其他限制區」，區內新建、增建須經主管機關會審，確保高度、量體與色彩不損及古蹟風貌。申請前可向本局申請分區查詢，免費且約 5 個工作天核復。</p>
+        </div>
+      </div>
+    </div>
+    <div class="flip" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-face flip-front">
+          <span class="q-mark">QUESTION 03</span>
+          <h3>我家老宅想申請登錄，第一步是什麼？</h3>
+          <span class="hint">▶ 點我翻面</span>
+        </div>
+        <div class="flip-face flip-back">
+          <p>請填具「文化資產價值評估申請表」並附建物照片、地籍資料，向本局提報。本局將安排現勘，提送審議會評估其歷史、藝術與科學價值；審議期間老宅即受「暫定古蹟」效力保護，不得拆除。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 參觀資訊 -->
+<div class="visit" id="visit">
+  <div class="visit-inner">
+    <div>
+      <h4>▍參觀資訊</h4>
+      <p>溪洲市文化資產局・膠卷記憶館<br>溪洲市中正路三段 166 號（舊市議會廳舍）<br>開館：週二至週日 09:00–17:00（週一休館）<br>免費參觀，團體導覽請 3 日前預約</p>
+    </div>
+    <div>
+      <h4>▍聯絡我們</h4>
+      <p>總機：(04) 777-0216<br>修復工程科 分機 210<br>古蹟審議科 分機 320<br>信箱：heritage@xizhou.example.gov</p>
+    </div>
+    <div>
+      <h4>▍交通指引</h4>
+      <p>臺鐵溪洲站步行 8 分鐘<br>公車：搭乘 12、25 路於「文化資產局」站下車<br>停車：本局地下停車場，憑參觀證折抵 2 小時</p>
+    </div>
+  </div>
+</div>
+
+<div class="sprockets" id="sprFootTop" style="margin-top:0"></div>
+<footer>
+  <small>© 114 溪洲市文化資產局　BUREAU OF CULTURAL HERITAGE, XIZHOU CITY<br>本網站為設計示範頁，所示資料皆為虛構範例</small>
+  <a class="back-frame" href="../../index.html">← 返回入口</a>
+</footer>
+<div class="sprockets" id="sprFootBottom"></div>
+
+<script>
+/* 產生齒孔 */
+function fillSprockets(id){
+  var el = document.getElementById(id);
+  var n = Math.ceil(window.innerWidth / 40) + 4;
+  for(var i=0;i<n;i++){ el.appendChild(document.createElement('span')); }
+}
+['sprTop','sprBottom','sprFootTop','sprFootBottom'].forEach(fillSprockets);
+
+/* 跑馬燈（複製內容達成無縫循環）*/
+var msg = 'MEMORY ON FILM <em>⧉</em> 溪洲市文化資產局 <em>⧉</em> 一格膠卷・一座城的百年記憶 <em>⧉</em> REEL TO REEL SINCE 1987 <em>⧉</em> ';
+var track = document.getElementById('marqueeTrack');
+track.innerHTML = msg + msg + msg + msg;
+
+/* 膠卷軌無縫循環：複製一組卡片 */
+var ft = document.getElementById('filmTrack');
+ft.innerHTML += ft.innerHTML;
+
+/* 修復進度條進場動畫 */
+var io = new IntersectionObserver(function(entries){
+  entries.forEach(function(e){
+    if(!e.isIntersecting) return;
+    var fill = e.target.querySelector('.fill');
+    var pv = e.target.querySelector('.pv');
+    var target = parseInt(fill.dataset.pct, 10);
+    fill.style.width = target + '%';
+    var cur = 0;
+    var timer = setInterval(function(){
+      cur += 2;
+      if(cur >= target){ cur = target; clearInterval(timer); }
+      pv.textContent = cur;
+    }, 32);
+    io.unobserve(e.target);
+  });
+},{threshold:.4});
+document.querySelectorAll('.restore-card').forEach(function(c){ io.observe(c); });
+</script>
+</body>
+</html>

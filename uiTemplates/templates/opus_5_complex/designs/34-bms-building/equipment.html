@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>設備管理 － 系統立管樹與巡檢時序 · 宏達智慧大樓 BMS</title>
+<style>
+:root{
+  --deep:#0a1628;--deep2:#0f2038;--pane:#132a47;--edge:#1e3a5f;
+  --cy:#38e0ff;--gr:#3ddc97;--am:#ffc247;--rd:#ff5f6d;--pu:#a78bfa;
+  --txt:#dceaf7;--dim:#7695b8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--deep);color:var(--txt);min-height:100vh;font-size:13.5px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  background-image:
+    radial-gradient(ellipse at 15% 0%,rgba(56,224,255,.1),transparent 55%),
+    radial-gradient(ellipse at 85% 100%,rgba(167,139,250,.1),transparent 55%)}
+a:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+
+.home{position:fixed;right:22px;bottom:22px;z-index:99;text-decoration:none;color:var(--deep);
+  background:var(--cy);padding:13px 22px;border-radius:10px;font-weight:700;font-size:13px;
+  box-shadow:0 0 26px rgba(56,224,255,.5);transition:.22s}
+.home:hover{background:#fff;transform:translateY(-3px)}
+
+header{padding:16px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  border-bottom:1px solid var(--edge);background:rgba(15,32,56,.7);backdrop-filter:blur(10px);
+  position:sticky;top:0;z-index:40}
+header h1{font-size:17px;font-weight:700;letter-spacing:-.01em}
+header h1 small{display:block;font-size:10px;letter-spacing:.24em;color:var(--dim);font-weight:400;margin-top:4px}
+.badge{padding:6px 13px;border-radius:8px;font-size:11.5px;border:1px solid;display:flex;align-items:center;gap:7px}
+.badge i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.b-ok{color:var(--gr);border-color:rgba(61,220,151,.4);background:rgba(61,220,151,.1)}
+.b-ok i{background:var(--gr);box-shadow:0 0 8px var(--gr)}
+.b-wn{color:var(--am);border-color:rgba(255,194,71,.4);background:rgba(255,194,71,.1)}
+.b-wn i{background:var(--am);box-shadow:0 0 8px var(--am);animation:pl 1.4s infinite}
+@keyframes pl{50%{opacity:.3}}
+header .rt{margin-left:auto;display:flex;align-items:center;gap:20px;font-size:12px;color:var(--dim)}
+header .rt b{color:var(--txt);font-size:15px;display:block}
+.subnav{background:var(--deep2);border-bottom:1px solid var(--edge);padding:0 24px;display:flex;overflow-x:auto}
+.subnav a{font-size:11.5px;padding:10px 16px;color:var(--dim);text-decoration:none;font-weight:700;
+  letter-spacing:.06em;border-bottom:2px solid transparent;white-space:nowrap;transition:.2s}
+.subnav a:hover{color:var(--cy)}
+.subnav a[aria-current]{color:var(--cy);border-bottom-color:var(--cy)}
+
+.wrap{max-width:1680px;margin:0 auto;padding:18px 24px 60px}
+.card{background:var(--pane);border:1px solid var(--edge);border-radius:16px;overflow:hidden}
+.card>h2{font-size:12px;letter-spacing:.14em;color:var(--dim);padding:14px 16px;
+  border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.card>h2 b{color:var(--cy);font-size:11px;font-weight:700}
+
+/* ---------- kpi ribbon ---------- */
+.ribbon{display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin-bottom:16px;
+  background:var(--pane);border:1px solid var(--edge);border-radius:16px;overflow:hidden}
+.ribbon div{padding:15px 16px;border-right:1px solid var(--edge)}
+.ribbon div:last-child{border-right:0}
+.ribbon small{font-size:10.5px;letter-spacing:.1em;color:var(--dim);display:block}
+.ribbon b{display:block;font-size:26px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.ribbon b i{font-size:11px;font-style:normal;color:var(--dim);font-weight:400;margin-left:3px}
+
+/* ---------- 3 column ---------- */
+.grid{display:grid;grid-template-columns:288px minmax(0,1fr) 268px;gap:16px;align-items:start}
+
+/* ---------- tree ---------- */
+.treewrap{padding:8px 8px 12px;max-height:640px;overflow:auto}
+.sys{margin-bottom:2px}
+.sysbtn{width:100%;display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.03);
+  border:1px solid var(--edge);border-radius:9px;padding:9px 11px;color:var(--txt);
+  font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left;transition:.18s}
+.sysbtn:hover{background:rgba(56,224,255,.09)}
+.sysbtn .ar{color:var(--dim);font-size:10px;width:11px;flex:0 0 auto;transition:.2s}
+.sysbtn[aria-expanded="true"] .ar{transform:rotate(90deg);color:var(--cy)}
+.sysbtn .ct{margin-left:auto;font-size:10.5px;color:var(--dim);font-weight:400}
+.sysbtn .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.kids{display:none;padding:5px 0 7px 14px;border-left:1px dashed var(--edge);margin-left:16px}
+.kids.on{display:block}
+.node{width:100%;display:flex;align-items:center;gap:8px;background:none;border:1px solid transparent;
+  border-radius:8px;padding:6px 9px;color:var(--dim);font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.node:hover{background:rgba(56,224,255,.08);color:var(--txt)}
+.node[aria-pressed="true"]{background:rgba(56,224,255,.16);border-color:rgba(56,224,255,.5);color:#fff}
+.node .id{margin-left:auto;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
+.node .st{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.s-ok{background:var(--gr)}.s-wn{background:var(--am)}.s-er{background:var(--rd)}.s-sb{background:#4a6688}
+
+/* ---------- riser section ---------- */
+.riser{padding:14px 12px;background:#0b1c30}
+.riser svg{width:100%;height:auto;display:block}
+.floorband{fill:rgba(255,255,255,.03)}
+.floorline{stroke:#20416b;stroke-width:1}
+.risepipe{stroke-width:3;fill:none;stroke-linecap:round}
+.eqdot{cursor:pointer}
+.eqdot:hover circle{stroke:#fff}
+.pulse{animation:pp 2s ease-in-out infinite}
+@keyframes pp{50%{opacity:.35}}
+.rlegend{display:flex;gap:16px;flex-wrap:wrap;padding:11px 16px;font-size:11px;color:var(--dim);
+  border-top:1px solid var(--edge)}
+.rlegend span{display:flex;align-items:center;gap:7px}
+.rlegend i{width:12px;height:4px;border-radius:2px;display:block}
+
+/* ---------- detail ---------- */
+.detail{padding:15px}
+.detail .hd{display:flex;align-items:center;gap:12px;margin-bottom:13px}
+.detail .hd .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+  background:rgba(255,255,255,.06);border:1px solid var(--edge);flex:0 0 auto}
+.detail .hd b{display:block;font-size:14.5px}
+.detail .hd small{color:var(--dim);font-size:11px}
+.pillrow{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:13px}
+.pill{font-size:10.5px;padding:4px 10px;border-radius:7px;border:1px solid var(--edge);color:var(--dim)}
+.pill.ok{color:var(--gr);border-color:rgba(61,220,151,.4);background:rgba(61,220,151,.1)}
+.pill.wn{color:var(--am);border-color:rgba(255,194,71,.4);background:rgba(255,194,71,.1)}
+.pill.sb{color:var(--pu);border-color:rgba(167,139,250,.4);background:rgba(167,139,250,.1)}
+dl.par{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;font-size:12px;margin-bottom:13px}
+dl.par dt{color:var(--dim)}
+dl.par dd{text-align:right;font-weight:600}
+.meter{margin-bottom:12px}
+.meter .t{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:6px}
+.meter .t span{color:var(--dim)}
+.meter .trk{height:7px;border-radius:4px;background:rgba(0,0,0,.35);overflow:hidden}
+.meter .trk i{display:block;height:100%;border-radius:4px;transform-origin:left;animation:gw .7s cubic-bezier(.2,.8,.2,1) both}
+@keyframes gw{from{transform:scaleX(0)}}
+.act{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.act button{flex:1;min-width:96px;font:inherit;font-size:11.5px;font-weight:700;padding:9px 10px;border-radius:9px;
+  border:1px solid var(--edge);background:rgba(255,255,255,.05);color:var(--txt);cursor:pointer;transition:.2s}
+.act button:hover{background:rgba(56,224,255,.15);border-color:rgba(56,224,255,.5)}
+.act button.on{background:rgba(56,224,255,.25);border-color:var(--cy);color:#fff}
+.logline{margin-top:13px;font-size:11px;line-height:1.85;color:var(--dim);border-top:1px solid var(--edge);padding-top:11px}
+.logline b{color:var(--cy)}
+
+/* ---------- stringline ---------- */
+.string{padding:14px 12px 6px;overflow-x:auto}
+.string svg{display:block;min-width:760px;width:100%;height:auto}
+.slabel{font-size:10px;fill:#7695b8}
+.sgrid{stroke:#1e3a5f;stroke-width:1}
+.spath{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;
+  stroke-dasharray:2400;stroke-dashoffset:2400;animation:draw 2.2s ease-out forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.stop{cursor:pointer}
+.stop:hover circle{stroke:#fff;stroke-width:2}
+.slegend{display:flex;gap:18px;flex-wrap:wrap;padding:10px 16px 14px;font-size:11px;color:var(--dim)}
+.slegend span{display:flex;align-items:center;gap:7px}
+.slegend i{width:16px;height:3px;border-radius:2px;display:block}
+
+.ftr{text-align:center;font-size:10.5px;color:#4c6a8c;letter-spacing:.3em;padding:26px 0 8px}
+
+@media(max-width:1240px){
+  .grid{grid-template-columns:1fr}
+  .treewrap{max-height:320px}
+  .ribbon{grid-template-columns:repeat(3,1fr)}
+  .ribbon div:nth-child(3){border-right:0}
+  .ribbon div:nth-child(-n+3){border-bottom:1px solid var(--edge)}
+}
+@media(max-width:640px){
+  .wrap{padding:14px 12px 60px}
+  header{padding:12px 14px;gap:12px}
+  header .rt{gap:12px;font-size:11px}
+  .subnav{padding:0 10px}
+  .ribbon{grid-template-columns:repeat(2,1fr)}
+  .ribbon div:nth-child(odd){border-right:1px solid var(--edge)}
+  .ribbon div:nth-child(even){border-right:0}
+  .home{right:12px;bottom:12px;padding:11px 16px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<header>
+  <h1>宏達智慧大樓 BMS<small>BUILDING MANAGEMENT SYSTEM · 台北市信義區</small></h1>
+  <div class="badge b-ok"><i></i>設備 26 / 28 正常</div>
+  <div class="badge b-wn"><i></i>2 項需保養</div>
+  <div class="rt">
+    <div><b>28</b>納管設備</div>
+    <div><b>3</b>值勤技師</div>
+    <div><b id="clk">--:--</b>系統時間</div>
+  </div>
+</header>
+<nav class="subnav" aria-label="子頁導覽">
+  <a href="index.html">儀表板</a>
+  <a href="equipment.html" aria-current="page">設備管理</a>
+  <a href="alerts.html">警示歷程</a>
+  <a href="energy.html">能耗分析</a>
+  <a href="settings.html">系統設定</a>
+</nav>
+
+<div class="wrap">
+  <div class="ribbon">
+    <div><small>納管設備總數</small><b>28<i>台</i></b></div>
+    <div><small>運轉中</small><b style="color:var(--cy)">19<i>台</i></b></div>
+    <div><small>待命 / 停機</small><b style="color:var(--pu)">7<i>台</i></b></div>
+    <div><small>需保養</small><b style="color:var(--am)">2<i>台</i></b></div>
+    <div><small>本月保養完成率</small><b style="color:var(--gr)">92<i>%</i></b></div>
+    <div><small>今日巡檢點位</small><b>21<i>點</i></b></div>
+  </div>
+
+  <div class="grid">
+    <!-- ============ 設備樹 ============ -->
+    <div class="card">
+      <h2>系統階層 SYSTEM TREE<b id="treeCount">28 台</b></h2>
+      <div class="treewrap" id="tree"></div>
+    </div>
+
+    <!-- ============ 立管剖面 + 巡檢時序 ============ -->
+    <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="card">
+        <h2>垂直系統立管剖面 RISER DIAGRAM <span id="riserSub" style="color:var(--cy);letter-spacing:0;font-size:12.5px">冰水主機 CH-01 · B2</span><b>B2 – 18F</b></h2>
+        <div class="riser" id="riser"></div>
+        <div class="rlegend">
+          <span><i style="background:#38e0ff"></i>冰水立管 CHW</span>
+          <span><i style="background:#a78bfa"></i>電力幹線 BUS</span>
+          <span><i style="background:#ff5f6d"></i>排煙立管 SEF</span>
+          <span><i style="background:#3ddc97"></i>給排水立管 P/D</span>
+          <span><i style="background:#ffc247"></i>選定設備位置</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>今日巡檢時序 PATROL STRINGLINE<b>06:00 – 22:00 · 21 個點位</b></h2>
+        <div class="string" id="string"></div>
+        <div class="slegend">
+          <span><i style="background:#38e0ff"></i>林建志 · 機電巡檢（9 點）</span>
+          <span><i style="background:#3ddc97"></i>劉建國 · 定期保養（6 點）</span>
+          <span><i style="background:#ffc247"></i>陳大偉 · 工務派工（6 點）</span>
+          <span>點擊路徑上的節點可切換至該設備</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 詳細 ============ -->
+    <div class="card">
+      <h2>設備詳細 DETAIL<b id="detId">CH-01</b></h2>
+      <div class="detail" id="detail"></div>
+    </div>
+  </div>
+
+  <div class="ftr">SMART BUILDING BMS · Equipment / System Riser Tree ＋ Patrol Stringline · DESIGN 34 / 40</div>
+</div>
+
+<script>
+/* ================= 設備資料 ================= */
+var FLOORS=["B2","B1","1F","5F","8F","12F","15F","18F"];
+var EQ=[
+ {id:"CH-01",  nm:"冰水主機 CH-01",   sys:"空調系統",fl:"B2", ic:"❄",st:"ok",on:true, hrs:18420,maint:"2025-05-20",next:"2025-08-20",
+  par:{"負載":"68 %","出水溫度":"7.2 °C","回水溫度":"12.4 °C","COP":"4.8","冷媒壓力":"正常"},load:68,
+  log:"05-20 完成年度保養，更換冷媒乾燥過濾器；本月累計運轉 486 小時。"},
+ {id:"CH-02",  nm:"冰水主機 CH-02",   sys:"空調系統",fl:"B2", ic:"❄",st:"ok",on:true, hrs:16240,maint:"2025-05-20",next:"2025-08-20",
+  par:{"負載":"52 %","出水溫度":"7.5 °C","回水溫度":"12.8 °C","COP":"4.6","冷媒壓力":"正常"},load:52,
+  log:"作為輪替主機，依 CH-01 負載自動投入；本月累計運轉 312 小時。"},
+ {id:"CHP-01", nm:"冰水一次泵 CHP-01",sys:"空調系統",fl:"B2", ic:"🌊",st:"ok",on:true, hrs:21860,maint:"2025-04-08",next:"2025-10-08",
+  par:{"流量":"142 m³/h","揚程":"28 m","變頻":"74 %","軸承溫度":"41 °C","振動值":"1.8 mm/s"},load:74,
+  log:"變頻器 04-08 更新韌體 v3.2.1，振動值較上季下降 12%。"},
+ {id:"CHP-02", nm:"冰水二次泵 CHP-02",sys:"空調系統",fl:"B2", ic:"🌊",st:"ok",on:true, hrs:20140,maint:"2025-04-08",next:"2025-10-08",
+  par:{"流量":"118 m³/h","揚程":"24 m","變頻":"62 %","軸承溫度":"39 °C","振動值":"1.6 mm/s"},load:62,
+  log:"依各樓層 AHU 需求壓差自動調速，維持二次側壓差 85 kPa。"},
+ {id:"CT-01",  nm:"冷卻水塔 CT-01",   sys:"空調系統",fl:"18F",ic:"💨",st:"ok",on:true, hrs:15980,maint:"2025-03-18",next:"2025-09-18",
+  par:{"風扇轉速":"82 %","出水溫度":"30.6 °C","進水溫度":"35.2 °C","補水量":"1.4 m³/h","導電度":"640 µS"},load:82,
+  log:"03-18 完成填料清洗與水質加藥系統校正，導電度控制於 800 µS 以下。"},
+ {id:"CT-02",  nm:"冷卻水塔 CT-02",   sys:"空調系統",fl:"18F",ic:"💨",st:"sb",on:false,hrs:14220,maint:"2025-03-18",next:"2025-09-18",
+  par:{"風扇轉速":"0 %","出水溫度":"—","進水溫度":"—","補水量":"0 m³/h","導電度":"—"},load:0,
+  log:"備援水塔，於 CH-02 投入或外氣濕球溫度 > 27°C 時自動啟動。"},
+ {id:"AHU-12A",nm:"空調箱 AHU-12A",   sys:"空調系統",fl:"12F",ic:"🌀",st:"ok",on:true, hrs:6284, maint:"2025-06-03",next:"2025-09-03",
+  par:{"風量":"68 %","送風溫度":"16.2 °C","靜壓":"120 Pa","濾網壓差":"正常","皮帶狀態":"良好"},load:68,
+  log:"服務 12F 開放辦公 A / B 區，設定溫度 23.5°C，實測 23.8°C。"},
+ {id:"AHU-12B",nm:"空調箱 AHU-12B",   sys:"空調系統",fl:"12F",ic:"🌀",st:"ok",on:true, hrs:6120, maint:"2025-06-03",next:"2025-09-03",
+  par:{"風量":"95 %","送風溫度":"15.4 °C","靜壓":"138 Pa","濾網壓差":"正常","皮帶狀態":"良好"},load:95,
+  log:"14:22 因 12F 機房溫度 29.4°C 超標，自動提升風量至 95%。"},
+ {id:"AHU-08A",nm:"空調箱 AHU-08A",   sys:"空調系統",fl:"8F", ic:"🌀",st:"ok",on:true, hrs:7420, maint:"2025-06-11",next:"2025-09-11",
+  par:{"風量":"85 %","送風溫度":"16.0 °C","靜壓":"118 Pa","濾網壓差":"正常","皮帶狀態":"良好"},load:85,
+  log:"06-11 11:05 完成 G4 + F7 濾網更換，靜壓由 182 Pa 恢復至 118 Pa。"},
+ {id:"AHU-08B",nm:"空調箱 AHU-08B",   sys:"空調系統",fl:"8F", ic:"🌀",st:"wn",on:true, hrs:7840, maint:"2025-04-12",next:"2025-06-20",
+  par:{"風量":"42 %","送風溫度":"14.8 °C","靜壓":"98 Pa","濾網壓差":"偏高 — 需更換","皮帶狀態":"磨損中"},load:42,
+  log:"濾網壓差偏高且皮帶磨損，已排定 06-20 保養；期間風量限制於 50% 以下。"},
+ {id:"AHU-15A",nm:"空調箱 AHU-15A",   sys:"空調系統",fl:"15F",ic:"🌀",st:"ok",on:true, hrs:5960, maint:"2025-05-06",next:"2025-08-06",
+  par:{"風量":"72 %","送風溫度":"16.4 °C","靜壓":"124 Pa","濾網壓差":"正常","皮帶狀態":"良好"},load:72,
+  log:"服務 15F 租戶區，依門禁人流自動調整外氣比例。"},
+ {id:"AHU-05A",nm:"空調箱 AHU-05A",   sys:"空調系統",fl:"5F", ic:"🌀",st:"ok",on:true, hrs:5480, maint:"2025-05-06",next:"2025-08-06",
+  par:{"風量":"58 %","送風溫度":"16.8 °C","靜壓":"112 Pa","濾網壓差":"正常","皮帶狀態":"良好"},load:58,
+  log:"服務 5F 會議區，僅於會議室預約時段全載運轉。"},
+ {id:"TR-01",  nm:"變壓器 TR-01",     sys:"電力系統",fl:"B2", ic:"⚡",st:"ok",on:true, hrs:52600,maint:"2025-01-15",next:"2026-01-15",
+  par:{"負載率":"68 %","一次側":"22.8 kV","二次側":"380 V","線圈溫度":"72 °C","功率因數":"0.96"},load:68,
+  log:"契約容量 800 kW，今日尖峰 544 kW（68%），未觸及超約警戒。"},
+ {id:"UPS-01", nm:"不斷電系統 UPS-01",sys:"電力系統",fl:"18F",ic:"🔋",st:"wn",on:true, hrs:41200,maint:"2024-11-22",next:"2025-06-25",
+  par:{"負載":"38 %","電池健康度":"78 %","後備時間":"22 分","輸出電壓":"220 V","模組溫度":"34 °C"},load:38,
+  log:"電池健康度 78% 已低於 80% 更換建議線，06-25 安排電池模組更換。"},
+ {id:"GEN-01", nm:"緊急發電機 GEN-01",sys:"電力系統",fl:"B2", ic:"🛢",st:"sb",on:false,hrs:186,  maint:"2025-05-02",next:"2025-08-02",
+  par:{"燃油存量":"92 %","冷卻水溫":"28 °C","起動電池":"26.4 V","上次試車":"2025-05-02","可供電時數":"18 h"},load:92,
+  log:"每月定期無載試車 30 分鐘，最近一次 05-02 起動時間 8.2 秒。"},
+ {id:"SF-18",  nm:"排煙風機 SF-18",   sys:"消防系統",fl:"18F",ic:"🔥",st:"ok",on:false,hrs:320,  maint:"2025-02-10",next:"2025-08-10",
+  par:{"狀態":"待命","風量":"0 CMH","消防連動":"已啟用","盤面電源":"正常","控制模式":"自動"},load:0,
+  log:"僅於受信總機發出火警訊號時連動啟動，每季試轉一次。"},
+ {id:"SF-12",  nm:"排煙風機 SF-12",   sys:"消防系統",fl:"12F",ic:"🔥",st:"ok",on:false,hrs:294,  maint:"2025-02-10",next:"2025-08-10",
+  par:{"狀態":"待命","風量":"0 CMH","消防連動":"已啟用","盤面電源":"正常","控制模式":"自動"},load:0,
+  log:"服務 12F 至 15F 排煙區劃，最近一次試轉 02-10 合格。"},
+ {id:"FP-B2",  nm:"消防幫浦 FP-B2",   sys:"消防系統",fl:"B2", ic:"🚒",st:"ok",on:false,hrs:142,  maint:"2025-03-06",next:"2025-09-06",
+  par:{"狀態":"待命","出口壓力":"8.4 kg/cm²","水池液位":"94 %","啟動壓力":"6.0 kg/cm²","控制模式":"自動"},load:94,
+  log:"消防水池液位 94%，壓力維持泵每日補壓 2 至 3 次屬正常範圍。"},
+ {id:"L-12",   nm:"照明迴路 L-12",    sys:"照明系統",fl:"12F",ic:"💡",st:"ok",on:true, hrs:4120, maint:"2025-03-15",next:"2025-09-15",
+  par:{"亮度":"80 %","自動模式":"開啟","自然採光":"420 lux","定時":"08:00–21:00","日耗電":"3.2 kWh"},load:80,
+  log:"依採光感測自動調降 20%，本月照明用電較去年同期減少 14%。"},
+ {id:"L-08",   nm:"照明迴路 L-08",    sys:"照明系統",fl:"8F", ic:"💡",st:"ok",on:true, hrs:4060, maint:"2025-03-15",next:"2025-09-15",
+  par:{"亮度":"75 %","自動模式":"開啟","自然採光":"468 lux","定時":"08:00–21:00","日耗電":"3.0 kWh"},load:75,
+  log:"東側採光良好，午前經常自動調降至 60% 以下。"},
+ {id:"L-05",   nm:"照明迴路 L-05",    sys:"照明系統",fl:"5F", ic:"💡",st:"ok",on:true, hrs:3820, maint:"2025-03-15",next:"2025-09-15",
+  par:{"亮度":"60 %","自動模式":"開啟","自然採光":"380 lux","定時":"08:00–22:00","日耗電":"2.4 kWh"},load:60,
+  log:"會議區採場景控制，簡報模式時自動降至 30%。"},
+ {id:"EL-01",  nm:"客梯 EL-01",       sys:"垂直運輸",fl:"1F", ic:"🛗",st:"ok",on:true, hrs:38200,maint:"2025-06-11",next:"2025-09-11",
+  par:{"今日運行":"412 次","平均等待":"24 s","載重":"1150 kg","門機狀態":"正常","鋼索張力":"合格"},load:62,
+  log:"06-11 09:30 完成法定年度保養，保養合格證書已掃描存檔。"},
+ {id:"EL-02",  nm:"客梯 EL-02",       sys:"垂直運輸",fl:"1F", ic:"🛗",st:"ok",on:true, hrs:37640,maint:"2025-06-11",next:"2025-09-11",
+  par:{"今日運行":"388 次","平均等待":"26 s","載重":"1150 kg","門機狀態":"正常","鋼索張力":"合格"},load:58,
+  log:"與 EL-01 採群控排程，尖峰時段自動改為分區服務。"},
+ {id:"EL-03",  nm:"客梯 EL-03",       sys:"垂直運輸",fl:"1F", ic:"🛗",st:"ok",on:true, hrs:36980,maint:"2025-06-11",next:"2025-09-11",
+  par:{"今日運行":"356 次","平均等待":"28 s","載重":"1150 kg","門機狀態":"正常","鋼索張力":"合格"},load:54,
+  log:"06-11 09:30 完成年度保養，緩衝器與消防運行模式測試均合格。"},
+ {id:"EL-04",  nm:"貨梯 EL-04",       sys:"垂直運輸",fl:"B1", ic:"🛗",st:"ok",on:true, hrs:22140,maint:"2025-04-19",next:"2025-10-19",
+  par:{"今日運行":"96 次","平均等待":"42 s","載重":"2000 kg","門機狀態":"正常","鋼索張力":"合格"},load:32,
+  log:"限貨物與清運使用，07:00–20:00 開放，其餘時段需刷卡。"},
+ {id:"AC-12F", nm:"門禁控制 AC-12F",  sys:"安防系統",fl:"12F",ic:"🚪",st:"ok",on:true, hrs:14200,maint:"2025-04-28",next:"2025-10-28",
+  par:{"今日進出":"218 次","授權卡數":"146 張","異常事件":"0","通訊狀態":"正常","電池電量":"92 %"},load:92,
+  log:"與 AHU-12A 外氣量連動，在室人數推估 78 人時自動提高新鮮外氣。"},
+ {id:"AC-1F",  nm:"門禁控制 AC-1F",   sys:"安防系統",fl:"1F", ic:"🚪",st:"ok",on:true, hrs:19860,maint:"2025-04-28",next:"2025-10-28",
+  par:{"今日進出":"1,246 次","授權卡數":"842 張","異常事件":"2","通訊狀態":"正常","電池電量":"88 %"},load:88,
+  log:"2 筆異常皆為過期訪客卡刷卡失敗，已由櫃檯人工放行並記錄。"},
+ {id:"NVR-B1", nm:"監控主機 NVR-B1",  sys:"安防系統",fl:"B1", ic:"📹",st:"ok",on:true, hrs:44120,maint:"2025-02-24",next:"2025-08-24",
+  par:{"線上攝影機":"64 / 64","硬碟容量":"72 %","保存天數":"31 天","串流頻寬":"186 Mbps","RAID":"正常"},load:72,
+  log:"硬碟使用率 72%，依 31 天保存政策自動覆寫最早錄影。"}
+];
+var SYSCOL={"空調系統":"#38e0ff","電力系統":"#a78bfa","消防系統":"#ff5f6d","照明系統":"#ffc247","垂直運輸":"#3ddc97","安防系統":"#7db2ff"};
+var $=function(i){return document.getElementById(i);};
+var cur="CH-01";
+
+/* ================= 樹 ================= */
+function buildTree(){
+  var order=["空調系統","電力系統","消防系統","照明系統","垂直運輸","安防系統"];
+  $("tree").innerHTML=order.map(function(s,si){
+    var kids=EQ.filter(function(e){return e.sys===s;});
+    var bad=kids.filter(function(e){return e.st!=="ok";}).length;
+    return '<div class="sys"><button type="button" class="sysbtn" aria-expanded="'+(si===0)+'" data-sys="'+s+'">'+
+      '<span class="ar">▶</span><span class="dot" style="background:'+SYSCOL[s]+'"></span>'+s+
+      '<span class="ct">'+kids.length+" 台"+(bad?" · "+bad+" 異常":"")+"</span></button>"+
+      '<div class="kids'+(si===0?" on":"")+'" data-kids="'+s+'">'+
+      kids.map(function(e){
+        return '<button type="button" class="node" data-eq="'+e.id+'" aria-pressed="'+(e.id===cur)+'">'+
+          '<span class="st s-'+e.st+'"></span><span>'+e.nm.replace(/\s[A-Z].*$/,"")+
+          '</span><span class="id">'+e.fl+" · "+e.id+"</span></button>";
+      }).join("")+"</div></div>";
+  }).join("");
+}
+$("tree").addEventListener("click",function(e){
+  var s=e.target.closest("[data-sys]");
+  if(s){ var open=s.getAttribute("aria-expanded")==="true";
+    s.setAttribute("aria-expanded",String(!open));
+    document.querySelector('[data-kids="'+s.dataset.sys+'"]').classList.toggle("on",!open); return; }
+  var n=e.target.closest("[data-eq]");
+  if(n){ select(n.dataset.eq); }
+});
+
+/* ================= 立管剖面 ================= */
+function drawRiser(){
+  var e=EQ.find(function(x){return x.id===cur;});
+  var W=760,H=420,top=22,bh=(H-top-30)/FLOORS.length,x0=64,x1=W-40;
+  var g="";
+  FLOORS.slice().reverse().forEach(function(f,i){
+    var y=top+i*bh;
+    g+='<rect class="floorband" x="'+x0+'" y="'+y+'" width="'+(x1-x0)+'" height="'+(bh-4)+'" rx="3"/>'+
+       '<line class="floorline" x1="'+x0+'" y1="'+(y+bh-2)+'" x2="'+x1+'" y2="'+(y+bh-2)+'"/>'+
+       '<text class="slabel" x="'+(x0-10)+'" y="'+(y+bh/2+4)+'" text-anchor="end" font-size="11">'+f+"</text>";
+  });
+  function yOf(fl){ var idx=FLOORS.indexOf(fl); return top+(FLOORS.length-1-idx)*bh+bh/2-2; }
+  var pipes=[["#38e0ff",150],["#a78bfa",250],["#ff5f6d",350],["#3ddc97",450]];
+  pipes.forEach(function(p){
+    g+='<path class="risepipe" stroke="'+p[0]+'" stroke-opacity=".55" d="M'+p[1]+" "+(top+6)+" L"+p[1]+" "+(H-34)+'"/>';
+  });
+  g+='<text class="slabel" x="150" y="'+(H-18)+'" text-anchor="middle">CHW</text>'+
+     '<text class="slabel" x="250" y="'+(H-18)+'" text-anchor="middle">BUS</text>'+
+     '<text class="slabel" x="350" y="'+(H-18)+'" text-anchor="middle">SEF</text>'+
+     '<text class="slabel" x="450" y="'+(H-18)+'" text-anchor="middle">P/D</text>';
+  var slot={};
+  EQ.forEach(function(q){
+    slot[q.fl]=(slot[q.fl]||0);
+    var cx=520+ (slot[q.fl]%5)*44, cy=yOf(q.fl)+ (Math.floor(slot[q.fl]/5)*0);
+    slot[q.fl]++;
+    var col = q.id===cur ? "#ffc247" : SYSCOL[q.sys];
+    var r = q.id===cur ? 11 : 8;
+    g+='<g class="eqdot'+(q.id===cur?" pulse":"")+'" data-eq="'+q.id+'" role="button" tabindex="0" aria-label="'+q.nm+" 位於 "+q.fl+'">'+
+       '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+col+'" fill-opacity="'+(q.id===cur?".95":".28")+
+       '" stroke="'+col+'" stroke-width="1.6"><title>'+q.nm+"（"+q.fl+"）</title></circle>"+
+       (q.st!=="ok" ? '<circle cx="'+(cx+7)+'" cy="'+(cy-7)+'" r="3.4" fill="'+(q.st==="wn"?"#ffc247":"#7695b8")+'"/>' : "")+
+       "</g>";
+  });
+  g+='<text class="slabel" x="520" y="'+(H-18)+'">各樓層設備配置（點擊圓點切換）</text>';
+  $("riser").innerHTML='<svg viewBox="0 0 '+W+" "+H+'" role="img" aria-label="宏達智慧大樓 B2 至 18F 垂直系統立管剖面圖，標示 28 台設備所在樓層，目前選定 '+e.nm+'">'+g+"</svg>";
+  $("riserSub").textContent=e.nm+" · "+e.fl;
+}
+$("riser").addEventListener("click",function(e){
+  var g=e.target.closest("[data-eq]"); if(g) select(g.dataset.eq);
+});
+$("riser").addEventListener("keydown",function(e){
+  if(e.key!=="Enter"&&e.key!==" ") return;
+  var g=e.target.closest("[data-eq]"); if(g){ e.preventDefault(); select(g.dataset.eq); }
+});
+
+/* ================= 巡檢時序 ================= */
+var PATROL=[
+ {who:"林建志",role:"機電巡檢",col:"#38e0ff",stops:[
+   ["06:30","B2","CH-01","冰水主機啟動確認"],["07:10","B2","CHP-01","一次泵振動量測"],
+   ["08:00","B1","NVR-B1","監控主機日誌檢查"],["09:30","5F","AHU-05A","會議區送風確認"],
+   ["11:00","8F","AHU-08B","濾網壓差複測"],["13:30","12F","AHU-12A","溫溼度校驗"],
+   ["15:00","15F","AHU-15A","外氣比例調整"],["16:30","18F","CT-01","水塔水質採樣"],
+   ["18:00","B2","CH-02","夜間輪替切換"]]},
+ {who:"劉建國",role:"定期保養",col:"#3ddc97",stops:[
+   ["07:00","8F","AHU-08A","保養前置作業"],["09:30","8F","AHU-08A","G4/F7 濾網更換"],
+   ["11:30","12F","AHU-12B","盤管清潔"],["13:00","1F","EL-01","門機潤滑"],
+   ["14:30","B1","EL-04","貨梯鋼索檢查"],["16:00","B2","FP-B2","消防幫浦試轉"]]},
+ {who:"陳大偉",role:"工務派工",col:"#ffc247",stops:[
+   ["08:30","1F","AC-1F","訪客卡異常處理"],["10:00","12F","L-12","照明感測校正"],
+   ["12:00","15F","AHU-15A","租戶溫度反映"],["14:22","12F","AHU-12B","機房溫度超標派工"],
+   ["16:00","18F","UPS-01","電池健康度量測"],["19:00","B2","GEN-01","發電機油位檢查"]]}
+];
+function drawString(){
+  var W=880,H=330,L=70,R=24,T=22,B=44;
+  var t0=6*60, t1=22*60;
+  function X(hm){ var p=hm.split(":"); return L+((+p[0]*60+ +p[1])-t0)/(t1-t0)*(W-L-R); }
+  function Y(fl){ var i=FLOORS.indexOf(fl); return T+(FLOORS.length-1-i)*((H-T-B)/(FLOORS.length-1)); }
+  var g="";
+  FLOORS.forEach(function(f){
+    var y=Y(f);
+    g+='<line class="sgrid" x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'"/>'+
+       '<text class="slabel" x="'+(L-10)+'" y="'+(y+4)+'" text-anchor="end">'+f+"</text>";
+  });
+  for(var h=6;h<=22;h+=2){
+    var x=X(h+":00");
+    g+='<line class="sgrid" x1="'+x+'" y1="'+T+'" x2="'+x+'" y2="'+(H-B)+'" stroke-opacity=".5"/>'+
+       '<text class="slabel" x="'+x+'" y="'+(H-B+18)+'" text-anchor="middle">'+(h<10?"0"+h:h)+":00</text>";
+  }
+  PATROL.forEach(function(p,pi){
+    var pts=p.stops.map(function(s){ return X(s[0])+","+Y(s[1]); }).join(" ");
+    g+='<polyline class="spath" points="'+pts+'" stroke="'+p.col+'" style="animation-delay:'+(pi*0.25)+'s"/>';
+  });
+  PATROL.forEach(function(p){
+    p.stops.forEach(function(s){
+      var sel = s[2]===cur;
+      g+='<g class="stop" data-eq="'+s[2]+'" role="button" tabindex="0" aria-label="'+p.who+" "+s[0]+" 於 "+s[1]+" 巡檢 "+s[2]+"，"+s[3]+'">'+
+         '<circle cx="'+X(s[0])+'" cy="'+Y(s[1])+'" r="'+(sel?7:4.6)+'" fill="'+(sel?"#fff":p.col)+
+         '" stroke="'+p.col+'" stroke-width="'+(sel?3:1.5)+'"><title>'+p.who+" "+s[0]+" · "+s[2]+" · "+s[3]+"</title></circle></g>";
+    });
+  });
+  g+='<text class="slabel" x="'+L+'" y="'+(H-8)+'">縱軸＝樓層　橫軸＝時間　折線斜率即為技師的移動速率</text>';
+  $("string").innerHTML='<svg viewBox="0 0 '+W+" "+H+'" role="img" aria-label="今日 06:00 至 22:00 三位技師的巡檢時間-樓層路徑圖，共 21 個巡檢點位">'+g+"</svg>";
+}
+$("string").addEventListener("click",function(e){
+  var g=e.target.closest("[data-eq]"); if(g) select(g.dataset.eq);
+});
+$("string").addEventListener("keydown",function(e){
+  if(e.key!=="Enter"&&e.key!==" ") return;
+  var g=e.target.closest("[data-eq]"); if(g){ e.preventDefault(); select(g.dataset.eq); }
+});
+
+/* ================= 詳細面板 ================= */
+var STLBL={ok:"運轉正常",wn:"需保養",er:"故障",sb:"待命"};
+function drawDetail(){
+  var e=EQ.find(function(x){return x.id===cur;});
+  var visits=[];
+  PATROL.forEach(function(p){ p.stops.forEach(function(s){ if(s[2]===e.id) visits.push(p.who+" "+s[0]+" · "+s[3]); }); });
+  var pcls = e.st==="ok" ? "ok" : e.st==="wn" ? "wn" : "sb";
+  $("detail").innerHTML=
+    '<div class="hd"><span class="ic">'+e.ic+"</span><div><b>"+e.nm+"</b><small>"+e.sys+" · "+e.fl+" · "+e.id+"</small></div></div>"+
+    '<div class="pillrow"><span class="pill '+pcls+'">'+STLBL[e.st]+'</span><span class="pill">'+
+      (e.on?"運轉中":"停機／待命")+'</span><span class="pill">累計 '+e.hrs.toLocaleString("en-US")+" h</span></div>"+
+    '<dl class="par">'+Object.keys(e.par).map(function(k){
+      return "<dt>"+k+"</dt><dd>"+e.par[k]+"</dd>"; }).join("")+"</dl>"+
+    '<div class="meter"><div class="t"><span>目前負載 / 水位</span><b>'+e.load+'%</b></div>'+
+      '<div class="trk"><i style="width:'+e.load+"%;background:"+(e.load>85?"var(--am)":"var(--cy)")+'"></i></div></div>'+
+    '<dl class="par"><dt>上次保養</dt><dd>'+e.maint+"</dd><dt>下次排程</dt><dd>"+e.next+"</dd></dl>"+
+    '<div class="act">'+
+      '<button type="button" id="togPow" class="'+(e.on?"on":"")+'">'+(e.on?"■ 停止運轉":"▶ 啟動設備")+"</button>"+
+      '<button type="button" id="btnWO">＋ 建立工單</button></div>'+
+    '<div class="logline"><b>維運紀錄</b><br>'+e.log+
+      (visits.length ? "<br><br><b>今日巡檢</b><br>"+visits.join("<br>") : "<br><br>今日無排定巡檢點位。")+"</div>";
+  $("detId").textContent=e.id;
+  $("togPow").onclick=function(){
+    e.on=!e.on; e.load = e.on ? (e.load||55) : 0;
+    drawDetail(); drawRiser();
+  };
+  $("btnWO").onclick=function(){
+    var box=document.querySelector(".logline");
+    box.innerHTML="<b>已建立工單 WO-"+e.id.replace(/[^0-9A-Z]/g,"")+"-0613</b><br>指派工務 陳大偉，預計 24 小時內到場；系統已同步發送通知至設施主管信箱。<br><br>"+box.innerHTML;
+  };
+}
+
+function select(id){
+  cur=id;
+  document.querySelectorAll("[data-eq]").forEach(function(n){
+    if(n.hasAttribute("aria-pressed")) n.setAttribute("aria-pressed", String(n.dataset.eq===id));
+  });
+  var e=EQ.find(function(x){return x.id===id;});
+  var sysBtn=document.querySelector('[data-sys="'+e.sys+'"]');
+  if(sysBtn && sysBtn.getAttribute("aria-expanded")==="false"){
+    sysBtn.setAttribute("aria-expanded","true");
+    document.querySelector('[data-kids="'+e.sys+'"]').classList.add("on");
+  }
+  drawDetail(); drawRiser(); drawString();
+}
+
+buildTree(); drawDetail(); drawRiser(); drawString();
+function tick(){ $("clk").textContent=new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"}); }
+tick(); setInterval(tick,20000);
+</script>
+</body>
+</html>

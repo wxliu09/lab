@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台灣 CCS 場址評估 WebGIS</title>
+<script>
+  // 主題：先於繪製套用（localStorage 偏好，否則依系統），避免閃白
+  (function () { let t = null; try { t = localStorage.getItem('ccs-theme'); } catch (e) { }
+    if (t !== 'dark' && t !== 'light') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = t; })();
+</script>
+<style>
+  /* ---------- 設計代幣（淺色） ---------- */
+  :root {
+    --bg: #eeede7; --surface: #fcfcfb; --surface-2: #f5f4ef; --surface-3: #ebe9e2;
+    --border: #e1dfd6; --border-strong: #c9c6bb;
+    --ink: #1a1a19; --ink-2: #55534e; --muted: #8a887f;
+    --blue: #2a78d6; --blue-soft: #e6eef9; --blue-ink: #1c5cab;
+    --orange: #eb6834; --orange-soft: #fdeee6; --orange-ink: #b34a1f;
+    --aqua: #1baf7a; --aqua-soft: #e3f6ee; --yellow: #eda100;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --good-soft: #e6f6e6; --good-edge: #b9e4b9; --good-ink: #0a6a0a;
+    --warn-soft: #fff3d6; --warn-edge: #f2d48a; --warn-ink: #8a5a00;
+    --bad-soft: #fbe3e3; --bad-edge: #f0b3b3; --bad-ink: #8f1f1f;
+    --sim-soft: #eceff3; --sim-edge: #d6dbe2;
+    --canvas-bg: #f3f2ec; --card-bg: rgba(252,252,251,0.96); --overlay-bg: rgba(252,252,251,0.85);
+    --swatch-border: rgba(0,0,0,0.22); --row-alt: #faf9f5; --res-row: #fff8e6; --knob: #fff;
+    --tip-bg: rgba(26,26,25,0.92); --tip-ink: #fff; --tip-edge: transparent;
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2355534e' stroke-width='1.5'/%3E%3C/svg%3E");
+    --font: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --r: 8px; --r-sm: 6px;
+    --shadow: 0 1px 2px rgba(20,18,10,0.06), 0 6px 18px rgba(20,18,10,0.08);
+    --shadow-sm: 0 1px 2px rgba(20,18,10,0.08);
+    --ctl-h: 28px;
+    color-scheme: light;
+  }
+  /* ---------- 設計代幣（深色） ---------- */
+  :root[data-theme="dark"] {
+    --bg: #121211; --surface: #1c1c1b; --surface-2: #232321; --surface-3: #2c2c2a;
+    --border: #2e2e2b; --border-strong: #474742;
+    --ink: #f2f1ec; --ink-2: #c3c2b7; --muted: #8f8d85;
+    --blue: #3987e5; --blue-soft: #1d2b40; --blue-ink: #86b4f0;
+    --orange: #d95926; --orange-soft: #3a2316; --orange-ink: #f0a07c;
+    --aqua: #199e70; --aqua-soft: #14302a;
+    --good-soft: #163220; --good-edge: #2d6a34; --good-ink: #7fd68a;
+    --warn-soft: #332a12; --warn-edge: #6b5518; --warn-ink: #f2c94c;
+    --bad-soft: #3a1a1a; --bad-edge: #7a2f2f; --bad-ink: #f28b8b;
+    --sim-soft: #26292e; --sim-edge: #3b4048;
+    --canvas-bg: #1a1a19; --card-bg: rgba(28,28,27,0.95); --overlay-bg: rgba(28,28,27,0.85);
+    --swatch-border: rgba(255,255,255,0.28); --row-alt: #1f1f1e; --res-row: #2c2718; --knob: #e9e8e2;
+    --tip-bg: rgba(44,44,42,0.97); --tip-ink: #f2f1ec; --tip-edge: #474742;
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c3c2b7' stroke-width='1.5'/%3E%3C/svg%3E");
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.45);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 13px/1.45 var(--font); color: var(--ink); background: var(--bg); overflow: hidden; accent-color: var(--blue); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { height: var(--ctl-h); display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 0 10px; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, box-shadow .12s; }
+  button:hover { background: var(--surface-2); border-color: var(--muted); }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button.primary:hover { background: var(--blue-ink); }
+  button.active { background: var(--orange); color: #fff; border-color: var(--orange); }
+  button.on { background: var(--blue-soft); border-color: var(--blue); color: var(--blue-ink); }
+  button.ghost { border-color: transparent; background: transparent; }
+  button.ghost:hover { background: var(--surface-3); }
+  button.icon { width: var(--ctl-h); padding: 0; justify-content: center; }
+  .ic { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  input[type=number] { width: 78px; height: 24px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); font-variant-numeric: tabular-nums; }
+  input[type=number]:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+  input[type=range] { width: 100%; margin: 0; height: 18px; }
+  select { height: var(--ctl-h); padding: 0 26px 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface) var(--select-arrow) no-repeat right 9px center; appearance: none; max-width: 100%; }
+  select:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+  a { color: var(--blue); }
+  code, pre { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size: 12px; }
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px; overflow: auto; white-space: pre; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; } ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- 頂列 ---------- */
+  .topbar { height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); position: relative; z-index: 20; }
+  .brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .brand .mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(160deg, #2a78d6, #1baf7a); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 12px; letter-spacing: .5px; }
+  .brand .t { font-weight: 700; font-size: 15px; line-height: 1.1; }
+  .brand .sub { display: block; font-weight: 400; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .site-switch { display: flex; align-items: center; gap: 8px; margin-left: 10px; padding: 3px 4px 3px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+  .site-switch .lab { font-size: 11px; color: var(--muted); }
+  .site-switch select { min-width: 260px; border-color: transparent; background-color: transparent; font-weight: 600; }
+  .site-switch select:hover { background-color: var(--surface); border-color: var(--border-strong); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; line-height: 16px; }
+  .badge.suitable { background: var(--good-soft); color: var(--good-ink); border-color: var(--good-edge); }
+  .badge.conditional { background: var(--warn-soft); color: var(--warn-ink); border-color: var(--warn-edge); }
+  .badge.unsuitable { background: var(--bad-soft); color: var(--bad-ink); border-color: var(--bad-edge); }
+  .badge.sim { background: var(--sim-soft); color: var(--ink-2); border-color: var(--sim-edge); }
+  .badge.crs { background: var(--surface-3); color: var(--ink-2); font-weight: 500; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
+  .toolbar { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+  .menu { position: relative; }
+  .menu > summary { list-style: none; cursor: pointer; }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > summary > button { pointer-events: none; }
+  .menu[open] > summary > button { background: var(--blue-soft); border-color: var(--blue); }
+  .menu .menu-body { position: absolute; right: 0; top: calc(100% + 6px); min-width: 210px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); padding: 6px; z-index: 30; display: flex; flex-direction: column; gap: 2px; }
+  .menu .menu-body button { width: 100%; justify-content: flex-start; border-color: transparent; background: transparent; height: 30px; }
+  .menu .menu-body button:hover { background: var(--surface-2); }
+  .menu .menu-body .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  #btnTheme .ic-sun { display: none; } :root[data-theme="dark"] #btnTheme .ic-sun { display: block; } :root[data-theme="dark"] #btnTheme .ic-moon { display: none; }
+
+  /* ---------- 版面 ---------- */
+  .layout { display: grid; grid-template-columns: minmax(340px, 29%) minmax(420px, 1fr) 470px; height: calc(100% - 52px); gap: 0; }
+  .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--surface); }
+  .pane:last-child { border-right: 0; }
+  .pane-head { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--border); background: var(--surface-2); height: 42px; }
+  .pane-head .title { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .pane-head .grow { flex: 1; min-width: 0; }
+  .pane-head .light { font-weight: 400; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-sm); overflow: hidden; background: var(--surface); }
+  .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--border); height: 26px; padding: 0 9px; }
+  .seg button:last-child { border-right: 0; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .switch input { appearance: none; width: 30px; height: 17px; border-radius: 999px; background: var(--border-strong); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+  .switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--knob); transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .switch input:checked { background: var(--blue); } .switch input:checked::after { left: 15px; }
+
+  /* ---------- 2D 圖台 ---------- */
+  .layer-pop { position: relative; }
+  .layer-pop > summary { list-style: none; }
+  .layer-pop > summary::-webkit-details-marker { display: none; }
+  .layer-pop > summary > button { pointer-events: none; }
+  .layer-pop[open] > summary > button { background: var(--blue-soft); border-color: var(--blue); }
+  .layer-pop .pop { position: absolute; left: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); padding: 8px 10px; z-index: 10; min-width: 190px; }
+  .layer-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 12px; }
+  .layer-toggles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+  .map-body { position: relative; flex: 1 1 55%; min-height: 200px; overflow: hidden; }
+  .map-canvas { position: absolute; inset: 0; cursor: grab; }
+  .map-status { padding: 0 10px; height: 24px; display: flex; align-items: center; font-size: 11px; color: var(--ink-2); border-top: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .site-list { flex: 0 0 auto; max-height: 40%; overflow: auto; border-top: 1px solid var(--border); }
+  .site-list table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .site-list th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; padding: 6px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-2); z-index: 1; }
+  .site-list td { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+  .site-list tr:hover td { background: var(--surface-2); }
+  .site-list tr.active td { background: var(--blue-soft); box-shadow: inset 3px 0 0 var(--blue); }
+  .sym { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 2px solid; }
+  .sym.saline { border-color: var(--blue); background: var(--blue); }
+  .sym.depleted { border-color: var(--orange); background: var(--orange); border-radius: 2px; transform: rotate(45deg); }
+  .sym.offshore { background: var(--surface); }
+
+  /* ---------- 3D 檢視 ---------- */
+  .view-body { position: relative; flex: 1; min-height: 200px; overflow: hidden; background: var(--canvas-bg); }
+  .view-body > canvas { width: 100% !important; height: 100% !important; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+  .legend { position: absolute; left: 12px; top: 12px; padding: 8px 10px; max-height: calc(100% - 96px); overflow: auto; width: 236px; font-size: 12px; z-index: 2; }
+  .legend h4 { margin: 0 0 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .legend h4 small { color: var(--muted); font-weight: 400; }
+  .legend .legend-btns { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+  .legend .legend-btns button { height: 22px; padding: 0 7px; font-size: 11px; }
+  .legend-row { display: grid; grid-template-columns: 16px 14px 1fr 52px; align-items: center; gap: 5px; padding: 3px 0; border-radius: 4px; }
+  .legend-row:hover { background: var(--surface-2); }
+  .legend-row .sw { width: 14px; height: 12px; border: 1px solid var(--swatch-border); border-radius: 3px; }
+  .legend-row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .legend-row .nm small { color: var(--muted); margin-left: 2px; }
+  .legend-row input[type=range] { width: 52px; height: 12px; }
+  .legend-row.res .nm { font-weight: 600; }
+  .view-controls { position: absolute; right: 12px; top: 12px; padding: 8px 10px; width: 232px; font-size: 12px; z-index: 2; max-height: calc(100% - 96px); overflow: auto; }
+  .view-controls h5 { margin: 0 0 4px; font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+  .view-controls .row { display: grid; grid-template-columns: 60px 1fr 44px; gap: 6px; align-items: center; margin: 2px 0; }
+  .view-controls .row span { color: var(--ink-2); }
+  .view-controls .row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-size: 11.5px; }
+  .view-controls .checks { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 6px; margin-top: 6px; }
+  .view-controls .checks label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; white-space: nowrap; }
+  .colorbar-card { position: absolute; left: 12px; bottom: 12px; padding: 7px 10px; display: flex; align-items: center; gap: 10px; z-index: 2; width: 340px; }
+  .colorbar-card .lab { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .colorbar-card select { height: 24px; width: 138px; flex: none; }
+  .colorbar-wrap { flex: 1; min-width: 100px; }
+  .colorbar { height: 9px; border-radius: 4px; border: 1px solid var(--border-strong); }
+  .colorbar-ticks { display: flex; justify-content: space-between; gap: 6px; font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: 2px; }
+  .colorbar-swatches { display: flex; gap: 2px; }
+  .colorbar-swatches i { flex: 1; height: 9px; border: 1px solid var(--swatch-border); border-radius: 2px; }
+  .hover-tip { position: absolute; pointer-events: none; background: var(--tip-bg); color: var(--tip-ink); border: 1px solid var(--tip-edge); padding: 6px 9px; border-radius: var(--r-sm); font-size: 12px; white-space: nowrap; z-index: 5; box-shadow: var(--shadow); }
+  .hover-tip b { color: #ffd27a; }
+  .view-hint { position: absolute; right: 12px; bottom: 14px; font-size: 11px; color: var(--muted); background: var(--overlay-bg); padding: 3px 8px; border-radius: 999px; z-index: 2; }
+  .mode-hint { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: var(--orange); color: #fff; padding: 5px 14px; border-radius: 999px; font-weight: 600; font-size: 12px; z-index: 3; box-shadow: var(--shadow); }
+
+  .info-card { position: absolute; right: 12px; bottom: 48px; width: 330px; max-height: 58%; overflow: auto; padding: 10px 12px; font-size: 12px; z-index: 4; }
+  .info-card h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .info-card h4 .grow { flex: 1; }
+  .info-card dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 8px; }
+  .info-card dt { color: var(--muted); white-space: nowrap; }
+  .info-card dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .info-card .btnrow button { height: 24px; font-size: 11px; padding: 0 8px; }
+  .info-card .col-row { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 6px; align-items: center; padding: 2px 0; font-size: 11px; border-bottom: 1px dashed var(--border); }
+  .info-card .col-row .sw { width: 10px; height: 10px; border: 1px solid var(--swatch-border); border-radius: 2px; }
+  .info-card .note { color: var(--ink-2); margin: 4px 0; }
+
+  .analysis { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: var(--surface); border-top: 1px solid var(--border-strong); z-index: 6; display: flex; flex-direction: column; box-shadow: 0 -6px 20px rgba(0,0,0,0.12); }
+  .analysis[hidden] { display: none; }
+  .an-head { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 38px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .an-head .tabs-inline { display: flex; gap: 2px; }
+  .an-head .tabs-inline button { border: 0; background: transparent; font-weight: 600; color: var(--ink-2); padding: 0 10px; height: 38px; border-bottom: 2px solid transparent; border-radius: 0; }
+  .an-head .tabs-inline button.active { color: var(--ink); border-bottom-color: var(--orange); }
+  .an-head .grow { flex: 1; }
+  .an-head label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+  .an-head select { height: 24px; }
+  .an-body { flex: 1; overflow: auto; padding: 10px 12px; position: relative; }
+  .an-pane { display: none; } .an-pane.active { display: block; }
+  .an-row { display: flex; gap: 16px; align-items: flex-start; }
+  .an-side { flex: 1; min-width: 240px; font-size: 12px; overflow: auto; }
+  .an-side table.data { font-size: 11px; white-space: nowrap; }
+  .an-meta { font-size: 11px; color: var(--muted); }
+  .sec-wrap { position: relative; }
+  .sec-tip { position: absolute; pointer-events: none; background: var(--tip-bg); color: var(--tip-ink); border: 1px solid var(--tip-edge); padding: 5px 8px; border-radius: var(--r-sm); font-size: 11px; white-space: nowrap; }
+
+  .timeline { display: flex; align-items: center; gap: 14px; padding: 0 14px; height: 56px; border-top: 1px solid var(--border); background: var(--surface-2); container-type: inline-size; }
+  .timeline .tl-track { overflow: hidden; }
+  @container (max-width: 820px) { .timeline .tl-scale span:nth-child(2) { display: none; } .timeline .kpi:nth-child(3) { display: none; } }
+  @container (max-width: 640px) { .timeline .kpi:nth-child(2) { display: none; } .timeline .tl-scale span:nth-child(3) { display: none; } }
+  .timeline #tlPlay { height: 32px; min-width: 76px; border-radius: 999px; font-weight: 600; }
+  .timeline .tl-year { font-size: 22px; font-weight: 700; line-height: 1; min-width: 60px; letter-spacing: -.5px; }
+  .timeline .tl-phase { font-size: 11px; color: var(--ink-2); margin-top: 3px; white-space: nowrap; }
+  .timeline .tl-phase.inj { color: var(--orange-ink); } .timeline .tl-phase.post { color: var(--blue-ink); }
+  .timeline .tl-track { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 120px; }
+  .timeline .tl-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .timeline .tl-kpi { display: flex; gap: 14px; }
+  .timeline .kpi { min-width: 64px; }
+  .timeline .kpi .k { font-size: 10px; color: var(--muted); white-space: nowrap; } .timeline .kpi .v { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- 右側面板 ---------- */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface-2); height: 42px; padding: 0 6px; gap: 2px; }
+  .tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; height: 42px; padding: 0 4px; font-weight: 600; color: var(--ink-2); border-bottom: 2px solid transparent; justify-content: center; }
+  .tabs button:hover { background: var(--surface-3); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--orange); background: var(--surface); }
+  .tab-body { flex: 1; overflow: auto; padding: 12px 14px 40px; display: none; background: var(--surface); }
+  .tab-body.active { display: block; }
+
+  .group { border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 10px; background: var(--surface); }
+  .group > summary { padding: 7px 12px; font-weight: 600; cursor: pointer; background: var(--surface-2); border-radius: var(--r); list-style: none; display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .group > summary::-webkit-details-marker { display: none; }
+  .group > summary::before { content: ''; width: 6px; height: 6px; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: rotate(-45deg); margin-right: 2px; transition: transform .15s; }
+  .group[open] > summary::before { transform: rotate(45deg); }
+  .group[open] > summary { border-bottom: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; }
+  .group .body { padding: 8px 12px 10px; }
+  .prow { display: grid; grid-template-columns: 1fr 84px; gap: 2px 8px; align-items: center; margin: 4px 0 8px; }
+  .prow .lbl { color: var(--ink-2); font-size: 12px; }
+  .prow .lbl small { color: var(--muted); }
+  .prow input[type=range] { grid-column: 1 / 3; }
+  .prow select { grid-column: 1 / 3; height: 26px; }
+  .hint { color: var(--muted); font-size: 11px; margin: 0 0 6px; }
+  .desc { font-size: 12px; color: var(--ink-2); margin-bottom: 10px; }
+  .desc b { color: var(--ink); }
+  .refs { font-size: 11px; color: var(--muted); }
+
+  .rating { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r); margin-bottom: 12px; border: 1px solid var(--border); }
+  .rating .icon { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; color: #fff; flex: none; }
+  .rating.suitable { background: var(--good-soft); border-color: var(--good-edge); } .rating.suitable .icon { background: var(--good); }
+  .rating.conditional { background: var(--warn-soft); border-color: var(--warn-edge); } .rating.conditional .icon { background: #d98f00; }
+  .rating.unsuitable { background: var(--bad-soft); border-color: var(--bad-edge); } .rating.unsuitable .icon { background: var(--critical); }
+  .rating .txt b { font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .tile { border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .tile .k { color: var(--muted); font-size: 11px; }
+  .tile .v { font-size: 20px; font-weight: 700; margin-top: 2px; letter-spacing: -.3px; }
+  .tile .v small { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+  .tile .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .tile.warn { border-color: var(--warn-edge); } .tile.warn .v { color: var(--warn-ink); }
+  .tile.bad { border-color: var(--bad-edge); } .tile.bad .v { color: var(--bad-ink); }
+  .tile.good { border-color: var(--good-edge); } .tile.good .v { color: var(--good-ink); }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+  table.data th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; padding: 5px 6px; border-bottom: 1px solid var(--border-strong); }
+  table.data td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.data tbody tr:nth-child(even) td { background: var(--row-alt); }
+  table.data tbody tr.res td { background: var(--res-row); }
+  table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.data input[type=number] { width: 58px; height: 22px; padding: 0 4px; }
+  table.data.strat td.nm { min-width: 150px; white-space: normal; }
+  table.data.strat td.nm small { font-size: 10.5px; }
+  table.data td .st { white-space: nowrap; }
+  .st { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+  .st.pass { color: var(--good-ink); } .st.warn { color: var(--warn-ink); } .st.fail { color: var(--bad-ink); }
+  .chart { position: relative; margin: 6px 0 14px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+  .chart-tip { position: absolute; background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 5px 8px; font-size: 11px; pointer-events: none; box-shadow: var(--shadow); z-index: 3; }
+  .chart-tip .sw { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; }
+  .chart-tip-key { color: var(--muted); margin-bottom: 2px; }
+  .chart-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .chart-head button { height: 22px; padding: 0 8px; font-size: 11px; }
+  .chart-table { max-height: 180px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 12px; }
+  .warn-list { background: var(--warn-soft); border: 1px solid var(--warn-edge); border-radius: var(--r); padding: 8px 12px; margin-bottom: 12px; font-size: 12px; }
+  .method { font-size: 12px; color: var(--ink-2); }
+  .method li { margin: 4px 0; }
+
+  textarea { width: 100%; min-height: 90px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 8px; background: var(--surface); }
+  input[type=file] { font-size: 12px; }
+  .msg { padding: 8px 10px; border-radius: var(--r-sm); font-size: 12px; margin: 8px 0; white-space: pre-wrap; }
+  .msg.err { background: var(--bad-soft); color: var(--bad-ink); } .msg.ok { background: var(--good-soft); color: var(--good-ink); }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .doc h4 { margin: 12px 0 4px; } .doc table { font-size: 11px; } .doc td, .doc th { padding: 3px 6px; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
+  .modal.open { display: flex; }
+  .modal .box { background: var(--surface); border-radius: 12px; width: min(900px, 92vw); max-height: 88vh; overflow: auto; padding: 18px 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .loading { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; background: var(--overlay-bg); font-weight: 600; color: var(--ink-2); z-index: 8; backdrop-filter: blur(1px); }
+  .loading::before { content: ''; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--border-strong); border-top-color: var(--blue); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #paneMap.collapsed { display: none; }
+</style>
+<script>
+  // 錯誤記錄：便於離線環境回報問題（顯示於 console 與隱藏的 #errlog）
+  window.__ccsErrors = [];
+  window.addEventListener("error", e => { window.__ccsErrors.push((e.message || "") + " @ " + (e.filename || "") + ":" + e.lineno); const el = document.getElementById("errlog"); if (el) el.textContent = window.__ccsErrors.join("\n"); });
+  window.addEventListener("unhandledrejection", e => { window.__ccsErrors.push("unhandledrejection: " + (e.reason && e.reason.message || e.reason)); });
+</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-layers" viewBox="0 0 16 16"><path d="M8 2l6 3-6 3-6-3 6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></symbol>
+  <symbol id="i-well" viewBox="0 0 16 16"><path d="M8 2v12"/><path d="M5 2h6"/><path d="M6 10h4M6 12h4"/></symbol>
+  <symbol id="i-log" viewBox="0 0 16 16"><path d="M3 2v12M3 4h5M3 7h8M3 10h4M3 13h6"/></symbol>
+  <symbol id="i-section" viewBox="0 0 16 16"><path d="M2 12L14 4"/><circle cx="2.5" cy="12" r="1.3"/><circle cx="13.5" cy="4" r="1.3"/><path d="M4 7c2 1 5 1 8 0"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 16 16"><path d="M8 2l6 3v6l-6 3-6-3V5l6-3z"/><path d="M2 5l6 3 6-3M8 8v6"/></symbol>
+  <symbol id="i-top" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M3 8h10M8 3v10"/></symbol>
+  <symbol id="i-north" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4"/></symbol>
+  <symbol id="i-east" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2v3h-3"/></symbol>
+  <symbol id="i-export" viewBox="0 0 16 16"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 12v2h10v-2"/></symbol>
+  <symbol id="i-help" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.7 1.7c-.6.3-.9.7-.9 1.3M8 12h.01"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 16 16"><path d="M8 14s4-4.2 4-7.5A4 4 0 0 0 4 6.5C4 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.4"/></symbol>
+  <symbol id="i-image" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/><circle cx="10.5" cy="6" r="1"/></symbol>
+  <symbol id="i-json" viewBox="0 0 16 16"><path d="M5 2c-2 0-2 1.5-2 3s0 3-1 3c1 0 1 1.5 1 3s0 3 2 3M11 2c2 0 2 1.5 2 3s0 3 1 3c-1 0-1 1.5-1 3s0 3-2 3"/></symbol>
+  <symbol id="i-report" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 6h4M6 9h4M6 12h2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="brand"><div class="mark">CCS</div><div><div class="t">台灣 CCS 場址評估 WebGIS</div><span class="sub">2D 圖台 × 3D 地質模型 × 封存評估</span></div></div>
+  <div class="site-switch">
+    <span class="lab">場址</span>
+    <select id="siteSelect" aria-label="場址"></select>
+    <span id="siteBadge" class="badge sim">模擬資料</span>
+  </div>
+  <div class="toolbar">
+    <button id="btnToggleMap" class="ghost" title="收合／展開 2D 圖台"><svg class="ic"><use href="#i-sidebar"/></svg><span id="btnToggleMapLabel">收合圖台</span></button>
+    <details class="menu">
+      <summary><button type="button"><svg class="ic"><use href="#i-export"/></svg>匯出</button></summary>
+      <div class="menu-body">
+        <button id="btnExport"><svg class="ic"><use href="#i-json"/></svg>場址 JSON（含目前參數）</button>
+        <button id="btnReport"><svg class="ic"><use href="#i-report"/></svg>評估結果 JSON + 時間序列 CSV</button>
+        <div class="sep"></div>
+        <button id="btnSnap3d"><svg class="ic"><use href="#i-image"/></svg>3D 檢視 PNG</button>
+        <button id="btnSnap2d"><svg class="ic"><use href="#i-image"/></svg>2D 圖台 PNG</button>
+      </div>
+    </details>
+    <button id="btnTheme" class="icon ghost" title="切換深色／淺色模式"><svg class="ic ic-moon"><use href="#i-moon"/></svg><svg class="ic ic-sun"><use href="#i-sun"/></svg></button>
+    <button id="btnHelp" class="icon ghost" title="資料格式說明"><svg class="ic"><use href="#i-help"/></svg></button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="pane" id="paneMap">
+    <div class="pane-head">
+      <span class="title">2D 圖台 <span class="badge crs">TWD97 TM2</span></span>
+      <details class="layer-pop">
+        <summary><button type="button"><svg class="ic"><use href="#i-layers"/></svg>圖層</button></summary>
+        <div class="pop"><div class="layer-toggles" id="mapLayers"></div></div>
+      </details>
+      <span class="grow"></span>
+      <label class="switch" title="2D 中心跟隨 3D 軌道目標點"><input type="checkbox" id="chkFollow">跟隨 3D</label>
+      <span class="seg"><button id="btnFit" title="全台範圍"><svg class="ic"><use href="#i-fit"/></svg>全台</button><button id="btnZoomSite" title="縮放至場址"><svg class="ic"><use href="#i-pin"/></svg>場址</button></span>
+    </div>
+    <div class="map-body" id="map"></div>
+    <div class="map-status" id="mapStatus">—</div>
+    <div class="site-list" id="siteList"></div>
+  </section>
+
+  <section class="pane" id="pane3d">
+    <div class="pane-head">
+      <span class="title">3D 地質模型</span><span class="light grow" id="modelTitle"></span>
+      <span class="seg" title="取點工具">
+        <button id="btnWellMode" title="在 2D 圖台模型範圍內或 3D 模型上點選以移動注入井"><svg class="ic"><use href="#i-well"/></svg>井位</button>
+        <button id="btnLogMode" title="點一點產生該處合成井柱"><svg class="ic"><use href="#i-log"/></svg>井柱</button>
+        <button id="btnSectionMode" title="點兩點拉出 A–A′ 地質剖面"><svg class="ic"><use href="#i-section"/></svg>剖面</button>
+      </span>
+      <button id="btnAnalysis" title="開啟／關閉分析面板"><svg class="ic"><use href="#i-panel"/></svg>分析面板</button>
+      <span class="seg" title="視角">
+        <button data-view="iso" title="立體視角"><svg class="ic"><use href="#i-cube"/></svg></button>
+        <button data-view="top" title="俯視"><svg class="ic"><use href="#i-top"/></svg></button>
+        <button data-view="north" title="向北看"><svg class="ic"><use href="#i-north"/></svg>北</button>
+        <button data-view="east" title="向東看"><svg class="ic"><use href="#i-east"/></svg>東</button>
+        <button id="btnRotate" title="自動環繞"><svg class="ic"><use href="#i-rotate"/></svg></button>
+      </span>
+    </div>
+    <div class="view-body" id="view3d">
+      <div class="legend card" id="legend"></div>
+      <div class="view-controls card" id="viewControls">
+        <h5>檢視設定</h5>
+        <div class="row"><span>垂直放大</span><input type="range" id="ve" min="1" max="4" step="0.1" value="1.5"><output id="veOut">1.5×</output></div>
+        <div class="row"><span>剖切 E–W</span><input type="range" id="cutX" min="10" max="100" step="1" value="65"><output id="cutXOut">65%</output></div>
+        <div class="row"><span>剖切 N–S</span><input type="range" id="cutY" min="10" max="100" step="1" value="65"><output id="cutYOut">65%</output></div>
+        <div class="row"><span>層間分離</span><input type="range" id="explode" min="0" max="800" step="20" value="0"><output id="explodeOut">0 m</output></div>
+        <h5 style="margin-top:8px">顯示物件</h5>
+        <div class="checks">
+          <label><input type="checkbox" id="chkFaults" checked>斷層面</label>
+          <label><input type="checkbox" id="chkWater" checked>海面</label>
+          <label><input type="checkbox" id="chkPlume" checked>羽流</label>
+          <label><input type="checkbox" id="chkWells" checked>井</label>
+          <label><input type="checkbox" id="chkMonitors" checked>監測站</label>
+          <label><input type="checkbox" id="chkVectors" checked>圖徵</label>
+        </div>
+      </div>
+      <div class="colorbar-card card">
+        <span class="lab">屬性著色</span>
+        <select id="colorMode" title="屬性場為統計實現，非量測值"></select>
+        <div class="colorbar-wrap">
+          <div id="colorbar" class="colorbar" hidden></div>
+          <div id="colorbarSwatches" class="colorbar-swatches"></div>
+          <div id="colorbarTicks" class="colorbar-ticks"></div>
+        </div>
+      </div>
+      <div class="hover-tip" id="tip3d" hidden></div>
+      <div class="mode-hint" id="modeHint" hidden></div>
+      <div class="info-card card" id="infoCard" hidden></div>
+      <div class="view-hint">左鍵旋轉・右鍵/Shift 平移・滾輪縮放・點選物件顯示屬性</div>
+      <section class="analysis" id="analysis" hidden>
+        <header class="an-head">
+          <div class="tabs-inline"><button data-atab="log" class="active">合成井柱</button><button data-atab="section">地質剖面</button></div>
+          <span class="grow"></span>
+          <span id="anSectionCtl" hidden><label>屬性 <select id="secMode"></select></label>　<label><input type="checkbox" id="secFollow" checked>跟隨 3D 著色</label>　<span id="secMeta" class="an-meta"></span></span>
+          <button id="anClose" class="icon ghost" title="關閉">✕</button>
+        </header>
+        <div class="an-body">
+          <div id="anLog" class="an-pane active"><div class="an-row"><canvas id="logCanvas"></canvas><div id="logSide" class="an-side"></div></div></div>
+          <div id="anSection" class="an-pane"><div class="sec-wrap"><canvas id="secCanvas"></canvas><div id="secTip" class="sec-tip" hidden></div></div></div>
+        </div>
+      </section>
+      <div class="loading" id="loading">建立地質模型…</div>
+    </div>
+    <footer class="timeline">
+      <button id="tlPlay">▶ 播放</button>
+      <div><div class="tl-year" id="tlYear">—</div><div class="tl-phase" id="tlPhase">—</div></div>
+      <div class="tl-track">
+        <input type="range" id="tlSlider" min="0" max="130" step="1" value="30">
+        <div class="tl-scale"><span id="tlStart">開始注入</span><span id="tlStop">停止注入</span><span id="tlEnd">模擬結束</span></div>
+      </div>
+      <div class="tl-kpi">
+        <div class="kpi"><div class="k">累積注入</div><div class="v" id="kpiCum">—</div></div>
+        <div class="kpi"><div class="k">羽流半徑</div><div class="v" id="kpiRadius">—</div></div>
+        <div class="kpi"><div class="k">停注後運移</div><div class="v" id="kpiDrift">—</div></div>
+        <div class="kpi"><div class="k">井壓力增量</div><div class="v" id="kpiDp">—</div></div>
+      </div>
+    </footer>
+  </section>
+
+  <aside class="pane">
+    <nav class="tabs">
+      <button data-tab="params" class="active">參數</button>
+      <button data-tab="results">評估結果</button>
+      <button data-tab="strat">地層</button>
+      <button data-tab="data">資料</button>
+    </nav>
+    <div class="tab-body active" id="tab-params"></div>
+    <div class="tab-body" id="tab-results"></div>
+    <div class="tab-body" id="tab-strat"></div>
+    <div class="tab-body" id="tab-data"></div>
+  </aside>
+</main>
+
+<pre id="errlog" hidden></pre>
+<div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="data/taiwan-basemap.js"></script>
+<script src="data/taiwan-geology.js"></script>
+<script src="data/sites.js"></script>
+<script src="src/geo.js"></script>
+<script src="src/co2props.js"></script>
+<script src="src/geomodel.js"></script>
+<script src="src/petro.js"></script>
+<script src="src/assess.js"></script>
+<script src="src/charts.js"></script>
+<script src="src/section.js"></script>
+<script src="src/welllog.js"></script>
+<script src="src/map2d.js"></script>
+<script src="src/view3d.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

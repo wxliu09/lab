@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  設計規格｜21 石墨儀表·製造監控（MIS）
+  ─ 風格定位：石墨深色工控儀表板，細線分割、資料密集、低飽和高對比
+  ─ 配色：石墨底 #1c1f24 / 卡片 #24282f / 分割線 #33383f / 紅 #ff5252 / 綠 #69f0ae / 黃 #ffd740 / 文字 #d7dce2
+  ─ 字體：'Roboto Mono' + 'Noto Sans TC'（數值用等寬）
+  ─ 版面：頂部工具列（返回+廠區選擇+時鐘）→ 六欄 KPI 儀表格 → 即時產量 SVG 折線圖 + OEE 圓環 → 產線狀態表（狀態燈號圓點）
+  ─ 動態：狀態燈呼吸閃爍；KPI 數值每 3 秒微幅跳動；折線圖即時右移推入新資料
+-->
+<title>智造通 MES｜產線即時監控戰情室</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1c1f24;color:#d7dce2;font-family:'Noto Sans TC','Roboto Mono',sans-serif;min-height:100vh}
+  /* 頂部工具列 */
+  .topbar{display:flex;align-items:center;gap:16px;padding:12px 22px;background:#17191d;border-bottom:1px solid #33383f}
+  .back{color:#d7dce2;text-decoration:none;font-size:13px;border:1px solid #33383f;padding:7px 14px;transition:.2s;letter-spacing:1px}
+  .back:hover{border-color:#69f0ae;color:#69f0ae}
+  .topbar h1{font-size:16px;font-weight:500;letter-spacing:2px}
+  .topbar h1 span{color:#69f0ae;font-family:'Roboto Mono',monospace}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:18px;font-family:'Roboto Mono',monospace;font-size:13px;color:#8a929c}
+  #clock{color:#d7dce2}
+  select{background:#24282f;color:#d7dce2;border:1px solid #33383f;padding:6px 10px;font-family:inherit;font-size:13px}
+  .wrap{padding:18px 22px 40px;max-width:1400px;margin:0 auto}
+  /* 六欄 KPI 格 */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid #33383f;background:#33383f;gap:1px}
+  @media(max-width:960px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:600px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:#24282f;padding:16px 18px;position:relative}
+  .kpi .lab{font-size:11.5px;color:#8a929c;letter-spacing:2px;display:flex;align-items:center;gap:7px}
+  .kpi .val{font-family:'Roboto Mono',monospace;font-size:30px;margin-top:8px;font-weight:600}
+  .kpi .val small{font-size:13px;color:#8a929c;font-weight:400}
+  .kpi .trend{font-size:11px;margin-top:6px;font-family:'Roboto Mono',monospace}
+  .up{color:#69f0ae}.dn{color:#ff5252}.flat{color:#ffd740}
+  /* 燈號 */
+  .lamp{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .lamp.g{background:#69f0ae;box-shadow:0 0 8px #69f0ae;animation:blink 2.4s infinite}
+  .lamp.y{background:#ffd740;box-shadow:0 0 8px #ffd740;animation:blink 1.4s infinite}
+  .lamp.r{background:#ff5252;box-shadow:0 0 8px #ff5252;animation:blink .7s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+  /* 中間圖表列 */
+  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .panel{background:#24282f;border:1px solid #33383f}
+  .panel-h{padding:12px 16px;border-bottom:1px solid #33383f;font-size:12.5px;letter-spacing:2px;color:#8a929c;display:flex;justify-content:space-between}
+  .panel-h b{color:#d7dce2;font-weight:500}
+  .panel-b{padding:16px}
+  .mono{font-family:'Roboto Mono',monospace}
+  /* OEE 圓環 */
+  .oee{display:flex;align-items:center;gap:20px}
+  .oee svg{flex:none}
+  .oee-leg{font-size:12.5px;line-height:2.2;color:#8a929c}
+  .oee-leg b{color:#d7dce2;font-family:'Roboto Mono',monospace}
+  .sw{display:inline-block;width:10px;height:10px;margin-right:8px}
+  /* 狀態表 */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-size:11px;letter-spacing:2px;color:#8a929c;text-align:left;padding:10px 14px;border-bottom:1px solid #33383f;font-weight:400}
+  td{padding:11px 14px;border-bottom:1px solid #2b3037;font-family:'Roboto Mono',monospace}
+  td.zh{font-family:'Noto Sans TC',sans-serif}
+  tr:hover td{background:#282c33}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:3px 12px;border:1px solid;border-radius:2px;font-family:'Noto Sans TC'}
+  .b-g{color:#69f0ae;border-color:rgba(105,240,174,.4);background:rgba(105,240,174,.08)}
+  .b-y{color:#ffd740;border-color:rgba(255,215,64,.4);background:rgba(255,215,64,.08)}
+  .b-r{color:#ff5252;border-color:rgba(255,82,82,.4);background:rgba(255,82,82,.08)}
+  .foot{margin-top:14px;font-size:11px;color:#5c636c;letter-spacing:1px;display:flex;justify-content:space-between;font-family:'Roboto Mono',monospace}
+  /* 子頁導覽 */
+  .subnav{display:flex;gap:2px;background:#17191d;border-bottom:1px solid #33383f;padding:0 22px}
+  .subnav a{color:#8a929c;text-decoration:none;font-size:13px;padding:10px 16px;letter-spacing:1px;border-bottom:2px solid transparent;transition:.2s}
+  .subnav a:hover{color:#d7dce2}
+  .subnav a.on{color:#69f0ae;border-bottom-color:#69f0ae}
+  .lnk{color:#69f0ae;text-decoration:none;font-family:'Roboto Mono',monospace}
+  .lnk:hover{text-decoration:underline}
+  .kpi a{text-decoration:none}
+  a.kpi{text-decoration:none;color:inherit}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a class="back" href="../../index.html">← 返回入口</a>
+    <h1>智造通 MES <span>// LINE-MONITOR v4.2</span></h1>
+    <div class="top-right">
+      <select id="fab">
+        <option>台中一廠 · 全產線</option>
+        <option>台中二廠 · SMT 區</option>
+        <option>台南廠 · 組裝區</option>
+      </select>
+      <span>SHIFT 夜班</span>
+      <span id="clock">--:--:--</span>
+    </div>
+  </div>
+  <div class="subnav">
+    <a href="index.html" class="on">主控台</a>
+    <a href="lines.html">產線清單</a>
+    <a href="workorder.html">維修工單</a>
+    <a href="report.html">生產報表</a>
+    <a href="settings.html">警報設定</a>
+  </div>
+
+  <div class="wrap">
+    <!-- 六欄 KPI -->
+    <div class="kpis">
+      <div class="kpi"><div class="lab"><span class="lamp g"></span>整體 OEE</div><div class="val" id="k1">86.4<small>%</small></div><div class="trend up">▲ +1.2 vs 昨日</div></div>
+      <div class="kpi"><div class="lab"><span class="lamp g"></span>一次良率 FPY</div><div class="val" id="k2">97.8<small>%</small></div><div class="trend up">▲ +0.4%</div></div>
+      <div class="kpi"><div class="lab"><span class="lamp y"></span>即時產量 UPH</div><div class="val" id="k3">1,842<small> pcs/hr</small></div><div class="trend flat">▬ 目標 1,900</div></div>
+      <div class="kpi"><div class="lab"><span class="lamp g"></span>當班累計</div><div class="val" id="k4">22,104<small> pcs</small></div><div class="trend up">▲ 達成 92%</div></div>
+      <a class="kpi" href="line-detail.html" style="display:block"><div class="lab"><span class="lamp r"></span>停機事件</div><div class="val dn" id="k5">3<small> 件</small></div><div class="trend dn">▼ L4 待修復 → 查看</div></a>
+      <div class="kpi"><div class="lab"><span class="lamp y"></span>能耗</div><div class="val" id="k6">412<small> kWh</small></div><div class="trend flat">▬ 區間內</div></div>
+    </div>
+
+    <!-- 圖表列 -->
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-h"><b>即時產量趨勢 · 近 60 分鐘</b><span class="mono">UNIT: pcs/5min</span></div>
+        <div class="panel-b">
+          <svg id="chart" viewBox="0 0 640 220" width="100%" preserveAspectRatio="none">
+            <g id="grid"></g>
+            <polyline id="target" fill="none" stroke="#ffd740" stroke-width="1" stroke-dasharray="5 5" opacity=".6"/>
+            <polygon id="area" fill="rgba(105,240,174,.08)" stroke="none"/>
+            <polyline id="line" fill="none" stroke="#69f0ae" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><b>OEE 構成</b><span class="mono">A·P·Q</span></div>
+        <div class="panel-b oee">
+          <svg width="150" height="150" viewBox="0 0 150 150">
+            <circle cx="75" cy="75" r="62" fill="none" stroke="#2b3037" stroke-width="14"/>
+            <circle id="oeeRing" cx="75" cy="75" r="62" fill="none" stroke="#69f0ae" stroke-width="14"
+              stroke-linecap="butt" transform="rotate(-90 75 75)" stroke-dasharray="0 389.6"
+              style="transition:stroke-dasharray 1s"/>
+            <text x="75" y="72" text-anchor="middle" fill="#d7dce2" font-family="Roboto Mono" font-size="24" font-weight="600" id="oeeTxt">0%</text>
+            <text x="75" y="92" text-anchor="middle" fill="#8a929c" font-size="10">OEE</text>
+          </svg>
+          <div class="oee-leg">
+            <div><span class="sw" style="background:#69f0ae"></span>可用率 A <b>91.2%</b></div>
+            <div><span class="sw" style="background:#ffd740"></span>性能率 P <b>96.8%</b></div>
+            <div><span class="sw" style="background:#d7dce2"></span>品質率 Q <b>97.8%</b></div>
+            <div style="margin-top:6px;color:#5c636c">更新：每 5 分鐘</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 產線狀態表 -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-h"><b>產線狀態總表</b><span class="mono" id="upd">LAST UPDATE —</span></div>
+      <div style="overflow-x:auto">
+      <table>
+        <tr><th>產線</th><th>機種</th><th>狀態</th><th>UPH</th><th>良率</th><th>開動時間</th><th>異常說明</th></tr>
+        <tr><td>L1</td><td class="zh">主機板 A 型</td><td><span class="badge b-g"><span class="lamp g"></span>運轉中</span></td><td>486</td><td>98.2%</td><td>07:42:13</td><td class="zh" style="color:#5c636c">—</td></tr>
+        <tr><td>L2</td><td class="zh">主機板 A 型</td><td><span class="badge b-g"><span class="lamp g"></span>運轉中</span></td><td>471</td><td>97.9%</td><td>07:42:13</td><td class="zh" style="color:#5c636c">—</td></tr>
+        <tr><td>L3</td><td class="zh">電源模組 P2</td><td><span class="badge b-y"><span class="lamp y"></span>換線中</span></td><td>0</td><td>—</td><td>00:18:40</td><td class="zh">P2 → P3 切換，預計 25 分</td></tr>
+        <tr><td><a class="lnk" href="line-detail.html">L4</a></td><td class="zh">電源模組 P2</td><td><span class="badge b-r"><span class="lamp r"></span>停機</span></td><td>0</td><td>96.1%</td><td>00:03:57</td><td class="zh" style="color:#ff5252">迴焊爐 溫區 3 超溫警報 <a class="lnk" href="workorder.html" style="font-size:12px">→ 建維修單</a></td></tr>
+        <tr><td>L5</td><td class="zh">整機組裝 Z1</td><td><span class="badge b-g"><span class="lamp g"></span>運轉中</span></td><td>522</td><td>98.6%</td><td>07:42:13</td><td class="zh" style="color:#5c636c">—</td></tr>
+        <tr><td>L6</td><td class="zh">整機組裝 Z1</td><td><span class="badge b-y"><span class="lamp y"></span>待料</span></td><td>0</td><td>98.0%</td><td>00:11:02</td><td class="zh">料架補給中（連接器 J-220）</td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="foot"><span>MES-NODE: TC-01 · OPC-UA LINKED</span><span>© 智造通製造執行系統</span></div>
+  </div>
+
+<script>
+  // 時鐘
+  function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('zh-TW',{hour12:false});}
+  tick();setInterval(tick,1000);
+
+  // 折線圖
+  const N=60,W=640,H=220,pad=8;
+  let data=Array.from({length:N},(_,i)=>150+Math.sin(i/5)*40+Math.random()*30);
+  const grid=document.getElementById('grid');
+  for(let i=1;i<5;i++){
+    const y=H/5*i;
+    grid.innerHTML+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#2b3037" stroke-width="1"/>`;
+  }
+  const maxV=260;
+  function pts(arr){return arr.map((v,i)=>`${(i/(N-1))*W},${H-pad-(v/maxV)*(H-2*pad)}`).join(' ');}
+  function render(){
+    document.getElementById('line').setAttribute('points',pts(data));
+    document.getElementById('area').setAttribute('points',`0,${H} ${pts(data)} ${W},${H}`);
+    document.getElementById('target').setAttribute('points',`0,${H-pad-(200/maxV)*(H-2*pad)} ${W},${H-pad-(200/maxV)*(H-2*pad)}`);
+  }
+  render();
+  setInterval(()=>{data.shift();data.push(150+Math.sin(Date.now()/30000)*40+Math.random()*30);render();},2000);
+
+  // OEE 環
+  const oee=86.4,C=2*Math.PI*62;
+  setTimeout(()=>{
+    document.getElementById('oeeRing').setAttribute('stroke-dasharray',`${C*oee/100} ${C}`);
+    document.getElementById('oeeTxt').textContent=oee+'%';
+  },300);
+
+  // KPI 微幅跳動
+  setInterval(()=>{
+    const r=(b,a)=>(b+(Math.random()-.5)*a);
+    document.getElementById('k1').innerHTML=r(86.4,.6).toFixed(1)+'<small>%</small>';
+    document.getElementById('k2').innerHTML=r(97.8,.2).toFixed(1)+'<small>%</small>';
+    document.getElementById('k3').innerHTML=Math.round(r(1842,36)).toLocaleString()+'<small> pcs/hr</small>';
+    const cum=parseInt(document.getElementById('k4').textContent.replace(/,/g,''))+Math.floor(Math.random()*40);
+    document.getElementById('k4').innerHTML=cum.toLocaleString()+'<small> pcs</small>';
+    document.getElementById('k6').innerHTML=Math.round(r(412,4))+'<small> kWh</small>';
+    document.getElementById('upd').textContent='LAST UPDATE '+new Date().toLocaleTimeString('zh-TW',{hour12:false});
+  },3000);
+</script>
+</body>
+</html>

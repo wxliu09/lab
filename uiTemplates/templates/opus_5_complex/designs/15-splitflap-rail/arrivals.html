@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>到站時刻表 ARRIVALS · CENTRAL STATION</title>
+<style>
+:root{
+  --board:#0b0b0c;--slat:#17181a;--slat2:#1f2124;--amber:#ffb000;--amber-dim:#8a5f00;
+  --green:#3ddc6b;--red:#ff4a4a;--blue:#4aa3ff;--orange:#ff8a3d;--edge:#000;--mute:#6d6a60;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#050506;color:var(--amber);min-height:100vh;
+  font-family:"DIN Alternate","Helvetica Neue",Arial,"Noto Sans TC","Microsoft JhengHei",sans-serif;
+  overflow-x:hidden;font-variant-numeric:tabular-nums}
+body::before{content:"";position:fixed;inset:0;z-index:0;
+  background:radial-gradient(90% 60% at 50% 0%,rgba(255,176,0,.10),transparent 65%)}
+
+.home{position:fixed;left:16px;bottom:16px;z-index:70;text-decoration:none;color:#050506;
+  background:var(--amber);padding:11px 20px;font-size:12px;letter-spacing:.22em;font-weight:bold;
+  border-radius:2px;box-shadow:0 0 24px rgba(255,176,0,.4);transition:.2s}
+.home:hover{background:#fff;box-shadow:0 0 34px rgba(255,255,255,.5)}
+.subnav{position:fixed;right:16px;bottom:16px;z-index:70;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.subnav a{text-decoration:none;color:var(--amber);background:var(--amber-dim);
+  padding:10px 16px;font-size:11px;letter-spacing:.18em;font-weight:bold;border-radius:2px;
+  border:1px solid var(--amber-dim);transition:.2s}
+.subnav a:hover{background:var(--amber);color:#050506}
+.subnav a.act{background:var(--green);color:#050506;border-color:var(--green)}
+a:focus-visible,button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+
+.hall{position:relative;z-index:5;max-width:1300px;margin:0 auto;padding:34px 18px 110px}
+
+/* ---------- station header ---------- */
+.stn{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;margin-bottom:22px}
+.stn h1{font-size:clamp(22px,4vw,40px);letter-spacing:.28em;color:#e9e4d8;font-weight:600}
+.stn h1 small{display:block;font-size:11px;letter-spacing:.5em;color:#7a7468;margin-top:10px}
+.bigclock{font-family:"Consolas",monospace;font-size:clamp(30px,6vw,58px);letter-spacing:.06em;
+  color:var(--amber);text-shadow:0 0 22px rgba(255,176,0,.55)}
+.bigclock small{display:block;text-align:right;font-size:10px;letter-spacing:.34em;color:#7a7468;text-shadow:none}
+
+/* ---------- filter bar ---------- */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.filters .lb{font-size:10px;letter-spacing:.26em;color:var(--mute);margin-right:6px}
+.fbtn{font:inherit;font-weight:bold;cursor:pointer;background:#111113;color:var(--mute);
+  border:1px solid #2a2a2d;border-radius:2px;padding:9px 15px;font-size:11px;letter-spacing:.18em;transition:.2s}
+.fbtn:hover{border-color:var(--amber);color:var(--amber)}
+.fbtn[aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:#050506}
+.fcount{margin-left:auto;font-size:11px;letter-spacing:.2em;color:#7a7468}
+.fcount b{color:var(--amber);font-weight:bold}
+
+/* ---------- platform occupancy chart ---------- */
+.panelbox{background:linear-gradient(180deg,#141416,#0a0a0b);border:2px solid #2a2a2d;border-radius:6px;
+  box-shadow:0 30px 70px rgba(0,0,0,.8),inset 0 0 60px rgba(0,0,0,.9)}
+.ptitle{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;
+  padding:15px 18px;border-bottom:1px solid #232326}
+.ptitle h2{font-size:13px;letter-spacing:.28em;color:#e9e4d8;font-weight:600}
+.ptitle span{font-size:10px;letter-spacing:.24em;color:var(--mute)}
+.chartwrap{overflow-x:auto;padding:16px 18px 20px}
+.chartinner{min-width:1080px}
+.axis{position:relative;height:22px;margin-left:78px;border-bottom:1px solid #2a2a2d}
+.axis i{position:absolute;top:0;bottom:0;border-left:1px solid #232326;font-style:normal;
+  font-size:9.5px;letter-spacing:.12em;color:var(--mute);padding-left:5px;font-family:"Consolas",monospace}
+.lane{display:grid;grid-template-columns:78px 1fr;align-items:center;border-bottom:1px solid #17171a}
+.lane:last-child{border-bottom:0}
+.pnum{background:#0d47a1;color:#fff;font-weight:bold;text-align:center;padding:6px 0;border-radius:2px;
+  font-size:14px;letter-spacing:.08em;margin:7px 10px 7px 0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.2)}
+.track{position:relative;height:34px;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 12.5%)}
+.blk{position:absolute;top:5px;bottom:5px;min-width:26px;border:0;padding:0;cursor:pointer;
+  border-radius:2px;font:inherit;font-weight:bold;font-size:10px;letter-spacing:.06em;color:#050506;
+  font-family:"Consolas","Courier New",monospace;overflow:hidden;white-space:nowrap;
+  transform-origin:left center;animation:grow .7s cubic-bezier(.2,.8,.2,1) both;transition:filter .2s,box-shadow .2s}
+@keyframes grow{from{transform:scaleX(0)}}
+.blk:hover{filter:brightness(1.25);box-shadow:0 0 16px rgba(255,255,255,.35)}
+.blk.sel{box-shadow:0 0 0 2px #fff,0 0 20px rgba(255,255,255,.5)}
+.blk.off{opacity:.16;pointer-events:none}
+.blk .lt{position:absolute;left:4px;top:50%;transform:translateY(-50%)}
+.blk::after{content:"";position:absolute;left:0;right:0;top:0;height:50%;
+  background:linear-gradient(180deg,rgba(255,255,255,.28),transparent);pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:16px;padding:12px 18px 16px;border-top:1px solid #232326}
+.legend span{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.18em;color:var(--mute)}
+.legend i{width:16px;height:10px;border-radius:2px;display:block}
+
+/* ---------- detail readout ---------- */
+.detail{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0;margin-top:22px;
+  border:2px solid #2a2a2d;border-radius:6px;overflow:hidden;
+  background:linear-gradient(180deg,#141416,#0a0a0b);box-shadow:0 22px 50px rgba(0,0,0,.7)}
+.dleft{padding:20px 22px;border-right:1px solid #232326}
+.dright{padding:20px 22px}
+.dcap{font-size:10px;letter-spacing:.3em;color:var(--mute);margin-bottom:14px}
+.flap{display:inline-block;background:linear-gradient(180deg,var(--slat2) 0 49%,#101113 49% 51%,var(--slat) 51%);
+  border:1px solid #000;border-radius:2px;color:var(--amber);
+  font-family:"Consolas","Courier New",monospace;font-weight:bold;text-align:center;line-height:1;
+  padding:9px 0;min-width:1.05em;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 4px rgba(0,0,0,.6)}
+.grp{display:flex;gap:2px;flex-wrap:wrap}
+.grp.big .flap{font-size:clamp(18px,3vw,28px);padding:11px 2px;min-width:.92em}
+.grp.mid .flap{font-size:14px;padding:8px 1px;min-width:.88em}
+.dname{margin-top:16px;font-size:clamp(17px,2.6vw,24px);letter-spacing:.14em;color:#e9e4d8;font-weight:600}
+.dsub{margin-top:8px;font-size:11px;letter-spacing:.2em;color:var(--mute)}
+.dgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#232326;
+  border:1px solid #232326;border-radius:3px;overflow:hidden;margin-top:18px}
+.dgrid div{background:#0d0d0f;padding:12px 14px}
+.dgrid .k{font-size:9.5px;letter-spacing:.24em;color:var(--mute)}
+.dgrid .v{font-size:19px;margin-top:8px;color:#e9e4d8;letter-spacing:.05em;font-family:"Consolas",monospace}
+.dgrid .v em{font-style:normal;font-size:12px;color:var(--amber);margin-left:6px}
+.status{font-size:12px;letter-spacing:.16em;padding:7px 12px;border-radius:2px;text-align:center;
+  border:1px solid currentColor;font-weight:600;display:inline-block}
+.s-ontime{color:var(--green)}
+.s-arr{color:var(--amber);animation:pulse 1.2s ease-in-out infinite}
+.s-delay{color:var(--red)}
+@keyframes pulse{50%{opacity:.4}}
+.loadbar{height:12px;background:#17171a;border:1px solid #2a2a2d;border-radius:2px;overflow:hidden;margin-top:10px}
+.loadbar b{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--amber));
+  transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.consist{display:flex;gap:4px;margin-top:12px;flex-wrap:wrap}
+.car{width:26px;height:16px;border-radius:2px 2px 1px 1px;border:1px solid #2a2a2d;background:#17181a;position:relative}
+.car.pax{background:var(--amber-dim);border-color:var(--amber)}
+.car.eng{background:#0d47a1;border-color:#4aa3ff}
+.car.din{background:#1b4d2a;border-color:var(--green)}
+
+/* ---------- register ---------- */
+.reg{margin-top:22px;overflow-x:auto;border:2px solid #2a2a2d;border-radius:6px;
+  background:linear-gradient(180deg,#111113,#0a0a0b)}
+.reg table{width:100%;border-collapse:collapse;min-width:800px}
+.reg th{background:#0d0d0f;color:var(--mute);text-align:left;font-size:9.5px;letter-spacing:.24em;
+  padding:12px 14px;font-weight:bold;border-bottom:1px solid #2a2a2d;white-space:nowrap}
+.reg th.r,.reg td.r{text-align:right}
+.reg td{padding:11px 14px;border-bottom:1px solid #17171a;font-size:12.5px;color:#c9c3b4;
+  font-family:"Consolas",monospace;letter-spacing:.03em;white-space:nowrap}
+.reg tr:last-child td{border-bottom:0}
+.reg tbody tr{cursor:pointer;transition:background .15s}
+.reg tbody tr:hover td{background:rgba(255,176,0,.08)}
+.reg tbody tr.sel td{background:rgba(255,176,0,.16);color:#fff}
+.reg tbody tr.off{display:none}
+.reg td.tm{color:var(--amber);font-weight:bold}
+.reg .chip{font-size:9.5px;letter-spacing:.12em;padding:3px 7px;border-radius:2px;color:#050506;font-weight:bold}
+
+/* ---------- punctuality chart ---------- */
+.punct{margin-top:22px;border:2px solid #2a2a2d;border-radius:6px;overflow:hidden;
+  background:linear-gradient(180deg,#141416,#0a0a0b)}
+.punct .body{padding:18px}
+.punct svg{width:100%;height:auto;display:block;overflow:visible}
+.gl{stroke:#232326;stroke-width:1}
+.pline{fill:none;stroke:var(--amber);stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round;
+  stroke-dasharray:1400;stroke-dashoffset:1400;animation:draw 2.2s cubic-bezier(.3,.7,.3,1) .2s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.pfill{fill:rgba(255,176,0,.09)}
+.tk{font-size:9.5px;fill:#6d6a60;letter-spacing:.1em;font-family:"Consolas",monospace}
+.lowlbl{font-size:10px;fill:var(--red);letter-spacing:.1em;font-weight:bold}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:22px}
+.pan{border:1px solid #26262a;background:linear-gradient(180deg,#111113,#0a0a0b);padding:16px;border-radius:4px}
+.pan .k{font-size:10px;letter-spacing:.26em;color:var(--mute)}
+.pan .v{font-size:24px;margin-top:10px;color:#e9e4d8;letter-spacing:.06em;font-family:"Consolas",monospace}
+.pan .v em{font-style:normal;color:var(--amber);font-size:14px;margin-left:8px}
+.ftr{margin-top:30px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;
+  font-size:10px;letter-spacing:.3em;color:#4c4a44}
+
+@media(max-width:900px){
+  .detail{grid-template-columns:1fr}
+  .dleft{border-right:0;border-bottom:1px solid #232326}
+}
+@media(max-width:640px){
+  .hall{padding:22px 12px 130px}
+  .stn{gap:10px}
+  .fcount{margin-left:0;width:100%}
+  .dgrid{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+<nav class="subnav">
+  <a href="index.html">出發 DEP</a>
+  <a href="arrivals.html" class="act">到站 ARR</a>
+  <a href="route.html">路線 ROUTE</a>
+  <a href="services.html">服務 INFO</a>
+</nav>
+
+<div class="hall">
+  <div class="stn">
+    <h1>CENTRAL STATION<small>中 央 車 站 · 到 站 時 刻 表</small></h1>
+    <div class="bigclock"><small>CURRENT TIME</small><span id="clock">19:47:32</span></div>
+  </div>
+
+  <div class="filters">
+    <span class="lb">FILTER 車種</span>
+    <button class="fbtn" type="button" aria-pressed="true" data-t="ALL">全部 ALL</button>
+    <button class="fbtn" type="button" aria-pressed="false" data-t="HIGHSPD">HIGHSPD 高鐵</button>
+    <button class="fbtn" type="button" aria-pressed="false" data-t="EXPRESS">EXPRESS 特快</button>
+    <button class="fbtn" type="button" aria-pressed="false" data-t="LIMITED">LIMITED 自強</button>
+    <button class="fbtn" type="button" aria-pressed="false" data-t="LOCAL">LOCAL 區間</button>
+    <span class="fcount">顯示 <b id="shown">16</b> / 16 班次</span>
+  </div>
+
+  <section class="panelbox">
+    <div class="ptitle">
+      <h2>PLATFORM OCCUPANCY · 月台佔用圖</h2>
+      <span>19:00 — 23:00 · 點選色塊查看班次明細</span>
+    </div>
+    <div class="chartwrap">
+      <div class="chartinner">
+        <div class="axis" id="axis" aria-hidden="true"></div>
+        <div id="lanes"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#ff8a3d"></i>HIGHSPD 高鐵</span>
+      <span><i style="background:#ffb000"></i>EXPRESS 特快</span>
+      <span><i style="background:#3ddc6b"></i>LIMITED 自強</span>
+      <span><i style="background:#4aa3ff"></i>LOCAL 區間</span>
+      <span><i style="background:#3a3a3e"></i>色塊長度 = 月台停留時間</span>
+    </div>
+  </section>
+
+  <section class="detail" id="detail">
+    <div class="dleft">
+      <div class="dcap">▸ SELECTED SERVICE · 班次明細</div>
+      <div class="grp big" id="fTrain"></div>
+      <div class="dname" id="dName">HUALIEN 花蓮</div>
+      <div class="dsub" id="dSub">始發 花蓮 06:12 · 行駛 3 小時 22 分 · 停靠 9 站</div>
+      <div class="dcap" style="margin:18px 0 10px">▸ 到站 / 離站</div>
+      <div class="grp mid" id="fTime"></div>
+    </div>
+    <div class="dright">
+      <div class="dcap">▸ 即時狀態</div>
+      <div id="dStatus"><span class="status s-delay">DELAY 06</span></div>
+      <div class="dgrid">
+        <div><div class="k">PLATFORM 月台</div><div class="v" id="dPlat">4A</div></div>
+        <div><div class="k">TYPE 車種</div><div class="v" id="dType">EXPRESS</div></div>
+        <div><div class="k">STOP 停留</div><div class="v" id="dDur">12<em>min</em></div></div>
+        <div><div class="k">LOAD 載客率</div><div class="v" id="dLoadV">78<em>%</em></div></div>
+      </div>
+      <div class="loadbar"><b id="dLoadBar" style="width:78%"></b></div>
+      <div class="dcap" style="margin:18px 0 0">▸ CONSIST 編組（車頭 → 車尾）</div>
+      <div class="consist" id="dCars"></div>
+    </div>
+  </section>
+
+  <div class="reg">
+    <table>
+      <caption class="dcap" style="text-align:left;padding:14px 14px 0">▸ ARRIVALS REGISTER · 到站登記簿（點列同步上方明細）</caption>
+      <thead><tr>
+        <th>到站</th><th>離站</th><th>車次</th><th>始發站</th><th>車種</th>
+        <th>月台</th><th class="r">停留</th><th class="r">載客</th><th>狀態</th>
+      </tr></thead>
+      <tbody id="regBody"></tbody>
+    </table>
+  </div>
+
+  <section class="punct">
+    <div class="ptitle">
+      <h2>ON-TIME RATE · 24 小時準點率</h2>
+      <span>逐時 · 全站到站班次 · 日均 96.8%</span>
+    </div>
+    <div class="body">
+      <svg id="punctSvg" viewBox="0 0 760 220" role="img"
+           aria-label="中央車站 24 小時逐時準點率折線圖，最低值 93.4% 出現於 16:00，日均 96.8%"></svg>
+    </div>
+  </section>
+
+  <div class="strip">
+    <div class="pan"><div class="k">ARRIVALS TODAY</div><div class="v">206 <em>班次</em></div></div>
+    <div class="pan"><div class="k">ON-TIME RATE</div><div class="v">96.8 <em>%</em></div></div>
+    <div class="pan"><div class="k">AVG DELAY</div><div class="v">2.4 <em>min</em></div></div>
+    <div class="pan"><div class="k">PLATFORMS IN USE</div><div class="v">8 <em>/ 10</em></div></div>
+  </div>
+
+  <div class="ftr">
+    <span>CENTRAL STATION BOARD</span>
+    <span>Arrivals / Platform Occupancy Chart 月台佔用圖</span>
+    <span>DESIGN 15 / 40</span>
+  </div>
+</div>
+
+<script>
+/* ---------- 資料：19:00–23:00 到站班次 ---------- */
+/* [到站, 停留分, 車次, 始發站, 車種, 月台, 狀態, 誤點分, 載客%, 編組, 始發時刻, 行駛, 停靠站] */
+const ARR = [
+  ["19:05", 6,"5504","KEELUNG 基隆","LOCAL","5B","ontime",0,42,["eng","pax","pax","pax","pax"],"17:58","1 小時 07 分",14],
+  ["19:18", 9,"0317","TAICHUNG 臺中","LIMITED","1B","ontime",0,66,["eng","pax","pax","pax","din","pax","pax"],"17:02","2 小時 16 分",8],
+  ["19:34",12,"2275","HUALIEN 花蓮","EXPRESS","4A","delay",6,78,["eng","pax","pax","din","pax","pax","pax","pax"],"16:12","3 小時 22 分",9],
+  ["19:47",10,"1187","KAOHSIUNG 高雄","HIGHSPD","3A","arr",0,91,["eng","pax","pax","pax","pax","pax","pax","pax","pax","eng"],"18:12","1 小時 35 分",4],
+  ["20:02", 8,"0641","HSINCHU 新竹","LIMITED","1A","ontime",0,54,["eng","pax","pax","pax","pax","pax"],"18:44","1 小時 18 分",6],
+  ["20:16",14,"2409","TAITUNG 臺東","EXPRESS","2B","delay",11,83,["eng","pax","pax","din","pax","pax","pax","pax"],"15:30","4 小時 46 分",12],
+  ["20:29", 6,"5512","KEELUNG 基隆","LOCAL","5B","ontime",0,38,["eng","pax","pax","pax","pax"],"19:22","1 小時 07 分",14],
+  ["20:44",12,"1355","PINGTUNG 屏東","EXPRESS","3B","ontime",0,71,["eng","pax","pax","pax","din","pax","pax","pax"],"16:08","4 小時 36 分",11],
+  ["20:58", 9,"0320","TAICHUNG 臺中","LIMITED","1B","delay",4,62,["eng","pax","pax","pax","din","pax","pax"],"18:42","2 小時 16 分",8],
+  ["21:11",10,"1043","TAINAN 臺南","EXPRESS","2A","ontime",0,74,["eng","pax","pax","din","pax","pax","pax"],"17:26","3 小時 45 分",10],
+  ["21:26",10,"1190","KAOHSIUNG 高雄","HIGHSPD","3A","ontime",0,88,["eng","pax","pax","pax","pax","pax","pax","pax","pax","eng"],"19:51","1 小時 35 分",4],
+  ["21:38",12,"2280","HUALIEN 花蓮","EXPRESS","4A","ontime",0,69,["eng","pax","pax","din","pax","pax","pax","pax"],"18:16","3 小時 22 分",9],
+  ["21:52", 6,"5520","KEELUNG 基隆","LOCAL","5B","ontime",0,31,["eng","pax","pax","pax","pax"],"20:45","1 小時 07 分",14],
+  ["22:07", 8,"0645","HSINCHU 新竹","LIMITED","1A","delay",3,47,["eng","pax","pax","pax","pax","pax"],"20:49","1 小時 18 分",6],
+  ["22:20",14,"2412","TAITUNG 臺東","EXPRESS","2B","ontime",0,58,["eng","pax","pax","din","pax","pax","pax","pax"],"17:34","4 小時 46 分",12],
+  ["22:35",12,"1360","PINGTUNG 屏東","EXPRESS","3B","ontime",0,64,["eng","pax","pax","pax","din","pax","pax","pax"],"17:59","4 小時 36 分",11]
+];
+const PLATS = ["1A","1B","2A","2B","3A","3B","4A","5B"];
+const TYPECOLOR = {HIGHSPD:"#ff8a3d", EXPRESS:"#ffb000", LIMITED:"#3ddc6b", LOCAL:"#4aa3ff"};
+const START = 19 * 60, SPAN = 240;                       /* 19:00 起算，四小時窗 */
+const toMin = t => +t.slice(0,2) * 60 + +t.slice(3);
+const fmt = m => String(Math.floor(m/60) % 24).padStart(2,"0") + ":" + String(m % 60).padStart(2,"0");
+
+/* ---------- 時間軸 ---------- */
+const axis = document.getElementById("axis");
+for (let m = 0; m <= SPAN; m += 30) {
+  const i = document.createElement("i");
+  i.style.left = (m / SPAN * 100) + "%";
+  i.textContent = fmt(START + m);
+  axis.appendChild(i);
+}
+
+/* ---------- 月台泳道 ---------- */
+const lanes = document.getElementById("lanes");
+PLATS.forEach(p => {
+  const lane = document.createElement("div");
+  lane.className = "lane";
+  lane.innerHTML = '<div class="pnum">' + p + '</div><div class="track" data-p="' + p + '"></div>';
+  lanes.appendChild(lane);
+});
+
+ARR.forEach((r, idx) => {
+  const track = lanes.querySelector('.track[data-p="' + r[5] + '"]');
+  const s = toMin(r[0]) - START;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "blk";
+  b.dataset.i = idx;
+  b.dataset.type = r[4];
+  b.style.left = (s / SPAN * 100) + "%";
+  b.style.width = (r[1] / SPAN * 100) + "%";
+  b.style.background = TYPECOLOR[r[4]];
+  b.style.animationDelay = (idx * 45) + "ms";
+  b.setAttribute("aria-label", r[0] + " 抵達 " + r[3] + " " + r[2] + " 次，月台 " + r[5] + "，停留 " + r[1] + " 分");
+  b.innerHTML = '<span class="lt">' + r[2] + '</span>';
+  b.addEventListener("click", () => select(idx));
+  track.appendChild(b);
+});
+
+/* ---------- 登記簿 ---------- */
+const regBody = document.getElementById("regBody");
+const STATUSTXT = {ontime:"ON TIME", arr:"ARRIVING", delay:"DELAY"};
+regBody.innerHTML = ARR.map((r, i) => {
+  const dep = fmt(toMin(r[0]) + r[1]);
+  const st = r[6] === "delay" ? "DELAY " + String(r[7]).padStart(2,"0") : STATUSTXT[r[6]];
+  return '<tr data-i="' + i + '" data-type="' + r[4] + '">' +
+    '<td class="tm">' + r[0] + '</td><td>' + dep + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td>' +
+    '<td><span class="chip" style="background:' + TYPECOLOR[r[4]] + '">' + r[4] + '</span></td>' +
+    '<td>' + r[5] + '</td><td class="r">' + r[1] + ' min</td><td class="r">' + r[8] + '%</td>' +
+    '<td class="s-' + (r[6] === "arr" ? "arr" : r[6]) + '">' + st + '</td></tr>';
+}).join("");
+[...regBody.rows].forEach(tr => tr.addEventListener("click", () => select(+tr.dataset.i)));
+
+/* ---------- 翻牌字元 ---------- */
+function flaps(target, text) {
+  target.innerHTML = [...text.toUpperCase()]
+    .map(c => '<span class="flap">' + (c === " " ? "&nbsp;" : c) + "</span>").join("");
+}
+
+/* ---------- 選取 ---------- */
+let cur = -1;
+function select(i) {
+  cur = i;
+  const r = ARR[i];
+  document.querySelectorAll(".blk").forEach(b => b.classList.toggle("sel", +b.dataset.i === i));
+  [...regBody.rows].forEach(tr => tr.classList.toggle("sel", +tr.dataset.i === i));
+
+  flaps(document.getElementById("fTrain"), r[2]);
+  flaps(document.getElementById("fTime"), r[0] + " → " + fmt(toMin(r[0]) + r[1]));
+  document.getElementById("dName").textContent = r[3];
+  document.getElementById("dSub").textContent =
+    "始發 " + r[3].split(" ")[1] + " " + r[10] + " · 行駛 " + r[11] + " · 停靠 " + r[12] + " 站";
+  const st = r[6] === "delay" ? "DELAY " + String(r[7]).padStart(2,"0") : STATUSTXT[r[6]];
+  document.getElementById("dStatus").innerHTML =
+    '<span class="status s-' + (r[6] === "arr" ? "arr" : r[6]) + '">' + st + "</span>";
+  document.getElementById("dPlat").textContent = r[5];
+  document.getElementById("dType").textContent = r[4];
+  document.getElementById("dDur").innerHTML = r[1] + '<em>min</em>';
+  document.getElementById("dLoadV").innerHTML = r[8] + '<em>%</em>';
+  document.getElementById("dLoadBar").style.width = r[8] + "%";
+  document.getElementById("dCars").innerHTML =
+    r[9].map(c => '<span class="car ' + c + '"></span>').join("");
+}
+
+/* ---------- 車種篩選 ---------- */
+const fbtns = [...document.querySelectorAll(".fbtn")];
+const shown = document.getElementById("shown");
+fbtns.forEach(btn => btn.addEventListener("click", () => {
+  fbtns.forEach(o => o.setAttribute("aria-pressed", String(o === btn)));
+  const t = btn.dataset.t;
+  let n = 0;
+  ARR.forEach((r, i) => {
+    const on = t === "ALL" || r[4] === t;
+    if (on) n++;
+    document.querySelector('.blk[data-i="' + i + '"]').classList.toggle("off", !on);
+    regBody.querySelector('tr[data-i="' + i + '"]').classList.toggle("off", !on);
+  });
+  shown.textContent = n;
+  if (cur >= 0 && t !== "ALL" && ARR[cur][4] !== t) {
+    const first = ARR.findIndex(r => r[4] === t);
+    if (first >= 0) select(first);
+  }
+}));
+
+/* ---------- 24 小時準點率折線 ---------- */
+const RATE = [97.2,98.0,99.1,99.4,99.6,98.2,95.4,95.8,93.6,96.1,97.4,98.0,
+              97.6,96.8,96.2,95.0,93.4,94.6,94.0,95.8,96.9,97.8,98.4,98.9];
+(function drawPunct(){
+  const W = 690, H = 170, LO = 92, HI = 100;
+  const X = i => 40 + i * (W / 23);
+  const Y = v => 14 + (HI - v) / (HI - LO) * H;
+  let g = "";
+  [100, 98, 96, 94, 92].forEach(v => {
+    g += '<line class="gl" x1="40" y1="' + Y(v).toFixed(1) + '" x2="' + (40 + W) + '" y2="' + Y(v).toFixed(1) + '"' +
+         (v === 92 ? ' stroke="#3a3a3e"' : '') + '/>' +
+         '<text class="tk" x="32" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+  });
+  const pts = RATE.map((v,i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
+  g += '<path class="pfill" d="M' + pts.split(" ").join(" L") +
+       " L" + X(23).toFixed(1) + "," + Y(LO).toFixed(1) + " L" + X(0) + "," + Y(LO).toFixed(1) + ' Z"/>';
+  g += '<polyline class="pline" points="' + pts + '"/>';
+  RATE.forEach((v,i) => {
+    if (i % 2) return;
+    g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="3" fill="#ffb000"/>';
+  });
+  const lo = RATE.indexOf(Math.min(...RATE));
+  g += '<circle cx="' + X(lo).toFixed(1) + '" cy="' + Y(RATE[lo]).toFixed(1) + '" r="5" fill="#ff4a4a"/>' +
+       '<text class="lowlbl" x="' + X(lo).toFixed(1) + '" y="' + (Y(RATE[lo]) + 20).toFixed(1) +
+       '" text-anchor="middle">最低 93.4% · 16:00 尖峰</text>';
+  [0,4,8,12,16,20,23].forEach(i => {
+    g += '<text class="tk" x="' + X(i).toFixed(1) + '" y="205" text-anchor="middle">' +
+         String(i).padStart(2,"0") + ":00</text>";
+  });
+  document.getElementById("punctSvg").innerHTML = g;
+})();
+
+/* ---------- 時鐘 ---------- */
+const pad = n => String(n).padStart(2,"0");
+setInterval(() => {
+  const d = new Date();
+  document.getElementById("clock").textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}, 1000);
+
+select(3);
+</script>
+</body>
+</html>

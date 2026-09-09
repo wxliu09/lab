@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>36 · 航班到離顯示板 — AIRPORT OPS</title>
+<style>
+:root{
+  --n0:#0b1222;--n1:#111c33;--n2:#16243f;--edge:#22344f;
+  --txt:#dbe6f5;--dim:#7b91b0;
+  --gate:#4dd0e1;--dep:#7c9cff;--arr:#8bd67a;--dly:#ffb547;--cnc:#ff5c6c;--vip:#c792ea;
+  --flap:#080f1c;--flapedge:#1c2d47;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--n0);color:var(--txt);min-height:100vh;font-size:13px;
+  font-family:"Segoe UI","Roboto Condensed","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--gate);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:99;text-decoration:none;color:var(--n0);
+  background:var(--gate);padding:12px 22px;border-radius:6px;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;box-shadow:0 0 22px rgba(77,208,225,.45)}
+.home:hover{background:#fff}
+
+.subnav{display:flex;flex-wrap:wrap;gap:1px;background:var(--edge);border-bottom:2px solid var(--edge);
+  position:sticky;top:0;z-index:60}
+.subnav a{background:var(--n1);color:var(--dim);text-decoration:none;padding:11px 18px;font-size:11px;
+  letter-spacing:.14em;font-weight:600;transition:.16s}
+.subnav a:hover{background:var(--n2);color:var(--txt)}
+.subnav a[aria-current]{background:rgba(77,208,225,.16);color:var(--gate);
+  box-shadow:inset 0 -2px 0 var(--gate)}
+.subnav a.bk{background:var(--n2);color:var(--gate)}
+
+/* ---------- board header ---------- */
+.bhead{background:linear-gradient(180deg,#152342,#0e1a2f);border-bottom:2px solid var(--edge);
+  padding:16px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.bhead .p{width:40px;height:40px;border-radius:9px;background:linear-gradient(135deg,#4dd0e1,#2b7ea8);
+  display:grid;place-items:center;font-size:20px;color:#04121c}
+.bhead h1{font-size:16px;font-weight:700;letter-spacing:.02em}
+.bhead h1 small{display:block;font-size:9.5px;letter-spacing:.26em;color:var(--dim);font-weight:400;margin-top:3px}
+.bhead .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:10.5px;color:var(--dim)}
+.bhead .rt b{display:block;color:var(--txt);font-size:17px;font-weight:700;letter-spacing:.03em}
+.bhead .rt b.g{color:var(--arr)}.bhead .rt b.w{color:var(--dly)}.bhead .rt b.r{color:var(--cnc)}
+
+/* ---------- controls ---------- */
+.ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 20px;background:var(--n1);
+  border-bottom:1px solid var(--edge)}
+.seg{display:flex;background:var(--n2);border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+.seg button{appearance:none;border:0;background:transparent;font:inherit;font-weight:700;font-size:12px;
+  letter-spacing:.1em;color:var(--dim);padding:10px 20px;cursor:pointer;transition:.16s}
+.seg button:hover{color:var(--txt)}
+.seg button[aria-selected="true"]{background:rgba(77,208,225,.18);color:var(--gate)}
+.srch{position:relative}
+.srch input{background:var(--n2);border:1px solid var(--edge);border-radius:8px;color:var(--txt);
+  font:inherit;font-size:12.5px;padding:10px 14px 10px 32px;width:240px}
+.srch input::placeholder{color:#5d7ea3}
+.srch span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--dim);font-size:12px}
+.tog{appearance:none;border:1px solid var(--edge);background:var(--n2);color:var(--dim);font:inherit;
+  font-size:12px;font-weight:600;padding:10px 16px;border-radius:8px;cursor:pointer;transition:.16s}
+.tog:hover{color:var(--txt)}
+.tog[aria-pressed="true"]{background:rgba(255,181,71,.16);border-color:var(--dly);color:var(--dly)}
+.ctl .cnt{margin-left:auto;font-size:11px;color:var(--dim);letter-spacing:.1em}
+.ctl .cnt b{color:var(--gate);font-size:14px}
+
+/* ---------- split-flap board ---------- */
+.boardwrap{padding:18px 20px 8px}
+.board{border:1px solid var(--edge);border-radius:10px;background:#0a1220;overflow-x:auto;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.55)}
+.bgrid{min-width:920px}
+.brow{display:grid;grid-template-columns:96px 120px minmax(230px,1fr) 78px 108px 170px;
+  align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid rgba(34,52,79,.55)}
+.bhdr{background:var(--n2);border-bottom:2px solid var(--edge);position:sticky;top:0}
+.bhdr span{font-size:9.5px;letter-spacing:.22em;color:var(--dim);font-weight:600}
+.brow.item{cursor:pointer;transition:.14s}
+.brow.item:hover{background:rgba(77,208,225,.06)}
+.brow.item[aria-expanded="true"]{background:rgba(77,208,225,.09)}
+.brow:last-child{border-bottom:0}
+
+.flap{display:inline-flex;gap:2px;perspective:90px}
+.flap i{position:relative;width:15px;height:24px;background:var(--flap);border-radius:2px;
+  display:grid;place-items:center;font-size:13.5px;font-weight:700;font-style:normal;letter-spacing:0;
+  color:#eaf4ff;box-shadow:inset 0 0 0 1px var(--flapedge);transform-origin:center}
+.flap i::after{content:"";position:absolute;left:1px;right:1px;top:50%;height:1px;background:rgba(0,0,0,.6)}
+.flap i.sp{background:transparent;box-shadow:none;width:7px}
+.flap i.sp::after{display:none}
+.flap i.f{animation:flip .34s cubic-bezier(.3,.9,.3,1) both}
+@keyframes flip{0%{transform:rotateX(-92deg);filter:brightness(.25)}100%{transform:rotateX(0);filter:none}}
+.flap.amber i{color:var(--dly)}
+.flap.cyan i{color:var(--gate)}
+.flap.grn i{color:var(--arr)}
+
+.city{font-size:13.5px;font-weight:600;letter-spacing:.01em}
+.city small{display:block;font-size:10px;color:var(--dim);letter-spacing:.16em;margin-top:2px}
+.gt{font-size:14px;font-weight:700;color:var(--gate);letter-spacing:.06em}
+.gt.none{color:#4a6482}
+.stat{font-size:11px;font-weight:700;letter-spacing:.06em;padding:5px 10px;border-radius:5px;
+  display:inline-block;white-space:nowrap}
+.s-ot{background:rgba(139,214,122,.15);color:var(--arr)}
+.s-bd{background:rgba(124,156,255,.16);color:var(--dep)}
+.s-fc{background:rgba(199,146,234,.16);color:var(--vip)}
+.s-dl{background:rgba(255,181,71,.15);color:var(--dly)}
+.s-cn{background:rgba(255,92,108,.16);color:var(--cnc)}
+.s-ld{background:rgba(77,208,225,.15);color:var(--gate)}
+.blink{animation:bk 1.4s steps(2) infinite}
+@keyframes bk{50%{opacity:.35}}
+
+.detail{display:none;grid-column:1/-1;padding:12px 4px 6px;border-top:1px dashed rgba(77,208,225,.28);
+  margin-top:8px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.brow.item[aria-expanded="true"] .detail{display:grid}
+.detail div small{display:block;font-size:9.5px;letter-spacing:.18em;color:var(--dim);margin-bottom:4px}
+.detail div b{font-size:12.5px;font-weight:600;color:var(--txt)}
+.empty{padding:44px 20px;text-align:center;color:var(--dim);font-size:13px}
+
+/* ---------- histogram ---------- */
+.hist{padding:6px 20px 20px}
+.hist .box{background:var(--n1);border:1px solid var(--edge);border-radius:10px;padding:16px 18px}
+.hist h2{font-size:12px;letter-spacing:.18em;color:var(--dim);font-weight:600;margin-bottom:4px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.hist h2 b{color:var(--gate);font-size:11px}
+.hist svg{width:100%;height:auto;display:block;margin-top:12px}
+.hg{stroke:rgba(34,52,79,.9);stroke-width:1}
+.hb{fill:#2f4d78;transform-origin:center bottom;animation:rise .7s cubic-bezier(.2,.8,.3,1) both}
+.hb.pk{fill:var(--gate)}
+@keyframes rise{from{transform:scaleY(0)}}
+.hx{fill:#5d7ea3;font-size:9px;letter-spacing:.06em}
+.hnote{margin-top:12px;font-size:11.5px;color:var(--dim);line-height:1.85}
+.hnote b{color:var(--txt)}
+.ftr{text-align:center;font-size:10px;color:#40587a;letter-spacing:.3em;padding:14px 0 46px}
+
+@media(max-width:900px){
+  .bhead .rt{width:100%;margin-left:0;justify-content:space-between;gap:10px}
+  .srch input{width:180px}
+}
+@media(max-width:640px){
+  .ctl{padding:12px 14px}
+  .boardwrap,.hist{padding-left:12px;padding-right:12px}
+  .seg button{padding:9px 13px;font-size:11px}
+  .srch input{width:100%}
+  .srch{flex:1 1 100%}
+  .ctl .cnt{margin-left:0}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<nav class="subnav" aria-label="子頁導覽">
+  <a class="bk" href="index.html">◄ 排班台 GANTT</a>
+  <a href="flights.html" aria-current="page">航班動態 FLIGHTS</a>
+  <a href="gates.html">登機門 GATES</a>
+  <a href="crew.html">地勤班組 CREW</a>
+  <a href="report.html">運務報表 REPORT</a>
+</nav>
+
+<header class="bhead">
+  <div class="p">✈</div>
+  <h1>到離顯示板 · 第二航廈<small>FLIGHT INFORMATION DISPLAY SYSTEM · TPE T2</small></h1>
+  <div class="rt">
+    <div><b id="clk">--:--:--</b>LOCAL UTC+8</div>
+    <div><b>209</b>TOTAL MOVEMENTS</div>
+    <div><b class="g">184</b>ON TIME</div>
+    <div><b class="w">23</b>DELAYED</div>
+    <div><b class="r">2</b>CANCELLED</div>
+  </div>
+</header>
+
+<div class="ctl">
+  <div class="seg" role="tablist" aria-label="到離切換">
+    <button role="tab" aria-selected="true" data-dir="dep">出境 DEPARTURES</button>
+    <button role="tab" aria-selected="false" data-dir="arr">入境 ARRIVALS</button>
+  </div>
+  <div class="srch">
+    <span aria-hidden="true">⌕</span>
+    <input id="q" type="search" placeholder="搜尋航班／城市／登機門" aria-label="搜尋航班、城市或登機門">
+  </div>
+  <button class="tog" id="only" aria-pressed="false">只看延誤／取消</button>
+  <div class="cnt"><b id="shown">0</b> / <span id="total">0</span> 班次顯示中</div>
+</div>
+
+<div class="boardwrap">
+  <div class="board">
+    <div class="bgrid">
+      <div class="brow bhdr">
+        <span>時刻 TIME</span><span>班號 FLIGHT</span><span>目的地／出發地</span>
+        <span>門 GATE</span><span>櫃檯 CHECK-IN</span><span>狀態 REMARKS</span>
+      </div>
+      <div id="rows"></div>
+    </div>
+  </div>
+</div>
+
+<section class="hist">
+  <div class="box">
+    <h2>全日起降架次分布 · MOVEMENTS PER HOUR<b>06:00 – 23:00 · 合計 209 架次</b></h2>
+    <svg viewBox="0 0 820 210" role="img"
+      aria-label="桃園第二航廈全日起降架次長條圖，06:00 至 23:00 共 209 架次，尖峰出現於 15:00 的 18 架次">
+      <g id="hg"></g>
+    </svg>
+    <p class="hnote">尖峰時段落在 <b>15:00</b>（18 架次）與 <b>16:00</b>（17 架次），與東北亞返程波次重疊；此兩小時的登機門周轉壓力最高，D 區雙橋機位平均佔用 <b>3.1 小時</b>。全日離峰為 <b>23:00</b>（5 架次），為夜間貨機與過境整備時窗。</p>
+  </div>
+</section>
+
+<div class="ftr">FLIGHTS / SPLIT-FLAP DEPARTURE BOARD · DESIGN 36 / 40</div>
+
+<script>
+/* ---------- 資料 ---------- */
+const DEP=[
+ ["14:20","BR 182","東京 成田","NRT","A5","12–16","bd","登機中 BOARDING","長榮航空","B77W","B-16718","282 / 311"],
+ ["14:45","CI 502","香港","HKG","A7","20–24","ot","準時 ON TIME","中華航空","A333","B-18301","254 / 277"],
+ ["15:10","JX 720","大阪 關西","KIX","B2","28–31","dl","延誤 25 分 · 15:35","星宇航空","A321neo","B-58201","178 / 188"],
+ ["15:30","SQ 879","新加坡","SIN","B4","32–36","ot","準時 ON TIME","新加坡航空","B78X","9V-SCA","318 / 337"],
+ ["15:55","CX 470","香港","HKG","A9","08–11","ot","準時 ON TIME","國泰航空","A359","B-LRA","262 / 280"],
+ ["16:20","TG 635","曼谷","BKK","C1","40–43","dl","延誤 40 分 · 17:00","泰國航空","B788","HS-TQA","231 / 264"],
+ ["16:40","KE 692","首爾 仁川","ICN","—","44–46","cn","取消 CANCELLED","大韓航空","B738","HL8093","0 / 186"],
+ ["17:05","UA 872","舊金山","SFO","D6","50–58","ot","準時 ON TIME","聯合航空","B77W","N2333U","341 / 364"],
+ ["17:30","BR 108","洛杉磯","LAX","A5","12–18","ot","準時 ON TIME","長榮航空","B789","B-17881","286 / 304"],
+ ["17:50","CI 831","曼谷","BKK","A7","20–24","ot","準時 ON TIME","中華航空","A321neo","B-18101","174 / 180"],
+ ["18:15","JX 216","胡志明","SGN","B2","28–31","ot","準時 ON TIME","星宇航空","A321neo","B-58207","166 / 188"],
+ ["18:40","CX 495","香港","HKG","A9","08–11","ot","準時 ON TIME","國泰航空","A333","B-HLD","243 / 251"],
+ ["19:00","EK 366","杜拜","DXB","D8","60–68","dl","延誤 15 分 · 19:15","阿聯酋航空","B77W","A6-EGP","338 / 354"],
+ ["19:25","TR 897","新加坡","SIN","B4","32–36","ot","準時 ON TIME","酷航","B789","9V-OJA","324 / 340"],
+ ["19:45","KE 691","首爾 仁川","ICN","C3","44–46","ot","準時 ON TIME","大韓航空","B738","HL8094","171 / 186"],
+ ["20:10","NH 852","東京 羽田","HND","D6","50–54","ot","準時 ON TIME","全日空","B788","JA815A","228 / 240"],
+ ["20:35","CI 018","舊金山","SFO","A7","20–26","ot","準時 ON TIME","中華航空","B77W","B-18055","337 / 358"],
+ ["21:00","VN 577","胡志明","SGN","C1","40–43","ot","準時 ON TIME","越南航空","A321","VN-A604","162 / 184"]
+];
+const ARR=[
+ ["13:55","BR 225","香港","HKG","A5","—","ld","已抵達 LANDED","長榮航空","A321neo","B-16210","181 / 188"],
+ ["14:24","CX 471","香港","HKG","A9","—","ld","已抵達 LANDED","國泰航空","A359","B-LRB","258 / 280"],
+ ["14:50","JX 801","首爾 仁川","ICN","B2","—","ld","進場中 ON FINAL","星宇航空","A321neo","B-58203","170 / 188"],
+ ["15:15","CI 105","東京 成田","NRT","A7","—","ot","準時 ON TIME","中華航空","A333","B-18359","249 / 277"],
+ ["15:36","EK 367","杜拜","DXB","D8","—","dl","延誤 22 分 · 15:58","阿聯酋航空","B77W","A6-EGQ","330 / 354"],
+ ["16:05","OZ 712","首爾 仁川","ICN","C3","—","ot","準時 ON TIME","韓亞航空","A333","HL7793","264 / 290"],
+ ["16:28","TG 634","曼谷","BKK","C1","—","ot","準時 ON TIME","泰國航空","B788","HS-TQB","220 / 264"],
+ ["16:50","MU 5008","上海 浦東","PVG","A9","—","dl","延誤 18 分 · 17:08","中國東方航空","A320neo","B-30EF","152 / 168"],
+ ["17:20","SQ 878","新加坡","SIN","B4","—","ot","準時 ON TIME","新加坡航空","B78X","9V-SCB","311 / 337"],
+ ["17:44","UA 871","舊金山","SFO","D6","—","ot","準時 ON TIME","聯合航空","B77W","N2250U","349 / 364"],
+ ["18:10","MH 367","吉隆坡","KUL","B4","—","ot","準時 ON TIME","馬來西亞航空","B738","9M-MXA","162 / 174"],
+ ["18:35","QR 894","杜哈","DOH","D8","—","ot","準時 ON TIME","卡達航空","B77W","A7-BEE","326 / 354"],
+ ["19:02","7C 2652","首爾 仁川","ICN","C3","—","ot","準時 ON TIME","濟州航空","B738","HL8306","178 / 189"],
+ ["19:28","JX 741","福岡","FUK","B2","—","ot","準時 ON TIME","星宇航空","A321neo","B-58205","158 / 188"],
+ ["19:55","BR 811","新加坡","SIN","A5","—","ot","準時 ON TIME","長榮航空","B77W","B-16720","301 / 333"]
+];
+const STAT={ot:["s-ot",""],bd:["s-bd","blink"],dl:["s-dl",""],cn:["s-cn",""],ld:["s-ld",""],fc:["s-fc","blink"]};
+
+/* ---------- split-flap 字元渲染 ---------- */
+function flap(text,cls,delay){
+  const chars=[...text].map((c,i)=>c===" "
+    ? '<i class="sp" aria-hidden="true"></i>'
+    : `<i class="f" style="animation-delay:${delay+i*26}ms">${c}</i>`).join("");
+  return `<span class="flap ${cls||""}" role="text" aria-label="${text}">${chars}</span>`;
+}
+
+/* ---------- 渲染 ---------- */
+const rowsEl=document.getElementById("rows");
+let dir="dep",q="",onlyBad=false;
+
+function dataset(){return dir==="dep"?DEP:ARR;}
+
+function render(){
+  const src=dataset();
+  const list=src.filter(r=>{
+    if(onlyBad && r[6]!=="dl" && r[6]!=="cn") return false;
+    if(!q) return true;
+    const hay=(r[1]+r[2]+r[3]+r[4]+r[8]).toLowerCase();
+    return hay.includes(q);
+  });
+  document.getElementById("total").textContent=src.length;
+  document.getElementById("shown").textContent=list.length;
+  if(!list.length){
+    rowsEl.innerHTML='<div class="empty">目前條件下沒有符合的班次 — 請調整關鍵字或關閉「只看延誤／取消」。</div>';
+    return;
+  }
+  rowsEl.innerHTML=list.map((r,i)=>{
+    const [tm,fl,city,iata,gate,ctr,st,label,airline,ac,reg,pax]=r;
+    const d=i*55;
+    const sc=st==="dl"?"amber":st==="cn"?"amber":st==="ot"?"":"cyan";
+    return `<div class="brow item" role="button" tabindex="0" aria-expanded="false"
+      aria-label="${fl} 飛往 ${city}，${label}">
+      ${flap(tm,"cyan",d)}
+      ${flap(fl,sc,d+40)}
+      <div class="city">${city}<small>${iata} · ${airline}</small></div>
+      <div class="gt ${gate==="—"?"none":""}">${gate}</div>
+      <div class="gt" style="color:var(--dim);font-size:12px">${ctr}</div>
+      <div><span class="stat ${STAT[st][0]} ${STAT[st][1]}">${label}</span></div>
+      <div class="detail">
+        <div><small>機型 AIRCRAFT</small><b>${ac}</b></div>
+        <div><small>註冊編號 REG</small><b>${reg}</b></div>
+        <div><small>載客 / 座位</small><b>${pax}</b></div>
+        <div><small>航空公司</small><b>${airline}</b></div>
+        <div><small>${dir==="dep"?"行李轉盤／裝載":"提領轉盤 BELT"}</small><b>${dir==="dep"?"Bay "+((i%4)+1):"轉盤 "+((i%5)+1)}</b></div>
+        <div><small>停機位 STAND</small><b>${gate==="—"?"未指派":gate+"／"+(gate[0]==="P"?"遠端":"空橋")}</b></div>
+      </div>
+    </div>`;
+  }).join("");
+  rowsEl.querySelectorAll(".brow.item").forEach(el=>{
+    const toggle=()=>el.setAttribute("aria-expanded",el.getAttribute("aria-expanded")==="true"?"false":"true");
+    el.addEventListener("click",toggle);
+    el.addEventListener("keydown",e=>{
+      if(e.key==="Enter"||e.key===" "){e.preventDefault();toggle();}
+    });
+  });
+}
+render();
+
+document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".seg button").forEach(o=>o.setAttribute("aria-selected",String(o===b)));
+  dir=b.dataset.dir;render();
+}));
+document.getElementById("q").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();render();});
+document.getElementById("only").addEventListener("click",e=>{
+  onlyBad=!onlyBad;e.currentTarget.setAttribute("aria-pressed",String(onlyBad));render();
+});
+
+/* ---------- 起降架次長條圖 ---------- */
+(function(){
+  const v=[6,9,12,14,13,11,10,12,15,18,17,14,13,12,11,10,7,5];
+  const W=820,H=210,L=34,R=10,T=14,B=30,max=20;
+  const bw=(W-L-R)/v.length;
+  let g="";
+  for(let i=0;i<=4;i++){
+    const y=T+(H-T-B)*i/4;
+    g+=`<line class="hg" x1="${L}" y1="${y}" x2="${W-R}" y2="${y}"/>`;
+    g+=`<text class="hx" x="${L-6}" y="${y+3}" text-anchor="end">${max-i*5}</text>`;
+  }
+  v.forEach((n,i)=>{
+    const h=(n/max)*(H-T-B),x=L+i*bw+3,y=H-B-h;
+    g+=`<rect class="hb${n>=17?" pk":""}" x="${x}" y="${y}" width="${bw-6}" height="${h}"
+      rx="2" style="animation-delay:${i*45}ms"/>`;
+    g+=`<text class="hx" x="${x+(bw-6)/2}" y="${H-B+14}" text-anchor="middle">${String(6+i).padStart(2,"0")}</text>`;
+    if(n>=17) g+=`<text class="hx" x="${x+(bw-6)/2}" y="${y-5}" text-anchor="middle" fill="#4dd0e1">${n}</text>`;
+  });
+  document.getElementById("hg").innerHTML=g;
+})();
+
+/* ---------- 時鐘 ---------- */
+function tick(){document.getElementById("clk").textContent=new Date().toLocaleTimeString("en-GB");}
+tick();setInterval(tick,1000);
+</script>
+</body>
+</html>

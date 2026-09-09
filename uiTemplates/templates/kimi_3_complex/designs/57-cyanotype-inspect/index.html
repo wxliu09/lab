@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════
+ 設計規格｜57. 藍晒負片·工程查報 (Cyanotype Blueprint)
+───────────────────────────────────────────────────────────────────
+ ● 風格定位：藍晒圖（Cyanotype）負片風 —— 整頁如同一張剛顯影的工程藍圖：
+              亮藍藥膜底、白色線稿、負片文字、紙邊暈白、顯影不均勻。
+ ● 配色：藍晒主藍 #2456a8 → #3f7ad1 漸層｜線稿白 #eef4ff｜淺藍 #8fb4e8
+        警示反白底用白框＋亮青 #bfe0ff｜暈邊白 rgba(255,255,255,.35)
+ ● 字體："Share Tech Mono"（圖面字）+ "Noto Sans TC"（中文負片感）
+ ● 版面：頂部圖簽欄（圖號/比例/日期）＋左欄缺失通報單＋右欄通報列表。
+        全版疊加細格網（藍圖方格紙）與四角十字對位標記。
+ ● 動態：每個卡片進場時「藍晒顯影」由深藍模糊淡入（exposure 動畫）；
+        改善期限倒數每秒跳動；複查流程節點逐格亮起；暈邊用 radial-gradient 飄移。
+═══════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>藍晒負片 · 工程查報系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --b1:#2456a8; --b2:#3f7ad1; --line:#eef4ff; --soft:#8fb4e8; --hi:#bfe0ff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;
+  color:var(--line);min-height:100vh;overflow-x:hidden;
+  background:
+    radial-gradient(ellipse 90% 70% at 20% 10%, rgba(255,255,255,.14), transparent 55%),
+    radial-gradient(ellipse 70% 60% at 85% 90%, rgba(255,255,255,.10), transparent 50%),
+    linear-gradient(135deg, var(--b1), var(--b2) 55%, var(--b1));
+}
+/* 藍圖方格 */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(238,244,255,.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238,244,255,.07) 1px, transparent 1px),
+    linear-gradient(rgba(238,244,255,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238,244,255,.14) 1px, transparent 1px);
+  background-size:20px 20px, 20px 20px, 100px 100px, 100px 100px;
+}
+/* 曬圖暈邊 */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 180px rgba(10,25,60,.75), inset 0 0 60px rgba(255,255,255,.12);
+  animation:bloom 9s ease-in-out infinite alternate;
+}
+@keyframes bloom{
+  from{box-shadow:inset 0 0 180px rgba(10,25,60,.75), inset 0 0 60px rgba(255,255,255,.10)}
+  to  {box-shadow:inset 0 0 220px rgba(10,25,60,.55), inset 0 0 90px rgba(255,255,255,.18)}
+}
+.mono{font-family:'Share Tech Mono',monospace}
+
+/* 對位十字 */
+.cross{position:fixed;width:26px;height:26px;z-index:1;pointer-events:none;opacity:.7}
+.cross::before,.cross::after{content:'';position:absolute;background:var(--line)}
+.cross::before{left:50%;top:0;width:1.5px;height:100%}
+.cross::after{top:50%;left:0;height:1.5px;width:100%}
+
+/* ── 頂部圖簽 ─────────────────────── */
+.titlebar{
+  position:relative;z-index:5;display:flex;align-items:stretch;gap:0;
+  border-bottom:2px solid var(--line);margin:22px 26px 0;
+}
+.cell{padding:12px 18px;border-right:1.5px solid rgba(238,244,255,.55);display:flex;flex-direction:column;justify-content:center}
+.cell:last-child{border-right:none}
+.cell .k{font-size:10px;letter-spacing:2px;color:var(--soft)}
+.cell .v{font-size:14px;font-weight:500;margin-top:2px}
+.back{
+  align-self:center;text-decoration:none;color:var(--b1);font-weight:700;font-size:14px;
+  background:var(--line);padding:9px 18px;margin-right:16px;border:1.5px solid var(--line);
+  transition:all .2s;letter-spacing:1px;
+}
+.back:hover{background:transparent;color:var(--line)}
+.brand-cell{flex:1}
+.brand{font-size:24px;font-weight:700;letter-spacing:3px}
+.brand small{display:block;font-size:11px;letter-spacing:4px;color:var(--soft);font-weight:300;margin-top:2px}
+/* 子頁導覽 */
+.subnav{align-self:center;display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px}
+.subnav a{color:var(--line);text-decoration:none;font-size:13px;letter-spacing:1px;border-bottom:1px dashed var(--soft);padding-bottom:2px;transition:all .2s}
+.subnav a:hover{color:#fff;border-bottom-color:#fff;background:rgba(255,255,255,.08)}
+
+/* ── 版面 ─────────────────────── */
+.layout{position:relative;z-index:5;display:grid;grid-template-columns:400px 1fr;gap:26px;padding:26px;max-width:1500px;margin:0 auto}
+@media(max-width:1020px){.layout{grid-template-columns:1fr}}
+
+/* 顯影淡入 */
+.expose{opacity:0;filter:blur(6px) brightness(.6);animation:develop 1.1s ease-out forwards}
+@keyframes develop{to{opacity:1;filter:blur(0) brightness(1)}}
+
+.panel{
+  border:2px solid var(--line);padding:22px;position:relative;
+  background:rgba(255,255,255,.04);
+  box-shadow:0 0 0 1px rgba(36,86,168,.9), 0 0 24px rgba(191,224,255,.10) inset;
+}
+.panel::before,.panel::after{
+  content:'';position:absolute;width:14px;height:14px;border:2px solid var(--line);
+}
+.panel::before{top:-2px;left:-2px;border-right:none;border-bottom:none}
+.panel::after{bottom:-2px;right:-2px;border-left:none;border-top:none}
+h3.sec{
+  font-size:13px;letter-spacing:3px;color:var(--hi);margin-bottom:18px;
+  display:flex;align-items:center;gap:10px;font-weight:500;
+}
+h3.sec::after{content:'';flex:1;height:1.5px;background:repeating-linear-gradient(90deg,var(--line),var(--line) 8px,transparent 8px,transparent 14px)}
+h3.sec .no{font-family:'Share Tech Mono';border:1.5px solid var(--line);padding:1px 8px;font-size:12px}
+
+/* ── 通報表單 ─────────────────────── */
+.f-row{margin-bottom:16px}
+.f-row label{display:block;font-size:12px;letter-spacing:2px;color:var(--soft);margin-bottom:6px}
+.f-row input[type=text],.f-row select,.f-row textarea{
+  width:100%;padding:10px 12px;font-family:inherit;font-size:14px;
+  color:var(--line);background:rgba(10,30,70,.35);border:1.5px solid var(--soft);
+  outline:none;transition:all .2s;
+}
+.f-row select option{color:#1c2f55}
+.f-row input:focus,.f-row select:focus,.f-row textarea:focus{border-color:#fff;background:rgba(255,255,255,.10);box-shadow:0 0 12px rgba(191,224,255,.35)}
+.f-row textarea{resize:vertical;min-height:80px}
+.sev{display:flex;gap:8px}
+.sev label{flex:1;cursor:pointer;text-align:center;padding:9px 4px;border:1.5px solid var(--soft);font-size:13px;letter-spacing:1px;transition:all .18s;margin:0;color:var(--line)}
+.sev input{display:none}
+.sev label:has(input:checked){background:var(--line);color:var(--b1);font-weight:700;box-shadow:0 0 14px rgba(238,244,255,.45)}
+.sev .s3:has(input:checked){background:#fff;box-shadow:0 0 18px rgba(255,255,255,.7)}
+.submit{
+  width:100%;padding:13px;font-size:15px;letter-spacing:4px;font-weight:700;cursor:pointer;
+  background:var(--line);color:var(--b1);border:none;font-family:inherit;transition:all .2s;
+}
+.submit:hover{background:#fff;box-shadow:0 0 22px rgba(255,255,255,.55);letter-spacing:6px}
+
+/* ── 通報列表 ─────────────────────── */
+.list-head{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.chip{
+  padding:6px 16px;border:1.5px solid var(--soft);font-size:13px;letter-spacing:1px;
+  background:transparent;color:var(--line);cursor:pointer;font-family:inherit;transition:all .18s;
+}
+.chip:hover{border-color:#fff}
+.chip.on{background:var(--line);color:var(--b1);font-weight:700}
+.ticket{
+  display:grid;grid-template-columns:110px 1fr 150px;gap:16px;align-items:stretch;
+  border:1.5px solid rgba(238,244,255,.7);margin-bottom:14px;padding:14px;position:relative;
+  background:rgba(255,255,255,.03);transition:background .2s, transform .2s;
+}
+.ticket:hover{background:rgba(255,255,255,.09);transform:translateX(4px)}
+/* 照片位：白線框佈景 */
+.photo{
+  border:1.5px dashed var(--soft);position:relative;display:grid;place-items:center;
+  min-height:96px;overflow:hidden;
+}
+.photo svg{width:100%;height:100%;position:absolute;inset:0}
+.photo .ph-label{position:relative;font-size:10px;letter-spacing:2px;color:var(--soft);text-align:center;line-height:1.7}
+.t-main .t-id{font-family:'Share Tech Mono';font-size:12px;color:var(--soft);letter-spacing:1px}
+.t-main .t-title{font-size:16px;font-weight:700;margin:3px 0 6px}
+.t-main .t-desc{font-size:13px;color:#d7e5fb;line-height:1.7;font-weight:300}
+.t-tags{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.tag{font-size:11.5px;padding:3px 10px;border:1px solid var(--soft);letter-spacing:1px}
+.tag.sev1{border-color:var(--hi);color:var(--hi)}
+.tag.sev2{border-color:#fff;color:#fff}
+.tag.sev3{background:#fff;color:#a33333;border-color:#fff;font-weight:700}
+.st-open{background:rgba(191,224,255,.16)}
+.st-fix{background:transparent}
+.st-review{background:rgba(238,244,255,.28);font-weight:700}
+.st-done{background:#eef4ff;color:#2456a8;font-weight:700}
+.t-right{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;text-align:right}
+.countdown{font-family:'Share Tech Mono';font-size:13px;line-height:1.5}
+.countdown .lbl{font-size:10px;letter-spacing:2px;color:var(--soft);font-family:'Noto Sans TC'}
+.countdown.over{color:#fff;background:#a33333;padding:2px 8px}
+.countdown.urgent{color:#fff;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+/* 複查流程 */
+.flow{display:flex;gap:0;align-items:center}
+.flow .node{width:22px;height:22px;border:1.5px solid var(--soft);display:grid;place-items:center;font-size:10px;font-family:'Share Tech Mono';color:var(--soft);transition:all .3s}
+.flow .seg{width:14px;height:1.5px;background:var(--soft);transition:background .3s}
+.flow .node.lit{background:var(--line);color:var(--b1);border-color:var(--line);box-shadow:0 0 8px rgba(238,244,255,.5)}
+.flow .seg.lit{background:var(--line)}
+.flow-lbls{display:flex;justify-content:space-between;font-size:9.5px;color:var(--soft);letter-spacing:1px;margin-top:4px;width:132px}
+.panel .empty{padding:30px;text-align:center;color:var(--soft);letter-spacing:2px;font-size:13px}
+
+/* 表單送出狀態 */
+.submit.developing{background:repeating-linear-gradient(90deg,#eef4ff,#bfe0ff 20px,#eef4ff 40px);background-size:40px 100%;animation:roll 1s linear infinite;color:transparent}
+@keyframes roll{to{background-position:40px 0}}
+.note{margin-top:14px;font-size:11px;color:var(--soft);letter-spacing:1px;line-height:1.8;border-top:1px dashed var(--soft);padding-top:10px}
+</style>
+</head>
+<body>
+
+<div class="cross" style="top:12px;left:12px"></div>
+<div class="cross" style="top:12px;right:12px"></div>
+<div class="cross" style="bottom:12px;left:12px"></div>
+<div class="cross" style="bottom:12px;right:12px"></div>
+
+<header class="titlebar expose">
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <div class="cell brand-cell">
+    <div class="brand">藍晒負片 · 工程查報系統<small>CYANOTYPE SITE DEFICIENCY REPORT — SHEET A-101</small></div>
+  </div>
+  <nav class="subnav">
+    <a href="list.html">缺失列表</a>
+    <a href="detail.html">缺失詳情</a>
+    <a href="form.html">新增通報</a>
+    <a href="review.html">複查紀錄</a>
+  </nav>
+  <div class="cell"><div class="k">圖號 DWG NO.</div><div class="v mono">INS-2026-040</div></div>
+  <div class="cell"><div class="k">比例 SCALE</div><div class="v mono">1 : 100</div></div>
+  <div class="cell"><div class="k">出圖日期 DATE</div><div class="v mono">2026-08-28</div></div>
+  <div class="cell"><div class="k">查報員 INSPECTOR</div><div class="v">王進興 技師</div></div>
+</header>
+
+<div class="layout">
+  <!-- ── 通報單 ── -->
+  <section class="panel expose" style="animation-delay:.15s">
+    <h3 class="sec"><span class="no">01</span>缺失通報單 DEFICIENCY FORM</h3>
+    <form id="repForm">
+      <div class="f-row">
+        <label>工地別 SITE</label>
+        <select id="fSite">
+          <option>南港機廠聯開大樓</option>
+          <option>台中捷運綠線 G08 站</option>
+          <option>高雄港旅運中心二期</option>
+          <option>桃園航空城配水池</option>
+        </select>
+      </div>
+      <div class="f-row">
+        <label>缺失類別 CATEGORY</label>
+        <select id="fCat">
+          <option>結構體裂縫</option><option>鋼筋鏽蝕外露</option><option>防水層破損</option>
+          <option>機電管線不符</option><option>施工架安全</option><option>環境髒亂 / 廢料</option>
+        </select>
+      </div>
+      <div class="f-row">
+        <label>嚴重度 SEVERITY</label>
+        <div class="sev">
+          <label class="s1"><input type="radio" name="sev" value="1" checked>輕微</label>
+          <label class="s2"><input type="radio" name="sev" value="2">中等</label>
+          <label class="s3"><input type="radio" name="sev" value="3">重大</label>
+        </div>
+      </div>
+      <div class="f-row">
+        <label>缺失說明 DESCRIPTION</label>
+        <textarea id="fDesc" placeholder="例：B2F 柱 C-17 西側面發現 0.4mm 斜向裂縫，長約 1.2m…"></textarea>
+      </div>
+      <div class="f-row">
+        <label>要求改善期限 DEADLINE</label>
+        <select id="fDays">
+          <option value="1">24 小時內（重大缺失）</option>
+          <option value="3" selected>3 個工作天</option>
+          <option value="7">7 個工作天</option>
+          <option value="14">14 個工作天</option>
+        </select>
+      </div>
+      <button type="submit" class="submit mono" id="btnSend">▣ 送 出 通 報</button>
+      <div class="note">※ 送出後系統自動通知監造單位與承攬廠商工務所，並啟動複查流程。重大缺失同步通報職安室。</div>
+    </form>
+  </section>
+
+  <!-- ── 通報列表 ── -->
+  <section class="panel expose" style="animation-delay:.3s">
+    <h3 class="sec"><span class="no">02</span>通報紀錄 REPORT LOG</h3>
+    <div class="list-head" id="chips">
+      <button class="chip on" data-f="">全部 <span class="mono" id="nAll"></span></button>
+      <button class="chip" data-f="open">待改善</button>
+      <button class="chip" data-f="fix">改善中</button>
+      <button class="chip" data-f="review">待複查</button>
+      <button class="chip" data-f="done">已結案</button>
+    </div>
+    <div id="list"></div>
+  </section>
+</div>
+
+<script>
+const NOW = Date.now();
+const H = 3600e3, D = 24*H;
+let REPORTS = [
+  {id:'DR-2608-014', site:'南港機廠聯開大樓', cat:'結構體裂縫', sev:3, status:'open',
+   desc:'7F 版 S12 區域灌漿面出現貫穿裂縫，寬約 0.5mm，疑似拆模過早。', due: NOW + 0.35*D, flow:1},
+  {id:'DR-2608-013', site:'台中捷運綠線 G08 站', cat:'施工架安全', sev:3, status:'open',
+   desc:'穿堂層施工架未設置護欄且踏板間隙過大，現場人員通行頻繁。', due: NOW + 0.8*D, flow:1},
+  {id:'DR-2608-012', site:'高雄港旅運中心二期', cat:'防水層破損', sev:2, status:'fix',
+   desc:'屋頂 PU 防水層於女兒牆轉角處起泡剝離約 2 ㎡，已通知防水班進場。', due: NOW + 1.6*D, flow:2},
+  {id:'DR-2608-011', site:'桃園航空城配水池', cat:'鋼筋鏽蝕外露', sev:2, status:'fix',
+   desc:'池壁頂部保護層不足，主筋外露鏽蝕約 6 處，廠商已安排除鏽補強。', due: NOW + 2.9*D, flow:2},
+  {id:'DR-2608-010', site:'南港機廠聯開大樓', cat:'機電管線不符', sev:1, status:'review',
+   desc:'B1 機房消防排煙風管吊筋間距與核准圖不符，廠商回報已重吊，待複查。', due: NOW + 4.2*D, flow:3},
+  {id:'DR-2608-009', site:'台中捷運綠線 G08 站', cat:'環境髒亂 / 廢料', sev:1, status:'done',
+   desc:'月台層模板廢料堆置阻礙動線，已清運完成並複查合格結案。', due: NOW - 1.2*D, flow:4},
+  {id:'DR-2608-008', site:'高雄港旅運中心二期', cat:'結構體裂縫', sev:2, status:'done',
+   desc:'3F 梁 L-22 蜂窩現象經環氧樹脂灌注修復，超音波檢測通過。', due: NOW - 3.5*D, flow:4},
+  {id:'DR-2607-031', site:'桃園航空城配水池', cat:'施工架安全', sev:2, status:'review',
+   desc:'外牆施工架斜撐數量不足已補齊，複查照片已上傳待確認。', due: NOW - 0.4*D, flow:3},
+];
+const STATUS = {open:['待改善','st-open'], fix:['改善中','st-fix'], review:['待複查','st-review'], done:['已結案','st-done']};
+const SEV = {1:['輕微','sev1'], 2:['中等','sev2'], 3:['重大','sev3']};
+const FLOW = ['通報','改善','複查','結案'];
+let filter = '';
+
+function fmtCountdown(ms){
+  if (ms < 0) return '<span class="countdown over">已逾期 ' + Math.ceil(-ms/D) + ' 天</span>';
+  const d = Math.floor(ms/D), h = Math.floor(ms%D/H), m = Math.floor(ms%H/60e3), s = Math.floor(ms%60e3/1e3);
+  const urgent = ms < D ? ' urgent' : '';
+  return `<span class="countdown${urgent}"><span class="lbl">改善期限倒數</span><br>${d}d ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}</span>`;
+}
+
+function photoSVG(seed){
+  // 白線稿佈景：依 seed 畫簡單線稿（裂縫/鋼筋/施工架）
+  const kinds = [
+    '<path d="M10,80 L30,55 L45,62 L60,30 L78,44 L95,15" fill="none" stroke="#eef4ff" stroke-width="1.4"/><circle cx="60" cy="30" r="4" fill="none" stroke="#eef4ff" stroke-width="1.2"/>',
+    '<rect x="14" y="20" width="72" height="55" fill="none" stroke="#eef4ff" stroke-width="1.3"/><line x1="14" y1="40" x2="86" y2="40" stroke="#eef4ff" stroke-width="1"/><line x1="35" y1="20" x2="35" y2="75" stroke="#eef4ff" stroke-width="1"/><line x1="62" y1="20" x2="62" y2="75" stroke="#eef4ff" stroke-width="1"/>',
+    '<line x1="15" y1="75" x2="50" y2="18" stroke="#eef4ff" stroke-width="1.4"/><line x1="50" y1="18" x2="85" y2="75" stroke="#eef4ff" stroke-width="1.4"/><line x1="28" y1="55" x2="72" y2="55" stroke="#eef4ff" stroke-width="1.2"/><line x1="38" y1="38" x2="62" y2="38" stroke="#eef4ff" stroke-width="1.2"/>'
+  ];
+  return `<svg viewBox="0 0 100 90" preserveAspectRatio="xMidYMid meet">${kinds[seed % 3]}</svg>`;
+}
+
+function render(){
+  document.getElementById('nAll').textContent = REPORTS.length;
+  const list = document.getElementById('list');
+  const rows = REPORTS.filter(r => !filter || r.status === filter);
+  if (!rows.length){ list.innerHTML = '<div class="empty">— 此篩選條件下無通報紀錄 —</div>'; return; }
+  list.innerHTML = rows.map((r,i)=>{
+    const [slabel, scls] = STATUS[r.status];
+    const [vlabel, vcls] = SEV[r.sev];
+    const flowHtml = FLOW.map((f,idx)=>{
+      const lit = idx < r.flow ? ' lit' : '';
+      const seg = idx < FLOW.length-1 ? `<span class="seg${idx < r.flow-1 ? ' lit':''}"></span>` : '';
+      return `<span class="node${lit}">${idx+1}</span>${seg}`;
+    }).join('');
+    return `<article class="ticket" data-id="${r.id}">
+      <div class="photo">${photoSVG(r.sev + i)}<span class="ph-label">PHOTO<br>佈景線稿</span></div>
+      <div class="t-main">
+        <div class="t-id">${r.id} ｜ ${r.site}</div>
+        <div class="t-title">${r.cat}</div>
+        <div class="t-desc">${r.desc}</div>
+        <div class="t-tags">
+          <span class="tag ${vcls}">嚴重度：${vlabel}</span>
+          <span class="tag ${scls}">${slabel}</span>
+        </div>
+      </div>
+      <div class="t-right">
+        <div>${r.status==='done' ? '<span class="countdown"><span class="lbl">已於期限內結案</span><br>— CLOSED —</span>' : fmtCountdown(r.due - Date.now())}</div>
+        <div>
+          <div class="flow">${flowHtml}</div>
+          <div class="flow-lbls">${FLOW.map(f=>`<span>${f}</span>`).join('')}</div>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+document.getElementById('chips').addEventListener('click', e=>{
+  const c = e.target.closest('.chip'); if(!c) return;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+  c.classList.add('on'); filter = c.dataset.f; render();
+});
+
+/* 送出：顯影動畫後加入列表 */
+document.getElementById('repForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const desc = document.getElementById('fDesc').value.trim();
+  const btn = document.getElementById('btnSend');
+  if (!desc){
+    btn.textContent = '▣ 請填寫缺失說明';
+    setTimeout(()=>btn.textContent='▣ 送 出 通 報', 1400);
+    return;
+  }
+  btn.classList.add('developing');
+  setTimeout(()=>{
+    const sev = +document.querySelector('input[name=sev]:checked').value;
+    const days = +document.getElementById('fDays').value;
+    REPORTS.unshift({
+      id:'DR-2608-0' + (15 + REPORTS.length),
+      site: document.getElementById('fSite').value,
+      cat: document.getElementById('fCat').value,
+      sev, status:'open', desc,
+      due: Date.now() + days*D, flow:1
+    });
+    btn.classList.remove('developing');
+    btn.textContent = '✓ 已顯影歸檔';
+    filter=''; document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on', !x.dataset.f));
+    render();
+    // 新卡片顯影淡入
+    const first = document.querySelector('.ticket');
+    if (first) first.classList.add('expose');
+    setTimeout(()=>btn.textContent='▣ 送 出 通 報', 1800);
+    e.target.reset();
+  }, 1200);
+});
+
+render();
+setInterval(render, 1000); // 倒數每秒更新
+</script>
+</body>
+</html>

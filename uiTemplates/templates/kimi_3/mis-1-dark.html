@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>曜城 MIS｜夜幕數據戰情室</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+  html,body{margin:0;padding:0;background:#080c18;overflow:hidden;font-family:'Noto Sans TC',sans-serif;}
+  canvas{display:block;}
+  a.back{position:fixed;right:22px;bottom:22px;z-index:50;font-size:.74rem;letter-spacing:.2em;
+    color:#9fb3d9;text-decoration:none;background:rgba(20,28,50,.85);border:1px solid rgba(90,120,200,.35);
+    padding:10px 18px;border-radius:999px;backdrop-filter:blur(8px);transition:.25s;}
+  a.back:hover{color:#fff;border-color:#38bdf8;box-shadow:0 0 18px rgba(56,189,248,.35);}
+</style>
+</head>
+<body>
+<a class="back" href="showcase.html">← 返回展演</a>
+<script>
+// ---------- 資料模型 ----------
+let seriesA = [], seriesB = [], sparks = [[], [], [], []];
+let bars = [], donut = [], logs = [], kpis = [];
+const menu = ['營運儀表板', '案件管理', '市民資料', '系統監控', '報表中心', '帳號設定'];
+const glyphs = ['◈', '▤', '◉', '⌁', '▦', '⚙'];
+const logPool = [
+  ['INFO', '批次作業 #4471 完成，共 1,284 筆'],
+  ['INFO', '市民帳號新註冊 +36'],
+  ['WARN', '節點 C-07 回應時間高於閾值'],
+  ['INFO', '開放資料 API v3 呼叫量上升 12%'],
+  ['ERROR', '支付閘道逾時，已自動重試成功'],
+  ['INFO', '排程備份完成，耗時 42 秒'],
+  ['WARN', '登入失敗次數異常，觸發防護'],
+  ['INFO', '戶政系統同步完成']
+];
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  textFont('Noto Sans TC');
+  for (let i = 0; i < 36; i++) {
+    seriesA.push(50 + noise(i * 0.3) * 40);
+    seriesB.push(28 + noise(i * 0.3 + 99) * 34);
+  }
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 20; j++) sparks[i].push(random(20, 85));
+  bars = [['戶政', 86], ['社福', 64], ['交通', 72], ['環保', 45], ['文化', 58], ['工商', 77], ['教育', 66]]
+    .map(d => ({ label: d[0], target: d[1], val: 0 }));
+  donut = [
+    { label: '線上申辦', v: 42, c: [56, 189, 248] },
+    { label: '臨櫃辦理', v: 26, c: [167, 139, 250] },
+    { label: '電話預約', v: 18, c: [52, 211, 153] },
+    { label: '郵寄申請', v: 14, c: [251, 191, 36] }
+  ];
+  kpis = [
+    { label: '今日申辦量', target: 1284, val: 0, suffix: ' 件', delta: '+8.2%', c: [56, 189, 248], dec: 0, goodUp: true },
+    { label: '服務滿意度', target: 96.2, val: 0, suffix: ' %', delta: '+1.4%', c: [52, 211, 153], dec: 1, goodUp: true },
+    { label: '平均處理時長', target: 3.2, val: 0, suffix: ' 小時', delta: '-12.5%', c: [251, 191, 36], dec: 1, goodUp: false },
+    { label: '待處理異常', target: 7, val: 0, suffix: ' 件', delta: '-30%', c: [251, 113, 133], dec: 0, goodUp: false }
+  ];
+  addLog('INFO', '晨間系統巡檢完成，所有節點正常');
+}
+
+function addLog(lv, msg) {
+  logs.unshift({ t: nf(hour(), 2) + ':' + nf(minute(), 2) + ':' + nf(second(), 2), lv, msg, born: frameCount });
+  if (logs.length > 8) logs.pop();
+}
+
+function update() {
+  for (const k of kpis) k.val = lerp(k.val, k.target, 0.045);
+  for (const b of bars) b.val = lerp(b.val, b.target, 0.06);
+  if (frameCount % 42 === 0) {
+    seriesA.push(50 + noise(frameCount * 0.02) * 46); seriesA.shift();
+    seriesB.push(28 + noise(frameCount * 0.02 + 99) * 38); seriesB.shift();
+  }
+  if (frameCount % 34 === 0) for (const s of sparks) { s.push(random(20, 85)); s.shift(); }
+  if (frameCount % 150 === 0) {
+    const p = logPool[floor(random(logPool.length))];
+    addLog(p[0], p[1]);
+    for (const b of bars) b.target = constrain(b.target + random(-9, 9), 18, 96);
+    for (const k of kpis) k.target = max(0, k.target + random(-4, 6));
+  }
+}
+
+// ---------- 版面常數 ----------
+const SB = 228, TB = 62, P = 22, GAP = 18;
+
+function draw() {
+  background(8, 12, 24);
+  update();
+  const cx = SB + P, cw = width - SB - P * 2;
+  const y0 = TB + P;
+  const kcw = (cw - GAP * 3) / 4;
+  for (let i = 0; i < 4; i++) drawKpi(cx + i * (kcw + GAP), y0, kcw, 116, kpis[i], sparks[i]);
+  const y1 = y0 + 116 + GAP;
+  const lw = (cw - GAP) * 0.63, dw = cw - GAP - lw;
+  lineChart(cx, y1, lw, 258);
+  donutChart(cx + lw + GAP, y1, dw, 258);
+  const y2 = y1 + 258 + GAP;
+  const bw2 = (cw - GAP) / 2;
+  const bh = Math.max(150, height - y2 - P);
+  barChart(cx, y2, bw2, bh);
+  logPanel(cx + bw2 + GAP, y2, bw2, bh);
+  sidebar();
+  topbar();
+}
+
+function panel(x, y, w, h, title, en) {
+  fill(13, 18, 34); stroke(255, 255, 255, 10); strokeWeight(1);
+  rect(x, y, w, h, 14);
+  noStroke(); fill(226, 232, 245); textSize(13); textStyle(BOLD); textAlign(LEFT, TOP);
+  text(title, x + 18, y + 15);
+  fill(100, 112, 145); textSize(9); textStyle(NORMAL);
+  text(en, x + 18, y + 34);
+  return { x: x + 18, y: y + 52, w: w - 36, h: h - 66 };
+}
+
+// ---------- 側邊欄 ----------
+function sidebar() {
+  noStroke(); fill(10, 15, 29); rect(0, 0, SB, height);
+  stroke(255, 255, 255, 8); line(SB, 0, SB, height);
+  // logo
+  noStroke(); fill(56, 189, 248); circle(38, 36, 34);
+  fill(10, 15, 29); textAlign(CENTER, CENTER); textSize(15); textStyle(BOLD); text('曜', 38, 36);
+  fill(226, 232, 245); textAlign(LEFT, CENTER); textSize(14); text('曜城 MIS', 62, 28);
+  fill(100, 112, 145); textSize(9); textStyle(NORMAL); text('CITY ADMIN CONSOLE', 62, 46);
+  // 選單
+  let hoverAny = false;
+  for (let i = 0; i < menu.length; i++) {
+    const my = 92 + i * 48;
+    const hover = mouseX > 12 && mouseX < SB - 12 && mouseY > my && mouseY < my + 40;
+    if (hover) hoverAny = true;
+    if (i === 0) {
+      fill(56, 189, 248, 26); noStroke(); rect(12, my, SB - 24, 40, 10);
+      fill(56, 189, 248); rect(12, my, 3, 40, 2);
+    } else if (hover) {
+      fill(255, 255, 255, 10); noStroke(); rect(12, my, SB - 24, 40, 10);
+    }
+    noStroke();
+    const mc = i === 0 ? [125, 211, 252] : hover ? [200, 208, 230] : [120, 132, 158];
+    fill(mc[0], mc[1], mc[2]);
+    textSize(14); textAlign(LEFT, CENTER); text(glyphs[i], 28, my + 21);
+    textSize(12.5); textStyle(i === 0 ? BOLD : NORMAL);
+    text(menu[i], 54, my + 21);
+    textStyle(NORMAL);
+  }
+  // 使用者
+  const uy = height - 64;
+  stroke(255, 255, 255, 8); line(16, uy - 12, SB - 16, uy - 12);
+  noStroke(); fill(167, 139, 250); circle(36, uy + 16, 32);
+  fill(10, 15, 29); textAlign(CENTER, CENTER); textSize(13); textStyle(BOLD); text('陳', 36, uy + 16);
+  fill(226, 232, 245); textAlign(LEFT, CENTER); textSize(12); text('陳冠廷', 60, uy + 8);
+  fill(100, 112, 145); textSize(9.5); textStyle(NORMAL); text('系統管理員', 60, uy + 26);
+  cursor(hoverAny ? HAND : ARROW);
+}
+
+// ---------- 頂欄 ----------
+function topbar() {
+  noStroke(); fill(10, 15, 29); rect(SB, 0, width - SB, TB);
+  stroke(255, 255, 255, 8); line(SB, TB, width, TB);
+  noStroke(); fill(226, 232, 245); textSize(15); textStyle(BOLD); textAlign(LEFT, CENTER);
+  text('營運儀表板', SB + P, TB / 2);
+  fill(100, 112, 145); textSize(11); textStyle(NORMAL);
+  text('/ 即時總覽', SB + P + 82, TB / 2 + 1);
+  // 搜尋
+  const sw = Math.min(240, width * 0.18), sx = width - P - 210 - sw - 14;
+  fill(255, 255, 255, 8); stroke(255, 255, 255, 14); rect(sx, TB / 2 - 15, sw, 30, 15);
+  noStroke(); fill(90, 102, 135); textSize(11); textAlign(LEFT, CENTER); text('⌕ 搜尋案件、市民或節點…', sx + 14, TB / 2);
+  // 時間 + 鈴鐺
+  fill(226, 232, 245); textSize(13); textAlign(RIGHT, CENTER);
+  text(nf(hour(), 2) + ':' + nf(minute(), 2) + ':' + nf(second(), 2), width - P - 46, TB / 2);
+  fill(255, 255, 255, 10); stroke(255, 255, 255, 16); circle(width - P - 22, TB / 2, 30);
+  noStroke(); fill(160, 172, 200); textAlign(CENTER, CENTER); textSize(13); text('♪', width - P - 22, TB / 2);
+  fill(251, 113, 133); circle(width - P - 12, TB / 2 - 10, 7);
+}
+
+// ---------- KPI 卡 ----------
+function drawKpi(x, y, w, h, k, spark) {
+  fill(13, 18, 34); stroke(255, 255, 255, 10); rect(x, y, w, h, 14);
+  noStroke(); fill(k.c[0], k.c[1], k.c[2]); rect(x, y, 3, h, 2);
+  fill(120, 132, 165); textSize(11); textAlign(LEFT, TOP); text(k.label, x + 18, y + 16);
+  // 數值
+  fill(240, 244, 252); textSize(min(26, w * 0.15)); textStyle(BOLD);
+  const vtxt = k.dec ? k.val.toFixed(k.dec) : Math.round(k.val).toLocaleString();
+  text(vtxt, x + 18, y + 38);
+  const vw = textWidth(vtxt);
+  textStyle(NORMAL); textSize(11); fill(120, 132, 165); text(k.suffix, x + 20 + vw, y + 52);
+  // delta 膠囊（依指標性質決定紅綠）
+  const neg = k.delta.startsWith('-');
+  const good = (!neg && k.goodUp) || (neg && !k.goodUp);
+  const dc = good ? [52, 211, 153] : [251, 113, 133];
+  fill(dc[0], dc[1], dc[2], 30);
+  const dtw = textWidth(k.delta) + 16;
+  rect(x + w - dtw - 14, y + 14, dtw, 20, 10);
+  fill(dc[0], dc[1], dc[2]); textSize(10); textAlign(CENTER, CENTER);
+  text((neg ? '▼ ' : '▲ ') + k.delta.slice(1), x + w - dtw / 2 - 14, y + 24);
+  // 迷你走勢
+  const sy = y + h - 38, sh = 26;
+  stroke(k.c[0], k.c[1], k.c[2], 200); strokeWeight(1.6); noFill();
+  beginShape();
+  for (let i = 0; i < spark.length; i++) {
+    vertex(x + 16 + (i / (spark.length - 1)) * (w - 32), sy + sh - (spark[i] / 100) * sh);
+  }
+  endShape();
+  const lx = x + 16 + (w - 32);
+  const ly = sy + sh - (spark[spark.length - 1] / 100) * sh;
+  noStroke(); fill(k.c[0], k.c[1], k.c[2]); circle(lx, ly, 5);
+}
+
+// ---------- 折線圖 ----------
+function lineChart(x, y, w, h) {
+  const inn = panel(x, y, w, h, '申辦趨勢', 'APPLICATIONS — LAST 36 PERIODS');
+  // 圖例
+  noStroke(); textSize(10); textAlign(LEFT, CENTER);
+  fill(56, 189, 248); circle(x + w - 150, y + 24, 7);
+  fill(150, 160, 190); text('線上申辦', x + w - 140, y + 25);
+  fill(167, 139, 250); circle(x + w - 70, y + 24, 7);
+  fill(150, 160, 190); text('臨櫃受理', x + w - 60, y + 25);
+  // 格線
+  stroke(255, 255, 255, 8); strokeWeight(1);
+  for (let i = 0; i <= 4; i++) {
+    const gy = inn.y + (i / 4) * inn.h;
+    line(inn.x, gy, inn.x + inn.w, gy);
+    noStroke(); fill(80, 92, 125); textSize(9); textAlign(RIGHT, CENTER);
+    text(round(100 - i * 25), inn.x - 6 < x + 4 ? inn.x + 2 : inn.x - 6, gy);
+    stroke(255, 255, 255, 8);
+  }
+  const stepX = inn.w / (seriesA.length - 1);
+  // A 區域漸層
+  const g = drawingContext.createLinearGradient(0, inn.y, 0, inn.y + inn.h);
+  g.addColorStop(0, 'rgba(56,189,248,0.28)');
+  g.addColorStop(1, 'rgba(56,189,248,0)');
+  drawingContext.fillStyle = g;
+  drawingContext.beginPath();
+  drawingContext.moveTo(inn.x, inn.y + inn.h);
+  for (let i = 0; i < seriesA.length; i++) drawingContext.lineTo(inn.x + i * stepX, inn.y + inn.h - (seriesA[i] / 100) * inn.h);
+  drawingContext.lineTo(inn.x + inn.w, inn.y + inn.h);
+  drawingContext.closePath();
+  drawingContext.fill();
+  // 兩條線
+  drawLineSeries(seriesA, inn, stepX, [56, 189, 248]);
+  drawLineSeries(seriesB, inn, stepX, [167, 139, 250]);
+  // 末端光點
+  noStroke(); fill(56, 189, 248, 60 + sin(frameCount * 0.1) * 40);
+  circle(inn.x + inn.w, inn.y + inn.h - (seriesA[seriesA.length - 1] / 100) * inn.h, 14);
+  fill(56, 189, 248);
+  circle(inn.x + inn.w, inn.y + inn.h - (seriesA[seriesA.length - 1] / 100) * inn.h, 6);
+}
+function drawLineSeries(s, inn, stepX, c) {
+  stroke(c[0], c[1], c[2], 230); strokeWeight(2); noFill();
+  beginShape();
+  for (let i = 0; i < s.length; i++) vertex(inn.x + i * stepX, inn.y + inn.h - (s[i] / 100) * inn.h);
+  endShape();
+}
+
+// ---------- 環圖 ----------
+function donutChart(x, y, w, h) {
+  panel(x, y, w, h, '服務通路', 'CHANNEL SHARE');
+  const cx = x + w / 2, cy = y + h / 2 - 18;
+  const d = Math.min(w, h) * 0.5;
+  let a = -HALF_PI + frameCount * 0.003;
+  strokeWeight(22); noFill();
+  for (const s of donut) {
+    const sweep = (s.v / 100) * TWO_PI;
+    stroke(s.c[0], s.c[1], s.c[2]);
+    arc(cx, cy, d, d, a + 0.06, a + sweep - 0.06);
+    a += sweep;
+  }
+  noStroke(); fill(240, 244, 252); textAlign(CENTER, CENTER);
+  textSize(22); textStyle(BOLD); text('3,842', cx, cy - 8);
+  textSize(9); textStyle(NORMAL); fill(100, 112, 145); text('本月總量', cx, cy + 12);
+  // 圖例
+  let ly = y + h - 64;
+  for (const s of donut) {
+    fill(s.c[0], s.c[1], s.c[2]); circle(x + 24, ly, 8);
+    fill(170, 180, 205); textSize(11); textAlign(LEFT, CENTER); text(s.label, x + 38, ly);
+    fill(240, 244, 252); textAlign(RIGHT, CENTER); text(s.v + '%', x + w - 24, ly);
+    ly += 16;
+  }
+}
+
+// ---------- 長條圖 ----------
+function barChart(x, y, w, h) {
+  const inn = panel(x, y, w, h, '各局處案件量', 'DEPARTMENT WORKLOAD');
+  const bw = inn.w / bars.length;
+  for (let i = 0; i <= 4; i++) {
+    const gy = inn.y + (i / 4) * (inn.h - 18);
+    stroke(255, 255, 255, 8); strokeWeight(1);
+    line(inn.x, gy, inn.x + inn.w, gy);
+  }
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const bh2 = (b.val / 100) * (inn.h - 18);
+    const bx = inn.x + i * bw + bw * 0.22;
+    const bwid = bw * 0.56;
+    const by = inn.y + (inn.h - 18) - bh2;
+    const g = drawingContext.createLinearGradient(0, by, 0, by + bh2);
+    g.addColorStop(0, 'rgba(56,189,248,0.95)');
+    g.addColorStop(1, 'rgba(124,58,237,0.75)');
+    drawingContext.fillStyle = g;
+    noStroke();
+    rect(bx, by, bwid, bh2, 6);
+    fill(150, 160, 190); textSize(10); textAlign(CENTER, TOP);
+    text(b.label, bx + bwid / 2, inn.y + inn.h - 14);
+    fill(226, 232, 245); textAlign(CENTER, BOTTOM); textSize(10);
+    text(Math.round(b.val), bx + bwid / 2, by - 4);
+  }
+}
+
+// ---------- 事件流 ----------
+function logPanel(x, y, w, h) {
+  const inn = panel(x, y, w, h, '即時事件流', 'LIVE EVENTS');
+  const lc = { INFO: [56, 189, 248], WARN: [251, 191, 36], ERROR: [251, 113, 133] };
+  for (let i = 0; i < logs.length; i++) {
+    const L = logs[i];
+    const ly = inn.y + i * ((inn.h) / 8) + 4;
+    const a = Math.min(255, (frameCount - L.born) * 8);
+    const c = lc[L.lv];
+    noStroke(); fill(c[0], c[1], c[2], a * 0.14);
+    rect(inn.x, ly - 4, inn.w, (inn.h) / 8 - 6, 8);
+    fill(c[0], c[1], c[2], a); circle(inn.x + 14, ly + 9, 7);
+    fill(100, 112, 145, a); textSize(9.5); textAlign(LEFT, CENTER);
+    text(L.t, inn.x + 28, ly + 9);
+    fill(200, 208, 228, a); textSize(11);
+    text(L.msg, inn.x + 86, ly + 9);
+  }
+}
+
+function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+</script>
+</body>
+</html>

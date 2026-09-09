@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  設計規格｜24 深夜終端·日誌稽核（MIS）
+  ─ 風格定位：純黑終端機／駭客戰情室，等寬字、語法高亮、ASCII 框線
+  ─ 配色：純黑 #000 / 終端綠 #00e676 / 黃 #ffea00 / 紅 #ff1744 / 紫 #d500f9 / 青 #00e5ff / 灰 #555 / 面板邊線 #1f1f1f
+  ─ 字體：'JetBrains Mono','Cascadia Code','Consolas' 全等寬
+  ─ 版面：頂部查詢過濾列（level 過濾按鈕+關鍵字）→ ASCII 框線統計小卡 ×4 → 即時滾動日誌流 → 底部狀態列
+  ─ 動態：setInterval 每 1.2s 追加新日誌行（含打字游標閃爍）；等級過濾即時生效；游標 ▌閃爍
+-->
+<title>auditd · 日誌稽核終端 — audit.term</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#000;color:#c8e6c9;min-height:100vh;display:flex;flex-direction:column;
+    font-family:'JetBrains Mono','Cascadia Code','Consolas',monospace;font-size:13px;
+  }
+  ::selection{background:#00e676;color:#000}
+  /* CRT 掃描線 */
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px)}
+  /* 頂部過濾列 */
+  .filterbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;
+    border-bottom:1px solid #1f1f1f;background:#050505;position:sticky;top:0;z-index:10}
+  .back{color:#00e5ff;text-decoration:none;border:1px solid #00e5ff55;padding:5px 12px;transition:.15s;white-space:nowrap}
+  .back:hover{background:#00e5ff;color:#000}
+  .fname{color:#555}
+  .fbtn{background:#000;border:1px solid #333;color:#888;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12px;transition:.15s}
+  a.fbtn{text-decoration:none;display:inline-block}
+  a.fbtn:hover{border-color:#00e5ff;color:#00e5ff}
+  .fbtn:hover{border-color:#888;color:#ccc}
+  .fbtn.on[data-lv="INFO"]{border-color:#00e676;color:#00e676;background:rgba(0,230,118,.08)}
+  .fbtn.on[data-lv="WARN"]{border-color:#ffea00;color:#ffea00;background:rgba(255,234,0,.08)}
+  .fbtn.on[data-lv="ERROR"]{border-color:#ff1744;color:#ff1744;background:rgba(255,23,68,.08)}
+  .fbtn.on[data-lv="DEBUG"]{border-color:#d500f9;color:#d500f9;background:rgba(213,0,249,.08)}
+  #kw{background:#000;border:1px solid #333;color:#00e676;padding:5px 10px;font-family:inherit;font-size:12px;width:190px;outline:none}
+  #kw:focus{border-color:#00e676}
+  #kw::placeholder{color:#444}
+  .pause{margin-left:auto}
+  .fbtn.on.paused{border-color:#ffea00;color:#ffea00}
+  /* ASCII 統計卡 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:16px}
+  .stat{border:1px solid #1f1f1f;padding:0;background:#030303}
+  .stat pre{color:#555;font-size:12px;line-height:1.35;padding:10px 12px;overflow:hidden;white-space:pre}
+  .stat pre b{font-weight:700}
+  .stat .n{color:#fff;font-size:15px}
+  .c-info b{color:#00e676}.c-warn b{color:#ffea00}.c-error b{color:#ff1744}.c-debug b{color:#d500f9}
+  /* 日誌流 */
+  .logwrap{flex:1;padding:0 16px 8px;overflow-y:auto}
+  .loghead{color:#555;padding:10px 4px;border-bottom:1px dashed #1f1f1f;letter-spacing:1px}
+  #log{line-height:1.75;padding:10px 4px 20px}
+  .line{white-space:pre-wrap;word-break:break-all;animation:fadein .25s}
+  @keyframes fadein{from{opacity:0;transform:translateX(-6px)}to{opacity:1}}
+  .ts{color:#555}
+  .lv{display:inline-block;min-width:52px;font-weight:700}
+  .lv-INFO{color:#00e676}.lv-WARN{color:#ffea00}.lv-ERROR{color:#ff1744}.lv-DEBUG{color:#d500f9}
+  .src{color:#00e5ff}
+  .msg{color:#b0bec5}
+  .msg .hl{color:#fff;background:#222;padding:0 3px}
+  .ip{color:#e1bee7}
+  .hidden{display:none}
+  .cursor{display:inline-block;color:#00e676;animation:blink 1s steps(1) infinite;font-weight:700}
+  @keyframes blink{50%{opacity:0}}
+  /* 狀態列 */
+  .statusbar{border-top:1px solid #1f1f1f;background:#050505;padding:7px 16px;display:flex;gap:22px;color:#555;font-size:12px;flex-wrap:wrap}
+  .statusbar b{color:#00e676;font-weight:700}
+  .statusbar .r{margin-left:auto;color:#333}
+</style>
+</head>
+<body>
+  <!-- 頂部查詢過濾列 -->
+  <div class="filterbar">
+    <a class="back" href="../../index.html">← 返回入口</a>
+    <span class="fname">auditd@core-gw-01:/var/log/secure</span>
+    <button class="fbtn on" data-lv="INFO">INFO</button>
+    <button class="fbtn on" data-lv="WARN">WARN</button>
+    <button class="fbtn on" data-lv="ERROR">ERROR</button>
+    <button class="fbtn on" data-lv="DEBUG">DEBUG</button>
+    <input id="kw" type="text" placeholder="grep 關鍵字…（Enter 套用）">
+    <button class="fbtn pause" id="pauseBtn">⏸ 暫停滾動</button>
+    <a class="fbtn" href="hosts.html">hosts</a>
+    <a class="fbtn" href="incident.html">incident</a>
+    <a class="fbtn" href="rules.html">rules</a>
+    <a class="fbtn" href="report.html">report</a>
+  </div>
+
+  <!-- ASCII 統計卡 -->
+  <div class="stats">
+    <div class="stat c-info"><pre>┌─ INFO ──────────────
+│ 今日資訊事件
+│ <b class="n" id="sInfo">0</b> 筆
+└──────────────────────</pre></div>
+    <div class="stat c-warn"><pre>┌─ WARN ──────────────
+│ 警告（需關注）
+│ <b class="n" id="sWarn">0</b> 筆
+└──────────────────────</pre></div>
+    <div class="stat c-error"><pre>┌─ ERROR ─────────────
+│ 錯誤（需處理）
+│ <b class="n" id="sError">0</b> 筆
+└──────────────────────</pre></div>
+    <div class="stat c-debug"><pre>┌─ DEBUG ─────────────
+│ 偵錯追蹤
+│ <b class="n" id="sDebug">0</b> 筆
+└──────────────────────</pre></div>
+  </div>
+
+  <!-- 日誌流 -->
+  <div class="logwrap" id="logwrap">
+    <p class="loghead">$ tail -f /var/log/secure/audit.log --since "today" <span class="cursor">▌</span></p>
+    <div id="log"></div>
+  </div>
+
+  <div class="statusbar">
+    <span>host: <b>core-gw-01</b></span>
+    <span>source: <b>journald → fluent-bit</b></span>
+    <span>buffer: <b id="buf">0</b> lines</span>
+    <span id="filt">filter: ALL</span>
+    <span class="r">UTF-8 · 稽核模式 · 連線加密 TLS1.3</span>
+  </div>
+
+<script>
+const logEl=document.getElementById('log');
+const wrapEl=document.getElementById('logwrap');
+const counts={INFO:0,WARN:0,ERROR:0,DEBUG:0};
+const active={INFO:true,WARN:true,ERROR:true,DEBUG:true};
+let paused=false,kw='';
+let total=0;
+
+const samples=[
+ ['INFO','auth','使用者 <span class="hl">lisa.chen</span> 自 <span class="ip">10.24.8.15</span> 登入成功（MFA: TOTP）'],
+ ['INFO','backup','夜間備份完成：db-prod-02 → 異地機房，耗時 14m32s，大小 8.7GB'],
+ ['INFO','deploy','服務 <span class="hl">billing-api</span> v3.8.1 部署完成（canary 10%）'],
+ ['INFO','cron','排程 purge_tmp 執行完畢，清除 1,204 個暫存檔'],
+ ['WARN','auth','使用者 <span class="hl">guest-ops</span> 密碼連續錯誤 4 次（<span class="ip">203.74.19.2</span>），已暫時鎖定 10 分鐘'],
+ ['WARN','disk','/var/log 使用率達 <span class="hl">82%</span>，建議清理或擴容'],
+ ['WARN','tls','憑證 api.internal 將於 <span class="hl">14 天後</span>到期'],
+ ['WARN','rate','API /v2/orders 請求量超過閾值：612 req/min（閾值 500）'],
+ ['ERROR','db','連線池耗盡：postgres@db-prod-02，等待逾時 30s 後釋放'],
+ ['ERROR','auth','偵測到異地登入：帳號 <span class="hl">sysadmin</span> 來自 <span class="ip">45.148.10.88</span>（RU），已阻擋並通報'],
+ ['ERROR','deploy','health-check 失敗：inventory-svc:8080 回應 503，已自動回滾至 v2.4.0'],
+ ['DEBUG','trace','span#9f31d2 auth.verify → token introspect 耗時 41ms'],
+ ['DEBUG','cache','cache miss: session:u88213，回源查詢 12ms'],
+ ['DEBUG','queue','worker-7 領取任務 job_58f2（queue: email-digest）'],
+];
+function ts(){
+  const d=new Date();
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3,'0')}`;
+}
+function addLine(){
+  if(paused)return;
+  const s=samples[Math.floor(Math.random()*samples.length)];
+  counts[s[0]]++;total++;
+  const div=document.createElement('div');
+  div.className='line';
+  div.dataset.lv=s[0];
+  div.innerHTML=`<span class="ts">${ts()}</span> <span class="lv lv-${s[0]}">[${s[0]}]</span> <span class="src">(${s[1]})</span> <span class="msg">${s[2]}</span>`;
+  logEl.appendChild(div);
+  if(total>300){logEl.removeChild(logEl.firstChild);}
+  updateStats();applyFilter(div);
+  wrapEl.scrollTop=wrapEl.scrollHeight;
+  document.getElementById('buf').textContent=Math.min(total,300);
+}
+function updateStats(){
+  document.getElementById('sInfo').textContent=counts.INFO;
+  document.getElementById('sWarn').textContent=counts.WARN;
+  document.getElementById('sError').textContent=counts.ERROR;
+  document.getElementById('sDebug').textContent=counts.DEBUG;
+}
+function applyFilter(line){
+  const matchKw=!kw||line.textContent.toLowerCase().includes(kw);
+  line.classList.toggle('hidden',!(active[line.dataset.lv]&&matchKw));
+}
+function refilterAll(){
+  document.querySelectorAll('#log .line').forEach(applyFilter);
+  const on=Object.keys(active).filter(k=>active[k]);
+  document.getElementById('filt').textContent='filter: '+(on.length===4&&!kw?'ALL':on.join('|')+(kw?` + "${kw}"`:''));
+}
+document.querySelectorAll('.fbtn[data-lv]').forEach(b=>b.addEventListener('click',()=>{
+  active[b.dataset.lv]=!active[b.dataset.lv];
+  b.classList.toggle('on');
+  refilterAll();
+}));
+document.getElementById('kw').addEventListener('input',e=>{kw=e.target.value.trim().toLowerCase();refilterAll();});
+document.getElementById('pauseBtn').addEventListener('click',function(){
+  paused=!paused;
+  this.textContent=paused?'▶ 繼續滾動':'⏸ 暫停滾動';
+  this.classList.toggle('paused',paused);
+});
+// 初始補 18 行歷史
+for(let i=0;i<18;i++){const p=paused;paused=false;addLine();paused=p;}
+setInterval(addLine,1200);
+</script>
+</body>
+</html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>21 · 帳號權限管理 — SYSOPS TERMINAL</title>
+<style>
+:root{--p:#33ff66;--pd:#149c36;--pdd:#0a4d1c;--bg:#040a05;--amber:#ffcc33;--red:#ff5b4a;--sec:#6fe38b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--p);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","Courier New","Noto Sans Mono",monospace;font-size:13px;line-height:1.45;
+  text-shadow:0 0 4px rgba(51,255,102,.55)}
+.crt{position:fixed;inset:0;z-index:100;pointer-events:none}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px)}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(110% 90% at 50% 50%,transparent 52%,rgba(0,0,0,.85));
+  box-shadow:inset 0 0 130px rgba(51,255,102,.10)}
+.flick{position:fixed;inset:0;z-index:101;pointer-events:none;background:rgba(51,255,102,.03);
+  animation:fl .14s steps(2) infinite}
+@keyframes fl{50%{opacity:.35}}
+.scan{position:fixed;left:0;right:0;height:90px;z-index:99;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(51,255,102,.06),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-100px}to{top:100%}}
+
+.home{position:fixed;right:12px;top:12px;z-index:110;text-decoration:none;color:var(--bg);
+  background:var(--p);padding:6px 13px;font-size:11px;letter-spacing:.14em;text-shadow:none;
+  box-shadow:0 0 18px rgba(51,255,102,.6)}
+.home:hover{background:var(--amber);box-shadow:0 0 22px rgba(255,204,51,.7)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+.term{position:relative;z-index:5;padding:14px;max-width:1500px;margin:0 auto}
+.head{border:1px solid var(--pd);padding:8px 130px 8px 12px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px}
+.head b{color:var(--amber);text-shadow:0 0 6px rgba(255,204,51,.6)}
+.topnav{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;background:rgba(0,10,2,.5)}
+.topnav span{font-size:10px;letter-spacing:.24em;color:#3f8f56;padding:8px 12px;border-right:1px solid var(--pdd)}
+.topnav a{padding:8px 14px;color:var(--sec);text-decoration:none;font-size:12px;letter-spacing:.06em;
+  border-right:1px solid var(--pdd);transition:.15s}
+.topnav a:hover{color:var(--p);background:rgba(51,255,102,.09)}
+.topnav a.on{color:var(--bg);background:var(--p);text-shadow:none}
+
+.counters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border:1px solid var(--pd);
+  margin-bottom:12px}
+.counters>div{padding:11px 13px;border-right:1px solid var(--pdd)}
+.counters>div:last-child{border-right:0}
+.counters .k{font-size:9.5px;letter-spacing:.22em;color:#3f8f56}
+.counters .v{font-size:26px;letter-spacing:-.02em;margin-top:5px}
+.counters .v small{font-size:11px;letter-spacing:.1em;color:var(--sec);margin-left:5px}
+.counters .v.hot{color:var(--amber);text-shadow:0 0 9px rgba(255,204,51,.5)}
+
+.bar{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:stretch}
+.bar button{appearance:none;background:transparent;border:0;border-right:1px solid var(--pdd);cursor:pointer;
+  font:inherit;font-size:11.5px;letter-spacing:.08em;color:var(--sec);padding:8px 14px;transition:.15s;text-shadow:inherit}
+.bar button:hover{background:rgba(51,255,102,.1);color:var(--p)}
+.bar button[aria-pressed="true"]{background:var(--p);color:var(--bg);text-shadow:none}
+.bar .sp{flex:1 1 40px;border-right:1px solid var(--pdd)}
+.bar .live{padding:8px 14px;font-size:11.5px;color:var(--amber)}
+
+/* ---------- matrix ---------- */
+.wrapgrid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:12px;align-items:start}
+.mxbox{border:1px solid var(--pd);min-width:0}
+.mxbox>h2,.side>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-weight:normal}
+.mxbox>h2 em,.side>h2 em{font-style:normal;color:var(--sec)}
+.mxscroll{overflow-x:auto;padding:0 0 4px}
+table.mx{border-collapse:collapse;font-size:11.5px;min-width:820px}
+table.mx th,table.mx td{border:1px solid rgba(20,156,54,.35)}
+table.mx thead th{background:rgba(51,255,102,.05);font-weight:normal;color:var(--sec);vertical-align:bottom}
+table.mx th.grp{font-size:9px;letter-spacing:.2em;color:#3f8f56;padding:4px 6px;text-align:center}
+table.mx th.cap{padding:8px 2px;height:118px;width:34px}
+table.mx th.cap span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;
+  font-size:10.5px;letter-spacing:.06em;display:inline-block}
+table.mx th.cap.risk span{color:var(--amber)}
+table.mx th.who{text-align:left;padding:6px 10px;min-width:168px;position:sticky;left:0;
+  background:#061109;z-index:2}
+table.mx td.who{position:sticky;left:0;background:#040a05;z-index:1;padding:0}
+table.mx td.who button{appearance:none;width:100%;background:transparent;border:0;color:inherit;font:inherit;
+  text-align:left;cursor:pointer;padding:5px 10px;text-shadow:inherit;display:block}
+table.mx td.who button:hover{background:rgba(51,255,102,.12)}
+table.mx tr.sel td.who button{background:var(--pd);color:var(--bg);text-shadow:none}
+.uname{font-size:12px;letter-spacing:.04em}
+.ugrp{font-size:9.5px;color:var(--sec);letter-spacing:.1em}
+tr.off .uname{color:#2f7a45;text-decoration:line-through}
+table.mx td.c{padding:0;text-align:center;width:34px}
+table.mx td.c button{appearance:none;width:100%;height:26px;background:transparent;border:0;cursor:pointer;
+  color:#1e6b34;font:inherit;font-size:13px;line-height:1;text-shadow:inherit;transition:.12s}
+table.mx td.c button:hover{background:rgba(51,255,102,.18)}
+td.c.d button{color:var(--p);text-shadow:0 0 8px rgba(51,255,102,.8)}
+td.c.i button{color:var(--sec);opacity:.8}
+td.c.risk.d button{color:var(--amber);text-shadow:0 0 9px rgba(255,204,51,.7)}
+td.c.lock button{color:var(--red);cursor:not-allowed}
+td.n{text-align:right;padding:4px 8px;color:var(--sec);font-size:11px}
+tbody tr:hover td:not(.who){background:rgba(51,255,102,.07)}
+.hidecol{display:none}
+.legend{display:flex;flex-wrap:wrap;gap:18px;padding:9px 12px;border-top:1px solid var(--pdd);
+  font-size:10.5px;color:#3f8f56}
+.legend b{color:var(--p);font-weight:normal}
+
+/* ---------- side ---------- */
+.side{border:1px solid var(--pd);position:sticky;top:12px}
+.side .bd{padding:11px 12px}
+.uhead{font-size:17px;letter-spacing:.06em}
+.uhead b{color:var(--amber)}
+.usub{font-size:11px;color:var(--sec);margin:3px 0 10px}
+.kv{font-size:11.5px;line-height:1.95;border-top:1px dotted rgba(20,156,54,.5);
+  border-bottom:1px dotted rgba(20,156,54,.5);padding:8px 0;margin-bottom:10px}
+.kv b{color:var(--sec);font-weight:normal;display:inline-block;min-width:92px}
+.sect{font-size:10px;letter-spacing:.22em;color:var(--sec);margin:12px 0 6px;
+  border-bottom:1px solid var(--pdd);padding-bottom:4px}
+.caps{display:flex;flex-wrap:wrap;gap:5px}
+.caps span{font-size:10.5px;border:1px solid var(--pdd);padding:3px 7px;letter-spacing:.04em}
+.caps span.d{border-color:var(--p);color:var(--p)}
+.caps span.risk{border-color:var(--amber);color:var(--amber)}
+.sudo{background:#03150a;border:1px dashed var(--pdd);padding:9px 11px;font-size:11px;
+  white-space:pre-wrap;color:#8dffae;overflow-x:auto;margin-top:6px}
+.note{font-size:10.5px;color:#3f8f56;line-height:1.85;margin-top:10px}
+.note b{color:var(--amber)}
+
+/* ---------- group table ---------- */
+.groups{border:1px solid var(--pd);margin-top:12px}
+.groups>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;font-weight:normal}
+.groups>h2 em{font-style:normal;color:var(--sec)}
+.gw{overflow-x:auto}
+table.gt{width:100%;border-collapse:collapse;font-size:11.5px;min-width:700px}
+table.gt th{text-align:left;color:var(--sec);font-weight:normal;padding:6px 10px;border-bottom:1px solid var(--pdd);white-space:nowrap}
+table.gt td{padding:6px 10px;border-bottom:1px dotted rgba(20,156,54,.4);vertical-align:top}
+table.gt tr:hover td{background:rgba(51,255,102,.08)}
+table.gt td.n{text-align:right}
+.ftr{margin-top:12px;border-top:1px solid var(--pdd);padding-top:8px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  font-size:10px;letter-spacing:.24em;color:#3f8f56}
+
+@media(max-width:1180px){
+  .wrapgrid{grid-template-columns:1fr}
+  .side{position:static}
+}
+@media(max-width:640px){
+  .term{padding:10px}
+  table.mx th.who{min-width:132px}
+  table.mx th.cap{height:104px;width:30px}
+  table.mx td.c,table.mx td.c button{width:30px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="flick"></div><div class="scan"></div>
+<a class="home" href="../../index.html">[ESC] INDEX</a>
+
+<div class="term">
+  <div class="head">
+    <span>SYSOPS TERMINAL v4.12 — MODULE <b>accessctl</b></span>
+    <span>目錄來源 <b>LDAP dc=taipei,dc=lan</b> + /etc/sudoers.d</span>
+    <span>最後同步 <b>19:45:02</b></span>
+  </div>
+
+  <nav class="topnav" aria-label="模組導覽">
+    <span>MODULES</span>
+    <a href="index.html">▶ 系統監控主頁</a>
+    <a href="list.html">▶ 服務進程管理</a>
+    <a href="logs.html">▶ 系統日誌查詢</a>
+    <a href="users.html" class="on" aria-current="page">▶ 帳號權限管理</a>
+    <a href="report.html">▶ 效能統計報表</a>
+  </nav>
+
+  <div class="counters">
+    <div><div class="k">TOTAL ACCOUNTS</div><div class="v">18<small>個</small></div></div>
+    <div><div class="k">LDAP GROUPS</div><div class="v">7<small>組</small></div></div>
+    <div><div class="k">EFFECTIVE GRANTS</div><div class="v"><span id="c-eff">0</span><small>/ 216 格</small></div></div>
+    <div><div class="k">HIGH-RISK GRANTS</div><div class="v hot"><span id="c-risk">0</span><small>個</small></div></div>
+    <div><div class="k">STALE &gt; 90 DAYS</div><div class="v hot">2<small>個</small></div></div>
+    <div><div class="k">DISABLED</div><div class="v">2<small>個</small></div></div>
+  </div>
+
+  <div class="bar" role="group" aria-label="矩陣顯示選項">
+    <button type="button" id="t-inherit" aria-pressed="true">◐ 顯示群組繼承</button>
+    <button type="button" id="t-risk" aria-pressed="false">⚑ 僅高風險權限</button>
+    <button type="button" id="t-active" aria-pressed="false">✓ 僅啟用中帳號</button>
+    <div class="sp"></div>
+    <span class="live" id="live" role="status">就緒 — 點擊格子可直接授權／收回</span>
+  </div>
+
+  <div class="wrapgrid">
+    <section class="mxbox">
+      <h2><span>[ ACCESS MATRIX — 18 帳號 × 12 權限 ]</span><em>● 直接授權 ◐ 群組繼承 · 未授權</em></h2>
+      <div class="mxscroll">
+        <table class="mx" id="mx">
+          <thead>
+            <tr id="hgrp"></tr>
+            <tr id="hcap"></tr>
+          </thead>
+          <tbody id="mbody"></tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span><b>●</b> 直接授權（寫入 sudoers.d）</span>
+        <span><b>◐</b> 由 LDAP 群組繼承</span>
+        <span><b>·</b> 未授權</span>
+        <span><b>✕</b> 系統鎖定，不可變更</span>
+      </div>
+    </section>
+
+    <aside class="side" aria-live="polite">
+      <h2><span>[ ACCOUNT DETAIL ]</span><em id="s-uid">uid=0</em></h2>
+      <div class="bd">
+        <div class="uhead"><b id="s-name">root</b></div>
+        <div class="usub" id="s-full">系統超級使用者 · 主要群組 ops</div>
+        <div class="kv" id="s-kv"></div>
+        <div class="sect">[ EFFECTIVE CAPABILITIES ]</div>
+        <div class="caps" id="s-caps"></div>
+        <div class="sect">[ SUDOERS FRAGMENT ]</div>
+        <pre class="sudo" id="s-sudo"></pre>
+        <p class="note">※ 高風險權限（<b>sudo.root / deploy.prod / secret.read / user.admin</b>）之異動會即時寫入稽核軌跡，
+        並於 <a href="logs.html" style="color:var(--sec)">系統日誌查詢</a> 以 priority=4 記錄。root 之 ssh.login 與 sudo.root 由系統鎖定。</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="groups">
+    <h2><span>[ LDAP GROUP MAP ]</span><em>7 組 · 繼承權限來源</em></h2>
+    <div class="gw">
+      <table class="gt">
+        <thead><tr><th>群組</th><th>用途</th><th>繼承權限</th><th class="n">成員</th><th class="n">高風險</th></tr></thead>
+        <tbody id="gbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="ftr">
+    <span>P H O S P H O R   C R T   T E R M I N A L</span>
+    <span>Users / Access Matrix</span>
+    <span>D E S I G N   2 1 / 4 0</span>
+  </div>
+</div>
+
+<script>
+/* ---- 權限欄位定義 ---- */
+const GROUPCOL = [
+  ["SYSTEM", ["ssh.login", "sudo.root", "systemctl.restart"]],
+  ["DATABASE", ["db.readonly", "db.write", "db.dump"]],
+  ["DEPLOY", ["deploy.staging", "deploy.prod", "registry.push"]],
+  ["AUDIT", ["log.read", "secret.read", "user.admin"]]
+];
+const CAPS = GROUPCOL.flatMap(g => g[1]);
+const RISK = new Set(["sudo.root", "deploy.prod", "secret.read", "user.admin"]);
+
+/* ---- 群組 → 繼承權限 ---- */
+const GROUPS = {
+  ops:      {use:"平台維運 · 主機層全權", caps:["ssh.login","sudo.root","systemctl.restart","log.read"]},
+  dba:      {use:"資料庫管理 · 不含主機 root", caps:["ssh.login","db.readonly","db.write","db.dump","log.read"]},
+  dev:      {use:"應用開發 · 僅測試環境", caps:["ssh.login","db.readonly","deploy.staging"]},
+  deployer: {use:"發布管線 · CI/CD 專用", caps:["ssh.login","systemctl.restart","deploy.staging","deploy.prod","registry.push"]},
+  audit:    {use:"稽核與資安 · 唯讀取證", caps:["ssh.login","log.read","secret.read"]},
+  svc:      {use:"服務帳號 · 無互動登入", caps:["log.read"]},
+  guest:    {use:"實習／外包 · 最小權限", caps:["ssh.login"]}
+};
+
+/* ---- 帳號：uid, 名稱, 群組, 全名, 最後登入, shell, key, 啟用, 直接授權 ---- */
+const USERS = [
+  [0,"root","ops","系統超級使用者","19:47（本機 console）","/bin/bash","ED25519 SHA256:9f2c…a41d",1,[]],
+  [1101,"ops01","ops","陳彥廷 · 平台維運工程師","19:45（10.4.2.18）","/bin/bash","ED25519 SHA256:1b7e…c022",1,["deploy.prod"]],
+  [1102,"ops02","ops","黃莉雯 · 平台維運工程師","18:02（10.4.2.31）","/bin/bash","ED25519 SHA256:44a9…7f13",1,[]],
+  [1103,"ops03","ops","蘇柏彥 · 值班維運（大夜）","08/27 23:10（10.4.2.44）","/bin/bash","ED25519 SHA256:6c31…9e80",1,[]],
+  [1201,"dba01","dba","林于捷 · 資料庫管理員","17:26（10.4.3.12）","/bin/bash","RSA-4096 SHA256:0d55…31ab",1,["log.read"]],
+  [1202,"dba02","dba","許雅涵 · 資料庫管理員","16:40（10.4.3.19）","/bin/bash","ED25519 SHA256:83fe…5c47",1,[]],
+  [1301,"dev01","dev","江宗祐 · 後端工程師","19:12（10.4.6.21）","/bin/bash","ED25519 SHA256:2af0…8b6c",1,["db.dump"]],
+  [1302,"dev02","dev","吳品瑄 · 後端工程師","19:31（10.4.6.24）","/bin/bash","ED25519 SHA256:7d18…4402",1,[]],
+  [1303,"dev03","dev","鄭仲庭 · 前端工程師","15:08（10.4.6.30）","/bin/bash","ED25519 SHA256:5e93…ba71",1,[]],
+  [1304,"dev04","dev","何思妤 · 資料工程師","14:52（10.4.6.33）","/bin/bash","ED25519 SHA256:c604…19df",1,["db.write"]],
+  [1305,"dev05","dev","盧建誠 · 後端工程師（留停）","05/22 09:41（10.4.6.37）","/usr/sbin/nologin","ED25519 SHA256:ae27…6630",0,[]],
+  [1400,"deploy","deployer","發布服務帳號 · Jenkins","19:40（10.4.9.7）","/bin/bash","ED25519 SHA256:31cc…d5a8",1,[]],
+  [1401,"ci-bot","deployer","CI 執行器 · GitLab Runner","19:44（10.4.9.11）","/usr/sbin/nologin","ED25519 SHA256:9a40…7712",1,["registry.push"]],
+  [1501,"audit01","audit","趙又寧 · 內稽專員","11:20（10.4.8.5）","/bin/bash","ED25519 SHA256:0f6b…2c39",1,[]],
+  [1502,"sec01","audit","石孟哲 · 資安工程師","19:03（10.4.8.9）","/bin/bash","ED25519 SHA256:b872…40e1",1,["user.admin"]],
+  [1601,"intern01","guest","方詠晴 · 實習生（合約至 09/30）","05/14 10:02（10.4.7.61）","/bin/bash","ED25519 SHA256:6631…8faa",0,[]],
+  [900,"backup-svc","svc","備份代理 · borg","19:12（10.4.1.41）","/usr/sbin/nologin","ED25519 SHA256:47dd…0a95",1,["db.dump"]],
+  [901,"monitor-svc","svc","監控探針 · prometheus","19:47（10.4.1.51）","/usr/sbin/nologin","ED25519 SHA256:22b1…ff08",1,[]]
+].map(u => ({uid:u[0], name:u[1], grp:u[2], full:u[3], last:u[4], shell:u[5], key:u[6],
+             active:!!u[7], direct:new Set(u[8])}));
+
+/* ---- 建表 ---- */
+const hgrp = document.getElementById("hgrp"), hcap = document.getElementById("hcap");
+hgrp.innerHTML = '<th class="who" rowspan="2">帳號 / 群組</th>' +
+  GROUPCOL.map(g => '<th class="grp" colspan="3">' + g[0] + "</th>").join("") +
+  '<th class="grp" rowspan="2">計</th>';
+hcap.innerHTML = CAPS.map(c =>
+  '<th class="cap' + (RISK.has(c) ? " risk" : "") + '" data-cap="' + c + '"><span>' +
+  (RISK.has(c) ? "⚑ " : "") + c + "</span></th>").join("");
+
+const eff = (u, c) => u.direct.has(c) || GROUPS[u.grp].caps.includes(c);
+const inh = (u, c) => GROUPS[u.grp].caps.includes(c);
+const locked = (u, c) => u.name === "root" && (c === "ssh.login" || c === "sudo.root");
+
+const body = document.getElementById("mbody");
+function cellHTML(u, c){
+  const d = u.direct.has(c), i = inh(u, c), lk = locked(u, c);
+  const cls = "c" + (RISK.has(c) ? " risk" : "") + (lk ? " lock d" : d ? " d" : i ? " i" : "");
+  const glyph = lk ? "✕" : d ? "●" : i ? "◐" : "·";
+  const label = u.name + " " + c + "：" + (lk ? "系統鎖定" : d ? "直接授權" : i ? "群組繼承" : "未授權");
+  return '<td class="' + cls + '" data-cap="' + c + '"><button type="button" data-u="' + u.name +
+    '" data-c="' + c + '" aria-pressed="' + (d || i) + '" aria-label="' + label + '">' + glyph + "</button></td>";
+}
+function rowHTML(u){
+  return '<tr data-u="' + u.name + '" class="' + (u.active ? "" : "off") + '">' +
+    '<td class="who"><button type="button" data-sel="' + u.name + '">' +
+      '<span class="uname">' + u.name + "</span> " +
+      '<span class="ugrp">uid=' + u.uid + " · " + u.grp + "</span></button></td>" +
+    CAPS.map(c => cellHTML(u, c)).join("") +
+    '<td class="n" data-total="' + u.name + '">0</td></tr>';
+}
+body.innerHTML = USERS.map(rowHTML).join("");
+
+/* ---- 統計 ---- */
+function recount(){
+  let e = 0, r = 0;
+  USERS.forEach(u => {
+    let n = 0;
+    CAPS.forEach(c => { if (eff(u, c)) { n++; e++; if (RISK.has(c)) r++; } });
+    body.querySelector('[data-total="' + u.name + '"]').textContent = n;
+  });
+  document.getElementById("c-eff").textContent = e;
+  document.getElementById("c-risk").textContent = r;
+}
+
+/* ---- 側欄 ---- */
+let sel = USERS[0];
+function paintSide(){
+  const u = sel;
+  document.getElementById("s-uid").textContent = "uid=" + u.uid;
+  document.getElementById("s-name").textContent = u.name;
+  document.getElementById("s-full").textContent = u.full + " · 主要群組 " + u.grp;
+  document.getElementById("s-kv").innerHTML =
+    "<b>最後登入</b>" + u.last + "<br><b>登入 Shell</b>" + u.shell + "<br>" +
+    "<b>公鑰指紋</b>" + u.key + "<br><b>帳號狀態</b>" +
+      (u.active ? "啟用" : '<span style="color:#ff5b4a">已停用（nologin）</span>') + "<br>" +
+    "<b>直接授權</b>" + (u.direct.size ? u.direct.size + " 項" : "無（全部由群組繼承）");
+  const list = CAPS.filter(c => eff(u, c));
+  document.getElementById("s-caps").innerHTML = list.length
+    ? list.map(c => '<span class="' + (u.direct.has(c) ? "d " : "") + (RISK.has(c) ? "risk" : "") + '">' +
+        (u.direct.has(c) ? "● " : "◐ ") + c + "</span>").join("")
+    : '<span style="color:#2f7a45">無任何有效權限</span>';
+  const rules = CAPS.filter(c => u.direct.has(c));
+  document.getElementById("s-sudo").textContent =
+    "# /etc/sudoers.d/" + u.name + "\n" +
+    (rules.length
+      ? rules.map(c => u.name + " ALL=(ALL) NOPASSWD: /usr/local/sbin/cap-" + c.replace(/\./g, "-")).join("\n")
+      : "# 無直接授權，權限全數來自群組 " + u.grp) +
+    "\n# 群組繼承：" + GROUPS[u.grp].caps.join(", ");
+}
+function selectUser(name){
+  sel = USERS.find(u => u.name === name);
+  body.querySelectorAll("tr").forEach(tr => tr.classList.toggle("sel", tr.dataset.u === name));
+  paintSide();
+}
+
+/* ---- 互動：切換授權 ---- */
+const live = document.getElementById("live");
+body.addEventListener("click", e => {
+  const s = e.target.closest("[data-sel]");
+  if (s) { selectUser(s.dataset.sel); return; }
+  const b = e.target.closest("button[data-c]");
+  if (!b) return;
+  const u = USERS.find(x => x.name === b.dataset.u), c = b.dataset.c;
+  if (locked(u, c)) {
+    live.textContent = "✕ " + u.name + " 的 " + c + " 由系統鎖定，無法變更";
+    return;
+  }
+  if (u.direct.has(c)) u.direct.delete(c); else u.direct.add(c);
+  /* 就地更新格子，避免重建 DOM 時掉掉「僅高風險」欄位隱藏與繼承透明度 */
+  const td = b.parentElement, d = u.direct.has(c), i = inh(u, c);
+  td.classList.toggle("d", d);
+  td.classList.toggle("i", !d && i);
+  b.textContent = d ? "●" : i ? "◐" : "·";
+  b.setAttribute("aria-pressed", String(d || i));
+  b.setAttribute("aria-label", u.name + " " + c + "：" + (d ? "直接授權" : i ? "群組繼承" : "未授權"));
+  if (!d && i) b.style.opacity = showInherit ? "" : "0"; else b.style.opacity = "";
+  recount();
+  if (sel.name === u.name) paintSide();
+  const now = u.direct.has(c) ? "已直接授權" : inh(u, c) ? "已收回直接授權（仍由群組繼承）" : "已收回";
+  live.textContent = (RISK.has(c) ? "⚑ 高風險 · " : "") + u.name + " → " + c + "：" + now;
+});
+
+/* ---- 顯示選項 ---- */
+let showInherit = true;
+document.getElementById("t-inherit").addEventListener("click", e => {
+  showInherit = !showInherit;
+  e.currentTarget.setAttribute("aria-pressed", String(showInherit));
+  body.querySelectorAll("td.c.i button").forEach(b => b.style.opacity = showInherit ? "" : "0");
+  live.textContent = showInherit ? "顯示群組繼承權限" : "已隱藏繼承權限，僅顯示直接授權";
+});
+document.getElementById("t-risk").addEventListener("click", e => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  CAPS.forEach(c => {
+    const hide = on && !RISK.has(c);
+    document.querySelectorAll('[data-cap="' + c + '"]').forEach(el => el.classList.toggle("hidecol", hide));
+  });
+  live.textContent = on ? "僅顯示 4 項高風險權限欄位" : "顯示全部 12 項權限欄位";
+});
+document.getElementById("t-active").addEventListener("click", e => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  body.querySelectorAll("tr").forEach(tr => {
+    const u = USERS.find(x => x.name === tr.dataset.u);
+    tr.style.display = on && !u.active ? "none" : "";
+  });
+  live.textContent = on ? "已隱藏 2 個停用帳號" : "顯示全部 18 個帳號";
+});
+
+/* ---- 群組表 ---- */
+document.getElementById("gbody").innerHTML = Object.entries(GROUPS).map(([g, o]) => {
+  const members = USERS.filter(u => u.grp === g).length;
+  const risky = o.caps.filter(c => RISK.has(c)).length;
+  return "<tr><td>" + g + "</td><td>" + o.use + "</td><td>" + o.caps.join(" · ") +
+    '</td><td class="n">' + members + '</td><td class="n"' +
+    (risky ? ' style="color:#ffcc33"' : "") + ">" + risky + "</td></tr>";
+}).join("");
+
+recount();
+selectUser("root");
+</script>
+</body>
+</html>

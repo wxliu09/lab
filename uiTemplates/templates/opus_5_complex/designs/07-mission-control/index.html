@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>07 · 任務控制中心 HUD — ORBITAL OPS</title>
+<style>
+:root{
+  --void:#03060b;--panel:#070d17;--grid:rgba(90,220,255,.10);
+  --cy:#5adcff;--am:#ffb648;--gn:#3dffa2;--rd:#ff4d5e;--dim:#5c7a92;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--void);color:#cfe8f5;min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","SF Mono",ui-monospace,"Noto Sans TC",monospace;font-size:13px;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse at 50% 40%,#000 25%,transparent 80%);
+  -webkit-mask-image:radial-gradient(ellipse at 50% 40%,#000 25%,transparent 80%);
+}
+.stars{position:fixed;inset:0;z-index:0}
+.home{
+  position:fixed;left:14px;bottom:14px;z-index:80;text-decoration:none;color:var(--void);
+  background:var(--cy);padding:9px 16px;font-size:11px;letter-spacing:.2em;font-weight:bold;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+  box-shadow:0 0 18px rgba(90,220,255,.5)}
+.home:hover{background:#fff}
+
+.shell{position:relative;z-index:5;padding:14px;max-width:1500px;margin:0 auto}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  border:1px solid rgba(90,220,255,.28);padding:10px 16px;background:rgba(7,13,23,.75);
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+}
+.topbar h1{font-size:16px;letter-spacing:.34em;color:var(--cy);text-shadow:0 0 12px rgba(90,220,255,.7)}
+.topbar h1 i{font-style:normal;color:var(--am)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;font-size:10px;letter-spacing:.16em}
+.chip{border:1px solid currentColor;padding:3px 9px;color:var(--dim)}
+.chip.go{color:var(--gn);box-shadow:0 0 10px rgba(61,255,162,.25)}
+.chip.warn{color:var(--am)}
+.met{font-size:20px;color:var(--am);letter-spacing:.1em;text-shadow:0 0 12px rgba(255,182,72,.6)}
+.met small{display:block;font-size:9px;color:var(--dim);letter-spacing:.3em;text-align:right}
+
+.layout{display:grid;grid-template-columns:280px 1fr 300px;gap:12px;margin-top:12px}
+@media(max-width:1180px){.layout{grid-template-columns:1fr}}
+
+.mod{
+  border:1px solid rgba(90,220,255,.22);background:linear-gradient(180deg,rgba(7,13,23,.9),rgba(3,6,11,.9));
+  position:relative;
+}
+.mod-h{
+  display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+  border-bottom:1px solid rgba(90,220,255,.2);font-size:10px;letter-spacing:.22em;color:var(--cy)
+}
+.mod-h b{color:var(--dim);font-weight:400}
+.mod-b{padding:12px}
+.corner{position:absolute;width:9px;height:9px;border:1px solid var(--cy);opacity:.7}
+.c-tl{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.c-br{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+/* telemetry rows */
+.tele{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+  border-bottom:1px dotted rgba(90,220,255,.16);font-size:12px}
+.tele:last-child{border:0}
+.tele span{color:var(--dim);letter-spacing:.08em}
+.tele b{font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.tele b.g{color:var(--gn)}.tele b.a{color:var(--am)}.tele b.r{color:var(--rd)}
+
+/* orbit view */
+.orbit{position:relative;aspect-ratio:16/10;min-height:320px;display:grid;place-items:center;overflow:hidden}
+.orbit svg{width:100%;height:100%}
+.planet{filter:drop-shadow(0 0 26px rgba(90,220,255,.35))}
+.hudtext{position:absolute;font-size:10px;letter-spacing:.16em;color:var(--cy);opacity:.8}
+.reticle{
+  position:absolute;left:50%;top:50%;width:230px;height:230px;transform:translate(-50%,-50%);
+  border:1px solid rgba(90,220,255,.2);border-radius:50%;
+}
+.reticle::before,.reticle::after{content:"";position:absolute;background:rgba(90,220,255,.22)}
+.reticle::before{left:50%;top:-14px;bottom:-14px;width:1px}
+.reticle::after{top:50%;left:-14px;right:-14px;height:1px}
+
+/* waveform */
+.wave{height:76px;width:100%}
+.bars{display:flex;gap:3px;align-items:flex-end;height:70px;margin-top:6px}
+.bars i{flex:1;background:linear-gradient(180deg,var(--cy),rgba(90,220,255,.15));animation:bump 1.3s ease-in-out infinite}
+@keyframes bump{50%{transform:scaleY(.3)}}
+
+/* log */
+.log{height:190px;overflow:auto;font-size:11.5px;line-height:1.9}
+.log div{border-left:2px solid var(--dim);padding-left:9px;margin-bottom:5px;color:#9fc0d4}
+.log div.g{border-color:var(--gn)}.log div.a{border-color:var(--am);color:#ffd9a0}
+.log div.r{border-color:var(--rd);color:#ffb0b8}
+.log time{color:var(--cy);margin-right:8px}
+
+/* progress ring row */
+.rings{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+.ring{position:relative}
+.ring svg{width:100%;height:auto;transform:rotate(-90deg)}
+.ring .lbl{font-size:9px;letter-spacing:.18em;color:var(--dim);margin-top:6px}
+.ring .val{position:absolute;left:0;right:0;top:36%;font-size:16px;color:#fff}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:12px}
+.stat{border:1px solid rgba(255,182,72,.28);padding:12px;background:rgba(255,182,72,.04)}
+.stat .k{font-size:9px;letter-spacing:.24em;color:var(--dim)}
+.stat .v{font-size:26px;color:var(--am);margin-top:8px;letter-spacing:-.01em;text-shadow:0 0 14px rgba(255,182,72,.45)}
+.ftr{margin-top:14px;text-align:center;font-size:9.5px;letter-spacing:.4em;color:#3c576b}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ RETURN TO INDEX</a>
+<canvas class="stars" id="stars"></canvas>
+
+<div class="shell">
+  <div class="topbar">
+    <h1>ORBITAL <i>OPS</i> — MISSION CONTROL</h1>
+    <div class="chips">
+      <a class="chip go" href="telemetry.html" style="text-decoration:none">● TELEMETRY NOMINAL</a>
+      <a class="chip go" href="comms.html" style="text-decoration:none">● COMMS LOCKED</a>
+      <a class="chip warn" href="telemetry.html" style="text-decoration:none">▲ THERMAL WATCH</a>
+      <a class="chip" href="crew.html" style="text-decoration:none">◇ CREW 04</a>
+    </div>
+    <div class="met"><small>MISSION ELAPSED TIME</small><span id="met">142:07:33</span></div>
+  </div>
+
+  <div class="layout">
+    <!-- LEFT -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="mod"><i class="corner c-tl"></i><i class="corner c-br"></i>
+        <div class="mod-h"><span>TELEMETRY · VEHICLE</span><b>STREAM A</b></div>
+        <div class="mod-b">
+          <div class="tele"><span>ALTITUDE</span><b class="g" id="alt">408.2 km</b></div>
+          <div class="tele"><span>VELOCITY</span><b class="g" id="vel">7.66 km/s</b></div>
+          <div class="tele"><span>INCLINATION</span><b>51.64°</b></div>
+          <div class="tele"><span>PERIOD</span><b>92.68 min</b></div>
+          <div class="tele"><span>BATTERY</span><b class="g">98.4 %</b></div>
+          <div class="tele"><span>SOLAR ARRAY</span><b class="g">DEPLOYED</b></div>
+          <div class="tele"><span>CABIN PRESS</span><b>1013 hPa</b></div>
+          <div class="tele"><span>CABIN TEMP</span><b class="a">24.8 °C</b></div>
+          <div class="tele"><span>CO₂ PARTIAL</span><b class="a">3.1 mmHg</b></div>
+          <div class="tele"><span>ATT. CONTROL</span><b class="g">CMG NOMINAL</b></div>
+        </div>
+      </div>
+      <div class="mod"><i class="corner c-tl"></i>
+        <div class="mod-h"><span>SIGNAL STRENGTH</span><b>S-BAND</b></div>
+        <div class="mod-b"><div class="bars" id="bars"></div></div>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="mod"><i class="corner c-tl"></i><i class="corner c-br"></i>
+        <div class="mod-h"><span>GROUND TRACK · ORBIT 2,318</span><b id="phase">DAYLIGHT PASS</b></div>
+        <div class="orbit">
+          <svg viewBox="0 0 640 400">
+            <defs>
+              <radialGradient id="pl" cx="35%" cy="32%">
+                <stop offset="0" stop-color="#1b4f6d"/><stop offset="70%" stop-color="#0a2337"/><stop offset="100%" stop-color="#040d17"/>
+              </radialGradient>
+            </defs>
+            <circle class="planet" cx="320" cy="200" r="118" fill="url(#pl)" stroke="rgba(90,220,255,.35)"/>
+            <g stroke="rgba(90,220,255,.16)" fill="none">
+              <ellipse cx="320" cy="200" rx="118" ry="40"/><ellipse cx="320" cy="200" rx="118" ry="78"/>
+              <line x1="202" y1="200" x2="438" y2="200"/><line x1="320" y1="82" x2="320" y2="318"/>
+            </g>
+            <ellipse cx="320" cy="200" rx="190" ry="132" fill="none" stroke="rgba(255,182,72,.5)" stroke-dasharray="6 8"/>
+            <ellipse cx="320" cy="200" rx="250" ry="86" fill="none" stroke="rgba(61,255,162,.32)" stroke-dasharray="3 10"/>
+            <g id="craft">
+              <circle r="6" fill="#ffb648"/><circle r="14" fill="none" stroke="#ffb648" stroke-opacity=".5"/>
+              <rect x="-22" y="-3" width="14" height="6" fill="#5adcff" opacity=".8"/>
+              <rect x="8" y="-3" width="14" height="6" fill="#5adcff" opacity=".8"/>
+            </g>
+            <g id="sat2"><circle r="4" fill="#3dffa2"/></g>
+          </svg>
+          <div class="reticle"></div>
+          <div class="hudtext" style="left:14px;top:14px">LAT +28.4°<br>LON −114.7°<br>GS 7.66 KM/S</div>
+          <div class="hudtext" style="right:14px;top:14px;text-align:right">NEXT AOS 00:04:12<br>STATION MADRID<br>ELEV 42°</div>
+          <div class="hudtext" style="left:14px;bottom:14px">ORBIT 2318 / 2319<br>APOGEE 412.0 KM</div>
+          <div class="hudtext" style="right:14px;bottom:14px;text-align:right">ATTITUDE −LVLH<br>PITCH 0.2 YAW −1.1 ROLL 0.0</div>
+        </div>
+      </div>
+
+      <div class="strip">
+        <div class="stat"><div class="k">DELTA-V REMAIN</div><div class="v">128.4<span style="font-size:11px"> m/s</span></div></div>
+        <div class="stat"><div class="k">PROPELLANT</div><div class="v">72<span style="font-size:11px"> %</span></div></div>
+      <div class="stat" style="cursor:pointer" onclick="location.href='eva.html'"><div class="k">EVA SCHEDULED</div><div class="v">T−06:12</div></div>
+        <div class="stat"><div class="k">DATA DOWNLINK</div><div class="v">412<span style="font-size:11px"> Mbps</span></div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="mod"><i class="corner c-tl"></i>
+        <div class="mod-h"><span>SUBSYSTEM LOAD</span><b>%</b></div>
+        <div class="mod-b">
+          <div class="rings">
+            <div class="ring">
+              <svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="24" fill="none" stroke="rgba(90,220,255,.15)" stroke-width="6"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#5adcff" stroke-width="6" stroke-dasharray="150.8" stroke-dashoffset="42" stroke-linecap="round"/></svg>
+              <div class="val">72</div><div class="lbl">POWER</div></div>
+            <div class="ring">
+              <svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="24" fill="none" stroke="rgba(61,255,162,.15)" stroke-width="6"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#3dffa2" stroke-width="6" stroke-dasharray="150.8" stroke-dashoffset="24" stroke-linecap="round"/></svg>
+              <div class="val">84</div><div class="lbl">THERMAL</div></div>
+            <div class="ring">
+              <svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="24" fill="none" stroke="rgba(255,182,72,.15)" stroke-width="6"/>
+              <circle cx="30" cy="30" r="24" fill="none" stroke="#ffb648" stroke-width="6" stroke-dasharray="150.8" stroke-dashoffset="76" stroke-linecap="round"/></svg>
+              <div class="val">49</div><div class="lbl">COMMS</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mod"><i class="corner c-br"></i>
+        <div class="mod-h"><span>FLIGHT LOG</span><b>LIVE</b></div>
+        <div class="mod-b"><div class="log" id="log"></div></div>
+      </div>
+
+      <div class="mod">
+        <div class="mod-h"><span>CREW STATUS</span><b>04 SOULS</b></div>
+        <div class="mod-b">
+          <div class="tele" style="cursor:pointer" onclick="location.href='crew.html'"><span>CDR — A. NAKAMURA</span><b class="g">ON DUTY</b></div>
+          <div class="tele" style="cursor:pointer" onclick="location.href='crew.html'"><span>PLT — R. OKONKWO</span><b class="g">ON DUTY</b></div>
+          <div class="tele" style="cursor:pointer" onclick="location.href='crew.html'"><span>MS1 — L. VARGAS</span><b class="a">SLEEP</b></div>
+          <div class="tele" style="cursor:pointer" onclick="location.href='crew.html'"><span>MS2 — C. LINDQVIST</span><b class="a">EVA PREP</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ftr">O R B I T A L   O P S   ·   N A S A - S T Y L E   H U D   ·   D E S I G N   0 7 / 4 0</div>
+</div>
+
+<script>
+/* starfield */
+const cv=document.getElementById('stars'),cx=cv.getContext('2d');
+let st=[];
+function sizeC(){cv.width=innerWidth;cv.height=innerHeight;
+  st=Array.from({length:260},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,
+    r:Math.random()*1.3+.2,a:Math.random(),s:Math.random()*.02+.004}));}
+sizeC();addEventListener('resize',sizeC);
+(function draw(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  st.forEach(p=>{p.a+=p.s;const o=.25+Math.abs(Math.sin(p.a))*.75;
+    cx.fillStyle=`rgba(190,225,245,${o})`;cx.fillRect(p.x,p.y,p.r,p.r);});
+  requestAnimationFrame(draw);
+})();
+
+/* orbiting craft */
+let ang=0;
+const craft=document.getElementById('craft'),sat2=document.getElementById('sat2');
+setInterval(()=>{
+  ang+=0.012;
+  craft.setAttribute('transform',`translate(${320+190*Math.cos(ang)},${200+132*Math.sin(ang)}) rotate(${ang*57.3+90})`);
+  sat2.setAttribute('transform',`translate(${320+250*Math.cos(-ang*1.6+2)},${200+86*Math.sin(-ang*1.6+2)})`);
+},33);
+
+/* signal bars */
+const bw=document.getElementById('bars');
+bw.innerHTML=Array.from({length:34},(_,i)=>`<i style="animation-delay:${(i*0.06).toFixed(2)}s;height:${20+Math.random()*80}%"></i>`).join('');
+
+/* MET clock */
+let met=142*3600+7*60+33;
+setInterval(()=>{met++;const h=String(Math.floor(met/3600)).padStart(3,'0'),
+  m=String(Math.floor(met%3600/60)).padStart(2,'0'),s=String(met%60).padStart(2,'0');
+  document.getElementById('met').textContent=`${h}:${m}:${s}`;},1000);
+
+/* telemetry jitter */
+setInterval(()=>{
+  document.getElementById('alt').textContent=(408+Math.random()*.9-.45).toFixed(1)+' km';
+  document.getElementById('vel').textContent=(7.66+Math.random()*.02-.01).toFixed(3)+' km/s';
+},1400);
+
+/* log feed */
+const MSG=[
+ ['g','GNC — attitude hold within 0.05° deadband'],
+ ['','ECLSS — CO₂ scrubber cycle B complete'],
+ ['a','THERMAL — radiator loop B ΔT above nominal, monitoring'],
+ ['g','COMMS — Ku-band handover to TDRS-11 successful'],
+ ['','PAYLOAD — experiment rack 4 data dump 412 MB'],
+ ['r','CAUTION — micrometeoroid shield sensor 7 offline'],
+ ['g','EPS — array beta gimbal tracking nominal'],
+ ['','FLIGHT — crew sleep shift begins in 00:42'],
+ ['g','PROP — reboost burn scheduled MET 143:00:00']
+];
+const logEl=document.getElementById('log');
+function pad(n){return String(n).padStart(2,'0')}
+function push(){
+  const [c,t]=MSG[Math.floor(Math.random()*MSG.length)];
+  const d=new Date();
+  const el=document.createElement('div');
+  el.className=c;
+  el.innerHTML=`<time>${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}</time>${t}`;
+  logEl.prepend(el);
+  while(logEl.children.length>26) logEl.lastChild.remove();
+}
+for(let i=0;i<8;i++) push();
+setInterval(push,3200);
+</script>
+</body>
+</html>

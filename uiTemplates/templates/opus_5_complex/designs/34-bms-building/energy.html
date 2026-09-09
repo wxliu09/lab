@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>能耗分析 － 能流桑基圖與負載曲線 · 宏達智慧大樓 BMS</title>
+<style>
+:root{
+  --deep:#0a1628;--deep2:#0f2038;--pane:#132a47;--edge:#1e3a5f;
+  --cy:#38e0ff;--gr:#3ddc97;--am:#ffc247;--rd:#ff5f6d;--pu:#a78bfa;--bl:#7db2ff;
+  --txt:#dceaf7;--dim:#7695b8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--deep);color:var(--txt);min-height:100vh;font-size:13.5px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  background-image:
+    radial-gradient(ellipse at 15% 0%,rgba(61,220,151,.1),transparent 55%),
+    radial-gradient(ellipse at 85% 100%,rgba(56,224,255,.1),transparent 55%)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+
+.home{position:fixed;right:22px;bottom:22px;z-index:99;text-decoration:none;color:var(--deep);
+  background:var(--cy);padding:13px 22px;border-radius:10px;font-weight:700;font-size:13px;
+  box-shadow:0 0 26px rgba(56,224,255,.5);transition:.22s}
+.home:hover{background:#fff;transform:translateY(-3px)}
+
+header{padding:16px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  border-bottom:1px solid var(--edge);background:rgba(15,32,56,.7);backdrop-filter:blur(10px);
+  position:sticky;top:0;z-index:40}
+header h1{font-size:17px;font-weight:700;letter-spacing:-.01em}
+header h1 small{display:block;font-size:10px;letter-spacing:.24em;color:var(--dim);font-weight:400;margin-top:4px}
+.badge{padding:6px 13px;border-radius:8px;font-size:11.5px;border:1px solid;display:flex;align-items:center;gap:7px}
+.badge i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.b-ok{color:var(--gr);border-color:rgba(61,220,151,.4);background:rgba(61,220,151,.1)}
+.b-ok i{background:var(--gr);box-shadow:0 0 8px var(--gr)}
+header .rt{margin-left:auto;display:flex;align-items:center;gap:20px;font-size:12px;color:var(--dim)}
+header .rt b{color:var(--txt);font-size:15px;display:block}
+.subnav{background:var(--deep2);border-bottom:1px solid var(--edge);padding:0 24px;display:flex;overflow-x:auto}
+.subnav a{font-size:11.5px;padding:10px 16px;color:var(--dim);text-decoration:none;font-weight:700;
+  letter-spacing:.06em;border-bottom:2px solid transparent;white-space:nowrap;transition:.2s}
+.subnav a:hover{color:var(--cy)}
+.subnav a[aria-current]{color:var(--cy);border-bottom-color:var(--cy)}
+
+.wrap{max-width:1680px;margin:0 auto;padding:18px 24px 60px}
+.card{background:var(--pane);border:1px solid var(--edge);border-radius:16px;overflow:hidden;margin-bottom:16px}
+.card>h2{font-size:12px;letter-spacing:.14em;color:var(--dim);padding:14px 16px;
+  border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.card>h2 b{color:var(--cy);font-size:11px;font-weight:700}
+
+/* period switch */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{font:inherit;font-size:12.5px;font-weight:700;padding:11px 20px;border-radius:11px;cursor:pointer;
+  border:1px solid var(--edge);background:var(--pane);color:var(--dim);transition:.2s;text-align:left}
+.tabs button small{display:block;font-size:10px;font-weight:400;color:#5d7e9f;margin-top:3px;letter-spacing:.06em}
+.tabs button:hover{color:var(--txt);border-color:rgba(56,224,255,.4)}
+.tabs button[aria-selected="true"]{background:rgba(56,224,255,.16);border-color:var(--cy);color:#fff}
+.tabs button[aria-selected="true"] small{color:#a8d8ee}
+
+.ribbon{display:grid;grid-template-columns:repeat(6,1fr);background:var(--pane);border:1px solid var(--edge);
+  border-radius:16px;overflow:hidden;margin-bottom:16px}
+.ribbon div{padding:15px 16px;border-right:1px solid var(--edge)}
+.ribbon div:last-child{border-right:0}
+.ribbon small{font-size:10.5px;letter-spacing:.1em;color:var(--dim);display:block}
+.ribbon b{display:block;font-size:24px;font-weight:700;letter-spacing:-.03em;margin-top:6px}
+.ribbon b i{font-size:11px;font-style:normal;color:var(--dim);font-weight:400;margin-left:3px}
+
+/* sankey */
+.sankey{padding:14px 8px 6px;overflow-x:auto}
+.sankey svg{display:block;min-width:820px;width:100%;height:auto}
+.lk{transition:.25s}
+.nd{cursor:pointer}
+.nd:hover rect{stroke:#fff;stroke-width:2}
+.nlbl{font-size:11.5px;fill:#dceaf7}
+.nval{font-size:10.5px;fill:#7695b8}
+.stg{font-size:10.5px;fill:#5d7e9f;letter-spacing:.2em}
+.skinfo{padding:12px 16px 16px;font-size:12px;line-height:1.85;color:var(--dim);border-top:1px solid var(--edge)}
+.skinfo b{color:var(--cy)}
+
+/* stacked area */
+.stack{padding:14px 8px 6px;overflow-x:auto}
+.stack svg{display:block;min-width:760px;width:100%;height:auto}
+.slbl{font-size:10px;fill:#7695b8}
+.sg{stroke:#1e3a5f;stroke-width:1}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px 16px;font-size:11.5px;color:var(--dim);
+  border-top:1px solid var(--edge)}
+.legend button{display:flex;align-items:center;gap:7px;background:none;border:0;color:inherit;font:inherit;
+  cursor:pointer;padding:3px 4px;border-radius:6px}
+.legend button:hover{color:var(--txt)}
+.legend button[aria-pressed="false"]{opacity:.4;text-decoration:line-through}
+.legend i{width:13px;height:13px;border-radius:4px;display:block}
+
+/* tables */
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.2px;min-width:460px}
+th{text-align:left;font-size:10.5px;letter-spacing:.1em;color:var(--dim);font-weight:600;
+  padding:11px 14px;border-bottom:1px solid var(--edge);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid rgba(30,58,95,.6);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:rgba(56,224,255,.05)}
+th.n,td.n{text-align:right}
+td .mb{position:relative;height:7px;border-radius:4px;background:rgba(0,0,0,.35);min-width:70px;overflow:hidden}
+td .mb i{position:absolute;inset:0 auto 0 0;display:block;border-radius:4px}
+td.up{color:var(--rd)}td.dn{color:var(--gr)}
+tfoot td{font-weight:700;border-top:1px solid var(--edge);color:var(--cy)}
+
+.ftr{text-align:center;font-size:10.5px;color:#4c6a8c;letter-spacing:.3em;padding:22px 0 8px}
+
+@media(max-width:1240px){
+  .two{grid-template-columns:1fr}
+  .ribbon{grid-template-columns:repeat(3,1fr)}
+  .ribbon div:nth-child(3){border-right:0}
+  .ribbon div:nth-child(-n+3){border-bottom:1px solid var(--edge)}
+}
+@media(max-width:640px){
+  .wrap{padding:14px 12px 60px}
+  header{padding:12px 14px;gap:12px}
+  header .rt{gap:12px;font-size:11px}
+  .subnav{padding:0 10px}
+  .ribbon{grid-template-columns:repeat(2,1fr)}
+  .ribbon div:nth-child(odd){border-right:1px solid var(--edge)}
+  .ribbon div:nth-child(even){border-right:0}
+  .tabs button{flex:1;min-width:104px}
+  .home{right:12px;bottom:12px;padding:11px 16px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<header>
+  <h1>宏達智慧大樓 BMS<small>ENERGY ANALYTICS · 能流與負載分析</small></h1>
+  <div class="badge b-ok"><i></i>契約容量 800 kW · 未超約</div>
+  <div class="rt">
+    <div><b id="kToday">4,286</b>期間用電 kWh</div>
+    <div><b>52.0%</b>空調佔比</div>
+    <div><b id="clk">--:--</b>系統時間</div>
+  </div>
+</header>
+<nav class="subnav" aria-label="子頁導覽">
+  <a href="index.html">儀表板</a>
+  <a href="equipment.html">設備管理</a>
+  <a href="alerts.html">警示歷程</a>
+  <a href="energy.html" aria-current="page">能耗分析</a>
+  <a href="settings.html">系統設定</a>
+</nav>
+
+<div class="wrap">
+  <div class="tabs" role="tablist" aria-label="統計期間">
+    <button type="button" role="tab" aria-selected="true"  data-p="0">今日 06/11<small>單日實績 · 逐時解析</small></button>
+    <button type="button" role="tab" aria-selected="false" data-p="1">本週 06/09–06/15<small>週末節能 · 等效 6 個標準日</small></button>
+    <button type="button" role="tab" aria-selected="false" data-p="2">本月至今 06/01–06/11<small>11 日 · 等效 10 個標準日</small></button>
+  </div>
+
+  <div class="ribbon" id="ribbon"></div>
+
+  <div class="card">
+    <h2>能流桑基圖 SANKEY ENERGY FLOW <span id="skSub" style="color:var(--cy);letter-spacing:0;font-size:12.5px">來源 → 用電分類 → 樓層分區</span><b id="skTotal">4,286 kWh</b></h2>
+    <div class="sankey" id="sankey"></div>
+    <div class="skinfo" id="skinfo"></div>
+  </div>
+
+  <div class="card">
+    <h2>平均日負載曲線 STACKED LOAD PROFILE<b>00:00 – 23:00 · 24 個逐時取樣點</b></h2>
+    <div class="stack" id="stack"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="two">
+    <div class="card" style="margin:0">
+      <h2>用電分類明細 BY CATEGORY<b id="catNote">與上期比較</b></h2>
+      <div class="tblwrap"><table>
+        <thead><tr><th>用電分類</th><th class="n">本期 kWh</th><th class="n">佔比</th><th>分佈</th><th class="n">上期</th><th class="n">增減</th></tr></thead>
+        <tbody id="catRows"></tbody>
+        <tfoot id="catFoot"></tfoot>
+      </table></div>
+    </div>
+    <div class="card" style="margin:0">
+      <h2>各樓層用電 BY FLOOR<b>12 個計量迴路</b></h2>
+      <div class="tblwrap"><table>
+        <thead><tr><th>樓層</th><th>分區</th><th class="n">用電 kWh</th><th>相對量</th><th class="n">每坪 kWh</th></tr></thead>
+        <tbody id="flRows"></tbody>
+        <tfoot id="flFoot"></tfoot>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="ftr">SMART BUILDING BMS · Energy / Sankey Flow ＋ Stacked Load Profile · DESIGN 34 / 40</div>
+</div>
+
+<script>
+/* ================= 基礎資料（今日 06/11 實績，合計 4,286 kWh） ================= */
+var SRC=[{k:"grid",nm:"台電進線",c:"#7db2ff"},{k:"pv",nm:"屋頂太陽能",c:"#3ddc97"},{k:"bess",nm:"儲能放電",c:"#a78bfa"}];
+var CAT=[{k:"ac",nm:"空調系統",c:"#38e0ff"},{k:"lt",nm:"照明系統",c:"#ffc247"},{k:"pw",nm:"動力設備",c:"#a78bfa"},
+         {k:"it",nm:"資訊機房",c:"#ff5f6d"},{k:"sn",nm:"衛生設備",c:"#3ddc97"},{k:"pl",nm:"一般插座",c:"#7db2ff"}];
+var ZON=[{k:"hi",nm:"高樓區 13–18F",c:"#38e0ff"},{k:"md",nm:"中樓區 8–12F",c:"#ffc247"},
+         {k:"lo",nm:"低樓區 1–5F",c:"#3ddc97"},{k:"bs",nm:"地下層 B1–B2",c:"#a78bfa"}];
+/* 來源 × 分類（今日 kWh） */
+var A0=[[1980,700,400,260,168,78],[168,160,20,0,12,126],[80,0,0,120,0,14]];
+/* 分類 × 分區（今日 kWh） */
+var B0=[[640,780,460,348],[240,290,190,140],[60,70,40,250],[120,180,30,50],[42,46,42,50],[40,20,90,68]];
+/* 期間：倍率 k 與各分類調整係數 */
+var PERIOD=[
+ {nm:"今日 06/11",   k:1,  mod:[1,1,1,1,1,1],         days:1,  peak:544, pf:0.96, co2f:0.494},
+ {nm:"本週 06/09–15",k:6,  mod:[1.02,.94,1.08,1,.96,1.10], days:7,  peak:568, pf:0.95, co2f:0.494},
+ {nm:"本月 06/01–11",k:10, mod:[.96,1.06,1.02,1.04,1,.92],  days:11, peak:582, pf:0.96, co2f:0.494}
+];
+/* 樓層（每個分區內的分配比例，取自今日實績） */
+var FLOOR=[
+ {f:"18F",z:"hi",v:180,ar:180},{f:"15F",z:"hi",v:340,ar:420},{f:"14F",z:"hi",v:306,ar:420},{f:"13F",z:"hi",v:316,ar:420},
+ {f:"12F",z:"md",v:560,ar:420},{f:"10F",z:"md",v:402,ar:420},{f:"8F", z:"md",v:424,ar:420},
+ {f:"5F", z:"lo",v:318,ar:400},{f:"3F", z:"lo",v:274,ar:400},{f:"1F", z:"lo",v:260,ar:360},
+ {f:"B1", z:"bs",v:342,ar:900},{f:"B2", z:"bs",v:564,ar:900}
+];
+/* 24 小時負載形狀（相對值） */
+var SHAPE={
+ ac:[14,13,12,12,13,16,34,62,86,92,95,97,99,100,100,98,94,88,72,52,36,26,20,16],
+ lt:[10,10,10,10,10,14,32,68,92,95,96,96,88,95,96,96,94,90,74,48,28,18,12,10],
+ pw:[18,14,12,12,14,22,46,88,100,72,58,54,76,80,58,54,62,92,70,42,28,22,20,18],
+ it:[86,85,85,84,85,86,88,92,96,98,99,100,99,100,99,98,96,94,92,90,88,87,86,86],
+ sn:[8,6,6,6,8,12,30,64,88,84,80,92,100,86,80,84,88,76,52,30,18,12,10,8],
+ pl:[22,20,20,20,21,24,38,72,94,97,98,96,84,96,99,100,96,88,66,42,30,26,24,22]
+};
+var $=function(i){return document.getElementById(i);};
+function fm(n){ return Math.round(n).toLocaleString("en-US"); }
+
+/* ================= 計算期間資料 ================= */
+function compute(pi){
+  var P=PERIOD[pi], A=[], B=[], catTot=CAT.map(function(){return 0;});
+  A0.forEach(function(row,si){
+    A[si]=row.map(function(v,cj){ var x=Math.round(v*P.k*P.mod[cj]); catTot[cj]+=x; return x; });
+  });
+  B0.forEach(function(row,cj){
+    var base=row.reduce(function(a,b){return a+b;},0), acc=0, out=[];
+    row.forEach(function(v,zi){
+      if(zi===row.length-1) out.push(catTot[cj]-acc);
+      else { var x=Math.round(catTot[cj]*v/base); out.push(x); acc+=x; }
+    });
+    B[cj]=out;
+  });
+  var srcTot=A.map(function(r){ return r.reduce(function(a,b){return a+b;},0); });
+  var zonTot=ZON.map(function(_,zi){ return B.reduce(function(s,r){return s+r[zi];},0); });
+  var total=catTot.reduce(function(a,b){return a+b;},0);
+  return {P:P,A:A,B:B,catTot:catTot,srcTot:srcTot,zonTot:zonTot,total:total};
+}
+var cur=0, D=compute(0), prev=null, hidden={};
+
+/* ================= KPI ================= */
+function drawRibbon(){
+  var t=D.total, ac=D.catTot[0], renew=D.srcTot[1]+D.srcTot[2];
+  var water=Math.round(28.4*D.P.k*0.98), co2=(t*D.P.co2f/1000).toFixed(1);
+  $("ribbon").innerHTML=
+    "<div><small>期間用電量</small><b>"+fm(t)+"<i>kWh</i></b></div>"+
+    '<div><small>空調佔比</small><b style="color:var(--cy)">'+(ac/t*100).toFixed(1)+"<i>%</i></b></div>"+
+    '<div><small>再生能源＋儲能</small><b style="color:var(--gr)">'+(renew/t*100).toFixed(1)+"<i>%</i></b></div>"+
+    "<div><small>用水量</small><b>"+water+"<i>m³</i></b></div>"+
+    '<div><small>碳排放量</small><b style="color:var(--am)">'+co2+"<i>tCO₂e</i></b></div>"+
+    '<div><small>期間尖峰負載</small><b>'+D.P.peak+"<i>kW / 800</i></b></div>";
+  $("kToday").textContent=fm(t);
+  $("skTotal").textContent=fm(t)+" kWh";
+}
+
+/* ================= 桑基圖 ================= */
+var focusNode=null;
+function drawSankey(){
+  var W=880,H=440,T=34,B=30,NW=20;
+  var cols=[[SRC,D.srcTot,60],[CAT,D.catTot,430],[ZON,D.zonTot,800]];
+  var scale=(H-T-B-Math.max(SRC.length,CAT.length,ZON.length-0)*0);
+  var maxSum=Math.max(D.total,D.total,D.total);
+  var pos={};
+  cols.forEach(function(col,ci){
+    var items=col[0], vals=col[1], x=col[2];
+    var gap=14, usable=H-T-B-gap*(items.length-1);
+    var y=T;
+    items.forEach(function(it,i){
+      var h=Math.max(6, vals[i]/maxSum*usable);
+      pos[ci+"-"+i]={x:x,y:y,h:h,v:vals[i],nm:it.nm,c:it.c};
+      y+=h+gap;
+    });
+  });
+  function ribbon(x1,y1,h1,x2,y2,h2,color,op,key){
+    var mx=(x1+x2)/2;
+    var d="M"+x1+","+y1+" C"+mx+","+y1+" "+mx+","+y2+" "+x2+","+y2+
+          " L"+x2+","+(y2+h2)+" C"+mx+","+(y2+h2)+" "+mx+","+(y1+h1)+" "+x1+","+(y1+h1)+" Z";
+    return '<path class="lk" data-lk="'+key+'" d="'+d+'" fill="'+color+'" fill-opacity="'+op+'"/>';
+  }
+  var links="",nodes="";
+  var outOff={},inOff={};
+  D.A.forEach(function(row,si){
+    row.forEach(function(v,cj){
+      if(v<=0) return;
+      var s=pos["0-"+si], c=pos["1-"+cj];
+      var ko="0-"+si, ki="1-"+cj;
+      outOff[ko]=outOff[ko]||0; inOff[ki]=inOff[ki]||0;
+      var h1=v/s.v*s.h, h2=v/c.v*c.h;
+      var dim = focusNode && focusNode!==ko && focusNode!==ki;
+      links+=ribbon(s.x+NW, s.y+outOff[ko], h1, c.x, c.y+inOff[ki], h2, SRC[si].c, dim?0.06:0.3, ko+"|"+ki);
+      outOff[ko]+=h1; inOff[ki]+=h2;
+    });
+  });
+  var outOff2={},inOff2={};
+  D.B.forEach(function(row,cj){
+    row.forEach(function(v,zi){
+      if(v<=0) return;
+      var c=pos["1-"+cj], z=pos["2-"+zi];
+      var ko="1-"+cj, ki="2-"+zi;
+      outOff2[ko]=outOff2[ko]||0; inOff2[ki]=inOff2[ki]||0;
+      var h1=v/c.v*c.h, h2=v/z.v*z.h;
+      var dim = focusNode && focusNode!==ko && focusNode!==ki;
+      links+=ribbon(c.x+NW, c.y+outOff2[ko], h1, z.x, z.y+inOff2[ki], h2, CAT[cj].c, dim?0.06:0.3, ko+"|"+ki);
+      outOff2[ko]+=h1; inOff2[ki]+=h2;
+    });
+  });
+  [0,1,2].forEach(function(ci){
+    var items=cols[ci][0];
+    items.forEach(function(it,i){
+      var p=pos[ci+"-"+i], key=ci+"-"+i;
+      var anchor = ci===2 ? "end" : "start";
+      var tx = ci===2 ? p.x-8 : p.x+NW+8;
+      nodes+='<g class="nd" data-nd="'+key+'" role="button" tabindex="0" aria-label="'+p.nm+" "+fm(p.v)+' kWh">'+
+        '<rect x="'+p.x+'" y="'+p.y.toFixed(1)+'" width="'+NW+'" height="'+p.h.toFixed(1)+'" rx="4" fill="'+p.c+
+        '" fill-opacity="'+(focusNode&&focusNode!==key?".35":".95")+'" stroke="'+p.c+'" stroke-opacity=".8"><title>'+
+        p.nm+" "+fm(p.v)+" kWh</title></rect>"+
+        '<text class="nlbl" x="'+tx+'" y="'+(p.y+p.h/2-2).toFixed(1)+'" text-anchor="'+anchor+'">'+p.nm+"</text>"+
+        '<text class="nval" x="'+tx+'" y="'+(p.y+p.h/2+13).toFixed(1)+'" text-anchor="'+anchor+'">'+fm(p.v)+" kWh</text></g>";
+    });
+  });
+  var stg='<text class="stg" x="60" y="18">SOURCE 能源來源</text>'+
+          '<text class="stg" x="430" y="18" text-anchor="middle">CATEGORY 用電分類</text>'+
+          '<text class="stg" x="820" y="18" text-anchor="end">ZONE 樓層分區</text>';
+  $("sankey").innerHTML='<svg viewBox="0 0 '+W+" "+H+'" role="img" aria-label="'+D.P.nm+
+    " 能流桑基圖：三個能源來源流向六類用電，再分配至四個樓層分區，總量 "+fm(D.total)+' kWh">'+
+    links+nodes+stg+"</svg>";
+  drawSkInfo();
+}
+function drawSkInfo(){
+  if(!focusNode){
+    var pv=D.srcTot[1], be=D.srcTot[2];
+    $("skinfo").innerHTML="桑基圖寬度即為能量大小。屋頂太陽能本期供電 <b>"+fm(pv)+" kWh</b>（優先供應照明與插座迴路），"+
+      "儲能系統於尖峰時段放電 <b>"+fm(be)+" kWh</b>（優先支援資訊機房不斷電需求）。"+
+      "點擊任一節點可只保留該節點的能流路徑。";
+    return;
+  }
+  var p=focusNode.split("-"), ci=+p[0], i=+p[1];
+  var arr=[SRC,CAT,ZON][ci], v=[D.srcTot,D.catTot,D.zonTot][ci][i];
+  var lines=[];
+  if(ci===0) CAT.forEach(function(c,cj){ if(D.A[i][cj]>0) lines.push(c.nm+" "+fm(D.A[i][cj])+" kWh"); });
+  if(ci===1){
+    SRC.forEach(function(s,si){ if(D.A[si][i]>0) lines.push("來自 "+s.nm+" "+fm(D.A[si][i])+" kWh"); });
+    ZON.forEach(function(z,zi){ if(D.B[i][zi]>0) lines.push("流向 "+z.nm+" "+fm(D.B[i][zi])+" kWh"); });
+  }
+  if(ci===2) CAT.forEach(function(c,cj){ if(D.B[cj][i]>0) lines.push(c.nm+" "+fm(D.B[cj][i])+" kWh"); });
+  $("skinfo").innerHTML="已聚焦 <b>"+arr[i].nm+"</b>（"+fm(v)+" kWh，佔全棟 "+(v/D.total*100).toFixed(1)+"%）：<br>"+
+    lines.join("　／　")+"<br>再點一次同一節點可解除聚焦。";
+}
+$("sankey").addEventListener("click",function(e){
+  var g=e.target.closest("[data-nd]"); if(!g) return;
+  focusNode = focusNode===g.dataset.nd ? null : g.dataset.nd;
+  drawSankey();
+});
+$("sankey").addEventListener("keydown",function(e){
+  if(e.key!=="Enter"&&e.key!==" ") return;
+  var g=e.target.closest("[data-nd]"); if(!g) return;
+  e.preventDefault();
+  focusNode = focusNode===g.dataset.nd ? null : g.dataset.nd;
+  drawSankey();
+});
+
+/* ================= 堆疊負載曲線 ================= */
+function drawStack(){
+  var W=880,H=300,L=54,R=18,T=20,B=38;
+  var series=CAT.map(function(c,i){
+    var sh=SHAPE[c.k], sum=sh.reduce(function(a,b){return a+b;},0);
+    var per=D.catTot[i]/D.P.k;              /* 平均單日 kWh */
+    return {k:c.k,nm:c.nm,c:c.c,v:sh.map(function(x){ return hidden[c.k]?0:per*x/sum; })};
+  });
+  var stackTop=[],prevTop=new Array(24).fill(0),maxY=0;
+  series.forEach(function(s){
+    var t=s.v.map(function(v,h){ return prevTop[h]+v; });
+    stackTop.push(t.slice()); prevTop=t;
+  });
+  maxY=Math.max.apply(null,prevTop)*1.08 || 1;
+  function X(h){ return L+h*(W-L-R)/23; }
+  function Y(v){ return H-B-v/maxY*(H-T-B); }
+  var g="";
+  for(var k=0;k<=4;k++){
+    var v=maxY*k/4, y=Y(v);
+    g+='<line class="sg" x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke-opacity=".55"/>'+
+       '<text class="slbl" x="'+(L-8)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end">'+v.toFixed(0)+"</text>";
+  }
+  for(var h=0;h<24;h+=3){
+    g+='<text class="slbl" x="'+X(h).toFixed(1)+'" y="'+(H-B+18)+'" text-anchor="middle">'+(h<10?"0"+h:h)+":00</text>";
+  }
+  for(var si=series.length-1;si>=0;si--){
+    var top=stackTop[si], bot = si===0 ? new Array(24).fill(0) : stackTop[si-1];
+    var d="M"+X(0)+","+Y(top[0]).toFixed(1);
+    for(var h2=1;h2<24;h2++) d+=" L"+X(h2).toFixed(1)+","+Y(top[h2]).toFixed(1);
+    for(var h3=23;h3>=0;h3--) d+=" L"+X(h3).toFixed(1)+","+Y(bot[h3]).toFixed(1);
+    d+=" Z";
+    g+='<path d="'+d+'" fill="'+series[si].c+'" fill-opacity=".55" stroke="'+series[si].c+'" stroke-width="1.2"/>';
+  }
+  var pk=0,pkh=0;
+  prevTop.forEach(function(v,h){ if(v>pk){pk=v;pkh=h;} });
+  g+='<circle cx="'+X(pkh).toFixed(1)+'" cy="'+Y(pk).toFixed(1)+'" r="4.5" fill="#fff"/>'+
+     '<text class="slbl" x="'+X(pkh).toFixed(1)+'" y="'+(Y(pk)-10).toFixed(1)+'" text-anchor="middle" fill="#dceaf7">日尖峰 '+
+     pk.toFixed(0)+" kWh · "+(pkh<10?"0"+pkh:pkh)+":00</text>"+
+     '<line class="sg" x1="'+L+'" y1="'+(H-B)+'" x2="'+(W-R)+'" y2="'+(H-B)+'"/>'+
+     '<text class="slbl" x="'+L+'" y="'+(T-4)+'">kWh / 小時</text>';
+  $("stack").innerHTML='<svg viewBox="0 0 '+W+" "+H+'" role="img" aria-label="'+D.P.nm+
+    " 平均日負載堆疊面積圖，24 個逐時取樣點，六類用電疊加，日尖峰 "+pk.toFixed(0)+" kWh 出現於 "+pkh+':00">'+g+"</svg>";
+  $("legend").innerHTML=CAT.map(function(c){
+    return '<button type="button" data-hide="'+c.k+'" aria-pressed="'+(!hidden[c.k])+'"><i style="background:'+
+      c.c+'"></i>'+c.nm+"</button>";
+  }).join("")+'<span style="align-self:center">點擊圖例可切換該分類是否納入堆疊</span>';
+}
+$("legend").addEventListener("click",function(e){
+  var b=e.target.closest("[data-hide]"); if(!b) return;
+  hidden[b.dataset.hide]=!hidden[b.dataset.hide];
+  drawStack();
+});
+
+/* ================= 表格 ================= */
+function drawTables(){
+  var prevD = compute(cur===0 ? 0 : cur-1);
+  var mx=Math.max.apply(null,D.catTot);
+  $("catRows").innerHTML=CAT.map(function(c,i){
+    var v=D.catTot[i], pv=prevD.catTot[i]*(cur===0?0.97:1);
+    var dl=(v-pv)/pv*100;
+    return "<tr><td>"+c.nm+'</td><td class="n">'+fm(v)+'</td><td class="n">'+(v/D.total*100).toFixed(1)+
+      '%</td><td><div class="mb"><i style="width:'+(v/mx*100).toFixed(1)+"%;background:"+c.c+'"></i></div></td>'+
+      '<td class="n">'+fm(pv)+'</td><td class="n '+(dl>=0?"up":"dn")+'">'+(dl>=0?"▲ ":"▼ ")+Math.abs(dl).toFixed(1)+"%</td></tr>";
+  }).join("");
+  $("catFoot").innerHTML='<tr><td>合計</td><td class="n">'+fm(D.total)+'</td><td class="n">100.0%</td><td></td><td class="n">'+
+    fm(prevD.total*(cur===0?0.97:1))+'</td><td class="n"></td></tr>';
+
+  var zoneTot={};
+  ZON.forEach(function(z,zi){ zoneTot[z.k]=D.zonTot[zi]; });
+  var zoneBase={};
+  FLOOR.forEach(function(f){ zoneBase[f.z]=(zoneBase[f.z]||0)+f.v; });
+  var acc={},rows=[];
+  FLOOR.forEach(function(f,i){
+    acc[f.z]=acc[f.z]||{n:0,sum:0};
+    var lastOfZone = !FLOOR[i+1] || FLOOR[i+1].z!==f.z;
+    var val = lastOfZone ? zoneTot[f.z]-acc[f.z].sum : Math.round(zoneTot[f.z]*f.v/zoneBase[f.z]);
+    acc[f.z].sum+=val;
+    rows.push({f:f.f,z:f.z,v:val,ar:f.ar});
+  });
+  var mf=Math.max.apply(null,rows.map(function(r){return r.v;}));
+  var zn={hi:"高樓區",md:"中樓區",lo:"低樓區",bs:"地下層"};
+  var zc={hi:"#38e0ff",md:"#ffc247",lo:"#3ddc97",bs:"#a78bfa"};
+  $("flRows").innerHTML=rows.map(function(r){
+    return "<tr><td><b>"+r.f+"</b></td><td>"+zn[r.z]+'</td><td class="n">'+fm(r.v)+
+      '</td><td><div class="mb"><i style="width:'+(r.v/mf*100).toFixed(1)+"%;background:"+zc[r.z]+'"></i></div></td>'+
+      '<td class="n">'+(r.v/r.ar).toFixed(2)+"</td></tr>";
+  }).join("");
+  $("flFoot").innerHTML='<tr><td colspan="2">全棟合計</td><td class="n">'+fm(D.total)+'</td><td></td><td class="n">'+
+    (D.total/FLOOR.reduce(function(s,f){return s+f.ar;},0)).toFixed(2)+"</td></tr>";
+  $("catNote").textContent = cur===0 ? "與昨日比較" : cur===1 ? "與上週比較" : "與上月同期比較";
+}
+
+/* ================= 期間切換 ================= */
+document.querySelectorAll("[data-p]").forEach(function(b){
+  b.onclick=function(){
+    cur=+b.dataset.p;
+    document.querySelectorAll("[data-p]").forEach(function(o){ o.setAttribute("aria-selected",String(o===b)); });
+    D=compute(cur); focusNode=null;
+    $("skSub").textContent=D.P.nm+" · 來源 → 用電分類 → 樓層分區";
+    drawRibbon(); drawSankey(); drawStack(); drawTables();
+  };
+});
+
+drawRibbon(); drawSankey(); drawStack(); drawTables();
+function tick(){ $("clk").textContent=new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"}); }
+tick(); setInterval(tick,20000);
+</script>
+</body>
+</html>

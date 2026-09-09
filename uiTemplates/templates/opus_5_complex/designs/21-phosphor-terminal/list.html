@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>21 · 服務進程管理 — SYSOPS TERMINAL</title>
+<style>
+:root{--p:#33ff66;--pd:#149c36;--pdd:#0a4d1c;--bg:#040a05;--amber:#ffcc33;--red:#ff5b4a;--sec:#6fe38b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--p);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","Courier New","Noto Sans Mono",monospace;font-size:13px;line-height:1.45;
+  text-shadow:0 0 4px rgba(51,255,102,.55)}
+.crt{position:fixed;inset:0;z-index:100;pointer-events:none}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px)}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(110% 90% at 50% 50%,transparent 52%,rgba(0,0,0,.85));
+  box-shadow:inset 0 0 130px rgba(51,255,102,.10)}
+.flick{position:fixed;inset:0;z-index:101;pointer-events:none;background:rgba(51,255,102,.03);
+  animation:fl .14s steps(2) infinite}
+@keyframes fl{50%{opacity:.35}}
+.scan{position:fixed;left:0;right:0;height:90px;z-index:99;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(51,255,102,.06),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-100px}to{top:100%}}
+
+.home{position:fixed;right:12px;top:12px;z-index:110;text-decoration:none;color:var(--bg);
+  background:var(--p);padding:6px 13px;font-size:11px;letter-spacing:.14em;text-shadow:none;
+  box-shadow:0 0 18px rgba(51,255,102,.6)}
+.home:hover{background:var(--amber);box-shadow:0 0 22px rgba(255,204,51,.7)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+.term{position:relative;z-index:5;padding:14px;max-width:1500px;margin:0 auto}
+.head{border:1px solid var(--pd);padding:8px 130px 8px 12px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px}
+.head b{color:var(--amber);text-shadow:0 0 6px rgba(255,204,51,.6)}
+.topnav{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;background:rgba(0,10,2,.5)}
+.topnav span{font-size:10px;letter-spacing:.24em;color:#3f8f56;padding:8px 12px;border-right:1px solid var(--pdd)}
+.topnav a{padding:8px 14px;color:var(--sec);text-decoration:none;font-size:12px;letter-spacing:.06em;
+  border-right:1px solid var(--pdd);transition:.15s}
+.topnav a:hover{color:var(--p);background:rgba(51,255,102,.09)}
+.topnav a.on{color:var(--bg);background:var(--p);text-shadow:none}
+
+/* ---------- banner ---------- */
+.banner{border:1px solid var(--pd);padding:11px 13px;margin-bottom:12px;
+  display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px}
+.banner h1{font-size:clamp(15px,2.6vw,24px);letter-spacing:.16em;font-weight:normal}
+.banner h1 em{font-style:normal;color:var(--amber);text-shadow:0 0 8px rgba(255,204,51,.55)}
+.banner .meta{font-size:11px;color:var(--sec);text-align:right;line-height:1.9}
+.banner .meta b{color:var(--p)}
+
+/* ---------- filter chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--pd);margin-bottom:12px}
+.chips button{appearance:none;background:transparent;border:0;border-right:1px solid var(--pdd);
+  cursor:pointer;font:inherit;font-size:11.5px;letter-spacing:.1em;color:var(--sec);
+  padding:8px 14px;transition:.15s;text-shadow:inherit}
+.chips button:hover{background:rgba(51,255,102,.1);color:var(--p)}
+.chips button[aria-pressed="true"]{background:var(--p);color:var(--bg);text-shadow:none}
+.chips .sp{flex:1 1 60px;border-right:1px solid var(--pdd)}
+.chips .cnt{font-size:11px;color:#3f8f56;padding:8px 14px}
+
+/* ---------- layout ---------- */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:12px;align-items:start}
+.racks{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rack{border:1px solid var(--pd)}
+.rack>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;font-weight:normal}
+.rack>h2 em{font-style:normal;color:var(--sec)}
+.frame{display:grid;grid-template-columns:26px minmax(0,1fr);gap:6px;padding:10px 10px 12px}
+.uscale{display:flex;flex-direction:column;justify-content:space-between;font-size:9px;
+  color:#2f7a45;text-align:right;padding:2px 2px 2px 0;line-height:1}
+.bay{border-left:3px double var(--pdd);border-right:3px double var(--pdd);padding:4px;
+  background:repeating-linear-gradient(180deg,rgba(20,156,54,.16) 0 1px,transparent 1px 13px);
+  display:flex;flex-direction:column;gap:4px}
+.dev{appearance:none;width:100%;border:1px solid var(--pd);background:rgba(10,77,28,.28);
+  color:var(--p);font:inherit;text-align:left;cursor:pointer;padding:0 8px;position:relative;
+  display:flex;align-items:center;gap:8px;transition:.15s;text-shadow:inherit;height:var(--h)}
+.dev:hover{background:rgba(51,255,102,.16)}
+.dev[aria-pressed="true"]{background:var(--p);color:var(--bg);text-shadow:none;border-color:var(--p);
+  box-shadow:0 0 16px rgba(51,255,102,.45)}
+.dev[aria-pressed="true"] .u,.dev[aria-pressed="true"] .role{color:var(--bg);opacity:.8}
+.dev.dim{opacity:.24}
+.dev .led{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--p);
+  box-shadow:0 0 7px currentColor}
+.dev.s-warn .led{background:var(--amber)}
+.dev.s-err .led{background:var(--red);animation:pl 1s steps(2) infinite}
+.dev.s-idle .led{background:#2f7a45;box-shadow:none}
+@keyframes pl{50%{opacity:.2}}
+.dev .txt{min-width:0;flex:1}
+.dev .nm{font-size:11.5px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev .role{margin-left:10px;font-size:9.5px;color:var(--sec);letter-spacing:.08em;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dev .u{font-size:9px;color:var(--sec);letter-spacing:.06em;flex:0 0 auto}
+.dev .vent{position:absolute;right:56px;top:6px;bottom:6px;width:46px;pointer-events:none;
+  background:repeating-linear-gradient(90deg,rgba(51,255,102,.28) 0 1px,transparent 1px 4px)}
+.dev.k-stor .vent{background:repeating-linear-gradient(180deg,rgba(51,255,102,.3) 0 2px,transparent 2px 7px)}
+.dev.k-net .vent{background:repeating-linear-gradient(90deg,rgba(51,255,102,.4) 0 3px,transparent 3px 6px)}
+.blank{height:20px;border:1px dashed var(--pdd);opacity:.5}
+
+/* ---------- detail ---------- */
+.detail{border:1px solid var(--pd);position:sticky;top:12px}
+.detail>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;font-weight:normal}
+.detail>h2 em{font-style:normal;color:var(--sec)}
+.dbody{padding:11px 12px}
+.hostline{font-size:16px;letter-spacing:.08em;margin-bottom:2px}
+.hostline b{color:var(--amber)}
+.subline{font-size:11px;color:var(--sec);margin-bottom:10px}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;font-size:11px;color:var(--sec);
+  border-top:1px dotted rgba(20,156,54,.5);border-bottom:1px dotted rgba(20,156,54,.5);
+  padding:8px 0;margin-bottom:10px}
+.facts b{color:var(--p);font-weight:normal}
+.meter{margin-bottom:8px}
+.meter .lb{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.meter .bar{border:1px solid var(--pdd);height:14px;padding:1px}
+.meter .bar i{display:block;height:100%;background:repeating-linear-gradient(90deg,var(--p) 0 5px,transparent 5px 7px)}
+.meter.warn .bar i{background:repeating-linear-gradient(90deg,var(--amber) 0 5px,transparent 5px 7px)}
+.meter.crit .bar i{background:repeating-linear-gradient(90deg,var(--red) 0 5px,transparent 5px 7px)}
+.sect{font-size:10px;letter-spacing:.22em;color:var(--sec);margin:14px 0 6px;
+  border-bottom:1px solid var(--pdd);padding-bottom:4px;display:flex;justify-content:space-between}
+.sortbtns{display:flex;gap:0;margin-bottom:6px;border:1px solid var(--pdd)}
+.sortbtns button{appearance:none;background:transparent;border:0;border-right:1px solid var(--pdd);
+  color:var(--sec);font:inherit;font-size:10.5px;letter-spacing:.1em;padding:5px 10px;cursor:pointer;text-shadow:inherit}
+.sortbtns button:last-child{border-right:0}
+.sortbtns button[aria-pressed="true"]{background:var(--pd);color:var(--bg);text-shadow:none}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:330px}
+th{text-align:left;color:var(--sec);font-weight:normal;padding:4px 6px;border-bottom:1px solid var(--pdd);white-space:nowrap}
+td{padding:4px 6px;border-bottom:1px dotted rgba(20,156,54,.4);white-space:nowrap}
+tr:hover td{background:rgba(51,255,102,.09)}
+td.n{text-align:right}
+.st-run{color:var(--p)}.st-slp{color:var(--sec);opacity:.75}
+.st-err{color:var(--red);text-shadow:0 0 6px rgba(255,91,74,.6)}
+.st-wrn{color:var(--amber)}
+.hint{font-size:10.5px;color:#3f8f56;line-height:1.8;margin-top:10px}
+.ftr{margin-top:12px;border-top:1px solid var(--pdd);padding-top:8px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  font-size:10px;letter-spacing:.24em;color:#3f8f56}
+
+@media(max-width:1180px){
+  .layout{grid-template-columns:1fr}
+  .detail{position:static}
+}
+@media(max-width:900px){.racks{grid-template-columns:1fr}}
+@media(max-width:640px){
+  .term{padding:10px}
+  .dev .vent{display:none}
+  .facts{grid-template-columns:1fr}
+  .banner .meta{text-align:left}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="flick"></div><div class="scan"></div>
+<a class="home" href="../../index.html">[ESC] INDEX</a>
+
+<div class="term">
+  <div class="head">
+    <span>SYSOPS TERMINAL v4.12 — MODULE <b>svcctl</b></span>
+    <span>USER <b>root</b>@dc-taipei-a · TTY1</span>
+    <span>UPTIME <b id="up">184d 06:22:41</b></span>
+  </div>
+
+  <nav class="topnav" aria-label="模組導覽">
+    <span>MODULES</span>
+    <a href="index.html">▶ 系統監控主頁</a>
+    <a href="list.html" class="on" aria-current="page">▶ 服務進程管理</a>
+    <a href="logs.html">▶ 系統日誌查詢</a>
+    <a href="users.html">▶ 帳號權限管理</a>
+    <a href="report.html">▶ 效能統計報表</a>
+  </nav>
+
+  <div class="banner">
+    <h1>RACK ELEVATION — ROW 3 / <em>DC-TAIPEI-A</em></h1>
+    <div class="meta">
+      機櫃 <b>2</b> 座 · 上架設備 <b>14</b> 台 · 佔用 <b>25U</b> / 84U<br>
+      服務單元 <b>77</b> 個 — active <b>60</b> · waiting <b>11</b> · degraded <b>3</b> · failed <b>3</b>
+    </div>
+  </div>
+
+  <div class="chips" role="group" aria-label="依狀態篩選設備">
+    <button type="button" data-f="all" aria-pressed="true">全部 14</button>
+    <button type="button" data-f="run" aria-pressed="false">ONLINE 9</button>
+    <button type="button" data-f="warn" aria-pressed="false">DEGRADED 2</button>
+    <button type="button" data-f="err" aria-pressed="false">FAULT 1</button>
+    <button type="button" data-f="idle" aria-pressed="false">STANDBY 2</button>
+    <div class="sp"></div>
+    <span class="cnt" id="cnt">顯示 14 / 14 台</span>
+  </div>
+
+  <div class="layout">
+    <div class="racks" id="racks"></div>
+
+    <section class="detail" aria-live="polite">
+      <h2><span>[ NODE DETAIL ]</span><em id="d-slot">U40–41</em></h2>
+      <div class="dbody">
+        <div class="hostline"><b id="d-name">prd-core-01</b></div>
+        <div class="subline" id="d-role">應用主節點 · Compute</div>
+        <div class="facts" id="d-facts"></div>
+        <div id="d-meters"></div>
+        <div class="sect"><span>[ SYSTEMD UNITS &amp; PROCESSES ]</span><em id="d-count">8 units</em></div>
+        <div class="sortbtns" role="group" aria-label="排序方式">
+          <button type="button" data-s="cpu" aria-pressed="true">依 CPU ↓</button>
+          <button type="button" data-s="mem" aria-pressed="false">依 MEM ↓</button>
+          <button type="button" data-s="name" aria-pressed="false">依名稱 ↑</button>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>UNIT</th><th>ACTIVE</th><th>SINCE</th><th class="n">CPU</th><th class="n">MEM</th><th class="n">PID</th></tr></thead>
+            <tbody id="d-rows"></tbody>
+          </table>
+        </div>
+        <p class="hint">※ 點擊左側機櫃立面圖任一設備即可切換節點；狀態篩選同時作用於立面圖與本表。
+        故障設備 <b>stor-array-01</b> 的 /dev/sdd 已於 19:33 標記 FAILED，/dev/sdc 重建進度 42%，預估 03:40 完成。</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="ftr">
+    <span>P H O S P H O R   C R T   T E R M I N A L</span>
+    <span>List / Rack Elevation</span>
+    <span>D E S I G N   2 1 / 4 0</span>
+  </div>
+</div>
+
+<script>
+/* 執行中的 uptime，與主控台同一時間基準 */
+let up = 184 * 86400 + 6 * 3600 + 22 * 60 + 41;
+const pad = n => String(n).padStart(2, "0");
+setInterval(() => {
+  up++;
+  const d = Math.floor(up / 86400), r = up % 86400;
+  document.getElementById("up").textContent =
+    d + "d " + pad(Math.floor(r / 3600)) + ":" + pad(Math.floor(r % 3600 / 60)) + ":" + pad(r % 60);
+}, 1000);
+
+/* ---- 機櫃資料：svc = [unit, active, since, cpu%, mem%, pid] ---- */
+const RACKS = [
+  {id:"RACK-A03", pdu:"2 × 16A / 冗餘", dev:[
+    {u:"U40–41",h:54,k:"cmp",s:"run",n:"prd-core-01",role:"應用主節點 · Compute",
+     ip:"10.4.0.11",os:"Debian 12.6 · 6.1.0-21",cpu:48,mem:76,dsk:61,net:34,
+     hw:"Dell R650 · 32C / 128GiB",sn:"SN-4C7A19",load:"1.42 1.88 2.04",
+     svc:[["nginx.service","active","184d",18.4,2.1,1042],
+          ["app-api.service","active","12d",9.2,6.4,2231],
+          ["etl-worker.service","active","12d",6.8,4.2,2410],
+          ["containerd.service","active","184d",2.4,1.2,3390],
+          ["node-exporter.service","active","184d",0.6,0.4,1180],
+          ["rsyncd.service","active","92d",0.8,0.3,4488],
+          ["mailq.service","failed","00:14",0.0,0.0,"—"],
+          ["backup.timer","waiting","06:12",0.0,0.0,"—"]]},
+    {u:"U38–39",h:54,k:"cmp",s:"run",n:"prd-core-02",role:"應用備節點 · Compute",
+     ip:"10.4.0.12",os:"Debian 12.6 · 6.1.0-21",cpu:22,mem:41,dsk:58,net:12,
+     hw:"Dell R650 · 32C / 128GiB",sn:"SN-4C7A20",load:"0.61 0.74 0.80",
+     svc:[["nginx.service","active","184d",6.1,1.8,1051],
+          ["app-api.service","active","12d",4.4,5.9,2244],
+          ["containerd.service","active","184d",1.9,1.1,3402],
+          ["node-exporter.service","active","184d",0.5,0.4,1186],
+          ["keepalived.service","active","184d",0.3,0.2,1204],
+          ["backup.timer","waiting","06:12",0.0,0.0,"—"]]},
+    {u:"U36–37",h:54,k:"cmp",s:"run",n:"prd-db-01",role:"PostgreSQL 主庫 · Database",
+     ip:"10.4.0.21",os:"Debian 12.6 · 6.1.0-21",cpu:37,mem:82,dsk:74,net:19,
+     hw:"Dell R750 · 48C / 256GiB",sn:"SN-7B2E04",load:"2.06 2.21 2.18",
+     svc:[["postgresql.service","active","184d",12.7,18.6,1088],
+          ["pgbouncer.service","active","184d",3.4,1.4,1131],
+          ["wal-archiver.service","active","184d",2.2,0.9,1166],
+          ["pg-exporter.service","active","184d",0.7,0.5,1192],
+          ["vacuum.timer","waiting","02:41",0.0,0.0,"—"],
+          ["node-exporter.service","active","184d",0.5,0.4,1199]]},
+    {u:"U34–35",h:54,k:"cmp",s:"warn",n:"prd-db-02",role:"PostgreSQL 熱備 · Standby",
+     ip:"10.4.0.22",os:"Debian 12.6 · 6.1.0-21",cpu:29,mem:69,dsk:74,net:44,
+     hw:"Dell R750 · 48C / 256GiB",sn:"SN-7B2E05",load:"1.88 1.72 1.65",
+     svc:[["postgresql.service","active","184d",9.8,17.2,1094],
+          ["wal-receiver.service","degraded","00:52",4.1,1.1,1140],
+          ["pgbouncer.service","active","184d",2.6,1.2,1148],
+          ["pg-exporter.service","active","184d",0.6,0.5,1195],
+          ["node-exporter.service","active","184d",0.5,0.4,1201]]},
+    {u:"U30–33",h:110,k:"stor",s:"err",n:"stor-array-01",role:"RAID-6 磁碟陣列 · 18TB",
+     ip:"10.4.0.31",os:"TrueNAS 24.04 · ZFS 2.2",cpu:14,mem:58,dsk:61,net:52,
+     hw:"5 × 3.6T SAS · RAID-6",sn:"SN-9F0C77",load:"0.94 1.12 1.30",
+     svc:[["mdmonitor.service","active","184d",0.4,0.2,812],
+          ["nfs-server.service","active","184d",5.2,3.1,844],
+          ["smbd.service","active","184d",2.8,2.4,861],
+          ["scrub.timer","waiting","41:18",0.0,0.0,"—"],
+          ["md0-rebuild.task","degraded","03:26",21.6,1.8,1877],
+          ["sdd-fault.alert","failed","03:26",0.0,0.0,"—"]]},
+    {u:"U28",h:26,k:"net",s:"run",n:"net-tor-a03",role:"Top-of-Rack 交換器 · 48 埠",
+     ip:"10.4.0.2",os:"SONiC 202405",cpu:11,mem:27,dsk:18,net:66,
+     hw:"48 × 10G SFP+ / 4 × 40G",sn:"SN-TOR-A03",load:"0.22 0.26 0.24",
+     svc:[["bgpd.service","active","362d",1.8,1.2,411],
+          ["lldpd.service","active","362d",0.4,0.3,418],
+          ["snmpd.service","active","362d",0.6,0.5,426],
+          ["sflow.service","active","120d",2.1,0.8,502],
+          ["ntpd.service","active","362d",0.2,0.1,388]]},
+    {u:"U26",h:26,k:"net",s:"idle",n:"kvm-a03",role:"KVM over IP · 遠端主控",
+     ip:"10.4.0.9",os:"Raritan 4.2.1",cpu:3,mem:12,dsk:6,net:2,
+     hw:"16 埠 KVM · IP 序列台",sn:"SN-KVM-A03",load:"0.04 0.05 0.05",
+     svc:[["kvmd.service","active","362d",0.3,0.4,201],
+          ["sshd.service","active","362d",0.1,0.2,208],
+          ["httpd.service","active","362d",0.2,0.3,214],
+          ["session-idle.timer","waiting","09:44",0.0,0.0,"—"]]}
+  ]},
+  {id:"RACK-A04", pdu:"2 × 16A / 冗餘", dev:[
+    {u:"U40",h:26,k:"net",s:"run",n:"lb-edge-01",role:"邊界負載平衡 · Active",
+     ip:"10.4.1.11",os:"Debian 12.6 · HAProxy 2.9",cpu:34,mem:38,dsk:22,net:78,
+     hw:"HPE DL325 · 16C / 64GiB",sn:"SN-LB-0101",load:"0.88 0.92 0.85",
+     svc:[["haproxy.service","active","184d",26.4,9.2,702],
+          ["keepalived.service","active","184d",0.6,0.4,711],
+          ["certbot.timer","waiting","11:02",0.0,0.0,"—"],
+          ["node-exporter.service","active","184d",0.5,0.3,724],
+          ["fail2ban.service","active","184d",1.1,0.8,733]]},
+    {u:"U39",h:26,k:"net",s:"idle",n:"lb-edge-02",role:"邊界負載平衡 · Standby",
+     ip:"10.4.1.12",os:"Debian 12.6 · HAProxy 2.9",cpu:4,mem:21,dsk:22,net:3,
+     hw:"HPE DL325 · 16C / 64GiB",sn:"SN-LB-0102",load:"0.06 0.09 0.11",
+     svc:[["haproxy.service","active","184d",0.9,7.4,704],
+          ["keepalived.service","active","184d",0.5,0.4,713],
+          ["certbot.timer","waiting","11:02",0.0,0.0,"—"],
+          ["node-exporter.service","active","184d",0.4,0.3,726]]},
+    {u:"U36–37",h:54,k:"cmp",s:"run",n:"prd-cache-01",role:"Redis 快取叢集 · 3 shard",
+     ip:"10.4.1.21",os:"Debian 12.6 · Redis 7.2",cpu:26,mem:64,dsk:14,net:41,
+     hw:"Dell R450 · 16C / 96GiB",sn:"SN-CA-2201",load:"0.72 0.81 0.79",
+     svc:[["redis@6379.service","active","62d",3.1,9.8,3155],
+          ["redis@6380.service","active","62d",2.8,9.1,3161],
+          ["redis@6381.service","active","62d",2.4,8.7,3167],
+          ["redis-sentinel.service","active","62d",0.7,0.6,3180],
+          ["node-exporter.service","active","184d",0.5,0.3,3188],
+          ["rdb-snapshot.timer","waiting","00:38",0.0,0.0,"—"]]},
+    {u:"U34–35",h:54,k:"cmp",s:"warn",n:"prd-mq-01",role:"訊息佇列 · RabbitMQ",
+     ip:"10.4.1.31",os:"Debian 12.6 · RabbitMQ 3.13",cpu:41,mem:71,dsk:47,net:36,
+     hw:"Dell R450 · 16C / 96GiB",sn:"SN-MQ-3101",load:"1.96 1.74 1.52",
+     svc:[["rabbitmq-server.service","active","62d",14.2,22.4,2904],
+          ["celery-worker@mail.service","failed","00:14",0.0,0.0,"—"],
+          ["celery-worker@etl.service","active","12d",6.6,4.4,6640],
+          ["celery-beat.service","active","12d",1.2,1.0,6652],
+          ["queue-depth.alert","degraded","01:08",0.0,0.0,"—"],
+          ["node-exporter.service","active","184d",0.5,0.3,2918]]},
+    {u:"U31–33",h:82,k:"stor",s:"run",n:"bkp-vault-01",role:"備份保管庫 · 60TB 冷儲存",
+     ip:"10.4.1.41",os:"Debian 12.6 · Borg 1.4",cpu:9,mem:33,dsk:88,net:24,
+     hw:"12 × 5T SATA · RAID-Z2",sn:"SN-BK-4101",load:"0.38 0.44 0.51",
+     svc:[["borg-repo.service","active","184d",2.1,3.8,5010],
+          ["backup-nightly.timer","waiting","06:12",0.0,0.0,"—"],
+          ["retention-prune.timer","waiting","30:12",0.0,0.0,"—"],
+          ["integrity-check.service","active","06:41",7.8,2.2,5088],
+          ["node-exporter.service","active","184d",0.4,0.3,5094]]},
+    {u:"U29",h:26,k:"net",s:"run",n:"net-tor-a04",role:"Top-of-Rack 交換器 · 48 埠",
+     ip:"10.4.1.2",os:"SONiC 202405",cpu:9,mem:24,dsk:18,net:58,
+     hw:"48 × 10G SFP+ / 4 × 40G",sn:"SN-TOR-A04",load:"0.19 0.21 0.20",
+     svc:[["bgpd.service","active","362d",1.6,1.1,413],
+          ["lldpd.service","active","362d",0.4,0.3,419],
+          ["snmpd.service","active","362d",0.6,0.5,427],
+          ["sflow.service","active","120d",1.9,0.8,504],
+          ["ntpd.service","active","362d",0.2,0.1,389]]},
+    {u:"U27",h:26,k:"net",s:"run",n:"mon-probe-01",role:"監控探針 · Prometheus",
+     ip:"10.4.1.51",os:"Debian 12.6 · Prometheus 2.53",cpu:31,mem:54,dsk:66,net:29,
+     hw:"Dell R350 · 8C / 32GiB",sn:"SN-MN-5101",load:"0.94 0.88 0.83",
+     svc:[["prometheus.service","active","184d",18.8,26.1,6102],
+          ["alertmanager.service","active","184d",1.4,2.2,6118],
+          ["blackbox-exporter.service","active","184d",2.6,1.1,6126],
+          ["loki.service","active","92d",6.2,8.4,6140],
+          ["grafana-server.service","active","92d",4.1,5.6,6152],
+          ["scrape-lag.alert","waiting","00:31",0.0,0.0,"—"]]}
+  ]}
+];
+
+/* ---- 立面圖 ---- */
+const wrap = document.getElementById("racks");
+const flat = [];
+RACKS.forEach(rk => {
+  const sec = document.createElement("section");
+  sec.className = "rack";
+  const used = rk.dev.reduce((a, d) => a + (d.u.includes("–") ? (+d.u.split("–")[1] - +d.u.slice(1).split("–")[0] + 1) : 1), 0);
+  sec.innerHTML =
+    '<h2><span>[ ' + rk.id + ' ]</span><em>' + used + 'U 使用 · PDU ' + rk.pdu + '</em></h2>' +
+    '<div class="frame"><div class="uscale" aria-hidden="true"></div><div class="bay"></div></div>';
+  const bay = sec.querySelector(".bay");
+  rk.dev.forEach(d => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "dev k-" + d.k + " s-" + d.s;
+    b.style.setProperty("--h", d.h + "px");
+    b.setAttribute("aria-pressed", "false");
+    b.dataset.state = d.s;
+    b.innerHTML = '<span class="led" aria-hidden="true"></span><span class="vent" aria-hidden="true"></span>' +
+      '<span class="txt"><span class="nm">' + d.n + '</span>' +
+      '<span class="role">' + d.role + '</span></span><span class="u">' + d.u + '</span>';
+    b.addEventListener("click", () => select(d, b));
+    bay.appendChild(b);
+    flat.push({d, b});
+  });
+  const blank = document.createElement("div");
+  blank.className = "blank";
+  blank.setAttribute("aria-hidden", "true");
+  bay.appendChild(blank);
+  const sc = sec.querySelector(".uscale");
+  for (let u = 42; u >= 24; u -= 3) sc.insertAdjacentHTML("beforeend", "<span>" + u + "</span>");
+  wrap.appendChild(sec);
+});
+
+/* ---- 詳情面板 ---- */
+let current = RACKS[0].dev[0], sortKey = "cpu";
+const grade = v => v >= 85 ? " crit" : v >= 70 ? " warn" : "";
+const cls = a => a === "active" ? "st-run" : a === "failed" ? "st-err" : a === "degraded" ? "st-wrn" : "st-slp";
+
+function meters(d){
+  const rows = [["CPU", d.cpu], ["MEM", d.mem], ["DISK", d.dsk], ["NET", d.net]];
+  return rows.map(([k, v]) =>
+    '<div class="meter' + grade(v) + '"><div class="lb"><span>' + k + '</span><span>' + v + '%</span></div>' +
+    '<div class="bar"><i style="width:' + v + '%"></i></div></div>').join("");
+}
+function rows(d){
+  const list = d.svc.slice().sort((a, b) =>
+    sortKey === "name" ? String(a[0]).localeCompare(b[0]) :
+    sortKey === "mem" ? b[4] - a[4] : b[3] - a[3]);
+  return list.map(s =>
+    "<tr><td>" + s[0] + '</td><td class="' + cls(s[1]) + '">' + s[1] + "</td><td>" + s[2] +
+    '</td><td class="n">' + s[3].toFixed(1) + '</td><td class="n">' + s[4].toFixed(1) +
+    '</td><td class="n">' + s[5] + "</td></tr>").join("");
+}
+function paint(){
+  const d = current;
+  document.getElementById("d-slot").textContent = d.u;
+  document.getElementById("d-name").textContent = d.n;
+  document.getElementById("d-role").textContent = d.role;
+  document.getElementById("d-facts").innerHTML =
+    "<span>MGMT IP <b>" + d.ip + "</b></span><span>SERIAL <b>" + d.sn + "</b></span>" +
+    "<span>OS <b>" + d.os + "</b></span><span>HW <b>" + d.hw + "</b></span>" +
+    "<span>LOAD AVG <b>" + d.load + "</b></span><span>UNITS <b>" + d.svc.length + "</b></span>";
+  document.getElementById("d-meters").innerHTML = meters(d);
+  document.getElementById("d-count").textContent = d.svc.length + " units";
+  document.getElementById("d-rows").innerHTML = rows(d);
+}
+function select(d, btn){
+  current = d;
+  flat.forEach(o => o.b.setAttribute("aria-pressed", String(o.b === btn)));
+  paint();
+}
+select(current, flat[0].b);
+
+document.querySelectorAll(".sortbtns button").forEach(b => b.addEventListener("click", () => {
+  sortKey = b.dataset.s;
+  document.querySelectorAll(".sortbtns button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+  document.getElementById("d-rows").innerHTML = rows(current);
+}));
+
+/* ---- 狀態篩選：同時作用於立面圖與計數 ---- */
+document.querySelectorAll(".chips button").forEach(c => c.addEventListener("click", () => {
+  const f = c.dataset.f;
+  document.querySelectorAll(".chips button").forEach(o => o.setAttribute("aria-pressed", String(o === c)));
+  let n = 0;
+  flat.forEach(o => {
+    const on = f === "all" || o.d.s === f;
+    o.b.classList.toggle("dim", !on);
+    if (on) n++;
+  });
+  document.getElementById("cnt").textContent = "顯示 " + n + " / 14 台";
+}));
+</script>
+</body>
+</html>

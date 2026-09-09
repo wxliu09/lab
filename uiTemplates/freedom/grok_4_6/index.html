@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>靜界 · Stillverse</title>
+  <style>
+    :root {
+      --ink: #07080d;
+      --paper: #e8e0d0;
+      --dim: #9aa3b8;
+      --gold: #e2c27a;
+      --line: rgba(226, 194, 122, 0.35);
+    }
+    html, body {
+      margin: 0; height: 100%; background: var(--ink); color: var(--paper);
+      overflow: hidden; font-family: "Iowan Old Style", "Palatino Linotype", "Songti TC",
+        "PMingLiU", "Microsoft JhengHei", serif;
+      user-select: none; -webkit-user-select: none;
+    }
+    canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+    #hud { pointer-events: none; }
+    #boot {
+      position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+      background:
+        radial-gradient(ellipse at 50% 30%, #16131f 0%, #07080d 62%);
+    }
+    #boot.gone { opacity: 0; pointer-events: none; transition: opacity 1.1s ease; }
+    .card {
+      width: min(560px, calc(100vw - 40px));
+      border: 1px solid var(--line);
+      background: rgba(8, 9, 14, 0.72);
+      padding: 36px 34px 28px;
+      box-shadow: 0 30px 80px #000a;
+    }
+    .ring {
+      width: 54px; height: 54px; margin: 0 auto 22px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      animation: spin 18s linear infinite;
+      position: relative;
+    }
+    .ring:after {
+      content: ""; position: absolute; inset: 11px; border: 1px solid #7ee0d655;
+      border-radius: 50%; animation: spin 11s linear infinite reverse;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 {
+      margin: 0; font-weight: 500; letter-spacing: 0.42em; text-align: center;
+      font-size: 22px;
+    }
+    .en {
+      text-align: center; letter-spacing: 0.38em; color: var(--gold);
+      font-size: 11px; margin: 10px 0 22px;
+    }
+    .blurb {
+      color: var(--dim); font-size: 14px; line-height: 1.8;
+      text-align: center; margin: 0 0 22px;
+    }
+    .safe {
+      border-top: 1px solid #ffffff12; padding-top: 16px;
+      font-size: 12px; color: #8b93a7; line-height: 1.75;
+    }
+    .safe b { color: #c8d0e0; font-weight: 600; }
+    button.enter {
+      display: block; width: 100%; margin-top: 22px;
+      background: transparent; color: var(--paper);
+      border: 1px solid var(--gold); padding: 12px 0;
+      letter-spacing: 0.28em; cursor: pointer; font: inherit; font-size: 13px;
+    }
+    button.enter:hover { background: #e2c27a18; }
+    #fail {
+      display: none; margin-top: 14px; color: #e8a0a0; font-size: 12px; text-align: center;
+    }
+    #toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+      z-index: 8; pointer-events: none; opacity: 0; color: var(--gold);
+      letter-spacing: 0.18em; font-size: 13px; transition: opacity .4s;
+      text-shadow: 0 2px 16px #000;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <canvas id="hud"></canvas>
+  <div id="toast"></div>
+  <div id="boot">
+    <div class="card">
+      <div class="ring" aria-hidden="true"></div>
+      <h1>靜　界</h1>
+      <div class="en">STILLVERSE · OFFLINE</div>
+      <p class="blurb">一座只活在這個分頁裡的神殿。<br>沒有伺服器，沒有雲，關頁即散。</p>
+      <div class="safe">
+        <b>本機安全</b><br>
+        · 不連外網、不載入任何 CDN／字體／追蹤<br>
+        · 不使用鏡頭、麥克風、剪貼簿或鍵盤側錄<br>
+        · 不讀寫磁碟（除非你自己按「底片」才下載一張圖）<br>
+        · 不安裝 Service Worker、不常駐背景<br>
+        · 只需瀏覽器的 Canvas 與（可關）Web Audio
+      </div>
+      <button class="enter" id="enter" type="button">進入神殿</button>
+      <div id="fail"></div>
+    </div>
+  </div>
+  <script>
+  (function () {
+    'use strict';
+    // 安全契約：無 fetch / XHR / WebSocket / Worker / 裝置權限 / eval。
+    var POEM = [
+      '夜在內部發光',
+      '柱廊通向同一處',
+      '名字是多餘的',
+      '重力只是習慣',
+      '回聲比聲音更早',
+      '星辰是借來的',
+      '合上眼睛，世界仍在轉'
+    ];
+    var PAL_NAMES = ['夜汞', '琥珀', '海璃', '骨瓷', '焰心'];
+    var ORB_N = 7;
+    var glCanvas = document.getElementById('gl');
+    var hudCanvas = document.getElementById('hud');
+    var hud = hudCanvas.getContext('2d');
+    var toastEl = document.getElementById('toast');
+    var boot = document.getElementById('boot');
+    var failEl = document.getElementById('fail');
+
+    var state = {
+      started: false,
+      look: false,
+      seed: 2048,
+      pal: 0,
+      cam: { x: 0, y: 1.8, z: 13.5 },
+      yaw: Math.PI,
+      pitch: -0.12,
+      keys: Object.create(null),
+      orbs: [],
+      got: 0,
+      torch: 0,
+      audioOn: true,
+      quality: 0.72,
+      mode: 'gl',
+      win: 0,
+      t0: 0,
+      last: 0,
+      fps: 60,
+      fpsFrames: 0,
+      fpsTime: 0,
+      toastTimer: 0
+    };
+
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        var t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+    function toast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
+    }
+
+    function placeOrbs(seed) {
+      var rng = mulberry32(seed >>> 0);
+      var list = [];
+      for (var i = 0; i < ORB_N; i++) {
+        var a = (i / ORB_N) * Math.PI * 2 + (rng() - 0.5) * 0.35;
+        var r = 6.2 + rng() * 7.4;
+        list.push({
+          x: Math.cos(a) * r,
+          y: 0.7 + rng() * 3.2,
+          z: Math.sin(a) * r,
+          got: false
+        });
+      }
+      return list;
+    }
+    function reseed(seed) {
+      state.seed = seed >>> 0;
+      state.orbs = placeOrbs(state.seed);
+      state.got = 0;
+      state.win = 0;
+      state.cam.x = 0; state.cam.y = 1.8; state.cam.z = 13.5;
+      state.yaw = Math.PI; state.pitch = -0.12;
+    }
+
+    /* ---------- audio (local oscillators only) ---------- */
+    var audio = {
+      ctx: null, master: null, filter: null, timer: 0, drones: []
+    };
+    function audioStart() {
+      if (audio.ctx) {
+        if (audio.ctx.state === 'suspended') audio.ctx.resume();
+        return;
+      }
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { state.audioOn = false; return; }
+      var ctx = new AC();
+      var master = ctx.createGain();
+      master.gain.value = 0.16;
+      var filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 520;
+      filter.Q.value = 0.7;
+      filter.connect(master);
+      master.connect(ctx.destination);
+      function drone(freq, type, gain) {
+        var o = ctx.createOscillator();
+        var g = ctx.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        g.gain.value = gain;
+        o.connect(g); g.connect(filter); o.start();
+        audio.drones.push(o);
+      }
+      drone(55, 'sine', 0.28);
+      drone(82.5, 'sine', 0.11);
+      drone(110.2, 'triangle', 0.04);
+      audio.ctx = ctx; audio.master = master; audio.filter = filter;
+      scheduleBell();
+    }
+    function scheduleBell() {
+      if (!audio.ctx || !state.audioOn) return;
+      var ctx = audio.ctx;
+      var now = ctx.currentTime;
+      var scale = [0, 3, 5, 7, 10, 12];
+      var n = scale[(Math.random() * scale.length) | 0];
+      var freq = 220 * Math.pow(2, n / 12);
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.09, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
+      o.connect(g); g.connect(audio.filter);
+      o.start(now); o.stop(now + 3.4);
+      var wait = 1.6 + Math.random() * 3.4;
+      audio.timer = setTimeout(scheduleBell, wait * 1000);
+    }
+    function chime(index) {
+      if (!audio.ctx || !state.audioOn) return;
+      var ctx = audio.ctx, now = ctx.currentTime;
+      var freq = 330 * Math.pow(2, index / 12);
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
+      o.connect(g); g.connect(audio.master);
+      o.start(now); o.stop(now + 1.5);
+    }
+    function audioMuteToggle() {
+      state.audioOn = !state.audioOn;
+      if (!audio.ctx) return;
+      audio.master.gain.value = state.audioOn ? 0.16 : 0;
+      if (state.audioOn) scheduleBell();
+      else clearTimeout(audio.timer);
+      toast(state.audioOn ? '聲響開啟' : '聲響關閉');
+    }
+
+    /* ---------- WebGL ---------- */
+    var gl = null, prog = null, u = {}, buf = null;
+
+    var VERT = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}';
+    var FRAG = [
+      '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+      'precision highp float;',
+      '#else',
+      'precision mediump float;',
+      '#endif',
+      'uniform vec2 uRes;',
+      'uniform float uTime;',
+      'uniform vec3 uCam;',
+      'uniform vec2 uRot;',
+      'uniform vec3 uOrbs[7];',
+      'uniform float uGot[7];',
+      'uniform float uPal;',
+      'uniform float uTorch;',
+      'uniform float uWin;',
+      'float hash(vec3 p){p=fract(p*0.3183099+vec3(.11,.17,.23));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}',
+      'mat2 rm(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}',
+      'float sdBox(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0);}',
+      'float sdTorus(vec3 p,vec2 t){vec2 q=vec2(length(p.xz)-t.x,p.y);return length(q)-t.y;}',
+      'vec3 palSky(vec3 rd){',
+      '  vec3 top=vec3(0.03,0.04,0.09); vec3 hor=vec3(0.12,0.08,0.18); vec3 fog=vec3(0.07,0.05,0.10);',
+      '  if(uPal<0.5){ top=vec3(0.02,0.03,0.08); hor=vec3(0.10,0.07,0.18); }',
+      '  else if(uPal<1.5){ top=vec3(0.07,0.03,0.02); hor=vec3(0.22,0.10,0.04); }',
+      '  else if(uPal<2.5){ top=vec3(0.01,0.05,0.08); hor=vec3(0.04,0.16,0.20); }',
+      '  else if(uPal<3.5){ top=vec3(0.06,0.06,0.07); hor=vec3(0.18,0.16,0.14); }',
+      '  else { top=vec3(0.06,0.01,0.02); hor=vec3(0.20,0.05,0.04); }',
+      '  float h=clamp(rd.y*0.5+0.5,0.0,1.0);',
+      '  vec3 c=mix(hor,top,pow(h,0.85));',
+      '  float stars=step(0.995,hash(rd*180.0))*pow(max(rd.y,0.0),0.35);',
+      '  c+=stars*vec3(0.85,0.9,1.0);',
+      '  float glow=pow(max(dot(rd,normalize(vec3(0.2,0.15,0.6))),0.0),40.0);',
+      '  c+=glow*0.15*vec3(0.7,0.8,1.0);',
+      '  return mix(c,fog,0.12);',
+      '}',
+      'vec3 palCol(float id){',
+      '  vec3 stone=vec3(0.38,0.37,0.44);',
+      '  vec3 gold=vec3(0.83,0.68,0.38);',
+      '  vec3 teal=vec3(0.45,0.86,0.80);',
+      '  vec3 ember=vec3(0.92,0.42,0.28);',
+      '  if(uPal>0.5&&uPal<1.5){ gold=vec3(0.95,0.62,0.22); teal=vec3(0.95,0.45,0.22);} ',
+      '  if(uPal>1.5&&uPal<2.5){ gold=vec3(0.55,0.85,0.90); teal=vec3(0.30,0.75,0.85);} ',
+      '  if(uPal>2.5&&uPal<3.5){ gold=vec3(0.86,0.80,0.70); teal=vec3(0.75,0.72,0.68);} ',
+      '  if(uPal>3.5){ gold=vec3(0.95,0.35,0.28); teal=vec3(0.95,0.70,0.25);} ',
+      '  if(id<1.5) return stone*0.55;',
+      '  if(id<2.5) return stone*0.85;',
+      '  if(id<3.5) return mix(stone,gold,0.18);',
+      '  if(id<4.5) return gold;',
+      '  if(id<5.5) return mix(gold,teal,0.45+0.25*uWin);',
+      '  return teal*0.35;',
+      '}',
+      'vec2 map(vec3 p){',
+      '  float id=1.0;',
+      '  float d=p.y + 0.03*sin(p.x*0.35)*sin(p.z*0.35);',
+      '  float an=atan(p.z,p.x);',
+      '  float len=length(p.xz);',
+      '  float domain=6.2831853/8.0;',
+      '  float aa=mod(an+domain*0.5,domain)-domain*0.5;',
+      '  vec3 q=vec3(cos(aa)*len,p.y,sin(aa)*len);',
+      '  float mono=sdBox(q-vec3(16.0,2.15,0.0),vec3(0.42,2.15,1.15))-0.02;',
+      '  if(mono<d){d=mono;id=2.0;}',
+      '  float domain2=6.2831853/5.0;',
+      '  float ab=mod(an,domain2)-domain2*0.5;',
+      '  vec3 c=vec3(cos(ab)*len,p.y,sin(ab)*len);',
+      '  float col=length(c.xz-vec2(8.6,0.0))-0.22+0.04*sin(p.y*6.0);',
+      '  col=max(col, -p.y-0.02); col=max(col, p.y-4.6);',
+      '  if(col<d){d=col;id=2.0;}',
+      '  float zig=sdBox(p-vec3(0.0,0.38,0.0),vec3(4.4,0.38,4.4));',
+      '  zig=min(zig,sdBox(p-vec3(0.0,1.05,0.0),vec3(3.2,0.36,3.2)));',
+      '  zig=min(zig,sdBox(p-vec3(0.0,1.72,0.0),vec3(2.1,0.34,2.1)));',
+      '  zig=min(zig,sdBox(p-vec3(0.0,2.35,0.0),vec3(1.15,0.32,1.15)));',
+      '  if(zig<d){d=zig;id=3.0;}',
+      '  vec3 pr=p-vec3(0.0,4.15,0.0);',
+      '  vec3 pr1=pr; pr1.xy*=rm(uTime*0.21);',
+      '  vec3 pr2=pr; pr2.yz*=rm(uTime*0.14+1.2);',
+      '  vec3 pr3=pr; pr3.xz*=rm(uTime*0.09);',
+      '  float rings=sdTorus(pr1,vec2(2.15,0.055));',
+      '  rings=min(rings,sdTorus(pr2,vec2(3.05,0.045)));',
+      '  rings=min(rings,sdTorus(pr3,vec2(1.25,0.04)));',
+      '  if(rings<d){d=rings;id=4.0;}',
+      '  float core=length(pr)-(0.42+0.07*sin(uTime*2.0)+0.25*uWin);',
+      '  if(core<d){d=core;id=5.0;}',
+      '  float pool=sdBox(p-vec3(0.0,0.04,0.0),vec3(1.35,0.06,1.35));',
+      '  if(pool<d){d=pool;id=6.0;}',
+      '  return vec2(d,id);',
+      '}',
+      'vec3 nrm(vec3 p){',
+      '  vec2 e=vec2(0.0016,0.0);',
+      '  return normalize(vec3(',
+      '    map(p+e.xyy).x-map(p-e.xyy).x,',
+      '    map(p+e.yxy).x-map(p-e.yxy).x,',
+      '    map(p+e.yyx).x-map(p-e.yyx).x));',
+      '}',
+      'float shadow(vec3 p,vec3 l){',
+      '  float t=0.04; float res=1.0;',
+      '  for(int i=0;i<18;i++){',
+      '    float h=map(p+l*t).x;',
+      '    res=min(res,16.0*h/t);',
+      '    t+=clamp(h,0.04,0.5);',
+      '    if(res<0.02||t>18.0) break;',
+      '  }',
+      '  return clamp(res,0.0,1.0);',
+      '}',
+      'void main(){',
+      '  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;',
+      '  float yaw=uRot.x, pit=uRot.y;',
+      '  vec3 fw=normalize(vec3(sin(yaw)*cos(pit), sin(pit), cos(yaw)*cos(pit)));',
+      '  vec3 ri=normalize(vec3(cos(yaw),0.0,-sin(yaw)));',
+      '  vec3 up=normalize(cross(fw,ri));',
+      '  vec3 rd=normalize(fw+uv.x*ri+uv.y*up);',
+      '  vec3 ro=uCam;',
+      '  float t=0.0; vec2 h=vec2(1.0);',
+      '  for(int i=0;i<64;i++){',
+      '    h=map(ro+rd*t);',
+      '    if(h.x<0.0009*t || t>70.0) break;',
+      '    t+=h.x*0.92;',
+      '  }',
+      '  vec3 sky=palSky(rd);',
+      '  vec3 col=sky;',
+      '  if(t<70.0){',
+      '    vec3 p=ro+rd*t;',
+      '    vec3 n=nrm(p);',
+      '    vec3 lgt=normalize(vec3(0.35,0.82,0.28));',
+      '    float dif=max(dot(n,lgt),0.0);',
+      '    float fre=pow(1.0-max(dot(n,-rd),0.0),3.0);',
+      '    float sh=shadow(p+n*0.03,lgt);',
+      '    vec3 mate=palCol(h.y);',
+      '    if(h.y<1.5){',
+      '      vec2 gv=abs(fract(p.xz*0.5)-0.5);',
+      '      float line=1.0-smoothstep(0.018,0.03,min(gv.x,gv.y));',
+      '      mate+=line*0.07;',
+      '    }',
+      '    vec3 lit=mate*(0.12+0.88*dif*sh)+fre*palCol(4.0)*0.18;',
+      '    lit+=pow(max(dot(reflect(-lgt,n),-rd),0.0),28.0)*palCol(4.0)*0.45*sh;',
+      '    if(h.y>4.5&&h.y<5.5) lit+=palCol(5.0)*(0.8+2.2*uWin);',
+      '    if(h.y>5.5) lit+=palCol(6.0)*0.4;',
+      '    float fog=1.0-exp(-t*t*0.00115);',
+      '    col=mix(lit,sky,fog);',
+      '    col+=uTorch*exp(-t*0.11)*vec3(1.0,0.93,0.78)*0.22;',
+      '  }',
+      '  vec3 ocol=vec3(0.0); float og=0.0;',
+      '  for(int i=0;i<7;i++){',
+      '    if(uGot[i]>0.5) continue;',
+      '    vec3 oc=uOrbs[i]-ro;',
+      '    float along=max(dot(oc,rd),0.0);',
+      '    vec3 closest=ro+rd*along;',
+      '    float dist=length(uOrbs[i]-closest);',
+      '    float g=0.055/(dist*dist+0.018);',
+      '    g*=smoothstep(70.0,0.0,along);',
+      '    vec3 cc=mix(palCol(4.0),palCol(6.0),float(i)/6.0);',
+      '    ocol+=cc*g; og+=g;',
+      '  }',
+      '  col+=ocol;',
+      '  col=mix(col,palCol(5.0),uWin*0.12);',
+      '  col=pow(clamp(col,0.0,8.0),vec3(0.92));',
+      '  col+=(hash(vec3(gl_FragCoord.xy*0.7,uTime))-0.5)*0.035;',
+      '  vec2 pq=gl_FragCoord.xy/uRes;',
+      '  col*=0.78+0.22*smoothstep(1.2,0.2,length(pq-0.5));',
+      '  gl_FragColor=vec4(col,1.0);',
+      '}'
+    ].join('\n');
+
+    function compile(type, src) {
+      var sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(sh) || 'shader');
+      }
+      return sh;
+    }
+    function initGL() {
+      var opts = {
+        alpha: false, antialias: false, depth: false, stencil: false,
+        premultipliedAlpha: false, preserveDrawingBuffer: true,
+        failIfMajorPerformanceCaveat: false
+      };
+      gl = glCanvas.getContext('webgl', opts) || glCanvas.getContext('experimental-webgl', opts);
+      if (!gl) return false;
+      var vs = compile(gl.VERTEX_SHADER, VERT);
+      var fs = compile(gl.FRAGMENT_SHADER, FRAG);
+      prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.bindAttribLocation(prog, 0, 'a');
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(prog) || 'link');
+      }
+      gl.useProgram(prog);
+      buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      function loc(n) { return gl.getUniformLocation(prog, n); }
+      u = {
+        res: loc('uRes'), time: loc('uTime'), cam: loc('uCam'), rot: loc('uRot'),
+        orbs: loc('uOrbs[0]') || loc('uOrbs'),
+        got: loc('uGot[0]') || loc('uGot'),
+        pal: loc('uPal'), torch: loc('uTorch'), win: loc('uWin')
+      };
+      return true;
+    }
+    function sizeGL() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = Math.max(1, (window.innerWidth * dpr * state.quality) | 0);
+      var h = Math.max(1, (window.innerHeight * dpr * state.quality) | 0);
+      if (glCanvas.width !== w || glCanvas.height !== h) {
+        glCanvas.width = w; glCanvas.height = h;
+      }
+      hudCanvas.width = (window.innerWidth * dpr) | 0;
+      hudCanvas.height = (window.innerHeight * dpr) | 0;
+      if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    }
+    function drawGL(t) {
+      gl.useProgram(prog);
+      gl.uniform2f(u.res, glCanvas.width, glCanvas.height);
+      gl.uniform1f(u.time, t);
+      gl.uniform3f(u.cam, state.cam.x, state.cam.y, state.cam.z);
+      gl.uniform2f(u.rot, state.yaw, state.pitch);
+      var flat = new Float32Array(ORB_N * 3);
+      var got = new Float32Array(ORB_N);
+      for (var i = 0; i < ORB_N; i++) {
+        flat[i * 3] = state.orbs[i].x;
+        flat[i * 3 + 1] = state.orbs[i].y;
+        flat[i * 3 + 2] = state.orbs[i].z;
+        got[i] = state.orbs[i].got ? 1 : 0;
+      }
+      gl.uniform3fv(u.orbs, flat);
+      gl.uniform1fv(u.got, got);
+      gl.uniform1f(u.pal, state.pal);
+      gl.uniform1f(u.torch, state.torch);
+      gl.uniform1f(u.win, state.win);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    /* ---------- 2D fallback ---------- */
+    function drawFallback(t) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = hudCanvas.width, h = hudCanvas.height;
+      var ctx = hud;
+      var g = ctx.createRadialGradient(w * 0.5, h * 0.35, 20, w * 0.5, h * 0.5, h * 0.8);
+      g.addColorStop(0, '#1a1528'); g.addColorStop(1, '#07080d');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(w / 2, h * 0.58);
+      var scale = Math.min(w, h) * 0.028;
+      ctx.strokeStyle = 'rgba(226,194,122,0.35)';
+      ctx.lineWidth = 1.2 * dpr;
+      for (var r = 3; r <= 18; r += 3) {
+        ctx.beginPath(); ctx.arc(0, 0, r * scale, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.rotate(t * 0.12);
+      ctx.strokeStyle = '#e2c27a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 5.2 * scale, 2.1 * scale, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.rotate(-t * 0.2);
+      ctx.strokeStyle = '#7ee0d6';
+      ctx.beginPath(); ctx.ellipse(0, 0, 7.4 * scale, 3.0 * scale, 0.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      for (var i = 0; i < ORB_N; i++) {
+        if (state.orbs[i].got) continue;
+        var ox = w / 2 + (state.orbs[i].x - state.cam.x) * scale * 1.1;
+        var oy = h * 0.58 + (state.orbs[i].z - state.cam.z) * scale * 1.1 - state.orbs[i].y * 6;
+        ctx.fillStyle = 'rgba(126,224,214,0.85)';
+        ctx.beginPath(); ctx.arc(ox, oy, 5 * dpr, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#e2c27a';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.58 - 4.15 * scale, (8 + Math.sin(t * 2) * 2) * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    /* ---------- HUD ---------- */
+    function drawHUD(t, clear) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = hudCanvas.width, h = hudCanvas.height;
+      if (clear !== false) hud.clearRect(0, 0, w, h);
+      hud.save();
+      hud.scale(dpr, dpr);
+      var W = window.innerWidth, H = window.innerHeight;
+      hud.fillStyle = 'rgba(232,224,208,0.72)';
+      hud.font = '13px "PMingLiU","Microsoft JhengHei",serif';
+      hud.fillText('靜界  ·  seed ' + state.seed + '  ·  ' + PAL_NAMES[state.pal], 18, 28);
+      hud.fillStyle = 'rgba(154,163,184,0.8)';
+      hud.font = '12px "Microsoft JhengHei",sans-serif';
+      hud.fillText('念頭 ' + state.got + ' / 7', 18, 48);
+      var y = 72;
+      hud.font = '13px "PMingLiU","Microsoft JhengHei",serif';
+      for (var i = 0; i < ORB_N; i++) {
+        hud.fillStyle = state.orbs[i].got ? 'rgba(226,194,122,0.92)' : 'rgba(154,163,184,0.28)';
+        hud.fillText(state.orbs[i].got ? POEM[i] : '·', 18, y);
+        y += 20;
+      }
+      hud.fillStyle = 'rgba(154,163,184,0.45)';
+      hud.font = '11px "Microsoft JhengHei",sans-serif';
+      var help = 'WASD 遊走   拖曳滑鼠視角   空白上升  Q下降  Shift加速   F燈   M聲   C色盤   R新宇宙   1-3畫質   P底片   Esc暫停視角';
+      hud.fillText(help, 18, H - 20);
+      if (state.look) {
+        hud.strokeStyle = 'rgba(232,224,208,0.35)';
+        hud.beginPath();
+        hud.moveTo(W / 2 - 7, H / 2); hud.lineTo(W / 2 + 7, H / 2);
+        hud.moveTo(W / 2, H / 2 - 7); hud.lineTo(W / 2, H / 2 + 7);
+        hud.stroke();
+      }
+      if (state.win > 0.2) {
+        hud.fillStyle = 'rgba(226,194,122,' + (0.55 + 0.25 * Math.sin(t * 2)) + ')';
+        hud.font = '16px "PMingLiU","Microsoft JhengHei",serif';
+        hud.textAlign = 'center';
+        hud.fillText('七念已聚  ·  這宇宙仍只活在分頁裡', W / 2, H * 0.18);
+        hud.textAlign = 'left';
+      }
+      hud.restore();
+    }
+
+    /* ---------- sim ---------- */
+    function step(dt) {
+      var sp = (state.keys.ShiftLeft || state.keys.ShiftRight ? 7.2 : 3.6) * dt;
+      var cy = Math.cos(state.yaw), sy = Math.sin(state.yaw);
+      var dx = 0, dz = 0;
+      if (state.keys.KeyW || state.keys.ArrowUp) { dx += sy; dz += cy; }
+      if (state.keys.KeyS || state.keys.ArrowDown) { dx -= sy; dz -= cy; }
+      if (state.keys.KeyA || state.keys.ArrowLeft) { dx -= cy; dz += sy; }
+      if (state.keys.KeyD || state.keys.ArrowRight) { dx += cy; dz -= sy; }
+      var len = Math.hypot(dx, dz);
+      if (len > 0) { dx /= len; dz /= len; }
+      state.cam.x += dx * sp;
+      state.cam.z += dz * sp;
+      if (state.keys.Space || state.keys.KeyE) state.cam.y += 3.2 * dt;
+      if (state.keys.KeyQ || state.keys.ControlLeft) state.cam.y -= 3.2 * dt;
+      state.cam.y = clamp(state.cam.y, 0.4, 14);
+      var rad = Math.hypot(state.cam.x, state.cam.z);
+      if (rad > 22) {
+        var k = 22 / rad;
+        state.cam.x *= k; state.cam.z *= k;
+      }
+      for (var i = 0; i < ORB_N; i++) {
+        var o = state.orbs[i];
+        if (o.got) continue;
+        var dist = Math.hypot(o.x - state.cam.x, o.y - state.cam.y, o.z - state.cam.z);
+        if (dist < 1.35) {
+          o.got = true;
+          state.got++;
+          chime(i * 2);
+          toast(POEM[i]);
+          if (state.got >= ORB_N) {
+            state.win = 0.01;
+            toast('七念已聚');
+            if (audio.ctx && state.audioOn) {
+              chime(12); setTimeout(function () { chime(19); }, 180);
+            }
+          }
+        }
+      }
+      if (state.win > 0 && state.win < 1) state.win = Math.min(1, state.win + dt * 0.25);
+      if (audio.filter && audio.ctx) {
+        var target = 420 + Math.min(900, (Math.abs(dx) + Math.abs(dz)) * 1400 + state.cam.y * 18);
+        audio.filter.frequency.setTargetAtTime(target, audio.ctx.currentTime, 0.08);
+      }
+    }
+
+    function loop(now) {
+      if (!state.started) return;
+      if (!state.last) state.last = now;
+      var dt = Math.min(0.05, (now - state.last) / 1000);
+      state.last = now;
+      var t = (now - state.t0) / 1000;
+      step(dt);
+      sizeGL();
+      if (state.mode === 'gl') {
+        drawGL(t);
+        drawHUD(t, true);
+      } else {
+        drawFallback(t);
+        drawHUD(t, false);
+      }
+      state.fpsFrames++;
+      state.fpsTime += dt;
+      if (state.fpsTime > 1) {
+        state.fps = state.fpsFrames / state.fpsTime;
+        state.fpsFrames = 0; state.fpsTime = 0;
+        if (state.mode === 'gl' && state.fps < 28 && state.quality > 0.45) {
+          state.quality = Math.max(0.45, state.quality - 0.08);
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+
+    function exportStill() {
+      var out = document.createElement('canvas');
+      out.width = glCanvas.width; out.height = glCanvas.height;
+      var c = out.getContext('2d');
+      c.drawImage(glCanvas, 0, 0);
+      try {
+        var a = document.createElement('a');
+        a.href = out.toDataURL('image/png');
+        a.download = 'stillverse_' + state.seed + '.png';
+        a.click();
+        toast('已請求下載底片（僅在你按了之後）');
+      } catch (err) {
+        toast('此瀏覽器不允許匯出畫布');
+      }
+    }
+
+    function onKey(e, down) {
+      if (!state.started) return;
+      state.keys[e.code] = down;
+      if (!down) return;
+      if (e.code === 'Escape') { state.look = false; toast('視角已暫停'); }
+      if (e.code === 'KeyF') { state.torch = state.torch > 0.5 ? 0 : 1; toast(state.torch ? '提燈' : '熄燈'); }
+      if (e.code === 'KeyM') audioMuteToggle();
+      if (e.code === 'KeyC') { state.pal = (state.pal + 1) % PAL_NAMES.length; toast(PAL_NAMES[state.pal]); }
+      if (e.code === 'KeyR') { reseed((Math.random() * 0xffffffff) >>> 0); toast('新宇宙  seed ' + state.seed); }
+      if (e.code === 'KeyP') exportStill();
+      if (e.code === 'Digit1') { state.quality = 0.5; toast('畫質 低'); }
+      if (e.code === 'Digit2') { state.quality = 0.72; toast('畫質 中'); }
+      if (e.code === 'Digit3') { state.quality = 1; toast('畫質 高'); }
+      if (e.code === 'KeyH') toast('WASD 遊走 · 滑鼠拖曳視角 · F 燈 · M 聲 · C 色 · R 新宇宙');
+      var block = /^(Key[WASDQEFCMRPH]|Arrow(Up|Down|Left|Right)|Space|Digit[123]|Escape|ShiftLeft|ShiftRight)$/;
+      if (block.test(e.code)) e.preventDefault();
+    }
+
+    var dragging = false, lx = 0, ly = 0;
+    function onPointerDown(e) {
+      if (!state.started) return;
+      dragging = true; state.look = true;
+      lx = e.clientX; ly = e.clientY;
+    }
+    function onPointerMove(e) {
+      if (!state.started || !state.look) return;
+      if (!dragging && e.buttons === 0) return;
+      var dx = e.clientX - lx, dy = e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      state.yaw += dx * 0.005;
+      state.pitch = clamp(state.pitch - dy * 0.005, -1.35, 1.35);
+    }
+    function onPointerUp() { dragging = false; }
+
+    document.getElementById('enter').addEventListener('click', function () {
+      try {
+        reseed(((Date.now() % 2147483647) ^ 0x9E3779B9) >>> 0);
+        var ok = false;
+        var errMsg = '';
+        try { ok = initGL(); } catch (err) {
+          ok = false;
+          errMsg = 'WebGL 著色器無法編譯，改用平面儀。';
+        }
+        if (!ok) {
+          state.mode = '2d';
+          glCanvas.style.display = 'none';
+          failEl.style.display = 'block';
+          failEl.textContent = errMsg || '此環境沒有 WebGL，已改用離線平面儀。';
+        }
+        if (state.audioOn) audioStart();
+        state.started = true;
+        state.t0 = performance.now();
+        state.last = 0;
+        boot.classList.add('gone');
+        setTimeout(function () { boot.style.display = 'none'; }, 1200);
+        sizeGL();
+        requestAnimationFrame(loop);
+        toast('拖曳滑鼠看向遠方');
+      } catch (err) {
+        failEl.style.display = 'block';
+        failEl.textContent = '無法啟動：' + (err && err.message ? err.message : '未知錯誤');
+      }
+    });
+
+    window.addEventListener('keydown', function (e) { onKey(e, true); });
+    window.addEventListener('keyup', function (e) { state.keys[e.code] = false; });
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('blur', function () { state.keys = Object.create(null); dragging = false; });
+    window.addEventListener('resize', sizeGL);
+  })();
+  </script>
+</body>
+</html>

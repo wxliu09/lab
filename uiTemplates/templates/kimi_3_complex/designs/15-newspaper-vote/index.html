@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 15 報紙號外 · 選舉開票
+  ─────────────────────────────────────
+  風格定位:二十世紀初報紙「號外」單張,黑白油墨排版,開票之夜即時快報。
+  配色:新聞紙米白 #f4f1e8(底)、油墨黑 #1c1c1c(字)、灰階 #6b6b6b(輔字)、
+        強調僅用黑塊反白,全站無彩色(忠於油墨灰階)。
+  字體:標題 "Noto Serif TC" 900 超大字,英文報頭 "Playfair Display",
+        內文襯線直排感以高行距模擬鉛字。
+  版面結構:
+    1. 撕紙邊緣(上/下鋸齒 clip-path)+ 報頭(刊名、期號、定價、日期)
+    2. 超大「號外」直覺標題 + 副標題列
+    3. 頭條快訊(多欄 column-count 排版)
+    4. 開票數據粗黑框表格(四候選人)+ 油墨長條圖
+    5. 各地區票數快報(表格)
+    6. 開票之夜側寫 / 記者現場
+    7. 報尾:返回入口與免責聲明
+  動態效果:
+    - 油墨網點質感(SVG feTurbulence noise 覆層)
+    - 開票長條圖進場由 0 生長至票數比例
+    - 「開票中」打字機式逐字更新票數(JS 累加動畫)
+    - 頭條標題油墨印刷感(text-shadow 微暈)
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>號外 · 市長選舉開票快報 | 自由晨報</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Noto+Serif+TC:wght@400;600;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f1e8; --ink:#1c1c1c; --gray:#6b6b6b; --hair:#b9b4a6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:#dedad0;
+    font-family:"Noto Serif TC","Songti TC","PMingLiU",serif;
+    color:var(--ink);
+    padding:34px 4vw 60px;
+  }
+  .en{font-family:"Playfair Display","Noto Serif TC",serif;}
+  /* ── 報紙本體 + 撕紙邊 ── */
+  .newspaper{
+    max-width:1060px;margin:0 auto;background:var(--paper);position:relative;
+    box-shadow:0 24px 70px rgba(0,0,0,.35);
+    clip-path:polygon(0 .6%,3% .1%,7% .7%,12% .2%,18% .8%,24% .3%,31% .9%,37% .2%,44% .7%,52% .1%,58% .8%,65% .3%,71% .9%,78% .2%,84% .7%,90% .3%,95% .8%,100% .4%,100% 99.4%,97% 99.9%,92% 99.3%,86% 99.8%,79% 99.2%,72% 99.9%,66% 99.3%,59% 99.8%,52% 99.2%,45% 99.9%,38% 99.4%,31% 99.9%,24% 99.3%,17% 99.8%,11% 99.2%,5% 99.9%,0 99.5%);
+    padding:34px 42px 48px;
+  }
+  /* 油墨噪點 */
+  .grain{
+    position:absolute;inset:0;pointer-events:none;opacity:.5;mix-blend-mode:multiply;
+    filter:contrast(120%);
+  }
+  /* ── 報頭 ── */
+  .masthead{border-bottom:4px double var(--ink);padding-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;}
+  .masthead .brand{font-size:clamp(26px,4.6vw,44px);font-weight:900;letter-spacing:.28em;}
+  .masthead .meta{font-size:11.5px;line-height:1.9;color:var(--gray);text-align:right;letter-spacing:.1em;}
+  .dateline{display:flex;justify-content:space-between;font-size:11.5px;color:var(--gray);border-bottom:1px solid var(--ink);padding:7px 2px;letter-spacing:.15em;flex-wrap:wrap;gap:6px;}
+  /* ── 號外大標 ── */
+  .extra{
+    text-align:center;padding:30px 0 8px;border-bottom:3px solid var(--ink);
+  }
+  .extra .kicker{font-size:13px;letter-spacing:.8em;color:var(--ink);font-weight:600;}
+  .extra h1{
+    font-size:clamp(64px,15vw,150px);font-weight:900;letter-spacing:.14em;line-height:1.05;
+    margin:8px 0;
+    text-shadow:1.5px 1.5px 0 rgba(28,28,28,.35), -.8px -.5px 0 rgba(28,28,28,.2);
+  }
+  .extra .sub{
+    font-size:clamp(15px,2.6vw,24px);font-weight:600;letter-spacing:.18em;margin-top:6px;
+  }
+  .flash{
+    display:inline-block;margin-top:14px;background:var(--ink);color:var(--paper);
+    font-size:13px;letter-spacing:.4em;padding:6px 20px 6px 24px;font-weight:600;
+  }
+  .flash .dot{animation:blinkdot 1s steps(1) infinite;}
+  @keyframes blinkdot{50%{opacity:0;}}
+  /* ── 頭條多欄 ── */
+  .lead-zone{display:grid;grid-template-columns:1fr 300px;gap:0;border-bottom:3px solid var(--ink);}
+  .lead-story{padding:22px 26px 26px 0;border-right:1px solid var(--ink);}
+  .lead-story h2{font-size:clamp(22px,3.4vw,32px);font-weight:900;line-height:1.5;letter-spacing:.06em;margin-bottom:14px;}
+  .lead-story .byline{font-size:11.5px;color:var(--gray);letter-spacing:.2em;margin-bottom:14px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:6px 0;}
+  .columns{
+    column-count:2;column-gap:26px;column-rule:1px solid var(--hair);
+    font-size:13.5px;line-height:2.05;text-align:justify;
+  }
+  .columns p{margin-bottom:10px;text-indent:2em;}
+  .columns p:first-child::first-letter{
+    font-size:44px;font-weight:900;float:left;line-height:.95;margin:4px 8px 0 0;
+  }
+  /* 側欄 */
+  .side-rail{padding:22px 0 26px 26px;}
+  .side-rail h3{font-size:15px;font-weight:900;letter-spacing:.2em;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:12px;}
+  .side-rail ul{list-style:none;}
+  .side-rail li{font-size:12.5px;line-height:1.9;padding:8px 0;border-bottom:1px dashed var(--hair);}
+  .side-rail li b{display:block;font-size:13px;}
+  .side-rail li time{font-size:11px;color:var(--gray);letter-spacing:.1em;}
+  /* ── 開票表格 ── */
+  .result-sec{padding:28px 0 6px;}
+  .sec-label{
+    display:flex;align-items:center;gap:14px;margin-bottom:18px;
+  }
+  .sec-label .t{background:var(--ink);color:var(--paper);font-weight:900;font-size:16px;letter-spacing:.3em;padding:8px 20px 8px 24px;}
+  .sec-label .l{flex:1;height:3px;background:var(--ink);}
+  table.results{width:100%;border-collapse:collapse;border:3px solid var(--ink);}
+  table.results th,table.results td{border:2px solid var(--ink);padding:12px 14px;font-size:14px;text-align:center;}
+  table.results thead th{background:var(--ink);color:var(--paper);font-size:13px;letter-spacing:.24em;font-weight:600;}
+  table.results .cand{font-weight:900;font-size:16.5px;text-align:left;letter-spacing:.1em;}
+  table.results .cand small{display:block;font-weight:400;font-size:11px;color:var(--gray);margin-top:3px;letter-spacing:.15em;}
+  .bar-cell{text-align:left !important;width:34%;}
+  .bar-track{height:22px;border:2px solid var(--ink);background:repeating-linear-gradient(45deg,#fff 0 4px,#efeadf 4px 8px);position:relative;}
+  .bar-fill{
+    height:100%;width:0;background:repeating-linear-gradient(45deg,var(--ink) 0 6px,#3d3d3d 6px 12px);
+    transition:width 1.6s cubic-bezier(.3,0,.2,1);
+  }
+  .winner-mark{background:var(--ink);color:var(--paper);font-size:11px;padding:3px 10px;letter-spacing:.2em;white-space:nowrap;}
+  /* 地區表格 */
+  .district{margin-top:34px;}
+  table.dist{width:100%;border-collapse:collapse;border:2.5px solid var(--ink);font-size:13px;}
+  table.dist th,table.dist td{border:1px solid var(--ink);padding:9px 10px;text-align:center;}
+  table.dist thead th{background:#e7e2d4;letter-spacing:.15em;font-weight:600;font-size:12.5px;border-bottom:2.5px solid var(--ink);}
+  table.dist td:first-child{font-weight:900;letter-spacing:.1em;}
+  /* ── 現場側寫 ── */
+  .feature{border-top:3px solid var(--ink);margin-top:34px;padding-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:30px;}
+  .feature article h3{font-size:18px;font-weight:900;letter-spacing:.08em;margin-bottom:10px;line-height:1.6;}
+  .feature article .byline{font-size:11px;color:var(--gray);letter-spacing:.2em;margin-bottom:12px;}
+  .feature article p{font-size:13px;line-height:2.05;text-align:justify;text-indent:2em;}
+  /* ── 報尾 ── */
+  .colophon{
+    border-top:4px double var(--ink);margin-top:34px;padding-top:20px;
+    display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;
+  }
+  .colophon .note{font-size:11px;color:var(--gray);line-height:2;letter-spacing:.1em;max-width:560px;}
+  .back-btn{
+    display:inline-block;text-decoration:none;color:var(--paper);background:var(--ink);
+    font-weight:900;letter-spacing:.28em;font-size:14px;padding:14px 30px 14px 34px;
+    border:2px solid var(--ink);
+    box-shadow:4px 4px 0 rgba(28,28,28,.3);
+    transition:transform .15s, box-shadow .15s;
+  }
+  .back-btn:hover{transform:translate(2px,2px);box-shadow:2px 2px 0 rgba(28,28,28,.3);}
+  .sub-link{
+    display:inline-block;margin-top:14px;font-weight:900;font-size:13px;letter-spacing:.2em;
+    color:var(--ink);text-decoration:none;border-bottom:2px solid var(--ink);padding-bottom:3px;
+  }
+  .sub-link:hover{color:var(--gray);border-color:var(--gray);}
+  .cand a{color:inherit;text-decoration:none;border-bottom:1.5px solid var(--ink);}
+  .cand a:hover{background:var(--ink);color:var(--paper);}
+  .foot-nav{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+  @media (max-width:860px){
+    .lead-zone{grid-template-columns:1fr;}
+    .lead-story{border-right:none;border-bottom:1px solid var(--ink);padding-right:0;}
+    .side-rail{padding-left:0;}
+    .columns{column-count:1;}
+    .feature{grid-template-columns:1fr;}
+    .newspaper{padding:24px 20px 36px;}
+    .bar-cell{width:auto;min-width:120px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="newspaper">
+  <!-- 油墨噪點 -->
+  <svg class="grain" width="100%" height="100%">
+    <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#noise)" opacity="0.16"/>
+  </svg>
+
+  <!-- 報頭 -->
+  <div class="masthead">
+    <div class="brand">自由晨報</div>
+    <div class="meta en">THE LIBERTY MORNING POST<br>民國一一五年八月二十八日 · 星期五 · 第一萬零四百二十一期 · 零售每份十元</div>
+  </div>
+  <div class="dateline">
+    <span>本報訊 · 開票之夜特別報導</span>
+    <span>天氣:晴時多雲 27–33°C · 出刊:開票快報組</span>
+  </div>
+
+  <!-- 號外 -->
+  <div class="extra">
+    <div class="kicker">第 七 屆 市 長 選 舉 · 開 票 快 報</div>
+    <h1>號 外</h1>
+    <div class="sub">林 亦 舟 宣 告 當 選 · 得 票 率 過 半</div>
+    <div class="flash">開 票 進 行 中 <span class="dot">●</span> 即 時 更 新</div>
+  </div>
+
+  <!-- 頭條 + 側欄 -->
+  <div class="lead-zone">
+    <div class="lead-story">
+      <h2>開票兩小時底定 林亦舟領先逾九萬票 對手致電恭賀</h2>
+      <div class="byline">記者 陳靜宜 · 黃啟文 / 市政中心聯合報導 · 晚間九時四十分</div>
+      <div class="columns">
+        <p>本市第七屆市長選舉今晚八時起開票,根據選務中心九時三十分最新統計,三號候選人林亦舟以五成二得票率遙遙領先,自行宣佈當選。競選總部外聚集上千名支持者,高呼口號,氣氛沸騰。</p>
+        <p>一號候選人周承翰於九時十分出面,承認敗選並表示已致電林亦舟表達恭賀,呼籲支持者「讓城市回到日常,明天繼續努力」。二號候選人高美玲則表示尊重選民決定,將持續監督市政。</p>
+        <p>選務中心表示,本次投票率達七成四,創下近三屆新高;全市一千六百餘個投開票所中,已回報逾九成八,預計十時三十分前完成全部計票。</p>
+        <p>林亦舟在勝選演說中強調,上任後首要之務為托育補助擴大、捷運南環段如期動工,以及老舊市場改建三大政見,「選舉結束,責任才剛開始」。</p>
+      </div>
+    </div>
+    <aside class="side-rail">
+      <h3>開票之夜 · 大事紀</h3>
+      <ul>
+        <li><b>16:00 投票截止</b><time>各地投票所湧現最後人潮</time></li>
+        <li><b>20:05 首批開票回報</b><time>北區三投開票所率先完成</time></li>
+        <li><b>21:10 周承翰承認敗選</b><time>於競選總部發表三分鐘談話</time></li>
+        <li><b>21:32 林亦舟宣佈當選</b><time>發表勝選演說約八分鐘</time></li>
+        <li><b>22:30 預定完成計票</b><time>選務中心預估時間</time></li>
+      </ul>
+      <a class="sub-link" href="history.html" style="font-size:12px;">歷屆選舉回顧與比較 →</a>
+    </aside>
+  </div>
+
+  <!-- 開票數據 -->
+  <div class="result-sec">
+    <div class="sec-label"><span class="t">最 新 開 票 數 據</span><span class="l"></span><span style="font-size:11px;color:var(--gray);letter-spacing:.15em;">已回報 98.2%</span></div>
+    <table class="results">
+      <thead>
+        <tr><th style="width:56px;">號次</th><th>候選人</th><th>得票數</th><th>得票率</th><th colspan="2">得票比例圖</th></tr>
+      </thead>
+      <tbody id="resultBody"></tbody>
+    </table>
+    <div style="text-align:right;"><a class="sub-link" href="candidates.html">候選人小傳與政見對照 →</a></div>
+
+    <div class="district">
+      <div class="sec-label"><span class="t">各 區 票 數 快 報</span><span class="l"></span></div>
+      <table class="dist">
+        <thead>
+          <tr><th>行政區</th><th>周承翰</th><th>高美玲</th><th>林亦舟</th><th>鄭石</th><th>投票率</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>北區</td><td>31,204</td><td>24,517</td><td>52,830</td><td>5,412</td><td>75.1%</td></tr>
+          <tr><td>中區</td><td>28,966</td><td>21,304</td><td>47,121</td><td>4,988</td><td>72.8%</td></tr>
+          <tr><td>南區</td><td>33,551</td><td>26,042</td><td>55,407</td><td>6,120</td><td>76.4%</td></tr>
+          <tr><td>東區</td><td>25,778</td><td>19,663</td><td>42,359</td><td>4,231</td><td>71.9%</td></tr>
+          <tr><td>西區</td><td>22,430</td><td>18,915</td><td>40,688</td><td>3,804</td><td>73.5%</td></tr>
+          <tr><td>濱海區</td><td>12,147</td><td>9,306</td><td>21,190</td><td>2,077</td><td>74.6%</td></tr>
+        </tbody>
+      </table>
+      <div style="text-align:right;"><a class="sub-link" href="results.html">投開票所明細與逐區觀察 →</a></div>
+    </div>
+  </div>
+
+  <!-- 現場側寫 -->
+  <div class="feature">
+    <article>
+      <h3>【現場】總部外的雨傘與喇叭——支持者從焦慮到沸騰的兩小時</h3>
+      <div class="byline">記者 黃啟文 / 林亦舟競選總部外</div>
+      <p>晚間八時,開票剛開始,總部外的大螢幕前只有零星群眾。隨著票數逐批開出,領先差距從兩萬票拉大到九萬票,人群如漲潮般湧入。九時三十分,當「宣佈當選」四字打出,鞭炮聲與歡呼聲同時炸開,有支持者激動落淚。一位七十六歲的陳姓阿伯說,他投了一輩子票,「今晚最想告訴年輕人:你的一票,真的有用。」</p>
+    </article>
+    <article>
+      <h3>【分析】投票率創高三成的背後:青年返鄉投票專車發酵</h3>
+      <div class="byline">主筆 吳恆毅 / 本報評論組</div>
+      <p>本次投票率達七成四,較上屆高出近六個百分點。觀察家指出,公民團體發起的「青年返鄉投票專車」共開出二百餘班次,載回逾萬名在外縣市就學就業的年輕選民,是推升投票率的關鍵力量。此外,托育與居住議題在本次選戰中高度聚焦,也使首投族與年輕家庭投票意願明顯提升,將成為新市府上任後首要面對的民意基礎。</p>
+    </article>
+  </div>
+
+  <!-- 報尾 -->
+  <div class="colophon">
+    <div class="note">
+      本報開票數據由選務中心公開資訊彙整,最終結果以選舉委員會正式公告為準。<br>
+      本頁為設計展示之虛構示範內容,所有人物、數據與事件均非真實。
+    </div>
+    <div class="foot-nav">
+      <a class="back-btn" style="background:var(--paper);color:var(--ink);" href="results.html">各區明細</a>
+      <a class="back-btn" style="background:var(--paper);color:var(--ink);" href="candidates.html">候選人</a>
+      <a class="back-btn" style="background:var(--paper);color:var(--ink);" href="history.html">歷屆回顧</a>
+      <a class="back-btn" href="../../index.html">← 返回入口</a>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 候選人資料與得票生長動畫 */
+const CANDS=[
+  {no:1, name:'周承翰', party:'市民聯盟', votes:154076, pct:31.5},
+  {no:2, name:'高美玲', party:'進步力量', votes:119747, pct:24.5},
+  {no:3, name:'林亦舟', party:'希望陣線', votes:259595, pct:53.1, win:true},
+  {no:4, name:'鄭 石',  party:'無黨籍',   votes:26632,  pct:5.4},
+];
+const body=document.getElementById('resultBody');
+CANDS.forEach(c=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td class="fat" style="font-weight:900;font-size:18px;">${c.no}</td>
+    <td class="cand"><a href="candidates.html#c${c.no}">${c.name}</a><small>${c.party}</small></td>
+    <td class="votes" data-v="${c.votes}">0</td>
+    <td style="font-weight:900;">${c.pct}%</td>
+    <td class="bar-cell"><div class="bar-track"><div class="bar-fill" data-w="${c.pct}"></div></div></td>
+    <td style="border:none;width:20px;">${c.win?'<span class="winner-mark">當選</span>':''}</td>`;
+  body.appendChild(tr);
+});
+/* 進場時票數累加 + 長條圖生長 */
+const io=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(!e.isIntersecting)return;
+    io.unobserve(e.target);
+    /* 長條圖 */
+    e.target.querySelectorAll('.bar-fill').forEach(b=>{ b.style.width=b.dataset.w+'%'; });
+    /* 票數逐字累加 */
+    e.target.querySelectorAll('.votes').forEach(v=>{
+      const target=+v.dataset.v; const t0=performance.now(); const dur=1500;
+      (function step(t){
+        const k=Math.min(1,(t-t0)/dur);
+        const ease=1-Math.pow(1-k,3);
+        v.textContent=Math.round(target*ease).toLocaleString('zh-Hant');
+        if(k<1)requestAnimationFrame(step);
+      })(t0);
+    });
+  });
+},{threshold:.35});
+io.observe(document.querySelector('table.results'));
+</script>
+</body>
+</html>

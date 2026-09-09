@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════
+ 設計規格｜58. 蜂巢六邊·案件追蹤 (Hive Hex Case Wall)
+───────────────────────────────────────────────────────────────────
+ ● 風格定位：深夜蜂巢 —— 深棕木質底上，案件如蜂蜜被一格一格釀進六邊形巢房；
+              狀態以蜜色深淺區分，整體溫暖、有機、帶一點養蜂場的木盒感。
+ ● 配色：深棕底 #241a10｜巢格深 #3a2a18｜蜂蜜金 #f0a82e｜淺蜜 #ffd98a
+        處理中 #f0a82e｜待回覆 #7fb8d4(青)｜已結案 #8a9a5b(橄欖)｜新案 #ffe9c0
+ ● 字體："Noto Serif TC"（標題，蜜蠟印章感）+ "Noto Sans TC"（內文）
+ ● 版面：頂部標題列＋KPI 條；左側篩選列；中央蜂巢牆（clip-path 六邊形，
+        奇偶列交錯位移）；右側詳情抽屜（平時隱藏，點巢格滑出）。
+ ● 動態：新案件六邊形「孵出」動畫（縮放＋蜜光暈散）；巢格 hover 如滴蜜放大；
+        篩選時不符巢格縮小淡出；抽屜滑入帶蜂巢紋背景。
+═══════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢六邊 · 案件追蹤</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#241a10; --cell:#3a2a18; --honey:#f0a82e; --honey-l:#ffd98a;
+  --blue:#7fb8d4; --olive:#8a9a5b; --cream:#ffe9c0; --txt:#f3e6cf; --dim:#a68e6b;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;background:var(--bg);color:var(--txt);
+  min-height:100vh;overflow-x:hidden;
+  background-image:radial-gradient(circle at 30% 20%, rgba(240,168,46,.06), transparent 45%);
+}
+.serif{font-family:'Noto Serif TC','Microsoft JhengHei',serif}
+
+/* ── 頂部 ─────────────────────── */
+.topbar{
+  display:flex;align-items:center;gap:20px;padding:18px 30px;
+  border-bottom:1px solid rgba(240,168,46,.28);
+  background:linear-gradient(180deg, rgba(58,42,24,.9), transparent);
+  position:sticky;top:0;z-index:60;backdrop-filter:blur(4px);
+}
+.back{
+  text-decoration:none;color:var(--honey);font-size:14px;font-weight:700;letter-spacing:1px;
+  border:1.5px solid var(--honey);padding:7px 16px;
+  clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,12px 100%,0 50%);
+  transition:all .2s;background:rgba(240,168,46,.08);
+}
+.back:hover{background:var(--honey);color:var(--bg)}
+.brand{font-size:24px;font-weight:800;letter-spacing:4px}
+.brand em{color:var(--honey);font-style:normal}
+.brand small{display:block;font-size:10px;letter-spacing:5px;color:var(--dim);font-family:'Noto Sans TC';font-weight:300;margin-top:3px}
+.kpis{margin-left:auto;display:flex;gap:26px}
+.kpi{text-align:right}
+.kpi .n{font-family:'Noto Serif TC';font-size:28px;font-weight:800;color:var(--honey);line-height:1}
+.kpi .n small{font-size:13px;color:var(--dim);font-weight:400;margin-left:4px}
+.kpi .k{font-size:11px;letter-spacing:2px;color:var(--dim);margin-top:4px}
+/* 子頁導覽 */
+.subnav{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.subnav a{
+  text-decoration:none;color:var(--honey-l);font-size:13px;font-weight:700;letter-spacing:1px;padding:6px 14px;
+  background:rgba(240,168,46,.08);transition:all .2s;
+  clip-path:polygon(10px 0,calc(100% - 10px) 0,100% 50%,calc(100% - 10px) 100%,10px 100%,0 50%);
+}
+.subnav a:hover{background:var(--honey);color:var(--bg)}
+.kpis{margin-left:0}
+
+/* ── 內容區 ─────────────────────── */
+.stage{display:flex;min-height:calc(100vh - 78px)}
+.left{padding:26px 20px 26px 30px;width:230px;flex-shrink:0}
+.hive-wrap{flex:1;padding:10px 40px 60px 10px;position:relative}
+
+/* 篩選列 */
+.filters{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+.filters h4,.side-h{font-size:11px;letter-spacing:3px;color:var(--dim);margin-bottom:4px}
+.fbtn{
+  display:flex;align-items:center;gap:12px;background:transparent;border:none;cursor:pointer;
+  color:var(--txt);font-family:inherit;font-size:15px;padding:10px 12px;text-align:left;
+  border-radius:10px;transition:all .2s;
+}
+.fbtn:hover{background:rgba(240,168,46,.1)}
+.fbtn.on{background:rgba(240,168,46,.18);box-shadow:inset 3px 0 0 var(--honey)}
+.fbtn .dot{width:12px;height:12px;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.fbtn .cnt{margin-left:auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* 新案按鈕 */
+.addbtn{
+  margin-top:26px;width:100%;padding:13px;font-family:'Noto Serif TC';font-size:15px;font-weight:800;
+  letter-spacing:3px;cursor:pointer;color:var(--bg);background:linear-gradient(135deg,var(--honey),var(--honey-l));
+  border:none;clip-path:polygon(14px 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,14px 100%,0 50%);
+  transition:all .2s;
+}
+.addbtn:hover{filter:brightness(1.12);letter-spacing:5px}
+
+/* 統計小卡 */
+.statbox{margin-top:26px;border:1px solid rgba(240,168,46,.3);padding:16px;border-radius:12px;font-size:12.5px;color:var(--dim);line-height:2}
+.statbox b{color:var(--honey-l)}
+
+/* ── 蜂巢牆 ─────────────────────── */
+.hive{
+  display:grid;grid-template-columns:repeat(auto-fill, 150px);gap:8px 10px;justify-content:center;
+  padding-top:14px;
+}
+/* 六邊形巢格：偶數列下移半格 */
+.hex-row{display:contents}
+.hex{
+  width:150px;height:168px;position:relative;cursor:pointer;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  background:var(--cell);transition:transform .25s cubic-bezier(.3,1.4,.4,1), filter .25s, opacity .3s;
+  text-align:center;padding:20px 14px;
+}
+.hex::before{
+  content:'';position:absolute;inset:3px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(160deg, rgba(240,168,46,.16), transparent 55%);
+  pointer-events:none;
+}
+.hex:nth-child(odd){transform:translateY(46px)}
+.hex:hover{transform:scale(1.07);filter:brightness(1.25);z-index:5}
+.hex:nth-child(odd):hover{transform:translateY(46px) scale(1.07)}
+.hex.dimmed{opacity:.13;filter:saturate(.2);pointer-events:none;transform:scale(.85)}
+.hex:nth-child(odd).dimmed{transform:translateY(46px) scale(.85)}
+.hex .cid{font-size:11px;letter-spacing:1px;color:var(--dim);font-variant-numeric:tabular-nums}
+.hex .ctitle{font-size:13.5px;font-weight:700;line-height:1.45;color:var(--txt)}
+.hex .cwho{font-size:11px;color:var(--dim)}
+.hex .pip{
+  width:10px;height:11px;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  margin-bottom:2px;
+}
+.hex.s-active{box-shadow:none}
+.hex.s-active{background:linear-gradient(170deg,#4a3618,#3a2a18)}
+.hex.s-active .pip{background:var(--honey);animation:glow 2s infinite}
+.hex.s-reply{background:linear-gradient(170deg,#2c3a42,#33291a)}
+.hex.s-reply .pip{background:var(--blue)}
+.hex.s-done{background:linear-gradient(170deg,#32341f,#2a2416)}
+.hex.s-done .pip{background:var(--olive)}
+.hex.s-done .ctitle{color:#c9bd9e;text-decoration:line-through rgba(240,168,46,.5)}
+.hex.s-new{background:linear-gradient(170deg,#54401e,#3e2e16)}
+.hex.s-new .pip{background:var(--cream)}
+.hex.selected{outline:none}
+.hex.selected::after{
+  content:'';position:absolute;inset:-1px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  border:none;background:transparent;box-shadow:inset 0 0 0 3px var(--honey);
+}
+@keyframes glow{0%,100%{box-shadow:0 0 4px var(--honey)}50%{box-shadow:0 0 12px var(--honey-l)}}
+/* 孵出動畫 */
+@keyframes hatch{
+  0%{transform:scale(0) rotate(-30deg);opacity:0;filter:brightness(3)}
+  55%{transform:scale(1.18) rotate(4deg);opacity:1;filter:brightness(1.6)}
+  100%{transform:scale(1) rotate(0);filter:brightness(1)}
+}
+.hex.hatching{animation:hatch .8s cubic-bezier(.3,1.3,.4,1)}
+.hex.hatching::after{
+  content:'';position:absolute;inset:-30px;border-radius:50%;
+  background:radial-gradient(circle, rgba(240,168,46,.55), transparent 65%);
+  animation:halo .8s ease-out forwards;pointer-events:none;
+}
+@keyframes halo{from{opacity:1;transform:scale(.4)}to{opacity:0;transform:scale(1.6)}}
+
+/* ── 詳情抽屜 ─────────────────────── */
+.drawer{
+  position:fixed;top:0;right:0;width:380px;height:100vh;z-index:80;
+  background:linear-gradient(200deg,#2f2214,#241a10);
+  border-left:2px solid var(--honey);
+  transform:translateX(105%);transition:transform .4s cubic-bezier(.3,1,.3,1);
+  padding:26px;overflow-y:auto;
+  background-image:radial-gradient(circle at 90% 10%, rgba(240,168,46,.1), transparent 40%);
+}
+.drawer.open{transform:translateX(0)}
+.drawer h2{font-family:'Noto Serif TC';font-size:21px;margin:6px 0 2px;line-height:1.5}
+.drawer .d-id{font-size:12px;letter-spacing:2px;color:var(--dim)}
+.d-meta{margin:18px 0;font-size:13.5px;line-height:2.1;color:#e6d7ba}
+.d-meta b{color:var(--honey-l)}
+.d-tag{
+  display:inline-block;font-size:12px;padding:4px 14px;margin-top:8px;letter-spacing:2px;font-weight:700;
+  clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 50%,calc(100% - 8px) 100%,8px 100%,0 50%);
+}
+.d-tag.s-active{background:var(--honey);color:var(--bg)}
+.d-tag.s-reply{background:var(--blue);color:#10222b}
+.d-tag.s-done{background:var(--olive);color:#1c2210}
+.d-tag.s-new{background:var(--cream);color:#3a2c10}
+.timeline{margin-top:20px;border-left:2px solid rgba(240,168,46,.35);padding-left:16px}
+.timeline .ev{position:relative;padding-bottom:16px;font-size:13px;line-height:1.7}
+.timeline .ev::before{
+  content:'';position:absolute;left:-22px;top:6px;width:10px;height:11px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);background:var(--honey);
+}
+.timeline .ev time{display:block;font-size:11px;color:var(--dim)}
+.d-actions{margin-top:22px;display:flex;gap:10px;flex-wrap:wrap}
+.d-btn{
+  flex:1;padding:11px;font-family:inherit;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;
+  background:transparent;border:1.5px solid var(--honey);color:var(--honey);min-width:100px;
+  clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 50%,calc(100% - 8px) 100%,8px 100%,0 50%);
+  transition:all .2s;
+}
+.d-btn:hover{background:var(--honey);color:var(--bg)}
+.d-close{
+  position:absolute;top:18px;right:18px;background:none;border:none;color:var(--dim);
+  font-size:22px;cursor:pointer;transition:color .2s;
+}
+.d-close:hover{color:var(--honey)}
+.scrim{position:fixed;inset:0;background:rgba(20,14,7,.55);z-index:70;opacity:0;pointer-events:none;transition:opacity .3s}
+.scrim.show{opacity:1;pointer-events:auto}
+@media(max-width:900px){.stage{flex-direction:column}.left{width:auto}.filters{flex-direction:row;flex-wrap:wrap}.kpis{display:none}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <div class="brand serif">蜂巢<em>六邊</em>案件追蹤<small>HIVE CASE TRACKING — 客服中心工單巢箱</small></div>
+  <nav class="subnav">
+    <a href="list.html">案件列表</a>
+    <a href="detail.html">案件詳情</a>
+    <a href="form.html">新增案件</a>
+  </nav>
+  <div class="kpis">
+    <div class="kpi"><div class="n" id="kToday">0<small>件</small></div><div class="k">今日新案</div></div>
+    <div class="kpi"><div class="n" id="kAvg">0<small>hr</small></div><div class="k">平均處理時長</div></div>
+    <div class="kpi"><div class="n" id="kOpen">0<small>件</small></div><div class="k">未結案件</div></div>
+  </div>
+</header>
+
+<div class="stage">
+  <aside class="left">
+    <h4 class="side-h">巢格篩選 FILTER</h4>
+    <div class="filters" id="filters">
+      <button class="fbtn on" data-f=""><span class="dot" style="background:var(--honey-l)"></span>全部案件<span class="cnt" id="nAll"></span></button>
+      <button class="fbtn" data-f="active"><span class="dot" style="background:var(--honey)"></span>處理中<span class="cnt" id="nActive"></span></button>
+      <button class="fbtn" data-f="reply"><span class="dot" style="background:var(--blue)"></span>待回覆<span class="cnt" id="nReply"></span></button>
+      <button class="fbtn" data-f="done"><span class="dot" style="background:var(--olive)"></span>已結案<span class="cnt" id="nDone"></span></button>
+    </div>
+    <button class="addbtn serif" id="btnNew">＋ 釀入新案件</button>
+    <div class="statbox">
+      巢箱健康度<br>
+      本週結案率 <b>87%</b> ｜ 超時案件 <b>2 件</b><br>
+      值班組員：<b>蜂巢 B 組（6 人）</b><br>
+      蜜源狀態：<b>流量正常</b>
+    </div>
+  </aside>
+
+  <main class="hive-wrap">
+    <div class="hive" id="hive"></div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <button class="d-close" id="dClose">✕</button>
+  <div id="dBody"></div>
+</aside>
+
+<script>
+const CASES = [
+  {id:'HV-2201', title:'訂單 #88231 發票抬頭錯誤', who:'業務一部 / 趙敏君', status:'active', cat:'帳務', age:'今日 09:12',
+   log:[['08/28 09:12','客戶來電反映統編開立錯誤，建立案件。'],['08/28 10:05','轉帳務組協助作廢重開，處理中。']]},
+  {id:'HV-2202', title:'APP 推播通知重複發送', who:'產品組 / 吳冠霖', status:'reply', cat:'系統', age:'今日 08:47',
+   log:[['08/28 08:47','多名用戶回報同一推播收到 3 次。'],['08/28 09:30','定位為佇列重試機制異常，待客戶確認是否已恢復。']]},
+  {id:'HV-2203', title:'VIP 客戶要求提前續約折扣', who:'業務二部 / 林佳蓉', status:'active', cat:'合約', age:'今日 08:15',
+   log:[['08/28 08:15','合約將於 9 月到期，客戶要求比照去年 88 折。'],['08/28 11:20','報價單送主管簽核中。']]},
+  {id:'HV-2204', title:'門市 POS 離線無法結帳', who:'資訊組 / 高志明', status:'reply', cat:'系統', age:'昨日 17:40',
+   log:[['08/27 17:40','台中三民門市回報離線模式無法啟用。'],['08/28 09:10','推送 hotfix v3.2.1，待門市回覆驗證結果。']]},
+  {id:'HV-2205', title:'退貨退款逾 7 日未入帳', who:'客服組 / 陳思妤', status:'active', cat:'帳務', age:'昨日 15:22',
+   log:[['08/27 15:22','刷退單已送出，銀行端顯示處理中。'],['08/28 10:00','再次致電收單行催辦。']]},
+  {id:'HV-2206', title:'官網會員無法重置密碼', who:'產品組 / 張育誠', status:'done', cat:'系統', age:'昨日 11:08',
+   log:[['08/27 11:08','重置信遭 Gmail 歸類垃圾郵件。'],['08/27 16:30','調整 SPF/DKIM 後投遞率恢復正常，結案。']]},
+  {id:'HV-2207', title:'大量訂單地址匯入格式錯誤', who:'電商組 / 蔡明勳', status:'done', cat:'資料', age:'08/26 16:51',
+   log:[['08/26 16:51','CSV 編碼 Big5 導致地址亂碼。'],['08/27 09:40','改以 UTF-8 重新匯入 1,204 筆，全數正確。']]},
+  {id:'HV-2208', title:'企業客戶 API 金鑰即將到期', who:'技術支援 / 黃柏睿', status:'active', cat:'系統', age:'08/26 14:03',
+   log:[['08/26 14:03','提前 30 天通知客戶更換金鑰。'],['08/28 08:50','客戶已完成測試環境切換，待正式切換。']]},
+  {id:'HV-2209', title:'發票中獎通知未寄出', who:'帳務組 / 謝欣怡', status:'reply', cat:'帳務', age:'08/26 10:27',
+   log:[['08/26 10:27','5–6 月期雲端發票中獎 3 位客戶未收到通知。'],['08/27 14:15','補寄完成，待客戶確認收訖。']]},
+  {id:'HV-2210', title:'倉儲出貨延遲客訴', who:'物流組 / 曾國豪', status:'done', cat:'物流', age:'08/25 13:36',
+   log:[['08/25 13:36','颱風影響北區配送延誤 2 日。'],['08/27 10:00','全數包裹送達並致贈運費券補償。']]},
+  {id:'HV-2211', title:'App 折價券無法使用', who:'行銷組 / 鄧雅文', status:'active', cat:'行銷', age:'08/25 09:44',
+   log:[['08/25 09:44','券碼規則排除特價品但前台未提示。'],['08/28 09:55','文案修正排程本週五上線。']]},
+  {id:'HV-2212', title:'年度滿意度調查邀請名單異常', who:'行銷組 / 呂承翰', status:'done', cat:'資料', age:'08/24 15:19',
+   log:[['08/24 15:19','名單重複匯入導致一人收多封。'],['08/25 11:30','去重完成並發送致歉信。']]},
+];
+const STATUS = {active:['處理中','s-active'], reply:['待回覆','s-reply'], done:['已結案','s-done'], new:['新進件','s-new']};
+let filter = '', selectedId = null, newCount = 0;
+
+const hive = document.getElementById('hive');
+function hexHTML(c){
+  const [label, cls] = STATUS[c.status];
+  return `<div class="hex ${cls}${selectedId===c.id?' selected':''}" data-id="${c.id}" data-status="${c.status}" title="${c.title}">
+    <span class="pip"></span>
+    <span class="cid">${c.id}</span>
+    <span class="ctitle">${c.title.length>12 ? c.title.slice(0,12)+'…' : c.title}</span>
+    <span class="cwho">${c.who.split(' / ')[0]}</span>
+  </div>`;
+}
+function render(){
+  hive.innerHTML = CASES.map(hexHTML).join('');
+  applyFilter(); updateKPI();
+}
+function applyFilter(){
+  hive.querySelectorAll('.hex').forEach(h=>{
+    h.classList.toggle('dimmed', !!filter && h.dataset.status !== filter);
+  });
+}
+function updateKPI(){
+  const c = {active:0, reply:0, done:0, new:0};
+  CASES.forEach(x=>c[x.status]++);
+  document.getElementById('nAll').textContent = CASES.length;
+  document.getElementById('nActive').textContent = c.active + c.new;
+  document.getElementById('nReply').textContent = c.reply;
+  document.getElementById('nDone').textContent = c.done;
+  document.getElementById('kToday').innerHTML = (3 + newCount) + '<small>件</small>';
+  document.getElementById('kAvg').innerHTML = (18.4 - newCount*0.3).toFixed(1) + '<small>hr</small>';
+  document.getElementById('kOpen').innerHTML = (c.active + c.reply + c.new) + '<small>件</small>';
+}
+
+document.getElementById('filters').addEventListener('click', e=>{
+  const b = e.target.closest('.fbtn'); if(!b) return;
+  document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); filter = b.dataset.f; applyFilter();
+});
+
+/* 抽屜 */
+const drawer = document.getElementById('drawer'), scrim = document.getElementById('scrim');
+hive.addEventListener('click', e=>{
+  const h = e.target.closest('.hex'); if(!h) return;
+  selectedId = h.dataset.id;
+  hive.querySelectorAll('.hex').forEach(x=>x.classList.toggle('selected', x===h));
+  const c = CASES.find(x=>x.id===selectedId);
+  const [label, cls] = STATUS[c.status];
+  document.getElementById('dBody').innerHTML = `
+    <div class="d-id">案件編號 ${c.id} ｜ ${c.cat}類</div>
+    <h2 class="serif">${c.title}</h2>
+    <span class="d-tag ${cls}">${label}</span>
+    <div class="d-meta">
+      承辦：<b>${c.who}</b><br>
+      收件時間：<b>${c.age}</b><br>
+      SLA 目標：<b>24 小時內回覆</b>
+    </div>
+    <h4 class="side-h">處理歷程 TIMELINE</h4>
+    <div class="timeline">${c.log.map(([t,m])=>`<div class="ev"><time>${t}</time>${m}</div>`).join('')}</div>
+    <div class="d-actions">
+      ${c.status!=='done' ? '<button class="d-btn" data-act="advance">推進狀態 →</button>' : ''}
+      <button class="d-btn" data-act="close">✕ 結案</button>
+    </div>`;
+  drawer.classList.add('open'); scrim.classList.add('show');
+});
+function closeDrawer(){ drawer.classList.remove('open'); scrim.classList.remove('show'); selectedId=null; hive.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected')); }
+document.getElementById('dClose').addEventListener('click', closeDrawer);
+scrim.addEventListener('click', closeDrawer);
+
+drawer.addEventListener('click', e=>{
+  const b = e.target.closest('.d-btn'); if(!b) return;
+  const c = CASES.find(x=>x.id===selectedId); if(!c) return;
+  const now = new Date();
+  const stamp = `08/28 ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  if (b.dataset.act === 'advance'){
+    if (c.status==='new' || c.status==='active'){ c.status='reply'; c.log.push([stamp,'已回覆客戶，等待對方確認。']); }
+    else if (c.status==='reply'){ c.status='done'; c.log.push([stamp,'客戶確認無誤，案件結案。']); }
+  } else {
+    c.status='done'; c.log.push([stamp,'承辦人直接結案。']);
+  }
+  render(); drawer.classList.remove('open'); scrim.classList.remove('show');
+  setTimeout(()=>{ /* 重新開啟顯示最新狀態 */
+    const h = hive.querySelector(`[data-id="${c.id}"]`);
+    if (h) h.click();
+  }, 120);
+});
+
+/* 孵出新案件 */
+const NEW_POOL = [
+  ['客戶反映帳單金額與合約不符','帳務','客服組 / 邱立群'],
+  ['官網結帳頁信用卡 3D 驗證失敗','系統','產品組 / 郭靜怡'],
+  ['經銷商詢問新品上架時程','業務','業務一部 / 羅仕偉'],
+  ['電子報退訂連結失效','系統','行銷組 / 葉子豪'],
+  ['門市反映贈品庫存數量異常','物流','倉儲組 / 簡郁珊'],
+];
+document.getElementById('btnNew').addEventListener('click', ()=>{
+  const p = NEW_POOL[Math.floor(Math.random()*NEW_POOL.length)];
+  const now = new Date();
+  CASES.unshift({
+    id:'HV-' + (2213 + newCount), title:p[0], cat:p[1], who:p[2], status:'new', age:'今日 ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0'),
+    log:[[`08/28 ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, '新案件進件，由系統自動分派。']]
+  });
+  newCount++;
+  render();
+  const first = hive.querySelector('.hex');
+  if (first) first.classList.add('hatching');
+});
+
+render();
+</script>
+</body>
+</html>

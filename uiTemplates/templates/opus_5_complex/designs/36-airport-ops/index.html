@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>36 · 機場運務排班台 — AIRPORT OPS GANTT</title>
+<style>
+:root{
+  --n0:#0b1222;--n1:#111c33;--n2:#16243f;--edge:#22344f;
+  --txt:#dbe6f5;--dim:#7b91b0;
+  --gate:#4dd0e1;--dep:#7c9cff;--arr:#8bd67a;--dly:#ffb547;--cnc:#ff5c6c;--vip:#c792ea;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--n0);color:var(--txt);min-height:100vh;font-size:13px;
+  font-family:"Segoe UI","Roboto Condensed","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+.home{
+  position:fixed;right:18px;bottom:18px;z-index:99;text-decoration:none;color:var(--n0);
+  background:var(--gate);padding:12px 22px;border-radius:6px;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;box-shadow:0 0 22px rgba(77,208,225,.45)}
+.home:hover{background:#fff}
+
+header{
+  background:linear-gradient(180deg,#152342,#0e1a2f);border-bottom:2px solid var(--edge);
+  padding:12px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+header .lg{display:flex;align-items:center;gap:12px}
+header .lg .p{width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,#4dd0e1,#2b7ea8);
+  display:grid;place-items:center;font-size:19px;color:#04121c}
+header h1{font-size:16px;font-weight:700;letter-spacing:.02em}
+header h1 small{display:block;font-size:9.5px;letter-spacing:.26em;color:var(--dim);font-weight:400;margin-top:3px}
+.chips{display:flex;gap:6px;margin-left:8px;flex-wrap:wrap}
+.chips b{font-size:11px;padding:6px 12px;border-radius:5px;background:var(--n2);border:1px solid var(--edge);
+  color:var(--dim);cursor:pointer}
+.chips b.on{background:rgba(77,208,225,.16);border-color:var(--gate);color:var(--gate)}
+header .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:11px;color:var(--dim)}
+header .rt b{display:block;color:var(--txt);font-size:16px;font-weight:700;letter-spacing:.03em}
+header .rt b.w{color:var(--dly)}header .rt b.g{color:var(--arr)}header .rt b.r{color:var(--cnc)}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--edge);
+  border-bottom:2px solid var(--edge)}
+.strip div{background:var(--n1);padding:13px 16px}
+.strip small{font-size:10px;letter-spacing:.14em;color:var(--dim);display:block}
+.strip b{font-size:21px;font-weight:700;letter-spacing:-.01em;display:block;margin-top:5px}
+
+.gwrap{padding:16px 20px 8px}
+.gtitle{display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+.gtitle h2{font-size:14px;font-weight:700;letter-spacing:.1em}
+.gtitle .lg2{margin-left:auto;display:flex;gap:16px;font-size:11px;color:var(--dim);flex-wrap:wrap}
+.gtitle .lg2 span{display:flex;align-items:center;gap:7px}
+.gtitle .lg2 i{width:14px;height:9px;border-radius:2px}
+
+/* GANTT */
+.gantt{border:1px solid var(--edge);border-radius:8px;overflow:hidden;background:var(--n1)}
+.grow{display:grid;grid-template-columns:110px 1fr;border-bottom:1px solid rgba(34,52,79,.7)}
+.grow:last-child{border-bottom:0}
+.glabel{padding:0 12px;display:flex;align-items:center;gap:9px;background:var(--n2);
+  border-right:1px solid var(--edge);font-size:12px;font-weight:600;min-height:44px}
+.glabel .g{width:26px;height:26px;border-radius:6px;background:rgba(77,208,225,.14);color:var(--gate);
+  display:grid;place-items:center;font-size:11px;font-weight:700;border:1px solid rgba(77,208,225,.3)}
+.glabel small{color:var(--dim);font-size:10px;font-weight:400;display:block}
+.gtrack{position:relative;height:44px;background-image:repeating-linear-gradient(90deg,
+  rgba(34,52,79,.55) 0 1px,transparent 1px calc(100% / 16))}
+.gbar{
+  position:absolute;top:7px;height:30px;border-radius:5px;padding:0 9px;display:flex;align-items:center;gap:7px;
+  font-size:11px;font-weight:700;color:#08121f;cursor:pointer;overflow:hidden;white-space:nowrap;
+  box-shadow:0 3px 10px rgba(0,0,0,.4);transition:.18s;animation:gin .5s cubic-bezier(.2,.8,.3,1) both}
+@keyframes gin{from{opacity:0;transform:translateX(-12px)}}
+.gbar:hover{transform:translateY(-2px);filter:brightness(1.12);z-index:9}
+.gbar small{font-weight:400;opacity:.72}
+.b-dep{background:linear-gradient(135deg,#9db6ff,#6f8fff)}
+.b-arr{background:linear-gradient(135deg,#a7e39a,#6fca5c)}
+.b-dly{background:linear-gradient(135deg,#ffcc73,#f7a723);
+  box-shadow:0 0 0 1px rgba(255,181,71,.7),0 3px 12px rgba(255,181,71,.32)}
+.b-cnc{background:repeating-linear-gradient(45deg,#ff6b7a 0 8px,#d84152 8px 16px);color:#fff}
+.b-vip{background:linear-gradient(135deg,#d9b3ff,#b073e8);color:#fff}
+.b-mnt{background:repeating-linear-gradient(45deg,#3a4d6b 0 7px,#2c3d57 7px 14px);color:#9db2cc}
+/* time axis */
+.axis{display:grid;grid-template-columns:110px 1fr;background:var(--n2);border-bottom:2px solid var(--edge)}
+.axis .sp{border-right:1px solid var(--edge)}
+.axis .tk{display:grid;grid-template-columns:repeat(16,1fr);font-size:10px;color:var(--dim);letter-spacing:.06em}
+.axis .tk span{padding:8px 0 8px 6px;border-left:1px solid rgba(34,52,79,.7)}
+/* now line */
+.now{position:absolute;top:0;bottom:0;width:2px;background:var(--cnc);z-index:12;
+  box-shadow:0 0 10px rgba(255,92,108,.8)}
+.now::before{content:"NOW";position:absolute;top:-19px;left:-14px;font-size:9px;color:var(--cnc);
+  letter-spacing:.12em;font-weight:700}
+.nowwrap{position:absolute;left:110px;right:0;top:0;bottom:0;pointer-events:none}
+
+/* bottom */
+.bottom{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px;padding:12px 20px 44px}
+@media(max-width:1080px){.bottom{grid-template-columns:1fr}}
+.pnl{background:var(--n1);border:1px solid var(--edge);border-radius:8px;overflow:hidden}
+.pnl h3{font-size:11px;letter-spacing:.18em;color:var(--dim);padding:11px 14px;border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:center}
+.pnl h3 b{color:var(--gate);font-size:10.5px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;letter-spacing:.12em;color:var(--dim);font-weight:400;padding:8px 12px;
+  border-bottom:1px solid var(--edge)}
+td{padding:9px 12px;border-bottom:1px solid rgba(34,52,79,.55)}
+tr:hover td{background:rgba(77,208,225,.06)}
+.fl{font-weight:700;letter-spacing:.04em}
+.pill{font-size:9.5px;padding:3px 8px;border-radius:4px;letter-spacing:.06em;font-weight:700}
+.p-ot{background:rgba(139,214,122,.16);color:var(--arr)}
+.p-dl{background:rgba(255,181,71,.16);color:var(--dly)}
+.p-cn{background:rgba(255,92,108,.16);color:var(--cnc)}
+.p-bd{background:rgba(124,156,255,.16);color:var(--dep)}
+/* crew */
+.cr{display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid rgba(34,52,79,.55)}
+.cr:last-child{border:0}
+.cr .a{width:30px;height:30px;border-radius:8px;background:rgba(199,146,234,.16);color:var(--vip);
+  display:grid;place-items:center;font-size:12px;font-weight:700}
+.cr .m{flex:1}
+.cr .m b{display:block;font-size:12.5px}
+.cr .m small{color:var(--dim);font-size:10.5px}
+.bar{height:5px;border-radius:3px;background:rgba(255,255,255,.09);overflow:hidden;width:66px}
+.bar i{display:block;height:100%;background:var(--gate)}
+.ftr{text-align:center;font-size:10px;color:#40587a;letter-spacing:.3em;padding:0 0 30px}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<header>
+  <div class="lg"><div class="p">✈</div><h1>桃園國際機場 · 第二航廈運務排班<small>AIRPORT OPERATIONS CONTROL · TPE TERMINAL 2</small></h1></div>
+  <div class="chips"><b class="on">今日</b><b>明日</b><b>登機門</b><b>停機坪</b><b>地勤</b><b>報表</b></div>
+  <div class="rt">
+    <div><b id="clk">--:--:--</b>LOCAL UTC+8</div>
+    <div><b class="g">184</b>ON TIME</div>
+    <div><b class="w">23</b>DELAYED</div>
+    <div><b class="r">2</b>CANCELLED</div>
+    <div><b>78%</b>GATE UTIL</div>
+  </div>
+</header>
+
+<div class="strip">
+  <div><small>今日總航班</small><b>209</b></div>
+  <div><small>已起飛 / 已降落</small><b>142 / 137</b></div>
+  <div><small>旅客人次</small><b>48,216</b></div>
+  <div><small>行李處理量</small><b>62,480</b></div>
+  <div><small>平均延誤</small><b style="color:var(--dly)">12.4 分</b></div>
+  <div><small>準點率</small><b style="color:var(--arr)">88.1%</b></div>
+</div>
+
+<div class="gwrap">
+  <div class="gtitle">
+    <h2>登機門排程甘特圖 · GATE ASSIGNMENT</h2>
+    <div class="lg2">
+      <span><i style="background:#6f8fff"></i>出境</span>
+      <span><i style="background:#6fca5c"></i>入境</span>
+      <span><i style="background:#f7a723"></i>延誤</span>
+      <span><i style="background:#d84152"></i>取消</span>
+      <span><i style="background:#b073e8"></i>包機／專機</span>
+      <span><i style="background:#3a4d6b"></i>維護封閉</span>
+    </div>
+  </div>
+
+  <div class="gantt">
+    <div class="axis">
+      <div class="sp"></div>
+      <div class="tk" id="tk"></div>
+    </div>
+    <div id="rows" style="position:relative">
+      <div class="nowwrap"><div class="now" id="nowline"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom">
+  <div class="pnl">
+    <h3>航班動態 FLIGHT STATUS<a href="flights.html" style="color:var(--gate);font-size:10.5px;text-decoration:none;font-weight:700">LIVE ● →</a></h3>
+    <table>
+      <thead><tr><th>航班</th><th>目的地</th><th>登機門</th><th>時刻</th><th>狀態</th></tr></thead>
+      <tbody>
+        <tr><td class="fl">BR 182</td><td>東京 成田 NRT</td><td>A5</td><td>14:20</td><td><span class="pill p-bd">登機中</span></td></tr>
+        <tr><td class="fl">CI 502</td><td>香港 HKG</td><td>A7</td><td>14:45</td><td><span class="pill p-ot">準時</span></td></tr>
+        <tr><td class="fl">JX 720</td><td>大阪 關西 KIX</td><td>B2</td><td>15:10</td><td><span class="pill p-dl">延誤 25 分</span></td></tr>
+        <tr><td class="fl">SQ 879</td><td>新加坡 SIN</td><td>B4</td><td>15:30</td><td><span class="pill p-ot">準時</span></td></tr>
+        <tr><td class="fl">CX 470</td><td>香港 HKG</td><td>A9</td><td>15:55</td><td><span class="pill p-ot">準時</span></td></tr>
+        <tr><td class="fl">TG 635</td><td>曼谷 BKK</td><td>C1</td><td>16:20</td><td><span class="pill p-dl">延誤 40 分</span></td></tr>
+        <tr><td class="fl">KE 692</td><td>首爾 仁川 ICN</td><td>C3</td><td>16:40</td><td><span class="pill p-cn">取消</span></td></tr>
+        <tr><td class="fl">UA 872</td><td>舊金山 SFO</td><td>D6</td><td>17:05</td><td><span class="pill p-ot">準時</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pnl">
+    <h3>地勤班組 GROUND CREW<a href="crew.html" style="color:var(--gate);font-size:10.5px;text-decoration:none;font-weight:700">6 TEAMS →</a></h3>
+    <div class="cr"><div class="a">A1</div><div class="m"><b>行李裝卸組 · 甲班</b><small>負責 A5 / A7 · 8 人</small></div><div class="bar"><i style="width:82%"></i></div></div>
+    <div class="cr"><div class="a">A2</div><div class="m"><b>行李裝卸組 · 乙班</b><small>負責 B2 / B4 · 8 人</small></div><div class="bar"><i style="width:64%"></i></div></div>
+    <div class="cr"><div class="a">C1</div><div class="m"><b>客艙清潔組</b><small>機動支援 · 12 人</small></div><div class="bar"><i style="width:91%"></i></div></div>
+    <div class="cr"><div class="a">F1</div><div class="m"><b>加油作業組</b><small>停機坪 P1–P8 · 6 人</small></div><div class="bar"><i style="width:47%"></i></div></div>
+    <div class="cr"><div class="a">T1</div><div class="m"><b>拖車推機組</b><small>全區支援 · 5 人</small></div><div class="bar"><i style="width:73%"></i></div></div>
+    <div class="cr"><div class="a">S1</div><div class="m"><b>特殊旅客服務</b><small>輪椅／無陪同兒童 · 4 人</small></div><div class="bar"><i style="width:38%"></i></div></div>
+  </div>
+
+  <div class="pnl">
+    <h3>運務通報 OPS NOTICE<b style="color:var(--dly)">3 ACTIVE</b></h3>
+    <div class="cr"><div class="a" style="background:rgba(255,181,71,.16);color:var(--dly)">!</div>
+      <div class="m"><b>C1 登機門空橋故障</b><small>14:02 · 維修中，預計 16:00 恢復</small></div></div>
+    <div class="cr"><div class="a" style="background:rgba(255,92,108,.16);color:var(--cnc)">✕</div>
+      <div class="m"><b>KE 692 取消 · 機械因素</b><small>13:41 · 已啟動旅客改機作業，影響 186 人</small></div></div>
+    <div class="cr"><div class="a" style="background:rgba(255,181,71,.16);color:var(--dly)">≋</div>
+      <div class="m"><b>桃園地區雷雨特報</b><small>13:20 · 15:00–18:00 可能影響起降間隔</small></div></div>
+    <div class="cr"><div class="a" style="background:rgba(139,214,122,.16);color:var(--arr)">✓</div>
+      <div class="m"><b>D6 停機坪清空完成</b><small>12:55 · 可供 UA 872 使用</small></div></div>
+    <div class="cr"><div class="a" style="background:rgba(199,146,234,.16);color:var(--vip)">★</div>
+      <div class="m"><b>15:40 專機抵達 · VIP 通道</b><small>12:10 · 已通知禮賓與安檢單位</small></div></div>
+  </div>
+</div>
+
+<div class="ftr">AIRPORT OPERATIONS GANTT · 午夜藍排班控制台 · DESIGN 36 / 40</div>
+
+<script>
+const START=12,HOURS=16; // 12:00 -> 04:00 next day, 16 slots of 1h
+document.getElementById('tk').innerHTML=Array.from({length:HOURS},(_,i)=>
+  `<span>${String((START+i)%24).padStart(2,'0')}:00</span>`).join('');
+
+const gates=[
+ ['A5','國際 · 遠端'],['A7','國際 · 空橋'],['A9','國際 · 空橋'],
+ ['B2','國際 · 空橋'],['B4','國際 · 空橋'],
+ ['C1','國際 · 空橋'],['C3','區域 · 空橋'],
+ ['D6','長程 · 雙橋'],['D8','長程 · 雙橋'],['P3','遠端停機坪']
+];
+const flights={
+ 'A5':[['BR 182','NRT',12.4,2.0,'b-dep'],['BR 225','HKG',15.2,1.8,'b-arr'],['BR 108','LAX',18.6,3.0,'b-dep'],['BR 811','SIN',22.4,2.2,'b-arr']],
+ 'A7':[['CI 502','HKG',13.0,2.2,'b-dep'],['CI 105','NRT',16.4,2.0,'b-arr'],['CI 831','BKK',19.6,2.4,'b-dep'],['CI 018','SFO',23.0,3.2,'b-dep']],
+ 'A9':[['CX 470','HKG',14.2,1.9,'b-arr'],['CX 495','HKG',17.0,2.0,'b-dep'],['MU 5008','PVG',20.2,2.1,'b-arr'],['CX 465','HKG',24.0,1.9,'b-dep']],
+ 'B2':[['JX 720','KIX',13.6,2.6,'b-dly'],['JX 801','ICN',17.4,2.0,'b-arr'],['JX 216','SGN',20.8,2.4,'b-dep'],['JX 741','FUK',24.4,2.0,'b-arr']],
+ 'B4':[['SQ 879','SIN',14.8,2.4,'b-dep'],['SQ 878','SIN',18.2,2.4,'b-arr'],['TR 897','SIN',21.6,2.2,'b-dep'],['MH 367','KUL',25.0,2.4,'b-arr']],
+ 'C1':[['—— 空橋維護封閉 ——','',12.0,4.0,'b-mnt'],['TG 635','BKK',16.6,2.8,'b-dly'],['TG 634','BKK',20.4,2.6,'b-arr'],['VN 577','SGN',24.2,2.2,'b-dep']],
+ 'C3':[['KE 692','ICN',13.4,2.2,'b-cnc'],['OZ 712','ICN',16.8,2.2,'b-arr'],['KE 691','ICN',20.0,2.2,'b-dep'],['7C 2652','ICN',23.6,2.0,'b-arr']],
+ 'D6':[['UA 872','SFO',14.0,3.2,'b-dep'],['UA 871','SFO',18.8,3.0,'b-arr'],['NH 852','HND',23.2,2.6,'b-dep']],
+ 'D8':[['EK 367','DXB',15.6,3.4,'b-arr'],['EK 366','DXB',20.6,3.4,'b-dep'],['QR 894','DOH',25.2,3.0,'b-arr']],
+ 'P3':[['專機 CHTR-01','VIP',15.4,2.0,'b-vip'],['貨機 CI 5252','ANC',19.2,3.0,'b-dep'],['專機 CHTR-04','VIP',23.4,1.8,'b-vip']]
+};
+const rows=document.getElementById('rows');
+let html='';
+gates.forEach(([g,desc],gi)=>{
+  let bars='';
+  (flights[g]||[]).forEach((f,fi)=>{
+    const [no,dst,st,dur,cls]=f;
+    const left=(st-START)/HOURS*100, w=dur/HOURS*100;
+    if(left>100||left+w<0)return;
+    bars+=`<div class="gbar ${cls}" style="left:${Math.max(0,left)}%;width:${w}%;animation-delay:${(gi*70+fi*40)}ms"
+      title="${no} ${dst} · ${String(Math.floor(st)%24).padStart(2,'0')}:${String(Math.round(st%1*60)).padStart(2,'0')}">
+      ${no}${dst?` <small>${dst}</small>`:''}</div>`;
+  });
+  html+=`<div class="grow"><div class="glabel"><span class="g">${g}</span><span>${g}<small>${desc}</small></span></div>
+    <div class="gtrack">${bars}</div></div>`;
+});
+rows.insertAdjacentHTML('afterbegin',html);
+
+function updNow(){
+  const d=new Date(),h=d.getHours()+d.getMinutes()/60;
+  let hh=h<START?h+24:h;
+  const p=Math.min(100,Math.max(0,(hh-START)/HOURS*100));
+  document.getElementById('nowline').style.left=p+'%';
+  document.getElementById('clk').textContent=d.toLocaleTimeString('en-GB');
+}
+updNow();setInterval(updNow,1000);
+document.querySelectorAll('.chips b').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.chips b').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  var urls={'今日':'flights.html','明日':'flights.html','登機門':'gates.html','停機坪':'gates.html','地勤':'crew.html','報表':'report.html'};
+  var u=urls[b.textContent.trim()];if(u)location.href=u;});
+</script>
+</body>
+</html>

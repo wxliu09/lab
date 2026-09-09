@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════
+ 設計規格｜59. 硬式車票·差勤假單 (Edmondson Punch Ticket)
+───────────────────────────────────────────────────────────────────
+ ● 風格定位：台鐵老式硬式車票（名片票）—— 米色厚紙票卡、深藍凸版印刷字、
+              左緣打孔圓孔列、右緣虛線撕線存根，查驗假單像剪票一樣有儀式感。
+ ● 配色：票卡米紅 #e9d8b4｜票面深藍 #24406e｜票背赭紅 #b4553f（戳章）
+        存根淺米 #f2e7cd｜打孔洞 #2b2118（透出桌面深木色 #3a2c22）
+ ● 字體："Courier Prime"（票據打字機感）+ "Noto Sans TC"（中文票面）
+ ● 版面：頂部票務亭工具列 → 左欄「請假單填報票卡」＋「假別餘額票券列」；
+        右欄（下欄）「歷史假單查詢表」。每張票卡左緣圓孔列、右緣虛線撕線。
+ ● 動態：核准時打孔機「喀噠」蓋孔動畫（票卡震動 + 圓孔由實心轉為穿透）；
+        送單時票卡沿撕線撕下存根滑出；查詢列 hover 如票卡抽出。
+═══════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>硬式車票 · 差勤假單系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --desk:#3a2c22; --card:#e9d8b4; --card-l:#f2e7cd; --ink:#24406e; --stamp:#b4553f;
+  --line:#c9b58c;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;color:var(--ink);
+  min-height:100vh;background:var(--desk);
+  background-image:
+    radial-gradient(circle at 25% 15%, rgba(255,240,200,.06), transparent 40%),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 2px, transparent 2px 90px);
+}
+.mono{font-family:'Courier Prime',monospace}
+
+/* ── 票務亭工具列 ─────────────────────── */
+.topbar{
+  display:flex;align-items:center;gap:20px;padding:16px 30px;
+  background:#2c211a;border-bottom:3px solid var(--stamp);
+  box-shadow:0 4px 14px rgba(0,0,0,.4);position:sticky;top:0;z-index:60;
+}
+.back{
+  text-decoration:none;font-weight:900;font-size:14px;letter-spacing:2px;
+  color:var(--card);border:2px solid var(--card);padding:7px 16px;
+  background:linear-gradient(180deg, rgba(233,216,180,.12), transparent);
+  transition:all .15s;
+}
+.back:hover{background:var(--card);color:var(--ink)}
+.brand{color:var(--card);font-size:21px;font-weight:900;letter-spacing:4px}
+.brand small{display:block;font-family:'Courier Prime';font-size:10px;letter-spacing:3px;color:#a9927a;font-weight:400;margin-top:2px}
+.topbar .win{
+  margin-left:auto;font-family:'Courier Prime';color:#a9927a;font-size:12px;letter-spacing:2px;
+  border:1px dashed #a9927a;padding:6px 14px;
+}
+/* 子頁導覽 */
+.subnav{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.subnav a{
+  text-decoration:none;color:var(--card);font-size:13px;font-weight:900;letter-spacing:2px;padding:6px 14px;
+  border:1.5px dashed #a9927a;transition:all .15s;
+}
+.subnav a:hover{border-style:solid;border-color:var(--card);background:rgba(233,216,180,.15)}
+.topbar .win{margin-left:0}
+
+/* ── 版面 ─────────────────────── */
+.layout{display:grid;grid-template-columns:minmax(420px,520px) 1fr;gap:34px;padding:34px;max-width:1500px;margin:0 auto;align-items:start}
+@media(max-width:1080px){.layout{grid-template-columns:1fr}}
+
+.sec-title{
+  color:var(--card);font-size:13px;letter-spacing:4px;font-weight:700;margin:0 0 16px 4px;
+  display:flex;align-items:center;gap:12px;
+}
+.sec-title::after{content:'';flex:1;height:1px;background:repeating-linear-gradient(90deg,#a9927a,#a9927a 6px,transparent 6px,transparent 12px)}
+
+/* ══ 硬式票卡 ══════════════════════════ */
+.ticket{
+  display:flex;background:var(--card);position:relative;
+  filter:drop-shadow(5px 6px 0 rgba(0,0,0,.35));
+  background-image:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.35), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(36,64,110,.03) 0 2px, transparent 2px 5px);
+}
+/* 左側打孔圓孔列 */
+.punches{
+  width:34px;flex-shrink:0;border-right:2px dashed rgba(36,64,110,.4);
+  display:flex;flex-direction:column;justify-content:space-evenly;align-items:center;padding:10px 0;
+}
+.punches i{
+  width:12px;height:12px;border-radius:50%;background:var(--desk);
+  box-shadow:inset 1px 2px 2px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.4);
+}
+/* 右側撕線存根 */
+.stub{
+  width:86px;flex-shrink:0;border-left:2.5px dashed var(--stamp);
+  background:var(--card-l);display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.stub span{writing-mode:vertical-rl;letter-spacing:6px;font-size:12px;font-weight:900;color:var(--stamp);opacity:.85}
+.body{flex:1;padding:18px 20px;min-width:0}
+.t-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:12px}
+.t-head b{font-size:17px;font-weight:900;letter-spacing:3px}
+.t-head .no{font-family:'Courier Prime';font-size:12px;letter-spacing:1px}
+
+/* 表單控件（票面印刷風） */
+.frm{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
+.frm .full{grid-column:1/-1}
+.frm label{font-size:11px;font-weight:900;letter-spacing:2px;display:block;margin-bottom:4px;color:var(--stamp)}
+.frm select,.frm input,.frm textarea{
+  width:100%;padding:8px 10px;font-family:'Courier Prime','Noto Sans TC';font-size:14px;
+  color:var(--ink);background:rgba(255,255,255,.5);border:1.5px solid var(--ink);border-radius:0;outline:none;
+}
+.frm select:focus,.frm input:focus,.frm textarea:focus{background:#fff;box-shadow:3px 3px 0 rgba(36,64,110,.25)}
+.frm textarea{resize:vertical;min-height:56px;font-family:'Noto Sans TC'}
+.send{
+  grid-column:1/-1;padding:12px;font-family:'Noto Sans TC';font-weight:900;font-size:15px;
+  letter-spacing:6px;cursor:pointer;color:var(--card);background:var(--ink);border:none;
+  box-shadow:3px 3px 0 rgba(0,0,0,.3);transition:all .15s;
+}
+.send:hover{background:#2f5290;transform:translate(-1px,-1px);box-shadow:4px 4px 0 rgba(0,0,0,.3)}
+.send:active{transform:translate(2px,2px);box-shadow:none}
+
+/* 撕下動畫 */
+.ticket.tearing .stub{animation:tear .7s ease-in forwards}
+@keyframes tear{
+  30%{transform:translateX(10px) rotate(2deg)}
+  100%{transform:translateX(140%) rotate(12deg);opacity:0}
+}
+.ticket.tearing{animation:shudder .5s}
+@keyframes shudder{0%,100%{transform:none}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
+
+/* ══ 餘額票券列 ══════════════════════ */
+.balances{display:flex;flex-direction:column;gap:16px;margin-top:8px}
+.bal{display:flex;align-items:stretch;filter:drop-shadow(4px 5px 0 rgba(0,0,0,.3));transition:transform .2s}
+.bal:hover{transform:translateX(6px)}
+.bal .punches{width:28px}
+.bal .punches i{width:9px;height:9px}
+.bal .main{
+  flex:1;padding:13px 18px;display:flex;align-items:center;gap:16px;
+}
+.bal.b1 .main{background:var(--card)}
+.bal.b2 .main{background:#d8e0c8}
+.bal.b3 .main{background:#ecd3c8}
+.bal .name{font-weight:900;font-size:16px;letter-spacing:3px}
+.bal .en{font-family:'Courier Prime';font-size:10px;letter-spacing:2px;color:var(--stamp)}
+.bal .days{margin-left:auto;text-align:right}
+.bal .days b{font-family:'Courier Prime';font-size:26px;font-weight:700}
+.bal .days small{display:block;font-size:10px;letter-spacing:2px;color:var(--stamp)}
+.bal .edge{
+  width:14px;
+  background:repeating-linear-gradient(0deg, var(--card) 0 6px, transparent 6px 12px);
+}
+.bal.b2 .edge{background:repeating-linear-gradient(0deg,#d8e0c8 0 6px, transparent 6px 12px)}
+.bal.b3 .edge{background:repeating-linear-gradient(0deg,#ecd3c8 0 6px, transparent 6px 12px)}
+
+/* ══ 歷史查詢 ══════════════════════════ */
+.board{
+  background:var(--card);filter:drop-shadow(5px 6px 0 rgba(0,0,0,.35));padding:20px 22px;
+  background-image:repeating-linear-gradient(0deg, rgba(36,64,110,.03) 0 2px, transparent 2px 5px);
+}
+.board .t-head b{font-size:16px}
+.qbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.qbar select,.qbar input{
+  padding:7px 10px;font-family:inherit;font-size:13px;border:1.5px solid var(--ink);
+  background:rgba(255,255,255,.55);color:var(--ink);outline:none;
+}
+.qbar input{flex:1;min-width:120px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{
+  font-size:11px;letter-spacing:2px;color:var(--stamp);text-align:left;font-weight:900;
+  border-bottom:2px solid var(--ink);padding:8px 10px;white-space:nowrap;
+}
+tbody td{padding:10px;border-bottom:1.5px dashed var(--line);vertical-align:middle}
+tbody tr{transition:all .18s;cursor:default}
+tbody tr:hover{background:rgba(36,64,110,.08);transform:translateX(5px)}
+.mono-td{font-family:'Courier Prime';font-size:12.5px;white-space:nowrap}
+.status{
+  font-size:11.5px;font-weight:900;letter-spacing:2px;padding:3px 10px;white-space:nowrap;
+  border:1.5px solid currentColor;display:inline-block;
+}
+.st-approved{color:#2e6b3a;background:rgba(46,107,58,.1)}
+.st-pending{color:#a36b00;background:rgba(163,107,0,.12)}
+.st-rejected{color:var(--stamp);background:rgba(180,85,63,.12)}
+/* 已核准票卡上的打孔標記 */
+.holemark{
+  display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--desk);
+  box-shadow:inset 1px 2px 2px rgba(0,0,0,.55);margin-right:6px;vertical-align:-1px;
+  animation:punchin .35s cubic-bezier(.2,1.6,.4,1);
+}
+@keyframes punchin{0%{transform:scale(2.6);opacity:0;box-shadow:0 0 0 4px rgba(180,85,63,.5)}100%{transform:scale(1);opacity:1}}
+.rowpunch{animation:rowshake .3s}
+@keyframes rowshake{0%,100%{transform:none}30%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
+.approve-btn{
+  font-family:inherit;font-size:12px;font-weight:900;letter-spacing:1px;cursor:pointer;
+  border:1.5px solid var(--ink);background:transparent;color:var(--ink);padding:4px 12px;
+  transition:all .15s;white-space:nowrap;
+}
+.approve-btn:hover{background:var(--ink);color:var(--card)}
+/* 戳章 */
+.stamp-ok{
+  display:inline-block;border:2.5px solid var(--stamp);color:var(--stamp);font-weight:900;
+  font-size:13px;letter-spacing:4px;padding:3px 12px;transform:rotate(-6deg);
+  animation:stampIn .4s cubic-bezier(.2,2,.4,1);
+}
+@keyframes stampIn{0%{transform:rotate(-6deg) scale(2.2);opacity:0}100%{transform:rotate(-6deg) scale(1);opacity:.9}}
+.empty{padding:26px;text-align:center;color:var(--stamp);letter-spacing:3px;font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="back mono" href="../../index.html">← 返回入口</a>
+  <div class="brand">硬式車票 · 差勤假單系統<small>EDMONDSON LEAVE TICKET OFFICE — FORM NO. L-59</small></div>
+  <nav class="subnav">
+    <a href="list.html">假單列表</a>
+    <a href="detail.html">假單詳情</a>
+    <a href="form.html">新增假單</a>
+    <a href="balance.html">餘額查詢</a>
+  </nav>
+  <div class="win">第 3 號票務窗口 ｜ 值勤：周秀蘭</div>
+</header>
+
+<div class="layout">
+  <!-- ══ 左欄 ══ -->
+  <section>
+    <h3 class="sec-title">請假單填報票卡 APPLICATION TICKET</h3>
+    <div class="ticket" id="formTicket">
+      <div class="punches"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="body">
+        <div class="t-head"><b>請 假 單</b><span class="no" id="formNo">NO. LV-2608-039</span></div>
+        <form class="frm" id="leaveForm">
+          <div>
+            <label>假別 LEAVE TYPE</label>
+            <select id="lType">
+              <option>特別休假</option><option>病假</option><option>事假</option>
+              <option>生理假</option><option>家庭照顧假</option>
+            </select>
+          </div>
+          <div>
+            <label>代理人 DEPUTY</label>
+            <select id="lDeputy">
+              <option>黃建智（課內）</option><option>吳雅雯（課內）</option><option>陳志豪（鄰課）</option>
+            </select>
+          </div>
+          <div><label>起始日期 FROM</label><input type="date" id="lFrom" value="2026-09-07"></div>
+          <div><label>結束日期 TO</label><input type="date" id="lTo" value="2026-09-08"></div>
+          <div class="full">
+            <label>事由 REASON</label>
+            <textarea id="lReason" placeholder="例：陪同母親至高雄長庚回診，需兩日"></textarea>
+          </div>
+          <button type="submit" class="send" id="btnSend">撕 票 送 審 ▸▸</button>
+        </form>
+      </div>
+      <div class="stub" id="formStub"><span>存根聯 STUB</span></div>
+    </div>
+
+    <h3 class="sec-title" style="margin-top:34px">假別餘額票券 BALANCE TICKETS</h3>
+    <div class="balances">
+      <div class="bal b1">
+        <div class="punches"><i></i><i></i><i></i></div>
+        <div class="main">
+          <div><div class="name">特別休假</div><div class="en">ANNUAL LEAVE</div></div>
+          <div class="days"><b id="balAnnual">7.5</b><small>剩餘天數 / 14 天</small></div>
+        </div>
+        <div class="edge"></div>
+      </div>
+      <div class="bal b2">
+        <div class="punches"><i></i><i></i><i></i></div>
+        <div class="main">
+          <div><div class="name">病　　假</div><div class="en">SICK LEAVE</div></div>
+          <div class="days"><b id="balSick">24.0</b><small>剩餘天數 / 30 天</small></div>
+        </div>
+        <div class="edge"></div>
+      </div>
+      <div class="bal b3">
+        <div class="punches"><i></i><i></i><i></i></div>
+        <div class="main">
+          <div><div class="name">事　　假</div><div class="en">PERSONAL LEAVE</div></div>
+          <div class="days"><b id="balPersonal">9.0</b><small>剩餘天數 / 14 天</small></div>
+        </div>
+        <div class="edge"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 右欄：歷史查詢 ══ -->
+  <section>
+    <h3 class="sec-title">歷史假單查詢 TICKET RECORDS</h3>
+    <div class="board">
+      <div class="t-head"><b>假 單 存 根 簿</b><span class="no">LEDGER 2026 · 卷三</span></div>
+      <div class="qbar">
+        <select id="qStatus">
+          <option value="">全部狀態</option><option value="approved">已核准</option>
+          <option value="pending">審核中</option><option value="rejected">已退回</option>
+        </select>
+        <select id="qType">
+          <option value="">全部假別</option><option>特別休假</option><option>病假</option>
+          <option>事假</option><option>生理假</option><option>家庭照顧假</option>
+        </select>
+        <input id="qKw" placeholder="搜尋單號或事由…">
+      </div>
+      <table>
+        <thead>
+          <tr><th>驗孔</th><th>單號</th><th>假別</th><th>期間</th><th>天數</th><th>事由</th><th>狀態</th><th></th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+const RECORDS = [
+  {no:'LV-2608-036', type:'特別休假', from:'08/24', to:'08/25', days:2,   reason:'返台南掃墓祭祖', status:'approved'},
+  {no:'LV-2608-031', type:'事假',     from:'08/19', to:'08/19', days:1,   reason:'陪同子女新生註冊報到', status:'approved'},
+  {no:'LV-2608-027', type:'病假',     from:'08/13', to:'08/14', days:2,   reason:'急性腸胃炎就醫（附診斷書）', status:'approved'},
+  {no:'LV-2607-052', type:'特別休假', from:'07/30', to:'07/31', days:2,   reason:'家庭旅遊（墾丁）', status:'approved'},
+  {no:'LV-2607-044', type:'事假',     from:'07/17', to:'07/17', days:0.5, reason:'至區公所辦理印鑑證明', status:'approved'},
+  {no:'LV-2607-038', type:'生理假',   from:'07/09', to:'07/09', days:1,   reason:'身體不適在家休養', status:'approved'},
+  {no:'LV-2606-029', type:'家庭照顧假', from:'06/22', to:'06/23', days:2, reason:'照顧確診流感之女兒', status:'rejected'},
+  {no:'LV-2606-021', type:'特別休假', from:'06/08', to:'06/10', days:3,   reason:'參加妹妹婚禮（屏東）', status:'approved'},
+];
+const STATUS = {approved:['已核准','st-approved'], pending:['審核中','st-pending'], rejected:['已退回','st-rejected']};
+const tbody = document.getElementById('tbody');
+
+function render(){
+  const qs = document.getElementById('qStatus').value;
+  const qt = document.getElementById('qType').value;
+  const kw = document.getElementById('qKw').value.trim();
+  const rows = RECORDS.filter(r =>
+    (!qs || r.status===qs) && (!qt || r.type===qt) &&
+    (!kw || r.no.includes(kw) || r.reason.includes(kw))
+  );
+  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="8"><div class="empty">— 查無符合之假單存根 —</div></td></tr>'; return; }
+  tbody.innerHTML = rows.map(r=>{
+    const [label, cls] = STATUS[r.status];
+    return `<tr data-no="${r.no}">
+      <td>${r.status==='approved' ? '<span class="holemark"></span>' : ''}</td>
+      <td class="mono-td"><b>${r.no}</b></td>
+      <td>${r.type}</td>
+      <td class="mono-td">${r.from} — ${r.to}</td>
+      <td class="mono-td">${r.days}</td>
+      <td>${r.reason}</td>
+      <td><span class="status ${cls}">${label}</span></td>
+      <td>${r.status==='pending' ? '<button class="approve-btn">打孔核准</button>' : (r.status==='approved' ? '<span class="stamp-ok">准</span>' : '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* 打孔核准：「喀噠」蓋孔動畫 */
+tbody.addEventListener('click', e=>{
+  const b = e.target.closest('.approve-btn'); if(!b) return;
+  const tr = b.closest('tr');
+  const rec = RECORDS.find(r=>r.no===tr.dataset.no);
+  tr.classList.add('rowpunch');
+  b.disabled = true; b.textContent = '打孔中…';
+  setTimeout(()=>{
+    rec.status = 'approved';
+    render();
+  }, 520);
+});
+
+['qStatus','qType'].forEach(id=>document.getElementById(id).addEventListener('change', render));
+document.getElementById('qKw').addEventListener('input', render);
+
+/* 撕票送審 */
+document.getElementById('leaveForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const reason = document.getElementById('lReason').value.trim();
+  const btn = document.getElementById('btnSend');
+  if (!reason){
+    btn.textContent = '⚠ 請填寫事由';
+    setTimeout(()=>btn.textContent='撕 票 送 審 ▸▸', 1300);
+    return;
+  }
+  const type = document.getElementById('lType').value;
+  const from = document.getElementById('lFrom').value;
+  const to = document.getElementById('lTo').value;
+  const days = Math.max(0.5, Math.round(((new Date(to) - new Date(from)) / 864e5 + 1) * 2) / 2);
+  // 撕下存根動畫
+  const card = document.getElementById('formTicket');
+  card.classList.add('tearing');
+  setTimeout(()=>{
+    RECORDS.unshift({
+      no:'LV-2608-0' + (40 + RECORDS.length),
+      type, from:from.slice(5).replace('-','/'), to:to.slice(5).replace('-','/'),
+      days, reason, status:'pending'
+    });
+    // 扣餘額
+    const map = {'特別休假':'balAnnual','病假':'balSick','事假':'balPersonal'};
+    if (map[type]){
+      const el = document.getElementById(map[type]);
+      el.textContent = Math.max(0, parseFloat(el.textContent) - days).toFixed(1);
+    }
+    card.classList.remove('tearing');
+    render();
+    btn.textContent = '✓ 已投入審核票箱';
+    document.getElementById('lReason').value = '';
+    document.getElementById('formNo').textContent = 'NO. LV-2608-0' + (40 + RECORDS.length);
+    setTimeout(()=>btn.textContent='撕 票 送 審 ▸▸', 1800);
+  }, 750);
+});
+
+render();
+</script>
+</body>
+</html>

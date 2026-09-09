@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCS 疊合圖台｜方案 A：Leaflet 自訂 pane ＋ Three.js</title>
+<link rel="stylesheet" href="../shared/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="loading"><div class="ld-box"><div class="ld-spin"></div><div>建立不規則地質模型…</div></div></div>
+<div id="boot-error"><strong>無法啟動</strong><div class="msg"></div></div>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="logo">A</span>
+    <div>
+      <h1>CCS 疊合圖台</h1>
+      <p>方案 A ─ Three.js 透明 canvas 置於 Leaflet 自訂 pane，正交相機對齊 CRS</p>
+    </div>
+  </div>
+  <div class="modes">
+    <button id="mode-aligned" class="btn on">對齊模式</button>
+    <button id="mode-free" class="btn">自由 3D 視角</button>
+  </div>
+</header>
+
+<main id="stage">
+  <div id="map"></div>
+
+  <section id="panel">
+    <button id="panel-toggle">⟨</button>
+    <div class="pnl-scroll">
+
+      <div class="group">
+        <h2>模式</h2>
+        <p id="mode-note" class="note tight">對齊模式：3D 與 Leaflet 逐像素對齊，marker／popup／圖層控制照常可用。</p>
+        <div class="preset-row">
+          <button class="btn sm" data-preset="flat">正射套疊</button>
+          <button class="btn sm" data-preset="stack">斜移堆疊</button>
+          <button class="btn sm" data-preset="xray">透視地下</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>對齊與呈現</h2>
+        <label class="rng">垂直放大 <b id="ve-val">×3</b>
+          <input type="range" id="ve" min="1" max="8" step="0.5" value="3"></label>
+        <label class="rng">深度斜移 <b id="oblique-val">0.50</b>
+          <input type="range" id="oblique" min="0" max="1.2" step="0.05" value="0.5"></label>
+        <label class="rng">斜移方向 <b id="oblique-dir-val">135°</b>
+          <input type="range" id="oblique-dir" min="0" max="359" step="1" value="135"></label>
+        <label class="rng">地層透明度 <b id="opacity-val">55%</b>
+          <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="0.55"></label>
+        <p id="align-note" class="note tight warn-on">深度斜移 &gt; 0 時，只有地表（深度 0）仍與底圖精確對齊，
+          越深的層位移越大；這是在無 pitch 的 Leaflet 中讀出層序的折衷做法。</p>
+      </div>
+
+      <div class="group">
+        <h2>屬性著色</h2>
+        <select id="color-mode"></select>
+        <div id="colorbar-wrap">
+          <div id="colorbar"></div>
+          <div id="colorbar-ticks"></div>
+          <div id="colorbar-title" class="note tight"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>地質分析</h2>
+        <div class="tool-grid">
+          <button id="tool-log" class="btn sm">合成井柱</button>
+          <button id="tool-section" class="btn sm">任意剖面</button>
+          <button id="tool-vol" class="btn sm">容積計算</button>
+        </div>
+        <p id="tool-hint" class="note tight">合成井柱：在模型上點一點；任意剖面：點兩點拉出 A–A′。</p>
+      </div>
+
+      <div class="group">
+        <h2>剖切</h2>
+        <select id="section-mode">
+          <option value="off">關閉</option>
+          <option value="ns">南北向切面</option>
+          <option value="ew">東西向切面</option>
+          <option value="quad">四分之一切除</option>
+        </select>
+        <label class="rng">切面位置 <b id="section-offset-val">0 m</b>
+          <input type="range" id="section-offset" min="-3000" max="3000" step="50" value="0" disabled></label>
+      </div>
+
+      <div class="group">
+        <h2>3D 圖層</h2>
+        <div class="layer-grid">
+          <label class="chk"><input type="checkbox" data-layer="strata" checked> 地層</label>
+          <label class="chk"><input type="checkbox" data-layer="plume" checked> CO₂ 羽流</label>
+          <label class="chk"><input type="checkbox" data-layer="wells" checked> 井</label>
+          <label class="chk"><input type="checkbox" data-layer="faults" checked> 斷層</label>
+          <label class="chk"><input type="checkbox" data-layer="vectors"> 3D 向量圖徵</label>
+          <label class="chk"><input type="checkbox" data-layer="outlines" checked> 尖滅界線</label>
+          <label class="chk"><input type="checkbox" data-layer="terrain"> 3D 地表</label>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>地層</h2>
+        <div id="strata-list"></div>
+      </div>
+
+      <div class="group">
+        <h2>資訊 <span id="info-title" class="info-title">方案 A 說明</span></h2>
+        <div id="info-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="analysis" class="hidden">
+    <header class="an-head">
+      <div class="an-tabs">
+        <button data-tab="log" class="an-tab on">合成井柱</button>
+        <button data-tab="section" class="an-tab">地質剖面</button>
+        <button data-tab="vol" class="an-tab">容積與封存量</button>
+      </div>
+      <button id="an-close" class="mini-btn" title="關閉">✕</button>
+    </header>
+    <div class="an-body">
+      <div id="tab-log" class="an-pane on">
+        <div class="an-row">
+          <canvas id="log-canvas"></canvas>
+          <div id="log-side"></div>
+        </div>
+      </div>
+      <div id="tab-section" class="an-pane">
+        <div class="an-bar">
+          <label>屬性 <select id="sec-mode"></select></label>
+          <label class="chk inline"><input type="checkbox" id="sec-follow" checked> 隨屬性著色同步</label>
+          <span id="sec-meta" class="an-meta"></span>
+        </div>
+        <canvas id="sec-canvas"></canvas>
+      </div>
+      <div id="tab-vol" class="an-pane">
+        <div class="an-bar">
+          <label>目標層 <select id="vol-layer"></select></label>
+          <label class="rng inline">φ 下限 <b id="vol-phi-val">10%</b>
+            <input type="range" id="vol-phi" min="0" max="30" step="1" value="10"></label>
+          <label class="rng inline">Vsh 上限 <b id="vol-vsh-val">0.40</b>
+            <input type="range" id="vol-vsh" min="0.05" max="1" step="0.05" value="0.4"></label>
+          <label class="chk inline"><input type="checkbox" id="vol-closure"> 僅計構造閉合區</label>
+          <button id="vol-run" class="btn sm">重新計算</button>
+        </div>
+        <div id="vol-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <button id="play" class="btn">▶ 播放</button>
+    <div class="tl-main">
+      <input type="range" id="year">
+      <div class="tl-row">
+        <span class="yr" id="year-label">2050</span>
+        <span class="phase post" id="year-phase">封存後監測期</span>
+        <span class="kpi">累積注入 <b id="kpi-cum">0</b> Mt</span>
+        <span class="kpi">羽流半徑 <b id="kpi-radius">0</b> m</span>
+      </div>
+    </div>
+  </section>
+
+  <footer id="statusbar">
+    <span>zoom <b id="st-zoom">–</b></span>
+    <span>每公尺像素 <b id="st-ppm">–</b></span>
+    <span>圖心 <b id="st-center">–</b></span>
+    <span id="st-tiles">3D 地表未啟用</span>
+    <span class="tip">對齊模式＝Leaflet 操作　自由模式＝拖曳環繞</span>
+  </footer>
+</main>
+
+<script src="../shared/vendor/leaflet/leaflet.js"></script>
+<script src="../shared/vendor/three/three.js"></script>
+<script src="../shared/vendor/three/OrbitControls.js"></script>
+<script src="../shared/js/config.js"></script>
+<script src="../shared/js/geo.js"></script>
+<script src="../shared/js/petro.js"></script>
+<script src="../shared/js/geology.js"></script>
+<script src="../shared/js/welllog.js"></script>
+<script src="../shared/js/section.js"></script>
+<script src="../shared/js/terrain.js"></script>
+<script src="js/overlay3d.js"></script>
+<script src="../shared/js/analysis.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

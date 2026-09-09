@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 44 熱感收據·國稅申報
+  ─────────────────────────────────────────
+  風格定位：把整個報稅網站做成一捲正在列印的熱感收據——灰藍櫃檯背景上，
+            白色收據紙自頂部出紙口「印出」，上下鋸齒撕邊，全部等寬字體，
+            條碼、虛線分隔、星號標題列，復古 POS 機質感。
+  配色：
+    櫃檯灰藍 #46535e（出紙機外殼／頁面背景）
+    收據白   #fdfdfa（熱感紙本體，微暖白）
+    油墨黑   #1c1c1c（所有文字）
+    淡灰條碼 #b9b9b9（裝飾條碼、虛線）
+    強調紅   #d23c2a（稅額結果、印章字，熱感紙上的紅字印刷）
+  字體：'JetBrains Mono' 等寬為主 + 'Noto Sans TC' 中文補字
+  版面結構（全部包在一條收據紙內，由上而下）：
+    1. 出紙口（深色機殼＋金屬槽）＋返回入口按鈕
+    2. 收據標頭：局名、統編、日期時間（JS 即時時鐘）、條碼
+    3. 報稅五步驟（ITEMIZED 清單式排版）
+    4. 稅額試算小工具（輸入所得即時計算綜所稅，級距 JS）
+    5. 繳費方式（四格條碼卡）
+    6. 收件匣式公告（RECEIVED 列表）
+    7. 常見問題（簡短 Q/A）
+    8. 收據尾：感謝光臨式結語＋大條碼＋鋸齒撕邊＋返回入口
+  動態效果：
+    1) 頁面載入時收據紙自出紙口由短至長「列印出紙」（JS 逐段揭示 + 高度動畫）
+    2) 打字機效果的標頭時間戳（JS 每秒更新）
+    3) 稅額試算即時運算並以紅字「蓋章」式顯示結果
+    4) 鋸齒撕邊以 clip-path polygon 實現
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>松河國稅局 · 綜合所得稅申報櫃檯</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --shell:#46535e; --shell-dark:#333e47; --paper:#fdfdfa;
+  --ink:#1c1c1c; --grey:#b9b9b9; --red:#d23c2a;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:linear-gradient(180deg,var(--shell) 0%,var(--shell-dark) 100%);
+  min-height:100vh;font-family:'JetBrains Mono','Noto Sans TC',monospace;
+  color:var(--ink);padding-bottom:80px;
+}
+a{text-decoration:none;color:inherit}
+
+/* ── 出紙機頂部 ── */
+.machine{
+  max-width:760px;margin:0 auto;padding:34px 20px 0;text-align:center;
+}
+.machine-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+.back-key{
+  display:inline-block;font-size:13px;font-weight:700;letter-spacing:1px;
+  color:#dfe7ec;background:var(--shell-dark);padding:11px 22px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.25);border-bottom:4px solid #20272d;transition:.15s;
+}
+.back-key:hover{background:#2a333b}
+.back-key:active{transform:translateY(2px);border-bottom-width:2px}
+.machine-top .model{font-size:11px;letter-spacing:3px;color:rgba(255,255,255,.55)}
+.slot{
+  height:26px;border-radius:10px;background:linear-gradient(180deg,#171c20,#2c353d 60%,#171c20);
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.15);
+  position:relative;
+}
+.slot::after{
+  content:"◤ PRINTING… THERMAL RECEIPT v2.4 ◢";
+  position:absolute;left:0;right:0;top:34px;font-size:10px;letter-spacing:4px;color:rgba(255,255,255,.4);
+}
+
+/* ── 收據本體 ── */
+.receipt-wrap{max-width:760px;margin:56px auto 0;padding:0 20px;overflow:hidden}
+.receipt{
+  background:var(--paper);
+  background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.012) 0 3px,transparent 3px 6px);
+  box-shadow:0 14px 40px rgba(0,0,0,.45);
+  padding:0 0 8px;position:relative;
+  clip-path:polygon(0 14px,4% 0,8% 14px,12% 0,16% 14px,20% 0,24% 14px,28% 0,32% 14px,36% 0,40% 14px,44% 0,48% 14px,52% 0,56% 14px,60% 0,64% 14px,68% 0,72% 14px,76% 0,80% 14px,84% 0,88% 14px,92% 0,96% 14px,100% 0,100% 100%,0 100%);
+}
+.receipt-inner{padding:30px 34px 10px;visibility:hidden}
+.receipt-inner.printed{visibility:visible}
+.sheet-section{border-bottom:2px dashed var(--grey);padding:26px 0 22px}
+.sheet-section:last-of-type{border-bottom:none}
+
+/* 標頭 */
+.rcpt-head{text-align:center;padding-bottom:8px}
+.rcpt-head h1{font-size:24px;font-weight:800;letter-spacing:8px;margin-bottom:6px}
+.rcpt-head .en{font-size:10px;letter-spacing:3px;color:#555}
+.rcpt-head .stars{font-size:12px;letter-spacing:4px;margin:10px 0 6px;color:#555}
+.rcpt-head .meta{font-size:12px;line-height:1.9;color:#333}
+.rcpt-head .meta b{color:var(--ink)}
+
+/* 條碼 */
+.barcode{
+  height:44px;margin:14px auto 4px;
+  background:repeating-linear-gradient(90deg,
+    var(--ink) 0 2px,transparent 2px 5px,
+    var(--ink) 5px 6px,transparent 6px 11px,
+    var(--ink) 11px 15px,transparent 15px 18px,
+    var(--ink) 18px 19px,transparent 19px 24px);
+  opacity:.85;
+}
+.barcode.light{
+  height:30px;opacity:.4;
+  background:repeating-linear-gradient(90deg,
+    var(--grey) 0 3px,transparent 3px 6px,
+    var(--grey) 6px 7px,transparent 7px 12px,
+    var(--grey) 12px 16px,transparent 16px 20px);
+}
+.barcode-num{text-align:center;font-size:11px;letter-spacing:6px;color:#555}
+
+/* 區塊標題 */
+.sheet-title{
+  display:flex;align-items:center;gap:12px;margin-bottom:18px;
+  font-size:15px;font-weight:800;letter-spacing:3px;
+}
+.sheet-title::before,.sheet-title::after{
+  content:"";flex:1;height:0;border-top:2px dashed var(--grey);
+}
+.sheet-title .idx{background:var(--ink);color:var(--paper);padding:3px 10px;font-size:12px;letter-spacing:1px}
+
+/* 報稅五步驟（明細行式） */
+.step-row{
+  display:grid;grid-template-columns:56px 1fr auto;gap:14px;align-items:baseline;
+  padding:13px 0;border-bottom:1px dotted var(--grey);font-size:13.5px;
+}
+.step-row:last-child{border-bottom:none}
+.step-row .no{font-weight:800;font-size:15px}
+.step-row .desc{line-height:1.8}
+.step-row .desc b{display:block;font-size:15px;letter-spacing:1px}
+.step-row .desc span{color:#555;font-size:12.5px}
+.step-row .time{font-weight:700;color:var(--red);font-size:12px;white-space:nowrap}
+.step-row:hover{background:rgba(210,60,42,.04)}
+
+/* 稅額試算 */
+.calc-box{
+  border:2px solid var(--ink);padding:22px 24px;background:#fff;
+  box-shadow:5px 5px 0 rgba(28,28,28,.12);
+}
+.calc-box label{font-size:12px;letter-spacing:2px;font-weight:700;display:block;margin-bottom:8px}
+.calc-input-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.calc-input-row .cur{font-size:20px;font-weight:800}
+#incomeInput{
+  flex:1;min-width:180px;font-family:inherit;font-size:20px;font-weight:700;
+  padding:10px 14px;border:2px solid var(--ink);background:var(--paper);outline:none;
+  letter-spacing:1px;
+}
+#incomeInput:focus{box-shadow:4px 4px 0 var(--red)}
+.calc-note{font-size:11px;color:#777;margin-top:8px;line-height:1.8}
+.calc-result{
+  margin-top:18px;border-top:2px dashed var(--grey);padding-top:16px;
+  font-size:13px;line-height:2.2;
+}
+.calc-result .line{display:flex;justify-content:space-between;gap:12px}
+.calc-result .line .v{font-weight:700;font-variant-numeric:tabular-nums}
+.calc-result .total{
+  margin-top:10px;padding:14px 16px;border:3px double var(--red);
+  display:flex;justify-content:space-between;align-items:center;
+  transform:rotate(-.6deg);background:rgba(210,60,42,.05);
+}
+.calc-result .total .lbl{font-weight:800;letter-spacing:2px;font-size:14px}
+.calc-result .total .amt{font-size:26px;font-weight:800;color:var(--red);font-variant-numeric:tabular-nums}
+.calc-result .rate-line{color:var(--red);font-size:12px;font-weight:700}
+
+/* 繳費方式 */
+.pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.pay-card{
+  border:1.5px solid var(--ink);background:#fff;padding:16px 14px;text-align:center;
+  transition:.2s;cursor:pointer;
+}
+.pay-card:hover{transform:translateY(-4px);box-shadow:4px 6px 0 rgba(28,28,28,.15)}
+.pay-card .pi{font-size:26px}
+.pay-card h4{font-size:14px;letter-spacing:2px;margin:8px 0 6px}
+.pay-card p{font-size:11px;color:#666;line-height:1.8}
+.pay-card .barcode{height:22px;margin:10px 0 0;opacity:.5}
+
+/* 子頁導引連結 */
+.more-link{
+  display:block;margin-top:16px;font-size:13px;font-weight:800;letter-spacing:2px;
+  color:var(--red);border:2px dashed var(--red);padding:11px 16px;text-align:center;transition:.2s;
+}
+.more-link:hover{background:var(--red);color:var(--paper)}
+
+/* 收件匣公告 */
+.inbox-row{
+  display:grid;grid-template-columns:86px 1fr auto;gap:14px;align-items:center;
+  padding:13px 10px;border-bottom:1px dotted var(--grey);cursor:pointer;font-size:13px;transition:.15s;
+}
+.inbox-row:hover{background:rgba(28,28,28,.05)}
+.inbox-row.unread{font-weight:700}
+.inbox-row.unread .from::before{content:"● ";color:var(--red)}
+.inbox-row .from{letter-spacing:1px}
+.inbox-row .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inbox-row .subj small{color:#888;font-weight:400;margin-left:8px}
+.inbox-row .date{font-size:11px;color:#777}
+
+/* FAQ */
+.faq-line{padding:11px 0;border-bottom:1px dotted var(--grey);font-size:13px;line-height:1.9}
+.faq-line:last-child{border-bottom:none}
+.faq-line b{color:var(--red)}
+
+/* 收據尾 */
+.rcpt-foot{text-align:center;padding:26px 0 18px}
+.rcpt-foot .thanks{font-size:17px;font-weight:800;letter-spacing:6px;margin-bottom:8px}
+.rcpt-foot p{font-size:11.5px;color:#555;line-height:2}
+.rcpt-foot .foot-back{margin-top:16px}
+.rcpt-foot .back-ink{
+  display:inline-block;font-weight:800;font-size:13px;letter-spacing:2px;
+  border:2px solid var(--ink);padding:10px 26px;transition:.2s;background:#fff;
+}
+.rcpt-foot .back-ink:hover{background:var(--ink);color:var(--paper)}
+.zigzag-bottom{
+  height:16px;background:var(--paper);
+  clip-path:polygon(0 0,4% 100%,8% 0,12% 100%,16% 0,20% 100%,24% 0,28% 100%,32% 0,36% 100%,40% 0,44% 100%,48% 0,52% 100%,56% 0,60% 100%,64% 0,68% 100%,72% 0,76% 100%,80% 0,84% 100%,88% 0,92% 100%,96% 0,100% 100%,100% 0,0 0);
+  box-shadow:0 10px 24px rgba(0,0,0,.3);
+}
+.under-note{max-width:760px;margin:18px auto 0;padding:0 20px;text-align:center;font-size:10.5px;letter-spacing:2px;color:rgba(255,255,255,.5);line-height:2}
+@media(max-width:640px){
+  .receipt-inner{padding:24px 20px 10px}
+  .step-row{grid-template-columns:44px 1fr;grid-template-rows:auto auto}
+  .step-row .time{grid-column:2}
+  .inbox-row{grid-template-columns:1fr auto}
+  .inbox-row .from{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- 出紙機 -->
+<div class="machine">
+  <div class="machine-top">
+    <a class="back-key" href="../../index.html">← 返回入口</a>
+    <span class="model">SONGHO TAX TERMINAL · MODEL NT-113</span>
+  </div>
+  <div class="slot"></div>
+</div>
+
+<!-- 收據 -->
+<div class="receipt-wrap">
+  <div class="receipt">
+    <div class="receipt-inner" id="receiptInner">
+
+      <!-- 標頭 -->
+      <div class="rcpt-head sheet-section">
+        <h1>松河國稅局</h1>
+        <div class="en">SONGHO NATIONAL TAXATION BUREAU</div>
+        <div class="stars">★ ★ ★ 綜合所得稅申報櫃檯 ★ ★ ★</div>
+        <div class="meta">
+          統一編號 <b>0 3 7 7 9 2 0 1</b>　機台 <b>NT-113-07</b><br>
+          列印時間 <b id="clock">----/--/-- --:--:--</b><br>
+          113 年度綜合所得稅結算申報服務憑證
+        </div>
+        <div class="barcode" style="max-width:320px"></div>
+        <div class="barcode-num">T A X 1 1 3 0 5 0 1</div>
+      </div>
+
+      <!-- 報稅五步驟 -->
+      <div class="sheet-section">
+        <div class="sheet-title"><span class="idx">NO.1</span>報稅五步驟</div>
+        <div class="step-row">
+          <span class="no">01</span>
+          <div class="desc"><b>下載所得與扣除額資料</b><span>以自然人憑證、健保卡或行動自然人憑證登入「綜合所得稅電子結算申報系統」，自動帶入年度所得清單。</span></div>
+          <span class="time">約 5 分鐘</span>
+        </div>
+        <div class="step-row">
+          <span class="no">02</span>
+          <div class="desc"><b>核對扶養親屬與免稅額</b><span>確認配偶、子女、父母等扶養名單；每人免稅額 97,000 元，年滿 70 歲之直系尊親屬為 145,500 元。</span></div>
+          <span class="time">約 3 分鐘</span>
+        </div>
+        <div class="step-row">
+          <span class="no">03</span>
+          <div class="desc"><b>選擇扣除額方式</b><span>標準扣除額（單身 131,000 元／有配偶 262,000 元）或列舉扣除額擇高適用，系統自動試算比較。</span></div>
+          <span class="time">約 2 分鐘</span>
+        </div>
+        <div class="step-row">
+          <span class="no">04</span>
+          <div class="desc"><b>試算稅額並確認繳退方式</b><span>系統依累進級距試算應納稅額，可選擇現金、轉帳、信用卡或行動支付繳納；退稅案件請填寫直撥帳戶。</span></div>
+          <span class="time">約 3 分鐘</span>
+        </div>
+        <div class="step-row">
+          <span class="no">05</span>
+          <div class="desc"><b>上傳申報並留存收執聯</b><span>確認無誤後送出，下載「申報收執聯」PDF 妥善保存五年，即完成申報。</span></div>
+          <span class="time">約 2 分鐘</span>
+        </div>
+        <a class="more-link" href="guide.html">▸ 完整申報流程圖解（含手機報稅比較）»</a>
+      </div>
+
+      <!-- 稅額試算 -->
+      <div class="sheet-section">
+        <div class="sheet-title"><span class="idx">NO.2</span>稅額試算機</div>
+        <div class="calc-box">
+          <label for="incomeInput">請輸入全年綜合所得淨額（新臺幣）</label>
+          <div class="calc-input-row">
+            <span class="cur">NT$</span>
+            <input id="incomeInput" type="number" min="0" step="1000" value="560000" oninput="calcTax()" inputmode="numeric">
+          </div>
+          <div class="calc-note">※ 本試算採 113 年度五級累進稅率：5%／12%／20%／30%／40%，僅供參考，實際稅額以申報系統為準。</div>
+          <div class="calc-result">
+            <div class="line"><span>所得淨額</span><span class="v" id="rIncome">0</span></div>
+            <div class="line"><span>適用稅率級距</span><span class="v rate-line" id="rRate">—</span></div>
+            <div class="line"><span>累進差額</span><span class="v" id="rDiff">0</span></div>
+            <div class="total">
+              <span class="lbl">應納稅額 TAX</span>
+              <span class="amt" id="rTax">NT$ 0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 繳費方式 -->
+      <div class="sheet-section">
+        <div class="sheet-title"><span class="idx">NO.3</span>繳費方式</div>
+        <div class="pay-grid">
+          <a class="pay-card" href="pay.html#atm">
+            <div class="pi">🏧</div>
+            <h4>轉帳／ATM</h4>
+            <p>金融機構臨櫃、網路銀行或 ATM 轉帳，手續費依各行庫規定。</p>
+            <div class="barcode"></div>
+          </a>
+          <a class="pay-card" href="pay.html#card">
+            <div class="pi">💳</div>
+            <h4>信用卡</h4>
+            <p>線上刷卡一次付清，部分銀行提供 3–12 期零利率分期。</p>
+            <div class="barcode"></div>
+          </a>
+          <a class="pay-card" href="pay.html#mobile">
+            <div class="pi">📱</div>
+            <h4>行動支付</h4>
+            <p>支援台灣 Pay、街口、LINE Pay 掃描繳款書 QR Code。</p>
+            <div class="barcode"></div>
+          </a>
+          <a class="pay-card" href="pay.html#cvs">
+            <div class="pi">🏪</div>
+            <h4>超商代收</h4>
+            <p>稅額 3 萬元以下可列印繳款單至四大超商櫃檯繳納。</p>
+            <div class="barcode"></div>
+          </a>
+        </div>
+        <a class="more-link" href="pay.html">▸ 各管道手續費、入帳時間與分期說明 »</a>
+        <a class="more-link" href="forms.html">▸ 下載繳款書與申報表格 »</a>
+      </div>
+
+      <!-- 收件匣公告 -->
+      <div class="sheet-section">
+        <div class="sheet-title"><span class="idx">NO.4</span>公告收件匣</div>
+        <a class="inbox-row unread" href="guide.html">
+          <span class="from">稽徵組</span>
+          <span class="subj">113 年度報稅期延長至 6 月 2 日<small>— 因應系統維護，截止日順延，請於期限內完成申報…</small></span>
+          <span class="date">08/26</span>
+        </a>
+        <a class="inbox-row unread" href="faq.html">
+          <span class="from">服務台</span>
+          <span class="subj">稅額試算通知書第二批已寄出<small>— 收到通知書且無異議者，回復確認即完成申報…</small></span>
+          <span class="date">08/19</span>
+        </a>
+        <a class="inbox-row" href="guide.html">
+          <span class="from">資訊室</span>
+          <span class="subj">行動自然人憑證綁定教學上線<small>— 免插卡、免讀卡機，3 分鐘完成手機報稅設定…</small></span>
+          <span class="date">08/11</span>
+        </a>
+        <a class="inbox-row" href="faq.html">
+          <span class="from">法務組</span>
+          <span class="subj">防範退稅詐騙宣導<small>— 本局不會以簡訊連結要求輸入金融卡密碼，請提高警覺…</small></span>
+          <span class="date">08/04</span>
+        </a>
+        <a class="inbox-row" href="pay.html">
+          <span class="from">稽徵組</span>
+          <span class="subj">111 年度退稅憑單兌領提醒<small>— 退稅憑單兌領期限將於 9 月 30 日屆滿，請儘速辦理…</small></span>
+          <span class="date">07/28</span>
+        </a>
+      </div>
+
+      <!-- 常見問題 -->
+      <div class="sheet-section">
+        <div class="sheet-title"><span class="idx">NO.5</span>常見問題</div>
+        <div class="faq-line"><b>Q: 忘記申報怎麼辦？</b><br>A: 逾期可補報，但需加計滯納金（每逾 3 日加 1%，最高 10%）；被查到未申報另加罰鍰，請儘速至本局臨櫃或線上補報。</div>
+        <div class="faq-line"><b>Q: 退稅多久會入帳？</b><br>A: 網路申報且填寫直撥帳戶者，最快 7 月底第一批退稅；憑單退稅約 10 月底寄發，可至金融機構或郵局兌領。</div>
+        <div class="faq-line"><b>Q: 海外所得要申報嗎？</b><br>A: 全年海外所得達 100 萬元者須計入基本所得額申報；基本所得額超過 750 萬元（113 年度）始需繳納基本稅額。</div>
+        <a class="more-link" href="faq.html">▸ 更多稅務問答（共 12 題）與諮詢管道 »</a>
+      </div>
+
+      <!-- 收據尾 -->
+      <div class="rcpt-foot">
+        <div class="thanks">※ 感謝您如期申報 ※</div>
+        <p>松河國稅局　地址：松河市中稅路 100 號<br>服務專線 0800-000-321（免付費）　傳真 (02) 2234-5566<br>本憑證僅證明您已閱覽本頁，不具報稅效力</p>
+        <div class="barcode light" style="max-width:420px"></div>
+        <div class="barcode light" style="max-width:300px"></div>
+        <div class="barcode-num">** CUSTOMER COPY ** KEEP FOR 5 YEARS **</div>
+        <div class="foot-back">
+          <a class="back-ink" href="../../index.html">← 返回入口 / BACK</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="zigzag-bottom"></div>
+</div>
+
+<div class="under-note">© 114 松河國稅局 SONGHO NATIONAL TAXATION BUREAU<br>本網站為設計示範頁，稅率數字為虛構範例，實際請依財政部公告為準</div>
+
+<script>
+/* ── 列印出紙動畫：收據紙逐段向下揭示 ── */
+(function(){
+  var wrap = document.querySelector('.receipt-wrap');
+  var inner = document.getElementById('receiptInner');
+  inner.classList.add('printed');
+  var full = inner.offsetHeight;
+  var h = 0;
+  wrap.style.maxHeight = '0px';
+  wrap.style.transition = 'none';
+  var target = full;
+  var t = setInterval(function(){
+    h += Math.max(18, (target - h) * 0.12);
+    if(h >= target){
+      wrap.style.maxHeight = 'none';
+      clearInterval(t);
+      return;
+    }
+    wrap.style.maxHeight = h + 'px';
+  }, 40);
+})();
+
+/* ── 標頭即時時鐘 ── */
+function tick(){
+  var d = new Date();
+  var p = function(n){ return String(n).padStart(2,'0'); };
+  document.getElementById('clock').textContent =
+    (d.getFullYear()) + '/' + p(d.getMonth()+1) + '/' + p(d.getDate()) + ' ' +
+    p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+tick(); setInterval(tick, 1000);
+
+/* ── 稅額試算（113 年度五級累進，示範用級距）── */
+var BRACKETS = [
+  { up: 590000,   rate: 0.05, diff: 0 },
+  { up: 1330000,  rate: 0.12, diff: 41300 },
+  { up: 2660000,  rate: 0.20, diff: 147700 },
+  { up: 4980000,  rate: 0.30, diff: 413700 },
+  { up: Infinity, rate: 0.40, diff: 911700 }
+];
+function fmt(n){ return 'NT$ ' + Math.round(n).toLocaleString('en-US'); }
+function calcTax(){
+  var v = parseFloat(document.getElementById('incomeInput').value);
+  if(isNaN(v) || v < 0){ v = 0; }
+  var b = BRACKETS.find(function(x){ return v <= x.up; });
+  var tax = v * b.rate - b.diff;
+  if(tax < 0) tax = 0;
+  document.getElementById('rIncome').textContent = fmt(v);
+  document.getElementById('rRate').textContent = (b.rate*100).toFixed(0) + '%';
+  document.getElementById('rDiff').textContent = fmt(b.diff);
+  document.getElementById('rTax').textContent = fmt(tax);
+}
+calcTax();
+</script>
+</body>
+</html>

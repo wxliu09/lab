@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════════
+  【設計規格】卷宗打字機·填報單系統 (51-typewriter-form.html)
+  ─────────────────────────────────────────────────────────────────────────────
+  ■ 風格定位：復古文書處／卷宗檔案室，模擬機械打字機打出的公文填報單。
+  ■ 配色（附色碼）：
+      紙張底色 #fdf6e3（羊皮米）
+      紙張陰影 #e8dcc0（舊紙邊）
+      打字機墨 #2d2a26（深墨褐）
+      修正紅線 #c0392b（紅色修正帶）
+      印章紅 #b3402a（送審章）
+      滾筒深灰 #3a3733
+      狀態綠 #2d6a4f
+  ■ 字體：'Special Elite'（英文打字機風）、'Courier New' / 'Noto Serif TC'（中文）
+  ■ 版面結構：頂部打字機滾筒裝飾列 → 中央「捲入」的紙張填報單 →
+      下方歷次填報查詢表格。整體置中窄版（max-width: 880px）。
+  ■ 動態效果：
+      1. 頁面載入時紙張從上方滾筒「捲入」進場（translateY + 逐段展開）。
+      2. 表單各欄位依序以逐字打字動畫填入預設值，游標閃爍。
+      3. 紅色修正帶劃線效果（strike-through 動畫）。
+      4. 送出時蓋「已送審」旋轉印章動畫（scale + rotate 彈入）。
+      5. 查詢表可依狀態篩選（JS filter）。
+  ■ 返回入口：頂部工具列左側「← 返回入口」連結（../../index.html）。
+  ═══════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卷宗打字機 · 填報單系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Noto+Serif+TC:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fdf6e3;
+  --paper-edge:#e8dcc0;
+  --ink:#2d2a26;
+  --strike:#c0392b;
+  --stamp:#b3402a;
+  --roller:#3a3733;
+  --ok:#2d6a4f;
+  --pending:#8a6d1a;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:#6b5f4c;
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(255,255,255,.06), transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(0,0,0,.15), transparent 50%),
+    repeating-linear-gradient(45deg, transparent 0 4px, rgba(0,0,0,.02) 4px 8px);
+  min-height:100vh;
+  font-family:'Noto Serif TC', 'Courier New', serif;
+  color:var(--ink);
+  padding:24px 16px 64px;
+  overflow-x:hidden;
+}
+
+/* ── 頂部工具列 ── */
+.topbar{
+  max-width:880px;margin:0 auto 18px;
+  display:flex;align-items:center;gap:14px;
+}
+.back-link{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:'Special Elite','Courier New',monospace;
+  font-size:14px;letter-spacing:2px;
+  color:#fdf6e3;text-decoration:none;
+  background:var(--roller);
+  border:2px solid #241f1a;
+  border-radius:6px;
+  padding:8px 16px;
+  box-shadow:0 3px 0 #241f1a, inset 0 1px 0 rgba(255,255,255,.12);
+  transition:transform .15s, box-shadow .15s;
+}
+.back-link:hover{transform:translateY(1px);box-shadow:0 2px 0 #241f1a;}
+.back-link:active{transform:translateY(3px);box-shadow:0 0 0 #241f1a;}
+.back-link.subnav{font-size:12px;padding:6px 12px;letter-spacing:1px;}
+.back-link.subnav.first{margin-left:auto;}
+.row-link{
+  font-family:'Special Elite','Courier New',monospace;font-size:13px;letter-spacing:1px;
+  color:var(--stamp);text-decoration:underline dotted;white-space:nowrap;
+}
+.row-link:hover{color:var(--strike);background:rgba(192,57,43,.08);}
+.topbar-title{
+  font-family:'Special Elite','Courier New',monospace;
+  color:rgba(253,246,227,.75);font-size:13px;letter-spacing:3px;
+}
+
+/* ── 打字機滾筒 ── */
+.roller{
+  max-width:920px;margin:0 auto;
+  height:34px;border-radius:17px;
+  background:linear-gradient(180deg,#4a463f 0%, var(--roller) 35%, #221e1a 100%);
+  box-shadow:0 4px 10px rgba(0,0,0,.5), inset 0 2px 3px rgba(255,255,255,.15);
+  position:relative;z-index:5;
+}
+.roller::before,.roller::after{
+  content:'';position:absolute;top:6px;width:22px;height:22px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #5a554c, #1c1915);
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.2);
+}
+.roller::before{left:-8px;}
+.roller::after{right:-8px;}
+
+/* ── 紙張容器（捲入動畫） ── */
+.paper-wrap{
+  max-width:880px;margin:-4px auto 0;
+  perspective:1200px;
+}
+.paper{
+  background:var(--paper);
+  background-image:
+    repeating-linear-gradient(transparent 0 31px, rgba(45,42,38,.07) 31px 32px),
+    linear-gradient(90deg, transparent 0 56px, rgba(192,57,43,.18) 56px 58px, transparent 58px);
+  border:1px solid var(--paper-edge);
+  border-top:none;
+  box-shadow:0 12px 32px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+  padding:44px 64px 48px 76px;
+  position:relative;
+  transform-origin:top center;
+  animation:paperUnroll 1.4s cubic-bezier(.25,.9,.3,1) both;
+}
+@keyframes paperUnroll{
+  0%{transform:scaleY(.02) translateY(-20px);opacity:.4;}
+  60%{transform:scaleY(1.02) translateY(0);opacity:1;}
+  100%{transform:scaleY(1) translateY(0);opacity:1;}
+}
+.paper::before{
+  content:'';position:absolute;left:0;right:0;top:0;height:8px;
+  background:linear-gradient(180deg, rgba(0,0,0,.18), transparent);
+}
+/* 打孔 */
+.paper::after{
+  content:'';position:absolute;left:22px;top:60px;bottom:60px;width:14px;
+  background-image:radial-gradient(circle 5px at 7px 7px, #6b5f4c 5px, rgba(0,0,0,.25) 5.5px, transparent 6px);
+  background-size:14px 64px;background-repeat:repeat-y;
+  opacity:.85;
+}
+
+/* ── 文件標頭 ── */
+.doc-head{
+  text-align:center;border-bottom:2px solid var(--ink);
+  padding-bottom:14px;margin-bottom:22px;position:relative;
+}
+.doc-head .agency{
+  font-family:'Special Elite','Courier New',monospace;
+  font-size:12px;letter-spacing:6px;color:#6a6152;
+}
+.doc-head h1{
+  font-size:30px;font-weight:700;letter-spacing:10px;margin-top:6px;
+}
+.doc-head .docno{
+  position:absolute;right:0;top:2px;
+  font-family:'Special Elite','Courier New',monospace;
+  font-size:12px;color:#8a7f6a;
+}
+.strike{
+  position:relative;display:inline-block;
+}
+.strike::after{
+  content:'';position:absolute;left:-4px;right:-4px;top:52%;height:3px;
+  background:var(--strike);opacity:.85;border-radius:2px;
+  transform:scaleX(0);transform-origin:left center;
+  animation:strikeIn .5s ease 2.2s forwards;
+}
+@keyframes strikeIn{to{transform:scaleX(1);}}
+
+/* ── 表單 ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px 28px;margin-top:8px;}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field.full{grid-column:1 / -1;}
+.field label{
+  font-family:'Special Elite','Courier New',monospace;
+  font-size:13px;letter-spacing:2px;color:#5c5344;
+}
+.field label .req{color:var(--strike);}
+.field input,.field select,.field textarea{
+  font-family:'Special Elite','Courier New','Noto Serif TC',monospace;
+  font-size:16px;color:var(--ink);
+  background:transparent;
+  border:none;border-bottom:2px dotted #8a7f6a;
+  padding:6px 4px;outline:none;
+  caret-color:var(--strike);
+}
+.field textarea{resize:vertical;min-height:70px;line-height:32px;}
+.field input:focus,.field select:focus,.field textarea:focus{
+  border-bottom:2px solid var(--ink);
+  background:rgba(45,42,38,.03);
+}
+.field .hint{font-size:12px;color:var(--strike);min-height:16px;font-family:'Special Elite',monospace;}
+.typing-caret::after{
+  content:'▌';color:var(--strike);
+  animation:blink .7s steps(1) infinite;
+}
+@keyframes blink{50%{opacity:0;}}
+
+/* 蓋章 */
+.stamp-area{position:relative;}
+.stamp{
+  position:absolute;right:24px;top:-38px;
+  width:118px;height:118px;border:4px double var(--stamp);
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  color:var(--stamp);font-weight:700;letter-spacing:4px;
+  transform:rotate(-14deg) scale(3);opacity:0;pointer-events:none;
+  mix-blend-mode:multiply;
+}
+.stamp .zh{font-size:22px;}
+.stamp .en{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:2px;margin-top:4px;}
+.stamp.show{animation:stampIn .45s cubic-bezier(.2,1.6,.4,1) forwards;}
+@keyframes stampIn{
+  0%{transform:rotate(-30deg) scale(3);opacity:0;}
+  100%{transform:rotate(-14deg) scale(1);opacity:.92;}
+}
+
+.submit-row{margin-top:26px;display:flex;align-items:center;gap:18px;}
+.btn-type{
+  font-family:'Special Elite','Courier New',monospace;
+  font-size:16px;letter-spacing:4px;cursor:pointer;
+  color:var(--paper);background:var(--ink);
+  border:none;padding:12px 30px;
+  box-shadow:0 4px 0 #141210;
+  transition:transform .12s, box-shadow .12s;
+}
+.btn-type:hover{transform:translateY(1px);box-shadow:0 3px 0 #141210;}
+.btn-type:active{transform:translateY(4px);box-shadow:0 0 0 #141210;}
+.btn-type:disabled{opacity:.55;cursor:default;}
+.form-msg{font-family:'Special Elite',monospace;font-size:13px;color:var(--ok);letter-spacing:2px;}
+
+/* ── 查詢區 ── */
+.ledger{
+  max-width:880px;margin:34px auto 0;
+  background:var(--paper);border:1px solid var(--paper-edge);
+  box-shadow:0 12px 32px rgba(0,0,0,.45);
+  padding:30px 40px 36px;
+}
+.ledger h2{
+  font-size:19px;letter-spacing:6px;border-bottom:2px solid var(--ink);
+  padding-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;
+}
+.filter-row{display:flex;gap:8px;align-items:center;font-size:13px;}
+.filter-row select{
+  font-family:'Special Elite','Courier New',monospace;
+  background:transparent;border:1px solid #8a7f6a;padding:4px 8px;font-size:13px;color:var(--ink);
+}
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px;}
+th{
+  font-family:'Special Elite','Courier New',monospace;
+  letter-spacing:2px;font-size:12px;color:#5c5344;
+  border-bottom:2px solid var(--ink);padding:8px 6px;text-align:left;
+}
+td{border-bottom:1px dashed #b8ab8d;padding:9px 6px;}
+tr.row-hidden{display:none;}
+tbody tr{transition:background .2s;}
+tbody tr:hover{background:rgba(45,42,38,.04);}
+.tag{
+  display:inline-block;font-size:12px;letter-spacing:2px;padding:2px 10px;
+  border:1.5px solid currentColor;border-radius:3px;font-weight:600;
+}
+.tag.ok{color:var(--ok);}
+.tag.review{color:var(--pending);}
+.tag.return{color:var(--strike);}
+.empty-tip{
+  text-align:center;padding:22px;font-family:'Special Elite',monospace;
+  color:#8a7f6a;letter-spacing:3px;display:none;
+}
+
+@media (max-width:680px){
+  .form-grid{grid-template-columns:1fr;}
+  .paper{padding:32px 26px 36px 48px;}
+  .ledger{padding:22px 16px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+  <span class="topbar-title">FORM NO. TP-115 · 文書填報股</span>
+  <a class="back-link subnav first" href="list.html">填報列表</a>
+  <a class="back-link subnav" href="urge.html">催辦紀錄</a>
+  <a class="back-link subnav" href="report.html">統計報表</a>
+</div>
+
+<div class="roller"></div>
+
+<div class="paper-wrap">
+  <div class="paper" id="paper">
+    <div class="doc-head">
+      <div class="agency">臺 北 市 政 府 研 考 會</div>
+      <h1>計　畫　填　報　單</h1>
+      <div class="docno">文號：115-研填-0042</div>
+    </div>
+
+    <form id="reportForm" class="form-grid" novalidate>
+      <div class="field">
+        <label for="fName">計畫名稱 <span class="req">*</span></label>
+        <input type="text" id="fName" data-typewrite="老城區步行環境改善計畫" placeholder="">
+        <div class="hint" id="hName"></div>
+      </div>
+      <div class="field">
+        <label for="fCat">計畫類別 <span class="req">*</span></label>
+        <select id="fCat">
+          <option value="">── 請擇一 ──</option>
+          <option selected>都市更新</option>
+          <option>交通建設</option>
+          <option>社會福利</option>
+          <option>環境保護</option>
+          <option>教育文化</option>
+        </select>
+        <div class="hint"></div>
+      </div>
+      <div class="field">
+        <label for="fBudget">預算金額（新臺幣元）<span class="req">*</span></label>
+        <input type="text" id="fBudget" data-typewrite="4,800,000" inputmode="numeric">
+        <div class="hint" id="hBudget"></div>
+      </div>
+      <div class="field">
+        <label for="fDate">預定完成日期 <span class="req">*</span></label>
+        <input type="date" id="fDate" value="2026-12-31">
+        <div class="hint" id="hDate"></div>
+      </div>
+      <div class="field full">
+        <label for="fDesc">計畫說明</label>
+        <textarea id="fDesc" rows="3" data-typewrite="配合人本交通政策，拓寬騎樓淨空、增設無障礙坡道與夜間照明，分三期施作，預計惠及十二個里。"></textarea>
+        <div class="hint"></div>
+      </div>
+
+      <div class="field full stamp-area">
+        <div class="stamp" id="stamp">
+          <span class="zh">已送審</span>
+          <span class="en">SUBMITTED</span>
+        </div>
+        <div class="submit-row">
+          <button type="submit" class="btn-type" id="btnSubmit">▸ 送 出 填 報</button>
+          <span class="form-msg" id="formMsg"></span>
+        </div>
+        <p style="font-size:12px;color:#8a7f6a;letter-spacing:2px;margin-top:10px;">
+          備註：本單<span class="strike">一式三份</span>改為線上送審，紙本免附。
+        </p>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="ledger">
+  <h2>
+    歷次填報查詢
+    <span class="filter-row">
+      狀態：
+      <select id="statusFilter">
+        <option value="all">全部</option>
+        <option value="ok">已核定</option>
+        <option value="review">審核中</option>
+        <option value="return">退補件</option>
+      </select>
+    </span>
+  </h2>
+  <table>
+    <thead>
+      <tr><th>文號</th><th>計畫名稱</th><th>類別</th><th>預算（元）</th><th>填報日</th><th>狀態</th><th>操作</th></tr>
+    </thead>
+    <tbody id="ledgerBody">
+      <tr data-status="ok"><td>115-研填-0039</td><td>河濱自行車道拓寬工程</td><td>交通建設</td><td>12,600,000</td><td>115-08-12</td><td><span class="tag ok">已核定</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td></tr>
+      <tr data-status="review"><td>115-研填-0040</td><td>社區長照據點增設計畫</td><td>社會福利</td><td>6,350,000</td><td>115-08-19</td><td><span class="tag review">審核中</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td></tr>
+      <tr data-status="return"><td>115-研填-0037</td><td>校園老舊廁所整修（二期）</td><td>教育文化</td><td>3,920,000</td><td>115-08-05</td><td><span class="tag return">退補件</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td></tr>
+      <tr data-status="ok"><td>115-研填-0033</td><td>焚化爐底渣再利用示範</td><td>環境保護</td><td>8,100,000</td><td>115-07-22</td><td><span class="tag ok">已核定</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td></tr>
+      <tr data-status="review"><td>115-研填-0041</td><td>老城區步行環境改善計畫</td><td>都市更新</td><td>4,800,000</td><td>115-08-26</td><td><span class="tag review">審核中</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td></tr>
+    </tbody>
+  </table>
+  <div class="empty-tip" id="emptyTip">─ 無符合之填報紀錄 ─</div>
+</div>
+
+<script>
+/* 逐欄打字動畫：紙張捲入後依序敲入預設值 */
+(function typewriterFill(){
+  const targets = document.querySelectorAll('[data-typewrite]');
+  let delay = 1500; // 等紙張捲入
+  targets.forEach(function(el){
+    const text = el.dataset.typewrite;
+    el.value = '';
+    setTimeout(function(){ el.classList.add('typing-caret'); }, delay);
+    for (let i = 0; i < text.length; i++){
+      (function(ch, idx){
+        setTimeout(function(){
+          el.value += ch;
+          if (idx === text.length - 1) el.classList.remove('typing-caret');
+        }, delay + idx * 55);
+      })(text[i], i);
+    }
+    delay += text.length * 55 + 350;
+  });
+})();
+
+/* 欄位驗證提示 */
+function setHint(input, hintEl, msg){
+  hintEl.textContent = msg || '';
+  input.style.borderBottomColor = msg ? 'var(--strike)' : '';
+}
+document.getElementById('fName').addEventListener('blur', function(){
+  setHint(this, document.getElementById('hName'), this.value.trim() ? '' : '※ 計畫名稱不得空白');
+});
+document.getElementById('fBudget').addEventListener('blur', function(){
+  const v = this.value.replace(/,/g,'');
+  setHint(this, document.getElementById('hBudget'), /^[0-9]+$/.test(v) && +v > 0 ? '' : '※ 請輸入正整數金額');
+});
+
+/* 送出：蓋章 + 寫入查詢表 */
+document.getElementById('reportForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const name = document.getElementById('fName');
+  const budget = document.getElementById('fBudget');
+  const msg = document.getElementById('formMsg');
+  let ok = true;
+  if (!name.value.trim()){ setHint(name, document.getElementById('hName'), '※ 計畫名稱不得空白'); ok = false; }
+  if (!/^[0-9]+$/.test(budget.value.replace(/,/g,''))){ setHint(budget, document.getElementById('hBudget'), '※ 請輸入正整數金額'); ok = false; }
+  if (!ok){ msg.textContent = ''; return; }
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  msg.textContent = '打印中…';
+  setTimeout(function(){
+    document.getElementById('stamp').classList.add('show');
+    msg.textContent = '✓ 已於 115-08-28 送審，文號 115-研填-0043';
+    const tr = document.createElement('tr');
+    tr.dataset.status = 'review';
+    const cat = document.getElementById('fCat').value || '都市更新';
+    const num = (+budget.value.replace(/,/g,'')).toLocaleString('zh-TW');
+    tr.innerHTML = '<td>115-研填-0043</td><td></td><td>' + cat + '</td><td>' + num + '</td><td>115-08-28</td><td><span class="tag review">審核中</span></td><td><a class="row-link" href="detail.html">詳情 ▸</a></td>';
+    tr.children[1].textContent = name.value.trim();
+    document.getElementById('ledgerBody').prepend(tr);
+    btn.disabled = false;
+  }, 900);
+});
+
+/* 查詢表狀態篩選 */
+document.getElementById('statusFilter').addEventListener('change', function(){
+  const v = this.value;
+  let visible = 0;
+  document.querySelectorAll('#ledgerBody tr').forEach(function(tr){
+    const show = (v === 'all' || tr.dataset.status === v);
+    tr.classList.toggle('row-hidden', !show);
+    if (show) visible++;
+  });
+  document.getElementById('emptyTip').style.display = visible ? 'none' : 'block';
+});
+</script>
+</body>
+</html>

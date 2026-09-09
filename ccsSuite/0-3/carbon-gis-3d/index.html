@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCS 3D 地質封存 GIS 圖台｜鐵砧山示範場址</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230c1520'/%3E%3Cpath d='M3 12h26v5H3z' fill='%23c99b62'/%3E%3Cpath d='M3 17h26v4H3z' fill='%234f5f6d'/%3E%3Cpath d='M3 21h26v6H3z' fill='%23e0b877'/%3E%3Cellipse cx='16' cy='23' rx='8' ry='3' fill='%2335e0d0'/%3E%3Crect x='15' y='4' width='2' height='20' fill='%23ff7a1a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../shared/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>CCS 3D 地質封存 GIS 圖台</h1>
+      <span class="sub">鐵砧山示範場址｜Leaflet × Three.js</span>
+    </div>
+
+    <div class="seg" id="mode-seg">
+      <button data-mode="3d" class="active">3D 圖台</button>
+      <button data-mode="split">分割</button>
+      <button data-mode="2d">2D 圖台</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button class="tool" id="btn-reset">重置視角</button>
+    <button class="tool" id="btn-top">正上方俯視</button>
+    <button class="tool" id="btn-rotate">自動環繞</button>
+    <button class="tool" id="btn-snap">輸出圖片</button>
+  </header>
+
+  <div class="stage mode-3d" id="stage">
+    <div id="view3d" class="pane"></div>
+    <div id="view2d" class="pane">
+      <button class="mini-expand" id="btn-expand">切換版面</button>
+    </div>
+
+    <div class="loading" id="loading">地表瓦片載入中…</div>
+
+    <!-- 左側控制面板 -->
+    <aside class="panel panel-left">
+      <h2>圖台控制</h2>
+
+      <div class="gtitle">底圖來源</div>
+      <div class="seg" id="basemap-seg" style="width:100%">
+        <button data-basemap="imagery" class="active" style="flex:1">影像</button>
+        <button data-basemap="osm" style="flex:1">街道</button>
+        <button data-basemap="light" style="flex:1">淺色</button>
+      </div>
+
+      <div class="slider-row" style="margin-top:8px">
+        <input type="range" id="surface-opacity" min="0" max="100" value="100">
+        <span class="val" id="surface-opacity-val">100%</span>
+      </div>
+      <div class="gtitle" style="margin-top:-4px">地表底圖透明度</div>
+
+      <div class="group">
+        <div class="gtitle">垂直放大倍率</div>
+        <div class="slider-row">
+          <input type="range" id="exaggeration" min="1" max="8" step="0.5" value="3">
+          <span class="val" id="exaggeration-val">3.0×</span>
+        </div>
+        <div class="gtitle">地層整體透明度</div>
+        <div class="slider-row">
+          <input type="range" id="strata-opacity" min="10" max="100" value="100">
+          <span class="val" id="strata-opacity-val">100%</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">剖切（切開模型看內部）</div>
+        <div class="row">
+          <label><input type="checkbox" id="clip-x-on"><span class="name">東西向剖面</span></label>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="clip-x" min="-100" max="100" value="0" disabled>
+          <span class="val" id="clip-x-val">0 m</span>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="clip-z-on"><span class="name">南北向剖面</span></label>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="clip-z" min="-100" max="100" value="0" disabled>
+          <span class="val" id="clip-z-val">0 m</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">地層（由淺至深）</div>
+        <div id="strata-list"></div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">圖徵圖層</div>
+        <div id="feature-list"></div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">屬性著色</div>
+        <select id="color-mode"></select>
+        <div id="colorbar-wrap">
+          <div id="colorbar"></div>
+          <div id="colorbar-ticks"></div>
+          <div id="colorbar-title" class="note tight"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">地質分析</div>
+        <div class="tool-grid">
+          <button id="tool-log" class="btn sm">合成井柱</button>
+          <button id="tool-section" class="btn sm">任意剖面</button>
+          <button id="tool-vol" class="btn sm">容積計算</button>
+        </div>
+        <p id="tool-hint" class="note tight">合成井柱：在模型上點一點；任意剖面：點兩點拉出 A–A′。</p>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">快速定位</div>
+        <div class="btn-row" id="well-buttons"></div>
+      </div>
+    </aside>
+
+    <!-- 右側資訊面板 -->
+    <aside class="panel panel-right">
+      <h2>物件資訊</h2>
+      <div id="info">
+        <div class="empty">
+          於 3D 圖台點選任一地層、井、羽流、斷層或地表，即可在此檢視屬性。<br><br>
+          點選<b>地表</b>會產生該點的虛擬鑽井剖面。
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="gtitle">圖例</div>
+        <div id="legend"></div>
+      </div>
+    </aside>
+
+    <div class="hint" id="hint">
+      <span><b>左鍵拖曳</b> 360° 環繞</span>
+      <span><b>右鍵拖曳</b> 平移</span>
+      <span><b>滾輪</b> 縮放</span>
+      <span><b>點擊</b> 查詢屬性</span>
+      <span class="x" id="hint-close">✕</span>
+    </div>
+
+    <section id="analysis" class="hidden">
+      <header class="an-head">
+        <div class="an-tabs">
+          <button data-tab="log" class="an-tab on">合成井柱</button>
+          <button data-tab="section" class="an-tab">地質剖面</button>
+          <button data-tab="vol" class="an-tab">容積與封存量</button>
+        </div>
+        <button id="an-close" class="mini-btn" title="關閉">✕</button>
+      </header>
+      <div class="an-body">
+        <div id="tab-log" class="an-pane on">
+          <div class="an-row">
+            <canvas id="log-canvas"></canvas>
+            <div id="log-side"></div>
+          </div>
+        </div>
+        <div id="tab-section" class="an-pane">
+          <div class="an-bar">
+            <label>屬性 <select id="sec-mode"></select></label>
+            <label class="chk inline"><input type="checkbox" id="sec-follow" checked> 隨屬性著色同步</label>
+            <span id="sec-meta" class="an-meta"></span>
+          </div>
+          <canvas id="sec-canvas"></canvas>
+        </div>
+        <div id="tab-vol" class="an-pane">
+          <div class="an-bar">
+            <label>目標層 <select id="vol-layer"></select></label>
+            <label class="rng inline">φ 下限 <b id="vol-phi-val">10%</b>
+              <input type="range" id="vol-phi" min="0" max="30" step="1" value="10"></label>
+            <label class="rng inline">Vsh 上限 <b id="vol-vsh-val">0.40</b>
+              <input type="range" id="vol-vsh" min="0.05" max="1" step="0.05" value="0.4"></label>
+            <label class="chk inline"><input type="checkbox" id="vol-closure"> 僅計構造閉合區</label>
+            <button id="vol-run" class="btn sm">重新計算</button>
+          </div>
+          <div id="vol-body"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="timeline">
+    <div class="tl-left">
+      <button class="tool" id="btn-play">▶ 播放</button>
+      <div>
+        <div class="tl-year" id="tl-year">2050</div>
+        <div class="tl-phase" id="tl-phase">封存後監測期</div>
+      </div>
+    </div>
+
+    <div class="tl-track">
+      <input type="range" id="year" min="2026" max="2050" step="1" value="2050">
+      <div class="tl-scale">
+        <span>2026 開始注入</span>
+        <span>2046 停止注入</span>
+        <span>2050</span>
+      </div>
+    </div>
+
+    <div class="tl-stats">
+      <div class="stat"><div class="k">累積注入量</div><div class="v" id="st-cum">— Mt</div></div>
+      <div class="stat"><div class="k">羽流半徑</div><div class="v" id="st-radius">— m</div></div>
+      <div class="stat"><div class="k">羽流最大厚度</div><div class="v" id="st-thick">— m</div></div>
+      <div class="stat"><div class="k">封存深度</div><div class="v" id="st-depth">— m</div></div>
+    </div>
+  </footer>
+
+</div>
+
+<!-- 全部採用傳統 script（非 ES Module），故本頁可直接以 file:// 雙擊開啟；
+     載入順序即相依順序，不可任意調換。 -->
+<script src="../shared/vendor/leaflet/leaflet.js"></script>
+<script src="../shared/vendor/three/three.js"></script>
+<script src="../shared/vendor/three/OrbitControls.js"></script>
+<script src="js/ns.js"></script>
+<script src="../shared/js/config.js"></script>
+<script src="../shared/js/geo.js"></script>
+<script src="../shared/js/petro.js"></script>
+<script src="../shared/js/geology.js"></script>
+<script src="../shared/js/welllog.js"></script>
+<script src="../shared/js/section.js"></script>
+<script src="js/tiles3d.js"></script>
+<script src="js/map2d.js"></script>
+<script src="js/scene3d.js"></script>
+<script src="../shared/js/analysis.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

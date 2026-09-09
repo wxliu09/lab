@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>24 · 工業 SCADA 廠務監控 — PLANT CONTROL</title>
+<style>
+:root{
+  --steel:#2b3238;--steel2:#353d44;--panel:#3d464e;--edge:#1c2126;
+  --amber:#ffb020;--amber-d:#8a5c00;--green:#4ade80;--red:#f4544c;--cyan:#39c8e0;
+  --txt:#d6dde3;--dim:#8d99a3;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--steel);color:var(--txt);min-height:100vh;
+  font-family:"Consolas","DejaVu Sans Mono",monospace;font-size:13px;
+  background-image:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,transparent 1px 3px);
+}
+.home{
+  position:fixed;right:16px;bottom:16px;z-index:90;text-decoration:none;
+  background:linear-gradient(#4e5860,#333b42);color:var(--amber);
+  border:1px solid #5c666e;border-top-color:#6f7a83;border-radius:4px;
+  padding:11px 18px;font-weight:700;letter-spacing:.08em;font-size:12px;
+  box-shadow:0 4px 0 #1c2126,0 8px 16px rgba(0,0,0,.5)}
+.home:active{transform:translateY(3px);box-shadow:0 1px 0 #1c2126}
+
+.bar{
+  background:linear-gradient(#454e56,#2f363c);border-bottom:2px solid var(--edge);
+  padding:9px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.bar h1{font-size:15px;letter-spacing:.12em;color:var(--amber);font-weight:700}
+.bar h1 span{color:var(--dim);font-weight:400;font-size:11px;letter-spacing:.2em;display:block;margin-top:2px}
+.mode{display:flex;gap:0;margin-left:auto}
+.mode b{padding:7px 14px;font-size:11px;letter-spacing:.1em;background:#252b30;border:1px solid var(--edge);color:var(--dim);cursor:pointer}
+.mode b.on{background:var(--amber-d);color:#ffe4a8;border-color:var(--amber)}
+.clock{font-size:13px;color:var(--cyan);letter-spacing:.08em;padding:6px 12px;background:#1b2024;border:1px solid var(--edge);border-radius:3px}
+
+.alarmbar{background:#4a1f1c;border-bottom:2px solid var(--edge);padding:7px 16px;
+  display:flex;align-items:center;gap:12px;font-size:12px;overflow:hidden}
+.alarmbar .led{width:11px;height:11px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red);animation:bk .8s steps(2,end) infinite;flex:0 0 auto}
+@keyframes bk{50%{opacity:.15;box-shadow:none}}
+.alarmbar .scroll{white-space:nowrap;animation:mv 26s linear infinite;color:#ffb4b0}
+@keyframes mv{from{transform:translateX(60%)}to{transform:translateX(-100%)}}
+
+.main{padding:14px;display:grid;grid-template-columns:1fr 300px;gap:14px;max-width:1620px;margin:0 auto}
+@media(max-width:1080px){.main{grid-template-columns:1fr}}
+.pnl{background:var(--panel);border:1px solid var(--edge);border-radius:3px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 3px 10px rgba(0,0,0,.35)}
+.pnl>h2{font-size:11px;letter-spacing:.18em;color:var(--amber);padding:9px 13px;
+  background:linear-gradient(#414a52,#343c43);border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:center}
+.pnl>h2 em{font-style:normal;color:var(--dim);letter-spacing:.06em}
+.pnl .in{padding:14px}
+
+/* P&ID diagram */
+.pid{width:100%;height:auto;background:#232a2f;border:1px solid var(--edge);border-radius:2px}
+.flow{stroke-dasharray:6 6;animation:fl .8s linear infinite}
+@keyframes fl{to{stroke-dashoffset:-12}}
+
+/* gauges */
+.gauges{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+.gauge{background:#232a2f;border:1px solid var(--edge);border-radius:3px;padding:11px;text-align:center}
+.gauge .lbl{font-size:10px;letter-spacing:.14em;color:var(--dim);margin-bottom:6px}
+.gauge svg{width:100%;max-width:132px}
+.gauge .rd{font-size:19px;color:var(--amber);letter-spacing:.02em;margin-top:2px}
+.gauge .rd i{font-style:normal;font-size:10px;color:var(--dim);margin-left:3px}
+
+/* bars */
+.bars{display:flex;flex-direction:column;gap:11px}
+.brow .t{display:flex;justify-content:space-between;font-size:11px;margin-bottom:5px}
+.brow .t b{color:var(--txt);letter-spacing:.06em;font-weight:400}
+.brow .t span{color:var(--amber)}
+.trk{height:14px;background:#1e2428;border:1px solid var(--edge);position:relative;overflow:hidden}
+.trk div{height:100%;background:repeating-linear-gradient(90deg,var(--amber) 0 6px,#e09a12 6px 8px);transition:width 1s}
+.trk.g div{background:repeating-linear-gradient(90deg,var(--green) 0 6px,#31b566 6px 8px)}
+.trk.r div{background:repeating-linear-gradient(90deg,var(--red) 0 6px,#c93b34 6px 8px)}
+.trk .mark{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.5}
+
+/* alarm list */
+.alm{font-size:11.5px}
+.alm .row{display:grid;grid-template-columns:58px 1fr;gap:9px;padding:8px 0;border-bottom:1px dashed #4b555d}
+.alm .row:last-child{border:0}
+.alm .row time{color:var(--dim)}
+.alm .row b{font-weight:400;display:block}
+.alm .row .lv{font-size:9px;letter-spacing:.14em;padding:1px 5px;border-radius:2px;margin-right:6px}
+.lv-c{background:#5c1d19;color:#ff9a94}
+.lv-w{background:#5c4310;color:#ffcf74}
+.lv-i{background:#123f4a;color:#8fdcea}
+
+/* motors */
+.mot{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+.mot div{background:#232a2f;border:1px solid var(--edge);padding:9px;font-size:11px}
+.mot div .n{color:var(--dim);font-size:10px;letter-spacing:.1em}
+.mot div .s{margin-top:5px;display:flex;align-items:center;gap:6px}
+.mot i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.run i{background:var(--green);box-shadow:0 0 7px var(--green)}
+.stp i{background:#5c666e}
+.flt i{background:var(--red);box-shadow:0 0 7px var(--red);animation:bk 1s steps(2,end) infinite}
+.ftr{text-align:center;font-size:10px;color:#5f6b74;letter-spacing:.3em;padding:18px 0 26px}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<div class="bar">
+  <h1>永昌石化 · 第二廠區 SCADA<span>SUPERVISORY CONTROL AND DATA ACQUISITION v4.2</span></h1>
+  <div class="mode"><b class="on">監控</b><b>手動</b><b onclick="location.href='equipment.html'">維護</b><b onclick="location.href='trends.html'">歷史</b></div>
+  <div class="clock" id="clk">--:--:--</div>
+</div>
+
+<div class="alarmbar">
+  <span class="led"></span>
+  <div class="scroll">［高高警報］TK-203 儲槽液位 92.4% 超過上限 90% — 19:41:22 ／ ［警告］P-105 泵浦軸承溫度 78°C 接近跳脫值 — 19:38:07 ／ ［警告］CV-311 控制閥開度回授偏差 3.2% — 19:22:55</div>
+</div>
+
+<div class="main">
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="pnl">
+      <h2>製程流程圖 P&amp;ID<em>UNIT-02 / DISTILLATION</em></h2>
+      <div class="in">
+        <svg class="pid" viewBox="0 0 900 330">
+          <defs>
+            <linearGradient id="tk" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#4a555d"/><stop offset="1" stop-color="#2c343a"/>
+            </linearGradient>
+          </defs>
+          <!-- grid -->
+          <g stroke="#2d353b" stroke-width="1">
+            <path d="M0 0 H900 M0 330 H900"/>
+          </g>
+          <!-- Tank 1 -->
+          <rect x="40" y="90" width="110" height="160" rx="8" fill="url(#tk)" stroke="#69747c" stroke-width="2"/>
+          <rect x="46" y="150" width="98" height="94" rx="5" fill="#1f6d7d" opacity=".85"/>
+          <rect x="46" y="150" width="98" height="6" fill="#39c8e0" opacity=".9">
+            <animate attributeName="y" values="150;146;150" dur="3s" repeatCount="indefinite"/>
+          </rect>
+          <text x="95" y="80" fill="#ffb020" font-size="13" text-anchor="middle" font-family="Consolas">TK-201</text>
+          <text x="95" y="205" fill="#d6dde3" font-size="16" text-anchor="middle" font-family="Consolas">58.7%</text>
+          <text x="95" y="268" fill="#8d99a3" font-size="10" text-anchor="middle" font-family="Consolas">原料儲槽</text>
+
+          <!-- pipe -->
+          <path d="M150 170 H240" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M150 170 H240" class="flow" stroke="#39c8e0" stroke-width="3" fill="none"/>
+          <!-- pump -->
+          <circle cx="266" cy="170" r="26" fill="#39434a" stroke="#69747c" stroke-width="2"/>
+          <g transform="translate(266,170)">
+            <path d="M0 -14 L12 8 L-12 8 Z" fill="#4ade80">
+              <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1.2s" repeatCount="indefinite"/>
+            </path>
+          </g>
+          <text x="266" y="216" fill="#ffb020" font-size="11" text-anchor="middle" font-family="Consolas">P-105</text>
+
+          <path d="M292 170 H370" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M292 170 H370" class="flow" stroke="#39c8e0" stroke-width="3" fill="none"/>
+
+          <!-- Column -->
+          <rect x="370" y="40" width="86" height="240" rx="42" fill="url(#tk)" stroke="#69747c" stroke-width="2"/>
+          <g stroke="#69747c" stroke-width="1.4">
+            <path d="M370 90 H456 M370 130 H456 M370 170 H456 M370 210 H456 M370 250 H456"/>
+          </g>
+          <text x="413" y="28" fill="#ffb020" font-size="13" text-anchor="middle" font-family="Consolas">DC-301</text>
+          <text x="413" y="308" fill="#8d99a3" font-size="10" text-anchor="middle" font-family="Consolas">分餾塔</text>
+
+          <!-- top pipe to condenser -->
+          <path d="M413 40 V20 H600 V80" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M413 40 V20 H600 V80" class="flow" stroke="#ffb020" stroke-width="3" fill="none"/>
+          <rect x="556" y="80" width="88" height="52" rx="6" fill="#39434a" stroke="#69747c" stroke-width="2"/>
+          <g stroke="#39c8e0" stroke-width="2" fill="none"><path d="M566 92 h68 M566 106 h68 M566 120 h68"/></g>
+          <text x="600" y="150" fill="#ffb020" font-size="11" text-anchor="middle" font-family="Consolas">E-402 冷凝器</text>
+
+          <!-- valve -->
+          <path d="M644 106 H720" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M644 106 H720" class="flow" stroke="#39c8e0" stroke-width="3" fill="none"/>
+          <g transform="translate(740,106)">
+            <path d="M-18 -13 L0 0 L-18 13 Z M18 -13 L0 0 L18 13 Z" fill="#ffb020" stroke="#8a5c00"/>
+            <rect x="-3" y="-30" width="6" height="17" fill="#69747c"/>
+            <rect x="-14" y="-38" width="28" height="9" rx="2" fill="#4ade80"/>
+          </g>
+          <text x="740" y="140" fill="#ffb020" font-size="11" text-anchor="middle" font-family="Consolas">CV-311 · 68%</text>
+
+          <path d="M760 106 H830 V190" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M760 106 H830 V190" class="flow" stroke="#39c8e0" stroke-width="3" fill="none"/>
+          <!-- Tank 2 -->
+          <rect x="778" y="190" width="104" height="110" rx="8" fill="url(#tk)" stroke="#f4544c" stroke-width="2"/>
+          <rect x="784" y="204" width="92" height="90" rx="4" fill="#8a3d1e" opacity=".9"/>
+          <text x="830" y="182" fill="#f4544c" font-size="13" text-anchor="middle" font-family="Consolas">TK-203 ⚠</text>
+          <text x="830" y="255" fill="#ffd7d4" font-size="16" text-anchor="middle" font-family="Consolas">92.4%</text>
+
+          <!-- bottom out -->
+          <path d="M413 280 V310 H250" stroke="#5c666e" stroke-width="9" fill="none"/>
+          <path d="M413 280 V310 H250" class="flow" stroke="#ffb020" stroke-width="3" fill="none"/>
+          <text x="220" y="314" fill="#8d99a3" font-size="10" text-anchor="end" font-family="Consolas">塔底重油 →</text>
+        </svg>
+
+        <div class="gauges">
+          <div class="gauge"><div class="lbl">塔頂壓力 PI-301</div>
+            <svg viewBox="0 0 120 78">
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#1e2428" stroke-width="11"/>
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#4ade80" stroke-width="11" stroke-dasharray="151" stroke-dashoffset="52"/>
+              <line x1="60" y1="68" x2="86" y2="34" stroke="#ffb020" stroke-width="3" stroke-linecap="round">
+                <animateTransform attributeName="transform" type="rotate" values="-4 60 68;4 60 68;-4 60 68" dur="4s" repeatCount="indefinite"/>
+              </line>
+              <circle cx="60" cy="68" r="5" fill="#d6dde3"/>
+            </svg>
+            <div class="rd">2.84<i>MPa</i></div></div>
+          <div class="gauge"><div class="lbl">塔頂溫度 TI-302</div>
+            <svg viewBox="0 0 120 78">
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#1e2428" stroke-width="11"/>
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#ffb020" stroke-width="11" stroke-dasharray="151" stroke-dashoffset="38"/>
+              <line x1="60" y1="68" x2="98" y2="52" stroke="#ffb020" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="60" cy="68" r="5" fill="#d6dde3"/>
+            </svg>
+            <div class="rd">184.6<i>°C</i></div></div>
+          <div class="gauge"><div class="lbl">進料流量 FI-201</div>
+            <svg viewBox="0 0 120 78">
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#1e2428" stroke-width="11"/>
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#39c8e0" stroke-width="11" stroke-dasharray="151" stroke-dashoffset="76"/>
+              <line x1="60" y1="68" x2="60" y2="24" stroke="#ffb020" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="60" cy="68" r="5" fill="#d6dde3"/>
+            </svg>
+            <div class="rd">412<i>m³/h</i></div></div>
+          <div class="gauge"><div class="lbl">軸承溫度 TE-105</div>
+            <svg viewBox="0 0 120 78">
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#1e2428" stroke-width="11"/>
+              <path d="M12 68 A48 48 0 0 1 108 68" fill="none" stroke="#f4544c" stroke-width="11" stroke-dasharray="151" stroke-dashoffset="22"/>
+              <line x1="60" y1="68" x2="102" y2="58" stroke="#f4544c" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="60" cy="68" r="5" fill="#d6dde3"/>
+            </svg>
+            <div class="rd" style="color:#f4544c">78.2<i>°C</i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <h2>製程參數趨勢<em>REAL-TIME TRENDS</em></h2>
+      <div class="in bars">
+        <div class="brow"><div class="t"><b>TK-201 液位</b><span>58.7 %</span></div><div class="trk g"><div style="width:58.7%"></div><span class="mark" style="left:90%"></span></div></div>
+        <div class="brow"><div class="t"><b>TK-203 液位 [HH]</b><span>92.4 %</span></div><div class="trk r"><div style="width:92.4%"></div><span class="mark" style="left:90%"></span></div></div>
+        <div class="brow"><div class="t"><b>P-105 泵浦負載</b><span>81.5 %</span></div><div class="trk"><div style="width:81.5%"></div></div></div>
+        <div class="brow"><div class="t"><b>CV-311 閥開度</b><span>68.0 %</span></div><div class="trk g"><div style="width:68%"></div></div></div>
+        <div class="brow"><div class="t"><b>冷卻水回溫</b><span>34.2 %</span></div><div class="trk g"><div style="width:34.2%"></div></div></div>
+        <div class="brow"><div class="t"><b>塔效率 OEE</b><span>88.9 %</span></div><div class="trk"><div style="width:88.9%"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="pnl">
+      <h2>設備狀態<em>EQUIPMENT</em></h2>
+      <div class="in">
+        <div class="mot">
+          <div class="run" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">P-105 主泵</div><div class="s"><i></i>RUNNING</div></div>
+          <div class="run" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">P-106 備泵</div><div class="s"><i></i>STANDBY</div></div>
+          <div class="run" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">C-201 壓縮機</div><div class="s"><i></i>RUNNING</div></div>
+          <div class="flt" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">F-118 風扇</div><div class="s"><i></i>FAULT</div></div>
+          <div class="run" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">E-402 冷凝</div><div class="s"><i></i>RUNNING</div></div>
+          <div class="stp" onclick="location.href='equipment.html'" style="cursor:pointer"><div class="n">P-207 備援</div><div class="s"><i></i>STOPPED</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <h2>警報記錄<em>ALARM LOG</em></h2>
+      <div class="in alm">
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>19:41:22</time><b><span class="lv lv-c">HH</span>TK-203 液位超上限 92.4%</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>19:38:07</time><b><span class="lv lv-w">WARN</span>P-105 軸承溫度 78.2°C</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>19:22:55</time><b><span class="lv lv-w">WARN</span>CV-311 回授偏差 3.2%</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>19:04:11</time><b><span class="lv lv-c">FAULT</span>F-118 風扇過載跳脫</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>18:47:30</time><b><span class="lv lv-i">INFO</span>P-106 切換為 STANDBY</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>18:12:03</time><b><span class="lv lv-i">INFO</span>班次交接完成 · 甲班</b></div>
+        <div class="row" onclick="location.href='alarms.html'" style="cursor:pointer"><time>17:55:48</time><b><span class="lv lv-w">WARN</span>冷卻水塔 CT-01 補水低</b></div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <h2 onclick="location.href='report.html'" style="cursor:pointer">班次生產<em>SHIFT OUTPUT ▶</em></h2>
+      <div class="in bars">
+        <div class="brow"><div class="t"><b>目標達成率</b><span>94.2 %</span></div><div class="trk g"><div style="width:94.2%"></div></div></div>
+        <div class="brow"><div class="t"><b>能耗指標 EnPI</b><span>76.0 %</span></div><div class="trk"><div style="width:76%"></div></div></div>
+        <div class="brow"><div class="t"><b>品質合格率</b><span>99.1 %</span></div><div class="trk g"><div style="width:99.1%"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ftr">INDUSTRIAL SCADA HMI · 鋼灰琥珀工控介面 · DESIGN 24 / 40</div>
+
+<script>
+function tick(){const d=new Date();document.getElementById('clk').textContent=
+  d.toLocaleTimeString('en-GB');}
+tick();setInterval(tick,1000);
+document.querySelectorAll('.mode b').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.mode b').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>曜城 MIS｜星艦戰情監控台</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  html,body{margin:0;padding:0;background:#020810;overflow:hidden;}
+  canvas{display:block;}
+  a.back{position:fixed;right:22px;bottom:22px;z-index:50;font:12px 'Share Tech Mono',monospace;letter-spacing:.2em;
+    color:#22d3ee;text-decoration:none;background:rgba(3,20,32,.85);border:1px solid rgba(34,211,238,.4);
+    padding:10px 18px;transition:.25s;}
+  a.back:hover{box-shadow:0 0 18px rgba(34,211,238,.5);}
+</style>
+</head>
+<body>
+<a class="back" href="showcase.html">← EXIT</a>
+<script>
+const CY = [34, 211, 238], OR = [251, 146, 60], RD = [248, 113, 113], GR = [52, 211, 153];
+let blips = [], reads = [], wave = [];
+const readPool = [
+  () => 'GRID-' + nf(floor(random(1, 13)), 2) + ' │ LOAD ' + nf(floor(random(20, 95)), 2) + '% │ OK',
+  () => 'SENSOR S-' + floor(random(100, 199)) + ' │ TEMP ' + nf(random(31, 44), 1, 1) + '°C │ OK',
+  () => 'NODE B-' + nf(floor(random(1, 9)), 2) + ' │ SYNC ' + floor(random(90, 100)) + '% │ ACTIVE',
+  () => 'UPLINK ' + floor(random(200, 900)) + ' Mbps │ STABLE',
+  () => 'CAM-ZONE-' + nf(floor(random(1, 20)), 2) + ' │ STREAM │ OK'
+];
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  textFont('Share Tech Mono');
+  noCursor();
+  for (let i = 0; i < 9; i++) blips.push({ a: random(TWO_PI), r: random(0.15, 0.92), s: random(0.5, 1.4) });
+  for (let i = 0; i < 8; i++) reads.push(readPool[floor(random(readPool.length))]());
+  for (let i = 0; i < 90; i++) wave.push(0);
+}
+
+function draw() {
+  background(2, 8, 16);
+  hexGrid();
+  const cx = width / 2, cy = height * 0.56, R = min(width, height) * 0.29;
+  if (frameCount % 55 === 0) { reads.push(readPool[floor(random(readPool.length))]()); reads.shift(); }
+  if (frameCount % 3 === 0) { wave.push(noise(frameCount * 0.03) * 40 + sin(frameCount * 0.05) * 20); wave.shift(); }
+  hudFrame(cx, cy, R);
+  radar(cx, cy, R);
+  leftPanel();
+  rightPanel();
+  topBar();
+  crosshair();
+  alertBar();
+}
+
+// ---------- 六角網格底 ----------
+function hexGrid() {
+  stroke(CY[0], CY[1], CY[2], 9); strokeWeight(1); noFill();
+  const s = 30, hh = s * 0.866;
+  for (let row = -1; row * hh * 2 < height + s * 2; row++) {
+    for (let col = -1; col * s * 3 < width + s * 2; col++) {
+      const ox = col * s * 3 + (row % 2 ? s * 1.5 : 0);
+      const oy = row * hh * 2;
+      beginShape();
+      for (let k = 0; k < 6; k++) {
+        const a = PI / 3 * k + PI / 6;
+        vertex(ox + cos(a) * s, oy + sin(a) * s);
+      }
+      endShape(CLOSE);
+    }
+  }
+}
+
+// ---------- 雷達 ----------
+function radar(cx, cy, R) {
+  // 同心環 + 輻條
+  noFill(); strokeWeight(1);
+  for (let k = 1; k <= 4; k++) { stroke(CY[0], CY[1], CY[2], 46); circle(cx, cy, R * 2 * k / 4); }
+  stroke(CY[0], CY[1], CY[2], 26);
+  for (let i = 0; i < 12; i++) {
+    const a = PI * 2 * i / 12;
+    line(cx, cy, cx + cos(a) * R, cy + sin(a) * R);
+  }
+  // 外圈刻度
+  stroke(CY[0], CY[1], CY[2], 90);
+  for (let i = 0; i < 72; i++) {
+    const a = PI * 2 * i / 72;
+    const r1 = R + 8, r2 = R + (i % 6 === 0 ? 20 : 14);
+    line(cx + cos(a) * r1, cy + sin(a) * r1, cx + cos(a) * r2, cy + sin(a) * r2);
+  }
+  // 掃描束（拖尾漸弱）
+  const ang = frameCount * 0.028;
+  for (let i = 0; i < 56; i++) {
+    const a = ang - i * 0.013;
+    stroke(CY[0], CY[1], CY[2], map(i, 0, 56, 130, 0));
+    strokeWeight(2);
+    line(cx, cy, cx + cos(a) * R, cy + sin(a) * R);
+  }
+  // 光點：被掃過後亮起再淡出
+  const sweepA = ((ang % TWO_PI) + TWO_PI) % TWO_PI;
+  for (const b of blips) {
+    const d = ((sweepA - b.a) % TWO_PI + TWO_PI) % TWO_PI;
+    const a = map(d, 0, TWO_PI, 255, 0);
+    const bx = cx + cos(b.a) * R * b.r, by = cy + sin(b.a) * R * b.r;
+    noStroke(); fill(OR[0], OR[1], OR[2], a);
+    circle(bx, by, 5 + a / 255 * 3);
+    noFill(); stroke(OR[0], OR[1], OR[2], a * 0.5); strokeWeight(1);
+    circle(bx, by, 12 + a / 255 * 10);
+  }
+  // 軌道衛星點
+  noStroke();
+  for (let i = 0; i < 3; i++) {
+    const a = frameCount * 0.008 * (1 + i * 0.4) + i * TWO_PI / 3;
+    fill(i === 1 ? OR[0] : CY[0], i === 1 ? OR[1] : CY[1], i === 1 ? OR[2] : CY[2], 220);
+    circle(cx + cos(a) * (R + 32), cy + sin(a) * (R + 32), 5);
+  }
+  fill(CY[0], CY[1], CY[2], 200); textSize(10); textAlign(CENTER, CENTER);
+  text('RADAR · 12 DISTRICTS', cx, cy + R + 44);
+}
+
+// ---------- 雷達外框（旋轉虛線環 + 角括號） ----------
+function hudFrame(cx, cy, R) {
+  dashedRing(cx, cy, R + 58, 36, frameCount * 0.004, CY, 70);
+  dashedRing(cx, cy, R + 74, 26, -frameCount * 0.003, OR, 46);
+  stroke(CY[0], CY[1], CY[2], 160); strokeWeight(2); noFill();
+  const m = R + 92, L = 26;
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    line(cx + sx * m, cy + sy * m, cx + sx * m - sx * L, cy + sy * m);
+    line(cx + sx * m, cy + sy * m, cx + sx * m, cy + sy * m - sy * L);
+  }
+}
+function dashedRing(cx, cy, r, segs, off, col, alpha) {
+  stroke(col[0], col[1], col[2], alpha); strokeWeight(1.5); noFill();
+  for (let i = 0; i < segs; i += 2) {
+    const a0 = TWO_PI * i / segs + off, a1 = TWO_PI * (i + 1) / segs + off;
+    arc(cx, cy, r * 2, r * 2, a0, a1);
+  }
+}
+
+// ---------- 左側儀表 ----------
+function leftPanel() {
+  const x = 36, w = 250;
+  let y = height * 0.2;
+  panelBox(x, y - 30, w, 388, '系統狀態 // SYSTEM');
+  const gauges = [['網路負載', 62, CY], ['儲存容量', 81, OR], ['運算核心', 47, GR]];
+  for (const [lb, base, col] of gauges) {
+    const v = base + sin(frameCount * 0.015 + base) * 7;
+    const gy = y + 44;
+    noFill(); stroke(255, 255, 255, 16); strokeWeight(9);
+    arc(x + 52, gy, 72, 72, radians(150), radians(390));
+    stroke(col[0], col[1], col[2]); strokeCap(ROUND);
+    arc(x + 52, gy, 72, 72, radians(150), map(v, 0, 100, radians(150), radians(390)));
+    noStroke(); fill(235, 245, 255); textAlign(CENTER, CENTER); textSize(13);
+    text(round(v) + '%', x + 52, gy - 2);
+    fill(CY[0], CY[1], CY[2], 160); textSize(10);
+    text(lb, x + 52, gy + 52);
+    // 迷你歷史條
+    fill(255, 255, 255, 20);
+    for (let i = 0; i < 18; i++) {
+      const bh = 6 + noise(i * 0.5, frameCount * 0.01, base) * 22;
+      rect(x + 108 + i * 7, gy + 22 - bh, 4, bh);
+    }
+    y += 122;
+  }
+  // 直條：電力/冷卻
+  strokeCap(BUTT);
+  const barsV = [['PWR', 74, CY], ['COOL', 58, GR]];
+  for (let i = 0; i < 2; i++) {
+    const [lb, base, col] = barsV[i];
+    const v = base + sin(frameCount * 0.02 + i * 4) * 10;
+    const bx = x + 30 + i * 110;
+    noFill(); stroke(255, 255, 255, 16); strokeWeight(1); rect(bx, y, 22, 90, 4);
+    noStroke(); fill(col[0], col[1], col[2], 200);
+    rect(bx + 3, y + 87 - v / 100 * 84, 16, v / 100 * 84, 3);
+    fill(160, 190, 210); textSize(9); textAlign(CENTER, TOP); text(lb, bx + 11, y + 96);
+    fill(235, 245, 255); textSize(11); text(round(v) + '%', bx + 60, y + 30);
+  }
+}
+
+// ---------- 右側讀數 ----------
+function rightPanel() {
+  const w = 320, x = width - w - 36;
+  const y = height * 0.2 - 30;
+  panelBox(x, y, w, 300, '即時讀數 // TELEMETRY');
+  textAlign(LEFT, TOP); textSize(11);
+  for (let i = 0; i < reads.length; i++) {
+    const a = i === reads.length - 1 ? min(255, (frameCount % 55) * 10) : 200;
+    fill(120, 200, 215, a);
+    text('▸ ' + reads[i], x + 16, y + 34 + i * 26);
+  }
+  // 波形
+  const wy = y + 34 + reads.length * 26 + 14;
+  fill(CY[0], CY[1], CY[2], 160); textSize(10); text('NETWORK WAVEFORM', x + 16, wy);
+  noFill(); stroke(CY[0], CY[1], CY[2], 200); strokeWeight(1.5);
+  beginShape();
+  for (let i = 0; i < wave.length; i++) vertex(x + 16 + i / (wave.length - 1) * (w - 32), wy + 52 - wave[i]);
+  endShape();
+  // 運轉時數
+  fill(OR[0], OR[1], OR[2]); textSize(12); textAlign(LEFT, TOP);
+  text('UPTIME 99.982% · 142 DAYS', x + 16, wy + 66);
+}
+
+function panelBox(x, y, w, h, title) {
+  fill(3, 16, 27, 195); stroke(CY[0], CY[1], CY[2], 50); strokeWeight(1);
+  rect(x, y, w, h, 8);
+  stroke(CY[0], CY[1], CY[2], 200); strokeWeight(2);
+  line(x, y + 1, x + 18, y + 1); line(x + 1, y, x + 1, y + 18);
+  line(x + w, y + h - 1, x + w - 18, y + h - 1); line(x + w - 1, y + h, x + w - 1, y + h - 18);
+  noStroke(); fill(CY[0], CY[1], CY[2], 220); textSize(11); textAlign(LEFT, TOP);
+  text(title, x + 16, y + 10);
+}
+
+// ---------- 頂欄 ----------
+function topBar() {
+  noStroke(); fill(CY[0], CY[1], CY[2], 230); textAlign(CENTER, TOP); textSize(15);
+  text('曜 城 全 域 監 控 網  //  CITYWIDE GRID CONTROL', width / 2, 22);
+  fill(120, 200, 215, 160); textSize(10);
+  text('SECTOR-07 · TACTICAL DISPLAY · v9.1', width / 2, 46);
+  textAlign(LEFT, TOP); fill(CY[0], CY[1], CY[2], 200); textSize(13);
+  text(nf(hour(), 2) + ':' + nf(minute(), 2) + ':' + nf(second(), 2), 36, 26);
+  textAlign(RIGHT, TOP);
+  const st = [[GR, 'CORE'], [CY, 'NET'], [OR, 'AUX']];
+  let sx = width - 36;
+  for (const [c, lb] of st) {
+    fill(c[0], c[1], c[2]); circle(sx - 6, 32, 8);
+    fill(120, 200, 215, 170); textSize(10); text(lb, sx - 20, 27);
+    sx -= 74;
+  }
+}
+
+// ---------- 準星 ----------
+function crosshair() {
+  const mx = mouseX, my = mouseY;
+  stroke(CY[0], CY[1], CY[2], 110); strokeWeight(1);
+  line(mx - 18, my, mx - 6, my); line(mx + 6, my, mx + 18, my);
+  line(mx, my - 18, mx, my - 6); line(mx, my + 6, mx, my + 18);
+  noFill(); circle(mx, my, 12);
+  noStroke(); fill(CY[0], CY[1], CY[2], 170); textSize(10); textAlign(LEFT, TOP);
+  text('X ' + nf(mx, 4) + '  Y ' + nf(my, 4), mx + 14, my + 12);
+}
+
+// ---------- 週期告警 ----------
+function alertBar() {
+  const cyc = frameCount % 520;
+  if (cyc < 170) {
+    const a = cyc % 40 < 24 ? 200 : 60;
+    const w = 460, x = width / 2 - w / 2, y = height - 60;
+    noStroke(); fill(RD[0], RD[1], RD[2], a * 0.16); rect(x, y, w, 34, 6);
+    fill(RD[0], RD[1], RD[2], a); textSize(12); textAlign(CENTER, CENTER);
+    text('⚠ ALERT · 感測器 S-117 訊號異常 — 備援節點已接管', width / 2, y + 17);
+  }
+}
+
+function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+</script>
+</body>
+</html>

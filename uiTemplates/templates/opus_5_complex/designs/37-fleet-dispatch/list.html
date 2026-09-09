@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>37 · 車籍登記簿 — FLEET DISPATCH</title>
+<style>
+:root{
+  --map:#e8e4dc;--road:#ffffff;--road2:#f6f2ea;--water:#c6ddea;--park:#d6e6ce;
+  --ink:#1c2430;--dim:#6d7889;--panel:#ffffff;--edge:#e2e0da;
+  --go:#16b364;--busy:#f79009;--idle:#7f8b9c;--sos:#e5484d;--route:#3b6bff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--map);color:var(--ink);min-height:100vh;font-size:13.5px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--route);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:300;text-decoration:none;color:#fff;
+  background:var(--ink);padding:12px 22px;border-radius:999px;font-weight:600;font-size:13px;
+  box-shadow:0 6px 20px rgba(28,36,48,.4);transition:.22s}
+.home:hover{background:var(--route);transform:translateY(-3px)}
+
+.shell{max-width:1420px;margin:0 auto;padding:20px 20px 70px}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:14px;
+  box-shadow:0 8px 28px rgba(28,36,48,.10);overflow:hidden}
+
+/* ---------- brand + nav ---------- */
+.brand{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid var(--edge);flex-wrap:wrap}
+.brand .l{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#3b6bff,#16b364);
+  display:grid;place-items:center;color:#fff;font-size:19px}
+.brand b{font-size:16px;display:block;font-weight:700;letter-spacing:-.01em}
+.brand small{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.brand .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:10.5px;color:var(--dim)}
+.brand .rt b{display:block;font-size:19px;color:var(--ink);font-weight:700;letter-spacing:-.02em}
+.brand .rt b.g{color:var(--go)}.brand .rt b.i{color:var(--idle)}.brand .rt b.s{color:var(--sos)}
+.pagenav{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--edge);background:var(--road2);
+  flex-wrap:wrap}
+.pagenav a{flex:1;min-width:110px;text-align:center;padding:9px 6px;border-radius:8px;text-decoration:none;
+  font-size:12px;font-weight:700;color:var(--dim);background:var(--panel);border:1px solid var(--edge);transition:.15s}
+.pagenav a:hover{color:var(--route);border-color:var(--route);box-shadow:0 2px 8px rgba(59,107,255,.18)}
+.pagenav a[aria-current]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* ---------- composition unit chart ---------- */
+.comp{padding:18px}
+.comp h2{font-size:13px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.comp h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.1em}
+.units{display:grid;grid-template-columns:repeat(36,minmax(0,1fr));gap:5px}
+@media(max-width:900px){.units{grid-template-columns:repeat(18,minmax(0,1fr))}}
+@media(max-width:560px){.units{grid-template-columns:repeat(12,minmax(0,1fr))}}
+.units button{appearance:none;border:0;padding:0;cursor:pointer;aspect-ratio:1/1.5;border-radius:4px;
+  position:relative;animation:pop .35s cubic-bezier(.2,1.4,.4,1) both;transition:transform .14s}
+@keyframes pop{from{transform:scale(0)}}
+.units button:hover{transform:translateY(-4px)}
+.units button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink),0 4px 10px rgba(28,36,48,.3)}
+.u-go{background:var(--go)}.u-bs{background:var(--busy)}.u-id{background:#b9c2ce}.u-so{background:var(--sos)}
+.complg{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--dim)}
+.complg span{display:flex;align-items:center;gap:7px}
+.complg i{width:13px;height:13px;border-radius:3px;display:block}
+.complg b{color:var(--ink)}
+
+/* ---------- controls ---------- */
+.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 18px;border-top:1px solid var(--edge);
+  border-bottom:1px solid var(--edge);background:var(--road2)}
+.ctl input[type="search"]{border:1px solid var(--edge);border-radius:9px;background:var(--panel);
+  font:inherit;font-size:12.5px;padding:9px 13px;width:230px;color:var(--ink)}
+.ctl input::placeholder{color:#9aa4b1}
+.chipset{display:flex;gap:6px;flex-wrap:wrap}
+.chipset button{appearance:none;font:inherit;font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--edge);background:var(--panel);color:var(--dim);cursor:pointer;transition:.15s}
+.chipset button:hover{color:var(--ink)}
+.chipset button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ctl .n{margin-left:auto;font-size:12px;color:var(--dim)}
+.ctl .n b{color:var(--route);font-size:16px;font-weight:700}
+
+/* ---------- registry ---------- */
+.regwrap{overflow-x:auto}
+table.reg{width:100%;border-collapse:collapse;min-width:1080px}
+table.reg thead th{position:sticky;top:0;z-index:5;background:var(--panel);
+  border-bottom:2px solid var(--ink);padding:0;text-align:left;white-space:nowrap}
+table.reg thead th button{appearance:none;border:0;background:transparent;font:inherit;cursor:pointer;
+  font-size:10px;letter-spacing:.16em;color:var(--dim);font-weight:700;padding:11px 12px;width:100%;
+  text-align:inherit;display:flex;align-items:center;gap:6px}
+table.reg thead th.r button{justify-content:flex-end}
+table.reg thead th button:hover{color:var(--ink)}
+table.reg thead th[aria-sort] button{color:var(--route)}
+table.reg thead th button i{font-style:normal;font-size:9px;opacity:.55}
+table.reg td{padding:10px 12px;border-bottom:1px solid #f0ede6;font-size:12.5px;white-space:nowrap}
+table.reg td.r{text-align:right}
+table.reg tbody tr{transition:.14s}
+table.reg tbody tr:nth-child(even){background:#fbfaf7}
+table.reg tbody tr:hover{background:#eef3ff}
+table.reg tbody tr.hit{background:#e6edff;box-shadow:inset 3px 0 0 var(--route)}
+.vid{font-weight:700;letter-spacing:.03em}
+.vid a{color:var(--ink);text-decoration:none}
+.vid a:hover{color:var(--route);text-decoration:underline}
+.st{font-size:10.5px;padding:3px 9px;border-radius:999px;font-weight:700;white-space:nowrap}
+.s-go{background:rgba(22,179,100,.12);color:var(--go)}
+.s-bs{background:rgba(247,144,9,.16);color:#b56a05}
+.s-id{background:rgba(127,139,156,.16);color:var(--idle)}
+.s-so{background:rgba(229,72,77,.13);color:var(--sos)}
+.mb{position:relative;height:7px;width:88px;background:#eceae4;border-radius:4px;display:inline-block;vertical-align:middle}
+.mb i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--route)}
+.mb i.w{background:var(--busy)}
+.mb i.d{background:var(--sos)}
+.svc{font-weight:700}
+.svc.warn{color:var(--busy)}
+.svc.bad{color:var(--sos)}
+table.reg tfoot td{padding:13px 12px;border-top:2px solid var(--ink);font-size:12.5px;font-weight:700;
+  background:var(--road2)}
+table.reg tfoot td small{display:block;font-size:10px;letter-spacing:.14em;color:var(--dim);font-weight:400;margin-bottom:3px}
+.emptyrow td{padding:40px 16px!important;text-align:center;color:var(--dim);font-weight:400!important}
+.ftr{text-align:center;font-size:10.5px;color:rgba(28,36,48,.42);letter-spacing:.26em;padding:26px 0 10px}
+
+@media(max-width:640px){
+  .shell{padding:14px 12px 70px}
+  .brand .rt{width:100%;margin-left:0;justify-content:space-between;gap:10px}
+  .ctl input[type="search"]{width:100%}
+  .ctl .n{margin-left:0}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<div class="shell">
+  <div class="card">
+    <div class="brand">
+      <div class="l">🚚</div>
+      <div><b>迅捷車隊 · 車籍登記簿</b><small>FLEET REGISTRY LEDGER · 2026 / 10 / 12</small></div>
+      <div class="rt">
+        <div><b>36</b>總車輛</div>
+        <div><b class="g">22</b>執勤中</div>
+        <div><b class="i">11</b>待命</div>
+        <div><b class="s">3</b>異常</div>
+        <div><b>94,470</b>本月里程 km</div>
+      </div>
+    </div>
+
+    <nav class="pagenav" aria-label="子頁導覽">
+      <a href="index.html">調度地圖</a>
+      <a href="list.html" aria-current="page">車籍登記簿</a>
+      <a href="dispatch.html">派工看板</a>
+      <a href="detail.html">車輛詳情</a>
+      <a href="report.html">營運報表</a>
+    </nav>
+
+    <div class="comp">
+      <h2>車隊組成單位圖 <span>FLEET COMPOSITION · 1 方塊 = 1 輛 · 點選方塊可定位登記簿列</span></h2>
+      <div class="units" id="units" role="group" aria-label="車隊 36 輛車，依狀態著色"></div>
+      <div class="complg">
+        <span><i class="u-go"></i>執勤中 <b>18</b></span>
+        <span><i class="u-bs"></i>裝卸中 <b>4</b></span>
+        <span><i class="u-id"></i>待命 <b>11</b></span>
+        <span><i class="u-so"></i>異常 <b>3</b></span>
+        <span style="margin-left:auto">配置：貨車 5T <b>9</b> · 貨車 3.5T <b>8</b> · 冷鏈 3.5T <b>5</b> · 冷鏈 2T <b>4</b> · 機車快遞 <b>6</b> · 工程車 <b>4</b></span>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <input id="q" type="search" placeholder="搜尋車號／車牌／駕駛" aria-label="搜尋車號、車牌或駕駛">
+      <div class="chipset" role="group" aria-label="車型篩選">
+        <button data-t="all" aria-pressed="true">全部車型</button>
+        <button data-t="貨車 5T" aria-pressed="false">貨車 5T</button>
+        <button data-t="貨車 3.5T" aria-pressed="false">貨車 3.5T</button>
+        <button data-t="冷鏈 3.5T" aria-pressed="false">冷鏈 3.5T</button>
+        <button data-t="冷鏈 2T" aria-pressed="false">冷鏈 2T</button>
+        <button data-t="機車快遞" aria-pressed="false">機車快遞</button>
+        <button data-t="工程車" aria-pressed="false">工程車</button>
+      </div>
+      <span class="n"><b id="cnt">36</b> / 36 輛</span>
+    </div>
+
+    <div class="regwrap">
+      <table class="reg">
+        <thead>
+          <tr id="hrow">
+            <th data-k="0"><button type="button">車號 UNIT <i>▾</i></button></th>
+            <th data-k="1"><button type="button">車型 TYPE <i>▾</i></button></th>
+            <th data-k="2"><button type="button">車牌 PLATE <i>▾</i></button></th>
+            <th data-k="4"><button type="button">駕駛 DRIVER <i>▾</i></button></th>
+            <th data-k="5" class="r"><button type="button">年式 <i>▾</i></button></th>
+            <th data-k="3"><button type="button">狀態 STATUS <i>▾</i></button></th>
+            <th data-k="6" class="r"><button type="button">今日 km <i>▾</i></button></th>
+            <th data-k="7" class="r"><button type="button">本月 km <i>▾</i></button></th>
+            <th data-k="8" class="r"><button type="button">油耗 L/100km <i>▾</i></button></th>
+            <th data-k="10"><button type="button">載重利用率 <i>▾</i></button></th>
+            <th data-k="9" class="r"><button type="button">距下次保養 km <i>▾</i></button></th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5"><small>合計 / 平均 SUBTOTAL</small><span id="f-lab">全部 36 輛</span></td>
+            <td><small>異常佔比</small><span id="f-bad">8.3%</span></td>
+            <td class="r"><small>今日合計</small><span id="f-today">2,720</span></td>
+            <td class="r"><small>本月合計</small><span id="f-month">94,470</span></td>
+            <td class="r"><small>加權平均</small><span id="f-fuel">12.8</span></td>
+            <td><small>平均載重利用率</small><span id="f-load">—</span></td>
+            <td class="r"><small>最短保養里程</small><span id="f-svc">—</span></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="ftr">LIST / FLEET REGISTRY LEDGER · DESIGN 37 / 40</div>
+</div>
+
+<script>
+/* 車號, 車型, 車牌, 狀態, 駕駛, 年式, 今日km, 本月km, L/100km, 距保養km, 載重利用率% */
+const F=[
+["TR-01","冷鏈 3.5T","KEB-2071","go","林志偉",2022,148,3240,13.6,1820,78],
+["TR-02","貨車 5T","RFC-8802","bs","楊文凱",2021,96,2860,16.4,640,84],
+["TR-03","冷鏈 3.5T","KEB-2073","go","周聖凱",2022,172,3410,13.9,2450,81],
+["TR-04","貨車 3.5T","RDA-4104","go","王建良",2023,134,3020,12.1,4180,72],
+["TR-05","貨車 3.5T","RDA-4105","go","徐志豪",2023,118,2940,12.6,3260,69],
+["TR-06","冷鏈 2T","KEA-1206","go","陳俊宏",2024,102,2410,11.2,5640,66],
+["TR-07","工程車","EGV-7007","so","何冠霖",2020,42,1180,15.1,120,31],
+["TR-08","貨車 5T","RFC-8808","go","蘇建成",2021,186,3980,16.8,980,88],
+["TR-09","貨車 5T","RFC-8809","go","李國華",2022,164,3720,16.1,2140,85],
+["TR-10","機車快遞","MKD-0110","go","張哲瑋",2024,88,2180,3.1,1460,54],
+["TR-11","機車快遞","MKD-0111","go","江明峰",2024,94,2260,3.3,1720,57],
+["TR-12","貨車 3.5T","RDA-4112","id","呂宗翰",2022,0,2640,12.8,2980,0],
+["TR-13","貨車 3.5T","RDA-4113","id","黃奕翔",2023,0,2510,12.2,3840,0],
+["TR-14","冷鏈 2T","KEA-1214","bs","馬紹群",2023,76,2320,11.6,2260,74],
+["TR-15","冷鏈 3.5T","KEB-2115","go","吳承翰",2021,158,3180,14.2,1340,79],
+["TR-16","貨車 5T","RFC-8816","id","傅奕辰",2020,0,3060,17.2,460,0],
+["TR-17","貨車 5T","RFC-8817","id","林俊傑",2022,0,3340,16.0,1880,0],
+["TR-18","工程車","EGV-7018","go","康仲平",2021,68,1640,14.8,2020,44],
+["TR-19","機車快遞","MKD-0119","go","蔡明宏",2023,106,2420,3.4,880,61],
+["TR-20","貨車 3.5T","RDA-4120","go","郭柏均",2024,126,2880,11.9,4960,71],
+["TR-21","機車快遞","MKD-0121","so","藍柏睿",2022,34,1940,3.6,540,48],
+["TR-22","工程車","EGV-7022","id","許家豪",2019,0,1020,15.6,240,0],
+["TR-23","冷鏈 2T","KEA-1223","go","溫子誠",2024,114,2560,11.0,5120,68],
+["TR-24","貨車 5T","RFC-8824","bs","潘威廷",2023,108,3220,15.8,3420,82],
+["TR-25","貨車 3.5T","RDA-4125","id","賴俊男",2021,0,2380,13.1,1640,0],
+["TR-26","機車快遞","MKD-0126","go","邱柏文",2025,82,1880,3.0,2880,52],
+["TR-27","冷鏈 3.5T","KEB-2127","go","石育誠",2023,144,3060,13.4,3760,76],
+["TR-28","貨車 5T","RFC-8828","id","高志遠",2020,0,2940,17.6,320,0],
+["TR-29","貨車 3.5T","RDA-4129","go","阮文龍",2022,138,3120,12.5,2540,74],
+["TR-30","工程車","EGV-7030","so","沈冠宇",2018,0,860,16.2,80,0],
+["TR-31","冷鏈 2T","KEA-1231","id","方彥廷",2022,0,2180,11.8,1120,0],
+["TR-32","貨車 5T","RFC-8832","bs","唐嘉偉",2024,92,3480,15.4,4640,86],
+["TR-33","機車快遞","MKD-0133","id","童偉倫",2021,0,1760,3.8,660,0],
+["TR-34","貨車 3.5T","RDA-4134","go","廖世傑",2023,130,2960,12.3,3180,73],
+["TR-35","冷鏈 3.5T","KEB-2135","id","簡育駿",2020,0,2740,14.6,720,0],
+["TR-36","貨車 5T","RFC-8836","id","范振豪",2021,0,3180,16.6,1540,0]
+];
+const ST={go:["s-go","執勤中"],bs:["s-bs","裝卸中"],id:["s-id","待命"],so:["s-so","異常"]};
+const fmt=n=>n.toLocaleString("en-US");
+
+/* ---------- 單位圖 ---------- */
+document.getElementById("units").innerHTML=F.map((v,i)=>
+  `<button class="u-${v[3]}" data-i="${i}" aria-pressed="false" style="animation-delay:${i*14}ms"
+     title="${v[0]} ${v[1]} · ${ST[v[3]][1]}" aria-label="${v[0]} ${v[1]}，${ST[v[3]][1]}"></button>`).join("");
+
+/* ---------- 狀態 ---------- */
+let q="",type="all",sortK=0,sortDir=1,hit=-1;
+
+function rows(){
+  return F.map((v,i)=>({v,i})).filter(o=>{
+    if(type!=="all"&&o.v[1]!==type)return false;
+    if(!q)return true;
+    return (o.v[0]+o.v[2]+o.v[4]+o.v[1]).toLowerCase().includes(q);
+  }).sort((a,b)=>{
+    const x=a.v[sortK],y=b.v[sortK];
+    if(typeof x==="number")return (x-y)*sortDir;
+    return String(x).localeCompare(String(y),"zh-Hant")*sortDir;
+  });
+}
+function render(){
+  const list=rows();
+  document.getElementById("cnt").textContent=list.length;
+  const tb=document.getElementById("tb");
+  if(!list.length){
+    tb.innerHTML='<tr class="emptyrow"><td colspan="11">此條件下沒有符合的車輛 — 請調整關鍵字或車型篩選。</td></tr>';
+  }else{
+    tb.innerHTML=list.map(({v,i})=>{
+      const svcCls=v[9]<500?"bad":v[9]<1500?"warn":"";
+      const loadCls=v[10]>=80?"w":v[10]===0?"d":"";
+      return `<tr data-i="${i}" class="${i===hit?"hit":""}">
+        <td class="vid"><a href="detail.html">${v[0]}</a></td>
+        <td>${v[1]}</td><td>${v[2]}</td><td>${v[4]}</td><td class="r">${v[5]}</td>
+        <td><span class="st ${ST[v[3]][0]}">${ST[v[3]][1]}</span></td>
+        <td class="r">${v[6]===0?"—":fmt(v[6])}</td>
+        <td class="r">${fmt(v[7])}</td>
+        <td class="r">${v[8].toFixed(1)}</td>
+        <td><span class="mb"><i class="${loadCls}" style="width:${v[10]}%"></i></span>
+            <span style="margin-left:8px;font-size:11.5px;color:var(--dim)">${v[10]===0?"停用":v[10]+"%"}</span></td>
+        <td class="r svc ${svcCls}">${fmt(v[9])}</td>
+      </tr>`;
+    }).join("");
+  }
+  /* footer 統計 */
+  const today=list.reduce((s,o)=>s+o.v[6],0);
+  const month=list.reduce((s,o)=>s+o.v[7],0);
+  const fuel=month?list.reduce((s,o)=>s+o.v[7]*o.v[8],0)/month:0;
+  const act=list.filter(o=>o.v[10]>0);
+  const load=act.length?act.reduce((s,o)=>s+o.v[10],0)/act.length:0;
+  const svc=list.length?Math.min(...list.map(o=>o.v[9])):0;
+  const bad=list.filter(o=>o.v[3]==="so").length;
+  document.getElementById("f-lab").textContent=(type==="all"?"全部":type)+" "+list.length+" 輛";
+  document.getElementById("f-bad").textContent=list.length?(bad/list.length*100).toFixed(1)+"%":"—";
+  document.getElementById("f-today").textContent=fmt(today);
+  document.getElementById("f-month").textContent=fmt(month);
+  document.getElementById("f-fuel").textContent=fuel?fuel.toFixed(1):"—";
+  document.getElementById("f-load").textContent=load?load.toFixed(0)+"%":"—";
+  document.getElementById("f-svc").textContent=list.length?fmt(svc):"—";
+}
+render();
+
+/* ---------- 排序 ---------- */
+document.querySelectorAll("#hrow th").forEach(th=>{
+  th.querySelector("button").addEventListener("click",()=>{
+    const k=+th.dataset.k;
+    if(sortK===k){sortDir*=-1}else{sortK=k;sortDir=1}
+    document.querySelectorAll("#hrow th").forEach(o=>{
+      o.removeAttribute("aria-sort");
+      o.querySelector("button i").textContent="▾";
+    });
+    th.setAttribute("aria-sort",sortDir===1?"ascending":"descending");
+    th.querySelector("button i").textContent=sortDir===1?"▲":"▼";
+    render();
+  });
+});
+
+/* ---------- 篩選 ---------- */
+document.getElementById("q").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();render();});
+document.querySelectorAll(".chipset button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".chipset button").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  type=b.dataset.t;render();
+}));
+
+/* ---------- 單位圖定位 ---------- */
+document.querySelectorAll("#units button").forEach(b=>b.addEventListener("click",()=>{
+  const i=+b.dataset.i;
+  hit=(hit===i)?-1:i;
+  document.querySelectorAll("#units button").forEach(o=>o.setAttribute("aria-pressed",String(+o.dataset.i===hit)));
+  if(hit>=0){
+    q="";type="all";
+    document.getElementById("q").value="";
+    document.querySelectorAll(".chipset button").forEach(o=>o.setAttribute("aria-pressed",String(o.dataset.t==="all")));
+  }
+  render();
+  const tr=document.querySelector(`#tb tr[data-i="${hit}"]`);
+  if(tr)tr.scrollIntoView({block:"center",behavior:"smooth"});
+}));
+</script>
+</body>
+</html>

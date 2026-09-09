@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>燈港航務局｜燈塔光束・港務資訊網</title>
+<!--
+【設計規格】
+風格定位：燈塔光束・港務資訊 — 深夜海藍的海港場景，燈塔剪影立於岩岸，旋轉光束掃過海面，底部波浪線層層推進，傳達「為船引路」的港務守護意象。
+配色：
+  - 深夜海藍 #06182e、港灣藍 #0b2a4a、深海黑 #030d1a
+  - 燈塔光束暖白 #ffe9a8 / 燈芯黃 #ffd75e
+  - 浪線青 #3f8fb8、浪沫 #bfe3f2
+  - 狀態色：進港綠 #3ddc84、出港藍 #57a8ff、延誤紅 #ff6b6b、待命黃 #ffd75e
+字體：Noto Sans TC（Google Fonts）；船期時間採 Consolas 等寬字。
+版面結構：頂部導覽／Hero 燈塔 SVG 剪影＋conic-gradient 旋轉光束＋底部波浪線／船舶進出港即時動態表／潮汐表／港區公告／燈塔歷史介紹／頁尾。
+動態效果：
+  1. 燈塔光束 8 秒旋轉一圈（conic-gradient 光束，CSS rotate 動畫，週期 8s）
+  2. 底部波浪線水平循環漂移（兩層錯速）
+  3. 動態表狀態燈閃爍、公告列 hover 左移
+-->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sea:#06182e; --bay:#0b2a4a; --abyss:#030d1a;
+  --beam:#ffe9a8; --lamp:#ffd75e; --wave:#3f8fb8; --foam:#bfe3f2;
+  --green:#3ddc84; --blue:#57a8ff; --red:#ff6b6b; --yellow:#ffd75e;
+  --txt:#dceaf7; --sub:#8aa8c4;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--sea);color:var(--txt);font-family:'Noto Sans TC',sans-serif;overflow-x:hidden}
+a{text-decoration:none;color:inherit}
+
+/* ── 導覽 ── */
+.nav{display:flex;justify-content:space-between;align-items:center;padding:15px 34px;
+  background:rgba(3,13,26,.8);backdrop-filter:blur(8px);border-bottom:1px solid rgba(63,143,184,.25)}
+.brand{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:.18em;font-size:1.1rem}
+.brand .beam-ico{width:34px;height:34px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 50% 30%, var(--lamp), #b8862e 70%);
+  box-shadow:0 0 16px rgba(255,215,94,.55)}
+.brand .beam-ico::before{content:'';position:absolute;top:6px;left:50%;width:0;height:0;transform:translateX(-50%);
+  border-left:26px solid transparent;border-right:2px solid transparent;
+  border-bottom:6px solid rgba(255,233,168,.85);filter:blur(1px)}
+.nav-links{display:flex;gap:26px;font-size:.86rem;color:var(--sub)}
+.nav-links a:hover{color:var(--foam)}
+.back-btn{padding:8px 20px;border-radius:4px;border:1px solid var(--lamp);color:var(--lamp);font-size:.84rem;
+  font-weight:700;letter-spacing:.1em;transition:.25s}
+.back-btn:hover{background:var(--lamp);color:var(--abyss);box-shadow:0 0 18px rgba(255,215,94,.5)}
+
+/* ── Hero 燈塔 ── */
+.hero{position:relative;min-height:520px;overflow:hidden;
+  background:linear-gradient(180deg,#04101f 0%,var(--sea) 55%,var(--bay) 100%)}
+.hero .stars-svg{position:absolute;inset:0;width:100%;height:100%}
+.hero-content{position:relative;z-index:6;max-width:1180px;margin:0 auto;padding:84px 34px 0}
+.hero-content .kicker{color:var(--wave);font-size:.76rem;letter-spacing:.55em;margin-bottom:16px}
+.hero-content h1{font-size:clamp(2rem,4.8vw,3.2rem);font-weight:900;letter-spacing:.16em;line-height:1.4;
+  text-shadow:0 0 34px rgba(255,233,168,.2)}
+.hero-content h1 em{font-style:normal;color:var(--lamp)}
+.hero-content p{margin-top:16px;color:var(--sub);font-weight:300;max-width:520px;line-height:1.95;font-size:.95rem}
+
+/* 燈塔場景 */
+.lighthouse-scene{position:absolute;right:4%;bottom:0;width:420px;height:480px;z-index:4;pointer-events:none}
+@media(max-width:880px){.lighthouse-scene{opacity:.35}}
+/* 光束：8 秒一圈 */
+.beam-wrap{position:absolute;left:50%;top:64px;width:0;height:0;z-index:3}
+.beam{position:absolute;top:-16px;left:0;width:560px;height:32px;transform-origin:0 50%;
+  background:conic-gradient(from 180deg at 0 50%, transparent 0deg, rgba(255,233,168,.0) 176deg, rgba(255,233,168,.5) 180deg, rgba(255,233,168,0) 184deg);
+  animation:beamRot 8s linear infinite}
+.beam.rev{background:conic-gradient(from 0deg at 0 50%, rgba(255,233,168,.0) 356deg, rgba(255,233,168,.4) 360deg);
+  width:420px}
+@keyframes beamRot{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.lamp-glow{position:absolute;left:50%;top:56px;transform:translateX(-50%);width:56px;height:56px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,233,168,.9),rgba(255,233,168,.25) 55%,transparent 72%);
+  animation:glowPulse 2.6s ease-in-out infinite;z-index:5}
+@keyframes glowPulse{0%,100%{transform:translateX(-50%) scale(1);opacity:1}50%{transform:translateX(-50%) scale(1.25);opacity:.85}}
+
+/* 波浪 */
+.waves{position:absolute;left:0;right:0;bottom:0;height:120px;z-index:5;overflow:hidden}
+.wave{position:absolute;bottom:0;left:0;width:200%;height:100%;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 120' preserveAspectRatio='none'%3E%3Cpath d='M0 60 Q30 30 60 60 T120 60 T180 60 T240 60 V120 H0 Z' fill='%230b2a4a'/%3E%3C/svg%3E") repeat-x;
+  background-size:240px 120px;animation:waveMove 9s linear infinite}
+.wave.w2{opacity:.55;bottom:8px;background-size:300px 110px;animation-duration:6.5s;animation-direction:reverse}
+@keyframes waveMove{from{background-position-x:0}to{background-position-x:240px}}
+.wave.w2{animation-name:waveMove2}
+@keyframes waveMove2{from{background-position-x:0}to{background-position-x:300px}}
+
+/* ── 通用 ── */
+.section{max-width:1180px;margin:0 auto;padding:66px 34px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:36px}
+.sec-head h2{font-size:1.5rem;font-weight:900;letter-spacing:.2em}
+.sec-head h2::before{content:'⚓ ';color:var(--lamp)}
+.sec-head .line{flex:1;height:1px;background:linear-gradient(90deg,rgba(63,143,184,.55),transparent)}
+.sec-head .en{font-size:.68rem;color:var(--sub);letter-spacing:.35em}
+
+/* 船舶動態表 */
+.port-tabs{display:flex;gap:10px;margin-bottom:20px}
+.ptab{padding:8px 22px;border-radius:999px;border:1px solid rgba(63,143,184,.5);font-size:.84rem;color:var(--sub);
+  cursor:pointer;transition:.25s;background:transparent;font-family:inherit;letter-spacing:.1em}
+.ptab.active,.ptab:hover{background:var(--wave);color:#fff;border-color:var(--wave)}
+.ship-table{width:100%;border-collapse:collapse;font-size:.88rem;background:rgba(11,42,74,.35);border-radius:10px;overflow:hidden}
+.ship-table th{text-align:left;padding:13px 16px;color:var(--wave);font-size:.76rem;letter-spacing:.2em;font-weight:500;
+  border-bottom:1px solid rgba(63,143,184,.35)}
+.ship-table td{padding:13px 16px;border-bottom:1px solid rgba(63,143,184,.14)}
+.ship-table tbody tr{transition:.2s}
+.ship-table tbody tr:hover{background:rgba(63,143,184,.1)}
+.ship-table .mono{font-family:Consolas,monospace}
+.ship-name{font-weight:700}
+.ship-name small{display:block;font-size:.7rem;color:var(--sub);font-weight:300;letter-spacing:.08em}
+.st{display:inline-flex;align-items:center;gap:7px;font-size:.78rem;font-weight:700;padding:4px 12px;border-radius:999px}
+.st i{width:8px;height:8px;border-radius:50%;animation:blinkDot 1.6s infinite}
+@keyframes blinkDot{0%,100%{opacity:1}50%{opacity:.3}}
+.st.in{color:var(--green);background:rgba(61,220,132,.1)}.st.in i{background:var(--green)}
+.st.out{color:var(--blue);background:rgba(87,168,255,.1)}.st.out i{background:var(--blue)}
+.st.delay{color:var(--red);background:rgba(255,107,107,.1)}.st.delay i{background:var(--red)}
+.st.wait{color:var(--yellow);background:rgba(255,215,94,.1)}.st.wait i{background:var(--yellow)}
+
+/* 潮汐表 */
+.tide-grid{display:grid;grid-template-columns:300px 1fr;gap:36px;align-items:center}
+@media(max-width:860px){.tide-grid{grid-template-columns:1fr}}
+.tide-chart{background:rgba(11,42,74,.35);border:1px solid rgba(63,143,184,.3);border-radius:12px;padding:20px}
+.tide-chart svg{width:100%;height:auto;display:block}
+.tide-times{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:520px){.tide-times{grid-template-columns:1fr}}
+.tide-card{background:rgba(11,42,74,.35);border-left:4px solid var(--wave);border-radius:6px;padding:16px 20px}
+.tide-card.high{border-color:var(--lamp)}
+.tide-card .tt{font-size:.72rem;letter-spacing:.2em;color:var(--sub)}
+.tide-card .tm{font-family:Consolas,monospace;font-size:1.5rem;font-weight:700;margin-top:6px}
+.tide-card .hh{font-size:.78rem;color:var(--foam);margin-top:4px}
+
+/* 公告 */
+.notices{display:grid;gap:14px}
+.notice{display:flex;gap:20px;align-items:center;background:rgba(11,42,74,.35);border:1px solid rgba(63,143,184,.2);
+  border-radius:8px;padding:18px 24px;transition:.25s}
+.notice:hover{transform:translateX(8px);border-color:var(--wave);background:rgba(63,143,184,.12)}
+.notice .date{flex:none;font-family:Consolas,monospace;font-size:.8rem;color:var(--wave);text-align:center;line-height:1.5}
+.notice .date b{display:block;font-size:1.3rem;color:var(--foam)}
+.notice .nt{flex:none;font-size:.68rem;padding:3px 10px;border-radius:4px;letter-spacing:.12em;font-weight:700}
+.nt.c1{background:rgba(255,107,107,.15);color:var(--red)}
+.nt.c2{background:rgba(87,168,255,.15);color:var(--blue)}
+.nt.c3{background:rgba(61,220,132,.15);color:var(--green)}
+.notice h4{font-size:.94rem;font-weight:500;letter-spacing:.04em}
+
+/* 燈塔歷史 */
+.history{display:grid;grid-template-columns:1fr 340px;gap:44px;align-items:start}
+@media(max-width:860px){.history{grid-template-columns:1fr}}
+.history article p{font-size:.94rem;line-height:2.1;color:#c2d6ea;font-weight:300;margin-bottom:18px}
+.history article p b{color:var(--lamp);font-weight:700}
+.timeline{border-left:2px solid rgba(63,143,184,.4);padding-left:26px}
+.tl-item{position:relative;margin-bottom:26px}
+.tl-item::before{content:'';position:absolute;left:-33px;top:6px;width:12px;height:12px;border-radius:50%;
+  background:var(--lamp);box-shadow:0 0 12px rgba(255,215,94,.6)}
+.tl-item .yr{font-family:Consolas,monospace;color:var(--lamp);font-size:.85rem;letter-spacing:.1em}
+.tl-item h5{margin:5px 0 6px;font-size:.95rem;letter-spacing:.08em}
+.tl-item p{font-size:.8rem;color:var(--sub);line-height:1.8}
+
+footer{background:var(--abyss);border-top:1px solid rgba(63,143,184,.25);padding:36px 34px;text-align:center;
+  font-size:.78rem;color:var(--sub);line-height:2.1;letter-spacing:.1em}
+footer .anchor{color:var(--lamp);font-size:1.1rem;letter-spacing:.5em}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="brand"><span class="beam-ico"></span>燈港航務局</div>
+  <nav class="nav-links">
+    <a href="vessels.html">船舶動態</a><a href="tides.html">潮汐預報</a><a href="notices.html">港區公告</a><a href="tour.html#history">燈塔沿革</a>
+  </nav>
+  <a class="back-btn" href="../../index.html">← 返回入口</a>
+</header>
+
+<!-- Hero 燈塔 -->
+<section class="hero">
+  <svg class="stars-svg" viewBox="0 0 1200 520" preserveAspectRatio="xMidYMin slice">
+    <g fill="#dceaf7">
+      <circle cx="80" cy="50" r="1.4"><animate attributeName="opacity" values="1;.2;1" dur="2.4s" repeatCount="indefinite"/></circle>
+      <circle cx="240" cy="110" r="1.1"><animate attributeName="opacity" values=".3;1;.3" dur="3s" repeatCount="indefinite"/></circle>
+      <circle cx="420" cy="40" r="1.7"><animate attributeName="opacity" values="1;.25;1" dur="1.9s" repeatCount="indefinite"/></circle>
+      <circle cx="620" cy="90" r="1.2"><animate attributeName="opacity" values=".35;1;.35" dur="2.7s" repeatCount="indefinite"/></circle>
+      <circle cx="800" cy="35" r="1.5"><animate attributeName="opacity" values="1;.2;1" dur="2.2s" repeatCount="indefinite"/></circle>
+      <circle cx="1050" cy="60" r="1.3"><animate attributeName="opacity" values=".25;1;.25" dur="3.3s" repeatCount="indefinite"/></circle>
+      <circle cx="160" cy="200" r="1.1"><animate attributeName="opacity" values=".4;1;.4" dur="2.1s" repeatCount="indefinite"/></circle>
+      <circle cx="520" cy="170" r="1.4"><animate attributeName="opacity" values="1;.3;1" dur="2.8s" repeatCount="indefinite"/></circle>
+      <circle cx="960" cy="150" r="1.2"><animate attributeName="opacity" values=".3;1;.3" dur="2.5s" repeatCount="indefinite"/></circle>
+      <circle cx="1140" cy="220" r="1.5"><animate attributeName="opacity" values="1;.2;1" dur="3.1s" repeatCount="indefinite"/></circle>
+    </g>
+    <!-- 月亮 -->
+    <circle cx="150" cy="80" r="30" fill="#f2ecd8" opacity=".92"/>
+    <circle cx="162" cy="72" r="26" fill="#04101f"/>
+  </svg>
+
+  <div class="hero-content">
+    <div class="kicker">HARBOR BUREAU</div>
+    <h1>一束光，<br>引萬船<em>平安入港</em>。</h1>
+    <p>提供船舶進出港即時動態、潮汐預報與港區作業公告，24 小時航運監控，守護每一航次的歸途。</p>
+  </div>
+
+  <div class="lighthouse-scene">
+    <div class="beam-wrap">
+      <div class="beam"></div>
+      <div class="beam rev"></div>
+    </div>
+    <div class="lamp-glow"></div>
+    <svg viewBox="0 0 420 480" style="position:absolute;inset:0;width:100%;height:100%">
+      <!-- 燈塔剪影 -->
+      <g>
+        <path d="M186 120 L178 400 L242 400 L234 120 Z" fill="#0e2f52"/>
+        <path d="M186 120 L178 400 L196 400 L200 120 Z" fill="#134069"/>
+        <!-- 燈室 -->
+        <rect x="180" y="86" width="60" height="36" rx="4" fill="#0a2543"/>
+        <rect x="192" y="94" width="36" height="20" rx="2" fill="#ffd75e" opacity=".95"/>
+        <path d="M174 86 L210 58 L246 86 Z" fill="#082036"/>
+        <circle cx="210" cy="52" r="5" fill="#0a2543"/>
+        <!-- 紋帶 -->
+        <rect x="181" y="170" width="58" height="16" fill="#b8433a" opacity=".85"/>
+        <rect x="179" y="240" width="62" height="16" fill="#b8433a" opacity=".85"/>
+        <rect x="177" y="310" width="66" height="16" fill="#b8433a" opacity=".85"/>
+        <!-- 岩岸 -->
+        <path d="M40 480 L120 400 L200 392 L300 410 L380 480 Z" fill="#04121f"/>
+        <path d="M120 400 L200 392 L300 410 L260 440 L150 438 Z" fill="#0a2036"/>
+        <!-- 小屋 -->
+        <rect x="286" y="368" width="52" height="42" fill="#0e2f52"/>
+        <path d="M280 368 L312 346 L344 368 Z" fill="#082036"/>
+        <rect x="304" y="384" width="14" height="14" fill="#ffd75e" opacity=".8"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="waves"><div class="wave"></div><div class="wave w2"></div></div>
+</section>
+
+<!-- 船舶動態 -->
+<section class="section">
+  <div class="sec-head"><h2>船舶進出港即時動態</h2><span class="line"></span><span class="en">LIVE VESSEL TRAFFIC</span></div>
+  <div class="port-tabs">
+    <button class="ptab active">全部船班</button>
+    <button class="ptab">進港</button>
+    <button class="ptab">出港</button>
+    <button class="ptab">延誤</button>
+  </div>
+  <table class="ship-table">
+    <thead><tr><th>船名／航次</th><th>預定時間</th><th>停泊碼頭</th><th>航線</th><th>狀態</th></tr></thead>
+    <tbody>
+      <tr><td class="ship-name">遠洋之星<small>OCEAN AURORA / V.268E</small></td><td class="mono">08-28 21:40</td><td>W7 貨櫃碼頭</td><td>高雄 → 東京</td><td><span class="st in"><i></i>進港中</span></td></tr>
+      <tr><td class="ship-name">福爾摩沙輪<small>FORMOSA STAR / V.112</small></td><td class="mono">08-28 22:15</td><td>E3 散貨碼頭</td><td>麥寮 → 燈港</td><td><span class="st wait"><i></i>錨地待命</span></td></tr>
+      <tr><td class="ship-name">藍鯨快航<small>BLUE WHALE EXPRESS / V.88W</small></td><td class="mono">08-28 23:00</td><td>W2 貨櫃碼頭</td><td>燈港 → 上海</td><td><span class="st out"><i></i>預備出港</span></td></tr>
+      <tr><td class="ship-name">南海珍珠<small>SOUTH SEA PEARL / V.451</small></td><td class="mono">08-29 00:30</td><td>P1 客運碼頭</td><td>燈港 → 馬公</td><td><span class="st wait"><i></i>裝載作業</span></td></tr>
+      <tr><td class="ship-name">東風散貨輪<small>EAST WIND BULKER / V.77</small></td><td class="mono">08-29 02:10</td><td>E6 散貨碼頭</td><td>澳門 → 燈港</td><td><span class="st delay"><i></i>延誤 40 分</span></td></tr>
+      <tr><td class="ship-name">海巡 109 艇<small>COAST GUARD CG-109</small></td><td class="mono">08-29 06:00</td><td>G 公務碼頭</td><td>巡弋返港</td><td><span class="st in"><i></i>預定進港</span></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:18px"><a href="vessels.html" style="font-size:.84rem;color:var(--foam);font-weight:700;letter-spacing:.12em;border-bottom:1px solid var(--wave)">查看完整船期與碼頭配置 →</a></p>
+</section>
+
+<!-- 潮汐表 -->
+<section class="section">
+  <div class="sec-head"><h2>潮汐預報</h2><span class="line"></span><span class="en">TIDE FORECAST</span></div>
+  <div class="tide-grid">
+    <div class="tide-chart">
+      <svg viewBox="0 0 260 150">
+        <g stroke="rgba(63,143,184,.3)" stroke-width="1">
+          <line x1="20" y1="20" x2="20" y2="120"/><line x1="20" y1="120" x2="250" y2="120"/>
+          <line x1="20" y1="90" x2="250" y2="90" stroke-dasharray="3 4"/>
+          <line x1="20" y1="55" x2="250" y2="55" stroke-dasharray="3 4"/>
+        </g>
+        <path d="M20 70 C55 30 90 30 125 70 C160 110 195 110 230 70" fill="none" stroke="#3f8fb8" stroke-width="2.5"/>
+        <path d="M20 70 C55 30 90 30 125 70 C160 110 195 110 230 70 L230 120 L20 120 Z" fill="rgba(63,143,184,.18)"/>
+        <circle cx="72" cy="46" r="4" fill="#ffd75e"/><circle cx="177" cy="96" r="4" fill="#57a8ff"/>
+        <text x="62" y="38" fill="#ffd75e" font-size="9" font-family="monospace">滿潮</text>
+        <text x="167" y="112" fill="#57a8ff" font-size="9" font-family="monospace">乾潮</text>
+        <text x="8" y="24" fill="#8aa8c4" font-size="8">+2.1m</text>
+        <text x="8" y="122" fill="#8aa8c4" font-size="8">0m</text>
+      </svg>
+    </div>
+    <div class="tide-times">
+      <div class="tide-card high"><div class="tt">滿潮 HIGH TIDE</div><div class="tm">05:42</div><div class="hh">潮高 +1.86 m</div></div>
+      <div class="tide-card"><div class="tt">乾潮 LOW TIDE</div><div class="tm">11:58</div><div class="hh">潮高 +0.34 m</div></div>
+      <div class="tide-card high"><div class="tt">滿潮 HIGH TIDE</div><div class="tm">18:07</div><div class="hh">潮高 +2.03 m</div></div>
+      <div class="tide-card"><div class="tt">乾潮 LOW TIDE</div><div class="tm">翌 00:24</div><div class="hh">潮高 +0.41 m</div></div>
+    </div>
+  </div>
+  <p style="margin-top:22px"><a href="tides.html" style="font-size:.84rem;color:var(--foam);font-weight:700;letter-spacing:.12em;border-bottom:1px solid var(--wave)">未來七日潮汐與海象 →</a></p>
+</section>
+
+<!-- 港區公告 -->
+<section class="section">
+  <div class="sec-head"><h2>港區公告</h2><span class="line"></span><span class="en">PORT NOTICES</span></div>
+  <div class="notices">
+    <div class="notice"><div class="date">08/28<b>五</b></div><span class="nt c1">航行警告</span><h4>颱風外圍環流影響，明日 06:00 起港外錨地實施單向通航管制，請船長收聽 VHF 16 頻道。</h4></div>
+    <div class="notice"><div class="date">08/27<b>四</b></div><span class="nt c2">工程公告</span><h4>W4 碼頭浚深工程自 9/1 起夜間施工，期間該泊位暫停靠泊，預計 45 日完工。</h4></div>
+    <div class="notice"><div class="date">08/25<b>二</b></div><span class="nt c3">服務資訊</span><h4>港區線上預報系統升級完成，新增 AIS 船位即時查詢與靠泊申請電子簽章功能。</h4></div>
+    <div class="notice"><div class="date">08/22<b>六</b></div><span class="nt c2">環境監測</span><h4>本週港域水質與油污監測結果均符合標準，監測報告已公開於開放資料專區。</h4></div>
+  </div>
+  <p style="margin-top:22px"><a href="notices.html" style="font-size:.84rem;color:var(--foam);font-weight:700;letter-spacing:.12em;border-bottom:1px solid var(--wave)">全部公告與航行警告 →</a></p>
+</section>
+
+<!-- 燈塔歷史 -->
+<section class="section">
+  <div class="sec-head"><h2>燈塔歷史介紹</h2><span class="line"></span><span class="en">LIGHTHOUSE HERITAGE</span></div>
+  <div class="history">
+    <article>
+      <p>燈港燈塔始建於 <b>1892 年</b>，為本港開港通商後首座西式燈塔。塔身以本地花崗岩砌成，初燃煤油燈，光程僅十餘浬；歷經四次改建，今日塔高 <b>38.2 公尺</b>，採自動旋轉燈器，光束每 <b>8 秒</b>掃掠一圈，光程可達 <b>25 浬</b>。</p>
+      <p>紅白相間的塔身是船員口耳相傳的「回家記號」。2010 年燈塔登錄為歷史建築，並於塔下設立航政文物室，展出歷代燈器、海圖與守塔人手記，見證百年港埠的興起與蛻變。</p>
+      <p>現行燈質為「聯閃白光，週期 8 秒」，與海圖標示一致。每逢濃霧，霧笛以每 60 秒鳴放兩短聲，協助船隻定位，至今仍是本港不可或缺的導航設施。</p>
+    </article>
+    <div class="timeline">
+      <div class="tl-item"><div class="yr">1892</div><h5>燈塔初建</h5><p>花崗岩圓塔落成，燃三等煤油燈，設守塔人兩名。</p></div>
+      <div class="tl-item"><div class="yr">1935</div><h5>電氣化改建</h5><p>改裝白熾電燈與菲涅耳透鏡，光程倍增。</p></div>
+      <div class="tl-item"><div class="yr">1978</div><h5>塔身加高</h5><p>因應貨櫃化加高至 38.2 公尺，漆上紅白橫紋。</p></div>
+      <div class="tl-item"><div class="yr">2010</div><h5>登錄歷史建築</h5><p>塔區開放預約參觀，航政文物室同時啟用。</p></div>
+      <div class="tl-item"><div class="yr">2024</div><h5>智慧化升級</h5><p>導入 LED 燈器與遠端監控，守塔任務全面自動化。</p></div>
+    </div>
+  </div>
+  <p style="margin-top:22px"><a href="tour.html" style="font-size:.84rem;color:var(--lamp);font-weight:700;letter-spacing:.12em;border-bottom:1px solid var(--lamp)">燈塔參觀預約與港區導覽 →</a></p>
+</section>
+
+<footer>
+  <div class="anchor">⚓ ⚓ ⚓</div>
+  燈港航務局（示範機關）｜地址：燈港市臨海區港前路 7 號｜24 小時航運服務台：07-555-0000<br>
+  船舶緊急通訊：VHF CH16 ・ 本網站船位資料僅供參考，實際以港口無線電通報為準
+</footer>
+
+<script>
+// 船班分頁篩選（純前端示範）
+(function(){
+  var tabs = document.querySelectorAll('.ptab');
+  var rows = document.querySelectorAll('.ship-table tbody tr');
+  tabs.forEach(function(tab, idx){
+    tab.addEventListener('click', function(){
+      tabs.forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+      rows.forEach(function(r){
+        var st = r.querySelector('.st');
+        var show = true;
+        if(idx === 1) show = st.classList.contains('in');
+        else if(idx === 2) show = st.classList.contains('out');
+        else if(idx === 3) show = st.classList.contains('delay');
+        r.style.display = show ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

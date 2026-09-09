@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCS 統一 3D 圖台｜方案 B：2D 圖台搬進 3D</title>
+<link rel="stylesheet" href="../shared/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="loading"><div class="ld-box"><div class="ld-spin"></div><div>建立不規則地質模型…</div></div></div>
+
+<div id="boot-error"><strong>無法啟動</strong><div class="msg"></div></div>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="logo">CCS</span>
+    <div>
+      <h1>碳封存統一 3D 圖台</h1>
+      <p>方案 B ─ 把 2D GIS 圖台整個搬進 3D，單一場景、完整 360° 環繞</p>
+    </div>
+  </div>
+  <nav class="views">
+    <button data-view="bird" class="btn">鳥瞰</button>
+    <button data-view="top" class="btn">正射俯視</button>
+    <button data-view="ns" class="btn">南北剖視</button>
+    <button data-view="ew" class="btn">東西剖視</button>
+    <button data-view="reservoir" class="btn accent">注入井</button>
+    <label class="chk inline"><input type="checkbox" id="auto-rotate"> 自動環繞</label>
+  </nav>
+</header>
+
+<main id="stage">
+  <div id="scene"></div>
+  <div id="label-root"></div>
+
+  <div id="compass"><div id="compass-needle">N</div></div>
+
+  <div id="minimap-wrap">
+    <div class="mini-head">
+      <span>導覽圖（Leaflet）</span>
+      <button id="mini-toggle" class="mini-btn">▾</button>
+    </div>
+    <div id="minimap"></div>
+    <div class="mini-foot">黃色扇形＝3D 視野方向；點擊小圖可移動鏡頭</div>
+  </div>
+
+  <section id="panel">
+    <button id="panel-toggle" title="收合／展開">⟨</button>
+
+    <div class="pnl-scroll">
+      <div class="group">
+        <h2>底圖</h2>
+        <select id="basemap">
+          <option value="imagery">衛星影像</option>
+          <option value="osm">街道圖</option>
+          <option value="light">淺色圖</option>
+        </select>
+      </div>
+
+      <div class="group">
+        <h2>視覺</h2>
+        <label class="rng">垂直放大 <b id="ve-val">×3</b>
+          <input type="range" id="ve" min="1" max="8" step="0.5" value="3"></label>
+        <label class="rng">地層分離 <b id="explode-val">0 m</b>
+          <input type="range" id="explode" min="0" max="600" step="10" value="0"></label>
+      </div>
+
+      <div class="group">
+        <h2>屬性著色</h2>
+        <select id="color-mode"></select>
+        <div id="colorbar-wrap">
+          <div id="colorbar"></div>
+          <div id="colorbar-ticks"></div>
+          <div id="colorbar-title" class="note tight"></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>地質分析</h2>
+        <div class="tool-grid">
+          <button id="tool-log" class="btn sm">合成井柱</button>
+          <button id="tool-section" class="btn sm">任意剖面</button>
+          <button id="tool-vol" class="btn sm">容積計算</button>
+        </div>
+        <p id="tool-hint" class="note tight">合成井柱：在模型上點一點；任意剖面：點兩點拉出 A–A′。</p>
+      </div>
+
+      <div class="group">
+        <h2>剖切</h2>
+        <select id="section-mode">
+          <option value="off">關閉</option>
+          <option value="ns">南北向切面</option>
+          <option value="ew">東西向切面</option>
+          <option value="quad">四分之一切除</option>
+        </select>
+        <label class="rng">切面位置 <b id="section-offset-val">0 m</b>
+          <input type="range" id="section-offset" min="-3000" max="3000" step="50" value="0" disabled></label>
+      </div>
+
+      <div class="group">
+        <h2>圖層</h2>
+        <div class="layer-grid">
+          <label class="chk"><input type="checkbox" data-layer="terrain" checked> 地表底圖</label>
+          <label class="chk"><input type="checkbox" data-layer="strata" checked> 地層</label>
+          <label class="chk"><input type="checkbox" data-layer="plume" checked> CO₂ 羽流</label>
+          <label class="chk"><input type="checkbox" data-layer="wells" checked> 井</label>
+          <label class="chk"><input type="checkbox" data-layer="faults" checked> 斷層</label>
+          <label class="chk"><input type="checkbox" data-layer="vectors" checked> 向量圖徵</label>
+          <label class="chk"><input type="checkbox" data-layer="markers" checked> 標記</label>
+          <label class="chk"><input type="checkbox" data-layer="axis" checked> 深度標尺</label>
+          <label class="chk"><input type="checkbox" data-layer="strataLabels" checked> 地層名稱</label>
+          <label class="chk"><input type="checkbox" data-layer="outlines"> 各層平面輪廓</label>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>地層 <button id="reset-opacity" class="mini-btn wide">還原透明度</button></h2>
+        <div id="strata-list"></div>
+      </div>
+
+      <div class="group">
+        <h2>資訊 <span id="info-title" class="info-title">場址概況</span></h2>
+        <div id="info-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="analysis" class="hidden">
+    <header class="an-head">
+      <div class="an-tabs">
+        <button data-tab="log" class="an-tab on">合成井柱</button>
+        <button data-tab="section" class="an-tab">地質剖面</button>
+        <button data-tab="vol" class="an-tab">容積與封存量</button>
+      </div>
+      <button id="an-close" class="mini-btn" title="關閉">✕</button>
+    </header>
+    <div class="an-body">
+      <div id="tab-log" class="an-pane on">
+        <div class="an-row">
+          <canvas id="log-canvas"></canvas>
+          <div id="log-side"></div>
+        </div>
+      </div>
+      <div id="tab-section" class="an-pane">
+        <div class="an-bar">
+          <label>屬性 <select id="sec-mode"></select></label>
+          <label class="chk inline"><input type="checkbox" id="sec-follow" checked> 隨屬性著色同步</label>
+          <span id="sec-meta" class="an-meta"></span>
+        </div>
+        <canvas id="sec-canvas"></canvas>
+      </div>
+      <div id="tab-vol" class="an-pane">
+        <div class="an-bar">
+          <label>目標層 <select id="vol-layer"></select></label>
+          <label class="rng inline">φ 下限 <b id="vol-phi-val">10%</b>
+            <input type="range" id="vol-phi" min="0" max="30" step="1" value="10"></label>
+          <label class="rng inline">Vsh 上限 <b id="vol-vsh-val">0.40</b>
+            <input type="range" id="vol-vsh" min="0.05" max="1" step="0.05" value="0.4"></label>
+          <label class="chk inline"><input type="checkbox" id="vol-closure"> 僅計構造閉合區</label>
+          <button id="vol-run" class="btn sm">重新計算</button>
+        </div>
+        <div id="vol-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <button id="play" class="btn">▶ 播放</button>
+    <div class="tl-main">
+      <input type="range" id="year">
+      <div class="tl-row">
+        <span class="yr" id="year-label">2050</span>
+        <span class="phase post" id="year-phase">封存後監測期</span>
+        <span class="kpi">累積注入 <b id="kpi-cum">0</b> Mt</span>
+        <span class="kpi">羽流半徑 <b id="kpi-radius">0</b> m</span>
+        <span class="kpi">最大厚度 <b id="kpi-thick">0</b> m</span>
+      </div>
+    </div>
+  </section>
+
+  <footer id="statusbar">
+    <span>方位 <b id="st-bearing">–</b></span>
+    <span>俯角 <b id="st-pitch">–</b></span>
+    <span>視距 <b id="st-dist">–</b></span>
+    <span>視點中心 <b id="st-center">–</b></span>
+    <span id="st-tiles">底圖載入中…</span>
+    <span class="tip">左鍵拖曳＝旋轉　右鍵拖曳＝平移　滾輪＝縮放</span>
+  </footer>
+</main>
+
+<script src="../shared/vendor/leaflet/leaflet.js"></script>
+<script src="../shared/vendor/three/three.js"></script>
+<script src="../shared/vendor/three/OrbitControls.js"></script>
+<script src="../shared/vendor/three/CSS2DRenderer.js"></script>
+<script src="../shared/js/config.js"></script>
+<script src="../shared/js/geo.js"></script>
+<script src="../shared/js/petro.js"></script>
+<script src="../shared/js/geology.js"></script>
+<script src="../shared/js/welllog.js"></script>
+<script src="../shared/js/section.js"></script>
+<script src="../shared/js/terrain.js"></script>
+<script src="js/scene3d.js"></script>
+<script src="js/minimap.js"></script>
+<script src="../shared/js/analysis.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

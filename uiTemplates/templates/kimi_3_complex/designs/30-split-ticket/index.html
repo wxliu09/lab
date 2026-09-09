@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 30-split-ticket.html 雙欄速記·客服工單
+  風格定位：鍵盤優先（keyboard-first）極簡效率工具，Superhuman / Linear 風格
+  配色：極簡灰階 — 背景 #fafafa｜側欄 #f4f4f5｜文字 #18181b / 次要 #71717a｜單一強調藍 #2563eb
+        優先級色條：P1 紅 #dc2626、P2 橘 #ea580c、P3 灰 #a1a1aa
+  字體：Noto Sans TC＋快捷鍵 kbd 等寬（ui-monospace）
+  版面結構：頂欄（返回入口＋快捷鍵提示）→ KPI 條 → Master-Detail：左工單列表（優先級色條＋SLA 倒數）｜右詳情＋回覆編輯器
+  動態效果：J/K 鍵上下切換選取工單（JS keydown）、R 聚焦回覆框、Esc 取消、選取列藍邊滑入、SLA 倒數每秒更新
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客服工單中心 · HelpDesk</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Noto Sans TC',sans-serif}
+  body{background:#fafafa;color:#18181b;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  kbd{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;background:#fff;border:1px solid #d4d4d8;border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:#52525b}
+  header{background:#fff;border-bottom:1px solid #e4e4e7;padding:10px 20px;display:flex;align-items:center;gap:16px;flex:none}
+  .back{font-size:13px;color:#52525b;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #e4e4e7;transition:.15s}
+  .back:hover{color:#2563eb;border-color:#2563eb;background:#eff6ff}
+  h1{font-size:15px;font-weight:700}
+  .keys{margin-left:auto;display:flex;gap:14px;font-size:12px;color:#71717a;align-items:center}
+  .kpis{display:flex;gap:0;border-bottom:1px solid #e4e4e7;background:#fff;flex:none}
+  .kpi{flex:1;padding:10px 20px;border-right:1px solid #e4e4e7;display:flex;align-items:baseline;gap:8px}
+  .kpi:last-child{border:none}
+  .kpi b{font-size:20px;font-weight:900}
+  .kpi span{font-size:12px;color:#71717a}
+  .kpi .blue{color:#2563eb}.kpi .red{color:#dc2626}.kpi .green{color:#16a34a}
+  .split{flex:1;display:grid;grid-template-columns:400px 1fr;min-height:0}
+  .list{border-right:1px solid #e4e4e7;overflow-y:auto;background:#f4f4f5}
+  .titem{background:transparent;border-left:4px solid transparent;padding:13px 16px 13px 12px;cursor:pointer;border-bottom:1px solid #e4e4e7;position:relative;transition:background .12s}
+  .titem:hover{background:#ececee}
+  .titem.sel{background:#fff;border-left-color:#2563eb;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .titem.sel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:#2563eb;animation:slidein .18s ease}
+  @keyframes slidein{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  .titem .r1{display:flex;align-items:center;gap:8px;font-size:12px;color:#71717a}
+  .titem .tid{font-family:ui-monospace,monospace;font-weight:700;color:#52525b}
+  .prio{width:3px;align-self:stretch;border-radius:2px;flex:none;margin-right:4px}
+  .titem .sub{font-size:14px;font-weight:500;margin:3px 0 4px;line-height:1.4}
+  .titem .r3{display:flex;gap:8px;align-items:center;font-size:11.5px}
+  .sla{font-family:ui-monospace,monospace;padding:1px 7px;border-radius:4px;background:#e4e4e7;color:#52525b}
+  .sla.danger{background:#fee2e2;color:#dc2626;font-weight:700}
+  .sla.warn{background:#ffedd5;color:#ea580c}
+  .st{font-size:11px;padding:1px 8px;border-radius:99px;font-weight:500}
+  .st-open{background:#dbeafe;color:#2563eb}.st-pend{background:#fef9c3;color:#a16207}.st-done{background:#dcfce7;color:#16a34a}
+  .unread{width:8px;height:8px;border-radius:50%;background:#2563eb;margin-left:auto;flex:none}
+  .detail{display:flex;flex-direction:column;min-height:0;background:#fff}
+  .dhead{padding:18px 26px;border-bottom:1px solid #e4e4e7;flex:none}
+  .dhead .meta{font-size:12px;color:#71717a;font-family:ui-monospace,monospace;margin-bottom:6px}
+  .dhead h2{font-size:19px;font-weight:700}
+  .dhead .tags{margin-top:8px;display:flex;gap:8px}
+  .dtag{font-size:11.5px;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:99px;padding:2px 10px;color:#52525b}
+  .dbody{flex:1;overflow-y:auto;padding:20px 26px}
+  .msg{display:flex;gap:12px;margin-bottom:20px;animation:msgin .3s both}
+  @keyframes msgin{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+  .mav{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+  .mwho{font-size:13px;font-weight:700}
+  .mtime{font-size:11px;color:#a1a1aa;font-family:ui-monospace,monospace;margin-left:8px;font-weight:400}
+  .mbody{font-size:13.5px;line-height:1.75;color:#3f3f46;margin-top:4px;background:#f8f8f9;border:1px solid #eeeef0;border-radius:0 10px 10px 10px;padding:12px 14px}
+  .msg.agent .mbody{background:#eff6ff;border-color:#dbeafe}
+  .reply{border-top:1px solid #e4e4e7;padding:14px 26px;flex:none;background:#fafafa}
+  .reply textarea{width:100%;border:1px solid #d4d4d8;border-radius:8px;padding:10px 14px;font-size:13.5px;font-family:inherit;resize:none;height:74px;outline:none;transition:.15s;background:#fff}
+  .reply textarea:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+  .reply .bar{display:flex;align-items:center;margin-top:8px;gap:10px}
+  .hint{font-size:11.5px;color:#a1a1aa}
+  .send{margin-left:auto;background:#2563eb;color:#fff;border:none;font-family:inherit;font-size:13px;font-weight:500;padding:8px 20px;border-radius:6px;cursor:pointer;transition:.15s}
+  .send:hover{background:#1d4ed8}
+  @media(max-width:960px){.split{grid-template-columns:1fr}.detail{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <h1>客服工單中心</h1>
+  <a class="back" href="form.html" style="color:#2563eb;border-color:#bfdbfe;background:#eff6ff">＋ 新增工單</a>
+  <a class="back" href="report.html">📊 報表</a>
+  <div class="keys">
+    <span><kbd>J</kbd> <kbd>K</kbd> 移動</span><span><kbd>R</kbd> 回覆</span><span><kbd>Esc</kbd> 取消</span>
+    <a class="back" href="shortcuts.html" style="padding:4px 10px">? 快捷鍵</a>
+  </div>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><b class="blue">18</b><span>待處理工單</span></div>
+  <div class="kpi"><b class="red">3</b><span>SLA 即將逾時（&lt;1h）</span></div>
+  <div class="kpi"><b>42 分</b><span>平均首次回覆時間</span></div>
+  <div class="kpi"><b class="green">94.6%</b><span>本週 SLA 達標率</span></div>
+  <div class="kpi"><b>4.7 ★</b><span>客戶滿意度（本月）</span></div>
+</div>
+
+<div class="split">
+  <aside class="list" id="list"></aside>
+  <section class="detail">
+    <div class="dhead" id="dhead"></div>
+    <div class="dbody" id="dbody"></div>
+    <div class="reply">
+      <textarea id="replyBox" placeholder="輸入回覆內容…（按 R 快速聚焦，Ctrl+Enter 送出）"></textarea>
+      <div class="bar">
+        <span class="hint">🤖 智慧建議：此類問題常見解答 — 知識庫 KB-2041「密碼重設流程」</span>
+        <button class="send" id="sendBtn">送出回覆 ⏎</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const TICKETS = [
+  {id:'TK-88431', prio:1, from:'鼎新精密 · 蔡承翰', subj:'ERP 登入後立刻被登出，Session 無法保持', st:'open', sla:-42, unread:true,
+   tags:['帳號權限','ERP'], cust:'蔡承翰（採購部）', time:'08/28 18:52',
+   msgs:[
+     {who:'蔡承翰', role:'cust', t:'08/28 18:52', body:'今天下午開始，登入 ERP 後不到 30 秒就自動跳回登入頁，清過 Cookie 也一樣。我們部門有 6 個人都遇到相同狀況，月底結帳作業受到影響，請盡快協助。'},
+     {who:'客服 高敏珊', role:'agent', t:'08/28 19:05', body:'蔡先生您好，已為您建立工單並轉二線工程師。初步判斷與今日 17:30 的 SSO 憑證更新有關，正在確認影響範圍，30 分鐘內回覆您處理進度。'}]},
+  {id:'TK-88430', prio:2, from:'澄光生技 · 蘇奕辰', subj:'報表匯出 Excel 後數字格式變成文字', st:'open', sla:128, unread:true,
+   tags:['報表','資料匯出'], cust:'蘇奕辰（資訊處）', time:'08/28 17:40',
+   msgs:[{who:'蘇奕辰', role:'cust', t:'08/28 17:40', body:'銷售月報匯出後，金額欄位全部變成文字格式，左上角出現綠色小三角，導致樞紐分析無法加總。上個月的版本沒有這個問題。'}]},
+  {id:'TK-88429', prio:1, from:'翔宇餐飲 · 何冠廷', subj:'門市 POS 離線模式無法同步昨日交易', st:'open', sla:35, unread:true,
+   tags:['POS','同步異常'], cust:'何冠廷（營運部）', time:'08/28 16:15',
+   msgs:[
+     {who:'何冠廷', role:'cust', t:'08/28 16:15', body:'高雄三民門市昨天網路中斷 4 小時，恢復後離線交易一直卡在「待同步」，共 217 筆。今日營收對帳已經對不起來了。'},
+     {who:'客服 高敏珊', role:'agent', t:'08/28 16:40', body:'已遠端查看該門市主機，同步佇列有一筆異常交易（#A-9917，金額欄位溢位）卡住整批。建議先允許我們略過該筆，其餘 216 筆可立即補傳，您同意嗎？'},
+     {who:'何冠廷', role:'cust', t:'08/28 17:02', body:'同意略過，該筆我們人工補登。請盡快處理。'}]},
+  {id:'TK-88428', prio:3, from:'巨輪物流 · 鄭博文', subj:'希望儀表板新增「逾時率」自訂欄位', st:'pend', sla:1420, unread:false,
+   tags:['功能建議','儀表板'], cust:'鄭博文（營運管理組）', time:'08/28 15:20',
+   msgs:[{who:'鄭博文', role:'cust', t:'08/28 15:20', body:'目前週報要手動把逾時資料拉到 Excel 算，希望儀表板可以直接顯示各區域的逾時率趨勢，最好可以下鑽到單一路線。'}]},
+  {id:'TK-88427', prio:2, from:'泓達電子 · 吳佳樺', subj:'API 呼叫偶發 504，每日約 3-5 次', st:'open', sla:310, unread:false,
+   tags:['API','效能'], cust:'吳佳樺（系統工程師）', time:'08/28 13:55',
+   msgs:[
+     {who:'吳佳樺', role:'cust', t:'08/28 13:55', body:'我們排程每 5 分鐘呼叫 /v2/orders/sync，每天凌晨 2-4 點間會出現 3-5 次 504 Gateway Timeout，retry 後正常。附上 request id：req_7f3a91、req_7f4b22。'},
+     {who:'客服 周雅嵐', role:'agent', t:'08/28 14:30', body:'查詢後發現該時段為資料庫每日 vacuum 維護窗口，慢查詢導致 timeout。工程師已將維護時間調整至 04:30，今晚生效，再請您觀察一晚。'}]},
+  {id:'TK-88426', prio:3, from:'翔宇餐飲 · 林于婷', subj:'申請開通新進人員帳號 x2', st:'done', sla:0, unread:false,
+   tags:['帳號申請'], cust:'林于婷（人資）', time:'08/28 11:10',
+   msgs:[
+     {who:'林于婷', role:'cust', t:'08/28 11:10', body:'9/1 有兩位新進門市督導報到，請協助開通系統帳號，權限比照各區督導。名單如附檔。'},
+     {who:'客服 周雅嵐', role:'agent', t:'08/28 11:50', body:'已開通帳號 SUP-1142、SUP-1143，首次登入須變更密碼，通知信已寄至兩位信箱，此工單先行結案。'}]}
+];
+const PRIO_C = {1:'#dc2626',2:'#ea580c',3:'#a1a1aa'};
+const ST_TXT = {open:['待處理','st-open'], pend:['待客戶回覆','st-pend'], done:['已結案','st-done']};
+let sel = 0;
+const list = document.getElementById('list');
+
+function slaTxt(m){
+  if(m<=0) return `逾時 ${-m}m`;
+  if(m<60) return `${m}m`;
+  return `${Math.floor(m/60)}h ${m%60}m`;
+}
+function slaCls(m){ return m<=0?'danger':(m<120?'warn':''); }
+
+function renderList(){
+  list.innerHTML='';
+  TICKETS.forEach((t,i)=>{
+    const el=document.createElement('div');
+    el.className='titem'+(i===sel?' sel':'');
+    el.innerHTML=`
+      <div style="display:flex;gap:0;align-items:stretch">
+        <span class="prio" style="background:${PRIO_C[t.prio]}"></span>
+        <div style="flex:1;min-width:0">
+          <div class="r1"><span class="tid">${t.id}</span><span>P${t.prio}</span>
+            <span class="st ${ST_TXT[t.st][1]}">${ST_TXT[t.st][0]}</span>
+            ${t.unread?'<span class="unread"></span>':''}</div>
+          <div class="sub">${t.subj}</div>
+          <div class="r3"><span style="color:#71717a">${t.from}</span>
+            ${t.st!=='done'?`<span class="sla ${slaCls(t.sla)}" data-sla="${i}">⏱ ${slaTxt(t.sla)}</span>`:''}</div>
+        </div>
+      </div>`;
+    el.addEventListener('click',()=>{sel=i;renderAll();});
+    list.appendChild(el);
+  });
+  const selEl = list.children[sel];
+  if(selEl) selEl.scrollIntoView({block:'nearest'});
+}
+function renderDetail(){
+  const t=TICKETS[sel]; t.unread=false;
+  document.getElementById('dhead').innerHTML=`
+    <div class="meta">${t.id} ・ ${t.cust} ・ 建立於 ${t.time} ・ <a href="ticket.html" style="color:#2563eb;text-decoration:none">開啟完整頁面 →</a></div>
+    <h2>${t.subj}</h2>
+    <div class="tags">${t.tags.map(x=>`<span class="dtag">#${x}</span>`).join('')}
+      <span class="dtag" style="color:${PRIO_C[t.prio]};border-color:${PRIO_C[t.prio]}">優先級 P${t.prio}</span></div>`;
+  document.getElementById('dbody').innerHTML = t.msgs.map(m=>`
+    <div class="msg ${m.role==='agent'?'agent':''}">
+      <div class="mav" style="background:${m.role==='agent'?'#2563eb':'#71717a'}">${m.who.slice(-2,-1)||m.who[0]}</div>
+      <div style="flex:1"><span class="mwho">${m.who}</span><span class="mtime">${m.t}</span>
+      <div class="mbody">${m.body}</div></div>
+    </div>`).join('');
+}
+function renderAll(){ renderList(); renderDetail(); }
+renderAll();
+
+const replyBox = document.getElementById('replyBox');
+function sendReply(){
+  const v = replyBox.value.trim();
+  if(!v) return;
+  TICKETS[sel].msgs.push({who:'客服 高敏珊', role:'agent', t:'剛剛', body:v.replace(/</g,'&lt;')});
+  replyBox.value=''; renderDetail();
+  document.getElementById('dbody').scrollTop = 1e9;
+}
+document.getElementById('sendBtn').addEventListener('click', sendReply);
+document.addEventListener('keydown', e=>{
+  const typing = document.activeElement===replyBox;
+  if(e.key==='Escape'){ replyBox.blur(); return; }
+  if(typing){
+    if(e.key==='Enter'&&e.ctrlKey){ e.preventDefault(); sendReply(); }
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if(k==='j'){ e.preventDefault(); sel=Math.min(TICKETS.length-1,sel+1); renderAll(); }
+  else if(k==='k'){ e.preventDefault(); sel=Math.max(0,sel-1); renderAll(); }
+  else if(k==='r'){ e.preventDefault(); replyBox.focus(); }
+});
+setInterval(()=>{
+  TICKETS.forEach(t=>{ if(t.st!=='done') t.sla--; });
+  document.querySelectorAll('[data-sla]').forEach(el=>{
+    const t=TICKETS[+el.dataset.sla];
+    el.textContent='⏱ '+slaTxt(t.sla);
+    el.className='sla '+slaCls(t.sla);
+  });
+},60000);
+</script>
+</body>
+</html>

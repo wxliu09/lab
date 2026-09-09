@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>36 · 地勤班組排班與勤時檢核 — AIRPORT OPS</title>
+<style>
+:root{
+  --n0:#0b1222;--n1:#111c33;--n2:#16243f;--edge:#22344f;
+  --txt:#dbe6f5;--dim:#7b91b0;
+  --gate:#4dd0e1;--dep:#7c9cff;--arr:#8bd67a;--dly:#ffb547;--cnc:#ff5c6c;--vip:#c792ea;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--n0);color:var(--txt);min-height:100vh;font-size:13px;
+  font-family:"Segoe UI","Roboto Condensed","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gate);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:99;text-decoration:none;color:var(--n0);
+  background:var(--gate);padding:12px 22px;border-radius:6px;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;box-shadow:0 0 22px rgba(77,208,225,.45)}
+.home:hover{background:#fff}
+
+.subnav{display:flex;flex-wrap:wrap;gap:1px;background:var(--edge);border-bottom:2px solid var(--edge);
+  position:sticky;top:0;z-index:60}
+.subnav a{background:var(--n1);color:var(--dim);text-decoration:none;padding:11px 18px;font-size:11px;
+  letter-spacing:.14em;font-weight:600;transition:.16s}
+.subnav a:hover{background:var(--n2);color:var(--txt)}
+.subnav a[aria-current]{background:rgba(77,208,225,.16);color:var(--gate);box-shadow:inset 0 -2px 0 var(--gate)}
+.subnav a.bk{background:var(--n2);color:var(--gate)}
+
+header{background:linear-gradient(180deg,#152342,#0e1a2f);border-bottom:2px solid var(--edge);
+  padding:16px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+header .p{width:40px;height:40px;border-radius:9px;background:linear-gradient(135deg,#c792ea,#7c5aa8);
+  display:grid;place-items:center;font-size:19px;color:#120820}
+header h1{font-size:16px;font-weight:700}
+header h1 small{display:block;font-size:9.5px;letter-spacing:.26em;color:var(--dim);font-weight:400;margin-top:3px}
+header .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:10.5px;color:var(--dim)}
+header .rt b{display:block;color:var(--txt);font-size:17px;font-weight:700}
+header .rt b.r{color:var(--cnc)}header .rt b.g{color:var(--arr)}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:13px 20px;background:var(--n1);
+  border-bottom:1px solid var(--edge)}
+.filters button{appearance:none;font:inherit;font-size:11.5px;font-weight:600;padding:8px 15px;border-radius:6px;
+  border:1px solid var(--edge);background:var(--n2);color:var(--dim);cursor:pointer;transition:.16s}
+.filters button:hover{color:var(--txt)}
+.filters button[aria-pressed="true"]{background:rgba(77,208,225,.16);border-color:var(--gate);color:var(--gate)}
+.filters button.warn[aria-pressed="true"]{background:rgba(255,92,108,.16);border-color:var(--cnc);color:var(--cnc)}
+.filters .sep{width:1px;height:22px;background:var(--edge);margin:0 4px}
+.filters .cnt{margin-left:auto;font-size:11px;color:var(--dim)}
+.filters .cnt b{color:var(--gate);font-size:14px}
+
+/* ---------- layout ---------- */
+.stage{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;padding:16px 20px 8px;align-items:start}
+@media(max-width:1080px){.stage{grid-template-columns:1fr}}
+.panel{background:var(--n1);border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+.panel>h2{font-size:11px;letter-spacing:.18em;color:var(--dim);font-weight:600;padding:12px 16px;
+  border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.panel>h2 b{color:var(--gate);font-size:10.5px}
+
+/* ---------- badge ---------- */
+.badgewrap{padding:20px 18px 22px;display:flex;flex-direction:column;align-items:center;
+  background:radial-gradient(circle at 50% 0%,rgba(199,146,234,.10),transparent 60%)}
+.badgewrap svg{width:100%;max-width:262px;height:auto;display:block;
+  filter:drop-shadow(0 12px 28px rgba(0,0,0,.55))}
+.rules{padding:4px 18px 18px}
+.rules .r{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid rgba(34,52,79,.6)}
+.rules .r:last-child{border-bottom:0}
+.rules .mk{flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+  font-size:12px;font-weight:700}
+.mk.ok{background:rgba(139,214,122,.16);color:var(--arr)}
+.mk.no{background:rgba(255,92,108,.18);color:var(--cnc)}
+.rules .r .m b{display:block;font-size:12.5px;font-weight:600}
+.rules .r .m small{display:block;color:var(--dim);font-size:11px;margin-top:3px;line-height:1.65}
+.verdict{margin:0 18px 18px;padding:12px 14px;border-radius:8px;font-size:12px;line-height:1.8}
+.verdict.ok{background:rgba(139,214,122,.10);border-left:3px solid var(--arr);color:#bfe6b3}
+.verdict.no{background:rgba(255,92,108,.10);border-left:3px solid var(--cnc);color:#ffc0c7}
+
+/* ---------- matrix ---------- */
+.mxwrap{overflow-x:auto}
+.mx{min-width:880px;border-collapse:collapse;width:100%}
+.mx th{font-size:9.5px;letter-spacing:.16em;color:var(--dim);font-weight:600;text-align:center;
+  padding:10px 6px;border-bottom:1px solid var(--edge);background:var(--n2);white-space:nowrap}
+.mx th.nm{text-align:left;padding-left:16px;min-width:180px}
+.mx td{padding:0;border-bottom:1px solid rgba(34,52,79,.55);text-align:center}
+.mx tr.row{cursor:pointer;transition:.14s}
+.mx tr.row:hover td{background:rgba(77,208,225,.06)}
+.mx tr.row[aria-selected="true"] td{background:rgba(77,208,225,.12);
+  box-shadow:inset 0 0 0 1px rgba(77,208,225,.35)}
+.mx td.nm{text-align:left;padding:9px 10px 9px 16px}
+.mx td.nm b{display:block;font-size:13px;font-weight:600}
+.mx td.nm small{display:block;font-size:10.5px;color:var(--dim);margin-top:2px;letter-spacing:.08em}
+.sh{display:inline-grid;place-items:center;width:38px;height:30px;border-radius:5px;
+  font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.sh-D{background:rgba(255,181,71,.18);color:var(--dly)}
+.sh-E{background:rgba(124,156,255,.18);color:var(--dep)}
+.sh-N{background:rgba(199,146,234,.20);color:var(--vip)}
+.sh-S{background:rgba(77,208,225,.16);color:var(--gate)}
+.sh-T{background:rgba(139,214,122,.16);color:var(--arr)}
+.sh-O{background:rgba(123,145,176,.12);color:#5f7a99}
+.hrs{font-size:13px;font-weight:700}
+.hrs.over{color:var(--cnc)}
+.flagbox{display:inline-block;font-size:10px;font-weight:700;padding:4px 9px;border-radius:5px;white-space:nowrap}
+.fl-ok{background:rgba(139,214,122,.14);color:var(--arr)}
+.fl-no{background:rgba(255,92,108,.16);color:var(--cnc)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--edge);
+  font-size:11px;color:var(--dim)}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{width:13px;height:13px;border-radius:3px;display:block}
+
+/* ---------- hours chart ---------- */
+.hchart{padding:8px 20px 10px}
+.hchart .box{background:var(--n1);border:1px solid var(--edge);border-radius:10px;padding:16px 18px}
+.hchart h2{font-size:12px;letter-spacing:.18em;color:var(--dim);font-weight:600;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.hchart h2 b{color:var(--gate);font-size:11px}
+.hchart svg{width:100%;height:auto;display:block;margin-top:14px;min-width:0}
+.wb{transform-origin:center bottom;animation:rise .7s cubic-bezier(.2,.8,.3,1) both}
+@keyframes rise{from{transform:scaleY(0)}}
+.wg{stroke:rgba(34,52,79,.9);stroke-width:1}
+.wl{stroke:var(--cnc);stroke-width:1.5;stroke-dasharray:7 6}
+.wt{fill:#5d7ea3;font-size:9px}
+.hchart p{margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.85}
+.hchart p b{color:var(--txt)}
+.ftr{text-align:center;font-size:10px;color:#40587a;letter-spacing:.3em;padding:16px 0 46px}
+
+@media(max-width:640px){
+  .stage,.hchart{padding-left:12px;padding-right:12px}
+  header .rt{width:100%;margin-left:0;justify-content:space-between;gap:12px}
+  .filters .cnt{margin-left:0;width:100%}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<nav class="subnav" aria-label="子頁導覽">
+  <a class="bk" href="index.html">◄ 排班台 GANTT</a>
+  <a href="flights.html">航班動態 FLIGHTS</a>
+  <a href="gates.html">登機門 GATES</a>
+  <a href="crew.html" aria-current="page">地勤班組 CREW</a>
+  <a href="report.html">運務報表 REPORT</a>
+</nav>
+
+<header>
+  <div class="p">☰</div>
+  <h1>地勤班組排班與勤時合法性檢核<small>GROUND CREW ROSTER &amp; DUTY-TIME COMPLIANCE · W41 / 10.06 – 10.12</small></h1>
+  <div class="rt">
+    <div><b>43</b>在籍人數</div>
+    <div><b>18</b>本週核心班表</div>
+    <div><b>6</b>班組 TEAMS</div>
+    <div><b class="r" id="kv-bad">0</b>勤時違規</div>
+    <div><b class="g">4</b>檢核規則</div>
+  </div>
+</header>
+
+<div class="filters" role="group" aria-label="班組篩選">
+  <button data-t="all" aria-pressed="true">全部班組</button>
+  <button data-t="A1" aria-pressed="false">A1 行李甲班</button>
+  <button data-t="A2" aria-pressed="false">A2 行李乙班</button>
+  <button data-t="C1" aria-pressed="false">C1 客艙清潔</button>
+  <button data-t="F1" aria-pressed="false">F1 加油作業</button>
+  <button data-t="T1" aria-pressed="false">T1 拖車推機</button>
+  <button data-t="S1" aria-pressed="false">S1 特殊旅客</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button class="warn" id="onlybad" aria-pressed="false">只看違規人員</button>
+  <span class="cnt"><b id="shown">0</b> / 18 人顯示中</span>
+</div>
+
+<div class="stage">
+  <div class="panel">
+    <h2>員工識別證 STAFF BADGE<b id="bd-code">—</b></h2>
+    <div class="badgewrap" id="badge"></div>
+    <div class="rules" id="rules"></div>
+    <div id="verdict"></div>
+  </div>
+
+  <div class="panel">
+    <h2>本週排班矩陣 WEEKLY SHIFT MATRIX<b>點選任一列檢視識別證與勤時檢核</b></h2>
+    <div class="mxwrap">
+      <table class="mx">
+        <thead>
+          <tr>
+            <th class="nm">人員 / 班組</th>
+            <th>10/06 一</th><th>10/07 二</th><th>10/08 三</th><th>10/09 四</th>
+            <th>10/10 五</th><th>10/11 六</th><th>10/12 日</th>
+            <th>週工時</th><th>檢核</th>
+          </tr>
+        </thead>
+        <tbody id="mxbody"></tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><i class="sh-D" style="background:rgba(255,181,71,.18)"></i>早 D 06:00–14:00</span>
+      <span><i class="sh-E" style="background:rgba(124,156,255,.18)"></i>中 E 14:00–22:00</span>
+      <span><i class="sh-N" style="background:rgba(199,146,234,.20)"></i>夜 N 22:00–06:00</span>
+      <span><i class="sh-S" style="background:rgba(77,208,225,.16)"></i>支援 S 10:00–18:00</span>
+      <span><i class="sh-T" style="background:rgba(139,214,122,.16)"></i>訓練 T 09:00–13:00</span>
+      <span><i class="sh-O" style="background:rgba(123,145,176,.12)"></i>例休 OFF</span>
+    </div>
+  </div>
+</div>
+
+<div class="hchart">
+  <div class="box">
+    <h2>本週個人總工時 · WEEKLY DUTY HOURS<b>紅色虛線為單週 48 小時法定上限</b></h2>
+    <svg viewBox="0 0 900 240" role="img" id="wsvg"
+      aria-label="18 名地勤人員本週總工時長條圖，紅色虛線標示 48 小時法定上限，楊凱翔以 56 小時超標">
+      <g id="wbars"></g>
+    </svg>
+    <p>本週 18 名核心人員平均工時 <b>41.3 小時</b>。<b>楊凱翔（F1 加油作業組）</b> 因連續 7 日排班達 56 小時，同時觸發「單週工時上限」與「連續出勤天數」兩項規則，已列為優先調整對象；加油作業組現行人力使用率僅 47%，具備調班餘裕。夜班接早班造成的休息間隔不足，集中出現在 <b>A1 行李裝卸甲班</b>與 <b>T1 拖車推機組</b>，建議於夜班後強制插入 24 小時緩衝。</p>
+  </div>
+</div>
+
+<div class="ftr">CREW / ID BADGE + SHIFT MATRIX · DESIGN 36 / 40</div>
+
+<script>
+/* 班別定義：代碼 → [名稱, 起, 迄(可跨日), 時數] */
+const SH={
+  D:["早班",6,14,8],E:["中班",14,22,8],N:["夜班",22,30,8],
+  S:["支援",10,18,8],T:["訓練",9,13,4],O:["例休",0,0,0]
+};
+const TEAM={
+  A1:["行李裝卸組 · 甲班","A5 / A7 裝卸區",8,82],
+  A2:["行李裝卸組 · 乙班","B2 / B4 裝卸區",8,64],
+  C1:["客艙清潔組","全區機動支援",12,91],
+  F1:["加油作業組","停機坪 P1–P8",6,47],
+  T1:["拖車推機組","全區支援",5,73],
+  S1:["特殊旅客服務","輪椅／無陪同兒童",4,38]
+};
+/* 工號, 姓名, 班組, 職務, 到職, 證照, 七日班表 */
+const CREW=[
+ ["TPE-2117","林建豪","A1","領班 Lead","2018-03","ADP-B / 高空作業","DDDOEEO"],
+ ["TPE-2264","陳彥廷","A1","裝卸員","2021-07","ADP-B","NNNDOEE"],
+ ["TPE-2318","黃柏睿","A1","裝卸員","2022-11","ADP-B","EEODDDO"],
+ ["TPE-2402","吳孟哲","A2","領班 Lead","2017-09","ADP-B / 貨櫃拖車","DDOEEEO"],
+ ["TPE-2455","張家瑋","A2","裝卸員","2023-02","ADP-B","SSSSSOO"],
+ ["TPE-2478","劉冠廷","A2","裝卸員","2020-05","ADP-B / 危險品","NNONNOT"],
+ ["TPE-3021","李佩珊","C1","領班 Lead","2016-04","客艙清潔 A 級","DDDDDOO"],
+ ["TPE-3088","王雅琪","C1","清潔員","2019-08","客艙清潔 A 級","EEEEEEO"],
+ ["TPE-3140","蔡宜蓁","C1","清潔員","2022-01","客艙清潔 B 級","DEODEOD"],
+ ["TPE-3196","周思妤","C1","清潔員","2024-03","客艙清潔 B 級","ODDSSOE"],
+ ["TPE-4012","鄭文彥","F1","領班 Lead","2015-11","加油作業 / 危險品","DDDODDO"],
+ ["TPE-4066","許志明","F1","加油員","2019-02","加油作業","EEEONNO"],
+ ["TPE-4103","楊凱翔","F1","加油員","2023-06","加油作業","DDEENND"],
+ ["TPE-5008","洪世昌","T1","領班 Lead","2014-06","推機作業 / 無桿拖車","DDODDOS"],
+ ["TPE-5041","曾柏勳","T1","推機員","2021-10","推機作業","EEEDDDO"],
+ ["TPE-6015","謝雨潔","S1","領班 Lead","2018-08","無陪同兒童 / 醫療輔具","DDDOSSO"],
+ ["TPE-6052","江品妍","S1","服務員","2022-05","無陪同兒童","OEEEODD"],
+ ["TPE-6077","徐若彤","S1","服務員","2024-09","醫療輔具","TDDOEEO"]
+];
+const DAYS=["10/06 一","10/07 二","10/08 三","10/09 四","10/10 五","10/11 六","10/12 日"];
+
+/* ---------- 勤時檢核 ---------- */
+function audit(sh){
+  const arr=[...sh];
+  const hours=arr.reduce((s,c)=>s+SH[c][3],0);
+  const offs=arr.filter(c=>c==="O").length;
+  let maxRun=0,run=0;
+  arr.forEach(c=>{if(c==="O"){run=0}else{run++;maxRun=Math.max(maxRun,run)}});
+  let minGap=99,gapDay="";
+  for(let i=0;i<6;i++){
+    if(arr[i]==="O"||arr[i+1]==="O")continue;
+    const gap=24+SH[arr[i+1]][1]-SH[arr[i]][2];
+    if(gap<minGap){minGap=gap;gapDay=DAYS[i]+" → "+DAYS[i+1];}
+  }
+  if(minGap===99){minGap=24;gapDay="無連續班次";}
+  return {
+    hours,offs,maxRun,minGap,gapDay,
+    checks:[
+      {ok:hours<=48,t:"單週總工時 ≤ 48 小時",d:`本週累計 ${hours} 小時（含訓練時數）`},
+      {ok:maxRun<=6,t:"連續出勤 ≤ 6 日",d:`最長連續出勤 ${maxRun} 日`},
+      {ok:minGap>=11,t:"相鄰班次間隔 ≥ 11 小時",d:`最短間隔 ${minGap} 小時 · ${gapDay}`},
+      {ok:offs>=2,t:"每週例休 ≥ 2 日",d:`本週例休 ${offs} 日`}
+    ]
+  };
+}
+const AUD=CREW.map(c=>audit(c[6]));
+document.getElementById("kv-bad").textContent=AUD.filter(a=>a.checks.some(k=>!k.ok)).length;
+
+/* ---------- 矩陣 ---------- */
+const body=document.getElementById("mxbody");
+let team="all",onlyBad=false,sel=1;
+function render(){
+  const idx=CREW.map((c,i)=>i).filter(i=>{
+    if(team!=="all"&&CREW[i][2]!==team)return false;
+    if(onlyBad&&!AUD[i].checks.some(k=>!k.ok))return false;
+    return true;
+  });
+  document.getElementById("shown").textContent=idx.length;
+  if(!idx.length){
+    body.innerHTML='<tr><td class="nm" colspan="10" style="padding:34px 16px;color:#7b91b0">'+
+      '此條件下沒有符合的人員 — 請切換班組或關閉「只看違規人員」。</td></tr>';
+    return;
+  }
+  body.innerHTML=idx.map(i=>{
+    const c=CREW[i],a=AUD[i],bad=a.checks.filter(k=>!k.ok).length;
+    const cells=[...c[6]].map(s=>`<td><span class="sh sh-${s}">${s==="O"?"休":SH[s][0][0]+s}</span></td>`).join("");
+    return `<tr class="row" data-i="${i}" tabindex="0" aria-selected="${i===sel}"
+      aria-label="${c[1]} ${TEAM[c[2]][0]} 週工時 ${a.hours} 小時">
+      <td class="nm"><b>${c[1]}</b><small>${c[0]} · ${TEAM[c[2]][0]}</small></td>
+      ${cells}
+      <td><span class="hrs ${a.hours>48?"over":""}">${a.hours}h</span></td>
+      <td><span class="flagbox ${bad?"fl-no":"fl-ok"}">${bad?"違規 "+bad:"合格"}</span></td>
+    </tr>`;
+  }).join("");
+  body.querySelectorAll("tr.row").forEach(tr=>{
+    const go=()=>select(+tr.dataset.i);
+    tr.addEventListener("click",go);
+    tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+  });
+}
+
+/* ---------- 識別證 ---------- */
+function barcode(seed){
+  let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))&0xffff;
+  let x=22,out="";
+  for(let i=0;i<46;i++){
+    h=(h*1103515245+12345)&0x7fffffff;
+    const w=1+(h>>7)%3;
+    if(i%2===0)out+=`<rect x="${x}" y="328" width="${w}" height="20" fill="#0b1222"/>`;
+    x+=w+1;
+  }
+  return out;
+}
+function select(i){
+  sel=i;
+  const c=CREW[i],a=AUD[i],t=TEAM[c[2]];
+  const bad=a.checks.filter(k=>!k.ok);
+  document.getElementById("bd-code").textContent=c[0];
+  const accent=bad.length?"#ff5c6c":"#4dd0e1";
+  document.getElementById("badge").innerHTML=`
+  <svg viewBox="0 0 260 380" role="img" aria-label="${c[1]} 的員工識別證，工號 ${c[0]}，${t[0]}">
+    <rect x="112" y="0" width="36" height="16" rx="4" fill="#2b3f5e"/>
+    <rect x="120" y="12" width="20" height="26" rx="3" fill="#3d557a"/>
+    <rect x="6" y="34" width="248" height="340" rx="14" fill="#16243f" stroke="#2b4670" stroke-width="1.5"/>
+    <rect x="6" y="34" width="248" height="60" rx="14" fill="${accent}" opacity=".14"/>
+    <rect x="118" y="26" width="24" height="14" rx="7" fill="#0b1222" stroke="#2b4670"/>
+    <text x="24" y="60" fill="${accent}" font-size="11" font-weight="700" letter-spacing="2.4">TPE T2 GROUND OPS</text>
+    <text x="24" y="80" fill="#7b91b0" font-size="9" letter-spacing="2">桃園國際機場　第二航廈運務</text>
+
+    <g transform="translate(24,108)">
+      <rect width="72" height="88" rx="8" fill="#0d1a2e" stroke="#2b4670"/>
+      <circle cx="36" cy="32" r="16" fill="${accent}" opacity=".55"/>
+      <path d="M8 84 C8 60 18 52 36 52 C54 52 64 60 64 84 Z" fill="${accent}" opacity=".38"/>
+      <rect x="8" y="76" width="56" height="4" rx="2" fill="#16243f"/>
+    </g>
+    <text x="112" y="132" fill="#dbe6f5" font-size="26" font-weight="700">${c[1]}</text>
+    <text x="112" y="154" fill="#7b91b0" font-size="11" letter-spacing="1.6">${c[3]}</text>
+    <text x="112" y="176" fill="${accent}" font-size="13" font-weight="700" letter-spacing="1.6">${c[0]}</text>
+    <text x="112" y="194" fill="#7b91b0" font-size="10">到職 ${c[4]}</text>
+
+    <line x1="24" y1="214" x2="236" y2="214" stroke="#22344f"/>
+    <text x="24" y="234" fill="#7b91b0" font-size="9" letter-spacing="2">所屬班組 TEAM</text>
+    <text x="24" y="252" fill="#dbe6f5" font-size="13" font-weight="600">${t[0]}</text>
+    <text x="24" y="270" fill="#7b91b0" font-size="10">責任區 ${t[1]} · 編制 ${t[2]} 人</text>
+    <text x="24" y="292" fill="#7b91b0" font-size="9" letter-spacing="2">證照 CERTIFICATION</text>
+    <text x="24" y="310" fill="#dbe6f5" font-size="11.5">${c[5]}</text>
+
+    <rect x="16" y="322" width="228" height="42" rx="6" fill="#dbe6f5"/>
+    ${barcode(c[0])}
+    <text x="130" y="359" fill="#0b1222" font-size="8.5" letter-spacing="3"
+      text-anchor="middle">${c[0]} · W41</text>
+  </svg>`;
+  document.getElementById("rules").innerHTML=a.checks.map(k=>`
+    <div class="r"><span class="mk ${k.ok?"ok":"no"}">${k.ok?"✓":"✕"}</span>
+      <div class="m"><b>${k.t}</b><small>${k.d}</small></div></div>`).join("");
+  document.getElementById("verdict").innerHTML=bad.length
+    ? `<div class="verdict no"><b>檢核未通過 · ${bad.length} 項</b><br>${c[1]}（${c[0]}）本週班表違反 ${
+        bad.map(k=>"「"+k.t+"」").join("、")}。系統已自動送出調班申請單至 ${t[0]} 領班，須於排班生效前 48 小時內完成調整。</div>`
+    : `<div class="verdict ok"><b>檢核通過 · 4 項全數合格</b><br>${c[1]}（${c[0]}）本週累計 ${a.hours} 小時、例休 ${a.offs} 日，最短班距 ${a.minGap} 小時，符合勤時規範，無須調整。</div>`;
+  body.querySelectorAll("tr.row").forEach(tr=>tr.setAttribute("aria-selected",String(+tr.dataset.i===sel)));
+}
+
+document.querySelectorAll(".filters button[data-t]").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".filters button[data-t]").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  team=b.dataset.t;render();
+}));
+document.getElementById("onlybad").addEventListener("click",e=>{
+  onlyBad=!onlyBad;e.currentTarget.setAttribute("aria-pressed",String(onlyBad));render();
+});
+render();select(1);
+
+/* ---------- 週工時長條圖 ---------- */
+(function(){
+  const W=900,H=240,L=34,R=12,T=16,B=58,max=60;
+  const bw=(W-L-R)/CREW.length;
+  let g="";
+  for(let v=0;v<=60;v+=15){
+    const y=H-B-(v/max)*(H-T-B);
+    g+=`<line class="wg" x1="${L}" y1="${y}" x2="${W-R}" y2="${y}"/>`;
+    g+=`<text class="wt" x="${L-6}" y="${y+3}" text-anchor="end">${v}</text>`;
+  }
+  const y48=H-B-(48/max)*(H-T-B);
+  g+=`<line class="wl" x1="${L}" y1="${y48}" x2="${W-R}" y2="${y48}"/>`;
+  g+=`<text class="wt" x="${W-R}" y="${y48-6}" text-anchor="end" fill="#ff5c6c">法定上限 48h</text>`;
+  CREW.forEach((c,i)=>{
+    const a=AUD[i],bad=a.checks.some(k=>!k.ok);
+    const h=(a.hours/max)*(H-T-B),x=L+i*bw+4,y=H-B-h;
+    g+=`<rect class="wb" x="${x}" y="${y}" width="${bw-8}" height="${h}" rx="2"
+      fill="${bad?"#ff5c6c":"#2f4d78"}" style="animation-delay:${i*40}ms"/>`;
+    g+=`<text class="wt" x="${x+(bw-8)/2}" y="${H-B+16}" text-anchor="middle"
+      fill="${bad?"#ff8f9a":"#5d7ea3"}">${a.hours}</text>`;
+    g+=`<text class="wt" x="${x+(bw-8)/2}" y="${H-B+30}" text-anchor="middle"
+      transform="rotate(38 ${x+(bw-8)/2} ${H-B+30})">${c[1]}</text>`;
+  });
+  document.getElementById("wbars").innerHTML=g;
+})();
+</script>
+</body>
+</html>

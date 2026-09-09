@@ -1,0 +1,1758 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>CronScope</title>
+<style>
+:root {
+  --ink: #131A1F; --ledger: #1C252C; --rule: #2E3A43; --paper: #E9E4D6; --dim: #A9A497;
+  --amber: #F0B33C; --moss: #7FB59B; --coral: #E7776A;
+  --sans: "Segoe UI", "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  --mono: "Cascadia Code", Consolas, "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--ink); color: var(--paper); font: 16px/1.55 var(--sans); -webkit-text-size-adjust: 100%; }
+body { margin: 0 auto; padding: 32px 24px 64px; max-width: 1120px; }
+h1 { font-size: 31px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: 25px; font-weight: 600; margin: 0 0 16px; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; }
+p { margin: 0; }
+section { border-top: 1px solid var(--rule); padding-top: 28px; margin-top: 36px; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+.top p { color: var(--dim); margin-top: 6px; max-width: 62ch; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.seg button { background: transparent; border: 0; color: var(--dim); padding: 6px 12px; cursor: pointer; font: 15px var(--sans); }
+.seg button[aria-pressed="true"] { background: var(--ledger); color: var(--paper); }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
+.expr { width: 100%; font: 31px/1.3 var(--mono); background: var(--ledger); color: var(--amber); border: 1px solid var(--rule); border-radius: 4px; padding: 14px 18px; letter-spacing: .04em; margin-top: 8px; }
+.expr.invalid { border-color: var(--coral); }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.error { color: var(--coral); margin-top: 10px; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+.presets .cap { color: var(--dim); font-size: 14px; margin-right: 4px; }
+.chip { background: transparent; border: 1px solid var(--rule); color: var(--paper); border-radius: 999px; padding: 4px 12px; font: 14px var(--sans); cursor: pointer; }
+.chip code { font: 13px var(--mono); color: var(--amber); margin-left: 6px; }
+.chip:hover { border-color: var(--amber); }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 20px; margin-top: 22px; }
+select, input[type=text], input[type=number], input[type=datetime-local], input[type=date] { background: var(--ledger); color: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 8px 10px; font: 15px var(--sans); width: 100%; min-width: 0; }
+input[type=number], input[type=datetime-local], input[type=date] { font-family: var(--mono); }
+.row { display: flex; gap: 8px; align-items: center; }
+.btn { background: transparent; border: 1px solid var(--rule); color: var(--paper); border-radius: 4px; padding: 7px 12px; font: 14px var(--sans); cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--amber); color: var(--amber); }
+.gloss { display: grid; gap: 12px; margin-top: 30px; }
+.gloss .cell { border-top: 2px solid var(--rule); padding-top: 8px; min-width: 0; }
+.gloss .cell.bad { border-top-color: var(--coral); }
+.gloss .tok { font: 25px/1.2 var(--mono); color: var(--amber); word-break: break-all; }
+.gloss .cell.bad .tok { color: var(--coral); }
+.gloss .lbl { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.gloss .txt { font-size: 15px; margin-top: 2px; }
+.desc { font-size: 25px; line-height: 1.4; margin: 28px 0 8px; max-width: 46ch; }
+.jobkind { color: var(--dim); font-size: 14px; max-width: 80ch; }
+.warnings { list-style: none; padding: 0; margin: 12px 0 0; color: var(--dim); font-size: 14px; max-width: 90ch; }
+.warnings li { padding-left: 14px; position: relative; margin-top: 4px; }
+.warnings li::before { content: ''; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; background: var(--amber); border-radius: 50%; }
+.runs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.runs-head .meta { color: var(--dim); font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th { text-align: left; font-weight: 500; color: var(--dim); font-size: 13px; padding: 0 12px 8px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 7px 12px 7px 0; border-bottom: 1px solid rgba(46, 58, 67, .55); vertical-align: top; }
+td.mono { font-family: var(--mono); white-space: nowrap; }
+tr.first td { color: var(--amber); }
+td.note, td.dim { color: var(--dim); font-size: 13px; }
+.empty { color: var(--dim); padding: 12px 0; }
+details { margin-top: 18px; }
+summary { cursor: pointer; color: var(--dim); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 20px; flex-wrap: wrap; }
+.tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--dim); padding: 8px 12px; font: 15px var(--sans); cursor: pointer; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--paper); border-bottom-color: var(--amber); }
+.status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-weight: 600; }
+.status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--moss); flex-shrink: 0; }
+.status.bad .dot { background: var(--coral); }
+.reasons { color: var(--coral); margin: 0 0 8px; padding-left: 18px; }
+.notes { color: var(--dim); font-size: 14px; padding-left: 18px; margin: 0; max-width: 90ch; }
+.triggers { margin: 0 0 8px; padding-left: 18px; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 20px; margin: 18px 0; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
+.form label.check { flex-direction: row; align-items: center; gap: 8px; align-self: end; color: var(--paper); font-size: 14px; }
+.form input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--amber); }
+pre { background: var(--ledger); border-left: 3px solid var(--rule); padding: 14px 16px; margin: 0; overflow: auto; max-height: 460px; font: 13px/1.5 var(--mono); color: var(--paper); }
+.codehead { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 6px; gap: 12px; flex-wrap: wrap; }
+.sim { margin-top: 12px; font-size: 14px; }
+.sim.ok { color: var(--moss); }
+.sim.bad { color: var(--coral); }
+.hint { color: var(--dim); font-size: 14px; max-width: 90ch; }
+.ref table { font-size: 14px; }
+.ref td, .ref th { padding: 6px 12px 6px 0; }
+footer { margin-top: 48px; color: var(--dim); font-size: 13px; }
+[hidden] { display: none !important; }
+@media (max-width: 720px) {
+  body { padding: 20px 14px 48px; }
+  .expr { font-size: 22px; padding: 10px 12px; }
+  .gloss .tok { font-size: 18px; }
+  .desc { font-size: 20px; }
+  .runs td:nth-child(4), .runs th:nth-child(4) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>CronScope</h1>
+    <p data-i18n="tagline"></p>
+  </div>
+  <div class="seg" role="group" aria-label="Language">
+    <button type="button" data-lang="zh" aria-pressed="true">中文</button>
+    <button type="button" data-lang="en" aria-pressed="false">EN</button>
+  </div>
+</header>
+
+<section class="hero" style="border-top:0; margin-top: 28px; padding-top: 0;">
+  <label class="field" for="expr"><span data-i18n="expr_label"></span>
+    <input id="expr" class="expr" spellcheck="false" autocomplete="off" autocapitalize="off">
+  </label>
+  <div id="error" class="error" role="alert" hidden></div>
+  <div class="presets" id="presets"></div>
+  <div class="controls">
+    <label class="field"><span data-i18n="dialect"></span><select id="dialect"></select></label>
+    <label class="field"><span data-i18n="tz"></span><select id="tz"></select></label>
+    <label class="field" id="tz-custom-wrap" hidden><span data-i18n="tz_custom"></span><input type="text" id="tz-custom" spellcheck="false"></label>
+    <label class="field"><span data-i18n="base"></span><span class="row"><input type="datetime-local" id="base" step="1"><button type="button" class="btn" id="now" data-i18n="now_btn"></button></span></label>
+    <label class="field"><span data-i18n="count"></span><input type="number" id="count" min="1" max="500" step="1"></label>
+    <label class="field"><span data-i18n="policy"></span><select id="policy"></select></label>
+  </div>
+  <div id="gloss" class="gloss"></div>
+  <p id="desc" class="desc"></p>
+  <p id="jobkind" class="jobkind"></p>
+  <ul id="warnings" class="warnings"></ul>
+</section>
+
+<section class="runs">
+  <div class="runs-head"><h2 id="h-next"></h2><span class="meta" id="runs-meta"></span></div>
+  <table id="next-table" aria-describedby="h-next"><thead><tr>
+    <th data-i18n="col_day"></th><th data-i18n="col_local"></th><th data-i18n="col_offset"></th><th data-i18n="col_utc"></th><th data-i18n="col_rel"></th><th data-i18n="col_note"></th>
+  </tr></thead><tbody></tbody></table>
+  <div id="next-empty" class="empty" hidden data-i18n="never"></div>
+  <details><summary id="h-prev"></summary>
+    <table id="prev-table"><thead><tr>
+      <th data-i18n="col_day"></th><th data-i18n="col_local"></th><th data-i18n="col_offset"></th><th data-i18n="col_utc"></th><th data-i18n="col_rel"></th><th data-i18n="col_note"></th>
+    </tr></thead><tbody></tbody></table>
+  </details>
+</section>
+
+<section class="export">
+  <h2 data-i18n="h_export"></h2>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="ts" aria-selected="true">Windows Task Scheduler</button>
+    <button type="button" role="tab" data-tab="sd" aria-selected="false">systemd timer</button>
+    <button type="button" role="tab" data-tab="gate" aria-selected="false" data-i18n="tab_gate"></button>
+  </div>
+
+  <div id="tab-ts" class="tab" role="tabpanel">
+    <div id="ts-status" class="status"><span class="dot"></span><span id="ts-status-text"></span></div>
+    <ul id="ts-reasons" class="reasons"></ul>
+    <p id="ts-fallback-hint" class="hint" hidden data-i18n="ts_fallback_hint"></p>
+    <ul id="ts-triggers" class="triggers"></ul>
+    <ul id="ts-notes" class="notes"></ul>
+    <div class="form" id="ts-form">
+      <label><span data-i18n="f_taskName"></span><input type="text" data-ts="taskName"></label>
+      <label><span data-i18n="f_command"></span><input type="text" data-ts="command"></label>
+      <label><span data-i18n="f_arguments"></span><input type="text" data-ts="arguments"></label>
+      <label><span data-i18n="f_workdir"></span><input type="text" data-ts="workingDirectory"></label>
+      <label><span data-i18n="f_user"></span><input type="text" data-ts="userId"></label>
+      <label><span data-i18n="f_logon"></span><select data-ts="logonType"><option>S4U</option><option>Password</option><option>InteractiveToken</option><option>ServiceAccount</option></select></label>
+      <label><span data-i18n="f_runlevel"></span><select data-ts="runLevel"><option>LeastPrivilege</option><option>HighestAvailable</option></select></label>
+      <label><span data-i18n="f_limit"></span><input type="text" data-ts="executionTimeLimit"></label>
+      <label><span data-i18n="f_multi"></span><select data-ts="multipleInstances"><option>IgnoreNew</option><option>Queue</option><option>Parallel</option><option>StopExisting</option></select></label>
+      <label><span data-i18n="f_swa"></span><select data-ts="startWhenAvailable"><option value="auto" data-i18n="auto"></option><option value="true" data-i18n="yes"></option><option value="false" data-i18n="no"></option></select></label>
+      <label><span data-i18n="f_restart"></span><input type="number" min="0" max="999" data-ts="restartCount"></label>
+      <label><span data-i18n="f_restartInterval"></span><input type="text" data-ts="restartInterval"></label>
+      <label><span data-i18n="f_randomDelay"></span><input type="text" data-ts="randomDelay"></label>
+      <label><span data-i18n="f_startDate"></span><input type="date" data-ts="startDate"></label>
+      <label class="check"><input type="checkbox" data-ts="utcSync"><span data-i18n="f_utcSync"></span></label>
+    </div>
+    <div id="ts-xml-wrap">
+      <div class="codehead"><h3>Task XML</h3><span class="row"><button type="button" class="btn" data-copy="ts-xml" data-i18n="copy"></button><button type="button" class="btn" data-download="ts-xml" data-i18n="download"></button></span></div>
+      <pre id="ts-xml"></pre>
+      <p id="ts-sim" class="sim"></p>
+      <div class="codehead"><h3 data-i18n="ts_register"></h3><button type="button" class="btn" data-copy="ts-cmd" data-i18n="copy"></button></div>
+      <pre id="ts-cmd"></pre>
+    </div>
+  </div>
+
+  <div id="tab-sd" class="tab" role="tabpanel" hidden>
+    <div id="sd-status" class="status"><span class="dot"></span><span id="sd-status-text"></span></div>
+    <ul id="sd-reasons" class="reasons"></ul>
+    <ul id="sd-notes" class="notes"></ul>
+    <div class="form">
+      <label><span data-i18n="f_unitName"></span><input type="text" data-sd="unitName"></label>
+      <label><span data-i18n="f_execStart"></span><input type="text" data-sd="execStart"></label>
+    </div>
+    <div id="sd-wrap">
+      <div class="codehead"><h3>OnCalendar</h3><button type="button" class="btn" data-copy="sd-lines" data-i18n="copy"></button></div>
+      <pre id="sd-lines"></pre>
+      <div class="codehead"><h3 id="sd-timer-name">.timer</h3><span class="row"><button type="button" class="btn" data-copy="sd-timer" data-i18n="copy"></button><button type="button" class="btn" data-download="sd-timer" data-i18n="download"></button></span></div>
+      <pre id="sd-timer"></pre>
+      <div class="codehead"><h3 id="sd-service-name">.service</h3><span class="row"><button type="button" class="btn" data-copy="sd-service" data-i18n="copy"></button><button type="button" class="btn" data-download="sd-service" data-i18n="download"></button></span></div>
+      <pre id="sd-service"></pre>
+      <div class="codehead"><h3 data-i18n="sd_install"></h3><button type="button" class="btn" data-copy="sd-install" data-i18n="copy"></button></div>
+      <pre id="sd-install"></pre>
+    </div>
+  </div>
+
+  <div id="tab-gate" class="tab" role="tabpanel" hidden>
+    <p class="hint" data-i18n="gate_intro"></p>
+    <ol class="notes" id="gate-steps"></ol>
+    <div class="codehead"><h3 id="gate-title"></h3><span class="row"><button type="button" class="btn" data-copy="gate-xml" data-i18n="copy"></button><button type="button" class="btn" data-download="gate-xml" data-i18n="download"></button></span></div>
+    <pre id="gate-xml"></pre>
+    <div class="codehead"><h3 data-i18n="ts_register"></h3><button type="button" class="btn" data-copy="gate-cmd" data-i18n="copy"></button></div>
+    <pre id="gate-cmd"></pre>
+  </div>
+</section>
+
+<section class="ref">
+  <details><summary data-i18n="ref_title"></summary>
+    <table id="ref-table"><thead></thead><tbody></tbody></table>
+  </details>
+</section>
+
+<footer><span id="footer"></span></footer>
+
+<script>
+/*!
+ * CronScope engine — cron parsing, next-run computation with DST semantics,
+ * bilingual description, Windows Task Scheduler and systemd export.
+ * Zero dependencies. Runs in browsers and Node.js (>= 18).
+ * License: MIT
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) { module.exports = factory(); }
+  else { root.CronScope = factory(); }
+}(typeof self !== 'undefined' ? self : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
+'use strict';
+
+const VERSION = '1.0.0';
+const MS_SEC = 1000, MS_MIN = 60000, MS_HOUR = 3600000, MS_DAY = 86400000;
+const pad2 = n => (n < 10 ? '0' : '') + n;
+const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const DOW_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+// ---------------------------------------------------------------------------
+// Bitset over a closed integer range
+// ---------------------------------------------------------------------------
+class Bitset {
+  constructor(min, max) { this.min = min; this.max = max; this.bits = new Uint8Array(max - min + 1); }
+  set(v) { if (v >= this.min && v <= this.max) this.bits[v - this.min] = 1; return this; }
+  has(v) { return v >= this.min && v <= this.max && this.bits[v - this.min] === 1; }
+  values() { const out = []; for (let i = 0; i < this.bits.length; i++) if (this.bits[i]) out.push(i + this.min); return out; }
+  get count() { let c = 0; for (let i = 0; i < this.bits.length; i++) c += this.bits[i]; return c; }
+  isFull() { return this.count === this.bits.length; }
+  isEmpty() { return this.count === 0; }
+  next(from) { for (let v = Math.max(from, this.min); v <= this.max; v++) if (this.bits[v - this.min]) return v; return -1; }
+  fillAll() { this.bits.fill(1); return this; }
+  clone() { const b = new Bitset(this.min, this.max); b.bits.set(this.bits); return b; }
+}
+
+// ---------------------------------------------------------------------------
+// Time zone support built on Intl (no bundled tz database)
+// ---------------------------------------------------------------------------
+const _fmtCache = new Map();
+function getFormatter(tz) {
+  let f = _fmtCache.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    _fmtCache.set(tz, f);
+  }
+  return f;
+}
+function isValidTimeZone(tz) {
+  if (typeof tz !== 'string' || !tz) return false;
+  try { getFormatter(tz); return true; } catch (e) { return false; }
+}
+function exactOffsetMin(tz, ms) {
+  const parts = getFormatter(tz).formatToParts(new Date(ms));
+  let y = 0, mo = 1, d = 1, h = 0, mi = 0, s = 0;
+  for (const p of parts) {
+    switch (p.type) {
+      case 'year': y = +p.value; break;
+      case 'month': mo = +p.value; break;
+      case 'day': d = +p.value; break;
+      case 'hour': h = +p.value; break;
+      case 'minute': mi = +p.value; break;
+      case 'second': s = +p.value; break;
+    }
+  }
+  if (h === 24) h = 0;
+  const wallAsUtc = Date.UTC(y, mo - 1, d, h, mi, s);
+  return Math.round((wallAsUtc - Math.floor(ms / MS_SEC) * MS_SEC) / MS_MIN);
+}
+// Offset cache keyed by whole UTC hours. A bucket is cached only when the offset
+// is identical at both ends of the hour (i.e. no transition inside that hour).
+const _offsetCache = new Map();
+function offsetAt(tz, ms) {
+  let m = _offsetCache.get(tz);
+  if (!m) { m = new Map(); _offsetCache.set(tz, m); }
+  const bucket = Math.floor(ms / MS_HOUR);
+  if (m.has(bucket)) {
+    const v = m.get(bucket);
+    return v === null ? exactOffsetMin(tz, ms) : v;
+  }
+  if (m.size > 400000) m.clear();
+  const start = bucket * MS_HOUR;
+  const o1 = exactOffsetMin(tz, start);
+  const o2 = exactOffsetMin(tz, start + MS_HOUR - MS_SEC);
+  if (o1 === o2) { m.set(bucket, o1); return o1; }
+  m.set(bucket, null);
+  return exactOffsetMin(tz, ms);
+}
+function utcToWall(tz, ms) {
+  const off = offsetAt(tz, ms);
+  const dt = new Date(ms + off * MS_MIN);
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate(), H: dt.getUTCHours(), M: dt.getUTCMinutes(), S: dt.getUTCSeconds(), dow: dt.getUTCDay(), offsetMin: off };
+}
+function wallAsUtcMs(w) { return Date.UTC(w.y, w.m - 1, w.d, w.H, w.M, w.S); }
+// Wall clock -> UTC. Returns {kind:'unique'|'fold'|'gap', utcs, transition?}
+function wallToUtc(tz, w) {
+  const wallAsUtc = wallAsUtcMs(w);
+  const probes = new Set([offsetAt(tz, wallAsUtc - MS_DAY), offsetAt(tz, wallAsUtc), offsetAt(tz, wallAsUtc + MS_DAY)]);
+  const cands = [];
+  for (const o of probes) {
+    const u = wallAsUtc - o * MS_MIN;
+    if (offsetAt(tz, u) === o) cands.push(u); // wall(u) === w  <=>  offset(u) === o
+  }
+  cands.sort((a, b) => a - b);
+  const uniq = cands.filter((v, i) => i === 0 || v !== cands[i - 1]);
+  if (uniq.length === 1) return { kind: 'unique', utcs: uniq, wallAsUtc };
+  if (uniq.length >= 2) return { kind: 'fold', utcs: uniq.slice(0, 2), wallAsUtc };
+  // Gap: locate the transition instant (first second with a different offset).
+  const a = wallAsUtc - MS_DAY, oa = offsetAt(tz, a);
+  let lo = a, hi = wallAsUtc + MS_DAY;
+  while (hi - lo > MS_SEC) {
+    const mid = lo + Math.floor((hi - lo) / (2 * MS_SEC)) * MS_SEC;
+    if (offsetAt(tz, mid) === oa) lo = mid; else hi = mid;
+  }
+  return { kind: 'gap', utcs: [], transition: hi, wallAsUtc, beforeOffset: oa, afterOffset: offsetAt(tz, hi) };
+}
+function formatOffset(min) {
+  const sign = min < 0 ? '-' : '+'; const a = Math.abs(min);
+  return sign + pad2(Math.floor(a / 60)) + ':' + pad2(a % 60);
+}
+function isoUtc(ms) { return new Date(ms).toISOString().replace(/\.000Z$/, 'Z'); }
+function formatWall(w, withSeconds) {
+  return w.y + '-' + pad2(w.m) + '-' + pad2(w.d) + ' ' + pad2(w.H) + ':' + pad2(w.M) + (withSeconds === false ? '' : ':' + pad2(w.S));
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+class CronError extends Error {
+  constructor(field, zh, en) { super(en); this.name = 'CronError'; this.field = field; this.zh = zh; this.en = en; }
+}
+
+// ---------------------------------------------------------------------------
+// Dialects
+// ---------------------------------------------------------------------------
+const DIALECTS = {
+  vixie:  { id: 'vixie',  label: { zh: 'Vixie / POSIX cron（5 欄）', en: 'Vixie / POSIX cron (5 fields)' },  fields: ['minute', 'hour', 'dom', 'month', 'dow'], minFields: 5, maxFields: 5, dowBase: 0, requireQuestion: false },
+  quartz: { id: 'quartz', label: { zh: 'Quartz（6–7 欄，含秒）', en: 'Quartz (6–7 fields, with seconds)' }, fields: ['second', 'minute', 'hour', 'dom', 'month', 'dow', 'year'], minFields: 6, maxFields: 7, dowBase: 1, requireQuestion: true },
+  aws:    { id: 'aws',    label: { zh: 'AWS EventBridge（6 欄，含年）', en: 'AWS EventBridge (6 fields, with year)' }, fields: ['minute', 'hour', 'dom', 'month', 'dow', 'year'], minFields: 6, maxFields: 6, dowBase: 1, requireQuestion: true },
+};
+const FIELD_LABEL = {
+  second: { zh: '秒', en: 'second' }, minute: { zh: '分', en: 'minute' }, hour: { zh: '時', en: 'hour' },
+  dom: { zh: '日', en: 'day of month' }, month: { zh: '月', en: 'month' }, dow: { zh: '週', en: 'day of week' }, year: { zh: '年', en: 'year' },
+};
+const ALIASES = {
+  '@yearly': '0 0 1 1 *', '@annually': '0 0 1 1 *', '@monthly': '0 0 1 * *', '@weekly': '0 0 * * 0',
+  '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@hourly': '0 * * * *',
+};
+
+// ---------------------------------------------------------------------------
+// Parser
+// ---------------------------------------------------------------------------
+function fieldRange(name, dialect) {
+  switch (name) {
+    case 'second': case 'minute': return [0, 59];
+    case 'hour': return [0, 23];
+    case 'dom': return [1, 31];
+    case 'month': return [1, 12];
+    case 'dow': return dialect.dowBase === 1 ? [1, 7] : [0, 7];
+    case 'year': return [1970, 2199];
+  }
+  throw new Error('unknown field ' + name);
+}
+function parseValueToken(tok, name, dialect, raw) {
+  const fl = FIELD_LABEL[name];
+  if (/^\d+$/.test(tok)) return parseInt(tok, 10);
+  const up = tok.toUpperCase();
+  if (name === 'month') {
+    const i = MONTH_NAMES.indexOf(up.slice(0, 3));
+    if (i >= 0 && (up.length === 3 || up.startsWith(['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][i]) && up.length <= 9)) return i + 1;
+  }
+  if (name === 'dow') {
+    const i = DOW_NAMES.indexOf(up.slice(0, 3));
+    if (i >= 0 && (up.length === 3 || (['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][i] === up))) return i + dialect.dowBase; // native numbering
+  }
+  throw new CronError(name,
+    `「${fl.zh}」欄位的值「${tok}」無法辨識（原文：${raw}）`,
+    `Unrecognised value "${tok}" in the ${fl.en} field (in "${raw}")`);
+}
+function toInternalDow(v, dialect) { return dialect.dowBase === 1 ? v - 1 : v % 7; }
+
+function parseField(raw, name, dialect) {
+  const [min, max] = fieldRange(name, dialect);
+  const fl = FIELD_LABEL[name];
+  const bits = new Bitset(name === 'dow' ? 0 : min, name === 'dow' ? 6 : max);
+  const res = { raw, bits, starPrefixed: false, question: false, last: false, lastWeekday: false, lastOffsets: [], nearestWeekday: null, nth: [], lastDow: [], stepSource: null };
+  const items = raw.split(',');
+  if (items.some(s => s === '')) throw new CronError(name, `「${fl.zh}」欄位含有空的清單項目（${raw}）`, `Empty list item in the ${fl.en} field ("${raw}")`);
+  if (raw[0] === '*' || raw[0] === '?') res.starPrefixed = true;
+  const addNative = v => { bits.set(name === 'dow' ? toInternalDow(v, dialect) : v); };
+  for (const item of items) {
+    const up = item.toUpperCase();
+    if (item === '?') {
+      if (name !== 'dom' && name !== 'dow') throw new CronError(name, `「?」只能用在日或週欄位`, `"?" is only allowed in the day-of-month or day-of-week field`);
+      if (items.length > 1) throw new CronError(name, `「?」不能與其他值並列`, `"?" cannot be combined with other values`);
+      res.question = true; bits.fillAll(); continue;
+    }
+    // ---- day-of-month specials
+    if (name === 'dom') {
+      if (up === 'L') { res.last = true; continue; }
+      if (up === 'LW') { if (items.length > 1) throw new CronError(name, `「LW」必須單獨使用`, `"LW" must be the only value in the field`); res.lastWeekday = true; continue; }
+      let mm = /^L-(\d+)$/.exec(up);
+      if (mm) { const n = +mm[1]; if (n < 1 || n > 30) throw new CronError(name, `「L-${n}」超出範圍（1–30）`, `"L-${n}" out of range (1–30)`); res.lastOffsets.push(n); continue; }
+      mm = /^(\d+)W$/.exec(up);
+      if (mm) {
+        const n = +mm[1];
+        if (n < 1 || n > 31) throw new CronError(name, `「${item}」日期超出 1–31`, `"${item}": day out of range 1–31`);
+        if (items.length > 1) throw new CronError(name, `「${item}」（最近工作日）必須單獨使用`, `"${item}" (nearest weekday) must be the only value in the field`);
+        res.nearestWeekday = n; continue;
+      }
+    }
+    // ---- day-of-week specials
+    if (name === 'dow') {
+      if (up === 'L') { bits.set(6); continue; } // Quartz: bare L in DOW = Saturday
+      let mm = /^([A-Z]{3,9}|\d+)L$/.exec(up);
+      if (mm) { const v = toInternalDow(parseValueToken(mm[1], name, dialect, raw), dialect); if (v < 0 || v > 6) throw new CronError(name, `「${item}」週次超出範圍`, `"${item}": weekday out of range`); res.lastDow.push(v); continue; }
+      mm = /^([A-Z]{3,9}|\d+)#(\d+)$/.exec(up);
+      if (mm) {
+        const v = toInternalDow(parseValueToken(mm[1], name, dialect, raw), dialect); const n = +mm[2];
+        if (v < 0 || v > 6) throw new CronError(name, `「${item}」週次超出範圍`, `"${item}": weekday out of range`);
+        if (n < 1 || n > 5) throw new CronError(name, `「${item}」的第 N 個必須是 1–5`, `"${item}": the occurrence number must be 1–5`);
+        res.nth.push({ dow: v, n }); continue;
+      }
+    }
+    // ---- generic: *, */s, a, a-b, a-b/s, a/s
+    let body = item, step = 1;
+    const slash = item.indexOf('/');
+    if (slash >= 0) {
+      body = item.slice(0, slash); const st = item.slice(slash + 1);
+      if (!/^\d+$/.test(st) || +st === 0) throw new CronError(name, `「${item}」的步進值必須是正整數`, `"${item}": step must be a positive integer`);
+      step = +st;
+      if (body === '') throw new CronError(name, `「${item}」缺少步進的起始值`, `"${item}": missing start value before "/"`);
+    }
+    let a, b;
+    if (body === '*') { a = min; b = max; }
+    else if (body.includes('-')) {
+      const parts = body.split('-');
+      if (parts.length !== 2 || parts[0] === '' || parts[1] === '') throw new CronError(name, `「${item}」不是合法的範圍`, `"${item}" is not a valid range`);
+      a = parseValueToken(parts[0], name, dialect, raw); b = parseValueToken(parts[1], name, dialect, raw);
+      if (a > b) throw new CronError(name, `「${item}」範圍起點大於終點（不支援跨界範圍）`, `"${item}": range start is greater than end (wrap-around ranges are not supported)`);
+    } else {
+      a = parseValueToken(body, name, dialect, raw);
+      b = slash >= 0 ? max : a; // "a/s" means a..max step s
+    }
+    if (a < min || a > max || b < min || b > max) {
+      throw new CronError(name, `「${item}」超出「${fl.zh}」欄位的範圍 ${min}–${max}`, `"${item}" is outside the ${fl.en} range ${min}–${max}`);
+    }
+    if (slash >= 0 && res.stepSource === null) res.stepSource = { a: name === 'dow' ? toInternalDow(a, dialect) : a, step, fromStar: body === '*' };
+    for (let v = a; v <= b; v += step) addNative(v);
+  }
+  return res;
+}
+
+function expandAlias(expr, dialect) {
+  const key = expr.trim().toLowerCase();
+  if (key === '@reboot') throw new CronError(null, `「@reboot」沒有時間語意，無法計算執行時間`, `"@reboot" has no time semantics and cannot be scheduled`);
+  const base = ALIASES[key];
+  if (!base) return null;
+  if (dialect.id === 'vixie') return base;
+  const f = base.split(' ');
+  // 5-field -> quartz/aws: seconds prefix / year suffix, and "?" for the unrestricted day field
+  const dom = f[2], dow = f[4];
+  const q = dow === '*' ? [dom, '?'] : ['?', dow === '0' ? '1' : dow]; // quartz/aws: SUN = 1
+  const core = [f[0], f[1], q[0], f[3], q[1]];
+  if (dialect.id === 'quartz') return ['0'].concat(core).join(' ');
+  return core.concat(['*']).join(' ');
+}
+
+function parse(expression, options) {
+  const opts = options || {};
+  const dialect = DIALECTS[opts.dialect || 'vixie'];
+  if (!dialect) throw new CronError(null, `未知的方言：${opts.dialect}`, `Unknown dialect: ${opts.dialect}`);
+  if (typeof expression !== 'string') throw new CronError(null, '表達式必須是字串', 'Expression must be a string');
+  let src = expression.trim().replace(/\s+/g, ' ');
+  if (src === '') throw new CronError(null, '表達式是空的', 'Expression is empty');
+  const alias = src.startsWith('@') ? expandAlias(src, dialect) : null;
+  if (src.startsWith('@') && !alias) throw new CronError(null, `未知的別名：${src}`, `Unknown alias: ${src}`);
+  const text = alias || src;
+  const tokens = text.split(' ');
+  if (tokens.length < dialect.minFields || tokens.length > dialect.maxFields) {
+    const hint = dialect.id === 'vixie' && (tokens.length === 6 || tokens.length === 7)
+      ? { zh: '（6 或 7 欄請改選 Quartz 方言；含年份的 6 欄請選 AWS）', en: ' (for 6 or 7 fields choose the Quartz dialect; for 6 fields ending in a year choose AWS)' }
+      : { zh: '', en: '' };
+    throw new CronError(null,
+      `${dialect.label.zh} 需要 ${dialect.minFields}${dialect.maxFields !== dialect.minFields ? '–' + dialect.maxFields : ''} 個欄位，實際有 ${tokens.length} 個${hint.zh}`,
+      `${dialect.label.en} expects ${dialect.minFields}${dialect.maxFields !== dialect.minFields ? '–' + dialect.maxFields : ''} fields, got ${tokens.length}${hint.en}`);
+  }
+  const names = dialect.fields.slice(0, tokens.length);
+  const fields = {};
+  names.forEach((n, i) => { fields[n] = parseField(tokens[i], n, dialect); });
+  if (!fields.second) fields.second = { raw: '0', bits: new Bitset(0, 59).set(0), starPrefixed: false, question: false, implicit: true };
+  const warnings = [];
+  // Day-field semantics
+  const dom = fields.dom, dow = fields.dow;
+  if (dialect.requireQuestion) {
+    const qs = (dom.question ? 1 : 0) + (dow.question ? 1 : 0);
+    if (qs !== 1) throw new CronError('dow',
+      `${dialect.label.zh} 要求日與週欄位恰好一個是「?」（不能同時指定日與週）`,
+      `${dialect.label.en} requires exactly one of day-of-month / day-of-week to be "?" (both cannot be specified)`);
+  } else if (dom.question || dow.question) {
+    warnings.push({ code: 'QUESTION_AS_STAR', zh: '「?」在 Vixie cron 中不是標準語法，這裡當作「*」處理。', en: '"?" is not standard Vixie syntax; it is treated as "*" here.' });
+  }
+  if (dialect.id === 'aws' && dow.nth.length > 1) throw new CronError('dow', 'AWS EventBridge 的週欄位一次只能有一個「#」表達式', 'AWS EventBridge allows only one "#" expression in the day-of-week field');
+  const domAny = dom.bits.isFull() && !dom.last && !dom.lastWeekday && dom.lastOffsets.length === 0 && dom.nearestWeekday === null;
+  const dowAny = dow.bits.isFull() && dow.nth.length === 0 && dow.lastDow.length === 0;
+  const dayCombine = dialect.id === 'vixie' ? ((dom.starPrefixed || dow.starPrefixed) ? 'and' : 'or') : 'and';
+  if (dialect.id === 'vixie' && dayCombine === 'and' && !domAny && !dowAny) {
+    warnings.push({ code: 'VIXIE_AND', zh: '日或週欄位以「*」開頭（例如 */2），Vixie cron 視該欄為「不受限」，因此日與週是 AND 關係（例：0 0 */2 * sun 只在奇數日的週日執行）。', en: 'A day field starts with "*" (e.g. */2); Vixie cron treats it as unrestricted, so day-of-month and day-of-week are combined with AND (e.g. 0 0 */2 * sun runs only on odd-numbered Sundays).' });
+  }
+  if (dialect.id === 'vixie' && dayCombine === 'or' && !domAny && !dowAny) {
+    warnings.push({ code: 'VIXIE_OR', zh: '日與週欄位同時受限：Vixie cron 以 OR 合併（任一符合即執行）。', en: 'Both day fields are restricted: Vixie cron combines them with OR (either match runs the job).' });
+  }
+  if (dialect.id === 'vixie' && dayCombine === 'or' && (dom.bits.isFull() && !dom.last) && !dowAny) {
+    warnings.push({ code: 'VIXIE_OR_FULL', zh: '日欄位寫成完整範圍（如 1-31）但不以「*」開頭，Vixie cron 視為受限且與週欄位 OR，結果是每天都執行。', en: 'The day-of-month field spells out the full range (e.g. 1-31) without a leading "*"; Vixie cron treats it as restricted and ORs it with the weekday, so the job runs every day.' });
+  }
+  if (!domAny && dom.bits.next(29) >= 0 && !dom.bits.isFull()) {
+    warnings.push({ code: 'DOM_29_31', zh: '日欄位含 29–31：在較短的月份不會執行。', en: 'Day-of-month includes 29–31: it will not run in shorter months.' });
+  }
+  if (dialect.id === 'vixie' && (dom.last || dom.lastWeekday || dom.lastOffsets.length || dom.nearestWeekday !== null || dow.nth.length || dow.lastDow.length)) {
+    warnings.push({ code: 'QUARTZ_EXT', zh: 'L / W / # 是 Quartz 擴充語法，標準 Vixie cron 不支援；請確認你的排程器接受。', en: 'L / W / # are Quartz extensions not supported by standard Vixie cron; confirm your scheduler accepts them.' });
+  }
+  const wildcardJob = fields.minute.raw[0] === '*' || fields.hour.raw[0] === '*';
+  const years = fields.year ? (fields.year.bits.isFull() ? null : fields.year.bits) : null;
+  return {
+    dialect: dialect.id, source: src, expanded: text, alias: alias ? src : null,
+    fieldNames: names, fieldsRaw: tokens, fields,
+    seconds: fields.second.bits, minutes: fields.minute.bits, hours: fields.hour.bits, months: fields.month.bits, years,
+    dom: { any: domAny, starPrefixed: dom.starPrefixed, bits: dom.bits, last: dom.last, lastWeekday: dom.lastWeekday, lastOffsets: dom.lastOffsets, nearestWeekday: dom.nearestWeekday, stepSource: dom.stepSource },
+    dow: { any: dowAny, starPrefixed: dow.starPrefixed, bits: dow.bits, nth: dow.nth, lastDow: dow.lastDow, stepSource: dow.stepSource },
+    dayCombine, wildcardJob, warnings,
+    hasSeconds: !fields.second.implicit && !(fields.second.bits.count === 1 && fields.second.bits.has(0)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Calendar-aware day matching
+// ---------------------------------------------------------------------------
+function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+function dowOf(y, m, d) { return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); }
+function lastWeekdayOfMonth(y, m) { let d = daysInMonth(y, m); while (dowOf(y, m, d) === 0 || dowOf(y, m, d) === 6) d--; return d; }
+function nearestWeekdayTo(y, m, target) {
+  const dim = daysInMonth(y, m); if (target > dim) target = dim;
+  const w = dowOf(y, m, target);
+  if (w >= 1 && w <= 5) return target;
+  if (w === 6) return target - 1 >= 1 ? target - 1 : target + 2;
+  return target + 1 <= dim ? target + 1 : target - 2;
+}
+function domMatches(p, y, m, d) {
+  const dm = p.dom;
+  if (dm.any) return true;
+  if (dm.bits.has(d)) return true;
+  const dim = daysInMonth(y, m);
+  if (dm.last && d === dim) return true;
+  if (dm.lastWeekday && d === lastWeekdayOfMonth(y, m)) return true;
+  for (const n of dm.lastOffsets) if (d === dim - n) return true;
+  if (dm.nearestWeekday !== null && d === nearestWeekdayTo(y, m, dm.nearestWeekday)) return true;
+  return false;
+}
+function dowMatches(p, y, m, d) {
+  const dw = p.dow;
+  if (dw.any) return true;
+  const w = dowOf(y, m, d);
+  if (dw.bits.has(w)) return true;
+  for (const q of dw.nth) if (q.dow === w && Math.ceil(d / 7) === q.n) return true;
+  if (dw.lastDow.length) { const dim = daysInMonth(y, m); for (const l of dw.lastDow) if (l === w && d + 7 > dim) return true; }
+  return false;
+}
+// Vixie OR with a full-but-not-star-prefixed day field (e.g. "1-31" or "0-6") means every day.
+function orEveryDay(p) { return p.dayCombine === 'or' && (p.dom.any || p.dow.any); }
+function matchesDay(p, y, m, d) {
+  if (p.dom.any && p.dow.any) return true;
+  if (p.dayCombine === 'or') return domMatches(p, y, m, d) || dowMatches(p, y, m, d);
+  return domMatches(p, y, m, d) && dowMatches(p, y, m, d);
+}
+function matchesWall(p, w) {
+  return (!p.years || p.years.has(w.y)) && p.months.has(w.m) && matchesDay(p, w.y, w.m, w.d) && p.hours.has(w.H) && p.minutes.has(w.M) && p.seconds.has(w.S);
+}
+
+// ---------------------------------------------------------------------------
+// Next-run iterator (search in wall-clock space, then apply the DST policy)
+// ---------------------------------------------------------------------------
+const POLICIES = {
+  vixie: { id: 'vixie', label: { zh: 'Vixie cron 相容', en: 'Vixie cron compatible' }, desc: { zh: '固定時間 job：被跳過的時段在切換後補跑一次、重複時段只跑一次。分或時以「*」開頭的 wildcard job 一律照新時間跑。', en: 'Fixed-time jobs: skipped times run once right after the transition; repeated times run once. Wildcard jobs (minute or hour starts with "*") follow the new clock.' } },
+  skip:  { id: 'skip',  label: { zh: '略過不存在的時間', en: 'Skip nonexistent times' }, desc: { zh: '不存在的牆上時間直接跳過；重複的時間只跑第一次。', en: 'Nonexistent wall times are skipped; repeated wall times run once (first occurrence).' } },
+  shift: { id: 'shift', label: { zh: '平移到切換瞬間', en: 'Shift to the transition instant' }, desc: { zh: '不存在的牆上時間平移到時鐘跳轉的那一刻（同一次跳轉只跑一次）；重複的時間只跑第一次。', en: 'Nonexistent wall times move to the instant the clock jumps (once per transition); repeated wall times run once.' } },
+};
+function nextDayWall(w) {
+  const dt = new Date(Date.UTC(w.y, w.m - 1, w.d + 1));
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate(), H: 0, M: 0, S: 0 };
+}
+function addSecondsWall(w, s) {
+  const dt = new Date(Date.UTC(w.y, w.m - 1, w.d, w.H, w.M, w.S + s));
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate(), H: dt.getUTCHours(), M: dt.getUTCMinutes(), S: dt.getUTCSeconds() };
+}
+function nextMatchingWall(p, w, limitYear) {
+  let guard = 0;
+  while (guard++ < 3000000) {
+    if (w.y > limitYear) return null;
+    if (p.years && !p.years.has(w.y)) {
+      const ny = p.years.next(w.y + 1); if (ny < 0) return null;
+      w = { y: ny, m: 1, d: 1, H: 0, M: 0, S: 0 }; continue;
+    }
+    if (!p.months.has(w.m)) {
+      const nm = p.months.next(w.m + 1);
+      w = nm < 0 ? { y: w.y + 1, m: p.months.next(1), d: 1, H: 0, M: 0, S: 0 } : { y: w.y, m: nm, d: 1, H: 0, M: 0, S: 0 };
+      continue;
+    }
+    if (!matchesDay(p, w.y, w.m, w.d)) { w = nextDayWall(w); continue; }
+    if (!p.hours.has(w.H)) {
+      const nh = p.hours.next(w.H + 1);
+      w = nh < 0 ? nextDayWall(w) : { y: w.y, m: w.m, d: w.d, H: nh, M: 0, S: 0 }; continue;
+    }
+    if (!p.minutes.has(w.M)) {
+      const nmi = p.minutes.next(w.M + 1);
+      if (nmi < 0) w = w.H + 1 > 23 ? nextDayWall(w) : { y: w.y, m: w.m, d: w.d, H: w.H + 1, M: 0, S: 0 };
+      else w = { y: w.y, m: w.m, d: w.d, H: w.H, M: nmi, S: 0 };
+      continue;
+    }
+    if (!p.seconds.has(w.S)) {
+      const ns = p.seconds.next(w.S + 1);
+      if (ns < 0) w = addSecondsWall({ y: w.y, m: w.m, d: w.d, H: w.H, M: w.M, S: 0 }, 60);
+      else w = { y: w.y, m: w.m, d: w.d, H: w.H, M: w.M, S: ns };
+      continue;
+    }
+    return w;
+  }
+  return null;
+}
+function findTransition(tz, lo, hi, o) {
+  // First instant in (lo, hi] whose offset differs from o; offsetAt(lo) === o is known.
+  while (hi - lo > MS_SEC) {
+    const mid = lo + Math.floor((hi - lo) / (2 * MS_SEC)) * MS_SEC;
+    if (offsetAt(tz, mid) === o) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+function wallOfKey(key) {
+  const dt = new Date(key);
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate(), H: dt.getUTCHours(), M: dt.getUTCMinutes(), S: dt.getUTCSeconds() };
+}
+function makeOccurrence(inst, w, kind, foldIndex, tz) {
+  const wall = utcToWall(tz, inst);
+  const occ = { utc: inst, iso: isoUtc(inst), tz, wall, offsetMin: wall.offsetMin, kind, scheduled: { y: w.y, m: w.m, d: w.d, H: w.H, M: w.M, S: w.S } };
+  if (kind === 'fold') occ.foldIndex = foldIndex;
+  return occ;
+}
+// Generator of occurrences strictly after opts.from (ms since epoch), in chronological order.
+// The search runs in wall-clock space under the current UTC offset; when the next candidate
+// crosses a transition, the transition instant is located and gap / fold rules are applied.
+function* iterate(parsed, opts) {
+  const tz = opts.tz || 'UTC';
+  if (!isValidTimeZone(tz)) throw new CronError(null, `無法辨識的時區：${tz}（需要 IANA 名稱，例如 Asia/Taipei）`, `Unknown time zone: ${tz} (use an IANA name such as Asia/Taipei)`);
+  const policy = opts.policy || 'vixie';
+  if (!POLICIES[policy]) throw new CronError(null, `未知的 DST 政策：${policy}`, `Unknown DST policy: ${policy}`);
+  const wildcard = parsed.wildcardJob;
+  let lastInst = Math.floor(opts.from / MS_SEC) * MS_SEC;
+  let o = offsetAt(tz, lastInst);
+  let floorInst = lastInst; // offset o is known to hold at floorInst
+  let cursor = wallOfKey(lastInst + o * MS_MIN);
+  let lastKey = wallAsUtcMs(cursor);
+  let lastShiftInst = null;
+  const limitYear = cursor.y + (opts.maxYears || 30);
+  let guard = 0;
+  while (guard++ < 10000000) {
+    const w = nextMatchingWall(parsed, cursor, limitYear);
+    if (!w) return;
+    const key = wallAsUtcMs(w);
+    const cand = key - o * MS_MIN;
+    if (offsetAt(tz, cand) === o) {
+      const conv = wallToUtc(tz, w);
+      const foldIdx = conv.kind === 'fold' ? conv.utcs.indexOf(cand) : -1;
+      const allowed = conv.kind !== 'fold' || foldIdx === 0 || (policy === 'vixie' && wildcard);
+      if (allowed && (cand > lastInst || (cand === lastInst && key > lastKey))) {
+        yield makeOccurrence(cand, w, conv.kind, foldIdx, tz);
+        lastInst = cand; lastKey = key;
+      }
+      cursor = addSecondsWall(w, 1);
+      continue;
+    }
+    // A transition lies in (floorInst, cand].
+    const T = findTransition(tz, floorInst, cand, o);
+    const oNew = offsetAt(tz, T);
+    if (oNew > o) {
+      // Spring forward: wall times in [T+o, T+oNew) do not exist.
+      const gapStart = T + o * MS_MIN, gapEnd = T + oNew * MS_MIN;
+      let gw = nextMatchingWall(parsed, wallAsUtcMs(cursor) > gapStart ? cursor : wallOfKey(gapStart), limitYear);
+      while (gw && wallAsUtcMs(gw) < gapEnd) {
+        const gkey = wallAsUtcMs(gw);
+        let insts = [];
+        if (policy === 'vixie') insts = wildcard ? [] : [T];
+        else if (policy === 'shift') insts = lastShiftInst === T ? [] : [T];
+        for (const inst of insts) {
+          if (inst > lastInst || (inst === lastInst && gkey > lastKey)) {
+            yield makeOccurrence(inst, gw, 'gap', -1, tz);
+            lastInst = inst; lastKey = gkey; lastShiftInst = inst;
+          }
+        }
+        gw = nextMatchingWall(parsed, addSecondsWall(gw, 1), limitYear);
+      }
+      cursor = wallOfKey(gapEnd);
+    } else {
+      // Fall back: wall times in [T+oNew, T+o) occur a second time, now under oNew.
+      cursor = wallOfKey(T + oNew * MS_MIN);
+    }
+    o = oNew; floorInst = T;
+  }
+}
+function nextRuns(parsed, opts) {
+  const n = Math.max(0, Math.min(opts.count || 10, 100000));
+  const out = [];
+  for (const occ of iterate(parsed, opts)) { out.push(occ); if (out.length >= n) break; }
+  return out;
+}
+function occurrencesBetween(parsed, opts) {
+  const limit = Math.min(opts.limit || 200000, 500000);
+  const out = [];
+  for (const occ of iterate(parsed, { tz: opts.tz, from: opts.from, policy: opts.policy, maxYears: opts.maxYears })) {
+    if (occ.utc >= opts.to) break;
+    out.push(occ); if (out.length >= limit) break;
+  }
+  return out;
+}
+function prevRuns(parsed, opts) {
+  const n = Math.max(0, Math.min(opts.count || 10, 100000));
+  if (n === 0) return [];
+  const windows = [1 / 24, 1, 8, 64, 512, 4096, 11000];
+  let best = [];
+  for (const days of windows) {
+    const from = opts.from - days * MS_DAY - MS_SEC;
+    best = occurrencesBetween(parsed, { tz: opts.tz, from, to: opts.from, policy: opts.policy, limit: 300000 });
+    if (best.length >= n) break;
+  }
+  return best.slice(-n);
+}
+
+// ---------------------------------------------------------------------------
+// Description (zh-TW / en) and per-field gloss
+// ---------------------------------------------------------------------------
+function pattern(bits) {
+  const v = bits.values();
+  if (bits.isFull()) return { kind: 'all', values: v };
+  if (v.length === 1) return { kind: 'single', values: v, a: v[0] };
+  let contiguous = true, arith = true; const d = v[1] - v[0];
+  for (let i = 1; i < v.length; i++) { if (v[i] - v[i - 1] !== 1) contiguous = false; if (v[i] - v[i - 1] !== d) arith = false; }
+  if (contiguous) return { kind: 'range', values: v, a: v[0], b: v[v.length - 1] };
+  if (arith) {
+    const last = v[v.length - 1];
+    const span = bits.max - bits.min + 1;
+    if (last + d > bits.max && (v.length >= 3 || span % d === 0)) return { kind: 'step', values: v, a: v[0], step: d };
+    if (v.length >= 3) return { kind: 'rangeStep', values: v, a: v[0], b: last, step: d };
+  }
+  return { kind: 'list', values: v };
+}
+function joinList(items, zh) {
+  const s = items.map(String);
+  if (zh) return s.join('、');
+  if (s.length <= 1) return s.join('');
+  if (s.length === 2) return s[0] + ' and ' + s[1];
+  return s.slice(0, -1).join(', ') + ' and ' + s[s.length - 1];
+}
+const hhmm = (h, m) => pad2(h) + ':' + pad2(m);
+const ZH_DOW = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+const EN_DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const EN_DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const EN_MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const EN_MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) % 4] || 'th');
+const ZH_ORD = ['', '一', '二', '三', '四', '五'];
+
+function minuteSetPhrase(M, zh) {
+  if (M.kind === 'range') return zh ? `第 ${M.a}–${M.b} 分的每分鐘` : `every minute from :${pad2(M.a)} to :${pad2(M.b)}`;
+  if (M.kind === 'rangeStep') return zh ? `第 ${M.a}–${M.b} 分每 ${M.step} 分鐘` : `every ${M.step} minutes from :${pad2(M.a)} to :${pad2(M.b)}`;
+  return zh ? `第 ${joinList(M.values, true)} 分` : `at minutes ${joinList(M.values, false)}`;
+}
+function hourScopePhrase(H, hv, zh) {
+  if (H.kind === 'all') return '';
+  if (H.kind === 'single') return zh ? `${pad2(H.a)}:00 至 ${pad2(H.a)}:59` : `between ${pad2(H.a)}:00 and ${pad2(H.a)}:59`;
+  if (H.kind === 'range') return zh ? `${hhmm(H.a, 0)} 至 ${hhmm(H.b, 59)}` : `between ${hhmm(H.a, 0)} and ${hhmm(H.b, 59)}`;
+  return zh ? `在 ${joinList(hv.map(pad2), true)} 時` : `during hours ${joinList(hv.map(pad2), false)}`;
+}
+function timePhrase(p, lang) {
+  const zh = lang === 'zh';
+  const S = pattern(p.seconds), M = pattern(p.minutes), H = pattern(p.hours);
+  const hv = p.hours.values(), mv = p.minutes.values();
+  const scope = hourScopePhrase(H, hv, zh);
+  let core;
+  if (M.kind === 'all') {
+    core = zh ? (scope ? `${scope} 每分鐘` : '每分鐘') : (scope ? `every minute ${scope}` : 'every minute');
+  } else if (M.kind === 'step') {
+    const lastM = mv[mv.length - 1];
+    if (H.kind === 'all') {
+      core = M.a === 0 ? (zh ? `每 ${M.step} 分鐘` : `every ${M.step} minutes`)
+        : (zh ? `從每小時第 ${M.a} 分起每 ${M.step} 分鐘` : `every ${M.step} minutes starting at minute ${M.a} past the hour`);
+    } else if (H.kind === 'range' || H.kind === 'single') {
+      const hb = H.kind === 'single' ? H.a : H.b;
+      core = zh ? `每 ${M.step} 分鐘，${hhmm(H.a, M.a)} 至 ${hhmm(hb, lastM)}` : `every ${M.step} minutes from ${hhmm(H.a, M.a)} to ${hhmm(hb, lastM)}`;
+    } else {
+      core = zh ? `每 ${M.step} 分鐘，${scope}` : `every ${M.step} minutes ${scope}`;
+    }
+  } else if (M.kind === 'single') {
+    if (H.kind === 'all') {
+      core = M.a === 0 ? (zh ? '每小時整點' : 'every hour on the hour') : (zh ? `每小時第 ${M.a} 分` : `at minute ${M.a} past every hour`);
+    } else if (H.kind === 'step' && hv.length > 2) {
+      core = zh ? `每 ${H.step} 小時（${hhmm(H.a, M.a)} 起）` : `every ${H.step} hours starting at ${hhmm(H.a, M.a)}`;
+    } else if (H.kind === 'rangeStep' && hv.length > 2) {
+      core = zh ? `每 ${H.step} 小時，${hhmm(H.a, M.a)} 至 ${hhmm(H.b, M.a)}` : `every ${H.step} hours from ${hhmm(H.a, M.a)} to ${hhmm(H.b, M.a)}`;
+    } else if (hv.length <= 8) {
+      const times = hv.map(h => hhmm(h, M.a));
+      core = zh ? joinList(times, true) : `at ${joinList(times, false)}`;
+    } else if (H.kind === 'range') {
+      core = zh ? `${hhmm(H.a, M.a)} 至 ${hhmm(H.b, M.a)} 每小時` : `every hour from ${hhmm(H.a, M.a)} to ${hhmm(H.b, M.a)}`;
+    } else {
+      core = zh ? `每小時第 ${M.a} 分，${scope}` : `at minute ${M.a} past the hour ${scope}`;
+    }
+  } else {
+    const md = minuteSetPhrase(M, zh);
+    if (H.kind === 'all') core = zh ? `每小時${md}` : `${md} past every hour`;
+    else if (hv.length * mv.length <= 8) {
+      const times = []; for (const h of hv) for (const m of mv) times.push(hhmm(h, m));
+      core = zh ? joinList(times, true) : `at ${joinList(times, false)}`;
+    } else core = zh ? `${scope}${zh && (H.kind === 'range' || H.kind === 'single') ? ' ' : ''}${md}` : `${md} past the hour ${scope}`;
+  }
+  if (p.hasSeconds) {
+    let sec;
+    if (S.kind === 'all') sec = zh ? '每秒' : 'every second';
+    else if (S.kind === 'step' && S.a === 0) sec = zh ? `每 ${S.step} 秒` : `every ${S.step} seconds`;
+    else if (S.kind === 'single') sec = zh ? `第 ${S.a} 秒` : `at second ${S.a}`;
+    else sec = zh ? `第 ${joinList(S.values, true)} 秒` : `at seconds ${joinList(S.values, false)}`;
+    core = (M.kind === 'all' && H.kind === 'all') ? sec : (zh ? `${sec}，${core}` : `${sec}, ${core}`);
+  }
+  return core;
+}
+function domPhrase(p, lang) {
+  const zh = lang === 'zh';
+  const dm = p.dom; const pieces = [];
+  if (!dm.bits.isEmpty()) {
+    const P = pattern(dm.bits);
+    if (P.kind === 'all') pieces.push(zh ? '每天' : 'every day');
+    else if (P.kind === 'single') pieces.push(zh ? `每月 ${P.a} 日` : `on day ${P.a} of the month`);
+    else if (P.kind === 'range') pieces.push(zh ? `每月 ${P.a}–${P.b} 日` : `on days ${P.a}–${P.b} of the month`);
+    else if (P.kind === 'step') pieces.push(zh ? `每月從 ${P.a} 日起每 ${P.step} 天` : `every ${P.step} days starting on day ${P.a} of the month`);
+    else if (P.kind === 'rangeStep') pieces.push(zh ? `每月 ${P.a}–${P.b} 日每 ${P.step} 天` : `every ${P.step} days from day ${P.a} to ${P.b} of the month`);
+    else pieces.push(zh ? `每月 ${joinList(P.values, true)} 日` : `on days ${joinList(P.values, false)} of the month`);
+  }
+  if (dm.last) pieces.push(zh ? '每月最後一天' : 'on the last day of the month');
+  if (dm.lastWeekday) pieces.push(zh ? '每月最後一個工作日' : 'on the last weekday of the month');
+  for (const n of dm.lastOffsets) pieces.push(zh ? `每月結束前 ${n} 天` : `${n} days before the end of the month`);
+  if (dm.nearestWeekday !== null) pieces.push(zh ? `最接近每月 ${dm.nearestWeekday} 日的工作日` : `on the weekday nearest day ${dm.nearestWeekday} of the month`);
+  return zh ? pieces.join('、') : pieces.join(', ');
+}
+function dowPhrase(p, lang) {
+  const zh = lang === 'zh';
+  const dw = p.dow; const pieces = [];
+  const name = i => zh ? ZH_DOW[i] : EN_DOW[i];
+  if (!dw.bits.isEmpty()) {
+    const P = pattern(dw.bits);
+    if (P.kind === 'all') pieces.push(zh ? '每週各日' : 'every day of the week');
+    else if (P.kind === 'single') pieces.push(zh ? name(P.a) : `on ${name(P.a)}`);
+    else if (P.kind === 'range') pieces.push(zh ? `${name(P.a)}至${name(P.b)}` : `${name(P.a)} through ${name(P.b)}`);
+    else pieces.push(zh ? joinList(P.values.map(name), true) : `on ${joinList(P.values.map(name), false)}`);
+  }
+  for (const q of dw.nth) pieces.push(zh ? `每月第${ZH_ORD[q.n]}個${name(q.dow)}` : `the ${ordinal(q.n)} ${name(q.dow)} of the month`);
+  for (const l of dw.lastDow) pieces.push(zh ? `每月最後一個${name(l)}` : `the last ${name(l)} of the month`);
+  return zh ? pieces.join('、') : pieces.join(', ');
+}
+function dayPhrase(p, lang) {
+  const zh = lang === 'zh';
+  if (orEveryDay(p) && !(p.dom.any && p.dow.any)) return zh ? '每天' : 'every day';
+  const a = p.dom.any ? '' : domPhrase(p, lang);
+  const b = p.dow.any ? '' : dowPhrase(p, lang);
+  if (!a && !b) return '';
+  if (a && b) return p.dayCombine === 'or' ? (zh ? `${a}，以及${b}` : `${a}, and also ${b}`) : (zh ? `${a}且為${b}` : `${a} if it is ${b.replace(/^on /, '')}`);
+  return a || b;
+}
+function monthPhrase(p, lang) {
+  const zh = lang === 'zh';
+  const P = pattern(p.months);
+  const name = i => zh ? `${i} 月` : EN_MONTH[i - 1];
+  if (P.kind === 'all') return '';
+  if (P.kind === 'single') return zh ? `在 ${name(P.a)}` : `in ${name(P.a)}`;
+  if (P.kind === 'range') return zh ? `${name(P.a)}至 ${name(P.b)}` : `${name(P.a)} through ${name(P.b)}`;
+  if (P.kind === 'step' && P.values.length > 4) return zh ? `從 ${name(P.a)}起每 ${P.step} 個月` : `every ${P.step} months starting in ${name(P.a)}`;
+  return zh ? `在 ${joinList(P.values.map(name), true)}` : `in ${joinList(P.values.map(name), false)}`;
+}
+function yearPhrase(p, lang) {
+  const zh = lang === 'zh';
+  if (!p.years) return '';
+  const P = pattern(p.years);
+  if (P.kind === 'single') return zh ? `${P.a} 年` : `in ${P.a}`;
+  if (P.kind === 'range') return zh ? `${P.a}–${P.b} 年` : `from ${P.a} to ${P.b}`;
+  if (P.kind === 'step' || P.kind === 'rangeStep') return zh ? `從 ${P.a} 年起每 ${P.step} 年` : `every ${P.step} years from ${P.a}`;
+  return zh ? `在 ${joinList(P.values, true)} 年` : `in ${joinList(P.values, false)}`;
+}
+function describe(p, lang) {
+  const zh = lang === 'zh';
+  const parts = [timePhrase(p, lang), dayPhrase(p, lang), monthPhrase(p, lang), yearPhrase(p, lang)].filter(Boolean);
+  if (zh) return parts.join('，') + '。';
+  const s = parts.join(', ');
+  return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+}
+function glossField(p, name, lang) {
+  const zh = lang === 'zh';
+  const f = p.fields[name];
+  if (!f) return '';
+  if (name === 'second') {
+    const P = pattern(f.bits);
+    if (P.kind === 'all') return zh ? '每秒' : 'every second';
+    if (P.kind === 'single') return zh ? `第 ${P.a} 秒` : `second ${P.a}`;
+    if (P.kind === 'step') return zh ? `每 ${P.step} 秒` : `every ${P.step} s`;
+    return zh ? `第 ${joinList(P.values, true)} 秒` : `seconds ${P.values.join(', ')}`;
+  }
+  if (name === 'minute') {
+    const P = pattern(f.bits);
+    if (P.kind === 'all') return zh ? '每分鐘' : 'every minute';
+    if (P.kind === 'single') return zh ? `第 ${P.a} 分` : `minute ${P.a}`;
+    if (P.kind === 'step') return P.a === 0 ? (zh ? `每 ${P.step} 分鐘` : `every ${P.step} min`) : (zh ? `第 ${P.a} 分起每 ${P.step} 分` : `every ${P.step} min from :${pad2(P.a)}`);
+    if (P.kind === 'range') return zh ? `第 ${P.a}–${P.b} 分` : `minutes ${P.a}–${P.b}`;
+    if (P.kind === 'rangeStep') return zh ? `第 ${P.a}–${P.b} 分每 ${P.step} 分` : `every ${P.step} min, :${pad2(P.a)}–:${pad2(P.b)}`;
+    return zh ? `第 ${joinList(P.values, true)} 分` : `minutes ${P.values.join(', ')}`;
+  }
+  if (name === 'hour') {
+    const P = pattern(f.bits);
+    if (P.kind === 'all') return zh ? '每小時' : 'every hour';
+    if (P.kind === 'single') return zh ? `${pad2(P.a)} 時` : `hour ${pad2(P.a)}`;
+    if (P.kind === 'step') return zh ? `每 ${P.step} 小時（${pad2(P.a)} 起）` : `every ${P.step} h from ${pad2(P.a)}`;
+    if (P.kind === 'range') return zh ? `${pad2(P.a)}–${pad2(P.b)} 時` : `hours ${pad2(P.a)}–${pad2(P.b)}`;
+    if (P.kind === 'rangeStep') return zh ? `${pad2(P.a)}–${pad2(P.b)} 時每 ${P.step} 小時` : `every ${P.step} h, ${pad2(P.a)}–${pad2(P.b)}`;
+    return zh ? `${joinList(P.values.map(pad2), true)} 時` : `hours ${P.values.map(pad2).join(', ')}`;
+  }
+  if (name === 'dom') {
+    if (f.question) return zh ? '不指定' : 'unspecified';
+    if (p.dom.any) return zh ? '每日' : 'any day';
+    const parts = [];
+    if (!f.bits.isEmpty()) {
+      const P = pattern(f.bits);
+      if (P.kind === 'all') parts.push(zh ? '每日' : 'any day');
+      else if (P.kind === 'single') parts.push(zh ? `${P.a} 日` : `day ${P.a}`);
+      else if (P.kind === 'range') parts.push(zh ? `${P.a}–${P.b} 日` : `days ${P.a}–${P.b}`);
+      else if (P.kind === 'step') parts.push(zh ? `${P.a} 日起每 ${P.step} 天` : `every ${P.step} days from ${P.a}`);
+      else if (P.kind === 'rangeStep') parts.push(zh ? `${P.a}–${P.b} 日每 ${P.step} 天` : `every ${P.step} days, ${P.a}–${P.b}`);
+      else parts.push(zh ? `${joinList(P.values, true)} 日` : `days ${P.values.join(', ')}`);
+    }
+    if (f.last) parts.push(zh ? '最後一天' : 'last day');
+    if (f.lastWeekday) parts.push(zh ? '最後工作日' : 'last weekday');
+    for (const n of f.lastOffsets) parts.push(zh ? `倒數第 ${n + 1} 天` : `${n} before end`);
+    if (f.nearestWeekday !== null) parts.push(zh ? `最近 ${f.nearestWeekday} 日的工作日` : `weekday nearest ${f.nearestWeekday}`);
+    return parts.join(zh ? '、' : ', ');
+  }
+  if (name === 'month') {
+    const P = pattern(f.bits);
+    const nm = i => zh ? `${i} 月` : EN_MONTH_SHORT[i - 1];
+    if (P.kind === 'all') return zh ? '每月' : 'every month';
+    if (P.kind === 'single') return nm(P.a);
+    if (P.kind === 'range') return `${nm(P.a)}–${nm(P.b)}`;
+    if (P.kind === 'step') return zh ? `${nm(P.a)}起每 ${P.step} 個月` : `every ${P.step} months from ${nm(P.a)}`;
+    return P.values.map(nm).join(zh ? '、' : ', ');
+  }
+  if (name === 'dow') {
+    if (f.question) return zh ? '不指定' : 'unspecified';
+    if (p.dow.any) return zh ? '每週各日' : 'any weekday';
+    const nm = i => zh ? ZH_DOW[i] : EN_DOW_SHORT[i];
+    const parts = [];
+    if (!f.bits.isEmpty()) {
+      const P = pattern(f.bits);
+      if (P.kind === 'all') parts.push(zh ? '每週各日' : 'any weekday');
+      else if (P.kind === 'single') parts.push(nm(P.a));
+      else if (P.kind === 'range') parts.push(`${nm(P.a)}–${nm(P.b)}`);
+      else parts.push(P.values.map(nm).join(zh ? '、' : ', '));
+    }
+    for (const q of f.nth) parts.push(zh ? `第${ZH_ORD[q.n]}個${nm(q.dow)}` : `${ordinal(q.n)} ${nm(q.dow)}`);
+    for (const l of f.lastDow) parts.push(zh ? `最後一個${nm(l)}` : `last ${nm(l)}`);
+    return parts.join(zh ? '、' : ', ');
+  }
+  if (name === 'year') {
+    if (!p.years) return zh ? '每年' : 'every year';
+    const P = pattern(f.bits);
+    if (P.kind === 'single') return zh ? `${P.a} 年` : `${P.a}`;
+    if (P.kind === 'range') return zh ? `${P.a}–${P.b} 年` : `${P.a}–${P.b}`;
+    if (P.kind === 'step' || P.kind === 'rangeStep') return zh ? `${P.a} 起每 ${P.step} 年` : `every ${P.step} y from ${P.a}`;
+    return P.values.join(zh ? '、' : ', ');
+  }
+  return '';
+}
+function gloss(p, lang) {
+  return p.fieldNames.map((name, i) => ({ name, raw: p.fieldsRaw[i], label: FIELD_LABEL[name][lang === 'zh' ? 'zh' : 'en'], text: glossField(p, name, lang) }));
+}
+
+// ---------------------------------------------------------------------------
+// Windows Task Scheduler export
+// ---------------------------------------------------------------------------
+const TS_DOW = EN_DOW;
+const TS_MAX_TRIGGERS = 48;
+const TS_REASONS = {
+  SECONDS:  { zh: '秒欄位不是 0：Task Scheduler 的最小重複間隔是 1 分鐘，無法表達秒級排程。', en: 'The seconds field is not 0: the minimum Task Scheduler repetition interval is 1 minute, so second-level schedules cannot be expressed.' },
+  W:        { zh: '「W」（最接近的工作日）與「LW」：Task Scheduler 沒有對應的觸發條件。', en: '"W" (nearest weekday) and "LW" have no equivalent Task Scheduler trigger.' },
+  L_OFFSET: { zh: '「L-n」（倒數第 n 天）：DaysOfMonth 只支援 1–31 與 Last。', en: '"L-n" (n days before month end): DaysOfMonth only supports 1–31 and Last.' },
+  AND_DAYS: { zh: '日與週欄位同時受限且為 AND 關係：多個 Task Scheduler 觸發器只能表達 OR。', en: 'Both day fields are restricted and combined with AND: multiple Task Scheduler triggers can only express OR.' },
+  NTH5:     { zh: '「#5」（第五個週 X）：Task Scheduler 的 Weeks 只有 1–4 與 Last，而 Last 不等於「第五個」。', en: '"#5" (fifth weekday of the month): Task Scheduler Weeks only has 1–4 and Last, and Last is not the same as fifth.' },
+  YEARS:    { zh: '年欄位不是單一連續範圍：只能用 StartBoundary / EndBoundary 表達連續年份。', en: 'The year field is not one contiguous range: only a contiguous span can be expressed with StartBoundary / EndBoundary.' },
+  TOO_MANY: { zh: '需要的觸發器超過 48 個（Task Scheduler 每個工作的上限）。', en: 'More than 48 triggers would be required (the per-task Task Scheduler limit).' },
+};
+function tsReason(code, extra) { const r = TS_REASONS[code]; return { code, zh: r.zh + (extra && extra.zh ? extra.zh : ''), en: r.en + (extra && extra.en ? extra.en : '') }; }
+function isoDuration(totalMin) {
+  if (totalMin <= 0) return 'PT0M';
+  const d = Math.floor(totalMin / 1440), h = Math.floor((totalMin % 1440) / 60), m = totalMin % 60;
+  let s = 'P' + (d ? d + 'D' : '');
+  if (h || m || !d) s += 'T' + (h ? h + 'H' : '') + (m || (!h && !d) ? m + 'M' : '');
+  return s;
+}
+function parseIsoDurationMin(s) {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(String(s || '').trim());
+  if (!m) return null;
+  return (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0) + Math.round((+m[4] || 0) / 60);
+}
+function tzObservesDst(tz, year) {
+  const a = offsetAt(tz, Date.UTC(year, 0, 1)), b = offsetAt(tz, Date.UTC(year, 6, 1));
+  return a !== b;
+}
+function normalizeTsOptions(opts, parsed) {
+  const o = Object.assign({}, opts || {});
+  o.tz = o.tz || 'UTC';
+  const now = o.now !== undefined ? o.now : Date.now();
+  const nowWall = utcToWall(o.tz, now);
+  o.startDate = o.startDate || { y: nowWall.y, m: nowWall.m, d: nowWall.d };
+  o.utcSync = !!o.utcSync;
+  o.taskName = (o.taskName || 'CronScope Task').replace(/[\\\/:*?"<>|]/g, '_');
+  o.description = o.description || '';
+  o.author = o.author || '';
+  o.command = o.command || 'powershell.exe';
+  o.arguments = o.arguments !== undefined ? o.arguments : '-NoProfile -ExecutionPolicy Bypass -File "C:\\Jobs\\Invoke-Api.ps1"';
+  o.workingDirectory = o.workingDirectory !== undefined ? o.workingDirectory : 'C:\\Jobs';
+  o.executionTimeLimit = o.executionTimeLimit || 'PT1H';
+  o.multipleInstances = o.multipleInstances || 'IgnoreNew';
+  if (o.startWhenAvailable === undefined || o.startWhenAvailable === 'auto') o.startWhenAvailable = parsed.minutes.count === 1 && parsed.seconds.count === 1;
+  o.startWhenAvailableAuto = opts && (opts.startWhenAvailable === undefined || opts.startWhenAvailable === 'auto');
+  o.restartCount = o.restartCount !== undefined ? o.restartCount : 3;
+  o.restartInterval = o.restartInterval || 'PT1M';
+  o.randomDelay = o.randomDelay || 'PT0M';
+  o.runLevel = o.runLevel || 'LeastPrivilege';
+  o.userId = o.userId || 'SYSTEM';
+  o.logonType = o.logonType || 'S4U';
+  o.wakeToRun = !!o.wakeToRun;
+  o.runOnlyIfNetworkAvailable = !!o.runOnlyIfNetworkAvailable;
+  o.priority = o.priority !== undefined ? o.priority : 7;
+  o.registrationDate = o.registrationDate || (formatWall(nowWall).replace(' ', 'T'));
+  return o;
+}
+function deriveSkeletons(p, reasons) {
+  const sk = [];
+  const months = p.months.isFull() ? null : p.months.values();
+  const every = orEveryDay(p);
+  const domRestricted = !p.dom.any && !every, dowRestricted = !p.dow.any && !every;
+  if (p.dom.nearestWeekday !== null || p.dom.lastWeekday) reasons.push(tsReason('W'));
+  if (p.dom.lastOffsets.length) reasons.push(tsReason('L_OFFSET'));
+  if (p.dow.nth.some(q => q.n === 5)) reasons.push(tsReason('NTH5'));
+  if (domRestricted && dowRestricted && p.dayCombine === 'and') reasons.push(tsReason('AND_DAYS'));
+  if (!domRestricted && !dowRestricted) {
+    if (!months) sk.push({ kind: 'day', daysInterval: 1 });
+    else { const all = []; for (let d = 1; d <= 31; d++) all.push(String(d)); sk.push({ kind: 'month', daysOfMonth: all, months }); }
+  }
+  if (dowRestricted) {
+    const plain = p.dow.bits.values();
+    if (plain.length) sk.push(months ? { kind: 'monthDow', weeks: [1, 2, 3, 4, 'Last'], daysOfWeek: plain, months } : { kind: 'week', daysOfWeek: plain, weeksInterval: 1 });
+    const byN = new Map();
+    for (const q of p.dow.nth) { if (q.n === 5) continue; if (!byN.has(q.n)) byN.set(q.n, []); byN.get(q.n).push(q.dow); }
+    for (const [n, dows] of [...byN.entries()].sort((a, b) => a[0] - b[0])) sk.push({ kind: 'monthDow', weeks: [n], daysOfWeek: [...new Set(dows)].sort((a, b) => a - b), months });
+    if (p.dow.lastDow.length) sk.push({ kind: 'monthDow', weeks: ['Last'], daysOfWeek: [...new Set(p.dow.lastDow)].sort((a, b) => a - b), months });
+  }
+  if (domRestricted) {
+    const days = p.dom.bits.values().map(String);
+    if (p.dom.last) days.push('Last');
+    if (days.length) sk.push({ kind: 'month', daysOfMonth: days, months });
+  }
+  return sk;
+}
+function minuteProgression(M, singleHour) {
+  if (M.length < 2) return null;
+  const d = M[1] - M[0];
+  for (let i = 1; i < M.length; i++) if (M[i] - M[i - 1] !== d) return null;
+  const last = M[M.length - 1];
+  if (singleHour) return { a: M[0], step: d, last };
+  if (60 % d !== 0 || M[0] >= d || M.length !== 60 / d) return null;
+  return { a: M[0], step: d, last };
+}
+function hourProgression(H) {
+  if (H.length < 2) return null;
+  const d = H[1] - H[0];
+  for (let i = 1; i < H.length; i++) if (H[i] - H[i - 1] !== d) return null;
+  return { step: d };
+}
+function expandTimeSlots(p) {
+  const H = p.hours.values(), M = p.minutes.values();
+  const Hp = pattern(p.hours);
+  const hContig = Hp.kind === 'single' || Hp.kind === 'range' || Hp.kind === 'all';
+  const h1 = H[0], h2 = H[H.length - 1];
+  const slots = [];
+  const mp = minuteProgression(M, H.length === 1);
+  if (mp && hContig) {
+    const duration = (h2 * 60 + mp.last) - (h1 * 60 + mp.a);
+    if (duration > mp.step) { slots.push({ H: h1, M: mp.a, repetition: { intervalMin: mp.step, durationMin: duration } }); return slots; }
+  }
+  const hp = hourProgression(H);
+  if (hp && H.length >= 3) {
+    for (const m of M) slots.push({ H: h1, M: m, repetition: { intervalMin: hp.step * 60, durationMin: (h2 - h1) * 60 } });
+    return slots;
+  }
+  for (const h of H) for (const m of M) slots.push({ H: h, M: m, repetition: null });
+  return slots;
+}
+const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function tsBoundary(o, date, H, M, S) {
+  if (!o.utcSync) return `${date.y}-${pad2(date.m)}-${pad2(date.d)}T${pad2(H)}:${pad2(M)}:${pad2(S)}`;
+  const conv = wallToUtc(o.tz, { y: date.y, m: date.m, d: date.d, H, M, S });
+  const u = conv.kind === 'gap' ? conv.transition : conv.utcs[0];
+  return isoUtc(u);
+}
+function skeletonXml(sk, ind) {
+  const L = [];
+  const daysOfWeek = dows => { L.push(ind + '  <DaysOfWeek>'); for (const d of dows) L.push(ind + `    <${TS_DOW[d]}/>`); L.push(ind + '  </DaysOfWeek>'); };
+  const months = ms => { L.push(ind + '  <Months>'); for (const m of (ms || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])) L.push(ind + `    <${EN_MONTH[m - 1]}/>`); L.push(ind + '  </Months>'); };
+  if (sk.kind === 'day') { L.push(ind + '<ScheduleByDay>'); L.push(ind + `  <DaysInterval>${sk.daysInterval}</DaysInterval>`); L.push(ind + '</ScheduleByDay>'); }
+  else if (sk.kind === 'week') { L.push(ind + '<ScheduleByWeek>'); daysOfWeek(sk.daysOfWeek); L.push(ind + `  <WeeksInterval>${sk.weeksInterval || 1}</WeeksInterval>`); L.push(ind + '</ScheduleByWeek>'); }
+  else if (sk.kind === 'month') { L.push(ind + '<ScheduleByMonth>'); L.push(ind + '  <DaysOfMonth>'); for (const d of sk.daysOfMonth) L.push(ind + `    <Day>${d}</Day>`); L.push(ind + '  </DaysOfMonth>'); months(sk.months); L.push(ind + '</ScheduleByMonth>'); }
+  else { L.push(ind + '<ScheduleByMonthDayOfWeek>'); L.push(ind + '  <Weeks>'); for (const w of sk.weeks) L.push(ind + `    <Week>${w}</Week>`); L.push(ind + '  </Weeks>'); daysOfWeek(sk.daysOfWeek); months(sk.months); L.push(ind + '</ScheduleByMonthDayOfWeek>'); }
+  return L;
+}
+function triggerXml(t, o, endDate) {
+  const L = [];
+  L.push('    <CalendarTrigger>');
+  if (t.repetition) {
+    L.push('      <Repetition>');
+    L.push(`        <Interval>${isoDuration(t.repetition.intervalMin)}</Interval>`);
+    L.push(`        <Duration>${isoDuration(t.repetition.durationMin)}</Duration>`);
+    L.push('        <StopAtDurationEnd>false</StopAtDurationEnd>');
+    L.push('      </Repetition>');
+  }
+  L.push(`      <StartBoundary>${tsBoundary(o, o.startDate, t.H, t.M, 0)}</StartBoundary>`);
+  if (endDate) L.push(`      <EndBoundary>${tsBoundary(o, endDate, 23, 59, 59)}</EndBoundary>`);
+  L.push('      <Enabled>true</Enabled>');
+  if (o.randomDelay && o.randomDelay !== 'PT0M') L.push(`      <RandomDelay>${xmlEsc(o.randomDelay)}</RandomDelay>`);
+  L.push(...skeletonXml(t.skeleton, '      '));
+  L.push('    </CalendarTrigger>');
+  return L.join('\n');
+}
+function principalXml(o) {
+  const L = ['  <Principals>', '    <Principal id="Author">'];
+  if (o.userId.toUpperCase() === 'SYSTEM' || o.userId === 'S-1-5-18') {
+    L.push('      <UserId>S-1-5-18</UserId>');
+    L.push('      <RunLevel>HighestAvailable</RunLevel>');
+  } else {
+    L.push(`      <UserId>${xmlEsc(o.userId)}</UserId>`);
+    L.push(`      <LogonType>${xmlEsc(o.logonType)}</LogonType>`);
+    L.push(`      <RunLevel>${xmlEsc(o.runLevel)}</RunLevel>`);
+  }
+  L.push('    </Principal>', '  </Principals>');
+  return L.join('\n');
+}
+function settingsXml(o) {
+  const b = v => (v ? 'true' : 'false');
+  const L = ['  <Settings>',
+    `    <MultipleInstancesPolicy>${xmlEsc(o.multipleInstances)}</MultipleInstancesPolicy>`,
+    '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>',
+    '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>',
+    '    <AllowHardTerminate>true</AllowHardTerminate>',
+    `    <StartWhenAvailable>${b(o.startWhenAvailable)}</StartWhenAvailable>`,
+    `    <RunOnlyIfNetworkAvailable>${b(o.runOnlyIfNetworkAvailable)}</RunOnlyIfNetworkAvailable>`,
+    '    <IdleSettings>', '      <StopOnIdleEnd>false</StopOnIdleEnd>', '      <RestartOnIdle>false</RestartOnIdle>', '    </IdleSettings>',
+    '    <AllowStartOnDemand>true</AllowStartOnDemand>',
+    '    <Enabled>true</Enabled>',
+    '    <Hidden>false</Hidden>',
+    '    <RunOnlyIfIdle>false</RunOnlyIfIdle>',
+    `    <WakeToRun>${b(o.wakeToRun)}</WakeToRun>`,
+    `    <ExecutionTimeLimit>${xmlEsc(o.executionTimeLimit)}</ExecutionTimeLimit>`,
+    `    <Priority>${o.priority}</Priority>`];
+  if (o.restartCount > 0) L.push('    <RestartOnFailure>', `      <Interval>${xmlEsc(o.restartInterval)}</Interval>`, `      <Count>${o.restartCount}</Count>`, '    </RestartOnFailure>');
+  L.push('  </Settings>');
+  return L.join('\n');
+}
+function actionsXml(o, args) {
+  const L = ['  <Actions Context="Author">', '    <Exec>', `      <Command>${xmlEsc(o.command)}</Command>`];
+  if (args) L.push(`      <Arguments>${xmlEsc(args)}</Arguments>`);
+  if (o.workingDirectory) L.push(`      <WorkingDirectory>${xmlEsc(o.workingDirectory)}</WorkingDirectory>`);
+  L.push('    </Exec>', '  </Actions>');
+  return L.join('\n');
+}
+function taskXml(o, description, triggersXml, args) {
+  return ['<?xml version="1.0" encoding="UTF-8"?>',
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
+    '  <RegistrationInfo>',
+    `    <Date>${xmlEsc(o.registrationDate)}</Date>`,
+    o.author ? `    <Author>${xmlEsc(o.author)}</Author>` : null,
+    `    <Description>${xmlEsc(description)}</Description>`,
+    `    <URI>\\${xmlEsc(o.taskName)}</URI>`,
+    '  </RegistrationInfo>',
+    '  <Triggers>', triggersXml, '  </Triggers>',
+    principalXml(o), settingsXml(o), actionsXml(o, args),
+    '</Task>', ''].filter(x => x !== null).join('\n');
+}
+function skeletonSummary(sk, lang) {
+  const zh = lang === 'zh';
+  const dn = i => zh ? ZH_DOW[i] : EN_DOW_SHORT[i];
+  const mn = ms => ms ? (zh ? ms.map(m => m + ' 月').join('、') : ms.map(m => EN_MONTH_SHORT[m - 1]).join(', ')) : '';
+  if (sk.kind === 'day') return zh ? '每天' : 'every day';
+  if (sk.kind === 'week') return zh ? `每週 ${sk.daysOfWeek.map(dn).join('、')}` : `every ${sk.daysOfWeek.map(dn).join(', ')}`;
+  if (sk.kind === 'month') return (zh ? `每月 ${sk.daysOfMonth.map(d => d === 'Last' ? '最後一天' : d + ' 日').join('、')}` : `day ${sk.daysOfMonth.map(d => d === 'Last' ? 'last' : d).join(', ')} of the month`) + (sk.months ? (zh ? `（${mn(sk.months)}）` : ` (${mn(sk.months)})`) : '');
+  const wk = sk.weeks.map(w => w === 'Last' ? (zh ? '最後一個' : 'last') : (zh ? `第${ZH_ORD[w]}個` : ordinal(w))).join(zh ? '、' : '/');
+  return (zh ? `每月${wk}${sk.daysOfWeek.map(dn).join('、')}` : `the ${wk} ${sk.daysOfWeek.map(dn).join('/')} of the month`) + (sk.months ? (zh ? `（${mn(sk.months)}）` : ` (${mn(sk.months)})`) : '');
+}
+function triggerSummary(t, lang) {
+  const zh = lang === 'zh';
+  const base = skeletonSummary(t.skeleton, lang);
+  const at = hhmm(t.H, t.M);
+  if (!t.repetition) return zh ? `${base} ${at}` : `${base} at ${at}`;
+  const r = t.repetition; const runs = Math.floor(r.durationMin / r.intervalMin) + 1;
+  const iv = r.intervalMin % 60 === 0 ? (zh ? `${r.intervalMin / 60} 小時` : `${r.intervalMin / 60} h`) : (zh ? `${r.intervalMin} 分鐘` : `${r.intervalMin} min`);
+  const endMin = t.H * 60 + t.M + r.durationMin;
+  return zh ? `${base} ${at} 起每 ${iv}，至 ${hhmm(Math.floor(endMin / 60), endMin % 60)}（共 ${runs} 次）` : `${base}, from ${at} every ${iv} until ${hhmm(Math.floor(endMin / 60), endMin % 60)} (${runs} runs)`;
+}
+function toTaskScheduler(parsed, options) {
+  const o = normalizeTsOptions(options, parsed);
+  const reasons = [];
+  if (!(parsed.seconds.count === 1 && parsed.seconds.has(0))) reasons.push(tsReason('SECONDS'));
+  let endDate = null;
+  if (parsed.years) {
+    const P = pattern(parsed.years);
+    if (P.kind === 'single' || P.kind === 'range') {
+      const y0 = P.kind === 'single' ? P.a : P.a, y1 = P.kind === 'single' ? P.a : P.b;
+      if (o.startDate.y < y0) o.startDate = { y: y0, m: 1, d: 1 };
+      endDate = { y: y1, m: 12, d: 31 };
+      if (o.startDate.y > y1) reasons.push(tsReason('YEARS', { zh: '（年份範圍已全部過去）', en: ' (the year range is entirely in the past)' }));
+    } else reasons.push(tsReason('YEARS'));
+  }
+  const skeletons = deriveSkeletons(parsed, reasons);
+  const slots = expandTimeSlots(parsed);
+  const triggers = [];
+  for (const sk of skeletons) for (const s of slots) triggers.push({ skeleton: sk, H: s.H, M: s.M, repetition: s.repetition });
+  if (triggers.length > TS_MAX_TRIGGERS) reasons.push(tsReason('TOO_MANY', { zh: `（需要 ${triggers.length} 個）`, en: ` (${triggers.length} needed)` }));
+  const ok = reasons.length === 0;
+  const notes = [];
+  if (!o.utcSync) notes.push({ code: 'LOCAL_TZ', zh: `StartBoundary 使用本地時間格式（未勾選「跨時區同步」），假設伺服器的系統時區是 ${o.tz}。`, en: `StartBoundary uses local-time format ("Synchronize across time zones" unchecked); the server's system time zone is assumed to be ${o.tz}.` });
+  else notes.push({ code: 'UTC_SYNC', zh: 'StartBoundary 使用 UTC（結尾 Z，「跨時區同步」勾選）。若該時區有 DST，切換後本地執行時間會偏移 ±1 小時。', en: 'StartBoundary uses UTC (trailing Z, "Synchronize across time zones" checked). In a DST time zone the local run time shifts by ±1 hour after each transition.' });
+  const dst = tzObservesDst(o.tz, o.startDate.y);
+  if (dst && triggers.some(t => t.repetition)) notes.push({ code: 'DST_REPETITION', zh: `${o.tz} 有 DST：Repetition 以實際經過時間重複，跨越切換日的當天，重複時刻會偏移一小時、與 cron 的牆上時鐘語意不同。`, en: `${o.tz} observes DST: Repetition repeats by elapsed time, so on the transition day the repeated runs drift by one hour compared with cron's wall-clock semantics.` });
+  if (parsed.dayCombine === 'or' && !parsed.dom.any && !parsed.dow.any) notes.push({ code: 'OR_TRIGGERS', zh: '日與週欄位是 OR：輸出兩組觸發器。同一天同一時刻若兩者都觸發，MultipleInstancesPolicy=IgnoreNew 會忽略第二個。', en: 'Day fields are ORed: two trigger groups are emitted. If both fire at the same instant, MultipleInstancesPolicy=IgnoreNew drops the second one.' });
+  if (o.startWhenAvailableAuto) notes.push({ code: 'SWA_AUTO', zh: o.startWhenAvailable ? 'StartWhenAvailable=true（間隔 ≥ 1 小時：錯過的排程會盡快補跑）。' : 'StartWhenAvailable=false（高頻排程補跑沒有意義；開機後從下一個時刻開始）。', en: o.startWhenAvailable ? 'StartWhenAvailable=true (interval ≥ 1 hour: a missed run starts as soon as possible).' : 'StartWhenAvailable=false (catching up a high-frequency schedule is pointless; it resumes at the next slot).' });
+  if (o.userId.toUpperCase() !== 'SYSTEM' && o.logonType === 'S4U') notes.push({ code: 'S4U', zh: 'LogonType=S4U：不必儲存密碼即可「不論使用者是否登入都執行」，但無法使用網路憑證（整合式驗證、網路磁碟）。需要時改用 Password 或 gMSA。', en: 'LogonType=S4U: runs whether the user is logged on or not without storing a password, but cannot use network credentials (integrated auth, network shares). Switch to Password or a gMSA when needed.' });
+  const description = o.description || `cron "${parsed.source}" (${parsed.dialect}, ${o.tz}) — generated by CronScope ${VERSION}`;
+  const xmlPath = `${o.workingDirectory ? o.workingDirectory.replace(/\\+$/, '') + '\\' : ''}${o.taskName}.xml`;
+  const schtasks = `schtasks /Create /TN "${o.taskName}" /XML "${xmlPath}" /F`;
+  const powershell = [`$xml = Get-Content -Raw -Encoding UTF8 -LiteralPath "${xmlPath}"`, `Register-ScheduledTask -TaskName "${o.taskName}" -Xml $xml -Force`].join('\n');
+  const result = { ok, reasons, notes, triggers, triggerCount: triggers.length, settings: o, endDate, schtasks, powershell, xmlPath,
+    summary: lang => triggers.map(t => triggerSummary(t, lang)) };
+  if (ok) result.xml = taskXml(o, description, triggers.map(t => triggerXml(t, o, endDate)).join('\n'), o.arguments);
+  // Fallback: a minute-granularity gate task that runs the wrapper script, which evaluates the cron expression itself.
+  const gateDir = o.workingDirectory ? o.workingDirectory.replace(/\\+$/, '') : 'C:\\Jobs';
+  const gateArgs = `-NoProfile -ExecutionPolicy Bypass -File "${gateDir}\\Invoke-CronGate.ps1" -Expression "${parsed.source}" -Dialect ${parsed.dialect} -Action "${gateDir}\\Invoke-Api.ps1"`;
+  const gateTrigger = { skeleton: { kind: 'day', daysInterval: 1 }, H: 0, M: 0, repetition: { intervalMin: 1, durationMin: 1439 } };
+  const gateOpts = Object.assign({}, o, { taskName: o.taskName + ' (gate)', startWhenAvailable: false, executionTimeLimit: 'PT10M', restartCount: 0 });
+  result.fallbackXml = taskXml(gateOpts, `cron gate for "${parsed.source}" (${parsed.dialect}) — runs Invoke-CronGate.ps1 every minute; generated by CronScope ${VERSION}`, triggerXml(gateTrigger, gateOpts, null), gateArgs);
+  result.fallbackSchtasks = `schtasks /Create /TN "${gateOpts.taskName}" /XML "${gateDir}\\${gateOpts.taskName}.xml" /F`;
+  return result;
+}
+// Expand the triggers of a plan into run instants, independently of the mapping logic.
+function simulateTaskScheduler(plan, opts) {
+  const tz = opts.tz || plan.settings.tz;
+  const from = opts.from, to = opts.to;
+  const limit = opts.limit || 100000;
+  const start = plan.settings.startDate;
+  const startKey = Date.UTC(start.y, start.m - 1, start.d);
+  const endKey = plan.endDate ? Date.UTC(plan.endDate.y, plan.endDate.m - 1, plan.endDate.d) : Infinity;
+  const fw = utcToWall(tz, from), tw = utcToWall(tz, to);
+  const dayFrom = Date.UTC(fw.y, fw.m - 1, fw.d) - MS_DAY, dayTo = Date.UTC(tw.y, tw.m - 1, tw.d);
+  const out = [];
+  for (const t of plan.triggers) {
+    const sk = t.skeleton;
+    for (let dk = Math.max(dayFrom, startKey); dk <= Math.min(dayTo, endKey); dk += MS_DAY) {
+      const dt = new Date(dk); const y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate(); const dow = dt.getUTCDay(); const dim = daysInMonth(y, m);
+      let hit = false;
+      if (sk.kind === 'day') hit = ((dk - startKey) / MS_DAY) % sk.daysInterval === 0;
+      else if (sk.kind === 'week') hit = sk.daysOfWeek.includes(dow);
+      else if (sk.kind === 'month') hit = (!sk.months || sk.months.includes(m)) && (sk.daysOfMonth.includes(String(d)) || (sk.daysOfMonth.includes('Last') && d === dim));
+      else hit = (!sk.months || sk.months.includes(m)) && sk.daysOfWeek.includes(dow) && (sk.weeks.includes(Math.ceil(d / 7)) || (sk.weeks.includes('Last') && d + 7 > dim));
+      if (!hit) continue;
+      const conv = wallToUtc(tz, { y, m, d, H: t.H, M: t.M, S: 0 });
+      const base = conv.kind === 'gap' ? conv.transition : conv.utcs[0];
+      out.push(base);
+      if (t.repetition) for (let k = 1; k * t.repetition.intervalMin <= t.repetition.durationMin; k++) out.push(base + k * t.repetition.intervalMin * MS_MIN);
+      if (out.length > limit * 4) break;
+    }
+  }
+  out.sort((a, b) => a - b);
+  const res = [];
+  for (const u of out) { if (u <= from || u >= to) continue; if (res.length && res[res.length - 1] === u) continue; res.push(u); if (res.length >= limit) break; }
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+// systemd timer export
+// ---------------------------------------------------------------------------
+const SD_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SD_REASONS = {
+  NTH:   { zh: '「#」與「nL」（第 N 個 / 最後一個週 X）：systemd 日曆語法沒有對應。', en: '"#" and "nL" (n-th / last weekday of the month) have no systemd calendar equivalent.' },
+  W:     { zh: '「W」（最接近的工作日）與「LW」：systemd 沒有對應。', en: '"W" (nearest weekday) and "LW" have no systemd equivalent.' },
+  L_MIX: { zh: '「L」與其他日期混用：systemd 的「~」倒數語法不能與正數日期同列。', en: '"L" mixed with other days: systemd\'s "~" syntax cannot be combined with forward day numbers in one component.' },
+};
+function sdComp(bits, padded, preferList) {
+  const f = padded ? pad2 : String;
+  const P = pattern(bits);
+  if (P.kind === 'all') return '*';
+  if (P.kind === 'single') return f(P.a);
+  if (P.kind === 'range') return `${f(P.a)}..${f(P.b)}`;
+  if (P.kind === 'step' && preferList && P.values.length <= 12) return P.values.map(f).join(',');
+  if (P.kind === 'step') return `${f(P.a)}/${P.step}`;
+  if (P.kind === 'rangeStep' && P.values.length > 12) return `${f(P.a)}..${f(P.b)}/${P.step}`;
+  return P.values.map(f).join(',');
+}
+function sdDow(bits) {
+  const v = bits.values();
+  const order = [1, 2, 3, 4, 5, 6, 0]; // Mon-first
+  const idx = v.map(d => order.indexOf(d)).sort((a, b) => a - b);
+  let contiguous = idx.length >= 2; for (let i = 1; i < idx.length; i++) if (idx[i] - idx[i - 1] !== 1) contiguous = false;
+  if (contiguous) return `${SD_DOW[order[idx[0]]]}..${SD_DOW[order[idx[idx.length - 1]]]}`;
+  return idx.map(i => SD_DOW[order[i]]).join(',');
+}
+function toSystemd(parsed, options) {
+  const o = Object.assign({ tz: null, unitName: 'cronscope-job', description: '', execStart: '/usr/bin/curl -fsS --max-time 60 https://api.example.internal/trigger' }, options || {});
+  const reasons = [];
+  if (parsed.dow.nth.length || parsed.dow.lastDow.length) reasons.push(Object.assign({ code: 'NTH' }, SD_REASONS.NTH));
+  if (parsed.dom.nearestWeekday !== null || parsed.dom.lastWeekday) reasons.push(Object.assign({ code: 'W' }, SD_REASONS.W));
+  if ((parsed.dom.last || parsed.dom.lastOffsets.length) && !parsed.dom.bits.isEmpty()) reasons.push(Object.assign({ code: 'L_MIX' }, SD_REASONS.L_MIX));
+  if (parsed.dom.last && parsed.dom.lastOffsets.length) reasons.push(Object.assign({ code: 'L_MIX' }, SD_REASONS.L_MIX));
+  const notes = [];
+  const time = `${sdComp(parsed.hours, true)}:${sdComp(parsed.minutes, true)}:${sdComp(parsed.seconds, true)}`;
+  const year = parsed.years ? sdComp(parsed.years, false, true) : '*';
+  const month = sdComp(parsed.months, true, true);
+  let day;
+  if (parsed.dom.last) day = '~01';
+  else if (parsed.dom.lastOffsets.length) day = '~' + parsed.dom.lastOffsets.map(n => pad2(n + 1)).join(',');
+  else day = sdComp(parsed.dom.bits, true, true);
+  const dateDom = day.startsWith('~') ? `${year}-${month}${day}` : `${year}-${month}-${day}`;
+  const dateAny = `${year}-${month}-*`;
+  const tzSuffix = o.tz ? ' ' + o.tz : '';
+  const lines = [];
+  const every = orEveryDay(parsed);
+  const dowRestricted = !parsed.dow.any && !every, domRestricted = !parsed.dom.any && !every;
+  if (domRestricted && dowRestricted && parsed.dayCombine === 'or') {
+    lines.push(`${dateDom} ${time}${tzSuffix}`);
+    lines.push(`${sdDow(parsed.dow.bits)} ${dateAny} ${time}${tzSuffix}`);
+    notes.push({ code: 'OR_LINES', zh: '日與週欄位是 OR：輸出兩行 OnCalendar=（systemd 會取聯集）。', en: 'Day fields are ORed: two OnCalendar= lines are emitted (systemd takes the union).' });
+  } else {
+    const dow = dowRestricted ? sdDow(parsed.dow.bits) + ' ' : '';
+    lines.push(`${dow}${domRestricted ? dateDom : dateAny} ${time}${tzSuffix}`);
+    if (domRestricted && dowRestricted) notes.push({ code: 'AND_LINE', zh: '日與週欄位是 AND：systemd 天然以 AND 合併週名與日期，單行即可。', en: 'Day fields are ANDed: systemd combines the weekday and date with AND natively, so one line suffices.' });
+  }
+  if (o.tz) notes.push({ code: 'TZ', zh: `OnCalendar 結尾的時區名稱需要 systemd 246 以上；較舊版本請移除並改用系統時區。`, en: 'The trailing time-zone name in OnCalendar needs systemd 246 or newer; on older versions remove it and rely on the system time zone.' });
+  if (lines.some(l => /\.\.\d+\/\d+/.test(l))) notes.push({ code: 'RANGE_STEP', zh: '使用了「a..b/n」範圍步進語法，需要 systemd 237 以上。', en: 'The "a..b/n" range-with-step syntax requires systemd 237 or newer.' });
+  const persistent = parsed.minutes.count === 1 && parsed.seconds.count === 1;
+  const description = o.description || `cron "${parsed.source}" (${parsed.dialect}) — generated by CronScope ${VERSION}`;
+  const timerUnit = ['[Unit]', `Description=${description}`, '', '[Timer]', ...lines.map(l => `OnCalendar=${l}`), `Persistent=${persistent ? 'true' : 'false'}`, 'AccuracySec=1s', `Unit=${o.unitName}.service`, '', '[Install]', 'WantedBy=timers.target', ''].join('\n');
+  const serviceUnit = ['[Unit]', `Description=${description}`, '', '[Service]', 'Type=oneshot', `ExecStart=${o.execStart}`, ''].join('\n');
+  return { ok: reasons.length === 0, reasons, notes, lines, timerUnit, serviceUnit, unitName: o.unitName,
+    install: [`sudo cp ${o.unitName}.service ${o.unitName}.timer /etc/systemd/system/`, 'sudo systemctl daemon-reload', `sudo systemctl enable --now ${o.unitName}.timer`, `systemd-analyze calendar "${lines[0]}"`].join('\n') };
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+const PRESETS = [
+  { dialect: 'vixie', expr: '*/15 9-17 * * 1-5', zh: '上班時間每 15 分鐘', en: 'Every 15 min, office hours' },
+  { dialect: 'vixie', expr: '0 2 * * *', zh: '每天 02:00', en: 'Daily at 02:00' },
+  { dialect: 'vixie', expr: '30 8 * * 1-5', zh: '平日 08:30', en: 'Weekdays at 08:30' },
+  { dialect: 'vixie', expr: '0 */6 * * *', zh: '每 6 小時', en: 'Every 6 hours' },
+  { dialect: 'vixie', expr: '5,35 9-18 * * 1-5', zh: '每半小時的第 5 分', en: 'Twice an hour at :05/:35' },
+  { dialect: 'vixie', expr: '0 0 1 * *', zh: '每月 1 日', en: 'First day of month' },
+  { dialect: 'vixie', expr: '0 0 L * *', zh: '每月最後一天', en: 'Last day of month' },
+  { dialect: 'vixie', expr: '0 9 * * MON#2', zh: '每月第二個週一', en: 'Second Monday' },
+  { dialect: 'vixie', expr: '0 18 * * 5L', zh: '每月最後一個週五', en: 'Last Friday' },
+  { dialect: 'vixie', expr: '30 4 1,15 * 5', zh: 'man page 的 OR 範例', en: 'man page OR example' },
+  { dialect: 'vixie', expr: '0 0 */2 * sun', zh: 'Vixie 的 AND 陷阱', en: 'Vixie AND quirk' },
+  { dialect: 'vixie', expr: '30 2 * * *', zh: 'DST：固定時間 job', en: 'DST: fixed-time job' },
+  { dialect: 'vixie', expr: '*/30 * * * *', zh: 'DST：wildcard job', en: 'DST: wildcard job' },
+  { dialect: 'vixie', expr: '@daily', zh: '@daily 別名', en: '@daily alias' },
+  { dialect: 'quartz', expr: '0 0/30 9-17 ? * MON-FRI', zh: 'Quartz：上班時間每 30 分', en: 'Quartz: every 30 min, office hours' },
+  { dialect: 'quartz', expr: '0 0 12 15W * ?', zh: 'Quartz：最接近 15 日的工作日', en: 'Quartz: weekday nearest the 15th' },
+  { dialect: 'quartz', expr: '0 15 10 ? * 6L 2026-2028', zh: 'Quartz：最後一個週五，限年份', en: 'Quartz: last Friday, year-limited' },
+  { dialect: 'aws', expr: '0 8 ? * MON-FRI *', zh: 'AWS：平日 08:00 UTC', en: 'AWS: weekdays 08:00 UTC' },
+];
+
+return {
+  VERSION, DIALECTS, POLICIES, PRESETS, FIELD_LABEL, CronError,
+  parse, describe, gloss, nextRuns, prevRuns, occurrencesBetween, iterate, matchesWall, matchesDay,
+  toTaskScheduler, simulateTaskScheduler, toSystemd,
+  tz: { isValidTimeZone, utcToWall, wallToUtc, offsetAt, formatOffset, tzObservesDst },
+  util: { isoUtc, formatWall, pad2, daysInMonth, dowOf, pattern, isoDuration, parseIsoDurationMin },
+};
+}));
+
+</script>
+<script>
+(function () {
+'use strict';
+const C = window.CronScope;
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+
+const I18N = {
+  zh: {
+    tagline: '解析 cron 表達式、算出接下來的執行時間（含 DST 判定），並匯出可直接匯入的 Windows Task Scheduler XML 與 systemd timer。',
+    expr_label: 'Cron 表達式', dialect: '方言', tz: '時區', tz_custom: '自訂時區（IANA 名稱，例如 Europe/Berlin）', base: '基準時間（該時區的牆上時間）', now_btn: '現在', count: '次數', policy: 'DST 處理',
+    presets: '範例', other_tz: '其他時區…', tz_invalid: '無法辨識的時區名稱',
+    wildcard_job: 'Wildcard job（分或時欄位以 * 開頭）：DST 切換時一律照新時間執行——跳過的時段不跑、重複的時段跑兩次。',
+    fixed_job: '固定時間 job：時鐘往前跳時，落在消失時段的執行會在切換後立刻補跑一次；往後撥時，重複時段只跑一次（Vixie cron 規則）。',
+    h_next: n => `接下來 ${n} 次`, h_prev: '先前 5 次', runs_meta: (tz, base) => `${tz}，自 ${base} 起`, now: '現在',
+    col_day: '週', col_local: '本地時間', col_offset: 'UTC 位移', col_utc: 'UTC', col_rel: '相對', col_note: '備註',
+    never: '這個表達式在接下來 30 年內不會執行（例如 2 月 30 日）。', prev_empty: '（沒有先前的執行）',
+    note_gap: s => `原定 ${s} 因 DST 不存在，改於切換後執行`, note_fold0: '重複時段的第一次', note_fold1: '重複時段的第二次',
+    h_export: '匯出', tab_gate: 'PowerShell 逐分鐘閘門',
+    ts_ok: n => `可無損對應：${n} 個觸發器`, ts_bad: '無法無損對應',
+    ts_fallback_hint: '改用「PowerShell 逐分鐘閘門」分頁：Task Scheduler 每分鐘執行 Invoke-CronGate.ps1，由腳本自行判斷 cron 是否命中，再執行你的動作。',
+    ts_register: '註冊指令', copy: '複製', copied: '已複製', download: '下載', copy_failed: '複製失敗，請手動選取',
+    sim_ok: n => `驗證：把上面 XML 的觸發器展開後，前 ${n} 次執行時間與上表完全一致。`,
+    sim_bad: (i, a, b) => `驗證：第 ${i} 次不一致——XML 展開得到 ${a}，cron 引擎得到 ${b}。請看上方說明（通常是 DST 時區的 Repetition 偏移）。`,
+    sim_none: '驗證：這段期間沒有執行時間可比對。',
+    f_taskName: '工作名稱', f_command: '程式', f_arguments: '引數', f_workdir: '工作目錄（XML 也放這裡）', f_user: '執行身分（SYSTEM 或 網域\\帳號）', f_logon: '登入類型', f_runlevel: '權限', f_limit: '執行時間上限（ISO 8601）',
+    f_multi: '已在執行時', f_swa: '錯過排程時補跑', auto: '自動（間隔 ≥ 1 小時才開）', yes: '是', no: '否', f_restart: '失敗重試次數', f_restartInterval: '重試間隔', f_randomDelay: '隨機延遲', f_startDate: '生效日', f_utcSync: '跨時區同步（StartBoundary 用 UTC）',
+    f_unitName: 'unit 名稱', f_execStart: 'ExecStart',
+    sd_ok: '可對應', sd_bad: '無法對應', sd_install: '安裝與驗證指令',
+    gate_intro: '任何表達式都能用這個方式在 Task Scheduler 上執行：註冊下面這個「每分鐘觸發」的閘門工作，把 Invoke-CronGate.ps1 和你的動作腳本放到工作目錄。閘門腳本以與本頁相同的規則判斷 cron 是否命中，並依 Vixie 規則處理 DST（消失時段補跑一次、重複時段不重跑）。',
+    gate_steps: ['把 examples/Invoke-CronGate.ps1 複製到工作目錄，並確認動作腳本路徑（-Action）。', '儲存下面的 XML 到工作目錄，執行註冊指令。', '用「-Test -Now <時間>」在命令列先試跑，確認命中的分鐘正確。', '秒級的 Quartz 表達式只會在每分鐘的第 0 秒評估。'],
+    gate_title: n => `閘門工作 XML（${n}）`,
+    ref_title: '方言速查', ref_head: ['項目', 'Vixie / POSIX', 'Quartz', 'systemd', 'Kubernetes', 'AWS EventBridge', 'Task Scheduler'],
+    ref_rows: [
+      ['欄位', '5：分 時 日 月 週', '6–7：秒 分 時 日 月 週 [年]', '週 年-月-日 時:分:秒', '5（同 Vixie）', '6：分 時 日 月 週 年', '四種 CalendarTrigger + Repetition'],
+      ['週日的數字', '0 或 7', '1', '英文名', '0 或 7', '1', '<Sunday/>'],
+      ['日與週同時指定', 'OR（兩欄都不以 * 開頭時）', '不允許，一方必須 ?', 'AND', '同 Vixie', '不允許，一方必須 ?', '各自建觸發器（OR）'],
+      ['L / W / #', '無（本工具接受）', '有', '~01 表月底', '無', '有', 'Last / 無 W / Weeks 1–4,Last'],
+      ['秒', '無', '有', '有', '無', '無', 'Interval 最小 1 分鐘'],
+      ['DST', '固定時間 job 補跑一次、不重跑', '文件僅警告', '依本地時間', '隨 timeZone', 'Rules 為 UTC', '本地格式跟牆上時鐘；Z 格式固定 UTC'],
+    ],
+    footer: v => `CronScope ${v}。時區資料來自瀏覽器的 Intl（ICU），無網路存取；設定會編碼在網址的 # 之後，可直接分享。`,
+    error_field: f => `欄位：${f}`,
+  },
+  en: {
+    tagline: 'Parse cron expressions, compute upcoming runs with DST handling, and export ready-to-import Windows Task Scheduler XML and systemd timers.',
+    expr_label: 'Cron expression', dialect: 'Dialect', tz: 'Time zone', tz_custom: 'Custom time zone (IANA name, e.g. Europe/Berlin)', base: 'From (wall time in that zone)', now_btn: 'Now', count: 'Runs', policy: 'DST policy',
+    presets: 'Examples', other_tz: 'Other time zone…', tz_invalid: 'Unknown time zone name',
+    wildcard_job: 'Wildcard job (minute or hour field starts with *): always follows the new clock across DST transitions — skipped times do not run, repeated times run twice.',
+    fixed_job: 'Fixed-time job: after a forward jump, a run that fell into the missing hour is caught up once right after the transition; after a backward jump the repeated hour runs once (Vixie cron rule).',
+    h_next: n => `Next ${n} runs`, h_prev: 'Previous 5 runs', runs_meta: (tz, base) => `${tz}, from ${base}`, now: 'now',
+    col_day: 'Day', col_local: 'Local time', col_offset: 'UTC offset', col_utc: 'UTC', col_rel: 'Relative', col_note: 'Note',
+    never: 'This expression does not fire in the next 30 years (e.g. 30 February).', prev_empty: '(no previous runs)',
+    note_gap: s => `Scheduled ${s} does not exist (DST); runs right after the transition`, note_fold0: 'first pass of the repeated hour', note_fold1: 'second pass of the repeated hour',
+    h_export: 'Export', tab_gate: 'PowerShell minute gate',
+    ts_ok: n => `Exactly representable: ${n} trigger${n === 1 ? '' : 's'}`, ts_bad: 'Not exactly representable',
+    ts_fallback_hint: 'Use the "PowerShell minute gate" tab instead: Task Scheduler runs Invoke-CronGate.ps1 every minute and the script decides whether the cron expression matches before running your action.',
+    ts_register: 'Register', copy: 'Copy', copied: 'Copied', download: 'Download', copy_failed: 'Copy failed — select the text manually',
+    sim_ok: n => `Check: expanding the triggers of this XML reproduces the first ${n} runs above exactly.`,
+    sim_bad: (i, a, b) => `Check: run ${i} differs — the XML expands to ${a}, the cron engine gives ${b}. See the notes above (usually Repetition drift in a DST zone).`,
+    sim_none: 'Check: no runs in the window to compare.',
+    f_taskName: 'Task name', f_command: 'Program', f_arguments: 'Arguments', f_workdir: 'Start in (the XML goes here too)', f_user: 'Run as (SYSTEM or DOMAIN\\user)', f_logon: 'Logon type', f_runlevel: 'Run level', f_limit: 'Execution time limit (ISO 8601)',
+    f_multi: 'If already running', f_swa: 'Run after a missed start', auto: 'Auto (on when interval ≥ 1 h)', yes: 'Yes', no: 'No', f_restart: 'Restart on failure (count)', f_restartInterval: 'Restart interval', f_randomDelay: 'Random delay', f_startDate: 'Start date', f_utcSync: 'Synchronize across time zones (UTC StartBoundary)',
+    f_unitName: 'Unit name', f_execStart: 'ExecStart',
+    sd_ok: 'Representable', sd_bad: 'Not representable', sd_install: 'Install and verify',
+    gate_intro: 'Any expression can run under Task Scheduler this way: register the minute-triggered gate task below and put Invoke-CronGate.ps1 plus your action script in the working directory. The gate evaluates the expression with the same rules as this page and applies the Vixie DST rules (catch up a missing hour once, never repeat a repeated hour).',
+    gate_steps: ['Copy examples/Invoke-CronGate.ps1 into the working directory and check the action script path (-Action).', 'Save the XML below into the working directory and run the register command.', 'Dry-run from a console with "-Test -Now <time>" to confirm the matching minutes.', 'Seconds-level Quartz expressions are evaluated at second 0 of each minute only.'],
+    gate_title: n => `Gate task XML (${n})`,
+    ref_title: 'Dialect quick reference', ref_head: ['Item', 'Vixie / POSIX', 'Quartz', 'systemd', 'Kubernetes', 'AWS EventBridge', 'Task Scheduler'],
+    ref_rows: [
+      ['Fields', '5: min hour dom mon dow', '6–7: sec min hour dom mon dow [year]', 'dow year-mon-day h:m:s', '5 (as Vixie)', '6: min hour dom mon dow year', 'four CalendarTrigger types + Repetition'],
+      ['Sunday', '0 or 7', '1', 'name', '0 or 7', '1', '<Sunday/>'],
+      ['dom + dow', 'OR (when neither starts with *)', 'not allowed; one must be ?', 'AND', 'as Vixie', 'not allowed; one must be ?', 'separate triggers (OR)'],
+      ['L / W / #', 'no (accepted here)', 'yes', '~01 = month end', 'no', 'yes', 'Last / no W / Weeks 1–4, Last'],
+      ['Seconds', 'no', 'yes', 'yes', 'no', 'no', 'interval ≥ 1 minute'],
+      ['DST', 'fixed-time jobs: catch up once, never repeat', 'docs only warn', 'local time', 'per timeZone', 'Rules are UTC', 'local format follows the wall clock; Z format is fixed UTC'],
+    ],
+    footer: v => `CronScope ${v}. Time zone data comes from the browser's Intl (ICU); nothing leaves the page. Settings are encoded after # in the URL and can be shared.`,
+    error_field: f => `field: ${f}`,
+  },
+};
+const ZONES = ['UTC', 'Asia/Taipei', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Singapore', 'Asia/Bangkok', 'Asia/Kolkata', 'Asia/Dubai', 'Europe/London', 'Europe/Dublin', 'Europe/Berlin', 'Europe/Paris', 'Europe/Amsterdam', 'Europe/Moscow', 'Africa/Johannesburg', 'America/New_York', 'America/Toronto', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Sao_Paulo', 'Australia/Sydney', 'Australia/Lord_Howe', 'Pacific/Auckland'];
+const ZH_DOW = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+const EN_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; } })();
+const state = {
+  lang: 'zh', expr: '*/15 9-17 * * 1-5', dialect: 'vixie', tz: browserTz, base: '', count: 20, policy: 'vixie', tab: 'ts',
+  ts: { taskName: 'CronScope Task', command: 'powershell.exe', arguments: '-NoProfile -ExecutionPolicy Bypass -File "C:\\Jobs\\Invoke-Api.ps1"', workingDirectory: 'C:\\Jobs', userId: 'SYSTEM', logonType: 'S4U', runLevel: 'LeastPrivilege', executionTimeLimit: 'PT1H', multipleInstances: 'IgnoreNew', startWhenAvailable: 'auto', restartCount: 3, restartInterval: 'PT1M', randomDelay: 'PT0M', startDate: '', utcSync: false },
+  sd: { unitName: 'cronscope-job', execStart: '/usr/bin/curl -fsS --max-time 60 https://api.example.internal/trigger' },
+};
+const t = (k, ...a) => { let s = I18N[state.lang][k]; if (s == null) s = I18N.en[k]; return typeof s === 'function' ? s(...a) : (s == null ? k : s); };
+const pad2 = C.util.pad2;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// ---- URL hash state
+function readHash() {
+  const h = location.hash.replace(/^#/, '');
+  if (!h) return;
+  const q = new URLSearchParams(h);
+  if (q.get('expr')) state.expr = q.get('expr');
+  if (q.get('dialect') && C.DIALECTS[q.get('dialect')]) state.dialect = q.get('dialect');
+  if (q.get('tz') && C.tz.isValidTimeZone(q.get('tz'))) state.tz = q.get('tz');
+  if (q.get('lang') === 'en' || q.get('lang') === 'zh') state.lang = q.get('lang');
+  if (q.get('policy') && C.POLICIES[q.get('policy')]) state.policy = q.get('policy');
+  if (q.get('count')) state.count = Math.max(1, Math.min(500, parseInt(q.get('count'), 10) || 20));
+  if (q.get('base')) state.base = q.get('base');
+}
+function writeHash() {
+  const q = new URLSearchParams();
+  q.set('expr', state.expr); q.set('dialect', state.dialect); q.set('tz', state.tz); q.set('lang', state.lang); q.set('policy', state.policy); q.set('count', String(state.count));
+  if (state.base) q.set('base', state.base);
+  history.replaceState(null, '', '#' + q.toString());
+}
+
+// ---- helpers
+function baseMs() {
+  if (!state.base) return Date.now();
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(state.base);
+  if (!m) return Date.now();
+  const conv = C.tz.wallToUtc(state.tz, { y: +m[1], m: +m[2], d: +m[3], H: +m[4], M: +m[5], S: +(m[6] || 0) });
+  return conv.kind === 'gap' ? conv.transition : conv.utcs[0];
+}
+function relative(ms, now) {
+  const zh = state.lang === 'zh';
+  let diff = ms - now; const future = diff >= 0; diff = Math.abs(diff);
+  const units = [[86400000, '天', 'day'], [3600000, '小時', 'hour'], [60000, '分鐘', 'minute'], [1000, '秒', 'second']];
+  const parts = [];
+  for (const [u, z, e] of units) {
+    const n = Math.floor(diff / u);
+    if (n > 0 || (parts.length === 0 && u === 1000)) { parts.push(zh ? `${n} ${z}` : `${n} ${e}${n === 1 ? '' : 's'}`); diff -= n * u; }
+    if (parts.length === 2) break;
+  }
+  const body = parts.join(zh ? ' ' : ' ');
+  if (zh) return future ? `${body}後` : `${body}前`;
+  return future ? `in ${body}` : `${body} ago`;
+}
+function wallText(w) { return `${w.y}-${pad2(w.m)}-${pad2(w.d)} ${pad2(w.H)}:${pad2(w.M)}:${pad2(w.S)}`; }
+function dayName(dow) { return state.lang === 'zh' ? ZH_DOW[dow] : EN_DOW[dow]; }
+function download(name, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function copyText(text, btn) {
+  const done = ok => { const old = btn.textContent; btn.textContent = ok ? t('copied') : t('copy_failed'); setTimeout(() => { btn.textContent = old; }, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+  else { try { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); done(ok); } catch (e) { done(false); } }
+}
+
+// ---- static UI text
+function applyI18n() {
+  document.documentElement.lang = state.lang === 'zh' ? 'zh-Hant' : 'en';
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $$('.seg [data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === state.lang)));
+  const dsel = $('#dialect'); dsel.innerHTML = Object.values(C.DIALECTS).map(d => `<option value="${d.id}">${esc(d.label[state.lang])}</option>`).join(''); dsel.value = state.dialect;
+  const psel = $('#policy'); psel.innerHTML = Object.values(C.POLICIES).map(p => `<option value="${p.id}" title="${esc(p.desc[state.lang])}">${esc(p.label[state.lang])}</option>`).join(''); psel.value = state.policy;
+  const zones = ZONES.slice(); if (!zones.includes(browserTz)) zones.unshift(browserTz); if (!zones.includes(state.tz)) zones.push(state.tz);
+  const tsel = $('#tz'); tsel.innerHTML = zones.map(z => `<option value="${esc(z)}">${esc(z)}</option>`).join('') + `<option value="__custom">${esc(t('other_tz'))}</option>`; tsel.value = state.tz;
+  $('#presets').innerHTML = `<span class="cap">${esc(t('presets'))}</span>` + C.PRESETS.map((p, i) => `<button type="button" class="chip" data-preset="${i}">${esc(p[state.lang])}<code>${esc(p.expr)}</code></button>`).join('');
+  $('#h-prev').textContent = t('h_prev');
+  $('#footer').textContent = t('footer', C.VERSION);
+  const rt = $('#ref-table'); rt.tHead.innerHTML = '<tr>' + t('ref_head').map(h => `<th>${esc(h)}</th>`).join('') + '</tr>';
+  rt.tBodies[0].innerHTML = t('ref_rows').map(r => '<tr>' + r.map((c, i) => `<td${i === 0 ? '' : ' class="dim"'}>${esc(c)}</td>`).join('') + '</tr>').join('');
+  $('#gate-steps').innerHTML = t('gate_steps').map(s => `<li>${esc(s)}</li>`).join('');
+  $$('.tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === state.tab)));
+  $$('.tab').forEach(p => { p.hidden = p.id !== 'tab-' + state.tab; });
+}
+function syncInputs() {
+  $('#expr').value = state.expr; $('#count').value = state.count; $('#base').value = state.base;
+  $$('#ts-form [data-ts]').forEach(el => { const k = el.dataset.ts; if (el.type === 'checkbox') el.checked = !!state.ts[k]; else el.value = state.ts[k]; });
+  $$('[data-sd]').forEach(el => { el.value = state.sd[el.dataset.sd]; });
+}
+
+// ---- rendering
+let last = { parsed: null, plan: null, sd: null, runs: [], gateXml: '', gateCmd: '' };
+function renderGloss(parsed, error) {
+  const g = $('#gloss');
+  const names = C.DIALECTS[state.dialect].fields;
+  if (parsed) {
+    const cells = C.gloss(parsed, state.lang);
+    g.style.gridTemplateColumns = `repeat(${cells.length}, minmax(0, 1fr))`;
+    g.innerHTML = cells.map(c => `<div class="cell"><div class="tok">${esc(c.raw)}</div><div class="lbl">${esc(c.label)}</div><div class="txt">${esc(c.text)}</div></div>`).join('');
+  } else {
+    const toks = state.expr.trim().split(/\s+/).filter(Boolean);
+    g.style.gridTemplateColumns = `repeat(${Math.max(1, toks.length)}, minmax(0, 1fr))`;
+    g.innerHTML = toks.map((tok, i) => { const name = names[i]; const bad = error && error.field && error.field === name; return `<div class="cell${bad ? ' bad' : ''}"><div class="tok">${esc(tok)}</div><div class="lbl">${esc(name ? C.FIELD_LABEL[name][state.lang] : '')}</div><div class="txt"></div></div>`; }).join('');
+  }
+}
+function renderRuns(parsed, from) {
+  const next = C.nextRuns(parsed, { tz: state.tz, from, count: state.count, policy: state.policy });
+  const prev = C.prevRuns(parsed, { tz: state.tz, from, count: 5, policy: state.policy });
+  last.runs = next;
+  const now = Date.now();
+  const rows = (list, highlightFirst) => list.map((o, i) => {
+    let note = '';
+    if (o.kind === 'gap') note = t('note_gap', `${pad2(o.scheduled.H)}:${pad2(o.scheduled.M)}`);
+    else if (o.kind === 'fold') note = t(o.foldIndex === 1 ? 'note_fold1' : 'note_fold0');
+    return `<tr${highlightFirst && i === 0 ? ' class="first"' : ''}><td>${esc(dayName(o.wall.dow))}</td><td class="mono">${esc(wallText(o.wall))}</td><td class="mono">${esc(C.tz.formatOffset(o.offsetMin))}</td><td class="mono">${esc(o.iso)}</td><td class="dim">${esc(relative(o.utc, now))}</td><td class="note">${esc(note)}</td></tr>`;
+  }).join('');
+  $('#h-next').textContent = t('h_next', state.count);
+  $('#runs-meta').textContent = t('runs_meta', state.tz, state.base ? state.base.replace('T', ' ') : t('now'));
+  $('#next-table tbody').innerHTML = rows(next, true);
+  $('#next-table').hidden = next.length === 0; $('#next-empty').hidden = next.length > 0;
+  $('#prev-table tbody').innerHTML = prev.length ? rows(prev, false) : `<tr><td colspan="6" class="dim">${esc(t('prev_empty'))}</td></tr>`;
+}
+function tsOptions(from) {
+  const o = Object.assign({}, state.ts, { tz: state.tz, now: from });
+  o.restartCount = Math.max(0, parseInt(o.restartCount, 10) || 0);
+  if (!/^P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/.test(o.executionTimeLimit)) o.executionTimeLimit = 'PT1H';
+  if (!/^P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/.test(o.restartInterval)) o.restartInterval = 'PT1M';
+  if (!/^P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/.test(o.randomDelay)) o.randomDelay = 'PT0M';
+  const sd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(o.startDate || '');
+  o.startDate = sd ? { y: +sd[1], m: +sd[2], d: +sd[3] } : undefined;
+  o.startWhenAvailable = o.startWhenAvailable === 'auto' ? 'auto' : o.startWhenAvailable === 'true';
+  return o;
+}
+function renderTaskScheduler(parsed, from) {
+  const plan = C.toTaskScheduler(parsed, tsOptions(from));
+  last.plan = plan;
+  const st = $('#ts-status'); st.classList.toggle('bad', !plan.ok);
+  $('#ts-status-text').textContent = plan.ok ? t('ts_ok', plan.triggerCount) : t('ts_bad');
+  $('#ts-reasons').innerHTML = plan.reasons.map(r => `<li>${esc(r[state.lang])}</li>`).join('');
+  $('#ts-fallback-hint').hidden = plan.ok;
+  $('#ts-triggers').innerHTML = plan.ok ? plan.summary(state.lang).map(s => `<li>${esc(s)}</li>`).join('') : '';
+  $('#ts-notes').innerHTML = plan.notes.map(n => `<li>${esc(n[state.lang])}</li>`).join('');
+  $('#ts-xml-wrap').hidden = !plan.ok;
+  if (plan.ok) {
+    $('#ts-xml').textContent = plan.xml;
+    $('#ts-cmd').textContent = `:: cmd\n${plan.schtasks}\n\n# PowerShell\n${plan.powershell}`;
+    const n = Math.min(10, last.runs.length);
+    const sim = $('#ts-sim'); sim.className = 'sim';
+    if (n === 0) { sim.textContent = t('sim_none'); }
+    else {
+      const to = last.runs[n - 1].utc + 1000;
+      const got = C.simulateTaskScheduler(plan, { tz: state.tz, from, to, limit: n + 5 });
+      let bad = -1;
+      for (let i = 0; i < n; i++) if (got[i] !== last.runs[i].utc) { bad = i; break; }
+      if (bad < 0 && got.length === n) { sim.classList.add('ok'); sim.textContent = t('sim_ok', n); }
+      else { sim.classList.add('bad'); const i = bad < 0 ? n : bad; sim.textContent = t('sim_bad', i + 1, got[i] ? C.util.isoUtc(got[i]) : '—', last.runs[i] ? last.runs[i].iso : '—'); }
+    }
+  }
+  // gate tab (always available)
+  last.gateXml = plan.fallbackXml; last.gateCmd = plan.fallbackSchtasks;
+  $('#gate-title').textContent = t('gate_title', plan.settings.taskName + ' (gate)');
+  $('#gate-xml').textContent = plan.fallbackXml;
+  $('#gate-cmd').textContent = plan.fallbackSchtasks;
+}
+function renderSystemd(parsed) {
+  const sd = C.toSystemd(parsed, { tz: state.tz === 'UTC' ? null : state.tz, unitName: (state.sd.unitName || 'cronscope-job').replace(/[^A-Za-z0-9_.@-]/g, '-'), execStart: state.sd.execStart });
+  last.sd = sd;
+  $('#sd-status').classList.toggle('bad', !sd.ok);
+  $('#sd-status-text').textContent = sd.ok ? t('sd_ok') : t('sd_bad');
+  $('#sd-reasons').innerHTML = sd.reasons.map(r => `<li>${esc(r[state.lang])}</li>`).join('');
+  $('#sd-notes').innerHTML = sd.notes.map(n => `<li>${esc(n[state.lang])}</li>`).join('');
+  $('#sd-wrap').hidden = !sd.ok;
+  if (sd.ok) {
+    $('#sd-lines').textContent = sd.lines.map(l => 'OnCalendar=' + l).join('\n');
+    $('#sd-timer-name').textContent = sd.unitName + '.timer'; $('#sd-service-name').textContent = sd.unitName + '.service';
+    $('#sd-timer').textContent = sd.timerUnit; $('#sd-service').textContent = sd.serviceUnit; $('#sd-install').textContent = sd.install;
+  }
+}
+function render() {
+  const input = $('#expr');
+  const errBox = $('#error');
+  let parsed = null;
+  try { parsed = C.parse(state.expr, { dialect: state.dialect }); } catch (e) {
+    if (e.name !== 'CronError') throw e;
+    input.classList.add('invalid'); errBox.hidden = false;
+    errBox.textContent = (state.lang === 'zh' ? e.zh : e.en) + (e.field ? `　(${t('error_field', C.FIELD_LABEL[e.field][state.lang])})` : '');
+    renderGloss(null, e);
+    $('#desc').textContent = ''; $('#jobkind').textContent = ''; $('#warnings').innerHTML = '';
+    last.parsed = null;
+    return;
+  }
+  last.parsed = parsed;
+  input.classList.remove('invalid'); errBox.hidden = true;
+  renderGloss(parsed, null);
+  $('#desc').textContent = C.describe(parsed, state.lang);
+  $('#jobkind').textContent = t(parsed.wildcardJob ? 'wildcard_job' : 'fixed_job');
+  $('#warnings').innerHTML = parsed.warnings.map(w => `<li>${esc(w[state.lang])}</li>`).join('');
+  const from = baseMs();
+  renderRuns(parsed, from);
+  renderTaskScheduler(parsed, from);
+  renderSystemd(parsed);
+}
+function rerender() { writeHash(); applyI18n(); syncInputs(); render(); }
+
+// ---- events
+let timer = null;
+const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 120); };
+$('#expr').addEventListener('input', e => { state.expr = e.target.value; debounce(() => { writeHash(); render(); }); });
+$('#dialect').addEventListener('change', e => { state.dialect = e.target.value; writeHash(); render(); });
+$('#policy').addEventListener('change', e => { state.policy = e.target.value; writeHash(); render(); });
+$('#count').addEventListener('change', e => { state.count = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 20)); e.target.value = state.count; writeHash(); render(); });
+$('#base').addEventListener('change', e => { state.base = e.target.value; writeHash(); render(); });
+$('#now').addEventListener('click', () => { state.base = ''; $('#base').value = ''; writeHash(); render(); });
+$('#tz').addEventListener('change', e => {
+  if (e.target.value === '__custom') { $('#tz-custom-wrap').hidden = false; $('#tz-custom').value = ''; $('#tz-custom').focus(); return; }
+  $('#tz-custom-wrap').hidden = true; state.tz = e.target.value; writeHash(); render();
+});
+$('#tz-custom').addEventListener('change', e => {
+  const v = e.target.value.trim();
+  if (!C.tz.isValidTimeZone(v)) { $('#error').hidden = false; $('#error').textContent = `${t('tz_invalid')}: ${v}`; return; }
+  state.tz = v; rerender(); $('#tz-custom-wrap').hidden = true;
+});
+$('#presets').addEventListener('click', e => {
+  const b = e.target.closest('[data-preset]'); if (!b) return;
+  const p = C.PRESETS[+b.dataset.preset]; state.expr = p.expr; state.dialect = p.dialect; rerender();
+});
+$$('.seg [data-lang]').forEach(b => b.addEventListener('click', () => { state.lang = b.dataset.lang; rerender(); }));
+$$('.tabs [data-tab]').forEach(b => b.addEventListener('click', () => { state.tab = b.dataset.tab; $$('.tabs [data-tab]').forEach(x => x.setAttribute('aria-selected', String(x === b))); $$('.tab').forEach(p => { p.hidden = p.id !== 'tab-' + state.tab; }); }));
+$('#ts-form').addEventListener('change', e => { const el = e.target; const k = el.dataset.ts; if (!k) return; state.ts[k] = el.type === 'checkbox' ? el.checked : el.value; if (last.parsed) { renderTaskScheduler(last.parsed, baseMs()); } });
+$$('[data-sd]').forEach(el => el.addEventListener('change', () => { state.sd[el.dataset.sd] = el.value; if (last.parsed) renderSystemd(last.parsed); }));
+document.addEventListener('click', e => {
+  const cp = e.target.closest('[data-copy]'); if (cp) { copyText($('#' + cp.dataset.copy).textContent, cp); return; }
+  const dl = e.target.closest('[data-download]'); if (!dl) return;
+  const id = dl.dataset.download;
+  if (id === 'ts-xml' && last.plan && last.plan.ok) download(last.plan.settings.taskName + '.xml', last.plan.xml, 'application/xml;charset=utf-8');
+  else if (id === 'gate-xml' && last.plan) download(last.plan.settings.taskName + ' (gate).xml', last.gateXml, 'application/xml;charset=utf-8');
+  else if (id === 'sd-timer' && last.sd) download(last.sd.unitName + '.timer', last.sd.timerUnit);
+  else if (id === 'sd-service' && last.sd) download(last.sd.unitName + '.service', last.sd.serviceUnit);
+});
+window.addEventListener('hashchange', () => { readHash(); rerender(); });
+
+// ---- boot
+readHash();
+applyI18n();
+syncInputs();
+render();
+window.CronScopeApp = { state, render: rerender, last: () => last };
+})();
+</script>
+</body>
+</html>

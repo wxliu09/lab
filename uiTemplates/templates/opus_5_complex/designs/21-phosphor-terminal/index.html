@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>21 · 磷光終端機管理台 — SYSOPS TERMINAL</title>
+<style>
+:root{--p:#33ff66;--pd:#149c36;--pdd:#0a4d1c;--bg:#040a05;--amber:#ffcc33;--red:#ff5b4a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--p);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","Courier New","Noto Sans Mono",monospace;font-size:13px;line-height:1.45;
+  text-shadow:0 0 4px rgba(51,255,102,.55);
+}
+/* CRT effects */
+.crt{position:fixed;inset:0;z-index:100;pointer-events:none}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px)}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(110% 90% at 50% 50%,transparent 52%,rgba(0,0,0,.85));
+  box-shadow:inset 0 0 130px rgba(51,255,102,.10)}
+.flick{position:fixed;inset:0;z-index:101;pointer-events:none;background:rgba(51,255,102,.03);
+  animation:fl .14s steps(2) infinite}
+@keyframes fl{50%{opacity:.35}}
+.scan{position:fixed;left:0;right:0;height:90px;z-index:99;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(51,255,102,.06),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-100px}to{top:100%}}
+
+.home{
+  position:fixed;right:12px;top:12px;z-index:110;text-decoration:none;color:var(--bg);
+  background:var(--p);padding:6px 13px;font-size:11px;letter-spacing:.14em;text-shadow:none;
+  box-shadow:0 0 18px rgba(51,255,102,.6)}
+.home:hover{background:var(--amber);box-shadow:0 0 22px rgba(255,204,51,.7)}
+
+.term{position:relative;z-index:5;padding:14px;max-width:1500px;margin:0 auto}
+
+.head{border:1px solid var(--pd);padding:8px 12px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px}
+.head b{color:var(--amber);text-shadow:0 0 6px rgba(255,204,51,.6)}
+.ascii{white-space:pre;font-size:clamp(6px,1.15vw,11px);line-height:1.06;color:var(--p);
+  border:1px solid var(--pd);padding:10px 12px;margin-bottom:12px;overflow-x:auto}
+.topnav{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;
+  background:rgba(0,10,2,.5)}
+.topnav span{font-size:10px;letter-spacing:.24em;color:#3f8f56;padding:8px 12px;
+  border-right:1px solid var(--pdd)}
+.topnav a{padding:8px 14px;color:#6fe38b;text-decoration:none;font-size:12px;
+  letter-spacing:.06em;border-right:1px solid var(--pdd);transition:.15s}
+.topnav a:hover,.topnav a:focus{color:var(--p);background:rgba(51,255,102,.09);outline:none}
+.topnav a.on{color:var(--bg);background:var(--p);text-shadow:none}
+
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:1100px){.cols{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.cols{grid-template-columns:1fr}}
+
+.box{border:1px solid var(--pd);position:relative}
+.box>h2{
+  font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between}
+.box>h2 em{font-style:normal;color:var(--pdd);color:#6fe38b}
+.box .in{padding:10px 12px}
+
+/* process table */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:#6fe38b;font-weight:normal;padding:4px 6px;border-bottom:1px solid var(--pdd)}
+td{padding:4px 6px;border-bottom:1px dotted rgba(20,156,54,.4)}
+tr:hover td{background:rgba(51,255,102,.09)}
+td.n{text-align:right}
+.st-run{color:var(--p)}.st-slp{color:#6fe38b;opacity:.75}.st-err{color:var(--red);text-shadow:0 0 6px rgba(255,91,74,.6)}
+.st-wrn{color:var(--amber)}
+
+/* meters */
+.meter{margin-bottom:10px}
+.meter .lb{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.meter .bar{border:1px solid var(--pdd);height:15px;padding:1px;position:relative}
+.meter .bar i{display:block;height:100%;background:
+  repeating-linear-gradient(90deg,var(--p) 0 5px,transparent 5px 7px);transition:width .6s}
+.meter.warn .bar i{background:repeating-linear-gradient(90deg,var(--amber) 0 5px,transparent 5px 7px)}
+.meter.crit .bar i{background:repeating-linear-gradient(90deg,var(--red) 0 5px,transparent 5px 7px)}
+
+/* log stream */
+.logbox{height:250px;overflow:auto;font-size:11.5px;padding:8px 10px}
+.logbox div{white-space:pre-wrap;margin-bottom:2px}
+.logbox .t{color:#6fe38b}
+.logbox .w{color:var(--amber)}
+.logbox .e{color:var(--red)}
+
+/* command line */
+.cmd{border:1px solid var(--pd);padding:10px 12px;margin-top:12px}
+.cmd .hist{font-size:12px;margin-bottom:8px;opacity:.75}
+.cmd .line{display:flex;gap:8px;align-items:center}
+.cmd input{
+  flex:1;background:transparent;border:0;outline:0;color:var(--p);font:inherit;
+  text-shadow:0 0 4px rgba(51,255,102,.55);caret-color:transparent}
+.cur{display:inline-block;width:9px;height:15px;background:var(--p);animation:blink 1s steps(2) infinite;
+  box-shadow:0 0 8px rgba(51,255,102,.8)}
+@keyframes blink{50%{opacity:0}}
+.out{margin-top:8px;font-size:12px;white-space:pre-wrap;color:#8dffae}
+
+/* sparkline */
+.spark{display:flex;gap:2px;align-items:flex-end;height:52px;margin-top:6px}
+.spark i{flex:1;background:var(--p);opacity:.8;box-shadow:0 0 6px rgba(51,255,102,.5)}
+.ftr{margin-top:12px;text-align:center;font-size:10px;letter-spacing:.3em;color:#3f8f56}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="flick"></div><div class="scan"></div>
+<a class="home" href="../../index.html">[ESC] INDEX</a>
+
+<div class="term">
+  <div class="head">
+    <span>SYSOPS TERMINAL v4.12 — NODE <b>PRD-CORE-01</b></span>
+    <span>USER <b>root</b>@dc-taipei-a · TTY1</span>
+    <span>UPTIME <b id="up">184d 06:22:41</b></span>
+  </div>
+
+  <div class="ascii"> ___  _   _  ___   ___   ___  ___
+/ __|| | | |/ __| / _ \ | _ \/ __|   SYSTEM OPERATIONS CONSOLE
+\__ \| |_| |\__ \| (_) ||  _/\__ \   PHOSPHOR GREEN / VT-220 EMULATION
+|___/ \___/ |___/ \___/ |_|  |___/   ALL COMMANDS ARE LOGGED</div>
+
+  <nav class="topnav">
+    <span>MODULES</span>
+    <a href="index.html" class="on">▶ 系統監控主頁</a>
+    <a href="list.html">▶ 服務進程管理</a>
+    <a href="logs.html">▶ 系統日誌查詢</a>
+    <a href="users.html">▶ 帳號權限管理</a>
+    <a href="report.html">▶ 效能統計報表</a>
+  </nav>
+
+  <div class="cols">
+    <!-- COL 1 -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="box">
+        <h2><span>[ RESOURCE MONITOR ]</span><em>5s avg</em></h2>
+        <div class="in">
+          <div class="meter" id="m-cpu"><div class="lb"><span>CPU  [ 32 cores ]</span><span class="v">48%</span></div><div class="bar"><i style="width:48%"></i></div></div>
+          <div class="meter warn" id="m-mem"><div class="lb"><span>MEM  [ 128 GiB ]</span><span class="v">76%</span></div><div class="bar"><i style="width:76%"></i></div></div>
+          <div class="meter" id="m-dsk"><div class="lb"><span>DISK [ /var ]</span><span class="v">61%</span></div><div class="bar"><i style="width:61%"></i></div></div>
+          <div class="meter crit" id="m-swp"><div class="lb"><span>SWAP [ 16 GiB ]</span><span class="v">92%</span></div><div class="bar"><i style="width:92%"></i></div></div>
+          <div class="meter" id="m-net"><div class="lb"><span>NET  [ eth0 ]</span><span class="v">34%</span></div><div class="bar"><i style="width:34%"></i></div></div>
+          <div style="font-size:11px;margin-top:10px;color:#6fe38b">LOAD AVG: <span id="load">1.42  1.88  2.04</span></div>
+          <div class="spark" id="spark"></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <h2><span>[ DISK ARRAY ]</span><em>RAID-6</em></h2>
+        <div class="in">
+          <table>
+            <tr><th>DEV</th><th>SIZE</th><th>USED</th><th>STATE</th></tr>
+            <tr><td>/dev/sda</td><td class="n">3.6T</td><td class="n">61%</td><td class="st-run">ONLINE</td></tr>
+            <tr><td>/dev/sdb</td><td class="n">3.6T</td><td class="n">61%</td><td class="st-run">ONLINE</td></tr>
+            <tr><td>/dev/sdc</td><td class="n">3.6T</td><td class="n">61%</td><td class="st-wrn">REBUILD 42%</td></tr>
+            <tr><td>/dev/sdd</td><td class="n">3.6T</td><td class="n">—</td><td class="st-err">FAILED</td></tr>
+            <tr><td>/dev/sde</td><td class="n">3.6T</td><td class="n">61%</td><td class="st-run">ONLINE</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 2 -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="box">
+        <h2><span>[ PROCESS TABLE ]</span><em><a href="list.html" style="color:#6fe38b;text-decoration:none;letter-spacing:.1em">→ 進程管理</a></em></h2>
+        <div class="in" style="max-height:300px;overflow:auto">
+          <table>
+            <tr><th>PID</th><th>USER</th><th>COMMAND</th><th class="n">CPU</th><th class="n">MEM</th><th>S</th></tr>
+            <tr><td>1042</td><td>www</td><td>nginx: worker</td><td class="n">18.4</td><td class="n">2.1</td><td class="st-run">R</td></tr>
+            <tr><td>1088</td><td>pgsql</td><td>postgres: writer</td><td class="n">12.7</td><td class="n">18.6</td><td class="st-run">R</td></tr>
+            <tr><td>2231</td><td>app</td><td>node dist/server.js</td><td class="n">9.2</td><td class="n">6.4</td><td class="st-run">R</td></tr>
+            <tr><td>2410</td><td>app</td><td>python etl_worker.py</td><td class="n">6.8</td><td class="n">4.2</td><td class="st-slp">S</td></tr>
+            <tr><td>3155</td><td>redis</td><td>redis-server :6379</td><td class="n">3.1</td><td class="n">9.8</td><td class="st-run">R</td></tr>
+            <tr><td>3390</td><td>root</td><td>containerd-shim</td><td class="n">2.4</td><td class="n">1.2</td><td class="st-slp">S</td></tr>
+            <tr><td>4021</td><td>app</td><td>java -jar batch.jar</td><td class="n">1.9</td><td class="n">14.4</td><td class="st-wrn">D</td></tr>
+            <tr><td>4488</td><td>root</td><td>rsync --daemon</td><td class="n">0.8</td><td class="n">0.3</td><td class="st-slp">S</td></tr>
+            <tr><td>5102</td><td>nobody</td><td>[kworker/u64:3]</td><td class="n">0.4</td><td class="n">0.0</td><td class="st-slp">S</td></tr>
+            <tr><td>6633</td><td>app</td><td>celery worker -Q mail</td><td class="n">0.2</td><td class="n">2.8</td><td class="st-err">Z</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="box">
+        <h2><span>[ SERVICES ]</span><em><a href="list.html" style="color:#6fe38b;text-decoration:none;letter-spacing:.1em">→ 服務管理</a></em></h2>
+        <div class="in">
+          <table>
+            <tr><th>UNIT</th><th>LOAD</th><th>ACTIVE</th><th>SINCE</th></tr>
+            <tr><td>nginx.service</td><td>loaded</td><td class="st-run">active</td><td>184d</td></tr>
+            <tr><td>postgresql.service</td><td>loaded</td><td class="st-run">active</td><td>184d</td></tr>
+            <tr><td>redis.service</td><td>loaded</td><td class="st-run">active</td><td>62d</td></tr>
+            <tr><td>backup.timer</td><td>loaded</td><td class="st-wrn">waiting</td><td>06:12</td></tr>
+            <tr><td>mailq.service</td><td>loaded</td><td class="st-err">failed</td><td>00:14</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 3 -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="box">
+        <h2><span>[ SYSLOG STREAM ]</span><em><a href="logs.html" style="color:#6fe38b;text-decoration:none;letter-spacing:.1em">→ 日誌查詢</a></em></h2>
+        <div class="logbox" id="log"></div>
+      </div>
+      <div class="box">
+        <h2><span>[ ACTIVE SESSIONS ]</span><em><a href="users.html" style="color:#6fe38b;text-decoration:none;letter-spacing:.1em">→ 帳號管理</a></em></h2>
+        <div class="in">
+          <table>
+            <tr><th>USER</th><th>TTY</th><th>FROM</th><th>IDLE</th></tr>
+            <tr><td>root</td><td>tty1</td><td>console</td><td class="n">.</td></tr>
+            <tr><td>ops01</td><td>pts/0</td><td>10.4.2.18</td><td class="n">00:02</td></tr>
+            <tr><td>ops02</td><td>pts/1</td><td>10.4.2.31</td><td class="n">01:47</td></tr>
+            <tr><td>deploy</td><td>pts/2</td><td>10.4.9.7</td><td class="n">00:00</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cmd">
+    <div class="hist" id="hist">root@prd-core-01:~# systemctl status mailq.service<br>&nbsp;&nbsp;● mailq.service — Mail Queue Runner<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Active: <span class="st-err">failed</span> (Result: exit-code) since 19:33:12</div>
+    <div class="line">
+      <span>root@prd-core-01:~#</span>
+      <input id="inp" autocomplete="off" spellcheck="false" placeholder="type help and press enter">
+      <span class="cur"></span>
+    </div>
+    <div class="out" id="out"></div>
+  </div>
+
+  <div class="ftr">P H O S P H O R   C R T   T E R M I N A L   ·   D E S I G N   2 1 / 4 0</div>
+</div>
+
+<script>
+/* uptime */
+let up=184*86400+6*3600+22*60+41;
+setInterval(()=>{up++;const d=Math.floor(up/86400),r=up%86400;
+  document.getElementById('up').textContent=`${d}d ${String(Math.floor(r/3600)).padStart(2,'0')}:${String(Math.floor(r%3600/60)).padStart(2,'0')}:${String(r%60).padStart(2,'0')}`;},1000);
+
+/* meters jitter */
+const M=[['m-cpu',48,18],['m-mem',76,6],['m-dsk',61,1],['m-swp',92,3],['m-net',34,26]];
+setInterval(()=>{
+  M.forEach(([id,base,amp])=>{
+    const v=Math.max(2,Math.min(99,Math.round(base+(Math.random()*2-1)*amp)));
+    const el=document.getElementById(id);
+    el.querySelector('i').style.width=v+'%';
+    el.querySelector('.v').textContent=v+'%';
+  });
+  document.getElementById('load').textContent=
+    [1.4,1.8,2.0].map(x=>(x+Math.random()*.6-.3).toFixed(2)).join('  ');
+},1600);
+
+/* sparkline */
+const sp=document.getElementById('spark');
+let hist=Array.from({length:44},()=>20+Math.random()*70);
+function drawSpark(){
+  hist.push(20+Math.random()*70);hist.shift();
+  sp.innerHTML=hist.map(h=>`<i style="height:${h.toFixed(0)}%"></i>`).join('');
+}
+drawSpark();setInterval(drawSpark,900);
+
+/* syslog */
+const L=[
+ ['t','sshd[4412]: Accepted publickey for ops01 from 10.4.2.18 port 51422'],
+ ['t','kernel: [18442.3] EXT4-fs (sda1): mounted filesystem with ordered data'],
+ ['w','systemd[1]: mailq.service: Main process exited, code=exited, status=1'],
+ ['e','mdadm[812]: Fail event detected on md0, device /dev/sdd'],
+ ['t','nginx[1042]: 10.4.9.7 "GET /api/v2/orders" 200 0.042s'],
+ ['t','postgres[1088]: checkpoint complete: wrote 1842 buffers (2.8%)'],
+ ['w','redis[3155]: Background saving terminated with warning'],
+ ['t','cron[6210]: (root) CMD (/usr/local/bin/rotate-logs.sh)'],
+ ['e','celery[6633]: Task mail.send raised OperationalError: connection refused'],
+ ['t','containerd[3390]: pulling image registry.local/app:2.14.1']
+];
+const log=document.getElementById('log');
+function pad(n){return String(n).padStart(2,'0')}
+function pushLog(){
+  const [c,m]=L[Math.floor(Math.random()*L.length)];
+  const d=new Date();
+  const el=document.createElement('div');el.className=c;
+  el.textContent=`${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}  ${m}`;
+  log.appendChild(el);
+  if(log.children.length>60) log.firstChild.remove();
+  log.scrollTop=log.scrollHeight;
+}
+for(let i=0;i<14;i++) pushLog();
+setInterval(pushLog,1500);
+
+/* fake shell */
+const inp=document.getElementById('inp'),out=document.getElementById('out');
+const CMDS={
+ help:'Available: help, ls, uptime, df, free, ps, systemctl, whoami, clear\nNavigation: open list | open logs | open users | open report',
+ ls:'list.html  logs.html  users.html  report.html',
+ uptime:' 19:47:32 up 184 days,  6:22,  4 users,  load average: 1.42, 1.88, 2.04',
+ df:'Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1       3.6T  2.2T  1.4T  61% /\n/dev/sdb1       3.6T  2.2T  1.4T  61% /var',
+ free:'              total        used        free      shared\nMem:      131072000    99615232    31456768     2097152\nSwap:      16777216    15437824     1339392           0',
+ ps:'  PID  USER   COMMAND\n 1042  www    nginx: worker\n 1088  pgsql  postgres: writer\n 2231  app    node dist/server.js',
+ systemctl:'● nginx.service       loaded active running\n● postgresql.service  loaded active running\n● mailq.service       loaded FAILED (exit-code)',
+ whoami:'root'
+};
+const PAGES={list:'list.html',logs:'logs.html',users:'users.html',report:'report.html'};
+inp.addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return;
+  const c=inp.value.trim();
+  const parts=c.split(' ');
+  if(c==='clear'){out.textContent='';inp.value='';return;}
+  if(parts[0]==='open'&&PAGES[parts[1]]){
+    out.textContent='Opening '+PAGES[parts[1]]+' ...';
+    inp.value='';
+    setTimeout(()=>location.href=PAGES[parts[1]],400);
+    return;
+  }
+  out.textContent=CMDS[parts[0]] ?? (c?`-bash: ${parts[0]}: command not found`:'');
+  inp.value='';
+});
+inp.focus();
+document.addEventListener('click',()=>inp.focus());
+</script>
+</body>
+</html>

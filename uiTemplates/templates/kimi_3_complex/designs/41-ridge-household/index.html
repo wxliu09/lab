@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 41 稜線晨霧·戶政服務
+  ─────────────────────────────────────────
+  風格定位：清晨山稜多層剪影 + 緩慢流動的晨霧，傳達「安心、親切、貼近生活」
+            的戶政服務氛圍；大圓角卡片如山間雲朵般輕盈。
+  配色：
+    淺霧藍 #cfe3ee（天空／最遠山稜起點）
+    霧白   #eef5f8（卡片底色、霧氣帶）
+    灰藍綠 #8fb3ab（中景山稜）
+    黛綠   #4a7c6f（最近山稜、主色按鈕）
+    深黛   #2f5449（標題文字、頁尾底）
+    暖米   #fdf9f2（頁面底色）
+  字體：'M PLUS Rounded 1c'（圓潤標題與內文）+ 'Noto Sans TC' 備援
+  版面結構：
+    1. 頂部導覽列（返回入口＋所名＋服務連結）
+    2. 主視覺：五層 SVG 山稜漸層剪影 + 兩條 CSS 霧帶緩慢水平飄移
+    3. 申辦服務：出生／結婚／遷徙登記三張大圓角導引卡
+    4. 線上取號：互動式取號按鈕（JS 產生號碼牌、顯示等候人數）
+    5. 最新公告：圓角清單卡
+    6. 服務據點：據點查詢卡（下拉選區即時篩選 JS）
+    7. 常見問題：手風琴展開
+    8. 頁尾：聯絡資訊 + 返回入口
+  動態效果：
+    1) 晨霧帶以兩層不同速度水平無限飄移（@keyframes mistDrift）
+    2) 線上取號：點擊產生號碼牌，號碼遞增、等候人數即時更新
+    3) 據點下拉篩選即時過濾卡片
+    4) FAQ 手風琴滑動展開
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>臨港市戶政事務所 · 稜線晨霧服務台</title>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@300;400;500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --mist:#cfe3ee; --fog:#eef5f8; --mid:#8fb3ab;
+  --deep:#4a7c6f; --ink:#2f5449; --paper:#fdf9f2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:'M PLUS Rounded 1c','Noto Sans TC',sans-serif;min-height:100vh}
+a{text-decoration:none;color:inherit}
+
+/* ── 導覽列 ── */
+.nav{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:16px 28px;background:rgba(253,249,242,.92);
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(6px);
+  border-bottom:1px solid rgba(74,124,111,.15);
+}
+.back-pill{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--deep);color:#fff;font-weight:700;font-size:15px;
+  padding:10px 22px;border-radius:999px;transition:.25s;
+  box-shadow:0 4px 12px rgba(74,124,111,.3);
+}
+.back-pill:hover{background:var(--ink);transform:translateX(-3px)}
+.nav .brand{font-size:20px;font-weight:800;letter-spacing:2px}
+.nav .brand small{display:block;font-size:11px;font-weight:400;color:var(--deep);letter-spacing:4px}
+.nav nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.nav nav a{font-size:14px;font-weight:500;padding:8px 16px;border-radius:999px;transition:.2s}
+.nav nav a:hover{background:var(--mist)}
+
+/* ── 主視覺：山稜晨霧 ── */
+.hero{position:relative;overflow:hidden;background:linear-gradient(180deg,#cfe3ee 0%,#e8f1f5 55%,var(--paper) 100%)}
+.hero-inner{position:relative;z-index:3;max-width:1100px;margin:0 auto;padding:88px 28px 300px;text-align:center}
+.hero h1{font-size:clamp(34px,5.4vw,58px);font-weight:800;letter-spacing:6px;line-height:1.35}
+.hero h1 span{color:var(--deep)}
+.hero p{margin-top:18px;font-size:17px;font-weight:400;letter-spacing:2px;color:#4d6f66}
+.hero-cta{margin-top:34px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn-round{
+  display:inline-block;padding:16px 40px;border-radius:999px;font-size:17px;font-weight:700;
+  transition:.25s;cursor:pointer;border:none;font-family:inherit;letter-spacing:2px;
+}
+.btn-primary{background:var(--deep);color:#fff;box-shadow:0 8px 22px rgba(74,124,111,.35)}
+.btn-primary:hover{background:var(--ink);transform:translateY(-3px)}
+.btn-ghost{background:rgba(255,255,255,.75);color:var(--ink);border:2px solid var(--deep)}
+.btn-ghost:hover{background:#fff;transform:translateY(-3px)}
+
+/* 山稜層 */
+.ridges{position:absolute;left:0;right:0;bottom:-2px;z-index:2;line-height:0}
+.ridges svg{width:100%;height:auto;display:block}
+/* 霧帶 */
+.mist-band{
+  position:absolute;left:-50%;width:200%;height:120px;z-index:2;pointer-events:none;
+  background:radial-gradient(ellipse 60% 100% at 50% 50%,rgba(238,245,248,.95) 0%,rgba(238,245,248,0) 70%);
+  filter:blur(2px);
+}
+.mist-1{bottom:150px;animation:mistDrift 46s linear infinite}
+.mist-2{bottom:60px;height:160px;opacity:.85;animation:mistDrift 70s linear infinite reverse}
+@keyframes mistDrift{
+  0%{transform:translateX(-8%)}
+  50%{transform:translateX(8%)}
+  100%{transform:translateX(-8%)}
+}
+
+/* ── 通用區塊 ── */
+section{max-width:1100px;margin:0 auto;padding:70px 28px 10px}
+.sec-title{display:flex;align-items:center;gap:14px;margin-bottom:30px}
+.sec-title .dot{width:16px;height:16px;border-radius:50%;background:var(--deep);box-shadow:0 0 0 6px rgba(74,124,111,.18)}
+.sec-title h2{font-size:clamp(24px,3vw,32px);font-weight:800;letter-spacing:3px}
+.sec-title small{font-size:13px;color:var(--mid);letter-spacing:2px;font-weight:500}
+
+/* 申辦服務卡 */
+.svc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:26px}
+.svc-card{
+  background:#fff;border-radius:32px;padding:34px 30px;
+  box-shadow:0 10px 30px rgba(47,84,73,.09);border:1px solid rgba(74,124,111,.12);
+  transition:.3s;position:relative;overflow:hidden;
+}
+.svc-card:hover{transform:translateY(-8px);box-shadow:0 20px 44px rgba(47,84,73,.16)}
+.svc-card::before{
+  content:"";position:absolute;top:-46px;right:-46px;width:130px;height:130px;border-radius:50%;
+  background:radial-gradient(circle,rgba(207,227,238,.8),rgba(207,227,238,0) 70%);
+}
+.svc-ico{
+  width:64px;height:64px;border-radius:22px;display:flex;align-items:center;justify-content:center;
+  font-size:30px;background:var(--fog);margin-bottom:18px;
+}
+.svc-card h3{font-size:22px;font-weight:800;letter-spacing:2px;margin-bottom:10px}
+.svc-card p{font-size:14.5px;line-height:1.9;color:#54756c}
+.svc-card ul{margin:14px 0 18px;list-style:none}
+.svc-card li{font-size:13.5px;padding:5px 0 5px 22px;position:relative;color:#54756c}
+.svc-card li::before{content:"◦";position:absolute;left:6px;color:var(--deep);font-weight:800}
+.svc-link{
+  display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:15px;color:var(--deep);
+  padding:10px 22px;border-radius:999px;background:var(--fog);transition:.2s;
+}
+.svc-link:hover{background:var(--deep);color:#fff}
+
+/* 線上取號 */
+.ticket-wrap{
+  background:linear-gradient(135deg,#eaf3f0 0%,var(--fog) 100%);
+  border-radius:40px;padding:46px 40px;display:grid;grid-template-columns:1.2fr 1fr;gap:40px;align-items:center;
+  border:1px solid rgba(74,124,111,.15);
+}
+.ticket-info h3{font-size:26px;font-weight:800;letter-spacing:2px;margin-bottom:12px}
+.ticket-info p{font-size:15px;line-height:1.9;color:#54756c;margin-bottom:22px}
+.ticket-panel{
+  background:#fff;border-radius:28px;padding:32px;text-align:center;
+  box-shadow:0 12px 30px rgba(47,84,73,.12);
+}
+.ticket-panel .label{font-size:13px;letter-spacing:3px;color:var(--mid);font-weight:700}
+.ticket-num{
+  font-size:64px;font-weight:800;color:var(--deep);letter-spacing:4px;margin:8px 0;
+  font-variant-numeric:tabular-nums;min-height:80px;
+}
+.ticket-meta{display:flex;justify-content:center;gap:28px;margin:14px 0 22px;font-size:14px;color:#54756c}
+.ticket-meta b{color:var(--ink);font-size:20px;display:block}
+#takeBtn{width:100%}
+#takeBtn.taken{background:var(--mist);color:var(--ink);cursor:default}
+
+/* 公告 */
+.news-card{background:#fff;border-radius:32px;box-shadow:0 10px 30px rgba(47,84,73,.09);overflow:hidden;border:1px solid rgba(74,124,111,.12)}
+.news-item{
+  display:flex;align-items:center;gap:20px;padding:22px 30px;border-bottom:1px dashed rgba(74,124,111,.25);
+  transition:.2s;cursor:pointer;
+}
+.news-item:last-child{border-bottom:none}
+.news-item:hover{background:var(--fog)}
+.news-date{
+  flex-shrink:0;width:74px;text-align:center;background:var(--mist);border-radius:16px;padding:8px 4px;
+  font-weight:700;font-size:13px;line-height:1.4;color:var(--ink);
+}
+.news-date .d{font-size:20px;display:block}
+.news-tag{flex-shrink:0;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;background:var(--deep);color:#fff}
+.news-tag.green{background:var(--mid)}
+.news-item p{font-size:15.5px;font-weight:500;line-height:1.6}
+
+/* 據點查詢 */
+.loc-filter{display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap}
+.loc-filter label{font-weight:700;font-size:15px}
+.loc-filter select{
+  font-family:inherit;font-size:15px;font-weight:500;padding:12px 20px;border-radius:999px;
+  border:2px solid var(--deep);background:#fff;color:var(--ink);cursor:pointer;outline:none;
+}
+.loc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px}
+.loc-card{
+  background:#fff;border-radius:28px;padding:26px 28px;border-left:10px solid var(--mid);
+  box-shadow:0 8px 24px rgba(47,84,73,.08);transition:.25s;
+}
+.loc-card:hover{transform:translateY(-4px);border-left-color:var(--deep)}
+.loc-card h4{font-size:19px;font-weight:800;letter-spacing:1px;margin-bottom:8px}
+.loc-card .area{font-size:12px;font-weight:700;color:#fff;background:var(--deep);padding:3px 12px;border-radius:999px;margin-left:8px}
+.loc-card p{font-size:14px;line-height:1.9;color:#54756c;margin-top:6px}
+.loc-card .hours{color:var(--deep);font-weight:700}
+
+/* FAQ */
+.faq-item{background:#fff;border-radius:24px;margin-bottom:14px;overflow:hidden;border:1px solid rgba(74,124,111,.12)}
+.faq-q{
+  width:100%;text-align:left;background:none;border:none;font-family:inherit;cursor:pointer;
+  font-size:17px;font-weight:700;padding:22px 28px;display:flex;justify-content:space-between;align-items:center;color:var(--ink);
+}
+.faq-q .arrow{transition:.3s;color:var(--deep);font-size:20px}
+.faq-item.open .faq-q .arrow{transform:rotate(180deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .35s ease;padding:0 28px}
+.faq-item.open .faq-a{max-height:220px}
+.faq-a p{font-size:15px;line-height:1.9;color:#54756c;padding-bottom:24px}
+
+/* 頁尾 */
+footer{margin-top:80px;background:var(--ink);color:#d8e6e1;border-radius:48px 48px 0 0;padding:56px 28px 40px}
+.foot-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:36px}
+.foot-inner h5{font-size:18px;font-weight:800;letter-spacing:2px;color:#fff;margin-bottom:16px}
+.foot-inner p,.foot-inner a{font-size:14px;line-height:2.1;color:#b8cfc8;display:block}
+.foot-inner a:hover{color:#fff}
+.foot-back{
+  max-width:1100px;margin:36px auto 0;padding-top:26px;border-top:1px solid rgba(255,255,255,.15);
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;
+}
+.foot-back small{font-size:12px;letter-spacing:1px;color:#8fb3ab}
+.foot-back .back-pill{box-shadow:none}
+
+@media(max-width:760px){
+  .ticket-wrap{grid-template-columns:1fr}
+  .foot-inner{grid-template-columns:1fr}
+  .hero-inner{padding-bottom:220px}
+  .news-item{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <a class="back-pill" href="../../index.html">← 返回入口</a>
+  <div class="brand">臨港市戶政事務所<small>LINGANG HOUSEHOLD REGISTRATION OFFICE</small></div>
+  <nav>
+    <a href="#svc">申辦服務</a>
+    <a href="#ticket">線上取號</a>
+    <a href="#news">最新公告</a>
+    <a href="offices.html">服務據點</a>
+    <a href="forms.html">表格下載</a>
+    <a href="faq.html">常見問題</a>
+  </nav>
+</header>
+
+<!-- 主視覺 -->
+<div class="hero">
+  <div class="hero-inner">
+    <h1>山城的每一個家<br><span>都是我們守護的稜線</span></h1>
+    <p>出生登記・結婚登記・遷徙登記——人生重要時刻，臨港戶政與您同行</p>
+    <div class="hero-cta">
+      <a class="btn-round btn-primary" href="#ticket">線上取號，免排隊</a>
+      <a class="btn-round btn-ghost" href="#svc">瀏覽申辦服務</a>
+    </div>
+  </div>
+  <div class="mist-band mist-1"></div>
+  <div class="mist-band mist-2"></div>
+  <div class="ridges">
+    <svg viewBox="0 0 1440 320" preserveAspectRatio="none" style="height:320px">
+      <defs>
+        <linearGradient id="r1" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#cfe3ee"/><stop offset="1" stop-color="#b9d4e2"/>
+        </linearGradient>
+        <linearGradient id="r2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#a8c8c9"/><stop offset="1" stop-color="#8fb3ab"/>
+        </linearGradient>
+        <linearGradient id="r3" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#7ba499"/><stop offset="1" stop-color="#64907f"/>
+        </linearGradient>
+        <linearGradient id="r4" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#5c8d7e"/><stop offset="1" stop-color="#4a7c6f"/>
+        </linearGradient>
+        <linearGradient id="r5" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#4a7c6f"/><stop offset="1" stop-color="#2f5449"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#r1)" opacity=".7" d="M0,120 L180,60 L360,130 L540,50 L720,120 L900,40 L1080,110 L1260,55 L1440,115 L1440,320 L0,320 Z"/>
+      <path fill="url(#r2)" opacity=".8" d="M0,170 L160,110 L340,180 L520,100 L700,175 L880,95 L1060,165 L1240,105 L1440,170 L1440,320 L0,320 Z"/>
+      <path fill="url(#r3)" opacity=".9" d="M0,210 L140,150 L320,225 L500,145 L680,220 L860,140 L1040,215 L1220,150 L1440,210 L1440,320 L0,320 Z"/>
+      <path fill="url(#r4)" d="M0,250 L120,190 L300,265 L480,185 L660,260 L840,180 L1020,255 L1200,195 L1440,250 L1440,320 L0,320 Z"/>
+      <path fill="url(#r5)" d="M0,290 L100,235 L280,300 L460,230 L640,300 L820,225 L1000,295 L1180,240 L1440,290 L1440,320 L0,320 Z"/>
+    </svg>
+  </div>
+</div>
+
+<!-- 申辦服務 -->
+<section id="svc">
+  <div class="sec-title"><span class="dot"></span><h2>申辦服務</h2><small>REGISTRATION SERVICES</small></div>
+  <div class="svc-grid">
+    <div class="svc-card">
+      <div class="svc-ico">🍼</div>
+      <h3>出生登記</h3>
+      <p>寶寶出生後 60 日內，由父母或監護人向戶政事務所申報出生登記，同時可一併申請新生兒健保加保。</p>
+      <ul>
+        <li>出生證明書正本</li>
+        <li>父母雙方身分證、印章</li>
+        <li>戶口名簿（入籍戶）</li>
+      </ul>
+      <a class="svc-link" href="apply.html#birth">預約申辦 →</a>
+    </div>
+    <div class="svc-card">
+      <div class="svc-ico">💍</div>
+      <h3>結婚登記</h3>
+      <p>結婚雙方攜帶結婚書約（含兩位證人簽章）親自辦理，可指定登記生效日，並同步申請結婚證明書。</p>
+      <ul>
+        <li>結婚書約（證人 2 人簽章）</li>
+        <li>雙方身分證、印章、戶口名簿</li>
+        <li>近 2 年彩色照片 1 張（換證用）</li>
+      </ul>
+      <a class="svc-link" href="apply.html#marriage">預約申辦 →</a>
+    </div>
+    <div class="svc-card">
+      <div class="svc-ico">🏡</div>
+      <h3>遷徙登記</h3>
+      <p>遷入、遷出或住址變更，於遷徙事實發生後 30 日內辦理；跨縣市遷徙可於遷入地戶所一次辦妥。</p>
+      <ul>
+        <li>申請人身分證、印章</li>
+        <li>遷入地戶口名簿或房屋證明</li>
+        <li>委託辦理另附委託書</li>
+      </ul>
+      <a class="svc-link" href="apply.html#move">預約申辦 →</a>
+    </div>
+  </div>
+</section>
+
+<!-- 線上取號 -->
+<section id="ticket">
+  <div class="sec-title"><span class="dot"></span><h2>線上取號</h2><small>QUEUE TICKET</small></div>
+  <div class="ticket-wrap">
+    <div class="ticket-info">
+      <h3>出門前先取號<br>到場剛好輪到您</h3>
+      <p>點擊右方按鈕即可取得線上號碼牌，系統將為您保留號碼 30 分鐘。目前叫號進度與等候人數即時更新，尖峰時段（週一上午、週五下午）建議提前取號。</p>
+      <p>⏰ 服務時間：週一至週五 08:00–17:30（中午不打烊）<br>📞 電話預約：(03) 555-0119 轉 9</p>
+    </div>
+    <div class="ticket-panel">
+      <div class="label">您的號碼牌 YOUR TICKET</div>
+      <div class="ticket-num" id="ticketNum">— — —</div>
+      <div class="ticket-meta">
+        <div>目前叫號<b id="nowNum">A082</b></div>
+        <div>等候人數<b id="waitNum">7</b></div>
+      </div>
+      <button class="btn-round btn-primary" id="takeBtn" onclick="takeNumber()">🎫 立即取號</button>
+    </div>
+  </div>
+</section>
+
+<!-- 最新公告 -->
+<section id="news">
+  <div class="sec-title"><span class="dot"></span><h2>最新公告</h2><small>ANNOUNCEMENTS</small></div>
+  <div class="news-card">
+    <div class="news-item">
+      <div class="news-date">08/25<span class="d">114</span></div>
+      <span class="news-tag">重要</span>
+      <p>9 月 1 日起新增「夜間延長服務」：每週三營業至晚間 20:00，歡迎多加利用。</p>
+    </div>
+    <div class="news-item">
+      <div class="news-date">08/18<span class="d">114</span></div>
+      <span class="news-tag green">便民</span>
+      <p>戶籍謄本即日起可於全國任一戶政事務所跨區申請，免回原籍地辦理。</p>
+    </div>
+    <div class="news-item">
+      <div class="news-date">08/10<span class="d">114</span></div>
+      <span class="news-tag green">活動</span>
+      <p>「新住民幸福驛站」9 月場次開放報名：提供歸化諮詢、中文學習與親子共讀服務。</p>
+    </div>
+    <div class="news-item">
+      <div class="news-date">08/02<span class="d">114</span></div>
+      <span class="news-tag">提醒</span>
+      <p>颱風季節來臨，若市府宣布停班，本所同步停止對外服務，線上取號自動保留至次日。</p>
+    </div>
+    <div class="news-item">
+      <div class="news-date">07/28<span class="d">114</span></div>
+      <span class="news-tag green">系統</span>
+      <p>本所官方網站完成無障礙 AA 等級認證，歡迎使用語音朗讀與大字版瀏覽模式。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 服務據點 -->
+<section id="loc">
+  <div class="sec-title"><span class="dot"></span><h2>服務據點查詢</h2><small>SERVICE LOCATIONS</small></div>
+  <div class="loc-filter">
+    <label for="areaSel">選擇行政區：</label>
+    <select id="areaSel" onchange="filterLoc(this.value)">
+      <option value="all">全部據點</option>
+      <option value="港灣區">港灣區</option>
+      <option value="山城區">山城區</option>
+      <option value="雲林區">雲林區</option>
+    </select>
+  </div>
+  <div class="loc-grid" id="locGrid">
+    <div class="loc-card" data-area="港灣區">
+      <h4>港灣總所<span class="area">港灣區</span></h4>
+      <p>📍 臨港市港灣區濱海路一段 88 號 2 樓<br>📞 (03) 555-0119<br><span class="hours">🕗 週一至週五 08:00–17:30｜週三延長至 20:00</span></p>
+    </div>
+    <div class="loc-card" data-area="山城區">
+      <h4>山城辦事處<span class="area">山城區</span></h4>
+      <p>📍 臨港市山城區稜線街 12 號<br>📞 (03) 555-0234<br><span class="hours">🕗 週一至週五 08:00–17:30（中午不打烊）</span></p>
+    </div>
+    <div class="loc-card" data-area="雲林區">
+      <h4>雲林服務站<span class="area">雲林區</span></h4>
+      <p>📍 臨港市雲林區霧谷路 45 巷 6 號<br>📞 (03) 555-0377<br><span class="hours">🕗 週一、三、五 09:00–16:30</span></p>
+    </div>
+    <div class="loc-card" data-area="港灣區">
+      <h4>漁光便民窗口<span class="area">港灣區</span></h4>
+      <p>📍 臨港市港灣區漁光里活動中心 1 樓<br>📞 (03) 555-0412<br><span class="hours">🕗 每週二、四 09:00–12:00（行動戶政車）</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 常見問題 -->
+<section id="faq">
+  <div class="sec-title"><span class="dot"></span><h2>常見問題</h2><small>FAQ</small></div>
+  <div class="faq-item">
+    <button class="faq-q" onclick="toggleFaq(this)">新生兒出生登記可以線上申辦嗎？<span class="arrow">▾</span></button>
+    <div class="faq-a"><p>可以。凡父母雙方均設籍本市者，可透過「戶政線上申辦平臺」上傳出生證明書影像檔完成登記，全程免臨櫃；如需核發紙本戶口名簿，仍可擇日領取或申請郵寄。</p></div>
+  </div>
+  <div class="faq-item">
+    <button class="faq-q" onclick="toggleFaq(this)">結婚登記一定要雙方親自到場嗎？<span class="arrow">▾</span></button>
+    <div class="faq-a"><p>是的。依戶籍法規定，結婚登記須由雙方當事人親自辦理，不得委託他人。若一方為外籍人士，請另備護照、單身證明（經驗證）及其中文譯本。</p></div>
+  </div>
+  <div class="faq-item">
+    <button class="faq-q" onclick="toggleFaq(this)">遷徙後多久內要辦理登記？會罰錢嗎？<span class="arrow">▾</span></button>
+    <div class="faq-a"><p>應於遷徙事實發生後 30 日內辦理。逾期經催告仍未辦理者，依戶籍法可處新臺幣 300 元至 900 元罰鍰，建議搬家後儘速至遷入地戶所辦理，一次即可完成遷出與遷入手續。</p></div>
+  </div>
+  <div class="faq-item">
+    <button class="faq-q" onclick="toggleFaq(this)">忘記帶印章可以辦理嗎？<span class="arrow">▾</span></button>
+    <div class="faq-a"><p>多數登記項目可改以本人親筆簽名代替印章，惟印鑑登記、印鑑證明等業務仍須攜帶原登記印鑑章。不確定的話，歡迎先來電 (03) 555-0119 確認。</p></div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-inner">
+    <div>
+      <h5>臨港市戶政事務所</h5>
+      <p>地址：臨港市港灣區濱海路一段 88 號 2 樓<br>服務時間：週一至週五 08:00–17:30（週三延長至 20:00）<br>總機：(03) 555-0119　傳真：(03) 555-0120</p>
+    </div>
+    <div>
+      <h5>快速服務</h5>
+      <a href="apply.html">出生／結婚／遷徙登記</a>
+      <a href="#ticket">線上取號</a>
+      <a href="offices.html">據點查詢</a>
+      <a href="faq.html">常見問題</a>
+    </div>
+    <div>
+      <h5>相關服務</h5>
+      <a href="apply.html">線上申辦步驟說明</a>
+      <a href="forms.html">表格下載專區</a>
+      <a href="offices.html">服務據點與時間</a>
+    </div>
+  </div>
+  <div class="foot-back">
+    <small>© 114 臨港市戶政事務所　本網站為設計示範頁，資料為虛構範例</small>
+    <a class="back-pill" href="../../index.html">← 返回入口</a>
+  </div>
+</footer>
+
+<script>
+/* 線上取號 */
+var currentNum = 82, waiting = 7, myTicket = null;
+function takeNumber(){
+  var btn = document.getElementById('takeBtn');
+  if(myTicket){ return; }
+  currentNum++;
+  waiting++;
+  myTicket = 'A' + String(currentNum + waiting - 1).padStart(3,'0');
+  var el = document.getElementById('ticketNum');
+  el.textContent = myTicket;
+  el.style.animation = 'popIn .45s ease';
+  document.getElementById('waitNum').textContent = waiting;
+  btn.textContent = '✓ 已取號 ' + myTicket;
+  btn.classList.add('taken');
+}
+var style = document.createElement('style');
+style.textContent = '@keyframes popIn{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}';
+document.head.appendChild(style);
+
+/* 據點篩選 */
+function filterLoc(area){
+  document.querySelectorAll('.loc-card').forEach(function(c){
+    c.style.display = (area==='all' || c.dataset.area===area) ? '' : 'none';
+  });
+}
+
+/* FAQ 手風琴 */
+function toggleFaq(btn){
+  var item = btn.parentElement;
+  var wasOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item').forEach(function(i){ i.classList.remove('open'); });
+  if(!wasOpen){ item.classList.add('open'); }
+}
+</script>
+</body>
+</html>

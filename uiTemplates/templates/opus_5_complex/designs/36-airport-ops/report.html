@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>36 · 準點率統計報表 — AIRPORT OPS</title>
+<style>
+:root{
+  --n0:#0b1222;--n1:#111c33;--n2:#16243f;--edge:#22344f;
+  --txt:#dbe6f5;--dim:#7b91b0;
+  --gate:#4dd0e1;--dep:#7c9cff;--arr:#8bd67a;--dly:#ffb547;--cnc:#ff5c6c;--vip:#c792ea;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--n0);color:var(--txt);min-height:100vh;font-size:13px;
+  font-family:"Segoe UI","Roboto Condensed","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gate);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:99;text-decoration:none;color:var(--n0);
+  background:var(--gate);padding:12px 22px;border-radius:6px;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;box-shadow:0 0 22px rgba(77,208,225,.45)}
+.home:hover{background:#fff}
+
+.subnav{display:flex;flex-wrap:wrap;gap:1px;background:var(--edge);border-bottom:2px solid var(--edge);
+  position:sticky;top:0;z-index:60}
+.subnav a{background:var(--n1);color:var(--dim);text-decoration:none;padding:11px 18px;font-size:11px;
+  letter-spacing:.14em;font-weight:600;transition:.16s}
+.subnav a:hover{background:var(--n2);color:var(--txt)}
+.subnav a[aria-current]{background:rgba(77,208,225,.16);color:var(--gate);box-shadow:inset 0 -2px 0 var(--gate)}
+.subnav a.bk{background:var(--n2);color:var(--gate)}
+
+/* ---------- poster sheet ---------- */
+.sheet{max-width:1280px;margin:0 auto;padding:0 24px 60px}
+.mast{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;
+  padding:34px 0 20px;border-bottom:2px solid var(--gate)}
+.mast h1{font-size:clamp(30px,6.4vw,74px);font-weight:800;letter-spacing:-.045em;line-height:1.02}
+.mast h1 em{font-style:normal;color:var(--gate)}
+.mast .meta{text-align:right;font-size:10px;letter-spacing:.26em;color:var(--dim);line-height:2.1}
+.mast .meta b{color:var(--txt)}
+
+.periods{display:flex;gap:1px;background:var(--edge);border:1px solid var(--edge);border-radius:8px;
+  overflow:hidden;margin:20px 0 0;flex-wrap:wrap}
+.periods button{flex:1;min-width:150px;appearance:none;border:0;background:var(--n1);font:inherit;
+  color:var(--dim);padding:13px 18px;cursor:pointer;text-align:left;transition:.16s}
+.periods button b{display:block;font-size:13px;font-weight:700;letter-spacing:.04em}
+.periods button small{display:block;font-size:10px;letter-spacing:.14em;margin-top:4px;opacity:.85}
+.periods button:hover{background:var(--n2);color:var(--txt)}
+.periods button[aria-selected="true"]{background:rgba(77,208,225,.16);color:var(--gate)}
+
+/* ---------- hero band ---------- */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0;border-bottom:1px solid var(--edge);
+  margin-top:26px}
+@media(max-width:900px){.hero{grid-template-columns:1fr}}
+.hero .big{padding:6px 0 26px}
+.hero .big .k{font-size:10px;letter-spacing:.3em;color:var(--gate);font-weight:700}
+.hero .big .v{font-size:clamp(84px,17vw,190px);font-weight:800;letter-spacing:-.07em;line-height:.82;margin-top:12px}
+.hero .big .v small{font-size:.26em;letter-spacing:.02em;vertical-align:super;color:var(--gate)}
+.hero .big .cap{margin-top:16px;font-size:13.5px;line-height:1.95;color:#a8bdd6;max-width:48ch}
+.hero .big .cap b{color:var(--txt)}
+.hero .side{border-left:1px solid var(--edge);padding:6px 0 26px 24px;display:flex;flex-direction:column;
+  justify-content:flex-end;gap:14px}
+@media(max-width:900px){.hero .side{border-left:0;border-top:1px solid var(--edge);padding:20px 0 26px}}
+.hero .side div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  border-bottom:1px solid rgba(34,52,79,.7);padding-bottom:10px}
+.hero .side div:last-child{border-bottom:0}
+.hero .side .k{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.hero .side .v{font-size:24px;font-weight:700;letter-spacing:-.02em}
+.hero .side .v.g{color:var(--arr)}.hero .side .v.w{color:var(--dly)}.hero .side .v.r{color:var(--cnc)}
+
+/* ---------- section head ---------- */
+.sec{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px;
+  padding:26px 0 14px;border-bottom:1px solid var(--edge);margin-bottom:20px}
+.sec h2{font-size:clamp(16px,2.4vw,26px);font-weight:800;letter-spacing:-.02em}
+.sec h2 i{font-style:normal;color:var(--gate);margin-right:12px;font-size:.7em;letter-spacing:.1em}
+.sec span{font-size:10px;letter-spacing:.24em;color:var(--dim)}
+
+/* ---------- polar ---------- */
+.polar{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:26px;align-items:center}
+@media(max-width:900px){.polar{grid-template-columns:1fr}}
+.polar .plot{display:flex;justify-content:center}
+.polar svg{width:100%;max-width:460px;height:auto;display:block}
+.ring{fill:none;stroke:rgba(34,52,79,.9)}
+.ring.mid{stroke:rgba(77,208,225,.28);stroke-dasharray:4 5}
+.spoke{stroke:rgba(34,52,79,.75)}
+.pfill{fill:rgba(77,208,225,.16);stroke:var(--gate);stroke-width:2.2;stroke-linejoin:round;
+  transition:d .5s ease}
+.pdot{fill:var(--n0);stroke:var(--gate);stroke-width:2}
+.pdot.low{stroke:var(--cnc);fill:var(--cnc)}
+.plabel{fill:#6d89ab;font-size:10px}
+.pscale{fill:#4a6a8e;font-size:9px}
+.polar .notes .lbl{font-size:10px;letter-spacing:.24em;color:var(--gate);font-weight:700;
+  border-bottom:1px solid var(--edge);padding-bottom:9px;margin-bottom:14px}
+.polar .notes p{font-size:12.5px;line-height:1.95;color:#a8bdd6;margin-bottom:14px}
+.polar .notes p b{color:var(--txt)}
+.polar .notes dl{font-size:12px;line-height:1.7}
+.polar .notes dt{color:var(--dim);letter-spacing:.14em;font-size:10px;margin-top:12px}
+.polar .notes dd{font-weight:700;font-size:15px;margin-top:3px}
+
+/* ---------- causes ---------- */
+.causes{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start}
+@media(max-width:900px){.causes{grid-template-columns:1fr}}
+.cbar{display:grid;grid-template-columns:150px minmax(0,1fr) 84px;align-items:center;gap:14px;
+  width:100%;appearance:none;border:0;background:transparent;font:inherit;color:inherit;
+  padding:11px 8px;border-bottom:1px solid rgba(34,52,79,.7);cursor:pointer;text-align:left;transition:.15s}
+.cbar:hover{background:rgba(77,208,225,.06)}
+.cbar[aria-pressed="true"]{background:rgba(77,208,225,.11)}
+.cbar .nm{font-size:12.5px;font-weight:600}
+.cbar .tr{position:relative;height:22px;background:rgba(34,52,79,.55);border-radius:3px;overflow:hidden}
+.cbar .tr i{position:absolute;inset:0 auto 0 0;border-radius:3px;transform-origin:left;
+  animation:grow .8s cubic-bezier(.2,.8,.3,1) both}
+@keyframes grow{from{transform:scaleX(0)}}
+.cbar .num{text-align:right;font-size:14px;font-weight:700}
+.cbar .num small{display:block;font-size:10px;color:var(--dim);font-weight:400;margin-top:2px}
+.cnote{background:var(--n1);border:1px solid var(--edge);border-radius:10px;padding:18px}
+.cnote .t{font-size:10px;letter-spacing:.24em;color:var(--gate);font-weight:700;margin-bottom:10px}
+.cnote h3{font-size:17px;font-weight:700;margin-bottom:10px;letter-spacing:-.01em}
+.cnote p{font-size:12.5px;line-height:1.95;color:#a8bdd6}
+.cnote .fig{margin-top:14px;display:flex;gap:20px;flex-wrap:wrap}
+.cnote .fig div small{display:block;font-size:9.5px;letter-spacing:.18em;color:var(--dim)}
+.cnote .fig div b{font-size:21px;font-weight:700}
+
+/* ---------- calendar heat ---------- */
+.calwrap{overflow-x:auto}
+.cal{min-width:560px}
+.cal .hd{display:grid;grid-template-columns:64px repeat(7,1fr);gap:6px;margin-bottom:8px}
+.cal .hd span{font-size:9.5px;letter-spacing:.18em;color:var(--dim);text-align:center}
+.cal .wk{display:grid;grid-template-columns:64px repeat(7,1fr);gap:6px;margin-bottom:6px}
+.cal .wl{font-size:9.5px;letter-spacing:.14em;color:var(--dim);display:flex;align-items:center}
+.cal .d{position:relative;aspect-ratio:1.5/1;border-radius:5px;display:flex;flex-direction:column;
+  justify-content:space-between;padding:7px 8px;border:1px solid rgba(34,52,79,.6);
+  animation:pop .4s cubic-bezier(.2,1.3,.4,1) both}
+@keyframes pop{from{opacity:0;transform:scale(.86)}}
+.cal .d .dd{font-size:9.5px;color:#8fa8c4}
+.cal .d .rr{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.cal .d.today{border-color:var(--gate);box-shadow:0 0 0 1px var(--gate)}
+.calleg{display:flex;gap:8px;align-items:center;margin-top:16px;font-size:11px;color:var(--dim);flex-wrap:wrap}
+.calleg i{width:26px;height:12px;border-radius:3px;display:block}
+
+/* ---------- league ---------- */
+.leaguewrap{overflow-x:auto;border:1px solid var(--edge);border-radius:10px}
+table.lg{width:100%;border-collapse:collapse;min-width:680px;background:var(--n1)}
+table.lg th{background:var(--n2);text-align:left;font-size:9.5px;letter-spacing:.2em;color:var(--dim);
+  font-weight:600;padding:11px 16px;white-space:nowrap}
+table.lg th.r,table.lg td.r{text-align:right}
+table.lg td{padding:12px 16px;border-top:1px solid rgba(34,52,79,.6);font-size:13px}
+table.lg tbody tr:hover td{background:rgba(77,208,225,.06)}
+table.lg td.c{font-weight:700;letter-spacing:.06em;color:var(--gate)}
+.minib{position:relative;height:8px;background:rgba(34,52,79,.7);border-radius:2px;min-width:100px}
+.minib i{position:absolute;inset:0 auto 0 0;border-radius:2px;background:var(--gate)}
+.minib i.w{background:var(--dly)}
+.minib i.r{background:var(--cnc)}
+.foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:28px 0 0;margin-top:28px;
+  border-top:2px solid var(--gate);font-size:10px;letter-spacing:.26em;color:#40587a}
+
+@media(max-width:640px){
+  .sheet{padding:0 14px 60px}
+  .cbar{grid-template-columns:1fr 76px;row-gap:8px}
+  .cbar .nm{grid-column:1/-1}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<nav class="subnav" aria-label="子頁導覽">
+  <a class="bk" href="index.html">◄ 排班台 GANTT</a>
+  <a href="flights.html">航班動態 FLIGHTS</a>
+  <a href="gates.html">登機門 GATES</a>
+  <a href="crew.html">地勤班組 CREW</a>
+  <a href="report.html" aria-current="page">運務報表 REPORT</a>
+</nav>
+
+<div class="sheet">
+  <div class="mast">
+    <h1>準點率<br><em>統計報表</em></h1>
+    <div class="meta">
+      ON-TIME PERFORMANCE REVIEW<br>
+      桃園國際機場 · 第二航廈<br>
+      發布 <b>2026 / 10 / 12  16:00 CST</b><br>
+      資料來源 <b>A-CDM 起降紀錄</b>
+    </div>
+  </div>
+
+  <div class="periods" role="tablist" aria-label="統計期間切換">
+    <button role="tab" aria-selected="true" data-p="day"><b>本日 10/12</b><small>DAY · 209 架次</small></button>
+    <button role="tab" aria-selected="false" data-p="week"><b>本週 W41 10/06–10/12</b><small>WEEK · 1,438 架次</small></button>
+    <button role="tab" aria-selected="false" data-p="month"><b>本月 10/01–10/12</b><small>MONTH · 2,486 架次</small></button>
+  </div>
+
+  <div class="hero">
+    <div class="big">
+      <div class="k">ON-TIME PERFORMANCE — 誤差 ≤ 15 分</div>
+      <div class="v"><span id="k-otp">88.0</span><small>%</small></div>
+      <p class="cap" id="k-cap"></p>
+    </div>
+    <div class="side">
+      <div><span class="k">總架次 MOVEMENTS</span><span class="v" id="k-tot">209</span></div>
+      <div><span class="k">準點 ON TIME</span><span class="v g" id="k-ot">184</span></div>
+      <div><span class="k">延誤 DELAYED</span><span class="v w" id="k-dl">23</span></div>
+      <div><span class="k">取消 CANCELLED</span><span class="v r" id="k-cn">2</span></div>
+      <div><span class="k">平均延誤 AVG DELAY</span><span class="v" id="k-avg">12.4 分</span></div>
+      <div><span class="k">旅客人次 PAX</span><span class="v" id="k-pax">48,216</span></div>
+    </div>
+  </div>
+
+  <div class="sec"><h2><i>01</i>逐時準點率極座標圖</h2><span>HOURLY OTP · POLAR PLOT · 24 SPOKES</span></div>
+  <div class="polar">
+    <div class="plot">
+      <svg viewBox="0 0 460 460" role="img" id="psvg"
+        aria-label="逐時準點率極座標圖，24 個時段自 00 時起順時針排列，半徑代表準點率 70% 至 100%">
+        <g id="pg"></g>
+      </svg>
+    </div>
+    <div class="notes">
+      <div class="lbl">解讀 READING</div>
+      <p id="p-note"></p>
+      <dl>
+        <dt>最佳時段 BEST HOUR</dt><dd id="p-best">—</dd>
+        <dt>最差時段 WORST HOUR</dt><dd id="p-worst">—</dd>
+        <dt>晨昏差距 SPREAD</dt><dd id="p-spread">—</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="sec"><h2><i>02</i>延誤原因排行</h2><span>DELAY CAUSE RANKING · 點選任一列查看說明</span></div>
+  <div class="causes">
+    <div id="cbars" role="group" aria-label="延誤原因排行"></div>
+    <div class="cnote" id="cnote"></div>
+  </div>
+
+  <div class="sec"><h2><i>03</i>近 42 日準點率熱圖</h2><span>DAILY OTP HEAT CALENDAR · 09/01 – 10/12</span></div>
+  <div class="calwrap">
+    <div class="cal" id="cal"></div>
+  </div>
+  <div class="calleg">
+    <span>準點率</span>
+    <i style="background:rgba(255,92,108,.75)"></i><span>&lt; 80%</span>
+    <i style="background:rgba(255,181,71,.7)"></i><span>80 – 85%</span>
+    <i style="background:rgba(77,208,225,.5)"></i><span>85 – 90%</span>
+    <i style="background:rgba(139,214,122,.75)"></i><span>&gt; 90%</span>
+    <span style="margin-left:auto">42 日均值 87.1% · 最低 78%（10/04 鋒面過境）· 最高 93%（09/07、09/24）</span>
+  </div>
+
+  <div class="sec"><h2><i>04</i>航空公司準點榜</h2><span>CARRIER LEAGUE TABLE</span></div>
+  <div class="leaguewrap">
+    <table class="lg">
+      <thead><tr>
+        <th>代碼</th><th>航空公司</th><th class="r">架次</th><th class="r">準點率</th>
+        <th>分布</th><th class="r">名次</th>
+      </tr></thead>
+      <tbody id="lgbody"></tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <span>AIRPORT OPERATIONS CONTROL · TPE T2</span>
+    <span>REPORT / LARGE-FORMAT DATA POSTER</span>
+    <span>DESIGN 36 / 40</span>
+  </div>
+</div>
+
+<script>
+const DATA={
+  day:{
+    label:"本日 10/12（週日）",tot:209,ot:184,dl:23,cn:2,otp:"88.0",avg:"12.4 分",pax:"48,216",bag:"62,480",
+    hours:[96,97,98,95,94,93,92,90,88,86,84,82,85,87,83,80,78,81,86,89,91,93,95,96],
+    causes:[["前段班機晚到",8,"#ffb547","前一段航班抵達時刻落後，導致本段推出延遲。本日集中於 15:00–18:00 東北亞返程波次，平均遞延 18 分。"],
+            ["天候 · 雷雨對流",5,"#4dd0e1","桃園地區 15:00–18:00 雷雨特報，起降間隔由 2 分鐘拉長至 4 分鐘，容量削減約 34%。"],
+            ["空中交通流量管制",4,"#7c9cff","日本與韓國進場管制實施流量調節，受影響班次於離場前於停機位待命平均 22 分。"],
+            ["機務 · 技術檢修",3,"#c792ea","含 KE 692 引擎滑油壓力異常導致取消，其餘 2 班為航電自檢重置，各延誤 30 分內。"],
+            ["旅客與行李作業",2,"#8bd67a","2 班次因旅客未登機須卸下托運行李，各增加 14 與 19 分鐘。"],
+            ["組員勤時銜接",1,"#ff5c6c","JX 720 因前段組員休息時間不足須換班，延誤 25 分鐘。"]],
+    league:[["BR","長榮航空",24,91.7],["CI","中華航空",22,90.9],["JX","星宇航空",16,87.5],
+            ["CX","國泰航空",12,91.7],["SQ","新加坡航空",8,100.0],["KE","大韓航空",6,66.7],
+            ["TG","泰國航空",6,83.3],["UA","聯合航空",4,100.0],["EK","阿聯酋航空",4,75.0],
+            ["——","其他 26 家航空",107,87.9]],
+    note:"全日準點率 <b>88.0%</b>（184 ÷ 209）。凌晨 00:00–05:00 因班次稀疏且無銜接壓力，準點率維持 <b>93% 以上</b>；自 09:00 起隨波次密度上升逐步下滑，於 <b>16:00 觸底 78%</b>，與雷雨特報時段完全重合。18:00 之後隨對流減弱回升，21:00 後恢復 90% 以上。"
+  },
+  week:{
+    label:"本週 W41（10/06 – 10/12）",tot:1438,ot:1251,dl:172,cn:15,otp:"87.0",avg:"13.8 分",pax:"331,204",bag:"428,960",
+    hours:[95,96,96,94,93,92,90,88,86,84,82,80,83,85,81,78,76,79,84,87,89,91,93,94],
+    causes:[["前段班機晚到",62,"#ffb547","週間遞延效應顯著，週三與週五午後波次的遞延鏈最長達 4 段，單一晚到可影響後續 3 班。"],
+            ["天候 · 雷雨對流",38,"#4dd0e1","本週共 3 日發布雷雨特報（10/08、10/10、10/12），合計容量削減時數 9.5 小時。"],
+            ["空中交通流量管制",29,"#7c9cff","東京進場管制連續 4 日實施，平均每日影響 6 至 8 班東北亞航線。"],
+            ["機務 · 技術檢修",21,"#c792ea","含 3 班取消。B737 系列航電自檢佔 11 件，已排入機隊軟體更新批次。"],
+            ["旅客與行李作業",14,"#8bd67a","連假返程行李量放大，行李分揀尖峰時段平均等待由 8 分增至 15 分。"],
+            ["組員勤時銜接",8,"#ff5c6c","與 CREW 頁勤時檢核相互印證：夜班接早班的班距不足案例集中於 A1 與 T1 兩組。"]],
+    league:[["BR","長榮航空",168,90.5],["CI","中華航空",154,89.6],["JX","星宇航空",112,86.6],
+            ["CX","國泰航空",84,90.5],["SQ","新加坡航空",56,96.4],["KE","大韓航空",42,71.4],
+            ["TG","泰國航空",42,81.0],["UA","聯合航空",28,96.4],["EK","阿聯酋航空",28,78.6],
+            ["——","其他 26 家航空",724,86.3]],
+    note:"本週準點率 <b>87.0%</b>（1,251 ÷ 1,438），較上週下降 1.4 個百分點。逐時曲線的凹陷區間由本日的單點 16:00 擴大為 <b>15:00 – 17:00 連續三小時低於 82%</b>，顯示延誤已非單日天候事件，而是波次排程與地面資源的結構性擠壓。"
+  },
+  month:{
+    label:"本月 10/01 – 10/12",tot:2486,ot:2144,dl:318,cn:24,otp:"86.2",avg:"14.6 分",pax:"572,318",bag:"741,220",
+    hours:[94,95,95,93,92,90,89,86,84,82,80,78,81,83,79,76,74,77,82,85,87,89,91,92],
+    causes:[["前段班機晚到",114,"#ffb547","月累計最大延誤來源，佔全部延誤 35.8%。國慶連假（10/09–10/12）四日內即貢獻 48 件。"],
+            ["天候 · 雷雨對流",71,"#4dd0e1","10 月上旬受兩波東北季風與午後對流影響，共 7 日觸發低能見度或雷雨作業程序。"],
+            ["空中交通流量管制",52,"#7c9cff","北亞航路壅塞持續，10/04 鋒面過境當日單日即 14 件，為全月單日最高。"],
+            ["機務 · 技術檢修",39,"#c792ea","含 9 班取消。已提報機隊可靠度會議，針對 B737 航電自檢問題排定韌體升級。"],
+            ["旅客與行李作業",27,"#8bd67a","連假期間行李處理量單日峰值 78,400 件，超出設計容量 12%。"],
+            ["組員勤時銜接",15,"#ff5c6c","本月已有 4 名地勤人員觸發勤時規則，全數完成調班；空側組員違規 0 件。"]],
+    league:[["BR","長榮航空",290,89.7],["CI","中華航空",266,88.7],["JX","星宇航空",194,85.6],
+            ["CX","國泰航空",145,89.7],["SQ","新加坡航空",97,95.9],["KE","大韓航空",73,69.9],
+            ["TG","泰國航空",73,79.5],["UA","聯合航空",48,95.8],["EK","阿聯酋航空",48,77.1],
+            ["——","其他 26 家航空",1252,85.5]],
+    note:"月累計準點率 <b>86.2%</b>（2,144 ÷ 2,486），低於年度目標 90%。全日最低點下移至 <b>16:00 的 74%</b>，且 09:00–18:00 有 <b>連續 10 個小時低於 85%</b>。改善重點已鎖定 D 指廊寬體機位周轉與加油作業組人力配置。"
+  }
+};
+const HEAT=[91,89,92,88,85,90,93, 87,84,79,82,88,91,90, 92,90,86,83,80,85,89,
+            88,91,93,90,87,84,86, 89,92,88,85,81,78,83, 86,84,88,90,87,85,88];
+const HEAT_START=[9,1];
+let cur="day",selCause=0;
+
+/* ---------- KPI ---------- */
+function fmt(n){return n.toLocaleString("en-US");}
+function paint(){
+  const d=DATA[cur];
+  document.getElementById("k-otp").textContent=d.otp;
+  document.getElementById("k-tot").textContent=fmt(d.tot);
+  document.getElementById("k-ot").textContent=fmt(d.ot);
+  document.getElementById("k-dl").textContent=fmt(d.dl);
+  document.getElementById("k-cn").textContent=fmt(d.cn);
+  document.getElementById("k-avg").textContent=d.avg;
+  document.getElementById("k-pax").textContent=d.pax;
+  document.getElementById("k-cap").innerHTML=
+    `${d.label}共執行 <b>${fmt(d.tot)}</b> 架次起降，準點 <b>${fmt(d.ot)}</b>、延誤 <b>${fmt(d.dl)}</b>、取消 <b>${fmt(d.cn)}</b>；`+
+    `平均延誤 <b>${d.avg}</b>，服務旅客 <b>${d.pax}</b> 人次，處理行李 <b>${d.bag}</b> 件。`;
+  polar(d);causes(d);league(d);
+}
+
+/* ---------- 極座標 ---------- */
+function polar(d){
+  const cx=230,cy=230,r0=62,r1=186,lo=70,hi=100;
+  const R=v=>r0+(Math.max(lo,Math.min(hi,v))-lo)/(hi-lo)*(r1-r0);
+  const A=i=>(-90+i*15)*Math.PI/180;
+  let g="";
+  [70,80,90,100].forEach(v=>{
+    const rr=R(v);
+    g+=`<circle class="ring${v===90?" mid":""}" cx="${cx}" cy="${cy}" r="${rr}"/>`;
+    g+=`<text class="pscale" x="${cx+4}" y="${cy-rr+11}">${v}%</text>`;
+  });
+  for(let i=0;i<24;i++){
+    const a=A(i);
+    g+=`<line class="spoke" x1="${cx}" y1="${cy}" x2="${cx+Math.cos(a)*r1}" y2="${cy+Math.sin(a)*r1}"/>`;
+    const lr=r1+18;
+    g+=`<text class="plabel" x="${cx+Math.cos(a)*lr}" y="${cy+Math.sin(a)*lr+3.5}" text-anchor="middle">${String(i).padStart(2,"0")}</text>`;
+  }
+  const pts=d.hours.map((v,i)=>{const a=A(i),rr=R(v);return [cx+Math.cos(a)*rr,cy+Math.sin(a)*rr];});
+  g+=`<path class="pfill" d="M${pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" L")} Z"/>`;
+  const min=Math.min(...d.hours),max=Math.max(...d.hours);
+  pts.forEach((p,i)=>{
+    const low=d.hours[i]===min;
+    g+=`<circle class="pdot${low?" low":""}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${low?5:3.2}"/>`;
+  });
+  document.getElementById("pg").innerHTML=g;
+  const bi=d.hours.indexOf(max),wi=d.hours.indexOf(min);
+  document.getElementById("p-best").textContent=`${String(bi).padStart(2,"0")}:00 · ${max}%`;
+  document.getElementById("p-worst").textContent=`${String(wi).padStart(2,"0")}:00 · ${min}%`;
+  document.getElementById("p-spread").textContent=`${max-min} 個百分點`;
+  document.getElementById("p-note").innerHTML=d.note;
+}
+
+/* ---------- 延誤原因 ---------- */
+function causes(d){
+  const max=Math.max(...d.causes.map(c=>c[1]));
+  document.getElementById("cbars").innerHTML=d.causes.map((c,i)=>`
+    <button class="cbar" data-i="${i}" aria-pressed="${i===selCause}">
+      <span class="nm">${c[0]}</span>
+      <span class="tr"><i style="width:${(c[1]/max*100).toFixed(1)}%;background:${c[2]};animation-delay:${i*80}ms"></i></span>
+      <span class="num">${c[1]}<small>${(c[1]/d.dl*100).toFixed(1)}%</small></span>
+    </button>`).join("");
+  document.querySelectorAll(".cbar").forEach(b=>b.addEventListener("click",()=>{
+    selCause=+b.dataset.i;
+    document.querySelectorAll(".cbar").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+    cnote(d);
+  }));
+  cnote(d);
+}
+function cnote(d){
+  const c=d.causes[selCause];
+  document.getElementById("cnote").innerHTML=`
+    <div class="t">CAUSE 0${selCause+1} / ${d.causes.length}</div>
+    <h3 style="color:${c[2]}">${c[0]}</h3>
+    <p>${c[3]}</p>
+    <div class="fig">
+      <div><small>件數 COUNT</small><b style="color:${c[2]}">${c[1]}</b></div>
+      <div><small>佔延誤比</small><b>${(c[1]/d.dl*100).toFixed(1)}%</b></div>
+      <div><small>佔總架次</small><b>${(c[1]/d.tot*100).toFixed(2)}%</b></div>
+    </div>`;
+}
+
+/* ---------- 航空公司榜 ---------- */
+function league(d){
+  const ranked=[...d.league].filter(r=>r[0]!=="——").sort((a,b)=>b[3]-a[3]);
+  document.getElementById("lgbody").innerHTML=d.league.map(r=>{
+    const rank=r[0]==="——"?"—":(ranked.findIndex(x=>x[0]===r[0])+1);
+    const cls=r[3]>=90?"":r[3]>=80?"w":"r";
+    return `<tr>
+      <td class="c">${r[0]}</td><td>${r[1]}</td><td class="r">${fmt(r[2])}</td>
+      <td class="r" style="font-weight:700">${r[3].toFixed(1)}%</td>
+      <td><div class="minib"><i class="${cls}" style="width:${r[3]}%"></i></div></td>
+      <td class="r">${rank}</td></tr>`;
+  }).join("");
+}
+
+/* ---------- 熱圖日曆 ---------- */
+(function(){
+  const wd=["一","二","三","四","五","六","日"];
+  let m=HEAT_START[0],dnum=HEAT_START[1];
+  const cells=HEAT.map(v=>{
+    const lab=`${String(m).padStart(2,"0")}/${String(dnum).padStart(2,"0")}`;
+    dnum++;if(m===9&&dnum>30){m=10;dnum=1;}
+    return {lab,v};
+  });
+  const color=v=>v<80?"rgba(255,92,108,.75)":v<85?"rgba(255,181,71,.62)":v<90?"rgba(77,208,225,.42)":"rgba(139,214,122,.62)";
+  let h=`<div class="hd"><span></span>${wd.map(d=>`<span>${d}</span>`).join("")}</div>`;
+  for(let w=0;w<6;w++){
+    h+=`<div class="wk"><div class="wl">W${36+w}</div>`;
+    for(let k=0;k<7;k++){
+      const c=cells[w*7+k];
+      const today=c.lab==="10/12";
+      h+=`<div class="d${today?" today":""}" style="background:${color(c.v)};animation-delay:${(w*7+k)*14}ms"
+        title="${c.lab} 準點率 ${c.v}%">
+        <span class="dd">${c.lab}</span><span class="rr">${c.v}<small style="font-size:9px">%</small></span></div>`;
+    }
+    h+="</div>";
+  }
+  document.getElementById("cal").innerHTML=h;
+})();
+
+document.querySelectorAll(".periods button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".periods button").forEach(o=>o.setAttribute("aria-selected",String(o===b)));
+  cur=b.dataset.p;selCause=0;paint();
+}));
+paint();
+</script>
+</body>
+</html>

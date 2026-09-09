@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+  設計規格｜06 玻璃擬態·空氣品質
+  ─────────────────────────────────────
+  風格定位：玻璃擬態（Glassmorphism）氣象儀表板，輕盈、透明、現代
+  配色：天空漸層背景 藍 #4a90d9 → 粉橙 #f7b267 → 橘黃 #f2a65a；
+        毛玻璃卡 rgba(255,255,255,.18) + blur；文字白 #ffffff、
+        狀態色：良好 #4ade80 / 普通 #facc15 / 敏感 #fb923c / 不良 #f87171
+  字體：Noto Sans TC（Google Fonts，離線退回 sans-serif），數字用 tabular-nums
+  版面結構：置頂毛玻璃導覽條（含返回）→ 主視覺大 AQI 圓環儀表（脈動）
+            → 六都 AQI 卡片網格 → 污染物橫條圖（PM2.5/PM10/O3/NO2/SO2/CO）
+            → 建議活動卡片 → 頁尾
+  動態效果：主 AQI 數字呼吸脈動動畫；背景光斑緩慢漂浮；污染物橫條進場伸展；
+            卡片 hover 浮起與邊緣光
+  圖形：全部 CSS 漸層 / SVG 圓環，無外部圖片
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>透明氣息 · 空氣品質即時看板</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    font-family:'Noto Sans TC',sans-serif;color:#fff;min-height:100vh;overflow-x:hidden;
+    background:linear-gradient(165deg,#3a7bc8 0%,#4a90d9 30%,#8fb8e0 52%,#f7b267 78%,#f2a65a 100%);
+    background-attachment:fixed;
+  }
+  /* 漂浮光斑 */
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0}
+  .b1{width:420px;height:420px;background:#ffd9a0;top:-120px;right:-80px;animation:drift 16s ease-in-out infinite}
+  .b2{width:360px;height:360px;background:#7fb8ff;bottom:-100px;left:-100px;animation:drift 20s ease-in-out infinite reverse}
+  .b3{width:260px;height:260px;background:#ffb4c0;top:40%;left:55%;animation:drift 24s ease-in-out infinite}
+  @keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-40px,30px) scale(1.12)}}
+  .glass{
+    background:rgba(255,255,255,.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid rgba(255,255,255,.35);border-radius:22px;
+    box-shadow:0 10px 34px rgba(30,60,110,.18);
+  }
+  /* 導覽 */
+  nav{
+    position:sticky;top:14px;z-index:50;max-width:1160px;margin:14px auto 0;padding:12px 22px;
+    display:flex;align-items:center;gap:18px;
+  }
+  .back{
+    color:#fff;text-decoration:none;font-size:13px;letter-spacing:.18em;font-weight:500;
+    background:rgba(255,255,255,.22);padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.4);
+    transition:.25s;white-space:nowrap;
+  }
+  .back:hover{background:rgba(255,255,255,.45);color:#1c3a5e}
+  nav .brand{font-weight:700;letter-spacing:.22em;font-size:15px}
+  nav .time{margin-left:auto;font-size:12.5px;opacity:.85;letter-spacing:.1em;font-variant-numeric:tabular-nums}
+  nav .menu{display:flex;gap:8px;flex-wrap:wrap}
+  nav .menu a{color:#fff;text-decoration:none;font-size:12px;letter-spacing:.14em;padding:7px 14px;
+    border-radius:999px;border:1px solid rgba(255,255,255,.3);transition:.25s}
+  nav .menu a:hover{background:rgba(255,255,255,.4);color:#1c3a5e}
+  .city{cursor:pointer}
+  .adv{cursor:pointer}
+  .more-link{display:inline-block;margin:-24px 0 30px;color:#fff;font-size:12.5px;letter-spacing:.2em;
+    text-decoration:none;border-bottom:1px solid rgba(255,255,255,.6);padding-bottom:3px;transition:.25s}
+  .more-link:hover{color:#1c3a5e;background:rgba(255,255,255,.4);padding:3px 8px;border-radius:6px}
+  main{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:40px 24px 80px}
+  /* 主儀表 */
+  .hero{display:grid;grid-template-columns:320px 1fr;gap:28px;align-items:center;margin-bottom:40px}
+  .gauge{padding:30px;text-align:center;position:relative}
+  .aqi-num{
+    font-size:76px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;
+    animation:breathe 3.2s ease-in-out infinite;
+    text-shadow:0 0 30px rgba(255,255,255,.5);
+  }
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.92}50%{transform:scale(1.07);opacity:1}}
+  .gauge .status{display:inline-block;margin-top:12px;background:#facc15;color:#3a2e00;font-weight:700;
+    padding:6px 20px;border-radius:999px;font-size:14px;letter-spacing:.24em}
+  .gauge .loc{margin-top:10px;font-size:13px;opacity:.85;letter-spacing:.24em}
+  .hero-info h1{font-size:clamp(28px,4.4vw,44px);font-weight:700;letter-spacing:.06em;line-height:1.3;text-shadow:0 2px 18px rgba(30,60,110,.3)}
+  .hero-info p{margin-top:14px;font-size:14.5px;line-height:2;opacity:.92;max-width:560px}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .chips span{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);font-size:12px;
+    padding:6px 14px;border-radius:999px;letter-spacing:.14em}
+  /* 六都卡片 */
+  h2.sec{font-size:15px;letter-spacing:.4em;font-weight:500;opacity:.9;margin:0 0 18px;display:flex;align-items:center;gap:14px}
+  h2.sec::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.35)}
+  .cities{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:42px}
+  .city{padding:20px;transition:transform .3s,box-shadow .3s;position:relative;overflow:hidden}
+  .city:hover{transform:translateY(-7px);box-shadow:0 18px 40px rgba(30,60,110,.3)}
+  .city::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--c)}
+  .city .n{font-size:15px;letter-spacing:.24em;font-weight:500}
+  .city .v{font-size:42px;font-weight:700;font-variant-numeric:tabular-nums;margin:8px 0 4px}
+  .city .s{font-size:12px;letter-spacing:.2em;opacity:.85}
+  .city .bar{height:5px;border-radius:3px;background:rgba(255,255,255,.25);margin-top:14px;overflow:hidden}
+  .city .bar i{display:block;height:100%;border-radius:3px;background:var(--c);width:0;transition:width 1.4s cubic-bezier(.2,.8,.2,1)}
+  /* 污染物 */
+  .pollutants{padding:26px 30px;margin-bottom:42px}
+  .pollutants h3{font-size:16px;letter-spacing:.3em;font-weight:500;margin-bottom:20px}
+  .p-row{display:grid;grid-template-columns:110px 1fr 76px;gap:16px;align-items:center;margin-bottom:15px}
+  .p-row:last-child{margin-bottom:0}
+  .p-row .k{font-size:13px;letter-spacing:.14em;font-weight:500}
+  .p-row .k small{display:block;opacity:.7;font-size:10.5px;letter-spacing:.06em}
+  .track{height:12px;background:rgba(255,255,255,.2);border-radius:6px;overflow:hidden}
+  .track i{display:block;height:100%;width:0;border-radius:6px;transition:width 1.6s cubic-bezier(.2,.8,.2,1)}
+  .p-row .v{text-align:right;font-size:13px;font-variant-numeric:tabular-nums;opacity:.9}
+  /* 建議 */
+  .advice{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .adv{padding:22px 24px}
+  .adv .ico{font-size:28px}
+  .adv h4{margin:10px 0 8px;font-size:15px;letter-spacing:.18em}
+  .adv p{font-size:13px;line-height:1.9;opacity:.88}
+  footer{position:relative;z-index:1;text-align:center;padding:0 0 40px;font-size:12px;letter-spacing:.32em;opacity:.8}
+  @media(max-width:820px){.hero{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+
+<nav class="glass">
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <span class="brand">透明氣息 AQI</span>
+  <span class="menu">
+    <a href="pollutants.html">污染物圖鑑</a>
+    <a href="stations.html">測站列表</a>
+    <a href="health.html">健康建議</a>
+  </span>
+  <span class="time" id="clock">--:--</span>
+</nav>
+
+<main>
+  <section class="hero">
+    <div class="gauge glass">
+      <div class="aqi-num">62</div>
+      <div class="status">普通</div>
+      <div class="loc">基準測站 · 臺北古亭</div>
+    </div>
+    <div class="hero-info">
+      <h1>今天的天空，<br>蒙著一層薄薄的紗。</h1>
+      <p>境外臭氧隨西南氣流移入，午後光化反應增強，西半部空品轉差。敏感族群午後減少戶外劇烈活動，一般民眾正常作息即可。</p>
+      <div class="chips"><span>風場：西南風 3 級</span><span>濕度 64%</span><span>氣溫 32.4°C</span><span>能見度 9 km</span></div>
+    </div>
+  </section>
+
+  <h2 class="sec">六 都 即 時 空 品</h2>
+  <section class="cities" id="cities"></section>
+  <a class="more-link" href="stations.html">查看全部 18 個測站 →</a>
+
+  <h2 class="sec">主 要 污 染 物 濃 度</h2>
+  <section class="pollutants glass" id="pollutants">
+    <h3>古亭測站 · 小時均值</h3>
+  </section>
+  <a class="more-link" href="pollutants.html">認識六種污染物 →</a>
+
+  <h2 class="sec">今 日 活 動 建 議</h2>
+  <section class="advice" id="advice">
+    <div class="adv glass"><div class="ico">😷</div><h4>敏感族群</h4><p>心臟、呼吸道及心血管疾病患者，午後 13:00–17:00 儘量留在室內，外出配戴防護口罩。</p></div>
+    <div class="adv glass"><div class="ico">🏃</div><h4>運動時段</h4><p>建議於清晨 07:00 前或晚間 19:00 後運動，避開臭氧峰值；河濱勝過市區道路旁。</p></div>
+    <div class="adv glass"><div class="ico">🪟</div><h4>居家通風</h4><p>中午前開窗換氣 20 分鐘即可，午後關窗並開啟空氣清淨機，濾網記得每月檢查。</p></div>
+    <div class="adv glass"><div class="ico">👶</div><h4>孩童與長者</h4><p>幼兒園戶外課建議調整至室內；長者晨間散步可正常，攜帶水份補充。</p></div>
+  </section>
+  <a class="more-link" href="health.html">AQI 六級對照與完整建議 →</a>
+</main>
+
+<footer>資料來源：環境部空氣品質監測網 · 每小時更新 ◦ 玻璃之上，呼吸之間</footer>
+
+<script>
+  // 時鐘
+  const clock=document.getElementById('clock');
+  function tick(){
+    const d=new Date();
+    clock.textContent=`更新 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  }
+  tick();setInterval(tick,1000);
+
+  // 六都
+  const cities=[
+    ['臺北市',62,'普通','#facc15'],['新北市',58,'普通','#facc15'],['桃園市',71,'敏感','#fb923c'],
+    ['臺中市',83,'敏感','#fb923c'],['臺南市',94,'敏感','#fb923c'],['高雄市',112,'不良','#f87171'],
+  ];
+  const wrap=document.getElementById('cities');
+  cities.forEach(([name,aqi,status,c])=>{
+    const el=document.createElement('div');
+    el.className='city glass';el.style.setProperty('--c',c);
+    el.innerHTML=`<div class="n">${name}</div><div class="v" style="color:${c}">${aqi}</div>
+      <div class="s">AQI · ${status}</div><div class="bar"><i data-w="${Math.min(aqi/150*100,100)}%"></i></div>`;
+    el.addEventListener('click',()=>location.href='stations.html');
+    wrap.appendChild(el);
+  });
+
+  // 污染物橫條
+  const poll=[
+    ['PM2.5','細懸浮微粒',28,35,'#fb923c','μg/m³'],
+    ['PM10','懸浮微粒',51,100,'#facc15','μg/m³'],
+    ['O₃','臭氧',86,120,'#fb923c','ppb'],
+    ['NO₂','二氧化氮',18,60,'#4ade80','ppb'],
+    ['SO₂','二氧化硫',2.4,30,'#4ade80','ppb'],
+    ['CO','一氧化碳',0.4,9,'#4ade80','ppm'],
+  ];
+  const pw=document.getElementById('pollutants');
+  poll.forEach(([k,sub,val,max,c,unit])=>{
+    const row=document.createElement('div');
+    row.className='p-row';
+    row.innerHTML=`<div class="k">${k}<small>${sub}</small></div>
+      <div class="track"><i data-w="${Math.min(val/max*100,100)}%" style="background:${c}"></i></div>
+      <div class="v">${val} <small style="opacity:.65">${unit}</small></div>`;
+    pw.appendChild(row);
+  });
+
+  // 建議卡片 → 健康建議頁
+  document.querySelectorAll('#advice .adv').forEach(c=>c.addEventListener('click',()=>location.href='health.html'));
+
+  // 進場伸展
+  const io=new IntersectionObserver(es=>es.forEach(e=>{
+    if(e.isIntersecting){e.target.style.width=e.target.dataset.w;io.unobserve(e.target)}
+  }),{threshold:.35});
+  document.querySelectorAll('[data-w]').forEach(b=>io.observe(b));
+</script>
+</body>
+</html>

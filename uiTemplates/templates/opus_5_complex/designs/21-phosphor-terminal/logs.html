@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>21 · 系統日誌查詢 — SYSOPS TERMINAL</title>
+<style>
+:root{--p:#33ff66;--pd:#149c36;--pdd:#0a4d1c;--bg:#040a05;--amber:#ffcc33;--red:#ff5b4a;--sec:#6fe38b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--p);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","Courier New","Noto Sans Mono",monospace;font-size:13px;line-height:1.45;
+  text-shadow:0 0 4px rgba(51,255,102,.55)}
+.crt{position:fixed;inset:0;z-index:100;pointer-events:none}
+.crt::before{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px)}
+.crt::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(110% 90% at 50% 50%,transparent 52%,rgba(0,0,0,.85));
+  box-shadow:inset 0 0 130px rgba(51,255,102,.10)}
+.flick{position:fixed;inset:0;z-index:101;pointer-events:none;background:rgba(51,255,102,.03);
+  animation:fl .14s steps(2) infinite}
+@keyframes fl{50%{opacity:.35}}
+.scan{position:fixed;left:0;right:0;height:90px;z-index:99;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(51,255,102,.06),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-100px}to{top:100%}}
+
+.home{position:fixed;right:12px;top:12px;z-index:110;text-decoration:none;color:var(--bg);
+  background:var(--p);padding:6px 13px;font-size:11px;letter-spacing:.14em;text-shadow:none;
+  box-shadow:0 0 18px rgba(51,255,102,.6)}
+.home:hover{background:var(--amber);box-shadow:0 0 22px rgba(255,204,51,.7)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{
+  outline:2px solid var(--amber);outline-offset:2px}
+
+.term{position:relative;z-index:5;padding:14px;max-width:1500px;margin:0 auto}
+.head{border:1px solid var(--pd);padding:8px 130px 8px 12px;margin-bottom:12px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px}
+.head b{color:var(--amber);text-shadow:0 0 6px rgba(255,204,51,.6)}
+.topnav{border:1px solid var(--pd);margin-bottom:12px;display:flex;flex-wrap:wrap;background:rgba(0,10,2,.5)}
+.topnav span{font-size:10px;letter-spacing:.24em;color:#3f8f56;padding:8px 12px;border-right:1px solid var(--pdd)}
+.topnav a{padding:8px 14px;color:var(--sec);text-decoration:none;font-size:12px;letter-spacing:.06em;
+  border-right:1px solid var(--pdd);transition:.15s}
+.topnav a:hover{color:var(--p);background:rgba(51,255,102,.09)}
+.topnav a.on{color:var(--bg);background:var(--p);text-shadow:none}
+
+/* ---------- query line ---------- */
+.query{border:1px solid var(--pd);margin-bottom:12px}
+.qline{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--pdd)}
+.qline .ps{color:var(--amber);white-space:nowrap;font-size:12px}
+.qline input{flex:1;min-width:80px;background:transparent;border:0;outline:0;color:var(--p);font:inherit;
+  text-shadow:0 0 4px rgba(51,255,102,.55)}
+.qline input::placeholder{color:#2f7a45}
+.cur{display:inline-block;width:9px;height:15px;background:var(--p);flex:0 0 auto;
+  animation:blink 1s steps(2) infinite;box-shadow:0 0 8px rgba(51,255,102,.8)}
+@keyframes blink{50%{opacity:0}}
+.qopts{display:flex;flex-wrap:wrap;align-items:stretch}
+.qopts button{appearance:none;background:transparent;border:0;border-right:1px solid var(--pdd);
+  cursor:pointer;font:inherit;font-size:11.5px;letter-spacing:.08em;color:var(--sec);
+  padding:7px 13px;transition:.15s;text-shadow:inherit}
+.qopts button:hover{background:rgba(51,255,102,.1);color:var(--p)}
+.qopts button[aria-pressed="true"]{background:var(--p);color:var(--bg);text-shadow:none}
+.qopts button.w[aria-pressed="true"]{background:var(--amber)}
+.qopts button.e[aria-pressed="true"]{background:var(--red)}
+.qopts label{display:flex;align-items:center;gap:7px;border-right:1px solid var(--pdd);
+  padding:0 12px;font-size:11px;color:#3f8f56;letter-spacing:.1em}
+.qopts select{background:#03150a;border:1px solid var(--pdd);color:var(--p);font:inherit;
+  font-size:11.5px;padding:4px 6px;outline:0}
+.qopts .sp{flex:1 1 40px;border-right:1px solid var(--pdd)}
+.qopts .tail{color:var(--bg);background:var(--p);text-shadow:none}
+.qopts .tail.off{background:transparent;color:var(--red);text-shadow:inherit}
+
+/* ---------- density ribbon ---------- */
+.ribbon{border:1px solid var(--pd);margin-bottom:12px}
+.ribbon>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-weight:normal}
+.ribbon>h2 em{font-style:normal;color:var(--sec)}
+.hours{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;padding:12px 12px 6px;align-items:end}
+.hr{appearance:none;background:transparent;border:0;padding:0;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:flex-end;height:96px;gap:1px}
+.hr .seg{display:block;width:100%}
+.hr .i{background:rgba(51,255,102,.55)}
+.hr .w{background:var(--amber)}
+.hr .e{background:var(--red);box-shadow:0 0 8px rgba(255,91,74,.6)}
+.hr:hover .seg{filter:brightness(1.5)}
+.hr[aria-pressed="true"]{outline:1px solid var(--amber);outline-offset:2px}
+.hlabels{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;padding:0 12px 10px;
+  font-size:8.5px;color:#2f7a45;text-align:center}
+.ribbon .lg{display:flex;flex-wrap:wrap;gap:16px;padding:0 12px 11px;font-size:10.5px;color:#3f8f56}
+.ribbon .lg i{display:inline-block;width:9px;height:9px;margin-right:6px;vertical-align:-1px}
+
+/* ---------- stream ---------- */
+.stream{border:1px solid var(--pd)}
+.stream>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-weight:normal}
+.stream>h2 em{font-style:normal;color:var(--sec)}
+.colhd,.row{display:grid;grid-template-columns:52px 96px 30px 200px minmax(0,1fr);align-items:start}
+.colhd{font-size:9.5px;letter-spacing:.2em;color:#3f8f56;padding:6px 12px;border-bottom:1px solid var(--pdd)}
+.river{max-height:620px;overflow:auto}
+.row{width:100%;background:transparent;border:0;border-bottom:1px dotted rgba(20,156,54,.35);
+  color:inherit;font:inherit;text-align:left;cursor:pointer;padding:3px 12px;
+  text-shadow:inherit;transition:background .12s}
+.row:nth-child(even){background:rgba(51,255,102,.028)}
+.row:hover{background:rgba(51,255,102,.12)}
+.row .ln{color:#2f7a45;font-size:10.5px}
+.row .ts{color:var(--sec);font-size:11.5px}
+.row .sv{font-size:11px;letter-spacing:.06em}
+.row .src{font-size:11px;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px}
+.row .msg{font-size:12px;white-space:pre-wrap;word-break:break-word}
+.row.w .sv,.row.w .msg{color:var(--amber)}
+.row.e .sv,.row.e .msg{color:var(--red);text-shadow:0 0 6px rgba(255,91,74,.5)}
+.row.on{background:rgba(255,204,51,.16);box-shadow:inset 3px 0 0 var(--amber)}
+mark{background:var(--amber);color:var(--bg);text-shadow:none;padding:0 1px}
+.empty{padding:34px 12px;text-align:center;color:#3f8f56;font-size:11.5px;letter-spacing:.16em}
+
+/* ---------- inspector ---------- */
+.insp{border:1px solid var(--pd);margin-top:12px}
+.insp>h2{font-size:11px;letter-spacing:.2em;padding:6px 11px;border-bottom:1px solid var(--pd);
+  background:rgba(51,255,102,.07);display:flex;justify-content:space-between;font-weight:normal}
+.insp>h2 em{font-style:normal;color:var(--sec)}
+.insp .bd{padding:11px 12px;display:grid;grid-template-columns:252px minmax(0,1fr);gap:14px}
+.kv{font-size:11.5px;line-height:1.95}
+.kv b{color:var(--sec);font-weight:normal;display:inline-block;min-width:74px}
+.raw{background:#03150a;border:1px dashed var(--pdd);padding:10px 12px;font-size:11.5px;
+  white-space:pre-wrap;word-break:break-word;color:#8dffae;overflow-x:auto}
+.ftr{margin-top:12px;border-top:1px solid var(--pdd);padding-top:8px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  font-size:10px;letter-spacing:.24em;color:#3f8f56}
+
+@media(max-width:900px){
+  .colhd,.row{grid-template-columns:44px 78px 26px minmax(0,1fr)}
+  .colhd span:nth-child(4),.row .src{display:none}
+  .insp .bd{grid-template-columns:1fr}
+  .hours{grid-template-columns:repeat(12,1fr)}
+  .hlabels{grid-template-columns:repeat(12,1fr)}
+  .hr:nth-child(n+13),.hlabels span:nth-child(n+13){display:none}
+}
+@media(max-width:640px){
+  .term{padding:10px}
+  .colhd,.row{grid-template-columns:64px 24px minmax(0,1fr)}
+  .colhd span:nth-child(1),.row .ln{display:none}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="crt"></div><div class="flick"></div><div class="scan"></div>
+<a class="home" href="../../index.html">[ESC] INDEX</a>
+
+<div class="term">
+  <div class="head">
+    <span>SYSOPS TERMINAL v4.12 — MODULE <b>journalctl</b></span>
+    <span>索引區間 <b>2026-08-28 00:00 → 19:47</b></span>
+    <span>總筆數 <b id="total">0</b></span>
+  </div>
+
+  <nav class="topnav" aria-label="模組導覽">
+    <span>MODULES</span>
+    <a href="index.html">▶ 系統監控主頁</a>
+    <a href="list.html">▶ 服務進程管理</a>
+    <a href="logs.html" class="on" aria-current="page">▶ 系統日誌查詢</a>
+    <a href="users.html">▶ 帳號權限管理</a>
+    <a href="report.html">▶ 效能統計報表</a>
+  </nav>
+
+  <div class="query">
+    <div class="qline">
+      <span class="ps">root@prd-core-01:~# journalctl --grep</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="輸入關鍵字過濾，例如 timeout / mailq / 10.4.9.7">
+      <span class="cur" aria-hidden="true"></span>
+    </div>
+    <div class="qopts">
+      <button type="button" class="sev" data-s="all" aria-pressed="true">ALL</button>
+      <button type="button" class="sev" data-s="i" aria-pressed="false">INFO</button>
+      <button type="button" class="sev w" data-s="w" aria-pressed="false">WARN</button>
+      <button type="button" class="sev e" data-s="e" aria-pressed="false">ERROR</button>
+      <label for="host">HOST
+        <select id="host">
+          <option value="all">全部節點</option>
+          <option value="prd-core-01">prd-core-01</option>
+          <option value="prd-db-01">prd-db-01</option>
+          <option value="prd-db-02">prd-db-02</option>
+          <option value="prd-cache-01">prd-cache-01</option>
+          <option value="prd-mq-01">prd-mq-01</option>
+          <option value="stor-array-01">stor-array-01</option>
+          <option value="lb-edge-01">lb-edge-01</option>
+          <option value="net-tor-a03">net-tor-a03</option>
+        </select>
+      </label>
+      <div class="sp"></div>
+      <button type="button" id="tail" class="tail" aria-pressed="true">⏸ 暫停 tail -f</button>
+      <button type="button" id="reset">↺ 清除條件</button>
+    </div>
+  </div>
+
+  <section class="ribbon">
+    <h2><span>[ EVENT DENSITY — 每小時筆數 ]</span><em id="ribmeta">點擊任一小時可鎖定時段</em></h2>
+    <div class="hours" id="hours" role="group" aria-label="每小時日誌密度長條圖，點擊可篩選時段"></div>
+    <div class="hlabels" id="hlabels" aria-hidden="true"></div>
+    <div class="lg">
+      <span><i class="i" style="background:rgba(51,255,102,.55)"></i>info</span>
+      <span><i style="background:#ffcc33"></i>warning</span>
+      <span><i style="background:#ff5b4a"></i>error</span>
+      <span id="peak"></span>
+    </div>
+  </section>
+
+  <section class="stream">
+    <h2><span>[ TAIL STREAM ]</span><em id="shown">—</em></h2>
+    <div class="colhd" aria-hidden="true">
+      <span>LINE</span><span>TIME</span><span>SEV</span><span>HOST / UNIT</span><span>MESSAGE</span>
+    </div>
+    <div class="river" id="river"></div>
+    <div class="empty" id="empty" hidden>NO MATCHING ENTRIES — 條件過嚴，請放寬關鍵字或時段</div>
+  </section>
+
+  <section class="insp">
+    <h2><span>[ ENTRY INSPECTOR ]</span><em id="i-slot">尚未選取</em></h2>
+    <div class="bd">
+      <div class="kv" id="i-kv">
+        <b>提示</b>點選上方任一行日誌，<br>即可在此展開結構化欄位。
+      </div>
+      <pre class="raw" id="i-raw">{ "waiting": "select a line" }</pre>
+    </div>
+  </section>
+
+  <div class="ftr">
+    <span>P H O S P H O R   C R T   T E R M I N A L</span>
+    <span>Logs / Tail Stream + Severity Gutter</span>
+    <span>D E S I G N   2 1 / 4 0</span>
+  </div>
+</div>
+
+<script>
+/* 固定種子亂數：讓密度圖與日誌流每次載入完全一致，數字才對得起來 */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd = mulberry32(20260828);
+const pick = arr => arr[Math.floor(rnd() * arr.length)];
+const int = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+const pad = n => String(n).padStart(2, "0");
+
+const TPL = [
+  ["i","prd-core-01","nginx",1042,() => '10.4.9.' + int(2,60) + ' "GET /api/v2/orders?page=' + int(1,40) + '" 200 ' + (rnd()*.2+.01).toFixed(3) + 's'],
+  ["i","prd-core-01","nginx",1042,() => '10.4.2.' + int(2,60) + ' "POST /api/v2/checkout" 201 ' + (rnd()*.4+.08).toFixed(3) + 's'],
+  ["i","prd-core-01","app-api",2231,() => 'request_id=' + Math.floor(rnd()*9e6+1e6) + ' handler=OrderCreate ok in ' + int(18,240) + 'ms'],
+  ["i","prd-core-01","containerd",3390,() => 'pulling image registry.local/app:2.14.' + int(0,3) + ' layer ' + int(1,9) + '/9'],
+  ["i","prd-db-01","postgres",1088,() => 'checkpoint complete: wrote ' + int(600,2400) + ' buffers (' + (rnd()*4+.6).toFixed(1) + '%)'],
+  ["i","prd-db-01","postgres",1088,() => 'automatic vacuum of table "orders": index scans: 1, tuples removed: ' + int(120,9800)],
+  ["i","prd-cache-01","redis",3155,() => 'DB 0 saved on disk, ' + int(180,900) + ' keys, ' + (rnd()*40+8).toFixed(1) + ' MB RDB'],
+  ["i","lb-edge-01","haproxy",702,() => 'backend app_pool srv core-0' + int(1,2) + ' check ok, ' + int(1,9) + ' active conns'],
+  ["i","net-tor-a03","bgpd",411,() => 'neighbor 10.4.255.' + int(1,4) + ' Up, ' + int(18,44) + ' prefixes received'],
+  ["i","stor-array-01","zfs",844,() => 'scrub in progress: ' + (rnd()*100).toFixed(1) + '% done, ' + int(1,9) + 'h' + int(10,59) + 'm to go'],
+  ["i","prd-core-01","sshd",4412,() => 'Accepted publickey for ops0' + int(1,2) + ' from 10.4.2.' + int(10,40) + ' port ' + int(41000,59000)],
+  ["i","prd-mq-01","rabbitmq",2904,() => 'queue "mail.outbound" depth=' + int(0,180) + ' consumers=' + int(1,4)],
+  ["w","prd-db-02","wal-receiver",1140,() => 'replication lag ' + (rnd()*7+1.2).toFixed(1) + 's exceeds soft threshold 1.0s'],
+  ["w","prd-cache-01","redis",3155,() => 'Background saving terminated with warning: fork took ' + int(210,880) + 'ms'],
+  ["w","prd-mq-01","rabbitmq",2904,() => 'memory alarm set, ' + (rnd()*1.4+2.2).toFixed(2) + ' GiB of 4.00 GiB used'],
+  ["w","prd-core-01","systemd",1,() => 'mailq.service: Main process exited, code=exited, status=1/FAILURE'],
+  ["w","lb-edge-01","haproxy",702,() => 'backend app_pool has no server available in ' + int(1,3) + ' of 4 checks'],
+  ["w","stor-array-01","mdadm",812,() => 'md0 rebuild ' + (rnd()*40+20).toFixed(1) + '% complete, speed ' + int(90,190) + 'MB/s'],
+  ["e","stor-array-01","mdadm",812,() => 'Fail event detected on md0, device /dev/sdd — array now DEGRADED'],
+  ["e","prd-mq-01","celery",6633,() => 'Task mail.send[' + Math.floor(rnd()*9e5+1e5) + '] raised OperationalError: connection refused'],
+  ["e","prd-core-01","app-api",2231,() => 'upstream timeout after 30000ms calling payment-gw (attempt ' + int(1,3) + '/3)'],
+  ["e","prd-db-01","postgres",1088,() => 'FATAL: remaining connection slots reserved for superuser (max_connections=' + int(180,220) + ')']
+];
+
+/* 產生 00:00 → 19:47 的日誌本體 */
+const DATA = [];
+let cursor = 0;
+const END = 19 * 3600 + 47 * 60 + 52;
+while (cursor < END) {
+  const h = Math.floor(cursor / 3600);
+  /* 夜間流量低、日間高、19 點批次作業再拉一波 */
+  const busy = h < 6 ? 3.2 : h < 9 ? 1.6 : h < 18 ? 1.0 : 0.7;
+  cursor += Math.max(20, Math.round((rnd() * 260 + 40) * busy));
+  if (cursor >= END) break;
+  const t = TPL[Math.floor(rnd() * TPL.length)];
+  DATA.push({t:cursor, sev:t[0], host:t[1], unit:t[2], pid:t[3], msg:t[4]()});
+}
+DATA.forEach((d, i) => d.id = i + 1);
+document.getElementById("total").textContent = DATA.length.toLocaleString("en-US");
+
+/* ---- 密度圖 ---- */
+const buckets = Array.from({length:24}, () => ({i:0, w:0, e:0}));
+DATA.forEach(d => buckets[Math.floor(d.t / 3600)][d.sev]++);
+const maxB = Math.max(...buckets.map(b => b.i + b.w + b.e));
+const hoursBox = document.getElementById("hours");
+buckets.forEach((b, h) => {
+  const tot = b.i + b.w + b.e;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "hr";
+  btn.dataset.h = h;
+  btn.setAttribute("aria-pressed", "false");
+  btn.setAttribute("aria-label", pad(h) + ":00 共 " + tot + " 筆，warning " + b.w + " 筆，error " + b.e + " 筆");
+  const u = 96 / maxB;
+  btn.innerHTML =
+    '<span class="seg e" style="height:' + (b.e * u).toFixed(1) + 'px"></span>' +
+    '<span class="seg w" style="height:' + (b.w * u).toFixed(1) + 'px"></span>' +
+    '<span class="seg i" style="height:' + (b.i * u).toFixed(1) + 'px"></span>';
+  hoursBox.appendChild(btn);
+});
+document.getElementById("hlabels").innerHTML =
+  buckets.map((_, h) => "<span>" + pad(h) + "</span>").join("");
+const peakH = buckets.reduce((m, b, h) => (b.i + b.w + b.e) > (buckets[m].i + buckets[m].w + buckets[m].e) ? h : m, 0);
+document.getElementById("peak").textContent =
+  "尖峰 " + pad(peakH) + ":00 — " + (buckets[peakH].i + buckets[peakH].w + buckets[peakH].e) + " 筆 / 全日最高";
+
+/* ---- 過濾與繪製 ---- */
+const river = document.getElementById("river");
+const emptyEl = document.getElementById("empty");
+const state = {kw:"", sev:"all", host:"all", hour:null};
+const SEVTXT = {i:"INF", w:"WRN", e:"ERR"};
+let selected = null;
+
+function esc(s){return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+function hl(s){
+  const t = esc(s);
+  if (!state.kw) return t;
+  const k = state.kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return t.replace(new RegExp(k, "gi"), m => "<mark>" + m + "</mark>");
+}
+function clock(sec){return pad(Math.floor(sec/3600)) + ":" + pad(Math.floor(sec%3600/60)) + ":" + pad(sec%60)}
+function match(d){
+  if (state.sev !== "all" && d.sev !== state.sev) return false;
+  if (state.host !== "all" && d.host !== state.host) return false;
+  if (state.hour !== null && Math.floor(d.t / 3600) !== state.hour) return false;
+  if (state.kw && !(d.msg + " " + d.host + " " + d.unit).toLowerCase().includes(state.kw.toLowerCase())) return false;
+  return true;
+}
+function render(){
+  const list = DATA.filter(match).slice(-260).reverse();
+  river.innerHTML = list.map(d =>
+    '<button type="button" class="row ' + d.sev + (selected === d.id ? " on" : "") + '" data-id="' + d.id + '">' +
+      '<span class="ln">' + String(d.id).padStart(5, "0") + '</span>' +
+      '<span class="ts">' + clock(d.t) + '</span>' +
+      '<span class="sv">' + SEVTXT[d.sev] + '</span>' +
+      '<span class="src">' + d.host + " " + d.unit + "[" + d.pid + "]</span>" +
+      '<span class="msg">' + hl(d.msg) + "</span>" +
+    "</button>").join("");
+  emptyEl.hidden = list.length > 0;
+  document.getElementById("shown").textContent =
+    "顯示 " + list.length + " / " + DATA.length + " 筆" +
+    (state.hour === null ? "" : " · 鎖定 " + pad(state.hour) + ":00–" + pad(state.hour) + ":59");
+}
+render();
+
+river.addEventListener("click", e => {
+  const btn = e.target.closest(".row");
+  if (!btn) return;
+  const d = DATA.find(x => x.id === +btn.dataset.id);
+  selected = d.id;
+  river.querySelectorAll(".row").forEach(r => r.classList.toggle("on", r === btn));
+  document.getElementById("i-slot").textContent = "#" + String(d.id).padStart(5, "0") + " · " + clock(d.t);
+  document.getElementById("i-kv").innerHTML =
+    "<b>TIMESTAMP</b>2026-08-28T" + clock(d.t) + "+08:00<br>" +
+    "<b>PRIORITY</b>" + (d.sev === "e" ? "3 (err)" : d.sev === "w" ? "4 (warning)" : "6 (info)") + "<br>" +
+    "<b>HOST</b>" + d.host + "<br><b>UNIT</b>" + d.unit + ".service<br>" +
+    "<b>PID</b>" + d.pid + "<br><b>BOOT_ID</b>a41f9c2e07b3<br>" +
+    "<b>TRANSPORT</b>journal";
+  document.getElementById("i-raw").textContent =
+    "{\n  \"__REALTIME_TIMESTAMP\": \"2026-08-28 " + clock(d.t) + "\",\n" +
+    "  \"_HOSTNAME\": \"" + d.host + "\",\n" +
+    "  \"SYSLOG_IDENTIFIER\": \"" + d.unit + "\",\n" +
+    "  \"_PID\": " + d.pid + ",\n" +
+    "  \"PRIORITY\": " + (d.sev === "e" ? 3 : d.sev === "w" ? 4 : 6) + ",\n" +
+    "  \"MESSAGE\": \"" + d.msg.replace(/"/g, '\\"') + "\"\n}";
+});
+
+document.getElementById("q").addEventListener("input", e => {
+  state.kw = e.target.value.trim();
+  render();
+});
+document.querySelectorAll(".sev").forEach(b => b.addEventListener("click", () => {
+  state.sev = b.dataset.s;
+  document.querySelectorAll(".sev").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.getElementById("host").addEventListener("change", e => {
+  state.host = e.target.value;
+  render();
+});
+hoursBox.addEventListener("click", e => {
+  const b = e.target.closest(".hr");
+  if (!b) return;
+  const h = +b.dataset.h;
+  state.hour = state.hour === h ? null : h;
+  hoursBox.querySelectorAll(".hr").forEach(o =>
+    o.setAttribute("aria-pressed", String(state.hour !== null && +o.dataset.h === state.hour)));
+  document.getElementById("ribmeta").textContent =
+    state.hour === null ? "點擊任一小時可鎖定時段" : "已鎖定 " + pad(state.hour) + ":00 — 再點一次解除";
+  render();
+});
+document.getElementById("reset").addEventListener("click", () => {
+  state.kw = ""; state.sev = "all"; state.host = "all"; state.hour = null;
+  document.getElementById("q").value = "";
+  document.getElementById("host").value = "all";
+  document.querySelectorAll(".sev").forEach(o => o.setAttribute("aria-pressed", String(o.dataset.s === "all")));
+  hoursBox.querySelectorAll(".hr").forEach(o => o.setAttribute("aria-pressed", "false"));
+  document.getElementById("ribmeta").textContent = "點擊任一小時可鎖定時段";
+  render();
+});
+
+/* ---- tail -f：持續追加新行 ---- */
+const tailBtn = document.getElementById("tail");
+let tailing = true, tick = null;
+function appendLine(){
+  const t = TPL[Math.floor(Math.random() * TPL.length)];
+  cursor += Math.round(Math.random() * 60 + 8);
+  const d = {t:cursor % 86400, sev:t[0], host:t[1], unit:t[2], pid:t[3], msg:t[4](), id:DATA.length + 1};
+  DATA.push(d);
+  document.getElementById("total").textContent = DATA.length.toLocaleString("en-US");
+  render();
+}
+function startTail(){ tick = setInterval(appendLine, 2400) }
+startTail();
+tailBtn.addEventListener("click", () => {
+  tailing = !tailing;
+  tailBtn.setAttribute("aria-pressed", String(tailing));
+  tailBtn.classList.toggle("off", !tailing);
+  tailBtn.textContent = tailing ? "⏸ 暫停 tail -f" : "▶ 繼續 tail -f";
+  if (tailing) startTail(); else clearInterval(tick);
+});
+</script>
+</body>
+</html>

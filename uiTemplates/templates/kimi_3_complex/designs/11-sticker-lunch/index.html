@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 11 手帳貼紙 · 校園食安
+  ─────────────────────────────────────
+  風格定位:手帳 / 貼紙風格的校園午餐與食安公開資訊頁,親切、明亮、像同學的手帳本。
+  配色:粉彩奶油底 #fff6ec、亮粉 #ff8fab、薄荷綠 #8ce8c0、天藍 #7cc6ff、
+        奶黃 #ffe08a、字色可可 #5b4a42。
+  字體:中文圓潤感使用系統圓體 fallback,標題以 "Noto Sans TC" 900 粗體,
+        可愛裝飾用 emoji。
+  版面結構:
+    1. 頂部:大標題貼紙 + 紙膠帶裝飾 + 返回入口
+    2. 本週午餐菜單(五張貼紙卡,白邊撕紙感)
+    3. 營養素甜甜圈圖(SVG 圓環,四種營養素)
+    4. 食安小學堂(可摺疊問答)
+    5. 本月食材產地
+    6. 給家長的話 + 意見箱
+  動態效果:
+    - 貼紙卡 hover 跳起 + 微旋轉(transform transition)
+    - 甜甜圈圖進場時圓環描邊動畫(stroke-dashoffset)
+    - 紙膠帶隨機傾斜、蠟筆虛線邊框(dashed border)
+    - 問答摺疊展開動畫
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手帳貼紙 · 陽光國小校園午餐與食安</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#fff6ec; --pink:#ff8fab; --mint:#8ce8c0; --sky:#7cc6ff; --butter:#ffe08a;
+    --cocoa:#5b4a42; --paper:#ffffff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--cream);
+    background-image:radial-gradient(#ffe3cf 1.6px, transparent 1.6px);
+    background-size:26px 26px;
+    color:var(--cocoa);
+    font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;
+    min-height:100vh;
+  }
+  /* ── 紙膠帶 ── */
+  .tape{
+    position:absolute;width:110px;height:30px;top:-15px;left:50%;
+    transform:translateX(-50%) rotate(-3deg);
+    background:rgba(255,224,138,.85);
+    border-left:2px dashed rgba(255,255,255,.7);
+    border-right:2px dashed rgba(255,255,255,.7);
+    box-shadow:0 2px 5px rgba(91,74,66,.12);
+    z-index:3;
+  }
+  .tape.pink{background:rgba(255,143,171,.55);transform:translateX(-50%) rotate(4deg);}
+  .tape.sky{background:rgba(124,198,255,.5);transform:translateX(-50%) rotate(-5deg);}
+  /* ── Header ── */
+  header{text-align:center;padding:66px 6vw 30px;position:relative;}
+  .title-sticker{
+    display:inline-block;background:var(--paper);
+    border-radius:26px;padding:26px 44px;position:relative;
+    border:3px solid var(--paper);
+    box-shadow:0 0 0 3px var(--pink), 0 12px 26px rgba(91,74,66,.14);
+    transform:rotate(-1.5deg);
+  }
+  h1{font-size:clamp(26px,4.6vw,42px);font-weight:900;letter-spacing:.06em;color:var(--cocoa);}
+  h1 .hl{color:var(--pink);}
+  .sub{margin-top:12px;font-size:14.5px;color:#9a8577;letter-spacing:.25em;font-weight:700;}
+  .header-deco{font-size:30px;margin-top:18px;letter-spacing:.3em;}
+  .back-btn{
+    position:absolute;top:26px;left:26px;
+    display:inline-block;text-decoration:none;color:var(--cocoa);
+    background:var(--paper);border-radius:99px;padding:12px 22px;
+    font-weight:700;font-size:14px;
+    border:2.5px dashed var(--sky);
+    box-shadow:0 5px 14px rgba(91,74,66,.13);
+    transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .back-btn:hover{transform:translateY(-4px) rotate(-3deg);}
+  main{max-width:1120px;margin:0 auto;padding:24px 24px 90px;display:flex;flex-direction:column;gap:64px;}
+  .sec-title{
+    text-align:center;font-size:clamp(20px,3vw,27px);font-weight:900;margin-bottom:30px;letter-spacing:.08em;
+  }
+  .sec-title .pill{
+    display:inline-block;padding:8px 26px;border-radius:99px;background:var(--paper);
+    border:2.5px dashed var(--pink);box-shadow:0 5px 12px rgba(91,74,66,.1);
+  }
+  /* ── 貼紙卡(白邊撕紙感)── */
+  .sticker{
+    background:var(--paper);border-radius:22px;position:relative;
+    padding:24px 22px;
+    border:3px solid var(--paper);
+    box-shadow:0 0 0 2.5px var(--c,#ff8fab), 0 10px 22px rgba(91,74,66,.13);
+    transition:transform .28s cubic-bezier(.34,1.7,.64,1), box-shadow .28s;
+  }
+  .sticker:hover{
+    transform:translateY(-9px) rotate(var(--r,2deg)) scale(1.03);
+    box-shadow:0 0 0 2.5px var(--c,#ff8fab), 0 20px 34px rgba(91,74,66,.2);
+  }
+  a.sticker{display:block;text-decoration:none;color:inherit;}
+  .more-link{
+    display:inline-block;margin-top:24px;font-weight:900;font-size:14px;color:var(--pink);
+    text-decoration:none;border-bottom:2px dashed var(--pink);padding-bottom:3px;
+    transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .more-link:hover{transform:translateY(-3px);}
+  /* ── 菜單 ── */
+  .menu-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:22px;}
+  .menu-card{--r:2deg;text-align:center;}
+  .menu-card:nth-child(2n){--r:-2deg;}
+  .menu-card .day{
+    display:inline-block;font-weight:900;font-size:13px;padding:4px 16px;border-radius:99px;
+    background:var(--c);color:#fff;letter-spacing:.15em;margin-bottom:14px;
+  }
+  .menu-card .dish{font-size:16.5px;font-weight:900;margin:6px 0 4px;}
+  .menu-card .side{font-size:13px;color:#9a8577;line-height:1.9;}
+  .menu-card .cal{
+    margin-top:12px;font-size:12px;font-weight:700;color:var(--cocoa);
+    background:var(--cream);border-radius:10px;padding:5px 10px;display:inline-block;
+    border:1.5px dashed #e8d5c0;
+  }
+  .menu-card .emoji{font-size:40px;display:block;margin-bottom:6px;}
+  /* ── 營養甜甜圈 ── */
+  .nutrition{
+    background:var(--paper);border-radius:28px;padding:40px 34px;position:relative;
+    border:3px solid var(--paper);box-shadow:0 0 0 2.5px var(--mint), 0 12px 28px rgba(91,74,66,.12);
+  }
+  .donuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:26px;margin-top:8px;}
+  .donut{text-align:center;}
+  .donut svg{width:130px;height:130px;transform:rotate(-90deg);}
+  .donut .track{fill:none;stroke:#f3e8db;stroke-width:15;}
+  .donut .fill{
+    fill:none;stroke-width:15;stroke-linecap:round;
+    stroke-dasharray:327;stroke-dashoffset:327;
+    transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1);
+  }
+  .donut .pct{
+    font-size:24px;font-weight:900;margin-top:-86px;position:relative;height:58px;line-height:58px;
+  }
+  .donut .name{margin-top:26px;font-weight:700;font-size:14.5px;letter-spacing:.1em;}
+  .donut .gram{font-size:12px;color:#9a8577;margin-top:4px;}
+  .nutri-note{margin-top:26px;text-align:center;font-size:13.5px;color:#9a8577;line-height:2;}
+  /* ── 食安小學堂(摺疊) ── */
+  .qa{max-width:820px;margin:0 auto;width:100%;}
+  .qa-item{
+    background:var(--paper);border-radius:18px;margin-bottom:16px;overflow:hidden;
+    border:2.5px dashed var(--sky);
+    transition:box-shadow .3s;
+  }
+  .qa-item:nth-child(2){border-color:var(--pink);}
+  .qa-item:nth-child(3){border-color:var(--mint);}
+  .qa-item:nth-child(4){border-color:var(--butter);}
+  .qa-q{
+    width:100%;text-align:left;background:none;border:none;cursor:pointer;
+    padding:19px 24px;font-size:15.5px;font-weight:900;color:var(--cocoa);
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
+    font-family:inherit;
+  }
+  .qa-q .arrow{transition:transform .3s;font-size:13px;color:#c9b3a0;}
+  .qa-item.open .qa-q .arrow{transform:rotate(180deg);}
+  .qa-a{
+    max-height:0;overflow:hidden;transition:max-height .45s ease;
+    font-size:14px;line-height:2.1;color:#7d6a5e;
+  }
+  .qa-a div{padding:0 24px 20px;}
+  /* ── 產地 ── */
+  .origin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:22px;}
+  .origin{--r:-2deg;text-align:center;}
+  .origin:nth-child(2n){--r:2.5deg;}
+  .origin .emoji{font-size:38px;}
+  .origin h4{font-size:16px;font-weight:900;margin:10px 0 6px;}
+  .origin p{font-size:13px;color:#9a8577;line-height:1.9;}
+  .origin .badge{
+    display:inline-block;margin-top:12px;font-size:11.5px;font-weight:700;
+    padding:4px 14px;border-radius:99px;background:var(--c);color:#fff;letter-spacing:.12em;
+  }
+  /* ── 給家長的話 ── */
+  .letter{
+    background:linear-gradient(160deg,#fff,#fffaf2);
+    border-radius:26px;padding:44px 40px;position:relative;
+    border:3px solid var(--paper);box-shadow:0 0 0 2.5px var(--butter), 0 12px 26px rgba(91,74,66,.12);
+    transform:rotate(-.6deg);
+  }
+  .letter h3{font-size:19px;font-weight:900;margin-bottom:16px;}
+  .letter p{font-size:14.5px;line-height:2.2;color:#7d6a5e;}
+  .letter .sign{text-align:right;margin-top:18px;font-weight:900;color:var(--pink);}
+  .feedback{
+    margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;
+  }
+  .feedback button{
+    font-family:inherit;cursor:pointer;font-size:14px;font-weight:700;
+    border-radius:99px;padding:12px 22px;border:2.5px dashed var(--sky);
+    background:var(--paper);color:var(--cocoa);
+    transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .feedback button:hover{transform:translateY(-4px) rotate(2deg);}
+  .feedback button.picked{border-style:solid;border-color:var(--pink);background:#fff0f4;}
+  footer{text-align:center;padding:20px 6vw 60px;color:#c9b3a0;font-size:12.5px;letter-spacing:.2em;}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back-btn" href="../../index.html">← 返回入口</a>
+  <div class="title-sticker">
+    <div class="tape"></div>
+    <h1>🍱 陽光國小 <span class="hl">午餐日記</span></h1>
+    <div class="sub">SCHOOL LUNCH &amp; FOOD SAFETY · 校園食安公開資訊</div>
+  </div>
+  <div class="header-deco">🥦 🍓 🥕 🍙 🥛</div>
+</header>
+
+<main>
+  <!-- 一週菜單 -->
+  <section>
+    <h2 class="sec-title"><span class="pill">📅 本週午餐菜單 · 5/18 – 5/22</span></h2>
+    <div class="menu-grid">
+      <a class="sticker menu-card" href="menu.html" style="--c:#ff8fab;">
+        <span class="emoji">🍗</span>
+        <span class="day" style="background:#ff8fab;">週一</span>
+        <div class="dish">香烤雞腿排飯</div>
+        <div class="side">蒜香青花菜<br>番茄蛋花湯<br>季節水果:小番茄</div>
+        <div class="cal">🔥 約 685 大卡</div>
+      </a>
+      <a class="sticker menu-card" href="menu.html" style="--c:#8ce8c0;">
+        <span class="emoji">🐟</span>
+        <span class="day" style="background:#3ecf9a;">週二</span>
+        <div class="dish">清蒸鯛魚佐豆腐</div>
+        <div class="side">炒高麗菜<br>玉米濃湯<br>季節水果:芭樂</div>
+        <div class="cal">🔥 約 640 大卡</div>
+      </a>
+      <a class="sticker menu-card" href="menu.html" style="--c:#7cc6ff;">
+        <span class="emoji">🍝</span>
+        <span class="day" style="background:#7cc6ff;">週三</span>
+        <div class="dish">義式肉醬麵</div>
+        <div class="side">凱撒小沙拉<br>南瓜濃湯<br>季節水果:柳丁</div>
+        <div class="cal">🔥 約 710 大卡</div>
+      </a>
+      <a class="sticker menu-card" href="menu.html" style="--c:#ffb35c;">
+        <span class="emoji">🍛</span>
+        <span class="day" style="background:#ffb35c;">週四</span>
+        <div class="dish">元氣咖哩燉飯</div>
+        <div class="side">胡麻龍鬚菜<br>蘿蔔排骨湯<br>季節水果:香蕉</div>
+        <div class="cal">🔥 約 695 大卡</div>
+      </a>
+      <a class="sticker menu-card" href="menu.html" style="--c:#c39bff;">
+        <span class="emoji">🥟</span>
+        <span class="day" style="background:#c39bff;">週五</span>
+        <div class="dish">手工高麗菜水餃</div>
+        <div class="side">涼拌小黃瓜<br>紫菜蛋花湯<br>季節水果:西瓜</div>
+        <div class="cal">🔥 約 660 大卡</div>
+      </a>
+    </div>
+    <div style="text-align:center;"><a class="more-link" href="menu.html">📅 查看本月完整菜單總表 →</a></div>
+  </section>
+
+  <!-- 營養素甜甜圈 -->
+  <section>
+    <h2 class="sec-title"><span class="pill">🍩 今日營養素分析</span></h2>
+    <div class="nutrition">
+      <div class="tape pink"></div>
+      <div class="donuts" id="donuts"></div>
+      <p class="nutri-note">※ 依據「學校午餐食物內容及營養基準」設計,每餐蔬菜至少 2/3 碗、全榖雜糧占主食 1/3 以上,<br>每週供應兩次豆魚蛋肉類優質蛋白,並提供每日一份新鮮水果。</p>
+            <div style="text-align:center;"><a class="more-link" href="nutrition.html" style="color:#3ecf9a;border-color:#3ecf9a;">🍩 查看本週營養完整分析 →</a></div>
+          </div>
+        </section>
+
+  <!-- 食安小學堂 -->
+  <section>
+    <h2 class="sec-title"><span class="pill">🔍 食安小學堂(點我看答案)</span></h2>
+    <div class="qa">
+      <div class="qa-item">
+        <button class="qa-q">🥬 學校的蔬菜是哪裡來的?安全嗎?<span class="arrow">▼</span></button>
+        <div class="qa-a"><div>本學期葉菜類 100% 採用「三章一 Q」驗證食材,主要來自雲林西螺與彰化溪湖的契作農場。每批蔬菜進貨前皆附產銷履歷,廚房每日留存 200 公克檢體冷藏 48 小時備查。</div></div>
+      </div>
+      <div class="qa-item">
+        <button class="qa-q">🌡️ 午餐從烹調到上桌,溫度怎麼把關?<span class="arrow">▼</span></button>
+        <div class="qa-a"><div>所有菜餚中心溫度須達 75°C 以上,保溫運送全程維持 60°C 以上。營養師每日於出餐前、分裝後兩階段量測並記錄,紀錄表張貼於穿堂公布欄,歡迎家長隨時查閱。</div></div>
+      </div>
+      <div class="qa-item">
+        <button class="qa-q">🥜 孩子對花生過敏,午餐會怎麼處理?<span class="arrow">▼</span></button>
+        <div class="qa-a"><div>請於學期初填寫「飲食特殊需求調查表」。廚房設有過敏原對照表,含花生、蝦蟹、麩質等八大類;過敏兒童由營養師個別調整菜色,以專用托盤與餐具獨立供餐。</div></div>
+      </div>
+      <div class="qa-item">
+        <button class="qa-q">🧼 廚房和餐具的清潔標準是什麼?<span class="arrow">▼</span></button>
+        <div class="qa-a"><div>餐具以 80°C 以上高溫洗碗機洗滌後烘乾,每週抽檢澱粉與脂肪殘留。廚房每日收工後全面清消,每月委託合格廠商病媒防治,每學期接受教育局與衛生局聯合稽查。</div></div>
+      </div>
+    </div>
+            <div style="text-align:center;"><a class="more-link" href="safety.html" style="color:var(--sky);border-color:var(--sky);">🔍 更多食安紀錄與問答 →</a></div>
+          </section>
+
+  <!-- 食材產地 -->
+  <section>
+    <h2 class="sec-title"><span class="pill">🚜 本月食材產地直送</span></h2>
+    <div class="origin-grid">
+      <a class="sticker origin" href="origin.html" style="--c:#8ce8c0;">
+        <span class="emoji">🥬</span>
+        <h4>雲林西螺 · 葉菜類</h4>
+        <p>青江菜、小白菜、高麗菜<br>契作面積 12 公頃</p>
+        <span class="badge" style="background:#3ecf9a;">產銷履歷</span>
+      </a>
+      <a class="sticker origin" href="origin.html" style="--c:#ffe08a;">
+        <span class="emoji">🍚</span>
+        <h4>池上鄉 · 胚芽米</h4>
+        <p>台稉九號,當季現碾<br>每月配送 1.8 公噸</p>
+        <span class="badge" style="background:#e8b93c;">台灣優良農產品</span>
+      </a>
+      <a class="sticker origin" href="origin.html" style="--c:#ff8fab;">
+        <span class="emoji">🐔</span>
+        <h4>台南新化 · 放山雞</h4>
+        <p>無抗生素飼養 16 週<br>每批附動物用藥檢驗報告</p>
+        <span class="badge" style="background:#ff8fab;">CAS 驗證</span>
+      </a>
+      <a class="sticker origin" href="origin.html" style="--c:#7cc6ff;">
+        <span class="emoji">🥛</span>
+        <h4>苗栗通霄 · 鮮乳</h4>
+        <p>每週二、四供應<br>生乳每日清晨直送</p>
+        <span class="badge" style="background:#7cc6ff;">鮮乳標章</span>
+      </a>
+    </div>
+    <div style="text-align:center;"><a class="more-link" href="origin.html" style="color:#e8b93c;border-color:#e8b93c;">🚜 查看食材溯源履歷與檢驗紀錄 →</a></div>
+  </section>
+
+  <!-- 給家長的話 -->
+  <section>
+    <h2 class="sec-title"><span class="pill">💌 給家長的話</span></h2>
+    <div class="letter">
+      <div class="tape sky"></div>
+      <h3>親愛的家長,您好:</h3>
+      <p>孩子的每一餐,都是我們最重要的事。本學期起,午餐菜單由駐校營養師與三位廚工阿姨共同設計,兼顧營養、口味與在地食材。若您對菜色有任何建議,或孩子回家分享了喜歡(或不喜歡)的菜,都歡迎告訴我們——您的每一則回饋,都會出現在下個月的菜單會議上。</p>
+      <div class="sign">— 陽光國小 營養師 林悅寧 敬上 🌷</div>
+      <div class="feedback" id="feedback">
+        <button data-fb="1">😋 孩子說很好吃!</button>
+        <button data-fb="2">🥗 希望蔬菜多一點</button>
+        <button data-fb="3">🍎 水果可以再甜一點</button>
+        <button data-fb="4">✍️ 我想寫建議給學校</button>
+      </div>
+      <p id="fbMsg" style="text-align:center;margin-top:16px;font-weight:700;color:#ff8fab;min-height:24px;"></p>
+    </div>
+  </section>
+</main>
+
+<footer>陽光國小午餐日記 · 資料更新日:2026/05/15 · 吃飽飽,長高高 🌱</footer>
+
+<script>
+/* 營養素甜甜圈(SVG) */
+const NUTRI=[
+  {name:'蛋白質', gram:'28 g', pct:78, c:'#ff8fab'},
+  {name:'蔬菜量', gram:'2/3 碗', pct:85, c:'#3ecf9a'},
+  {name:'全榖雜糧', gram:'1.5 碗', pct:70, c:'#7cc6ff'},
+  {name:'鈣質', gram:'420 mg', pct:62, c:'#e8b93c'},
+];
+const C=2*Math.PI*52; // r=52
+const wrap=document.getElementById('donuts');
+NUTRI.forEach(n=>{
+  const d=document.createElement('div');
+  d.className='donut';
+  d.innerHTML=`
+    <svg viewBox="0 0 130 130">
+      <circle class="track" cx="65" cy="65" r="52"></circle>
+      <circle class="fill" cx="65" cy="65" r="52" stroke="${n.c}" data-target="${C*(1-n.pct/100)}"></circle>
+    </svg>
+    <div class="pct" style="color:${n.c}">${n.pct}%</div>
+    <div class="name">${n.name}</div>
+    <div class="gram">每餐參考量 ${n.gram}</div>`;
+  wrap.appendChild(d);
+});
+/* 進場動畫:當甜甜圈進入視窗才播放 */
+const io=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.querySelectorAll('.fill').forEach(f=>{
+        f.style.strokeDashoffset=f.dataset.target;
+      });
+      io.unobserve(e.target);
+    }
+  });
+},{threshold:.3});
+document.querySelectorAll('.donut').forEach(d=>io.observe(d));
+
+/* 食安問答摺疊 */
+document.querySelectorAll('.qa-item').forEach(item=>{
+  const q=item.querySelector('.qa-q'), a=item.querySelector('.qa-a');
+  q.addEventListener('click',()=>{
+    const open=item.classList.toggle('open');
+    a.style.maxHeight=open?a.scrollHeight+'px':'0';
+  });
+});
+
+/* 意見回饋互動 */
+const fbMsg=document.getElementById('fbMsg');
+const REPLIES={
+  1:'太棒了!廚房阿姨聽到會很開心 💕',
+  2:'收到!下月菜單會議會提出加菜提案 🥦',
+  3:'我們會與果農確認甜度更佳的品項 🍉',
+  4:'請投入穿堂意見箱,或寫在聯絡簿告訴老師 ✏️',
+};
+document.querySelectorAll('#feedback button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#feedback button').forEach(x=>x.classList.remove('picked'));
+    b.classList.add('picked');
+    fbMsg.textContent=REPLIES[b.dataset.fb];
+  });
+});
+</script>
+</body>
+</html>

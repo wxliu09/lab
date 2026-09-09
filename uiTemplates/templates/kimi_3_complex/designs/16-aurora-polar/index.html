@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 16 極光玻璃 · 極地科研
+  ─────────────────────────────────────
+  風格定位:極地夜空下的科研觀測站公開科普頁,極光流動 + 磨砂玻璃質感,靜謐而壯闊。
+  配色:深夜藍 #050d1f(底)、極光綠 #64ffda、極光紫 #b388ff、冰藍 #82b1ff、
+        雪白 #eaf6ff(主字)、霧白 rgba(255,255,255,.08)(玻璃卡)。
+  字體:英文 "Space Grotesk"、中文 "Noto Sans TC"(Google Fonts)。
+  版面結構:
+    1. 全螢幕星空(Canvas 星星閃爍)+ 極光漸層團(animated blobs + blur(90px))
+    2. Hero:站名 + 即時狀態玻璃膠囊
+    3. 觀測數據玻璃卡:氣溫 / 風速 / KP 極光指數(儀表 SVG)/ 日照狀態
+    4. 極光預報(未來三晚 KP 預測條)
+    5. 研究主題科普(冰芯、海冰、極光物理、生態)
+    6. 觀測站日誌(時間線)
+    7. 認識極地小知識 + 頁尾返回入口
+  動態效果:
+    - 三團極光 blob 以 @keyframes 緩慢漂移變形,blur 混合成流動極光
+    - Canvas 星星隨機閃爍 + 偶發流星
+    - KP 值儀表指針動畫、數字累加
+    - 玻璃卡 hover 邊框發光
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>極光玻璃 · 北境極地觀測站</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#050d1f; --aurora-g:#64ffda; --aurora-p:#b388ff; --ice:#82b1ff; --snow:#eaf6ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--night);color:var(--snow);
+    font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;
+    min-height:100vh;overflow-x:hidden;
+  }
+  .mono{font-family:"Space Grotesk","Noto Sans TC",sans-serif;}
+  /* ── 星空與極光背景 ── */
+  #stars{position:fixed;inset:0;z-index:0;}
+  .aurora{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden;filter:blur(90px) saturate(1.3);}
+  .blob{position:absolute;border-radius:50%;opacity:.5;mix-blend-mode:screen;}
+  .blob.g1{width:60vw;height:42vh;left:-10vw;top:-6vh;background:radial-gradient(closest-side,var(--aurora-g),transparent);animation:drift1 26s ease-in-out infinite;}
+  .blob.p1{width:48vw;height:40vh;right:-8vw;top:8vh;background:radial-gradient(closest-side,var(--aurora-p),transparent);animation:drift2 32s ease-in-out infinite;}
+  .blob.b1{width:40vw;height:34vh;left:24vw;top:2vh;background:radial-gradient(closest-side,var(--ice),transparent);opacity:.35;animation:drift3 22s ease-in-out infinite;}
+  @keyframes drift1{0%,100%{transform:translate(0,0) scale(1) skewX(0);}50%{transform:translate(14vw,6vh) scale(1.25) skewX(-8deg);}}
+  @keyframes drift2{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-12vw,-4vh) scale(1.15) skewX(10deg);}}
+  @keyframes drift3{0%,100%{transform:translate(0,0) rotate(0);}50%{transform:translate(6vw,10vh) rotate(20deg);}}
+  /* ── 玻璃元件 ── */
+  .glass{
+    background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.16);
+    border-radius:22px;
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 18px 50px rgba(0,0,0,.35);
+    transition:border-color .35s, box-shadow .35s, transform .35s;
+  }
+  .glass:hover{
+    border-color:rgba(100,255,218,.55);
+    box-shadow:0 18px 50px rgba(0,0,0,.4), 0 0 26px rgba(100,255,218,.14);
+    transform:translateY(-4px);
+  }
+  /* ── Header ── */
+  header{position:relative;z-index:3;text-align:center;padding:110px 6vw 70px;}
+  .station-tag{
+    display:inline-flex;align-items:center;gap:10px;
+    padding:9px 22px;border-radius:99px;font-size:12.5px;letter-spacing:.3em;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2);
+    backdrop-filter:blur(10px);
+  }
+  .pulse{width:9px;height:9px;border-radius:50%;background:var(--aurora-g);box-shadow:0 0 10px var(--aurora-g);animation:pulse 1.8s ease-in-out infinite;}
+  @keyframes pulse{50%{opacity:.3;transform:scale(.7);}}
+  h1{
+    font-family:"Space Grotesk","Noto Sans TC",sans-serif;font-weight:700;
+    font-size:clamp(36px,6.5vw,68px);letter-spacing:.04em;margin:30px 0 12px;
+    background:linear-gradient(100deg,var(--snow) 20%,var(--aurora-g) 50%,var(--aurora-p) 80%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero-sub{color:rgba(234,246,255,.72);font-size:15.5px;letter-spacing:.28em;line-height:2.1;}
+  .hero-chips{display:flex;justify-content:center;gap:14px;margin-top:34px;flex-wrap:wrap;}
+  .chip{
+    padding:11px 22px;border-radius:16px;font-size:13px;letter-spacing:.12em;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+    backdrop-filter:blur(12px);
+  }
+  .chip b{font-family:"Space Grotesk",sans-serif;color:var(--aurora-g);}
+  a.chip{text-decoration:none;color:inherit;transition:border-color .3s, box-shadow .3s;}
+  a.chip:hover{border-color:rgba(100,255,218,.55);box-shadow:0 0 18px rgba(100,255,218,.18);}
+  .more-row{text-align:center;margin-top:26px;}
+  .more-link{display:inline-block;color:var(--aurora-g);text-decoration:none;font-size:13px;letter-spacing:.15em;border:1px solid rgba(100,255,218,.4);border-radius:99px;padding:10px 24px;transition:.25s;backdrop-filter:blur(10px);}
+  .more-link:hover{background:rgba(100,255,218,.12);box-shadow:0 0 18px rgba(100,255,218,.2);}
+  .topic-link{display:inline-block;margin-top:14px;font-family:"Space Grotesk",sans-serif;font-size:12px;letter-spacing:.18em;color:var(--aurora-g);text-decoration:none;border-bottom:1px dashed rgba(100,255,218,.5);padding-bottom:2px;}
+  .topic-link:hover{color:var(--snow);border-color:var(--snow);}
+  main{max-width:1120px;margin:0 auto;padding:10px 24px 110px;display:flex;flex-direction:column;gap:76px;position:relative;z-index:3;}
+  .sec-title{display:flex;align-items:center;gap:16px;margin-bottom:28px;}
+  .sec-title .k{
+    font-family:"Space Grotesk",sans-serif;font-size:11px;letter-spacing:.35em;color:var(--aurora-g);
+    border:1px solid rgba(100,255,218,.4);border-radius:8px;padding:6px 12px;
+  }
+  .sec-title h2{font-size:clamp(20px,3vw,27px);font-weight:900;letter-spacing:.14em;}
+  .sec-title .line{flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,.3),transparent);}
+  /* ── 觀測數據卡 ── */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px;}
+  .metric{padding:28px 24px;text-align:center;position:relative;overflow:hidden;}
+  .metric .label{font-size:12px;letter-spacing:.3em;color:rgba(234,246,255,.6);}
+  .metric .value{
+    font-family:"Space Grotesk",sans-serif;font-size:clamp(34px,4.4vw,46px);font-weight:700;margin:14px 0 4px;
+  }
+  .metric .unit{font-size:13px;color:rgba(234,246,255,.55);letter-spacing:.1em;}
+  .metric .trend{margin-top:12px;font-size:12px;letter-spacing:.08em;}
+  .trend.up{color:var(--aurora-g);} .trend.down{color:var(--ice);} .trend.warn{color:#ffab91;}
+  /* KP 儀表 */
+  .gauge{width:150px;margin:6px auto 0;}
+  .gauge .needle{transform-origin:75px 78px;transition:transform 1.8s cubic-bezier(.34,1.3,.5,1);}
+  /* ── 極光預報 ── */
+  .forecast{padding:32px 30px;}
+  .fc-row{display:grid;grid-template-columns:120px 1fr 90px;gap:18px;align-items:center;padding:16px 0;border-bottom:1px dashed rgba(255,255,255,.14);}
+  .fc-row:last-child{border-bottom:none;}
+  .fc-row .d{font-size:14px;font-weight:700;letter-spacing:.1em;}
+  .fc-row .d small{display:block;font-weight:400;color:rgba(234,246,255,.55);margin-top:3px;font-size:11.5px;}
+  .kp-track{height:14px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;}
+  .kp-fill{
+    height:100%;width:0;border-radius:99px;
+    background:linear-gradient(90deg,var(--ice),var(--aurora-g),var(--aurora-p));
+    transition:width 1.5s cubic-bezier(.3,0,.2,1);
+  }
+  .fc-row .kp-val{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:19px;text-align:right;color:var(--aurora-g);}
+  .fc-note{margin-top:18px;font-size:12.5px;color:rgba(234,246,255,.6);line-height:2;}
+  /* ── 研究主題 ── */
+  .research{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;}
+  .topic{padding:30px 26px;}
+  .topic .ic{
+    width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+    font-size:26px;margin-bottom:18px;
+    background:linear-gradient(135deg,rgba(100,255,218,.18),rgba(179,136,255,.18));
+    border:1px solid rgba(255,255,255,.2);
+  }
+  .topic h4{font-size:17px;font-weight:900;letter-spacing:.08em;margin-bottom:6px;}
+  .topic .en{font-family:"Space Grotesk",sans-serif;font-size:11px;letter-spacing:.22em;color:var(--aurora-g);margin-bottom:12px;}
+  .topic p{font-size:13.5px;line-height:2.05;color:rgba(234,246,255,.78);}
+  /* ── 站務日誌 ── */
+  .log{padding:8px 0;}
+  .log-item{display:grid;grid-template-columns:150px 1fr;gap:22px;padding:20px 0;border-bottom:1px solid rgba(255,255,255,.1);}
+  .log-item:last-child{border-bottom:none;}
+  .log-item time{font-family:"Space Grotesk",sans-serif;font-size:13px;color:var(--ice);letter-spacing:.06em;padding-top:2px;}
+  .log-item .txt{font-size:14px;line-height:1.95;color:rgba(234,246,255,.85);}
+  .log-item .txt b{color:var(--aurora-g);font-weight:700;}
+  /* ── 小知識 ── */
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:22px;}
+  .fact{padding:26px 24px;font-size:13.5px;line-height:2;color:rgba(234,246,255,.8);}
+  .fact .q{font-weight:900;font-size:15px;color:var(--snow);margin-bottom:10px;letter-spacing:.06em;}
+  .fact .q::before{content:"Q";font-family:"Space Grotesk",sans-serif;color:var(--aurora-p);margin-right:8px;}
+  footer{
+    position:relative;z-index:3;text-align:center;padding:40px 6vw 70px;
+  }
+  .back-btn{
+    display:inline-block;text-decoration:none;color:var(--night);font-weight:900;letter-spacing:.2em;font-size:14.5px;
+    background:linear-gradient(100deg,var(--aurora-g),var(--ice));
+    padding:16px 38px;border-radius:99px;
+    box-shadow:0 0 30px rgba(100,255,218,.35);
+    transition:transform .2s, box-shadow .2s;
+  }
+  .back-btn:hover{transform:translateY(-3px);box-shadow:0 0 44px rgba(100,255,218,.55);}
+  .foot-note{margin-top:26px;font-family:"Space Grotesk",sans-serif;font-size:11.5px;letter-spacing:.3em;color:rgba(234,246,255,.4);}
+  @media (max-width:600px){
+    .fc-row{grid-template-columns:1fr;}
+    .fc-row .kp-val{text-align:left;}
+    .log-item{grid-template-columns:1fr;gap:6px;}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+<div class="aurora">
+  <div class="blob g1"></div>
+  <div class="blob p1"></div>
+  <div class="blob b1"></div>
+</div>
+
+<header>
+  <div class="station-tag"><span class="pulse"></span>LIVE · 觀測資料即時回傳中</div>
+  <h1>北境極地觀測站</h1>
+  <div class="hero-sub">BOREALIS POLAR OBSERVATORY · 78°13′N 15°38′E<br>斯瓦爾巴群島 · 新奧勒松科研村</div>
+  <div class="hero-chips">
+    <a class="chip" href="team.html">站內人員 <b>14 人</b></a>
+    <span class="chip">極夜倒數 <b>58 天</b></span>
+    <a class="chip" href="log.html">運作年資 <b>第 23 年</b></a>
+  </div>
+</header>
+
+<main>
+  <!-- 即時觀測數據 -->
+  <section>
+    <div class="sec-title"><span class="k">DATA</span><h2>即時觀測數據</h2><div class="line"></div></div>
+    <div class="metrics">
+      <div class="metric glass">
+        <div class="label">氣 溫 AIR TEMP</div>
+        <div class="value mono" style="color:var(--ice);"><span class="count" data-t="-14.6" data-dec="1">0</span>°C</div>
+        <div class="unit">體感 -22.3°C · 濕度 68%</div>
+        <div class="trend down">▼ 較昨日同期低 2.1°C</div>
+      </div>
+      <div class="metric glass">
+        <div class="label">風 速 WIND</div>
+        <div class="value mono" style="color:var(--snow);"><span class="count" data-t="8.4" data-dec="1">0</span><span style="font-size:20px;"> m/s</span></div>
+        <div class="unit">西北風 · 陣風 12.7 m/s</div>
+        <div class="trend up">▲ 風勢緩增中</div>
+      </div>
+      <div class="metric glass">
+        <div class="label">極光指數 KP INDEX</div>
+        <svg class="gauge" viewBox="0 0 150 90">
+          <path d="M12 78 A63 63 0 0 1 138 78" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="10" stroke-linecap="round"/>
+          <path id="kpArc" d="M12 78 A63 63 0 0 1 138 78" fill="none" stroke="url(#kpg)" stroke-width="10" stroke-linecap="round" stroke-dasharray="198" stroke-dashoffset="198"/>
+          <defs><linearGradient id="kpg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#82b1ff"/><stop offset=".5" stop-color="#64ffda"/><stop offset="1" stop-color="#b388ff"/></linearGradient></defs>
+          <line id="kpNeedle" class="needle" x1="75" y1="78" x2="75" y2="26" stroke="#eaf6ff" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="75" cy="78" r="5" fill="#eaf6ff"/>
+        </svg>
+        <div class="value mono" style="color:var(--aurora-g);margin-top:6px;">KP <span class="count" data-t="5.3" data-dec="1">0</span></div>
+        <div class="trend up">✦ G1 小型磁暴 · 今晚可見極光</div>
+      </div>
+      <div class="metric glass">
+        <div class="label">日 照 DAYLIGHT</div>
+        <div class="value mono" style="color:#ffe0b2;"><span class="count" data-t="13.2" data-dec="1">0</span><span style="font-size:20px;"> hr</span></div>
+        <div class="unit">日出 04:52 · 日落 22:03</div>
+        <div class="trend warn">◐ 白夜季尾聲 · 日落逐日提早</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 極光預報 -->
+  <section>
+    <div class="sec-title"><span class="k">FORECAST</span><h2>未來三晚極光預報</h2><div class="line"></div></div>
+    <div class="forecast glass">
+      <div class="fc-row">
+        <div class="d">今晚 8/28<small>多雲 · 雲量 40%</small></div>
+        <div class="kp-track"><div class="kp-fill" data-w="59"></div></div>
+        <div class="kp-val">KP 5.3</div>
+      </div>
+      <div class="fc-row">
+        <div class="d">明晚 8/29<small>晴朗 · 雲量 12%</small></div>
+        <div class="kp-track"><div class="kp-fill" data-w="74"></div></div>
+        <div class="kp-val">KP 6.7</div>
+      </div>
+      <div class="fc-row">
+        <div class="d">後晚 8/30<small>薄雲 · 雲量 25%</small></div>
+        <div class="kp-track"><div class="kp-fill" data-w="41"></div></div>
+        <div class="kp-val">KP 3.7</div>
+      </div>
+      <p class="fc-note">※ KP 指數達 4 以上且天空晴朗時,本站緯度可見明顯極光。明晚條件最佳,預估 22:00–01:00 為高峰,觀測甲板將延後關閉。</p>
+    </div>
+    <p class="more-row"><a class="more-link" href="data.html">查看觀測資料完整月報 →</a></p>
+  </section>
+
+  <!-- 研究主題 -->
+  <section>
+    <div class="sec-title"><span class="k">SCIENCE</span><h2>本站研究主題</h2><div class="line"></div></div>
+    <div class="research">
+      <div class="topic glass">
+        <div class="ic">🧊</div>
+        <h4>冰芯氣候檔案</h4>
+        <div class="en">ICE CORE CLIMATE ARCHIVE</div>
+        <p>從冰川鑽取深達百公尺的冰芯,氣泡裡封存著十萬年前的大氣。透過分析二氧化碳與甲烷濃度,重建地球氣候的漫長記憶。</p>
+        <a class="topic-link" href="research.html#ice">閱讀完整研究 →</a>
+      </div>
+      <div class="topic glass">
+        <div class="ic">🌊</div>
+        <h4>海冰消長監測</h4>
+        <div class="en">SEA ICE DYNAMICS</div>
+        <p>以聲納浮標與衛星遙測追蹤海冰厚度。近二十年,九月海冰面積已縮減逾三成——這是地球暖化最直觀的證據之一。</p>
+        <a class="topic-link" href="research.html#sea">閱讀完整研究 →</a>
+      </div>
+      <div class="topic glass">
+        <div class="ic">✨</div>
+        <h4>極光物理觀測</h4>
+        <div class="en">AURORAL PHYSICS</div>
+        <p>太陽風帶電粒子沿地磁線湧入極區,與高層大氣碰撞發光。本站全天空攝影機與磁力計,記錄每一場極光的舞姿與能量。</p>
+        <a class="topic-link" href="research.html#aurora">閱讀完整研究 →</a>
+      </div>
+      <div class="topic glass">
+        <div class="ic">🐻‍❄️</div>
+        <h4>極地生態調查</h4>
+        <div class="en">ARCTIC ECOLOGY</div>
+        <p>追蹤北極熊、馴鹿與候鳥族群的遷徙變化,理解氣候變遷如何改寫極地食物網,並評估保育行動的優先順序。</p>
+        <a class="topic-link" href="research.html#eco">閱讀完整研究 →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 站務日誌 -->
+  <section>
+    <div class="sec-title"><span class="k">LOG</span><h2>觀測站日誌</h2><div class="line"></div></div>
+    <div class="log glass" style="padding:8px 30px;">
+      <div class="log-item">
+        <time>08/28 06:30 UTC</time>
+        <div class="txt">晨間例行巡檢完成。氣象桅杆除冰順利,<b>全天空攝影機</b>鏡頭已清潔,今晚極光觀測準備就緒。</div>
+      </div>
+      <div class="log-item">
+        <time>08/27 14:10 UTC</time>
+        <div class="txt">冰芯實驗室完成第 <b>212 號冰芯</b>分段,初步目視發現清晰年層,預計下週進行同位素分析。</div>
+      </div>
+      <div class="log-item">
+        <time>08/26 09:00 UTC</time>
+        <div class="txt">補給船「雪羽號」靠泊,運抵冬季燃料 40 公秉與新一批乾燥糧食。全員協助卸貨,耗時五小時。</div>
+      </div>
+      <div class="log-item">
+        <time>08/25 23:45 UTC</time>
+        <div class="txt">昨晚出現本季首場 <b>KP 5 級極光</b>,綠紫色光幕橫跨全天,歷時近兩小時。值班研究員回報「美得忘記記錄,幸好攝影機沒忘」。</div>
+      </div>
+    </div>
+    <p class="more-row"><a class="more-link" href="log.html">閱讀更多站務日誌 →</a></p>
+  </section>
+
+  <!-- 極地小知識 -->
+  <section>
+    <div class="sec-title"><span class="k">FAQ</span><h2>極地小知識</h2><div class="line"></div></div>
+    <div class="facts">
+      <div class="fact glass">
+        <div class="q">極光為什麼是綠色的?</div>
+        最常見的綠光來自約 100 公里高空的氧原子被激發;更高處的氧發出紅光,氮分子則貢獻紫藍色的裙邊。
+      </div>
+      <div class="fact glass">
+        <div class="q">極夜是不是全天全黑?</div>
+        不完全是。極夜初期仍有數小時「民事暮光」,天空呈現深藍色的微光,稱為「藍調時刻」,是極地攝影師的最愛。
+      </div>
+      <div class="fact glass">
+        <div class="q">觀測站冬天怎麼取暖?</div>
+        本站建築採被動式保溫設計,牆體厚達 40 公分,搭配廢熱回收系統;照明與實驗設備的熱量也會被循環利用。
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a class="back-btn" href="../../index.html">← 返回入口</a>
+  <div class="foot-note">BOREALIS POLAR OBSERVATORY · 78°N · 數據為設計展示之示範值</div>
+</footer>
+
+<script>
+/* ── 星空 Canvas:星星閃爍 + 流星 ── */
+const cv=document.getElementById('stars'), cx=cv.getContext('2d');
+let W,H,stars=[],meteors=[];
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;
+  stars=Array.from({length:Math.floor(W*H/6500)},()=>({
+    x:Math.random()*W,y:Math.random()*H,
+    r:Math.random()*1.3+.3,
+    p:Math.random()*Math.PI*2,
+    s:.008+Math.random()*.02
+  }));
+}
+addEventListener('resize',resize);resize();
+function spawnMeteor(){
+  if(Math.random()<0.006 && meteors.length<2){
+    meteors.push({x:Math.random()*W*.7+W*.2,y:Math.random()*H*.3,vx:-7-Math.random()*4,vy:3.5+Math.random()*2,life:1});
+  }
+}
+(function draw(){
+  cx.clearRect(0,0,W,H);
+  stars.forEach(s=>{
+    s.p+=s.s;
+    const a=.35+Math.abs(Math.sin(s.p))*.65;
+    cx.globalAlpha=a;
+    cx.fillStyle='#eaf6ff';
+    cx.beginPath();cx.arc(s.x,s.y,s.r,0,7);cx.fill();
+  });
+  cx.globalAlpha=1;
+  spawnMeteor();
+  meteors=meteors.filter(m=>m.life>0);
+  meteors.forEach(m=>{
+    m.x+=m.vx;m.y+=m.vy;m.life-=.02;
+    const g=cx.createLinearGradient(m.x,m.y,m.x-m.vx*8,m.y-m.vy*8);
+    g.addColorStop(0,'rgba(234,246,255,'+(.9*m.life)+')');
+    g.addColorStop(1,'rgba(234,246,255,0)');
+    cx.strokeStyle=g;cx.lineWidth=1.6;
+    cx.beginPath();cx.moveTo(m.x,m.y);cx.lineTo(m.x-m.vx*8,m.y-m.vy*8);cx.stroke();
+  });
+  requestAnimationFrame(draw);
+})();
+
+/* ── 數字累加動畫 ── */
+function countUp(el){
+  const t=+el.dataset.t, dec=+(el.dataset.dec||0), t0=performance.now(), dur=1600;
+  (function step(now){
+    const k=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-k,3);
+    el.textContent=(t*e).toFixed(dec);
+    if(k<1)requestAnimationFrame(step);
+  })(t0);
+}
+const io=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(!e.isIntersecting)return;
+    io.unobserve(e.target);
+    e.target.querySelectorAll('.count').forEach(countUp);
+    e.target.querySelectorAll('.kp-fill').forEach(f=>f.style.width=f.dataset.w+'%');
+    /* KP 儀表 */
+    if(e.target.querySelector('#kpNeedle')){
+      const kp=5.3, ang=-90+(kp/9)*180;
+      document.getElementById('kpNeedle').style.transform=`rotate(${ang}deg)`;
+      document.getElementById('kpArc').style.transition='stroke-dashoffset 1.8s cubic-bezier(.3,0,.2,1)';
+      document.getElementById('kpArc').style.strokeDashoffset=198*(1-kp/9);
+    }
+  });
+},{threshold:.3});
+document.querySelectorAll('.metrics,.forecast').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

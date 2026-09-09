@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>40 · 機組出力堆疊與競價階梯 — POWER GRID CONTROL</title>
+<style>
+:root{
+  --bg:#050b10;--pane:#0a141c;--pane2:#0e1a24;--edge:#16283a;
+  --edge2:#173040;--txt:#d8e8f2;--dim:#6a8599;
+  --el:#00e5ff;--hi:#ffd54a;--lo:#ff5a52;--ok:#3ff28c;--pu:#b07cff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--txt);min-height:100vh;font-size:12.5px;overflow-x:hidden;
+  font-family:"Consolas","Segoe UI","Noto Sans TC","Microsoft JhengHei",monospace;
+  background-image:
+    radial-gradient(ellipse at 50% -10%,rgba(0,229,255,.09),transparent 55%),
+    repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 4px)}
+a{color:inherit}
+a:focus-visible,button:focus-visible{outline:2px solid var(--el);outline-offset:2px}
+
+.home{position:fixed;right:16px;bottom:16px;z-index:99;text-decoration:none;color:#03161c;
+  background:var(--el);padding:12px 22px;font-weight:700;font-size:12px;letter-spacing:.12em;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+  box-shadow:0 0 26px rgba(0,229,255,.55)}
+.home:hover{background:#fff}
+
+.nav{position:sticky;top:0;z-index:50;border-bottom:1px solid var(--edge2);
+  background:linear-gradient(180deg,rgba(0,229,255,.07),transparent),var(--pane);
+  display:flex;align-items:center;flex-wrap:wrap;padding:0 16px}
+.nav .brand{font-size:11.5px;letter-spacing:.16em;color:#fff;font-weight:700;padding:13px 18px 13px 0}
+.nav .brand em{font-style:normal;color:var(--el)}
+.nav a.tab{text-decoration:none;color:var(--dim);font-size:10.5px;letter-spacing:.14em;
+  padding:13px 15px;border-bottom:2px solid transparent;transition:.15s}
+.nav a.tab:hover{color:var(--txt);background:rgba(0,229,255,.06)}
+.nav a.tab[aria-current="page"]{color:var(--el);border-bottom-color:var(--el);background:rgba(0,229,255,.07)}
+.nav .rt{margin-left:auto;display:flex;gap:20px;font-size:9.5px;letter-spacing:.14em;color:var(--dim);
+  align-items:center;padding:10px 0}
+.nav .rt b{display:block;font-size:14px;color:var(--txt);letter-spacing:.02em;margin-top:3px}
+.blip{width:7px;height:7px;background:var(--ok);border-radius:50%;display:inline-block;
+  animation:bk 1.4s infinite;margin-right:6px}
+@keyframes bk{50%{opacity:.2}}
+
+.wrap{max-width:1600px;margin:0 auto;padding:14px 16px 60px}
+.pnl{background:var(--pane);border:1px solid var(--edge2);overflow:hidden;margin-bottom:14px;
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.pnl>h2{font-size:10.5px;letter-spacing:.22em;color:var(--dim);padding:11px 16px;
+  border-bottom:1px solid var(--edge2);display:flex;justify-content:space-between;
+  align-items:center;gap:12px;flex-wrap:wrap}
+.pnl>h2 b{color:var(--el);font-size:10px}
+.pnl .in{padding:16px}
+
+.phead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:end;
+  border-bottom:1px solid var(--edge2);padding:14px 4px 16px;margin-bottom:14px}
+.phead h1{font-size:22px;letter-spacing:.06em;font-weight:700;color:#fff}
+.phead h1 em{font-style:normal;color:var(--el)}
+.phead p{color:var(--dim);font-size:11.5px;line-height:1.9;margin-top:9px;max-width:72ch}
+.phead .rt{text-align:right;font-size:9.5px;letter-spacing:.16em;color:var(--dim);line-height:2.1}
+.phead .rt b{display:block;font-size:16px;color:var(--txt);letter-spacing:.02em}
+
+/* ---------- energy balance ---------- */
+.bal{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;
+  background:var(--edge2);border:1px solid var(--edge2);margin-bottom:14px}
+.bal>div{background:var(--pane);padding:12px 15px;position:relative}
+.bal small{font-size:9.5px;letter-spacing:.16em;color:var(--dim);display:block}
+.bal b{font-size:19px;display:block;margin-top:5px;letter-spacing:.01em}
+.bal b i{font-size:9.5px;font-style:normal;color:var(--dim);margin-left:4px}
+.bal .op{position:absolute;left:-1px;top:50%;transform:translate(-50%,-50%);
+  background:var(--bg);color:var(--dim);font-size:13px;width:18px;height:18px;
+  display:grid;place-items:center;z-index:2}
+
+/* ---------- stacked area ---------- */
+.chwrap{overflow-x:auto;background:#04090d;padding:12px 10px 0}
+.chwrap svg{min-width:840px;width:100%;height:auto;display:block}
+.gl{stroke:#132531;stroke-width:1}
+.tk{font-size:9px;fill:#4d6b80}
+.hit{cursor:pointer;fill:transparent}
+.hit:hover{fill:rgba(255,255,255,.05)}
+.hit.sel{fill:rgba(0,229,255,.08)}
+.lbl{font-size:9.5px;fill:#6a8599;letter-spacing:.06em}
+.leg{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--edge2)}
+.leg button{appearance:none;border:1px solid var(--edge2);background:var(--pane2);color:var(--txt);
+  font:inherit;font-size:10.5px;letter-spacing:.06em;padding:6px 11px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;transition:.14s}
+.leg button i{width:11px;height:11px;display:block}
+.leg button[aria-pressed="false"]{opacity:.38;text-decoration:line-through}
+.leg .hint{margin-left:auto;font-size:9.5px;color:var(--dim);align-self:center;letter-spacing:.1em}
+
+/* hour breakdown */
+.hb{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 26px;padding:14px 16px;
+  border-top:1px solid var(--edge2)}
+.hbrow{display:grid;grid-template-columns:96px minmax(0,1fr) 96px;align-items:center;gap:10px;
+  padding:7px 0;border-bottom:1px solid rgba(23,48,64,.55)}
+.hbrow .n{font-size:10.5px;color:var(--txt)}
+.hbtk{height:9px;background:rgba(255,255,255,.06)}
+.hbtk i{display:block;height:100%;transition:width .35s cubic-bezier(.2,.8,.3,1)}
+.hbrow .v{text-align:right;font-size:10.5px;font-weight:700}
+.hbrow .v em{font-style:normal;color:var(--dim);font-weight:400;font-size:9.5px;margin-left:5px}
+
+/* ---------- merit order ---------- */
+.mowrap{overflow-x:auto;background:#04090d;padding:12px 10px 0}
+.mowrap svg{min-width:820px;width:100%;height:auto;display:block}
+.step{transition:.15s}
+.step:hover{filter:brightness(1.3)}
+.scn{display:flex;gap:8px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid var(--edge2);align-items:center}
+.scn button{appearance:none;border:1px solid var(--edge2);background:var(--pane2);color:var(--dim);
+  font:inherit;font-size:10.5px;letter-spacing:.06em;padding:7px 13px;cursor:pointer;transition:.14s}
+.scn button:hover{color:var(--txt);border-color:var(--el)}
+.scn button[aria-pressed="true"]{background:rgba(0,229,255,.14);border-color:var(--el);color:var(--el)}
+.smp{margin-left:auto;font-size:10px;letter-spacing:.14em;color:var(--dim)}
+.smp b{color:var(--hi);font-size:17px;letter-spacing:0;margin-left:8px}
+.monote{padding:12px 16px;font-size:10.5px;color:var(--dim);line-height:1.95;border-top:1px solid var(--edge2)}
+.monote b{color:var(--txt)}
+
+/* ---------- unit table ---------- */
+.uctl{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:11px 16px;border-bottom:1px solid var(--edge2)}
+.uctl button{appearance:none;border:1px solid var(--edge2);background:var(--pane2);color:var(--dim);
+  font:inherit;font-size:10.5px;letter-spacing:.06em;padding:6px 12px;cursor:pointer;transition:.14s}
+.uctl button:hover{color:var(--txt);border-color:var(--el)}
+.uctl button[aria-pressed="true"]{background:rgba(0,229,255,.14);border-color:var(--el);color:var(--el)}
+.uctl .cnt{margin-left:auto;font-size:9.5px;color:var(--dim);letter-spacing:.12em}
+.uctl .cnt b{color:var(--txt)}
+.tblwrap{overflow-x:auto;max-height:560px}
+table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:920px}
+th{text-align:left;font-size:9.5px;letter-spacing:.14em;color:var(--dim);font-weight:400;
+  padding:9px 12px;border-bottom:1px solid var(--edge2);white-space:nowrap;
+  position:sticky;top:0;background:var(--pane);z-index:2}
+th button{appearance:none;background:none;border:0;color:inherit;font:inherit;cursor:pointer;
+  padding:0;display:inline-flex;gap:5px;align-items:center}
+th button:hover{color:var(--el)}
+th[aria-sort] button{color:var(--el)}
+td{padding:8px 12px;border-bottom:1px solid rgba(23,48,64,.6);white-space:nowrap}
+tbody tr:hover td{background:rgba(0,229,255,.05)}
+td.n,th.n{text-align:right}
+.st{font-size:9px;padding:2px 8px;letter-spacing:.08em;font-weight:700}
+.s-full{background:rgba(63,242,140,.14);color:var(--ok)}
+.s-run{background:rgba(0,229,255,.14);color:var(--el)}
+.s-part{background:rgba(255,213,74,.14);color:var(--hi)}
+.s-trip{background:rgba(255,90,82,.18);color:var(--lo)}
+.s-vre{background:rgba(176,124,255,.16);color:var(--pu)}
+.mb{display:inline-block;width:52px;height:6px;background:rgba(255,255,255,.08);
+  vertical-align:middle;margin-left:8px}
+.mb i{display:block;height:100%}
+.ftr{text-align:center;font-size:9.5px;color:#33556b;letter-spacing:.3em;padding:20px 0 4px}
+
+@media(max-width:900px){.phead{grid-template-columns:1fr}.phead .rt{text-align:left}
+  .hb{grid-template-columns:1fr}}
+@media(max-width:640px){
+  .wrap{padding:12px 10px 60px}
+  .nav{padding:0 10px}
+  .nav .rt{width:100%;margin-left:0;padding-bottom:10px}
+  .hbrow{grid-template-columns:80px minmax(0,1fr) 82px;gap:7px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<nav class="nav">
+  <div class="brand">國家電力調度中心 · <em>GRID CONTROL</em></div>
+  <a class="tab" href="index.html">調度總覽 OVERVIEW</a>
+  <a class="tab" href="substations.html">變電所 SUBSTATION</a>
+  <a class="tab" href="generation.html" aria-current="page">機組出力 GENERATION</a>
+  <a class="tab" href="alerts.html">事故時序 INCIDENT</a>
+  <a class="tab" href="report.html">負載報表 REPORT</a>
+  <div class="rt">
+    <div><span class="blip"></span>AGC 自動調節中</div>
+    <div>毛發電量<b>36,668 MW</b></div>
+    <div>快照時間<b>08/14 15:42</b></div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <div class="phead">
+    <div>
+      <h1>機組<em>出力堆疊</em>與競價階梯 DISPATCH STACK</h1>
+      <p>上圖為 24 小時八類燃料的毛發電量堆疊面積圖，點選任一時段可展開該小時的燃料結構；圖例可單獨關閉任一燃料別，座標軸隨即重算。下圖為依邊際成本排序的競價階梯（merit order），切換需求情境會移動需求線並重新求出系統邊際電價 SMP 與邊際機組。</p>
+    </div>
+    <div class="rt">
+      <b>57</b>併網機組<br>
+      <b>18.4%</b>再生能源佔比<br>
+      <b>0.492</b>碳排係數 kg/kWh
+    </div>
+  </div>
+
+  <div class="bal">
+    <div><small>毛發電量 GROSS</small><b>36,668<i>MW</i></b></div>
+    <div><span class="op">=</span><small>系統負載 LOAD</small><b style="color:var(--el)">32,486<i>MW</i></b></div>
+    <div><span class="op">+</span><small>線路損失 3.86%</small><b>1,254<i>MW</i></b></div>
+    <div><span class="op">+</span><small>廠用電 4.26%</small><b>1,562<i>MW</i></b></div>
+    <div><span class="op">+</span><small>中部聯絡線南送</small><b style="color:var(--pu)">1,366<i>MW</i></b></div>
+    <div><small>備轉容量</small><b style="color:var(--ok)">4,182<i>MW</i></b></div>
+    <div><small>備轉容量率</small><b style="color:var(--hi)">12.9<i>%</i></b></div>
+  </div>
+
+  <!-- ============ STACKED AREA ============ -->
+  <div class="pnl">
+    <h2>24 小時燃料別出力堆疊 GENERATION STACK BY FUEL<b id="stTag">15:00 · 36,668 MW</b></h2>
+    <div class="chwrap">
+      <svg id="stack" viewBox="0 0 960 400" role="img" aria-label="24 小時燃料別發電量堆疊面積圖"></svg>
+    </div>
+    <div class="leg" id="leg"></div>
+    <div class="hb" id="hb"></div>
+  </div>
+
+  <!-- ============ MERIT ORDER ============ -->
+  <div class="pnl">
+    <h2>競價階梯與系統邊際電價 MERIT ORDER &amp; SMP<b>以 15:42 可用容量為基準</b></h2>
+    <div class="scn" role="group" aria-label="需求情境">
+      <button type="button" aria-pressed="false" data-s="0">深夜離峰 03:00 · 需求 25,260 MW</button>
+      <button type="button" aria-pressed="true"  data-s="1">目前 15:42 · 需求 35,726 MW</button>
+      <button type="button" aria-pressed="false" data-s="2">傍晚尖峰 17:00 · 需求 37,120 MW</button>
+      <span class="smp">系統邊際電價 SMP<b id="smpv">—</b></span>
+    </div>
+    <div class="mowrap">
+      <svg id="merit" viewBox="0 0 960 380" role="img" aria-label="競價階梯圖"></svg>
+    </div>
+    <div class="monote" id="monote"></div>
+  </div>
+
+  <!-- ============ UNIT TABLE ============ -->
+  <div class="pnl">
+    <h2>機組明細 UNIT DISPATCH LIST<b id="uTag">57 部機組</b></h2>
+    <div class="uctl" role="group" aria-label="燃料別篩選">
+      <button type="button" aria-pressed="true" data-f="*">全部</button>
+      <button type="button" aria-pressed="false" data-f="核能">核能</button>
+      <button type="button" aria-pressed="false" data-f="燃煤">燃煤</button>
+      <button type="button" aria-pressed="false" data-f="燃氣">燃氣</button>
+      <button type="button" aria-pressed="false" data-f="太陽光電">太陽光電</button>
+      <button type="button" aria-pressed="false" data-f="風力">風力</button>
+      <button type="button" aria-pressed="false" data-f="水力">水力</button>
+      <button type="button" aria-pressed="false" data-f="儲能">儲能</button>
+      <button type="button" aria-pressed="false" data-f="汽電共生">汽電共生</button>
+      <span class="cnt">出力合計 <b id="uSum">—</b> · 額定合計 <b id="uCap">—</b></span>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th><button type="button" data-k="nm">機組 ▲▼</button></th>
+          <th><button type="button" data-k="fuel">燃料 ▲▼</button></th>
+          <th class="n"><button type="button" data-k="cap">額定 MW ▲▼</button></th>
+          <th class="n"><button type="button" data-k="out">出力 MW ▲▼</button></th>
+          <th class="n">出力率</th>
+          <th class="n"><button type="button" data-k="cost">邊際成本 ▲▼</button></th>
+          <th class="n">爬升率</th><th>併聯時間</th><th>狀態</th>
+        </tr></thead>
+        <tbody id="units"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="ftr">POWER GRID CONTROL · Generation / 堆疊出力＋競價階梯 Dispatch Stack · DESIGN 40 / 40</div>
+</div>
+
+<script>
+/* ============================================================
+   燃料別 24 小時毛發電量（MW）· 第 15 小時即為 15:42 快照值
+   ============================================================ */
+const FUEL=[
+ {k:'nuc',nm:'核能 NUCLEAR',c:'#b07cff',
+  v:Array(24).fill(3912)},
+ {k:'coa',nm:'燃煤 COAL',c:'#8898a8',
+  v:[8140,7980,7860,7820,7860,8020,8420,8760,9020,9180,9268,9268,9268,9268,9268,9268,9268,9268,9240,9160,9020,8820,8560,8320]},
+ {k:'lng',nm:'燃氣 LNG',c:'#00e5ff',
+  v:[8420,7860,7480,7280,7420,8140,9860,11240,12180,12640,12820,13060,13340,13580,13720,13842,14260,15080,15640,15320,14480,13260,11640,9820]},
+ {k:'sol',nm:'太陽光電 SOLAR',c:'#ffd54a',
+  v:[0,0,0,0,0,0,318,1246,2384,3418,4162,4586,4742,4680,4528,4286,3402,1968,642,0,0,0,0,0]},
+ {k:'wnd',nm:'風力 WIND',c:'#3ff28c',
+  v:[2684,2742,2806,2848,2792,2668,2504,2386,2248,2164,2086,2018,1962,1948,2024,2148,2312,2486,2604,2718,2806,2852,2818,2746]},
+ {k:'hyd',nm:'水力 HYDRO',c:'#4aa8ff',
+  v:[336,332,330,328,330,338,486,842,1108,1246,1318,1424,1508,1572,1630,1682,1758,1846,1792,1604,1186,742,486,368]},
+ {k:'ess',nm:'儲能放電 ESS',c:'#ff8f3f',
+  v:[0,0,0,0,0,0,0,0,0,0,0,0,124,386,682,942,1186,1420,1348,986,542,168,0,0]},
+ {k:'cog',nm:'汽電共生 CO-GEN',c:'#ff5a52',
+  v:[512,504,498,494,498,514,548,572,584,588,592,596,594,590,588,588,596,608,612,604,588,566,542,524]}
+];
+const on={};FUEL.forEach(f=>on[f.k]=true);
+let hour=15;
+const CAPLINE=38000;                    // 可調度容量上限
+const num=v=>Math.round(v).toLocaleString('en-US');
+const S=a=>a.reduce((x,y)=>x+y,0);
+
+function drawStack(){
+  const act=FUEL.filter(f=>on[f.k]);
+  const W=960,H=400,L=62,R=118,T=24,B=40;
+  const tot=Array.from({length:24},(_,i)=>S(act.map(f=>f.v[i])));
+  const ymax=Math.max(40000,Math.max(...tot)*1.08);
+  const X=i=>L+i*(W-L-R)/23;
+  const Y=v=>H-B-v/ymax*(H-T-B);
+  let s='';
+  for(let i=0;i<=5;i++){
+    const yy=T+i*(H-T-B)/5,val=ymax-ymax*i/5;
+    s+=`<line class="gl" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/>
+        <text class="tk" x="${L-7}" y="${yy+3.5}" text-anchor="end">${(val/1000).toFixed(0)}K</text>`;
+  }
+  // 堆疊面積（由下往上累加）
+  const base=Array(24).fill(0);
+  act.forEach(f=>{
+    const top=base.map((b,i)=>b+f.v[i]);
+    const up=top.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const dn=base.map((v,i)=>`${X(23-i).toFixed(1)},${Y(base[23-i]).toFixed(1)}`).join(' ');
+    s+=`<polygon points="${up} ${dn}" fill="${f.c}" fill-opacity=".55" stroke="${f.c}" stroke-width="1"/>`;
+    for(let i=0;i<24;i++)base[i]=top[i];
+  });
+  // 容量上限
+  s+=`<line x1="${L}" y1="${Y(CAPLINE)}" x2="${W-R}" y2="${Y(CAPLINE)}" stroke="#ff5a52"
+       stroke-width="1.4" stroke-dasharray="6 5"/>
+      <text class="tk" x="${W-R}" y="${Y(CAPLINE)-6}" text-anchor="end" fill="#ff5a52">可調度容量上限 38,000 MW</text>`;
+  // 時刻軸與點擊區
+  for(let i=0;i<24;i++){
+    const x0=L+(i-.5)*(W-L-R)/23,w=(W-L-R)/23;
+    s+=`<rect class="hit${i===hour?' sel':''}" data-h="${i}" x="${Math.max(L,x0).toFixed(1)}" y="${T}"
+         width="${w.toFixed(1)}" height="${H-T-B}" tabindex="0" role="button"
+         aria-label="選擇 ${String(i).padStart(2,'0')} 時，合計 ${num(tot[i])} 百萬瓦"/>`;
+    if(i%3===0)s+=`<text class="tk" x="${X(i).toFixed(1)}" y="${H-B+15}" text-anchor="middle">${String(i).padStart(2,'0')}</text>`;
+  }
+  // 選定時刻游標
+  s+=`<line x1="${X(hour)}" y1="${T}" x2="${X(hour)}" y2="${H-B}" stroke="#fff" stroke-width="1.2" stroke-dasharray="3 4"/>
+      <circle cx="${X(hour)}" cy="${Y(tot[hour])}" r="5" fill="#050b10" stroke="#fff" stroke-width="2.2"/>
+      <text class="lbl" x="${X(hour)+9}" y="${Y(tot[hour])-9}" fill="#fff">${num(tot[hour])} MW</text>`;
+  // 右側末端標籤
+  let acc=0;
+  act.forEach(f=>{
+    const mid=Y(acc+f.v[23]/2);acc+=f.v[23];
+    if(f.v[23]>420)s+=`<text class="lbl" x="${W-R+8}" y="${mid+3}" fill="${f.c}">${f.nm.split(' ')[0]} ${num(f.v[23])}</text>`;
+  });
+  s+=`<text class="lbl" x="${L}" y="16">毛發電量 MW · 2026-08-14 · ${act.length}/8 類燃料顯示中</text>`;
+  const el=document.getElementById('stack');
+  el.innerHTML=s;
+  el.setAttribute('aria-label',`24 小時燃料別發電量堆疊面積圖，目前顯示 ${act.length} 類燃料，`+
+    `第 ${hour} 時合計 ${num(tot[hour])} 百萬瓦，全日最高 ${num(Math.max(...tot))} 百萬瓦`);
+  el.querySelectorAll('.hit').forEach(r=>{
+    const go=()=>{hour=+r.dataset.h;drawStack();drawHB();};
+    r.addEventListener('click',go);
+    r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+  });
+  document.getElementById('stTag').textContent=
+    String(hour).padStart(2,'0')+':00 · '+num(tot[hour])+' MW';
+}
+
+function drawHB(){
+  const tot=S(FUEL.map(f=>f.v[hour]));
+  const mx=Math.max(...FUEL.map(f=>f.v[hour]));
+  document.getElementById('hb').innerHTML=FUEL.map(f=>`
+    <div class="hbrow">
+      <div class="n" style="color:${on[f.k]?'#d8e8f2':'#3d5666'}">${f.nm.split(' ')[0]}</div>
+      <div class="hbtk"><i style="width:${(f.v[hour]/mx*100).toFixed(1)}%;background:${f.c}"></i></div>
+      <div class="v" style="color:${f.c}">${num(f.v[hour])}<em>${(f.v[hour]/tot*100).toFixed(1)}%</em></div>
+    </div>`).join('')+
+    `<div class="hbrow" style="border-bottom:0">
+      <div class="n">合計</div><div class="hbtk"><i style="width:100%;background:#173040"></i></div>
+      <div class="v">${num(tot)}<em>MW</em></div></div>
+    <div class="hbrow" style="border-bottom:0">
+      <div class="n" style="color:#6a8599">再生能源</div>
+      <div class="hbtk"><i style="width:${((FUEL[3].v[hour]+FUEL[4].v[hour]+316)/tot*100).toFixed(1)}%;background:#3ff28c"></i></div>
+      <div class="v" style="color:#3ff28c">${((FUEL[3].v[hour]+FUEL[4].v[hour]+316)/tot*100).toFixed(1)}<em>%</em></div></div>`;
+}
+
+document.getElementById('leg').innerHTML=FUEL.map(f=>
+  `<button type="button" aria-pressed="true" data-k="${f.k}"><i style="background:${f.c}"></i>${f.nm}</button>`
+).join('')+'<span class="hint">再生能源＝太陽光電＋風力＋川流水力 316 MW（不含抽蓄）</span>';
+document.querySelectorAll('#leg button').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.k;
+  if(on[k]&&FUEL.filter(f=>on[f.k]).length===1)return;
+  on[k]=!on[k];b.setAttribute('aria-pressed',String(on[k]));drawStack();drawHB();
+}));
+
+/* ============================================================
+   競價階梯 MERIT ORDER
+   ============================================================ */
+const MO=[
+ {nm:'太陽光電',   cap:4286,cost:0.00,c:'#ffd54a',note:'必須運轉，零燃料成本'},
+ {nm:'風力',       cap:2148,cost:0.00,c:'#3ff28c',note:'必須運轉，零燃料成本'},
+ {nm:'川流水力',   cap: 316,cost:0.00,c:'#4aa8ff',note:'必須運轉'},
+ {nm:'核能',       cap:3922,cost:1.02,c:'#b07cff',note:'基載，四部機併聯'},
+ {nm:'台中燃煤',   cap:3300,cost:1.68,c:'#98a8b8',note:'超超臨界 6 部'},
+ {nm:'大林燃煤',   cap:1600,cost:1.74,c:'#8898a8',note:'新建 2 部'},
+ {nm:'林口燃煤',   cap:1600,cost:1.86,c:'#7c8c9c',note:'#2 跳脫，剩 2 部可用'},
+ {nm:'和平燃煤',   cap:1320,cost:1.98,c:'#70808f',note:'民營 IPP'},
+ {nm:'興達燃煤',   cap:1500,cost:2.14,c:'#647483',note:'亞臨界老舊機組'},
+ {nm:'汽電共生',   cap: 610,cost:2.28,c:'#ff5a52',note:'麥寮／和平汽電'},
+ {nm:'大潭 CCGT',  cap:4620,cost:2.86,c:'#00e5ff',note:'複循環，7 部'},
+ {nm:'通霄 CCGT',  cap:2760,cost:2.94,c:'#20d8f0',note:'複循環，3 部'},
+ {nm:'海湖 CCGT',  cap:1320,cost:3.02,c:'#3ccbe6',note:'複循環，2 部'},
+ {nm:'興達 CCGT',  cap:2340,cost:3.14,c:'#54bedb',note:'複循環，3 部'},
+ {nm:'南部 CCGT',  cap:1440,cost:3.22,c:'#68b1d0',note:'複循環，2 部'},
+ {nm:'大林 CCGT',  cap:1200,cost:3.28,c:'#7aa4c4',note:'複循環，2 部'},
+ {nm:'協和氣渦輪', cap:1000,cost:3.42,c:'#8c97b8',note:'尖載機組，2 部'},
+ {nm:'抽蓄水力',   cap:1580,cost:3.68,c:'#4a8fff',note:'明潭／大觀二廠'},
+ {nm:'電池儲能',   cap:1320,cost:4.24,c:'#ff8f3f',note:'調頻備轉，12 站'}
+];
+const SCN=[
+ {nm:'深夜離峰 03:00',need:25260,load:22380,txt:'太陽光電為零、風力上升，核能與燃煤即可覆蓋大部分需求，燃氣僅需投入約 4,658 MW。'},
+ {nm:'目前 15:42',    need:35726,load:32486,txt:'再生能源出力 6,750 MW 全數併網，燃氣機組已投入 13,842 MW，抽蓄水力成為邊際機組。'},
+ {nm:'傍晚尖峰 17:00',need:37120,load:34820,txt:'太陽光電退場、負載升至全日最高，電池儲能被叫進調度，邊際電價跳升至最高一階。'}
+];
+let scn=1;
+function drawMerit(){
+  const W=960,H=380,L=62,R=24,T=26,B=64;
+  const totalCap=S(MO.map(m=>m.cap));
+  const cmax=Math.max(...MO.map(m=>m.cost))*1.18;
+  const X=v=>L+v/totalCap*(W-L-R);
+  const Y=v=>H-B-v/cmax*(H-T-B);
+  const need=SCN[scn].need;
+  let s='',acc=0,marginal=null,margAcc=0;
+  for(let i=0;i<=4;i++){
+    const yy=T+i*(H-T-B)/4,val=cmax-cmax*i/4;
+    s+=`<line class="gl" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/>
+        <text class="tk" x="${L-7}" y="${yy+3.5}" text-anchor="end">${val.toFixed(2)}</text>`;
+  }
+  MO.forEach(m=>{
+    const x0=X(acc),x1=X(acc+m.cap),y=Y(m.cost);
+    const used=acc<need;
+    s+=`<rect class="step" x="${x0.toFixed(1)}" y="${y.toFixed(1)}" width="${(x1-x0).toFixed(1)}"
+         height="${(H-B-y).toFixed(1)}" fill="${m.c}" fill-opacity="${used?'.62':'.16'}"
+         stroke="${m.c}" stroke-width="1.2">
+         <title>${m.nm}：可用 ${num(m.cap)} MW，邊際成本 ${m.cost.toFixed(2)} 元/度（${m.note}）</title></rect>`;
+    if(acc<need&&acc+m.cap>=need){marginal=m;margAcc=acc;}
+    acc+=m.cap;
+  });
+  // 需求線
+  s+=`<line x1="${X(need)}" y1="${T-8}" x2="${X(need)}" y2="${H-B}" stroke="#fff" stroke-width="1.8"
+       stroke-dasharray="5 4"/>
+      <text class="lbl" x="${X(need)-8}" y="${T-12}" text-anchor="end" fill="#fff">需求 ${num(need)} MW</text>`;
+  if(marginal){
+    s+=`<line x1="${L}" y1="${Y(marginal.cost)}" x2="${X(need)}" y2="${Y(marginal.cost)}"
+         stroke="#ffd54a" stroke-width="1.6" stroke-dasharray="4 4"/>
+        <circle cx="${X(need)}" cy="${Y(marginal.cost)}" r="5.5" fill="#050b10" stroke="#ffd54a" stroke-width="2.4"/>
+        <text class="lbl" x="${X(need)+10}" y="${Y(marginal.cost)-8}" fill="#ffd54a">SMP ${marginal.cost.toFixed(2)} 元/度 · 邊際機組 ${marginal.nm}</text>`;
+  }
+  // x 軸刻度
+  for(let v=0;v<=totalCap;v+=5000){
+    s+=`<line class="gl" x1="${X(v)}" y1="${H-B}" x2="${X(v)}" y2="${H-B+5}"/>
+        <text class="tk" x="${X(v)}" y="${H-B+18}" text-anchor="middle">${(v/1000).toFixed(0)}K</text>`;
+  }
+  s+=`<text class="lbl" x="${L}" y="${H-14}">累積可用容量 MW →　合計 ${num(totalCap)} MW</text>
+      <text class="lbl" x="${L}" y="16">邊際成本 NT$/kWh ↑</text>`;
+  document.getElementById('merit').innerHTML=s;
+  document.getElementById('merit').setAttribute('aria-label',
+    `競價階梯圖：19 組機組依邊際成本由低到高排列，累積可用容量 ${num(totalCap)} 百萬瓦；`+
+    `${SCN[scn].nm} 需求 ${num(need)} 百萬瓦，邊際機組為${marginal?marginal.nm:'無'}，`+
+    `系統邊際電價 ${marginal?marginal.cost.toFixed(2):'—'} 元每度`);
+  document.getElementById('smpv').textContent=(marginal?marginal.cost.toFixed(2):'—')+' 元/度';
+  const inMarg=need-margAcc;
+  document.getElementById('monote').innerHTML=
+    `<b>${SCN[scn].nm}</b>｜系統負載 <b>${num(SCN[scn].load)} MW</b>，加計線損、廠用電與聯絡線外送後之發電需求為 <b>${num(need)} MW</b>。
+     依邊際成本排序，需求線落在「<b>${marginal?marginal.nm:'—'}</b>」這一階，該階已投入 <b>${num(inMarg)} MW</b>／可用 <b>${num(marginal?marginal.cap:0)} MW</b>，
+     系統邊際電價 SMP＝<b>${marginal?marginal.cost.toFixed(2):'—'} 元/度</b>。${SCN[scn].txt}
+     零成本的再生能源合計 <b>6,750 MW</b> 恆排在最前，因此其佔比越高、SMP 越低。`;
+}
+document.querySelectorAll('.scn button').forEach(b=>b.addEventListener('click',()=>{
+  scn=+b.dataset.s;
+  document.querySelectorAll('.scn button').forEach(o=>o.setAttribute('aria-pressed',String(o===b)));
+  drawMerit();
+}));
+
+/* ============================================================
+   機組明細（57 部）
+   ============================================================ */
+const U=[];
+const push=(nm,fuel,cap,out,cost,ramp,sync)=>U.push({nm,fuel,cap,out,cost,ramp,sync});
+// 核能
+[['核一 #2',1030,1025],['核二 #2',990,985],['核三 #1',951,951],['核三 #2',951,951]]
+  .forEach(([n,c,o])=>push(n,'核能',c,o,1.02,3,'基載連續'));
+// 燃煤
+for(let i=5;i<=10;i++)push('台中 #'+i,'燃煤',550,550,1.68,8,'基載連續');
+[['大林 #1',800,800],['大林 #2',800,800]].forEach(([n,c,o])=>push(n,'燃煤',c,o,1.74,10,'基載連續'));
+[['林口 #1',800,800],['林口 #2',800,0],['林口 #3',800,800]]
+  .forEach(([n,c,o])=>push(n,'燃煤',c,o,1.86,10,o?'基載連續':'08/14 11:26 跳脫'));
+[['和平 #1',660,660],['和平 #2',660,660]].forEach(([n,c,o])=>push(n,'燃煤',c,o,1.98,9,'基載連續'));
+[['興達 #1',500,448],['興達 #3',500,500],['興達 #4',500,500]]
+  .forEach(([n,c,o])=>push(n,'燃煤',c,o,2.14,7,'基載連續'));
+// 燃氣
+for(let i=1;i<=7;i++)push('大潭 CC'+i,'燃氣',660,620,2.86,26,i===7?'08/14 13:04 併聯':'06:20 併聯');
+for(let i=1;i<=3;i++)push('通霄 CC'+i,'燃氣',920,892,2.94,32,'05:40 併聯');
+for(let i=1;i<=2;i++)push('海湖 CC'+i,'燃氣',660,623,3.02,24,'06:00 併聯');
+for(let i=1;i<=3;i++)push('興達 CC'+i,'燃氣',780,720,3.14,28,'07:10 併聯');
+for(let i=1;i<=2;i++)push('南部 CC'+i,'燃氣',720,680,3.22,26,'08:25 併聯');
+for(let i=1;i<=2;i++)push('大林 CC'+i,'燃氣',600,550,3.28,22,'09:15 併聯');
+[['協和 #3',500,480],['協和 #4',500,480]].forEach(([n,c,o])=>push(n,'燃氣',c,o,3.42,44,'12:50 併聯'));
+// 太陽光電
+[['彰濱光電場',1180,862],['台南鹽灘地',1560,1148],['屏東養殖共生',960,704],['分散式屋頂',2140,1572]]
+  .forEach(([n,c,o])=>push(n,'太陽光電',c,o,0,0,'日出自動併網'));
+// 風力
+[['離岸一期 海洋風場',640,486],['離岸二期 彰芳西島',980,742],['離岸三期 大彰化',790,598],['陸域風機群',428,322]]
+  .forEach(([n,c,o])=>push(n,'風力',c,o,0,0,'連續併網'));
+// 水力
+for(let i=1;i<=4;i++)push('明潭抽蓄 #'+i,'水力',270,250,3.68,60,'11:40 轉發電');
+push('大觀二廠抽蓄','水力',500,366,3.68,55,'12:15 轉發電');
+push('川流水力機群','水力',420,316,0,0,'連續併網');
+// 儲能與汽電共生
+push('電網級電池儲能（12 站）','儲能',1320,942,4.24,120,'14:30 起放電');
+push('麥寮汽電','汽電共生',360,348,2.28,6,'基載連續');
+push('和平汽電','汽電共生',250,240,2.28,6,'基載連續');
+
+const FCOL={核能:'#b07cff',燃煤:'#8898a8',燃氣:'#00e5ff',太陽光電:'#ffd54a',
+            風力:'#3ff28c',水力:'#4aa8ff',儲能:'#ff8f3f',汽電共生:'#ff5a52'};
+let uf='*',uk='out',ud=-1;
+function drawUnits(){
+  const list=U.filter(u=>uf==='*'||u.fuel===uf)
+    .sort((a,b)=>{let x=a[uk],y=b[uk];
+      if(typeof x==='string')return x.localeCompare(y)*ud;
+      return (x-y)*ud;});
+  document.getElementById('units').innerHTML=list.map(u=>{
+    const r=u.out/u.cap*100;
+    const cls=u.out===0?'s-trip':['太陽光電','風力'].includes(u.fuel)?'s-vre':
+      r>=99?'s-full':r>=80?'s-run':'s-part';
+    const lab=u.out===0?'跳脫停機':['太陽光電','風力'].includes(u.fuel)?'隨機能源':
+      r>=99?'滿載':r>=80?'併聯運轉':'部分負載';
+    const c=FCOL[u.fuel];
+    return `<tr>
+      <td>${u.nm}</td>
+      <td><span style="color:${c}">■</span> ${u.fuel}</td>
+      <td class="n">${num(u.cap)}</td>
+      <td class="n" style="color:${u.out?'#d8e8f2':'#4a6577'}">${num(u.out)}</td>
+      <td class="n">${r.toFixed(1)}%<span class="mb"><i style="width:${r.toFixed(0)}%;background:${
+        u.out===0?'#ff5a52':c}"></i></span></td>
+      <td class="n">${u.cost.toFixed(2)}</td>
+      <td class="n">${u.ramp?u.ramp+' MW/min':'—'}</td>
+      <td style="color:#6a8599">${u.sync}</td>
+      <td><span class="st ${cls}">${lab}</span></td></tr>`;
+  }).join('');
+  document.getElementById('uSum').textContent=num(S(list.map(u=>u.out)))+' MW';
+  document.getElementById('uCap').textContent=num(S(list.map(u=>u.cap)))+' MW';
+  document.getElementById('uTag').textContent=list.length+' 部機組'+(uf==='*'?'':' · '+uf);
+}
+document.querySelectorAll('.uctl button').forEach(b=>b.addEventListener('click',()=>{
+  uf=b.dataset.f;
+  document.querySelectorAll('.uctl button').forEach(o=>o.setAttribute('aria-pressed',String(o===b)));
+  drawUnits();
+}));
+document.querySelectorAll('thead th button').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.k;
+  if(uk===k)ud*=-1;else{uk=k;ud=-1;}
+  document.querySelectorAll('thead th').forEach(th=>th.removeAttribute('aria-sort'));
+  b.closest('th').setAttribute('aria-sort',ud===1?'ascending':'descending');
+  drawUnits();
+}));
+
+drawStack();drawHB();drawMerit();drawUnits();
+</script>
+</body>
+</html>

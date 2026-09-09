@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>37 · 派工看板 — FLEET DISPATCH</title>
+<style>
+:root{
+  --map:#e8e4dc;--road:#ffffff;--road2:#f6f2ea;--water:#c6ddea;--park:#d6e6ce;
+  --ink:#1c2430;--dim:#6d7889;--panel:#ffffff;--edge:#e2e0da;
+  --go:#16b364;--busy:#f79009;--idle:#7f8b9c;--sos:#e5484d;--route:#3b6bff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--map);color:var(--ink);min-height:100vh;font-size:13.5px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible{outline:2px solid var(--route);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:300;text-decoration:none;color:#fff;
+  background:var(--ink);padding:12px 22px;border-radius:999px;font-weight:600;font-size:13px;
+  box-shadow:0 6px 20px rgba(28,36,48,.4);transition:.22s}
+.home:hover{background:var(--route);transform:translateY(-3px)}
+
+.shell{max-width:1520px;margin:0 auto;padding:20px 20px 70px}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:14px;
+  box-shadow:0 8px 28px rgba(28,36,48,.10);overflow:hidden;margin-bottom:18px}
+
+.brand{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid var(--edge);flex-wrap:wrap}
+.brand .l{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#3b6bff,#16b364);
+  display:grid;place-items:center;color:#fff;font-size:19px}
+.brand b{font-size:16px;display:block;font-weight:700;letter-spacing:-.01em}
+.brand small{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.brand .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:10.5px;color:var(--dim)}
+.brand .rt b{display:block;font-size:19px;color:var(--ink);font-weight:700;letter-spacing:-.02em}
+.brand .rt b.g{color:var(--go)}.brand .rt b.w{color:var(--busy)}.brand .rt b.b{color:var(--route)}
+.pagenav{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--edge);background:var(--road2);flex-wrap:wrap}
+.pagenav a{flex:1;min-width:110px;text-align:center;padding:9px 6px;border-radius:8px;text-decoration:none;
+  font-size:12px;font-weight:700;color:var(--dim);background:var(--panel);border:1px solid var(--edge);transition:.15s}
+.pagenav a:hover{color:var(--route);border-color:var(--route);box-shadow:0 2px 8px rgba(59,107,255,.18)}
+.pagenav a[aria-current]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* ---------- flow bar + chart ---------- */
+.metrics{display:grid;grid-template-columns:1.35fr 1fr;gap:0}
+@media(max-width:960px){.metrics{grid-template-columns:1fr}}
+.metrics>div{padding:18px}
+.metrics>div:first-child{border-right:1px solid var(--edge)}
+@media(max-width:960px){.metrics>div:first-child{border-right:0;border-bottom:1px solid var(--edge)}}
+.metrics h2{font-size:13px;font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;
+  align-items:baseline;flex-wrap:wrap;gap:10px}
+.metrics h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.1em}
+.flow{display:flex;height:34px;border-radius:8px;overflow:hidden;margin-top:14px;background:#eceae4}
+.flow i{display:block;height:100%;transition:width .4s cubic-bezier(.2,.8,.3,1);position:relative}
+.flow i span{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:11.5px;font-weight:700}
+.fl-q{background:var(--idle)}.fl-a{background:var(--route)}.fl-r{background:var(--busy)}.fl-d{background:var(--go)}
+.flowlg{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--dim)}
+.flowlg span{display:flex;align-items:center;gap:7px}
+.flowlg i{width:13px;height:13px;border-radius:3px;display:block}
+.flowlg b{color:var(--ink)}
+.metrics svg{width:100%;height:auto;display:block;margin-top:10px}
+.cg{stroke:#eceae4;stroke-width:1}
+.ct{fill:#9aa4b1;font-size:9.5px}
+.cline{fill:none;stroke:var(--go);stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}
+.ctarget{fill:none;stroke:var(--route);stroke-width:1.8;stroke-dasharray:6 5}
+.cdot{fill:#fff;stroke:var(--go);stroke-width:2.4}
+.carea{fill:rgba(22,179,100,.10)}
+
+/* ---------- filters ---------- */
+.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:13px 18px;background:var(--road2);
+  border-bottom:1px solid var(--edge);border-top:1px solid var(--edge)}
+.chipset{display:flex;gap:6px;flex-wrap:wrap}
+.chipset button{appearance:none;font:inherit;font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--edge);background:var(--panel);color:var(--dim);cursor:pointer;transition:.15s}
+.chipset button:hover{color:var(--ink)}
+.chipset button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ctl .n{margin-left:auto;font-size:12px;color:var(--dim)}
+.ctl .n b{color:var(--route);font-size:16px;font-weight:700}
+
+/* ---------- kanban ---------- */
+.kwrap{overflow-x:auto;padding:18px}
+.kban{display:grid;grid-template-columns:repeat(4,minmax(258px,1fr));gap:14px;min-width:1060px}
+.col{background:var(--road2);border:1px solid var(--edge);border-radius:12px;display:flex;flex-direction:column}
+.col>h3{display:flex;align-items:center;gap:9px;padding:13px 14px;border-bottom:1px solid var(--edge);
+  font-size:12.5px;font-weight:700}
+.col>h3 i{width:9px;height:9px;border-radius:50%;display:block}
+.col>h3 b{margin-left:auto;font-size:12px;background:var(--panel);border:1px solid var(--edge);
+  border-radius:999px;padding:2px 10px;color:var(--dim)}
+.lane{padding:11px;display:flex;flex-direction:column;gap:11px;min-height:120px}
+.job{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:12px 13px;
+  box-shadow:0 2px 8px rgba(28,36,48,.06);animation:in .3s ease both}
+@keyframes in{from{opacity:0;transform:translateY(-8px)}}
+.job .t{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.job .t b{font-size:12.5px;font-weight:700}
+.pri{font-size:10px;padding:3px 8px;border-radius:5px;font-weight:700;white-space:nowrap}
+.pri-h{background:rgba(229,72,77,.12);color:var(--sos)}
+.pri-m{background:rgba(247,144,9,.15);color:#b56a05}
+.pri-l{background:rgba(127,139,156,.14);color:var(--idle)}
+.job .ad{font-size:11.5px;color:var(--dim);line-height:1.75}
+.job .ad em{font-style:normal;color:var(--go);font-weight:700;margin-right:5px}
+.job .ad s{text-decoration:none;color:var(--sos);font-weight:700;margin-right:5px}
+.job .meta{margin-top:8px;font-size:11px;color:#98a1af;display:flex;gap:10px;flex-wrap:wrap}
+.job .veh{margin-top:9px;font-size:11.5px;font-weight:700;color:var(--route);display:flex;align-items:center;gap:7px}
+.job .veh i{width:7px;height:7px;border-radius:50%;background:var(--route);display:block}
+.job .acts{display:flex;gap:6px;margin-top:10px}
+.job .acts button{appearance:none;font:inherit;font-size:11.5px;font-weight:700;padding:7px 10px;border-radius:7px;
+  border:1px solid var(--edge);background:var(--panel);color:var(--dim);cursor:pointer;transition:.15s}
+.job .acts button:hover:not(:disabled){color:var(--ink);border-color:var(--ink)}
+.job .acts button.go{flex:1;background:var(--route);border-color:var(--route);color:#fff}
+.job .acts button.go:hover{background:#2c56dd;border-color:#2c56dd}
+.job .acts button:disabled{opacity:.45;cursor:not-allowed}
+.job.done{opacity:.9;background:#f7fbf8;border-color:#d5eadd}
+.job.done .t b{color:var(--go)}
+.emptycol{padding:26px 12px;text-align:center;font-size:11.5px;color:#a4adb9}
+
+/* ---------- log ---------- */
+.log{padding:16px 18px}
+.log h2{font-size:13px;font-weight:700;margin-bottom:12px;display:flex;justify-content:space-between;
+  align-items:baseline;flex-wrap:wrap;gap:10px}
+.log h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.1em}
+.log ol{list-style:none;max-height:230px;overflow:auto}
+.log li{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid #f1efe9;font-size:12.5px}
+.log li:last-child{border-bottom:0}
+.log li time{color:var(--dim);font-size:11.5px;flex:0 0 62px;font-variant-numeric:tabular-nums}
+.log li b{font-weight:700}
+.log li.new{animation:flash 1.2s ease both}
+@keyframes flash{from{background:#e6edff}}
+.ftr{text-align:center;font-size:10.5px;color:rgba(28,36,48,.42);letter-spacing:.26em;padding:10px 0}
+
+@media(max-width:640px){
+  .shell{padding:14px 12px 70px}
+  .brand .rt{width:100%;margin-left:0;justify-content:space-between;gap:10px}
+  .ctl .n{margin-left:0}
+  .kwrap{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<div class="shell">
+  <div class="card">
+    <div class="brand">
+      <div class="l">📋</div>
+      <div><b>派工看板 · 工單流轉</b><small>DISPATCH KANBAN BOARD · 2026 / 10 / 12</small></div>
+      <div class="rt">
+        <div><b id="k-total">20</b>今日工單</div>
+        <div><b class="w" id="k-q">7</b>待派工</div>
+        <div><b class="b" id="k-run">4</b>執行中</div>
+        <div><b class="g" id="k-done">6</b>已完成</div>
+        <div><b>4.2</b>平均回應 分</div>
+      </div>
+    </div>
+
+    <nav class="pagenav" aria-label="子頁導覽">
+      <a href="index.html">調度地圖</a>
+      <a href="list.html">車籍登記簿</a>
+      <a href="dispatch.html" aria-current="page">派工看板</a>
+      <a href="detail.html">車輛詳情</a>
+      <a href="report.html">營運報表</a>
+    </nav>
+
+    <div class="metrics">
+      <div>
+        <h2>工單狀態流向 <span>WORK ORDER FLOW · 隨看板操作即時更新</span></h2>
+        <div class="flow" id="flow" role="img" aria-label="工單狀態分布長條圖"></div>
+        <div class="flowlg">
+          <span><i class="fl-q"></i>待派工 <b id="lg-q">7</b></span>
+          <span><i class="fl-a"></i>已指派 <b id="lg-a">3</b></span>
+          <span><i class="fl-r"></i>執行中 <b id="lg-r">4</b></span>
+          <span><i class="fl-d"></i>已完成 <b id="lg-d">6</b></span>
+          <span style="margin-left:auto">可調度待命車輛 <b id="lg-idle">11</b> 輛</span>
+        </div>
+      </div>
+      <div>
+        <h2>完成累積 vs 目標 <span>CUMULATIVE COMPLETION · 08:00 – 20:00</span></h2>
+        <svg viewBox="0 0 440 190" role="img"
+          aria-label="今日工單完成累積折線圖，實線為 08 時至 11 時實績共 6 件，虛線為全日 20 件目標曲線">
+          <g id="cum"></g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <div class="chipset" role="group" aria-label="優先度篩選">
+        <button data-p="all" aria-pressed="true">全部優先度</button>
+        <button data-p="h" aria-pressed="false">緊急</button>
+        <button data-p="m" aria-pressed="false">一般</button>
+        <button data-p="l" aria-pressed="false">低</button>
+      </div>
+      <div class="chipset" role="group" aria-label="工單類型篩選">
+        <button data-c="all" aria-pressed="true">全部類型</button>
+        <button data-c="冷鏈配送" aria-pressed="false">冷鏈配送</button>
+        <button data-c="一般貨運" aria-pressed="false">一般貨運</button>
+        <button data-c="大宗配送" aria-pressed="false">大宗配送</button>
+        <button data-c="回收取件" aria-pressed="false">回收取件</button>
+        <button data-c="緊急維修" aria-pressed="false">緊急維修</button>
+      </div>
+      <span class="n"><b id="cnt">20</b> / 20 張工單顯示中</span>
+    </div>
+
+    <div class="kwrap">
+      <div class="kban" id="kban"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="log">
+      <h2>調度作業紀錄 <span>DISPATCH ACTIVITY LOG · 最新在上</span></h2>
+      <ol id="log"></ol>
+    </div>
+  </div>
+
+  <div class="ftr">DISPATCH / KANBAN SWIMLANES · DESIGN 37 / 40</div>
+</div>
+
+<script>
+/* id, 類型, 優先度, 起, 訖, 距離km, 預估分, 需求, 車輛, 欄位 */
+const JOBS=[
+ ["D-4821","冷鏈配送","h","大同區 民權西路 118 號","信義區 松高路 68 號",12.4,28,"需冷藏車 · 4°C",null,"q"],
+ ["D-4822","一般貨運","m","總調度站","中山區 南京東路三段 200 號",6.8,18,"3.5T 廂型",null,"q"],
+ ["D-4823","回收取件","l","萬華區 西園路 42 號","總調度站",9.2,24,"棧板回收 6 板",null,"q"],
+ ["D-4824","大宗配送","m","內湖科技園區 瑞光路","南港軟體園區",7.6,20,"需尾門升降",null,"q"],
+ ["D-4825","緊急維修","h","總調度站","大安區 復興南路一段",4.2,12,"工程車 · 電力搶修",null,"q"],
+ ["D-4826","一般貨運","l","總調度站","文山區 羅斯福路六段",14.8,38,"一般件 22 箱",null,"q"],
+ ["D-4827","冷鏈配送","m","大安區 仁愛路四段","信義區 基隆路一段",5.4,14,"冷藏 4°C · 12 箱",null,"q"],
+
+ ["D-4819","回收取件","m","中山區 松江路 236 號","內湖區 洲子街 88 號",8.4,22,"機車快遞 · 文件件","TR-11 江明峰","a"],
+ ["D-4820","一般貨運","m","總調度站","板橋區 文化路一段 66 號",16.2,42,"3.5T 廂型 · 18 箱","TR-05 徐志豪","a"],
+ ["D-4828","冷鏈配送","h","士林區 承德路四段","大安區 敦化南路二段",11.6,30,"冷藏 2°C · 疫苗鏈","TR-06 陳俊宏","a"],
+
+ ["D-4810","冷鏈配送","h","大同區 民權西路","信義區 松高路",12.4,28,"剩餘 9 分抵達","TR-01 林志偉","r"],
+ ["D-4808","冷鏈配送","m","萬華區 康定路","內湖科技園區 瑞光路",18.6,46,"剩餘 16 分抵達","TR-03 周聖凱","r"],
+ ["D-4815","大宗配送","m","總調度站","南港軟體園區 三重路",13.2,34,"剩餘 24 分抵達","TR-08 蘇建成","r"],
+ ["D-4816","緊急維修","h","總調度站","中山區 長安東路二段",5.8,15,"剩餘 6 分抵達","TR-18 康仲平","r"],
+
+ ["D-4801","一般貨運","m","總調度站","大安區 和平東路二段",7.4,20,"08:12 – 08:46 · 準時","TR-04 王建良","d"],
+ ["D-4802","冷鏈配送","h","士林區 基河路","中正區 羅斯福路一段",12.8,32,"08:30 – 09:14 · 準時","TR-15 吳承翰","d"],
+ ["D-4803","回收取件","l","松山區 八德路四段","總調度站",6.2,18,"09:05 – 09:38 · 準時","TR-20 郭柏均","d"],
+ ["D-4804","大宗配送","m","總調度站","新莊區 中正路 520 號",15.4,40,"09:40 – 10:32 · 延遲 8 分","TR-09 李國華","d"],
+ ["D-4805","一般貨運","m","中山區 建國北路","北投區 石牌路一段",9.8,26,"10:15 – 10:52 · 準時","TR-29 阮文龍","d"],
+ ["D-4806","冷鏈配送","m","大同區 承德路二段","信義區 忠孝東路五段",10.6,28,"11:02 – 11:41 · 準時","TR-23 溫子誠","d"]
+];
+const IDLE=["TR-12 呂宗翰","TR-13 黃奕翔","TR-16 傅奕辰","TR-17 林俊傑","TR-22 許家豪",
+            "TR-25 賴俊男","TR-28 高志遠","TR-31 方彥廷","TR-33 童偉倫","TR-35 簡育駿","TR-36 范振豪"];
+const COLS=[["q","待派工 PENDING","#7f8b9c"],["a","已指派 ASSIGNED","#3b6bff"],
+            ["r","執行中 EN ROUTE","#f79009"],["d","今日完成 COMPLETED","#16b364"]];
+const NEXT={q:"a",a:"r",r:"d"},PREV={a:"q",r:"a",d:"r"};
+const ACT={q:"指派最近車輛 ▶",a:"確認出車 ▶",r:"回報完成 ▶"};
+const PRI={h:["pri-h","緊急"],m:["pri-m","一般"],l:["pri-l","低"]};
+let pri="all",cat="all",idlePool=[...IDLE],logSeq=0;
+
+const kban=document.getElementById("kban");
+function visible(j){
+  return (pri==="all"||j[2]===pri)&&(cat==="all"||j[1]===cat);
+}
+function render(){
+  const shown=JOBS.filter(visible);
+  document.getElementById("cnt").textContent=shown.length;
+  kban.innerHTML=COLS.map(([key,label,color])=>{
+    const items=shown.filter(j=>j[9]===key);
+    const all=JOBS.filter(j=>j[9]===key).length;
+    return `<section class="col">
+      <h3><i style="background:${color}"></i>${label}<b>${items.length}${items.length!==all?" / "+all:""}</b></h3>
+      <div class="lane">${items.length?items.map(j=>card(j)).join("")
+        :'<div class="emptycol">此欄目前沒有符合篩選條件的工單</div>'}</div>
+    </section>`;
+  }).join("");
+  kban.querySelectorAll("button[data-move]").forEach(b=>b.addEventListener("click",()=>move(b.dataset.id,b.dataset.move)));
+  const c={q:0,a:0,r:0,d:0};JOBS.forEach(j=>c[j[9]]++);
+  document.getElementById("k-q").textContent=c.q;
+  document.getElementById("k-run").textContent=c.r;
+  document.getElementById("k-done").textContent=c.d;
+  document.getElementById("lg-q").textContent=c.q;
+  document.getElementById("lg-a").textContent=c.a;
+  document.getElementById("lg-r").textContent=c.r;
+  document.getElementById("lg-d").textContent=c.d;
+  document.getElementById("lg-idle").textContent=idlePool.length;
+  document.getElementById("flow").innerHTML=
+    [["q","fl-q"],["a","fl-a"],["r","fl-r"],["d","fl-d"]].map(([k,cl])=>
+      `<i class="${cl}" style="width:${c[k]/JOBS.length*100}%"><span>${c[k]||""}</span></i>`).join("");
+}
+function card(j){
+  const [id,type,p,from,to,km,min,need,veh,col]=j;
+  const done=col==="d";
+  return `<article class="job${done?" done":""}">
+    <div class="t"><b>#${id} · ${type}</b><span class="pri ${PRI[p][0]}">${PRI[p][1]}</span></div>
+    <div class="ad"><em>●</em>${from}<br><s>●</s>${to}</div>
+    <div class="meta"><span>${km.toFixed(1)} km</span><span>預估 ${min} 分</span><span>${need}</span></div>
+    ${veh?`<div class="veh"><i></i>${veh}</div>`:'<div class="veh" style="color:#a4adb9"><i style="background:#c9cdd4"></i>尚未指派車輛</div>'}
+    <div class="acts">
+      ${PREV[col]?`<button type="button" data-id="${id}" data-move="back" aria-label="將工單 ${id} 退回上一階段">◀ 退回</button>`:""}
+      ${NEXT[col]?`<button type="button" class="go" data-id="${id}" data-move="next" aria-label="將工單 ${id} 推進至下一階段">${ACT[col]}</button>`
+        :'<button type="button" disabled>已結案</button>'}
+    </div>
+  </article>`;
+}
+function move(id,dir){
+  const j=JOBS.find(x=>x[0]===id);if(!j)return;
+  const from=j[9];
+  if(dir==="next"){
+    const to=NEXT[from];if(!to)return;
+    if(from==="q"){
+      if(!idlePool.length){log(`#${id} 指派失敗 — 目前無可調度待命車輛，工單留在待派工佇列`,true);return;}
+      j[8]=idlePool.shift();
+      log(`#${id} ${j[1]} 已指派 <b>${j[8]}</b>（距離 ${j[5].toFixed(1)} km · 預估 ${j[6]} 分）`);
+    }else if(from==="a"){
+      log(`#${id} 車輛 <b>${j[8]}</b> 已確認出車，導航路徑已下發車機`);
+    }else{
+      log(`#${id} <b>${j[8]}</b> 回報配送完成，車輛返回待命池`);
+      if(j[8]&&!idlePool.includes(j[8]))idlePool.push(j[8]);
+    }
+    j[9]=to;
+  }else{
+    const to=PREV[from];if(!to)return;
+    if(to==="q"){
+      if(j[8]&&!idlePool.includes(j[8]))idlePool.push(j[8]);
+      log(`#${id} 已退回待派工佇列，<b>${j[8]}</b> 釋放為待命`);
+      j[8]=null;
+    }else if(from==="d"){
+      if(j[8])idlePool=idlePool.filter(v=>v!==j[8]);
+      log(`#${id} 結案撤回，重新標記為執行中`);
+    }else{
+      log(`#${id} 由執行中退回已指派，等待重新派車確認`);
+    }
+    j[9]=to;
+  }
+  render();
+}
+function log(html,warn){
+  const ol=document.getElementById("log");
+  const li=document.createElement("li");
+  li.className="new";
+  const t=new Date();
+  li.innerHTML=`<time>${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}</time>`+
+    `<span style="${warn?"color:var(--sos)":""}">${html}</span>`;
+  ol.prepend(li);
+  if(++logSeq>40)ol.lastElementChild.remove();
+}
+document.querySelectorAll(".chipset button[data-p]").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".chipset button[data-p]").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  pri=b.dataset.p;render();
+}));
+document.querySelectorAll(".chipset button[data-c]").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".chipset button[data-c]").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  cat=b.dataset.c;render();
+}));
+render();
+
+/* 開場紀錄 */
+[["11:41","#D-4806 TR-23 溫子誠 回報配送完成，今日第 6 張結案"],
+ ["11:12","#D-4816 緊急維修派工建立，優先度緊急，指派 TR-18 康仲平"],
+ ["10:52","#D-4805 TR-29 阮文龍 回報配送完成，準時"],
+ ["10:32","#D-4804 TR-09 李國華 完成配送，因新莊中正路施工延遲 8 分"],
+ ["09:58","#D-4828 冷鏈疫苗鏈工單建立，指派 TR-06 陳俊宏（2°C 恆溫）"],
+ ["09:38","#D-4803 TR-20 郭柏均 回收 6 板棧板返場"]
+].forEach(([tm,txt])=>{
+  const li=document.createElement("li");
+  li.innerHTML=`<time>${tm}</time><span>${txt}</span>`;
+  document.getElementById("log").appendChild(li);
+});
+
+/* ---------- 完成累積折線 ---------- */
+(function(){
+  const W=440,H=190,L=32,R=14,T=14,B=32;
+  const hours=[8,9,10,11,12,13,14,15,16,17,18,19,20];
+  const actual=[1,3,5,6];
+  const target=[1,3,5,7,9,11,13,15,16,18,19,20,20];
+  const max=20;
+  const x=i=>L+i*(W-L-R)/(hours.length-1);
+  const y=v=>H-B-(v/max)*(H-T-B);
+  let g="";
+  for(let v=0;v<=20;v+=5){
+    g+=`<line class="cg" x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}"/>`;
+    g+=`<text class="ct" x="${L-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`;
+  }
+  hours.forEach((h,i)=>{if(i%2===0)
+    g+=`<text class="ct" x="${x(i)}" y="${H-B+15}" text-anchor="middle">${String(h).padStart(2,"0")}</text>`;});
+  g+=`<polyline class="ctarget" points="${target.map((v,i)=>x(i)+","+y(v)).join(" ")}"/>`;
+  g+=`<path class="carea" d="M${x(0)},${y(actual[0])} ${actual.map((v,i)=>x(i)+","+y(v)).join(" L")} L${x(actual.length-1)},${H-B} L${x(0)},${H-B} Z"/>`;
+  g+=`<polyline class="cline" points="${actual.map((v,i)=>x(i)+","+y(v)).join(" ")}"/>`;
+  actual.forEach((v,i)=>{g+=`<circle class="cdot" cx="${x(i)}" cy="${y(v)}" r="4"/>`;});
+  g+=`<text class="ct" x="${x(3)+8}" y="${y(6)-6}" fill="#16b364" font-weight="700">實績 6 件</text>`;
+  g+=`<text class="ct" x="${W-R}" y="${y(20)-6}" text-anchor="end" fill="#3b6bff" font-weight="700">目標 20 件</text>`;
+  document.getElementById("cum").innerHTML=g;
+})();
+</script>
+</body>
+</html>

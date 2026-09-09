@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 28-hud-logistics.html 駕駛艙 HUD·物流追蹤
+  風格定位：航管／軍事駕駛艙 HUD 介面，深藍黑底＋螢光綠描邊、掃描線質感
+  配色：背景 #030a14｜面板 #06121f｜主色螢光綠 #39ff88｜輔助青 #22d3ee｜警示琥珀 #ffb454 / 紅 #ff4d5e
+        文字 #b8ffd9 / 次要 #4a7a63
+  字體：Noto Sans TC＋等寬 Share Tech Mono（數據）
+  版面結構：頂部 HUD 工具列 → KPI 列 → 左：SVG 掃掠雷達＋格網位置圖｜右：貨件追蹤表＋追蹤時間軸（光點沿線移動）
+  動態效果：雷達掃描旋轉動畫（SVG rotate）、時間軸光點 CSS 位移、數據每 2 秒跳動、掃描線背景
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKYLINK · 全球物流追蹤指揮中心</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Noto Sans TC',sans-serif}
+  body{background:#030a14;color:#b8ffd9;min-height:100vh;position:relative;overflow-x:hidden}
+  body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:99;
+    background:repeating-linear-gradient(0deg,rgba(57,255,136,.028) 0 1px,transparent 1px 3px)}
+  .mono{font-family:'Share Tech Mono',monospace}
+  header{display:flex;align-items:center;gap:18px;padding:12px 22px;border-bottom:1px solid rgba(57,255,136,.25);background:rgba(6,18,31,.85);position:sticky;top:0;z-index:50}
+  .back{font-family:'Share Tech Mono',monospace;font-size:13px;color:#39ff88;text-decoration:none;border:1px solid #39ff88;padding:6px 14px;letter-spacing:1px;transition:.2s;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+  .back:hover{background:#39ff88;color:#030a14;box-shadow:0 0 18px rgba(57,255,136,.6)}
+  h1{font-size:17px;letter-spacing:3px;color:#39ff88;text-shadow:0 0 12px rgba(57,255,136,.6)}
+  .clock{margin-left:auto;font-family:'Share Tech Mono',monospace;color:#22d3ee;font-size:15px}
+  .sys{font-size:11px;color:#4a7a63;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:18px 22px 6px}
+  .hud{background:rgba(6,18,31,.8);border:1px solid rgba(57,255,136,.3);position:relative;padding:14px 16px;
+    clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px)}
+  .hud::before{content:'';position:absolute;top:0;left:0;width:26px;height:2px;background:#39ff88;box-shadow:0 0 8px #39ff88}
+  .kpi .lb{font-size:11px;letter-spacing:2px;color:#4a7a63;font-family:'Share Tech Mono',monospace}
+  .kpi .vl{font-size:30px;font-family:'Share Tech Mono',monospace;color:#39ff88;text-shadow:0 0 14px rgba(57,255,136,.5);margin-top:4px}
+  .kpi .sub{font-size:11px;margin-top:3px}
+  .ok{color:#39ff88}.warn{color:#ffb454}.bad{color:#ff4d5e}.cyan{color:#22d3ee}
+  main{display:grid;grid-template-columns:1fr 1.25fr;gap:14px;padding:14px 22px 26px;align-items:start}
+  .panel{background:rgba(6,18,31,.8);border:1px solid rgba(57,255,136,.3);padding:16px;
+    clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+  .ptitle{font-size:13px;letter-spacing:3px;color:#39ff88;font-family:'Share Tech Mono',monospace;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .ptitle::before{content:'▸';color:#22d3ee}
+  .radar-wrap{display:flex;justify-content:center;padding:6px 0 2px}
+  .sweep{transform-origin:130px 130px;animation:sweep 4s linear infinite}
+  @keyframes sweep{to{transform:rotate(360deg)}}
+  .blip{animation:blipfade 4s infinite}
+  @keyframes blipfade{0%,45%{opacity:1}80%,100%{opacity:.1}}
+  .fleet{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .unit{border:1px solid rgba(57,255,136,.25);padding:8px 10px;font-family:'Share Tech Mono',monospace;font-size:11px;background:rgba(57,255,136,.04)}
+  .unit .id{color:#22d3ee;font-size:12px}
+  .unit .st{float:right}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:2px;color:#4a7a63;text-align:left;padding:8px 10px;border-bottom:1px solid rgba(57,255,136,.3)}
+  td{padding:9px 10px;border-bottom:1px solid rgba(57,255,136,.12);font-family:'Share Tech Mono',monospace;font-size:12.5px}
+  tbody tr{transition:.15s}
+  tbody tr:hover{background:rgba(57,255,136,.07)}
+  .tag{font-size:11px;padding:2px 9px;border:1px solid;letter-spacing:1px;white-space:nowrap}
+  .t-air{color:#22d3ee;border-color:#22d3ee}.t-sea{color:#39ff88;border-color:#39ff88}
+  .t-road{color:#ffb454;border-color:#ffb454}.t-delay{color:#ff4d5e;border-color:#ff4d5e;animation:blinkred 1.2s infinite}
+  @keyframes blinkred{50%{opacity:.45}}
+  .track{margin-top:8px}
+  .seg{display:flex;align-items:center;margin-bottom:22px}
+  .seg .port{width:88px;font-size:12px;text-align:right;padding-right:12px}
+  .seg .port .tm{font-family:'Share Tech Mono',monospace;font-size:10px;color:#4a7a63;display:block}
+  .seg .rail{flex:1;height:2px;background:rgba(57,255,136,.2);position:relative;margin:0 4px}
+  .seg .rail .fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#39ff88,#22d3ee);box-shadow:0 0 8px rgba(57,255,136,.6)}
+  .seg .rail .dot{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:#39ff88;box-shadow:0 0 12px #39ff88,0 0 24px #39ff88;transform:translate(-50%,-50%);animation:travel 6s ease-in-out infinite}
+  @keyframes travel{0%{left:8%}50%{left:92%}100%{left:8%}}
+  .seg .eta{width:96px;font-size:11px;padding-left:12px;color:#4a7a63;font-family:'Share Tech Mono',monospace}
+  .seg .st-name{font-size:13px;margin-bottom:2px}
+  @media(max-width:1100px){main{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../../index.html">← BACK</a>
+  <h1>◉ SKYLINK 物流追蹤指揮中心</h1>
+  <a class="back" href="shipments.html" style="color:#4a7a63;border-color:#4a7a63">≡ MANIFEST</a>
+  <a class="back" href="form.html">＋ NEW ORDER</a>
+  <a class="back" href="report.html" style="color:#4a7a63;border-color:#4a7a63">REPORT</a>
+  <span class="sys">SAT-LINK: LOCKED ▸ GPS: 38 SAT ▸ CH-07</span>
+  <span class="clock" id="clock">--:--:--</span>
+</header>
+
+<section class="kpis">
+  <div class="hud kpi"><div class="lb">ACTIVE SHIPMENTS / 在途貨件</div><div class="vl" id="k1">1,284</div><div class="sub ok">▲ +3.2% 較昨日</div></div>
+  <div class="hud kpi"><div class="lb">ON-TIME RATE / 準點率</div><div class="vl cyan">96.4%</div><div class="sub ok">▲ 目標 95% 達成</div></div>
+  <div class="hud kpi"><div class="lb">DELAYED / 延誤貨件</div><div class="vl warn">23</div><div class="sub warn">⚠ 5 件逾 24 小時</div></div>
+  <div class="hud kpi"><div class="lb">ALERTS / 異常告警</div><div class="vl bad">4</div><div class="sub bad">✖ 溫控異常 2 ・ 路線偏離 2</div></div>
+</section>
+
+<main>
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="panel">
+      <div class="ptitle">RADAR SWEEP — 台北樞紐 50KM</div>
+      <div class="radar-wrap">
+        <svg width="260" height="260" viewBox="0 0 260 260">
+          <circle cx="130" cy="130" r="120" fill="none" stroke="#39ff88" stroke-opacity=".5"/>
+          <circle cx="130" cy="130" r="90" fill="none" stroke="#39ff88" stroke-opacity=".3"/>
+          <circle cx="130" cy="130" r="60" fill="none" stroke="#39ff88" stroke-opacity=".3"/>
+          <circle cx="130" cy="130" r="30" fill="none" stroke="#39ff88" stroke-opacity=".3"/>
+          <line x1="10" y1="130" x2="250" y2="130" stroke="#39ff88" stroke-opacity=".25"/>
+          <line x1="130" y1="10" x2="130" y2="250" stroke="#39ff88" stroke-opacity=".25"/>
+          <g class="sweep"><polygon points="130,130 250,130 247,98" fill="url(#swg)"/>
+            <line x1="130" y1="130" x2="250" y2="130" stroke="#39ff88" stroke-width="2"/></g>
+          <defs><linearGradient id="swg" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#39ff88" stop-opacity="0"/><stop offset="1" stop-color="#39ff88" stop-opacity=".45"/>
+          </linearGradient></defs>
+          <circle class="blip" cx="185" cy="95" r="4" fill="#39ff88"/>
+          <circle class="blip" cx="90" cy="160" r="4" fill="#22d3ee" style="animation-delay:-1.4s"/>
+          <circle class="blip" cx="160" cy="185" r="4" fill="#ffb454" style="animation-delay:-2.6s"/>
+          <circle cx="130" cy="130" r="5" fill="#39ff88"/>
+          <text x="138" y="126" fill="#39ff88" font-size="9" font-family="monospace">TPE-HUB</text>
+          <text x="192" y="92" fill="#39ff88" font-size="9" font-family="monospace">CI5821</text>
+          <text x="96" y="156" fill="#22d3ee" font-size="9" font-family="monospace">EVER-09</text>
+          <text x="166" y="182" fill="#ffb454" font-size="9" font-family="monospace">TRK-334</text>
+        </svg>
+      </div>
+      <div class="fleet">
+        <div class="unit" onclick="location.href='tracking.html'" style="cursor:pointer" title="查看追蹤詳情"><span class="id">✈ CI5821</span><span class="st ok">巡航</span><br>TPE → NRT<br><span class="cyan">FL350 / 512kt</span></div>
+        <div class="unit" onclick="location.href='tracking.html'" style="cursor:pointer" title="查看追蹤詳情"><span class="id">🚢 EVER-09</span><span class="st ok">航行</span><br>KHH → LAX<br><span class="cyan">19.2kt / 北緯28°</span></div>
+        <div class="unit" onclick="location.href='tracking.html'" style="cursor:pointer" title="查看追蹤詳情"><span class="id">🚚 TRK-334</span><span class="st warn">延誤</span><br>TPE → TXG<br><span class="warn">國道3號 壅塞</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">LIVE GRID — 即時位置格網</div>
+      <svg width="100%" height="150" viewBox="0 0 400 150" preserveAspectRatio="none">
+        <g stroke="#39ff88" stroke-opacity=".18">
+          <line x1="0" y1="30" x2="400" y2="30"/><line x1="0" y1="60" x2="400" y2="60"/>
+          <line x1="0" y1="90" x2="400" y2="90"/><line x1="0" y1="120" x2="400" y2="120"/>
+          <line x1="80" y1="0" x2="80" y2="150"/><line x1="160" y1="0" x2="160" y2="150"/>
+          <line x1="240" y1="0" x2="240" y2="150"/><line x1="320" y1="0" x2="320" y2="150"/>
+        </g>
+        <polyline points="40,110 120,80 200,90 280,45 360,30" fill="none" stroke="#22d3ee" stroke-dasharray="5 4" stroke-opacity=".7"/>
+        <circle cx="40" cy="110" r="4" fill="#39ff88"/><text x="30" y="126" fill="#39ff88" font-size="9" font-family="monospace">KHH</text>
+        <circle cx="200" cy="90" r="4" fill="#22d3ee"><animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite"/></circle>
+        <text x="188" y="106" fill="#22d3ee" font-size="9" font-family="monospace">EVER-09</text>
+        <circle cx="360" cy="30" r="4" fill="#39ff88"/><text x="346" y="22" fill="#39ff88" font-size="9" font-family="monospace">LAX</text>
+      </svg>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="panel">
+      <div class="ptitle">SHIPMENT MANIFEST — 重點貨件</div>
+      <table>
+        <thead><tr><th>追蹤編號</th><th>品項</th><th>路線</th><th>運具</th><th>狀態</th><th>ETA</th></tr></thead>
+        <tbody>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412073</a></td><td>晶圓設備(恆溫)</td><td>TPE → PHX</td><td>✈ 空運</td><td><span class="tag t-air">飛航中</span></td><td class="mono" data-j>08/30 06:20</td></tr>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412065</a></td><td>生技試劑(冷鏈)</td><td>KHH → SIN</td><td>🚢 海運</td><td><span class="tag t-sea">航程中</span></td><td class="mono" data-j>09/02 14:00</td></tr>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412058</a></td><td>汽車零組件</td><td>TXG → TPE</td><td>🚚 陸運</td><td><span class="tag t-road">配送中</span></td><td class="mono" data-j>08/28 21:45</td></tr>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412041</a></td><td>醫療顯影劑(冷鏈)</td><td>TPE → FRA</td><td>✈ 空運</td><td><span class="tag t-delay">溫控異常</span></td><td class="mono bad" data-j>08/29 18:10</td></tr>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412036</a></td><td>電競筆電整櫃</td><td>CAN → KHH</td><td>🚢 海運</td><td><span class="tag t-sea">航程中</span></td><td class="mono" data-j>08/31 09:30</td></tr>
+          <tr><td><a href="tracking.html" class="cyan" style="text-decoration:none;border-bottom:1px dashed rgba(34,211,238,.5)">SL-88412029</a></td><td>精密儀器</td><td>TPE → KHH</td><td>🚚 陸運</td><td><span class="tag t-road">配送中</span></td><td class="mono" data-j>08/28 20:15</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="ptitle">ROUTE TIMELINE — SL-88412073 追蹤時間軸</div>
+      <div class="track">
+        <div class="seg">
+          <div class="port"><div class="st-name ok">台北 TPE</div><span class="tm">08/27 22:10 起運</span></div>
+          <div class="rail"><div class="fill"></div><div class="dot"></div></div>
+          <div class="eta">已離站<br>FL350 巡航中</div>
+        </div>
+        <div class="seg">
+          <div class="port"><div class="st-name cyan">安克拉治 ANC</div><span class="tm">預計 08/29 04:30</span></div>
+          <div class="rail"><div class="fill" style="width:0"></div><div class="dot" style="animation-delay:-3s;background:#22d3ee;box-shadow:0 0 12px #22d3ee"></div></div>
+          <div class="eta">技術降落<br>加油 55 分</div>
+        </div>
+        <div class="seg" style="margin-bottom:0">
+          <div class="port"><div class="st-name" style="color:#4a7a63">鳳凰城 PHX</div><span class="tm">ETA 08/30 06:20</span></div>
+          <div class="rail"><div class="fill" style="width:0;background:rgba(57,255,136,.15);box-shadow:none"></div></div>
+          <div class="eta">清關預審中<br>AWB 176-5521-0093</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+function tick(){ const d=new Date();
+  document.getElementById('clock').textContent =
+    'UTC+8 ' + [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':') + ' TST';
+}
+tick(); setInterval(tick,1000);
+setInterval(()=>{
+  const el=document.getElementById('k1');
+  el.textContent = (1280+Math.floor(Math.random()*12)).toLocaleString();
+  document.querySelectorAll('[data-j]').forEach(c=>{
+    if(Math.random()<.2){ c.style.color='#39ff88'; setTimeout(()=>c.style.color='',400); }
+  });
+},2000);
+</script>
+</body>
+</html>

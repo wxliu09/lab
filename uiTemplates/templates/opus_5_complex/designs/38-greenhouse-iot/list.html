@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>38 · 感測節點拓樸 — GREENHOUSE IOT</title>
+<style>
+:root{
+  --bg:#f2f6ee;--deep:#1f3b2c;--leaf:#4a8f5f;--leaf2:#7bc47f;--moss:#c9dfc3;
+  --soil:#8a6b4a;--sun:#e8b23c;--water:#5aa9d6;--ink:#22352a;--dim:#6f8574;
+  --card:#ffffff;--edge:#dde8d8;--alert:#c25b5b;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);min-height:100vh;padding:24px;font-size:14px;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;
+  background-image:
+    radial-gradient(circle at 88% 6%,rgba(123,196,127,.22),transparent 42%),
+    radial-gradient(circle at 6% 90%,rgba(90,169,214,.16),transparent 40%)}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:0;
+  background-image:
+    repeating-linear-gradient(58deg,var(--deep) 0 1px,transparent 1px 26px),
+    repeating-linear-gradient(-58deg,var(--deep) 0 1px,transparent 1px 26px)}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--leaf);outline-offset:3px}
+
+.home{position:fixed;right:24px;bottom:24px;z-index:99;text-decoration:none;color:#fff;
+  background:var(--deep);padding:14px 24px;border-radius:999px 999px 999px 4px;font-weight:600;font-size:13.5px;
+  box-shadow:0 8px 24px rgba(31,59,44,.35);transition:.24s}
+.home:hover{background:var(--leaf);transform:translateY(-3px)}
+
+.shell{max-width:1480px;margin:0 auto;position:relative;z-index:2}
+header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:18px}
+header .lf{width:52px;height:52px;background:linear-gradient(135deg,var(--leaf2),var(--leaf));
+  border-radius:50% 6px 50% 6px;display:grid;place-items:center;font-size:24px;
+  box-shadow:0 6px 18px rgba(74,143,95,.34)}
+header h1{font-size:25px;font-weight:700;letter-spacing:-.02em}
+header h1 small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;letter-spacing:.16em;margin-top:5px}
+.hbadge{padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;
+  background:rgba(74,143,95,.12);color:var(--leaf);border:1px solid rgba(74,143,95,.25)}
+.hbadge i{width:8px;height:8px;border-radius:50%;background:var(--leaf);animation:bk 2s infinite}
+@keyframes bk{50%{opacity:.3}}
+header .rt{margin-left:auto;display:flex;gap:24px;text-align:right;font-size:11.5px;color:var(--dim)}
+header .rt b{display:block;font-size:19px;color:var(--ink);font-weight:700;letter-spacing:-.02em}
+header .rt b.w{color:var(--sun)}
+
+nav.pages{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+nav.pages a{padding:11px 22px;border-radius:22px 6px 22px 6px;font-size:13px;font-weight:600;text-decoration:none;
+  background:var(--card);border:1px solid var(--edge);color:var(--dim);transition:.22s}
+nav.pages a:hover{border-color:var(--leaf2);color:var(--leaf)}
+nav.pages a[aria-current]{background:var(--deep);color:#fff;border-color:var(--deep);
+  box-shadow:0 5px 16px rgba(31,59,44,.28)}
+
+.card{background:var(--card);border:1px solid var(--edge);border-radius:24px 6px 24px 6px;overflow:hidden;
+  box-shadow:0 4px 16px rgba(31,59,44,.06);margin-bottom:20px}
+.card>h2{font-size:15.5px;font-weight:700;padding:18px 22px;border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.card>h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.12em}
+
+/* ---------- topology ---------- */
+.two{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0}
+@media(max-width:1040px){.two{grid-template-columns:1fr}}
+.topo{padding:18px 20px 22px;border-right:1px solid var(--edge);overflow-x:auto}
+@media(max-width:1040px){.topo{border-right:0;border-bottom:1px solid var(--edge)}}
+.topo svg{width:100%;min-width:760px;height:auto;display:block}
+.link{stroke:var(--moss);stroke-width:2;fill:none}
+.link.hot{stroke:var(--leaf);stroke-width:3}
+.boxlab{fill:#fff;font-weight:700}
+.subl{fill:rgba(255,255,255,.72);font-size:9.5px;letter-spacing:1.4}
+.nd{cursor:pointer}
+.nd rect{transition:.18s}
+.nd:hover rect{stroke-width:2.4}
+.nd.sel rect{stroke:var(--deep);stroke-width:2.6}
+.ndt{font-size:10.5px;font-weight:700;pointer-events:none}
+.ndv{font-size:9px;pointer-events:none}
+.grp{fill:var(--dim);font-size:10.5px;letter-spacing:1.6}
+.sigbar{stroke-linecap:round}
+
+/* ---------- detail ---------- */
+.detail{padding:20px}
+.detail .hero{border-radius:18px 4px 18px 4px;padding:16px;background:linear-gradient(160deg,#eef8ea,#dff0d8);margin-bottom:16px}
+.detail .hero.wn{background:linear-gradient(160deg,#fdf5e3,#faead0)}
+.detail .hero.dr{background:linear-gradient(160deg,#f9ecec,#f5dcdc)}
+.detail .hero b{display:block;font-size:22px;font-weight:700;letter-spacing:-.02em}
+.detail .hero small{display:block;font-size:12px;color:var(--dim);margin-top:5px}
+.detail .hero .tag{display:inline-block;margin-top:11px;font-size:11.5px;font-weight:700;padding:5px 12px;
+  border-radius:999px;background:rgba(255,255,255,.72)}
+.detail dl{font-size:13px}
+.detail dt{font-size:11px;letter-spacing:.14em;color:var(--dim);margin-top:13px}
+.detail dd{font-weight:700;margin-top:3px}
+.detail .meter{height:8px;border-radius:4px;background:#eef2ea;overflow:hidden;margin-top:7px}
+.detail .meter i{display:block;height:100%;border-radius:4px}
+.detail p.tip{margin-top:16px;font-size:11.5px;line-height:1.9;color:var(--dim);
+  background:#f5f8f2;border-radius:14px 4px 14px 4px;padding:12px 14px}
+
+/* ---------- registry ---------- */
+.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 20px;background:#f7faf5;
+  border-bottom:1px solid var(--edge)}
+.ctl input[type="search"]{border:1px solid var(--edge);border-radius:12px;background:var(--card);
+  font:inherit;font-size:12.5px;padding:9px 14px;width:220px;color:var(--ink)}
+.ctl input::placeholder{color:#9fb0a3}
+.chipset{display:flex;gap:6px;flex-wrap:wrap}
+.chipset button{appearance:none;font:inherit;font-size:12px;font-weight:600;padding:8px 15px;
+  border-radius:18px 5px 18px 5px;border:1px solid var(--edge);background:var(--card);color:var(--dim);cursor:pointer;transition:.18s}
+.chipset button:hover{color:var(--leaf);border-color:var(--leaf2)}
+.chipset button[aria-pressed="true"]{background:var(--deep);color:#fff;border-color:var(--deep)}
+.ctl .n{margin-left:auto;font-size:12px;color:var(--dim)}
+.ctl .n b{color:var(--leaf);font-size:16px;font-weight:700}
+
+.tblwrap{overflow-x:auto}
+table.nd{width:100%;border-collapse:collapse;min-width:960px}
+table.nd th{text-align:left;font-size:10px;letter-spacing:.16em;color:var(--dim);font-weight:700;
+  padding:11px 14px;border-bottom:2px solid var(--moss);white-space:nowrap;background:#f7faf5}
+table.nd th.r,table.nd td.r{text-align:right}
+table.nd td{padding:11px 14px;border-bottom:1px solid #eef3ec;font-size:12.5px;white-space:nowrap}
+table.nd tbody tr{cursor:pointer;transition:.16s}
+table.nd tbody tr:hover{background:#f5faf2}
+table.nd tbody tr[aria-selected="true"]{background:#e9f5e4;box-shadow:inset 4px 0 0 var(--leaf)}
+.nid{font-weight:700;letter-spacing:.03em}
+.stt{font-size:10.5px;padding:3px 10px;border-radius:999px;font-weight:700}
+.st-ok{background:rgba(74,143,95,.13);color:var(--leaf)}
+.st-wn{background:rgba(232,178,60,.18);color:#b07d16}
+.st-lo{background:rgba(194,91,91,.13);color:var(--alert)}
+.sig{display:inline-flex;gap:2px;align-items:flex-end;height:14px;vertical-align:middle;margin-right:7px}
+.sig i{width:3px;border-radius:1px;background:var(--moss);display:block}
+.sig i.on{background:var(--leaf)}
+.batt{position:relative;height:8px;width:64px;background:#eef2ea;border-radius:4px;display:inline-block;vertical-align:middle}
+.batt i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--leaf)}
+.batt i.w{background:var(--sun)}
+.batt i.d{background:var(--alert)}
+.emptyrow td{padding:38px 16px!important;text-align:center;color:var(--dim)}
+.ftr{text-align:center;font-size:11px;color:var(--dim);letter-spacing:.26em;padding:8px 0 40px}
+
+@media(max-width:640px){
+  body{padding:14px}
+  header .rt{width:100%;margin-left:0;justify-content:space-between;gap:12px}
+  .ctl input[type="search"]{width:100%}
+  .ctl .n{margin-left:0}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<div class="shell">
+  <header>
+    <div class="lf">🛰</div>
+    <h1>感測節點拓樸與台帳<small>SENSOR NETWORK TOPOLOGY · 雲林斗六 A 場區 · LoRaWAN 923 MHz</small></h1>
+    <div class="hbadge"><i></i>18 個感測節點連線正常</div>
+    <div class="rt">
+      <div><b>18</b>節點總數</div>
+      <div><b>2</b>閘道器</div>
+      <div><b class="w">2</b>待處理提醒</div>
+      <div><b>99.6%</b>近 7 日回傳率</div>
+    </div>
+  </header>
+
+  <nav class="pages" aria-label="子頁導覽">
+    <a href="index.html">控管總覽</a>
+    <a href="list.html" aria-current="page">感測節點</a>
+    <a href="schedule.html">灌溉排程</a>
+    <a href="alerts.html">告警中心</a>
+    <a href="report.html">生長報表</a>
+  </nav>
+
+  <div class="card">
+    <h2>網路拓樸圖 NETWORK TOPOLOGY<span>雲平台 ← 閘道器 ×2 ← 感測節點 ×18 · 點選節點檢視詳情</span></h2>
+    <div class="two">
+      <div class="topo">
+        <svg viewBox="0 0 920 480" role="img" id="topo"
+          aria-label="感測網路拓樸圖：青禾雲平台下接 GW-01 與 GW-02 兩台 LoRaWAN 閘道器，分別連接 A、B、C 棟共 12 個節點與 D、E 棟共 6 個節點。">
+          <g id="tg"></g>
+        </svg>
+      </div>
+      <div class="detail" id="detail"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>節點台帳 NODE REGISTRY<span>點選任一列同步高亮拓樸圖節點</span></h2>
+    <div class="ctl">
+      <input id="q" type="search" placeholder="搜尋節點編號／型號／量測項目" aria-label="搜尋節點編號、型號或量測項目">
+      <div class="chipset" role="group" aria-label="棟別篩選">
+        <button data-h="all" aria-pressed="true">全部棟別</button>
+        <button data-h="A" aria-pressed="false">A 棟 · 番茄</button>
+        <button data-h="B" aria-pressed="false">B 棟 · 小黃瓜</button>
+        <button data-h="C" aria-pressed="false">C 棟 · 草莓</button>
+        <button data-h="D" aria-pressed="false">D 棟 · 育苗室</button>
+        <button data-h="E" aria-pressed="false">E 棟 · 葉菜水耕</button>
+      </div>
+      <span class="n"><b id="cnt">18</b> / 18 個節點</span>
+    </div>
+    <div class="tblwrap">
+      <table class="nd">
+        <thead><tr>
+          <th>節點</th><th>棟別</th><th>量測項目</th><th>型號</th>
+          <th class="r">訊號 RSSI</th><th class="r">SNR</th><th>電量</th>
+          <th class="r">取樣間隔</th><th class="r">上次回傳</th><th>狀態</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="ftr">LIST / NETWORK TOPOLOGY SCHEMATIC · DESIGN 38 / 40</div>
+</div>
+
+<script>
+/* id, 棟, 量測, 型號, RSSI, SNR, 電量%, 韌體, 取樣秒, 上次回傳, 狀態, 現值, 說明 */
+const N=[
+["ND-A01","A","空氣溫濕度","Sensirion SHT35",-72,9.4,88,"v2.4.1",60,"12 秒前","ok","26.8 °C / 73 %","A 棟主控溫濕度節點，資料直接驅動天窗與噴霧的自動控制邏輯。"],
+["ND-A02","A","土壤含水率 / EC","Teros 12",-78,8.1,74,"v2.4.1",300,"2 分前","ok","含水率 52 % · EC 2.1","位於 A-01 至 A-06 畦區中央，代表北半區土壤狀態。"],
+["ND-A03","A","土壤含水率 / EC","Teros 12",-81,7.2,69,"v2.4.1",300,"3 分前","wn","含水率 38 % · EC 2.0","A-03 畦區偏乾（38 %，低於適當區間 45–65 %），14:22 已自動加入灌溉佇列，16:00 執行。"],
+["ND-A04","A","二氧化碳","SenseAir S8 NDIR",-75,8.8,91,"v2.4.1",120,"48 秒前","ok","842 ppm","目標區間 800–1200 ppm，日間光合作用高峰時由 CO₂ 施放閥自動補充。"],
+["ND-A05","A","葉部影像","RPi CAM v3 · 邊緣推論",-69,10.2,62,"v3.0.2",1800,"9 分前","ok","解析度 1920×1080","每 30 分鐘擷取一張並在邊緣端執行病斑判讀；13:05 於 A-07 判定疑似葉黴病，信心值 82 %。"],
+["ND-B01","B","空氣溫濕度","Sensirion SHT35",-74,9.1,85,"v2.4.1",60,"20 秒前","ok","25.4 °C / 78 %","B 棟小黃瓜區，濕度長期偏高，已列為白粉病重點監測區。"],
+["ND-B02","B","土壤含水率","Teros 10",-83,6.8,71,"v2.4.1",300,"1 分前","ok","含水率 58 %","小黃瓜需水量大，設定灌溉觸發下限為 50 %。"],
+["ND-B03","B","二氧化碳","SenseAir S8 NDIR",-77,8.3,58,"v2.4.1",120,"1 分前","wn","624 ppm","B 棟 CO₂ 鋼瓶餘量僅 18 %（05:32 通報），濃度已低於目標下限，建議三日內更換鋼瓶。"],
+["ND-B04","B","光量子 PAR","Apogee SQ-500",-79,7.9,80,"v2.4.1",60,"35 秒前","ok","1,024 μmol/m²·s","與戶外參考站比對可推算遮陰網透光率，目前透光 68 %。"],
+["ND-C01","C","空氣溫濕度","Sensirion SHT35",-86,6.1,77,"v2.4.1",60,"41 秒前","ok","19.6 °C / 71 %","草莓低溫區，夜間目標溫度 8–12 °C 以促進花芽分化。"],
+["ND-C02","C","土壤含水率 / EC","Teros 12",-88,5.4,66,"v2.4.1",300,"2 分前","ok","含水率 49 % · EC 1.4","高架栽培槽，介質為椰纖混泥炭，保水性較低故取樣頻率加密。"],
+["ND-C03","C","葉部影像","RPi CAM v3 · 邊緣推論",-91,4.8,14,"v3.0.2",1800,"22 分前","lo","解析度 1920×1080","電量僅 14 %，太陽能板受 C 棟遮陰網遮蔽導致充電不足，已排定 10/13 更換為市電供電。"],
+["ND-D01","D","空氣溫濕度","Sensirion SHT35",-68,10.8,93,"v2.4.1",60,"8 秒前","ok","28.2 °C / 82 %","育苗室採高溫高濕管理，加速種子萌發。"],
+["ND-D02","D","介質含水率","Teros 10",-71,9.6,89,"v2.4.1",180,"55 秒前","ok","含水率 64 %","穴盤介質含水率，配合底部吸水灌溉維持 60–70 %。"],
+["ND-D03","D","光量子 PAR","Apogee SQ-500",-70,10.1,86,"v2.4.1",60,"22 秒前","ok","318 μmol/m²·s","育苗室全人工光源，紅藍比 4:1，日照時數 16 小時。"],
+["ND-E01","E","空氣溫濕度","Sensirion SHT35",-84,6.9,81,"v2.4.1",60,"30 秒前","ok","23.1 °C / 68 %","葉菜水耕區，溫度維持 20–24 °C 以避免抽苔。"],
+["ND-E02","E","養液 EC / pH","Atlas EZO 組合",-89,5.2,73,"v2.5.0",120,"1 分前","ok","EC 1.8 · pH 6.2","養液槽線上量測，11:40 完成自動補水 240 L 並校正至 EC 2.1（A 棟迴路）。"],
+["ND-E03","E","液位 / 流量","Keller PR-26Y",-118,1.6,64,"v2.5.0",120,"6 分前","wn","液位 62 % · 流量 12 L/min","RSSI −118 dBm 已逼近 LoRa 接收門檻，疑似金屬支架屏蔽；建議加裝外接天線或增設中繼。"]
+];
+const HOUSE={A:["A 棟 · 番茄","#e8b23c"],B:["B 棟 · 小黃瓜","#4a8f5f"],C:["C 棟 · 草莓","#c25b5b"],
+             D:["D 棟 · 育苗室","#7bc47f"],E:["E 棟 · 葉菜水耕","#5aa9d6"]};
+const STT={ok:["st-ok","正常"],wn:["st-wn","需留意"],lo:["st-lo","電量偏低"]};
+const COL={ok:["#eef8ea","#4a8f5f"],wn:["#fdf5e3","#c9922e"],lo:["#f9ecec","#c25b5b"]};
+let sel=2,house="all",q="";
+
+/* ---------- 拓樸圖 ---------- */
+function topo(){
+  const GX={A:112,B:290,C:468,D:648,E:826};
+  const order=["A","B","C","D","E"];
+  let g="";
+  /* cloud */
+  g+=`<rect x="330" y="14" width="260" height="52" rx="26" fill="#1f3b2c"/>
+      <text class="boxlab" x="460" y="38" text-anchor="middle" font-size="14">青禾雲平台</text>
+      <text class="subl" x="460" y="54" text-anchor="middle">MQTT BROKER · TSDB · 規則引擎</text>`;
+  /* gateways */
+  const GW=[["GW-01",290,"A / B / C 棟 · 12 節點"],["GW-02",740,"D / E 棟 · 6 節點"]];
+  GW.forEach(([id,x,desc])=>{
+    g+=`<path class="link" d="M460 66 V96 H${x} V128"/>`;
+    g+=`<rect x="${x-96}" y="128" width="192" height="46" rx="14" fill="#4a8f5f"/>
+        <text class="boxlab" x="${x}" y="150" text-anchor="middle" font-size="13">${id}</text>
+        <text class="subl" x="${x}" y="165" text-anchor="middle">${desc}</text>`;
+  });
+  /* house headers */
+  order.forEach(h=>{
+    const x=GX[h],gx=h<="C"?290:740;
+    g+=`<path class="link" d="M${gx} 174 V196 H${x} V212"/>`;
+    g+=`<rect x="${x-72}" y="212" width="144" height="30" rx="10" fill="${HOUSE[h][1]}" fill-opacity=".16"
+          stroke="${HOUSE[h][1]}" stroke-width="1.4"/>
+        <text class="grp" x="${x}" y="231" text-anchor="middle" fill="${HOUSE[h][1]}"
+          font-weight="700">${HOUSE[h][0]}</text>`;
+  });
+  /* nodes */
+  order.forEach(h=>{
+    const x=GX[h];
+    const list=N.map((n,i)=>({n,i})).filter(o=>o.n[1]===h);
+    list.forEach((o,k)=>{
+      const y=262+k*42,i=o.i,n=o.n;
+      const dim=(house!=="all"&&h!==house);
+      g+=`<path class="link${i===sel?" hot":""}" d="M${x} ${y-20} V${y}"/>`;
+      g+=`<g class="nd${i===sel?" sel":""}" data-i="${i}" opacity="${dim?.3:1}">
+          <rect x="${x-72}" y="${y}" width="144" height="34" rx="11"
+            fill="${COL[n[10]][0]}" stroke="${COL[n[10]][1]}" stroke-width="1.5"/>
+          <text class="ndt" x="${x-62}" y="${y+15}" fill="${COL[n[10]][1]}">${n[0]}</text>
+          <text class="ndv" x="${x-62}" y="${y+27}" fill="#6f8574">${n[2]}</text>
+          ${sigbars(x+50,y+22,n[4])}
+        </g>`;
+    });
+  });
+  document.getElementById("tg").innerHTML=g;
+  document.querySelectorAll("#tg .nd").forEach(el=>el.addEventListener("click",()=>{
+    const tr=document.querySelector(`#tb tr[data-i="${el.dataset.i}"]`);
+    if(tr)tr.focus();
+    select(+el.dataset.i);
+  }));
+}
+function sigbars(x,y,rssi){
+  const lv=rssi>=-75?4:rssi>=-85?3:rssi>=-100?2:1;
+  let s="";
+  for(let i=0;i<4;i++){
+    const h=4+i*3;
+    s+=`<line class="sigbar" x1="${x+i*5}" y1="${y}" x2="${x+i*5}" y2="${y-h}"
+        stroke="${i<lv?"#4a8f5f":"#c9dfc3"}" stroke-width="2.6"/>`;
+  }
+  return s;
+}
+
+/* ---------- 詳情 ---------- */
+function detail(){
+  const n=N[sel];
+  const cls=n[10]==="ok"?"":n[10]==="wn"?"wn":"dr";
+  const bcol=n[6]<25?"var(--alert)":n[6]<60?"var(--sun)":"var(--leaf)";
+  document.getElementById("detail").innerHTML=`
+    <div class="hero ${cls}">
+      <b>${n[0]}</b>
+      <small>${HOUSE[n[1]][0]} · ${n[2]}</small>
+      <span class="tag" style="color:${COL[n[10]][1]}">${STT[n[10]][1]}</span>
+    </div>
+    <dl>
+      <dt>目前讀值 CURRENT</dt><dd style="font-size:16px">${n[11]}</dd>
+      <dt>感測器型號</dt><dd>${n[3]}</dd>
+      <dt>訊號品質</dt><dd>RSSI ${n[4]} dBm · SNR ${n[5]} dB</dd>
+      <dt>電池電量</dt><dd>${n[6]} %</dd>
+    </dl>
+    <div class="meter"><i style="width:${n[6]}%;background:${bcol}"></i></div>
+    <dl>
+      <dt>韌體版本</dt><dd>${n[7]}</dd>
+      <dt>取樣間隔</dt><dd>${n[8]>=60?(n[8]/60)+" 分鐘":n[8]+" 秒"}</dd>
+      <dt>上次回傳</dt><dd>${n[9]}</dd>
+    </dl>
+    <p class="tip">${n[12]}</p>`;
+}
+
+/* ---------- 台帳 ---------- */
+function render(){
+  const list=N.map((n,i)=>({n,i})).filter(o=>{
+    if(house!=="all"&&o.n[1]!==house)return false;
+    if(!q)return true;
+    return (o.n[0]+o.n[2]+o.n[3]).toLowerCase().includes(q);
+  });
+  document.getElementById("cnt").textContent=list.length;
+  const tb=document.getElementById("tb");
+  if(!list.length){
+    tb.innerHTML='<tr class="emptyrow"><td colspan="10">此條件下沒有符合的節點 — 請調整關鍵字或棟別篩選。</td></tr>';
+    return;
+  }
+  tb.innerHTML=list.map(({n,i})=>{
+    const lv=n[4]>=-75?4:n[4]>=-85?3:n[4]>=-100?2:1;
+    const bars=[0,1,2,3].map(k=>`<i class="${k<lv?"on":""}" style="height:${4+k*3}px"></i>`).join("");
+    const bcls=n[6]<25?"d":n[6]<60?"w":"";
+    return `<tr data-i="${i}" tabindex="0" aria-selected="${i===sel}">
+      <td class="nid">${n[0]}</td>
+      <td><span style="color:${HOUSE[n[1]][1]};font-weight:700">${n[1]}</span> ${HOUSE[n[1]][0].split(" · ")[1]}</td>
+      <td>${n[2]}</td><td>${n[3]}</td>
+      <td class="r"><span class="sig">${bars}</span>${n[4]} dBm</td>
+      <td class="r">${n[5].toFixed(1)}</td>
+      <td><span class="batt"><i class="${bcls}" style="width:${n[6]}%"></i></span>
+          <span style="margin-left:8px;font-size:11.5px;color:var(--dim)">${n[6]}%</span></td>
+      <td class="r">${n[8]>=60?(n[8]/60)+" 分":n[8]+" 秒"}</td>
+      <td class="r">${n[9]}</td>
+      <td><span class="stt ${STT[n[10]][0]}">${STT[n[10]][1]}</span></td>
+    </tr>`;
+  }).join("");
+  tb.querySelectorAll("tr").forEach(tr=>{
+    const go=()=>select(+tr.dataset.i);
+    tr.addEventListener("click",go);
+    tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+  });
+}
+function select(i){
+  sel=i;detail();topo();
+  document.querySelectorAll("#tb tr").forEach(tr=>tr.setAttribute("aria-selected",String(+tr.dataset.i===sel)));
+}
+document.getElementById("q").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();render();select(sel);});
+document.querySelectorAll(".chipset button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".chipset button").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  house=b.dataset.h;render();topo();
+}));
+render();select(2);
+</script>
+</body>
+</html>

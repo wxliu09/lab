@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 34 倉儲黃黑·庫存盤點
+  ─────────────────────────────────────────
+  風格定位：工業安全風倉儲管理終端，叉車警示帶 × 掃描槍紅光
+  配色：
+    警示黃 #ffc400（主強調、KPI 卡）
+    工業黑 #1a1a1a（背景、表格頭）
+    鋼灰   #2a2a2a / #3d3d3d（卡片、格線）
+    滿倉綠 #43d17c  缺貨紅 #ff3b30  補貨橘 #ff9500
+    掃描紅 #ff2d2d（掃描線）
+  字體：'Noto Sans TC' 內文 + 'Rajdhani' 英數（機台螢幕感）
+  版面結構：頂部黃黑斜紋警示邊條 → 深色頂欄（導覽）→ KPI 卡列 →
+            左：貨架座標平面圖（A01–D12 格網 CSS Grid）／右：條碼掃描框 → 庫存明細表
+  動態效果：1) 條碼掃描框內紅色掃描線無限上下掃動；
+            2) 低於安全存量的表格列紅色閃爍；3) 貨架格 hover 放大顯示儲位資訊；
+            4) KPI 數字載入時逐位跳動
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>倉儲盤點系統 · WMS MIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --yellow:#ffc400; --black:#1a1a1a; --panel:#242424; --grid:#3d3d3d;
+  --green:#43d17c; --red:#ff3b30; --orange:#ff9500; --scan:#ff2d2d;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--black);color:#e8e8e8;font-family:'Noto Sans TC',sans-serif;min-height:100vh}
+/* 黃黑斜紋警示邊條 */
+.hazard{
+  height:14px;
+  background:repeating-linear-gradient(45deg,var(--yellow) 0 20px,var(--black) 20px 40px);
+}
+.topbar{
+  display:flex;align-items:center;gap:28px;padding:14px 28px;
+  background:#111;border-bottom:2px solid var(--yellow);
+}
+.logo{font-family:'Rajdhani';font-size:24px;font-weight:700;color:var(--yellow);letter-spacing:2px}
+.logo span{color:#fff}
+nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+nav a{
+  color:#bbb;text-decoration:none;font-size:14px;padding:8px 16px;border-radius:4px;transition:.2s;letter-spacing:1px;
+}
+nav a:hover{color:var(--yellow);background:rgba(255,196,0,.08)}
+nav a.active{color:#111;background:var(--yellow);font-weight:700}
+.back-link{
+  color:var(--yellow);text-decoration:none;border:1px solid var(--yellow);
+  padding:7px 16px;border-radius:4px;font-size:14px;font-weight:700;transition:.2s;letter-spacing:1px;
+}
+.back-link:hover{background:var(--yellow);color:#111}
+main{max-width:1280px;margin:0 auto;padding:26px 28px 50px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px}
+.kpi{
+  background:var(--panel);border:1px solid var(--grid);border-top:4px solid var(--yellow);
+  padding:16px 20px;position:relative;overflow:hidden;
+}
+.kpi.warn{border-top-color:var(--red)}
+.kpi.ok{border-top-color:var(--green)}
+.kpi h3{font-size:12px;color:#999;letter-spacing:3px;font-weight:500}
+.kpi .val{font-family:'Rajdhani';font-size:44px;font-weight:700;color:#fff;line-height:1.15}
+.kpi.warn .val{color:var(--red)}
+.kpi .sub{font-size:12px;color:#777}
+.mid{display:grid;grid-template-columns:1.5fr 1fr;gap:22px;margin-bottom:28px}
+.panel{background:var(--panel);border:1px solid var(--grid);padding:20px}
+.panel h2{
+  font-size:15px;letter-spacing:3px;color:var(--yellow);margin-bottom:16px;
+  display:flex;align-items:center;gap:10px;font-weight:700;
+}
+.panel h2::before{content:"";width:10px;height:10px;background:var(--yellow);clip-path:polygon(0 0,100% 0,100% 100%)}
+/* 貨架平面圖 */
+.rack-map{display:grid;grid-template-columns:repeat(12,1fr);gap:5px}
+.slot{
+  aspect-ratio:1;border:1px solid var(--grid);display:flex;align-items:center;justify-content:center;
+  font-family:'Rajdhani';font-size:12px;font-weight:700;cursor:pointer;transition:.18s;position:relative;
+}
+.slot.full{background:rgba(67,209,124,.22);color:var(--green);border-color:rgba(67,209,124,.5)}
+.slot.empty{background:rgba(255,59,48,.18);color:var(--red);border-color:rgba(255,59,48,.55)}
+.slot.restock{background:rgba(255,149,0,.2);color:var(--orange);border-color:rgba(255,149,0,.5)}
+.slot:hover{transform:scale(1.18);z-index:2;box-shadow:0 4px 18px rgba(0,0,0,.6)}
+.slot .tip{
+  display:none;position:absolute;bottom:110%;left:50%;transform:translateX(-50%);
+  background:#000;border:1px solid var(--yellow);color:#fff;font-size:11px;padding:4px 8px;
+  white-space:nowrap;z-index:5;font-family:'Noto Sans TC';letter-spacing:0;
+}
+.slot:hover .tip{display:block}
+.legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:#aaa}
+.legend i{width:12px;height:12px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.legend .l-full i{background:var(--green)} .legend .l-empty i{background:var(--red)} .legend .l-restock i{background:var(--orange)}
+/* 條碼掃描框 */
+.scan-frame{
+  border:2px solid var(--yellow);height:210px;position:relative;overflow:hidden;
+  background:
+    linear-gradient(rgba(255,196,0,.04),rgba(255,196,0,.04)),
+    repeating-linear-gradient(90deg,transparent 0 14px,rgba(255,255,255,.03) 14px 15px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+}
+.scan-frame::before,.scan-frame::after,
+.scan-corner::before,.scan-corner::after{
+  content:"";position:absolute;width:22px;height:22px;border:3px solid var(--yellow);
+}
+.scan-frame::before{top:-2px;left:-2px;border-right:none;border-bottom:none}
+.scan-frame::after{top:-2px;right:-2px;border-left:none;border-bottom:none}
+.scan-corner::before{bottom:-2px;left:-2px;border-right:none;border-top:none}
+.scan-corner::after{bottom:-2px;right:-2px;border-left:none;border-top:none}
+.scanline{
+  position:absolute;left:6px;right:6px;height:3px;background:var(--scan);
+  box-shadow:0 0 14px 3px rgba(255,45,45,.7);
+  animation:scanMove 2.2s ease-in-out infinite alternate;
+}
+@keyframes scanMove{from{top:8%}to{top:88%}}
+.barcode{
+  display:flex;gap:3px;align-items:flex-end;height:64px;
+}
+.barcode i{background:#eee;display:block}
+.scan-code{font-family:'Rajdhani';font-size:20px;letter-spacing:6px;color:var(--yellow)}
+.scan-status{font-size:13px;color:var(--green);display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--green);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+/* 庫存表 */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--grid)}
+th{background:#111;color:var(--yellow);letter-spacing:2px;font-size:12px}
+tbody tr{transition:.15s}
+tbody tr:hover{background:rgba(255,196,0,.06)}
+td.mono{font-family:'Rajdhani';font-size:16px;font-weight:600;letter-spacing:1px}
+.badge{padding:3px 12px;font-size:12px;font-weight:700;border-radius:3px;letter-spacing:1px}
+.badge.ok{background:rgba(67,209,124,.15);color:var(--green);border:1px solid rgba(67,209,124,.5)}
+.badge.low{background:rgba(255,59,48,.15);color:var(--red);border:1px solid rgba(255,59,48,.6)}
+.badge.restock{background:rgba(255,149,0,.15);color:var(--orange);border:1px solid rgba(255,149,0,.5)}
+tr.low-row{animation:lowFlash 1.4s infinite}
+@keyframes lowFlash{0%,100%{background:transparent}50%{background:rgba(255,59,48,.13)}}
+.sku{color:var(--yellow);text-decoration:none;border-bottom:1px dashed var(--yellow)}
+.sku:hover{border-bottom-style:solid}
+.rack-labels{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin-bottom:6px}
+.rack-labels span{font-family:'Rajdhani';font-size:11px;color:#666;text-align:center}
+@media (max-width:980px){.mid{grid-template-columns:1fr}.kpi-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="hazard"></div>
+<header class="topbar">
+  <div class="logo">WMS<span>·倉儲盤點</span></div>
+  <nav>
+    <a href="index.html" class="active">庫存總覽</a><a href="items.html">品項列表</a><a href="inbound.html">入庫作業</a><a href="outbound.html">出庫作業</a><a href="stocktake.html">盤點排程</a><a href="report.html">報表中心</a>
+  </nav>
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+</header>
+<main>
+  <div class="kpi-row">
+    <div class="kpi ok"><h3>在庫品項</h3><div class="val" data-n="1248">0</div><div class="sub">SKU 總數</div></div>
+    <div class="kpi"><h3>今日入庫</h3><div class="val" data-n="367">0</div><div class="sub">件 · 較昨日 +12%</div></div>
+    <div class="kpi"><h3>今日出庫</h3><div class="val" data-n="542">0</div><div class="sub">件 · 達成率 96%</div></div>
+    <div class="kpi warn"><h3>低於安全存量</h3><div class="val" data-n="17">0</div><div class="sub">需立即補貨</div></div>
+  </div>
+
+  <div class="mid">
+    <section class="panel">
+      <h2>貨架座標平面圖 — A~D 區</h2>
+      <div class="rack-labels"><span>01</span><span>02</span><span>03</span><span>04</span><span>05</span><span>06</span><span>07</span><span>08</span><span>09</span><span>10</span><span>11</span><span>12</span></div>
+      <div class="rack-map" id="rackMap"></div>
+      <div class="legend">
+        <span class="l-full"><i></i>在庫充足</span>
+        <span class="l-restock"><i></i>補貨中</span>
+        <span class="l-empty"><i></i>缺貨／低於安全存量</span>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>條碼掃描站</h2>
+      <div class="scan-frame">
+        <div class="scanline"></div>
+        <div class="barcode" id="barcode"></div>
+        <div class="scan-code" id="scanCode">4710-8823-4415</div>
+        <div class="scan-status"><span class="dot"></span><span id="scanMsg">掃描器連線正常 · 待機中</span></div>
+        <div class="scan-corner"></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>庫存明細 — 即時盤點</h2>
+    <table>
+      <thead><tr><th>SKU 料號</th><th>品名</th><th>儲位</th><th>現存量</th><th>安全存量</th><th>差異</th><th>狀態</th></tr></thead>
+      <tbody>
+        <tr><td class="mono"><a class="sku" href="items.html">SKU-88014</a></td><td>無線藍牙耳機 Pro</td><td class="mono">A-03</td><td class="mono">486</td><td class="mono">200</td><td class="mono" style="color:var(--green)">+286</td><td><span class="badge ok">充足</span></td></tr>
+        <tr class="low-row"><td class="mono"><a class="sku" href="items.html">SKU-10277</a></td><td>27 吋 4K 顯示器</td><td class="mono">B-07</td><td class="mono">12</td><td class="mono">50</td><td class="mono" style="color:var(--red)">-38</td><td><span class="badge low">緊急補貨</span></td></tr>
+        <tr><td class="mono"><a class="sku" href="items.html">SKU-55309</a></td><td>機械式鍵盤 青軸</td><td class="mono">C-11</td><td class="mono">238</td><td class="mono">120</td><td class="mono" style="color:var(--green)">+118</td><td><span class="badge ok">充足</span></td></tr>
+        <tr class="low-row"><td class="mono"><a class="sku" href="items.html">SKU-77120</a></td><td>USB-C 集線器 8 合 1</td><td class="mono">A-09</td><td class="mono">8</td><td class="mono">80</td><td class="mono" style="color:var(--red)">-72</td><td><span class="badge low">緊急補貨</span></td></tr>
+        <tr><td class="mono"><a class="sku" href="items.html">SKU-33456</a></td><td>筆電散熱支架</td><td class="mono">D-02</td><td class="mono">64</td><td class="mono">60</td><td class="mono" style="color:var(--orange)">+4</td><td><span class="badge restock">補貨中</span></td></tr>
+        <tr><td class="mono"><a class="sku" href="items.html">SKU-90831</a></td><td>人體工學滑鼠</td><td class="mono">B-12</td><td class="mono">517</td><td class="mono">150</td><td class="mono" style="color:var(--green)">+367</td><td><span class="badge ok">充足</span></td></tr>
+        <tr class="low-row"><td class="mono"><a class="sku" href="items.html">SKU-22098</a></td><td>GaN 65W 充電器</td><td class="mono">C-05</td><td class="mono">21</td><td class="mono">100</td><td class="mono" style="color:var(--red)">-79</td><td><span class="badge low">緊急補貨</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+<div class="hazard"></div>
+<script>
+// 貨架平面圖 A01-D12
+const map=document.getElementById('rackMap');
+const rows=['A','B','C','D'];
+// 0=full 1=restock 2=empty
+const state={
+  A:[0,0,2,0,0,0,0,0,2,0,0,0],
+  B:[0,0,0,0,0,0,2,0,0,0,0,0],
+  C:[0,0,0,0,2,0,0,0,0,0,1,0],
+  D:[0,1,0,0,0,0,0,0,0,0,0,0]
+};
+const cls=['full','restock','empty'];
+const txt={full:'在庫充足',restock:'補貨中',empty:'低於安全存量'};
+rows.forEach(r=>{
+  state[r].forEach((s,i)=>{
+    const d=document.createElement('div');
+    d.className='slot '+cls[s];
+    d.textContent=r+String(i+1).padStart(2,'0');
+    d.innerHTML+=`<span class="tip">${r}-${String(i+1).padStart(2,'0')}｜${txt[cls[s]]}</span>`;
+    map.appendChild(d);
+  });
+});
+// 條碼（隨機寬度黑條）
+const bc=document.getElementById('barcode');
+[3,1,2,4,1,1,3,2,1,4,2,1,1,3,2,1,4,1,2,3,1,2].forEach(w=>{
+  const i=document.createElement('i');
+  i.style.width=w*2.4+'px';i.style.height=(48+((w*13)%16))+'px';
+  bc.appendChild(i);
+});
+// KPI 計數
+document.querySelectorAll('.kpi .val').forEach((el,idx)=>{
+  const target=+el.dataset.n,t0=performance.now(),dur=1100;
+  setTimeout(function tick(t){
+    const p=Math.min((t-t0)/dur,1);
+    el.textContent=Math.round(target*(1-Math.pow(1-p,3))).toLocaleString();
+    if(p<1)requestAnimationFrame(tick);
+  },150*idx,performance.now());
+});
+// 模擬掃描輪播
+const codes=['4710-8823-4415','4710-5567-9021','4710-3341-7788','4710-9902-1134'];
+const msgs=['掃描成功：SKU-88014 已登入','掃描成功：SKU-55309 已登入','掃描成功：SKU-90831 已登入','掃描成功：SKU-33456 已登入'];
+let ci=0;
+setInterval(()=>{
+  ci=(ci+1)%codes.length;
+  document.getElementById('scanCode').textContent=codes[ci];
+  document.getElementById('scanMsg').textContent=msgs[ci];
+},3500);
+</script>
+</body>
+</html>

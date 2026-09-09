@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════════
+  【設計規格】太空艙窗·定期申報平台 (54-spaceport-filing.html)
+  ─────────────────────────────────────────────────────────────────────────────
+  ■ 風格定位：軌道太空站的艙內儀表台——圓形艙窗、航電燈號、月／季報
+      申報作業如飛行任務的定期回報。
+  ■ 配色（附色碼）：
+      艙內底 #0c1020（深藍黑）
+      面板底 #141a30
+      琥珀燈 #ffb454（主要強調／進度）
+      氧綠 #3ddc97（正常／已申報）
+      警報紅 #ff4d5e（催辦閃爍）
+      冰藍 #7fb2ff（連結／資訊）
+      文字 #dfe8ff / 次要 #6d7ca6
+  ■ 字體：'Chakra Petch'（英數航電感）、'Noto Sans TC'（中文）
+  ■ 版面結構：頂部航電列（返回＋任務時鐘）→ 左：圓形艙窗（星空緩移）
+      ＋申報進度圓環；中：催辦名單＋申報歷程時間軸；右：申報表單面板
+      （點「開啟申報表」滑出欄位）。
+  ■ 動態效果：
+      1. 艙窗內星空以兩層不同速度 starfield 緩移（視差）。
+      2. 申報進度圓環 stroke-dashoffset 動畫＋中心百分比跳動。
+      3. 催辦名單紅色警示燈閃爍（opacity 呼吸）。
+      4. 申報表單面板下滑展開，送出時琥珀燈掃過並標記「已送審」。
+      5. 任務時鐘每秒跳動（T-plus 計時）。
+  ■ 返回入口：頂部航電列左側「← 返回入口」連結（../../index.html）。
+  ═══════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>太空艙窗 · 定期申報平台</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0c1020;
+  --panel:#141a30;
+  --amber:#ffb454;
+  --oxy:#3ddc97;
+  --alert:#ff4d5e;
+  --ice:#7fb2ff;
+  --txt:#dfe8ff;
+  --dim:#6d7ca6;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:var(--bg);
+  background-image:radial-gradient(ellipse at 50% 120%, rgba(127,178,255,.08), transparent 60%);
+  color:var(--txt);
+  font-family:'Chakra Petch','Noto Sans TC',sans-serif;
+  min-height:100vh;
+  padding-bottom:40px;
+}
+
+/* ── 頂部航電列 ── */
+.topbar{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:14px 24px;border-bottom:1px solid rgba(127,178,255,.2);
+  background:linear-gradient(180deg, rgba(20,26,48,.95), rgba(12,16,32,.9));
+}
+.back-link{
+  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  color:var(--amber);font-weight:700;letter-spacing:2px;font-size:14px;
+  border:1px solid rgba(255,180,84,.6);border-radius:20px;
+  padding:7px 16px;
+  box-shadow:0 0 12px rgba(255,180,84,.18), inset 0 0 10px rgba(255,180,84,.06);
+  transition:all .2s;
+}
+.back-link:hover{background:rgba(255,180,84,.12);box-shadow:0 0 20px rgba(255,180,84,.4);}
+.back-link.nav{
+  color:var(--ice);border-color:rgba(127,178,255,.5);font-size:12px;padding:5px 13px;
+  box-shadow:0 0 10px rgba(127,178,255,.15);
+}
+.back-link.nav:hover{background:rgba(127,178,255,.12);box-shadow:0 0 18px rgba(127,178,255,.4);}
+.op{
+  color:var(--ice);text-decoration:none;font-size:12px;letter-spacing:1px;white-space:nowrap;
+}
+.op:hover{text-decoration:underline;text-shadow:0 0 8px rgba(127,178,255,.8);}
+.topbar h1{font-size:18px;letter-spacing:4px;}
+.topbar h1 span{color:var(--amber);}
+.mission-clock{
+  margin-left:auto;font-size:13px;letter-spacing:2px;color:var(--dim);
+  border:1px solid rgba(127,178,255,.25);border-radius:20px;padding:6px 16px;
+  font-variant-numeric:tabular-nums;
+}
+.mission-clock b{color:var(--oxy);}
+
+/* ── 主區三欄 ── */
+.deck{
+  display:grid;grid-template-columns:320px 1fr 340px;gap:18px;
+  padding:20px 24px;align-items:start;
+}
+.panel{
+  background:var(--panel);
+  border:1px solid rgba(127,178,255,.18);
+  border-radius:12px;
+  padding:18px;
+  box-shadow:inset 0 0 30px rgba(5,8,20,.6);
+}
+.panel h2{
+  font-size:13px;letter-spacing:4px;color:var(--amber);
+  border-bottom:1px solid rgba(255,180,84,.25);
+  padding-bottom:9px;margin-bottom:14px;
+}
+
+/* ── 艙窗 ── */
+.porthole{
+  width:250px;height:250px;margin:6px auto 16px;
+  border-radius:50%;
+  border:10px solid #232c4d;
+  box-shadow:
+    0 0 0 4px #0a0e1e,
+    0 0 30px rgba(127,178,255,.25),
+    inset 0 0 40px rgba(0,0,0,.8);
+  position:relative;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 60%, #101a3a 0%, #05070f 75%);
+}
+.stars,.stars2{
+  position:absolute;inset:-50%;
+  background-repeat:repeat;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20px 30px, #fff, transparent),
+    radial-gradient(1px 1px at 60px 90px, rgba(255,255,255,.8), transparent),
+    radial-gradient(1px 1px at 120px 40px, rgba(255,255,255,.6), transparent),
+    radial-gradient(1.5px 1.5px at 170px 130px, #cfe0ff, transparent),
+    radial-gradient(1px 1px at 210px 70px, rgba(255,255,255,.7), transparent);
+  background-size:230px 170px;
+  animation:drift 70s linear infinite;
+}
+.stars2{
+  background-size:150px 110px;
+  opacity:.5;
+  animation-duration:38s;
+  animation-direction:reverse;
+}
+@keyframes drift{
+  from{transform:translate(0,0);}
+  to{transform:translate(-230px,-170px);}
+}
+.planet{
+  position:absolute;right:16px;bottom:20px;width:74px;height:74px;border-radius:50%;
+  background:radial-gradient(circle at 32% 28%, #8fb8ff, #35508f 55%, #16224a);
+  box-shadow:inset -10px -8px 18px rgba(0,0,0,.55), 0 0 24px rgba(127,178,255,.35);
+}
+.porthole .rim-glow{
+  position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  box-shadow:inset 0 0 30px rgba(127,178,255,.28);
+}
+.porthole-cap{text-align:center;font-size:12px;letter-spacing:3px;color:var(--dim);}
+
+/* ── 進度圓環 ── */
+.progress-wrap{display:flex;flex-direction:column;align-items:center;margin-top:16px;}
+.ring-box{position:relative;width:160px;height:160px;}
+.ring-box svg{transform:rotate(-90deg);}
+.ring-box .rb-bg{stroke:rgba(127,178,255,.15);}
+.ring-box .rb-fg{
+  stroke:var(--amber);stroke-linecap:round;
+  filter:drop-shadow(0 0 6px rgba(255,180,84,.7));
+  transition:stroke-dashoffset 1.4s cubic-bezier(.3,.8,.3,1);
+}
+.ring-center{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+}
+.ring-center .pct{font-size:34px;font-weight:700;color:var(--amber);font-variant-numeric:tabular-nums;}
+.ring-center .cap{font-size:11px;letter-spacing:3px;color:var(--dim);margin-top:2px;}
+.progress-note{margin-top:10px;font-size:12px;letter-spacing:2px;color:var(--dim);text-align:center;line-height:1.9;}
+.progress-note b{color:var(--oxy);}
+
+/* ── 催辦名單 ── */
+.urge-item{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 12px;border-radius:8px;margin-bottom:8px;
+  background:rgba(255,77,94,.07);
+  border:1px solid rgba(255,77,94,.3);
+}
+.urge-item .beacon{
+  width:10px;height:10px;border-radius:50%;background:var(--alert);
+  box-shadow:0 0 10px var(--alert);
+  animation:blinkAlert 1s steps(2) infinite;flex-shrink:0;
+}
+@keyframes blinkAlert{50%{opacity:.15;}}
+.urge-item .uinfo{flex:1;}
+.urge-item .uname{font-size:14px;font-weight:600;letter-spacing:1px;}
+.urge-item .umeta{font-size:11px;color:var(--dim);letter-spacing:1px;}
+.urge-item .udue{font-size:12px;color:var(--alert);letter-spacing:1px;font-weight:700;}
+.urge-ok{
+  padding:10px 12px;border-radius:8px;margin-bottom:8px;
+  background:rgba(61,220,151,.06);border:1px solid rgba(61,220,151,.25);
+  font-size:13px;letter-spacing:1px;color:var(--oxy);
+  display:flex;align-items:center;gap:10px;
+}
+
+/* ── 時間軸 ── */
+.timeline{margin-top:6px;position:relative;padding-left:22px;}
+.timeline::before{
+  content:'';position:absolute;left:6px;top:6px;bottom:6px;width:2px;
+  background:linear-gradient(180deg, var(--oxy), var(--amber), rgba(127,178,255,.3));
+}
+.tl-item{position:relative;margin-bottom:18px;}
+.tl-item::before{
+  content:'';position:absolute;left:-21px;top:4px;width:10px;height:10px;border-radius:50%;
+  background:var(--oxy);box-shadow:0 0 8px var(--oxy);
+}
+.tl-item.pending::before{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:blinkAlert 1.6s steps(2) infinite;}
+.tl-item .tl-date{font-size:11px;color:var(--dim);letter-spacing:2px;font-variant-numeric:tabular-nums;}
+.tl-item .tl-title{font-size:14px;font-weight:600;letter-spacing:1px;margin-top:2px;}
+.tl-item .tl-desc{font-size:12px;color:var(--dim);letter-spacing:1px;margin-top:2px;}
+
+/* ── 申報表單面板 ── */
+.open-btn{
+  width:100%;cursor:pointer;font-family:inherit;
+  background:linear-gradient(90deg, rgba(255,180,84,.15), rgba(255,180,84,.05));
+  border:1px solid var(--amber);color:var(--amber);
+  font-size:15px;font-weight:700;letter-spacing:4px;
+  padding:13px 0;border-radius:24px;
+  box-shadow:0 0 14px rgba(255,180,84,.25);
+  transition:all .2s;
+}
+.open-btn:hover{background:rgba(255,180,84,.2);box-shadow:0 0 24px rgba(255,180,84,.5);}
+.form-panel{
+  overflow:hidden;max-height:0;opacity:0;
+  transition:max-height .55s cubic-bezier(.3,.9,.3,1), opacity .4s;
+}
+.form-panel.open{max-height:640px;opacity:1;}
+.form-inner{padding-top:16px;}
+.f-row{margin-bottom:13px;}
+.f-row label{display:block;font-size:11px;color:var(--dim);letter-spacing:3px;margin-bottom:5px;}
+.f-row input,.f-row select,.f-row textarea{
+  width:100%;font-family:inherit;font-size:14px;letter-spacing:1px;
+  background:#0d1226;border:1px solid rgba(127,178,255,.3);
+  color:var(--txt);border-radius:6px;padding:9px 12px;outline:none;
+  caret-color:var(--amber);
+}
+.f-row input:focus,.f-row select:focus,.f-row textarea:focus{
+  border-color:var(--amber);box-shadow:0 0 10px rgba(255,180,84,.3);
+}
+.f-row .err{font-size:11px;color:var(--alert);letter-spacing:1px;min-height:15px;margin-top:3px;}
+.f-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.submit-btn{
+  width:100%;cursor:pointer;font-family:inherit;margin-top:6px;
+  background:var(--oxy);color:#07281a;border:none;
+  font-size:14px;font-weight:700;letter-spacing:4px;
+  padding:12px 0;border-radius:24px;
+  box-shadow:0 0 16px rgba(61,220,151,.35);
+  transition:all .2s;position:relative;overflow:hidden;
+}
+.submit-btn:hover{box-shadow:0 0 26px rgba(61,220,151,.6);}
+.submit-btn:disabled{opacity:.5;cursor:default;}
+.submit-btn.sending::after{
+  content:'';position:absolute;top:0;bottom:0;width:40px;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
+  animation:sweep .7s linear infinite;
+}
+@keyframes sweep{from{left:-40px;}to{left:110%;}}
+.form-status{margin-top:10px;font-size:12px;letter-spacing:2px;text-align:center;min-height:18px;}
+.form-status.ok{color:var(--oxy);}
+.form-status.bad{color:var(--alert);}
+
+@media (max-width:1100px){
+  .deck{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+  <h1>太空艙窗 <span>·</span> 定期申報平台</h1>
+  <a class="back-link nav" href="list.html">申報列表</a>
+  <a class="back-link nav" href="history.html">歷史查詢</a>
+  <a class="back-link nav" href="settings.html">申報設定</a>
+  <div class="mission-clock">任務時鐘 T+ <b id="clock">000:00:00:00</b></div>
+</div>
+
+<div class="deck">
+  <!-- 左：艙窗＋進度 -->
+  <div class="panel">
+    <h2>觀測艙窗 ▸ DECK-04</h2>
+    <div class="porthole">
+      <div class="stars"></div>
+      <div class="stars2"></div>
+      <div class="planet"></div>
+      <div class="rim-glow"></div>
+    </div>
+    <div class="porthole-cap">近地軌道 · 高度 412 KM</div>
+
+    <div class="progress-wrap">
+      <div class="ring-box">
+        <svg width="160" height="160">
+          <circle class="rb-bg" cx="80" cy="80" r="66" fill="none" stroke-width="10"/>
+          <circle class="rb-fg" id="ringFg" cx="80" cy="80" r="66" fill="none" stroke-width="10"/>
+        </svg>
+        <div class="ring-center">
+          <div class="pct" id="pctNum">0%</div>
+          <div class="cap">本期申報率</div>
+        </div>
+      </div>
+      <div class="progress-note">應申報 <b>24</b> 單位 ｜ 已申報 <b id="doneCnt">19</b> 單位<br>截止倒數： <b>3 日 06 時</b></div>
+    </div>
+  </div>
+
+  <!-- 中：催辦＋歷程 -->
+  <div class="panel">
+    <h2>催辦名單 ▸ 逾期未報</h2>
+    <div class="urge-item">
+      <span class="beacon"></span>
+      <div class="uinfo"><div class="uname">軌道材料試驗艙</div><div class="umeta">8 月份月報 ｜ 承辦：周子晴 ｜ <a class="op" href="detail.html">詳情 ▸</a></div></div>
+      <div class="udue">逾期 2 日</div>
+    </div>
+    <div class="urge-item">
+      <span class="beacon"></span>
+      <div class="uinfo"><div class="uname">生命維持系統組</div><div class="umeta">8 月份月報 ｜ 承辦：高逸凡 ｜ <a class="op" href="detail.html">詳情 ▸</a></div></div>
+      <div class="udue">逾期 1 日</div>
+    </div>
+    <div class="urge-ok">✓ 其餘 19 個單位均已如期完成申報</div>
+
+    <h2 style="margin-top:22px;">申報歷程 ▸ 時間軸</h2>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-date">115-08-01 09:00</div>
+        <div class="tl-title">8 月份月報開放填報</div>
+        <div class="tl-desc">系統自動寄送開報通知至 24 個單位。</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">115-08-15 17:30</div>
+        <div class="tl-title">期中提醒</div>
+        <div class="tl-desc">已申報 12 / 24 單位，寄發第一次提醒。</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-date">115-08-25 10:00</div>
+        <div class="tl-title">第二次催辦</div>
+        <div class="tl-desc">對未申報單位主管寄送催辦通知。</div>
+      </div>
+      <div class="tl-item pending">
+        <div class="tl-date">115-08-31 23:59</div>
+        <div class="tl-title">申報截止（進行中）</div>
+        <div class="tl-desc">截止後將自動結轉至季報彙整作業。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：申報表單 -->
+  <div class="panel">
+    <h2>申報作業 ▸ 8 月份月報</h2>
+    <button class="open-btn" id="openBtn">▼ 開啟申報表</button>
+    <div class="form-panel" id="formPanel">
+      <div class="form-inner">
+        <form id="fileForm" novalidate>
+          <div class="f-row">
+            <label>申報單位</label>
+            <select id="fUnit">
+              <option value="">── 請選擇 ──</option>
+              <option>軌道材料試驗艙</option>
+              <option>生命維持系統組</option>
+              <option>推進動力課</option>
+              <option>通訊酬載課</option>
+            </select>
+            <div class="err" id="eUnit"></div>
+          </div>
+          <div class="f-2col">
+            <div class="f-row">
+              <label>申報月份</label>
+              <input type="month" id="fMonth" value="2026-08">
+              <div class="err"></div>
+            </div>
+            <div class="f-row">
+              <label>出勤基準人數</label>
+              <input type="number" id="fHead" min="1" placeholder="例：12">
+              <div class="err" id="eHead"></div>
+            </div>
+          </div>
+          <div class="f-row">
+            <label>本月能耗（kWh）</label>
+            <input type="number" id="fPower" min="0" step="0.1" placeholder="例：1840.5">
+            <div class="err" id="ePower"></div>
+          </div>
+          <div class="f-row">
+            <label>異常事件摘要</label>
+            <textarea id="fNote" rows="3" placeholder="無異常請填「本月無異常事件」"></textarea>
+            <div class="err" id="eNote"></div>
+          </div>
+          <button type="submit" class="submit-btn" id="sendBtn">◉ 送出申報</button>
+          <div class="form-status" id="formStatus"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 任務時鐘（自任務起始日起跳） */
+(function(){
+  const t0 = new Date('2026-08-01T00:00:00+08:00').getTime();
+  const el = document.getElementById('clock');
+  function pad(n, w){ return String(n).padStart(w, '0'); }
+  function tick(){
+    let s = Math.max(0, Math.floor((Date.now() - t0) / 1000));
+    const d = Math.floor(s / 86400); s %= 86400;
+    const h = Math.floor(s / 3600); s %= 3600;
+    const m = Math.floor(s / 60); const sec = s % 60;
+    el.textContent = pad(d,3) + ':' + pad(h,2) + ':' + pad(m,2) + ':' + pad(sec,2);
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+/* 申報率圓環 */
+(function(){
+  const CIRC = 2 * Math.PI * 66;
+  const rate = 19 / 24;
+  const fg = document.getElementById('ringFg');
+  fg.setAttribute('stroke-dasharray', CIRC.toFixed(1));
+  fg.setAttribute('stroke-dashoffset', CIRC.toFixed(1));
+  setTimeout(function(){
+    fg.style.strokeDashoffset = (CIRC * (1 - rate)).toFixed(1);
+    /* 百分比跳動 */
+    const target = Math.round(rate * 100);
+    let cur = 0;
+    const num = document.getElementById('pctNum');
+    const iv = setInterval(function(){
+      cur += 3;
+      if (cur >= target){ cur = target; clearInterval(iv); }
+      num.textContent = cur + '%';
+    }, 40);
+  }, 300);
+})();
+
+/* 申報表展開 */
+const openBtn = document.getElementById('openBtn');
+const formPanel = document.getElementById('formPanel');
+openBtn.addEventListener('click', function(){
+  const opening = !formPanel.classList.contains('open');
+  formPanel.classList.toggle('open');
+  this.textContent = opening ? '▲ 收合申報表' : '▼ 開啟申報表';
+});
+
+/* 表單驗證＋送出動畫 */
+document.getElementById('fileForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const unit = document.getElementById('fUnit');
+  const head = document.getElementById('fHead');
+  const power = document.getElementById('fPower');
+  const note = document.getElementById('fNote');
+  const st = document.getElementById('formStatus');
+  let ok = true;
+  document.getElementById('eUnit').textContent = unit.value ? '' : '※ 請選擇申報單位';
+  if (!unit.value) ok = false;
+  document.getElementById('eHead').textContent = (+head.value > 0) ? '' : '※ 請輸入大於 0 的人數';
+  if (!(+head.value > 0)) ok = false;
+  document.getElementById('ePower').textContent = (power.value !== '' && +power.value >= 0) ? '' : '※ 請輸入能耗數值';
+  if (!(power.value !== '' && +power.value >= 0)) ok = false;
+  document.getElementById('eNote').textContent = note.value.trim() ? '' : '※ 請填寫摘要（無異常亦需註明）';
+  if (!note.value.trim()) ok = false;
+  if (!ok){ st.textContent = '⚠ 申報資料未齊，請檢查紅色欄位'; st.className = 'form-status bad'; return; }
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.classList.add('sending');
+  btn.textContent = '傳輸中…';
+  st.textContent = '';
+  setTimeout(function(){
+    btn.classList.remove('sending');
+    btn.textContent = '◉ 送出申報';
+    btn.disabled = false;
+    st.textContent = '✓ 申報已送審，編號 FIL-11508-' + String(Math.floor(Math.random()*900)+100);
+    st.className = 'form-status ok';
+    document.getElementById('doneCnt').textContent = '20';
+  }, 1400);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>30 · 等距 3D 倉儲 WMS — ISOMETRIC WAREHOUSE</title>
+<style>
+:root{
+  --bg:#eef1f6;--floor:#dfe4ec;--grid:#c8cfdc;--ink:#20293a;--dim:#6f7b90;
+  --card:#fff;--line:#dde2ec;
+  --c1:#4f7cff;--c2:#22c9a0;--c3:#ffb020;--c4:#ff5c72;--c5:#a06bff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--ink);min-height:100vh;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;font-size:14px;
+  background-image:radial-gradient(circle at 20% 0%,#fff 0,transparent 55%)}
+.home{
+  position:fixed;right:22px;bottom:22px;z-index:99;text-decoration:none;color:#fff;
+  background:var(--ink);padding:13px 22px;border-radius:12px;font-weight:600;font-size:13.5px;
+  box-shadow:0 8px 22px rgba(32,41,58,.35);transition:.22s}
+.home:hover{background:#4f7cff;transform:translateY(-3px)}
+
+header{padding:22px 26px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:#fff;border-bottom:1px solid var(--line)}
+header .lg{display:flex;align-items:center;gap:12px}
+header .lg .c{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#4f7cff,#22c9a0);
+  display:grid;place-items:center;color:#fff;font-size:19px;font-weight:800}
+header h1{font-size:18px;font-weight:700;letter-spacing:-.02em}
+header h1 small{display:block;font-size:10.5px;color:var(--dim);letter-spacing:.18em;font-weight:400;margin-top:3px}
+header nav{display:flex;gap:4px;margin-left:16px}
+header nav a{text-decoration:none;color:var(--dim);padding:8px 14px;border-radius:9px;font-size:13.5px}
+header nav a.on{background:#eaf0ff;color:var(--c1);font-weight:600}
+header nav a:hover{background:#f2f5fa}
+header .rt{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--dim)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c2);display:inline-block;margin-right:6px;
+  box-shadow:0 0 0 4px rgba(34,201,160,.18)}
+@media(max-width:860px){header nav{display:none}}
+
+.body{display:grid;grid-template-columns:1fr 320px;gap:20px;padding:22px 26px 60px;max-width:1600px;margin:0 auto}
+@media(max-width:1100px){.body{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;
+  box-shadow:0 2px 10px rgba(32,41,58,.05)}
+.panel>h2{font-size:15px;font-weight:700;padding:17px 20px;border-bottom:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center}
+.panel>h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.1em}
+.panel .in{padding:20px}
+
+/* ===== isometric stage ===== */
+.stage{
+  height:520px;overflow:hidden;position:relative;border-radius:0 0 18px 18px;
+  background:radial-gradient(ellipse at 50% 40%,#f7f9fc,#e4e9f1);perspective:1400px}
+.iso{
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%) rotateX(58deg) rotateZ(-45deg);
+  transform-style:preserve-3d;transition:transform .6s cubic-bezier(.2,.8,.3,1)}
+.floor{
+  width:620px;height:620px;background:var(--floor);position:relative;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:62px 62px;
+  box-shadow:0 0 0 3px #b9c2d2, 0 40px 60px rgba(32,41,58,.22)}
+/* aisles marking */
+.aisle{position:absolute;background:rgba(255,176,32,.22);border:1px dashed rgba(255,176,32,.7)}
+/* rack: a stack of 3D boxes */
+.rack{position:absolute;transform-style:preserve-3d;cursor:pointer}
+.rack .top{
+  position:absolute;left:0;top:0;border-radius:2px;
+  transform:translateZ(var(--h));transition:.3s}
+.rack .fA,.rack .fB{position:absolute;left:0;top:0;transform-origin:0 0}
+.rack .fA{transform:rotateX(-90deg)}
+.rack .fB{transform:rotateY(90deg) rotateZ(90deg) translateY(-100%);transform-origin:0 0}
+.rack:hover .top{filter:brightness(1.18)}
+.rack .lbl{
+  position:absolute;transform:translateZ(calc(var(--h) + 2px)) rotateZ(45deg) rotateX(-58deg) scale(1);
+  font-size:10px;font-weight:700;color:#fff;white-space:nowrap;
+  left:50%;top:50%;margin-left:-20px;margin-top:-7px;text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none}
+/* AGV */
+.agv{position:absolute;width:26px;height:26px;transform-style:preserve-3d}
+.agv .b{position:absolute;inset:0;background:#ff5c72;border-radius:4px;transform:translateZ(10px);
+  box-shadow:0 0 0 2px #d63a50}
+.agv .p{position:absolute;inset:0;background:rgba(255,92,114,.25);border-radius:50%;
+  animation:ping 1.6s ease-out infinite}
+@keyframes ping{from{transform:scale(1);opacity:.8}to{transform:scale(3.2);opacity:0}}
+.a1{animation:mv1 12s linear infinite}
+.a2{animation:mv2 15s linear infinite}
+.a3{animation:mv3 10s linear infinite}
+@keyframes mv1{0%{left:20px;top:20px}25%{left:540px;top:20px}50%{left:540px;top:280px}75%{left:20px;top:280px}100%{left:20px;top:20px}}
+@keyframes mv2{0%{left:560px;top:560px}30%{left:120px;top:560px}60%{left:120px;top:360px}100%{left:560px;top:560px}}
+@keyframes mv3{0%{left:300px;top:600px}50%{left:300px;top:120px}100%{left:300px;top:600px}}
+
+.ctrl{position:absolute;left:16px;top:16px;display:flex;gap:7px;z-index:8}
+.ctrl button{
+  font-family:inherit;font-size:12px;padding:8px 13px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.92);border:1px solid var(--line);color:var(--ink);
+  box-shadow:0 2px 8px rgba(32,41,58,.12)}
+.ctrl button:hover{background:#fff;border-color:var(--c1);color:var(--c1)}
+.lgd{position:absolute;right:16px;bottom:16px;background:rgba(255,255,255,.94);border:1px solid var(--line);
+  border-radius:12px;padding:13px 16px;font-size:11.5px;z-index:8;box-shadow:0 4px 14px rgba(32,41,58,.12)}
+.lgd div{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.lgd div:last-child{margin:0}
+.lgd i{width:12px;height:12px;border-radius:3px}
+/* bin info popover */
+.binfo{position:absolute;left:16px;bottom:16px;z-index:9;display:none;min-width:212px;
+  background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  box-shadow:0 6px 20px rgba(32,41,58,.16);font-size:12px}
+.binfo.show{display:block;animation:bi .18s ease}
+@keyframes bi{from{opacity:0;transform:translateY(6px)}}
+.binfo b{font-size:14px;display:block;margin-bottom:8px;letter-spacing:-.01em}
+.binfo .kv div{display:flex;justify-content:space-between;gap:14px;padding:4px 0;color:var(--dim)}
+.binfo .kv div span{color:var(--ink);font-weight:600}
+.binfo a{display:inline-block;margin-top:9px;color:var(--c1);font-size:12px;text-decoration:none;font-weight:600}
+.binfo a:hover{text-decoration:underline}
+.rack.sel .top{box-shadow:0 0 0 3px #20293a}
+
+/* right column */
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.kpi div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px}
+.kpi small{font-size:11px;color:var(--dim);display:block}
+.kpi b{font-size:24px;font-weight:700;letter-spacing:-.03em;display:block;margin-top:5px}
+.kpi b em{font-size:11px;font-style:normal;font-weight:400;color:var(--dim);margin-left:3px}
+
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row .sq{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:15px;flex:0 0 auto;color:#fff}
+.row .m{flex:1;min-width:0}
+.row .m b{display:block;font-size:13.5px;font-weight:600}
+.row .m small{color:var(--dim);font-size:11px}
+.row .pc{font-weight:700;font-size:14px}
+
+.util{margin-top:6px}
+.util .u{margin-bottom:14px}
+.util .u .t{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px}
+.util .u .t span{color:var(--dim)}
+.trk{height:9px;border-radius:5px;background:#e9edf4;overflow:hidden}
+.trk div{height:100%;border-radius:5px;animation:gw 1.1s cubic-bezier(.2,.8,.3,1) both}
+@keyframes gw{from{width:0!important}}
+.ftr{grid-column:1/-1;text-align:center;font-size:10.5px;color:#98a2b6;letter-spacing:.3em;padding-top:8px}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<header>
+  <div class="lg"><div class="c">▣</div><h1>立方倉儲 CubeWMS<small>ISOMETRIC WAREHOUSE MANAGEMENT</small></h1></div>
+  <nav><a href="index.html" class="on">儲位地圖</a><a href="inbound.html">入庫作業</a><a href="picking.html">揀貨出貨</a><a href="inventory.html">盤點作業</a><a href="report.html">營運報表</a></nav>
+  <div class="rt"><span><i class="dot"></i>桃園一廠 · 即時連線</span><span>|</span><span id="clk">--:--</span></div>
+</header>
+
+<div class="body">
+  <div class="panel">
+    <h2>A 區儲位立體圖<span id="stageMeta">ZONE A · 3D BIN MAP · 縮放與旋轉可互動</span></h2>
+    <div class="stage" id="stage">
+      <div class="ctrl">
+        <button data-r="-45">↺ 左轉</button>
+        <button data-r="45">↻ 右轉</button>
+        <button data-z="1.15">＋ 放大</button>
+        <button data-z="0.87">－ 縮小</button>
+        <button data-reset="1">⟲ 重設</button>
+      </div>
+      <div class="iso" id="iso">
+        <div class="floor" id="floor"></div>
+      </div>
+      <div class="binfo" id="binfo">
+        <b id="biTitle">—</b>
+        <div class="kv" id="biBody"></div>
+        <a href="inventory.html">查看盤點明細 →</a>
+      </div>
+      <div class="lgd">
+        <div><i style="background:#4f7cff"></i>滿載 &gt; 80%</div>
+        <div><i style="background:#22c9a0"></i>正常 40–80%</div>
+        <div><i style="background:#ffb020"></i>低量 &lt; 40%</div>
+        <div><i style="background:#ff5c72"></i>AGV 搬運車</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="kpi">
+      <div><small>總儲位</small><b>1,248<em>格</em></b></div>
+      <div><small>佔用率</small><b style="color:var(--c1)">76.1<em>%</em></b></div>
+      <div><small>今日入庫</small><b style="color:var(--c2)">382<em>板</em></b></div>
+      <div><small>待揀任務</small><b style="color:var(--c3)">47<em>張</em></b></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:20px">
+      <h2>AGV 車隊<span>FLEET</span></h2>
+      <div class="in">
+        <div class="row"><div class="sq" style="background:var(--c4)">🚙</div>
+          <div class="m"><b>AGV-01</b><small>搬運中 · A03 → 出貨月台</small></div><span class="pc" style="color:var(--c2)">92%</span></div>
+        <div class="row"><div class="sq" style="background:var(--c4)">🚙</div>
+          <div class="m"><b>AGV-02</b><small>取貨中 · B07 儲位</small></div><span class="pc" style="color:var(--c2)">78%</span></div>
+        <div class="row"><div class="sq" style="background:var(--c4)">🚙</div>
+          <div class="m"><b>AGV-03</b><small>返回充電站</small></div><span class="pc" style="color:var(--c3)">24%</span></div>
+        <div class="row"><div class="sq" style="background:#a8b2c4">🚙</div>
+          <div class="m"><b>AGV-04</b><small>待命 · 充電座 C2</small></div><span class="pc" style="color:var(--dim)">100%</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>區域使用率<span>ZONE UTILIZATION · 950 / 1,248 格</span></h2>
+      <div class="in util">
+        <div class="u"><div class="t"><b>A 區 · 常溫棧板</b><span>563 / 640 格 · 88%</span></div><div class="trk"><div style="width:88%;background:var(--c1)"></div></div></div>
+        <div class="u"><div class="t"><b>B 區 · 小件料架</b><span>128 / 200 格 · 64%</span></div><div class="trk"><div style="width:64%;background:var(--c2)"></div></div></div>
+        <div class="u"><div class="t"><b>C 區 · 冷藏庫</b><span>166 / 180 格 · 92%</span></div><div class="trk"><div style="width:92%;background:var(--c5)"></div></div></div>
+        <div class="u"><div class="t"><b>D 區 · 危險品</b><span>28 / 90 格 · 31%</span></div><div class="trk"><div style="width:31%;background:var(--c3)"></div></div></div>
+        <div class="u"><div class="t"><b>E 區 · 退貨暫存</b><span>65 / 138 格 · 47%</span></div><div class="trk"><div style="width:47%;background:var(--c4)"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ftr">ISOMETRIC 3D WAREHOUSE WMS · 等角立體儲位圖 · DESIGN 30 / 40</div>
+</div>
+
+<script>
+/* ---------- build isometric racks ---------- */
+const floor=document.getElementById('floor');
+const cols=['A','B','C','D','E','F'];
+let html='';
+// aisle strips
+html+=`<div class="aisle" style="left:0;top:186px;width:620px;height:24px"></div>`;
+html+=`<div class="aisle" style="left:0;top:434px;width:620px;height:24px"></div>`;
+
+const shadeFor=p=>p>80?['#4f7cff','#3d63d6','#3457c2']:p>40?['#22c9a0','#19a684','#158f72']:['#ffb020','#dc9313','#c2810f'];
+const SKUS=['精密電阻 ERJ-6ENF','積層電容 GRM188R','電感線圈 CLF7045','穩壓器 LM7805','光耦合器 PC817','連接器 DF11-20DS'];
+const BINS=[];
+let occSum=0;
+for(let r=0;r<6;r++){
+  for(let c=0;c<6;c++){
+    const x=18+c*100, y=18+r*100 + (r>=2?26:0) + (r>=4?26:0);
+    /* 固定序列（非亂數），確保每次載入的佔用率一致 */
+    const p=62+((r*7+c*13+5)*11)%39;
+    const h=26+Math.round(p/100*58);
+    const [top,fa,fb]=shadeFor(p);
+    const w=70;
+    const id=cols[c]+String(r+1).padStart(2,'0');
+    occSum+=p;
+    BINS.push({id,p,sku:SKUS[(r+c)%SKUS.length],pallets:Math.round(p/100*12)});
+    html+=`<div class="rack" data-id="${id}" style="left:${x}px;top:${y}px;width:${w}px;height:${w}px;--h:${h}px"
+      title="${id} 儲位 · 佔用 ${p}%">
+      <div class="top" style="width:${w}px;height:${w}px;background:${top}"></div>
+      <div class="fA" style="width:${w}px;height:${h}px;background:${fa}"></div>
+      <div class="fB" style="width:${w}px;height:${h}px;background:${fb}"></div>
+      <div class="lbl">${id} · ${p}%</div>
+    </div>`;
+  }
+}
+// AGVs
+html+=`<div class="agv a1"><div class="p"></div><div class="b"></div></div>
+<div class="agv a2"><div class="p"></div><div class="b"></div></div>
+<div class="agv a3"><div class="p"></div><div class="b"></div></div>`;
+floor.innerHTML=html;
+document.getElementById('stageMeta').textContent=
+  `ZONE A 主通道棧板區 · 36 格樣本 · 平均佔用 ${Math.round(occSum/BINS.length)}% · 可拖曳旋轉與滾輪縮放`;
+
+/* ---------- bin detail popover ---------- */
+const binfo=document.getElementById('binfo');
+floor.addEventListener('click',e=>{
+  const rk=e.target.closest('.rack');if(!rk||moved)return;
+  const b=BINS.find(x=>x.id===rk.dataset.id);if(!b)return;
+  document.querySelectorAll('.rack.sel').forEach(x=>x.classList.remove('sel'));
+  rk.classList.add('sel');
+  document.getElementById('biTitle').textContent=`儲位 ${b.id}`;
+  document.getElementById('biBody').innerHTML=
+    `<div>佔用率<span>${b.p}%</span></div>
+     <div>在庫棧板<span>${b.pallets} / 12 板</span></div>
+     <div>主要品項<span>${b.sku}</span></div>
+     <div>儲區溫控<span>常溫</span></div>`;
+  binfo.classList.add('show');
+});
+
+/* ---------- camera controls ---------- */
+let rot=-45,zoom=1;
+const iso=document.getElementById('iso');
+function apply(){iso.style.transform=`translate(-50%,-50%) rotateX(58deg) rotateZ(${rot}deg) scale(${zoom})`;}
+document.querySelectorAll('.ctrl button').forEach(b=>b.onclick=()=>{
+  if(b.dataset.r)rot+=+b.dataset.r;
+  if(b.dataset.z)zoom=Math.min(1.8,Math.max(.5,zoom*(+b.dataset.z)));
+  if(b.dataset.reset){rot=-45;zoom=1;}
+  apply();
+});
+apply();
+/* drag to rotate */
+let dragging=false,sx=0,sr=0,moved=false;
+const stage=document.getElementById('stage');
+stage.addEventListener('mousedown',e=>{if(e.target.closest('.ctrl'))return;dragging=true;moved=false;sx=e.clientX;sr=rot;stage.style.cursor='grabbing';});
+addEventListener('mouseup',()=>{dragging=false;stage.style.cursor='';});
+addEventListener('mousemove',e=>{if(!dragging)return;if(Math.abs(e.clientX-sx)>3)moved=true;rot=sr+(e.clientX-sx)*.4;iso.style.transition='none';apply();});
+stage.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(1.8,Math.max(.5,zoom*(e.deltaY<0?1.08:.93)));iso.style.transition='none';apply();},{passive:false});
+
+function tick(){document.getElementById('clk').textContent=new Date().toLocaleTimeString('zh-TW',{hour12:false});}
+tick();setInterval(tick,1000);
+</script>
+</body>
+</html>

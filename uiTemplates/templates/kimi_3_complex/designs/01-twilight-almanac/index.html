@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<!--
+  設計規格｜01 晨昏線·天文晨報
+  ─────────────────────────────────────
+  風格定位：天文台晨報 / 報紙與星圖混合的資訊版面，寧靜、史詩感
+  配色：深藍 #0b1d3a（夜空）、午夜藍 #12294f、琥珀 #f2a65a（晨昏光）、
+        金 #ffd98e、米白文字 #f4ecd8、輔助灰藍 #8fa3c4
+  字體：標題 Noto Serif TC（Google Fonts，離線退回 serif），內文 Noto Sans TC
+  版面結構：頂部晨昏線光帶 → 報頭區（日期/刊號）→ 大字標題 →
+            日出日落資訊欄 → 天氣三欄 → 月相圖（SVG）→ 星空觀測列表 → 頁尾
+  動態效果：頂部一條隨捲動水平移動的晨昏線漸層光帶（JS 監聽 scroll）；
+            星星閃爍 CSS 動畫；月相 SVG 呼吸光暈；卡片進場淡入
+  圖形：全部 CSS 漸層 / SVG / 文字符號，無外部圖片
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>晨昏線 · 天文晨報 — 第 1287 期</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;900&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0b1d3a; --midnight:#12294f; --amber:#f2a65a; --gold:#ffd98e;
+    --paper:#f4ecd8; --mute:#8fa3c4;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:linear-gradient(180deg,var(--navy) 0%,var(--midnight) 55%,#1b3a66 100%);
+    color:var(--paper);
+    font-family:'Noto Sans TC',sans-serif;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+  /* ── 晨昏線光帶 ── */
+  #terminator{
+    position:fixed;top:0;left:0;width:100%;height:14px;z-index:50;pointer-events:none;
+    background:linear-gradient(90deg,
+      transparent 0%, transparent 30%,
+      rgba(242,166,90,.15) 42%, rgba(255,217,142,.85) 50%, rgba(242,166,90,.15) 58%,
+      transparent 70%, transparent 100%);
+    background-size:200% 100%;
+    background-position:0% 0;
+    filter:blur(1px);
+    transition:background-position .1s linear;
+  }
+  /* ── 星星 ── */
+  .star{position:fixed;border-radius:50%;background:#fff;opacity:.6;pointer-events:none;z-index:0;
+        animation:twinkle 3s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:.15}50%{opacity:.85}}
+  .wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 28px 90px}
+  /* ── 返回入口 ── */
+  .back{
+    position:fixed;top:26px;left:24px;z-index:60;
+    font-family:'Noto Serif TC',serif;font-size:14px;letter-spacing:.18em;
+    color:var(--gold);text-decoration:none;border:1px solid rgba(255,217,142,.45);
+    padding:9px 18px;border-radius:999px;background:rgba(11,29,58,.72);backdrop-filter:blur(6px);
+    transition:.3s;
+  }
+  .back:hover{background:var(--amber);color:var(--navy);box-shadow:0 0 24px rgba(242,166,90,.55)}
+  /* ── 報頭 ── */
+  header.masthead{
+    text-align:center;padding:96px 0 34px;border-bottom:1px solid rgba(244,236,216,.22);
+    position:relative;
+  }
+  .masthead .kicker{letter-spacing:.6em;font-size:13px;color:var(--mute);text-transform:uppercase}
+  .masthead h1{
+    font-family:'Noto Serif TC',serif;font-weight:900;
+    font-size:clamp(46px,8vw,96px);line-height:1.12;margin:18px 0 10px;
+    background:linear-gradient(120deg,#fff 15%,var(--gold) 50%,var(--amber) 85%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .masthead .sub{font-family:'Noto Serif TC',serif;color:var(--paper);font-size:17px;letter-spacing:.28em}
+  .dateline{
+    display:flex;justify-content:center;gap:34px;flex-wrap:wrap;
+    margin-top:26px;font-size:13px;color:var(--mute);letter-spacing:.14em;
+  }
+  .dateline b{color:var(--gold);font-weight:500}
+  /* ── 子頁導覽 ── */
+  .subnav{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:28px}
+  .subnav a{
+    font-family:'Noto Serif TC',serif;font-size:14px;letter-spacing:.22em;color:var(--gold);
+    text-decoration:none;border:1px solid rgba(255,217,142,.4);padding:8px 20px;border-radius:999px;transition:.3s;
+  }
+  .subnav a:hover{background:var(--amber);color:var(--navy);box-shadow:0 0 20px rgba(242,166,90,.5)}
+  .more-link{
+    display:inline-block;margin-top:20px;font-family:'Noto Serif TC',serif;font-size:14px;
+    letter-spacing:.2em;color:var(--gold);text-decoration:none;
+    border-bottom:1px solid rgba(255,217,142,.5);padding-bottom:3px;transition:.3s;
+  }
+  .more-link:hover{color:var(--amber);border-color:var(--amber);letter-spacing:.28em}
+  /* ── 日出日落欄 ── */
+  .sun-bar{
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:22px;
+    margin:44px 0;padding:26px 34px;border:1px solid rgba(242,166,90,.4);border-radius:18px;
+    background:linear-gradient(100deg,rgba(18,41,79,.85),rgba(242,166,90,.14) 50%,rgba(18,41,79,.85));
+  }
+  .sun-bar .cell{text-align:center}
+  .sun-bar .lbl{font-size:12px;letter-spacing:.4em;color:var(--mute);margin-bottom:8px}
+  .sun-bar .time{font-family:'Noto Serif TC',serif;font-size:44px;font-weight:600;color:var(--gold)}
+  .sun-arc{width:120px;height:64px}
+  /* ── 天氣三欄 ── */
+  section{margin-top:64px}
+  .sec-title{
+    font-family:'Noto Serif TC',serif;font-size:26px;font-weight:600;letter-spacing:.2em;
+    display:flex;align-items:center;gap:16px;margin-bottom:24px;
+  }
+  .sec-title::before,.sec-title::after{content:"";flex:1;height:1px;background:rgba(244,236,216,.25)}
+  .weather-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+  .w-card{
+    border:1px solid rgba(143,163,196,.3);border-radius:14px;padding:22px;
+    background:rgba(18,41,79,.55);text-align:center;
+    opacity:0;transform:translateY(24px);transition:opacity .7s,transform .7s,border-color .3s,box-shadow .3s;
+  }
+  .w-card.show{opacity:1;transform:none}
+  .w-card:hover{border-color:var(--amber);box-shadow:0 0 30px rgba(242,166,90,.18)}
+  .w-card .ico{font-size:40px;display:block;margin-bottom:10px}
+  .w-card h3{font-family:'Noto Serif TC',serif;font-size:19px;letter-spacing:.2em;margin-bottom:6px}
+  .w-card .temp{font-size:30px;color:var(--gold);font-family:'Noto Serif TC',serif}
+  .w-card p{font-size:13px;color:var(--mute);line-height:1.9;margin-top:8px}
+  /* ── 月相 ── */
+  .moon-row{display:grid;grid-template-columns:220px 1fr;gap:36px;align-items:center}
+  .moon-svg{filter:drop-shadow(0 0 26px rgba(255,217,142,.35));animation:moonbreathe 5s ease-in-out infinite}
+  @keyframes moonbreathe{0%,100%{filter:drop-shadow(0 0 18px rgba(255,217,142,.25))}50%{filter:drop-shadow(0 0 40px rgba(255,217,142,.6))}}
+  .moon-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .fact{border-left:2px solid var(--amber);padding:6px 14px}
+  .fact .k{font-size:12px;color:var(--mute);letter-spacing:.3em}
+  .fact .v{font-family:'Noto Serif TC',serif;font-size:22px;color:var(--paper);margin-top:4px}
+  /* ── 觀測清單 ── */
+  .obs-list{list-style:none}
+  .obs-list li{
+    display:grid;grid-template-columns:86px 1fr auto;gap:18px;align-items:baseline;
+    padding:16px 6px;border-bottom:1px dashed rgba(143,163,196,.3);transition:.3s;
+  }
+  .obs-list li:hover{background:rgba(242,166,90,.08);padding-left:14px}
+  .obs-list .t{font-family:'Noto Serif TC',serif;color:var(--gold);font-size:18px}
+  .obs-list .d{color:var(--paper);font-size:15px;line-height:1.8}
+  .obs-list .tag{font-size:11px;letter-spacing:.25em;color:var(--amber);border:1px solid rgba(242,166,90,.5);padding:3px 10px;border-radius:999px;white-space:nowrap}
+  footer{margin-top:80px;text-align:center;color:var(--mute);font-size:12px;letter-spacing:.3em;line-height:2.4}
+  @media(max-width:680px){
+    .moon-row{grid-template-columns:1fr;text-align:center}
+    .sun-bar{grid-template-columns:1fr;gap:10px}
+  }
+</style>
+</head>
+<body>
+<div id="terminator"></div>
+<a class="back" href="../../index.html">← 返回入口</a>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="kicker">CIVIL TWILIGHT GAZETTE</div>
+    <h1>晨昏線 · 天文晨報</h1>
+    <div class="sub">光 正 在 越 過 你 的 城 市</div>
+    <div class="dateline">
+      <span>民國一一五年 <b>八月二十九日</b> 星期六</span>
+      <span>刊號 <b>第 1287 期</b></span>
+      <span>觀測站 <b>臺北天文館</b></span>
+      <span>能見度 <b>極佳</b></span>
+    </div>
+    <nav class="subnav">
+      <a href="ephemeris.html">七日星曆表</a>
+      <a href="moon.html">月相觀測曆</a>
+      <a href="planets.html">行星動態</a>
+      <a href="about.html">關於晨報</a>
+    </nav>
+  </header>
+
+  <div class="sun-bar">
+    <div class="cell">
+      <div class="lbl">日 出</div>
+      <div class="time">05:32</div>
+    </div>
+    <svg class="sun-arc" viewBox="0 0 120 64" aria-hidden="true">
+      <path d="M6 58 A54 54 0 0 1 114 58" fill="none" stroke="#8fa3c4" stroke-width="1.2" stroke-dasharray="4 5"/>
+      <circle cx="60" cy="14" r="9" fill="#ffd98e"/>
+      <circle cx="60" cy="14" r="15" fill="none" stroke="#f2a65a" stroke-width="1" opacity=".6"/>
+      <line x1="0" y1="58" x2="120" y2="58" stroke="#f2a65a" stroke-width="1.6"/>
+    </svg>
+    <div class="cell">
+      <div class="lbl">日 落</div>
+      <div class="time">18:24</div>
+    </div>
+  </div>
+
+  <section>
+    <h2 class="sec-title">今日天氣三段報</h2>
+    <div class="weather-grid">
+      <div class="w-card">
+        <span class="ico">🌅</span>
+        <h3>清晨 · 薄暮</h3>
+        <div class="temp">26°C</div>
+        <p>民用曙光始 05:07。東北風二級，海面平靜，適合迎接第一道晨昏線。</p>
+      </div>
+      <div class="w-card">
+        <span class="ico">☀️</span>
+        <h3>正午 · 赤焰</h3>
+        <div class="temp">34°C</div>
+        <p>日過中天 11:58。紫外線過量級，觀日請使用巴德膜，肉眼直視危險。</p>
+      </div>
+      <div class="w-card">
+        <span class="ico">🌇</span>
+        <h3>黃昏 · 餘暉</h3>
+        <div class="temp">29°C</div>
+        <p>民用暮光終 18:49。西南方低空有雲縫光，攝影黃金時刻約 17:40 起。</p>
+      </div>
+    </div>
+    <a class="more-link" href="ephemeris.html">七日星曆表 · 日月出沒全覽 →</a>
+  </section>
+
+  <section>
+    <h2 class="sec-title">月相觀測室</h2>
+    <div class="moon-row">
+      <a href="moon.html" aria-label="前往月相觀測曆" style="display:block;text-decoration:none">
+      <svg class="moon-svg" width="220" height="220" viewBox="0 0 220 220" aria-label="下弦月示意">
+        <defs>
+          <radialGradient id="mg" cx="38%" cy="38%" r="80%">
+            <stop offset="0%" stop-color="#fff6dd"/>
+            <stop offset="70%" stop-color="#ffd98e"/>
+            <stop offset="100%" stop-color="#f2a65a"/>
+          </radialGradient>
+          <mask id="mm">
+            <rect width="220" height="220" fill="black"/>
+            <circle cx="110" cy="110" r="86" fill="white"/>
+            <circle cx="66" cy="104" r="82" fill="black"/>
+          </mask>
+        </defs>
+        <circle cx="110" cy="110" r="86" fill="url(#mg)" mask="url(#mm)"/>
+        <circle cx="110" cy="110" r="98" fill="none" stroke="#8fa3c4" stroke-width=".8" stroke-dasharray="2 6" opacity=".7"/>
+        <text x="110" y="200" text-anchor="middle" fill="#8fa3c4" font-size="11" letter-spacing="4">盈凸月 · 76%</text>
+      </svg>
+      </a>
+      <div class="moon-facts">
+        <div class="fact"><div class="k">月 相</div><div class="v">盈凸月</div></div>
+        <div class="fact"><div class="k">月 出</div><div class="v">15:41</div></div>
+        <div class="fact"><div class="k">月 落</div><div class="v">02:13</div></div>
+        <div class="fact"><div class="k">月 齡</div><div class="v">10.6 日</div></div>
+        <div class="fact"><div class="k">滿 月</div><div class="v">9/7（月全食）</div></div>
+        <div class="fact"><div class="k">地月距</div><div class="v">372,400 km</div></div>
+      </div>
+    </div>
+    <a class="more-link" href="moon.html">月相觀測曆 · 月全食食相全記錄 →</a>
+  </section>
+
+  <section>
+    <h2 class="sec-title">今夜星空行事曆</h2>
+    <ul class="obs-list">
+      <li><span class="t">19:40</span><span class="d">國際太空站掠過頭頂，仰角 78°，亮度 −3.8 等，肉眼可見約四分鐘。</span><span class="tag">人造衛星</span></li>
+      <li><span class="t">20:15</span><span class="d">木星合月：東南方低空，木星位於月球左下 2.3°，雙筒鏡即可同框。</span><span class="tag">行星</span></li>
+      <li><span class="t">21:00</span><span class="d">夏季大三角高懸天頂——織女、牛郎、天津四連線，辨識銀河最佳時機。</span><span class="tag">星座</span></li>
+      <li><span class="t">23:30</span><span class="d">英仙座流星雨餘韻，每小時預估 12 顆，東北方無光害處守株待兔。</span><span class="tag">流星</span></li>
+      <li><span class="t">03:10</span><span class="d">土星過中天，環傾角 3.2°，小望遠鏡可見卡西尼環縫的細線。</span><span class="tag">行星</span></li>
+    </ul>
+    <a class="more-link" href="planets.html">行星動態 · 九月天象行事曆 →</a>
+  </section>
+
+  <footer>
+    晨昏線以每小時約 1,670 公里的速度掠過地表<br>
+    明日日出 05:33 · 日落 18:23 —— 白晝又短了一分鐘<br>
+    <a href="ephemeris.html" style="color:var(--gold);text-decoration:none;border-bottom:1px solid rgba(255,217,142,.4)">七日星曆</a> ｜
+    <a href="moon.html" style="color:var(--gold);text-decoration:none;border-bottom:1px solid rgba(255,217,142,.4)">月相觀測曆</a> ｜
+    <a href="planets.html" style="color:var(--gold);text-decoration:none;border-bottom:1px solid rgba(255,217,142,.4)">行星動態</a> ｜
+    <a href="about.html" style="color:var(--gold);text-decoration:none;border-bottom:1px solid rgba(255,217,142,.4)">關於晨報</a><br>
+    ◦ 天文晨報社 · 每日曙光前出刊 ◦
+  </footer>
+</div>
+
+<script>
+  // 星星
+  (function(){
+    for(let i=0;i<70;i++){
+      const s=document.createElement('span');
+      s.className='star';
+      const size=Math.random()*2.2+.6;
+      s.style.cssText=`width:${size}px;height:${size}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh;animation-delay:${(Math.random()*3).toFixed(2)}s;animation-duration:${(2+Math.random()*3).toFixed(2)}s`;
+      document.body.appendChild(s);
+    }
+  })();
+  // 晨昏線光帶隨捲動移動
+  const band=document.getElementById('terminator');
+  function sweep(){
+    const max=document.documentElement.scrollHeight-innerHeight;
+    const p=max>0?scrollY/max:0;
+    band.style.backgroundPosition=(p*100)+'% 0';
+  }
+  addEventListener('scroll',sweep,{passive:true});sweep();
+  // 進場動畫
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('show');io.unobserve(e.target)}}),{threshold:.2});
+  document.querySelectorAll('.w-card').forEach(c=>io.observe(c));
+</script>
+</body>
+</html>

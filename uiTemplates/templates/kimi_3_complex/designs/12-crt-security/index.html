@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 12 終端機 · 資安通報
+  ─────────────────────────────────────
+  風格定位:1980 年代綠磷光 CRT 終端機,資安事件通報系統(資訊公開頁),冷峻、機房氛圍。
+  配色:純黑 #000000(底)、磷光綠 #33ff33(主字)、暗綠 #0d3b0d(分隔)、
+        琥珀 #ffb000(中風險)、紅 #ff3333(高風險)、青 #33ffff(連結/提示)。
+  字體:全站等寬字體 "JetBrains Mono"(Google Fonts)+ 中文系統等寬 fallback。
+  版面結構:
+    1. CRT 外框機殼(圓角 + 內凹陰影),掃描線 + 閃爍覆層
+    2. 開機自檢(BIOS POST 打字機逐字輸出)
+    3. 系統狀態列(時間、連線、威脅等級)
+    4. ASCII 框線包裹:CVE 漏洞通報列表(風險等級標籤)
+    5. 事件時間軸(ASCII 樹狀)
+    6. 防護建議 / 通報窗口
+    7. 指令提示符互動(可輸入 help / cve / status / clear / exit)
+  動態效果:
+    - 打字機逐字輸出開機訊息
+    - 螢幕閃爍(flicker)+ 掃描線下移(scanlines)
+    - 游標方塊閃爍
+    - 終端機指令互動(鍵盤輸入即時回應)
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEC-NET // 資安通報終端</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#33ff33; --dim:#0d3b0d; --amber:#ffb000; --red:#ff3333; --cyan:#33ffff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:#050505;
+    font-family:"JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    min-height:100vh;padding:34px 4vw 60px;
+    display:flex;justify-content:center;
+  }
+  /* ── CRT 機殼 ── */
+  .crt-shell{
+    width:100%;max-width:1080px;
+    background:linear-gradient(160deg,#2b2b2b,#171717);
+    border-radius:26px;padding:30px 30px 36px;
+    box-shadow:0 30px 80px rgba(0,0,0,.8), inset 0 2px 3px rgba(255,255,255,.12);
+  }
+  .shell-label{
+    color:#777;font-size:11px;letter-spacing:.35em;display:flex;justify-content:space-between;
+    padding:0 6px 16px;
+  }
+  .led{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);margin-right:6px;animation:blink 2.4s steps(1) infinite;vertical-align:middle;}
+  @keyframes blink{90%{opacity:1;}95%{opacity:.15;}}
+  /* ── CRT 螢幕 ── */
+  .crt-screen{
+    position:relative;background:#000;border-radius:14px;overflow:hidden;
+    box-shadow:inset 0 0 60px rgba(51,255,51,.09), inset 0 0 8px #000;
+    border:2px solid #0a0a0a;
+    min-height:70vh;
+  }
+  .crt-content{
+    position:relative;z-index:3;padding:30px 32px 40px;
+    color:var(--green);font-size:14.5px;line-height:1.75;
+    text-shadow:0 0 6px rgba(51,255,51,.55);
+  }
+  /* 掃描線 */
+  .scanlines{
+    position:absolute;inset:0;z-index:5;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.32) 3px, rgba(0,0,0,.32) 4px);
+    animation:scan 9s linear infinite;
+  }
+  @keyframes scan{to{background-position:0 100px;}}
+  /* 閃爍 */
+  .flicker{
+    position:absolute;inset:0;z-index:6;pointer-events:none;background:rgba(51,255,51,.02);
+    animation:flick 4.2s infinite;
+  }
+  @keyframes flick{
+    0%,100%{opacity:.35;}
+    8%{opacity:.6;} 9%{opacity:.2;} 10%{opacity:.55;}
+    42%{opacity:.4;} 43%{opacity:.7;} 44%{opacity:.3;}
+    76%{opacity:.5;} 77%{opacity:.25;}
+  }
+  /* 弧形光暈 */
+  .vignette{
+    position:absolute;inset:0;z-index:4;pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%);
+  }
+  .cursor{display:inline-block;width:9px;height:16px;background:var(--green);vertical-align:-2px;animation:blink 1s steps(1) infinite;box-shadow:0 0 8px var(--green);}
+  /* ── 排版元素 ── */
+  .hr{color:var(--dim);white-space:pre;overflow:hidden;margin:14px 0;}
+  .box{border:1px solid var(--dim);padding:16px 20px;margin:14px 0;}
+  .box-title{color:var(--cyan);margin:-27px 0 12px;background:#000;display:inline-block;padding:0 10px;font-weight:700;text-shadow:0 0 6px rgba(51,255,255,.6);}
+  .dim{color:#1f9c1f;}
+  .amb{color:var(--amber);text-shadow:0 0 6px rgba(255,176,0,.5);}
+  .red{color:var(--red);text-shadow:0 0 6px rgba(255,51,51,.55);}
+  .cyn{color:var(--cyan);text-shadow:0 0 6px rgba(51,255,255,.55);}
+  a{color:var(--cyan);}
+  .kbd-hint{color:#1f9c1f;font-size:12.5px;}
+  /* 狀態列 */
+  .statusbar{
+    display:flex;flex-wrap:wrap;gap:8px 28px;font-size:12.5px;
+    border-top:1px solid var(--dim);border-bottom:1px solid var(--dim);
+    padding:8px 2px;margin:12px 0;color:#1f9c1f;
+  }
+  .statusbar b{color:var(--green);}
+  /* CVE 表 */
+  .cve{margin:10px 0;padding:12px 16px;border-left:3px solid var(--dim);background:rgba(51,255,51,.03);}
+  .cve:hover{background:rgba(51,255,51,.08);}
+  .cve .head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-weight:700;}
+  .sev{font-size:11.5px;padding:2px 10px;border:1px solid;letter-spacing:.1em;}
+  .sev.crit{color:#fff;background:var(--red);border-color:var(--red);animation:blink 1.6s steps(1) infinite;}
+  .sev.high{color:var(--red);border-color:var(--red);}
+  .sev.med{color:var(--amber);border-color:var(--amber);}
+  .sev.low{color:var(--green);border-color:var(--green);}
+  .cve .desc{margin-top:8px;color:#28c628;font-size:13.5px;line-height:1.8;}
+  .cve .meta{margin-top:6px;font-size:12px;color:#1f9c1f;}
+  /* 時間軸 */
+  .tree{white-space:pre;line-height:1.8;color:#28c628;font-size:13.5px;}
+  /* 輸入列 */
+  .prompt-line{display:flex;align-items:center;gap:8px;margin-top:18px;flex-wrap:wrap;}
+  .prompt{color:var(--cyan);font-weight:700;white-space:nowrap;}
+  #cmdInput{
+    flex:1;min-width:180px;background:transparent;border:none;outline:none;
+    color:var(--green);font:inherit;text-shadow:0 0 6px rgba(51,255,51,.55);
+    caret-color:var(--green);
+  }
+  .back-link{
+    display:inline-block;margin-top:22px;color:var(--green);text-decoration:none;
+    border:1px solid var(--green);padding:9px 20px;letter-spacing:.12em;font-size:13px;
+    transition:background .2s,color .2s;
+  }
+  .back-link:hover{background:var(--green);color:#000;text-shadow:none;}
+  @media (max-width:640px){
+    .crt-content{padding:20px 16px 30px;font-size:13px;}
+  }
+</style>
+</head>
+<body>
+<div class="crt-shell">
+  <div class="shell-label">
+    <span><span class="led"></span>SEC-NET TERMINAL MODEL T-1987</span>
+    <span>SERIAL 0x2F4A · 80×25</span>
+  </div>
+  <div class="crt-screen">
+    <div class="crt-content" id="screen">
+      <pre id="bootlog" style="font:inherit;color:inherit;text-shadow:inherit;"></pre>
+      <div id="mainUI" style="display:none;">
+        <div class="hr">+==============================================================================+</div>
+        <div>&nbsp;██ 國家資通安全通報中心 · 公開資訊終端 &nbsp;SEC-NET PUBLIC BULLETIN SYSTEM v4.2</div>
+        <div class="hr">+==============================================================================+</div>
+
+        <div class="statusbar">
+          <span>系統時間 <b id="clock">--:--:--</b></span>
+          <span>連線狀態 <b>[SECURE]</b></span>
+          <span>今日威脅等級 <b class="amb" id="threat">ELEVATED 中高度</b></span>
+          <span>資料更新 <b>2026-08-28 18:00</b></span>
+        </div>
+
+        <!-- CVE 通報 -->
+        <div class="box">
+          <span class="box-title">[1] 最新漏洞通報 CVE ALERTS</span>
+          <div class="cve">
+            <div class="head"><a class="cyn" href="cve.html#cve-2026-21487">CVE-2026-21487</a><span class="sev crit">CRITICAL 9.8</span></div>
+            <div class="desc">OpenFlow 路由套件存在堆疊溢位漏洞,遠端攻擊者不經驗證即可執行任意程式碼。影響版本 3.2.0 – 3.4.1。</div>
+            <div class="meta">發布:2026-08-26 · 狀態:已釋出修補 3.4.2 · 建議:立即更新並檢查對外 8443 埠</div>
+          </div>
+          <div class="cve">
+            <div class="head"><a class="cyn" href="cve.html#cve-2026-20931">CVE-2026-20931</a><span class="sev high">HIGH 8.1</span></div>
+            <div class="desc">雲端儲存閘道之權限檢查缺陷,已驗證使用者可越權讀取其他租戶物件。已有概念驗證程式公開。</div>
+            <div class="meta">發布:2026-08-24 · 狀態:廠商熱修復中 · 緩解:啟用物件層級 ACL 稽核</div>
+          </div>
+          <div class="cve">
+            <div class="head"><a class="cyn" href="cve.html#cve-2026-19804">CVE-2026-19804</a><span class="sev med">MEDIUM 5.9</span></div>
+            <div class="desc">郵件伺服器 TLS 交握降級弱點,中間人攻擊者可強制使用過時加密套件,導致傳輸內容遭解密。</div>
+            <div class="meta">發布:2026-08-21 · 狀態:組態修正即可 · 建議:停用 TLS 1.0/1.1</div>
+          </div>
+          <div class="cve">
+            <div class="head"><a class="cyn" href="cve.html#cve-2026-18336">CVE-2026-18336</a><span class="sev low">LOW 3.3</span></div>
+            <div class="desc">列印服務本機資訊洩漏,僅影響啟用偵錯模式之環境,預設組態不受影響。</div>
+            <div class="meta">發布:2026-08-19 · 狀態:下次例行更新修復 · 建議:確認偵錯模式關閉</div>
+          </div>
+          <div style="margin-top:14px;"><a href="cve.html">&gt;&gt; MORE — 查看全部漏洞詳情(CVSS 向量 / 處置步驟)</a></div>
+        </div>
+
+        <!-- 事件時間軸 -->
+        <div class="box">
+          <span class="box-title">[2] 近期資安事件時間軸 INCIDENT TIMELINE</span>
+          <div class="tree">2026-08-28 ├─ 09:14 偵測針對教育網路之釣魚郵件批次攻擊(已攔截 1,842 封)
+2026-08-28 └─ 15:40 完成骨幹路由韌體更新,無服務中斷
+2026-08-27 ├─ 11:02 通報縣市政府入口網弱掃發現 3 項中風險弱點
+2026-08-27 └─ 22:30 DDoS 緩解系統攔截峰值 42 Gbps 攻擊流量
+2026-08-26 ├─ 08:00 發布 CVE-2026-21487 緊急通報(見上)
+2026-08-26 └─ 17:25 完成全國 DNS 異地備援演練,RTO 4 分 12 秒</div>
+          <div style="margin-top:14px;"><a href="advisories.html">&gt;&gt; MORE — 完整事件通報列表與統計</a></div>
+        </div>
+
+        <!-- 防護建議 -->
+        <div class="box">
+          <span class="box-title">[3] 本週防護建議 RECOMMENDATIONS</span>
+          <div>
+            <span class="amb">&gt;&gt;</span> 全體使用者:啟用多因素驗證(MFA),密碼長度至少 12 字元。<br>
+            <span class="amb">&gt;&gt;</span> 系統管理者:盤點對外服務,關閉非必要埠口,套用 8 月安全性更新。<br>
+            <span class="amb">&gt;&gt;</span> 開發團隊:依 OWASP Top 10 複查身分驗證與存取控制邏輯。<br>
+            <span class="amb">&gt;&gt;</span> 一般民眾:不點不明連結、不開啟陌生附件,收件前二次確認寄件者。
+          </div>
+          <div style="margin-top:14px;"><a href="guide.html">&gt;&gt; MORE — 資安事件應變指引(SOP / 分級 / 檢查清單)</a></div>
+        </div>
+
+        <!-- 通報窗口 -->
+        <div class="box">
+          <span class="box-title">[4] 通報窗口 CONTACT</span>
+          <div>
+            資安事件通報專線:<span class="cyn">0800-SEC-365</span>(全年無休)<br>
+            電子郵件:<span class="cyn">report@sec-net.example.tw</span> · PGP KeyID <span class="dim">0x4A2F88C1</span><br>
+            民間漏洞通報平台:週一至週五 09:00–18:00 · 重大事件 30 分鐘內回應
+          </div>
+        </div>
+
+        <div class="hr">+------------------------------------------------------------------------------+</div>
+        <div class="kbd-hint">提示:在下方輸入指令並按 Enter — 可用指令:<span class="cyn">help</span> · <span class="cyn">cve</span> · <span class="cyn">status</span> · <span class="cyn">whoami</span> · <span class="cyn">clear</span></div>
+        <div id="cmdOut"></div>
+        <div class="prompt-line">
+          <span class="prompt">guest@sec-net:~$</span>
+          <input id="cmdInput" type="text" autocomplete="off" spellcheck="false" aria-label="終端機指令輸入">
+        </div>
+        <a class="back-link" href="../../index.html">&lt;- cd ../index — 返回入口</a>
+      </div>
+    </div>
+    <div class="vignette"></div>
+    <div class="scanlines"></div>
+    <div class="flicker"></div>
+  </div>
+</div>
+
+<script>
+/* ── 開機打字機 ── */
+const BOOT=[
+  'SEC-NET BIOS v2.11 — MEMORY CHECK ......... 65536 KB OK',
+  'LOADING KERNEL MODULES ..................... [OK]',
+  'MOUNTING /var/advisories ................... [OK]',
+  'ESTABLISHING SECURE CHANNEL (TLS 1.3) ...... [OK]',
+  'VERIFYING BULLETIN SIGNATURE (PGP) ......... [VALID]',
+  '',
+  'WELCOME, GUEST. TYPE "help" FOR COMMANDS.',
+  '_'
+];
+const pre=document.getElementById('bootlog');
+let li=0,ci=0;
+function type(){
+  if(li>=BOOT.length){
+    setTimeout(()=>{
+      document.getElementById('mainUI').style.display='block';
+      const cur=pre.querySelector('.cursor'); if(cur)cur.remove();
+      document.getElementById('cmdInput').focus({preventScroll:true});
+    },420);
+    return;
+  }
+  const line=BOOT[li];
+  if(ci<=line.length){
+    const shown=BOOT.slice(0,li).join('\n')+(li?'\n':'')+line.slice(0,ci);
+    pre.innerHTML=shown.replace(/</g,'&lt;')+'<span class="cursor"></span>';
+    ci++;
+    setTimeout(type, ci===1?60:(line==='_'?300:8+Math.random()*22));
+  }else{
+    li++;ci=0;
+    setTimeout(type,110);
+  }
+}
+window.addEventListener('load',type);
+
+/* ── 時鐘 ── */
+function tick(){
+  const d=new Date();
+  document.getElementById('clock').textContent=
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+}
+setInterval(tick,1000);tick();
+
+/* ── 指令互動 ── */
+const out=document.getElementById('cmdOut');
+const inp=document.getElementById('cmdInput');
+const CMDS={
+  help:'可用指令:\n  help      顯示本說明\n  cve       列出今日關鍵漏洞\n  status    顯示系統狀態\n  whoami    顯示目前身分\n  clear     清除輸出\n  exit      返回入口頁',
+  cve:'[CRIT] CVE-2026-21487  OpenFlow 堆疊溢位 — 立即更新至 3.4.2\n[HIGH] CVE-2026-20931  雲端閘道越權讀取 — 啟用物件 ACL 稽核\n[MED ] CVE-2026-19804  TLS 降級弱點 — 停用 TLS 1.0/1.1\n[LOW ] CVE-2026-18336  列印服務資訊洩漏 — 關閉偵錯模式',
+  status:'UPTIME 99.982% · THREAT LEVEL: ELEVATED · ADVISORIES TODAY: 4 · BLOCKED ATTACKS (24h): 12,487',
+  whoami:'guest — 公開資訊唯讀權限。如需通報事件請撥 0800-SEC-365。',
+};
+inp.addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const raw=inp.value.trim().toLowerCase();
+  inp.value='';
+  const div=document.createElement('div');
+  div.style.whiteSpace='pre-wrap';
+  div.style.margin='10px 0';
+  let resp;
+  if(raw==='clear'){out.innerHTML='';return;}
+  if(raw==='exit'){window.location.href='../../index.html';return;}
+  if(raw==='')resp='';
+  else if(CMDS[raw])resp=CMDS[raw];
+  else resp='command not found: '+raw+' — 輸入 help 查看可用指令';
+  div.innerHTML='<span class="prompt">guest@sec-net:~$</span> '+raw.replace(/</g,'&lt;')+'\n'+(resp?('<span style="color:#28c628">'+resp.replace(/</g,'&lt;')+'</span>'):'');
+  out.appendChild(div);
+  div.scrollIntoView({behavior:'smooth',block:'end'});
+});
+</script>
+</body>
+</html>

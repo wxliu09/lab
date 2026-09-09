@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 36 粉彩甘特·排程系統
+  ─────────────────────────────────────────
+  風格定位：柔和粉彩專案排程工具，圓潤、輕盈、療癒系白底介面
+  配色：
+    薄荷綠 #b8e8d0   櫻花粉 #ffd6e0
+    奶油黃 #fff3b8   薰衣草紫 #dcd0ff
+    背景白 #fdfdff   文字深灰 #4a4a5a   今日線 #ff6b81
+  字體：'Noto Sans TC' 圓潤無襯線 + 'Quicksand' 英數
+  版面結構：頂部圓潤頂欄 → KPI 圓角卡列 → 甘特圖主區（左人員/資源列 +
+            右 CSS Grid 橫向時間軸），圓角色塊任務列、今日紅線垂直標記
+  動態效果：1) 甘特任務列載入時由左至右依序展開（scaleX 動畫）；
+            2) hover 任務列浮出圓角 tooltip（跟隨滑鼠）；
+            3) 今日線左右呼吸微光；4) 頂部週切換按鈕滑動指示條
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>粉彩排程系統 · 專案甘特圖 MIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --mint:#b8e8d0; --pink:#ffd6e0; --yellow:#fff3b8; --purple:#dcd0ff;
+  --bg:#fdfdff; --ink:#4a4a5a; --today:#ff6b81;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);font-family:'Noto Sans TC','Quicksand',sans-serif;color:var(--ink);min-height:100vh}
+.topbar{
+  display:flex;align-items:center;gap:20px;padding:16px 30px;
+  background:#fff;border-bottom:1px solid #eee7f5;
+}
+.logo{
+  font-family:'Quicksand';font-weight:700;font-size:22px;
+  background:linear-gradient(90deg,#7ed8b0,#f0a8c0,#b19ef0);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.tabs{display:flex;background:#f4f0fb;border-radius:30px;padding:4px;position:relative}
+.tabs button{
+  border:none;background:none;padding:8px 20px;border-radius:24px;font-size:14px;cursor:pointer;
+  font-family:inherit;color:#8a8aa0;position:relative;z-index:1;transition:.25s;
+}
+.tabs button.on{color:#fff;font-weight:700}
+.tabs .pill{
+  position:absolute;top:4px;bottom:4px;border-radius:24px;background:linear-gradient(90deg,#b19ef0,#f0a8c0);
+  transition:left .3s cubic-bezier(.3,1.4,.5,1),width .3s;z-index:0;
+}
+.pagenav{display:flex;gap:8px;flex-wrap:wrap}
+.pagenav a{
+  color:#8a8aa0;text-decoration:none;font-size:13px;padding:7px 16px;border-radius:20px;
+  background:#f4f0fb;transition:.25s;font-weight:500;
+}
+.pagenav a:hover{background:var(--purple);color:#6a5aa8;transform:translateY(-2px)}
+.pagenav a.on{background:linear-gradient(90deg,#b19ef0,#f0a8c0);color:#fff;font-weight:700}
+.spacer{flex:1}
+.back-link{
+  color:#b19ef0;text-decoration:none;font-size:14px;font-weight:500;
+  border:2px solid var(--purple);border-radius:24px;padding:8px 20px;transition:.25s;
+}
+.back-link:hover{background:var(--purple);color:#6a5aa8;transform:translateX(-3px)}
+main{max-width:1300px;margin:0 auto;padding:26px 30px 60px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px}
+.kpi{
+  border-radius:22px;padding:20px 24px;position:relative;overflow:hidden;
+  transition:.25s;cursor:default;
+}
+.kpi:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(150,120,200,.18)}
+.kpi.k-mint{background:var(--mint)} .kpi.k-pink{background:var(--pink)}
+.kpi.k-yellow{background:var(--yellow)} .kpi.k-purple{background:var(--purple)}
+.kpi h3{font-size:13px;color:#5a5a6e;letter-spacing:2px;font-weight:500}
+.kpi .val{font-family:'Quicksand';font-size:44px;font-weight:700;color:#3a3a4c;line-height:1.15}
+.kpi .sub{font-size:12px;color:#6e6e82}
+.kpi .deco{
+  position:absolute;right:-22px;bottom:-22px;width:90px;height:90px;border-radius:50%;
+  background:rgba(255,255,255,.4);
+}
+/* 甘特圖 */
+.gantt-card{
+  background:#fff;border-radius:26px;border:1px solid #f0e9fa;
+  box-shadow:0 8px 30px rgba(170,140,220,.1);padding:26px 28px 30px;overflow-x:auto;
+}
+.gantt-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;min-width:980px}
+.gantt-head h2{font-size:18px;font-weight:700;letter-spacing:2px}
+.gantt-head .range{font-family:'Quicksand';font-size:14px;color:#8a8aa0}
+.gantt{min-width:980px}
+.g-row{
+  display:grid;grid-template-columns:150px 1fr;align-items:center;
+}
+.g-row.head{font-size:12px;color:#a0a0b5;font-family:'Quicksand';font-weight:600}
+.g-row.head .days{display:grid;grid-template-columns:repeat(14,1fr);text-align:center;padding-bottom:8px}
+.g-body{position:relative}
+.member{
+  display:flex;align-items:center;gap:10px;padding:0 10px 0 0;height:56px;
+}
+.avatar{
+  width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:#4a4a5a;flex-shrink:0;
+}
+.member .nm{font-size:14px;font-weight:500}
+.member .role{font-size:11px;color:#a0a0b5}
+.track{position:relative;height:56px;border-top:1px dashed #f0e9fa;display:grid;grid-template-columns:repeat(14,1fr)}
+.track::before{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(100%/14 - 1px),#f6f1fc calc(100%/14 - 1px) calc(100%/14));
+  pointer-events:none;
+}
+.task{
+  height:32px;border-radius:16px;align-self:center;margin:0 3px;position:relative;
+  display:flex;align-items:center;padding:0 14px;font-size:12px;font-weight:500;color:#4a4a5a;
+  white-space:nowrap;overflow:hidden;cursor:pointer;
+  transform-origin:left center;animation:grow .7s cubic-bezier(.2,.9,.3,1.2) both;
+  transition:filter .2s, box-shadow .2s;
+}
+@keyframes grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+.task:hover{filter:brightness(.96);box-shadow:0 6px 16px rgba(120,100,160,.25)}
+.t-mint{background:var(--mint)} .t-pink{background:var(--pink)} .t-yellow{background:var(--yellow)} .t-purple{background:var(--purple)}
+.task .pct{
+  margin-left:auto;background:rgba(255,255,255,.65);border-radius:12px;padding:1px 9px;font-size:11px;font-weight:700;
+}
+/* 今日線 */
+.today-line{
+  position:absolute;top:-6px;bottom:0;width:2px;background:var(--today);z-index:3;pointer-events:none;
+  animation:glow 2s ease-in-out infinite;
+}
+@keyframes glow{0%,100%{box-shadow:0 0 4px 1px rgba(255,107,129,.5)}50%{box-shadow:0 0 12px 3px rgba(255,107,129,.8)}}
+.today-line::before{
+  content:"今天";position:absolute;top:-24px;left:50%;transform:translateX(-50%);
+  background:var(--today);color:#fff;font-size:11px;padding:2px 10px;border-radius:12px;font-weight:700;
+  white-space:nowrap;
+}
+/* tooltip */
+#tooltip{
+  position:fixed;z-index:50;background:#fff;border:2px solid var(--purple);border-radius:16px;
+  padding:12px 16px;font-size:13px;box-shadow:0 10px 30px rgba(120,90,180,.25);pointer-events:none;
+  display:none;max-width:260px;line-height:1.7;
+}
+#tooltip b{color:#8a6fd0}
+#tooltip .bar{height:7px;border-radius:4px;background:#f0e9fa;margin-top:8px;overflow:hidden}
+#tooltip .bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#b8e8d0,#b19ef0)}
+@media (max-width:980px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">Pastel Plan ✿</div>
+  <div class="tabs" id="tabs">
+    <div class="pill"></div>
+    <button class="on">本週</button><button>下週</button><button>整月</button>
+  </div>
+  <nav class="pagenav">
+    <a href="index.html" class="on">甘特圖</a>
+    <a href="tasks.html">任務列表</a>
+    <a href="form.html">新增排程</a>
+    <a href="report.html">負載報表</a>
+  </nav>
+  <div class="spacer"></div>
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+</header>
+<main>
+  <div class="kpi-row">
+    <div class="kpi k-mint"><h3>進行中任務</h3><div class="val">18</div><div class="sub">跨 5 個專案</div><div class="deco"></div></div>
+    <div class="kpi k-pink"><h3>本週到期</h3><div class="val">6</div><div class="sub">最晚 09/04 截止</div><div class="deco"></div></div>
+    <div class="kpi k-yellow"><h3>整體達成率</h3><div class="val">72%</div><div class="sub">較上週 +8%</div><div class="deco"></div></div>
+    <div class="kpi k-purple"><h3>可用人力</h3><div class="val">9</div><div class="sub">2 人休假中</div><div class="deco"></div></div>
+  </div>
+
+  <section class="gantt-card">
+    <div class="gantt-head">
+      <h2>🌸 產品開發排程甘特圖</h2>
+      <div class="range">2026/08/24 — 09/06（雙週檢視）</div>
+    </div>
+    <div class="gantt">
+      <div class="g-row head">
+        <div>成員 / 資源</div>
+        <div class="days">
+          <span>一 24</span><span>二 25</span><span>三 26</span><span>四 27</span><span>五 28</span><span>六 29</span><span>日 30</span>
+          <span>一 31</span><span>二 1</span><span>三 2</span><span>四 3</span><span>五 4</span><span>六 5</span><span>日 6</span>
+        </div>
+      </div>
+      <div class="g-body" id="gBody">
+        <div class="today-line" style="left:calc(150px + (100% - 150px) * 4.5 / 14)"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="tooltip"></div>
+<script>
+const members=[
+  {nm:'林書羽',role:'UI 設計師',color:'var(--purple)',tasks:[
+    {name:'新版官網視覺稿',s:0,d:4,c:'t-purple',pct:85},
+    {name:'設計系統元件庫',s:6,d:5,c:'t-purple',pct:30}]},
+  {nm:'陳冠廷',role:'前端工程師',color:'var(--mint)',tasks:[
+    {name:'首頁切版開發',s:2,d:5,c:'t-mint',pct:60},
+    {name:'購物車流程',s:9,d:4,c:'t-mint',pct:10}]},
+  {nm:'黃郁雯',role:'後端工程師',color:'var(--yellow)',tasks:[
+    {name:'訂單 API 重構',s:1,d:6,c:'t-yellow',pct:70},
+    {name:'金流串接測試',s:8,d:5,c:'t-yellow',pct:0}]},
+  {nm:'張家豪',role:'QA 工程師',color:'var(--pink)',tasks:[
+    {name:'迴歸測試 v2.4',s:4,d:4,c:'t-pink',pct:45},
+    {name:'壓力測試腳本',s:10,d:3,c:'t-pink',pct:0}]},
+  {nm:'蘇品妤',role:'專案經理',color:'var(--purple)',tasks:[
+    {name:'Sprint 15 規劃',s:0,d:2,c:'t-pink',pct:100},
+    {name:'客戶驗收會議',s:7,d:2,c:'t-yellow',pct:50},
+    {name:'v2.5 發佈準備',s:11,d:3,c:'t-purple',pct:0}]},
+];
+const body=document.getElementById('gBody');
+const tip=document.getElementById('tooltip');
+members.forEach((m,mi)=>{
+  const row=document.createElement('div');row.className='g-row';
+  const mem=document.createElement('div');mem.className='member';
+  mem.innerHTML=`<div class="avatar" style="background:${m.color}">${m.nm[0]}</div>
+    <div><div class="nm">${m.nm}</div><div class="role">${m.role}</div></div>`;
+  const track=document.createElement('div');track.className='track';
+  m.tasks.forEach((t,ti)=>{
+    const el=document.createElement('div');
+    el.className='task '+t.c;
+    el.style.gridColumn=`${t.s+1} / span ${t.d}`;
+    el.style.animationDelay=(mi*0.12+ti*0.15)+'s';
+    el.innerHTML=`${t.name}<span class="pct">${t.pct}%</span>`;
+    el.addEventListener('mousemove',e=>{
+      tip.style.display='block';
+      tip.style.left=(e.clientX+16)+'px';
+      tip.style.top=(e.clientY+14)+'px';
+      tip.innerHTML=`<b>${t.name}</b><br>負責人：${m.nm}（${m.role}）<br>
+        期間：第 ${t.s+1} 天起，共 ${t.d} 天<br>目前進度：<b>${t.pct}%</b>
+        <div class="bar"><i style="width:${t.pct}%"></i></div>`;
+    });
+    el.addEventListener('mouseleave',()=>tip.style.display='none');
+    el.addEventListener('click',()=>location.href='tasks.html');
+    track.appendChild(el);
+  });
+  row.appendChild(mem);row.appendChild(track);
+  body.appendChild(row);
+});
+// 週切換滑動指示
+const tabs=document.getElementById('tabs'),pill=tabs.querySelector('.pill');
+const btns=[...tabs.querySelectorAll('button')];
+function movePill(b){pill.style.left=b.offsetLeft+'px';pill.style.width=b.offsetWidth+'px';}
+btns.forEach(b=>b.addEventListener('click',()=>{
+  btns.forEach(x=>x.classList.remove('on'));b.classList.add('on');movePill(b);
+}));
+window.addEventListener('load',()=>movePill(btns[0]));
+window.addEventListener('resize',()=>movePill(tabs.querySelector('.on')));
+</script>
+</body>
+</html>

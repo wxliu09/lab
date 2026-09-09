@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 32-dark-trading.html 暗色霓虹·交易監控
+  風格定位：專業金融交易終端（Bloomberg Terminal 風），暗底霓虹數據
+  配色：金融暗底 #0b0e17｜面板 #12151f｜格線 #1e2433
+        台股習慣：漲紅 #ff4d5e / 跌綠 #00d97a｜強調金 #f5b545｜文字 #e8ecf4 / 次要 #5b6478
+  字體：Noto Sans TC＋數字 JetBrains Mono
+  版面結構：頂欄（返回入口＋大盤指數）→ KPI 風控卡片列 → 左：Canvas K 線圖（紅漲綠跌＋均線）＋大額警示列｜右：報價串流面板（setInterval 隨機跳動＋漲跌閃爍）＋持倉風控表格
+  動態效果：K 線繪入動畫、報價每 1.2 秒隨機跳價並以紅/綠背景閃爍、警示列滑入、數字等寬跳動
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>磐石證券 · 交易監控終端</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Noto Sans TC',sans-serif}
+  body{background:#0b0e17;color:#e8ecf4;min-height:100vh}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .up{color:#ff4d5e}.down{color:#00d97a}.flat{color:#5b6478}
+  header{background:#12151f;border-bottom:1px solid #1e2433;padding:10px 22px;display:flex;align-items:center;gap:20px;position:sticky;top:0;z-index:20}
+  .back{font-size:12.5px;color:#8b93a8;text-decoration:none;border:1px solid #2a3247;border-radius:4px;padding:6px 13px;transition:.15s;font-family:'JetBrains Mono',monospace}
+  .back:hover{color:#f5b545;border-color:#f5b545}
+  h1{font-size:16px;font-weight:900;letter-spacing:1px}
+  h1 .gold{color:#f5b545}
+  .idx{margin-left:auto;display:flex;gap:24px;font-family:'JetBrains Mono',monospace;font-size:13px}
+  .idx .nm{font-size:11px;color:#5b6478;display:block;font-family:'Noto Sans TC',sans-serif}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 22px 4px}
+  .kpi{background:#12151f;border:1px solid #1e2433;border-left:3px solid #f5b545;border-radius:6px;padding:13px 16px}
+  .kpi .lb{font-size:11.5px;color:#5b6478;letter-spacing:1px}
+  .kpi .vl{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px}
+  .kpi .sub{font-size:11.5px;margin-top:2px}
+  main{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;padding:12px 22px 24px;align-items:start}
+  .panel{background:#12151f;border:1px solid #1e2433;border-radius:6px;padding:16px}
+  .ptitle{font-size:13.5px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+  .ptitle .sym{font-family:'JetBrains Mono',monospace;color:#f5b545}
+  .ptitle .live{margin-left:auto;font-size:10.5px;color:#00d97a;display:flex;align-items:center;gap:5px}
+  .ptitle .live::before{content:'';width:7px;height:7px;border-radius:50%;background:#00d97a;box-shadow:0 0 8px #00d97a;animation:live 1.4s infinite}
+  @keyframes live{50%{opacity:.3}}
+  canvas{width:100%;display:block}
+  .quote{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:13px;border-bottom:1px solid #171b28;transition:background .5s}
+  .quote .qn{font-family:'Noto Sans TC',sans-serif;font-size:12.5px;width:118px;flex:none}
+  .quote .qn small{color:#5b6478;font-family:'JetBrains Mono',monospace;font-size:10px;display:block}
+  .quote .qp{flex:1;text-align:right;font-weight:700;font-size:15px}
+  .quote .qc{width:88px;text-align:right}
+  .quote .qv{width:74px;text-align:right;color:#5b6478;font-size:11.5px}
+  .flash-up{animation:fu .7s}.flash-down{animation:fd .7s}
+  @keyframes fu{0%{background:rgba(255,77,94,.28)}100%{background:transparent}}
+  @keyframes fd{0%{background:rgba(0,217,122,.28)}100%{background:transparent}}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-size:11px;color:#5b6478;text-align:right;padding:8px 10px;border-bottom:1px solid #1e2433;font-weight:500;letter-spacing:1px}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:9px 10px;border-bottom:1px solid #171b28;text-align:right;font-family:'JetBrains Mono',monospace}
+  td:first-child{font-family:'Noto Sans TC',sans-serif}
+  .riskbar{width:80px;height:6px;background:#1e2433;border-radius:99px;display:inline-block;vertical-align:middle;overflow:hidden;margin-right:6px}
+  .riskbar i{display:block;height:100%;border-radius:99px}
+  .subnav{background:#12151f;border-bottom:1px solid #1e2433;padding:0 22px;display:flex;gap:2px;position:sticky;top:57px;z-index:19}
+  .subnav a{display:inline-block;padding:10px 16px;font-size:12.5px;color:#8b93a8;text-decoration:none;border-bottom:2px solid transparent;font-family:'JetBrains Mono',monospace;letter-spacing:1px;transition:.15s}
+  .subnav a:hover{color:#f5b545}
+  .subnav a.active{color:#f5b545;border-bottom-color:#f5b545}
+  .more{margin-left:auto;font-size:11px;color:#f5b545;text-decoration:none;font-family:'JetBrains Mono',monospace}
+  .more:hover{text-decoration:underline}
+  .alert{border:1px solid rgba(255,77,94,.4);background:rgba(255,77,94,.07);border-radius:6px;padding:11px 14px;margin-bottom:9px;
+    display:flex;gap:12px;align-items:center;font-size:12.5px;animation:alertin .5s both}
+  .alert:nth-child(2){animation-delay:.12s}.alert:nth-child(3){animation-delay:.24s}
+  @keyframes alertin{from{opacity:0;transform:translateX(-14px)}to{opacity:1}}
+  .alert .ico{color:#ff4d5e;font-size:16px}
+  .alert .tm{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:#5b6478;flex:none}
+  .alert.gold{border-color:rgba(245,181,69,.4);background:rgba(245,181,69,.07)}
+  .alert.gold .ico{color:#f5b545}
+  @media(max-width:1100px){main{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.idx{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../../index.html">← BACK 返回入口</a>
+  <h1>磐石證券 <span class="gold">交易監控終端</span> <span class="mono" style="font-size:11px;color:#5b6478">TWSE · 盤中</span></h1>
+  <div class="idx">
+    <span><span class="nm">加權指數</span><span class="up">23,412.67 ▲ 186.32</span></span>
+    <span><span class="nm">櫃買指數</span><span class="down">271.44 ▼ 1.08</span></span>
+    <span><span class="nm">台指期</span><span class="up">23,455 ▲ 204</span></span>
+  </div>
+</header>
+<nav class="subnav">
+  <a href="index.html" class="active">監控總覽</a>
+  <a href="positions.html">持倉明細</a>
+  <a href="order.html">下單</a>
+  <a href="risk.html">風控設定</a>
+  <a href="report.html">績效日報</a>
+</nav>
+
+<section class="kpis">
+  <div class="kpi"><div class="lb">今日成交值（億元）</div><div class="vl mono" style="color:#f5b545">4,286.5</div><div class="sub up">▲ 量能放大 18.2%</div></div>
+  <div class="kpi" style="border-left-color:#ff4d5e"><div class="lb">持倉未實現損益</div><div class="vl mono up">+1,247,300</div><div class="sub" style="color:#5b6478">8 檔持倉 · 6 漲 2 跌</div></div>
+  <div class="kpi" style="border-left-color:#00d97a"><div class="lb">風控使用率（維持率）</div><div class="vl mono down">187.4%</div><div class="sub" style="color:#5b6478">安全門檻 ≥ 130%</div></div>
+  <div class="kpi" style="border-left-color:#ff4d5e"><div class="lb">大額異動警示</div><div class="vl mono up">3</div><div class="sub up">⚠ 最近 5 分鐘內</div></div>
+</section>
+
+<main>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <div class="ptitle">K 線圖 <span class="sym">2330 台積電</span><span class="mono" style="font-size:12px;color:#5b6478">5 分 K ・ MA5 / MA20</span><span class="live">LIVE</span></div>
+      <canvas id="chart" height="300"></canvas>
+    </div>
+    <div class="panel">
+      <div class="ptitle">⚠ 大額交易警示列<a class="more" href="risk.html">風控設定 →</a></div>
+      <div class="alert"><span class="ico">⬤</span><span><b>2330 台積電</b> 單筆大戶拋售 <b class="mono up">1,842 張</b>，成交價 1,045.0，觸及大單閾值</span><span class="tm">13:41:07</span></div>
+      <div class="alert gold"><span class="ico">⬤</span><span><b>2317 鴻海</b> 連續 3 筆千張買單敲入，5 分鐘漲幅 <b class="mono up">+2.1%</b></span><span class="tm">13:38:52</span></div>
+      <div class="alert"><span class="ico">⬤</span><span><b>2454 聯發科</b> 跌破均線支撐並伴隨量能放大 <b class="mono down">3.4 倍</b>，注意停損連鎖</span><span class="tm">13:35:19</span></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <div class="ptitle">報價串流 <span class="live">STREAMING</span><a class="more" href="order.html">前往下單 →</a></div>
+      <div id="quotes"></div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">持倉風控表<a class="more" href="positions.html">持倉明細 →</a></div>
+      <table>
+        <thead><tr><th>標的</th><th>成本</th><th>現價</th><th>損益</th><th>風控水位</th></tr></thead>
+        <tbody id="pos"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ---------- K 線圖 ---------- */
+const candles = [];
+let p = 1000;
+for(let i=0;i<56;i++){
+  const o=p, drift=(Math.random()-.46)*9;
+  const c=o+drift, h=Math.max(o,c)+Math.random()*4, l=Math.min(o,c)-Math.random()*4;
+  candles.push({o,c,h,l}); p=c;
+}
+const cv=document.getElementById('chart'), ctx=cv.getContext('2d');
+function drawChart(prog){
+  const dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth, H=300;
+  cv.width=W*dpr; cv.height=H*dpr; ctx.scale(dpr,dpr);
+  const min=Math.min(...candles.map(c=>c.l))-3, max=Math.max(...candles.map(c=>c.h))+3;
+  const y=v=>H-8-(v-min)/(max-min)*(H-30);
+  const bw=W/candles.length;
+  ctx.strokeStyle='#1e2433'; ctx.fillStyle='#5b6478'; ctx.font='10px JetBrains Mono';
+  for(let g=0;g<=4;g++){ const gy=10+(H-40)*g/4;
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
+    ctx.fillText((max-(max-min)*g/4).toFixed(0),6,gy-3);
+  }
+  const ma=(n,i)=>{ if(i<n-1)return null; let s=0; for(let j=i-n+1;j<=i;j++)s+=candles[j].c; return s/n; };
+  [[5,'#f5b545'],[20,'#a78bfa']].forEach(([n,col])=>{
+    ctx.strokeStyle=col; ctx.lineWidth=1.4; ctx.beginPath(); let started=false;
+    candles.forEach((c,i)=>{ if(i/prog>1)return; const m=ma(n,i); if(m===null)return;
+      const x=i*bw+bw/2; started?ctx.lineTo(x,y(m)):ctx.moveTo(x,y(m)); started=true; });
+    ctx.stroke(); ctx.lineWidth=1;
+  });
+  const upto=Math.floor(candles.length*prog);
+  for(let i=0;i<upto;i++){
+    const c=candles[i], x=i*bw+bw/2, up=c.c>=c.o;
+    ctx.strokeStyle=up?'#ff4d5e':'#00d97a'; ctx.fillStyle=up?'#ff4d5e':'#00d97a';
+    ctx.beginPath(); ctx.moveTo(x,y(c.h)); ctx.lineTo(x,y(c.l)); ctx.stroke();
+    const top=y(Math.max(c.o,c.c)), bh=Math.max(2,Math.abs(y(c.o)-y(c.c)));
+    if(up) ctx.fillRect(x-bw*.32,top,bw*.64,bh);
+    else { ctx.globalAlpha=.85; ctx.fillRect(x-bw*.32,top,bw*.64,bh); ctx.globalAlpha=1; }
+  }
+}
+let t0=null;
+function anim(ts){ if(!t0)t0=ts; const pr=Math.min(1,(ts-t0)/1400); drawChart(pr); if(pr<1)requestAnimationFrame(anim); }
+requestAnimationFrame(anim);
+
+/* ---------- 報價串流 ---------- */
+const STOCKS=[
+  {id:'2330',name:'台積電',price:1045,vol:58210},
+  {id:'2317',name:'鴻海',price:212.5,vol:41083},
+  {id:'2454',name:'聯發科',price:1285,vol:8941},
+  {id:'2603',name:'長榮',price:198,vol:22314},
+  {id:'2881',name:'富邦金',price:88.4,vol:15230},
+  {id:'2303',name:'聯電',price:52.1,vol:31452},
+  {id:'2412',name:'中華電',price:131,vol:5214}
+];
+STOCKS.forEach(s=>{ s.open=s.price*(1+(Math.random()-.5)*.02); });
+const qbox=document.getElementById('quotes');
+function renderQuotes(){
+  qbox.innerHTML='';
+  STOCKS.forEach((s,i)=>{
+    const chg=s.price-s.open, pct=chg/s.open*100;
+    const cls=chg>0?'up':(chg<0?'down':'flat'), arrow=chg>0?'▲':(chg<0?'▼':'—');
+    const row=document.createElement('div');
+    row.className='quote'; row.id='q'+i;
+    row.innerHTML=`<span class="qn">${s.name}<small>${s.id}.TW</small></span>
+      <span class="qp ${cls}">${s.price.toFixed(s.price<100?2:1)}</span>
+      <span class="qc ${cls}">${arrow} ${Math.abs(pct).toFixed(2)}%</span>
+      <span class="qv">${s.vol.toLocaleString()} 張</span>`;
+    qbox.appendChild(row);
+  });
+}
+renderQuotes();
+setInterval(()=>{
+  const i=Math.floor(Math.random()*STOCKS.length), s=STOCKS[i];
+  const step=s.price>500?1:(s.price>100?0.5:0.1);
+  const delta=(Math.random()-.48)*step*3;
+  s.price=Math.max(1,s.price+delta);
+  s.vol+=Math.floor(Math.random()*140);
+  const chg=s.price-s.open, pct=chg/s.open*100;
+  const cls=chg>0?'up':(chg<0?'down':'flat'), arrow=chg>0?'▲':(chg<0?'▼':'—');
+  const row=document.getElementById('q'+i);
+  row.innerHTML=`<span class="qn">${s.name}<small>${s.id}.TW</small></span>
+    <span class="qp ${cls}">${s.price.toFixed(s.price<100?2:1)}</span>
+    <span class="qc ${cls}">${arrow} ${Math.abs(pct).toFixed(2)}%</span>
+    <span class="qv">${s.vol.toLocaleString()} 張</span>`;
+  row.classList.remove('flash-up','flash-down'); void row.offsetWidth;
+  row.classList.add(delta>=0?'flash-up':'flash-down');
+},1200);
+
+/* ---------- 持倉 ---------- */
+const POS=[
+  {name:'2330 台積電',cost:1012.4,cur:1045,qty:12,risk:34},
+  {name:'2317 鴻海',cost:205.8,cur:212.5,qty:30,risk:22},
+  {name:'2454 聯發科',cost:1310,cur:1285,qty:4,risk:61},
+  {name:'2603 長榮',cost:182.3,cur:198,qty:20,risk:18},
+  {name:'2881 富邦金',cost:91.2,cur:88.4,qty:40,risk:47}
+];
+document.getElementById('pos').innerHTML=POS.map(p=>{
+  const pnl=(p.cur-p.cost)*p.qty*1000;
+  const cls=pnl>=0?'up':'down';
+  const rc=p.risk<30?'#00d97a':(p.risk<55?'#f5b545':'#ff4d5e');
+  return `<tr><td>${p.name}</td><td>${p.cost.toFixed(1)}</td><td>${p.cur.toFixed(1)}</td>
+    <td class="${cls}">${pnl>=0?'+':''}${pnl.toLocaleString()}</td>
+    <td><span class="riskbar"><i style="width:${p.risk}%;background:${rc}"></i></span><span class="mono" style="font-size:11px;color:#5b6478">${p.risk}%</span></td></tr>`;
+}).join('');
+</script>
+</body>
+</html>

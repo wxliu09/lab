@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>揀貨出貨 · 走道動線路徑圖 — 立方倉儲 CubeWMS</title>
+<style>
+:root{
+  --bg:#eef1f6;--floor:#dfe4ec;--grid:#c8cfdc;--ink:#20293a;--dim:#6f7b90;
+  --card:#fff;--line:#dde2ec;
+  --c1:#4f7cff;--c2:#22c9a0;--c3:#ffb020;--c4:#ff5c72;--c5:#a06bff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;font-size:14px;
+  background-image:radial-gradient(circle at 20% 0%,#fff 0,transparent 55%)}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--c1);outline-offset:3px}
+
+.home{position:fixed;right:22px;bottom:22px;z-index:99;text-decoration:none;color:#fff;
+  background:var(--ink);padding:13px 22px;border-radius:12px;font-weight:600;font-size:13.5px;
+  box-shadow:0 8px 22px rgba(32,41,58,.35);transition:.22s}
+.home:hover{background:var(--c1);transform:translateY(-3px)}
+
+header{padding:22px 26px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:#fff;border-bottom:1px solid var(--line)}
+header .lg{display:flex;align-items:center;gap:12px}
+header .lg .c{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#4f7cff,#22c9a0);
+  display:grid;place-items:center;color:#fff;font-size:19px;font-weight:800}
+header h1{font-size:18px;font-weight:700;letter-spacing:-.02em}
+header h1 small{display:block;font-size:10.5px;color:var(--dim);letter-spacing:.18em;font-weight:400;margin-top:3px}
+header .rt{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--dim)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c2);display:inline-block;margin-right:6px;
+  box-shadow:0 0 0 4px rgba(34,201,160,.18)}
+nav.sub{display:flex;flex-wrap:wrap;gap:4px;padding:10px 26px;background:#fff;border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:40}
+nav.sub a{text-decoration:none;color:var(--dim);padding:8px 14px;border-radius:9px;font-size:13.5px;transition:.16s}
+nav.sub a:hover{background:#f2f5fa;color:var(--ink)}
+nav.sub a[aria-current]{background:#eaf0ff;color:var(--c1);font-weight:600}
+
+.wrap{max-width:1600px;margin:0 auto;padding:22px 26px 90px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;
+  box-shadow:0 2px 10px rgba(32,41,58,.05);margin-bottom:20px}
+.panel>h2{font-size:15px;font-weight:700;padding:17px 20px;border-bottom:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.panel>h2 span{font-size:11px;color:var(--dim);font-weight:400;letter-spacing:.1em}
+.panel .in{padding:20px}
+
+/* ---------- wave selector ---------- */
+.waves{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.wave{font:inherit;text-align:left;cursor:pointer;background:#fff;border:1px solid var(--line);
+  border-radius:16px;padding:16px 18px;transition:.18s;color:var(--ink)}
+.wave:hover{border-color:var(--c1);transform:translateY(-2px)}
+.wave b{display:block;font-size:15px;font-weight:700}
+.wave small{display:block;font-size:11.5px;color:var(--dim);margin-top:5px;letter-spacing:.04em}
+.wave .n{display:block;font-size:30px;font-weight:700;letter-spacing:-.03em;margin-top:10px}
+.wave .n em{font-style:normal;font-size:11px;font-weight:400;color:var(--dim);margin-left:4px}
+.wave[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.wave[aria-selected="true"] small,.wave[aria-selected="true"] .n em{color:#a7b3c8}
+
+/* ---------- route map ---------- */
+.maplayout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:0}
+.mapbox{border-right:1px solid var(--line);padding:18px;overflow-x:auto}
+.mapbox svg{display:block;width:100%;min-width:560px;height:auto}
+.rack{fill:#c3cddf;stroke:#a8b3c6;stroke-width:1}
+.rack.hit{fill:var(--c1);stroke:#3457c2}
+.rack.done{fill:var(--c2);stroke:#17a37e}
+.rlbl{font-size:11px;fill:#5c6a80;font-family:inherit}
+.rlbl.on{fill:#fff;font-weight:700}
+.aisle{fill:#f2f5fa}
+.zone{fill:none;stroke:#c8cfdc;stroke-width:1;stroke-dasharray:5 4}
+.path{fill:none;stroke:var(--c4);stroke-width:3.4;stroke-linejoin:round;stroke-linecap:round;
+  stroke-dasharray:3000;stroke-dashoffset:3000;animation:draw 2.2s cubic-bezier(.3,.7,.3,1) forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.stop circle{fill:#fff;stroke:var(--c4);stroke-width:2.6}
+.stop text{font-size:10.5px;font-weight:700;fill:var(--ink);font-family:inherit}
+.stop.done circle{fill:var(--c2);stroke:#17a37e}
+.stop.done text{fill:#fff}
+.term rect{fill:var(--ink)}
+.term text{fill:#fff;font-size:10px;letter-spacing:.1em;font-family:inherit}
+
+/* ---------- pick list ---------- */
+.plist{padding:18px 20px 20px}
+.prog{margin-bottom:16px}
+.prog .t{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:7px}
+.prog .t span{color:var(--dim)}
+.trk{height:10px;border-radius:6px;background:#e9edf4;overflow:hidden}
+.trk div{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--c1),var(--c2));transition:width .3s}
+.stoplist{max-height:430px;overflow-y:auto;margin:0 -4px}
+.pi{display:grid;grid-template-columns:26px 34px minmax(0,1fr) auto;gap:11px;align-items:center;
+  padding:10px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:10px;transition:.14s}
+.pi:hover{background:#f6f8fc}
+.pi:last-child{border-bottom:0}
+.pi input{width:17px;height:17px;accent-color:#22c9a0;cursor:pointer}
+.pi .seq{width:26px;height:26px;border-radius:8px;background:#eef1f6;color:var(--dim);
+  display:grid;place-items:center;font-size:11.5px;font-weight:700}
+.pi .m b{display:block;font-size:13px;font-weight:600}
+.pi .m small{display:block;font-size:11px;color:var(--dim);margin-top:2px}
+.pi .q{font-size:13px;font-weight:700;white-space:nowrap}
+.pi.done .seq{background:var(--c2);color:#fff}
+.pi.done .m b{text-decoration:line-through;color:var(--dim)}
+.stopfoot{margin-top:14px;font-size:12px;color:var(--dim);line-height:1.85;
+  background:#f6f8fc;border-radius:12px;padding:12px 14px}
+
+/* ---------- metrics ---------- */
+.met{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}
+.met div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 15px}
+.met small{font-size:11px;color:var(--dim);display:block}
+.met b{font-size:23px;font-weight:700;letter-spacing:-.03em;display:block;margin-top:5px}
+.met b em{font-size:11px;font-style:normal;font-weight:400;color:var(--dim);margin-left:3px}
+
+/* ---------- table ---------- */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{text-align:left;font-size:10.5px;letter-spacing:.14em;color:var(--dim);font-weight:600;
+  padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#f6f8fc}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;border-radius:7px;padding:3px 9px;white-space:nowrap}
+.p-a{background:#eaf0ff;color:#3457c2}.p-b{background:#d9f7ee;color:#0f7f65}.p-c{background:#fff1d6;color:#8a5c00}
+.p-x{background:#ffe4e8;color:#c0293c}
+
+/* ---------- AGV rows ---------- */
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row .sq{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:12px;
+  flex:0 0 auto;color:#fff;font-weight:700}
+.row .m{flex:1;min-width:0}
+.row .m b{display:block;font-size:13.5px;font-weight:600}
+.row .m small{color:var(--dim);font-size:11px}
+.row .pc{font-weight:700;font-size:14px}
+
+.two{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+.ftr{text-align:center;font-size:10.5px;color:#98a2b6;letter-spacing:.3em;padding:26px 0 8px}
+
+@media(max-width:1200px){
+  .maplayout{grid-template-columns:1fr}
+  .mapbox{border-right:0;border-bottom:1px solid var(--line)}
+  .met{grid-template-columns:repeat(3,1fr)}
+  .two{grid-template-columns:1fr}
+}
+@media(max-width:900px){
+  .waves{grid-template-columns:1fr}
+  .met{grid-template-columns:repeat(2,1fr)}
+  header .rt{width:100%;margin-left:0}
+}
+@media(max-width:640px){
+  .wrap{padding:16px 14px 90px}
+  header,nav.sub{padding-left:14px;padding-right:14px}
+  .stoplist{max-height:none}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<header>
+  <div class="lg"><div class="c">▣</div><h1>立方倉儲 CubeWMS<small>ISOMETRIC WAREHOUSE MANAGEMENT</small></h1></div>
+  <div class="rt"><span><i class="dot"></i>桃園一廠 · A 區揀貨連線</span><span>|</span><span>待揀任務 47 張</span></div>
+</header>
+
+<nav class="sub">
+  <a href="index.html">儲位地圖</a>
+  <a href="inbound.html">入庫作業</a>
+  <a href="picking.html" aria-current="page">揀貨出貨</a>
+  <a href="inventory.html">盤點作業</a>
+  <a href="report.html">營運報表</a>
+</nav>
+
+<div class="wrap">
+
+  <div class="waves" role="tablist" aria-label="揀貨波次">
+    <button class="wave" role="tab" aria-selected="true" data-w="A">
+      <b>波次 A · 早批</b><small>09:00 出車 · 北區宅配 + 超商店配</small>
+      <span class="n">18<em>張訂單</em></span>
+    </button>
+    <button class="wave" role="tab" aria-selected="false" data-w="B">
+      <b>波次 B · 午批</b><small>13:00 出車 · 中南部經銷商整板</small>
+      <span class="n">17<em>張訂單</em></span>
+    </button>
+    <button class="wave" role="tab" aria-selected="false" data-w="C">
+      <b>波次 C · 晚批</b><small>16:00 出車 · 急單與跨境空運</small>
+      <span class="n">12<em>張訂單</em></span>
+    </button>
+  </div>
+
+  <div class="met" id="met"></div>
+
+  <div class="panel">
+    <h2 id="mapTitle">A 區走道揀貨動線 · 波次 A<span id="mapMeta">SERPENTINE PICK PATH · 6 通道 × 6 排</span></h2>
+    <div class="maplayout">
+      <div class="mapbox">
+        <svg id="map" viewBox="0 0 640 540" role="img" aria-labelledby="mapDesc">
+          <title id="mapDesc">A 區平面揀貨路徑圖：自揀貨起點依序經過各儲位後抵達出貨集貨區，路徑以蛇行方式繞行六條通道</title>
+        </svg>
+      </div>
+      <div class="plist">
+        <div class="prog">
+          <div class="t"><b>揀貨進度</b><span id="progTxt">0 / 12 站 · 0%</span></div>
+          <div class="trk"><div id="progBar" style="width:0%"></div></div>
+        </div>
+        <div class="stoplist" id="stops"></div>
+        <div class="stopfoot" id="stopFoot"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="panel">
+      <h2 id="ordTitle">波次訂單清單<span id="ordMeta">PICK ORDERS</span></h2>
+      <div class="tw">
+        <table>
+          <thead><tr>
+            <th>訂單編號</th><th>客戶</th><th>出貨方式</th><th class="n">行數</th>
+            <th class="n">件數</th><th class="n">重量</th><th>截止</th><th>優先級</th>
+          </tr></thead>
+          <tbody id="ordBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>AGV 車隊<span>FLEET</span></h2>
+        <div class="in">
+          <div class="row"><div class="sq" style="background:var(--c4)">01</div>
+            <div class="m"><b>AGV-01</b><small>搬運中 · A03 → 出貨月台</small></div><span class="pc" style="color:var(--c2)">92%</span></div>
+          <div class="row"><div class="sq" style="background:var(--c4)">02</div>
+            <div class="m"><b>AGV-02</b><small>取貨中 · B07 儲位</small></div><span class="pc" style="color:var(--c2)">78%</span></div>
+          <div class="row"><div class="sq" style="background:var(--c4)">03</div>
+            <div class="m"><b>AGV-03</b><small>返回充電站</small></div><span class="pc" style="color:var(--c3)">24%</span></div>
+          <div class="row"><div class="sq" style="background:#a8b2c4">04</div>
+            <div class="m"><b>AGV-04</b><small>待命 · 充電座 C2</small></div><span class="pc" style="color:var(--dim)">100%</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>路徑最佳化說明<span>ROUTING POLICY</span></h2>
+        <div class="in" style="font-size:12.5px;line-height:1.95;color:var(--dim)">
+          <p>系統採 <b style="color:var(--ink)">蛇行走道法（Serpentine / S-Shape）</b>：揀貨員自左下角揀貨台進入，逐條通道往返，不折返回頭，於右下角出貨集貨區交板。</p>
+          <p style="margin-top:11px">與最短路徑法（Largest Gap）相比，蛇行法在儲位命中密度 &gt; 40% 時平均縮短 11.4% 行走距離，且路線可預測、便於新人上線。</p>
+          <p style="margin-top:11px">重物優先原則：單件 &gt; 8 kg 之品項自動排入路徑前段，避免堆疊壓損。波次 B 之整板品項改由 AGV-01 直送月台，不列入人工路徑。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ftr">PICKING / AISLE ROUTE DIAGRAM — 走道揀貨動線路徑圖 · DESIGN 30 / 40</div>
+</div>
+
+<script>
+/* ============ 幾何：A 區 6 通道（A–F）× 6 排（01–06） ============ */
+const COLS = ["A","B","C","D","E","F"];
+const RW = 62, RH = 44;
+function pos(id){
+  const c = COLS.indexOf(id[0]), r = +id.slice(1) - 1;
+  const x = 58 + c * 92;
+  const y = 46 + r * 62 + (r >= 2 ? 20 : 0) + (r >= 4 ? 20 : 0);
+  return {x, y, cx: x + RW / 2, cy: y + RH / 2};
+}
+const START = {cx:30, cy:505}, END = {cx:610, cy:505};
+const SCALE = 0.052;            // 1 SVG 單位 = 0.052 公尺（全區 33.3 m × 28.1 m）
+
+/* ============ 波次資料 ============ */
+const SKU = {
+  "精密電阻 ERJ-6ENF":"ERJ6ENF-1002","積層電容 GRM188R":"GRM188R71H","電感線圈 CLF7045":"CLF7045T-100",
+  "穩壓器 LM7805":"LM7805CT","光耦合器 PC817":"PC817X-C","連接器 DF11-20DS":"DF11-20DS-2C",
+  "微控制器 STM32F4":"STM32F407VG","射頻模組 RF-2450":"RF2450-M","面板玻璃基板 G5":"GLS-G5-1100",
+  "沖壓模座 SKD-11":"SKD11-B240","恆溫校正液":"CAL-STD-04","蝕刻液 FeCl3":"ETCH-FE38"
+};
+const WAVES = {
+  A:{name:"波次 A · 早批",depart:"09:00",orders:18,picker:"許庭安",cart:"CART-07",note:"北區宅配 + 超商店配，單筆件數小、行數多，採整車蛇行一次完成。",
+     stops:[
+      ["A01","精密電阻 ERJ-6ENF",180],["B01","積層電容 GRM188R",240],["C02","光耦合器 PC817",96],
+      ["D02","連接器 DF11-20DS",144],["E03","穩壓器 LM7805",72],["F03","電感線圈 CLF7045",120],
+      ["F04","微控制器 STM32F4",48],["E05","射頻模組 RF-2450",36],["D05","精密電阻 ERJ-6ENF",300],
+      ["C06","積層電容 GRM188R",210],["B06","光耦合器 PC817",84],["A06","連接器 DF11-20DS",66]
+     ]},
+  B:{name:"波次 B · 午批",depart:"13:00",orders:17,picker:"呂尚謙",cart:"CART-03",note:"中南部經銷商整板出貨，重物優先排入路徑前段，整板品項改由 AGV-01 直送月台。",
+     stops:[
+      ["B02","沖壓模座 SKD-11",12],["C02","面板玻璃基板 G5",24],["D03","穩壓器 LM7805",480],
+      ["E03","電感線圈 CLF7045",360],["F04","精密電阻 ERJ-6ENF",600],["E04","積層電容 GRM188R",540],
+      ["D05","連接器 DF11-20DS",288],["C05","光耦合器 PC817",192],["B06","微控制器 STM32F4",90],
+      ["A05","射頻模組 RF-2450",64]
+     ]},
+  C:{name:"波次 C · 晚批",depart:"16:00",orders:12,picker:"高詠晴",cart:"CART-11",note:"急單與跨境空運，含危險品第 8 類蝕刻液，須雙人複核並貼 UN 標籤後方可封箱。",
+     stops:[
+      ["A02","精密電阻 ERJ-6ENF",120],["A04","恆溫校正液",18],["B05","蝕刻液 FeCl3",6],
+      ["C04","穩壓器 LM7805",150],["D06","微控制器 STM32F4",72],["E06","射頻模組 RF-2450",40],
+      ["F05","光耦合器 PC817",108],["F02","積層電容 GRM188R",264]
+     ]}
+};
+
+/* 依波次生成訂單清單（固定序列，非亂數，重新整理數字不變） */
+const CUST = ["宏泰電子","佳霖科技","元鼎工業","新光通訊","博元自動化","華聯電子","立信儀器","泰昌實業",
+  "永達精機","中興電控","昱翔科技","盛群電子","協豐工業","鼎新光電","長榮電機","富喬材料","明鴻科技","偉盛儀電"];
+const SHIP = ["宅配 · 黑貓","店配 · 統一","專車 · 自有車隊","空運 · 桃園機場","陸運 · 中南線"];
+function buildOrders(w){
+  const cfg = WAVES[w], n = cfg.orders, base = w === "A" ? 0 : w === "B" ? 18 : 35;
+  const out = [];
+  for (let i = 0; i < n; i++){
+    const k = base + i;
+    const lines = 2 + (k * 7 + 3) % 9;
+    const units = lines * (6 + (k * 11 + 5) % 22);
+    const kg = (units * (0.18 + ((k * 13) % 9) / 40)).toFixed(1);
+    const pr = (k % 9 === 0) ? "急件" : (k % 3 === 0 ? "高" : "標準");
+    out.push({
+      id:"SO-2608" + String(101 + k),
+      cust:CUST[k % CUST.length],
+      ship:SHIP[(w === "C" ? 3 : 0) + (k % (w === "C" ? 2 : 3))],
+      lines, units, kg,
+      due:cfg.depart,
+      pr
+    });
+  }
+  return out;
+}
+
+/* ============ 繪製底圖與路徑 ============ */
+const map = document.getElementById("map");
+let current = "A", doneSet = new Set();
+
+function pathLength(pts){
+  let L = 0;
+  for (let i = 1; i < pts.length; i++)
+    L += Math.hypot(pts[i].cx - pts[i-1].cx, pts[i].cy - pts[i-1].cy);
+  return L;
+}
+function routePoints(w){
+  return [START, ...WAVES[w].stops.map(s => pos(s[0])), END];
+}
+function render(){
+  const cfg = WAVES[current];
+  const hit = new Map(cfg.stops.map((s, i) => [s[0], i + 1]));
+  let svg = '<title id="mapDesc">A 區平面揀貨路徑圖：' + cfg.name + " 共 " + cfg.stops.length +
+            " 個揀貨站，自左下揀貨台蛇行繞行六條通道後抵達右下出貨集貨區</title>";
+
+  // 走道底色
+  svg += '<rect class="aisle" x="14" y="30" width="612" height="452" rx="8"/>';
+  svg += '<rect class="zone" x="14" y="30" width="612" height="452" rx="8"/>';
+
+  // 貨架
+  COLS.forEach((c, ci) => {
+    for (let r = 1; r <= 6; r++){
+      const id = c + String(r).padStart(2, "0"), p = pos(id);
+      const seq = hit.get(id);
+      const cls = seq ? (doneSet.has(id) ? "rack done" : "rack hit") : "rack";
+      svg += '<rect class="' + cls + '" x="' + p.x + '" y="' + p.y + '" width="' + RW +
+             '" height="' + RH + '" rx="4"/>';
+      svg += '<text class="rlbl' + (seq ? " on" : "") + '" x="' + (p.x + RW / 2) +
+             '" y="' + (p.y + RH / 2 + 4) + '" text-anchor="middle">' + id + "</text>";
+    }
+  });
+
+  // 路徑
+  const pts = routePoints(current);
+  const d = pts.map((p, i) => (i ? "L" : "M") + p.cx + " " + p.cy).join(" ");
+  svg += '<path class="path" d="' + d + '"/>';
+
+  // 站點標記
+  cfg.stops.forEach((s, i) => {
+    const p = pos(s[0]);
+    svg += '<g class="stop' + (doneSet.has(s[0]) ? " done" : "") + '"><circle cx="' + p.cx +
+           '" cy="' + (p.cy - 2) + '" r="13"/><text x="' + p.cx + '" y="' + (p.cy + 2) +
+           '" text-anchor="middle">' + (i + 1) + "</text></g>";
+  });
+
+  // 起點 / 終點
+  svg += '<g class="term"><rect x="8" y="490" width="86" height="30" rx="7"/>' +
+         '<text x="51" y="509" text-anchor="middle">揀貨台 START</text></g>';
+  svg += '<g class="term"><rect x="546" y="490" width="86" height="30" rx="7"/>' +
+         '<text x="589" y="509" text-anchor="middle">集貨區 END</text></g>';
+
+  map.innerHTML = svg;
+  map.setAttribute("aria-labelledby", "mapDesc");
+  map.setAttribute("aria-label", "A 區平面揀貨路徑圖：" + cfg.name + " 共 " + cfg.stops.length +
+    " 個揀貨站，蛇行繞行六條通道，已完成 " + doneSet.size + " 站");
+}
+
+/* ============ 揀貨明細清單 ============ */
+function renderStops(){
+  const cfg = WAVES[current];
+  document.getElementById("stops").innerHTML = cfg.stops.map((s, i) => {
+    const id = s[0], done = doneSet.has(id);
+    return '<label class="pi' + (done ? " done" : "") + '" data-bin="' + id + '">' +
+      '<input type="checkbox"' + (done ? " checked" : "") + ' aria-label="完成揀貨 ' + id + '">' +
+      '<span class="seq">' + (i + 1) + "</span>" +
+      '<span class="m"><b>' + id + " · " + s[1] + "</b><small>品號 " + SKU[s[1]] +
+      " · 儲位層架 " + (1 + i % 4) + " 層</small></span>" +
+      '<span class="q">' + s[2] + " 件</span></label>";
+  }).join("");
+}
+function updateProgress(){
+  const cfg = WAVES[current], total = cfg.stops.length;
+  const done = cfg.stops.filter(s => doneSet.has(s[0])).length;
+  const pct = Math.round(done / total * 100);
+  document.getElementById("progBar").style.width = pct + "%";
+  document.getElementById("progTxt").textContent = done + " / " + total + " 站 · " + pct + "%";
+  const units = cfg.stops.reduce((a, s) => a + s[2], 0);
+  const got = cfg.stops.filter(s => doneSet.has(s[0])).reduce((a, s) => a + s[2], 0);
+  document.getElementById("stopFoot").innerHTML =
+    "揀貨員 <b style=\"color:var(--ink)\">" + cfg.picker + "</b> · 台車 " + cfg.cart +
+    " · 已揀 <b style=\"color:var(--ink)\">" + got.toLocaleString() + " / " + units.toLocaleString() +
+    " 件</b><br>" + cfg.note;
+}
+
+/* ============ 指標列 ============ */
+function renderMet(){
+  const cfg = WAVES[current];
+  const dist = pathLength(routePoints(current)) * SCALE;
+  const units = cfg.stops.reduce((a, s) => a + s[2], 0);
+  const orders = buildOrders(current);
+  const lines = orders.reduce((a, o) => a + o.lines, 0);
+  const walkMin = dist / 62;                       // 步行 62 m/min
+  const pickMin = cfg.stops.length * 0.65;         // 每站平均 39 秒
+  const eta = walkMin + pickMin;
+  document.getElementById("met").innerHTML =
+    tile("揀貨站數", cfg.stops.length, "個儲位") +
+    tile("訂單行數", lines, "行") +
+    tile("揀貨件數", units.toLocaleString(), "件") +
+    tile("路徑距離", dist.toFixed(1), "公尺") +
+    tile("預估工時", eta.toFixed(1), "分鐘") +
+    tile("生產力", (units / eta).toFixed(0), "件/分");
+  function tile(k, v, u){
+    return "<div><small>" + k + "</small><b>" + v + "<em>" + u + "</em></b></div>";
+  }
+}
+
+/* ============ 訂單表 ============ */
+function renderOrders(){
+  const cfg = WAVES[current], orders = buildOrders(current);
+  const cls = {"急件":"p-x","高":"p-c","標準":"p-a"};
+  document.getElementById("ordBody").innerHTML = orders.map(o =>
+    "<tr><td><b>" + o.id + "</b></td><td>" + o.cust + "</td><td>" + o.ship +
+    '</td><td class="n">' + o.lines + '</td><td class="n">' + o.units.toLocaleString() +
+    '</td><td class="n">' + o.kg + " kg</td><td>" + o.due +
+    '</td><td><span class="pill ' + cls[o.pr] + '">' + o.pr + "</span></td></tr>"
+  ).join("");
+  const lines = orders.reduce((a, o) => a + o.lines, 0);
+  const units = orders.reduce((a, o) => a + o.units, 0);
+  document.getElementById("ordTitle").firstChild.nodeValue = cfg.name + " 訂單清單";
+  document.getElementById("ordMeta").textContent =
+    "PICK ORDERS · " + orders.length + " 張 · " + lines + " 行 · " + units.toLocaleString() + " 件";
+}
+
+/* ============ 切換波次 ============ */
+function select(w){
+  current = w;
+  doneSet = new Set();
+  const cfg = WAVES[w];
+  document.getElementById("mapTitle").firstChild.nodeValue = "A 區走道揀貨動線 · " + cfg.name;
+  document.getElementById("mapMeta").textContent =
+    "SERPENTINE PICK PATH · " + cfg.stops.length + " 站 · " + cfg.depart + " 出車";
+  render(); renderStops(); updateProgress(); renderMet(); renderOrders();
+}
+const tabs = [...document.querySelectorAll(".wave")];
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(o => o.setAttribute("aria-selected", String(o === t)));
+  select(t.dataset.w);
+}));
+
+/* 勾選揀貨站 → 地圖同步變色、進度累計 */
+document.getElementById("stops").addEventListener("change", e => {
+  const box = e.target.closest("input");
+  if (!box) return;
+  const bin = box.closest(".pi").dataset.bin;
+  if (box.checked) doneSet.add(bin); else doneSet.delete(bin);
+  box.closest(".pi").classList.toggle("done", box.checked);
+  render(); updateProgress();
+});
+
+select("A");
+</script>
+</body>
+</html>

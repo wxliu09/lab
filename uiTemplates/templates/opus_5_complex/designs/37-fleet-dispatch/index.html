@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>37 · 車隊即時調度地圖 — FLEET DISPATCH</title>
+<style>
+:root{
+  --map:#e8e4dc;--road:#ffffff;--road2:#f6f2ea;--water:#c6ddea;--park:#d6e6ce;
+  --ink:#1c2430;--dim:#6d7889;--panel:#ffffff;--edge:#e2e0da;
+  --go:#16b364;--busy:#f79009;--idle:#7f8b9c;--sos:#e5484d;--route:#3b6bff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--map);color:var(--ink);overflow:hidden;
+  font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;font-size:13.5px}
+.home{
+  position:fixed;right:18px;bottom:18px;z-index:300;text-decoration:none;color:#fff;
+  background:var(--ink);padding:12px 22px;border-radius:999px;font-weight:600;font-size:13px;
+  box-shadow:0 6px 20px rgba(28,36,48,.4);transition:.22s}
+.home:hover{background:var(--route);transform:translateY(-3px)}
+
+/* MAP LAYER */
+#map{position:fixed;inset:0;z-index:1}
+#map svg{width:100%;height:100%;display:block}
+.rd{stroke:var(--road);stroke-linecap:round}
+.rd2{stroke:var(--road2);stroke-linecap:round}
+.lbl{fill:#98a1af;font-size:11px;letter-spacing:.1em}
+.veh{cursor:pointer}
+.veh .body{filter:drop-shadow(0 3px 6px rgba(0,0,0,.28))}
+.pulse{animation:pl 1.8s ease-out infinite}
+@keyframes pl{from{r:8;opacity:.55}to{r:26;opacity:0}}
+.routeline{fill:none;stroke:var(--route);stroke-width:4;stroke-linecap:round;opacity:.85;
+  stroke-dasharray:10 8;animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-18}}
+.routeglow{fill:none;stroke:rgba(59,107,255,.18);stroke-width:12;stroke-linecap:round}
+
+/* PANELS */
+.tl{position:fixed;left:16px;top:16px;z-index:100;width:322px;max-height:calc(100vh - 32px);
+  display:flex;flex-direction:column;gap:12px}
+@media(max-width:820px){.tl{width:calc(100vw - 32px)}}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:14px;
+  box-shadow:0 8px 28px rgba(28,36,48,.14);overflow:hidden}
+.brand{padding:15px 17px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--edge)}
+.brand .l{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#3b6bff,#16b364);
+  display:grid;place-items:center;color:#fff;font-size:18px}
+.brand b{font-size:15.5px;display:block;font-weight:700;letter-spacing:-.01em}
+.brand small{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.brand .live{margin-left:auto;font-size:10.5px;color:var(--go);display:flex;align-items:center;gap:6px;font-weight:600}
+.brand .live i{width:8px;height:8px;border-radius:50%;background:var(--go);animation:bk 1.4s infinite}
+@keyframes bk{50%{opacity:.25}}
+
+.sum{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--edge)}
+.sum div{padding:12px 8px;text-align:center;border-right:1px solid var(--edge)}
+.sum div:last-child{border:0}
+.sum small{font-size:10px;color:var(--dim);display:block}
+.sum b{font-size:20px;font-weight:700;display:block;margin-top:3px;letter-spacing:-.02em}
+
+.pagenav{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--edge);background:var(--road2)}
+.pagenav a{flex:1;text-align:center;padding:7px 4px;border-radius:7px;text-decoration:none;font-size:11.5px;
+  font-weight:700;color:var(--dim);background:var(--panel);border:1px solid var(--edge);transition:.15s}
+.pagenav a:hover,.pagenav a:focus-visible{color:var(--route);border-color:var(--route);
+  box-shadow:0 2px 8px rgba(59,107,255,.18);outline:none}
+.tabs{display:flex;border-bottom:1px solid var(--edge)}
+.tabs b{flex:1;text-align:center;padding:11px 0;font-size:12.5px;color:var(--dim);cursor:pointer;font-weight:600;
+  border-bottom:2px solid transparent}
+.tabs b:hover:not(.on){color:var(--ink);background:#f7f9fc}
+.tabs b.on{color:var(--route);border-bottom-color:var(--route)}
+.empty{padding:26px 16px;text-align:center;font-size:12px;color:var(--dim)}
+
+.list{overflow:auto;max-height:calc(100vh - 348px)}
+.veh-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f1efe9;cursor:pointer;transition:.16s}
+.veh-row:hover{background:#f7f9fc}
+.veh-row.sel{background:#eef3ff;box-shadow:inset 3px 0 0 var(--route)}
+.veh-row .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:16px;color:#fff;flex:0 0 auto}
+.veh-row .m{flex:1;min-width:0}
+.veh-row .m b{display:block;font-size:13.5px;font-weight:700}
+.veh-row .m small{color:var(--dim);font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.veh-row .st{font-size:10px;padding:3px 9px;border-radius:999px;font-weight:700;white-space:nowrap}
+.s-go{background:rgba(22,179,100,.12);color:var(--go)}
+.s-bs{background:rgba(247,144,9,.14);color:var(--busy)}
+.s-id{background:rgba(127,139,156,.14);color:var(--idle)}
+.s-so{background:rgba(229,72,77,.14);color:var(--sos)}
+
+/* right queue */
+.tr{position:fixed;right:16px;top:16px;z-index:100;width:300px;max-height:calc(100vh - 90px);
+  display:flex;flex-direction:column;gap:12px}
+@media(max-width:1180px){.tr{display:none}}
+.card h3{font-size:12px;letter-spacing:.12em;color:var(--dim);padding:13px 16px;border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.card h3 b{color:var(--busy);font-size:11px}
+.job{padding:13px 16px;border-bottom:1px solid #f1efe9}
+.job .t{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.job .t b{font-size:13px;font-weight:700}
+.job .t span{font-size:10px;padding:3px 8px;border-radius:5px;font-weight:700}
+.pri-h{background:rgba(229,72,77,.12);color:var(--sos)}
+.pri-m{background:rgba(247,144,9,.14);color:var(--busy)}
+.pri-l{background:rgba(127,139,156,.14);color:var(--idle)}
+.job .ad{font-size:11.5px;color:var(--dim);line-height:1.7}
+.job .ad i{font-style:normal;color:var(--go);font-weight:700;margin-right:5px}
+.job .ad em{font-style:normal;color:var(--sos);font-weight:700;margin-right:5px}
+.job .btn{margin-top:9px;width:100%;padding:8px;border:0;border-radius:8px;background:var(--route);color:#fff;
+  font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.job .btn:hover{background:#2c56dd}
+
+/* bottom bar */
+.bb{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:100;
+  background:var(--panel);border:1px solid var(--edge);border-radius:999px;padding:7px;
+  display:flex;gap:5px;box-shadow:0 8px 28px rgba(28,36,48,.18)}
+.bb button{border:0;background:transparent;font-family:inherit;font-size:12.5px;padding:9px 17px;
+  border-radius:999px;cursor:pointer;color:var(--dim);font-weight:600}
+.bb button.on{background:var(--ink);color:#fff}
+.bb button:hover:not(.on){background:#f2f4f7;color:var(--ink)}
+@media(max-width:900px){.bb{display:none}}
+.watermark{position:fixed;left:50%;transform:translateX(-50%);bottom:74px;z-index:90;
+  font-size:9.5px;letter-spacing:.3em;color:rgba(28,36,48,.32)}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">← 返回入口</a>
+
+<div id="map">
+  <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+    <!-- base -->
+    <rect width="1600" height="900" fill="#e8e4dc"/>
+    <!-- water -->
+    <path d="M0 620 C180 590 300 660 460 640 C620 620 720 690 900 668 C1080 646 1240 706 1400 682 L1600 700 L1600 900 L0 900 Z" fill="#c6ddea"/>
+    <path d="M0 620 C180 590 300 660 460 640 C620 620 720 690 900 668 C1080 646 1240 706 1400 682 L1600 700" fill="none" stroke="#a9c8db" stroke-width="2"/>
+    <!-- parks -->
+    <rect x="180" y="120" width="230" height="150" rx="16" fill="#d6e6ce"/>
+    <rect x="1080" y="180" width="190" height="180" rx="16" fill="#d6e6ce"/>
+    <circle cx="740" cy="420" r="86" fill="#d6e6ce"/>
+    <!-- blocks -->
+    <g fill="#dedad1">
+      <rect x="90" y="330" width="150" height="110" rx="6"/><rect x="270" y="330" width="120" height="110" rx="6"/>
+      <rect x="470" y="120" width="160" height="130" rx="6"/><rect x="680" y="120" width="130" height="130" rx="6"/>
+      <rect x="880" y="120" width="150" height="130" rx="6"/>
+      <rect x="470" y="300" width="140" height="90" rx="6"/><rect x="900" y="300" width="140" height="120" rx="6"/>
+      <rect x="1120" y="420" width="180" height="120" rx="6"/><rect x="1340" y="200" width="180" height="200" rx="6"/>
+      <rect x="120" y="490" width="180" height="90" rx="6"/><rect x="360" y="470" width="140" height="110" rx="6"/>
+      <rect x="560" y="500" width="160" height="80" rx="6"/><rect x="820" y="490" width="150" height="90" rx="6"/>
+      <rect x="1340" y="470" width="180" height="110" rx="6"/>
+    </g>
+    <!-- roads -->
+    <g class="rd" stroke-width="26" fill="none">
+      <path d="M0 290 H1600"/><path d="M0 460 H1600"/>
+      <path d="M440 0 V620"/><path d="M860 0 V620"/><path d="M1300 0 V640"/>
+    </g>
+    <g class="rd2" stroke-width="13" fill="none">
+      <path d="M0 180 H1600"/><path d="M0 590 H1600"/>
+      <path d="M170 0 V600"/><path d="M660 0 V600"/><path d="M1080 0 V620"/><path d="M1520 0 V620"/>
+      <path d="M440 380 H860"/><path d="M860 210 H1300"/>
+    </g>
+    <!-- road centre dashes -->
+    <g stroke="#e9e5dc" stroke-width="2" stroke-dasharray="14 12" fill="none">
+      <path d="M0 290 H1600"/><path d="M0 460 H1600"/><path d="M440 0 V620"/><path d="M860 0 V620"/><path d="M1300 0 V640"/>
+    </g>
+    <g class="lbl">
+      <text x="24" y="284">市民大道</text><text x="24" y="454">忠孝東路</text>
+      <text x="452" y="30" transform="rotate(90 452 30)">敦化南路</text>
+      <text x="872" y="30" transform="rotate(90 872 30)">復興北路</text>
+      <text x="1312" y="30" transform="rotate(90 1312 30)">基隆路</text>
+      <text x="700" y="418">中央公園</text><text x="1108" y="172">河濱綠地</text><text x="200" y="112">植物園</text>
+      <text x="60" y="760" font-size="13">淡水河</text>
+    </g>
+    <!-- depot -->
+    <g><rect x="612" y="248" width="44" height="44" rx="10" fill="#1c2430"/>
+      <text x="634" y="277" text-anchor="middle" fill="#fff" font-size="19">⌂</text>
+      <text x="634" y="316" text-anchor="middle" fill="#6d7889" font-size="11" letter-spacing="1">總調度站</text></g>
+    <!-- routes + vehicles injected -->
+    <g id="lyr-heat" style="display:none">
+      <circle cx="700" cy="330" r="150" fill="#e5484d" opacity=".10"/>
+      <circle cx="700" cy="330" r="92" fill="#e5484d" opacity=".12"/>
+      <circle cx="1180" cy="500" r="130" fill="#f79009" opacity=".12"/>
+      <circle cx="1180" cy="500" r="78" fill="#f79009" opacity=".14"/>
+      <circle cx="300" cy="380" r="118" fill="#f79009" opacity=".10"/>
+      <text x="700" y="336" text-anchor="middle" fill="#8a3438" font-size="12" font-weight="700">高需求熱區 · 大安/信義</text>
+      <text x="1180" y="506" text-anchor="middle" fill="#8a5a12" font-size="12" font-weight="700">次熱區 · 內湖</text>
+    </g>
+    <g id="lyr-jam" style="display:none">
+      <g stroke-linecap="round" fill="none" opacity=".9">
+        <path d="M440 290 H860" stroke="#e5484d" stroke-width="10"/>
+        <path d="M860 290 V460" stroke="#f79009" stroke-width="10"/>
+        <path d="M1080 460 H1300" stroke="#e5484d" stroke-width="10"/>
+        <path d="M170 460 H440" stroke="#f79009" stroke-width="10"/>
+      </g>
+      <text x="650" y="278" text-anchor="middle" fill="#8a3438" font-size="11" font-weight="700">市民大道 · 嚴重壅塞 18 km/h</text>
+      <text x="1190" y="448" text-anchor="middle" fill="#8a3438" font-size="11" font-weight="700">忠孝東路 · 事故回堵</text>
+    </g>
+    <g id="lyr-fence" style="display:none">
+      <g fill="none" stroke="#3b6bff" stroke-width="2.5" stroke-dasharray="12 8" opacity=".75">
+        <circle cx="634" cy="270" r="120"/><circle cx="1300" cy="470" r="96"/><circle cx="170" cy="460" r="88"/>
+      </g>
+      <text x="634" y="140" text-anchor="middle" fill="#3b6bff" font-size="11" font-weight="700">圍籬 GF-01 總調度站 500 m</text>
+      <text x="1300" y="360" text-anchor="middle" fill="#3b6bff" font-size="11" font-weight="700">圍籬 GF-02 內湖轉運</text>
+      <text x="170" y="358" text-anchor="middle" fill="#3b6bff" font-size="11" font-weight="700">圍籬 GF-03 萬華倉庫</text>
+    </g>
+    <g id="routes"></g>
+    <g id="vehs"></g>
+  </svg>
+</div>
+
+<div class="tl">
+  <div class="card">
+    <div class="brand"><div class="l">🚚</div><div><b>迅捷車隊調度</b><small>FLEET DISPATCH</small></div>
+      <span class="live"><i></i>即時</span></div>
+    <div class="sum">
+      <div><small>總車輛</small><b>36</b></div>
+      <div><small>執勤</small><b style="color:var(--go)">22</b></div>
+      <div><small>待命</small><b style="color:var(--idle)">11</b></div>
+      <div><small>異常</small><b style="color:var(--sos)">3</b></div>
+    </div>
+    <div class="pagenav">
+      <a href="list.html">車輛管理</a>
+      <a href="dispatch.html">派工管理</a>
+      <a href="report.html">統計報表</a>
+      <a href="detail.html">車輛詳情</a>
+    </div>
+    <div class="tabs"><b class="on" data-f="all">全部</b><b data-f="go">執勤中</b><b data-f="bs">裝卸中</b><b data-f="id">待命</b><b data-f="so">異常</b></div>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+
+<div class="tr">
+  <div class="card">
+    <h3>待派工單 DISPATCH QUEUE<b>7 PENDING</b></h3>
+    <div style="overflow:auto;max-height:calc(100vh - 150px)">
+      <div class="job"><div class="t"><b>#D-4821 · 冷鏈配送</b><span class="pri-h">緊急</span></div>
+        <div class="ad"><i>●</i>大同區 民權西路 118 號<br><em>●</em>信義區 松高路 68 號<br>
+          <span style="color:#98a1af">12.4 km · 預估 28 分 · 需冷藏車</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4822 · 一般貨運</b><span class="pri-m">一般</span></div>
+        <div class="ad"><i>●</i>總調度站<br><em>●</em>中山區 南京東路 三段 200 號<br>
+          <span style="color:#98a1af">6.8 km · 預估 18 分 · 3.5T</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4823 · 回收取件</b><span class="pri-l">低</span></div>
+        <div class="ad"><i>●</i>萬華區 西園路 42 號<br><em>●</em>總調度站<br>
+          <span style="color:#98a1af">9.2 km · 預估 24 分</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4824 · 大宗配送</b><span class="pri-m">一般</span></div>
+        <div class="ad"><i>●</i>內湖科技園區 瑞光路<br><em>●</em>南港軟體園區<br>
+          <span style="color:#98a1af">7.6 km · 預估 20 分 · 需尾門</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4825 · 緊急維修</b><span class="pri-h">緊急</span></div>
+        <div class="ad"><i>●</i>總調度站<br><em>●</em>大安區 復興南路 一段<br>
+          <span style="color:#98a1af">4.2 km · 預估 12 分 · 工程車</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4826 · 一般貨運</b><span class="pri-l">低</span></div>
+        <div class="ad"><i>●</i>總調度站<br><em>●</em>文山區 羅斯福路 六段<br>
+          <span style="color:#98a1af">14.8 km · 預估 38 分</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+      <div class="job"><div class="t"><b>#D-4827 · 冷鏈配送</b><span class="pri-m">一般</span></div>
+        <div class="ad"><i>●</i>大安區 仁愛路 四段<br><em>●</em>信義區 基隆路 一段<br>
+          <span style="color:#98a1af">5.4 km · 預估 14 分 · 冷藏 4°C</span></div>
+        <button class="btn" onclick="location.href='dispatch.html'">指派最近車輛</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="bb">
+  <button class="on" data-layer="vehs">車輛圖層</button><button class="on" data-layer="routes">路線軌跡</button>
+  <button data-layer="lyr-heat">熱區密度</button>
+  <button data-layer="lyr-jam">交通壅塞</button><button data-layer="lyr-fence">電子圍籬</button>
+</div>
+<div class="watermark">REAL-TIME FLEET DISPATCH MAP · 地圖為主體調度介面 · DESIGN 37 / 40</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const vehsG=document.getElementById('vehs'),routesG=document.getElementById('routes');
+const COL={go:'#16b364',bs:'#f79009',id:'#7f8b9c',so:'#e5484d'};
+const FLEET=[
+ ['TR-01','冷鏈 3.5T','go','配送中 · #D-4810 → 信義區',[[120,290],[440,290],[440,460],[860,460],[860,590],[1180,590]]],
+ ['TR-02','貨車 5T','bs','裝載中 · 總調度站',[[634,270],[660,290],[660,180],[1080,180],[1080,420]]],
+ ['TR-03','冷鏈 3.5T','go','配送中 · #D-4808 → 內湖',[[170,180],[660,180],[660,290],[1300,290],[1300,470]]],
+ ['TR-05','貨車 3.5T','go','返程中 → 總調度站',[[1520,460],[860,460],[860,290],[660,290],[634,270]]],
+ ['TR-07','工程車','so','異常回報 · 引擎警示',[[440,120],[440,290],[170,290],[170,460]]],
+ ['TR-08','貨車 5T','go','配送中 · #D-4815 → 南港',[[0,460],[440,460],[440,590],[1300,590],[1300,640]]],
+ ['TR-11','機車快遞','go','取件中 · #D-4819',[[860,0],[860,290],[1080,290],[1080,180],[1520,180]]],
+ ['TR-12','貨車 3.5T','id','待命 · 總調度站停車場',null],
+ ['TR-14','冷鏈 2T','bs','等待卸貨 · 大安區',[[1300,120],[1300,290],[860,290],[860,380],[440,380]]],
+ ['TR-16','貨車 5T','id','待命 · 北區停車場',null],
+ ['TR-18','工程車','go','支援中 · 中山區',[[0,180],[660,180],[660,460],[1080,460],[1080,620]]],
+ ['TR-21','機車快遞','so','失聯 · 最後定位 12 分前',[[1520,590],[1300,590],[1300,460]]],
+];
+const state=[];
+FLEET.forEach((v,i)=>{
+  const [id,type,st,desc,path]=v;
+  if(path){
+    const d='M'+path.map(p=>p.join(' ')).join(' L');
+    const g=document.createElementNS(NS,'path');g.setAttribute('d',d);g.setAttribute('class','routeglow');
+    const l=document.createElementNS(NS,'path');l.setAttribute('d',d);l.setAttribute('class','routeline');
+    l.setAttribute('stroke',COL[st]);l.style.opacity=st==='so'?'.5':'.7';
+    routesG.appendChild(g);routesG.appendChild(l);
+    state.push({id,el:null,path,t:Math.random(),sp:.0009+Math.random()*.0012,st,line:l,glow:g});
+  }else{
+    state.push({id,el:null,path:null,st,fixed:[600+i*14,262]});
+  }
+});
+// build markers
+state.forEach((s,i)=>{
+  const g=document.createElementNS(NS,'g');g.setAttribute('class','veh');
+  g.innerHTML=`<circle r="8" fill="${COL[s.st]}" opacity=".28" class="pulse"/>
+    <circle class="body" r="12" fill="#fff" stroke="${COL[s.st]}" stroke-width="3"/>
+    <circle r="5" fill="${COL[s.st]}"/>
+    <text y="-20" text-anchor="middle" font-size="10.5" fill="#1c2430" font-weight="700">${s.id}</text>`;
+  vehsG.appendChild(g);s.el=g;
+});
+function ptOn(path,t){
+  // piecewise linear interpolation over polyline
+  let total=0,segs=[];
+  for(let i=0;i<path.length-1;i++){
+    const dx=path[i+1][0]-path[i][0],dy=path[i+1][1]-path[i][1];
+    const L=Math.hypot(dx,dy);segs.push(L);total+=L;
+  }
+  let d=t*total;
+  for(let i=0;i<segs.length;i++){
+    if(d<=segs[i]){const r=d/segs[i];
+      return [path[i][0]+(path[i+1][0]-path[i][0])*r, path[i][1]+(path[i+1][1]-path[i][1])*r];}
+    d-=segs[i];
+  }
+  return path[path.length-1];
+}
+function frame(){
+  state.forEach(s=>{
+    let p;
+    if(s.path){s.t+=s.sp;if(s.t>1)s.t=0;p=ptOn(s.path,s.t);}
+    else p=s.fixed;
+    s.el.setAttribute('transform',`translate(${p[0]},${p[1]})`);
+  });
+  requestAnimationFrame(frame);
+}
+frame();
+
+/* list */
+const STL={go:['s-go','執勤中'],bs:['s-bs','裝卸中'],id:['s-id','待命'],so:['s-so','異常']};
+const listEl=document.getElementById('list');
+let curTab='all';
+function renderList(){
+  const rows=FLEET.map((v,i)=>({v,i})).filter(o=>curTab==='all'||o.v[2]===curTab);
+  if(!rows.length){listEl.innerHTML='<div class="empty">此狀態目前沒有車輛</div>';return;}
+  listEl.innerHTML=rows.map((o,n)=>{
+    const [id,type,st,desc]=o.v;
+    return `<div class="veh-row${n===0?' sel':''}" data-i="${o.i}">
+    <div class="ic" style="background:${COL[st]}">${type.includes('機車')?'🛵':type.includes('工程')?'🔧':'🚚'}</div>
+    <div class="m"><b>${id} · ${type}</b><small>${desc}</small></div>
+    <span class="st ${STL[st][0]}">${STL[st][1]}</span></div>`;
+  }).join('');
+  listEl.querySelectorAll('.veh-row').forEach(r=>r.onclick=()=>{
+    listEl.querySelectorAll('.veh-row').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');
+    state.forEach((s,i)=>{if(s.line)s.line.style.opacity=(i==r.dataset.i)?'1':'.18';
+      if(s.glow)s.glow.style.opacity=(i==r.dataset.i)?'1':'.1';});
+    setTimeout(()=>location.href='detail.html',320);
+  });
+}
+renderList();
+document.querySelectorAll('.tabs b').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs b').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');curTab=b.dataset.f;renderList();});
+/* map layer toggles */
+document.querySelectorAll('.bb button').forEach(b=>b.onclick=()=>{
+  b.classList.toggle('on');
+  const g=document.getElementById(b.dataset.layer);
+  if(g)g.style.display=b.classList.contains('on')?'':'none';});
+</script>
+</body>
+</html>

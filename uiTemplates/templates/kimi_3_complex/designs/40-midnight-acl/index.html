@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 40 午夜極簡·權限設定
+  ─────────────────────────────────────────
+  風格定位：午夜純黑極簡主義 — 資安稽核室的權限矩陣終端
+  配色：
+    純黑 #000000（全域背景）
+    白線 rgba(255,255,255,.14)（細線框）／白字 #f5f5f5
+    灰字 #6b6b6b（次要資訊）
+    唯一強調色 青 #00e5c7（所有互動、開啟態、聚焦態只亮此色）
+  字體：'Noto Sans TC' 細體 + 'JetBrains Mono' 等寬（設定值）
+  版面結構：極細頂欄 → KPI 細線卡列 →
+            左：角色×權限十字矩陣（可點擊 toggle switch）／右：變更紀錄面板
+            無圓角卡片（僅 2px）、無陰影、無第二色彩
+  動態效果：1) toggle switch 點擊滑動切換，即時寫入變更紀錄；
+            2) 開啟中的格子以青色呼吸微光標記；3) 變更紀錄新條目自頂部滑入；
+            4) 游標掃過矩陣時行列十字定位線亮起
+  ─────────────────────────────────────────
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>權限設定 · Access Control MIS</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@200;300;400;500&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--acc:#00e5c7;--line:rgba(255,255,255,.14);--grey:#6b6b6b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#f5f5f5;font-family:'Noto Sans TC',sans-serif;font-weight:300;min-height:100vh}
+.topbar{
+  display:flex;align-items:center;gap:26px;padding:0 32px;height:60px;
+  border-bottom:1px solid var(--line);
+}
+.logo{font-size:14px;letter-spacing:6px;font-weight:400}
+.logo b{color:var(--acc);font-weight:500}
+.topbar nav{display:flex;gap:2px}
+.topbar nav a{
+  color:var(--grey);text-decoration:none;font-size:12px;letter-spacing:2px;padding:6px 14px;transition:.2s;
+}
+.topbar nav a:hover{color:#fff}
+.topbar nav a.on{color:var(--acc);border-bottom:1px solid var(--acc)}
+.spacer{flex:1}
+.back-link{
+  color:#f5f5f5;text-decoration:none;font-size:12px;letter-spacing:2px;
+  border:1px solid var(--line);padding:8px 18px;transition:.25s;
+}
+.back-link:hover{border-color:var(--acc);color:var(--acc);box-shadow:0 0 12px rgba(0,229,199,.25)}
+main{max-width:1360px;margin:0 auto;padding:30px 32px 60px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--line);margin-bottom:36px}
+.kpi{padding:20px 26px;border-right:1px solid var(--line)}
+.kpi:last-child{border-right:none}
+.kpi h3{font-size:11px;letter-spacing:3px;color:var(--grey);font-weight:400}
+.kpi .val{font-family:'JetBrains Mono';font-size:34px;font-weight:400;margin-top:6px}
+.kpi .val.acc{color:var(--acc)}
+.kpi .sub{font-size:11px;color:var(--grey);margin-top:2px;font-family:'JetBrains Mono'}
+.cols{display:grid;grid-template-columns:1.7fr 1fr;gap:36px}
+h2{font-size:12px;letter-spacing:4px;color:var(--grey);font-weight:400;margin-bottom:16px}
+h2::before{content:"◼ ";color:var(--acc);font-size:9px;vertical-align:2px}
+/* 矩陣 */
+.matrix{border:1px solid var(--line);position:relative}
+.matrix table{width:100%;border-collapse:collapse}
+.matrix th,.matrix td{
+  border:1px solid var(--line);padding:0;height:56px;text-align:center;position:relative;
+}
+.matrix thead th{
+  height:48px;font-size:11px;letter-spacing:2px;color:#f5f5f5;font-weight:400;
+}
+.matrix thead th small{display:block;color:var(--grey);font-family:'JetBrains Mono';font-size:9px;letter-spacing:1px;margin-top:3px}
+.matrix .role-col{
+  width:150px;text-align:left;padding:0 18px;font-size:13px;letter-spacing:1px;
+}
+.matrix .role-col small{display:block;color:var(--grey);font-family:'JetBrains Mono';font-size:10px;margin-top:2px}
+/* 十字定位 hover */
+.matrix tbody tr:hover td{background:rgba(255,255,255,.03)}
+.matrix td.cell:hover{outline:1px solid var(--acc);outline-offset:-1px}
+.matrix td.cell:hover::after{
+  content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,229,199,.15);pointer-events:none;
+}
+/* toggle switch */
+.tg{
+  width:44px;height:22px;border:1px solid var(--grey);border-radius:22px;display:inline-block;
+  position:relative;cursor:pointer;transition:.25s;vertical-align:middle;background:transparent;
+}
+.tg::before{
+  content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;
+  background:var(--grey);transition:.25s cubic-bezier(.3,1.4,.5,1);
+}
+.tg.on{border-color:var(--acc);box-shadow:0 0 10px rgba(0,229,199,.35);animation:breathe 2.4s infinite}
+@keyframes breathe{50%{box-shadow:0 0 18px rgba(0,229,199,.6)}}
+.tg.on::before{left:25px;background:var(--acc)}
+.tg:disabled{cursor:not-allowed;opacity:.25}
+/* 變更紀錄 */
+.log{border:1px solid var(--line);max-height:520px;overflow-y:auto}
+.log::-webkit-scrollbar{width:4px}
+.log::-webkit-scrollbar-thumb{background:var(--line)}
+.log-item{
+  padding:14px 20px;border-bottom:1px solid var(--line);font-size:12px;line-height:1.8;
+  animation:slideIn .35s ease both;
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+.log-item .tm{font-family:'JetBrains Mono';color:var(--grey);font-size:10px;letter-spacing:1px}
+.log-item .act{color:var(--acc);font-family:'JetBrains Mono'}
+.log-item .who{color:#f5f5f5}
+.log-empty{padding:30px;text-align:center;color:var(--grey);font-size:12px;letter-spacing:2px}
+.save-bar{
+  display:flex;justify-content:space-between;align-items:center;margin-top:20px;
+  border:1px solid var(--line);padding:14px 22px;
+}
+.save-bar .dirty{font-size:12px;color:var(--grey);letter-spacing:2px}
+.save-bar .dirty b{color:var(--acc);font-family:'JetBrains Mono'}
+.btn{
+  background:transparent;border:1px solid var(--acc);color:var(--acc);padding:10px 34px;
+  font-size:12px;letter-spacing:3px;cursor:pointer;font-family:inherit;transition:.25s;
+}
+.btn:hover{background:var(--acc);color:#000;box-shadow:0 0 20px rgba(0,229,199,.5)}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}.kpi-row{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2){border-right:none}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">ACCESS <b>CONTROL</b></div>
+  <nav>
+    <a href="index.html" class="on">權限矩陣</a><a href="roles.html">角色管理</a><a href="audit.html">稽核報表</a><a href="keys.html">API 金鑰</a>
+  </nav>
+  <div class="spacer"></div>
+  <a class="back-link" href="../../index.html">← 返回入口</a>
+</header>
+<main>
+  <div class="kpi-row">
+    <div class="kpi"><h3>角色總數</h3><div class="val">5</div><div class="sub">roles defined</div></div>
+    <div class="kpi"><h3>權限項目</h3><div class="val">6</div><div class="sub">permissions</div></div>
+    <div class="kpi"><h3>啟用中授權</h3><div class="val acc" id="grantCount">0</div><div class="sub">grants active</div></div>
+    <div class="kpi"><h3>待套用變更</h3><div class="val" id="dirtyCount">0</div><div class="sub">pending changes</div></div>
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>角色 × 權限 矩陣 ROLE × PERMISSION MATRIX</h2>
+      <div class="matrix">
+        <table id="mx">
+          <thead>
+            <tr>
+              <th class="role-col" style="text-align:left;padding-left:18px">角色 ROLE</th>
+              <th>讀取<small>read</small></th>
+              <th>新增<small>create</small></th>
+              <th>修改<small>update</small></th>
+              <th>刪除<small>delete</small></th>
+              <th>匯出<small>export</small></th>
+              <th>系統設定<small>admin</small></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="save-bar">
+        <div class="dirty">目前共 <b id="dirtyN">0</b> 項未套用變更 · 套用後立即生效並寫入稽核軌跡</div>
+        <button class="btn" id="applyBtn">套用變更 APPLY</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>變更紀錄 CHANGE LOG</h2>
+      <div class="log" id="log">
+        <div class="log-empty">尚無本次工作階段變更<br>點擊左側開關以編輯權限</div>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+const roles=[
+  {name:'系統管理員',code:'SYSADMIN',fixed:true,  grants:[1,1,1,1,1,1]},
+  {name:'財務主管',  code:'FIN_MGR', grants:[1,1,1,0,1,0]},
+  {name:'倉儲專員',  code:'WH_STAFF',grants:[1,1,1,0,0,0]},
+  {name:'客服人員',  code:'CS_AGENT',grants:[1,0,0,0,0,0]},
+  {name:'外部稽核',  code:'AUDITOR', grants:[1,0,0,0,1,0]},
+];
+const permNames=['read','create','update','delete','export','admin'];
+const tbody=document.querySelector('#mx tbody');
+const logEl=document.getElementById('log');
+let dirty=0;
+function refreshCounts(){
+  let n=0;
+  document.querySelectorAll('.tg.on').forEach(()=>n++);
+  document.getElementById('grantCount').textContent=n;
+  document.getElementById('dirtyCount').textContent=dirty;
+  document.getElementById('dirtyN').textContent=dirty;
+}
+roles.forEach((r,ri)=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="role-col">${r.name}<small>${r.code}</small></td>`+
+    r.grants.map((g,pi)=>{
+      const lock=r.fixed?'disabled':'';
+      return `<td class="cell"><button class="tg ${g?'on':''}" ${lock}
+        data-r="${ri}" data-p="${pi}" aria-label="${r.name} ${permNames[pi]}"></button></td>`;
+    }).join('');
+  tbody.appendChild(tr);
+});
+function nowStr(){
+  return new Date().toLocaleTimeString('zh-TW',{hour12:false});
+}
+document.querySelectorAll('.tg:not(:disabled)').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    btn.classList.toggle('on');
+    dirty++;
+    const r=roles[+btn.dataset.r], p=permNames[+btn.dataset.p];
+    const on=btn.classList.contains('on');
+    const empty=logEl.querySelector('.log-empty');
+    if(empty)empty.remove();
+    const item=document.createElement('div');
+    item.className='log-item';
+    item.innerHTML=`<div class="tm">${nowStr()}</div>
+      <span class="who">administrator</span> 將
+      <span class="who">${r.name}（${r.code}）</span> 的
+      <span class="act">${p}</span> 權限
+      ${on?'<span class="act">開啟 →</span>':'<span style="color:#6b6b6b">關閉 ×</span>'}`;
+    logEl.prepend(item);
+    refreshCounts();
+  });
+});
+document.getElementById('applyBtn').addEventListener('click',()=>{
+  if(dirty===0)return;
+  dirty=0;
+  const item=document.createElement('div');
+  item.className='log-item';
+  item.innerHTML=`<div class="tm">${nowStr()}</div>
+    <span class="act">✓ 變更已套用</span> <span class="who">並寫入稽核軌跡（audit_trail）</span>`;
+  logEl.prepend(item);
+  refreshCounts();
+});
+refreshCounts();
+</script>
+</body>
+</html>

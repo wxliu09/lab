@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<!--
+  設計規格 — 09 像素街機 · 電競賽事
+  ─────────────────────────────────────
+  風格定位：8-bit 復古街機風格的電競賽事公開資訊頁，CRT 螢幕氛圍、投幣互動、像素級視覺元素。
+  配色：深夜紫黑 #0d0221（底色）、螢光綠 #a4f644（主強調）、熾紅 #ff3864（警示/亞軍強調）、
+        亮紫 #7b2ff7（漸層輔助）、琥珀 #ffd166（金幣/季軍）。
+  字體：標題/數字使用 "Press Start 2P"（Google Fonts），中文內文使用 "Noto Sans TC"。
+  版面結構：
+    1. CRT 掃描線全螢幕覆層（repeating-linear-gradient + pointer-events:none）
+    2. 頂部機台 Header（跑馬燈標題 + INSERT COIN 投幣按鈕 + 投幣計數器）
+    3. 像素邊框資訊卡：賽事總覽 / 賽程表 / 獎金池 / 參賽隊伍 / 數據快訊 / 觀賽資訊
+    4. 底部街機操作列（方向鍵圖示 + 返回入口按鈕）
+  動態效果：
+    - CRT 掃描線緩慢下移動畫（@keyframes scan）
+    - 標題閃爍游標（blink 動畫）
+    - INSERT COIN 點擊投幣：金幣落下動畫、計數器累加、按下凹陷
+    - 賽程列 hover 時像素綠光掃過
+    - 隊伍卡 hover 微微放大 + 階梯陰影位移
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>像素街機 · 電競賽事資訊站</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0221; --neon:#a4f644; --hot:#ff3864; --violet:#7b2ff7; --amber:#ffd166;
+    --panel:#160a33; --panel2:#1d0e42;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);
+    color:#e8e4ff;
+    font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;
+    overflow-x:hidden;
+    min-height:100vh;
+  }
+  /* ── CRT 掃描線覆層 ── */
+  .crt-overlay{
+    position:fixed;inset:0;z-index:999;pointer-events:none;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.28) 3px, rgba(0,0,0,.28) 4px
+    );
+    animation:scanMove 10s linear infinite;
+  }
+  @keyframes scanMove{
+    0%{background-position:0 0;}
+    100%{background-position:0 120px;}
+  }
+  .crt-glow{
+    position:fixed;inset:0;z-index:998;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 40%, rgba(164,246,68,.06), transparent 65%);
+  }
+  .px{font-family:"Press Start 2P",monospace;}
+  /* ── 像素邊框（階梯陰影）── */
+  .px-frame{
+    border:4px solid var(--neon);
+    box-shadow:
+      0 0 0 4px var(--bg),
+      8px 8px 0 4px rgba(164,246,68,.25);
+    image-rendering:pixelated;
+  }
+  .px-frame-red{
+    border:4px solid var(--hot);
+    box-shadow:0 0 0 4px var(--bg), 8px 8px 0 4px rgba(255,56,100,.25);
+  }
+  .px-frame-amber{
+    border:4px solid var(--amber);
+    box-shadow:0 0 0 4px var(--bg), 8px 8px 0 4px rgba(255,209,102,.22);
+  }
+  /* ── Header 機台 ── */
+  header{
+    background:linear-gradient(180deg, var(--panel2) 0%, var(--bg) 100%);
+    padding:52px 6vw 40px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+    border-bottom:4px solid var(--neon);
+  }
+  .marquee{
+    font-family:"Press Start 2P",monospace;
+    color:var(--neon);
+    font-size:clamp(20px,4.4vw,44px);
+    text-shadow:0 0 12px rgba(164,246,68,.7), 4px 4px 0 #2a6e12;
+    letter-spacing:.04em;
+  }
+  .marquee .cursor{
+    display:inline-block;width:.55em;height:.9em;background:var(--neon);
+    vertical-align:-8%;margin-left:6px;animation:blink 1s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0;}}
+  .sub-en{font-family:"Press Start 2P",monospace;color:var(--hot);font-size:clamp(9px,1.4vw,13px);margin-top:18px;letter-spacing:.14em;}
+  .sub-zh{margin-top:10px;color:#b9aee6;font-size:14px;letter-spacing:.28em;}
+  .coin-row{display:flex;justify-content:center;align-items:center;gap:24px;margin-top:34px;flex-wrap:wrap;}
+  .coin-btn{
+    font-family:"Press Start 2P",monospace;
+    background:linear-gradient(180deg,#ff4d79,#c9184a);
+    color:#fff;font-size:12px;padding:16px 26px;
+    border:4px solid #ffd166;
+    box-shadow:0 6px 0 #8f0f38, 0 10px 0 rgba(0,0,0,.45);
+    cursor:pointer;letter-spacing:.08em;
+    transition:transform .05s;
+    position:relative;
+    image-rendering:pixelated;
+  }
+  .coin-btn:hover{filter:brightness(1.15);}
+  .coin-btn:active{transform:translateY(6px);box-shadow:0 0 0 #8f0f38, 0 4px 0 rgba(0,0,0,.45);}
+  .coin-count{
+    font-family:"Press Start 2P",monospace;font-size:12px;color:var(--amber);
+    border:3px dashed var(--amber);padding:12px 18px;background:rgba(255,209,102,.06);
+  }
+  .topnav{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:24px;}
+  .topnav a{
+    font-family:"Press Start 2P",monospace;font-size:10px;text-decoration:none;
+    color:var(--neon);border:3px solid var(--neon);padding:10px 14px;background:rgba(164,246,68,.06);
+    transition:.1s;
+  }
+  .topnav a:hover{background:var(--neon);color:var(--bg);}
+  .schedule-row,.team,.watch .card{cursor:pointer;}
+  .coin-drop{
+    position:fixed;z-index:1000;font-size:22px;pointer-events:none;
+    animation:coinFall .8s ease-in forwards;
+  }
+  @keyframes coinFall{
+    0%{transform:translateY(0) rotate(0deg);opacity:1;}
+    100%{transform:translateY(140px) rotate(540deg);opacity:0;}
+  }
+  main{max-width:1180px;margin:0 auto;padding:56px 24px 90px;display:flex;flex-direction:column;gap:56px;}
+  section{scroll-margin-top:24px;}
+  .sec-title{
+    font-family:"Press Start 2P",monospace;font-size:clamp(13px,2vw,19px);
+    color:var(--neon);margin-bottom:24px;display:flex;align-items:center;gap:14px;
+    text-shadow:2px 2px 0 #2a6e12;
+  }
+  .sec-title::before,.sec-title::after{
+    content:"";flex:0 0 26px;height:10px;
+    background:
+      linear-gradient(var(--neon) 0 0) 0 0/8px 4px no-repeat,
+      linear-gradient(var(--neon) 0 0) 8px 4px/8px 4px no-repeat,
+      linear-gradient(var(--neon) 0 0) 18px 4px/8px 4px no-repeat;
+  }
+  .sec-title::after{transform:scaleX(-1);}
+  /* ── 賽事總覽卡 ── */
+  .overview{
+    background:var(--panel);padding:32px 30px;position:relative;
+  }
+  .overview h3{font-family:"Press Start 2P",monospace;font-size:15px;color:#fff;margin-bottom:16px;}
+  .overview p{line-height:2;color:#cfc7f2;font-size:15px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;margin-top:26px;}
+  .stat{
+    background:var(--bg);border:3px solid var(--violet);padding:18px 16px;text-align:center;
+  }
+  .stat .n{font-family:"Press Start 2P",monospace;font-size:20px;color:var(--neon);}
+  .stat .l{margin-top:10px;font-size:12.5px;color:#9d92cc;letter-spacing:.2em;}
+  /* ── 賽程表 ── */
+  .schedule-row{
+    display:grid;grid-template-columns:130px 1fr auto;gap:16px;align-items:center;
+    background:var(--panel);border:3px solid #33205e;padding:18px 22px;margin-bottom:14px;
+    position:relative;overflow:hidden;transition:border-color .2s;
+  }
+  .schedule-row::before{
+    content:"";position:absolute;left:-40%;top:0;bottom:0;width:30%;
+    background:linear-gradient(90deg,transparent,rgba(164,246,68,.18),transparent);
+    transition:left .45s;
+  }
+  .schedule-row:hover{border-color:var(--neon);}
+  .schedule-row:hover::before{left:110%;}
+  .schedule-row .date{font-family:"Press Start 2P",monospace;font-size:11px;color:var(--amber);line-height:1.8;}
+  .schedule-row .match{font-size:15px;font-weight:700;color:#fff;}
+  .schedule-row .match small{display:block;font-weight:400;color:#9d92cc;margin-top:6px;font-size:12.5px;}
+  .tag{
+    font-family:"Press Start 2P",monospace;font-size:9px;padding:8px 10px;white-space:nowrap;
+  }
+  .tag.live{background:var(--hot);color:#fff;animation:blink 1.2s steps(1) infinite;}
+  .tag.soon{background:transparent;border:2px solid var(--neon);color:var(--neon);}
+  .tag.done{background:#2a1b52;color:#7d71ad;}
+  /* ── 獎金池 ── */
+  .prize-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:22px;}
+  .prize{
+    padding:30px 24px;text-align:center;background:var(--panel);
+    transition:transform .15s;
+  }
+  .prize:hover{transform:translateY(-6px);}
+  .prize .rank{font-family:"Press Start 2P",monospace;font-size:11px;letter-spacing:.1em;}
+  .prize .amount{font-family:"Press Start 2P",monospace;font-size:clamp(18px,2.4vw,26px);margin:16px 0 12px;color:#fff;}
+  .prize .note{font-size:13px;color:#9d92cc;line-height:1.9;}
+  .prize.p1 .rank{color:var(--neon);} .prize.p2 .rank{color:var(--hot);} .prize.p3 .rank{color:var(--amber);}
+  .prize-total{
+    text-align:center;margin-top:26px;font-family:"Press Start 2P",monospace;font-size:13px;color:var(--amber);
+  }
+  /* ── 隊伍 ── */
+  .teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:22px;}
+  .team{
+    background:var(--panel);border:3px solid #33205e;padding:24px 20px;text-align:center;
+    transition:transform .12s steps(2), border-color .12s;
+    box-shadow:6px 6px 0 rgba(0,0,0,.5);
+  }
+  .team:hover{transform:scale(1.045);border-color:var(--neon);box-shadow:10px 10px 0 rgba(164,246,68,.3);}
+  .team .avatar{
+    width:72px;height:72px;margin:0 auto 16px;image-rendering:pixelated;
+  }
+  .team h4{font-family:"Press Start 2P",monospace;font-size:11px;color:#fff;line-height:1.7;}
+  .team .region{font-size:12px;color:var(--hot);margin-top:10px;letter-spacing:.2em;}
+  .team .rec{margin-top:10px;font-size:13px;color:#b9aee6;}
+  .team .rec b{color:var(--neon);font-family:"Press Start 2P",monospace;font-size:11px;}
+  /* ── 數據快訊 ── */
+  .ticker-box{background:var(--panel);padding:0;overflow:hidden;}
+  .ticker-head{padding:16px 22px;border-bottom:3px solid #33205e;font-family:"Press Start 2P",monospace;font-size:10px;color:var(--hot);}
+  .ticker-list{list-style:none;}
+  .ticker-list li{
+    padding:14px 22px;border-bottom:2px solid #241447;font-size:14px;color:#cfc7f2;line-height:1.8;
+    display:flex;gap:14px;align-items:baseline;
+  }
+  .ticker-list li:last-child{border-bottom:none;}
+  .ticker-list .time{font-family:"Press Start 2P",monospace;font-size:9px;color:var(--neon);white-space:nowrap;}
+  /* ── 觀賽資訊 ── */
+  .watch{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;}
+  .watch .card{background:var(--panel);padding:26px 24px;}
+  .watch h4{font-family:"Press Start 2P",monospace;font-size:10px;color:var(--neon);margin-bottom:14px;line-height:1.8;}
+  .watch p,.watch li{font-size:14px;color:#cfc7f2;line-height:2;}
+  .watch ul{list-style:none;}
+  .watch li::before{content:"▸ ";color:var(--hot);}
+  /* ── 底部操作列 ── */
+  footer{
+    border-top:4px solid var(--neon);
+    background:var(--panel2);
+    padding:34px 6vw 44px;text-align:center;
+  }
+  .dpad{font-size:26px;letter-spacing:.4em;color:#5a3fa8;margin-bottom:20px;}
+  .back-btn{
+    display:inline-block;font-family:"Press Start 2P",monospace;font-size:11px;
+    color:var(--bg);background:var(--neon);padding:16px 26px;text-decoration:none;
+    border:4px solid #fff;
+    box-shadow:0 6px 0 #2a6e12;
+    transition:transform .05s;
+  }
+  .back-btn:hover{filter:brightness(1.12);}
+  .back-btn:active{transform:translateY(6px);box-shadow:0 0 0 #2a6e12;}
+  .foot-note{margin-top:22px;font-size:12px;color:#7d71ad;letter-spacing:.3em;}
+  @media (max-width:640px){
+    .schedule-row{grid-template-columns:1fr;}
+    .schedule-row .tag{justify-self:start;}
+  }
+</style>
+</head>
+<body>
+<div class="crt-overlay"></div>
+<div class="crt-glow"></div>
+
+<header>
+  <div class="marquee">PIXEL CUP 電競大賽<span class="cursor"></span></div>
+  <div class="sub-en">★ TAIWAN AMATEUR ESPORTS CHAMPIONSHIP · SEASON 7 ★</div>
+  <div class="sub-zh">第七屆全國業餘電競錦標賽 · 官方公開資訊站</div>
+  <div class="coin-row">
+    <button class="coin-btn" id="coinBtn">◉ INSERT COIN 投幣應援</button>
+    <div class="coin-count">CREDITS <span id="coinNum">00</span></div>
+  </div>
+  <nav class="topnav">
+    <a href="schedule.html">▸ 賽程表</a>
+    <a href="teams.html">▸ 隊伍名單</a>
+    <a href="rules.html">▸ 賽制與獎金</a>
+    <a href="watch.html">▸ 觀賽指南</a>
+  </nav>
+</header>
+
+<main>
+  <!-- 賽事總覽 -->
+  <section>
+    <h2 class="sec-title">STAGE 1 · 賽事總覽</h2>
+    <div class="overview px-frame">
+      <h3>▲ 關於本屆賽事</h3>
+      <p>「像素盃」邁入第七屆,本季以《星海爭霸戰：像素復刻版》為指定競賽項目,廣邀全國 16 支業餘戰隊齊聚台北。賽制採小組循環加雙敗淘汰,全程線下舉行、線上同步轉播。本頁為官方公開資訊站,提供賽程、獎金、隊伍與即時快訊,歡迎所有玩家前來觀戰應援。</p>
+      <div class="stat-grid">
+        <div class="stat"><div class="n">16</div><div class="l">參賽戰隊</div></div>
+        <div class="stat"><div class="n">¥1.2M</div><div class="l">總獎金（NTD)</div></div>
+        <div class="stat"><div class="n">9 DAYS</div><div class="l">賽期天數</div></div>
+        <div class="stat"><div class="n">4K/60</div><div class="l">轉播規格</div></div>
+        <div class="stat"><div class="n">3000+</div><div class="l">現場座位</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 賽程表 -->
+  <section id="scheduleSec">
+    <h2 class="sec-title">STAGE 2 · 賽程表 <a href="schedule.html" style="font-size:9px;color:var(--amber);text-decoration:none;border:2px solid var(--amber);padding:6px 9px;margin-left:auto;">FULL SCHEDULE →</a></h2>
+    <div class="schedule-row">
+      <div class="date">03/14<br>SAT 13:00</div>
+      <div class="match">小組賽 A 組開幕戰<small>夜鷹戰隊 vs 蒼藍閃電 · 台北三創電競館 主舞台</small></div>
+      <span class="tag done">ENDED</span>
+    </div>
+    <div class="schedule-row">
+      <div class="date">03/15<br>SUN 14:00</div>
+      <div class="match">小組賽 B 組<small>像素貓貓 vs 鐵壁軍團 · 副舞台 2 號機台區</small></div>
+      <span class="tag done">ENDED</span>
+    </div>
+    <div class="schedule-row">
+      <div class="date">03/21<br>SAT 13:30</div>
+      <div class="match">八強雙敗淘汰 · 勝部首輪<small>小組前二交叉對戰 · 主舞台 BO3</small></div>
+      <span class="tag live">LIVE NOW</span>
+    </div>
+    <div class="schedule-row">
+      <div class="date">03/22<br>SUN 15:00</div>
+      <div class="match">敗部復活賽<small>四支敗部隊伍爭奪最後兩席 · 副舞台</small></div>
+      <span class="tag soon">UPCOMING</span>
+    </div>
+    <div class="schedule-row">
+      <div class="date">03/28<br>SAT 18:00</div>
+      <div class="match">四強準決賽<small>BO5 單場定勝負 · 主舞台 + 現場樂團開場</small></div>
+      <span class="tag soon">UPCOMING</span>
+    </div>
+    <div class="schedule-row">
+      <div class="date">03/29<br>SUN 17:00</div>
+      <div class="match">總決賽 GRAND FINAL<small>BO7 史詩對決 · 賽後頒獎典禮與選手簽名會</small></div>
+      <span class="tag soon">FINAL</span>
+    </div>
+  </section>
+
+  <!-- 獎金池 -->
+  <section>
+    <h2 class="sec-title">STAGE 3 · 獎金池 <a href="rules.html" style="font-size:9px;color:var(--amber);text-decoration:none;border:2px solid var(--amber);padding:6px 9px;margin-left:auto;">RULEBOOK →</a></h2>
+    <div class="prize-wrap">
+      <div class="prize px-frame p1">
+        <div class="rank">★ CHAMPION ★</div>
+        <div class="amount">NT$ 600,000</div>
+        <div class="note">冠軍獎盃一座<br>全隊像素限定鍵帽組<br>下屆種子隊資格</div>
+      </div>
+      <div class="prize px-frame-red p2">
+        <div class="rank">2ND PLACE</div>
+        <div class="amount">NT$ 300,000</div>
+        <div class="note">亞軍獎牌<br>電競螢幕五人份<br>賽事紀念外套</div>
+      </div>
+      <div class="prize px-frame-amber p3">
+        <div class="rank">3RD PLACE</div>
+        <div class="amount">NT$ 150,000</div>
+        <div class="note">季軍獎牌<br>機械鍵盤五人份<br>周邊禮包</div>
+      </div>
+    </div>
+    <div class="prize-total">TOTAL PRIZE POOL ▸ NT$ 1,200,000（含五至八名各 NT$ 37,500)</div>
+  </section>
+
+  <!-- 參賽隊伍 -->
+  <section>
+    <h2 class="sec-title">STAGE 4 · 焦點戰隊 <a href="teams.html" style="font-size:9px;color:var(--amber);text-decoration:none;border:2px solid var(--amber);padding:6px 9px;margin-left:auto;">ALL 16 TEAMS →</a></h2>
+    <div class="teams" id="teamGrid"></div>
+  </section>
+
+  <!-- 數據快訊 -->
+  <section>
+    <h2 class="sec-title">STAGE 5 · 即時快訊</h2>
+    <div class="ticker-box px-frame">
+      <div class="ticker-head">/// SYSTEM MESSAGE BROADCAST ///</div>
+      <ul class="ticker-list">
+        <li><span class="time">14:02</span>勝部首輪 Game 2,夜鷹戰隊選手「Shiro」以 7 分 12 秒速攻打破賽會紀錄。</li>
+        <li><span class="time">13:47</span>現場觀眾突破 2,400 人,副舞台加開站立區,請依工作人員引導入場。</li>
+        <li><span class="time">13:20</span>蒼藍閃電主將「Kaze」賽後訪談:「下一場我們會拿出準備了三個月的戰術。」</li>
+        <li><span class="time">12:58</span>官方周邊快閃店「像素補給站」今日限定徽章已售罄,明日 11:00 補貨。</li>
+        <li><span class="time">12:31</span>轉播平台同時在線人數突破 86,000,創下本賽事歷史新高。</li>
+        <li><span class="time">11:55</span>裁判團公告：八強賽起全面啟用新版比賽用機,鍵盤延遲低於 1ms。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 觀賽資訊 -->
+  <section id="watchSec">
+    <h2 class="sec-title">STAGE 6 · 觀賽資訊 <a href="watch.html" style="font-size:9px;color:var(--amber);text-decoration:none;border:2px solid var(--amber);padding:6px 9px;margin-left:auto;">VIEWER GUIDE →</a></h2>
+    <div class="watch">
+      <div class="card px-frame">
+        <h4>▲ 現場入場</h4>
+        <ul>
+          <li>地點：台北三創生活園區 12F 電競館</li>
+          <li>免費索票,每日 11:00 開放進場</li>
+          <li>12 歲以下需家長陪同</li>
+          <li>館內禁止外食,設有飲水機</li>
+        </ul>
+      </div>
+      <div class="card px-frame-red">
+        <h4>▲ 線上轉播</h4>
+        <ul>
+          <li>官方頻道 4K/60fps 全程直播</li>
+          <li>國語 / 英語雙語主播台</li>
+          <li>賽後 VOD 於 24 小時內上架</li>
+          <li>提供戰報圖卡免費下載</li>
+        </ul>
+      </div>
+      <div class="card px-frame-amber">
+        <h4>▲ 應援活動</h4>
+        <ul>
+          <li>投幣應援：每枚虛擬金幣為喜愛隊伍集氣</li>
+          <li>預測冠軍抽限定像素獎盃模型</li>
+          <li>總決賽現場千人開幕合唱</li>
+          <li>Cosplay 大賽冠軍可上台頒獎</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="dpad">◀ ▲ ▼ ▶</div>
+  <a class="back-btn" href="../../index.html">← 返回入口 BACK TO LOBBY</a>
+  <div class="foot-note">PIXEL CUP SEASON 7 · PRESS START · © 2026 大會資訊組</div>
+</footer>
+
+<script>
+/* 焦點戰隊資料與像素頭像（以 SVG 像素格繪製） */
+const TEAMS=[
+  {name:'夜鷹戰隊 NIGHTHAWK', region:'北區種子', rec:'例行賽 12W - 2L', c1:'#a4f644', c2:'#1d3a0a'},
+  {name:'蒼藍閃電 AZURE BOLT', region:'北區第二', rec:'例行賽 11W - 3L', c1:'#4cc9f0', c2:'#0a2a3a'},
+  {name:'像素貓貓 PIXELCAT', region:'中區種子', rec:'例行賽 10W - 4L', c1:'#ff8fab', c2:'#3a0a1d'},
+  {name:'鐵壁軍團 IRONWALL', region:'南區種子', rec:'例行賽 10W - 4L', c1:'#ffd166', c2:'#3a2a0a'},
+  {name:'赤紅鳳凰 REDPHOENIX', region:'南區第二', rec:'例行賽 9W - 5L', c1:'#ff3864', c2:'#3a0a14'},
+  {name:'量子幽靈 QUANTUM', region:'外卡黑馬', rec:'外卡賽 5W - 0L', c1:'#b388ff', c2:'#241040'},
+];
+function pixelAvatar(c1,c2,seed){
+  // 8x8 對稱像素臉譜
+  let cells='';
+  const rnd=(()=>{let s=seed;return()=>{s=(s*9301+49297)%233280;return s/233280;};})();
+  for(let y=0;y<8;y++){
+    for(let x=0;x<4;x++){
+      const on=rnd()>0.5;
+      if(on){
+        cells+=`<rect x="${x}" y="${y}" width="1" height="1" fill="${c1}"/>`;
+        cells+=`<rect x="${7-x}" y="${y}" width="1" height="1" fill="${c1}"/>`;
+      }
+    }
+  }
+  return `<svg class="avatar" viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="${c2}"/>${cells}</svg>`;
+}
+const grid=document.getElementById('teamGrid');
+TEAMS.forEach((t,i)=>{
+  const d=document.createElement('div');
+  d.className='team';
+  d.innerHTML=`${pixelAvatar(t.c1,t.c2,i*7+3)}<h4>${t.name}</h4><div class="region">${t.region}</div><div class="rec"><b>${t.rec}</b></div>`;
+  d.addEventListener('click',()=>location.href='teams.html');
+  grid.appendChild(d);
+});
+
+/* 賽程列與觀賽卡 → 子頁 */
+document.querySelectorAll('#scheduleSec .schedule-row').forEach(r=>r.addEventListener('click',()=>location.href='schedule.html'));
+document.querySelectorAll('#watchSec .card').forEach(c=>c.addEventListener('click',()=>location.href='watch.html'));
+
+/* 投幣互動 */
+let credits=0;
+const btn=document.getElementById('coinBtn');
+const num=document.getElementById('coinNum');
+btn.addEventListener('click',e=>{
+  credits=(credits+1)%100;
+  num.textContent=String(credits).padStart(2,'0');
+  const coin=document.createElement('div');
+  coin.className='coin-drop';
+  coin.textContent='🪙';
+  coin.style.left=(e.clientX-11)+'px';
+  coin.style.top=(e.clientY-11)+'px';
+  document.body.appendChild(coin);
+  setTimeout(()=>coin.remove(),820);
+  btn.textContent = credits>=20 ? '★ MAX POWER! 繼續投幣' : '◉ INSERT COIN 投幣應援';
+});
+</script>
+</body>
+</html>

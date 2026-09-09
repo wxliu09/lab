@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════
+ 設計規格｜56. 螢光標記·報名審核系統 (Highlighter Markup)
+───────────────────────────────────────────────────────────────────
+ ● 風格定位：白紙筆記風 —— 審核員手拿螢光筆在列印名單上作記號的感覺。
+              手寫字體 + 螢光筆塗線 + 手繪圈選，輕快、有人味。
+ ● 配色：白紙底 #fdfcf7｜螢光黃 #fffd8a｜螢光粉 #ffc9e3｜螢光綠 #c8f7c5
+        原子筆藍黑 #2b3a67｜紅筆 #e05252｜鉛筆灰 #8a8672
+ ● 字體："Kalam"、"Noto Sans TC"、"Microsoft JhengHei"（手寫感標題 + 清晰內文）
+ ● 版面：左側窄欄（活動資訊卡+篩選）＋右側主區（待審徽章列、名單表格、明細手繪卡）。
+ ● 動態：螢光筆塗線用半透明白底漸層 + transform 微斜；核准時該列被螢光筆
+        由左至右「劃過」；手繪圈選框為 SVG 橢圓亂線 path 描邊動畫；明細卡展開時
+        像貼紙翻上來（rotate 彈出）。
+═══════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>螢光標記 · 報名審核系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fdfcf7; --ink:#2b3a67; --pencil:#8a8672;
+  --hl-y:#fffd8a; --hl-p:#ffc9e3; --hl-g:#c8f7c5; --red:#e05252;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif;
+  background-color:var(--paper);color:var(--ink);
+  background-image:
+    linear-gradient(transparent 31px, rgba(43,58,103,.06) 32px);
+  background-size:100% 32px; min-height:100vh;
+}
+.hand{font-family:'Kalam','Noto Sans TC',cursive}
+
+/* ── 頂部工具列 ─────────────────────── */
+.topbar{
+  display:flex;align-items:center;gap:18px;
+  padding:14px 28px;border-bottom:2px solid var(--ink);
+  background:#fffdf4;position:sticky;top:0;z-index:50;
+}
+.back{
+  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  color:var(--ink);font-weight:700;font-size:14px;padding:6px 14px;
+  border:2px solid var(--ink);border-radius:255px 15px 225px 15px/15px 225px 15px 255px;
+  background:linear-gradient(transparent 55%, var(--hl-y) 55%);
+  transition:transform .15s;
+}
+.back:hover{transform:rotate(-2deg) scale(1.05)}
+.brand{font-size:22px;font-weight:700;letter-spacing:1px}
+.brand .hl{background:linear-gradient(transparent 45%, var(--hl-p) 45%);padding:0 6px}
+.topbar .stamp{
+  margin-left:auto;font-size:12px;color:var(--red);border:2px solid var(--red);
+  padding:4px 12px;border-radius:4px;transform:rotate(3deg);font-weight:700;letter-spacing:2px;
+}
+/* 子頁導覽 */
+.subnav{display:flex;gap:6px;flex-wrap:wrap}
+.subnav a{
+  text-decoration:none;color:var(--ink);font-size:14px;font-weight:700;padding:5px 12px;
+  border:2px solid transparent;border-radius:255px 15px 225px 15px/15px 225px 15px 255px;
+  transition:all .15s;
+}
+.subnav a:hover{border-color:var(--ink);background:linear-gradient(transparent 55%, var(--hl-g) 55%);transform:rotate(-1.5deg)}
+
+/* ── 主版面 ─────────────────────── */
+.layout{display:grid;grid-template-columns:300px 1fr;gap:28px;padding:28px;max-width:1440px;margin:0 auto}
+@media(max-width:980px){.layout{grid-template-columns:1fr}}
+
+/* 手繪框通用 */
+.sketch{
+  border:2px solid var(--ink);background:#fffef9;position:relative;
+  border-radius:255px 18px 225px 18px/18px 225px 18px 255px;
+  box-shadow:3px 4px 0 rgba(43,58,103,.12);
+}
+.side .sketch{padding:22px;margin-bottom:24px}
+h3.sec{font-size:18px;margin-bottom:14px;display:inline-block;
+  background:linear-gradient(transparent 50%, var(--hl-y) 50%);padding:0 8px;transform:rotate(-.6deg)}
+
+/* 活動資訊卡 */
+.ev-name{font-size:20px;font-weight:700;margin:8px 0 4px}
+.ev-meta{font-size:13px;color:var(--pencil);line-height:1.9}
+.ev-meta b{color:var(--ink)}
+.capacity{margin-top:14px;font-size:13px}
+.cap-bar{height:12px;border:2px solid var(--ink);border-radius:8px;margin-top:6px;overflow:hidden;background:#fff}
+.cap-fill{height:100%;background:repeating-linear-gradient(-45deg,var(--hl-g),var(--hl-g) 6px,#a4e8a0 6px,#a4e8a0 12px);width:76%;transition:width .6s}
+
+/* 篩選 */
+.filter label{display:block;font-size:13px;font-weight:700;margin:12px 0 4px;color:var(--pencil)}
+.filter select,.filter input{
+  width:100%;padding:8px 12px;font-family:inherit;font-size:14px;color:var(--ink);
+  border:2px solid var(--ink);background:#fff;border-radius:15px 4px 15px 4px/4px 15px 4px 15px;
+}
+.filter select:focus,.filter input:focus{outline:none;background:linear-gradient(transparent 50%,rgba(255,253,138,.5) 50%)}
+
+/* ── 主區 ─────────────────────── */
+.main .sketch{padding:26px}
+.badge-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.badge{
+  padding:10px 18px;border:2px solid var(--ink);font-size:14px;font-weight:700;
+  border-radius:15px 225px 15px 225px/225px 15px 225px 15px;background:#fffef9;position:relative;
+}
+.badge .n{font-family:'Kalam';font-size:24px;vertical-align:-4px;margin-left:6px}
+.badge.pending{background:linear-gradient(transparent 40%,var(--hl-y) 40%)}
+.badge.approved{background:linear-gradient(transparent 40%,var(--hl-g) 40%)}
+.badge.wait{background:linear-gradient(transparent 40%,var(--hl-p) 40%)}
+.badge .pulse{
+  position:absolute;top:-8px;right:-8px;background:var(--red);color:#fff;
+  width:24px;height:24px;border-radius:50%;font-size:12px;display:grid;place-items:center;
+  animation:pulse 1.6s infinite;
+}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+
+/* 批次操作列 */
+.bulkbar{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.btn{
+  font-family:'Kalam','Noto Sans TC';font-size:15px;font-weight:700;cursor:pointer;
+  padding:8px 20px;border:2px solid var(--ink);color:var(--ink);
+  border-radius:225px 15px 255px 15px/15px 255px 15px 225px;background:#fff;
+  transition:transform .12s, background .2s;
+}
+.btn:hover{transform:rotate(-1.5deg) scale(1.04)}
+.btn.ok{background:linear-gradient(transparent 45%,var(--hl-g) 45%)}
+.btn.hold{background:linear-gradient(transparent 45%,var(--hl-p) 45%)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.sel-info{font-size:13px;color:var(--pencil)}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{
+  text-align:left;padding:10px 12px;font-size:13px;color:var(--pencil);
+  border-bottom:2px dashed var(--ink);letter-spacing:1px;font-weight:500;
+}
+td{padding:12px;border-bottom:1px dashed rgba(43,58,103,.25);vertical-align:middle}
+tbody tr{cursor:pointer;transition:background .25s;position:relative}
+tbody tr:hover{background:rgba(255,253,138,.28)}
+tbody tr.expanded{background:rgba(201,247,197,.3)}
+tr.sweep::after{
+  content:'';position:absolute;left:0;top:50%;height:62%;transform:translateY(-50%) rotate(-.4deg);
+  background:rgba(201,247,197,.75);width:0;z-index:0;pointer-events:none;
+  animation:sweep .9s cubic-bezier(.6,.05,.3,1) forwards;
+}
+tr.sweep-p::after{
+  content:'';position:absolute;left:0;top:50%;height:62%;transform:translateY(-50%) rotate(-.4deg);
+  background:rgba(255,201,227,.75);width:0;z-index:0;pointer-events:none;
+  animation:sweep .9s cubic-bezier(.6,.05,.3,1) forwards;
+}
+@keyframes sweep{to{width:100%}}
+td>*{position:relative;z-index:1}
+.num{font-family:'Kalam';font-weight:700}
+
+/* 狀態標籤：螢光筆塗線 */
+.tag{
+  display:inline-block;padding:2px 10px;font-size:12.5px;font-weight:700;transform:rotate(-1deg);
+  position:relative;
+}
+.tag.pending{background:rgba(255,253,138,.85)}
+.tag.approved{background:rgba(201,247,197,.9)}
+.tag.waitlist{background:rgba(255,201,227,.85)}
+.tag.rejected{background:transparent;color:var(--red);text-decoration:line-through wavy var(--red)}
+
+/* 手繪圈選框 (SVG) */
+.circled{position:relative;display:inline-block;padding:2px 4px}
+.circled svg{position:absolute;inset:-8px -12px;width:calc(100% + 24px);height:calc(100% + 16px);pointer-events:none;overflow:visible}
+.circled svg path{fill:none;stroke:var(--red);stroke-width:2;stroke-linecap:round}
+
+/* 明細手繪卡 */
+.detail-row td{padding:0;border-bottom:1px dashed rgba(43,58,103,.25)}
+.detail-card{
+  margin:12px 0 12px 44px;padding:18px 22px;background:#fffbe6;
+  border:2px solid var(--ink);border-radius:18px 255px 18px 225px/225px 18px 255px 18px;
+  box-shadow:2px 3px 0 rgba(43,58,103,.15);
+  transform-origin:top left;animation:unfold .35s cubic-bezier(.2,1.4,.4,1);
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 24px;
+}
+@keyframes unfold{from{transform:rotateX(-60deg) translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+.detail-card .k{font-size:12px;color:var(--pencil)}
+.detail-card .v{font-weight:600;margin-top:2px}
+.detail-card .memo{grid-column:1/-1;background:rgba(255,253,138,.5);padding:8px 12px;border-radius:8px;font-size:13.5px}
+
+/* 新報名表單 */
+.newform{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;margin-top:6px}
+.newform .full{grid-column:1/-1}
+.newform label{font-size:13px;font-weight:700;color:var(--pencil);display:block;margin-bottom:4px}
+.newform input,.newform select,.newform textarea{
+  width:100%;padding:9px 12px;font-family:inherit;font-size:14px;color:var(--ink);
+  border:2px solid var(--ink);background:#fff;border-radius:4px 15px 4px 15px/15px 4px 15px 4px;
+}
+.newform textarea{resize:vertical;min-height:64px}
+.radios{display:flex;gap:14px;flex-wrap:wrap;padding-top:4px}
+.radios label{
+  display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--ink);
+  font-weight:400;cursor:pointer;padding:3px 10px;
+}
+.radios input{accent-color:var(--ink)}
+.radios label:has(input:checked){background:linear-gradient(transparent 45%,var(--hl-p) 45%);border-radius:6px}
+.shake{animation:shake .4s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+/* 完成提示 */
+.toast{
+  position:fixed;bottom:28px;right:28px;background:#fffef9;border:2px solid var(--ink);
+  border-radius:255px 15px 225px 15px/15px 225px 15px 255px;padding:14px 22px;
+  font-weight:700;box-shadow:3px 4px 0 rgba(43,58,103,.2);z-index:99;
+  animation:popin .35s cubic-bezier(.2,1.5,.4,1);
+}
+.toast .mark{background:linear-gradient(transparent 45%,var(--hl-g) 45%);padding:0 4px}
+@keyframes popin{from{transform:scale(.5) rotate(6deg);opacity:0}to{transform:none;opacity:1}}
+input[type=checkbox]{width:17px;height:17px;accent-color:var(--ink);cursor:pointer}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="back hand" href="../../index.html">← 返回入口</a>
+  <div class="brand hand">螢光標記 <span class="hl">報名審核</span> 系統</div>
+  <nav class="subnav hand">
+    <a href="events.html">活動列表</a>
+    <a href="detail.html">報名詳情</a>
+    <a href="form.html">新增活動</a>
+    <a href="report.html">統計報表</a>
+  </nav>
+  <div class="stamp hand">審核中 · REVIEW</div>
+</header>
+
+<div class="layout">
+  <!-- ── 左側欄 ── -->
+  <aside class="side">
+    <div class="sketch">
+      <h3 class="sec">活動資訊</h3>
+      <div class="ev-name">2026 春季登山社 · 合歡北峰兩日營</div>
+      <div class="ev-meta">
+        主辦單位：<b>戶外活動組</b><br>
+        活動日期：<b>2026/04/11（六）– 04/12（日）</b><br>
+        集合地點：<b>台中干城站 07:00</b><br>
+        承辦人：<b>林韋廷 分機 2317</b>
+      </div>
+      <div class="capacity">
+        名額使用 <b id="capText">38 / 50</b>
+        <div class="cap-bar"><div class="cap-fill" id="capFill"></div></div>
+      </div>
+    </div>
+
+    <div class="sketch filter">
+      <h3 class="sec">篩選條件</h3>
+      <label>審核狀態</label>
+      <select id="fStatus">
+        <option value="">全部狀態</option>
+        <option value="pending">待審核</option>
+        <option value="approved">已核准</option>
+        <option value="waitlist">候補中</option>
+        <option value="rejected">已婉拒</option>
+      </select>
+      <label>組別</label>
+      <select id="fGroup">
+        <option value="">全部組別</option>
+        <option>新手體驗組</option>
+        <option>縱走挑戰組</option>
+        <option>攝影慢遊組</option>
+      </select>
+      <label>關鍵字（姓名 / 電話）</label>
+      <input id="fKw" placeholder="輸入關鍵字…">
+    </div>
+
+    <div class="sketch">
+      <h3 class="sec">新增手動報名</h3>
+      <form class="newform" id="newForm">
+        <div><label>姓名 *</label><input id="nName" placeholder="王大名"></div>
+        <div><label>聯絡電話 *</label><input id="nPhone" placeholder="0912-345-678"></div>
+        <div>
+          <label>報名組別</label>
+          <select id="nGroup">
+            <option>新手體驗組</option><option>縱走挑戰組</option><option>攝影慢遊組</option>
+          </select>
+        </div>
+        <div>
+          <label>餐食</label>
+          <select id="nMeal"><option>葷食</option><option>素食</option><option>不吃晚餐</option></select>
+        </div>
+        <div class="full">
+          <label>經驗等級</label>
+          <div class="radios">
+            <label><input type="radio" name="exp" value="初次登山" checked>初次登山</label>
+            <label><input type="radio" name="exp" value="有百岳經驗">有百岳經驗</label>
+            <label><input type="radio" name="exp" value="嚮導級">嚮導級</label>
+          </div>
+        </div>
+        <div class="full"><label>備註（裝備 / 疾病史）</label><textarea id="nMemo" placeholder="例：需租借睡袋；有氣喘病史"></textarea></div>
+        <div class="full"><button type="submit" class="btn ok">＋ 加入名單（待審）</button></div>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ── 主區 ── -->
+  <main class="main">
+    <div class="sketch">
+      <h3 class="sec" style="font-size:22px">
+        報名名單審核
+        <span class="circled hand" style="font-size:15px;color:var(--red)">記得先勾選再批次處理！
+          <svg viewBox="0 0 200 40" preserveAspectRatio="none">
+            <path d="M8,22 C10,6 90,2 150,6 C192,9 196,18 188,27 C176,38 60,40 22,34 C4,31 2,26 12,18" />
+          </svg>
+        </span>
+      </h3>
+      <div class="badge-row">
+        <div class="badge pending">待審核 <span class="n" id="cPending">0</span><span class="pulse" id="pulseBadge">0</span></div>
+        <div class="badge approved">已核准 <span class="n" id="cApproved">0</span></div>
+        <div class="badge wait">候補中 <span class="n" id="cWait">0</span></div>
+        <div class="badge">已婉拒 <span class="n" id="cRejected" style="color:var(--red)">0</span></div>
+      </div>
+
+      <div class="bulkbar">
+        <button class="btn ok" id="btnApprove" disabled>✔ 批次核准</button>
+        <button class="btn hold" id="btnWait" disabled>⧗ 移入候補</button>
+        <span class="sel-info" id="selInfo">尚未勾選任何報名</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" id="ckAll"></th>
+            <th>編號</th><th>姓名</th><th>組別</th><th>聯絡電話</th><th>報名時間</th><th>狀態</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const DATA = [
+  {id:'A-0117', name:'陳昱安', group:'縱走挑戰組', phone:'0922-841-306', time:'03/02 09:14', status:'approved', meal:'葷食', exp:'有百岳經驗', memo:'自備全套雪地裝備，曾走完奇萊主北。'},
+  {id:'A-0121', name:'黃詩涵', group:'新手體驗組', phone:'0935-117-482', time:'03/02 11:42', status:'pending',  meal:'素食', exp:'初次登山', memo:'需租借登山鞋（24.5cm）與睡袋。'},
+  {id:'A-0124', name:'李宗翰', group:'攝影慢遊組', phone:'0910-663-927', time:'03/03 08:05', status:'pending',  meal:'葷食', exp:'初次登山', memo:'攜帶空拍機，已確認活動區域可飛。'},
+  {id:'A-0129', name:'張維真', group:'新手體驗組', phone:'0988-204-551', time:'03/03 14:38', status:'pending',  meal:'素食', exp:'初次登山', memo:'有輕微氣喘，隨身攜帶吸入劑。'},
+  {id:'A-0133', name:'劉承諺', group:'縱走挑戰組', phone:'0971-552-890', time:'03/04 10:27', status:'approved', meal:'葷食', exp:'有百岳經驗', memo:'與 A-0117 陳昱安同住帳。'},
+  {id:'A-0138', name:'蔡宛蓉', group:'攝影慢遊組', phone:'0963-708-214', time:'03/04 19:56', status:'waitlist', meal:'不吃晚餐', exp:'初次登山', memo:'候補第 1 順位，可臨時請假配合。'},
+  {id:'A-0141', name:'吳俊賢', group:'新手體驗組', phone:'0905-331-768', time:'03/05 07:49', status:'pending',  meal:'葷食', exp:'初次登山', memo:'身高 188cm，需確認帳篷空間。'},
+  {id:'A-0145', name:'鄭伊婷', group:'縱走挑戰組', phone:'0928-990-143', time:'03/05 13:12', status:'pending',  meal:'素食', exp:'嚮導級', memo:'持有野外急救 WAFA 證照，可協助隊醫。'},
+  {id:'A-0149', name:'許家睿', group:'新手體驗組', phone:'0916-475-032', time:'03/06 09:31', status:'rejected', meal:'葷食', exp:'初次登山', memo:'保險資料不完整，已通知補件後重新報名。'},
+  {id:'A-0152', name:'蘇品妍', group:'攝影慢遊組', phone:'0952-618-407', time:'03/06 16:44', status:'pending',  meal:'葷食', exp:'初次登山', memo:'希望拍到日出，詢問凌晨行程。'},
+  {id:'A-0157', name:'高士傑', group:'縱走挑戰組', phone:'0931-227-965', time:'03/07 08:58', status:'pending',  meal:'不吃晚餐', exp:'有百岳經驗', memo:'自備行動糧，不需晚餐。'},
+  {id:'A-0161', name:'賴品妤', group:'新手體驗組', phone:'0908-764-219', time:'03/07 21:03', status:'pending',  meal:'素食', exp:'初次登山', memo:'與 A-0129 張維真為朋友，希望同組。'},
+];
+const STATUS_LABEL = {pending:['待審核','pending'], approved:['已核准','approved'], waitlist:['候補中','waitlist'], rejected:['已婉拒','rejected']};
+const tbody = document.getElementById('tbody');
+const selected = new Set();
+let expandedId = null;
+
+function counts(){
+  const c = {pending:0,approved:0,waitlist:0,rejected:0};
+  DATA.forEach(d=>c[d.status]++);
+  document.getElementById('cPending').textContent = c.pending;
+  document.getElementById('pulseBadge').textContent = c.pending;
+  document.getElementById('pulseBadge').style.display = c.pending ? 'grid' : 'none';
+  document.getElementById('cApproved').textContent = c.approved;
+  document.getElementById('cWait').textContent = c.waitlist;
+  document.getElementById('cRejected').textContent = c.rejected;
+  const cap = DATA.filter(d=>d.status==='approved').length + 26;
+  document.getElementById('capText').textContent = cap + ' / 50';
+  document.getElementById('capFill').style.width = Math.min(100, cap*2) + '%';
+}
+
+function render(){
+  const fs = document.getElementById('fStatus').value;
+  const fg = document.getElementById('fGroup').value;
+  const kw = document.getElementById('fKw').value.trim();
+  tbody.innerHTML = '';
+  DATA.filter(d =>
+    (!fs || d.status===fs) && (!fg || d.group===fg) &&
+    (!kw || d.name.includes(kw) || d.phone.includes(kw))
+  ).forEach(d=>{
+    const tr = document.createElement('tr');
+    tr.dataset.id = d.id;
+    if (expandedId===d.id) tr.classList.add('expanded');
+    const [label, cls] = STATUS_LABEL[d.status];
+    tr.innerHTML = `
+      <td><input type="checkbox" class="rowck" data-id="${d.id}" ${selected.has(d.id)?'checked':''} ${d.status==='rejected'?'disabled':''}></td>
+      <td class="num">${d.id}</td>
+      <td><b>${d.name}</b></td><td>${d.group}</td><td>${d.phone}</td><td>${d.time}</td>
+      <td><span class="tag ${cls}">${label}</span></td>`;
+    tbody.appendChild(tr);
+    if (expandedId===d.id){
+      const dr = document.createElement('tr');
+      dr.className = 'detail-row';
+      dr.innerHTML = `<td colspan="7"><div class="detail-card">
+        <div><div class="k">餐食</div><div class="v">${d.meal}</div></div>
+        <div><div class="k">登山經驗</div><div class="v">${d.exp}</div></div>
+        <div><div class="k">報名編號</div><div class="v num">${d.id}</div></div>
+        <div class="memo">📌 ${d.memo}</div>
+      </div></td>`;
+      tbody.appendChild(dr);
+    }
+  });
+  refreshBulk();
+}
+
+function refreshBulk(){
+  const n = selected.size;
+  document.getElementById('selInfo').textContent = n ? `已勾選 ${n} 筆報名` : '尚未勾選任何報名';
+  document.getElementById('btnApprove').disabled = !n;
+  document.getElementById('btnWait').disabled = !n;
+}
+
+function toast(msg){
+  const t = document.createElement('div');
+  t.className = 'toast hand';
+  t.innerHTML = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{ t.style.transition='all .4s'; t.style.opacity=0; t.style.transform='translateY(16px)'; setTimeout(()=>t.remove(),400); }, 2200);
+}
+
+/* 批次處理：螢光筆劃過該列再變更狀態 */
+function sweepRows(ids, newStatus){
+  ids.forEach((id, i)=>{
+    setTimeout(()=>{
+      const tr = tbody.querySelector(`tr[data-id="${id}"]`);
+      if (tr) tr.classList.add(newStatus==='approved' ? 'sweep' : 'sweep-p');
+      setTimeout(()=>{
+        const rec = DATA.find(d=>d.id===id);
+        if (rec) rec.status = newStatus;
+        selected.delete(id);
+        if (expandedId===id) expandedId = null;
+        render(); counts();
+      }, 750);
+    }, i*260);
+  });
+}
+
+document.getElementById('btnApprove').addEventListener('click', ()=>{
+  const ids = [...selected];
+  sweepRows(ids, 'approved');
+  toast(`已用螢光筆核准 <span class="mark">${ids.length} 筆報名</span> ✔`);
+});
+document.getElementById('btnWait').addEventListener('click', ()=>{
+  const ids = [...selected];
+  sweepRows(ids, 'waitlist');
+  toast(`已將 <span class="mark">${ids.length} 筆報名</span> 移入候補`);
+});
+
+tbody.addEventListener('change', e=>{
+  if (!e.target.classList.contains('rowck')) return;
+  e.target.checked ? selected.add(e.target.dataset.id) : selected.delete(e.target.dataset.id);
+  refreshBulk();
+});
+document.getElementById('ckAll').addEventListener('change', e=>{
+  tbody.querySelectorAll('.rowck:not(:disabled)').forEach(ck=>{
+    ck.checked = e.target.checked;
+    e.target.checked ? selected.add(ck.dataset.id) : selected.delete(ck.dataset.id);
+  });
+  refreshBulk();
+});
+
+/* 點列展開明細 */
+tbody.addEventListener('click', e=>{
+  if (e.target.closest('input') || e.target.closest('.detail-card')) return;
+  const tr = e.target.closest('tr[data-id]');
+  if (!tr) return;
+  expandedId = (expandedId===tr.dataset.id) ? null : tr.dataset.id;
+  render();
+});
+
+['fStatus','fGroup'].forEach(id=>document.getElementById(id).addEventListener('change', render));
+document.getElementById('fKw').addEventListener('input', render);
+
+/* 新增報名 */
+document.getElementById('newForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const name = document.getElementById('nName').value.trim();
+  const phone = document.getElementById('nPhone').value.trim();
+  if (!name || !phone){
+    e.target.classList.add('shake'); setTimeout(()=>e.target.classList.remove('shake'), 450);
+    return;
+  }
+  const exp = document.querySelector('input[name=exp]:checked').value;
+  const now = new Date();
+  DATA.unshift({
+    id:'A-0' + (170 + DATA.length),
+    name, phone,
+    group: document.getElementById('nGroup').value,
+    meal: document.getElementById('nMeal').value,
+    exp,
+    time: `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,
+    status:'pending',
+    memo: document.getElementById('nMemo').value.trim() || '（無備註）'
+  });
+  e.target.reset();
+  render(); counts();
+  toast(`已將 <span class="mark">${name}</span> 加入待審名單`);
+});
+
+render(); counts();
+</script>
+</body>
+</html>

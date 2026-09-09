@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<!--
+  設計規格｜05 浮世繪·潮汐預報
+  ─────────────────────────────────────
+  風格定位：江戶浮世繪版畫 × 氣象局潮汐表，葛飾北齋大浪的現代資訊版
+  配色：靛青 #1a3a5c、深靛 #0f2438、赭石 #c8734a、米紙 #f4ead5、
+        浪白 #f7f2e6、墨色 #2b2118
+  字體：標題 Noto Serif TC（直排），內文 Noto Sans TC；離線退回 serif
+  版面結構：頂部浮世繪大浪 SVG 橫幅 → 直排大標題「潮汐預報」→
+            今日潮汐曲線（SVG path 繪製兩漲兩退）→ 港口水平捲動卡片列
+            （每卡含迷你潮汐曲線）→ 滿潮乾潮時刻表 → 海象注意 → 頁尾
+  動態效果：大浪 SVG 以 CSS 動畫緩慢起伏；水平卡片列拖曳捲動；
+            潮汐曲線描邊動畫；卡片 hover 上浮
+  圖形：全部 SVG（大浪、曲線）+ CSS 漸層，無外部圖片
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>浮世繪 · 潮汐預報 — 東海岸七港</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;900&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--indigo:#1a3a5c;--deep:#0f2438;--ochre:#c8734a;--paper:#f4ead5;--foam:#f7f2e6;--ink:#2b2118}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:'Noto Sans TC',sans-serif;min-height:100vh;overflow-x:hidden}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.5;
+    background-image:radial-gradient(rgba(43,33,24,.06) 1px,transparent 1.5px);background-size:22px 22px}
+  /* 大浪橫幅 */
+  .wave-banner{position:relative;background:var(--deep);overflow:hidden}
+  .wave-banner svg{display:block;width:100%;height:clamp(180px,30vw,320px)}
+  .w1{animation:swell 7s ease-in-out infinite}
+  .w2{animation:swell 9s ease-in-out infinite reverse;opacity:.85}
+  .w3{animation:swell 11s ease-in-out infinite;opacity:.6}
+  @keyframes swell{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  /* 返回鈕 */
+  .back{
+    position:absolute;top:22px;left:24px;z-index:10;
+    background:var(--ochre);color:var(--foam);text-decoration:none;
+    font-family:'Noto Serif TC',serif;font-weight:600;letter-spacing:.22em;font-size:14px;
+    padding:10px 20px;border:2px solid var(--foam);transition:.25s;
+    box-shadow:4px 4px 0 rgba(0,0,0,.3);
+  }
+  .back:hover{background:var(--foam);color:var(--ochre)}
+  /* 直排標題 */
+  .title-block{
+    display:flex;justify-content:flex-end;gap:26px;padding:44px 6vw 10px;
+  }
+  .v-title{
+    writing-mode:vertical-rl;font-family:'Noto Serif TC',serif;font-weight:900;
+    font-size:clamp(44px,7vw,76px);letter-spacing:.22em;color:var(--indigo);
+    border-right:3px solid var(--ochre);padding-right:18px;
+  }
+  .v-sub{
+    writing-mode:vertical-rl;font-family:'Noto Serif TC',serif;font-size:15px;
+    letter-spacing:.5em;color:var(--ochre);padding-top:8px;
+  }
+  .v-stamp{
+    writing-mode:vertical-rl;align-self:flex-start;
+    font-family:'Noto Serif TC',serif;color:var(--foam);background:var(--ochre);
+    font-size:14px;letter-spacing:.35em;padding:14px 8px;border-radius:3px;
+    box-shadow:2px 2px 0 rgba(43,33,24,.25);
+  }
+  .date-line{padding:6px 6vw 30px;text-align:right;font-size:13px;letter-spacing:.3em;color:#7a6a55}
+  .mainnav{display:flex;justify-content:flex-end;gap:14px;flex-wrap:wrap;padding:0 6vw 26px}
+  .mainnav a{
+    font-family:'Noto Serif TC',serif;font-size:13.5px;letter-spacing:.2em;color:var(--indigo);
+    text-decoration:none;border:1.5px solid var(--indigo);padding:7px 18px;transition:.25s;background:var(--foam);
+    box-shadow:3px 3px 0 rgba(26,58,92,.18);
+  }
+  .mainnav a:hover{background:var(--indigo);color:var(--foam)}
+  .port .row a{color:var(--ochre);text-decoration:none;font-weight:700}
+  .port .row a:hover{text-decoration:underline}
+  /* 今日曲線 */
+  section{padding:26px 6vw}
+  h2.sec{
+    font-family:'Noto Serif TC',serif;color:var(--indigo);font-size:22px;letter-spacing:.3em;
+    border-left:6px solid var(--ochre);padding-left:14px;margin-bottom:22px;
+  }
+  .curve-box{background:var(--foam);border:2px solid var(--indigo);padding:26px 20px 10px;box-shadow:6px 6px 0 rgba(26,58,92,.18)}
+  .curve-box .cap{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.24em;color:#7a6a55;padding:0 6px 6px}
+  #tideCurve path.main{stroke-dasharray:1200;stroke-dashoffset:1200;animation:draw 2.8s ease forwards .3s}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .times{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0;border:2px solid var(--indigo);border-top:none}
+  .times div{padding:12px;text-align:center;border-right:1px dashed rgba(26,58,92,.35)}
+  .times div:last-child{border-right:none}
+  .times .k{font-size:11px;letter-spacing:.3em;color:var(--ochre);font-weight:500}
+  .times .t{font-family:'Noto Serif TC',serif;font-size:21px;color:var(--indigo);margin-top:4px}
+  .times .h{font-size:12px;color:#7a6a55;margin-top:2px}
+  /* 港口卡片水平捲動 */
+  .scroller{
+    display:flex;gap:22px;overflow-x:auto;padding:8px 4px 22px;cursor:grab;
+    scrollbar-width:thin;scrollbar-color:var(--ochre) transparent;
+  }
+  .scroller.dragging{cursor:grabbing}
+  .port{
+    flex:0 0 250px;background:var(--foam);border:2px solid var(--indigo);position:relative;
+    box-shadow:5px 5px 0 rgba(26,58,92,.18);transition:transform .25s,box-shadow .25s;user-select:none;
+  }
+  .port:hover{transform:translateY(-8px);box-shadow:5px 13px 0 rgba(200,115,74,.35)}
+  .port .head{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 8px;border-bottom:1px dashed rgba(26,58,92,.35)}
+  .port .name{writing-mode:vertical-rl;font-family:'Noto Serif TC',serif;font-weight:600;font-size:21px;letter-spacing:.3em;color:var(--indigo);height:110px}
+  .port .badge{font-size:11px;background:var(--ochre);color:var(--foam);padding:3px 9px;letter-spacing:.18em}
+  .port svg{width:100%;height:90px;display:block}
+  .port .row{display:flex;justify-content:space-between;padding:10px 16px;font-size:12.5px;border-top:1px dashed rgba(26,58,92,.25)}
+  .port .row b{font-family:'Noto Serif TC',serif;color:var(--indigo)}
+  /* 海象注意 */
+  .warn{background:var(--indigo);color:var(--foam);padding:26px 30px;border-left:10px solid var(--ochre)}
+  .warn h3{font-family:'Noto Serif TC',serif;letter-spacing:.3em;margin-bottom:10px;color:#ffd9c4}
+  .warn p{font-size:14px;line-height:2;max-width:840px}
+  .warn .tags{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap}
+  .warn .tags span{border:1px solid var(--foam);font-size:11.5px;letter-spacing:.2em;padding:4px 12px}
+  footer{background:var(--deep);color:#8fa3bd;text-align:center;padding:26px;font-size:12px;letter-spacing:.35em;margin-top:20px}
+</style>
+</head>
+<body>
+
+<div class="wave-banner">
+  <a class="back" href="../../index.html">← 返回入口</a>
+  <svg viewBox="0 0 1440 320" preserveAspectRatio="none" aria-label="浮世繪大浪">
+    <rect width="1440" height="320" fill="#0f2438"/>
+    <circle cx="1150" cy="72" r="46" fill="#f4ead5" opacity=".9"/>
+    <path class="w3" fill="#2b4d74" d="M0 190 Q120 120 240 190 T480 190 T720 190 T960 190 T1200 190 T1440 190 V320 H0 Z"/>
+    <path class="w2" fill="#1a3a5c" d="M0 240 Q160 150 320 240 T640 240 T960 240 T1280 240 T1440 240 V320 H0 Z"/>
+    <!-- 北齋式捲浪 -->
+    <g class="w1">
+      <path fill="#c8734a" d="M180 320 C180 190 260 130 360 130 C300 160 280 220 320 250 C290 240 250 260 250 320 Z" opacity=".9"/>
+      <path fill="#f7f2e6" d="M360 130 C430 128 470 180 460 230 C450 195 415 175 385 185 C400 165 385 140 360 130 Z"/>
+      <path fill="#f7f2e6" d="M335 138 c14 -22 44 -26 58 -10 c-18 -2 -30 8 -34 22 c-8 -10 -16 -12 -24 -12 z"/>
+      <path fill="#f7f2e6" d="M300 168 c10 -18 34 -22 46 -10 c-14 0 -24 8 -27 18 c-7 -7 -13 -8 -19 -8 z"/>
+      <path fill="#f7f2e6" d="M268 208 c8 -14 28 -17 38 -8 c-11 1 -19 7 -21 14 c-6 -5 -11 -6 -17 -6 z"/>
+    </g>
+    <g class="w1" style="animation-delay:1.2s">
+      <path fill="#c8734a" d="M860 320 C860 210 930 155 1020 155 C965 182 948 235 984 262 C955 253 920 272 920 320 Z" opacity=".85"/>
+      <path fill="#f7f2e6" d="M1020 155 C1085 153 1122 200 1113 246 C1103 214 1070 195 1043 205 C1057 186 1043 162 1020 155 Z"/>
+    </g>
+    <path fill="#f7f2e6" opacity=".14" d="M0 300 Q180 270 360 300 T720 300 T1080 300 T1440 300 V320 H0 Z"/>
+  </svg>
+</div>
+
+<div class="title-block">
+  <div class="v-stamp">氣象海象 · 第一報</div>
+  <div class="v-sub">月之引力，海之呼吸</div>
+  <h1 class="v-title">潮汐預報</h1>
+</div>
+<div class="date-line">民國 115 年 8 月 29 日 星期六 ｜ 農曆七月十七 ｜ 大潮</div>
+<nav class="mainnav">
+  <a href="weekly.html">七日潮汐表</a>
+  <a href="ports.html">港口誌</a>
+  <a href="safety.html">海象安全</a>
+  <a href="knowledge.html">潮汐小知識</a>
+</nav>
+
+<section>
+  <h2 class="sec">今日潮汐曲線 — 基準港</h2>
+  <div class="curve-box">
+    <div class="cap"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    <svg id="tideCurve" viewBox="0 0 1000 220" width="100%" aria-label="今日潮位曲線">
+      <line x1="0" y1="110" x2="1000" y2="110" stroke="#1a3a5c" stroke-width="1" stroke-dasharray="3 6" opacity=".4"/>
+      <path class="main" fill="none" stroke="#c8734a" stroke-width="3.5" stroke-linecap="round"
+        d="M0 150 C 80 150 100 40 200 40 C 300 40 320 175 420 175 C 520 175 540 55 640 55 C 740 55 760 165 860 165 C 930 165 960 110 1000 105"/>
+      <path fill="#1a3a5c" opacity=".12"
+        d="M0 150 C 80 150 100 40 200 40 C 300 40 320 175 420 175 C 520 175 540 55 640 55 C 740 55 760 165 860 165 C 930 165 960 110 1000 105 L1000 220 L0 220 Z"/>
+      <circle cx="200" cy="40" r="6" fill="#1a3a5c"/><circle cx="420" cy="175" r="6" fill="#c8734a"/>
+      <circle cx="640" cy="55" r="6" fill="#1a3a5c"/><circle cx="860" cy="165" r="6" fill="#c8734a"/>
+      <text x="200" y="26" text-anchor="middle" font-size="13" fill="#1a3a5c" font-weight="bold">滿潮 04:48</text>
+      <text x="420" y="205" text-anchor="middle" font-size="13" fill="#c8734a" font-weight="bold">乾潮 10:52</text>
+      <text x="640" y="41" text-anchor="middle" font-size="13" fill="#1a3a5c" font-weight="bold">滿潮 17:10</text>
+      <text x="860" y="198" text-anchor="middle" font-size="13" fill="#c8734a" font-weight="bold">乾潮 23:26</text>
+    </svg>
+  </div>
+  <div class="times">
+    <div><div class="k">第一次滿潮</div><div class="t">04:48</div><div class="h">潮高 1.82 m</div></div>
+    <div><div class="k">第一次乾潮</div><div class="t">10:52</div><div class="h">潮高 0.31 m</div></div>
+    <div><div class="k">第二次滿潮</div><div class="t">17:10</div><div class="h">潮高 1.65 m</div></div>
+    <div><div class="k">第二次乾潮</div><div class="t">23:26</div><div class="h">潮高 0.44 m</div></div>
+  </div>
+  <p style="margin-top:16px;text-align:right">
+    <a href="weekly.html" style="font-family:'Noto Serif TC',serif;font-size:14px;letter-spacing:.22em;color:var(--ochre);text-decoration:none;border-bottom:1.5px solid var(--ochre);padding-bottom:3px">七日潮汐表 · 逐日四潮 →</a>
+  </p>
+</section>
+
+<section>
+  <h2 class="sec">東海岸七港 — 橫覽</h2>
+  <div class="scroller" id="scroller">
+    <!-- JS 產生港口卡片 -->
+  </div>
+</section>
+
+<section>
+  <h2 class="sec">海象注意報</h2>
+  <div class="warn">
+    <h3>⚠ 大潮期間岸際活動提醒</h3>
+    <p>適逢農曆十七大潮，滿乾潮差達 1.5 公尺以上，离岸流增強。磯釣者請繫安全繩並穿救生衣；退潮時切勿跨越潮間帶外緣礁岩。明日清晨 05:00 前沿海風力五至六級，小型船隻請注意繫纜。</p>
+    <div class="tags"><span>浪高 1.2–1.8 m</span><span>長浪機率：中</span><span>水溫 27.8°C</span><span>海流：北向 0.6 節</span></div>
+    <p style="margin-top:14px"><a href="safety.html" style="color:#ffd9c4;text-decoration:none;border-bottom:1px dashed #ffd9c4;font-family:'Noto Serif TC',serif;letter-spacing:.2em">海象安全指引 · 離岸流脫困 →</a></p>
+  </div>
+</section>
+
+<footer>◦ 潮之氣配所 · 每日寅時發刊 · 直排右讀 ◦<br>
+<a href="knowledge.html" style="color:#f4ead5;text-decoration:none;border-bottom:1px dashed #8fa3bd">潮汐小知識</a> ·
+<a href="ports.html" style="color:#f4ead5;text-decoration:none;border-bottom:1px dashed #8fa3bd">港口誌</a>
+</footer>
+
+<script>
+  // 七港資料：[港名, 狀態, 曲線path, 滿潮, 乾潮, 潮差]
+  const ports=[
+    ['石梯港','大潮','M0 60 C40 60 50 18 100 18 C150 18 160 78 220 78 C260 78 270 40 300 40','04:32 / 16:55','10:38 / 23:11','1.58 m'],
+    ['成功港','大潮','M0 55 C45 55 55 15 105 15 C155 15 165 75 225 75 C265 75 275 38 300 38','04:41 / 17:02','10:46 / 23:19','1.61 m'],
+    ['富岡港','中潮','M0 52 C45 52 55 22 105 22 C155 22 165 70 225 70 C265 70 275 42 300 42','04:55 / 17:18','10:58 / 23:34','1.34 m'],
+    ['綠島港','中潮','M0 54 C45 54 55 24 105 24 C155 24 165 68 225 68 C265 68 275 44 300 44','05:03 / 17:26','11:06 / 23:41','1.27 m'],
+    ['蘭嶼港','小潮','M0 50 C45 50 55 30 105 30 C155 30 165 62 225 62 C265 62 275 46 300 46','05:18 / 17:40','11:22 / 23:58','0.92 m'],
+    ['長濱港','大潮','M0 58 C45 58 55 20 105 20 C155 20 165 74 225 74 C265 74 275 41 300 41','04:47 / 17:08','10:51 / 23:25','1.52 m'],
+    ['三仙港','大潮','M0 57 C45 57 55 19 105 19 C155 19 165 73 225 73 C265 73 275 40 300 40','04:39 / 17:00','10:44 / 23:17','1.55 m'],
+  ];
+  const sc=document.getElementById('scroller');
+  const badgeColor={'大潮':'#c8734a','中潮':'#1a3a5c','小潮':'#7a6a55'};
+  ports.forEach(([name,tag,path,hi,lo,range])=>{
+    const card=document.createElement('div');
+    card.className='port';
+    card.innerHTML=`
+      <div class="head">
+        <div class="name">${name}</div>
+        <span class="badge" style="background:${badgeColor[tag]}">${tag}</span>
+      </div>
+      <svg viewBox="0 0 300 90" aria-hidden="true">
+        <line x1="0" y1="48" x2="300" y2="48" stroke="#1a3a5c" stroke-width="1" stroke-dasharray="3 5" opacity=".35"/>
+        <path d="${path}" fill="none" stroke="#c8734a" stroke-width="2.6" stroke-linecap="round"/>
+      </svg>
+      <div class="row"><span>滿潮</span><b>${hi}</b></div>
+      <div class="row"><span>乾潮</span><b>${lo}</b></div>
+      <div class="row"><span>潮差</span><b>${range}</b></div>
+      <div class="row"><a href="ports.html">港口誌 →</a><a href="weekly.html">七日潮汐 →</a></div>`;
+    sc.appendChild(card);
+  });
+  // 拖曳水平捲動
+  let down=false,sx=0,sl=0;
+  sc.addEventListener('pointerdown',e=>{down=true;sx=e.clientX;sl=sc.scrollLeft;sc.classList.add('dragging')});
+  addEventListener('pointermove',e=>{if(down)sc.scrollLeft=sl-(e.clientX-sx)});
+  addEventListener('pointerup',()=>{down=false;sc.classList.remove('dragging')});
+</script>
+</body>
+</html>

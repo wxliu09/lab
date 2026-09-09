@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>36 · 停機位平面配置 — AIRPORT OPS</title>
+<style>
+:root{
+  --n0:#0b1222;--n1:#111c33;--n2:#16243f;--edge:#22344f;
+  --txt:#dbe6f5;--dim:#7b91b0;
+  --gate:#4dd0e1;--dep:#7c9cff;--arr:#8bd67a;--dly:#ffb547;--cnc:#ff5c6c;--vip:#c792ea;
+  --apron:#0d1626;--pier:#1d3050;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--n0);color:var(--txt);min-height:100vh;font-size:13px;
+  font-family:"Segoe UI","Roboto Condensed","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gate);outline-offset:3px}
+
+.home{position:fixed;right:18px;bottom:18px;z-index:99;text-decoration:none;color:var(--n0);
+  background:var(--gate);padding:12px 22px;border-radius:6px;font-weight:700;font-size:12.5px;
+  letter-spacing:.08em;box-shadow:0 0 22px rgba(77,208,225,.45)}
+.home:hover{background:#fff}
+
+.subnav{display:flex;flex-wrap:wrap;gap:1px;background:var(--edge);border-bottom:2px solid var(--edge);
+  position:sticky;top:0;z-index:60}
+.subnav a{background:var(--n1);color:var(--dim);text-decoration:none;padding:11px 18px;font-size:11px;
+  letter-spacing:.14em;font-weight:600;transition:.16s}
+.subnav a:hover{background:var(--n2);color:var(--txt)}
+.subnav a[aria-current]{background:rgba(77,208,225,.16);color:var(--gate);box-shadow:inset 0 -2px 0 var(--gate)}
+.subnav a.bk{background:var(--n2);color:var(--gate)}
+
+header{background:linear-gradient(180deg,#152342,#0e1a2f);border-bottom:2px solid var(--edge);
+  padding:16px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+header .p{width:40px;height:40px;border-radius:9px;background:linear-gradient(135deg,#4dd0e1,#2b7ea8);
+  display:grid;place-items:center;font-size:19px;color:#04121c}
+header h1{font-size:16px;font-weight:700}
+header h1 small{display:block;font-size:9.5px;letter-spacing:.26em;color:var(--dim);font-weight:400;margin-top:3px}
+header .rt{margin-left:auto;display:flex;gap:22px;text-align:right;font-size:10.5px;color:var(--dim)}
+header .rt b{display:block;color:var(--txt);font-size:17px;font-weight:700}
+header .rt b.c{color:var(--gate)}header .rt b.w{color:var(--dly)}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;padding:13px 20px;background:var(--n1);border-bottom:1px solid var(--edge);
+  align-items:center}
+.filters button{appearance:none;font:inherit;font-size:11.5px;font-weight:600;letter-spacing:.06em;
+  padding:8px 15px;border-radius:6px;border:1px solid var(--edge);background:var(--n2);color:var(--dim);cursor:pointer;
+  display:flex;align-items:center;gap:8px;transition:.16s}
+.filters button:hover{color:var(--txt)}
+.filters button i{width:11px;height:11px;border-radius:3px;display:block}
+.filters button[aria-pressed="true"]{background:rgba(77,208,225,.16);border-color:var(--gate);color:var(--gate)}
+.filters .hint{margin-left:auto;font-size:11px;color:var(--dim);letter-spacing:.06em}
+
+/* ---------- layout ---------- */
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding:16px 20px 8px}
+@media(max-width:1080px){.stage{grid-template-columns:1fr}}
+.panel{background:var(--n1);border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+.panel>h2{font-size:11px;letter-spacing:.18em;color:var(--dim);font-weight:600;padding:12px 16px;
+  border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.panel>h2 b{color:var(--gate);font-size:10.5px}
+
+.planbox{overflow-x:auto;background:var(--apron);
+  background-image:radial-gradient(circle at 30% 12%,rgba(77,208,225,.06),transparent 46%)}
+.planbox svg{display:block;width:100%;min-width:860px;height:auto}
+.tarmac{fill:#0d1626}
+.pierbody{fill:var(--pier);stroke:#2b4670;stroke-width:1.5}
+.hall{fill:#16243f;stroke:#2b4670;stroke-width:1.5}
+.pl{fill:#6d89ab;font-size:11px;letter-spacing:.18em}
+.pl.sm{font-size:9.5px;fill:#516f92;letter-spacing:.22em}
+.taxiline{stroke:#22344f;stroke-width:2;stroke-dasharray:14 10;fill:none}
+.cline{stroke:#e8b23c;stroke-width:1.5;stroke-dasharray:6 8;fill:none;opacity:.4}
+
+.stand{cursor:pointer}
+.stand .box{stroke-width:1.6}
+.stand .id{font-size:12px;font-weight:700;text-anchor:middle;pointer-events:none}
+.stand .bridge{stroke-width:3;stroke-linecap:round}
+.stand.dim{opacity:.18}
+.stand.sel .box{stroke:#fff;stroke-width:2.6}
+.stand.sel .ring{opacity:1}
+.ring{fill:none;stroke:var(--gate);stroke-width:2;opacity:0;animation:pl 1.6s ease-out infinite}
+@keyframes pl{from{opacity:.75;transform:scale(.9)}to{opacity:0;transform:scale(1.35)}}
+.remote{stroke-dasharray:5 4}
+
+/* ---------- dock ---------- */
+.dock{padding:0}
+.dock .hero{padding:18px 18px 14px;border-bottom:1px solid var(--edge);
+  background:linear-gradient(180deg,rgba(77,208,225,.08),transparent)}
+.dock .hero .big{font-size:44px;font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--gate)}
+.dock .hero .sub{font-size:12px;color:var(--dim);margin-top:8px;letter-spacing:.08em}
+.dock .hero .tag{display:inline-block;margin-top:12px;font-size:11px;font-weight:700;padding:5px 12px;border-radius:5px}
+.t-oc{background:rgba(124,156,255,.16);color:var(--dep)}
+.t-av{background:rgba(139,214,122,.16);color:var(--arr)}
+.t-mt{background:rgba(255,181,71,.16);color:var(--dly)}
+.t-rs{background:rgba(199,146,234,.16);color:var(--vip)}
+.dock dl{padding:6px 18px 14px}
+.dock dt{font-size:9.5px;letter-spacing:.2em;color:var(--dim);margin-top:13px}
+.dock dd{font-size:13px;font-weight:600;margin-top:4px;line-height:1.6}
+.dock .note{margin:0 18px 18px;padding:12px 14px;border-radius:8px;background:var(--n2);
+  border-left:3px solid var(--gate);font-size:12px;line-height:1.85;color:#a8bdd6}
+
+/* ---------- keypad ---------- */
+.pad{padding:14px 16px 18px}
+.padgrp{margin-bottom:14px}
+.padgrp:last-child{margin-bottom:0}
+.padgrp .t{font-size:9.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:8px}
+.padgrp .row{display:flex;gap:7px;flex-wrap:wrap}
+.pad button{appearance:none;font:inherit;font-size:12.5px;font-weight:700;letter-spacing:.04em;
+  width:52px;padding:9px 0;border-radius:6px;border:1px solid var(--edge);background:var(--n2);
+  color:var(--dim);cursor:pointer;position:relative;transition:.16s}
+.pad button::after{content:"";position:absolute;left:7px;right:7px;bottom:4px;height:2px;border-radius:2px}
+.pad button.oc::after{background:var(--dep)}
+.pad button.av::after{background:var(--arr)}
+.pad button.mt::after{background:var(--dly)}
+.pad button.rs::after{background:var(--vip)}
+.pad button:hover{color:var(--txt);border-color:#3a5578}
+.pad button[aria-pressed="true"]{background:rgba(77,208,225,.18);border-color:var(--gate);color:var(--gate)}
+.pad button.hide{display:none}
+
+/* ---------- utilisation ---------- */
+.util{padding:8px 20px 10px}
+.util .box{background:var(--n1);border:1px solid var(--edge);border-radius:10px;padding:16px 18px}
+.util h2{font-size:12px;letter-spacing:.18em;color:var(--dim);font-weight:600;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.util h2 b{color:var(--gate);font-size:11px}
+.util svg{width:100%;height:auto;display:block;margin-top:14px}
+.ub{fill:#2f4d78;transform-origin:left center;animation:grow .8s cubic-bezier(.2,.8,.3,1) both}
+.ub.hi{fill:var(--gate)}
+.ub.lo{fill:#3f5a80}
+@keyframes grow{from{transform:scaleX(0)}}
+.ut{fill:#8fa8c4;font-size:11px}
+.uv{fill:#dbe6f5;font-size:11.5px;font-weight:700}
+.ug{stroke:rgba(34,52,79,.9);stroke-width:1}
+.util p{margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.85}
+.util p b{color:var(--txt)}
+.ftr{text-align:center;font-size:10px;color:#40587a;letter-spacing:.3em;padding:16px 0 46px}
+
+@media(max-width:640px){
+  .stage,.util{padding-left:12px;padding-right:12px}
+  header .rt{width:100%;margin-left:0;justify-content:space-between;gap:12px}
+  .pad button{width:46px;font-size:11.5px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ 返回入口</a>
+
+<nav class="subnav" aria-label="子頁導覽">
+  <a class="bk" href="index.html">◄ 排班台 GANTT</a>
+  <a href="flights.html">航班動態 FLIGHTS</a>
+  <a href="gates.html" aria-current="page">登機門 GATES</a>
+  <a href="crew.html">地勤班組 CREW</a>
+  <a href="report.html">運務報表 REPORT</a>
+</nav>
+
+<header>
+  <div class="p">⛭</div>
+  <h1>停機位平面配置 · 第二航廈<small>STAND ALLOCATION FLOOR PLAN · TPE T2 · 基準時刻 15:00</small></h1>
+  <div class="rt">
+    <div><b class="c">20</b>總停機位</div>
+    <div><b>12</b>目前佔用</div>
+    <div><b>5</b>可供指派</div>
+    <div><b class="w">2</b>維護封閉</div>
+    <div><b>78%</b>全日平均佔用率</div>
+  </div>
+</header>
+
+<div class="filters" role="group" aria-label="停機位狀態篩選">
+  <button data-f="all" aria-pressed="true">全部 20</button>
+  <button data-f="oc" aria-pressed="false"><i style="background:#7c9cff"></i>佔用中 12</button>
+  <button data-f="av" aria-pressed="false"><i style="background:#8bd67a"></i>可供指派 5</button>
+  <button data-f="mt" aria-pressed="false"><i style="background:#ffb547"></i>維護封閉 2</button>
+  <button data-f="rs" aria-pressed="false"><i style="background:#c792ea"></i>保留／專機 1</button>
+  <span class="hint">點擊平面圖或下方鍵盤選擇停機位</span>
+</div>
+
+<div class="stage">
+  <div class="panel">
+    <h2>航廈平面圖 TERMINAL PLAN<b>視角：北向 · 遠端停機坪在上</b></h2>
+    <div class="planbox">
+      <svg id="plan" viewBox="0 0 1040 620" role="img"
+        aria-label="桃園第二航廈停機位平面配置圖：北側遠端停機坪 4 席，A 至 D 四座指廊共 16 席空橋機位，南側為航廈主樓。">
+        <rect class="tarmac" width="1040" height="620"/>
+        <g class="pl sm">
+          <text x="24" y="34">北側遠端停機坪 REMOTE APRON</text>
+          <text x="24" y="176">滑行道 TAXIWAY N1</text>
+          <text x="24" y="492">滑行道 TAXIWAY S2</text>
+        </g>
+        <path class="taxiline" d="M20 158 H1020"/>
+        <path class="taxiline" d="M20 486 H1020"/>
+        <path class="cline" d="M120 158 V486 M340 158 V486 M540 158 V486 M756 158 V486 M940 158 V486"/>
+
+        <rect class="hall" x="110" y="500" width="820" height="96" rx="10"/>
+        <text class="pl" x="520" y="540" text-anchor="middle">第 二 航 廈 主 樓　TERMINAL 2 CONCOURSE</text>
+        <text class="pl sm" x="520" y="566" text-anchor="middle">3F 出境大廳 · 2F 候機 · 1F 入境行李提領</text>
+
+        <g>
+          <rect class="pierbody" x="180" y="180" width="66" height="320" rx="6"/>
+          <rect class="pierbody" x="380" y="180" width="66" height="320" rx="6"/>
+          <rect class="pierbody" x="580" y="180" width="66" height="320" rx="6"/>
+          <rect class="pierbody" x="790" y="180" width="86" height="320" rx="6"/>
+        </g>
+        <g class="pl sm" text-anchor="middle">
+          <text x="213" y="204">A 指廊</text>
+          <text x="413" y="204">B 指廊</text>
+          <text x="613" y="204">C 指廊</text>
+          <text x="833" y="204">D 指廊</text>
+        </g>
+        <g id="stands"></g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="panel dock">
+    <h2>停機位詳情 STAND DETAIL<b id="dk-id">—</b></h2>
+    <div id="dock"></div>
+    <div class="pad" id="pad"></div>
+  </div>
+</div>
+
+<div class="util">
+  <div class="box">
+    <h2>各指廊全日平均佔用率 · STAND UTILISATION BY PIER<b>06:00 – 23:00 · 全區加權平均 78%</b></h2>
+    <svg viewBox="0 0 820 220" role="img"
+      aria-label="各指廊停機位佔用率長條圖：D 指廊 88%、B 指廊 86%、A 指廊 82%、C 指廊 71%、遠端停機坪 58%">
+      <g id="ubars"></g>
+    </svg>
+    <p>D 指廊四席雙空橋機位承擔全部長程寬體班次，全日平均佔用 <b>88%</b>，為全航廈最緊繃；C 指廊因 <b>C1 空橋液壓故障（14:02 起，預計 16:00 復原）</b>而降至 71%，期間 TG 635 已改由遠端接駁備案並延誤 40 分。遠端停機坪佔用率 <b>58%</b> 仍有餘裕，是尖峰時段溢流疏解的主要緩衝。</p>
+  </div>
+</div>
+
+<div class="ftr">GATES / TERMINAL FLOOR PLAN · DESIGN 36 / 40</div>
+
+<script>
+/* id, pier, x, y, w, h, 空橋數, 機型上限, 狀態, 標題, 航班, 時窗, 備註 */
+const S=[
+ ["P1","P",200, 62,64,36,0,"C 級 · 中型","av","可供指派","—","—","北側遠端 1 號位，具地面電源與接駁車站位，適用 A321／B738 級距。"],
+ ["P3","P",380, 62,64,36,0,"C 級 · 中型","rs","保留 · 專機","CHTR-01","15:40 – 17:20","VIP 專機停放位。禮賓、安檢與移民署已於 12:10 完成通報，啟用北側 VIP 通道。"],
+ ["P5","P",560, 62,64,36,0,"—","mt","維護封閉","—","08:00 – 20:00","道面刨鋪工程，混凝土面層局部更換，20:00 養護完成後恢復調度。"],
+ ["P6","P",740, 62,64,36,0,"E 級 · 寬體","oc","佔用中 · 貨機裝載","CI 5252 → ANC","13:40 – 19:20","全貨機 B744F，貨櫃裝載 92 板，19:20 推出。停機坪禁行區已設置。"],
+
+ ["A1","A",134,210,46,26,1,"C 級 · 窄體","av","可供指派","—","—","單空橋窄體位，距 12 號安檢通道最近，適合快速轉機班次。"],
+ ["A3","A",134,290,46,26,1,"C 級 · 窄體","oc","佔用中 · 機務作業","B-16215 定檢","13:00 – 18:00","長榮 A321neo 執行 A-Check 過站檢查，非營運佔用，18:00 釋出。"],
+ ["A5","A",134,370,46,26,1,"E 級 · 寬體","oc","佔用中 · 過站整備","BR 225 → BR 108","13:55 – 17:30","入境 BR 225（HKG）13:55 靠橋，同機續飛 BR 108（LAX）17:30 推出。"],
+ ["A7","A",246,230,46,26,1,"E 級 · 寬體","oc","佔用中 · 進場中","CI 105 → CI 831","15:15 – 17:50","CI 105（NRT）15:15 靠橋，過站 2 小時 35 分後續飛 CI 831（BKK）。"],
+ ["A9","A",246,330,46,26,1,"E 級 · 寬體","oc","佔用中 · 過站整備","CX 471 → CX 470","14:24 – 15:55","國泰 A350 過站 91 分鐘，清艙與加油同步作業，15:55 準時推出。"],
+
+ ["B1","B",334,270,46,26,1,"C 級 · 窄體","oc","佔用中 · 臨時改分配","JX 801（ICN）","14:50 – 16:40","原分配 B2，因 JX 720 延誤佔用未釋出，14:38 改指派至 B1。"],
+ ["B2","B",446,210,46,26,1,"C 級 · 窄體","oc","佔用中 · 延誤待推","JX 720 → KIX","12:30 – 15:35","星宇 A321neo 因組員勤時銜接延誤 25 分，15:35 推出，已連帶影響 B1 分配。"],
+ ["B4","B",446,290,46,26,1,"E 級 · 寬體","oc","佔用中 · 登機作業","SQ 879 → SIN","14:05 – 15:30","B787-10 登機中，登機門 B4 於 15:12 開始廣播，15:30 準時推出。"],
+ ["B6","B",446,370,46,26,1,"E 級 · 寬體","oc","佔用中 · 過夜整備","TR 897 → SIN","08:20 – 19:25","酷航 B787-9 過夜停放後執行深度清艙，19:25 推出。"],
+
+ ["C1","C",534,220,46,26,1,"E 級 · 寬體","mt","維護封閉","TG 635（16:20 起）","14:02 – 16:00","空橋液壓管路滲漏，機務 14:02 封閉搶修，預計 16:00 復原後接續 TG 635。"],
+ ["C3","C",534,310,46,26,1,"C 級 · 窄體","oc","佔用中 · 機體滯留","KE 692（已取消）","13:41 – 21:00","B737-800 因引擎滑油壓力異常取消航班，機體滯留待零件，影響旅客 186 人已完成改機。"],
+ ["C5","C",534,400,46,26,1,"C 級 · 窄體","av","可供指派","—","—","區域航線窄體位，鄰接 44–46 號報到櫃檯，可作為 C1 復原前的替代方案。"],
+
+ ["D2","D",732,230,58,30,2,"F 級 · 超寬體","av","可供指派","—","—","雙空橋 F 級位，可停放 A380／B747-8，備有 400 Hz 地面電源與預冷空調。"],
+ ["D4","D",732,340,58,30,2,"F 級 · 超寬體","av","可供指派","—","—","雙空橋 F 級位，20:45 起預留給 QR 894 隔日回程整備。"],
+ ["D6","D",876,230,58,30,2,"F 級 · 超寬體","oc","佔用中 · 整備中","UA 872 → SFO","13:20 – 17:05","B777-300ER 長程整備，餐勤 3 車次、加油 82 公噸，17:05 推出。"],
+ ["D8","D",876,340,58,30,2,"F 級 · 超寬體","oc","佔用中 · 進場中","EK 367 → EK 366","15:58 – 19:00","阿聯酋 B777-300ER 延誤 22 分，15:58 靠橋，過站 3 小時 2 分。"]
+];
+const COL={oc:["#7c9cff","rgba(124,156,255,.22)","t-oc","佔用中"],
+           av:["#8bd67a","rgba(139,214,122,.18)","t-av","可供指派"],
+           mt:["#ffb547","rgba(255,181,71,.20)","t-mt","維護封閉"],
+           rs:["#c792ea","rgba(199,146,234,.20)","t-rs","保留／專機"]};
+
+/* ---------- 平面圖標記 ---------- */
+const standsG=document.getElementById("stands");
+standsG.innerHTML=S.map((s,i)=>{
+  const [id,pier,x,y,w,h,br,ac,st]=s;
+  const c=COL[st];
+  const remote=pier==="P";
+  const cx=x+w/2,cy=y+h/2;
+  let bridge="";
+  if(!remote){
+    // 空橋短線由機位指向指廊主體：左排機位往右接，右排機位往左接
+    const leftSide=(x===134||x===334||x===534||x===732);
+    const bx=leftSide?x+w:x, ex=leftSide?bx+16:bx-16;
+    bridge=`<line class="bridge" x1="${bx}" y1="${cy}" x2="${ex}" y2="${cy}" stroke="${c[0]}" opacity=".7"/>`;
+    if(br===2) bridge+=`<line class="bridge" x1="${bx}" y1="${cy-8}" x2="${ex}" y2="${cy-8}" stroke="${c[0]}" opacity=".45"/>`;
+  }
+  return `<g class="stand" data-i="${i}" data-st="${st}">
+    <rect class="ring" x="${x-5}" y="${y-5}" width="${w+10}" height="${h+10}" rx="8"
+      style="transform-origin:${cx}px ${cy}px"/>
+    ${bridge}
+    <rect class="box ${remote?"remote":""}" x="${x}" y="${y}" width="${w}" height="${h}"
+      fill="${c[1]}" stroke="${c[0]}" rx="4"/>
+    <text class="id" x="${cx}" y="${cy+4}" fill="${c[0]}">${id}</text>
+  </g>`;
+}).join("");
+
+/* ---------- 鍵盤 ---------- */
+const PIERS=[["A","A 指廊 · 窄體／寬體混用"],["B","B 指廊 · 東北亞主力"],
+             ["C","C 指廊 · 區域航線"],["D","D 指廊 · 長程寬體"],["P","遠端停機坪 REMOTE"]];
+document.getElementById("pad").innerHTML=PIERS.map(([p,label])=>`
+  <div class="padgrp"><div class="t">${label}</div><div class="row">
+  ${S.map((s,i)=>s[1]===p?`<button class="${s[8]}" data-i="${i}" data-st="${s[8]}"
+     aria-pressed="false" aria-label="停機位 ${s[0]}，${COL[s[8]][3]}">${s[0]}</button>`:"").join("")}
+  </div></div>`).join("");
+
+/* ---------- 選取 ---------- */
+const dock=document.getElementById("dock");
+function select(i){
+  const s=S[i],c=COL[s[8]];
+  document.getElementById("dk-id").textContent=s[0];
+  dock.innerHTML=`<div class="hero">
+      <div class="big">${s[0]}</div>
+      <div class="sub">${s[1]==="P"?"遠端停機坪":s[1]+" 指廊"} · ${s[7]} · 空橋 ${s[6]} 座</div>
+      <span class="tag ${c[2]}">${s[9]}</span>
+    </div>
+    <dl>
+      <dt>目前航班 CURRENT</dt><dd>${s[10]}</dd>
+      <dt>佔用時窗 OCCUPANCY WINDOW</dt><dd>${s[11]}</dd>
+      <dt>可用機型 AIRCRAFT LIMIT</dt><dd>${s[7]}</dd>
+      <dt>狀態代碼 STATUS</dt><dd style="color:${c[0]}">${s[8].toUpperCase()} · ${c[3]}</dd>
+    </dl>
+    <div class="note" style="border-left-color:${c[0]}">${s[12]}</div>`;
+  document.querySelectorAll("#stands .stand").forEach(g=>g.classList.toggle("sel",+g.dataset.i===i));
+  document.querySelectorAll("#pad button").forEach(b=>b.setAttribute("aria-pressed",String(+b.dataset.i===i)));
+}
+document.querySelectorAll("#pad button").forEach(b=>b.addEventListener("click",()=>select(+b.dataset.i)));
+document.querySelectorAll("#stands .stand").forEach(g=>g.addEventListener("click",()=>{
+  const b=document.querySelector(`#pad button[data-i="${g.dataset.i}"]`);
+  if(b){b.focus();select(+g.dataset.i);}
+}));
+select(S.findIndex(s=>s[0]==="D8"));
+
+/* ---------- 篩選 ---------- */
+document.querySelectorAll(".filters button").forEach(btn=>btn.addEventListener("click",()=>{
+  const f=btn.dataset.f;
+  document.querySelectorAll(".filters button").forEach(o=>o.setAttribute("aria-pressed",String(o===btn)));
+  document.querySelectorAll("#stands .stand").forEach(g=>
+    g.classList.toggle("dim",f!=="all"&&g.dataset.st!==f));
+  document.querySelectorAll("#pad button").forEach(b=>
+    b.classList.toggle("hide",f!=="all"&&b.dataset.st!==f));
+}));
+
+/* ---------- 佔用率長條 ---------- */
+(function(){
+  const rows=[["D 指廊（4 席 · 雙空橋）",88],["B 指廊（4 席）",86],["A 指廊（5 席）",82],
+              ["C 指廊（3 席）",71],["遠端停機坪（4 席）",58]];
+  const W=820,L=190,R=54,T=18,rowh=38;
+  let g="";
+  [0,25,50,75,100].forEach(p=>{
+    const x=L+(W-L-R)*p/100;
+    g+=`<line class="ug" x1="${x}" y1="${T}" x2="${x}" y2="${T+rows.length*rowh}"/>`;
+    g+=`<text class="ut" x="${x}" y="${T+rows.length*rowh+16}" text-anchor="middle">${p}%</text>`;
+  });
+  rows.forEach(([lb,v],i)=>{
+    const y=T+i*rowh+8,w=(W-L-R)*v/100;
+    g+=`<text class="ut" x="${L-12}" y="${y+15}" text-anchor="end">${lb}</text>`;
+    g+=`<rect class="ub ${v>=85?"hi":v<65?"lo":""}" x="${L}" y="${y}" width="${w}" height="20" rx="3"
+        style="animation-delay:${i*90}ms"/>`;
+    g+=`<text class="uv" x="${L+w+10}" y="${y+15}">${v}%</text>`;
+  });
+  document.getElementById("ubars").innerHTML=g;
+})();
+</script>
+</body>
+</html>

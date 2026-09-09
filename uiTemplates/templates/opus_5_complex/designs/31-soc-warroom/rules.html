@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>告警規則 · 偵測邏輯樹 — SENTINEL SOC</title>
+<style>
+:root{
+  --void:#07090d;--pane:#0d1117;--edge:#1c232e;--red:#ff2d3f;--red2:#ff6b78;
+  --amb:#ffab2e;--grn:#28e07a;--blu:#3aa8ff;--pur:#a06bff;--txt:#c8d2df;--dim:#5d6b7f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--void);color:var(--txt);min-height:100vh;overflow-x:hidden;
+  font-family:"Consolas","SF Mono",ui-monospace,monospace;font-size:12.5px}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:60;
+  background:repeating-linear-gradient(0deg,rgba(255,45,63,.028) 0 1px,transparent 1px 3px)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--amb);outline-offset:2px}
+
+.home{position:fixed;right:16px;bottom:16px;z-index:99;text-decoration:none;
+  background:var(--red);color:#fff;padding:11px 20px;font-weight:700;letter-spacing:.14em;font-size:11.5px;
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  box-shadow:0 0 24px rgba(255,45,63,.6)}
+.home:hover{background:#fff;color:var(--red)}
+
+.hdr{border-bottom:1px solid var(--edge);padding:12px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  background:linear-gradient(90deg,rgba(255,45,63,.16),transparent 45%),var(--pane)}
+.hdr h1{font-size:15px;letter-spacing:.22em;color:#fff;font-weight:700}
+.hdr h1 em{font-style:normal;color:var(--red)}
+.hdr h1 small{display:block;font-size:9.5px;letter-spacing:.3em;color:var(--dim);font-weight:400;margin-top:4px}
+.defcon{display:flex;align-items:center;gap:10px;padding:7px 16px;border:1px solid var(--red);
+  background:rgba(255,45,63,.12);animation:glowr 1.6s ease-in-out infinite}
+@keyframes glowr{50%{box-shadow:0 0 22px rgba(255,45,63,.55);background:rgba(255,45,63,.24)}}
+.defcon b{color:var(--red);font-size:19px;letter-spacing:.1em}
+.defcon small{color:var(--dim);font-size:9.5px;letter-spacing:.22em;line-height:1.4;display:block}
+.hdr .rt{margin-left:auto;display:flex;gap:22px;font-size:11px;text-align:right;flex-wrap:wrap}
+.hdr .rt div b{display:block;color:#fff;font-size:15px;letter-spacing:.06em}
+.hdr .rt div small{color:var(--dim);font-size:9.5px;letter-spacing:.18em}
+.r{color:var(--red)}.a{color:var(--amb)}.g{color:var(--grn)}.b{color:var(--blu)}.pu{color:var(--pur)}
+
+.subnav{display:flex;flex-wrap:wrap;padding:0 20px;border-bottom:1px solid var(--edge);background:var(--pane);
+  position:sticky;top:0;z-index:50}
+.subnav a{text-decoration:none;color:var(--dim);padding:9px 14px;font-size:10.5px;letter-spacing:.2em;
+  text-transform:uppercase;border-bottom:2px solid transparent;transition:.18s}
+.subnav a:hover{color:var(--txt)}
+.subnav a[aria-current]{color:var(--red);border-bottom-color:var(--red)}
+
+.wrap{padding:20px;max-width:1560px;margin:0 auto}
+.blk{border:1px solid var(--edge);background:var(--pane);margin-bottom:18px}
+.blk>h2{font-size:10px;letter-spacing:.24em;padding:10px 15px;color:var(--dim);text-transform:uppercase;
+  border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.blk>h2 b{color:var(--red);font-size:10px}
+.blk>h2 b.g{color:var(--grn)}
+.blk .p{padding:15px}
+
+/* ---------- rule rail ---------- */
+.rail{display:flex;gap:8px;overflow-x:auto;padding:14px 15px}
+.rbtn{flex:0 0 auto;font:inherit;cursor:pointer;background:transparent;border:1px solid var(--edge);
+  color:var(--dim);padding:9px 13px;text-align:left;min-width:186px;transition:.15s}
+.rbtn:hover{border-color:var(--blu);color:var(--txt)}
+.rbtn b{display:block;font-size:11px;color:#e4ecf6;font-weight:400;letter-spacing:.04em}
+.rbtn small{display:block;font-size:9.5px;color:var(--dim);margin-top:4px;letter-spacing:.08em}
+.rbtn .n{display:block;font-size:9px;margin-top:6px;letter-spacing:.1em}
+.rbtn[aria-selected="true"]{background:rgba(255,45,63,.14);border-color:var(--red)}
+.rbtn.off{opacity:.42}
+.rbtn.off b::after{content:" · DISABLED";color:var(--dim);font-size:9px}
+
+/* ---------- tree ---------- */
+.rulehead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 15px;
+  border-bottom:1px solid var(--edge);background:#0a0e14}
+.rulehead .sev{font-size:9px;letter-spacing:.14em;padding:3px 9px;font-weight:700}
+.rulehead h3{font-size:14px;color:#fff;letter-spacing:.06em;font-weight:400}
+.rulehead h3 small{display:block;font-size:9.5px;color:var(--dim);letter-spacing:.14em;margin-top:4px}
+.toggle{margin-left:auto;font:inherit;font-size:10.5px;letter-spacing:.16em;cursor:pointer;
+  padding:8px 16px;border:1px solid var(--grn);background:rgba(40,224,122,.12);color:var(--grn);transition:.15s}
+.toggle[aria-pressed="false"]{border-color:var(--dim);background:transparent;color:var(--dim)}
+.toggle:hover{filter:brightness(1.3)}
+.treewrap{overflow-x:auto;padding:20px 15px;background:
+  linear-gradient(rgba(58,168,255,.04) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(58,168,255,.04) 1px,transparent 1px),#080b10;background-size:24px 24px}
+.treewrap svg{display:block;width:100%;min-width:820px;height:auto}
+.tl{stroke:#2a3444;stroke-width:1.4;fill:none}
+.op rect{fill:rgba(160,107,255,.14);stroke:var(--pur);stroke-width:1.4}
+.op.and rect{fill:rgba(255,171,46,.13);stroke:var(--amb)}
+.op.not rect{fill:rgba(255,45,63,.13);stroke:var(--red)}
+.op text{font-size:11px;fill:#fff;font-family:inherit;letter-spacing:.16em}
+.lf rect{fill:rgba(13,17,23,.9);stroke:#2a3444;stroke-width:1.2}
+.lf text.f{font-size:10px;fill:var(--blu);font-family:inherit}
+.lf text.v{font-size:10px;fill:#e4ecf6;font-family:inherit}
+.root rect{fill:rgba(255,45,63,.16);stroke:var(--red);stroke-width:1.8}
+.root text{font-size:11px;fill:#fff;font-family:inherit;letter-spacing:.14em}
+.srcbox rect{fill:rgba(40,224,122,.1);stroke:var(--grn);stroke-width:1.2}
+.srcbox text{font-size:10px;fill:var(--grn);font-family:inherit;letter-spacing:.06em}
+
+/* ---------- code + stats ---------- */
+.two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start}
+pre{font-family:inherit;font-size:11.5px;line-height:1.85;color:#c8d2df;overflow-x:auto;padding:15px;
+  background:#080b10;border-top:1px solid var(--edge)}
+pre .k{color:var(--pur)}
+pre .s{color:var(--grn)}
+pre .c{color:var(--dim)}
+pre .n{color:var(--amb)}
+.sr{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed #1b2230;font-size:11.5px}
+.sr:last-child{border:0}
+.sr span{color:var(--dim);letter-spacing:.06em}
+.sr b{font-weight:400;color:#e4ecf6}
+.spark{display:flex;align-items:flex-end;gap:3px;height:74px;margin:14px 0 6px}
+.spark i{flex:1;background:linear-gradient(#ff2d3f,#5c0a12);animation:gb .7s ease-out both}
+@keyframes gb{from{height:0!important}}
+.sparkx{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);letter-spacing:.1em}
+
+/* ---------- table ---------- */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:1000px}
+th{text-align:left;font-size:9px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;
+  font-weight:400;padding:10px 12px;border-bottom:1px solid var(--edge);white-space:nowrap;background:var(--pane)}
+td{padding:9px 12px;border-bottom:1px solid #141b26;white-space:nowrap}
+tbody tr:hover td{background:rgba(58,168,255,.06);cursor:pointer}
+tbody tr.on td{background:rgba(255,45,63,.10)}
+tbody tr.off td{opacity:.45}
+td.n{text-align:right}
+.sev{display:inline-block;font-size:8.5px;letter-spacing:.1em;padding:2px 7px;font-weight:700}
+.s-crit{background:var(--red);color:#fff}
+.s-high{background:#4a1c08;color:var(--amb);border:1px solid var(--amb)}
+.s-med{background:#0d2c4a;color:var(--blu);border:1px solid var(--blu)}
+.s-low{background:#0d2c1c;color:var(--grn);border:1px solid var(--grn)}
+.fp{position:relative;height:6px;background:#141b26;min-width:70px;display:inline-block;width:70px;vertical-align:middle}
+.fp b{position:absolute;inset:0 auto 0 0;background:var(--amb)}
+
+.ftr{text-align:center;font-size:9.5px;color:#3d4a5c;letter-spacing:.34em;padding:20px 0 30px}
+
+@media(max-width:1100px){.two{grid-template-columns:1fr}}
+@media(max-width:820px){.hdr .rt{width:100%;margin-left:0;justify-content:flex-start;text-align:left}}
+@media(max-width:640px){.wrap{padding:12px}.hdr,.subnav{padding-left:12px;padding-right:12px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="home" href="../../index.html">◄ RETURN</a>
+
+<div class="hdr">
+  <h1>SENTINEL <em>SOC</em> — 偵測規則庫<small>DETECTION RULE LIBRARY · LOGIC TREE VIEW</small></h1>
+  <div class="defcon"><b>DEFCON 2</b><small>THREAT LEVEL<br>HIGH ALERT</small></div>
+  <div class="rt">
+    <div><b class="b">14</b><small>ACTIVE RULES</small></div>
+    <div><b class="r">1,482</b><small>24H TRIGGERS</small></div>
+    <div><b class="a" id="hFp">11.4%</b><small>AVG FP RATE</small></div>
+    <div><b class="g">99.2%</b><small>UPTIME</small></div>
+  </div>
+</div>
+
+<div class="subnav">
+  <a href="index.html">◄ DASHBOARD</a>
+  <a href="incidents.html">INCIDENTS</a>
+  <a href="assets.html">ASSETS</a>
+  <a href="rules.html" aria-current="page">RULES</a>
+  <a href="report.html">REPORT</a>
+</div>
+
+<div class="wrap">
+
+  <div class="blk">
+    <h2>規則選擇 RULE SELECTOR<b class="g" id="railMeta">14 RULES · 1,482 TRIGGERS / 24H</b></h2>
+    <div class="rail" role="tablist" aria-label="偵測規則" id="rail"></div>
+  </div>
+
+  <div class="blk">
+    <div class="rulehead" id="rhead"></div>
+    <div class="treewrap">
+      <svg id="tree" viewBox="0 0 900 420" role="img" aria-label="偵測規則邏輯樹"></svg>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="blk">
+      <h2>規則定義 RULE DEFINITION<b>SIGMA-LIKE PSEUDOCODE</b></h2>
+      <pre id="code"></pre>
+    </div>
+    <div class="blk">
+      <h2>規則統計 RULE TELEMETRY<b class="g" id="statMeta">24H</b></h2>
+      <div class="p" id="stats"></div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <h2>規則清冊 RULE REGISTER<b id="tblMeta">14 RULES</b></h2>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>規則 ID</th><th>名稱</th><th>MITRE</th><th>攻擊類別</th><th>資料來源</th>
+          <th>嚴重度</th><th class="n">24h 觸發</th><th class="n">誤報率</th><th>誤報比例</th>
+          <th>最後調校</th><th>狀態</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="ftr">RULES / DETECTION LOGIC TREE — 偵測規則邏輯樹 · DESIGN 31 / 40</div>
+</div>
+
+<script>
+/* ============ 規則庫：24h 觸發數合計 1,482，與總覽頁攻擊類型分布一致 ============ */
+const L = (f, v) => ({f, v});
+const RULES = [
+  {id:"R-001",nm:"SSH 暴力破解偵測",cat:"暴力破解 Brute Force",mitre:"T1110.001",sev:"high",
+   src:"防火牆認證日誌 / VPN-GW-02",hits:286,fp:8.4,tuned:"2026-08-21",on:true,
+   desc:"針對遠端存取閘道之密碼噴灑與字典攻擊。以來源 IP 失敗次數與帳號分散度雙門檻判定，排除內部管理網段。",
+   tree:{op:"AND",ch:[
+     L("logsource","firewall.auth · VPN-GW-02"),
+     L("event","sshd: Failed password"),
+     {op:"OR",ch:[L("count(src_ip)","≥ 50 / 10 min"), L("distinct(user)","≥ 15 / 10 min")]},
+     {op:"NOT",ch:[L("src_ip in","10.40.250.0/24 管理網段")]}
+   ]}},
+  {id:"R-002",nm:"AD 帳號鎖定風暴",cat:"暴力破解 Brute Force",mitre:"T1110.003",sev:"high",
+   src:"Windows 安全日誌 / AD-DC-01",hits:218,fp:14.2,tuned:"2026-08-18",on:true,
+   desc:"短時間內大量帳號被鎖定，通常為密碼噴灑的直接副作用。排除排程批次伺服器造成的規律鎖定。",
+   tree:{op:"AND",ch:[
+     L("logsource","windows.security · AD-DC-01"),
+     L("EventID","4740 (Account Lockout)"),
+     L("count(events)","≥ 20 / 5 min"),
+     L("distinct(target_user)","≥ 8"),
+     {op:"NOT",ch:[L("caller_computer in","BATCH-SRV-01, BATCH-SRV-02")]}
+   ]}},
+  {id:"R-003",nm:"SQL 注入特徵命中",cat:"SQL 注入 Injection",mitre:"T1190",sev:"crit",
+   src:"WAF 日誌 / WEB-PROD-01·02",hits:201,fp:6.1,tuned:"2026-08-26",on:true,
+   desc:"以正規表示式比對常見 SQLi payload，並要求回應碼非 403，代表未被 WAF 攔下、確實抵達應用層。",
+   tree:{op:"AND",ch:[
+     L("logsource","waf.access · DMZ"),
+     {op:"OR",ch:[
+       L("payload =~","/union\\s+select/i"),
+       L("payload =~","/'\\s+or\\s+1\\s*=\\s*1/i"),
+       L("payload =~","/sleep\\(\\d+\\)|benchmark\\(/i")
+     ]},
+     L("response_code","!= 403"),
+     L("uri not in","/healthz, /metrics")
+   ]}},
+  {id:"R-004",nm:"OS 命令注入嘗試",cat:"SQL 注入 Injection",mitre:"T1059.004",sev:"crit",
+   src:"Web 存取日誌 / WEB-PROD-01·02",hits:125,fp:9.8,tuned:"2026-08-24",on:true,
+   desc:"偵測 URI 或表單參數中夾帶 shell metacharacter 與下載指令的組合，排除已登錄之弱點掃描器。",
+   tree:{op:"AND",ch:[
+     L("logsource","nginx.access · DMZ"),
+     {op:"OR",ch:[
+       L("uri =~","/;\\s*(cat|wget|curl|nc)\\s/"),
+       L("uri =~","/\\$\\(.*\\)|`.*`/"),
+       L("body =~","/\\|\\s*(bash|sh)\\s/")
+     ]},
+     {op:"NOT",ch:[L("user_agent in","Nessus, Qualys, Burp（已報備）")]}
+   ]}},
+  {id:"R-005",nm:"HTML Smuggling 附件",cat:"釣魚郵件 Phishing",mitre:"T1566.001",sev:"high",
+   src:"郵件閘道 / MAIL-RELAY",hits:142,fp:12.6,tuned:"2026-08-29",on:true,
+   desc:"針對以 HTML/SVG 夾帶 base64 二進位並在瀏覽器端還原落地的手法。需沙箱判定非乾淨才告警。",
+   tree:{op:"AND",ch:[
+     L("logsource","mail.gateway · MAIL-RELAY"),
+     L("attachment_type in","html, htm, svg, xhtml"),
+     {op:"OR",ch:[
+       L("body contains","base64 blob > 200 KB"),
+       L("body contains","msSaveOrOpenBlob | createObjectURL")
+     ]},
+     L("sandbox_verdict","!= clean")
+   ]}},
+  {id:"R-006",nm:"寄件人網域偽冒",cat:"釣魚郵件 Phishing",mitre:"T1566.002",sev:"med",
+   src:"郵件閘道 / MAIL-RELAY",hits:125,fp:21.4,tuned:"2026-08-12",on:true,
+   desc:"外部來信卻宣稱來自本公司網域，且 SPF 與 DKIM 皆未通過。誤報主要來自尚未納管的行銷發信平台。",
+   tree:{op:"AND",ch:[
+     L("logsource","mail.gateway · inbound"),
+     L("header.from.domain","== corp.example.tw"),
+     L("spf","!= pass"),
+     L("dkim","!= pass"),
+     {op:"NOT",ch:[L("relay_ip in","已授權行銷發信平台清單")]}
+   ]}},
+  {id:"R-007",nm:"SYN Flood 容量攻擊",cat:"DDoS 阻斷服務",mitre:"T1498.001",sev:"high",
+   src:"NetFlow / FW-EDGE-01",hits:118,fp:4.2,tuned:"2026-08-20",on:true,
+   desc:"以每秒封包數與來源分散度判定容量型攻擊，門檻依平日基線之 8 倍動態調整。",
+   tree:{op:"AND",ch:[
+     L("logsource","netflow · edge"),
+     L("tcp_flags","== SYN & !ACK"),
+     L("packets_per_sec","≥ 80,000 / 10 s"),
+     L("distinct(src_ip)","≥ 5,000")
+   ]}},
+  {id:"R-008",nm:"應用層 HTTP Flood",cat:"DDoS 阻斷服務",mitre:"T1499.002",sev:"med",
+   src:"負載平衡日誌 / DMZ",hits:75,fp:18.9,tuned:"2026-08-15",on:false,
+   desc:"針對登入與搜尋等高成本端點的低速大量請求。目前因促銷檔期誤報偏高，暫時停用並改用速率限制緩解。",
+   tree:{op:"AND",ch:[
+     L("logsource","lb.access · DMZ"),
+     L("requests_per_ip","≥ 600 / min"),
+     {op:"OR",ch:[L("uri ==","/login"), L("uri ==","/api/search"), L("uri ==","/checkout")]},
+     {op:"NOT",ch:[L("src_ip in","CDN 回源節點清單")]}
+   ]}},
+  {id:"R-009",nm:"lsass 記憶體存取",cat:"橫向移動 Lateral",mitre:"T1003.001",sev:"crit",
+   src:"EDR 程序事件 / 全端點",hits:34,fp:2.4,tuned:"2026-08-29",on:true,
+   desc:"憑證竊取的核心偵測。以 granted_access 遮罩比對 Mimikatz 慣用權限組合，並排除微軟簽章之防毒程序。",
+   tree:{op:"AND",ch:[
+     L("logsource","edr.process_access"),
+     L("target_image","== C:\\Windows\\System32\\lsass.exe"),
+     L("granted_access in","0x1010, 0x1410, 0x143a"),
+     {op:"NOT",ch:[L("initiator signed by","Microsoft Windows Publisher")]}
+   ]}},
+  {id:"R-010",nm:"PsExec 橫向移動",cat:"橫向移動 Lateral",mitre:"T1021.002",sev:"crit",
+   src:"Windows 安全日誌 / 伺服器網段",hits:48,fp:16.7,tuned:"2026-08-19",on:true,
+   desc:"偵測透過 ADMIN$ / IPC$ 共用安裝遠端服務的行為。維運跳板機為已知合法來源，需列入白名單。",
+   tree:{op:"AND",ch:[
+     L("logsource","windows.security · server"),
+     {op:"OR",ch:[L("EventID ==","7045 (Service Installed)"), L("EventID ==","5145 (Share Access)")]},
+     L("service_name =~","/^PSEXESVC|^PAExec/"),
+     L("share_name in","ADMIN$, IPC$"),
+     {op:"NOT",ch:[L("src_host in","JUMP-01, JUMP-02 管理跳板")]}
+   ]}},
+  {id:"R-011",nm:"Pass-the-Hash 登入",cat:"橫向移動 Lateral",mitre:"T1550.002",sev:"crit",
+   src:"Windows 安全日誌 / AD-DC-01",hits:37,fp:5.3,tuned:"2026-08-25",on:true,
+   desc:"以登入類型 9 搭配 seclogo 程序判定 NTLM 雜湊重放。此組合在正常作業中極為罕見，誤報率低。",
+   tree:{op:"AND",ch:[
+     L("logsource","windows.security · AD-DC-01"),
+     L("EventID","== 4624"),
+     L("logon_type","== 9 (NewCredentials)"),
+     L("auth_package","== Negotiate"),
+     L("logon_process","== seclogo")
+   ]}},
+  {id:"R-012",nm:"C2 Beacon 週期偵測",cat:"其他 Other",mitre:"T1071.001",sev:"crit",
+   src:"Proxy / NetFlow · 全網",hits:21,fp:7.8,tuned:"2026-08-29",on:true,
+   desc:"以連線間隔的標準差偵測機器化心跳，搭配上下行位元組比與目的地信譽分數三重確認。",
+   tree:{op:"AND",ch:[
+     L("logsource","proxy.access + netflow"),
+     {op:"OR",ch:[
+       L("stddev(interval)","< 5% of mean（≥ 12 次連線）"),
+       L("jitter_pattern","matches CS profile db")
+     ]},
+     L("bytes_out / bytes_in","≥ 20"),
+     L("dest_reputation","≤ 30 / 100")
+   ]}},
+  {id:"R-013",nm:"DGA 高熵域名查詢",cat:"其他 Other",mitre:"T1568.002",sev:"med",
+   src:"DNS 日誌 / PROXY-01",hits:32,fp:24.6,tuned:"2026-08-14",on:true,
+   desc:"以夏農熵、域名註冊年齡與 NXDOMAIN 比例三項指標偵測網域生成演算法。CDN 隨機子網域為主要誤報來源。",
+   tree:{op:"AND",ch:[
+     L("logsource","dns.query · PROXY-01"),
+     L("shannon_entropy","≥ 3.6"),
+     L("domain_age","< 30 天"),
+     L("nxdomain_ratio(src)","≥ 0.7 / 1 h"),
+     {op:"NOT",ch:[L("domain matches","已知 CDN 隨機子網域樣式")]}
+   ]}},
+  {id:"R-014",nm:"DLP 大量資料外傳",cat:"其他 Other",mitre:"T1567.002",sev:"crit",
+   src:"DLP / CASB · 全端點",hits:20,fp:3.1,tuned:"2026-08-28",on:true,
+   desc:"含個資標記之檔案上傳至個人雲端服務。單次或累計超過門檻即告警，並自動觸發端點隔離劇本。",
+   tree:{op:"AND",ch:[
+     L("logsource","dlp.endpoint + casb"),
+     L("classification","== PII / 個資"),
+     L("upload_size","≥ 500 MB / 1 h"),
+     L("destination in","個人雲端硬碟服務清單（38 個網域）")
+   ]}}
+];
+const SEV = {crit:{t:"CRIT",cls:"s-crit",c:"#ff2d3f"},high:{t:"HIGH",cls:"s-high",c:"#ffab2e"},
+             med:{t:"MED",cls:"s-med",c:"#3aa8ff"},low:{t:"LOW",cls:"s-low",c:"#28e07a"}};
+
+/* ============ 邏輯樹佈局：根在左，葉節點縱向排開 ============ */
+function layout(node, depth, cursor){
+  if (node.f !== undefined){
+    node._d = depth; node._y = cursor.y; cursor.y += 1;
+    return node._y;
+  }
+  const ys = node.ch.map(c => layout(c, depth + 1, cursor));
+  node._d = depth;
+  node._y = (Math.min(...ys) + Math.max(...ys)) / 2;
+  return node._y;
+}
+function collect(node, out){
+  out.push(node);
+  if (node.ch) node.ch.forEach(c => collect(c, out));
+  return out;
+}
+function drawTree(rule){
+  const root = JSON.parse(JSON.stringify(rule.tree));
+  const cur = {y: 0};
+  layout(root, 1, cur);
+  const rows = cur.y;
+  const RH = 46, TOP = 26, W = 900;
+  const H = Math.max(220, rows * RH + TOP + 30);
+  const colW = 214;
+  const nodes = collect(root, []);
+  const px = n => 14 + n._d * colW;
+  const py = n => TOP + n._y * RH + RH / 2;
+
+  let s = "";
+  // 根節點（告警輸出）
+  s += '<g class="root"><rect x="14" y="' + (py(root) - 17) + '" width="150" height="34" rx="3"/>' +
+       '<text x="26" y="' + (py(root) + 4) + '">ALERT ' + rule.id + "</text></g>";
+  s += '<path class="tl" d="M164 ' + py(root) + " H" + (px(root) + 22) + '"/>';
+
+  nodes.forEach(n => {
+    const x = px(n) + 22, y = py(n);
+    if (n.ch){
+      n.ch.forEach(c => {
+        const cx = px(c) + 22, cy = py(c);
+        const mid = x + 106;
+        s += '<path class="tl" d="M' + (x + 96) + " " + y + " H" + mid + " V" + cy + " H" + cx + '"/>';
+      });
+      const cls = n.op === "AND" ? "op and" : n.op === "NOT" ? "op not" : "op";
+      s += '<g class="' + cls + '"><rect x="' + x + '" y="' + (y - 15) + '" width="96" height="30" rx="3"/>' +
+           '<text x="' + (x + 48) + '" y="' + (y + 4) + '" text-anchor="middle">' + n.op + "</text></g>";
+    } else {
+      s += '<g class="lf"><rect x="' + x + '" y="' + (y - 16) + '" width="' + (colW - 34) +
+           '" height="32" rx="3"/>' +
+           '<text class="f" x="' + (x + 9) + '" y="' + (y - 3) + '">' + esc(n.f) + "</text>" +
+           '<text class="v" x="' + (x + 9) + '" y="' + (y + 10) + '">' + esc(n.v) + "</text></g>";
+    }
+  });
+  const svg = document.getElementById("tree");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = s;
+  svg.setAttribute("aria-label", rule.id + " " + rule.nm + " 偵測邏輯樹，共 " +
+    nodes.filter(n => !n.ch).length + " 個條件節點，以 " + root.op + " 邏輯組合");
+}
+function esc(t){ return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+/* ============ 虛擬碼 ============ */
+function pseudo(rule){
+  const lines = [];
+  lines.push('<span class="c"># ' + rule.id + " — " + rule.nm + "</span>");
+  lines.push('<span class="k">title</span>: ' + rule.nm);
+  lines.push('<span class="k">id</span>: sentinel-' + rule.id.toLowerCase());
+  lines.push('<span class="k">level</span>: <span class="n">' + rule.sev + "</span>");
+  lines.push('<span class="k">tags</span>: [attack.' + rule.mitre.toLowerCase() + "]");
+  lines.push('<span class="k">logsource</span>: ' + rule.src);
+  lines.push('<span class="k">detection</span>:');
+  walk(rule.tree, 1);
+  lines.push('<span class="k">falsepositives</span>: <span class="c">' + rule.fp + "% (近 7 日)</span>");
+  lines.push('<span class="k">status</span>: <span class="' + (rule.on ? "s" : "c") + '">' +
+    (rule.on ? "enabled" : "disabled") + "</span>");
+  document.getElementById("code").innerHTML = lines.join("\n");
+
+  function walk(n, ind){
+    const pad = "  ".repeat(ind);
+    if (n.f !== undefined){
+      lines.push(pad + '<span class="k">' + esc(n.f) + "</span>: <span class=\"s\">" + esc(n.v) + "</span>");
+    } else {
+      lines.push(pad + '<span class="n">' + n.op + "</span>:");
+      n.ch.forEach(c => walk(c, ind + 1));
+    }
+  }
+}
+
+/* ============ 統計 ============ */
+function stats(rule){
+  const total = RULES.reduce((a, r) => a + r.hits, 0);
+  // 固定序列的 24 小時觸發分布，總和等於該規則 24h 觸發數
+  const raw = Array.from({length: 24}, (_, h) => 1 + ((h * 7 + rule.hits) % 9) + (h >= 1 && h <= 5 ? 4 : 0));
+  const rsum = raw.reduce((a, b) => a + b, 0);
+  const bars = raw.map(v => Math.round(v / rsum * rule.hits));
+  const bmax = Math.max(...bars);
+  document.getElementById("stats").innerHTML =
+    '<div class="sr"><span>24h 觸發次數</span><b class="r">' + rule.hits.toLocaleString() + " 次</b></div>" +
+    '<div class="sr"><span>佔全部告警</span><b>' + (rule.hits / total * 100).toFixed(1) + "%</b></div>" +
+    '<div class="sr"><span>誤報率（近 7 日）</span><b class="a">' + rule.fp + "%</b></div>" +
+    '<div class="sr"><span>推估有效告警</span><b class="g">' +
+      Math.round(rule.hits * (1 - rule.fp / 100)).toLocaleString() + " 次</b></div>" +
+    '<div class="sr"><span>資料來源</span><b>' + rule.src + "</b></div>" +
+    '<div class="sr"><span>最後調校</span><b>' + rule.tuned + "</b></div>" +
+    '<div class="spark" aria-hidden="true">' + bars.map((v, i) =>
+      '<i style="height:' + Math.max(3, v / bmax * 100) + "%;animation-delay:" + (i * 22) + 'ms"></i>').join("") +
+    "</div>" +
+    '<div class="sparkx"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>' +
+    '<div style="margin-top:14px;font-size:11px;line-height:1.9;color:var(--dim);letter-spacing:.04em">' +
+      rule.desc + "</div>";
+  document.getElementById("statMeta").textContent = rule.id + " · 24H";
+}
+
+/* ============ 渲染 ============ */
+let sel = "R-001";
+function rail(){
+  document.getElementById("rail").innerHTML = RULES.map(r =>
+    '<button class="rbtn' + (r.on ? "" : " off") + '" role="tab" aria-selected="' + (sel === r.id) +
+    '" data-id="' + r.id + '"><b>' + r.id + " " + r.nm + "</b><small>" + r.mitre + " · " + r.cat +
+    '</small><span class="n ' + (r.sev === "crit" ? "r" : r.sev === "high" ? "a" : "b") + '">' +
+    r.hits.toLocaleString() + " triggers / 24h</span></button>").join("");
+}
+function head(r){
+  const s = SEV[r.sev];
+  document.getElementById("rhead").innerHTML =
+    '<span class="sev ' + s.cls + '">' + s.t + "</span>" +
+    "<h3>" + r.id + " · " + r.nm + "<small>" + r.mitre + " · " + r.cat + " · 資料來源 " + r.src + "</small></h3>" +
+    '<button class="toggle" id="tg" aria-pressed="' + r.on + '">' +
+    (r.on ? "● ENABLED — 點擊停用" : "○ DISABLED — 點擊啟用") + "</button>";
+  document.getElementById("tg").addEventListener("click", () => {
+    r.on = !r.on;
+    render();
+  });
+}
+function table(){
+  document.getElementById("tbody").innerHTML = RULES.map(r => {
+    const s = SEV[r.sev];
+    return '<tr data-id="' + r.id + '" class="' + (r.on ? "" : "off") + (sel === r.id ? " on" : "") +
+      '"><td><b style="color:#e4ecf6">' + r.id + "</b></td><td>" + r.nm + "</td><td>" + r.mitre +
+      "</td><td>" + r.cat + "</td><td>" + r.src +
+      '</td><td><span class="sev ' + s.cls + '">' + s.t + '</span></td><td class="n">' +
+      r.hits.toLocaleString() + '</td><td class="n a">' + r.fp.toFixed(1) +
+      '%</td><td><span class="fp"><b style="width:' + Math.min(100, r.fp * 3.5) + '%"></b></span></td><td>' +
+      r.tuned + '</td><td class="' + (r.on ? "g" : "") + '">' + (r.on ? "ENABLED" : "DISABLED") + "</td></tr>";
+  }).join("");
+}
+function render(){
+  const r = RULES.find(x => x.id === sel);
+  rail(); head(r); drawTree(r); pseudo(r); stats(r); table();
+  const on = RULES.filter(x => x.on);
+  const hits = on.reduce((a, x) => a + x.hits, 0);
+  const avgFp = on.reduce((a, x) => a + x.fp, 0) / (on.length || 1);
+  document.getElementById("railMeta").textContent =
+    on.length + " / " + RULES.length + " RULES ENABLED · " + hits.toLocaleString() + " TRIGGERS / 24H";
+  document.getElementById("tblMeta").textContent =
+    RULES.length + " RULES · " + on.length + " ENABLED";
+  document.getElementById("hFp").textContent = avgFp.toFixed(1) + "%";
+}
+document.getElementById("rail").addEventListener("click", e => {
+  const b = e.target.closest(".rbtn");
+  if (b){ sel = b.dataset.id; render(); }
+});
+document.getElementById("tbody").addEventListener("click", e => {
+  const t = e.target.closest("tr");
+  if (t){ sel = t.dataset.id; render(); window.scrollTo({top: 0, behavior: "smooth"}); }
+});
+render();
+</script>
+</body>
+</html>
