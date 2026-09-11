@@ -1,0 +1,1 @@
+import{a as e,p as t}from"#entry";function n(){return t().$api}function r(){return e(`mockMode`,()=>!1)}export{r as n,n as t};

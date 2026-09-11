@@ -1,0 +1,1 @@
+import{lt as e}from"./runtime-core.esm-bundler-C_7khglX.js";import{t}from"./api-CbnQOkqM.js";import{n}from"./useApiError-oU59sxD0.js";var r=null,i=e(null);function a(){return r||o(),{lookups:i,refresh:o}}function o(){return r=t.getLookups(),r.then(e=>(i.value=e,e)).catch(e=>(r=null,n(e),null))}export{a as n,o as t};
