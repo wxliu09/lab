@@ -1,1 +1,0 @@
-import{a as e}from"./index-DV4s1VKE.js";function t(e){return e instanceof Error?e.message:String(e)}function n(n){e.error(t(n))}export{n,t};
