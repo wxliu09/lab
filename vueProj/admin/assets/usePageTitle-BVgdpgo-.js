@@ -1,0 +1,1 @@
+import{M as e}from"./runtime-core.esm-bundler-CeQl0Vmy.js";import{_t as t}from"./api-BivkFZ3_.js";function n(){let n=t(),r=!1;return e(()=>{r=!0}),e=>{r||n.setPageTitle(e)}}export{n as t};

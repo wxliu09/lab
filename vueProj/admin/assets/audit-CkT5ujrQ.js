@@ -1,0 +1,1 @@
+function e(e){let t=e.split(`.`).pop()??e;return t===`delete`||t===`reject`||t===`reject_review`?`danger`:t===`publish`||t===`import`?`success`:t===`create`||t===`submit_review`?`primary`:t===`change_password`||t===`reset_password`||t===`unpublish`?`warning`:`info`}export{e as t};

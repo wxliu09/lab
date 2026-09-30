@@ -1,1 +1,0 @@
-import{m as e}from"#entry";var t=/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;function n(){let n=e().app.baseURL.replace(/\/$/,``);return e=>e.startsWith(`/`)&&!t.test(e)?`${n}${e}`:e}export{n as t};

@@ -1,0 +1,1 @@
+import{P as e}from"./api-BivkFZ3_.js";function t(t,n=!1){return e(t,n?`minute`:`date`)??`—`}function n(t){return e(t,`second`)??`—`}export{n,t};

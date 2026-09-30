@@ -1,0 +1,1 @@
+import{t as e}from"./message-box-C4Y29upK.js";function t(t){let n=``;function r(){n=JSON.stringify(t())}function i(r){if(JSON.stringify(t())===n){r();return}e.confirm(`尚未儲存的內容將會遺失，確定關閉？`,`關閉表單`,{type:`warning`,confirmButtonText:`捨棄並關閉`,cancelButtonText:`繼續編輯`}).then(()=>r(),()=>void 0)}return{markClean:r,confirmClose:i}}export{t};

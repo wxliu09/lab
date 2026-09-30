@@ -1,1 +1,0 @@
-import{a as e}from"./index-DPheba6n.js";function t(e){return e instanceof Error?e.message:String(e)}function n(n){e.error(t(n))}export{n,t};
