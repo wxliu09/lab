@@ -1,0 +1,1 @@
+import{Vn as e,vn as t,xn as n}from"./jM1K-vny.js";function r(r){let i=e(r()[0]),a;return n(()=>{a=new IntersectionObserver(e=>{for(let t of e)t.isIntersecting&&(i.value=t.target.id)},{rootMargin:`-30% 0px -60% 0px`});for(let e of r()){let t=document.getElementById(e);t&&a.observe(t)}}),t(()=>a?.disconnect()),i}export{r as t};
