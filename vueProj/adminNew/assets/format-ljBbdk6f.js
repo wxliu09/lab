@@ -1,0 +1,1 @@
+import{j as e}from"./auth-D5Kpm3aC.js";function t(t,n=!1){return e(t,n?`minute`:`date`)??`—`}function n(t){return e(t,`second`)??`—`}export{n,t};

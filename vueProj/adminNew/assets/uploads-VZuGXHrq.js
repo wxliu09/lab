@@ -1,0 +1,1 @@
+function e(e){return e.status===`validating`&&Date.now()-Date.parse(e.uploadedAt)>6e5}function t(t){return t.status===`imported`||t.status===`rejected`?!1:t.status!==`validating`||e(t)}export{t};

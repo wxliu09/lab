@@ -1,0 +1,1 @@
+import{i as e}from"./index-CJ7Md8Mm.js";function t(e){return e instanceof Error?e.message:String(e)}function n(n){e.error(t(n))}export{n,t};

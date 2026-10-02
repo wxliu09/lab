@@ -1,0 +1,1 @@
+import{Et as e,kt as t}from"./_plugin-vue_export-helper-sny0p6xH.js";var n=`(max-width: 767px)`,r=`(min-width: 1200px)`;function i(n){let r=window.matchMedia(n),i=t(r.matches),a=e=>{i.value=e.matches};return r.addEventListener(`change`,a),e(()=>r.removeEventListener(`change`,a)),i}export{r as n,i as r,n as t};

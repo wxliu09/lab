@@ -1,0 +1,1 @@
+import{kt as e}from"./_plugin-vue_export-helper-sny0p6xH.js";import{n as t}from"./auth-D5Kpm3aC.js";import{n}from"./useApiError-UGj-2HL5.js";var r=null,i=e(null);function a(){return r||o(),{lookups:i,refresh:o}}function o(){return r=t.getLookups(),r.then(e=>(i.value=e,e)).catch(e=>(r=null,n(e),null))}export{a as n,o as t};

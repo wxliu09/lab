@@ -1,0 +1,1 @@
+import{X as e}from"./_plugin-vue_export-helper-sny0p6xH.js";import{mt as t}from"./auth-D5Kpm3aC.js";function n(){let n=t(),r=!1;return e(()=>{r=!0}),e=>{r||n.setPageTitle(e)}}export{n as t};
