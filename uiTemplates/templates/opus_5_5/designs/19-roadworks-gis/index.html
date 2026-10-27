@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>地圖總覽 — 澄港市 道路挖掘 管線施工許可</title>
+<meta name="description" content="澄港市道路挖掘管線施工許可系統：全市施工範圍地圖、日期時間軸、同路段衝突警示與許可流程總覽。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Noto+Sans+TC:wght@400..700&family=Roboto+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首：標題 + 圖框式統計條 ---------- */
+  .ov-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 28px; flex-wrap: wrap; margin-bottom: 16px; }
+  .ov-stats { grid-template-columns: repeat(5, auto); flex: none; }
+  .ov-stats .statgrid__cell { padding: 8px 16px 9px; min-width: 116px; }
+  .ov-stats .statgrid__v { font-size: 25px; }
+  .ov-stats .statgrid__f { white-space: nowrap; }
+  .ov-stats__work .statgrid__k::before { content: ''; width: 10px; height: 10px; border-radius: 2px; background: repeating-linear-gradient(-45deg, var(--ink) 0 2px, var(--hazard) 2px 4px); }
+
+  /* ---------- 地圖 + 側欄 ---------- */
+  .overview { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 16px; margin-bottom: 16px; }
+  .mapcard { display: flex; flex-direction: column; overflow: hidden; }
+  .mapcard .panel__head { flex-wrap: nowrap; }
+  .map--overview { height: clamp(460px, calc(100vh - 380px), 640px); }
+  /* 側欄不撐高格線列：高度跟著地圖卡，清單在面板內捲動 */
+  .side { position: relative; min-height: 560px; }
+  .side__in { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; }
+  .cf-panel { flex: none; overflow: hidden; }
+  .cf-panel .clash-item:last-child { border-bottom: 0; }
+  .cf-resolved { border-top: 1px solid var(--line); }
+  .cf-resolved summary { cursor: pointer; padding: 8px 16px; font-size: 12px; color: var(--ink-3); list-style: none; display: flex; align-items: center; gap: 6px; }
+  .cf-resolved summary::-webkit-details-marker { display: none; }
+  .cf-resolved summary::before { content: '▸'; transition: transform var(--dur-2) var(--ease-out); }
+  .cf-resolved[open] summary::before { transform: rotate(90deg); }
+  .cf-resolved summary:hover { color: var(--ink); }
+  .list-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .list-panel .tabs { padding: 0 8px; flex: none; }
+  .list-more { display: none; }
+  .wk.is-selected::after { content: ''; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  /* ---------- 選取卡內容 ---------- */
+  .card-prog { display: flex; align-items: center; gap: 8px; }
+  .card-prog .progress { flex: 1; min-width: 60px; }
+  .card-pair { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
+  .card-pair a { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--r); font-size: 12.5px; }
+  .card-pair a:hover { border-color: var(--line-3); background: var(--surface-2); }
+  .card-pair a .icon { margin-left: auto; color: var(--ink-3); }
+
+  /* ---------- 管線單位 ---------- */
+  .ulist { display: flex; flex-direction: column; }
+  .urow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .urow:last-child { border-bottom: 0; }
+  .urow__icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--u-soft); color: var(--u-ink); box-shadow: inset 0 0 0 2px var(--u); }
+  .urow__name { font-weight: 650; font-size: 13.5px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .urow__name span { font-weight: 400; font-size: 11.5px; color: var(--ink-3); }
+  .urow .meter { margin-top: 7px; height: 7px; }
+  .urow__num { text-align: right; font-size: 11.5px; color: var(--ink-3); line-height: 1.35; white-space: nowrap; }
+  .urow__num b { display: block; font-size: 20px; font-weight: 650; color: var(--ink); line-height: 1.1; }
+  .ulegend { padding: 10px 16px; border-top: 1px solid var(--line); }
+  /* 樣本與上方 7px 高的比例條同高 */
+  .ulegend i { width: 14px; height: 7px; background: var(--ink-3); }
+
+  /* ---------- 行政區方塊圖 ---------- */
+  .dtiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 16px; }
+  .dtile {
+    --t: 0;
+    position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; min-height: 92px;
+    padding: 10px 11px; border-radius: var(--r); text-align: left;
+    background: color-mix(in srgb, #0E5F5B calc(var(--t) * 100%), #F1F5F0);
+    border: 1px solid rgba(24, 32, 29, .08); color: var(--ink);
+    transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2), background-color .5s var(--ease-out);
+  }
+  .dtile:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+  .dtile.is-dark { color: #fff; }
+  .dtile__name { font-size: 13px; font-weight: 650; letter-spacing: .08em; }
+  .dtile__n { font-size: 24px; font-weight: 650; line-height: 1; }
+  .dtile__n small { font-size: 11px; font-weight: 500; opacity: .75; margin-left: 2px; }
+  .dtile__a { font: 500 10.5px var(--font-mono); opacity: .78; }
+  .dtile__u { display: flex; gap: 2px; height: 4px; }
+  .dtile__u i { flex: 1; border-radius: 2px; background: var(--u); opacity: .9; }
+  .dtile__u i.is-zero { opacity: .15; background: currentColor; }
+  .dlegend { display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 6px 4px 6px 10px; font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+  .dlegend__ramp { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #F1F5F0, #0E5F5B); border: 1px solid var(--line); }
+  .dlegend__ends { display: flex; justify-content: space-between; font: 500 10px var(--font-mono); }
+
+  .activity { padding: 6px 16px 10px; }
+
+  @media (max-width: 1200px) {
+    .overview { grid-template-columns: minmax(0, 1fr) 330px; }
+    .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .lower > :last-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 960px) {
+    .overview { grid-template-columns: minmax(0, 1fr); }
+    .side { min-height: 0; }
+    .side__in { position: static; }
+    .list-scroll { overflow: visible; }
+    .list-panel.is-collapsed .wk-list > li:nth-child(n + 6) { display: none; }
+    .list-more { display: flex; justify-content: center; padding: 10px; border-top: 1px solid var(--line); }
+    .list-panel:not(.is-collapsed) .list-more [data-more-label]::after { content: ''; }
+  }
+  @media (max-width: 760px) {
+    .ov-head { flex-direction: column; align-items: stretch; }
+    .ov-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ov-stats .statgrid__cell { min-width: 0; }
+    .ov-stats .statgrid__cell:last-child { grid-column: 1 / -1; }
+    .ov-stats .statgrid__f { white-space: normal; }
+    .map--overview { height: 400px; }
+    .mapcard .panel__head { flex-wrap: wrap; }
+    .mapcard .panel__actions { width: 100%; }
+    .mapcard .panel__actions .select { flex: 1; }
+    .lower { grid-template-columns: minmax(0, 1fr); }
+    .lower > :last-child { grid-column: auto; }
+    .map--overview .map-card .kv, .map--overview .map-card .card-pair + p { display: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要內容</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="brand" href="index.html" aria-label="道路挖掘許可 首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#18201D"/>
+        <path d="M4.5 12.5H12M24 12.5h7.5" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M12 12.5 13.6 29h8.8L24 12.5" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="16" cy="25" r="2.5" fill="#F5A623"/>
+        <circle cx="20.4" cy="25" r="2.5" fill="#2F80ED"/>
+        <circle cx="18.2" cy="20.8" r="2.3" fill="#27AE60"/>
+        <path d="M14.5 7h7" stroke="#F5C518" stroke-width="2" stroke-dasharray="2 1.5"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">道路挖掘許可</span><span class="brand__sub">CHENGGANG · ROADWORKS</span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <a class="nav__link" href="index.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>地圖總覽</a>
+      <a class="nav__link" href="permits.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>許可清單<span class="nav__count" data-count="pending" title="審查中件數">10</span></a>
+      <a class="nav__link" href="permit.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>許可詳情</a>
+      <a class="nav__link" href="apply.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 8 6l7 9 5-7"/><circle cx="4" cy="19" r="1.6"/><circle cx="8" cy="6" r="1.6"/><circle cx="15" cy="15" r="1.6"/><circle cx="20" cy="8" r="1.6"/></svg>線上申請</a>
+      <a class="nav__link nav__back" href="../../index.html">← 返回目錄</a>
+    </nav>
+    <div class="topbar__tools">
+      <button class="search-btn" type="button" data-search aria-label="快速搜尋許可"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>搜尋案號、路段</span><span class="kbd">/</span></button>
+      <span class="today-chip" data-today>2026/10/22 週四 10:24</span>
+      <button class="icon-btn" type="button" data-notify aria-label="通知" aria-haspopup="true" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><span class="icon-btn__dot"></span></button>
+      <button class="user" type="button" data-user aria-label="使用者選單：林雅雯" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true">林</span><span class="user__name">林雅雯<small>道路管線科・承辦</small></span></button>
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="ov-head">
+    <div class="page-head__main">
+      <p class="eyebrow"><span class="ref">GIS-01</span>地圖總覽</p>
+      <h1 class="page-title">全市道路挖掘施工圖台</h1>
+      <p class="page-desc">資料時間 <b>2026/10/22（四）10:24</b>・8 個行政區・在案許可 <b data-count="total">47</b> 件・拖動時間軸檢視任一日的道路佔用</p>
+    </div>
+    <dl class="statgrid ov-stats" id="stats" aria-label="今日概況"></dl>
+  </div>
+
+  <div class="overview">
+    <section class="panel mapcard" aria-labelledby="mapTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="mapTitle"><span class="ref">A1</span>施工範圍圖</h2>
+        <p class="panel__sub hide-sm">點選範圍查看許可・紅色斜線為同路段同期衝突</p>
+        <div class="panel__actions">
+          <label class="sr-only" for="roadJump">路段定位</label>
+          <select class="select select--sm" id="roadJump"></select>
+          <button class="btn btn--sm" type="button" id="btnExport"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>匯出圖面</button>
+          <a class="btn btn--sm btn--primary hide-sm" href="apply.html"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新增申請</a>
+        </div>
+      </header>
+      <div class="map map--overview" id="map"></div>
+      <div id="timeline"></div>
+    </section>
+
+    <aside class="side" aria-label="衝突與施工清單">
+      <div class="side__in">
+        <section class="panel panel--alert cf-panel" aria-labelledby="cfTitle">
+          <header class="panel__head">
+            <h2 class="panel__title" id="cfTitle"><span class="ref">A2</span>衝突警示</h2>
+            <span class="badge badge--danger" id="cfCount" style="margin-left:auto"></span>
+          </header>
+          <div id="cfList"></div>
+        </section>
+
+        <section class="panel list-panel is-collapsed" aria-labelledby="sideTitle">
+          <header class="panel__head">
+            <h2 class="panel__title"><span class="ref">A3</span><span id="sideTitle">今日施工概況</span></h2>
+            <div class="panel__actions"><button class="btn btn--sm btn--ghost" type="button" id="btnToday" hidden>回到今日</button></div>
+          </header>
+          <div class="tabs" role="tablist" aria-label="清單分類" id="sideTabs">
+            <button class="tab" type="button" role="tab" id="tab-active" aria-controls="tp-active" aria-selected="true">施工中 <span class="count" id="nActive">0</span></button>
+            <button class="tab" type="button" role="tab" id="tab-week" aria-controls="tp-week" aria-selected="false"><span id="weekLabel">本週核准</span> <span class="count" id="nWeek">0</span></button>
+            <button class="tab" type="button" role="tab" id="tab-soon" aria-controls="tp-soon" aria-selected="false">7 日內進場 <span class="count" id="nSoon">0</span></button>
+          </div>
+          <div class="scroll-area list-scroll">
+            <div id="tp-active" role="tabpanel" aria-labelledby="tab-active"></div>
+            <div id="tp-week" role="tabpanel" aria-labelledby="tab-week" hidden></div>
+            <div id="tp-soon" role="tabpanel" aria-labelledby="tab-soon" hidden></div>
+          </div>
+          <div class="list-more"><button class="btn btn--sm btn--ghost" type="button" id="btnMore">顯示全部</button></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <section class="panel" data-reveal aria-labelledby="pipeTitle" style="margin-bottom:16px">
+    <header class="panel__head">
+      <h2 class="panel__title" id="pipeTitle"><span class="ref">B1</span>許可流程管線</h2>
+      <p class="panel__sub hide-sm">申請 → 自動衝突檢查 → 會辦（交通・管線協調・環保）→ 核准 → 施工 → 完工 → 刨鋪驗收</p>
+      <div class="panel__actions"><a class="btn btn--sm btn--ghost" href="permits.html">全部許可<svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+    </header>
+    <div class="pipeline" id="pipeline" data-anim></div>
+  </section>
+
+  <div class="grid-3 lower">
+    <section class="panel" data-reveal aria-labelledby="uTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="uTitle"><span class="ref">C1</span>管線單位</h2>
+        <p class="panel__sub">在案許可的流程分布</p>
+      </header>
+      <ul class="ulist" id="ulist"></ul>
+      <div class="legend ulegend" aria-hidden="true">
+        <span><i style="background:repeating-linear-gradient(-45deg,#AEB8AD 0 2px,#fff 2px 4px)"></i>審查中</span>
+        <span><i style="opacity:.45"></i>已核准</span>
+        <span><i></i>施工中</span>
+        <span><i style="background:#8B958F"></i>完工・驗收</span>
+        <span><i style="background:#DDE3DB"></i>結案</span>
+      </div>
+    </section>
+
+    <section class="panel" data-reveal style="--i:1" aria-labelledby="dTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="dTitle"><span class="ref">C2</span>行政區施工量</h2>
+        <p class="panel__sub" id="dSub">10/22 施工中</p>
+      </header>
+      <div class="dtiles" id="dtiles"></div>
+    </section>
+
+    <section class="panel" data-reveal style="--i:2" aria-labelledby="aTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="aTitle"><span class="ref">C3</span>近期動態</h2>
+        <div class="panel__actions"><a class="btn btn--sm btn--ghost" href="permits.html">全部紀錄</a></div>
+      </header>
+      <div class="activity"><ol class="log" id="activity"></ol></div>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__in">
+    <div class="titleblock">
+      <div class="titleblock__cell"><span class="titleblock__k">系統</span><span class="titleblock__v">道路挖掘管線施工許可</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">主管機關</span><span class="titleblock__v">澄港市政府工務局 道路管線科</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">圖資版本</span><span class="titleblock__v mono">CG-GIS 2026.10</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">座標系統</span><span class="titleblock__v mono">CG-TM 平面座標</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">版次</span><span class="titleblock__v mono">v3.8.2</span></div>
+    </div>
+    <p class="site-footer__note">本系統為作品集虛構示範：澄港市、機關、管線單位、施工廠商、人名與案件皆為虛構，地圖為自繪示意圖，不對應任何真實地點。</p>
+    <div class="site-footer__end">
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <span class="mono muted" style="font-size:11px">澄港市政府工務局（虛構）</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { UTIL, UTIL_ORDER, STATUS, fmt, icon, esc, utilChip, statusBadge } = App;
+  const PERMITS = App.DATA.permits;
+  const TODAY = App.TODAY;
+  const $ = s => document.querySelector(s);
+  const small = matchMedia('(max-width: 760px)');
+  const qDate = App.param('date');
+  let date = qDate && /^2026-(09|1[0-2])-\d{2}$/.test(qDate) ? qDate : TODAY;
+  const followed = new Set();
+  const live = (c, d = date) => { const n = App.day(d); return n >= c.d0 && n <= c.d1; };
+  const working = p => !App.isPending(p) && p.status !== 'returned';
+
+  /* ---------- 統計條（以「今日」為準，不跟時間軸走） ---------- */
+  function renderStats() {
+    const c = App.counts();
+    const actives = PERMITS.filter(p => p.status === 'active');
+    const night = actives.filter(p => p.hours.startsWith('夜間')).length;
+    const emergency = actives.filter(p => p.emergency).length;
+    const [w0, w1] = App.weekRange(TODAY);
+    const liveCf = App.conflictsOn(TODAY).filter(x => x.status !== 'resolved').length;
+    const overdue = PERMITS.filter(p => p.status === 'review' && App.day(TODAY) - App.day(p.applied) > 10).length;
+    const waits = PERMITS.filter(p => p.status === 'done' || p.status === 'paving').map(p => App.day(TODAY) - App.day(p.end));
+    $('#stats').innerHTML = `
+      <div class="statgrid__cell ov-stats__work"><dt class="statgrid__k">今日施工中</dt><dd class="statgrid__v"><span data-count="active">${c.active}</span><small>件</small></dd><dd class="statgrid__f">夜間 ${night}・緊急搶修 ${emergency}</dd></div>
+      <div class="statgrid__cell"><dt class="statgrid__k">本週核准</dt><dd class="statgrid__v"><span data-count="approvedWeek">${c.approvedWeek}</span><small>件</small></dd><dd class="statgrid__f mono">${fmt.range(w0, w1)}</dd></div>
+      <div class="statgrid__cell statgrid__cell--danger"><dt class="statgrid__k"><i class="hatch-swatch" style="width:12px;height:9px"></i>衝突待處理</dt><dd class="statgrid__v"><span data-count="conflicts">${c.conflicts}</span><small>件</small></dd><dd class="statgrid__f">今日發生 ${liveCf} 件</dd></div>
+      <div class="statgrid__cell"><dt class="statgrid__k">會辦中</dt><dd class="statgrid__v"><span data-count="review">${c.review}</span><small>件</small></dd><dd class="statgrid__f">${overdue ? `逾期 ${overdue} 件（> 10 天）` : '無逾期'}</dd></div>
+      <div class="statgrid__cell"><dt class="statgrid__k">待刨鋪驗收</dt><dd class="statgrid__v"><span data-count="paving">${c.paving}</span><small>件</small></dd><dd class="statgrid__f">${waits.length ? `最久已等 ${Math.max(...waits)} 天` : '無待驗收'}</dd></div>`;
+  }
+
+  /* ---------- 地圖與時間軸 ---------- */
+  const mapEl = $('#map');
+  let card = null, cardTarget = null;
+  const map = App.map.create(mapEl, {
+    frame: true, date,
+    // 手機地圖較窄：只框住市中心，避免上下留下大片空白
+    fit: small.matches ? [850, 150, 3550, 2250] : 'permits',
+    titleblock: { title: '道路挖掘施工總圖', no: 'CG-RW-115-10' },
+    // 桌機：選取卡與圖層面板都浮在左上，聚焦時避開；手機：選取卡固定在底部
+    inset: () => {
+      if (small.matches) return { bottom: card ? card.offsetHeight + 16 : 0 };
+      const layersBox = mapEl.querySelector('.map-layers');
+      const panelW = card ? card.offsetWidth : layersBox && layersBox.dataset.open === 'true' ? layersBox.offsetWidth : 0;
+      return { left: panelW ? panelW + 12 : 0, right: 52 };
+    },
+    onSelect: p => {
+      if (p) { showPermitCard(p); map.panIntoView(p.bbox); }
+      else if (cardTarget && cardTarget.type === 'permit') closeCard();
+      markList();
+    },
+    onConflict: c => { showConflictCard(c); map.panIntoView(c.bbox); },
+  });
+  map.on('click', () => { if (cardTarget && cardTarget.type === 'conflict') closeCard(); });
+  App.map.layerPanel(map);
+
+  const tl = App.timeline($('#timeline'), { value: date, onInput: d => setDate(d) });
+
+  function setDate(d) {
+    date = d;
+    map.setDate(d);
+    renderSide();
+    renderDistricts();
+    refreshCard();
+  }
+
+  // 路段定位
+  const jump = $('#roadJump');
+  jump.innerHTML = '<option value="">路段定位…</option>' + App.DATA.roads.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  jump.addEventListener('change', () => {
+    const r = App.DATA.roads.find(x => x.id === jump.value);
+    if (!r) { map.fit(); return; }
+    const [x0, y0, x1, y1] = App.geo.bbox([r.line]);
+    map.focusBox([x0 - 120, y0 - 120, x1 + 120, y1 + 120], { maxK: 1.6 });
+  });
+
+  $('#btnExport').addEventListener('click', () => {
+    const ratio = map.el.querySelector('[data-ratio]').textContent;
+    App.toast('已產生圖面 PDF', { desc: `道路挖掘施工總圖 CG-RW-115-10・${fmt.md(date)}・比例 ${ratio}・A3 橫式`, tone: 'ok' });
+  });
+
+  /* ---------- 選取卡 ---------- */
+  function closeCard() {
+    if (card) card.remove();
+    card = null;
+    cardTarget = null;
+  }
+  function mountCard(target, html, color) {
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'map-card';
+      card.setAttribute('role', 'dialog');
+      mapEl.appendChild(card);
+      card.addEventListener('click', e => {
+        if (e.target.closest('[data-close]')) { const t = cardTarget; closeCard(); if (t && t.type === 'permit') map.select(null); }
+        const f = e.target.closest('[data-follow]');
+        if (f) {
+          const id = f.dataset.follow;
+          const on = !followed.has(id);
+          on ? followed.add(id) : followed.delete(id);
+          f.textContent = on ? '已追蹤' : '追蹤';
+          f.setAttribute('aria-pressed', String(on));
+          App.toast(on ? `已追蹤 ${id}` : `已取消追蹤 ${id}`, { desc: on ? '狀態變更、開工與完工時會通知您。' : '', tone: on ? 'ok' : 'info' });
+        }
+        const loc = e.target.closest('[data-locate]');
+        if (loc) { map.focusPermit(loc.dataset.locate); map.flash(loc.dataset.locate); }
+      });
+    }
+    cardTarget = target;
+    card.style.setProperty('--u', color);
+    card.setAttribute('aria-label', target.id);
+    card.innerHTML = html;
+  }
+  function permitCardHtml(p) {
+    const n = App.day(date);
+    const pr = App.progress(p, date);
+    const cs = App.conflictsOf(p).filter(c => c.status !== 'resolved');
+    const state = n < p.d0 ? `尚未進場（${p.d0 - n} 天後）` : n > p.d1 ? `已於 ${fmt.md(p.end)} 完成佔用` : null;
+    return `
+      <div class="map-card__head"><span class="pid">${p.id}</span>${statusBadge(p.status)}${p.emergency ? '<span class="badge badge--danger">搶修</span>' : ''}<button class="icon-btn icon-btn--sm" type="button" data-close aria-label="關閉">${icon('x', 'icon icon--sm')}</button></div>
+      <div class="map-card__body">
+        <p class="map-card__title">${esc(p.segment)} <span class="mono" style="font-size:12.5px;font-weight:500">${p.station}</span></p>
+        <p class="map-card__desc">${utilChip(p.utility)} ${esc(UTIL[p.utility].short)}・${esc(p.purpose)}</p>
+        <dl class="kv kv--tight">
+          <dt>佔用期間</dt><dd class="mono">${fmt.range(p.start, p.end)}（${p.days} 天）</dd>
+          <dt>施工進度</dt><dd>${state ? esc(state) : `<span class="card-prog"><span class="progress" style="--u:${UTIL[p.utility].color}"><i style="--p:${pr.frac.toFixed(3)}"></i></span><span class="mono">${pr.day}/${pr.total} 天</span></span>`}</dd>
+          <dt>施工時段</dt><dd>${esc(p.hours)}</dd>
+          <dt>範圍面積</dt><dd class="mono">${fmt.area(p.area)}・${p.length} m</dd>
+          <dt>行政區</dt><dd>${esc(p.district)}</dd>
+          <dt>施工廠商</dt><dd>${esc(p.contractor)}</dd>
+        </dl>
+        ${cs.map(c => {
+          const other = c.a === p ? c.b : c.a;
+          return `<div class="callout callout--danger"><span class="callout__icon">${icon('alert', 'icon icon--sm')}</span><div class="callout__body"><b>${c.id}</b> 與 ${other.id}（${UTIL[other.utility].name}）重疊 ${c.length} m・${fmt.range(c.from, c.to)}</div></div>`;
+        }).join('')}
+      </div>
+      <div class="map-card__foot"><a class="btn btn--sm btn--primary" href="${App.permitUrl(p.id)}">查看許可詳情${icon('arrowR', 'icon icon--sm')}</a><button class="btn btn--sm" type="button" data-follow="${p.id}" aria-pressed="${followed.has(p.id)}">${followed.has(p.id) ? '已追蹤' : '追蹤'}</button></div>`;
+  }
+  function showPermitCard(p) { mountCard({ type: 'permit', id: p.id }, permitCardHtml(p), UTIL[p.utility].color); }
+  function conflictCardHtml(c) {
+    const st = App.CONFLICT_STATUS[c.status];
+    const row = p => `<a href="${App.permitUrl(p.id)}"><span class="swatch" style="--u:${UTIL[p.utility].color}"></span><span><span class="pid">${p.id}</span>・${UTIL[p.utility].name}<br><span class="muted" style="font-size:11.5px">${fmt.range(p.start, p.end)}・${esc(STATUS[p.status].label)}</span></span>${icon('arrowR', 'icon icon--sm')}</a>`;
+    return `
+      <div class="map-card__head"><span class="pid" style="color:var(--danger-ink)">${c.id}</span><span class="badge badge--${st.tone}">${st.label}</span>${live(c) ? '<span class="badge badge--danger badge--live">當日</span>' : ''}<button class="icon-btn icon-btn--sm" type="button" data-close aria-label="關閉">${icon('x', 'icon icon--sm')}</button></div>
+      <div class="map-card__body">
+        <p class="map-card__title">${esc(c.road)} 同路段衝突</p>
+        <p class="map-card__desc mono">重疊 ${c.length} m・${fmt.range(c.from, c.to)}（${c.days} 天）</p>
+        <div class="card-pair">${row(c.a)}${row(c.b)}</div>
+        <p style="font-size:12.5px;color:var(--ink-2);margin-top:8px;line-height:1.55">${esc(c.note)}</p>
+      </div>
+      <div class="map-card__foot"><button class="btn btn--sm btn--primary" type="button" data-locate="${c.a.id}">定位 ${c.a.id.slice(-4)}</button><button class="btn btn--sm" type="button" data-locate="${c.b.id}">定位 ${c.b.id.slice(-4)}</button></div>`;
+  }
+  function showConflictCard(c) {
+    if (map.selected()) map.select(null);
+    mountCard({ type: 'conflict', id: c.id }, conflictCardHtml(c), '#D92D20');
+  }
+  function refreshCard() {
+    if (!cardTarget) return;
+    if (cardTarget.type === 'permit') card.innerHTML = permitCardHtml(App.getPermit(cardTarget.id));
+    else card.innerHTML = conflictCardHtml(App.conflicts().find(c => c.id === cardTarget.id));
+  }
+
+  /* ---------- 側欄 ---------- */
+  function conflictItem(c) {
+    const st = App.CONFLICT_STATUS[c.status];
+    const pair = p => `<span class="nowrap"><i class="swatch" style="--u:${UTIL[p.utility].color};width:8px;height:8px"></i> ${p.id.slice(-4)}</span>`;
+    return `<button class="clash-item${live(c) ? ' is-live' : ''}${c.status === 'resolved' ? ' is-resolved' : ''}" type="button" data-cid="${c.id}">
+      <span class="clash-item__top"><span class="clash-item__code">${c.id}</span><span class="clash-item__road truncate">${esc(c.road)}</span>${live(c) && c.status !== 'resolved' ? '<span class="badge badge--danger badge--live">當日</span>' : ''}</span>
+      <span class="badge badge--${st.tone}">${st.label}</span>
+      <span class="clash-item__pair">${utilChip(c.a.utility, { plain: true, label: c.a.id.slice(-4) })}<span class="clash-item__x">×</span>${utilChip(c.b.utility, { plain: true, label: c.b.id.slice(-4) })}</span>
+      <span class="clash-item__meta">${c.length} m・${fmt.range(c.from, c.to)}</span>
+    </button>`;
+  }
+  function wkItem(p, aside) {
+    const n = App.day(date);
+    const pr = App.progress(p, date);
+    const onD = n >= p.d0 && n <= p.d1;
+    return `<li><button class="wk${map.selected() === p ? ' is-selected' : ''}" type="button" data-pid="${p.id}" style="--u:${UTIL[p.utility].color}">
+      <span class="wk__top"><span class="pid">${p.id}</span>${utilChip(p.utility)}${App.conflictsOf(p).some(c => c.status !== 'resolved' && live(c)) ? '<span class="badge badge--danger">衝突</span>' : ''}</span>
+      <span class="wk__aside">${aside}</span>
+      <span class="wk__road">${esc(p.segment)} <span class="mono muted" style="font-size:11.5px;font-weight:500">${p.station}</span></span>
+      <span class="wk__meta truncate">${esc(UTIL[p.utility].short)}・${esc(p.purpose)}</span>
+      ${onD ? `<span class="wk__prog"><span class="progress" style="--u:${UTIL[p.utility].color}"><i style="--p:${pr.frac.toFixed(3)}"></i></span>${fmt.range(p.start, p.end)}</span>` : ''}
+    </button></li>`;
+  }
+  function renderSide() {
+    const n = App.day(date);
+    const isToday = date === TODAY;
+
+    const cs = App.conflicts();
+    const open = cs.filter(c => c.status !== 'resolved').sort((a, b) => (live(b) - live(a)) || a.d0 - b.d0);
+    const resolved = cs.filter(c => c.status === 'resolved');
+    const liveN = open.filter(c => live(c)).length;
+    $('#cfCount').textContent = `${open.length} 件待處理${liveN ? `・${isToday ? '今日' : '當日'} ${liveN}` : ''}`;
+    $('#cfList').innerHTML = open.map(conflictItem).join('') +
+      (resolved.length ? `<details class="cf-resolved"${$('.cf-resolved[open]') ? ' open' : ''}><summary>已排解 ${resolved.length} 件</summary>${resolved.map(conflictItem).join('')}</details>` : '');
+
+    $('#sideTitle').textContent = isToday ? '今日施工概況' : `${fmt.mdw(date)} 施工概況`;
+    $('#btnToday').hidden = isToday;
+
+    const actives = PERMITS.filter(p => working(p) && n >= p.d0 && n <= p.d1)
+      .sort((a, b) => (App.conflictsOf(b).some(c => live(c) && c.status !== 'resolved') - App.conflictsOf(a).some(c => live(c) && c.status !== 'resolved')) || a.d1 - b.d1);
+    const [w0, w1] = App.weekRange(date);
+    const week = PERMITS.filter(p => p.approved && p.approved >= w0 && p.approved <= w1).sort((a, b) => b.approved.localeCompare(a.approved));
+    const soon = PERMITS.filter(p => working(p) && p.d0 > n && p.d0 - n <= 7).sort((a, b) => a.d0 - b.d0);
+    const thisWeek = TODAY >= w0 && TODAY <= w1;
+    $('#weekLabel').textContent = thisWeek ? '本週核准' : '該週核准';
+
+    $('#nActive').textContent = actives.length;
+    $('#nWeek').textContent = week.length;
+    $('#nSoon').textContent = soon.length;
+    const list = (arr, aside, empty) => arr.length
+      ? `<ul class="wk-list">${arr.map(p => wkItem(p, aside(p))).join('')}</ul>`
+      : App.emptyState({ art: 'map', title: empty[0], text: empty[1] });
+    $('#tp-active').innerHTML = list(actives, p => `${App.progress(p, date).day}/${p.days} 天`, ['這一天沒有施工中的範圍', '拖動時間軸到其他日期，或開啟「審查中申請」圖層。']);
+    $('#tp-week').innerHTML = list(week, p => `核准 ${fmt.md(p.approved)}`, [`${fmt.range(w0, w1)} 沒有核准案件`, '核准紀錄以許可核定日計算。']);
+    $('#tp-soon').innerHTML = list(soon, p => fmt.rel(p.start, date), ['7 日內沒有預定進場的許可', '已核准但尚未開工的案件會出現在這裡。']);
+    const longest = Math.max(actives.length, week.length, soon.length);
+    $('.list-more').hidden = longest <= 5;
+    $('#btnMore').textContent = $('.list-panel').classList.contains('is-collapsed') ? '顯示全部' : '收合清單';
+  }
+  function markList() {
+    const sel = map.selected();
+    document.querySelectorAll('.wk').forEach(b => b.classList.toggle('is-selected', !!sel && b.dataset.pid === sel.id));
+  }
+  function ensureMapVisible() {
+    const r = mapEl.getBoundingClientRect();
+    if (r.top < 60 || r.bottom > innerHeight) mapEl.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  }
+  function locatePermit(id) {
+    map.select(id);
+    map.focusPermit(id);
+    ensureMapVisible();
+  }
+  function locateConflict(id) {
+    const c = App.conflicts().find(x => x.id === id);
+    if (!c) return;
+    // 衝突不在目前日期時，把時間軸移到重疊開始日，地圖才看得到斜線
+    if (!live(c)) tl.set(c.from);
+    showConflictCard(c);
+    map.focusConflict(id);
+    setTimeout(() => map.flash(id), 650);
+    ensureMapVisible();
+  }
+  $('.side').addEventListener('click', e => {
+    const cf = e.target.closest('[data-cid]');
+    if (cf) { locateConflict(cf.dataset.cid); return; }
+    const wk = e.target.closest('[data-pid]');
+    if (wk) locatePermit(wk.dataset.pid);
+  });
+  $('#btnToday').addEventListener('click', () => tl.set(TODAY));
+  $('#btnMore').addEventListener('click', () => {
+    const panel = $('.list-panel');
+    panel.classList.toggle('is-collapsed');
+    $('#btnMore').textContent = panel.classList.contains('is-collapsed') ? '顯示全部' : '收合清單';
+  });
+  App.tabs($('#sideTabs'));
+
+  /* ---------- 流程管線 ---------- */
+  function renderPipeline() {
+    const by = s => PERMITS.filter(p => s.includes(p.status));
+    const n = App.day(TODAY);
+    const review = by(['review']);
+    const waits = review.map(p => n - App.day(p.applied));
+    const done = by(['done']);
+    const paving = by(['paving']);
+    const fails = paving.filter(p => App.acceptanceOf(p).some(a => a.state === 'fail')).length;
+    const stages = [
+      { label: '申請', st: ['returned'], ic: 'doc', sub: `退回補正 ${by(['returned']).length} 件`, hold: by(['returned']).length > 0 },
+      { label: '衝突檢查', st: ['checking', 'coordinating'], ic: 'alert', sub: `檢查中 ${by(['checking']).length}・協調中 ${by(['coordinating']).length}`, hold: by(['coordinating']).length > 0 },
+      { label: '會辦', st: ['review'], ic: 'stack', sub: waits.length ? `平均等候 ${fmt.dec(waits.reduce((a, b) => a + b, 0) / waits.length)} 天` : '無待會辦' },
+      { label: '核准', st: ['approved'], ic: 'check', sub: `7 日內進場 ${by(['approved']).filter(p => p.d0 - n <= 7).length} 件` },
+      { label: '施工', st: ['active'], ic: 'hard', sub: `緊急搶修 ${by(['active']).filter(p => p.emergency).length} 件`, work: true },
+      { label: '完工', st: ['done'], ic: 'flag', sub: done.length ? `待刨鋪・最久 ${Math.max(...done.map(p => n - App.day(p.end)))} 天` : '無待刨鋪' },
+      { label: '刨鋪驗收', st: ['paving'], ic: 'paving', sub: fails ? `${fails} 件平整度複驗` : '驗收排程中' },
+    ];
+    const closedOct = PERMITS.filter(p => p.status === 'accepted' && p.accepted && p.accepted.startsWith('2026-10')).length;
+    $('#pipeline').innerHTML = `<div class="pipeline__pipe" aria-hidden="true"><span class="pipeline__flow"></span></div>` +
+      stages.map(s => `
+        <a class="pipeline__stage${s.work ? ' pipeline__stage--work' : ''}${s.hold ? ' pipeline__stage--hold' : ''}" href="permits.html?status=${s.st.join(',')}">
+          <span class="pipeline__node">${icon(s.ic)}</span>
+          <span class="pipeline__n">${by(s.st).length}</span>
+          <span class="pipeline__label">${s.label}</span>
+          <span class="pipeline__sub">${esc(s.sub)}</span>
+        </a>`).join('') +
+      `<a class="pipeline__end" href="permits.html?status=accepted"><span class="eyebrow">結案</span><span class="pipeline__n" style="margin-top:2px">${closedOct}</span><span class="pipeline__sub">10 月驗收合格</span></a>`;
+  }
+
+  /* ---------- 管線單位 ---------- */
+  function renderUtilities() {
+    const groups = [
+      [['returned', 'checking', 'coordinating', 'review'], 'repeating-linear-gradient(-45deg,#AEB8AD 0 2px,#fff 2px 4px)'],
+      [['approved'], 'color-mix(in srgb, var(--u) 45%, #fff)'],
+      [['active'], 'var(--u)'],
+      [['done', 'paving'], '#8B958F'],
+      [['accepted'], '#DDE3DB'],
+    ];
+    $('#ulist').innerHTML = UTIL_ORDER.map(u => {
+      const ps = PERMITS.filter(p => p.utility === u);
+      const act = ps.filter(p => p.status === 'active').length;
+      const uu = UTIL[u];
+      return `<li class="urow" style="--u:${uu.color};--u-ink:${uu.ink};--u-soft:${uu.soft}">
+        <span class="urow__icon">${icon(uu.icon)}</span>
+        <div style="min-width:0"><p class="urow__name">${uu.name}<span class="truncate">${esc(uu.org)}</span></p>
+          <div class="meter" role="img" aria-label="${uu.name}：${groups.map(([st]) => ps.filter(p => st.includes(p.status)).length).join('、')} 件（審查、核准、施工、完工驗收、結案）">${groups.map(([st, bg]) => { const c = ps.filter(p => st.includes(p.status)).length; return c ? `<i style="flex:${c};background:${bg}"></i>` : ''; }).join('')}</div></div>
+        <p class="urow__num"><b>${act}</b>施工中・共 ${ps.length}</p>
+      </li>`;
+    }).join('');
+  }
+
+  /* ---------- 行政區 ---------- */
+  const TILE_ORDER = ['yunling', 'beian', 'xinwan', 'shanjiao', 'jiucheng', 'xizhou', 'yantian', 'gangcheng'];
+  function renderDistricts() {
+    const n = App.day(date);
+    const on = PERMITS.filter(p => working(p) && n >= p.d0 && n <= p.d1);
+    const rows = TILE_ORDER.map(id => {
+      const d = App.DATA.districts.find(x => x.id === id);
+      const ps = on.filter(p => p.districtId === id);
+      return { d, ps, area: ps.reduce((s, p) => s + p.area, 0) };
+    });
+    const max = Math.max(1, ...rows.map(r => r.area));
+    $('#dSub').textContent = `${date === TODAY ? '今日' : fmt.md(date)} 施工中範圍`;
+    $('#dtiles').innerHTML = rows.map(r => {
+      const t = r.area ? .12 + .78 * r.area / max : 0;
+      return `<button class="dtile${t > .5 ? ' is-dark' : ''}" type="button" data-district="${r.d.id}" style="--t:${t.toFixed(3)}" aria-label="${r.d.name}：施工中 ${r.ps.length} 件，${fmt.area(r.area)}，按下在地圖上定位">
+        <span class="dtile__name">${r.d.name}</span>
+        <span><span class="dtile__n">${r.ps.length}<small>件</small></span><br><span class="dtile__a">${fmt.area(r.area)}</span></span>
+        <span class="dtile__u" aria-hidden="true">${UTIL_ORDER.map(u => `<i style="--u:${UTIL[u].color}"${r.ps.some(p => p.utility === u) ? '' : ' class="is-zero"'}></i>`).join('')}</span>
+      </button>`;
+    }).join('') + `<div class="dlegend"><span>施工面積</span><span class="dlegend__ramp"></span><span class="dlegend__ends"><span>0</span><span>${fmt.num(max)} m²</span></span><span>隨時間軸日期變化</span></div>`;
+  }
+  $('#dtiles').addEventListener('click', e => {
+    const b = e.target.closest('[data-district]');
+    if (!b) return;
+    const d = App.DATA.districts.find(x => x.id === b.dataset.district);
+    const [x0, y0, x1, y1] = d.bbox;
+    map.focusBox([Math.max(0, x0), Math.max(0, y0), Math.min(App.WORLD.w, x1), Math.min(App.WORLD.h, y1)], { maxK: 1.2 });
+    ensureMapVisible();
+  });
+
+  /* ---------- 近期動態 ---------- */
+  function renderActivity() {
+    $('#activity').innerHTML = App.DATA.activity.slice(0, 7).map(a => {
+      const [d, t] = a.t.split(' ');
+      return `<li class="log__item"><span class="log__time"><b>${fmt.md(d)}</b>${t}</span><span class="log__dot${a.tone ? ' log__dot--' + a.tone : ''}" aria-hidden="true"></span>
+        <p class="log__body"><span class="log__who">${esc(App.personName(a.who))}</span>　${App.linkify(a.text)}</p></li>`;
+    }).join('');
+  }
+
+  renderStats();
+  renderSide();
+  renderPipeline();
+  renderUtilities();
+  renderDistricts();
+  renderActivity();
+  App.watchAnim($('#pipeline').parentElement);
+
+  // 任何資料變更（含復原）都走同一套重繪
+  App.on('data', () => { renderStats(); renderSide(); renderPipeline(); renderUtilities(); renderDistricts(); renderActivity(); refreshCard(); });
+
+  // 從通知或其他頁連過來：?focus=CF-031 定位衝突、?id=RW115-0398 定位許可
+  const focus = App.param('focus'), pid = App.param('id');
+  if (focus) setTimeout(() => locateConflict(focus), 300);
+  else if (pid && App.getPermit(pid)) setTimeout(() => { const p = App.getPermit(pid); if (!App.onDate(p, date)) tl.set(p.start); locatePermit(pid); }, 300);
+});
+</script>
+</body>
+</html>

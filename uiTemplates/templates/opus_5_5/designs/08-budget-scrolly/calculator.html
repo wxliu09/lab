@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>稅金計算器 — 你的稅金去哪裡？澄港市 2027 年度總預算</title>
+<meta name="description" content="輸入年收入、扶養人數與自住房屋，估算你一年貢獻給澄港市政府多少錢、分到哪些用途，又換成了幾份營養午餐、幾公尺人行道。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@500;700;800;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首：標題＋公式 ---------- */
+  .calc-head.page-head { padding-block: clamp(32px, 4.4vw, 64px) clamp(28px, 3.4vw, 48px); }
+  .calc-head .page-head__title { font-size: clamp(2.625rem, 1.4rem + 3.4vw, 4.75rem); font-weight: 900; letter-spacing: -.025em; line-height: 1.02; }
+  .calc-head .dek { font-size: var(--fs-lg); line-height: 1.7; max-width: 32em; }
+
+  /* 公式卡：三個來源相加 ＝ 你的那一份 */
+  .calc-formula { border-top: 3px solid var(--ink); padding-top: var(--sp-4); }
+  .calc-formula__title { font: 600 var(--fs-xs)/1.3 var(--font-mono); letter-spacing: .08em; color: var(--ink-2); margin-bottom: var(--sp-4); }
+  .calc-formula__eq {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.3fr);
+    column-gap: 8px; row-gap: 8px;
+    align-items: stretch;
+  }
+  .calc-term { display: grid; align-content: center; gap: 4px; padding: 10px 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule-2); }
+  .calc-term__name { font-weight: 600; font-size: var(--fs-sm); line-height: 1.3; }
+  .calc-term__rate { font: 500 var(--fs-xs)/1 var(--font-mono); color: var(--ink-3); }
+  .calc-op { align-self: center; font: 500 var(--fs-lg)/1 var(--font-mono); color: var(--ink-3); }
+  /* 大括號：用細框畫出「國稅」與「地方稅」兩段 */
+  .calc-brace { grid-row: 2; position: relative; height: 10px; border: 1.5px solid var(--ink); border-top: 0; }
+  .calc-brace--nat { grid-column: 1 / 4; }
+  .calc-brace--loc { grid-column: 5 / 6; }
+  .calc-brace__label {
+    grid-row: 3; text-align: center;
+    font-size: var(--fs-xs); line-height: 1.45; color: var(--ink-2);
+  }
+  .calc-brace__label--nat { grid-column: 1 / 4; }
+  .calc-brace__label--loc { grid-column: 5 / 6; }
+  .calc-formula__result { margin-top: var(--sp-4); display: grid; gap: 8px; }
+  .calc-formula__result p { font: 700 var(--fs-lg)/1.4 var(--font-serif); }
+  .calc-formula__result p span { font: 500 var(--fs-sm)/1.5 var(--font-sans); color: var(--ink-2); }
+
+  /* ---------- 主版面：左輸入（sticky）＋右結果 ---------- */
+  .calc-layout {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: var(--sp-7);
+    align-items: start;
+    padding-block: var(--sp-7) 0;
+  }
+
+  .calc-panel {
+    position: sticky;
+    top: calc(var(--head-h) + var(--sp-3));
+    /* 視窗較矮時側欄自己捲動，主內容仍是文件捲動；1440×900 時內容剛好放得下 */
+    max-height: calc(100vh - var(--head-h) - var(--sp-5));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--ink);
+    padding: 20px var(--sp-5);
+  }
+  .calc-panel__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+  .calc-panel__title { font-size: var(--fs-xl); }
+  .calc-form { display: grid; gap: var(--sp-4); }
+  .calc-form > .field + .field { padding-top: var(--sp-4); border-top: 1px dashed var(--rule-2); }
+  .calc-label-note { font-weight: 400; font-size: var(--fs-xs); color: var(--ink-3); }
+  .calc-income.input { font-size: var(--fs-xl); font-weight: 500; letter-spacing: -.01em; min-height: 48px; }
+  .calc-range-scale { display: flex; justify-content: space-between; margin-top: -4px; font: 500 var(--fs-2xs)/1 var(--font-mono); color: var(--ink-3); }
+  .calc-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .calc-row__note { font-size: var(--fs-sm); color: var(--ink-2); }
+  .stepper .input[type="number"] { -moz-appearance: textfield; appearance: textfield; font-size: var(--fs-lg); }
+  .stepper .input[type="number"]::-webkit-inner-spin-button,
+  .stepper .input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .calc-home { gap: var(--sp-3); }
+  .calc-home__more { display: grid; gap: var(--sp-3); padding: 14px var(--sp-4); background: var(--paper); border-left: 3px solid var(--ink); }
+  .calc-home__more[hidden] { display: none; }
+  .calc-home__more:not([hidden]) { animation: calc-drop var(--t-med) var(--ease-out); }
+  @keyframes calc-drop { from { opacity: 0; transform: translateY(-6px); } }
+  .calc-seg-full { display: flex; }
+  .calc-seg-full > button { flex: 1 1 0; padding-inline: 6px; }
+  .calc-presets { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--rule-2); }
+  .calc-presets__title { font: 600 var(--fs-xs)/1.3 var(--font-mono); letter-spacing: .06em; color: var(--ink-2); margin-bottom: var(--sp-3); }
+  .calc-presets .chip { min-height: 32px; padding: 4px 12px; font-size: var(--fs-xs); }
+
+  /* ---------- 手機：捲過輸入區後的結果摘要列（只在單欄時出現） ---------- */
+  .calc-dock { display: none; }
+
+  /* ---------- 結果摘要 ---------- */
+  .calc-results { min-width: 0; display: grid; gap: var(--sp-8); }
+  .calc-summary { display: grid; gap: var(--sp-5); }
+  .calc-summary__top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-4) var(--sp-7); align-items: end; }
+  .calc-summary__title { font: 700 var(--fs-xl)/1.3 var(--font-serif); margin-top: var(--sp-3); }
+  .calc-total { display: flex; align-items: baseline; gap: .12em; margin-top: var(--sp-2); }
+  .calc-total__value {
+    font: 500 clamp(3.75rem, 2.2rem + 4.4vw, 7rem)/.95 var(--font-mono);
+    letter-spacing: -.05em;
+    font-variant-numeric: tabular-nums;
+  }
+  .calc-total__unit { font: 700 clamp(1.5rem, 1.1rem + 1vw, 2.125rem)/1 var(--font-serif); }
+  .calc-facts { display: grid; gap: 10px; margin: 0; min-width: 200px; }
+  .calc-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-4); padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+  .calc-facts dt { font-size: var(--fs-xs); color: var(--ink-2); }
+  .calc-facts dd { margin: 0; font: 500 var(--fs-lg)/1 var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .calc-facts dd small { font: 500 var(--fs-xs)/1 var(--font-sans); color: var(--ink-2); margin-left: 3px; }
+  .calc-lede { font: 500 var(--fs-lg)/1.8 var(--font-serif); color: var(--ink-2); max-width: 44em; }
+  .calc-lede b { color: var(--ink); font-weight: 700; }
+
+  /* 預算尺：你的那一段。各層共用同一條水平座標，--x 以「全寬的百分比」平移 */
+  .calc-ruler { margin: 0; }
+  .calc-ruler__cap { margin-bottom: 6px; font: 600 var(--fs-xs)/1.3 var(--font-mono); letter-spacing: .06em; color: var(--ink-2); }
+  .calc-ruler__plot { position: relative; height: 132px; overflow: hidden; }
+  .calc-ruler__track { position: absolute; left: 0; right: 0; top: 30px; height: 48px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule); }
+  .calc-ruler__grid { position: absolute; left: 0; right: 0; top: 30px; bottom: 18px; }
+  .calc-ruler__grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rule-2); }
+  /* 尺的細刻度：每 5% 一格，畫在色條下緣 */
+  .calc-ruler__ticks { position: absolute; left: 0; right: 0; top: 78px; height: 6px; background: repeating-linear-gradient(90deg, var(--ink-3) 0 1px, transparent 1px 5%); opacity: .55; }
+  .calc-ruler__bar.stack-bar { position: absolute; left: 0; right: 0; top: 30px; height: 48px; gap: 0; }
+  /* 以內側陰影畫分隔線，段寬總和才會剛好等於「你」的位置 */
+  .calc-ruler__bar .stack-bar__seg + .stack-bar__seg { box-shadow: inset 2px 0 0 var(--paper); }
+  .calc-ruler__bar .stack-bar__seg { transition: flex-basis var(--t-slow) var(--ease-out), opacity var(--t-fast); }
+  .calc-ruler__bar .stack-bar__seg.is-dim { opacity: .22; }
+  .calc-ruler__bar .stack-bar__label { left: 10px; font-weight: 600; }
+  .calc-ruler__mark { position: absolute; left: 0; width: 100%; pointer-events: none; transform: translateX(var(--x, 0%)); transition: transform var(--t-slow) var(--ease-out); }
+  .calc-ruler__you { top: 0; height: 80px; }
+  .calc-ruler__you::before { content: ""; position: absolute; left: -1px; top: 20px; height: 60px; width: 2px; background: var(--ink); }
+  .calc-ruler__avg { top: 26px; height: 88px; }
+  .calc-ruler__avg::before { content: ""; position: absolute; left: 0; top: 0; height: 66px; border-left: 1.5px dashed var(--ink); }
+  .calc-ruler__tag { position: absolute; left: 0; white-space: nowrap; font-size: var(--fs-xs); line-height: 1.3; }
+  .calc-ruler__you .calc-ruler__tag { top: 0; padding-left: 8px; font-weight: 700; }
+  .calc-ruler__avg .calc-ruler__tag { top: 64px; padding: 2px 0 2px 8px; background: var(--paper); color: var(--ink-2); }
+  .calc-ruler__mark.is-flip .calc-ruler__tag { transform: translateX(-100%); padding-left: 0; padding-right: 8px; }
+  .calc-ruler__avg.is-flip .calc-ruler__tag { padding-left: 4px; }
+  .calc-ruler__axis { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; font: 500 var(--fs-2xs)/1 var(--font-mono); color: var(--ink-3); }
+  .calc-ruler__axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .calc-ruler__axis span:first-child { transform: none; }
+  .calc-ruler__axis span:last-child { transform: translateX(-100%); }
+
+  /* 六類金額鍵：hover 對應色段，點擊跳到換算卡 */
+  .calc-keys { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+  .calc-key {
+    display: grid; gap: 6px; align-content: start;
+    padding: 12px 12px 10px;
+    border: 0; border-top: 3px solid var(--cat);
+    background: var(--surface);
+    text-align: left;
+    transition: background-color var(--t-fast), opacity var(--t-fast);
+  }
+  .calc-key:hover, .calc-key.is-on { background: var(--cat-tint); }
+  .calc-keys.has-focus .calc-key:not(.is-on) { opacity: .5; }
+  .calc-key__name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; }
+  .calc-key__value { font: 500 var(--fs-xl)/1 var(--font-mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .calc-key__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 6px; font: 500 var(--fs-2xs)/1.3 var(--font-mono); color: var(--ink-3); }
+
+  /* ---------- 區塊標題 ---------- */
+  .calc-sec-head { display: grid; gap: var(--sp-3); margin-bottom: var(--sp-5); max-width: 720px; }
+  .calc-sec-title { font-size: var(--fs-3xl); line-height: 1.18; }
+  .calc-sec-dek { color: var(--ink-2); font-size: var(--fs-md); line-height: 1.7; }
+
+  /* ---------- 換算卡 ---------- */
+  .calc-eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--sp-4); }
+  .calc-eq {
+    position: relative;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px 18px 14px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--cat);
+    scroll-margin-top: calc(var(--head-h) + 80px);
+  }
+  .calc-eq:focus { outline: none; }
+  .calc-eq.is-target { animation: calc-flash 1600ms var(--ease-out); }
+  @keyframes calc-flash { 0%, 35% { box-shadow: 0 0 0 3px var(--cat); } 100% { box-shadow: 0 0 0 3px transparent; } }
+  .calc-eq__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .calc-eq__amt { font: 500 var(--fs-sm)/1 var(--font-mono); color: var(--ink-2); white-space: nowrap; }
+  .calc-seg-sm { align-self: flex-start; max-width: 100%; }
+  .calc-seg-sm > button { min-height: 28px; padding: 3px 10px; font-size: var(--fs-xs); }
+  .calc-eq__body { display: grid; gap: 2px; }
+  .calc-eq__lead { font-size: var(--fs-xs); color: var(--ink-3); }
+  .calc-eq__value { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .calc-eq__num { font: 500 clamp(2.25rem, 1.7rem + 1.2vw, 2.875rem)/1.05 var(--font-mono); letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+  .calc-eq__unit { font: 600 var(--fs-md)/1 var(--font-sans); color: var(--ink-2); }
+  .calc-eq__name { font: 700 var(--fs-lg)/1.3 var(--font-serif); }
+  /* 圖示陣列：最多 30 格（桌機 3 列），預留高度避免拖曳滑桿時版面跳動 */
+  .calc-pict { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; min-height: 68px; margin-top: 4px; }
+  .calc-ico { position: relative; flex: none; width: 20px; height: 20px; }
+  .calc-ico svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .calc-ico__base { color: color-mix(in srgb, var(--cat) 22%, var(--paper-2)); }
+  .calc-ico__fill { color: var(--cat); clip-path: inset(0 calc((1 - var(--f, 1)) * 100%) 0 0); transition: clip-path var(--t-slow) var(--ease-out); }
+  .calc-ico.is-new { animation: calc-pop 520ms var(--ease-out) var(--d, 0ms) both; }
+  @keyframes calc-pop { from { opacity: 0; transform: translateY(8px) scale(.35); } }
+  .calc-pict__key { display: flex; align-items: center; gap: 6px; font: 500 var(--fs-2xs)/1.3 var(--font-mono); color: var(--ink-3); }
+  .calc-pict__key .calc-ico { width: 13px; height: 13px; }
+  .calc-eq__note { font-size: var(--fs-xs); line-height: 1.6; color: var(--ink-3); }
+  .calc-eq__link {
+    margin-top: auto;
+    display: grid; gap: 3px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--rule-2);
+    font-size: var(--fs-xs); line-height: 1.5; color: var(--ink-2);
+    text-decoration: none;
+  }
+  .calc-eq__link-label { font: 500 var(--fs-2xs)/1.3 var(--font-mono); letter-spacing: .04em; color: var(--ink-3); }
+  .calc-eq__link-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .calc-eq__link b { font-weight: 600; font-size: var(--fs-sm); color: var(--ink); }
+  .calc-eq__link:hover b { text-decoration: underline; text-underline-offset: .2em; }
+  .calc-eq__link .calc-eq__go { margin-left: auto; transition: transform var(--t-med) var(--ease-out); }
+  .calc-eq__link:hover .calc-eq__go { transform: translateX(3px); }
+
+  /* ---------- 收據＋排名 ---------- */
+  .calc-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: var(--sp-7); align-items: start; }
+  .calc-receipt { padding: var(--sp-5) var(--sp-5) var(--sp-4); }
+  .calc-receipt__sec { margin: var(--sp-4) 0 4px; font: 600 var(--fs-2xs)/1.3 var(--font-mono); letter-spacing: .08em; color: var(--ink-3); }
+  .calc-receipt__sec:first-of-type { margin-top: 0; }
+  .calc-src .receipt__row > :first-child { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .calc-src .receipt__row small { font-size: var(--fs-2xs); color: var(--ink-3); font-family: var(--font-mono); }
+  .calc-src .receipt__row.is-zero > :first-child, .calc-src .receipt__row.is-zero .num { color: var(--ink-3); }
+  .calc-rsw { display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: 0; }
+  .calc-rrow {
+    width: calc(100% + 16px); margin-inline: -8px; padding-inline: 8px;
+    border: 0; border-radius: var(--r-1); background: none;
+    font: inherit; color: inherit; text-align: left;
+    transition: background-color var(--t-fast);
+  }
+  .calc-rrow:hover, .calc-rrow.is-on { background: var(--cat-tint); }
+  .calc-rrow .calc-rrow__pct { width: 3.4em; text-align: right; color: var(--ink-3); font-size: var(--fs-xs); }
+  .calc-receipt__foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
+
+  .calc-rank { margin: 0; }
+  /* --avg：平均每位市民在比例尺上的位置（0~1），標頭標籤與每列的虛線刻度共用 */
+  .calc-rank__plot { --avg: 0; position: relative; margin-top: var(--sp-4); padding-top: 24px; }
+  .calc-rank__avghead { position: absolute; top: 0; left: 8px; right: 8px; height: 24px; pointer-events: none; }
+  .calc-rank__avghead > span {
+    position: absolute; top: 2px; left: calc(var(--avg) * 100%);
+    padding-left: 6px; border-left: 1.5px dashed var(--ink);
+    white-space: nowrap; font-size: var(--fs-2xs); line-height: 1.6; color: var(--ink-2);
+    transition: left var(--t-slow) var(--ease-out);
+  }
+  .calc-rank__plot.is-flip .calc-rank__avghead > span { transform: translateX(-100%); padding: 0 6px 0 0; border-left: 0; border-right: 1.5px dashed var(--ink); }
+  .calc-rank__list { position: relative; display: grid; gap: 2px; }
+  .calc-rank__item { transition: transform 620ms var(--ease-out); }
+  .calc-rank__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "who val" "bar bar";
+    gap: 7px 12px;
+    align-items: baseline;
+    width: 100%;
+    padding: 8px 8px 10px;
+    border: 0; border-radius: var(--r-1);
+    background: none;
+    font: inherit; color: inherit; text-align: left;
+  }
+  button.calc-rank__row { transition: background-color var(--t-fast); }
+  button.calc-rank__row:hover { background: var(--paper-2); }
+  button.calc-rank__row[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--rule-2); }
+  .calc-rank__who { grid-area: who; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-width: 0; }
+  .calc-rank__who b { font-size: var(--fs-sm); font-weight: 600; line-height: 1.35; }
+  .calc-rank__who small { font-size: var(--fs-2xs); line-height: 1.35; color: var(--ink-3); }
+  .calc-rank__val { grid-area: val; text-align: right; font: 500 var(--fs-sm)/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+  .calc-rank__bar { grid-area: bar; position: relative; height: 10px; }
+  .calc-rank__bar::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: calc(var(--avg) * 100%); border-left: 1.5px dashed var(--ink); transition: left var(--t-slow) var(--ease-out); }
+  .calc-rank__fill { position: absolute; inset: 0; display: flex; background: var(--ink-4); transform-origin: left center; transform: scaleX(var(--w, 0)); transition: transform var(--t-slow) var(--ease-out); }
+  .calc-rank__item.is-you .calc-rank__row { background: var(--surface); box-shadow: inset 3px 0 0 var(--ink), var(--shadow-1); }
+  .calc-rank__item.is-you .calc-rank__who b { font-size: var(--fs-md); font-weight: 800; font-family: var(--font-serif); }
+  .calc-rank__item.is-you .calc-rank__bar { height: 14px; }
+  .calc-rank__item.is-you .calc-rank__fill > i { flex: var(--g) 1 0; background: var(--cat); }
+  .calc-rank__item.is-you .calc-rank__val { font-weight: 600; font-size: var(--fs-md); }
+  .calc-rank__axis { display: flex; justify-content: space-between; padding: 8px 8px 0; font: 500 var(--fs-2xs)/1 var(--font-mono); color: var(--ink-3); }
+
+  /* ---------- 方法 ---------- */
+  .calc-method__grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--sp-8); align-items: start; }
+  .calc-steps { counter-reset: step; display: grid; gap: var(--sp-5); }
+  .calc-step { position: relative; padding-left: 52px; counter-increment: step; }
+  .calc-step::before {
+    content: counter(step);
+    position: absolute; left: 0; top: -2px;
+    width: 34px; height: 34px; display: grid; place-items: center;
+    border: 1.5px solid var(--ink); border-radius: 50%;
+    font: 600 var(--fs-sm)/1 var(--font-mono);
+  }
+  .calc-step h3 { font-size: var(--fs-lg); line-height: 1.35; }
+  .calc-step__eq {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+    margin-top: var(--sp-3); padding: 12px 14px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule);
+    font: 500 var(--fs-sm)/1.6 var(--font-mono); font-variant-numeric: tabular-nums;
+  }
+  .calc-step__eq b { font-weight: 600; background: linear-gradient(transparent 60%, color-mix(in srgb, var(--c-pol) 42%, transparent) 60%); }
+  .calc-step__eq .calc-op2 { color: var(--ink-3); }
+  .calc-step__note { margin-top: var(--sp-2); font-size: var(--fs-sm); line-height: 1.75; color: var(--ink-2); }
+  /* 加上 .calc-steps 前綴：基礎樣式的 ul[class] 重設權重較高，會吃掉 padding */
+  .calc-steps .calc-step__split {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 20px;
+    /* 接在算式框下方：上移 1px 讓虛線蓋住算式框底線，自己不再畫上框 */
+    margin-top: -1px;
+    padding: 10px 14px 12px;
+    background: var(--surface);
+    box-shadow: inset 1px 0 0 var(--rule), inset -1px 0 0 var(--rule), inset 0 -1px 0 var(--rule);
+    border-top: 1px dashed var(--rule-2);
+    font-size: var(--fs-xs);
+  }
+  .calc-step__split li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .calc-step__split .num { margin-left: auto; }
+  .calc-dtable caption { font-size: var(--fs-lg); }
+  .calc-dtable tbody tr.is-current { background: color-mix(in srgb, var(--c-pol) 16%, transparent); }
+  .calc-dtable tbody tr.is-current th { box-shadow: inset 3px 0 0 var(--ink); font-weight: 700; }
+  .calc-dtable td.is-current-cell { font-weight: 700; color: var(--ink); text-decoration: underline; text-underline-offset: .25em; }
+  .calc-dtable tbody th { font-weight: 500; white-space: nowrap; }
+  .calc-method__side { display: grid; gap: var(--sp-6); }
+  /* 共用 .method-grid 兩欄；這裡左欄註腳較長，略寬一些，並以細線與上方算式隔開 */
+  .calc-method__foot { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); margin-top: var(--sp-8); padding-top: var(--sp-6); border-top: 1px solid var(--rule-2); }
+
+  /* ---------- 響應式 ---------- */
+  @media (max-width: 1279px) {
+    .calc-pair { grid-template-columns: minmax(0, 1fr); gap: var(--sp-7); }
+    .calc-summary__top { grid-template-columns: minmax(0, 1fr); }
+    .calc-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); }
+    .calc-facts > div { display: grid; gap: 6px; padding: 8px 0 0; border-bottom: 0; border-top: 1px solid var(--rule-2); }
+    .calc-facts dd { order: -1; }
+  }
+  @media (max-width: 1023px) {
+    .calc-layout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); padding-top: var(--sp-5); }
+    .calc-panel { position: static; max-height: none; overflow: visible; }
+    .calc-dock {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+      position: sticky; top: var(--head-h); z-index: 6;
+      margin: 0 calc(var(--gutter) * -1) calc(var(--sp-7) * -1 + var(--sp-4));
+      padding: 10px var(--gutter);
+      background: color-mix(in srgb, var(--paper) 94%, transparent);
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--ink);
+    }
+    .calc-dock__main { display: grid; gap: 2px; min-width: 0; }
+    .calc-dock__total { font: 600 var(--fs-xl)/1.1 var(--font-mono); letter-spacing: -.03em; }
+    .calc-dock__total small { font: 600 var(--fs-xs)/1 var(--font-sans); letter-spacing: 0; color: var(--ink-2); margin-left: 4px; }
+    .calc-dock__cond { font-size: var(--fs-2xs); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .calc-keys { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .calc-method__grid, .calc-method__foot { grid-template-columns: minmax(0, 1fr); gap: var(--sp-7); }
+  }
+  @media (max-width: 899px) {
+    .calc-formula { margin-top: var(--sp-3); }
+  }
+  @media (max-width: 599px) {
+    .calc-results { gap: var(--sp-7); }
+    .calc-panel { padding: var(--sp-4); }
+    .calc-facts { gap: var(--sp-3); }
+    .calc-facts dd { font-size: var(--fs-md); }
+    .calc-lede { font-size: var(--fs-md); line-height: 1.75; }
+    .calc-term { padding: 8px; }
+    .calc-term__name { font-size: var(--fs-xs); }
+    .calc-op { font-size: var(--fs-md); }
+    .calc-key { padding: 10px 10px 8px; }
+    .calc-key__value { font-size: var(--fs-lg); }
+    .calc-ruler__plot { height: 128px; }
+    .calc-receipt { padding: var(--sp-4); }
+    .calc-step { padding-left: 44px; }
+    .calc-step::before { width: 30px; height: 30px; }
+    .calc-steps .calc-step__split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .calc-pict { min-height: 0; }
+    .calc-brace__label { font-size: var(--fs-2xs); }
+    /* 三欄時寬度不夠並排，占比與每天金額固定上下排，六張卡才一致 */
+    .calc-key__meta { display: grid; gap: 2px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<header class="masthead">
+  <div class="masthead__strip">
+    <div class="container masthead__strip-inner">
+      <p class="masthead__dateline">
+        <a class="back-link" href="../../index.html"><span aria-hidden="true">←</span>返回目錄</a>
+        <span class="masthead__sep" aria-hidden="true">/</span>
+        <time datetime="2026-10-23">2026 年 10 月 23 日（五）</time>
+        <span class="masthead__sep" aria-hidden="true">/</span>
+        <span class="masthead__org">澄港市政府主計處 · 公民預算專刊</span>
+      </p>
+      <p class="masthead__status"><span class="live-dot" aria-hidden="true"></span>市議會審查中 · 預計 12 月 18 日三讀</p>
+    </div>
+  </div>
+  <div class="masthead__bar">
+    <div class="container masthead__bar-inner">
+      <a class="brand" href="index.html">
+        <svg class="brand__mark" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+          <circle cx="5" cy="5" r="3.6" fill="#2F6BFF"/><circle cx="15" cy="5" r="3.6" fill="#2F6BFF"/><circle cx="25" cy="5" r="3.6" fill="#2F6BFF"/>
+          <circle cx="5" cy="15" r="3.6" fill="#FF6B4A"/><circle cx="15" cy="15" r="3.6" fill="#FF6B4A"/><circle cx="25" cy="15" r="3.6" fill="#12A37F"/>
+          <circle cx="5" cy="25" r="3.6" fill="#8A8F98"/><circle cx="15" cy="25" r="3.6" fill="#F2B705"/><circle cx="25" cy="25" r="3.6" fill="#9B5DE5"/>
+        </svg>
+        <span class="brand__text">
+          <span class="brand__name">你的稅金去哪裡？</span>
+          <span class="brand__sub">澄港市 2027 年度總預算</span>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+        <span class="nav-toggle__bars" aria-hidden="true"></span><span class="sr-only">開啟選單</span>
+      </button>
+      <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+        <ul class="site-nav__list">
+          <li><a class="site-nav__link" href="index.html"><span class="site-nav__no">01</span>一千元的去向</a></li>
+          <li><a class="site-nav__link" href="explorer.html"><span class="site-nav__no">02</span>預算探索器</a></li>
+          <li><a class="site-nav__link is-active" href="calculator.html" aria-current="page"><span class="site-nav__no">03</span>稅金計算器</a></li>
+          <li><a class="site-nav__link" href="story.html"><span class="site-nav__no">04</span>專題：社福翻倍</a></li>
+        </ul>
+      </nav>
+    </div>
+  </div>
+  <div class="budget-rule budget-rule--progress" aria-hidden="true"></div>
+</header>
+
+<!-- 換算物件圖示（sprite）：形狀不寫 fill，由外層 svg 的 fill="currentColor" 繼承類別色 -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="ico-lunch" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4.5 5h15A2.5 2.5 0 0 1 22 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 16.5v-9A2.5 2.5 0 0 1 4.5 5zM4.5 7.5v9h7v-9zM13.5 7.5V11h6V7.5zM13.5 13v3.5h6V13z"/><circle cx="8" cy="12" r="2.2"/></symbol>
+    <symbol id="ico-book" viewBox="0 0 24 24"><path d="M7 2h12v16H6.5a1.5 1.5 0 0 0 0 3H19v1.5H6.5a3 3 0 0 1-3-3v-14A3.5 3.5 0 0 1 7 2z"/></symbol>
+    <symbol id="ico-care" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 0 1 0 19a9.5 9.5 0 0 1 0-19zM12 5a7 7 0 0 0 0 14a7 7 0 0 0 0-14z"/><rect x="11" y="7" width="2" height="6" rx="1"/><rect x="11" y="11" width="5.5" height="2" rx="1"/></symbol>
+    <symbol id="ico-childcare" viewBox="0 0 24 24"><path d="M10.5 1.5h3l.8 3h-4.6z"/><rect x="8" y="5" width="8" height="2.5" rx=".8"/><path fill-rule="evenodd" d="M9 8.5h6a1.5 1.5 0 0 1 1.5 1.5v9.5a3 3 0 0 1-3 3h-3a3 3 0 0 1-3-3V10A1.5 1.5 0 0 1 9 8.5zM10 12v1.4h3V12zM10 15.3v1.4h3v-1.4z"/></symbol>
+    <symbol id="ico-sidewalk" viewBox="0 0 24 24"><rect x="2" y="4" width="6.2" height="5.6"/><rect x="9.2" y="4" width="5.6" height="5.6"/><rect x="15.8" y="4" width="6.2" height="5.6"/><rect x="2" y="10.6" width="3" height="5.6"/><rect x="6" y="10.6" width="5.6" height="5.6"/><rect x="12.6" y="10.6" width="5.6" height="5.6"/><rect x="19.2" y="10.6" width="2.8" height="5.6"/><rect x="2" y="17.6" width="20" height="2.6"/></symbol>
+    <symbol id="ico-bus" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M7 2h10a3 3 0 0 1 3 3v13H4V5a3 3 0 0 1 3-3zM6.5 6v6h11V6zM6.5 14.2v2h2.5v-2zM15 14.2v2h2.5v-2z"/><rect x="5" y="18" width="3.5" height="3.5" rx="1"/><rect x="15.5" y="18" width="3.5" height="3.5" rx="1"/></symbol>
+    <symbol id="ico-streetlight" viewBox="0 0 24 24"><path d="M10.6 7.5A4.5 4.5 0 0 1 15.1 3H17v1.7h-1.9a2.8 2.8 0 0 0-2.8 2.8V21h-1.7z"/><path d="M14.2 4.2h7.3l-1.6 3h-4.1z"/><path d="M15.4 8.2h3.8l1.6 4.2h-7z" fill-opacity=".38"/><rect x="8" y="20.4" width="7" height="2" rx=".6"/></symbol>
+    <symbol id="ico-firefighter" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 4a8 8 0 0 1 8 8v2H4v-2a8 8 0 0 1 8-8zM12 7.2a2.3 2.3 0 0 0 0 4.6a2.3 2.3 0 0 0 0-4.6z"/><path d="M1.5 15h21v1.2a2.3 2.3 0 0 1-2.3 2.3H3.8a2.3 2.3 0 0 1-2.3-2.3z"/></symbol>
+    <symbol id="ico-cctv" viewBox="0 0 24 24"><g transform="rotate(14 12 9)"><path fill-rule="evenodd" d="M2.5 5.5h13a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-13zM14 7.8a1.2 1.2 0 0 0 0 2.4a1.2 1.2 0 0 0 0-2.4z"/><path d="M18 7.6l3.5-1.6v6l-3.5-1.6z"/></g><rect x="8.2" y="13.6" width="2" height="5.4"/><rect x="4.5" y="18.6" width="9.6" height="2.4" rx=".7"/></symbol>
+    <symbol id="ico-garbage" viewBox="0 0 24 24"><path d="M9.5 2.5h5a1 1 0 0 1 1 1V5h-7V3.5a1 1 0 0 1 1-1z"/><rect x="3.5" y="5" width="17" height="2.5" rx="1"/><path fill-rule="evenodd" d="M5 9h14l-1.2 11.6a1.6 1.6 0 0 1-1.6 1.4H7.8a1.6 1.6 0 0 1-1.6-1.4zM9 11.5V19h1.4v-7.5zM13.6 11.5V19H15v-7.5z"/></symbol>
+    <symbol id="ico-vaccine" viewBox="0 0 24 24"><g transform="rotate(45 12 12)"><rect x="8.5" y=".5" width="7" height="1.8" rx=".6"/><rect x="11.1" y="2.3" width="1.8" height="3"/><rect x="7" y="5.3" width="10" height="1.6" rx=".6"/><path fill-rule="evenodd" d="M8.5 6.9h7V17a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1zM10 9v1.2h2.5V9zM10 11.8V13h2.5v-1.2zM10 14.6v1.2h2.5v-1.2z"/><rect x="11.4" y="18" width="1.2" height="5.2"/></g></symbol>
+    <symbol id="ico-office" viewBox="0 0 24 24"><circle cx="12" cy="6.2" r="3.6"/><path d="M5 16a7 7 0 0 1 14 0z"/><rect x="2" y="17" width="20" height="2.4" rx=".6"/><rect x="4" y="19.4" width="1.6" height="3"/><rect x="18.4" y="19.4" width="1.6" height="3"/></symbol>
+  </defs>
+</svg>
+
+<main id="main">
+
+  <header class="page-head page-head--split calc-head">
+    <div class="container page-head__inner">
+      <p class="kicker">03 · 稅金計算器</p>
+      <h1 class="page-head__title">算算你的那一份</h1>
+      <p class="dek">沒有人剛好繳 1,000 元。輸入年收入、扶養人數與自住房屋，估算你一年貢獻給市府多少錢、被分到哪些用途，又變成了幾份營養午餐、幾公尺人行道。</p>
+      <div class="page-head__meta byline">
+        <span>文／<b>主計處預算視覺化小組</b></span>
+        <span>試算模型／<b>2027 年度總預算案</b></span>
+        <time datetime="2026-10-23">2026.10.23 更新</time>
+      </div>
+      <div class="page-head__side">
+        <div class="calc-formula">
+          <p class="calc-formula__title">怎麼算：三個來源加起來</p>
+          <div class="calc-formula__eq">
+            <span class="calc-term"><span class="calc-term__name">綜合所得稅</span><span class="calc-term__rate phrase"><span>× <span data-model="retIncome">34%</span></span> <span>回流</span></span></span>
+            <span class="calc-op" aria-hidden="true">＋</span>
+            <span class="calc-term"><span class="calc-term__name">營業稅</span><span class="calc-term__rate phrase"><span>× <span data-model="retVat">47%</span></span> <span>回流</span></span></span>
+            <span class="calc-op" aria-hidden="true">＋</span>
+            <span class="calc-term"><span class="calc-term__name">房屋稅、地價稅</span><span class="calc-term__rate">全數歸市府</span></span>
+            <span class="calc-brace calc-brace--nat" aria-hidden="true"></span>
+            <span class="calc-brace calc-brace--loc" aria-hidden="true"></span>
+            <span class="calc-brace__label calc-brace__label--nat phrase"><span>國稅：</span><span>經統籌分配稅款與補助回到市府</span></span>
+            <span class="calc-brace__label calc-brace__label--loc phrase"><span>地方稅：</span><span>直接繳進市庫</span></span>
+          </div>
+          <div class="calc-formula__result">
+            <div class="budget-rule" aria-hidden="true"></div>
+            <p>＝ 你的那一份 <span>再依預算案比例分給六大用途</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container calc-layout">
+
+    <!-- ===== 輸入 ===== -->
+    <aside class="calc-panel" id="calc-panel" aria-labelledby="panel-title">
+      <div class="calc-panel__head">
+        <h2 class="calc-panel__title" id="panel-title">你的條件</h2>
+        <button class="btn btn--link btn--sm" type="button" id="reset-btn">重設</button>
+      </div>
+      <form class="calc-form" id="calc-form" novalidate>
+        <div class="field" id="field-income">
+          <label class="field__label" for="income">年收入 <span class="calc-label-note">稅前、含年終獎金</span></label>
+          <div class="input-group">
+            <input class="input num calc-income" id="income" name="income" type="text" inputmode="numeric" autocomplete="off" value="900,000" aria-describedby="income-hint">
+            <span class="input-group__affix">元</span>
+          </div>
+          <input class="range" type="range" id="income-range" min="0" max="3000000" step="10000" value="900000" aria-label="以滑桿調整年收入">
+          <div class="calc-range-scale" aria-hidden="true"><span>0</span><span>150 萬</span><span>300 萬</span></div>
+          <p class="field__hint" id="income-hint">以薪資所得估算；超過 300 萬元請直接輸入金額。</p>
+          <p class="field__error" id="income-error"></p>
+        </div>
+
+        <div class="field" id="field-dep">
+          <span class="field__label" id="dep-label">扶養人數</span>
+          <div class="calc-row">
+            <div class="stepper" data-stepper>
+              <button type="button" data-step="-1" aria-label="減少扶養人數">−</button>
+              <input class="input num" id="dep" name="dep" type="number" min="0" max="6" step="1" value="1" inputmode="numeric" aria-labelledby="dep-label" aria-describedby="dep-hint">
+              <button type="button" data-step="1" aria-label="增加扶養人數">＋</button>
+            </div>
+            <span class="calc-row__note">人（不含你自己）</span>
+          </div>
+          <p class="field__hint" id="dep-hint">如子女、父母；每人可多減除免稅額 <span data-model="exemption">97,000</span> 元。</p>
+          <p class="field__error" id="dep-error"></p>
+        </div>
+
+        <div class="field calc-home">
+          <label class="switch"><input type="checkbox" role="switch" id="home" checked><span class="switch__track"></span><span>我有自住房屋</span></label>
+          <div class="calc-home__more" id="home-more">
+            <div class="field">
+              <span class="field__label" id="type-label">房屋類型</span>
+              <div class="segmented calc-seg-full" data-segmented id="home-type" role="group" aria-labelledby="type-label">
+                <button type="button" data-value="apt" aria-pressed="false">公寓</button>
+                <button type="button" data-value="tower" aria-pressed="true">電梯大樓</button>
+                <button type="button" data-value="villa" aria-pressed="false">透天厝</button>
+              </div>
+              <p class="field__hint" id="type-hint">約 35 坪、屋齡 15 年左右</p>
+            </div>
+            <div class="field">
+              <label class="field__label" for="district">所在行政區</label>
+              <select class="select" id="district" name="district"></select>
+            </div>
+          </div>
+        </div>
+      </form>
+      <div class="calc-presets">
+        <p class="calc-presets__title">或者，帶入這些人的條件</p>
+        <div class="cluster" id="presets"></div>
+      </div>
+    </aside>
+
+    <!-- ===== 結果 ===== -->
+    <div class="calc-results" id="results">
+      <div class="calc-dock" id="dock">
+        <div class="calc-dock__main">
+          <span class="calc-dock__total"><span class="num" id="dock-total">30,000</span><small>元／年</small></span>
+          <span class="calc-dock__cond" id="dock-cond">年收入 90 萬 · 扶養 1 人 · 北岸電梯大樓</span>
+        </div>
+        <button class="btn btn--quiet btn--sm" type="button" id="dock-edit">調整條件 <span aria-hidden="true">↑</span></button>
+      </div>
+
+      <section class="calc-summary" aria-labelledby="summary-title">
+        <div class="calc-summary__top">
+          <div>
+            <p class="kicker">估算結果 · 2027 年度</p>
+            <h2 class="calc-summary__title" id="summary-title">你一年約貢獻給市府</h2>
+            <p class="calc-total"><span class="calc-total__value num" id="total">30,000</span><span class="calc-total__unit">元</span></p>
+          </div>
+          <dl class="calc-facts">
+            <div><dt>平均每天</dt><dd><span id="f-day">82</span><small>元</small></dd></div>
+            <div><dt>是市民平均分攤的</dt><dd id="f-avg">43.4%</dd></div>
+            <div><dt>占你的年收入</dt><dd id="f-inc">3.3%</dd></div>
+          </dl>
+        </div>
+        <figure class="calc-ruler" aria-labelledby="ruler-cap">
+          <figcaption class="calc-ruler__cap" id="ruler-cap">你的那一段預算尺 · 依用途分段</figcaption>
+          <div class="calc-ruler__plot" id="ruler-plot">
+            <div class="calc-ruler__track" aria-hidden="true"></div>
+            <div class="calc-ruler__grid" id="ruler-grid" aria-hidden="true"></div>
+            <div class="calc-ruler__ticks" aria-hidden="true"></div>
+            <div class="stack-bar calc-ruler__bar" id="stack" role="img" aria-label="你的貢獻依六大政事別分段"></div>
+            <div class="calc-ruler__mark calc-ruler__avg" id="ruler-avg" aria-hidden="true"><span class="calc-ruler__tag">平均每位市民 <span class="num" data-bind="perCapita">69,131</span></span></div>
+            <div class="calc-ruler__mark calc-ruler__you" id="ruler-you" aria-hidden="true"><span class="calc-ruler__tag">你 <span class="num" id="you-tag">30,000</span></span></div>
+            <div class="calc-ruler__axis" id="ruler-axis" aria-hidden="true"></div>
+          </div>
+        </figure>
+        <div class="calc-keys" id="keys"></div>
+        <p class="calc-lede" id="lede"></p>
+      </section>
+
+      <section class="calc-equivs" aria-labelledby="eq-title">
+        <div class="calc-sec-head">
+          <p class="kicker">換成看得見的東西</p>
+          <h2 class="calc-sec-title phrase" id="eq-title"><span>你的錢，</span><span>變成了這些</span></h2>
+          <p class="calc-sec-dek">把你分給每一類的錢，全部換算成那一類裡的一樣東西。單價取自 2027 年度預算書的計畫說明<sup class="fn-ref"><a href="#fn-4" id="fnref-4" aria-label="註 4">4</a></sup>；每張卡片都能切換物件，也能直接連到預算探索器裡的那一項計畫。</p>
+        </div>
+        <div class="calc-eq-grid" id="eq-grid"></div>
+      </section>
+
+      <div class="calc-pair">
+        <section aria-labelledby="receipt-title">
+          <div class="calc-sec-head">
+            <p class="kicker">明細</p>
+            <h2 class="calc-sec-title" id="receipt-title">你的市府收據</h2>
+          </div>
+          <div class="receipt calc-receipt" id="receipt">
+            <p class="receipt__head">澄港市 2027 年度 · 你的那一份 · 估算</p>
+            <p class="calc-receipt__sec">一、從你繳的稅</p>
+            <ul class="calc-src" id="receipt-src"></ul>
+            <p class="calc-receipt__sec">二、到這些用途</p>
+            <ul class="calc-dst" id="receipt-dst"></ul>
+            <div class="receipt__total"><span>合計</span><span class="num" id="receipt-total">30,000 元</span></div>
+            <div class="calc-receipt__foot">
+              <p class="fine">各項取至百元；分配依 2027 年度總預算案各政事別占比。</p>
+              <button class="btn btn--quiet btn--sm" type="button" id="copy-btn">複製這張收據</button>
+            </div>
+          </div>
+        </section>
+
+        <figure class="calc-rank" aria-labelledby="rank-title">
+          <div class="calc-sec-head">
+            <p class="kicker">比一比</p>
+            <h2 class="calc-sec-title" id="rank-title">和其他市民比一比</h2>
+            <p class="calc-sec-dek">六種典型市民的估算，和你放在一起。點一列可以直接套用他的條件。</p>
+          </div>
+          <div class="calc-rank__plot" id="rank-plot">
+            <div class="calc-rank__avghead" aria-hidden="true"><span>平均每位市民 <span class="num" data-bind="perCapita">69,131</span></span></div>
+            <ol class="calc-rank__list" id="rank-list"></ol>
+            <div class="calc-rank__axis" id="rank-axis" aria-hidden="true"></div>
+          </div>
+          <figcaption class="figure__source">單位：元／年。平均每位市民分攤額＝歲出總額 ÷ 戶籍人口，含企業繳的稅與舉債，所以多數個人會低於這條線。</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 方法 ===== -->
+  <section class="section section--tint calc-method" id="method" aria-labelledby="method-title">
+    <div class="container">
+      <div class="section-head">
+        <p class="kicker">方法</p>
+        <h2 class="section-head__title" id="method-title">這個數字怎麼算出來</h2>
+        <p class="section-head__dek">下面的算式代入的是你目前輸入的條件。這是簡化的估算，不是你的繳稅通知；我們把每一個假設都寫出來，你可以自己判斷。</p>
+      </div>
+      <div class="calc-method__grid">
+        <ol class="calc-steps" id="steps" aria-live="off"></ol>
+        <div class="calc-method__side">
+          <div class="table-wrap">
+            <table class="table table--compact calc-dtable" id="district-table" data-sortable>
+              <caption>八個行政區，自住房屋一年繳多少</caption>
+              <thead>
+                <tr>
+                  <th scope="col"><button class="sort-btn" type="button" data-type="text">行政區</button></th>
+                  <th scope="col" class="is-num"><button class="sort-btn" type="button" data-type="num">公寓</button></th>
+                  <th scope="col" class="is-num"><button class="sort-btn" type="button" data-type="num">電梯大樓</button></th>
+                  <th scope="col" class="is-num"><button class="sort-btn" type="button" data-type="num">透天厝</button></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="fine">元／年，房屋稅與地價稅合計。各區自住稅率下 2026 年開徵稅額的中位數，取至百元。<sup class="fn-ref"><a href="#fn-3" id="fnref-3" aria-label="註 3">3</a></sup></p>
+          <div>
+            <details class="acc">
+              <summary>為什麼比「平均每位市民分攤」少這麼多？</summary>
+              <div class="acc__body">平均分攤額是歲出總額 <span data-bind="total">1,862.0 億</span>元除以 <span data-bind="population">2,693,418</span> 位市民，裡面包含企業繳的營利事業所得稅與土地增值稅、中央的計畫型補助，以及 <span data-bind="deficit">120.5 億</span>元的舉債與賸餘。一般受薪家庭個人直接或間接負擔的，只是其中一部分。</div>
+            </details>
+            <details class="acc">
+              <summary>我租房子，房東繳的房屋稅算我的嗎？</summary>
+              <div class="acc__body">本試算不計入。租金裡多少隱含了房屋稅與地價稅，但轉嫁的比例因地段與租約而異，很難一概而論；租屋族的實際貢獻可能比這裡算的略高。</div>
+            </details>
+            <details class="acc">
+              <summary>健保費、勞保費、汽機車的稅呢？</summary>
+              <div class="acc__body">健保與勞保屬於社會保險，不進市府總預算，所以不列入。汽機車的使用牌照稅（歲入 <span data-fill="plateYi">58.9 億</span>元）與停車費確實會進市庫，本版尚未納入，有車的人實際貢獻會再高一些。</div>
+            </details>
+            <details class="acc">
+              <summary><span>回流率 <span data-model="retIncome">34%</span> 與 <span data-model="retVat">47%</span> 是怎麼來的？</span></summary>
+              <div class="acc__body">國稅先繳給中央，再以統籌分配稅款（2027 年度 <span data-fill="poolYi">412.6 億</span>元）與一般性補助的形式回到市府。主計處以這兩項收入，對照澄港市民繳納的綜合所得稅與營業稅推估回流比例；中央調整分配公式時，這兩個數字也會跟著變。<sup class="fn-ref"><a href="#fn-1" id="fnref-1" aria-label="註 1">1</a></sup></div>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <div class="method-grid calc-method__foot">
+        <div>
+          <h3>註腳</h3>
+          <ol class="footnotes">
+            <li id="fn-1">回流率為主計處依 2027 年度預算案歲入「統籌分配稅款」與「補助及協助收入」中的一般性補助部分推估，未含計畫型補助。<a class="fn-back" href="#fnref-1" aria-label="回到內文">↩</a></li>
+            <li id="fn-2">綜合所得稅以 2026 年度免稅額、標準扣除額、薪資所得特別扣除額與五級累進稅率簡化計算，未計入其他所得、列舉扣除與各項特別扣除。<a class="fn-back" href="#fnref-2" aria-label="回到內文">↩</a></li>
+            <li id="fn-3">房屋稅、地價稅取自澄港市稅捐稽徵處 2026 年開徵資料，為各區同類型自住房屋稅額中位數；實際稅額依房屋評定現值與公告地價而定。<a class="fn-back" href="#fnref-3" aria-label="回到內文">↩</a></li>
+            <li id="fn-4">換算單價取自各計畫的預算說明，含人力與營運成本，不等於市面零售價；把一整類的錢全部換成同一樣東西，只是為了感受尺度。<a class="fn-back" href="#fnref-4" aria-label="回到內文">↩</a></li>
+          </ol>
+        </div>
+        <div class="callout callout--method">
+          <p class="callout__title">資料來源</p>
+          <p class="fine">澄港市政府主計處《2027 年度澄港市地方總預算案》（2026 年 8 月 31 日送市議會）、主計處家庭收支調查（消費比例）、澄港市稅捐稽徵處 2026 年房屋稅與地價稅開徵資料。整理：主計處預算視覺化小組。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 繼續讀下去 ===== -->
+  <section class="section section--tight" aria-labelledby="next-title">
+    <div class="container">
+      <div class="section-head">
+        <p class="kicker">繼續讀下去</p>
+        <h2 class="section-head__title phrase" id="next-title"><span>從你的那一份，</span><span>回到整座城市</span></h2>
+      </div>
+      <div class="next-grid">
+        <a class="next-card" href="index.html" data-reveal>
+          <span class="next-card__art" aria-hidden="true">
+            <svg class="viz" data-art="thousand" viewBox="0 0 320 168" preserveAspectRatio="xMidYMid meet" focusable="false"></svg>
+          </span>
+          <span class="next-card__no">01 · 一千元的去向</span>
+          <span class="next-card__title phrase"><span>1,000 個點，</span><span>重新排隊</span></span>
+          <span class="next-card__desc">把 <span data-bind="total">1,862.0 億</span>元縮成你繳的 1,000 元，一個點就是一塊錢，隨著捲動從散佈、分群排成十年柱狀。</span>
+          <span class="next-card__go">回到主文 <span aria-hidden="true">→</span></span>
+        </a>
+        <a class="next-card" href="explorer.html" data-reveal style="--rd:100ms">
+          <span class="next-card__art" aria-hidden="true">
+            <svg class="viz" data-art="treemap" viewBox="0 0 320 168" preserveAspectRatio="xMidYMid meet" focusable="false"></svg>
+          </span>
+          <span class="next-card__no">02 · 預算探索器</span>
+          <span class="next-card__title phrase"><span>午餐、人行道，</span><span>在預算書的哪一行</span></span>
+          <span class="next-card__desc">從政事別一路點到 <span data-bind="programCount">101</span> 項計畫，看每一項比去年多還是少。</span>
+          <span class="next-card__go">打開探索器 <span aria-hidden="true">→</span></span>
+        </a>
+        <a class="next-card" href="story.html" data-reveal style="--rd:200ms">
+          <span class="next-card__art" aria-hidden="true">
+            <svg class="viz" data-art="trend" viewBox="0 0 320 168" preserveAspectRatio="xMidYMid meet" focusable="false"></svg>
+          </span>
+          <span class="next-card__no">04 · 專題報導</span>
+          <span class="next-card__title phrase"><span>十年來，</span><span>社福預算為何翻倍</span></span>
+          <span class="next-card__desc">你分給社福的那一份，十年前只有現在的一半。長照、育兒與社會住宅三條線同時往上。</span>
+          <span class="next-card__go">閱讀專題 <span aria-hidden="true">→</span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <p class="sr-only" id="calc-status" role="status" aria-live="polite"></p>
+</main>
+
+<footer class="site-footer">
+  <div class="budget-rule" aria-hidden="true"></div>
+  <div class="container">
+    <div class="site-footer__grid">
+      <div class="site-footer__brand">
+        <a class="brand" href="index.html">
+          <svg class="brand__mark" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+            <circle cx="5" cy="5" r="3.6" fill="#2F6BFF"/><circle cx="15" cy="5" r="3.6" fill="#2F6BFF"/><circle cx="25" cy="5" r="3.6" fill="#2F6BFF"/>
+            <circle cx="5" cy="15" r="3.6" fill="#FF6B4A"/><circle cx="15" cy="15" r="3.6" fill="#FF6B4A"/><circle cx="25" cy="15" r="3.6" fill="#12A37F"/>
+            <circle cx="5" cy="25" r="3.6" fill="#8A8F98"/><circle cx="15" cy="25" r="3.6" fill="#F2B705"/><circle cx="25" cy="25" r="3.6" fill="#9B5DE5"/>
+          </svg>
+          <span class="brand__text">
+            <span class="brand__name">你的稅金去哪裡？</span>
+            <span class="brand__sub">澄港市 2027 年度總預算</span>
+          </span>
+        </a>
+        <p>澄港市政府主計處的公民預算專刊，把一千多億元的預算書還原成你看得懂的尺度。數字以市議會三讀通過的法定預算為準。</p>
+      </div>
+      <nav class="site-footer__nav" aria-label="頁尾導覽">
+        <h2>本專刊</h2>
+        <ul>
+          <li><a href="index.html"><span class="site-nav__no">01</span>一千元的去向</a></li>
+          <li><a href="explorer.html"><span class="site-nav__no">02</span>預算探索器</a></li>
+          <li><a href="calculator.html"><span class="site-nav__no">03</span>稅金計算器</a></li>
+          <li><a href="story.html"><span class="site-nav__no">04</span>專題：社福翻倍</a></li>
+        </ul>
+      </nav>
+      <div class="site-footer__source">
+        <h2>資料來源與聯絡</h2>
+        <p>澄港市政府主計處《2027 年度澄港市地方總預算案》，2018–2026 年度為法定預算。金額四捨五入，加總可能與合計略有出入。</p>
+        <p>預算視覺化小組 · 市民熱線 1999 轉 6 · 港埕區市府路 1 號 11 樓</p>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府主計處 · 內容以 CC BY 4.0 授權</span>
+      <span>資料更新 2026.10.23</span>
+      <a class="back-link" href="../../index.html"><span aria-hidden="true">←</span>返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  'use strict';
+  const { data, fmt } = App;
+  const cats = data.categories;
+  const catOf = Object.fromEntries(cats.map(c => [c.key, c]));
+  const unitOf = Object.fromEntries(data.units.map(u => [u.key, u]));
+  const clamp = App.clamp;
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+  const r100 = v => Math.round(v / 100) * 100;
+  const money = n => fmt.money(n);
+  const perCapita = Math.round(data.total * 1e6 / data.meta.population);
+
+  /* ======================================================================
+     1. 試算模型：所有參數集中在這裡，方法說明與頁首公式都從這裡讀
+     ====================================================================== */
+  const MODEL = {
+    exemption: 97000,        // 免稅額／人
+    standard: 131000,        // 標準扣除額（單身）
+    salary: 218000,          // 薪資所得特別扣除額
+    brackets: [[590000, 0.05], [1330000, 0.12], [2660000, 0.20], [4980000, 0.30], [Infinity, 0.40]],
+    // 消費占收入比例隨收入下降（家庭收支調查），收入很低時以基本消費計
+    spend: { max: 0.78, min: 0.42, slope: 6000000, floor: 180000, perDependent: 54000 },
+    ret: { income: 0.34, vat: 0.47 },   // 國稅經統籌分配與一般性補助回到市府的比例
+  };
+  const LIMIT = { income: 50000000, dep: 6 };
+
+  // 自住房屋：各類型的基準稅額 × 行政區係數（房屋稅看路段與屋齡，地價稅看公告地價）
+  const HOME_TYPES = [
+    { key: 'apt', name: '公寓', desc: '約 30 坪、屋齡 35 年以上的四五樓公寓', house: 2600, land: 3900 },
+    { key: 'tower', name: '電梯大樓', desc: '約 35 坪、屋齡 15 年左右', house: 6200, land: 2700 },
+    { key: 'villa', name: '透天厝', desc: '約 45 坪、三層樓，土地持分大', house: 4100, land: 6800 },
+  ];
+  const DISTRICTS = [
+    { key: 'gang', name: '港埕區', house: 1.15, land: 1.55 },
+    { key: 'north', name: '北岸區', house: 1.10, land: 1.20 },
+    { key: 'old', name: '舊城區', house: 1.05, land: 1.40 },
+    { key: 'hill', name: '山腳區', house: 0.90, land: 0.70 },
+    { key: 'bay', name: '新灣區', house: 1.20, land: 1.25 },
+    { key: 'salt', name: '鹽田區', house: 0.95, land: 0.80 },
+    { key: 'creek', name: '溪洲區', house: 0.95, land: 0.85 },
+    { key: 'cloud', name: '雲嶺區', house: 0.85, land: 0.55 },
+  ];
+  const typeOf = Object.fromEntries(HOME_TYPES.map(t => [t.key, t]));
+  const distOf = Object.fromEntries(DISTRICTS.map(d => [d.key, d]));
+  const homeTax = (type, dist) => ({
+    house: r100(typeOf[type].house * distOf[dist].house),
+    land: r100(typeOf[type].land * distOf[dist].land),
+  });
+
+  // 換算物件對應到預算書裡的實際計畫（探索器深連結）；frac 表示可以有小數的單位，minStep 為圖示每格的最小量
+  const UNIT_META = {
+    lunch: { program: 'doe-04' }, book: { program: 'culture-01' },
+    care: { program: 'ltc-01', frac: true, minStep: 0.5 }, childcare: { program: 'social-02' },
+    sidewalk: { program: 'works-02', frac: true, minStep: 0.1 }, bus: { program: 'traffic-01', frac: true },
+    streetlight: { program: 'works-05' },
+    firefighter: { program: 'fire-01', frac: true, minStep: 0.5 }, cctv: { program: 'police-02' },
+    garbage: { program: 'env-01' }, vaccine: { program: 'health-02' },
+    office: { program: 'civil-01' },
+  };
+
+  const PERSONAS = [
+    { key: 'north', short: '北岸上班族', name: '北岸區上班族', income: 900000, dep: 1, home: true, type: 'tower', dist: 'north' },
+    { key: 'grad', short: '社會新鮮人', name: '社會新鮮人', income: 420000, dep: 0, home: false, type: 'tower', dist: 'north' },
+    { key: 'retiree', short: '退休長輩', name: '舊城區退休長輩', income: 360000, dep: 0, home: true, type: 'apt', dist: 'old' },
+    { key: 'renter', short: '租屋工程師', name: '租屋的工程師', income: 1150000, dep: 1, home: false, type: 'tower', dist: 'north' },
+    { key: 'family', short: '三代同堂', name: '山腳區三代同堂', income: 1500000, dep: 3, home: true, type: 'villa', dist: 'hill' },
+    { key: 'exec', short: '科技業主管', name: '港埕區科技業主管', income: 2800000, dep: 2, home: true, type: 'tower', dist: 'gang' },
+  ];
+  // 預設值即首頁導流卡的範例（一年 30,000 元 → 132 份營養午餐、0.23 公尺人行道）
+  const DEFAULT = { income: 900000, dep: 1, home: true, type: 'tower', dist: 'north' };
+
+  function incomeTaxOf(income, dep) {
+    const salaryDeduction = Math.min(income, MODEL.salary);
+    const exemptions = MODEL.exemption * (1 + dep);
+    const net = Math.max(0, income - exemptions - MODEL.standard - salaryDeduction);
+    let tax = 0, lo = 0, topRate = 0;
+    for (const [hi, rate] of MODEL.brackets) {
+      if (net <= lo) break;
+      tax += (Math.min(net, hi) - lo) * rate;
+      topRate = rate;
+      lo = hi;
+    }
+    return { tax: Math.round(tax), net, exemptions, salaryDeduction, topRate };
+  }
+
+  function compute(s) {
+    const it = incomeTaxOf(s.income, s.dep);
+    const spendRate = clamp(MODEL.spend.max - s.income / MODEL.spend.slope, MODEL.spend.min, MODEL.spend.max);
+    const spendBase = Math.max(s.income * spendRate, MODEL.spend.floor);
+    const spend = Math.round(spendBase + s.dep * MODEL.spend.perDependent);
+    const vat = Math.round(spend * 5 / 105);
+    const home = s.home ? homeTax(s.type, s.dist) : { house: 0, land: 0 };
+    const parts = [
+      { key: 'income', name: '綜合所得稅回流', paid: it.tax, rate: MODEL.ret.income, amount: r100(it.tax * MODEL.ret.income), color: '#1A1A1A' },
+      { key: 'vat', name: '營業稅回流', paid: vat, rate: MODEL.ret.vat, amount: r100(vat * MODEL.ret.vat), color: '#6E6A62' },
+      { key: 'house', name: '房屋稅', amount: home.house, color: '#ABA699' },
+      { key: 'land', name: '地價稅', amount: home.land, color: '#C4BEB0' },
+    ];
+    const total = sum(parts.map(p => p.amount));
+    // 依各政事別占歲出比例分配，最大餘數法讓六項加總恰為合計
+    const split = App.largestRemainder(cats.map(c => c.amount), total);
+    const alloc = Object.fromEntries(cats.map((c, i) => [c.key, split[i]]));
+    return { it, spendRate, spendBase, spend, vat, home, parts, total, alloc };
+  }
+
+  // 換算數量：顯示的數字與圖示用同一個值（依顯示精度無條件捨去，不誇大）
+  function equivOf(amount, unit) {
+    const meta = UNIT_META[unit.key];
+    const raw = amount / unit.cost;
+    const floorTo = d => Math.floor(raw * 10 ** d + 1e-9) / 10 ** d;
+    let d;
+    if (meta.frac) d = raw < 1 ? 2 : raw < 100 ? 1 : 0;
+    else d = raw < 1 ? 1 : 0;
+    const v = floorTo(d);
+    // 16.0 小時顯示成 16 小時；0.20 公尺仍保留兩位
+    if (d === 1 && Number.isInteger(v)) d = 0;
+    return { v, d, text: fmt.num(v, d) };
+  }
+
+  const wan = n => `${fmt.num(n / 10000, n % 10000 ? 1 : 0)} 萬`;
+  const homeLabel = s => (s.home ? `${distOf[s.dist].name.replace('區', '')}${typeOf[s.type].name}` : '租屋');
+  const condText = s => `年收入 ${wan(s.income)} · ${s.dep ? `扶養 ${s.dep} 人` : '無扶養'} · ${homeLabel(s)}`;
+
+
+  /* ======================================================================
+     2. 狀態與輸入
+     ====================================================================== */
+  const state = {
+    ...DEFAULT,
+    units: Object.fromEntries(cats.map(c => [c.key, data.units.find(u => u.cat === c.key).key])),
+  };
+
+  const $ = id => document.getElementById(id);
+  const incomeInput = $('income');
+  const incomeRange = $('income-range');
+  const depInput = $('dep');
+  const homeSwitch = $('home');
+  const homeMore = $('home-more');
+  const typeGroup = $('home-type');
+  const typeHint = $('type-hint');
+  const districtSel = $('district');
+  const form = $('calc-form');
+
+  districtSel.innerHTML = DISTRICTS.map(d => `<option value="${d.key}">${d.name}</option>`).join('');
+  document.querySelectorAll('[data-model]').forEach(el => {
+    const v = { retIncome: fmt.pct(MODEL.ret.income, 0), retVat: fmt.pct(MODEL.ret.vat, 0), exemption: fmt.num(MODEL.exemption) }[el.dataset.model];
+    if (v === undefined) throw new Error(`Unknown data-model key: ${el.dataset.model}`);
+    el.textContent = v;
+  });
+  const revTax = data.revenue.items[0].items;
+  const FILL = {
+    plateYi: fmt.yi(revTax.find(t => t.name === '使用牌照稅').amount),
+    poolYi: fmt.yi(revTax.find(t => t.name === '統籌分配稅款').amount),
+  };
+  document.querySelectorAll('[data-fill]').forEach(el => {
+    if (!(el.dataset.fill in FILL)) throw new Error(`Unknown data-fill key: ${el.dataset.fill}`);
+    el.textContent = FILL[el.dataset.fill];
+  });
+
+  // 外部輸入（文字框、網址）一律先驗證；回傳 { value } 或 { error }
+  function parseIncome(raw) {
+    const s = String(raw).replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/[,\s，元]/g, '');
+    if (s === '') return { error: '請輸入年收入，沒有收入請填 0。' };
+    if (!/^\d+$/.test(s)) return { error: '只能輸入數字，例如 900000 或 900,000。' };
+    const v = Number(s);
+    if (v > LIMIT.income) return { error: `上限為 ${fmt.num(LIMIT.income)} 元。` };
+    return { value: v };
+  }
+  function parseDep(raw) {
+    const s = String(raw).trim();
+    if (!/^\d+$/.test(s) || +s > LIMIT.dep) return { error: `請輸入 0 到 ${LIMIT.dep} 之間的整數。` };
+    return { value: +s };
+  }
+
+  function syncRangeFill() {
+    const p = (+incomeRange.value - +incomeRange.min) / (+incomeRange.max - +incomeRange.min) * 100;
+    incomeRange.style.setProperty('--fill', `${p}%`);
+  }
+  function setPressed(group, value) {
+    group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === value)));
+  }
+
+  // 把狀態寫回所有輸入元件（套用範例、重設、讀網址時）
+  let applying = false;
+  function writeInputs() {
+    applying = true;
+    incomeInput.value = fmt.num(state.income);
+    incomeRange.value = Math.min(state.income, +incomeRange.max);
+    syncRangeFill();
+    depInput.value = state.dep;
+    // 讓 app.js 的 stepper 重新判斷 ± 是否停用
+    depInput.dispatchEvent(new Event('input', { bubbles: true }));
+    homeSwitch.checked = state.home;
+    homeMore.hidden = !state.home;
+    setPressed(typeGroup, state.type);
+    districtSel.value = state.dist;
+    App.field.clear(form);
+    applying = false;
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const r = parseIncome(incomeInput.value);
+    if (r.error) { incomeInput.focus(); return; }
+    incomeInput.value = fmt.num(r.value);
+  });
+  incomeInput.addEventListener('input', () => {
+    const r = parseIncome(incomeInput.value);
+    if (r.error) { App.field.setError(incomeInput, r.error); return; }
+    App.field.clear(incomeInput);
+    state.income = r.value;
+    incomeRange.value = Math.min(r.value, +incomeRange.max);
+    syncRangeFill();
+    update();
+  });
+  incomeInput.addEventListener('blur', () => {
+    const r = parseIncome(incomeInput.value);
+    if (!r.error) incomeInput.value = fmt.num(r.value);
+  });
+  incomeRange.addEventListener('input', () => {
+    state.income = +incomeRange.value;
+    incomeInput.value = fmt.num(state.income);
+    App.field.clear(incomeInput);
+    update();
+  });
+  depInput.addEventListener('input', () => {
+    if (applying) return;
+    const r = parseDep(depInput.value);
+    if (r.error) { App.field.setError(depInput, r.error); return; }
+    App.field.clear(depInput);
+    state.dep = r.value;
+    update();
+  });
+  homeSwitch.addEventListener('change', () => {
+    state.home = homeSwitch.checked;
+    homeMore.hidden = !state.home;
+    update();
+  });
+  typeGroup.addEventListener('segchange', e => { state.type = e.detail.value; update(); });
+  districtSel.addEventListener('change', () => { state.dist = districtSel.value; update(); });
+
+  function applyPreset(p) {
+    Object.assign(state, { income: p.income, dep: p.dep, home: p.home, type: p.type, dist: p.dist });
+    writeInputs();
+    update();
+  }
+  const presetsEl = $('presets');
+  presetsEl.innerHTML = PERSONAS.map(p => `<button type="button" class="chip" data-persona="${p.key}" aria-pressed="false">${p.short}</button>`).join('');
+  presetsEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-persona]');
+    if (b) applyPreset(PERSONAS.find(p => p.key === b.dataset.persona));
+  });
+  $('reset-btn').addEventListener('click', () => {
+    applyPreset(DEFAULT);
+    App.toast('已回到預設條件：年收入 90 萬、扶養 1 人、北岸區電梯大樓。', { title: '重設完成' });
+  });
+  $('dock-edit').addEventListener('click', () => {
+    $('calc-panel').scrollIntoView({ behavior: App.reducedMotion ? 'auto' : 'smooth', block: 'start' });
+    incomeInput.focus({ preventScroll: true });
+  });
+  const matchesPersona = p => p.income === state.income && p.dep === state.dep && p.home === state.home &&
+    (!p.home || (p.type === state.type && p.dist === state.dist));
+
+
+  /* ======================================================================
+     3. 結果：摘要、預算尺、六類金額
+     ====================================================================== */
+  const totalEl = $('total');
+  const stack = $('stack');
+  const plot = $('ruler-plot');
+  const youMark = $('ruler-you');
+  const avgMark = $('ruler-avg');
+  const keysEl = $('keys');
+
+  stack.innerHTML = cats.map(c => `<div class="stack-bar__seg cat-${c.key}" data-cat="${c.key}" style="--w:0%"><span class="stack-bar__label"></span></div>`).join('');
+  keysEl.innerHTML = cats.map(c => `<button type="button" class="calc-key cat-${c.key}" data-cat="${c.key}" aria-describedby="keys-hint">
+      <span class="calc-key__name"><span class="swatch"></span>${c.short}</span>
+      <span class="calc-key__value num" data-role="amt">0</span>
+      <span class="calc-key__meta"><span>${fmt.pct(c.share)}</span><span data-role="day"></span></span>
+    </button>`).join('') + '<span class="sr-only" id="keys-hint">前往這一類的換算卡</span>';
+
+  // 比例尺：1、2、5 × 10ⁿ，且至少 10 萬，讓「平均每位市民」那條線一直在畫面內
+  function niceScale(v, min, steps = [1, 2, 5]) {
+    const target = Math.max(v, min);
+    for (let p = Math.floor(Math.log10(target)); ; p++) {
+      for (const k of steps) { if (k * 10 ** p >= target) return k * 10 ** p; }
+    }
+  }
+  const scaleLabel = v => (v === 0 ? '0' : wan(v));
+  let rulerScale = 0;
+
+  function renderRuler(r) {
+    const scale = niceScale(r.total * 1.04, 100000);
+    if (scale !== rulerScale) {
+      rulerScale = scale;
+      $('ruler-grid').innerHTML = [0.25, 0.5, 0.75].map(t => `<i style="left:${t * 100}%"></i>`).join('');
+      $('ruler-axis').innerHTML = [0, 0.25, 0.5, 0.75, 1].map(t => `<span style="left:${t * 100}%">${scaleLabel(scale * t)}</span>`).join('');
+    }
+    stack.querySelectorAll('.stack-bar__seg').forEach(seg => {
+      seg.style.setProperty('--w', `${(r.alloc[seg.dataset.cat] / scale) * 100}%`);
+    });
+    const x = r.total / scale;
+    youMark.style.setProperty('--x', `${x * 100}%`);
+    youMark.classList.toggle('is-flip', x > 0.72);
+    const ax = perCapita / scale;
+    avgMark.style.setProperty('--x', `${ax * 100}%`);
+    avgMark.classList.toggle('is-flip', ax > 0.6);
+    $('you-tag').textContent = fmt.num(r.total);
+    stack.setAttribute('aria-label', `你的 ${money(r.total)} 依用途分段：` + cats.map(c => `${c.short} ${money(r.alloc[c.key])}`).join('、'));
+    labelSegments(r);
+  }
+  // 段內標籤看「到位後」的寬度決定要不要放、放多少字
+  function labelSegments(r) {
+    const W = plot.clientWidth;
+    if (!W) return;
+    stack.querySelectorAll('.stack-bar__seg').forEach(seg => {
+      const c = catOf[seg.dataset.cat];
+      const px = (r.alloc[c.key] / rulerScale) * W;
+      seg.firstElementChild.textContent = px >= 118 ? `${c.short} ${fmt.num(r.alloc[c.key])}` : px >= 52 ? c.short : '';
+    });
+  }
+
+  function renderSummary(r, animate) {
+    App.countTo(totalEl, r.total, animate ? {} : { duration: 1 });
+    $('f-day').textContent = fmt.num(Math.round(r.total / 365));
+    // 高收入者會是平均的好幾倍，此時「倍」比上千的百分比好讀
+    const ratio = r.total / perCapita;
+    $('f-avg').textContent = ratio >= 2 ? `${fmt.num(ratio, 1)} 倍` : fmt.pct(ratio);
+    $('f-inc').textContent = state.income > 0 ? fmt.pct(r.total / state.income) : '—';
+    $('lede').innerHTML = ledeHTML(r);
+    keysEl.querySelectorAll('.calc-key').forEach(k => {
+      App.countTo(k.querySelector('[data-role="amt"]'), r.alloc[k.dataset.cat], { duration: 700 });
+      k.querySelector('[data-role="day"]').textContent = `每天 ${fmt.num(Math.round(r.alloc[k.dataset.cat] / 365))} 元`;
+    });
+    $('dock-total').textContent = fmt.num(r.total);
+    $('dock-cond').textContent = condText(state);
+  }
+
+  function ledeHTML(r) {
+    const [inc, vat, house, land] = r.parts;
+    const local = house.amount + land.amount;
+    const pct = v => Math.round((v / r.total) * 100);
+    let src;
+    if (inc.amount === 0) src = `你的收入還不必繳綜合所得稅，但每次買東西都繳了營業稅，其中約 <b>${money(vat.amount)}</b> 經統籌分配回到市府`;
+    else if (vat.amount >= inc.amount) src = `其中 <b>${pct(vat.amount)}%</b> 來自你買東西時繳的營業稅，比綜合所得稅回流的 ${money(inc.amount)} 還多`;
+    else src = `其中 <b>${pct(inc.amount)}%</b> 來自綜合所得稅回流，收入越高，這一塊長得越快`;
+    const localTxt = local ? `；房屋稅與地價稅 <b>${money(local)}</b> 則直接繳進市庫` : '';
+    const u = unitOf[state.units.edu];
+    const eq = equivOf(r.alloc.edu, u);
+    return `你一年約貢獻 <b>${money(r.total)}</b> 給澄港市。${src}${localTxt}。最大的一份 <b>${money(r.alloc.edu)}</b> 給了教育，相當於 <b>${eq.text} ${u.unit}${u.name}</b>。`;
+  }
+
+  // 六類鍵、收據去向列：hover／focus 時在預算尺上單獨標出該類
+  let focusCat = null;
+  function setFocus(key) {
+    if (key === focusCat) return;
+    focusCat = key;
+    stack.querySelectorAll('.stack-bar__seg').forEach(seg => seg.classList.toggle('is-dim', !!key && seg.dataset.cat !== key));
+    keysEl.classList.toggle('has-focus', !!key);
+    document.querySelectorAll('.calc-key, .calc-rrow').forEach(el => el.classList.toggle('is-on', el.dataset.cat === key));
+  }
+  function goToCard(key) {
+    const card = $(`eq-${key}`);
+    document.querySelectorAll('.is-target').forEach(el => el.classList.remove('is-target'));
+    void card.offsetWidth;   // 重新觸發閃爍動畫
+    card.classList.add('is-target');
+    card.scrollIntoView({ behavior: App.reducedMotion ? 'auto' : 'smooth', block: 'center' });
+    card.focus({ preventScroll: true });
+  }
+  [keysEl, $('receipt-dst')].forEach(host => {
+    host.addEventListener('pointerover', e => { const b = e.target.closest('[data-cat]'); if (b) setFocus(b.dataset.cat); });
+    host.addEventListener('pointerleave', () => setFocus(null));
+    host.addEventListener('focusin', e => { const b = e.target.closest('[data-cat]'); if (b) setFocus(b.dataset.cat); });
+    host.addEventListener('focusout', () => setFocus(null));
+    host.addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (b) goToCard(b.dataset.cat); });
+  });
+
+
+  /* ======================================================================
+     4. 換算卡：每一類的錢換成一樣東西，圖示陣列隨數量增減
+     ====================================================================== */
+  const PICT_CAP = 30;
+  const PICT_STEPS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5];
+  for (let p = 0; p <= 6; p++) [1, 2, 5].forEach(k => PICT_STEPS.push(k * 10 ** p));
+  const pictStep = (v, unit) => PICT_STEPS.find(k => k >= (UNIT_META[unit.key].minStep || 1) && Math.ceil(v / k - 1e-9) <= PICT_CAP);
+  const icoSVG = (key, cls) => `<svg class="${cls}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><use href="#ico-${key}"/></svg>`;
+
+  const eqGrid = $('eq-grid');
+  eqGrid.innerHTML = cats.map(c => {
+    const units = data.units.filter(u => u.cat === c.key);
+    const seg = units.length > 1
+      ? `<div class="segmented calc-seg-sm" data-segmented role="group" aria-label="${c.short}：換算成哪一樣東西">${units.map(u =>
+        `<button type="button" data-value="${u.key}" aria-pressed="${u.key === state.units[c.key]}">${u.name}</button>`).join('')}</div>`
+      : '';
+    return `<article class="calc-eq cat-${c.key}" id="eq-${c.key}" data-cat="${c.key}" tabindex="-1" aria-labelledby="eq-${c.key}-name" data-reveal>
+        <div class="calc-eq__top"><span class="kicker cat-${c.key}">${c.name}</span><span class="calc-eq__amt num" data-role="amt"></span></div>
+        ${seg}
+        <div class="calc-eq__body">
+          <span class="calc-eq__lead">你出資了</span>
+          <p class="calc-eq__value"><span class="calc-eq__num num" data-role="value">0</span><span class="calc-eq__unit" data-role="unit"></span></p>
+          <h3 class="calc-eq__name" id="eq-${c.key}-name" data-role="name"></h3>
+        </div>
+        <div class="calc-pict" data-role="pict"></div>
+        <p class="calc-pict__key" data-role="key"></p>
+        <p class="calc-eq__note" data-role="note"></p>
+        <a class="calc-eq__link" data-role="link" href="explorer.html"></a>
+      </article>`;
+  }).join('');
+  App.scan(eqGrid);
+  eqGrid.querySelectorAll('[data-segmented]').forEach(g => g.addEventListener('segchange', e => {
+    state.units[g.closest('.calc-eq').dataset.cat] = e.detail.value;
+    update();
+  }));
+
+  // 圖示只在卡片區第一次進入視窗後才播放進場動畫，之前先靜態排好
+  let pictLive = false;
+  new IntersectionObserver((entries, obs) => {
+    if (!entries.some(en => en.isIntersecting)) return;
+    obs.disconnect();
+    pictLive = true;
+    eqGrid.querySelectorAll('[data-role="pict"]').forEach(box => { box.innerHTML = ''; box.dataset.sig = ''; });
+    update();
+  }).observe(eqGrid);
+
+  function renderPict(box, unit, v) {
+    const k = pictStep(v, unit);
+    const full = Math.floor(v / k + 1e-9);
+    const frac = v / k - full;
+    const n = full + (frac > 0.004 ? 1 : 0);
+    const sig = `${unit.key}|${k}`;
+    if (box.dataset.sig !== sig) { box.innerHTML = ''; box.dataset.sig = sig; }
+    while (box.children.length > n) box.lastElementChild.remove();
+    let added = 0;
+    while (box.children.length < n) {
+      const el = document.createElement('span');
+      el.className = 'calc-ico';
+      el.innerHTML = icoSVG(unit.key, 'calc-ico__base') + icoSVG(unit.key, 'calc-ico__fill');
+      if (pictLive) {
+        el.classList.add('is-new');
+        el.style.setProperty('--d', `${Math.min(added, 28) * 16}ms`);
+        el.addEventListener('animationend', () => el.classList.remove('is-new'), { once: true });
+      }
+      box.append(el);
+      added++;
+    }
+    [...box.children].forEach((el, i) => el.style.setProperty('--f', i < full ? '1' : frac.toFixed(3)));
+    return k;
+  }
+
+  function renderEquivs(r) {
+    eqGrid.querySelectorAll('.calc-eq').forEach(card => {
+      const key = card.dataset.cat;
+      const unit = unitOf[state.units[key]];
+      const amount = r.alloc[key];
+      const eq = equivOf(amount, unit);
+      const q = sel => card.querySelector(`[data-role="${sel}"]`);
+      q('amt').textContent = money(amount);
+      App.countTo(q('value'), eq.v, { decimals: eq.d, duration: 800, format: v => fmt.num(v, eq.d) });
+      q('unit').textContent = unit.unit;
+      q('name').textContent = unit.name;
+      const k = renderPict(q('pict'), unit, eq.v);
+      q('key').innerHTML = `<span class="calc-ico">${icoSVG(unit.key, 'calc-ico__fill')}</span>每格 ＝ ${fmt.num(k, k < 1 ? (k < 0.1 ? 2 : 1) : 0)} ${unit.unit}`;
+      q('note').textContent = `${fmt.num(unit.cost)} 元／${unit.unit}：${unit.note}`;
+      const prog = App.program(UNIT_META[unit.key].program);
+      const link = q('link');
+      link.href = `explorer.html#program=${prog.id}`;
+      link.innerHTML = `<span class="calc-eq__link-label">預算書裡的這一項</span>
+        <span class="calc-eq__link-row"><b>${prog.name}</b><span class="num">${fmt.yi(prog.amount)}</span>${fmt.deltaHTML(prog.amount, prog.prev)}<span class="calc-eq__go" aria-hidden="true">→</span></span>`;
+      card.querySelectorAll('[data-segmented] button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === unit.key)));
+    });
+  }
+
+
+  /* ======================================================================
+     5. 收據與排名
+     ====================================================================== */
+  const srcList = $('receipt-src');
+  const dstList = $('receipt-dst');
+  dstList.innerHTML = cats.map(c => `<li><button type="button" class="receipt__row calc-rrow cat-${c.key}" data-cat="${c.key}">
+      <span><span class="swatch"></span>${c.name}</span><span class="receipt__lead" aria-hidden="true"></span>
+      <span class="num" data-role="amt">0</span><span class="num calc-rrow__pct">${fmt.pct(c.share)}</span></button></li>`).join('');
+
+  function renderReceipt(r) {
+    srcList.innerHTML = r.parts.map(p => {
+      let sub;
+      if (p.paid !== undefined) sub = `你繳 ${fmt.num(p.paid)} × ${fmt.pct(p.rate, 0)}`;
+      else sub = state.home ? `${distOf[state.dist].name} · ${typeOf[state.type].name}` : '未持有自住房屋';
+      return `<li class="receipt__row${p.amount ? '' : ' is-zero'}">
+        <span><span><i class="calc-rsw" style="background:${p.color}"></i>${p.name}</span><small>${sub}</small></span>
+        <span class="receipt__lead" aria-hidden="true"></span><span class="num">${p.amount ? fmt.num(p.amount) : '—'}</span></li>`;
+    }).join('');
+    dstList.querySelectorAll('[data-cat]').forEach(b => { b.querySelector('[data-role="amt"]').textContent = fmt.num(r.alloc[b.dataset.cat]); });
+    $('receipt-total').textContent = money(r.total);
+  }
+
+  // 排名：六種典型市民＋你，數值改變時重新排序，用 FLIP 讓列滑到新位置
+  const personaResults = PERSONAS.map(p => ({ key: p.key, p, total: compute(p).total }));
+  const rankList = $('rank-list');
+  rankList.innerHTML = personaResults.map(({ p }) => `<li class="calc-rank__item" data-key="${p.key}">
+      <button type="button" class="calc-rank__row" data-persona="${p.key}" aria-pressed="false">
+        <span class="calc-rank__who"><b>${p.name}</b><small>${condText(p).replace('年收入 ', '')}</small></span>
+        <span class="calc-rank__val num"></span>
+        <span class="calc-rank__bar"><span class="calc-rank__fill"></span></span>
+        <span class="sr-only">，點擊套用這組條件</span>
+      </button></li>`).join('') +
+    `<li class="calc-rank__item is-you" data-key="you"><div class="calc-rank__row">
+        <span class="calc-rank__who"><b>你</b><small data-role="cond"></small></span>
+        <span class="calc-rank__val num" data-role="val"></span>
+        <span class="calc-rank__bar"><span class="calc-rank__fill">${cats.map(c => `<i class="cat-${c.key}" style="--g:${c.amount}"></i>`).join('')}</span></span>
+      </div></li>`;
+  rankList.addEventListener('click', e => {
+    const b = e.target.closest('[data-persona]');
+    if (b) applyPreset(PERSONAS.find(p => p.key === b.dataset.persona));
+  });
+  const rankItems = Object.fromEntries([...rankList.children].map(li => [li.dataset.key, li]));
+  personaResults.forEach(({ key, total }) => { rankItems[key].querySelector('.calc-rank__val').textContent = fmt.num(total); });
+
+  function renderRank(r) {
+    const rows = [...personaResults, { key: 'you', total: r.total }];
+    const scale = niceScale(Math.max(...rows.map(x => x.total)) * 1.04, 150000, [1, 1.5, 2, 3, 5]);
+    rows.forEach(x => rankItems[x.key].querySelector('.calc-rank__fill').style.setProperty('--w', (x.total / scale).toFixed(4)));
+    const you = rankItems.you;
+    you.querySelector('[data-role="val"]').textContent = fmt.num(r.total);
+    you.querySelector('[data-role="cond"]').textContent = condText(state).replace('年收入 ', '');
+    const rankPlot = $('rank-plot');
+    rankPlot.style.setProperty('--avg', (perCapita / scale).toFixed(4));
+    rankPlot.classList.toggle('is-flip', perCapita / scale > 0.62);
+    $('rank-axis').innerHTML = [0, 0.5, 1].map(t => `<span>${scaleLabel(scale * t)}</span>`).join('');
+    personaResults.forEach(({ key, p }) => rankItems[key].querySelector('button').setAttribute('aria-pressed', String(matchesPersona(p))));
+
+    // 由大到小；同額時「你」排在前面
+    const order = rows.sort((a, b) => b.total - a.total || (a.key === 'you' ? -1 : b.key === 'you' ? 1 : 0)).map(x => rankItems[x.key]);
+    const current = [...rankList.children];
+    if (order.every((el, i) => current[i] === el)) return;
+    const active = document.activeElement;
+    const first = new Map(current.map(el => [el, el.getBoundingClientRect().top]));
+    rankList.append(...order);
+    if (active && rankList.contains(active)) active.focus({ preventScroll: true });
+    if (App.reducedMotion) return;
+    const moved = current.filter(el => {
+      const dy = first.get(el) - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) return false;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      return true;
+    });
+    void rankList.offsetHeight;   // 先讓瀏覽器套用反向位移，再放開過渡
+    moved.forEach(el => { el.style.transition = ''; el.style.transform = ''; });
+  }
+
+
+  /* ======================================================================
+     6. 方法：代入目前條件的算式、行政區表
+     ====================================================================== */
+  const stepsEl = $('steps');
+  const op = s => `<span class="calc-op2">${s}</span>`;
+  function renderSteps(r) {
+    const it = r.it;
+    const [inc, vat, house, land] = r.parts;
+    const people = 1 + state.dep;
+    const itNote = it.net > 0
+      ? `淨額 ${fmt.num(it.net)} 元，最高適用 ${fmt.pct(it.topRate, 0)} 級距（五級累進 5%–40%）。`
+      : '扣除後沒有課稅所得，不必繳綜合所得稅。';
+    const spendNote = r.spendBase === MODEL.spend.floor
+      ? `收入 × ${fmt.pct(r.spendRate, 0)} 低於基本消費，以每年 ${fmt.num(MODEL.spend.floor)} 元計`
+      : `收入 ${fmt.num(state.income)} × ${fmt.pct(r.spendRate, 0)}`;
+    const homeEq = state.home
+      ? `房屋稅 ${fmt.num(house.amount)} ${op('＋')} 地價稅 ${fmt.num(land.amount)} ${op('＝')} <b>${fmt.num(house.amount + land.amount)}</b>`
+      : `<b>0</b>${op('（沒有自住房屋）')}`;
+    stepsEl.innerHTML = `
+      <li class="calc-step">
+        <h3>綜合所得稅<sup class="fn-ref"><a href="#fn-2" id="fnref-2" aria-label="註 2">2</a></sup></h3>
+        <p class="calc-step__eq">( ${fmt.num(state.income)} ${op('−')} ${fmt.num(MODEL.exemption)} × ${people} ${op('−')} ${fmt.num(MODEL.standard)} ${op('−')} ${fmt.num(it.salaryDeduction)} ) ${op('× 累進稅率 ＝')} <b>${fmt.num(it.tax)}</b></p>
+        <p class="calc-step__note">免稅額每人 ${fmt.num(MODEL.exemption)} 元（你${state.dep ? `與 ${state.dep} 位受扶養人` : ''}）、標準扣除額 ${fmt.num(MODEL.standard)} 元、薪資所得特別扣除額最多 ${fmt.num(MODEL.salary)} 元。${itNote}</p>
+      </li>
+      <li class="calc-step">
+        <h3>隨消費繳的營業稅</h3>
+        <p class="calc-step__eq">一年應稅消費 ${fmt.num(r.spend)} ${op('× 5/105 ＝')} <b>${fmt.num(r.vat)}</b></p>
+        <p class="calc-step__note">消費 ＝ ${spendNote}${state.dep ? `，加上受扶養人每人 ${fmt.num(MODEL.spend.perDependent)} 元` : ''}。收入越高，花掉的比例越低（${fmt.pct(MODEL.spend.min, 0)}–${fmt.pct(MODEL.spend.max, 0)}）；營業稅內含在售價裡，所以是 5/105。</p>
+      </li>
+      <li class="calc-step">
+        <h3>國稅回到市府的部分</h3>
+        <p class="calc-step__eq">${fmt.num(it.tax)} × ${fmt.pct(MODEL.ret.income, 0)} ${op('＋')} ${fmt.num(r.vat)} × ${fmt.pct(MODEL.ret.vat, 0)} ${op('＝')} ${fmt.num(inc.amount)} ${op('＋')} ${fmt.num(vat.amount)} ${op('＝')} <b>${fmt.num(inc.amount + vat.amount)}</b></p>
+        <p class="calc-step__note">綜合所得稅與營業稅先繳給中央，再以統籌分配稅款與一般性補助的形式回到市府；各取至百元。</p>
+      </li>
+      <li class="calc-step">
+        <h3>直接繳給市府的地方稅</h3>
+        <p class="calc-step__eq">${homeEq}</p>
+        <p class="calc-step__note">${state.home ? `${distOf[state.dist].name}${typeOf[state.type].name}（${typeOf[state.type].desc}）自住稅額的中位數，見八個行政區的稅額表。` : '只有持有房屋的人會收到房屋稅與地價稅的稅單；租金裡隱含的部分不計入。'}</p>
+      </li>
+      <li class="calc-step">
+        <h3>依 2027 年度預算案的比例分配</h3>
+        <p class="calc-step__eq">${fmt.num(inc.amount + vat.amount)} ${op('＋')} ${fmt.num(house.amount + land.amount)} ${op('＝')} <b>${fmt.num(r.total)}</b> ${op('× 各政事別占比')}</p>
+        <ul class="calc-step__split">${cats.map(c => `<li class="cat-${c.key}"><span class="swatch"></span>${c.short} ${fmt.pct(c.share)}<span class="num">${fmt.num(r.alloc[c.key])}</span></li>`).join('')}</ul>
+      </li>`;
+  }
+
+  const dTable = $('district-table');
+  dTable.tBodies[0].innerHTML = DISTRICTS.map(d => `<tr data-dist="${d.key}"><th scope="row" data-value="${d.name}">${d.name}</th>${HOME_TYPES.map(t => {
+    const h = homeTax(t.key, d.key);
+    const v = h.house + h.land;
+    return `<td class="is-num" data-type="${t.key}" data-value="${v}">${fmt.num(v)}</td>`;
+  }).join('')}</tr>`).join('');
+  function renderTable() {
+    dTable.querySelectorAll('tbody tr').forEach(tr => {
+      const on = state.home && tr.dataset.dist === state.dist;
+      tr.classList.toggle('is-current', on);
+      tr.querySelectorAll('td').forEach(td => td.classList.toggle('is-current-cell', on && td.dataset.type === state.type));
+    });
+  }
+
+
+  /* ======================================================================
+     7. 單一重繪入口：任何改變狀態的動作都經過這裡
+     ====================================================================== */
+  let hashTimer = 0, statusTimer = 0;
+  function update({ animate = true } = {}) {
+    const r = compute(state);
+    typeHint.textContent = typeOf[state.type].desc;
+    presetsEl.querySelectorAll('[data-persona]').forEach(b => b.setAttribute('aria-pressed', String(matchesPersona(PERSONAS.find(p => p.key === b.dataset.persona)))));
+    renderSummary(r, animate);
+    renderRuler(r);
+    renderEquivs(r);
+    renderReceipt(r);
+    renderRank(r);
+    renderSteps(r);
+    renderTable();
+    // 拖曳滑桿時不要每一格都寫網址、念給螢幕報讀器
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(writeHash, 300);
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { $('calc-status').textContent = `估算更新：${condText(state)}，一年約貢獻 ${money(r.total)}。`; }, 800);
+    lastResult = r;
+  }
+  let lastResult = null;
+
+  // 網址保存條件，可直接分享：#income=900000&dep=1&home=tower-north
+  function writeHash() {
+    const p = new URLSearchParams({ income: state.income, dep: state.dep, home: state.home ? `${state.type}-${state.dist}` : 'none' });
+    const hash = '#' + p.toString();
+    if (location.hash !== hash) history.replaceState(null, '', location.href.split('#')[0] + hash);
+  }
+  // 回傳是否讀到條件：頁內錨點（#fn-1、#method）不是條件，交給 app.js 的錨點捲動
+  function readHash() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    if (!p.has('income')) return false;
+    const inc = parseIncome(p.get('income'));
+    const dep = parseDep(p.get('dep') ?? '0');
+    if (!inc.error) state.income = inc.value;
+    if (!dep.error) state.dep = dep.value;
+    const home = p.get('home');
+    if (home === 'none') state.home = false;
+    else if (home) {
+      const [type, dist] = home.split('-');
+      if (typeOf[type] && distOf[dist]) Object.assign(state, { home: true, type, dist });
+    }
+    return true;
+  }
+  // 手動改網址，或在同一分頁貼上別人分享的條件連結：hash 變了但頁面不會重載，要自己重新套用
+  addEventListener('hashchange', () => {
+    if (!readHash()) return;
+    writeInputs();
+    update();
+  });
+
+  new ResizeObserver(() => { if (lastResult) labelSegments(lastResult); }).observe(plot);
+
+  $('copy-btn').addEventListener('click', () => {
+    const r = lastResult;
+    const lines = [
+      '我的澄港市稅金試算（2027 年度總預算案）',
+      condText(state),
+      `一年約貢獻給市府 ${money(r.total)}`,
+      ...r.parts.filter(p => p.amount).map(p => `　${p.name} ${money(p.amount)}`),
+      '分到這些用途：',
+      ...cats.map(c => {
+        const u = unitOf[state.units[c.key]];
+        return `　${c.name} ${money(r.alloc[c.key])}（相當於 ${equivOf(r.alloc[c.key], u).text} ${u.unit}${u.name}）`;
+      }),
+      location.href.split('#')[0] + '#' + new URLSearchParams({ income: state.income, dep: state.dep, home: state.home ? `${state.type}-${state.dist}` : 'none' }).toString(),
+    ];
+    // 剪貼簿是瀏覽器邊界：不支援或被拒時明確告知，不假裝成功
+    if (!navigator.clipboard) {
+      App.toast('這個瀏覽器不允許網頁寫入剪貼簿，請直接選取收據文字複製。', { title: '無法複製' });
+      return;
+    }
+    navigator.clipboard.writeText(lines.join('\n')).then(
+      () => App.toast('收據摘要與這組條件的連結已複製，可以貼給朋友比一比。', { title: '已複製' }),
+      () => App.toast('瀏覽器拒絕了剪貼簿存取，請直接選取收據文字複製。', { title: '無法複製' }),
+    );
+  });
+
+  /* ---- 啟動 ---- */
+  readHash();
+  writeInputs();
+  void stack.offsetWidth;   // 先以 0 寬完成一次樣式計算，第一次填值時預算尺才會長出來
+  update();
+});
+</script>
+</body>
+</html>

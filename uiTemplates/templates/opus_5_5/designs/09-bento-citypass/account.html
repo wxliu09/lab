@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="has-subnav">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>我的市民卡 — 城市通 CityPass 澄港市民數位服務</title>
+<meta name="description" content="城市通 CityPass 我的市民卡：行動市民卡條碼、點數與繳費紀錄、通知設定、綁定服務與資料授權、裝置與登入紀錄，一頁管理。">
+<script>
+  /* 在第一次繪製前套用使用者選過的主題，避免深淺閃爍（其餘主題邏輯在 app.js） */
+  (function () { var t = localStorage.getItem('citypass-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =============== 頁首問候 =============== */
+  .mc-hero { padding: clamp(36px, 5vw, 72px) 0 clamp(28px, 3.5vw, 44px); }
+  .mc-hero__grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 28px 48px; }
+  .mc-hero .lede { margin-top: 18px; max-width: 34em; }
+  .mc-profile {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px;
+    border-radius: var(--radius-2xl);
+    background: var(--surface);
+    box-shadow: var(--shadow-card), 0 0 0 .5px var(--line);
+  }
+  .mc-profile .avatar { --s: 52px; font-size: 20px; }
+  .mc-profile__body { min-width: 0; padding-right: 4px; }
+  .mc-profile__name { font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .mc-profile__meta { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* =============== 總覽 bento =============== */
+  .mc-bento {
+    grid-template-rows: repeat(2, minmax(300px, auto));
+    grid-template-areas: "a a b b" "a a c d";
+  }
+
+  /* A · 行動市民卡（深色舞台，卡片 3D 翻轉） */
+  .mc-cardtile { gap: 0; background: #0A0A0D; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
+  .mc-cardtile__head, .mc-cardtile__foot { position: relative; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .mc-cardtile__tools { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mc-stage { position: relative; flex: 1; display: grid; place-items: center; align-content: center; min-height: 380px; padding: 28px 0 22px; }
+  .mc-stage__glow {
+    position: absolute; left: 50%; top: 50%; width: 660px; height: 440px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(closest-side, rgba(91, 91, 246, .42), rgba(34, 211, 238, .12) 58%, transparent);
+    pointer-events: none;
+  }
+  .mc-stage__rings { position: absolute; left: 50%; top: 50%; width: 660px; height: 660px; transform: translate(-50%, -50%); pointer-events: none; }
+  .mc-ring { stroke: rgba(255, 255, 255, .07); }
+  .mc-ring--dash { stroke: rgba(140, 140, 255, .34); stroke-dasharray: 2 10; transform-box: fill-box; transform-origin: center; animation: cp-spin 120s linear infinite; }
+  .mc-flip { position: relative; z-index: 1; width: min(440px, 100%); }
+  /* 卡片落在舞台上的光影 */
+  .mc-flip::after {
+    content: ""; position: absolute; left: 10%; right: 10%; bottom: -30px; z-index: -1;
+    height: 30px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(91, 91, 246, .55), transparent);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+  .mc-flip__hit { position: absolute; inset: 0; z-index: 3; padding: 0; border: 0; border-radius: 22px; background: none; cursor: pointer; }
+  .mc-flip__hit:focus-visible { outline-offset: 6px; }
+  .mc-stage__hint { position: relative; z-index: 1; margin-top: 44px; font-size: 13px; color: var(--text-2); }
+
+  .mc-ccard { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2), 0 34px 60px -26px rgba(30, 30, 150, .85); }
+  .mc-ccard__mid { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .mc-ccard__chip { display: flex; align-items: center; gap: 3cqi; flex: 1; }
+  .mc-ccard__chip .ccard__chip { width: 17%; }
+  .mc-nfc { width: 7cqi; height: 7cqi; opacity: .8; }
+  /* 防偽全像貼紙：背景位置跟著指標（--mx/--my 由 [data-tilt] 寫入）移動，產生虹彩流動 */
+  .mc-holo {
+    width: 13cqi; aspect-ratio: 1;
+    display: grid; place-items: center;
+    border-radius: 2.6cqi;
+    background: linear-gradient(125deg, #F9D3F0 0%, #BFE8FF 18%, #D5FFE0 34%, #FFF2BF 50%, #E0D2FF 66%, #BFE8FF 82%, #F9D3F0 100%);
+    background-size: 280% 280%;
+    background-position: var(--mx, 50%) var(--my, 30%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6), 0 1px 3px rgba(0, 0, 0, .15);
+    color: rgba(50, 50, 130, .5);
+    transition: background-position .35s var(--ease-out);
+  }
+  .mc-holo svg { width: 62%; height: 62%; }
+  .mc-ccard__no { margin-top: 2%; }
+  .mc-glare {
+    position: absolute; inset: 0; z-index: 1;
+    border-radius: inherit;
+    background: radial-gradient(circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, .45), rgba(255, 255, 255, 0) 45%);
+    mix-blend-mode: overlay;
+    opacity: 0;
+    transition: opacity var(--dur-3);
+    pointer-events: none;
+  }
+  .mc-flip.is-tilting .mc-glare { opacity: 1; }
+  .mc-ccard.is-shine::after { animation: mc-shine 1.5s var(--ease-out); }
+  @keyframes mc-shine { from { transform: translateX(-70%); } to { transform: translateX(170%); } }
+
+  .mc-back { display: flex; gap: 5%; padding: 5.5%; align-items: stretch; }
+  .mc-back__qr { flex: none; height: 100%; aspect-ratio: 1; }
+  .mc-back__qr .qr { width: 100%; height: 100%; }
+  .mc-back__info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 1% 0; }
+  .mc-back__label { font-size: max(10px, 3.3cqi); font-weight: 600; letter-spacing: .06em; color: #6E6E73; }
+  .mc-back__name { margin-top: 1.5cqi; font-size: max(14px, 6cqi); font-weight: 700; letter-spacing: .06em; line-height: 1.2; }
+  .mc-back__tier { font-size: max(11px, 3.6cqi); font-weight: 600; color: #4B4BE0; }
+  .mc-back__timer { display: flex; align-items: center; gap: 2.4cqi; font-size: max(11px, 3.6cqi); color: #6E6E73; font-variant-numeric: tabular-nums; }
+  .mc-back__timer .ring { width: max(18px, 7cqi); height: auto; }
+  .mc-back__timer .ring__track { stroke: rgba(0, 0, 0, .08); }
+  .mc-back__timer .ring__bar { transition: stroke-dashoffset 1s linear; }
+  .mc-back__timer b { color: #1D1D1F; font-weight: 700; }
+  .mc-back__no { font-size: max(11px, 3.6cqi); font-weight: 600; letter-spacing: .1em; font-variant-numeric: tabular-nums; }
+
+  /* B · 市民點數 */
+  .mc-pts { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: clamp(24px, 3vw, 44px); }
+  .mc-pts__ring { width: 200px; height: 200px; }
+  .mc-pts__val { font-family: var(--font-display); font-size: 46px; font-weight: 700; letter-spacing: -.035em; line-height: 1; }
+  .mc-pts__unit { margin-top: 8px; font-size: 13px; color: var(--text-2); }
+  .mc-pts__body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .mc-pts__facts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mc-pts__facts .badge { height: 28px; padding: 0 12px; font-size: 12.5px; }
+  .mc-pts__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; margin-top: 4px; }
+
+  /* C · 待繳費用 */
+  .mc-due__label { font-size: 14px; color: var(--text-2); }
+  .mc-due__amt { display: flex; align-items: baseline; gap: 6px; margin-top: auto; font-family: var(--font-display); font-size: clamp(40px, 3.6vw, 52px); font-weight: 700; letter-spacing: -.04em; line-height: 1; }
+  .mc-due__amt small { font-size: 17px; font-weight: 600; color: var(--text-2); letter-spacing: 0; }
+  .mc-due__text { font-size: 14px; color: var(--text-2); }
+  .mc-due__done { margin-top: auto; display: grid; gap: 6px; }
+  .mc-due__done-mark { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--ok-text); }
+  .mc-due__done-mark .i { width: 28px; height: 28px; animation: mc-pop .6s var(--ease-spring); }
+  @keyframes mc-pop { from { transform: scale(.4); opacity: 0; } }
+
+  /* D · 綁定與授權 */
+  .mc-bindt__icons { display: flex; padding-left: 4px; }
+  .mc-bindt__icons .app-icon { --s: 38px; margin-left: -6px; box-shadow: 0 0 0 3px var(--surface); transition: transform var(--dur-3) var(--ease-spring); }
+  .mc-bindt.is-live .mc-bindt__icons .app-icon { transform: translateY(-4px); transition-delay: calc(var(--i) * 50ms); }
+  .mc-bindt__nums { margin-top: auto; display: flex; align-items: baseline; gap: 4px; font-family: var(--font-display); font-size: clamp(48px, 4.4vw, 64px); font-weight: 700; letter-spacing: -.045em; line-height: 1; }
+  .mc-bindt__nums small { font-size: 17px; font-weight: 600; letter-spacing: 0; color: var(--text-2); }
+  .mc-bindt__text { font-size: 14px; color: var(--text-2); }
+
+  /* =============== 各區塊標頭 =============== */
+  .mc-section { padding-block: clamp(56px, 7vw, 104px) 0; }
+  .mc-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; margin-bottom: clamp(24px, 3vw, 36px); }
+  .mc-head .eyebrow { margin-bottom: 8px; font-size: var(--fs-body); }
+  .mc-head__title { font-size: clamp(1.875rem, 1.3rem + 1.7vw, 2.75rem); font-weight: 700; letter-spacing: -.025em; line-height: 1.1; }
+  /* 每段是一個語意單位：寬度不夠時整段換行，避免「看多／久」這種斷法 */
+  .mc-head__title > span { display: inline-block; }
+  .mc-head__lede { margin-top: 10px; max-width: 36em; color: var(--text-2); text-wrap: pretty; }
+  .mc-head__aside { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+  /* =============== 點數 =============== */
+  .mc-pgrid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: var(--bento-gap); }
+  .mc-chart-tile { gap: 10px; }
+  .mc-tile-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .mc-tile-head h3 { font-size: var(--fs-h4); font-weight: 600; letter-spacing: -.015em; }
+  .mc-tile-head p { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-2); }
+  /* 圖表高度跟著卡片：與右側帳目卡等高時填滿，不留白；SVG 依實際尺寸重畫，文字不會被拉伸 */
+  .mc-chart { position: relative; flex: 1; min-height: clamp(240px, 28vw, 320px); margin-top: 6px; border-radius: 12px; }
+  .mc-chart > [data-chart-svg] { position: absolute; inset: 0; }
+  .mc-chart:focus-visible { outline-offset: 6px; }
+  .mc-chart svg { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; }
+  .mc-chart__grid { stroke: var(--line); }
+  .mc-chart__base { stroke: var(--line-2); }
+  .mc-chart__lab { fill: var(--text-2); font-family: var(--font-text); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .mc-chart__area { opacity: 0; transition: opacity 1.2s var(--ease-out) .5s; }
+  .mc-chart__line { stroke-dasharray: 1 1.02; stroke-dashoffset: 1; transition: stroke-dashoffset 1.8s var(--ease-in-out); }
+  .mc-chart__dot { opacity: 0; transition: opacity .4s var(--ease-out); transition-delay: calc(var(--i, 0) * 45ms + 700ms); }
+  .mc-chart__dot--earn { fill: var(--accent); stroke: var(--surface); }
+  .mc-chart__dot--spend { fill: var(--surface); stroke: var(--text-2); }
+  .mc-chart.is-drawn .mc-chart__area, .mc-chart.is-drawn .mc-chart__dot { opacity: 1; }
+  .mc-chart.is-drawn .mc-chart__line { stroke-dashoffset: 0; }
+  .mc-chart__now { fill: var(--accent); }
+  .mc-chart__ping { fill: var(--accent); transform-box: fill-box; transform-origin: center; animation: cp-ping 2.2s var(--ease-out) infinite; }
+  .mc-chart__guide { stroke: var(--line-2); visibility: hidden; }
+  .mc-chart__sel { fill: var(--surface); stroke: var(--accent); visibility: hidden; }
+  .mc-chart.is-scrub .mc-chart__guide, .mc-chart.is-scrub .mc-chart__sel { visibility: visible; }
+  .mc-tip {
+    position: absolute; left: 0; top: 0; z-index: 2;
+    width: 220px; padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    font-size: 12.5px; line-height: 1.45;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .mc-chart.is-scrub .mc-tip { opacity: 1; }
+  .mc-tip__date { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mc-tip__title { margin-top: 2px; font-weight: 600; color: var(--text); }
+  .mc-tip__nums { margin-top: 4px; display: flex; gap: 10px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mc-tip__nums b { font-weight: 700; }
+  .mc-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; font-size: 12.5px; color: var(--text-2); }
+  .mc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .mc-legend i { width: 9px; height: 9px; border-radius: 50%; }
+  .mc-legend .is-earn { background: var(--accent); }
+  .mc-legend .is-spend { box-shadow: inset 0 0 0 2px var(--text-2); }
+  .mc-legend .is-line { width: 18px; height: 3px; border-radius: 3px; background: var(--grad); }
+
+  .mc-recon { display: grid; margin-top: 2px; }
+  .mc-recon__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; color: var(--text-2); }
+  .mc-recon__row b { font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .mc-recon__row--total { padding-top: 14px; border-bottom: 0; color: var(--text); font-weight: 600; }
+  .mc-recon__row--total b { font-size: 36px; font-weight: 700; letter-spacing: -.035em; }
+  .mc-recon__ok { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ok-text); }
+  .mc-recon__ok .i { width: 17px; height: 17px; }
+  .mc-tier { display: grid; gap: 8px; margin-top: 6px; }
+  .mc-tier__head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); }
+  .mc-tier__head b { color: var(--text); font-weight: 600; }
+
+  .mc-listcard { margin-top: var(--bento-gap); padding: 0; overflow: hidden; }
+  .mc-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 20px 24px; }
+  .mc-toolbar__title { font-size: var(--fs-h4); font-weight: 600; letter-spacing: -.015em; }
+  .mc-toolbar__filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .mc-listcard .table-wrap { border-radius: 0; background: none; box-shadow: none; }
+  .seg__btn .mc-count { font-size: 12px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .chip .mc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .mc-src { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+  .mc-src i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .mc-ledger__date { white-space: nowrap; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mc-ledger__date small { margin-left: 6px; font-size: 12px; color: var(--text-2); }
+  .mc-ledger__title { font-weight: 500; }
+  .mc-ledger__title .badge { margin-left: 8px; vertical-align: 1px; }
+  .mc-ledger__delta { font-weight: 700; }
+  .mc-ledger__delta.is-earn { color: var(--ok-text); }
+  .mc-ledger__bal { color: var(--text-2); }
+  .mc-ledger tr.is-new { animation: mc-row-in 1.4s var(--ease-out); }
+  @keyframes mc-row-in { from { background: var(--accent-soft); } }
+  .mc-card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 24px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* =============== 繳費 =============== */
+  .mc-paygrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.3fr); gap: var(--bento-gap); align-items: start; }
+  .mc-paystats { position: sticky; top: calc(var(--header-h) + var(--subnav-h) + 20px); display: grid; gap: var(--bento-gap); }
+  .mc-paystat__label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-2); }
+  .mc-paystat__val { margin-top: 10px; font-family: var(--font-display); font-size: 36px; font-weight: 700; letter-spacing: -.035em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .mc-paystat__val small { margin-right: 4px; font-size: 15px; font-weight: 600; letter-spacing: 0; color: var(--text-2); }
+  .mc-paystat__note { margin-top: 6px; font-size: 13px; color: var(--text-2); }
+  .mc-paystat--due { background: var(--grad-soft), var(--surface); }
+  .mc-paystat--due .btn { margin-top: 18px; }
+  .mc-paylist { margin: 0; padding: 0; list-style: none; }
+  .mc-prow {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto 92px; align-items: center; gap: 12px 16px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--line);
+  }
+  .mc-prow.is-due { background: linear-gradient(90deg, var(--warn-soft), transparent 46%); }
+  .mc-prow__title { font-weight: 500; line-height: 1.35; }
+  .mc-prow__sub { margin-top: 3px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mc-prow__sub .text-ok { font-weight: 500; }
+  .mc-prow__amt { display: grid; justify-items: end; gap: 4px; }
+  .mc-prow__amt .num { font-size: 16px; font-weight: 600; }
+  .mc-prow__act { display: flex; justify-content: flex-end; }
+
+  /* =============== 通知 =============== */
+  .mc-ngrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--bento-gap); align-items: start; }
+  .mc-ngroups { display: grid; gap: 28px; }
+  .mc-ngroups .list-group { --inset: 78px; }
+  .mc-nrow .list-row__sub a { font-weight: 500; }
+  .mc-preview {
+    position: sticky; top: calc(var(--header-h) + var(--subnav-h) + 20px);
+    display: grid; justify-items: center; gap: 18px;
+    padding: 36px 24px 28px;
+    border-radius: var(--radius-2xl);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .mc-preview::before {
+    content: ""; position: absolute; left: 50%; top: 40%; z-index: -1;
+    width: 520px; height: 520px; transform: translate(-50%, -50%);
+    background: radial-gradient(closest-side, rgba(91, 91, 246, .16), rgba(34, 211, 238, .08) 60%, transparent);
+  }
+  .mc-preview__cap { display: grid; justify-items: center; gap: 4px; text-align: center; }
+  .mc-preview__cap b { font-size: 15px; font-weight: 600; }
+  .mc-preview__cap span { font-size: 13px; color: var(--text-2); }
+  .mc-phone { --pw: 288px; }
+  .mc-lock__body { display: flex; flex-direction: column; padding: 54px 12px 26px; }
+  .mc-lock__dnd {
+    align-self: center;
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, .16);
+    font-size: 11px; font-weight: 600;
+    transition: opacity var(--dur-2), transform var(--dur-3) var(--ease-spring);
+  }
+  .mc-lock__dnd .i { width: 13px; height: 13px; }
+  .mc-lock__dnd.is-off { opacity: 0; transform: scale(.8); }
+  .mc-lock__date { margin-top: 8px; text-align: center; font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, .85); }
+  .mc-lock__time { text-align: center; font-family: var(--font-display); font-size: 74px; font-weight: 600; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mc-lock__list { display: grid; margin-top: 20px; }
+  .mc-lock__item { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .45s var(--ease-out), opacity .35s var(--ease-out), translate .45s var(--ease-out); }
+  .mc-lock__item.is-pre { grid-template-rows: 0fr; opacity: 0; translate: 0 -10px; }
+  .mc-lock__inner { min-height: 0; overflow: hidden; }
+  .mc-lock .notif { margin-bottom: 8px; padding: 10px 12px; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; font-size: 12px; }
+  .mc-lock .notif__app, .mc-lock .notif__time { font-size: 11px; }
+  .mc-lock .notif__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mc-lock .notif__text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mc-lock .notif > div:last-child { min-width: 0; }
+  .mc-lock__more { margin-top: 2px; text-align: center; font-size: 11.5px; font-weight: 500; color: rgba(255, 255, 255, .75); }
+  .mc-lock__off { margin: 28px 8px 0; padding: 14px; border-radius: 18px; background: rgba(255, 255, 255, .12); text-align: center; font-size: 12px; line-height: 1.5; color: rgba(255, 255, 255, .85); }
+  .mc-lock__off b { display: block; font-size: 13px; color: #FFFFFF; }
+
+  /* =============== 綁定與授權 =============== */
+  .mc-bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--bento-gap); align-items: start; }
+  .mc-bgrid .list-group { --inset: 78px; }
+  .mc-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 4px 12px; }
+  .mc-group-head h3 { font-size: var(--fs-h4); font-weight: 600; letter-spacing: -.015em; }
+  .mc-group-head p { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mc-brow.is-off .list-row__title { color: var(--text-2); }
+  .mc-brow.is-off .app-icon { filter: grayscale(1); opacity: .5; }
+  .mc-brow .list-row__trail .btn .i { width: 16px; height: 16px; }
+
+  /* =============== 裝置 =============== */
+  .mc-dgrid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--bento-gap); align-items: start; }
+  .mc-dgrid .list-group { --inset: 74px; }
+  .mc-dgrid [data-security-list] { --inset: 66px; }
+  .mc-devicon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--fill); color: var(--text); }
+  .mc-devicon .i { width: 22px; height: 22px; }
+  .mc-drow.is-current .mc-devicon { background: var(--accent-soft); color: var(--accent-text); }
+  .mc-drow.is-warn .mc-devicon { background: var(--warn-soft); color: var(--warn-text); }
+  .mc-drow .list-row__title .badge { margin-left: 6px; vertical-align: 2px; }
+  .mc-history td { font-variant-numeric: tabular-nums; }
+  .mc-history__dev { font-weight: 500; }
+  .mc-history__res { white-space: nowrap; }
+  .mc-history__res .btn--plain { margin-left: 10px; font-size: 13px; }
+  .mc-history tr.is-blocked { background: var(--danger-soft); }
+
+  /* =============== Modal 內容 =============== */
+  .mc-form { display: grid; gap: 14px; }
+  .mc-rewards { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+  .mc-reward {
+    display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: box-shadow var(--dur-1), background-color var(--dur-1);
+  }
+  .mc-reward:has(input:checked) { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+  .mc-reward.is-disabled { opacity: .5; cursor: not-allowed; }
+  .mc-reward b { display: block; font-size: 15px; font-weight: 600; line-height: 1.35; }
+  .mc-reward small { display: block; font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+  .mc-reward__cost { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mc-paysum { display: grid; padding: 2px 16px; border-radius: 16px; background: var(--surface-2); color: var(--text); }
+  .mc-paysum__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; font-variant-numeric: tabular-nums; }
+  .mc-paysum__row + .mc-paysum__row { border-top: 1px solid var(--line); }
+  .mc-paysum__row small { display: block; font-size: 12px; color: var(--text-2); }
+  .mc-paysum__row--total { font-weight: 700; font-size: 16px; }
+  .mc-methods { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; color: var(--text); }
+  .mc-methods legend { margin-bottom: 10px; padding: 0; }
+  .mc-note { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+  .mc-note .i { width: 18px; height: 18px; color: var(--accent-text); }
+  .mc-note b { color: var(--text); }
+
+  /* =============== Responsive =============== */
+  @media (max-width: 1068px) {
+    .mc-bento { grid-template-rows: none; grid-auto-rows: minmax(280px, auto); grid-template-areas: "a a" "b b" "c d"; }
+    .mc-pgrid, .mc-paygrid, .mc-ngrid, .mc-dgrid { grid-template-columns: minmax(0, 1fr); }
+    /* 改單欄後群組上下相疊：拉開列距，避免上一組的註腳貼著下一組的標題 */
+    .mc-dgrid { row-gap: 36px; }
+    .mc-paystats { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .mc-preview { position: relative; top: 0; }
+  }
+  @media (max-width: 734px) {
+    .mc-hero__grid { grid-template-columns: minmax(0, 1fr); }
+    .mc-profile { justify-self: start; }
+    .mc-bento { grid-auto-rows: auto; grid-template-areas: "a" "b" "c" "d"; }
+    .mc-stage { min-height: 0; padding: 24px 0 18px; }
+    .mc-stage__glow { width: 420px; height: 320px; }
+    .mc-stage__rings { width: 460px; height: 460px; }
+    .mc-stage__hint { margin-top: 38px; }
+    .mc-pts { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; }
+    .mc-pts__ring { width: 176px; height: 176px; }
+    .mc-pts__facts, .mc-pts__actions { justify-content: center; }
+    .mc-due__amt, .mc-bindt__nums { margin-top: 8px; }
+    .mc-paystats { grid-template-columns: minmax(0, 1fr); }
+    .mc-toolbar { padding: 18px 16px; }
+    .mc-card-foot { padding: 14px 16px; }
+    .mc-bgrid { grid-template-columns: minmax(0, 1fr); row-gap: 36px; }
+    .mc-phone { --pw: 268px; }
+    .mc-lock__time { font-size: 66px; }
+
+    /* 帳目表格改成卡片列：避免手機橫向捲動 */
+    .mc-rtable, .mc-rtable tbody { display: block; }
+    .mc-rtable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .mc-rtable tbody tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; padding: 14px 16px; border-top: 1px solid var(--line); }
+    .mc-rtable td { padding: 0; border: 0; }
+    .mc-ledger tbody tr { grid-template-areas: "title title delta" "date src bal"; }
+    .mc-ledger__title { grid-area: title; }
+    .mc-ledger__delta { grid-area: delta; }
+    .mc-ledger__date { grid-area: date; font-size: 13px; }
+    .mc-ledger__src { grid-area: src; }
+    .mc-ledger__bal { grid-area: bal; font-size: 13px; }
+    .mc-ledger__bal::before { content: "餘額 "; }
+    .mc-history tbody tr { grid-template-areas: "dev dev res" "time method place"; }
+    .mc-history__dev { grid-area: dev; }
+    .mc-history__res { grid-area: res; text-align: right; }
+    .mc-history__time { grid-area: time; font-size: 13px; color: var(--text-2); }
+    .mc-history__method { grid-area: method; font-size: 13px; color: var(--text-2); }
+    .mc-history__place { grid-area: place; font-size: 13px; color: var(--text-2); text-align: right; }
+    .mc-history__res .btn--plain { display: block; margin: 4px 0 0 auto; }
+
+    .mc-prow { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon body body" "icon amt act"; padding: 16px; }
+    .mc-prow > .app-icon { grid-area: icon; align-self: start; }
+    .mc-prow__body { grid-area: body; }
+    .mc-prow__amt { grid-area: amt; justify-items: start; grid-auto-flow: column; align-items: center; justify-content: start; gap: 8px; }
+    .mc-prow__act { grid-area: act; }
+    .mc-reward { grid-template-columns: auto auto minmax(0, 1fr); }
+    .mc-reward__cost { grid-column: 3; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mc-ring--dash, .mc-chart__ping { animation: none; }
+    .mc-chart__line { stroke-dashoffset: 0; }
+    .mc-chart__area, .mc-chart__dot { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<header class="site-header">
+  <div class="site-header__inner container">
+    <a class="brand" href="index.html" aria-label="城市通 CityPass 首頁">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+      <span class="brand__name">城市通</span>
+      <span class="brand__en">CityPass</span>
+    </a>
+    <nav class="nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li><a class="nav__link" href="index.html">首頁</a></li>
+        <li><a class="nav__link" href="services.html">服務總覽</a></li>
+        <li><a class="nav__link" href="service.html">垃圾車動態</a></li>
+        <li><a class="nav__link is-active" href="account.html" aria-current="page">我的市民卡</a></li>
+      </ul>
+    </nav>
+    <div class="site-header__actions">
+      <a class="nav__back" href="../../index.html">← 返回目錄</a>
+      <button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="切換深色模式">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <mask id="tt-mask"><rect width="24" height="24" fill="#FFFFFF"/><circle class="tt-mask" cx="24" cy="4" r="6" fill="#000000"/></mask>
+          <circle class="tt-core" cx="12" cy="12" r="4.2" fill="currentColor" mask="url(#tt-mask)"/>
+          <g class="tt-rays" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.8v1.8M12 19.4v1.8M4.4 4.4l1.3 1.3M18.3 18.3l1.3 1.3M2.8 12h1.8M19.4 12h1.8M4.4 19.6l1.3-1.3M18.3 5.7l1.3-1.3"/></g>
+        </svg>
+      </button>
+      <a class="btn btn--primary btn--sm" href="index.html#download">下載 App</a>
+      <button class="icon-btn menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="mobile-menu" aria-label="開啟選單"><span class="menu-toggle__bars" aria-hidden="true"></span></button>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" id="mobile-menu" hidden>
+  <nav aria-label="行動版導覽">
+    <ul class="mobile-menu__list">
+      <li><a class="mobile-menu__link" href="index.html">首頁</a></li>
+      <li><a class="mobile-menu__link" href="services.html">服務總覽</a></li>
+      <li><a class="mobile-menu__link" href="service.html">垃圾車動態</a></li>
+      <li><a class="mobile-menu__link is-active" href="account.html" aria-current="page">我的市民卡</a></li>
+    </ul>
+  </nav>
+  <div class="mobile-menu__foot">
+    <a class="btn btn--primary btn--lg btn--block" href="index.html#download">下載 App</a>
+    <div class="seg" data-seg role="group" aria-label="外觀主題">
+      <button class="seg__btn" type="button" data-theme-option="auto" aria-pressed="true">自動</button>
+      <button class="seg__btn" type="button" data-theme-option="light" aria-pressed="false">淺色</button>
+      <button class="seg__btn" type="button" data-theme-option="dark" aria-pressed="false">深色</button>
+    </div>
+    <a class="site-footer__back" href="../../index.html">← 返回目錄</a>
+  </div>
+</div>
+
+<nav class="subnav" data-scrollspy aria-label="我的市民卡 頁內導覽">
+  <div class="subnav__inner container">
+    <p class="subnav__title">我的市民卡</p>
+    <div class="subnav__links">
+      <a class="subnav__link" href="#card">市民卡</a>
+      <a class="subnav__link" href="#points">點數</a>
+      <a class="subnav__link" href="#payments">繳費</a>
+      <a class="subnav__link" href="#notifications">通知</a>
+      <a class="subnav__link" href="#bindings">綁定與授權</a>
+      <a class="subnav__link" href="#devices">裝置</a>
+    </div>
+    <div class="subnav__actions">
+      <button class="btn btn--primary btn--sm" type="button" data-show-qr><span data-icon="qr"></span>出示條碼</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+  <!-- ================= 市民卡總覽 ================= -->
+  <section id="card" aria-labelledby="page-title">
+    <div class="container">
+      <header class="mc-hero">
+        <div class="mc-hero__grid">
+          <div>
+            <p class="eyebrow" data-intro style="--d:0ms">我的市民卡</p>
+            <h1 class="page-title" id="page-title">
+              <span data-intro style="--d:60ms">晚安，<span data-bind="user.shortName" data-format="text"></span>。</span>
+              <span class="grad-text" data-intro style="--d:140ms">整座城市，隨身帶著。</span>
+            </h1>
+            <p class="lede" data-intro style="--d:240ms">行動市民卡、點數、繳費、通知與資料授權，都在這一頁。條碼每 30 秒更新一次，只有你本人能出示。</p>
+          </div>
+          <div class="mc-profile" data-intro style="--d:320ms">
+            <span class="avatar" aria-hidden="true" data-avatar></span>
+            <div class="mc-profile__body">
+              <p class="mc-profile__name" data-bind="user.name" data-format="text"></p>
+              <p class="mc-profile__meta"><span class="nowrap" data-bind="user.district" data-format="text"></span> · <span class="nowrap" data-member-years></span> · <span class="nowrap" data-bind="user.phone" data-format="text"></span></p>
+            </div>
+            <button class="icon-btn icon-btn--filled" type="button" data-icon="edit" aria-label="編輯個人資料" data-toast="個人資料需在 App 內修改" data-toast-desc="為保護你的身分，姓名與戶籍資料需在城市通 App 以臉部辨識驗證後才能變更。"></button>
+          </div>
+        </div>
+      </header>
+
+      <h2 class="sr-only">市民卡總覽</h2>
+      <div class="bento mc-bento">
+        <!-- A 行動市民卡 -->
+        <article class="tile mc-cardtile theme-dark" style="grid-area:a" data-reveal data-anim aria-label="行動市民卡">
+          <div class="mc-cardtile__head">
+            <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--grad" data-icon="qr"></span>行動市民卡</p>
+            <span class="badge badge--ok" data-card-status><span class="status-dot status-dot--ok"></span>有效</span>
+          </div>
+          <div class="mc-stage" data-demo>
+            <div class="mc-stage__glow" aria-hidden="true"></div>
+            <svg class="mc-stage__rings" viewBox="0 0 660 660" aria-hidden="true">
+              <circle class="mc-ring" cx="330" cy="330" r="320" fill="none" stroke-width="1"/>
+              <circle class="mc-ring mc-ring--dash" cx="330" cy="330" r="262" fill="none" stroke-width="1.5"/>
+              <circle class="mc-ring" cx="330" cy="330" r="200" fill="none" stroke-width="1"/>
+            </svg>
+            <div class="flip mc-flip" data-flip data-tilt="9">
+              <div class="flip__inner">
+                <div class="flip__face ccard mc-ccard" data-face="front">
+                  <span class="mc-glare" aria-hidden="true"></span>
+                  <div class="ccard__top">
+                    <span class="ccard__brand"><span class="ccard__brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>澄港市民卡</span>
+                    <span class="ccard__tier" data-bind="user.tier" data-format="text"></span>
+                  </div>
+                  <div class="mc-ccard__mid">
+                    <span class="mc-ccard__chip">
+                      <span class="ccard__chip"></span>
+                      <svg class="mc-nfc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8.5 7.5a6.5 6.5 0 0 1 0 9"/><path d="M12 5a10 10 0 0 1 0 14"/><path d="M15.5 2.8a13.5 13.5 0 0 1 0 18.4"/></svg>
+                    </span>
+                    <span class="mc-holo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+                  </div>
+                  <div>
+                    <p class="ccard__no mc-ccard__no" data-card-no aria-hidden="true"></p>
+                    <p class="sr-only" data-card-no-sr></p>
+                    <div class="ccard__bottom">
+                      <span class="ccard__name" data-bind="user.name" data-format="text"></span>
+                      <span class="ccard__meta"><span data-bind="user.district" data-format="text"></span> · <span data-card-since></span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flip__face flip__face--back ccard ccard--back mc-back" data-face="back" aria-hidden="true">
+                  <div class="mc-back__qr" data-qr></div>
+                  <div class="mc-back__info">
+                    <div>
+                      <p class="mc-back__label">市民卡條碼</p>
+                      <p class="mc-back__name" data-bind="user.name" data-format="text"></p>
+                      <p class="mc-back__tier" data-bind="user.tier" data-format="text"></p>
+                    </div>
+                    <p class="mc-back__timer"><span data-qr-ring></span><span><b data-qr-sec>30</b> 秒後更新</span></p>
+                    <p class="mc-back__no" data-card-last4></p>
+                  </div>
+                </div>
+              </div>
+              <button class="mc-flip__hit" type="button" data-flip-hit aria-label="翻到背面，出示條碼"></button>
+            </div>
+            <p class="mc-stage__hint" data-flip-hint>點一下卡片，翻面出示條碼</p>
+          </div>
+          <div class="mc-cardtile__foot">
+            <div class="seg seg--sm" data-seg data-face-seg role="group" aria-label="卡片顯示面">
+              <button class="seg__btn" type="button" data-value="front" aria-pressed="true"><span data-icon="card"></span>卡面</button>
+              <button class="seg__btn" type="button" data-value="back" aria-pressed="false"><span data-icon="qr"></span>條碼</button>
+            </div>
+            <div class="mc-cardtile__tools">
+              <button class="btn btn--ghost btn--sm" type="button" data-card-reveal aria-pressed="false"><span data-icon="eye"></span><span data-card-reveal-label>顯示卡號</span></button>
+              <button class="btn btn--ghost btn--sm" type="button" data-card-lost><span data-icon="alert"></span><span data-card-lost-label>掛失實體卡</span></button>
+            </div>
+          </div>
+        </article>
+
+        <!-- B 市民點數 -->
+        <article class="tile mc-pts" style="grid-area:b" data-reveal data-tilt data-demo aria-labelledby="mc-pts-title">
+          <div class="mc-pts__ring ring-box" data-pts-ring>
+            <div class="ring-box__center">
+              <span class="mc-pts__val num" data-bind="user.points" data-odo></span>
+              <span class="mc-pts__unit">點 · <span data-bind="user.tierPct" data-format="pct"></span> 達成</span>
+            </div>
+          </div>
+          <div class="mc-pts__body">
+            <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--grad" data-icon="star"></span>市民點數</p>
+            <h3 class="tile__title" id="mc-pts-title"><span>再 <span class="num" data-bind="user.toNextTier"></span> 點，</span><span class="grad-text">升級<span data-bind="user.nextTier" data-format="text"></span>。</span></h3>
+            <div class="mc-pts__facts">
+              <span class="badge badge--ok"><span data-icon="plus-circle"></span>本週 <span data-week-earned></span> 點</span>
+              <span class="badge badge--warn"><span data-icon="clock"></span><span data-expiring></span></span>
+            </div>
+            <div class="mc-pts__actions">
+              <button class="btn btn--primary btn--sm" type="button" data-redeem><span data-icon="gift"></span>兌換點數</button>
+              <a class="link link--chev" href="#points">查看點數明細</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- C 待繳 -->
+        <article class="tile mc-due" style="grid-area:c" data-reveal data-tilt aria-labelledby="mc-due-title">
+          <p class="tile__eyebrow" id="mc-due-title"><span class="app-icon app-icon--xs app-icon--transit" data-icon="parking"></span>停車費</p>
+          <div data-due-open>
+            <p class="mc-due__label">待繳 <span data-bind="parking.dueCount"></span> 筆 · 車牌 <span data-bind="parking.plate" data-format="text"></span></p>
+          </div>
+          <p class="mc-due__amt" data-due-open><small>NT$</small><span data-bind="parking.dueTotal"></span></p>
+          <p class="mc-due__text" data-due-open>最晚 <span data-due-by></span> 前繳納 · 可得 <span data-due-pts></span> 點回饋</p>
+          <div class="mc-due__done" data-due-done hidden>
+            <p class="mc-due__done-mark"><span data-icon="check-circle"></span>全部繳清</p>
+            <p class="mc-due__text">這個月沒有待繳的停車費</p>
+          </div>
+          <div class="tile__foot">
+            <a class="btn btn--dark btn--block" href="#payments" data-due-go>前往繳費</a>
+          </div>
+        </article>
+
+        <!-- D 綁定與授權 -->
+        <article class="tile mc-bindt" style="grid-area:d" data-reveal data-tilt data-demo aria-labelledby="mc-bindt-title">
+          <p class="tile__eyebrow" id="mc-bindt-title"><span class="app-icon app-icon--xs app-icon--grad" data-icon="link"></span>綁定服務</p>
+          <div class="mc-bindt__icons" data-bindt-icons aria-hidden="true"></div>
+          <p class="mc-bindt__nums"><span data-bind="bindings.bound"></span><small>/ <span data-bindings-total></span> 項</small></p>
+          <p class="mc-bindt__text"><span data-bind="consents.granted"></span> 個單位可讀取你的資料</p>
+          <div class="tile__foot">
+            <a class="link link--chev" href="#bindings">管理綁定與授權</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 點數 ================= -->
+  <section class="mc-section" id="points" aria-labelledby="points-title">
+    <div class="container">
+      <header class="mc-head" data-reveal>
+        <div>
+          <p class="eyebrow">點數紀錄</p>
+          <h2 class="mc-head__title" id="points-title"><span>每一點，</span><span>都有來處。</span></h2>
+          <p class="mc-head__lede">搭車、準時還書、參加市民活動都會累積點數；兌換與折抵也一筆筆記下來，期初結轉加總後就是你現在的點數。</p>
+        </div>
+        <div class="mc-head__aside">
+          <button class="btn btn--tinted" type="button" data-redeem><span data-icon="gift"></span>兌換點數</button>
+        </div>
+      </header>
+
+      <div class="mc-pgrid">
+        <article class="tile mc-chart-tile" data-reveal aria-labelledby="chart-title">
+          <div class="mc-tile-head">
+            <div>
+              <h3 id="chart-title">點數餘額走勢</h3>
+              <p>移動游標或用方向鍵，逐筆檢視異動</p>
+            </div>
+            <div class="seg seg--sm" data-seg data-chart-range role="group" aria-label="走勢圖期間">
+              <button class="seg__btn" type="button" data-value="4m" aria-pressed="true">近 4 個月</button>
+              <button class="seg__btn" type="button" data-value="30d" aria-pressed="false">近 30 天</button>
+            </div>
+          </div>
+          <div class="mc-chart" data-chart data-anim tabindex="0" role="group" aria-label="點數餘額走勢圖，左右方向鍵可逐筆檢視" aria-describedby="chart-summary">
+            <div data-chart-svg></div>
+            <div class="mc-tip" data-chart-tip aria-hidden="true"></div>
+          </div>
+          <p class="sr-only" id="chart-summary" data-chart-summary></p>
+          <p class="sr-only" aria-live="polite" data-chart-live></p>
+          <div class="mc-legend" aria-hidden="true">
+            <span><i class="is-line"></i>點數餘額</span>
+            <span><i class="is-earn"></i>獲得</span>
+            <span><i class="is-spend"></i>兌換</span>
+          </div>
+        </article>
+
+        <article class="tile" data-reveal aria-labelledby="recon-title">
+          <div class="mc-tile-head">
+            <div>
+              <h3 id="recon-title">帳目核對</h3>
+              <p data-recon-range></p>
+            </div>
+            <span class="mc-recon__ok"><span data-icon="check-circle"></span>與市民卡相符</span>
+          </div>
+          <div class="mc-recon">
+            <p class="mc-recon__row"><span>期初結轉（<span data-opening-date></span>）</span><b data-recon-open></b></p>
+            <p class="mc-recon__row"><span>獲得 <span data-recon-earn-n></span> 筆</span><b class="text-ok" data-recon-earn></b></p>
+            <p class="mc-recon__row"><span>兌換 <span data-recon-spend-n></span> 筆</span><b data-recon-spend></b></p>
+            <p class="mc-recon__row mc-recon__row--total"><span>目前點數</span><b data-recon-total></b></p>
+          </div>
+          <div class="mc-tier">
+            <p class="mc-tier__head"><span><b data-bind="user.tier" data-format="text"></b> → <span data-bind="user.nextTier" data-format="text"></span></span><span class="num"><span data-bind="user.points"></span> / <span data-bind="user.tierGoal"></span></span></p>
+            <div class="meter meter--lg"><span class="meter__bar" data-tier-bar></span></div>
+          </div>
+          <p class="callout callout--warn"><span data-icon="clock"></span><span data-expiring-long></span></p>
+        </article>
+      </div>
+
+      <div class="card mc-listcard" data-reveal>
+        <div class="mc-toolbar">
+          <h3 class="mc-toolbar__title">點數明細</h3>
+          <div class="mc-toolbar__filters">
+            <div class="seg seg--sm" data-seg data-ledger-type role="group" aria-label="依異動類型篩選">
+              <button class="seg__btn" type="button" data-value="all" aria-pressed="true">全部 <span class="mc-count" data-count="all"></span></button>
+              <button class="seg__btn" type="button" data-value="earn" aria-pressed="false">獲得 <span class="mc-count" data-count="earn"></span></button>
+              <button class="seg__btn" type="button" data-value="spend" aria-pressed="false">兌換 <span class="mc-count" data-count="spend"></span></button>
+            </div>
+            <div class="chip-row" role="group" aria-label="依來源篩選" data-ledger-chips></div>
+          </div>
+        </div>
+        <div class="table-wrap" data-ledger-wrap>
+          <table class="table mc-rtable mc-ledger">
+            <caption class="sr-only">點數明細，最新的在最上面</caption>
+            <thead><tr><th scope="col">日期</th><th scope="col">項目</th><th scope="col">來源</th><th scope="col" class="num">點數</th><th scope="col" class="num">異動後餘額</th></tr></thead>
+            <tbody data-ledger-body></tbody>
+          </table>
+        </div>
+        <div data-ledger-empty hidden></div>
+        <div class="mc-card-foot">
+          <span data-ledger-meta></span>
+          <button class="btn btn--plain" type="button" data-ledger-more aria-expanded="false"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 繳費 ================= -->
+  <section class="mc-section" id="payments" aria-labelledby="payments-title">
+    <div class="container">
+      <header class="mc-head" data-reveal>
+        <div>
+          <p class="eyebrow">繳費紀錄</p>
+          <h2 class="mc-head__title" id="payments-title"><span>繳過的，</span><span>都留得清清楚楚。</span></h2>
+          <p class="mc-head__lede">停車費、稅費、交通卡加值與票券，透過城市通付款的每一筆都在這裡；停車費每 NT$ 10 回饋 1 點。</p>
+        </div>
+      </header>
+
+      <div class="mc-paygrid">
+        <div class="mc-paystats">
+          <div class="card mc-paystat--due" data-reveal>
+            <p class="mc-paystat__label"><span class="app-icon app-icon--xs app-icon--pay" data-icon="receipt"></span>待繳</p>
+            <p class="mc-paystat__val"><small>NT$</small><span data-bind="parking.dueTotal"></span></p>
+            <p class="mc-paystat__note" data-paystat-due-note></p>
+            <button class="btn btn--primary btn--block" type="button" data-pay-all>一鍵繳清</button>
+          </div>
+          <div class="card" data-reveal>
+            <p class="mc-paystat__label"><span class="app-icon app-icon--xs app-icon--transit" data-icon="check"></span><span data-paystat-year-label></span></p>
+            <p class="mc-paystat__val"><small>NT$</small><span data-paystat-year></span></p>
+            <p class="mc-paystat__note" data-paystat-year-note></p>
+          </div>
+          <div class="card" data-reveal>
+            <p class="mc-paystat__label"><span class="app-icon app-icon--xs app-icon--grad" data-icon="star"></span>繳費回饋點數</p>
+            <p class="mc-paystat__val" data-paystat-rebate></p>
+            <p class="mc-paystat__note">近 4 個月透過城市通繳停車費所得</p>
+          </div>
+        </div>
+
+        <div class="card mc-listcard" style="margin-top:0" data-reveal>
+          <div class="mc-toolbar">
+            <div class="seg seg--sm" data-seg data-pay-status role="group" aria-label="依繳費狀態篩選">
+              <button class="seg__btn" type="button" data-value="all" aria-pressed="true">全部 <span class="mc-count" data-pcount="all"></span></button>
+              <button class="seg__btn" type="button" data-value="due" aria-pressed="false">待繳 <span class="mc-count" data-pcount="due"></span></button>
+              <button class="seg__btn" type="button" data-value="paid" aria-pressed="false">已繳 <span class="mc-count" data-pcount="paid"></span></button>
+            </div>
+            <div class="chip-row" role="group" aria-label="依費用類型篩選" data-pay-chips></div>
+          </div>
+          <ul class="mc-paylist" data-pay-list aria-label="繳費紀錄"></ul>
+          <div data-pay-empty hidden></div>
+          <div class="mc-card-foot">
+            <span>付款方式：信用卡末四碼 2048、金融帳戶自動扣繳</span>
+            <button class="btn btn--plain" type="button" data-toast="已寄出繳費證明" data-toast-desc="2026 年 1 月至今的繳費證明 PDF 已寄到你的電子信箱。">下載繳費證明</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 通知 ================= -->
+  <section class="mc-section" id="notifications" aria-labelledby="notif-title">
+    <div class="container">
+      <header class="mc-head" data-reveal>
+        <div>
+          <p class="eyebrow">通知設定</p>
+          <h2 class="mc-head__title" id="notif-title"><span>只在該提醒的時候，</span><span>才提醒你。</span></h2>
+          <p class="mc-head__lede">開關每一種提醒，鎖定畫面預覽會即時告訴你，下次手機亮起時會看到什麼。</p>
+        </div>
+        <div class="mc-head__aside">
+          <span class="badge badge--accent" data-notif-count></span>
+        </div>
+      </header>
+
+      <div class="mc-ngrid">
+        <div class="mc-ngroups">
+          <div data-reveal>
+            <p class="list-group__label">提醒項目</p>
+            <ul class="list-group" data-notif-list></ul>
+          </div>
+          <div data-reveal>
+            <p class="list-group__label">通知管道</p>
+            <ul class="list-group" data-channel-list></ul>
+          </div>
+          <div data-reveal>
+            <p class="list-group__label">勿擾時段</p>
+            <ul class="list-group">
+              <li class="list-row mc-nrow">
+                <span class="app-icon app-icon--grad" data-icon="moon"></span>
+                <div class="list-row__body">
+                  <p class="list-row__title" id="dnd-title">夜間勿擾 22:00–07:00</p>
+                  <p class="list-row__sub" id="dnd-sub">期間只保留帳號安全通知，其餘早上 07:00 一次送達</p>
+                </div>
+                <div class="list-row__trail"><input class="switch" type="checkbox" role="switch" data-dnd checked aria-labelledby="dnd-title" aria-describedby="dnd-sub"></div>
+              </li>
+            </ul>
+            <p class="list-group__note">帳號安全與異常登入通知無法關閉。</p>
+          </div>
+        </div>
+
+        <aside class="mc-preview" data-reveal data-anim aria-label="鎖定畫面預覽">
+          <div class="phone mc-phone" aria-hidden="true">
+            <div class="phone__screen lockscreen mc-lock">
+              <div class="phone__island"></div>
+              <div class="phone__status">
+                <span data-icon="lock"></span>
+                <span class="phone__status-icons">
+                  <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx=".8"/><rect x="4.6" y="5" width="3" height="6" rx=".8"/><rect x="9.2" y="2.6" width="3" height="8.4" rx=".8"/><rect x="13.8" y="0" width="3" height="11" rx=".8"/></svg>
+                  <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 2.3c2 0 3.8.8 5.2 2.1l1-1A8.8 8.8 0 0 0 7.5.9 8.8 8.8 0 0 0 1.3 3.4l1 1a7.4 7.4 0 0 1 5.2-2.1zm0 2.9c1.2 0 2.3.5 3.1 1.3l1-1a5.8 5.8 0 0 0-8.2 0l1 1c.8-.8 1.9-1.3 3.1-1.3zm0 2.9c-.5 0-.9.2-1.2.5l1.2 1.2 1.2-1.2c-.3-.3-.7-.5-1.2-.5z"/></svg>
+                  <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="12" height="8" rx="2" fill="currentColor"/><path d="M23 4v4c.8-.3 1.3-1.1 1.3-2S23.8 4.3 23 4z" fill="currentColor" opacity=".45"/></svg>
+                </span>
+              </div>
+              <div class="phone__body mc-lock__body">
+                <p class="mc-lock__dnd" data-lock-dnd><span data-icon="moon"></span>勿擾 22:00 開始</p>
+                <p class="mc-lock__date" data-lock-date></p>
+                <p class="mc-lock__time" data-clock="time">18:52</p>
+                <div class="mc-lock__list" data-lock-list></div>
+                <p class="mc-lock__more" data-lock-more></p>
+                <p class="mc-lock__off" data-lock-off hidden><b>推播通知已關閉</b>提醒只會出現在 App 的通知中心，手機不會亮起。</p>
+              </div>
+              <div class="phone__homebar"></div>
+            </div>
+          </div>
+          <div class="mc-preview__cap">
+            <b>你的鎖定畫面</b>
+            <span aria-live="polite" data-preview-caption></span>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 綁定與授權 ================= -->
+  <section class="mc-section" id="bindings" aria-labelledby="bindings-title">
+    <div class="container">
+      <header class="mc-head" data-reveal>
+        <div>
+          <p class="eyebrow">綁定服務與資料授權</p>
+          <h2 class="mc-head__title" id="bindings-title"><span>給誰看、看多久，</span><span>你說了算。</span></h2>
+          <p class="mc-head__lede">綁定卡證後，服務會自動帶入你的資料；授權可以隨時收回，每一次調用都有紀錄。這裡與首頁「隱私與安全」是同一份設定。</p>
+        </div>
+      </header>
+      <div class="mc-bgrid">
+        <div data-reveal>
+          <div class="mc-group-head"><h3>綁定服務</h3><p>已綁定 <span data-bind="bindings.bound"></span> / <span data-bindings-total></span></p></div>
+          <ul class="list-group" data-binding-list></ul>
+          <p class="list-group__note">解除綁定不會刪除各單位保存的紀錄，例如借閱歷史仍保留在圖書館系統。</p>
+        </div>
+        <div data-reveal>
+          <div class="mc-group-head"><h3>資料授權</h3><p><span data-bind="consents.granted"></span> 個單位可讀取</p></div>
+          <ul class="list-group" data-consent-list></ul>
+          <p class="list-group__note">撤回後，對方需重新取得你的同意才能讀取；已完成的交易不受影響。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 裝置 ================= -->
+  <section class="mc-section" id="devices" aria-labelledby="devices-title">
+    <div class="container">
+      <header class="mc-head" data-reveal>
+        <div>
+          <p class="eyebrow">裝置與登入紀錄</p>
+          <h2 class="mc-head__title" id="devices-title"><span>哪裡登入過，</span><span>一目了然。</span></h2>
+          <p class="mc-head__lede">看到不認得的裝置，直接登出它；可疑的登入嘗試會被自動阻擋並標示出來。</p>
+        </div>
+        <div class="mc-head__aside">
+          <button class="btn btn--danger" type="button" data-logout-others><span data-icon="logout"></span>登出其他所有裝置</button>
+        </div>
+      </header>
+
+      <div class="mc-dgrid">
+        <div data-reveal>
+          <div class="mc-group-head"><h3>已登入的裝置</h3><p data-device-count></p></div>
+          <ul class="list-group" data-device-list></ul>
+        </div>
+        <div data-reveal>
+          <div class="mc-group-head"><h3>登入安全</h3><p data-security-score></p></div>
+          <ul class="list-group" data-security-list></ul>
+        </div>
+      </div>
+
+      <div class="card mc-listcard" data-reveal>
+        <div class="mc-toolbar">
+          <h3 class="mc-toolbar__title">登入紀錄</h3>
+          <div class="seg seg--sm" data-seg data-history-filter role="group" aria-label="依登入結果篩選">
+            <button class="seg__btn" type="button" data-value="all" aria-pressed="true">全部 <span class="mc-count" data-hcount="all"></span></button>
+            <button class="seg__btn" type="button" data-value="ok" aria-pressed="false">成功 <span class="mc-count" data-hcount="ok"></span></button>
+            <button class="seg__btn" type="button" data-value="blocked" aria-pressed="false">已阻擋 <span class="mc-count" data-hcount="blocked"></span></button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table mc-rtable mc-history">
+            <caption class="sr-only">近 30 天登入紀錄</caption>
+            <thead><tr><th scope="col">時間</th><th scope="col">裝置</th><th scope="col">驗證方式</th><th scope="col">地點</th><th scope="col">結果</th></tr></thead>
+            <tbody data-history-body></tbody>
+          </table>
+        </div>
+        <div class="mc-card-foot"><span>只保留近 30 天的紀錄；地點依網路位址推估，可能與實際位置略有差異。</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div>
+        <a class="brand" href="index.html" aria-label="城市通 CityPass 首頁">
+          <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+          <span class="brand__name">城市通</span>
+          <span class="brand__en">CityPass</span>
+        </a>
+        <p class="site-footer__tagline">澄港市政府官方市民 App。交通、生活、健康、繳費與文化服務，收進同一個帳號與同一張市民卡。</p>
+      </div>
+      <p class="site-footer__hotline">市民服務專線<strong>1999</strong>每日 08:00–22:00 · 外縣市請撥 0800-021-999</p>
+    </div>
+    <nav class="footer-cols" aria-label="頁尾導覽">
+      <div class="footer-col">
+        <h2 class="footer-col__title">服務</h2>
+        <ul>
+          <li><a class="footer-link" href="services.html?cat=transit">交通出行</a></li>
+          <li><a class="footer-link" href="services.html?cat=life">生活便民</a></li>
+          <li><a class="footer-link" href="services.html?cat=health">醫療健康</a></li>
+          <li><a class="footer-link" href="services.html?cat=pay">繳費服務</a></li>
+          <li><a class="footer-link" href="services.html?cat=culture">文化休閒</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">即時資訊</h2>
+        <ul>
+          <li><a class="footer-link" href="service.html">垃圾車動態</a></li>
+          <li><a class="footer-link" href="service.html#alerts">到站提醒設定</a></li>
+          <li><a class="footer-link" href="service.html#calendar">資源回收日曆</a></li>
+          <li><a class="footer-link" href="service.html#faq">常見問題</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">市民卡</h2>
+        <ul>
+          <li><a class="footer-link" href="account.html">我的市民卡</a></li>
+          <li><a class="footer-link" href="account.html#points">點數與繳費紀錄</a></li>
+          <li><a class="footer-link" href="account.html#bindings">綁定服務管理</a></li>
+          <li><a class="footer-link" href="account.html#devices">裝置與登入紀錄</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">支援</h2>
+        <ul>
+          <li><a class="footer-link" href="index.html#download">下載與綁定</a></li>
+          <li><a class="footer-link" href="index.html#privacy">隱私與安全</a></li>
+          <li><button class="footer-link" type="button" data-legal="a11y">無障礙聲明</button></li>
+          <li><button class="footer-link" type="button" data-toast="已為你接通線上客服" data-toast-desc="目前等候 2 人，預計 1 分鐘內回覆。">線上客服</button></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="site-footer__bottom">
+      <div class="site-footer__legal">
+        <span>© 2026 澄港市政府 數位服務處</span>
+        <button class="footer-link" type="button" data-legal="privacy">隱私權政策</button>
+        <button class="footer-link" type="button" data-legal="terms">使用條款</button>
+        <a class="site-footer__back" href="../../index.html">← 返回目錄</a>
+      </div>
+      <div class="seg seg--sm" data-seg role="group" aria-label="外觀主題">
+        <button class="seg__btn" type="button" data-theme-option="auto" aria-pressed="true"><span data-icon="monitor"></span>自動</button>
+        <button class="seg__btn" type="button" data-theme-option="light" aria-pressed="false"><span data-icon="sun"></span>淺色</button>
+        <button class="seg__btn" type="button" data-theme-option="dark" aria-pressed="false"><span data-icon="moon"></span>深色</button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, fmt, esc, icon } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const reduce = App.reduceMotion();
+  const DAY = 86400000;
+  const WEEK = '日一二三四五六';
+  const total = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+  const ymd = (ms) => { const p = App.parts(ms); return `${p.y}/${p.m}/${p.d}`; };
+  const stamp = (ms) => `${fmt.dateWeek(ms)} ${fmt.time(ms)}`;
+  // 說明小字以「 · 」串接，每段不拆行，只在段落之間換行（避免卡號、單號被切斷）
+  const segs = (...parts) => parts.filter(Boolean).map((x) => `<span class="nowrap">${x}</span>`).join(' · ');
+  const startOfDay = (ms) => { const p = App.parts(ms); return App.time(`${p.y}-${p.m}-${p.d}`); };
+
+  /* ================= 點數帳本 =================
+     帳本是本頁的明細資料；不變式：期初結轉＋所有異動＝DATA.user.points。
+     任何改變點數的動作都同時寫帳本與 App.update('user')，畫面一律由 'cp:data' 重繪。 */
+  const SRC = {
+    transit: { name: '交通', color: 'var(--c-transit)' },
+    pay: { name: '繳費', color: 'var(--c-pay)' },
+    culture: { name: '文化', color: 'var(--c-culture)' },
+    health: { name: '健康', color: 'var(--c-health)' },
+    event: { name: '市民活動', color: 'var(--accent-2)' },
+  };
+  const OPENING = { t: App.time('2026-06-30T23:59'), balance: 2215 };
+  let entrySeq = 0;
+  const entry = (t, src, title, delta) => ({ id: `PT-${++entrySeq}`, t: typeof t === 'number' ? t : App.time(t), src, title, delta });
+  const ledger = [
+    entry('2026-07-01T06:00', 'transit', '6 月大眾運輸乘車回饋（40 趟）', 200),
+    entry('2026-07-06T14:22', 'culture', '鹽田考古遺址博物館 門票兌換', -100),
+    entry('2026-07-19T16:30', 'event', '市民講堂《老街屋的修復》出席', 50),
+    entry('2026-08-01T06:00', 'transit', '7 月大眾運輸乘車回饋（45 趟）', 225),
+    entry('2026-08-09T20:41', 'pay', '路邊停車費繳納回饋 PK-2608-55320', 8),
+    entry('2026-08-16T11:00', 'event', '北岸區 防災演練參與', 80),
+    entry('2026-08-24T19:02', 'culture', '港埕音樂廳《夏夜港灣》票券折抵 NT$ 40', -400),
+    entry('2026-09-01T06:00', 'transit', '8 月大眾運輸乘車回饋（38 趟）', 190),
+    entry('2026-09-14T20:05', 'pay', '路邊停車費繳納回饋 PK-2609-71102', 12),
+    entry('2026-09-20T17:45', 'culture', '圖書館秋季閱讀挑戰 完成 5 本', 200),
+    entry('2026-09-28T10:30', 'health', '公費流感疫苗接種完成', 100),
+    entry('2026-10-01T06:00', 'transit', '9 月大眾運輸乘車回饋（42 趟）', 210),
+    entry('2026-10-05T08:15', 'transit', '澄港單車 免費騎乘券 ×2 兌換', -100),
+    entry('2026-10-12T12:00', 'event', '鹽田區 秋季淨灘志工', 150),
+    entry('2026-10-18T15:40', 'culture', '市立美術館《港與光》特展門票兌換', -300),
+    entry('2026-10-20T20:30', 'event', '市民講堂《港口的潮汐》出席', 50),
+    entry('2026-10-21T15:20', 'culture', '圖書館 準時還書回饋', 20),
+    entry('2026-10-22T19:10', 'transit', '港埕—北岸渡輪 乘船回饋', 20),
+    entry('2026-10-23T18:05', 'transit', '澄港單車 本週騎乘滿 3 次', 30),
+  ];
+  const ledgerBalance = () => OPENING.balance + total(ledger, (e) => e.delta);
+  const todayStart = startOfDay(App.now());
+  const weekStart = todayStart - ((App.parts(App.now()).dow + 6) % 7) * DAY;
+  const weekEarned = () => total(ledger.filter((e) => e.t >= weekStart && e.delta > 0), (e) => e.delta);
+  // 資料若對不上就直接中止：帳目不符的頁面比沒有頁面更糟
+  if (ledgerBalance() !== DATA.user.points) throw new Error(`Points ledger mismatch: ${ledgerBalance()} vs ${DATA.user.points}`);
+  if (weekEarned() !== DATA.user.weekPoints) throw new Error(`Week points mismatch: ${weekEarned()} vs ${DATA.user.weekPoints}`);
+
+  function pushEntries(list) {
+    ledger.push(...list);
+    App.update('user', (u) => { u.points += total(list, (e) => e.delta); });
+  }
+  function dropEntries(list) {
+    list.forEach((e) => {
+      const i = ledger.indexOf(e);
+      if (i < 0) throw new Error(`Ledger entry ${e.id} not found`);
+      ledger.splice(i, 1);
+    });
+    App.update('user', (u) => { u.points -= total(list, (e) => e.delta); });
+  }
+
+  /* ================= 頁首與共用小字 ================= */
+  $('[data-avatar]').textContent = DATA.user.shortName.slice(0, 1);
+  const since = App.time(DATA.user.since);
+  const sinceP = App.parts(since), nowP = App.parts(App.now());
+  $('[data-member-years]').textContent = `會員第 ${nowP.y - sinceP.y + 1} 年`;
+  $('[data-card-since]').textContent = `${sinceP.y}.${String(sinceP.m).padStart(2, '0')} 起`;
+  $('[data-card-last4]').textContent = `•••• ${DATA.user.cardNo.slice(-4)}`;
+  $$('[data-bindings-total]').forEach((el) => { el.textContent = DATA.bindings.length; });
+  $('[data-opening-date]').textContent = ymd(OPENING.t);
+
+  /* ================= A 行動市民卡：3D 翻轉、條碼、卡號 ================= */
+  const flipEl = $('[data-flip]');
+  const frontFace = $('[data-face="front"]');
+  const backFace = $('[data-face="back"]');
+  const hit = $('[data-flip-hit]');
+  const hint = $('[data-flip-hint]');
+  let flipped = false;
+  const faceSeg = App.seg($('[data-face-seg]'), { onChange: (v) => setFlip(v === 'back') });
+
+  const qrHost = $('[data-qr]');
+  const qrSec = $('[data-qr-sec]');
+  $('[data-qr-ring]').innerHTML = App.ring(30, 30, { size: 26, stroke: 3, label: '條碼剩餘有效時間' });
+  const qrRing = $('[data-qr-ring] svg');
+  let qrSeed = 0, qrLeft = 30, cardVisible = false;
+  function genQR(animate) {
+    qrSeed += 1;
+    qrHost.innerHTML = App.qrSVG(`citypass-${DATA.user.cardNo}-${qrSeed}`, { animate: animate && !reduce, label: `${DATA.user.name} 的市民卡條碼` });
+    qrLeft = 30;
+    renderQRTimer();
+  }
+  function renderQRTimer() {
+    qrSec.textContent = qrLeft;
+    App.setRing(qrRing, qrLeft, 30);
+  }
+  function shine() {
+    if (reduce) return;
+    frontFace.classList.remove('is-shine');
+    void frontFace.offsetWidth; // 重新觸發掃光動畫
+    frontFace.classList.add('is-shine');
+  }
+  frontFace.addEventListener('animationend', () => frontFace.classList.remove('is-shine'));
+  function setFlip(v) {
+    flipped = v;
+    flipEl.classList.toggle('is-flipped', v);
+    faceSeg.select(v ? 1 : 0, { silent: true });
+    frontFace.setAttribute('aria-hidden', String(v));
+    backFace.setAttribute('aria-hidden', String(!v));
+    hit.setAttribute('aria-label', v ? '翻回卡片正面' : '翻到背面，出示條碼');
+    hint.textContent = v ? '請服務人員掃描條碼；點卡片可翻回正面' : '點一下卡片，翻面出示條碼';
+    if (v) genQR(true); else shine();
+  }
+  hit.addEventListener('click', () => setFlip(!flipped));
+  $('[data-show-qr]').addEventListener('click', () => {
+    $('#card').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    if (!flipped) setFlip(true);
+  });
+  $('.mc-stage').addEventListener('cp:demo', (e) => { if (e.detail.active && !flipped) shine(); });
+  App.inView($('.mc-cardtile'), (v) => { cardVisible = v; });
+  App.every(1000, () => {
+    if (!cardVisible) return;
+    qrLeft -= 1;
+    if (qrLeft <= 0) genQR(flipped);
+    else renderQRTimer();
+  });
+  genQR(false);
+
+  /* 卡號：預設遮罩，顯示時逐位「解碼」；30 秒後自動遮回 */
+  const noEl = $('[data-card-no]');
+  const noSr = $('[data-card-no-sr]');
+  const noBtn = $('[data-card-reveal]');
+  const fullNo = DATA.user.cardNo;
+  const maskedNo = fullNo.replace(/^(\d{4}) \d{4} \d{4} (\d{4})$/, '$1 •••• •••• $2');
+  const MIDDLE = [5, 6, 7, 8, 10, 11, 12, 13];
+  let revealed = false, scrT = 0, autoHide = 0;
+  const scramble = App.loop((dt) => {
+    scrT += dt;
+    const target = revealed ? fullNo : maskedNo; // 每格讀最新狀態，連點也不會錯亂
+    const chars = [...target];
+    let done = true;
+    MIDDLE.forEach((pos, k) => {
+      if (scrT < 90 + k * 55) { chars[pos] = String(Math.floor(Math.random() * 10)); done = false; }
+    });
+    noEl.textContent = chars.join('');
+    return !done;
+  });
+  function setReveal(v) {
+    revealed = v;
+    noBtn.setAttribute('aria-pressed', String(v));
+    $('[data-card-reveal-label]').textContent = v ? '隱藏卡號' : '顯示卡號';
+    noSr.textContent = v ? `市民卡號 ${fullNo}` : `市民卡號末四碼 ${fullNo.slice(-4)}`;
+    clearTimeout(autoHide);
+    if (v) autoHide = setTimeout(() => setReveal(false), 30000);
+    if (reduce) { noEl.textContent = v ? fullNo : maskedNo; return; }
+    scrT = 0;
+    scramble.start();
+  }
+  noEl.textContent = maskedNo;
+  noSr.textContent = `市民卡號末四碼 ${fullNo.slice(-4)}`;
+  noBtn.addEventListener('click', () => {
+    if (flipped) setFlip(false);
+    setReveal(!revealed);
+  });
+
+  /* 掛失實體卡：行動卡不受影響，可復原 */
+  let physicalLost = false;
+  function renderCardStatus() {
+    const s = $('[data-card-status]');
+    s.className = `badge ${physicalLost ? 'badge--warn' : 'badge--ok'}`;
+    s.innerHTML = physicalLost ? `<span class="status-dot status-dot--warn"></span>實體卡已掛失 · 行動卡有效` : '<span class="status-dot status-dot--ok"></span>有效';
+    $('[data-card-lost-label]').textContent = physicalLost ? '取消掛失' : '掛失實體卡';
+  }
+  function setLost(v) {
+    physicalLost = v;
+    renderCardStatus();
+  }
+  $('[data-card-lost]').addEventListener('click', () => {
+    if (physicalLost) {
+      setLost(false);
+      App.toast('已取消掛失', { desc: '實體市民卡恢復可用。', tone: 'ok' });
+      return;
+    }
+    App.modal({
+      eyebrow: '實體市民卡',
+      title: '掛失實體市民卡？',
+      size: 'sm',
+      body: `<p>掛失後實體卡會立即停用，任何人都無法再用它借書、入館或折抵點數。</p><p>手機裡的<strong>行動市民卡照常可用</strong>；補發卡約 7 個工作天寄到${esc(DATA.user.district)}戶籍地址，首次補發免費。</p>`,
+      actions: [
+        { label: '取消' },
+        {
+          label: '確認掛失', variant: 'danger', onClick: (close) => {
+            close();
+            setLost(true);
+            App.toast('實體卡已掛失停用', {
+              desc: `補發卡將寄到${DATA.user.district}戶籍地址，行動市民卡照常可用。`,
+              tone: 'warn',
+              action: { label: '復原', onClick: () => setLost(false) },
+            });
+          },
+        },
+      ],
+    });
+  });
+
+  /* ================= B 市民點數 ================= */
+  const ptsRingHost = $('[data-pts-ring]');
+  ptsRingHost.insertAdjacentHTML('afterbegin', App.ring(DATA.user.points, DATA.user.tierGoal, { size: 200, stroke: 14, label: `距離${DATA.user.nextTier}的點數進度` }));
+  const ptsRing = $('svg.ring', ptsRingHost);
+  const expiringText = `${DATA.user.expiring.points} 點於 ${fmt.date(DATA.user.expiring.date)} 到期`;
+  $('[data-expiring]').textContent = expiringText;
+  $('[data-expiring-long]').textContent = `其中 ${fmt.num(DATA.user.expiring.points)} 點將於 ${ymd(App.time(DATA.user.expiring.date))} 到期，記得在年底前兌換使用。`;
+  function renderPointsTile() {
+    App.setRing(ptsRing, DATA.user.points, DATA.user.tierGoal);
+    $('[data-week-earned]').textContent = fmt.signed(weekEarned());
+    $('[data-tier-bar]').style.setProperty('--p', Math.min(100, (DATA.user.points / DATA.user.tierGoal) * 100).toFixed(1));
+  }
+  $('.mc-pts').addEventListener('cp:demo', (e) => {
+    if (!e.detail.active || reduce) return;
+    // 滑入時進度環與數字從 0 重跑一次
+    ptsRingHost.classList.add('no-trans');
+    App.setRing(ptsRing, 0, 1);
+    void ptsRing.getBoundingClientRect();
+    ptsRingHost.classList.remove('no-trans');
+    requestAnimationFrame(() => App.setRing(ptsRing, DATA.user.points, DATA.user.tierGoal));
+    App.odometer($('.mc-pts [data-odo]'), DATA.user.points, { reset: true });
+  });
+
+  /* 兌換點數 */
+  const REWARDS = [
+    { id: 'r-parking', src: 'transit', icon: 'parking', cat: 'transit', name: '路邊停車費折抵 NT$ 10', note: '繳停車費時自動折抵，限本人車牌', cost: 100 },
+    { id: 'r-bike', src: 'transit', icon: 'bike', cat: 'transit', name: '澄港單車 免費騎乘券 ×2', note: '單次 30 分鐘內免費，90 天內有效', cost: 100 },
+    { id: 'r-ferry', src: 'transit', icon: 'ship', cat: 'transit', name: '港埕—北岸渡輪 單程船票', note: '電子船票，碼頭閘門掃碼上船', cost: 150 },
+    { id: 'r-museum', src: 'culture', icon: 'frame', cat: 'culture', name: '市立美術館 特展門票', note: '《港與光》特展，展期至 12/28', cost: 300 },
+    { id: 'r-gym', src: 'health', icon: 'dumbbell', cat: 'health', name: '國民運動中心 單堂課程', note: '全市 5 座運動中心皆可使用', cost: 400 },
+  ];
+  function openRedeem() {
+    const pts = DATA.user.points;
+    const minCost = Math.min(...REWARDS.map((r) => r.cost));
+    // 點數連最便宜的項目都不夠時，整組選項都停用：只說明原因，不提供送出
+    const affordable = pts >= minCost;
+    const form = document.createElement('form');
+    form.className = 'mc-form';
+    form.noValidate = true;
+    form.innerHTML = (affordable
+      ? `<p>目前可用 <strong class="num">${fmt.num(pts)}</strong> 點。兌換後會立即從點數扣除，票券存放在 App 的「我的票券」。</p>`
+      : `<p>目前只有 <strong class="num">${fmt.num(pts)}</strong> 點，至少需要 ${fmt.num(minCost)} 點才能兌換。搭乘大眾運輸、準時還書都能累積點數。</p>`)
+      + '<div class="field" data-reward-field><fieldset class="mc-rewards"><legend class="sr-only">選擇兌換項目</legend>'
+      + REWARDS.map((r) => {
+        const off = r.cost > pts;
+        return `<label class="mc-reward${off ? ' is-disabled' : ''}"><input class="radio" type="radio" name="reward" value="${r.id}"${off ? ' disabled' : ''}>`
+          + `<span class="app-icon app-icon--sm app-icon--${r.cat}">${icon(r.icon, { sw: 2.1 })}</span>`
+          + `<span><b>${esc(r.name)}</b><small>${esc(r.note)}${off ? ' · 點數不足' : ''}</small></span>`
+          + `<span class="mc-reward__cost">${fmt.num(r.cost)} 點</span></label>`;
+      }).join('')
+      + `</fieldset><p class="field__error" role="alert">${icon('alert')}請先選擇一個兌換項目</p></div>`;
+    const field = $('[data-reward-field]', form);
+    form.addEventListener('change', () => field.classList.remove('is-invalid'));
+    const submit = (close) => {
+      const picked = $('input[name="reward"]:checked', form);
+      if (!picked) { field.classList.add('is-invalid'); $('input[name="reward"]:not(:disabled)', form).focus(); return; }
+      const r = REWARDS.find((x) => x.id === picked.value);
+      close();
+      redeem(r);
+    };
+    const m = App.modal({
+      eyebrow: '市民點數',
+      title: '兌換點數',
+      body: form,
+      actions: affordable
+        ? [{ label: '取消' }, { label: '確認兌換', variant: 'primary', onClick: submit }]
+        : [{ label: '好', variant: 'primary', autofocus: true }],
+    });
+    form.addEventListener('submit', (e) => { e.preventDefault(); if (affordable) submit(m.close); });
+  }
+  function redeem(r) {
+    const e = entry(App.now(), r.src, `${r.name} 兌換`, -r.cost);
+    pushEntries([e]);
+    App.toast(`已兌換 ${r.name}`, {
+      desc: `扣除 ${fmt.num(r.cost)} 點，剩餘 ${fmt.num(DATA.user.points)} 點`,
+      tone: 'ok',
+      action: { label: '復原', onClick: () => dropEntries([e]) },
+    });
+  }
+  $$('[data-redeem]').forEach((b) => b.addEventListener('click', openRedeem));
+
+  /* ================= C 待繳 / D 綁定 小卡 ================= */
+  const unpaid = () => DATA.parking.bills.filter((b) => !b.paid);
+  function renderDueTile() {
+    const list = unpaid();
+    $$('[data-due-open]').forEach((el) => { el.hidden = !list.length; });
+    $('[data-due-done]').hidden = list.length > 0;
+    const go = $('[data-due-go]');
+    go.textContent = list.length ? '前往繳費' : '查看繳費紀錄';
+    if (!list.length) return;
+    $('[data-due-by]').textContent = fmt.date(Math.min(...list.map((b) => App.time(b.due))));
+    $('[data-due-pts]').textContent = total(list, (b) => Math.floor(b.amount / DATA.parking.pointsRate));
+  }
+  function renderBindTile() {
+    $('[data-bindt-icons]').innerHTML = DATA.bindings.filter((b) => b.bound)
+      .map((b, i) => `<span class="app-icon app-icon--${b.cat}" style="--i:${i}">${icon(b.icon, { sw: 2.1 })}</span>`).join('');
+  }
+
+  /* ================= 點數走勢圖 ================= */
+  const chartHost = $('[data-chart]');
+  const chartSvgHost = $('[data-chart-svg]');
+  const chartTip = $('[data-chart-tip]');
+  const chartLive = $('[data-chart-live]');
+  let chartRange = '4m', chartGeom = null, chartSel = -1, chartSize = '';
+  function series() {
+    const end = App.now();
+    const start = chartRange === '30d' ? end - 30 * DAY : App.time('2026-07-01');
+    let bal = OPENING.balance;
+    ledger.filter((e) => e.t < start).forEach((e) => { bal += e.delta; });
+    const startBal = bal;
+    const events = ledger.filter((e) => e.t >= start).map((e) => ({ e, bal: (bal += e.delta) }));
+    return { start, end, startBal, events };
+  }
+  function renderChart() {
+    const w = Math.max(280, Math.round(chartHost.clientWidth));
+    const h = Math.max(200, Math.round(chartHost.clientHeight));
+    chartSize = `${w}x${h}`;
+    const P = { l: 46, r: 16, t: 16, b: 32 };
+    const s = series();
+    const vals = [s.startBal, ...s.events.map((x) => x.bal)];
+    const minV = Math.min(...vals), maxV = Math.max(...vals);
+    // 找不超過 5 格的整齊刻度，上下各留一點空間讓線不貼邊
+    let step = 50, lo = 0, hi = 0;
+    for (const st of [50, 100, 250, 500, 1000]) {
+      step = st;
+      lo = Math.floor((minV - st * 0.3) / st) * st;
+      hi = Math.ceil((maxV + st * 0.3) / st) * st;
+      if ((hi - lo) / st <= 5) break;
+    }
+    const X = (t) => P.l + ((t - s.start) / (s.end - s.start)) * (w - P.l - P.r);
+    const Y = (v) => P.t + ((hi - v) / (hi - lo)) * (h - P.t - P.b);
+    let d = `M${X(s.start).toFixed(1)} ${Y(s.startBal).toFixed(1)}`;
+    const pts = s.events.map((x) => {
+      const px = X(x.e.t), py = Y(x.bal);
+      d += `H${px.toFixed(1)}V${py.toFixed(1)}`;
+      return { x: px, y: py, e: x.e, bal: x.bal };
+    });
+    const endX = X(s.end), endY = Y(vals[vals.length - 1]);
+    d += `H${endX.toFixed(1)}`;
+    const base = h - P.b;
+    const area = `${d}V${base}H${X(s.start).toFixed(1)}Z`;
+    let grid = '';
+    for (let v = lo; v <= hi; v += step) {
+      grid += `<line class="mc-chart__grid" x1="${P.l}" x2="${w - P.r}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke-width="1" stroke-dasharray="${v === lo ? '0' : '3 5'}"/>`
+        + `<text class="mc-chart__lab" x="${P.l - 10}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${fmt.num(v)}</text>`;
+    }
+    // X 軸：4 個月看月初，30 天看每週一
+    const ticks = [];
+    if (chartRange === '4m') {
+      for (let m = 7; m <= 10; m++) ticks.push({ t: App.time(`2026-${m}-1`), label: `${m} 月` });
+    } else {
+      for (let t = startOfDay(s.start) + DAY; t < s.end; t += DAY) if (App.parts(t).dow === 1) ticks.push({ t, label: fmt.date(t) });
+    }
+    const xlabs = ticks.filter((k) => X(k.t) >= P.l - 1 && X(k.t) < w - P.r - 40)
+      .map((k) => `<line class="mc-chart__grid" x1="${X(k.t).toFixed(1)}" x2="${X(k.t).toFixed(1)}" y1="${base}" y2="${base + 5}" stroke-width="1"/><text class="mc-chart__lab" x="${X(k.t).toFixed(1)}" y="${h - 8}" text-anchor="${X(k.t) < P.l + 16 ? 'start' : 'middle'}">${k.label}</text>`).join('')
+      + `<text class="mc-chart__lab" x="${w - P.r}" y="${h - 8}" text-anchor="end">今天</text>`;
+    const dots = pts.map((p, i) => `<circle class="mc-chart__dot mc-chart__dot--${p.e.delta > 0 ? 'earn' : 'spend'}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" stroke-width="2" style="--i:${i}"/>`).join('');
+    chartSvgHost.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true" focusable="false">`
+      + `<defs><linearGradient id="mc-area-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B5BF6" stop-opacity=".22"/><stop offset="1" stop-color="#22D3EE" stop-opacity="0"/></linearGradient>`
+      + `<linearGradient id="mc-line-grad" gradientUnits="userSpaceOnUse" x1="${P.l}" y1="0" x2="${w - P.r}" y2="0"><stop offset="0" stop-color="#5B5BF6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>`
+      + grid + `<line class="mc-chart__base" x1="${P.l}" x2="${w - P.r}" y1="${base}" y2="${base}" stroke-width="1"/>` + xlabs
+      + `<path class="mc-chart__area" d="${area}" fill="url(#mc-area-grad)"/>`
+      + `<path class="mc-chart__line" d="${d}" pathLength="1" fill="none" stroke="url(#mc-line-grad)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`
+      + dots
+      + `<circle class="mc-chart__ping" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="5"/><circle class="mc-chart__now" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="5"/>`
+      + `<line class="mc-chart__guide" data-guide x1="0" x2="0" y1="${P.t}" y2="${base}" stroke-width="1"/>`
+      + `<circle class="mc-chart__sel" data-sel r="6.5" stroke-width="3"/>`
+      + '</svg>';
+    chartGeom = { pts, w, h };
+    const peak = s.events.reduce((a, x) => (x.bal > a.bal ? x : a), { bal: s.startBal, e: null });
+    $('[data-chart-summary]').textContent = `${fmt.dateLong(s.start)}起共 ${pts.length} 筆異動，點數從 ${fmt.num(s.startBal)} 點變為 ${fmt.num(DATA.user.points)} 點`
+      + (peak.e ? `，最高 ${fmt.num(peak.bal)} 點（${fmt.date(peak.e.t)}）。` : '。');
+    if (chartSel >= pts.length) chartSel = pts.length - 1;
+    if (chartSel >= 0 && chartHost.classList.contains('is-scrub')) select(chartSel, false);
+  }
+  function select(i, announce = true) {
+    if (!chartGeom || !chartGeom.pts.length) return;
+    chartSel = Math.max(0, Math.min(chartGeom.pts.length - 1, i));
+    const p = chartGeom.pts[chartSel];
+    const svg = $('svg', chartSvgHost);
+    const guide = $('[data-guide]', svg);
+    guide.setAttribute('x1', p.x.toFixed(1));
+    guide.setAttribute('x2', p.x.toFixed(1));
+    const sel = $('[data-sel]', svg);
+    sel.setAttribute('cx', p.x.toFixed(1));
+    sel.setAttribute('cy', p.y.toFixed(1));
+    sel.style.stroke = p.e.delta > 0 ? 'var(--accent)' : 'var(--text-2)';
+    const earn = p.e.delta > 0;
+    chartTip.innerHTML = `<p class="mc-tip__date">${stamp(p.e.t)}</p><p class="mc-tip__title">${esc(p.e.title)}</p>`
+      + `<p class="mc-tip__nums"><b class="${earn ? 'text-ok' : ''}">${fmt.signed(p.e.delta)} 點</b><span>餘額 ${fmt.num(p.bal)}</span></p>`;
+    chartHost.classList.add('is-scrub');
+    // 提示框盡量放在點的上方，超出邊界時往內收
+    const tw = chartTip.offsetWidth, th = chartTip.offsetHeight;
+    const left = Math.max(0, Math.min(chartGeom.w - tw, p.x - tw / 2));
+    const top = p.y - th - 16 >= 0 ? p.y - th - 16 : p.y + 18;
+    chartTip.style.transform = `translate(${left.toFixed(0)}px, ${top.toFixed(0)}px)`;
+    if (announce) chartLive.textContent = `${stamp(p.e.t)}，${p.e.title}，${fmt.signed(p.e.delta)} 點，餘額 ${fmt.num(p.bal)} 點`;
+  }
+  function unselect() { chartHost.classList.remove('is-scrub'); }
+  function nearest(clientX) {
+    const r = chartSvgHost.getBoundingClientRect();
+    const x = (clientX - r.left) * (chartGeom.w / r.width);
+    let best = 0;
+    chartGeom.pts.forEach((p, i) => { if (Math.abs(p.x - x) < Math.abs(chartGeom.pts[best].x - x)) best = i; });
+    return best;
+  }
+  chartSvgHost.addEventListener('pointermove', (e) => select(nearest(e.clientX), false));
+  chartSvgHost.addEventListener('pointerdown', (e) => select(nearest(e.clientX)));
+  chartSvgHost.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') unselect(); });
+  chartHost.addEventListener('keydown', (e) => {
+    const n = chartGeom.pts.length;
+    const next = { ArrowRight: chartSel + 1, ArrowLeft: chartSel < 0 ? n - 1 : chartSel - 1, Home: 0, End: n - 1 }[e.key];
+    if (next === undefined) { if (e.key === 'Escape') unselect(); return; }
+    e.preventDefault();
+    select(next);
+  });
+  chartHost.addEventListener('blur', unselect);
+  App.seg($('[data-chart-range]'), {
+    onChange: (v) => {
+      chartRange = v;
+      chartSel = -1;
+      unselect();
+      chartHost.classList.remove('is-drawn');
+      renderChart();
+      void chartHost.offsetWidth; // 讓新線段從頭畫起
+      chartHost.classList.add('is-drawn');
+    },
+  });
+  // 進入視窗才畫線；保底：只要已經捲到圖上方（或更下面）就直接畫好
+  const drawChart = () => chartHost.classList.add('is-drawn');
+  App.inView(chartHost, (v, stop) => { if (v) { stop(); drawChart(); } }, { threshold: 0.3 });
+  window.addEventListener('scroll', () => { if (chartHost.getBoundingClientRect().top < innerHeight) drawChart(); }, { passive: true });
+  new ResizeObserver(() => {
+    if (`${Math.max(280, Math.round(chartHost.clientWidth))}x${Math.max(200, Math.round(chartHost.clientHeight))}` !== chartSize) renderChart();
+  }).observe(chartHost);
+
+  /* ================= 帳目核對與點數明細 ================= */
+  function renderRecon() {
+    const earned = ledger.filter((e) => e.delta > 0), spent = ledger.filter((e) => e.delta < 0);
+    const bal = ledgerBalance();
+    if (bal !== DATA.user.points) throw new Error(`Points ledger mismatch: ${bal} vs ${DATA.user.points}`);
+    $('[data-recon-range]').textContent = `${ymd(OPENING.t + DAY)} 至今天`;
+    $('[data-recon-open]').textContent = fmt.num(OPENING.balance);
+    $('[data-recon-earn]').textContent = fmt.signed(total(earned, (e) => e.delta));
+    $('[data-recon-spend]').textContent = fmt.signed(total(spent, (e) => e.delta));
+    $('[data-recon-earn-n]').textContent = earned.length;
+    $('[data-recon-spend-n]').textContent = spent.length;
+    $('[data-recon-total]').textContent = fmt.num(bal);
+  }
+  const ledgerState = { type: 'all', srcs: new Set(), expanded: false };
+  const LEDGER_PAGE = 8;
+  let lastLedgerTop = ledger[ledger.length - 1].id;
+  $('[data-ledger-chips]').innerHTML = Object.entries(SRC).map(([id, s]) => `<button class="chip" type="button" aria-pressed="false" data-src="${id}"><span class="mc-dot" style="--c:${s.color}"></span>${s.name}</button>`).join('');
+  const ledgerTypeSeg = App.seg($('[data-ledger-type]'), { onChange: (v) => { ledgerState.type = v; renderLedger(); } });
+  $('[data-ledger-chips]').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-src]');
+    if (!c) return;
+    const id = c.dataset.src;
+    if (ledgerState.srcs.has(id)) ledgerState.srcs.delete(id); else ledgerState.srcs.add(id);
+    c.setAttribute('aria-pressed', String(ledgerState.srcs.has(id)));
+    renderLedger();
+  });
+  $('[data-ledger-more]').addEventListener('click', () => { ledgerState.expanded = !ledgerState.expanded; renderLedger(); });
+  function renderLedger() {
+    let bal = OPENING.balance;
+    const rows = ledger.map((e) => ({ e, bal: (bal += e.delta) })).reverse();
+    const bySrc = rows.filter((r) => !ledgerState.srcs.size || ledgerState.srcs.has(r.e.src));
+    const counts = { all: bySrc.length, earn: bySrc.filter((r) => r.e.delta > 0).length, spend: bySrc.filter((r) => r.e.delta < 0).length };
+    $$('[data-count]').forEach((el) => { el.textContent = counts[el.dataset.count]; });
+    ledgerTypeSeg.refresh();
+    const list = bySrc.filter((r) => ledgerState.type === 'all' || (ledgerState.type === 'earn' ? r.e.delta > 0 : r.e.delta < 0));
+    const shown = ledgerState.expanded ? list : list.slice(0, LEDGER_PAGE);
+    const top = ledger[ledger.length - 1].id;
+    $('[data-ledger-body]').innerHTML = shown.map((r) => {
+      const earn = r.e.delta > 0;
+      const isToday = r.e.t >= todayStart;
+      return `<tr${r.e.id === top && top !== lastLedgerTop ? ' class="is-new"' : ''}>`
+        + `<td class="mc-ledger__date"><span>${fmt.dateWeek(r.e.t)}</span><small>${fmt.time(r.e.t)}</small></td>`
+        + `<td class="mc-ledger__title">${esc(r.e.title)}${isToday ? '<span class="badge badge--accent">今天</span>' : ''}</td>`
+        + `<td class="mc-ledger__src"><span class="mc-src"><i style="--c:${SRC[r.e.src].color}"></i>${SRC[r.e.src].name}</span></td>`
+        + `<td class="num mc-ledger__delta${earn ? ' is-earn' : ''}">${fmt.signed(r.e.delta)}</td>`
+        + `<td class="num mc-ledger__bal">${fmt.num(r.bal)}</td></tr>`;
+    }).join('');
+    lastLedgerTop = top;
+    const empty = $('[data-ledger-empty]');
+    $('[data-ledger-wrap]').hidden = !list.length;
+    empty.hidden = list.length > 0;
+    if (!list.length) {
+      empty.innerHTML = App.emptyState({ art: 'list', title: '這個條件下沒有紀錄', text: '換個來源或類型試試，或清除所有篩選條件。', actions: '<button class="btn btn--tinted btn--sm" type="button" data-ledger-reset>清除篩選</button>' });
+    }
+    $('[data-ledger-meta]').textContent = `顯示 ${shown.length} / ${list.length} 筆 · 期初結轉 ${ymd(OPENING.t)} ${fmt.num(OPENING.balance)} 點`;
+    const more = $('[data-ledger-more]');
+    more.hidden = list.length <= LEDGER_PAGE;
+    more.textContent = ledgerState.expanded ? '收合' : `顯示全部 ${list.length} 筆`;
+    more.setAttribute('aria-expanded', String(ledgerState.expanded));
+  }
+  $('[data-ledger-empty]').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-ledger-reset]')) return;
+    ledgerState.srcs.clear();
+    $$('[data-src]').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+    ledgerTypeSeg.select(0);
+  });
+
+  /* ================= 繳費紀錄 ================= */
+  const PAY_KIND = {
+    parking: { name: '停車費', icon: 'parking', cat: 'transit' },
+    topup: { name: '交通卡加值', icon: 'card', cat: 'transit' },
+    tax: { name: '稅費', icon: 'house', cat: 'pay' },
+    ticket: { name: '票券', icon: 'ticket', cat: 'culture' },
+    fine: { name: '罰鍰', icon: 'fine', cat: 'pay' },
+  };
+  const PAY_HISTORY = [
+    { id: 'TU-2610-0409', kind: 'topup', title: '澄港通卡 自動加值', detail: `卡號末四碼 ${DATA.transit.cardNo.slice(-4)}`, t: '2026-10-09T07:58', amount: 500, method: '信用卡末四碼 2048' },
+    { id: 'TU-2609-2117', kind: 'topup', title: '澄港通卡 自動加值', detail: `卡號末四碼 ${DATA.transit.cardNo.slice(-4)}`, t: '2026-09-21T08:03', amount: 500, method: '信用卡末四碼 2048' },
+    { id: 'PK-2609-71102', kind: 'parking', title: '北岸區 河濱路路邊停車格', detail: '停車 3 小時', t: '2026-09-14T20:05', amount: 120, method: '信用卡末四碼 2048', points: 12 },
+    { id: 'TK-2608-3301', kind: 'ticket', title: '港埕音樂廳《夏夜港灣》全票 2 張', detail: '已用 400 點折抵 NT$ 40', t: '2026-08-24T19:02', amount: 1160, method: '信用卡末四碼 2048' },
+    { id: 'PK-2608-55320', kind: 'parking', title: '港埕區 漁人碼頭停車場', detail: '停車 2 小時', t: '2026-08-09T20:41', amount: 80, method: '信用卡末四碼 2048', points: 8 },
+    { id: 'FN-2607-04418', kind: 'fine', title: '交通罰鍰 違規停車（舊城區 民權路）', detail: '舉發單號 TC-0613-4418', t: '2026-07-02T10:15', amount: 600, method: '信用卡末四碼 2048' },
+    { id: 'TX-2026-HT-0927', kind: 'tax', title: `2026 年房屋稅（${DATA.user.district}住家）`, detail: '開徵期間 5/1–5/31', t: '2026-05-27T09:00', amount: 4286, method: '金融帳戶自動扣繳' },
+    { id: 'TX-2026-VL-2071', kind: 'tax', title: `2026 年使用牌照稅（${DATA.parking.plate}）`, detail: '開徵期間 4/1–4/30', t: '2026-04-18T21:12', amount: 7120, method: '信用卡末四碼 2048' },
+  ];
+  const paidHere = {}; // 本頁繳納的帳單：{ t, method, entries }
+  const payState = { status: 'all', kinds: new Set() };
+  $('[data-pay-chips]').innerHTML = Object.entries(PAY_KIND).map(([id, k]) => `<button class="chip" type="button" aria-pressed="false" data-kind="${id}">${icon(k.icon)}${k.name}</button>`).join('');
+  const payStatusSeg = App.seg($('[data-pay-status]'), { onChange: (v) => { payState.status = v; renderPayments(); } });
+  $('[data-pay-chips]').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-kind]');
+    if (!c) return;
+    const id = c.dataset.kind;
+    if (payState.kinds.has(id)) payState.kinds.delete(id); else payState.kinds.add(id);
+    c.setAttribute('aria-pressed', String(payState.kinds.has(id)));
+    renderPayments();
+  });
+  function paymentRows() {
+    const bills = DATA.parking.bills.map((b) => ({
+      id: b.id, kind: 'parking', title: b.place, detail: `停車 ${b.duration}`, t: App.time(b.date), amount: b.amount,
+      due: b.due, paid: b.paid, here: paidHere[b.id] || null,
+      points: Math.floor(b.amount / DATA.parking.pointsRate),
+    }));
+    const hist = PAY_HISTORY.map((p) => ({ ...p, t: App.time(p.t), paid: true, here: null }));
+    return [...bills, ...hist].sort((a, b) => (Number(a.paid) - Number(b.paid)) || (b.t - a.t));
+  }
+  function renderPayments() {
+    const all = paymentRows();
+    const byKind = all.filter((r) => !payState.kinds.size || payState.kinds.has(r.kind));
+    const counts = { all: byKind.length, due: byKind.filter((r) => !r.paid).length, paid: byKind.filter((r) => r.paid).length };
+    $$('[data-pcount]').forEach((el) => { el.textContent = counts[el.dataset.pcount]; });
+    payStatusSeg.refresh();
+    const list = byKind.filter((r) => payState.status === 'all' || (payState.status === 'due' ? !r.paid : r.paid));
+    $('[data-pay-list]').innerHTML = list.map((r) => {
+      const k = PAY_KIND[r.kind];
+      const rebate = r.points && r.paid ? `<span class="text-ok">回饋 ${r.points} 點</span>` : '';
+      const sub = r.here
+        ? segs(r.id, `已於 ${stamp(r.here.t)} 繳納`, esc(r.here.method), rebate)
+        : segs(r.id, fmt.dateWeek(r.t), esc(r.detail), r.paid ? esc(r.method) : '', rebate);
+      const badge = r.paid ? '<span class="badge badge--ok">已繳</span>' : `<span class="badge badge--warn">${fmt.date(r.due)} 前繳納</span>`;
+      const act = r.paid ? '' : `<button class="btn btn--primary btn--sm" type="button" data-pay="${r.id}">繳費</button>`;
+      return `<li class="mc-prow${r.paid ? '' : ' is-due'}"><span class="app-icon app-icon--sm app-icon--${k.cat}">${icon(k.icon, { sw: 2.1 })}</span>`
+        + `<div class="mc-prow__body"><p class="mc-prow__title">${esc(r.title)}</p><p class="mc-prow__sub">${sub}</p></div>`
+        + `<div class="mc-prow__amt"><span class="num">${fmt.money(r.amount)}</span>${badge}</div>`
+        + `<div class="mc-prow__act">${act}</div></li>`;
+    }).join('');
+    const empty = $('[data-pay-empty]');
+    empty.hidden = list.length > 0;
+    if (!list.length) {
+      empty.innerHTML = payState.status === 'due' && !payState.kinds.size
+        ? App.emptyState({ art: 'list', title: '沒有待繳費用', text: '停車單、稅單開徵時，會在到期前 3 天提醒你。' })
+        : App.emptyState({ art: 'search', title: '找不到符合的紀錄', text: '換個費用類型或狀態試試。' });
+    }
+    // 統計
+    const due = unpaid();
+    const dueNote = $('[data-paystat-due-note]');
+    dueNote.textContent = due.length ? `${due.length} 筆停車費 · 最晚 ${fmt.date(Math.min(...due.map((b) => App.time(b.due))))} 前繳納` : '目前沒有待繳費用';
+    $('[data-pay-all]').hidden = !due.length;
+    const year = nowP.y;
+    const paidYear = all.filter((r) => r.paid && App.parts(r.here ? r.here.t : r.t).y === year);
+    $('[data-paystat-year-label]').textContent = `${year} 年已繳`;
+    $('[data-paystat-year]').textContent = fmt.num(total(paidYear, (r) => r.amount));
+    $('[data-paystat-year-note]').textContent = `共 ${paidYear.length} 筆，全部透過城市通付款`;
+    $('[data-paystat-rebate]').innerHTML = `${fmt.signed(total(ledger.filter((e) => e.src === 'pay' && e.delta > 0), (e) => e.delta))}<small style="margin-left:6px">點</small>`;
+  }
+  function openPay(ids) {
+    const bills = DATA.parking.bills.filter((b) => ids.includes(b.id) && !b.paid);
+    const sumAmt = total(bills, (b) => b.amount);
+    const pts = total(bills, (b) => Math.floor(b.amount / DATA.parking.pointsRate));
+    const body = document.createElement('form');
+    body.className = 'mc-form';
+    body.noValidate = true;
+    body.innerHTML = '<div class="mc-paysum">'
+      + bills.map((b) => `<div class="mc-paysum__row"><span>${esc(b.place)}<small>${b.id} · ${fmt.dateWeek(b.date)} · 停車 ${esc(b.duration)}</small></span><b class="num">${fmt.money(b.amount)}</b></div>`).join('')
+      + (bills.length > 1 ? `<div class="mc-paysum__row mc-paysum__row--total"><span>合計</span><span class="num">${fmt.money(sumAmt)}</span></div>` : '')
+      + '</div>'
+      + '<fieldset class="mc-methods"><legend class="label">付款方式</legend>'
+      + '<label class="check-row"><input class="radio" type="radio" name="pay-method" value="信用卡末四碼 2048" checked>信用卡（末四碼 2048）</label>'
+      + '<label class="check-row"><input class="radio" type="radio" name="pay-method" value="金融帳戶末五碼 31057">金融帳戶（末五碼 31057）</label>'
+      + '</fieldset>'
+      + `<p class="mc-note">${icon('star')}<span>繳費後回饋 <b>${pts}</b> 點市民點數，車牌 ${esc(DATA.parking.plate)}</span></p>`;
+    const go = (close) => {
+      const method = $('input[name="pay-method"]:checked', body).value;
+      close();
+      pay(bills.map((b) => b.id), method);
+    };
+    const m = App.modal({
+      eyebrow: '路邊停車費',
+      title: bills.length > 1 ? `繳清 ${bills.length} 筆停車費` : '繳納停車費',
+      body,
+      actions: [{ label: '取消' }, { label: `付款 ${fmt.money(sumAmt)}`, variant: 'primary', onClick: go, autofocus: true }],
+      // 繳完後該列不再有繳費鈕：交給下一筆待繳，沒有就交給狀態篩選
+      returnFocus: () => $('[data-pay]') || $('.seg__btn[aria-pressed="true"]', $('[data-pay-status]')),
+    });
+    body.addEventListener('submit', (e) => { e.preventDefault(); go(m.close); });
+  }
+  function pay(ids, method) {
+    const t = App.now();
+    const bills = DATA.parking.bills.filter((b) => ids.includes(b.id));
+    const entries = bills.map((b) => entry(t, 'pay', `路邊停車費繳納回饋 ${b.id}`, Math.floor(b.amount / DATA.parking.pointsRate)));
+    bills.forEach((b, i) => { paidHere[b.id] = { t, method, entry: entries[i] }; });
+    App.update('parking', (p) => p.bills.forEach((b) => { if (ids.includes(b.id)) b.paid = true; }));
+    pushEntries(entries);
+    const sumAmt = total(bills, (b) => b.amount), pts = total(entries, (e) => e.delta);
+    App.toast(`已繳納 ${fmt.money(sumAmt)}`, {
+      desc: `${bills.length} 筆停車費 · ${method} · 回饋 ${pts} 點`,
+      tone: 'ok',
+      action: {
+        label: '復原',
+        onClick: () => {
+          ids.forEach((id) => { delete paidHere[id]; });
+          App.update('parking', (p) => p.bills.forEach((b) => { if (ids.includes(b.id)) b.paid = false; }));
+          dropEntries(entries);
+        },
+      },
+    });
+  }
+  $('[data-pay-list]').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pay]');
+    if (b) openPay([b.dataset.pay]);
+  });
+  $('[data-pay-all]').addEventListener('click', () => openPay(unpaid().map((b) => b.id)));
+
+  /* ================= 通知設定與鎖定畫面預覽 ================= */
+  const myStop = () => App.garbage.stop(DATA.garbage.myStop);
+  const NOTIFS = [
+    { id: 'garbage', cat: 'life', icon: 'truck', name: '垃圾車到站提醒', on: true },
+    { id: 'bills', cat: 'pay', icon: 'receipt', name: '繳費期限', on: true },
+    { id: 'library', cat: 'culture', icon: 'book', name: '圖書到期與預約到館', on: true },
+    { id: 'points', cat: 'grad', icon: 'star', name: '點數入帳與到期', on: true },
+    { id: 'transit', cat: 'transit', icon: 'card', name: '交通卡加值', on: true },
+    { id: 'health', cat: 'health', icon: 'stethoscope', name: '掛號與看診進度', on: false },
+    { id: 'city', cat: 'grad', icon: 'megaphone', name: '市政公告與活動', on: false },
+  ];
+  const notifDesc = {
+    garbage: () => segs(esc(myStop().name), '提前 5 分鐘', '<a href="service.html#alerts">變更站點</a>'),
+    bills: () => '停車單、稅單到期前 3 天提醒',
+    library: () => `到期前 3 天，以及預約書到館時`,
+    points: () => '點數入帳，以及到期前 30 天',
+    transit: () => `每次自動加值，以及餘額低於 NT$ ${DATA.transit.autoTopup.threshold}`,
+    health: () => '預約成功、叫號進度、輪到前 5 號提醒出發',
+    city: () => '交通管制、停水停電、市民活動',
+  };
+  const CHANNELS = [
+    { id: 'push', icon: 'bell', cat: 'transit', name: '推播通知', sub: '手機鎖定畫面與通知中心', on: true },
+    { id: 'sms', icon: 'message', cat: 'life', name: '簡訊', sub: () => `只用於繳費期限與帳號安全 · ${DATA.user.phone}`, on: true },
+    { id: 'email', icon: 'mail', cat: 'culture', name: '電子郵件', sub: '每月 1 日寄送點數與繳費月報', on: false },
+  ];
+  let dnd = true;
+  function renderNotifList() {
+    $('[data-notif-list]').innerHTML = NOTIFS.map((n) => `<li class="list-row mc-nrow">`
+      + `<span class="app-icon app-icon--${n.cat}">${icon(n.icon, { sw: 2.1 })}</span>`
+      + `<div class="list-row__body"><p class="list-row__title" id="nt-${n.id}">${esc(n.name)}</p><p class="list-row__sub" id="nd-${n.id}" data-ndesc="${n.id}">${notifDesc[n.id]()}</p></div>`
+      + `<div class="list-row__trail"><input class="switch" type="checkbox" role="switch" data-notif="${n.id}"${n.on ? ' checked' : ''} aria-labelledby="nt-${n.id}" aria-describedby="nd-${n.id}"></div></li>`).join('');
+    $('[data-channel-list]').innerHTML = CHANNELS.map((c) => `<li class="list-row mc-nrow">`
+      + `<span class="app-icon app-icon--${c.cat}">${icon(c.icon, { sw: 2.1 })}</span>`
+      + `<div class="list-row__body"><p class="list-row__title" id="ct-${c.id}">${esc(c.name)}</p><p class="list-row__sub" id="cd-${c.id}">${esc(typeof c.sub === 'function' ? c.sub() : c.sub)}</p></div>`
+      + `<div class="list-row__trail"><input class="switch" type="checkbox" role="switch" data-channel="${c.id}"${c.on ? ' checked' : ''} aria-labelledby="ct-${c.id}" aria-describedby="cd-${c.id}"></div></li>`).join('');
+  }
+  function garbageNotif() {
+    const s = myStop();
+    const route = DATA.garbage.route;
+    const sec = App.garbage.eta(s.id);
+    if (sec > 60) return { title: `${route} 即將抵達`, text: `約 ${Math.ceil(sec / 60)} 分鐘後抵達${s.name}，請準備出門` };
+    if (sec > -180) return { title: `${route} 已到站`, text: `正停靠${s.name}，約停 3 分鐘` };
+    return { title: `${route} 已離開${s.name}`, text: `下一班：明天 ${s.time}` };
+  }
+  const SAMPLE = {
+    garbage: () => ({ app: '垃圾車動態', time: '現在', ...garbageNotif() }),
+    bills: () => {
+      const list = unpaid();
+      if (!list.length) return { app: '繳費提醒', time: '剛剛', title: '本月停車費已全部繳清', text: '下一期稅單開徵時會再提醒你' };
+      return { app: '繳費提醒', time: '2 小時前', title: `${list.length} 筆停車費待繳`, text: `合計 ${fmt.money(total(list, (b) => b.amount))}，最晚 ${fmt.date(Math.min(...list.map((b) => App.time(b.due))))} 前繳納` };
+    },
+    library: () => {
+      const next = DATA.library.loans.reduce((a, b) => (App.time(a.due) <= App.time(b.due) ? a : b));
+      const hold = DATA.library.holds[0];
+      return { app: '圖書館', time: '09:00', title: `《${next.title}》${fmt.date(next.due)} 到期`, text: `預約書《${hold.title}》${hold.status}，${fmt.date(hold.pickupBy)} 前取書` };
+    },
+    points: () => {
+      const last = ledger[ledger.length - 1];
+      return last.delta > 0
+        ? { app: '市民點數', time: fmt.time(last.t), title: `${fmt.signed(last.delta)} 點已入帳`, text: `${last.title}；目前 ${fmt.num(DATA.user.points)} 點` }
+        : { app: '市民點數', time: fmt.time(last.t), title: `已使用 ${fmt.num(-last.delta)} 點`, text: `${last.title}；剩餘 ${fmt.num(DATA.user.points)} 點` };
+    },
+    transit: () => ({ app: '交通卡', time: '昨天', title: '自動加值已開啟', text: `餘額 ${fmt.money(DATA.transit.balance)}，低於 NT$ ${DATA.transit.autoTopup.threshold} 時自動加值 NT$ ${DATA.transit.autoTopup.amount}` }),
+    health: () => ({ app: '預約掛號', time: '10:12', title: '公費流感疫苗開放預約', text: '北岸院區 10/26 起，每日 09:00–15:00' }),
+    city: () => ({ app: '市政公告', time: '12:30', title: '10/25（日）港埕區路跑交通管制', text: '06:00–11:00 港埕大道封閉，公車 217 改道行駛' }),
+  };
+  const lockList = $('[data-lock-list]');
+  const lockEls = new Map();
+  const LOCK_MAX = 3;
+  function notifCard(id) {
+    const n = NOTIFS.find((x) => x.id === id);
+    const s = SAMPLE[id]();
+    return `<div class="notif"><span class="app-icon app-icon--${n.cat} notif__icon" style="--s:30px">${icon(n.icon, { sw: 2.1 })}</span>`
+      + `<div class="notif__head"><span class="notif__app">${esc(s.app)}</span><span class="notif__time">${esc(s.time)}</span></div>`
+      + `<div><p class="notif__title">${esc(s.title)}</p><p class="notif__text">${esc(s.text)}</p></div></div>`;
+  }
+  function renderLock() {
+    const push = CHANNELS.find((c) => c.id === 'push').on;
+    const enabled = NOTIFS.filter((n) => n.on);
+    const shown = push ? enabled.slice(0, LOCK_MAX) : [];
+    const ids = shown.map((n) => n.id);
+    // 依 id 增刪，讓開關切換時只有變動的那則滑入／收起
+    lockEls.forEach((el, id) => {
+      if (ids.includes(id)) return;
+      lockEls.delete(id);
+      el.classList.add('is-pre');
+      setTimeout(() => el.remove(), reduce ? 0 : 460);
+    });
+    let prev = null;
+    shown.forEach((n) => {
+      let el = lockEls.get(n.id);
+      const html = notifCard(n.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'mc-lock__item is-pre';
+        el.innerHTML = `<div class="mc-lock__inner">${html}</div>`;
+        lockEls.set(n.id, el);
+        lockList.insertBefore(el, prev ? prev.nextSibling : lockList.firstChild);
+        void el.offsetHeight; // 先以收合狀態排版，下一步才有展開的轉場
+        el.classList.remove('is-pre');
+      } else {
+        const inner = el.firstElementChild;
+        if (inner.innerHTML !== html) inner.innerHTML = html;
+        if (el.previousElementSibling !== prev) lockList.insertBefore(el, prev ? prev.nextSibling : lockList.firstChild);
+      }
+      prev = el;
+    });
+    const rest = push ? enabled.length - shown.length : 0;
+    $('[data-lock-more]').textContent = rest > 0 ? `還有 ${rest} 則通知` : '';
+    $('[data-lock-off]').hidden = push;
+    $('[data-lock-dnd]').classList.toggle('is-off', !dnd);
+    const p = App.parts(App.now());
+    $('[data-lock-date]').textContent = `${p.m}月${p.d}日 星期${WEEK[p.dow]}`;
+    $('[data-notif-count]').textContent = `已開啟 ${enabled.length} / ${NOTIFS.length} 項提醒`;
+    $('[data-preview-caption]').textContent = !push ? '推播已關閉，鎖定畫面不會出現提醒'
+      : enabled.length ? `現在會看到 ${enabled.length} 則提醒${dnd ? '，22:00 起進入勿擾' : ''}` : '所有提醒都已關閉';
+  }
+  renderNotifList();
+  $('[data-notif-list]').addEventListener('change', (e) => {
+    const id = e.target.dataset.notif;
+    if (!id) return;
+    NOTIFS.find((n) => n.id === id).on = e.target.checked;
+    renderLock();
+  });
+  $('[data-channel-list]').addEventListener('change', (e) => {
+    const id = e.target.dataset.channel;
+    if (!id) return;
+    const c = CHANNELS.find((x) => x.id === id);
+    c.on = e.target.checked;
+    renderLock();
+    if (id !== 'push') App.toast(c.on ? `已開啟${c.name}通知` : `已關閉${c.name}通知`, { desc: typeof c.sub === 'function' ? c.sub() : c.sub, tone: c.on ? 'ok' : 'info' });
+  });
+  $('[data-dnd]').addEventListener('change', (e) => { dnd = e.target.checked; renderLock(); });
+  // 垃圾車預估時間會隨時間變動，鎖定畫面每 15 秒更新一次
+  App.every(15000, renderLock);
+
+  /* ================= 綁定服務 ================= */
+  const BIND_FORM = {
+    'b-transit': { label: '澄港通卡卡號', placeholder: '卡片背面的 16 碼數字', prefill: DATA.transit.cardNo, hint: '卡號印在卡片背面，共 16 碼數字。', norm: (v) => v.replace(/[\s-]/g, ''), test: (v) => /^\d{16}$/.test(v), detail: (v) => `卡號末四碼 ${v.slice(-4)} · 自動加值` },
+    'b-plate': { label: '車牌號碼', placeholder: '例：ABC-1234', prefill: DATA.parking.plate, hint: '綁定後會收到停車單通知，也能查詢是否遭拖吊。', norm: (v) => v.trim().toUpperCase(), test: (v) => v === DATA.parking.plate, error: `車牌需與行照登記相符（${DATA.parking.plate}）`, detail: () => '停車單通知、拖吊查詢' },
+    'b-library': { label: '借書證號', placeholder: '例：L-0000-0000', prefill: DATA.library.cardNo, hint: '借書證號在借書證正面右下角。', norm: (v) => v.trim().toUpperCase(), test: (v) => /^L-\d{4}-\d{4}$/.test(v), detail: (v) => `${v} · 北岸分館` },
+    'b-clinic': { label: '病歷號', placeholder: '8 碼數字', prefill: '', hint: '病歷號印在掛號單或藥袋右上角，共 8 碼數字。', norm: (v) => v.replace(/\s/g, ''), test: (v) => /^\d{8}$/.test(v), detail: (v) => `病歷號 ••••${v.slice(-4)} · 北岸院區` },
+    'b-water': { label: '水號', placeholder: '例：K2-0381-5520-7', prefill: '', hint: '水號在水費帳單左上角，英文字母開頭共 11 碼。', norm: (v) => v.replace(/[\s-]/g, '').toUpperCase(), test: (v) => /^[A-Z]\d{10}$/.test(v), detail: (v) => `水號 ••••${v.slice(-4)} · 每期帳單自動通知` },
+  };
+  function renderBindings() {
+    const list = $('[data-binding-list]');
+    const focusId = document.activeElement && list.contains(document.activeElement) ? document.activeElement.dataset.linkId || document.activeElement.dataset.unlinkId : null;
+    list.innerHTML = DATA.bindings.map((b) => `<li class="list-row mc-brow${b.bound ? '' : ' is-off'}">`
+      + `<span class="app-icon app-icon--${b.cat}">${icon(b.icon, { sw: 2.1 })}</span>`
+      + `<div class="list-row__body"><p class="list-row__title">${esc(b.name)}</p><p class="list-row__sub">${segs(esc(b.detail), b.bound ? `${ymd(App.time(b.since))} 綁定` : '')}</p></div>`
+      + `<div class="list-row__trail">${b.bound
+        ? `<span class="badge badge--ok hide-mobile">已綁定</span><button class="btn btn--ghost btn--sm" type="button" data-unlink-id="${b.id}" aria-label="解除綁定 ${esc(b.name)}">解除</button>`
+        : `<button class="btn btn--tinted btn--sm" type="button" data-link-id="${b.id}" aria-label="綁定 ${esc(b.name)}">${icon('plus')}綁定</button>`}</div></li>`).join('');
+    // 重繪後把焦點還給同一列的按鈕（狀態翻轉後按鈕會換成另一顆）
+    if (focusId) {
+      const again = $(`[data-link-id="${focusId}"], [data-unlink-id="${focusId}"]`, list);
+      if (again) again.focus();
+    }
+  }
+  function snapshotBinding(id) {
+    const b = DATA.bindings.find((x) => x.id === id);
+    return { bound: b.bound, since: b.since, detail: b.detail };
+  }
+  function restoreBinding(id, snap) {
+    App.update('bindings', (list) => Object.assign(list.find((x) => x.id === id), snap));
+  }
+  // 綁定／解除後同一列的按鈕會換成另一顆，關閉 modal 時把焦點交給它
+  const bindingBtn = (id) => $(`[data-link-id="${id}"], [data-unlink-id="${id}"]`, $('[data-binding-list]'));
+  function openBind(id) {
+    const b = DATA.bindings.find((x) => x.id === id);
+    const f = BIND_FORM[id];
+    const form = document.createElement('form');
+    form.className = 'mc-form';
+    form.noValidate = true;
+    form.innerHTML = `<p>綁定後，${esc(b.name)}相關服務會自動帶入你的資料；可隨時在這裡解除。</p>`
+      + `<div class="field" data-bind-field><label class="label" for="bind-input">${esc(f.label)}</label>`
+      + `<input class="input" id="bind-input" name="value" autocomplete="off" placeholder="${esc(f.placeholder)}" value="${esc(f.prefill)}" aria-describedby="bind-hint bind-err">`
+      + `<p class="hint" id="bind-hint">${esc(f.hint)}</p>`
+      + `<p class="field__error" id="bind-err" role="alert">${icon('alert')}<span data-bind-err></span></p></div>`;
+    const field = $('[data-bind-field]', form);
+    const input = $('#bind-input', form);
+    input.addEventListener('input', () => { field.classList.remove('is-invalid'); input.removeAttribute('aria-invalid'); });
+    const submit = (close) => {
+      const v = f.norm(input.value);
+      if (!f.test(v)) {
+        field.classList.add('is-invalid');
+        input.setAttribute('aria-invalid', 'true');
+        $('[data-bind-err]', form).textContent = v ? (f.error || `${f.label}格式不正確`) : `請輸入${f.label}`;
+        input.focus();
+        return;
+      }
+      close();
+      const snap = snapshotBinding(id);
+      const today = App.parts(App.now());
+      App.update('bindings', (list) => {
+        const x = list.find((y) => y.id === id);
+        x.bound = true;
+        x.since = `${today.y}-${today.m}-${today.d}`;
+        x.detail = f.detail(v);
+      });
+      App.toast(`已綁定${b.name}`, { desc: '相關服務會自動帶入這筆資料。', tone: 'ok', action: { label: '復原', onClick: () => restoreBinding(id, snap) } });
+    };
+    const m = App.modal({
+      eyebrow: '綁定服務',
+      title: `綁定${b.name}`,
+      body: form,
+      actions: [{ label: '取消' }, { label: '確認綁定', variant: 'primary', onClick: submit }],
+      returnFocus: () => bindingBtn(id),
+    });
+    form.addEventListener('submit', (e) => { e.preventDefault(); submit(m.close); });
+    input.focus();
+  }
+  function openUnbind(id) {
+    const b = DATA.bindings.find((x) => x.id === id);
+    App.modal({
+      eyebrow: '綁定服務',
+      title: `解除綁定${b.name}？`,
+      size: 'sm',
+      returnFocus: () => bindingBtn(id),
+      body: `<p>解除後，城市通不會再自動帶入<strong>${esc(b.name)}</strong>的資料，相關的提醒也會停止。</p><p>之後隨時可以重新綁定。</p>`,
+      actions: [
+        { label: '取消' },
+        {
+          label: '解除綁定', variant: 'danger', onClick: (close) => {
+            close();
+            const snap = snapshotBinding(id);
+            App.update('bindings', (list) => { const x = list.find((y) => y.id === id); x.bound = false; x.since = null; });
+            App.toast(`已解除綁定${b.name}`, { tone: 'info', action: { label: '復原', onClick: () => restoreBinding(id, snap) } });
+          },
+        },
+      ],
+    });
+  }
+  $('[data-binding-list]').addEventListener('click', (e) => {
+    const link = e.target.closest('[data-link-id]');
+    if (link) { openBind(link.dataset.linkId); return; }
+    const unlink = e.target.closest('[data-unlink-id]');
+    if (unlink) openUnbind(unlink.dataset.unlinkId);
+  });
+
+  /* ================= 資料授權（與首頁隱私區同一份 DATA.consents） ================= */
+  function renderConsents() {
+    const list = $('[data-consent-list]');
+    const focusedId = document.activeElement && document.activeElement.dataset.consent;
+    list.innerHTML = DATA.consents.map((c) => `<li class="list-row mc-brow${c.granted ? '' : ' is-off'}">`
+      + `<span class="app-icon app-icon--${c.cat}">${icon(c.icon, { sw: 2.1 })}</span>`
+      + `<div class="list-row__body"><p class="list-row__title" id="cs-${c.id}">${esc(c.app)}</p><p class="list-row__sub">${c.granted ? segs(c.fields.map(esc).join('、'), `${ymd(App.time(c.since))} 授權`, `最近讀取 ${fmt.rel(c.lastUsed)}`) : segs(c.fields.map(esc).join('、'), '未授權', `上次讀取 ${ymd(App.time(c.lastUsed))}`)}</p></div>`
+      + `<div class="list-row__trail"><input class="switch" type="checkbox" role="switch" data-consent="${c.id}"${c.granted ? ' checked' : ''} aria-label="允許「${esc(c.app)}」讀取${esc(c.fields.join('、'))}"></div></li>`).join('');
+    if (focusedId) { const again = $(`[data-consent="${focusedId}"]`, list); if (again) again.focus(); }
+  }
+  $('[data-consent-list]').addEventListener('change', (e) => {
+    const id = e.target.dataset.consent;
+    if (!id) return;
+    const granted = e.target.checked;
+    const c = DATA.consents.find((x) => x.id === id);
+    const prevSince = c.since;
+    const today = App.parts(App.now());
+    const set = (v, sinceVal) => App.update('consents', (list) => { const x = list.find((y) => y.id === id); x.granted = v; x.since = sinceVal; });
+    set(granted, granted ? `${today.y}-${today.m}-${today.d}` : prevSince);
+    App.toast(granted ? `已授權「${c.app}」` : `已撤回「${c.app}」的授權`, {
+      desc: granted ? `對方可讀取：${c.fields.join('、')}` : `對方將無法再讀取：${c.fields.join('、')}`,
+      tone: granted ? 'ok' : 'info',
+      action: { label: '復原', onClick: () => set(!granted, prevSince) },
+    });
+  });
+
+  /* ================= 裝置與登入安全 ================= */
+  const devices = [
+    { id: 'd-phone', icon: 'phone', name: `${DATA.user.shortName}的手機`, client: '城市通 App 4.0.2', place: DATA.user.district, last: App.now(), current: true },
+    { id: 'd-watch', icon: 'watch', name: '智慧手錶', client: '行動市民卡（感應乘車）', place: DATA.user.district, last: App.time('2026-10-23T08:12') },
+    { id: 'd-tablet', icon: 'tablet', name: '家用平板', client: '城市通 App 4.0.2', place: DATA.user.district, last: App.time('2026-10-22T21:40') },
+    { id: 'd-laptop', icon: 'laptop', name: '公司筆電', client: '網頁版 · 瀏覽器', place: '港埕區', last: App.time('2026-10-21T09:12') },
+    { id: 'd-public', icon: 'monitor', name: '市立圖書館總館 公用電腦', client: '網頁版 · 瀏覽器', place: '舊城區', last: App.time('2026-10-14T16:05'), warn: '公用電腦，建議登出' },
+  ];
+  const HISTORY = [
+    { t: '2026-10-23T18:40', device: `${DATA.user.shortName}的手機`, method: '臉部辨識', place: DATA.user.district, ok: true },
+    { t: '2026-10-23T08:12', device: '智慧手錶', method: '已配對裝置', place: DATA.user.district, ok: true },
+    { t: '2026-10-22T21:40', device: '家用平板', method: '密碼＋簡訊驗證碼', place: DATA.user.district, ok: true },
+    { t: '2026-10-21T09:12', device: '公司筆電', method: '密碼＋簡訊驗證碼', place: '港埕區', ok: true },
+    { t: '2026-10-19T03:17', device: '不明裝置（瀏覽器）', method: '密碼錯誤 3 次', place: '境外網路位址', ok: false },
+    { t: '2026-10-14T16:05', device: '市立圖書館總館 公用電腦', method: '密碼＋簡訊驗證碼', place: '舊城區', ok: true },
+    { t: '2026-10-08T12:31', device: `${DATA.user.shortName}的手機`, method: '臉部辨識', place: '舊城區', ok: true },
+    { t: '2026-09-30T22:05', device: '家用平板', method: '密碼＋簡訊驗證碼', place: DATA.user.district, ok: true },
+  ].map((h) => ({ ...h, t: App.time(h.t) }));
+  const security = { twofa: true, bio: true, alert: true };
+  let historyFilter = 'all';
+
+  function renderDevices() {
+    const list = $('[data-device-list]');
+    list.innerHTML = devices.map((d) => `<li class="list-row mc-drow${d.current ? ' is-current' : ''}${d.warn ? ' is-warn' : ''}">`
+      + `<span class="mc-devicon">${icon(d.icon)}</span>`
+      + `<div class="list-row__body"><p class="list-row__title">${esc(d.name)}${d.current ? '<span class="badge badge--accent">這台裝置</span>' : ''}</p>`
+      + `<p class="list-row__sub">${segs(esc(d.client), esc(d.place), d.current ? '使用中' : `最後使用 ${fmt.rel(d.last)}`, d.warn ? `<span class="text-warn">${esc(d.warn)}</span>` : '')}</p></div>`
+      + `<div class="list-row__trail">${d.current ? '' : `<button class="btn btn--ghost btn--sm" type="button" data-logout="${d.id}" aria-label="登出 ${esc(d.name)}">登出</button>`}</div></li>`).join('');
+    $('[data-device-count]').textContent = `${devices.length} 台裝置`;
+    $('[data-logout-others]').disabled = devices.every((d) => d.current);
+  }
+  function logout(ids) {
+    const removed = ids.map((id) => ({ d: devices.find((x) => x.id === id), at: devices.findIndex((x) => x.id === id) }));
+    removed.slice().sort((a, b) => b.at - a.at).forEach((r) => devices.splice(r.at, 1));
+    renderDevices();
+    const label = removed.length > 1 ? `已登出 ${removed.length} 台裝置` : `已登出「${removed[0].d.name}」`;
+    App.toast(label, {
+      desc: '這些裝置下次使用城市通時需要重新驗證身分。',
+      tone: 'ok',
+      action: {
+        label: '復原',
+        onClick: () => {
+          // 依原本順序插回；同一台若已被其他復原放回就略過，避免重複
+          removed.slice().sort((a, b) => a.at - b.at).forEach((r) => {
+            if (!devices.some((x) => x.id === r.d.id)) devices.splice(Math.min(r.at, devices.length), 0, r.d);
+          });
+          renderDevices();
+        },
+      },
+    });
+  }
+  $('[data-device-list]').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-logout]');
+    if (!b) return;
+    const d = devices.find((x) => x.id === b.dataset.logout);
+    App.modal({
+      eyebrow: '裝置管理',
+      title: `登出「${d.name}」？`,
+      size: 'sm',
+      // 登出後該列消失：交給下一台裝置的登出鈕，沒有就交給「登出其他所有裝置」
+      returnFocus: () => $('[data-logout]') || $('[data-logout-others]'),
+      body: `<p>${esc(d.client)}會立即登出，下次使用需重新驗證身分。${d.icon === 'watch' ? '手錶上的行動市民卡也會一併移除。' : ''}</p>`,
+      actions: [{ label: '取消' }, { label: '登出', variant: 'danger', onClick: (close) => { close(); logout([d.id]); } }],
+    });
+  });
+  $('[data-logout-others]').addEventListener('click', () => {
+    const others = devices.filter((d) => !d.current);
+    App.modal({
+      eyebrow: '裝置管理',
+      title: `登出其他 ${others.length} 台裝置？`,
+      size: 'sm',
+      body: `<p>${others.map((d) => esc(d.name)).join('、')}都會立即登出。只有這台手機會保持登入。</p>`,
+      actions: [{ label: '取消' }, { label: '全部登出', variant: 'danger', onClick: (close) => { close(); logout(others.map((d) => d.id)); } }],
+    });
+  });
+
+  const SEC_ROWS = [
+    { id: 'twofa', icon: 'key', cat: 'transit', name: '兩步驟驗證', sub: () => `新裝置登入時傳送簡訊驗證碼到 ${DATA.user.phone}` },
+    { id: 'bio', icon: 'face', cat: 'life', name: '臉部／指紋登入', sub: () => '生物特徵只保存在你的手機上' },
+    { id: 'alert', icon: 'shield', cat: 'health', name: '異常登入通知', sub: () => '偵測到陌生裝置或境外登入時立即通知' },
+  ];
+  function renderSecurity() {
+    const on = SEC_ROWS.filter((r) => security[r.id]).length;
+    $('[data-security-score]').textContent = on === SEC_ROWS.length ? '保護全開' : `已開啟 ${on} / ${SEC_ROWS.length} 項`;
+    $('[data-security-list]').innerHTML = SEC_ROWS.map((r) => `<li class="list-row">`
+      + `<span class="app-icon app-icon--sm app-icon--${r.cat}">${icon(r.icon, { sw: 2.1 })}</span>`
+      + `<div class="list-row__body"><p class="list-row__title" id="sec-${r.id}">${r.name}</p><p class="list-row__sub" id="secd-${r.id}">${esc(r.sub())}</p></div>`
+      + `<div class="list-row__trail"><input class="switch" type="checkbox" role="switch" data-sec="${r.id}"${security[r.id] ? ' checked' : ''} aria-labelledby="sec-${r.id}" aria-describedby="secd-${r.id}"></div></li>`).join('')
+      + `<li class="list-row"><span class="app-icon app-icon--sm app-icon--grad">${icon('lock', { sw: 2.1 })}</span>`
+      + '<div class="list-row__body"><p class="list-row__title">登入密碼</p><p class="list-row__sub">上次變更：2026/6/12</p></div>'
+      + '<div class="list-row__trail"><button class="btn btn--ghost btn--sm" type="button" data-change-pw>變更</button></div></li>';
+  }
+  function setSecurity(id, v) {
+    security[id] = v;
+    renderSecurity();
+    const focus = $(`[data-sec="${id}"]`);
+    if (focus) focus.focus();
+  }
+  function sendPasswordReset() {
+    App.toast('已傳送密碼重設連結', { desc: `簡訊已寄到 ${DATA.user.phone}，15 分鐘內有效。`, tone: 'ok' });
+  }
+  $('[data-security-list]').addEventListener('change', (e) => {
+    const id = e.target.dataset.sec;
+    if (!id) return;
+    const row = SEC_ROWS.find((r) => r.id === id);
+    if (e.target.checked) { setSecurity(id, true); App.toast(`已開啟${row.name}`, { tone: 'ok' }); return; }
+    // 關閉保護前先確認；先把開關撥回去，確認後才真的關
+    e.target.checked = true;
+    App.modal({
+      eyebrow: '登入安全',
+      title: `關閉${row.name}？`,
+      size: 'sm',
+      returnFocus: () => $(`[data-sec="${id}"]`),
+      body: `<p>${id === 'twofa' ? '關閉後，只要知道密碼就能在新裝置登入你的市民卡。' : id === 'bio' ? '關閉後，每次開啟 App 都需要輸入密碼。' : '關閉後，陌生裝置登入時你不會收到通知。'}建議保持開啟。</p>`,
+      actions: [
+        { label: '保持開啟', variant: 'primary', autofocus: true },
+        {
+          label: '仍要關閉', variant: 'danger', onClick: (close) => {
+            close();
+            setSecurity(id, false);
+            App.toast(`已關閉${row.name}`, { tone: 'warn', action: { label: '復原', onClick: () => setSecurity(id, true) } });
+          },
+        },
+      ],
+    });
+  });
+  $('[data-security-list]').addEventListener('click', (e) => { if (e.target.closest('[data-change-pw]')) sendPasswordReset(); });
+
+  const historySeg = App.seg($('[data-history-filter]'), { onChange: (v) => { historyFilter = v; renderHistory(); } });
+  function renderHistory() {
+    const counts = { all: HISTORY.length, ok: HISTORY.filter((h) => h.ok).length, blocked: HISTORY.filter((h) => !h.ok).length };
+    $$('[data-hcount]').forEach((el) => { el.textContent = counts[el.dataset.hcount]; });
+    historySeg.refresh();
+    const list = HISTORY.filter((h) => historyFilter === 'all' || (historyFilter === 'ok' ? h.ok : !h.ok));
+    $('[data-history-body]').innerHTML = list.map((h) => `<tr${h.ok ? '' : ' class="is-blocked"'}>`
+      + `<td class="mc-history__time">${stamp(h.t)}</td>`
+      + `<td class="mc-history__dev">${esc(h.device)}</td>`
+      + `<td class="mc-history__method">${esc(h.method)}</td>`
+      + `<td class="mc-history__place">${esc(h.place)}</td>`
+      + `<td class="mc-history__res">${h.ok ? '<span class="badge badge--ok">成功</span>' : `<span class="badge badge--danger">已阻擋</span><button class="btn btn--plain" type="button" data-not-me="${h.t}">不是我？</button>`}</td></tr>`).join('');
+  }
+  $('[data-history-body]').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-not-me]');
+    if (!b) return;
+    const h = HISTORY.find((x) => String(x.t) === b.dataset.notMe);
+    App.modal({
+      eyebrow: '登入安全',
+      title: '這次登入已被阻擋',
+      size: 'sm',
+      body: `<p><strong>${stamp(h.t)}</strong>，有人從${esc(h.place)}嘗試登入你的帳號，${esc(h.method)}後被系統阻擋，帳號沒有被登入。</p><p>如果不是你，建議立即變更密碼，並確認兩步驟驗證保持開啟。</p>`,
+      actions: [{ label: '稍後再說' }, { label: '立即變更密碼', variant: 'primary', onClick: (close) => { close(); sendPasswordReset(); } }],
+    });
+  });
+
+  /* ================= 單一重繪管線：任何資料變動（含復原）都從這裡更新 ================= */
+  document.addEventListener('cp:data', (e) => {
+    const k = e.detail.key;
+    if (k === 'user') { renderPointsTile(); renderChart(); renderRecon(); renderLedger(); renderPayments(); }
+    if (k === 'parking') { renderDueTile(); renderPayments(); }
+    if (k === 'bindings') { renderBindings(); renderBindTile(); }
+    if (k === 'consents') renderConsents();
+    if (k === 'garbage') $$('[data-ndesc="garbage"]').forEach((el) => { el.innerHTML = notifDesc.garbage(); });
+    if (['user', 'parking', 'garbage', 'transit', 'library'].includes(k)) renderLock();
+  });
+
+  renderCardStatus();
+  renderPointsTile();
+  renderDueTile();
+  renderBindTile();
+  renderChart();
+  renderRecon();
+  renderLedger();
+  renderPayments();
+  renderLock();
+  renderBindings();
+  renderConsents();
+  renderDevices();
+  renderSecurity();
+  renderHistory();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>個案列表 — 澄港長照 申請與派案系統</title>
+<meta name="description" content="澄港市長期照顧管理中心本週追蹤中的個案：依照顧旅程、CMS 等級、行政區與關懷重點篩選，卡片與列表兩種檢視，並可直接安排到宅評估。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+  .cs-head { margin-bottom: var(--sp-5); }
+  .cs-head .lede b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cs-head__count {
+    display: inline-grid; place-items: center; min-width: 1.7rem; height: 1.7rem; padding: 0 .45rem;
+    border-radius: var(--r-pill); background: rgba(255, 255, 255, .2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- 照顧旅程：一站一站走的篩選列 ---------- */
+  .cs-journey { --panel-pad: 1.35rem 1.75rem .9rem; }
+  .cs-journey .panel__head { align-items: center; margin-bottom: .1rem; }
+  .cs-allpill b { font-family: var(--font-hand); font-size: 1.18em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cs-allpill[aria-pressed="true"] { --btn-bg: var(--ink); --btn-fg: var(--linen); --btn-bd: var(--ink); --btn-bg-hover: #45403a; --btn-bd-hover: #45403a; font-weight: 700; }
+  /* 外推一點留白：捲動容器會裁切，焦點光暈需要空間。
+     最小寬度讓每站至少約 120px，站名與三枚小圓章＋「+n」才不會和隔壁站擠在一起 */
+  .cs-railwrap { --min: 880px; --min-sm: 880px; margin-inline: -.8rem; padding-inline: .8rem; }
+  .cs-rail { position: relative; padding: 46px 0 14px; }
+
+  /* 小房子：旅程的起點。座標以 px 固定，才能和圓點、走路的人對齊 */
+  .cs-house { position: absolute; left: 4px; top: 5px; width: 80px; height: 72px; overflow: visible; }
+  .cs-ill { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .cs-house__smoke { stroke: var(--ink-3); stroke-width: 1.8; }
+
+  /* 路徑：點線是還沒走的路，實線是已走到的地方 */
+  .cs-trail {
+    position: absolute; z-index: 0; top: 71px; height: 4px; left: 80px; width: 0;
+    background: radial-gradient(circle, var(--sage-300) 1.7px, transparent 2.2px) 0 50% / 11px 4px repeat-x;
+  }
+  .cs-trail__fill {
+    position: absolute; inset: 0; border-radius: 4px; background: var(--sage);
+    transform-origin: left; transform: scaleX(var(--tp, 0));
+    transition: transform var(--walk, 0ms) cubic-bezier(.45, .05, .35, 1);
+  }
+
+  /* 牽手走路的照服員與長輩 */
+  .cs-walker {
+    position: absolute; z-index: 2; left: 0; top: 13px; width: 64px; height: 64px; pointer-events: none;
+    transform: translateX(calc(var(--wx, 118px) - 32px));
+    transition: transform var(--walk, 0ms) cubic-bezier(.45, .05, .35, 1);
+  }
+  .cs-walker__svg { display: block; width: 64px; height: 64px; overflow: visible; }
+  .cs-walker.is-left .cs-walker__svg { transform: scaleX(-1); }
+  .cs-walker__shadow { fill: rgba(80, 60, 38, .13); }
+  .cs-walker__tunic { fill: var(--sage-200); }
+  .cs-walker__shawl { fill: var(--clay-100); }
+  .cs-walker__heart { fill: var(--clay); transform-box: fill-box; transform-origin: 50% 100%; animation: cs-float 3.6s ease-in-out infinite; }
+  @keyframes cs-float { 0%, 100% { transform: translateY(0) scale(1); opacity: 1; } 50% { transform: translateY(-4px) scale(1.08); opacity: .75; } }
+  .cs-leg, .cs-cane { transform-box: view-box; }
+  .cs-leg--c { transform-origin: 21px 38px; }
+  .cs-leg--e { transform-origin: 42.2px 40.8px; }
+  .cs-cane { transform-origin: 52px 34px; }
+  .cs-walker.is-walking .cs-leg { animation: cs-swing .42s ease-in-out infinite alternate; }
+  .cs-walker.is-walking .cs-leg--b { animation-direction: alternate-reverse; }
+  .cs-walker.is-walking .cs-cane { animation: cs-cane .84s ease-in-out infinite; }
+  .cs-walker.is-walking .cs-fig { animation: cs-bob .21s ease-in-out infinite alternate; }
+  @keyframes cs-swing { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+  @keyframes cs-cane { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
+  @keyframes cs-bob { to { transform: translateY(-1.6px); } }
+
+  .cs-rail__stops { position: relative; z-index: 1; margin-left: 150px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); list-style: none; }
+  .cs-stop {
+    display: flex; flex-direction: column; align-items: center; width: 100%; padding: 0 .3rem;
+    border: 0; border-radius: var(--r-lg); background: none; color: var(--ink); text-align: center; cursor: pointer;
+  }
+  .cs-stop__dot {
+    display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%;
+    background: var(--paper); border: 2px solid var(--sage-300); color: var(--sage-800);
+    box-shadow: 0 0 0 6px var(--paper);
+    transition: transform var(--dur-3) var(--ease-spring), background-color var(--dur-2), border-color var(--dur-2), color var(--dur-2);
+  }
+  .cs-stop__dot .i { width: 1.45rem; height: 1.45rem; }
+  .cs-stop:hover .cs-stop__dot { transform: translateY(-3px); border-color: var(--sage-700); background: var(--sage-50); }
+  .cs-stop--attn:not(.is-zero) .cs-stop__dot { border-color: var(--clay); background: var(--clay-50); color: var(--clay-700); }
+  .cs-stop[aria-pressed="true"] .cs-stop__dot { border-color: var(--ink); background: var(--sun); color: var(--ink); }
+  .cs-stop.is-zero .cs-stop__dot { border-style: dashed; color: var(--ink-3); }
+  .cs-stop__dot.is-arrive { animation: cs-arrive .65s var(--ease-spring); }
+  @keyframes cs-arrive { 40% { transform: scale(1.14); } }
+  .cs-stop__body {
+    display: flex; flex-direction: column; align-items: center; width: 100%;
+    margin-top: .55rem; padding: .35rem .4rem .55rem; border-radius: var(--r-md);
+    transition: background-color var(--dur-2), box-shadow var(--dur-2);
+  }
+  .cs-stop:hover .cs-stop__body { background: var(--linen); }
+  .cs-stop[aria-pressed="true"] .cs-stop__body { background: var(--sun-50); box-shadow: inset 0 0 0 1.5px var(--sun-200); }
+  .cs-stop__label { display: inline-flex; align-items: baseline; gap: .35rem; font-weight: 700; font-size: var(--fs-sm); white-space: nowrap; }
+  .cs-stop__no { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; color: var(--sage-700); font-variant-numeric: tabular-nums; }
+  .cs-stop__n { display: flex; align-items: baseline; gap: .15rem; margin-top: .05rem; line-height: 1.15; }
+  .cs-stop__n b { font-family: var(--font-hand); font-size: 1.85rem; font-variant-numeric: tabular-nums; }
+  .cs-stop__n small { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cs-stop.is-zero .cs-stop__label, .cs-stop.is-zero .cs-stop__n b { color: var(--ink-3); }
+  .cs-stack { display: flex; justify-content: center; align-items: center; min-height: 34px; margin-top: .2rem; padding-left: 8px; }
+  .cs-stack .seal { --sz: 32px; margin-left: -7px; box-shadow: inset 0 0 0 1.5px var(--c), inset 0 0 0 3px var(--paper), 0 0 0 2.5px var(--paper); }
+  .cs-stack__more {
+    display: grid; place-items: center; width: 32px; height: 32px; margin-left: -5px; border-radius: 50%;
+    background: var(--linen-2); box-shadow: 0 0 0 2.5px var(--paper);
+    font-size: 12px; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums;
+  }
+  .cs-stack__none { font-size: var(--fs-xs); color: var(--ink-3); }
+
+  /* ---------- 版面：側欄＋結果 ---------- */
+  .cs-layout { display: grid; grid-template-columns: 292px minmax(0, 1fr); gap: var(--sp-5); align-items: start; margin-top: var(--sp-5); }
+
+  /* ---------- 側欄篩選 ---------- */
+  .cs-side { --panel-pad: 1.3rem 1.35rem 1.4rem; }
+  .cs-side__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .9rem; }
+  .cs-side__title { display: flex; align-items: center; gap: .5rem; font-size: var(--fs-xl); }
+  .cs-side__title .i { color: var(--sage-700); }
+  .cs-side__toggle {
+    display: none; align-items: center; gap: .6rem; width: 100%; min-height: 48px; padding: .3rem .2rem;
+    border: 0; background: none; text-align: left; cursor: pointer; border-radius: var(--r);
+    font-family: var(--font-hand); font-weight: 700; font-size: var(--fs-lg);
+  }
+  .cs-side__toggle .i { color: var(--sage-700); }
+  .cs-side__toggle .cs-chev { margin-left: auto; color: var(--ink-3); transition: transform var(--dur-3) var(--ease-out); }
+  .cs-side.is-open .cs-side__toggle .cs-chev { transform: rotate(180deg); }
+  .cs-sec + .cs-sec { margin-top: 1.15rem; padding-top: 1.1rem; border-top: 1px dashed var(--line-2); }
+  .cs-sec__title { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; font-size: var(--fs-md); }
+  .cs-sec__title small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); }
+  .cs-scope { display: flex; width: 100%; }
+  .cs-scope button { flex: 1; justify-content: center; }
+
+  /* CMS 階梯：等級越高、階梯越高；數字是人數 */
+  .cs-stairs { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; align-items: end; height: 128px; }
+  .cs-step {
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; height: 100%;
+    padding: 0 0 2px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--ink);
+  }
+  .cs-step__n { font-family: var(--font-hand); font-weight: 700; font-size: 1.02rem; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .cs-step__bar {
+    width: 100%; max-width: 26px; height: calc(10px + var(--lv) * 8.5px); border-radius: 7px 7px 3px 3px;
+    background: var(--sage-200); transition: background-color var(--dur-2), transform var(--dur-3) var(--ease-spring);
+    transform-origin: bottom;
+  }
+  .cs-step__lv { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .cs-step:hover .cs-step__bar { background: var(--sage-300); transform: scaleY(1.05); }
+  .cs-step.is-zero .cs-step__bar { background: var(--linen-3); }
+  .cs-step.is-zero .cs-step__n { color: var(--ink-3); font-weight: 400; }
+  .cs-step[aria-pressed="true"] .cs-step__bar { background: var(--clay); }
+  .cs-step[aria-pressed="true"] .cs-step__n { color: var(--clay-700); }
+  .cs-step[aria-pressed="true"] .cs-step__lv { color: var(--ink); }
+  .cs-presets { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+  .cs-mini-toggle {
+    display: inline-flex; align-items: center; gap: .3rem; min-height: 36px; padding: .2rem .75rem;
+    border: 1.5px solid var(--line-2); border-radius: var(--r-pill); background: var(--paper);
+    font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); cursor: pointer; white-space: nowrap;
+    transition: background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1);
+  }
+  .cs-mini-toggle:hover { border-color: var(--ink-3); color: var(--ink); }
+  .cs-mini-toggle[aria-pressed="true"] { border-color: var(--clay-700); background: var(--clay-50); color: var(--clay-700); }
+  .cs-mini-toggle .num { font-weight: 500; color: var(--ink-3); }
+  .cs-mini-toggle[aria-pressed="true"] .num { color: inherit; }
+
+  /* 行政區小地圖：依相對位置排列的方塊 */
+  .cs-map { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, 58px); gap: 6px; }
+  .cs-tile {
+    position: relative; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+    padding: .25rem .5rem; border: 1.5px solid var(--sage-200); border-radius: 14px 17px 12px 18px;
+    background: var(--sage-50); color: var(--ink); text-align: left; line-height: 1.25; cursor: pointer;
+    transition: transform var(--dur-2) var(--ease-spring), border-color var(--dur-2), background-color var(--dur-2), box-shadow var(--dur-2);
+  }
+  .cs-tile b { font-family: var(--font-hand); font-size: 1.02rem; }
+  .cs-tile__n { font-size: var(--fs-xs); font-weight: 700; color: var(--sage-800); font-variant-numeric: tabular-nums; }
+  .cs-tile:hover { transform: translateY(-2px); border-color: var(--sage-700); }
+  .cs-tile.is-zero { background: var(--linen); border-color: var(--line); }
+  .cs-tile.is-zero .cs-tile__n { color: var(--ink-3); font-weight: 500; }
+  .cs-tile[aria-pressed="true"] { background: var(--sun-100); border-color: var(--ink); box-shadow: 0 0 0 3px var(--sun); }
+  .cs-tile[aria-pressed="true"] .cs-tile__n { color: var(--ink); }
+  .cs-map__deco { display: grid; place-items: center; align-content: center; gap: 1px; border-radius: 14px; color: var(--ink-3); font-family: var(--font-hand); font-size: var(--fs-xs); }
+  .cs-map__deco .i { width: 1.25rem; height: 1.25rem; }
+  .cs-map__deco--sea { background: repeating-linear-gradient(170deg, var(--sage-50) 0 7px, transparent 7px 12px); color: var(--sage-700); }
+
+  /* ---------- 工具列 ---------- */
+  .cs-tools { display: grid; gap: .8rem; padding: .9rem 1rem; }
+  .cs-tools__row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  .cs-tools .search .input { min-height: 48px; }
+  .cs-tools .search .input::-webkit-search-cancel-button { cursor: pointer; }
+  .cs-sort { display: flex; align-items: center; gap: .5rem; }
+  .cs-sort .select { width: auto; min-height: 46px; }
+  .cs-dir .i { transition: transform var(--dur-3) var(--ease-out); }
+  .cs-dir.is-asc .i { transform: rotate(180deg); }
+  .cs-view button .i { width: 1.1rem; height: 1.1rem; }
+  .cs-care { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .5rem; padding-top: .8rem; border-top: 1px dashed var(--line-2); }
+  .cs-care__label { display: flex; flex-basis: 100%; align-items: center; gap: .4rem; font-family: var(--font-hand); font-weight: 700; font-size: var(--fs-md); line-height: 1.3; }
+  .cs-care__label small { font-family: var(--font-sans); font-weight: 500; font-size: var(--fs-xs); color: var(--ink-3); }
+  .cs-care__label .i { color: var(--clay); }
+  .cs-care .choice span { min-height: 40px; padding: .3rem .85rem; font-size: var(--fs-sm); }
+  .cs-care .choice .num { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); }
+  .cs-care .choice input:checked + span .num { color: var(--sage-800); }
+
+  /* ---------- 結果 ---------- */
+  .cs-results__head { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem .9rem; margin: var(--sp-5) 0 var(--sp-4); }
+  .cs-summary { font-size: var(--fs-lg); color: var(--ink-2); border-radius: var(--r-sm); }
+  .cs-summary b { font-family: var(--font-hand); font-size: 1.75rem; line-height: 1; color: var(--ink); margin: 0 .1rem; }
+  .cs-summary__of { margin-left: .4rem; font-size: var(--fs-sm); color: var(--ink-3); }
+  .cs-active { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+  .cs-chip {
+    display: inline-flex; align-items: center; gap: .35rem; min-height: 36px; padding: .15rem .45rem .15rem .85rem;
+    border: 1.5px solid var(--ink-3); border-radius: var(--r-pill); background: var(--paper);
+    font-size: var(--fs-sm); font-weight: 700; color: var(--ink); cursor: pointer;
+    transition: background-color var(--dur-1), border-color var(--dur-1);
+  }
+  .cs-chip .i { width: 1rem; height: 1rem; color: var(--ink-3); }
+  .cs-chip:hover { background: var(--sun-50); border-color: var(--ink); }
+  .cs-chip:hover .i { color: var(--ink); }
+
+  .cs-group { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .75rem; margin-top: var(--sp-4); }
+  .cs-group:first-child { margin-top: 0; }
+  .cs-group__icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 14px 17px 12px 18px; background: var(--sage-100); color: var(--sage-800); flex: none; }
+  .cs-group--apply .cs-group__icon, .cs-group--assess .cs-group__icon { background: var(--sun-100); color: var(--sun-700); }
+  .cs-group--dispatch .cs-group__icon { background: var(--clay-100); color: var(--clay-700); }
+  .cs-group__title { display: flex; align-items: baseline; gap: .45rem; font-size: var(--fs-xl); }
+  .cs-group__no { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; color: var(--ink-3); }
+  .cs-group__n { font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .cs-group__rule { flex: 1 1 2rem; min-width: 2rem; border-top: 2px dashed var(--line-2); }
+  .cs-group__hint { display: inline-flex; align-items: flex-start; gap: .4rem; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cs-group__hint .i { margin-top: .22em; color: var(--ink-3); }
+  .cs-group--dispatch .cs-group__hint { color: var(--clay-700); font-weight: 500; }
+  .cs-group--dispatch .cs-group__hint .i { color: var(--clay); }
+
+  /* 卡片：App.caseCard 加上承辦與階段狀態列 */
+  .case-card.is-in:not(.is-stamped) > .case-card__head .seal { animation: cs-stamp .7s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 80ms + 160ms); }
+  @keyframes cs-stamp { 0% { opacity: 0; transform: scale(1.55) rotate(-20deg); } 55% { opacity: 1; } 100% { transform: rotate(-6deg); } }
+  .case-card.cs-settled { transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2), border-color var(--dur-2); }
+  .case-card.cs-flash { animation: cs-flash 1.8s ease; }
+  @keyframes cs-flash { 0%, 40% { box-shadow: 0 0 0 6px var(--sun-200), var(--shadow-2); border-color: var(--sun-600); } }
+  .case-card mark.cs-hit, .cs-table mark.cs-hit, .cs-why mark.cs-hit { padding: 0 .08em; border-radius: 3px; background: var(--sun); color: inherit; }
+  .cs-why { display: flex; align-items: flex-start; gap: .4rem; margin-top: -.35rem; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cs-why .i { margin-top: .2em; color: var(--ink-3); }
+  /* 狀態列：承辦印章｜兩行說明｜動作 */
+  .cs-strip {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: .75rem;
+    margin: auto -1.4rem -1.2rem; padding: .75rem 1.4rem .8rem;
+    border-top: 1px dashed var(--line-2); border-radius: 0 0 var(--r-lg) var(--r-lg);
+    background: var(--linen); color: var(--ink-2);
+  }
+  .cs-strip--sun { background: var(--sun-50); }
+  .cs-strip--clay { background: var(--clay-50); }
+  .cs-strip__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.45; }
+  .cs-strip__staff { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cs-strip__staff b { color: var(--ink-2); }
+  .cs-strip__info { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; font-size: var(--fs-sm); }
+  .cs-strip__info b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .cs-strip--clay .cs-strip__info b { color: var(--clay-700); }
+  .cs-meter { width: 4.2rem; height: 8px; }
+  .case-card:not(.is-in) .cs-meter .meter__fill { transform: scaleX(0); }
+  .cs-act { position: relative; z-index: 2; }
+  .cs-mini .seal { --sz: 34px; }
+  /* 案號不要在連字號處斷行 */
+  .cs-grid .case-card__id { display: block; margin-left: 0; white-space: nowrap; }
+
+  .cs-empty { grid-column: 1 / -1; display: grid; justify-items: center; gap: .5rem; padding: 1rem 1rem 2.5rem; border: 1.5px dashed var(--line-2); border-radius: var(--r-xl); background: var(--paper); }
+
+  /* ---------- 列表檢視 ---------- */
+  .cs-view-in { animation: fade-up .38s var(--ease-out); }
+  .cs-table th, .cs-table td { padding: .75rem .7rem; }
+  .cs-table .cms__label { display: none; }
+  .cs-table tbody tr { animation: cs-row .32s var(--ease-out) both; animation-delay: calc(var(--k, 0) * 16ms); }
+  @keyframes cs-row { from { opacity: 0; } }
+  .cs-table tbody tr.cs-trow-group:hover { background: transparent; }
+  .cs-trow-group th {
+    padding: 1rem .8rem .55rem; background: var(--paper); border-bottom: 1.5px solid var(--line-2);
+    font-size: var(--fs-sm); letter-spacing: 0; color: var(--ink); text-align: left;
+  }
+  .cs-trow-group__in { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; }
+  .cs-trow-group__in .i { color: var(--sage-700); }
+  .cs-trow-group__in b { font-family: var(--font-hand); font-size: var(--fs-lg); }
+  .cs-trow-group__in small { font-weight: 500; color: var(--ink-3); font-size: var(--fs-xs); }
+  .cs-tcase { display: flex; align-items: center; gap: .65rem; }
+  .cs-tcase a { font-family: var(--font-hand); font-weight: 700; font-size: var(--fs-lg); color: var(--ink); text-decoration: none; line-height: 1.3; }
+  .cs-tcase a:hover { text-decoration: underline; text-decoration-color: var(--sun-600); }
+  .cs-tcase small, .cs-tnext { display: block; font-size: var(--fs-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cs-tnext { white-space: normal; min-width: 8.5rem; }
+  .cs-tcarer { white-space: nowrap; margin-bottom: .2rem; }
+  .cs-codes { display: flex; flex-wrap: wrap; gap: .25rem; width: 7.4rem; }
+  .cs-codes .tag { font-variant-numeric: tabular-nums; }
+  /* 承辦併在階段下方：省下一欄，1440 桌機的列表不必左右捲動 */
+  .cs-tstaff { display: block; margin-top: .35rem; font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; }
+  .cs-tstaff b { color: var(--ink-2); }
+  .cs-tnextd { display: block; white-space: nowrap; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* ---------- 安排到宅評估 dialog ---------- */
+  .cs-who { display: flex; gap: 1rem; align-items: flex-start; padding: 1rem 1.1rem; border-radius: var(--r-md); background: var(--linen-2); }
+  .cs-who__name { font-family: var(--font-hand); font-weight: 700; font-size: var(--fs-xl); line-height: 1.3; }
+  .cs-who__name span { margin-left: .4rem; font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
+  .cs-who__meta { display: flex; gap: .4rem; align-items: flex-start; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.6; }
+  .cs-who__meta .i { margin-top: .25em; color: var(--ink-3); }
+  .cs-fs { margin-top: 1.25rem; }
+  .cs-fs > .label { margin-bottom: .6rem; }
+  .cs-staff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .cs-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem .6rem; }
+  .cs-slots__day { display: grid; gap: .4rem; align-content: start; }
+  .cs-slots__date { font-weight: 700; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cs-opt { position: relative; display: block; }
+  .cs-opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .cs-opt input:disabled { cursor: not-allowed; }
+  .cs-opt__box {
+    display: flex; align-items: center; gap: .65rem; min-height: 54px; padding: .5rem .75rem;
+    border: 1.5px solid var(--line-2); border-radius: var(--r); background: var(--paper);
+    transition: border-color var(--dur-1), background-color var(--dur-1), box-shadow var(--dur-1);
+  }
+  .cs-opt__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+  .cs-opt__text small { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cs-opt .badge { margin-left: auto; }
+  .cs-opt--slot .cs-opt__box { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; line-height: 1.3; }
+  .cs-opt--slot b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+  .cs-opt--slot small { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cs-opt:hover input:not(:disabled) + .cs-opt__box { border-color: var(--ink-3); }
+  .cs-opt input:checked + .cs-opt__box { border-color: var(--sage-700); background: var(--sage-50); box-shadow: inset 0 0 0 1px var(--sage-700); }
+  .cs-opt input:checked + .cs-opt__box small { color: var(--sage-800); }
+  .cs-opt input:focus-visible + .cs-opt__box { outline: 3px solid var(--focus-ink); outline-offset: 3px; box-shadow: 0 0 0 9px var(--focus-halo); }
+  .cs-opt input:disabled + .cs-opt__box { border-style: dashed; background: repeating-linear-gradient(135deg, var(--linen) 0 6px, var(--linen-2) 6px 12px); color: var(--ink-3); }
+  .cs-opt input:disabled + .cs-opt__box b { text-decoration: line-through; text-decoration-color: var(--ink-4); }
+  .cs-fs .field__error { margin-top: .55rem; }
+  .cs-notify { margin-top: 1rem; font-size: var(--fs-sm); }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1280px) {
+    .cs-layout { grid-template-columns: 276px minmax(0, 1fr); }
+  }
+  @media (max-width: 1080px) {
+    .cs-layout { grid-template-columns: minmax(0, 1fr); }
+    .cs-side { --panel-pad: .6rem 1.1rem; }
+    .cs-side__head { display: none; }
+    .cs-side__toggle { display: flex; }
+    .cs-side:not(.is-open) .cs-side__body { display: none; }
+    .cs-side.is-open .cs-side__body { padding: .4rem 0 .8rem; animation: fade-up .3s var(--ease-out); }
+    .cs-side__body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--sp-6); }
+    /* 兩欄排列時不畫分隔線；要和上面桌機的 .cs-sec + .cs-sec 同權重才蓋得掉 */
+    .cs-sec, .cs-sec + .cs-sec { margin-top: 0; padding-top: .9rem; border-top: 0; }
+    .cs-sec--scope { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) {
+    .cs-head .page-head__actions { width: 100%; }
+    .cs-head .page-head__actions .btn { flex: 1 1 auto; }
+    .cs-journey { --panel-pad: 1.1rem 1.1rem .6rem; }
+    .cs-side__body { grid-template-columns: minmax(0, 1fr); }
+    .cs-sec + .cs-sec { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px dashed var(--line-2); }
+    .cs-tools { padding: .8rem; }
+    .cs-tools__row { gap: .6rem; }
+    .cs-sort { flex: 1 1 auto; }
+    .cs-sort .select { flex: 1; min-width: 0; }
+    .cs-view { width: 100%; }
+    .cs-view button { flex: 1; justify-content: center; }
+    /* 關懷重點在手機上改成可左右滑的一列，不把卡片推太遠 */
+    .cs-care { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -.8rem; padding: .8rem .8rem .15rem; }
+    .cs-care::-webkit-scrollbar { display: none; }
+    .cs-care > * { flex: none; }
+    .cs-care__label { flex-basis: auto; }
+    .cs-care__label small { display: none; }
+    .cs-care .choice span { min-height: 40px; padding: .25rem .75rem; white-space: nowrap; }
+    .cs-grid .case-card__head { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .9rem; row-gap: .5rem; align-items: start; }
+    .cs-grid .case-card__head .cms { grid-column: 2; justify-self: start; }
+    .cs-strip { grid-template-columns: auto minmax(0, 1fr); row-gap: .6rem; }
+    .cs-act { grid-column: 1 / -1; justify-self: stretch; }
+    .cs-group__rule { display: none; }
+    .cs-group__hint { flex-basis: 100%; padding-left: calc(40px + .75rem); margin-top: -.35rem; }
+    /* 列表檢視：每一列改成小卡（姓名＋CMS／階段＋承辦／標籤｜內容），手機不必左右捲動。
+       排序改用工具列的下拉選單，所以表頭可以收起來 */
+    .cs-table thead { display: none; }
+    .cs-table, .cs-table tbody { display: block; }
+    .cs-table tbody tr:not(.cs-trow-group) {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: .75rem;
+      padding: 1rem 1rem 1.05rem; border-bottom: 1px solid var(--line);
+    }
+    .cs-table tbody tr:last-child { border-bottom: 0; }
+    .cs-table td { display: block; padding: 0; border: 0; }
+    .cs-table .cs-td-cms { grid-column: 2; grid-row: 1; }
+    .cs-table .cms__label { display: inline; }
+    .cs-table .cs-td-stage { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .75rem; margin: .75rem 0 .2rem; }
+    .cs-table .cs-tstaff { margin-top: 0; }
+    .cs-table .cs-td-row { grid-column: 1 / -1; display: grid; grid-template-columns: 5.4rem minmax(0, 1fr); column-gap: .5rem; align-items: baseline; padding-top: .55rem; }
+    .cs-table .cs-td-row::before { content: attr(data-label); font-size: var(--fs-xs); color: var(--ink-3); }
+    .cs-table .cs-codes { width: auto; }
+    .cs-table .cs-tnext { min-width: 0; }
+    .cs-table .cs-trow-group, .cs-table .cs-trow-group th { display: block; }
+    .cs-staff, .cs-slots { grid-template-columns: minmax(0, 1fr); }
+    .cs-slots__day { grid-template-columns: 6.5rem repeat(2, minmax(0, 1fr)); align-items: center; }
+    .cs-who { padding: .85rem; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="topstrip">
+  <div class="wrap topstrip__inner">
+    <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回目錄</a>
+    <span class="topstrip__org hide-sm">澄港市長期照顧管理中心</span>
+    <span class="topstrip__meta">
+      <span class="hide-sm">長照諮詢專線 0800-178-520</span>
+      <span class="topstrip__date">2026/10/27（二）10:20</span>
+    </span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港長照 申請與派案系統，回到總覽">
+      <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 3.5c11.6 0 20.5 8.4 20.5 20.2S35.4 44.5 23.6 44.5 3.5 35.8 3.5 24 12.6 3.5 24 3.5z" fill="#FBEDCB"/>
+        <path d="M10.5 22.5 24 11l13.5 11.5" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14.5 20v14M33.5 20v14" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M24 33c-4.6-3.1-7.4-5.8-7.4-8.6a3.6 3.6 0 0 1 7.4-1.5 3.6 3.6 0 0 1 7.4 1.5c0 2.8-2.8 5.5-7.4 8.6z" fill="#C4704F"/>
+        <path d="M9.5 37.5c6 1.6 23 1.6 29 0" fill="none" stroke="#6E8B74" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">澄港長照</span><span class="brand__sub">申請與派案系統</span></span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav">
+        <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>總覽</a></li>
+        <li><a class="nav__link is-active" href="cases.html" aria-current="page"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>個案列表</a></li>
+        <li><a class="nav__link" href="case.html"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>個案詳情</a></li>
+        <li><a class="nav__link" href="dispatch.html"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>派案媒合<span class="nav__count" data-count="dispatch" title="待派案">19</span></a></li>
+      </ul>
+      <div class="site-nav__extra">
+        <span>字級</span>
+        <div class="textsize" role="group" aria-label="字級">
+          <button type="button" data-textsize="md" aria-label="標準" aria-pressed="true">A</button>
+          <button type="button" data-textsize="lg" aria-label="大" aria-pressed="false">A</button>
+          <button type="button" data-textsize="xl" aria-label="特大" aria-pressed="false">A</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="header-tools">
+      <div class="textsize" role="group" aria-label="字級">
+        <svg class="i textsize__icon" aria-hidden="true"><use href="#i-type"/></svg>
+        <button type="button" data-textsize="md" aria-label="標準" aria-pressed="true">A</button>
+        <button type="button" data-textsize="lg" aria-label="大" aria-pressed="false">A</button>
+        <button type="button" data-textsize="xl" aria-label="特大" aria-pressed="false">A</button>
+      </div>
+      <button type="button" class="icon-btn bell" data-bell aria-haspopup="true" aria-expanded="false">
+        <svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>
+        <span class="sr-only">需要關懷的提醒</span>
+        <span class="bell__count" data-count="reminders" data-count-hide-zero>6</span>
+      </button>
+      <div class="me">
+        <span class="seal seal--sm seal--ink" aria-hidden="true"><span class="seal__t">語晴</span></span>
+        <span class="me__text"><b>林語晴</b><small>照管專員・舊城／港埕</small></span>
+      </div>
+      <button type="button" class="icon-btn menu-toggle" data-nav-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單">
+        <svg class="i" aria-hidden="true"><use href="#i-menu"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page wrap">
+
+  <!-- ============ 頁首 ============ -->
+  <div class="page-head cs-head" data-reveal>
+    <div>
+      <p class="eyebrow">個案管理・照管團隊</p>
+      <h1 class="page-title">個案列表</h1>
+      <p class="lede" id="cs-lede">本週追蹤中的 <b>26</b> 位長輩，全市在案共 <b>1,391</b> 位。從照顧旅程、CMS 等級、行政區或關懷重點篩選，點卡片就能開啟個案詳情。</p>
+    </div>
+    <div class="page-head__actions">
+      <button type="button" class="btn" id="cs-export"><svg class="i" aria-hidden="true"><use href="#i-clipboard"/></svg>匯出目前名冊</button>
+      <a class="btn btn--primary" href="dispatch.html"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>前往派案媒合<span class="cs-head__count" data-count="dispatch">19</span></a>
+    </div>
+  </div>
+
+  <!-- ============ 照顧旅程篩選 ============ -->
+  <section class="panel cs-journey" aria-labelledby="cs-journey-title" data-reveal style="--i:1">
+    <div class="panel__head">
+      <span class="panel__icon"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg></span>
+      <div class="panel__titles">
+        <h2 class="panel__title" id="cs-journey-title">依照顧旅程找長輩</h2>
+        <p class="panel__sub">點一站，只看走到這一步的長輩；每站人數會跟著其他篩選一起變動。</p>
+      </div>
+      <div class="panel__actions">
+        <button type="button" class="btn btn--sm cs-allpill" id="cs-all" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>全部階段 <b id="cs-all-n">26</b> 位</button>
+      </div>
+    </div>
+    <div class="diagram-scroll cs-railwrap" id="cs-railwrap">
+      <div class="cs-rail" id="cs-rail" data-anim>
+        <svg class="cs-house draw-scope" viewBox="0 0 80 72" aria-hidden="true">
+          <path class="ill__blob" data-draw-fill d="M5 68c-5-17 1-37 20-46 15-7 31-5 43 6 10 10 12 25 8 40z"/>
+          <path class="ill__door" data-draw-fill style="--d:4" d="M31 68V54a5 5 0 0 1 10 0v14z"/>
+          <path class="ill__glow" data-draw-fill style="--d:5" d="M49 40h10v9H49z"/>
+          <g class="cs-ill">
+            <path data-draw pathLength="1" style="--d:0" d="M2 68h74"/>
+            <path data-draw pathLength="1" style="--d:1" d="M8 37 38 13l30 24"/>
+            <path data-draw pathLength="1" style="--d:2" d="M14 32.5V68M62 32.5V68"/>
+            <path data-draw pathLength="1" style="--d:3" d="M31 68V54a5 5 0 0 1 10 0v14"/>
+            <path data-draw pathLength="1" style="--d:4" d="M49 40h10v9H49zM54 40v9"/>
+            <path data-draw pathLength="1" style="--d:3" d="M52 23.5V15h6v13.5"/>
+            <path class="cs-house__smoke ill__smoke loop" data-draw-fill style="--d:6" d="M55.5 10.5c-3-2.6 1.6-4.4-1-7"/>
+          </g>
+        </svg>
+        <div class="cs-trail" id="cs-trail" aria-hidden="true"><span class="cs-trail__fill"></span></div>
+        <div class="cs-walker" id="cs-walker" aria-hidden="true">
+          <svg class="cs-walker__svg" viewBox="0 0 64 64">
+            <ellipse class="cs-walker__shadow" cx="33" cy="60.5" rx="21" ry="2.4"/>
+            <g class="cs-fig">
+              <path class="cs-walker__tunic" d="M16 19.5h10l2.2 16.5H13.8z"/>
+              <path class="cs-walker__shawl" d="M39.2 25.5h8.6l1.6 13.5H38.4z"/>
+              <g class="cs-ill">
+                <circle cx="21" cy="11" r="5.6"/>
+                <path d="M15.6 9.6c-2.8.6-4.2 3.4-3.2 6.2"/>
+                <path d="M21 16.6V38"/>
+                <path d="M21 22.5 15.2 33"/>
+                <path d="M21 22.5c3.6 4 6.8 7 11 8.3"/>
+                <path class="cs-leg cs-leg--c" d="M21 38 16.5 59"/>
+                <path class="cs-leg cs-leg--c cs-leg--b" d="M21 38l4.5 21"/>
+                <circle cx="44.5" cy="19" r="5.2"/>
+                <circle cx="40.6" cy="15.4" r="2.2"/>
+                <path d="M43.8 24.2c1.3 5.6.6 10.6-1.6 16.6"/>
+                <path d="M43.4 28c-4 1.4-7.2 2.4-11.4 2.8"/>
+                <path d="M44.4 28.2c2.8 2.6 5 4.6 7.2 6"/>
+                <path class="cs-leg cs-leg--e" d="M42.2 40.8 38.6 59"/>
+                <path class="cs-leg cs-leg--e cs-leg--b" d="M42.2 40.8l4.2 18.2"/>
+                <path class="cs-cane" d="M49.4 36.4c0-3.6 4.8-3.8 5-.2V59"/>
+              </g>
+              <path class="cs-walker__heart loop" d="M32.5 9.4c-2.2-1.6-3.8-3.2-3.8-4.9a1.95 1.95 0 0 1 3.8-.6 1.95 1.95 0 0 1 3.8.6c0 1.7-1.6 3.3-3.8 4.9z"/>
+            </g>
+          </svg>
+        </div>
+        <ol class="cs-rail__stops" id="cs-stops" aria-label="照顧階段"></ol>
+      </div>
+    </div>
+    <p class="diagram-scroll__hint"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>可左右滑動查看六個階段<svg class="i" aria-hidden="true"><use href="#i-arrow-right"/></svg></p>
+  </section>
+
+  <div class="cs-layout">
+    <!-- ============ 側欄篩選 ============ -->
+    <aside class="panel cs-side sticky-side" id="cs-side" aria-label="篩選條件" data-reveal style="--i:2">
+      <div class="cs-side__head">
+        <h2 class="cs-side__title"><svg class="i" aria-hidden="true"><use href="#i-filter"/></svg>篩選條件</h2>
+        <button type="button" class="btn btn--quiet btn--sm" id="cs-side-clear" hidden>清除</button>
+      </div>
+      <button type="button" class="cs-side__toggle" id="cs-side-toggle" aria-expanded="false" aria-controls="cs-side-body">
+        <svg class="i" aria-hidden="true"><use href="#i-filter"/></svg>篩選條件
+        <span class="badge badge--clay" id="cs-side-badge" hidden></span>
+        <svg class="i cs-chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      </button>
+      <div class="cs-side__body" id="cs-side-body">
+        <div class="cs-sec cs-sec--scope">
+          <h3 class="cs-sec__title" id="cs-scope-title">負責範圍</h3>
+          <div class="seg cs-scope" id="cs-scope" role="group" aria-labelledby="cs-scope-title">
+            <button type="button" data-value="all" aria-pressed="true">全組 <span class="seg__n" id="cs-scope-all">26</span></button>
+            <button type="button" data-value="mine" aria-pressed="false">我負責的 <span class="seg__n" id="cs-scope-mine">8</span></button>
+          </div>
+        </div>
+        <div class="cs-sec">
+          <h3 class="cs-sec__title"><span id="cs-cms-title">CMS 等級</span> <small>階梯上是人數・可複選</small></h3>
+          <div class="cs-stairs" id="cs-stairs" role="group" aria-labelledby="cs-cms-title"></div>
+          <div class="cs-presets" id="cs-presets" role="group" aria-label="CMS 等級快速選擇">
+            <button type="button" class="cs-mini-toggle" data-range="2,3" aria-pressed="false">輕度 2–3</button>
+            <button type="button" class="cs-mini-toggle" data-range="4,5" aria-pressed="false">中度 4–5</button>
+            <button type="button" class="cs-mini-toggle" data-range="6,7,8" aria-pressed="false">重度 6–8</button>
+            <button type="button" class="cs-mini-toggle" data-range="0" aria-pressed="false">尚未評估 <span class="num" id="cs-cms0">7</span></button>
+          </div>
+        </div>
+        <div class="cs-sec">
+          <h3 class="cs-sec__title" id="cs-map-title">行政區 <small>可複選</small></h3>
+          <div class="cs-map" id="cs-map" role="group" aria-labelledby="cs-map-title">
+            <span class="cs-map__deco cs-map__deco--sea" style="grid-column:1;grid-row:1" aria-hidden="true"><svg class="i"><use href="#i-wave"/></svg>澄港灣</span>
+            <span class="cs-map__deco" style="grid-column:4;grid-row:1" aria-hidden="true"><svg class="i"><use href="#i-mountain"/></svg>雲嶺山</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ 結果 ============ -->
+    <div class="cs-main">
+      <div class="toolbar cs-tools" data-reveal style="--i:2">
+        <div class="cs-tools__row">
+          <label class="search toolbar__grow">
+            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="sr-only">搜尋個案（按 / 可快速聚焦）</span>
+            <input class="input" type="search" id="cs-q" placeholder="姓名、案號、地址或診斷" autocomplete="off" enterkeyhint="search">
+          </label>
+          <div class="cs-sort">
+            <label class="toolbar__label" for="cs-sort">排序</label>
+            <select class="select" id="cs-sort">
+              <option value="stage">照顧旅程（分組）</option>
+              <option value="next">下次訪視</option>
+              <option value="cms">CMS 等級</option>
+              <option value="load">照顧者負荷</option>
+              <option value="applied">申請日期</option>
+              <option value="name">姓名筆畫</option>
+            </select>
+            <button type="button" class="btn btn--quiet btn--sm cs-dir" id="cs-dir" hidden><svg class="i" aria-hidden="true"><use href="#i-chevron-down"/></svg><span id="cs-dir-text">由近到遠</span></button>
+          </div>
+          <div class="seg cs-view" id="cs-view" role="group" aria-label="檢視方式">
+            <button type="button" data-value="grid" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#i-grid"/></svg>卡片</button>
+            <button type="button" data-value="list" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg>列表</button>
+          </div>
+        </div>
+        <div class="cs-care" id="cs-care" role="group" aria-labelledby="cs-care-label">
+          <span class="cs-care__label"><svg class="i" aria-hidden="true"><use href="#i-heart"/></svg><span id="cs-care-label">需要多看一眼</span><small>同時勾選取交集</small></span>
+        </div>
+      </div>
+
+      <section class="cs-results" aria-labelledby="cs-summary">
+        <div class="cs-results__head">
+          <p class="cs-summary" id="cs-summary" aria-live="polite" tabindex="-1">符合 <b>26</b> 位長輩</p>
+          <div class="cs-active" id="cs-active"></div>
+        </div>
+        <div class="card-grid cs-grid" id="cs-grid"></div>
+        <div class="cs-listview" id="cs-list" hidden>
+          <div class="table-wrap" id="cs-table-wrap">
+            <table class="table cs-table">
+              <caption class="sr-only">個案列表（依目前篩選與排序）</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-sort="name"><button type="button" class="sort">個案</button></th>
+                  <th scope="col">階段・承辦</th>
+                  <th scope="col" data-sort="cms"><button type="button" class="sort">CMS</button></th>
+                  <th scope="col" data-sort="load"><button type="button" class="sort">主要照顧者</button></th>
+                  <th scope="col">服務項目</th>
+                  <th scope="col" data-sort="next"><button type="button" class="sort">下次訪視</button></th>
+                </tr>
+              </thead>
+              <tbody id="cs-tbody"></tbody>
+            </table>
+          </div>
+          <div id="cs-list-empty"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap site-footer__inner">
+    <div class="site-footer__brand">
+      <a class="brand" href="index.html" aria-label="澄港長照 申請與派案系統，回到總覽">
+        <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M24 3.5c11.6 0 20.5 8.4 20.5 20.2S35.4 44.5 23.6 44.5 3.5 35.8 3.5 24 12.6 3.5 24 3.5z" fill="#FBEDCB"/>
+          <path d="M10.5 22.5 24 11l13.5 11.5" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14.5 20v14M33.5 20v14" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M24 33c-4.6-3.1-7.4-5.8-7.4-8.6a3.6 3.6 0 0 1 7.4-1.5 3.6 3.6 0 0 1 7.4 1.5c0 2.8-2.8 5.5-7.4 8.6z" fill="#C4704F"/>
+          <path d="M9.5 37.5c6 1.6 23 1.6 29 0" fill="none" stroke="#6E8B74" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        <span class="brand__text"><span class="brand__name">澄港長照</span><span class="brand__sub">申請與派案系統</span></span>
+      </a>
+      <p>讓每一位長輩都能在熟悉的家裡被好好照顧。從申請、到宅評估、擬定計畫到媒合照服員，我們陪家屬一起走。</p>
+      <p class="site-footer__hotline">
+        <span class="panel__icon panel__icon--sun"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg></span>
+        <span>長照諮詢專線 <b>0800-178-520</b><small>週一至週六 8:00–20:00，免付費</small></span>
+      </p>
+    </div>
+    <nav aria-label="頁尾導覽">
+      <h2 class="footer-title">系統頁面</h2>
+      <ul class="footer-links">
+        <li><a href="index.html"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>總覽</a></li>
+        <li><a href="cases.html"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>個案列表</a></li>
+        <li><a href="case.html"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>個案詳情</a></li>
+        <li><a href="dispatch.html"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>派案媒合</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h2 class="footer-title">澄港市長期照顧管理中心</h2>
+      <address>舊城區府前街 1 號 3 樓<br>週一至週五 8:30–17:30<br>傳真 (07) 551-2046</address>
+    </div>
+  </div>
+  <div class="wrap site-footer__bottom">
+    <span>© 2026 澄港市長期照顧管理中心・作品集虛構示範，個案、人名與數據皆為虛構</span>
+    <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回目錄</a>
+  </div>
+</footer>
+
+<!-- ============ 安排到宅評估 ============ -->
+<dialog class="modal" id="cs-assess" aria-labelledby="cs-assess-title">
+  <div class="modal__head">
+    <span class="modal__icon"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span>
+    <h2 class="modal__title" id="cs-assess-title">安排到宅評估</h2>
+    <button type="button" class="icon-btn modal__close" data-close aria-label="關閉"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+  </div>
+  <form class="modal__body" id="cs-assess-form" novalidate>
+    <div class="cs-who" id="cs-who"></div>
+    <fieldset class="fieldset cs-fs">
+      <legend class="label">照管專員</legend>
+      <div class="cs-staff" id="cs-staff"></div>
+    </fieldset>
+    <fieldset class="fieldset field cs-fs" id="cs-slot-field" aria-describedby="cs-slot-err">
+      <legend class="label">評估時段 <span class="req">必填</span></legend>
+      <div class="cs-slots" id="cs-slots"></div>
+      <p class="field__error" id="cs-slot-err"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>請選一個評估時段；斜線的時段專員已有其他行程。</p>
+    </fieldset>
+    <label class="check cs-notify"><input type="checkbox" id="cs-notify" checked><span id="cs-notify-text">以簡訊通知主要聯絡人</span></label>
+  </form>
+  <div class="modal__foot">
+    <button type="button" class="btn" data-close>取消</button>
+    <button type="submit" class="btn btn--primary" form="cs-assess-form"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>確認安排</button>
+  </div>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, fmt, esc, icon, seal, $, $$ } = App;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const STAGES = App.STAGES;
+  const STAGE_KEYS = STAGES.map(s => s.key);
+
+  /* ================= 日期小工具 ================= */
+  const dateOnly = v => { const d = App.toDate(v); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+  const isoDate = d => fmt.ymd(d).replace(/\//g, '-');
+  const daysSince = v => Math.round((dateOnly(App.NOW) - dateOnly(v)) / 864e5);
+  const TODAY = isoDate(App.NOW);
+  const WEEK_END = (() => { const d = dateOnly(App.NOW); d.setDate(d.getDate() + 7); return isoDate(d); })();
+  const toMin = at => { const d = App.toDate(at); return d.getHours() * 60 + d.getMinutes(); };
+
+  /* ================= 篩選狀態 ================= */
+  // 關懷重點：同時勾選多個時取交集（「獨居」且「失智」）
+  const CARE = {
+    alone: { label: '獨居', test: c => /獨居/.test(c.living) },
+    elderly: { label: '老老照顧', title: '主要照顧者 65 歲以上', test: c => c.carer.age >= 65 },
+    dementia: { label: '失智或疑似', test: c => /失智|阿茲海默|認知/.test(c.dx + c.flags.join('')) },
+    strain: { label: '照顧負荷偏高', title: '主要照顧者 Zarit 負荷量表 41 分以上', test: c => c.carer.zarit >= 41 },
+    soon: { label: '7 天內訪視', test: c => !!c.next && c.next.at.slice(0, 10) >= TODAY && c.next.at.slice(0, 10) < WEEK_END },
+    quota: { label: '額度近用罄', title: '本月照顧額度已使用 90% 以上', test: c => !!c.cms && App.quotaOf(c).pct >= 0.9 },
+  };
+  const SORTS = {
+    next: { dir: 'asc', val: c => (c.next ? c.next.at : null), label: { asc: '由近到遠', desc: '由遠到近' } },
+    cms: { dir: 'desc', val: c => c.cms, label: { desc: '由高到低', asc: '由低到高' } },
+    load: { dir: 'desc', val: c => c.carer.zarit, label: { desc: '由高到低', asc: '由低到高' } },
+    applied: { dir: 'desc', val: c => c.applied, label: { desc: '由新到舊', asc: '由舊到新' } },
+    name: { dir: 'asc', val: c => c.name, label: { asc: '筆畫少到多', desc: '筆畫多到少' }, cmp: new Intl.Collator('zh-Hant-TW-u-co-stroke').compare },
+  };
+
+  const state = { stage: null, scope: 'all', cms: new Set(), districts: new Set(), care: new Set(), q: '', sort: 'stage', dir: null, view: 'grid' };
+  // 總覽的照顧旅程連結會帶 ?stage=；只接受六個已知階段，其餘當作沒帶
+  const paramStage = App.param('stage');
+  if (STAGE_KEYS.includes(paramStage)) state.stage = paramStage;
+
+  /* ================= 搜尋 ================= */
+  const norm = s => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+  const hitRegex = q => new RegExp([...q].map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'), 'gi');
+
+  // 回傳 null＝不符合；label 為 null＝符合處卡片上看得到，否則在卡片上註明「符合：地址…」
+  function searchHit(c, q) {
+    const cg = c.aides.map(id => App.getCaregiver(id).name).join('、');
+    const fields = [
+      [c.name], [c.id], [c.carer.name], [c.district], [App.getStaff(c.staff).name],
+      [c.flags.slice(0, 2).join(' ')], [c.services.slice(0, 3).map(k => k + App.SERVICES[k].name).join(' ')],
+      [c.addr, '地址'], [c.dx, '診斷'], [cg, '照服員'], [c.flags.slice(2).join('、'), '關懷註記'],
+      [c.services.slice(3).map(k => `${k} ${App.SERVICES[k].name}`).join('、'), '其他服務'], [c.channel, '申請管道'],
+    ];
+    for (const [val, label] of fields) if (val && norm(val).includes(q)) return { label: label || null, val };
+    return null;
+  }
+
+  function textNodes(el) {
+    const out = [], walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) out.push(walker.currentNode);
+    return out;
+  }
+  function markNodes(nodes, re) {
+    nodes.forEach(node => {
+      const text = node.nodeValue;
+      re.lastIndex = 0;
+      let m, last = 0;
+      const frag = document.createDocumentFragment();
+      while ((m = re.exec(text))) {
+        frag.append(text.slice(last, m.index));
+        const mk = document.createElement('mark');
+        mk.className = 'cs-hit';
+        mk.textContent = m[0];
+        frag.append(mk);
+        last = m.index + m[0].length;
+      }
+      if (!last) return;
+      frag.append(text.slice(last));
+      node.replaceWith(frag);
+    });
+  }
+  function clearMarks(el) {
+    const marks = $$('mark.cs-hit', el);
+    if (!marks.length) return;
+    marks.forEach(m => m.replaceWith(m.textContent));
+    el.normalize();
+  }
+
+  /* ================= 篩選與排序 ================= */
+  let hits = new Map();
+  function pass(c, except) {
+    if (except !== 'stage' && state.stage && c.stage !== state.stage) return false;
+    if (except !== 'scope' && state.scope === 'mine' && c.staff !== App.ME) return false;
+    if (except !== 'cms' && state.cms.size && !state.cms.has(c.cms || 0)) return false;
+    if (except !== 'district' && state.districts.size && !state.districts.has(c.district)) return false;
+    if (except !== 'care') for (const k of state.care) if (!CARE[k].test(c)) return false;
+    if (state.q && !hits.has(c.id)) return false;
+    return true;
+  }
+  const facet = except => DATA.cases.filter(c => pass(c, except));
+
+  const byNext = (a, b) => (a.next ? 0 : 1) - (b.next ? 0 : 1) || (a.next && b.next ? a.next.at.localeCompare(b.next.at) : 0);
+  function sortList(list) {
+    if (state.sort === 'stage') {
+      return list.slice().sort((a, b) => STAGE_KEYS.indexOf(a.stage) - STAGE_KEYS.indexOf(b.stage) || byNext(a, b) || a.applied.localeCompare(b.applied));
+    }
+    const def = SORTS[state.sort], sign = state.dir === 'asc' ? 1 : -1;
+    return list.slice().sort((a, b) => {
+      const va = def.val(a), vb = def.val(b);
+      // 沒有值的（未評估、未排訪視）不論方向都排最後
+      if (va == null || vb == null) return (va == null) - (vb == null) || a.id.localeCompare(b.id);
+      const r = def.cmp ? def.cmp(va, vb) : (va < vb ? -1 : va > vb ? 1 : 0);
+      return r * sign || a.id.localeCompare(b.id);
+    });
+  }
+
+  /* ================= 照顧旅程：站點與走路的人 ================= */
+  const rail = $('#cs-rail'), railWrap = $('#cs-railwrap'), walker = $('#cs-walker'), trail = $('#cs-trail');
+  $('#cs-stops').innerHTML = STAGES.map((s, i) => `<li>
+      <button type="button" class="cs-stop${s.key === 'dispatch' ? ' cs-stop--attn' : ''}" data-stage="${s.key}" aria-pressed="false">
+        <span class="cs-stop__dot">${icon(s.icon)}</span>
+        <span class="cs-stop__body">
+          <span class="cs-stop__label"><span class="cs-stop__no">0${i + 1}</span>${esc(s.label)}</span>
+          <span class="cs-stop__n"><b>0</b><small>位</small></span>
+          <span class="cs-stack" aria-hidden="true"></span>
+        </span>
+      </button>
+    </li>`).join('');
+  const stopBtns = $$('.cs-stop', rail);
+
+  const HALF = 32, GAP = 7; // 走路的人寬 64px；站在圓點旁 7px
+  let walkAt = -1, facing = 1, walkTimer = 0;
+
+  // 位置一律量測實際的圓點與房子，字級切換、視窗縮放後重新對齊
+  function layoutRail() {
+    const rb = rail.getBoundingClientRect();
+    const dots = stopBtns.map(b => { const r = $('.cs-stop__dot', b).getBoundingClientRect(); return { x: r.left - rb.left + r.width / 2, r: r.width / 2 }; });
+    const house = $('.cs-house', rail).getBoundingClientRect();
+    const start = house.left - rb.left + house.width * (70 / 80);
+    const last = dots[dots.length - 1].x;
+    trail.style.left = start + 'px';
+    trail.style.width = (last - start) + 'px';
+    let x = house.right - rb.left + GAP + HALF, p = 0;
+    if (walkAt >= 0) {
+      const d = dots[walkAt];
+      // 從左邊走來就停在圓點左側，往回走就停在右側，永遠面向前進方向
+      x = facing > 0 ? d.x - d.r - GAP - HALF : d.x + d.r + GAP + HALF;
+      p = (d.x - start) / (last - start);
+    }
+    rail.style.setProperty('--wx', x + 'px');
+    rail.style.setProperty('--tp', p.toFixed(4));
+  }
+
+  function walkTo(i) {
+    if (i === walkAt) return;
+    const steps = Math.abs(i - walkAt);
+    facing = i > walkAt ? 1 : -1;
+    walker.classList.toggle('is-left', facing < 0);
+    walkAt = i;
+    const dur = reduceMotion.matches ? 0 : Math.min(2300, 380 + 290 * steps);
+    rail.style.setProperty('--walk', dur + 'ms');
+    layoutRail();
+    clearTimeout(walkTimer);
+    walker.classList.toggle('is-walking', dur > 0);
+    walkTimer = setTimeout(arrive, dur);
+    centerRail(i);
+  }
+  function arrive() {
+    walker.classList.remove('is-walking');
+    if (walkAt < 0) return;
+    const dot = $('.cs-stop__dot', stopBtns[walkAt]);
+    dot.classList.remove('is-arrive');
+    void dot.offsetWidth; // 重新觸發抵達時的彈跳
+    dot.classList.add('is-arrive');
+  }
+  // 手機上旅程列可左右滑；選到的站捲到中間，走路的人才不會走出畫面
+  function centerRail(i) {
+    if (railWrap.scrollWidth <= railWrap.clientWidth + 1) return;
+    const target = i < 0 ? 0 : stopBtns[i].getBoundingClientRect().left - rail.getBoundingClientRect().left + stopBtns[i].offsetWidth / 2 - railWrap.clientWidth / 2;
+    railWrap.scrollTo({ left: Math.max(0, target), behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  }
+
+  // 只在寬度改變時重新對齊；字型載入造成的高度微調不該打斷正在走的動畫
+  let railW = 0;
+  new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w === railW) return;
+    railW = w;
+    rail.style.setProperty('--walk', '0ms');
+    layoutRail();
+  }).observe(rail);
+
+  function stack(list) {
+    if (!list.length) return '<span class="cs-stack__none">目前沒有</span>';
+    // 小圓章只放名字最後一個字，32px 裡才讀得清楚
+    return list.slice(0, 3).map(c => seal({ name: c.name, seal: c.name.slice(-1) }, { size: 'sm' })).join('') + (list.length > 3 ? `<span class="cs-stack__more">+${list.length - 3}</span>` : '');
+  }
+
+  function renderRail() {
+    const base = sortList(facet('stage'));
+    stopBtns.forEach(btn => {
+      const items = base.filter(c => c.stage === btn.dataset.stage);
+      btn.setAttribute('aria-pressed', state.stage === btn.dataset.stage);
+      btn.classList.toggle('is-zero', !items.length);
+      $('.cs-stop__n b', btn).textContent = items.length;
+      $('.cs-stack', btn).innerHTML = stack(items);
+    });
+    $('#cs-all-n').textContent = base.length;
+    $('#cs-all').setAttribute('aria-pressed', !state.stage);
+  }
+
+  function setStage(k) {
+    state.stage = k;
+    walkTo(k ? STAGE_KEYS.indexOf(k) : -1);
+    render({ animate: true });
+  }
+  rail.addEventListener('click', e => {
+    const btn = e.target.closest('.cs-stop');
+    if (btn) setStage(state.stage === btn.dataset.stage ? null : btn.dataset.stage);
+  });
+  $('#cs-all').addEventListener('click', () => setStage(null));
+
+  /* ================= 側欄：負責範圍、CMS 階梯、行政區 ================= */
+  const scopeSeg = App.seg($('#cs-scope'), { onChange: v => { state.scope = v; render({ animate: true }); } });
+
+  $('#cs-stairs').innerHTML = Array.from({ length: 8 }, (_, k) => k + 1).map(lv =>
+    `<button type="button" class="cs-step" data-cms="${lv}" aria-pressed="false" style="--lv:${lv}"><span class="cs-step__n">0</span><span class="cs-step__bar"></span><span class="cs-step__lv">${lv}</span></button>`).join('');
+  $('#cs-map').insertAdjacentHTML('beforeend', DATA.districts.map(d =>
+    `<button type="button" class="cs-tile" data-district="${d.name}" aria-pressed="false" style="grid-column:${d.tile[0]};grid-row:${d.tile[1]}"><b>${d.name.slice(0, 2)}<span class="sr-only">區</span></b><span class="cs-tile__n">0 位</span></button>`).join(''));
+
+  const sameSet = (set, arr) => set.size === arr.length && arr.every(v => set.has(v));
+  function renderSide() {
+    const scopeBase = facet('scope');
+    $('#cs-scope-all').textContent = scopeBase.length;
+    $('#cs-scope-mine').textContent = scopeBase.filter(c => c.staff === App.ME).length;
+
+    const cmsBase = facet('cms');
+    $$('.cs-step').forEach(b => {
+      const lv = +b.dataset.cms, n = cmsBase.filter(c => c.cms === lv).length;
+      $('.cs-step__n', b).textContent = n;
+      b.classList.toggle('is-zero', !n);
+      b.setAttribute('aria-pressed', state.cms.has(lv));
+      b.setAttribute('aria-label', `CMS ${lv} 級，${n} 位`);
+    });
+    $('#cs-cms0').textContent = cmsBase.filter(c => !c.cms).length;
+    const levels = new Set([...state.cms].filter(Boolean));
+    $$('#cs-presets [data-range]').forEach(b => {
+      const r = b.dataset.range;
+      b.setAttribute('aria-pressed', r === '0' ? state.cms.has(0) : sameSet(levels, r.split(',').map(Number)));
+    });
+
+    const distBase = facet('district');
+    $$('.cs-tile').forEach(t => {
+      const n = distBase.filter(c => c.district === t.dataset.district).length;
+      $('.cs-tile__n', t).textContent = `${n} 位`;
+      t.classList.toggle('is-zero', !n);
+      t.setAttribute('aria-pressed', state.districts.has(t.dataset.district));
+    });
+
+    const sideActive = (state.scope === 'mine' ? 1 : 0) + state.cms.size + state.districts.size;
+    $('#cs-side-clear').hidden = !sideActive;
+    const badge = $('#cs-side-badge');
+    badge.hidden = !sideActive;
+    badge.textContent = `已選 ${sideActive}`;
+  }
+
+  $('#cs-stairs').addEventListener('click', e => {
+    const b = e.target.closest('.cs-step');
+    if (!b) return;
+    const lv = +b.dataset.cms;
+    if (state.cms.has(lv)) state.cms.delete(lv); else state.cms.add(lv);
+    render({ animate: true });
+  });
+  $('#cs-presets').addEventListener('click', e => {
+    const b = e.target.closest('[data-range]');
+    if (!b) return;
+    const range = b.dataset.range.split(',').map(Number);
+    if (b.dataset.range === '0') {
+      // 「尚未評估」可以和等級並存（例如「重度＋尚未評估」）
+      if (state.cms.has(0)) state.cms.delete(0); else state.cms.add(0);
+    } else {
+      const keep0 = state.cms.has(0);
+      const same = sameSet(new Set([...state.cms].filter(v => v)), range);
+      state.cms = new Set(same ? [] : range);
+      if (keep0) state.cms.add(0);
+    }
+    render({ animate: true });
+  });
+  $('#cs-map').addEventListener('click', e => {
+    const t = e.target.closest('.cs-tile');
+    if (!t) return;
+    const d = t.dataset.district;
+    if (state.districts.has(d)) state.districts.delete(d); else state.districts.add(d);
+    render({ animate: true });
+  });
+  $('#cs-side-clear').addEventListener('click', () => {
+    state.scope = 'all'; scopeSeg.set('all', false);
+    state.cms.clear(); state.districts.clear();
+    render({ animate: true });
+  });
+  const side = $('#cs-side'), sideToggle = $('#cs-side-toggle');
+  sideToggle.addEventListener('click', () => {
+    const open = !side.classList.contains('is-open');
+    side.classList.toggle('is-open', open);
+    sideToggle.setAttribute('aria-expanded', open);
+  });
+
+  /* ================= 關懷重點 ================= */
+  $('#cs-care').insertAdjacentHTML('beforeend', Object.entries(CARE).map(([k, d]) =>
+    `<label class="choice"${d.title ? ` title="${esc(d.title)}"` : ''}><input type="checkbox" value="${k}"><span>${esc(d.label)} <small class="num" data-care-n="${k}">0</small></span></label>`).join(''));
+  function renderCare() {
+    const base = facet('care');
+    Object.keys(CARE).forEach(k => {
+      $(`[data-care-n="${k}"]`).textContent = base.filter(CARE[k].test).length;
+      $(`#cs-care input[value="${k}"]`).checked = state.care.has(k);
+    });
+  }
+  $('#cs-care').addEventListener('change', e => {
+    const k = e.target.value;
+    if (e.target.checked) state.care.add(k); else state.care.delete(k);
+    render({ animate: true });
+  });
+
+  /* ================= 搜尋、排序、檢視 ================= */
+  const qInput = $('#cs-q');
+  let qTimer = 0;
+  function applyQuery() {
+    const q = norm(qInput.value);
+    if (q === state.q) return;
+    state.q = q;
+    render({ animate: true });
+  }
+  // 注音輸入選字時不篩，選完（compositionend）才套用
+  qInput.addEventListener('input', e => { if (e.isComposing) return; clearTimeout(qTimer); qTimer = setTimeout(applyQuery, 160); });
+  qInput.addEventListener('compositionend', () => { clearTimeout(qTimer); qTimer = setTimeout(applyQuery, 160); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return;
+    e.preventDefault();
+    qInput.focus();
+  });
+
+  const sortSel = $('#cs-sort'), dirBtn = $('#cs-dir');
+  function setSort(key, dir) {
+    state.sort = key;
+    state.dir = key === 'stage' ? null : dir || SORTS[key].dir;
+    sortSel.value = key;
+    render({ animate: true });
+  }
+  sortSel.addEventListener('change', () => setSort(sortSel.value));
+  dirBtn.addEventListener('click', () => setSort(state.sort, state.dir === 'asc' ? 'desc' : 'asc'));
+  $('.cs-table thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th || !e.target.closest('button.sort')) return;
+    const key = th.dataset.sort;
+    setSort(key, state.sort === key ? (state.dir === 'asc' ? 'desc' : 'asc') : null);
+  });
+  function renderSortUi() {
+    dirBtn.hidden = state.sort === 'stage';
+    if (state.sort !== 'stage') {
+      dirBtn.classList.toggle('is-asc', state.dir === 'asc');
+      $('#cs-dir-text').textContent = SORTS[state.sort].label[state.dir];
+      dirBtn.setAttribute('aria-label', `排序方向：${SORTS[state.sort].label[state.dir]}，按一下反轉`);
+    }
+    $$('.cs-table th[data-sort]').forEach(th => {
+      if (th.dataset.sort === state.sort) th.setAttribute('aria-sort', state.dir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+  }
+
+  const gridEl = $('#cs-grid'), listEl = $('#cs-list');
+  App.seg($('#cs-view'), {
+    onChange: v => {
+      state.view = v;
+      gridEl.hidden = v !== 'grid';
+      listEl.hidden = v !== 'list';
+      const shown = v === 'grid' ? gridEl : listEl;
+      shown.classList.remove('cs-view-in');
+      void shown.offsetWidth;
+      shown.classList.add('cs-view-in');
+      render();
+    },
+  });
+
+  /* ================= 啟用中的篩選 ================= */
+  let activeOff = [];
+  function renderActive() {
+    const items = [];
+    if (state.stage) items.push([`階段：${App.stageOf(state.stage).label}`, () => { state.stage = null; walkTo(-1); }]);
+    if (state.scope === 'mine') items.push(['我負責的', () => { state.scope = 'all'; scopeSeg.set('all', false); }]);
+    if (state.cms.size) {
+      const lv = [...state.cms].sort((a, b) => a - b).map(v => (v ? v : '尚未評估'));
+      items.push([`CMS：${lv.join('、')}`, () => state.cms.clear()]);
+    }
+    if (state.districts.size) items.push([`行政區：${[...state.districts].map(d => d.slice(0, 2)).join('、')}`, () => state.districts.clear()]);
+    state.care.forEach(k => items.push([CARE[k].label, () => state.care.delete(k)]));
+    if (state.q) items.push([`關鍵字「${qInput.value.trim()}」`, () => { qInput.value = ''; state.q = ''; }]);
+    activeOff = items.map(([, off]) => off);
+    $('#cs-active').innerHTML = items.map(([label], i) =>
+      `<button type="button" class="cs-chip" data-off="${i}" aria-label="移除篩選：${esc(label)}">${esc(label)}${icon('x')}</button>`).join('') +
+      (items.length > 1 ? '<button type="button" class="btn btn--quiet btn--sm" data-clear-all>全部清除</button>' : '');
+  }
+  function clearAll() {
+    state.scope = 'all'; scopeSeg.set('all', false);
+    state.cms.clear(); state.districts.clear(); state.care.clear();
+    qInput.value = ''; state.q = '';
+    state.stage = null;
+    walkTo(-1);
+    render({ animate: true });
+  }
+  document.addEventListener('click', e => {
+    if (e.target.closest('[data-clear-all]')) { clearAll(); $('#cs-summary').focus({ preventScroll: true }); return; }
+    const chip = e.target.closest('#cs-active [data-off]');
+    if (!chip) return;
+    activeOff[+chip.dataset.off]();
+    render({ animate: true });
+    // 被移除的膠囊消失了，焦點移到下一個膠囊或結果摘要，鍵盤使用者不會掉回頁首
+    const next = $(`#cs-active [data-off="${chip.dataset.off}"]`) || $('#cs-active [data-off]');
+    (next || $('#cs-summary')).focus({ preventScroll: true });
+  });
+
+  /* ================= 卡片 ================= */
+  function meter(p, tone) {
+    return `<span class="meter cs-meter" style="--c:var(--${tone})" aria-hidden="true"><span class="meter__fill" style="--p:${Math.min(1, p).toFixed(3)}"></span></span>`;
+  }
+  // 卡片底部的狀態列：承辦專員＋這個階段最需要知道的一件事
+  function strip(c) {
+    const st = App.getStaff(c.staff);
+    let info = '', act = '', tone = '';
+    if (c.stage === 'apply') {
+      // 申請管道整段不拆行，避免「轉介」只剩一個字掉到下一行
+      info = `<span>申請 <b>${fmt.md(c.applied)}</b>・<span class="nowrap">${esc(c.channel)}</span></span>`;
+      act = `<button type="button" class="btn btn--soft btn--sm cs-act" data-assess="${c.id}">${icon('home')}安排到宅評估</button>`;
+      tone = 'sun';
+    } else if (c.stage === 'assess') {
+      const d = daysSince(c.applied);
+      info = `<span>等候評估 <b>${d}</b> 天</span>${meter(d / 7, d > 7 ? 'clay' : 'sun-600')}`;
+    } else if (c.stage === 'plan') {
+      info = `<span>評估完成 <b>${fmt.md(c.assessed)}</b>・計畫待說明</span>`;
+    } else if (c.stage === 'dispatch') {
+      const d = daysSince(c.request.since);
+      info = `<span>等候媒合 <b>${d}</b> 天</span>${meter(d / 14, d > 5 ? 'clay' : 'sage')}`;
+      act = `<a class="btn btn--quiet btn--sm cs-act" href="dispatch.html?id=${c.id}">去媒合${icon('arrow-right')}</a>`;
+      tone = d > 5 ? 'clay' : '';
+    } else if (c.stage === 'service') {
+      const q = App.quotaOf(c);
+      info = `<span>本月額度 <b>${fmt.pct(q.pct)}</b></span>${meter(q.pct, q.pct >= 0.9 ? 'clay' : 'sage')}`;
+      if (q.pct >= 0.9) tone = 'sun';
+    } else if (c.stage === 'review') {
+      info = `<span>複評到期 <b>${fmt.md(c.reviewDue)}</b>・${fmt.rel(c.reviewDue)}</span>`;
+    }
+    return `<div class="cs-strip${tone ? ' cs-strip--' + tone : ''}">
+      <span class="cs-mini">${seal(st, { size: 'sm', tone: 'ink' })}</span>
+      <span class="cs-strip__text"><span class="cs-strip__staff">承辦 <b>${esc(st.name)}</b></span><span class="cs-strip__info">${info}</span></span>${act}
+    </div>`;
+  }
+
+  const cards = new Map(); // id → { el, sig }：同一張卡重複使用，蓋章動畫才不會每次篩選都重播
+  const cardSig = c => [c.stage, c.staff, c.next ? c.next.at : '', c.cms].join('|');
+  function buildCard(c) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = App.caseCard(c).trim();
+    const el = tpl.content.firstElementChild;
+    el.dataset.key = c.id;
+    el.setAttribute('data-reveal', '');
+    el.insertAdjacentHTML('beforeend', '<p class="cs-why" hidden></p>' + strip(c));
+    // 首次載入後才建立的卡片由 FLIP 負責進場，不走捲動淡入
+    if (!firstGrid) el.classList.add('is-in', 'cs-settled');
+    return el;
+  }
+  function cardFor(c) {
+    const sig = cardSig(c);
+    let entry = cards.get(c.id);
+    if (!entry || entry.sig !== sig) {
+      entry = { el: buildCard(c), sig };
+      cards.set(c.id, entry);
+    }
+    const el = entry.el;
+    clearMarks(el);
+    const why = $('.cs-why', el);
+    const h = hits.get(c.id);
+    if (state.q) {
+      const re = hitRegex(state.q);
+      const dd = $('.case-card__facts dd', el);
+      markNodes([
+        ...['.case-card__name a', '.case-card__meta', '.svc', '.case-card__foot .tag', '.cs-strip__staff b'].flatMap(sel => $$(sel, el).flatMap(textNodes)),
+        ...(dd.firstChild && dd.firstChild.nodeType === Node.TEXT_NODE ? [dd.firstChild] : []),
+      ], re);
+    }
+    if (h && h.label) {
+      why.hidden = false;
+      why.innerHTML = `${icon('search')}<span>符合${esc(h.label)}：<span class="cs-why__val"></span></span>`;
+      const val = $('.cs-why__val', why);
+      val.textContent = h.val;
+      markNodes(textNodes(val), hitRegex(state.q));
+    } else {
+      why.hidden = true;
+    }
+    return el;
+  }
+
+  function groupHint(k, items) {
+    if (k === 'apply') {
+      const first = items.map(c => c.applied).sort()[0];
+      return `最早一件 ${fmt.md(first)} 受理，3 個工作天內聯繫家屬安排評估`;
+    }
+    if (k === 'assess') {
+      const today = items.filter(c => c.next && c.next.at.startsWith(TODAY)).length;
+      const ats = items.filter(c => c.next).map(c => c.next.at).sort();
+      return today ? `今天有 ${today} 位要到宅評估` : ats.length ? `最近一場 ${fmt.date(ats[0])} ${fmt.time(ats[0])}` : '等候安排評估時段';
+    }
+    if (k === 'plan') {
+      const ats = items.filter(c => c.next).map(c => c.next.at).sort();
+      if (!ats.length) return '照顧計畫擬定中';
+      const a = fmt.md(ats[0]), b = fmt.md(ats[ats.length - 1]);
+      return `照顧計畫說明 ${a === b ? a : `${a}–${b}`}`;
+    }
+    if (k === 'dispatch') {
+      const avg = items.reduce((s, c) => s + daysSince(c.request.since), 0) / items.length;
+      return `平均已等候 ${avg.toFixed(1)} 天，目標 ${App.DATA.stats.targetDays.dispatch} 天內`;
+    }
+    if (k === 'service') {
+      const tight = items.filter(c => App.quotaOf(c).pct >= 0.9).length;
+      return tight ? `本月額度用到九成以上：${tight} 位` : '本月額度都還寬裕';
+    }
+    const due = items.map(c => c.reviewDue).filter(Boolean).sort().map(fmt.md);
+    return due.length ? `複評到期 ${due.join('、')}` : '定期複評';
+  }
+  const GROUP_HINT_ICON = { apply: 'clock', assess: 'calendar', plan: 'note', dispatch: 'clock', service: 'wallet', review: 'calendar' };
+
+  const groups = new Map();
+  function groupFor(k, items) {
+    let el = groups.get(k);
+    if (!el) {
+      const s = App.stageOf(k);
+      el = document.createElement('div');
+      el.className = `cs-group cs-group--${k}`;
+      el.dataset.key = 'g-' + k;
+      el.setAttribute('data-reveal', '');
+      el.innerHTML = `<span class="cs-group__icon">${icon(s.icon)}</span>
+        <h2 class="cs-group__title"><span class="cs-group__no">0${STAGE_KEYS.indexOf(k) + 1}</span>${esc(s.label)}</h2>
+        <span class="cs-group__n"></span><span class="cs-group__rule" aria-hidden="true"></span>
+        <p class="cs-group__hint">${icon(GROUP_HINT_ICON[k])}<span></span></p>`;
+      groups.set(k, el);
+    }
+    $('.cs-group__n', el).textContent = `${items.length} 位`;
+    $('.cs-group__hint span', el).textContent = groupHint(k, items);
+    return el;
+  }
+
+  const emptyEl = document.createElement('div');
+  emptyEl.className = 'cs-empty';
+  emptyEl.dataset.key = 'empty';
+  emptyEl.innerHTML = App.emptyState({ title: '這組條件下沒有長輩', text: '試著放寬篩選或換個關鍵字。也可能是好消息：這一步暫時沒有人在等。', art: 'tea' }) +
+    '<button type="button" class="btn btn--soft btn--sm" data-clear-all>清除全部篩選</button>';
+
+  // FLIP：篩選或排序後，留下來的卡片從舊位置滑到新位置，新出現的柔和淡入
+  function flip(container, mutate, animate) {
+    const go = animate && !reduceMotion.matches;
+    const before = new Map();
+    if (go) $$('[data-key]', container).forEach(el => before.set(el.dataset.key, el.getBoundingClientRect()));
+    mutate();
+    if (!go) return;
+    let k = 0;
+    $$('[data-key]', container).forEach(el => {
+      const b = before.get(el.dataset.key);
+      if (b) {
+        const r = el.getBoundingClientRect();
+        const dx = b.left - r.left, dy = b.top - r.top;
+        if (Math.abs(dx) + Math.abs(dy) < 1) return;
+        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 580, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+      } else {
+        el.animate([{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }],
+          { duration: 480, delay: Math.min(k++, 8) * 40, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'backwards' });
+      }
+    });
+  }
+
+  let firstGrid = true;
+  function renderGrid(list, animate) {
+    const nodes = [];
+    if (state.sort === 'stage') {
+      STAGE_KEYS.forEach(k => {
+        const items = list.filter(c => c.stage === k);
+        if (!items.length) return;
+        nodes.push(groupFor(k, items));
+        items.forEach(c => nodes.push(cardFor(c)));
+      });
+    } else {
+      list.forEach(c => nodes.push(cardFor(c)));
+    }
+    if (!list.length) nodes.push(emptyEl);
+    flip(gridEl, () => gridEl.replaceChildren(...nodes), animate);
+    if (firstGrid) {
+      // 首次載入：交給 App.reveal（視窗內的直接淡入、視窗外的捲到才出現，並有保底）
+      let col = 0;
+      nodes.forEach(n => { if (n.classList.contains('cs-group')) col = 0; else n.style.setProperty('--i', col++ % 2); });
+      App.reveal(gridEl);
+      firstGrid = false;
+    } else {
+      nodes.forEach(n => n.classList.add('is-in'));
+    }
+  }
+  gridEl.addEventListener('animationend', e => {
+    if (e.animationName === 'cs-stamp') e.target.closest('.case-card').classList.add('is-stamped');
+  });
+  // [data-reveal] 的 0.9 秒轉場會蓋掉卡片原本的 hover 轉場；淡入完成後換回輕快的版本
+  gridEl.addEventListener('transitionend', e => {
+    if (e.propertyName === 'opacity' && e.target.classList.contains('case-card')) e.target.classList.add('cs-settled');
+  });
+
+  /* ================= 列表檢視 ================= */
+  function tableRow(c, k) {
+    const st = App.getStaff(c.staff);
+    const next = c.next
+      ? `<span class="cs-tnextd">${fmt.date(c.next.at)} ${fmt.time(c.next.at)}</span><small class="cs-tnext">${fmt.rel(c.next.at)}・${esc(c.next.type)}</small>`
+      : '<span class="muted">待聯繫安排評估</span>';
+    // 每格內容包成單一子元素：手機版把列改成小卡時，格子變成「標籤｜內容」兩欄
+    return `<tr style="--k:${Math.min(k, 14)}">
+      <td class="cs-td-case"><div class="cs-tcase">${seal(c, { size: 'sm' })}<div><a href="case.html?id=${c.id}">${esc(c.name)}</a><small>${c.id}</small><small>${c.gender === 'F' ? '女' : '男'} ${c.age} 歲・${esc(c.district)}</small></div></div></td>
+      <td class="cs-td-stage">${App.stage(c.stage)}<small class="cs-tstaff">承辦 <b>${esc(st.name)}</b></small></td>
+      <td class="cs-td-cms">${App.cms(c.cms)}</td>
+      <td class="cs-td-row" data-label="主要照顧者"><div><div class="cs-tcarer"><b>${esc(c.carer.name)}</b><span class="muted">（${esc(c.carer.rel)}）</span></div>${c.carer.zarit != null ? App.loadChip(c.carer.zarit) : '<span class="muted">尚未評估負荷</span>'}</div></td>
+      <td class="cs-td-row" data-label="服務項目"><div class="cs-codes">${c.services.length ? c.services.map(code => `<span class="tag" title="${esc(App.SERVICES[code].name)}">${code}</span>`).join('') : '<span class="muted">尚未擬定</span>'}</div></td>
+      <td class="cs-td-row" data-label="下次訪視"><div>${next}</div></td>
+    </tr>`;
+  }
+  function renderTable(list) {
+    let html = '', k = 0;
+    if (state.sort === 'stage') {
+      STAGE_KEYS.forEach((key, i) => {
+        const items = list.filter(c => c.stage === key);
+        if (!items.length) return;
+        const s = App.stageOf(key);
+        html += `<tr class="cs-trow-group" style="--k:${Math.min(k++, 14)}"><th colspan="6" scope="colgroup"><span class="cs-trow-group__in">${icon(s.icon)}<b>0${i + 1}　${esc(s.label)}</b><span>${items.length} 位</span><small>${esc(groupHint(key, items))}</small></span></th></tr>`;
+        html += items.map(c => tableRow(c, k++)).join('');
+      });
+    } else {
+      html = list.map(c => tableRow(c, k++)).join('');
+    }
+    $('#cs-tbody').innerHTML = html;
+    $('#cs-table-wrap').hidden = !list.length;
+    $('#cs-list-empty').replaceChildren(...(list.length ? [] : [emptyEl]));
+    if (state.q) {
+      const re = hitRegex(state.q);
+      markNodes(['.cs-tcase a', '.cs-tcase small', '.cs-tcarer b', '.cs-codes .tag', '.cs-tstaff b'].flatMap(sel => $$(sel, $('#cs-tbody')).flatMap(textNodes)), re);
+    }
+  }
+
+  /* ================= 重繪：任何資料或篩選變動都走這裡 ================= */
+  let current = [];
+  function render({ animate = false } = {}) {
+    hits = new Map();
+    if (state.q) DATA.cases.forEach(c => { const h = searchHit(c, state.q); if (h) hits.set(c.id, h); });
+    current = sortList(facet());
+    renderRail();
+    renderSide();
+    renderCare();
+    renderSortUi();
+    renderActive();
+    const k = App.counts();
+    const total = k.apply + k.assess + k.plan + k.dispatch + k.service + k.review;
+    $('#cs-lede').innerHTML = `本週追蹤中的 <b>${DATA.cases.length}</b> 位長輩，全市在案共 <b>${fmt.num(total)}</b> 位。從照顧旅程、CMS 等級、行政區或關懷重點篩選，點卡片就能開啟個案詳情。`;
+    $('#cs-summary').innerHTML = `符合 <b>${current.length}</b> 位長輩${current.length !== DATA.cases.length ? `<span class="cs-summary__of">／共 ${DATA.cases.length} 位</span>` : ''}`;
+    if (state.view === 'grid') renderGrid(current, animate); else renderTable(current);
+  }
+  document.addEventListener('app:data', () => render({ animate: true }));
+
+  /* ================= 匯出名冊（CSV） ================= */
+  const csvCell = v => { const s = String(v ?? ''); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  $('#cs-export').addEventListener('click', () => {
+    if (!current.length) {
+      App.toast('目前沒有符合條件的長輩可以匯出', { tone: 'warn', desc: '放寬篩選後再試一次。' });
+      return;
+    }
+    const head = ['案號', '姓名', '性別', '年齡', '行政區', '照顧階段', 'CMS 等級', '主要照顧者', '關係', '照顧負荷（Zarit）', '服務項目', '下次訪視', '訪視事由', '承辦專員'];
+    const rows = current.map(c => [
+      c.id, c.name, c.gender === 'F' ? '女' : '男', c.age, c.district, App.stageOf(c.stage).label, c.cms || '尚未評估',
+      c.carer.name, c.carer.rel, c.carer.zarit ?? '', c.services.join(' '),
+      c.next ? `${fmt.ymd(c.next.at)} ${fmt.time(c.next.at)}` : '', c.next ? c.next.type : '', App.getStaff(c.staff).name,
+    ]);
+    // 加 BOM，Excel 才會用 UTF-8 開啟中文
+    const csv = '﻿' + [head, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `澄港長照_個案名冊_${fmt.ymd(App.NOW).replace(/\//g, '')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    App.toast(`已匯出 ${current.length} 位長輩的名冊`, { desc: '檔案含個人資料，請存在中心電腦並依規定保管。' });
+  });
+
+  /* ================= 安排到宅評估 ================= */
+  const dlg = $('#cs-assess'), form = $('#cs-assess-form'), slotField = $('#cs-slot-field');
+  const SLOT_DAYS = ['2026-10-28', '2026-10-29', '2026-10-30'];
+  const SLOT_TIMES = ['09:30', '14:00'];
+  let target = null;
+
+  // 同一位專員當天前後兩小時內已有訪視，就不能再排
+  const busyWith = (staffId, at) => DATA.cases.find(o => o !== target && o.staff === staffId && o.next
+    && o.next.at.slice(0, 10) === at.slice(0, 10) && Math.abs(toMin(o.next.at) - toMin(at)) < 120);
+
+  function renderSlots() {
+    const staffId = form.elements.staff.value;
+    const keep = form.elements.slot ? form.elements.slot.value : '';
+    $('#cs-slots').innerHTML = SLOT_DAYS.map(d => `<div class="cs-slots__day"><p class="cs-slots__date">${fmt.date(d)}</p>${SLOT_TIMES.map(t => {
+      const at = `${d}T${t}`, busy = busyWith(staffId, at);
+      return `<label class="cs-opt cs-opt--slot"${busy ? ` title="${esc(`${busy.name}・${busy.next.type} ${fmt.time(busy.next.at)}`)}"` : ''}>
+        <input type="radio" name="slot" value="${at}"${busy ? ' disabled' : ''}${!busy && keep === at ? ' checked' : ''}>
+        <span class="cs-opt__box"><b>${t}</b><small>${busy ? `已有行程・${esc(busy.name)}` : t < '12:00' ? '上午' : '下午'}</small></span>
+      </label>`;
+    }).join('')}</div>`).join('');
+  }
+
+  function openAssess(id) {
+    target = App.getCase(id);
+    const c = target;
+    const def = (DATA.staff.find(s => s.role === '照管專員' && s.areas.includes(c.district)) || App.getStaff(c.staff)).id;
+    $('#cs-who').innerHTML = `${seal(c, { size: 'lg' })}<div>
+      <p class="cs-who__name">${esc(c.name)}<span>${c.gender === 'F' ? '女' : '男'}・${c.age} 歲・${c.id}</span></p>
+      <p class="cs-who__meta">${icon('pin')}<span>${esc(c.addr)}</span></p>
+      <p class="cs-who__meta">${icon('clipboard')}<span>${fmt.md(c.applied)} ${esc(c.channel)}・${esc(c.dx)}</span></p>
+      <p class="cs-who__meta">${icon('user')}<span>主要聯絡人 ${esc(c.carer.name)}（${esc(c.carer.rel)}）・${esc(c.living)}</span></p>
+    </div>`;
+    $('#cs-staff').innerHTML = DATA.staff.map(s => `<label class="cs-opt">
+      <input type="radio" name="staff" value="${s.id}"${s.id === def ? ' checked' : ''}>
+      <span class="cs-opt__box"><span class="cs-mini">${seal(s, { size: 'sm', tone: 'ink' })}</span>
+        <span class="cs-opt__text"><b>${esc(s.name)}</b><small>${s.role === '照管督導' ? '督導・' : ''}${s.areas.map(a => a.slice(0, 2)).join('／')}</small></span>
+        ${s.areas.includes(c.district) ? '<span class="badge badge--sage">負責此區</span>' : ''}</span>
+    </label>`).join('');
+    $('#cs-slots').innerHTML = '';
+    renderSlots();
+    slotField.classList.remove('is-invalid');
+    $('#cs-notify').checked = true;
+    $('#cs-notify-text').textContent = `以簡訊通知主要聯絡人 ${c.carer.name}（${c.carer.rel}）`;
+    App.openDialog(dlg);
+  }
+  gridEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-assess]');
+    if (b) openAssess(b.dataset.assess);
+  });
+  $('#cs-staff').addEventListener('change', renderSlots);
+  $('#cs-slots').addEventListener('change', () => slotField.classList.remove('is-invalid'));
+
+  function flashCard(id) {
+    const entry = cards.get(id);
+    if (!entry || !entry.el.isConnected) return;
+    const el = entry.el;
+    el.classList.remove('cs-flash');
+    void el.offsetWidth;
+    el.classList.add('cs-flash');
+    el.scrollIntoView({ block: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    $('.case-card__name a', el).focus({ preventScroll: true });
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    // 送出按鈕在 dialog 外也能被程式觸發；只有開著時才算數
+    if (!dlg.open) return;
+    const at = form.elements.slot.value;
+    if (!at) {
+      slotField.classList.add('is-invalid');
+      const first = $('input[name="slot"]:not(:disabled)', form);
+      if (first) first.focus();
+      // 時段區在可捲動的 modal 內，錯誤訊息常在下緣之外；捲到看得見
+      $('#cs-slot-err').scrollIntoView({ block: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+      return;
+    }
+    const c = target, staff = App.getStaff(form.elements.staff.value), notify = $('#cs-notify').checked;
+    const prev = { stage: c.stage, staff: c.staff, next: c.next };
+    c.stage = 'assess';
+    c.staff = staff.id;
+    c.next = { at, type: '初評到宅評估' };
+    App.closeDialog(dlg);
+    App.emit('case:assess', { id: c.id });
+    flashCard(c.id);
+    if (!cards.get(c.id).el.isConnected) $('#cs-summary').focus({ preventScroll: true });
+    App.toast(`已安排${c.name}的到宅評估`, {
+      desc: `${fmt.date(at)} ${fmt.time(at)}・${staff.name}${notify ? `・已簡訊通知${c.carer.name}` : ''}`,
+      action: {
+        label: '復原',
+        onClick: () => {
+          Object.assign(c, prev);
+          App.emit('case:assess', { id: c.id, restored: true });
+          flashCard(c.id);
+        },
+      },
+    });
+  });
+
+  /* ================= 初始化 ================= */
+  if (state.sort !== 'stage') state.dir = SORTS[state.sort].dir;
+  rail.style.setProperty('--walk', '0ms');
+  layoutRail();
+  render();
+  // 從總覽帶著階段進來：等旅程列進入視窗，再讓兩人從家門口慢慢走到那一站
+  if (state.stage) {
+    const goal = STAGE_KEYS.indexOf(state.stage);
+    App.whenVisible(rail, () => setTimeout(() => { if (state.stage === STAGE_KEYS[goal]) walkTo(goal); }, 500));
+  }
+});
+</script>
+</body>
+</html>

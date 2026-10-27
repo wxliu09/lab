@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>派案媒合 — 澄港長照 申請與派案系統</title>
+<meta name="description" content="澄港市長期照顧管理中心的派案媒合工作台：待派個案、照服員配對分數與媒合地圖、每週排班拖放安排、時段衝突提示與確認派案。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     派案媒合（dispatch）專屬樣式，class 一律加 dsp- 前綴
+     ===================================================================== */
+
+  /* ---------- 頁首 ---------- */
+  .dsp-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); gap: var(--sp-6); align-items: end; margin-bottom: var(--sp-6); }
+  .dsp-head__title { margin-top: .35rem; }
+  .dsp-head__title > span { display: block; }
+  .dsp-head .lede { max-width: 38em; }
+  .dsp-head__tools { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; margin-top: var(--sp-5); }
+  .dsp-steps { gap: .35rem; }
+  .dsp-steps .step__dot { width: 30px; height: 30px; font-size: var(--fs-sm); }
+  .dsp-steps .step + .step::before { width: 18px; }
+  .dsp-steps .step.is-done .step__dot .i { width: 16px; height: 16px; }
+
+  .dsp-ill__basket { fill: var(--sage-200); }
+  /* 點狀小路：由右往左（照服員往家門）慢慢浮現 */
+  .dsp-ill__route { fill: none; stroke: var(--sage); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: .1 9; clip-path: inset(0 0 0 100%); transition: clip-path 1.6s var(--ease-soft) .9s; }
+  .is-drawn .dsp-ill__route { clip-path: inset(0); }
+  .is-static .dsp-ill__route { transition: none; }
+  .dsp-ill__scooter { transform-box: fill-box; transform-origin: 50% 100%; }
+  .is-drawn .dsp-ill__scooter { animation: dsp-scoot 2.8s ease-in-out 2.4s infinite; }
+  @keyframes dsp-scoot { 0%, 100% { transform: translate(0, 0); } 30% { transform: translate(-3px, -1.5px); } 60% { transform: translate(-1px, .5px); } }
+
+  /* ---------- 概況 ---------- */
+  .dsp-stats {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: var(--sp-6); border-radius: var(--r-xl); border: 1px solid var(--line);
+    background: var(--paper); box-shadow: var(--shadow-1);
+  }
+  .dsp-stat { position: relative; display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: 1.15rem 1.4rem 1.2rem; }
+  .dsp-stat + .dsp-stat::before { content: ""; position: absolute; left: 0; top: 1.1rem; bottom: 1.1rem; border-left: 1px dashed var(--line-2); }
+  .dsp-stat__label { display: inline-flex; align-items: center; gap: .45rem; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
+  .dsp-stat__label .i { color: var(--sage-700); }
+  .dsp-stat__num { display: flex; align-items: baseline; gap: .3rem; font-family: var(--font-hand); font-weight: 700; font-size: 2.4rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .dsp-stat__num small { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
+  .dsp-stat__sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .dsp-stat--attn .dsp-stat__label .i { color: var(--clay-700); }
+  .dsp-waitbar { position: relative; height: 8px; margin: .35rem 0 .3rem; border-radius: var(--r-pill); background: var(--linen-3); }
+  .dsp-waitbar i { position: absolute; inset: 0; border-radius: inherit; background: repeating-linear-gradient(-45deg, var(--clay) 0 4px, var(--clay-200) 4px 7px); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform var(--dur-4) var(--ease-out); }
+  .dsp-waitbar b { position: absolute; top: -4px; bottom: -4px; left: calc(var(--t) * 100%); width: 2px; border-radius: 2px; background: var(--sage-800); }
+  .dsp-done-seals { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .25rem; }
+  .dsp-done-seals a { display: inline-grid; border-radius: 50%; }
+
+  /* ---------- 媒合區：左個案、右照服員 ---------- */
+  .dsp-match { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
+  .dsp-left { display: grid; gap: var(--sp-5); }
+
+  /* 待派個案佇列 */
+  .dsp-queue .panel__head { margin-bottom: var(--sp-4); }
+  .dsp-queue__seg { display: flex; width: 100%; }
+  /* 特大字級的手機上三顆按鈕擠不下：允許按鈕內換行，不撐出水平捲動 */
+  .dsp-queue__seg button { flex: 1 1 auto; min-width: 0; justify-content: center; flex-wrap: wrap; gap: 0 .4rem; padding-inline: .6rem; white-space: normal; line-height: 1.3; text-align: center; }
+  .dsp-qlist { list-style: none; display: grid; gap: .6rem; margin-top: var(--sp-4); }
+  .dsp-q {
+    position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .15rem .85rem; align-items: center;
+    width: 100%; padding: .8rem .95rem; border: 1.5px solid var(--line); border-radius: var(--r-md);
+    background: var(--paper); color: var(--ink); text-align: left; cursor: pointer;
+    transition: border-color var(--dur-2), background-color var(--dur-2), box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out);
+  }
+  .dsp-q:hover { border-color: var(--line-2); box-shadow: var(--shadow-1); transform: translateX(2px); }
+  .dsp-q[aria-pressed="true"] { border-color: var(--sage-700); background: linear-gradient(90deg, var(--sage-50), var(--paper) 75%); box-shadow: 0 0 0 4px var(--sage-100); }
+  /* 選中的個案在桌機上以小三角指向右側的照服員清單 */
+  .dsp-q[aria-pressed="true"]::after {
+    content: ""; position: absolute; right: -11px; top: 50%; width: 18px; height: 18px; margin-top: -9px;
+    background: var(--paper); border-top: 1.5px solid var(--sage-700); border-right: 1.5px solid var(--sage-700);
+    transform: rotate(45deg); border-radius: 0 4px 0 0;
+  }
+  .dsp-q .seal { grid-row: 1 / span 2; }
+  .dsp-q__top { display: flex; align-items: baseline; flex-wrap: wrap; gap: .1rem .6rem; min-width: 0; }
+  .dsp-q__name { font-family: var(--font-hand); font-size: var(--fs-lg); font-weight: 700; line-height: 1.3; }
+  .dsp-q__age { font-size: var(--fs-xs); color: var(--ink-3); }
+  .dsp-q__mid { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .5rem; }
+  .dsp-q__mid .cms { padding: .05rem .55rem .05rem .6rem; }
+  .dsp-q__mid .cms__num { font-size: 1.05rem; }
+  .dsp-q__req { grid-column: 1 / -1; margin-top: .35rem; padding-top: .45rem; border-top: 1px dashed var(--line); font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.55; }
+  .dsp-wait { display: inline-flex; align-items: center; gap: .3rem; padding: .02rem .55rem; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 700; line-height: 1.7; white-space: nowrap; }
+  .dsp-wait .i { width: 1em; height: 1em; }
+  .dsp-wait--clay { background: var(--clay-100); color: var(--clay-700); }
+  .dsp-wait--sun { background: var(--sun-100); color: var(--sun-700); }
+  .dsp-wait--sage { background: var(--sage-100); color: var(--sage-800); }
+  .dsp-queue__note { margin-top: var(--sp-4); font-size: var(--fs-xs); color: var(--ink-3); }
+
+  /* 個案需求 */
+  .dsp-need__head { display: flex; align-items: center; gap: 1rem; margin-bottom: var(--sp-4); }
+  .dsp-need__who { flex: 1; min-width: 0; }
+  .dsp-need__name { font-size: var(--fs-2xl); line-height: 1.25; }
+  .dsp-need__name small { margin-left: .4rem; font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
+  .dsp-need__meta { font-size: var(--fs-sm); color: var(--ink-3); }
+  .dsp-need__list { display: grid; gap: .8rem; margin: 0; }
+  .dsp-need__list > div { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr); gap: .75rem; align-items: baseline; }
+  .dsp-need__list dt { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: var(--ink-3); }
+  .dsp-need__list dt .i { width: 1.05rem; height: 1.05rem; color: var(--sage-700); }
+  .dsp-need__list dd { margin: 0; font-size: var(--fs-sm); line-height: 1.6; min-width: 0; }
+  .dsp-need__carer { display: block; margin-top: .3rem; padding-left: .7rem; border-left: 3px solid var(--sun-200); color: var(--ink-2); }
+  .dsp-need__foot { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px dashed var(--line-2); }
+  /* 等候超過目標天數：提醒先致電家屬，記下後改成鼠尾草色的完成狀態 */
+  .dsp-call { margin-top: var(--sp-5); font-size: var(--fs-sm); line-height: 1.6; }
+  .dsp-call__body { display: grid; gap: .55rem; justify-items: start; min-width: 0; }
+
+  /* 推薦照服員 */
+  .dsp-cands__tools { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+  .dsp-cands__tools .select { width: auto; min-height: 44px; }
+  .dsp-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-5); align-items: start; margin-bottom: var(--sp-5); }
+
+  /* 媒合地圖：道路、溪流、山稜為底，個案住家與照服員為動態層 */
+  .dsp-map { margin: 0; padding: .55rem; border-radius: var(--r-lg); border: 1px solid var(--line); background: radial-gradient(closest-side at 60% 45%, rgba(251, 237, 203, .5), transparent), var(--linen); }
+  .dsp-map .diagram-scroll { --min: 0px; --min-sm: 520px; border-radius: var(--r-md); }
+  .dsp-map__svg { display: block; width: 100%; height: auto; }
+  .dsp-map__sea { fill: var(--sage-50); }
+  .dsp-map__coast { fill: none; stroke: var(--sage-300); stroke-width: 2; stroke-linecap: round; }
+  .dsp-map__wave { fill: none; stroke: var(--sage-300); stroke-width: 1.6; stroke-linecap: round; }
+  .dsp-map__sea-label { font: 700 13px var(--font-hand); fill: var(--sage-700); letter-spacing: .3em; writing-mode: vertical-rl; }
+  .dsp-map__river { fill: none; stroke: var(--sage-200); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+  .dsp-map__river-label { font: 500 13px var(--font-hand); fill: var(--sage-700); transition: opacity var(--dur-2); }
+  .dsp-map__road-casing { fill: none; stroke: var(--line-2); stroke-width: 7; stroke-linecap: round; opacity: .55; }
+  .dsp-map__road { fill: none; stroke: var(--paper); stroke-width: 3.5; stroke-linecap: round; }
+  .dsp-map__ridge { fill: none; stroke: var(--sage-300); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .dsp-map__salt { fill: var(--paper); stroke: var(--line-2); stroke-width: 1.2; }
+  .dsp-map__district { font: 700 16px var(--font-hand); fill: var(--ink-3); letter-spacing: .12em; paint-order: stroke; stroke: var(--linen); stroke-width: 4px; stroke-linejoin: round; transition: opacity var(--dur-2); }
+  .dsp-map__district.is-faded, .dsp-map__river-label.is-faded { opacity: .22; }
+
+  .dsp-map__ring { fill: rgba(242, 212, 155, .2); stroke: var(--sun-600); stroke-width: 1.6; stroke-dasharray: 3 6; }
+  .dsp-map__ring-label { font: 700 12px var(--font-sans); fill: var(--sun-700); paint-order: stroke; stroke: var(--linen); stroke-width: 3px; }
+  .dsp-map__link {
+    fill: none; stroke: var(--ink-4); stroke-width: 1.6; stroke-linecap: round;
+    stroke-dasharray: 1 2; stroke-dashoffset: 1.05;
+    transition: stroke-dashoffset .9s var(--ease-soft) calc(.15s + var(--d, 0) * 110ms), stroke var(--dur-2), stroke-width var(--dur-2);
+  }
+  .dsp-map__svg.is-on .dsp-map__link { stroke-dashoffset: 0; }
+  .dsp-map__link.is-hot { stroke: var(--sage-700); stroke-width: 2.8; }
+  .dsp-map__route { fill: none; stroke: var(--sage-700); stroke-width: 4.5; stroke-linecap: round; stroke-dasharray: 1 2; stroke-dashoffset: 1.05; }
+  .dsp-map__svg.is-route .dsp-map__route { stroke-dashoffset: 0; transition: stroke-dashoffset 1s var(--ease-soft) .25s; }
+  .dsp-map__svg.is-static .dsp-map__link, .dsp-map__svg.is-static .dsp-map__route { transition: none; }
+  .dsp-map__leader { stroke: var(--sage-300); stroke-width: 1.4; stroke-dasharray: 2 3; }
+  .dsp-map__true { fill: var(--sage-700); }
+  .dsp-mk__body { transform-box: fill-box; transform-origin: center; transition: transform .45s var(--ease-spring); }
+  .dsp-mk.is-hot .dsp-mk__body { transform: scale(1.22); }
+  .dsp-mk__dot { fill: var(--paper); stroke: var(--sage-700); stroke-width: 2.4; }
+  .dsp-mk__num { font: 700 13px var(--font-sans); fill: var(--sage-800); }
+  .dsp-mk--minor .dsp-mk__dot { fill: var(--ink-4); stroke: var(--paper); stroke-width: 1.5; opacity: .75; }
+  .dsp-mk.is-sel .dsp-mk__dot { fill: var(--sage-700); stroke: var(--paper); stroke-width: 2.5; }
+  .dsp-mk.is-sel .dsp-mk__num { fill: #fff; }
+  .dsp-mk__pulse { fill: none; stroke: var(--sage-700); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: dsp-pulse 2.4s ease-out infinite; }
+  @keyframes dsp-pulse { from { transform: scale(1); opacity: .65; } to { transform: scale(2.2); opacity: 0; } }
+  .dsp-mk__name { font: 700 14px var(--font-sans); fill: var(--sage-900); paint-order: stroke; stroke: var(--linen); stroke-width: 4px; stroke-linejoin: round; }
+  .dsp-home__body { transform-box: fill-box; transform-origin: center; animation: dsp-home-in .7s var(--ease-spring) both; }
+  @keyframes dsp-home-in { from { opacity: 0; transform: scale(.4); } }
+  .dsp-home__dot { fill: var(--clay); stroke: var(--paper); stroke-width: 3; }
+  .dsp-home__icon { color: #fff; }
+  .dsp-home__label { font: 700 16px var(--font-hand); fill: var(--clay-700); paint-order: stroke; stroke: var(--linen); stroke-width: 4px; stroke-linejoin: round; }
+  .dsp-map__traveler { fill: var(--sun); stroke: var(--sage-800); stroke-width: 2; }
+  .dsp-map figcaption { display: grid; gap: .55rem; padding: .7rem .45rem .2rem; }
+  .dsp-map__route-text { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .6rem; font-size: var(--fs-sm); color: var(--ink-2); }
+  .dsp-map__route-text b { color: var(--ink); }
+  .dsp-map .legend { gap: .3rem 1rem; font-size: var(--fs-xs); }
+  .dsp-lg-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; border: 2.2px solid var(--sage-700); background: var(--paper); }
+  .dsp-lg-dot--home { border-color: var(--paper); background: var(--clay); box-shadow: 0 0 0 1px var(--clay); }
+  .dsp-lg-dot--minor { width: 9px; height: 9px; border: 0; background: var(--ink-4); }
+  .dsp-lg-ring { width: 16px; height: 16px; border-radius: 50%; flex: none; border: 1.6px dashed var(--sun-600); background: rgba(242, 212, 155, .25); }
+
+  /* 配對分數拆解 */
+  .dsp-why { padding: 1.15rem 1.25rem 1.2rem; border-radius: var(--r-lg); background: var(--linen-2); }
+  .dsp-why__eyebrow { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+  /* 名字與總分同一列，基本資料橫跨下方兩欄：大字總分不會把資料擠成一字一行 */
+  .dsp-why__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: 0 .9rem; margin-top: .35rem; }
+  .dsp-why__head > .seal { grid-row: 1 / span 2; align-self: center; }
+  .dsp-why__name { font-size: var(--fs-xl); line-height: 1.25; }
+  .dsp-why__meta { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .dsp-why__total { white-space: nowrap; font-family: var(--font-hand); font-weight: 700; font-size: 2.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .dsp-why__total small { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
+  .dsp-why__rows { list-style: none; display: grid; gap: .6rem; margin-top: 1rem; }
+  .dsp-why__row { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr) 3.3rem; gap: .1rem .65rem; align-items: center; font-size: var(--fs-sm); }
+  .dsp-why__row > b { font-weight: 700; }
+  .dsp-why__pts { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .dsp-why__pts small { font-weight: 500; color: var(--ink-3); }
+  .dsp-why__bar { height: 10px; border-radius: var(--r-pill); background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+  .dsp-why__bar i { display: block; height: 100%; border-radius: inherit; background: var(--sage); transform: scaleX(var(--p, 0)); transform-origin: left; transition: transform .9s var(--ease-out) calc(var(--k, 0) * 80ms); }
+  .dsp-why__row.is-part .dsp-why__bar i { background: var(--sun-600); }
+  .dsp-why__row.is-zero .dsp-why__bar i { background: var(--clay); }
+  .dsp-why__note { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .dsp-why__row.is-zero .dsp-why__note, .dsp-why__row.is-part .dsp-why__note { color: var(--clay-700); }
+  .dsp-why__go { margin-top: 1rem; }
+
+  /* 照服員卡片 */
+  .dsp-cands { list-style: none; display: grid; gap: .75rem; }
+  .dsp-cands__sep { display: flex; align-items: center; gap: .6rem; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .dsp-cands__sep::after { content: ""; flex: 1; border-top: 1px dashed var(--line-2); }
+  .dsp-cand {
+    position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "ring who dist" "ring fit fit" "ring week week" "ring note note";
+    gap: .45rem 1.1rem; padding: 1rem 1.2rem 1.05rem 1rem;
+    border: 1.5px solid var(--line); border-radius: var(--r-lg); background: var(--paper);
+    transition: border-color var(--dur-2), box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out), background-color var(--dur-2);
+  }
+  .dsp-cand:hover { border-color: var(--line-2); box-shadow: var(--shadow-2); transform: translateY(-2px); }
+  .dsp-cand.is-selected { border-color: var(--sage-700); background: linear-gradient(180deg, var(--sage-50), var(--paper) 55%); box-shadow: 0 0 0 4px var(--sage-100); }
+  .dsp-cand:has(.dsp-cand__pick:focus-visible) { outline: 3px solid var(--focus-ink); outline-offset: 3px; box-shadow: 0 0 0 9px var(--focus-halo); }
+  .dsp-cand__ring { grid-area: ring; position: relative; align-self: start; }
+  .dsp-cand__rank {
+    position: absolute; left: -6px; top: -6px; z-index: 2; display: grid; place-items: center;
+    min-width: 24px; height: 24px; padding: 0 5px; border-radius: var(--r-pill);
+    background: var(--paper); border: 2px solid var(--sage-700); color: var(--sage-800);
+    font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .dsp-cand.is-selected .dsp-cand__rank { background: var(--sage-700); color: #fff; }
+  .dsp-cand__who { grid-area: who; min-width: 0; }
+  .dsp-cand__name { display: flex; align-items: center; flex-wrap: wrap; gap: .2rem .6rem; font-size: var(--fs-xl); line-height: 1.3; }
+  .dsp-cand__pick { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  .dsp-cand__chosen { display: none; }
+  .dsp-cand.is-selected .dsp-cand__chosen { display: inline-flex; }
+  .dsp-cand__meta { font-size: var(--fs-sm); color: var(--ink-3); }
+  .dsp-cand__dist { grid-area: dist; text-align: right; line-height: 1.25; white-space: nowrap; }
+  .dsp-cand__dist b { font-family: var(--font-hand); font-size: 1.55rem; font-variant-numeric: tabular-nums; }
+  .dsp-cand__dist small { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
+  .dsp-cand__fit { grid-area: fit; display: flex; flex-wrap: wrap; gap: .35rem; }
+  .dsp-fit { display: inline-flex; align-items: center; gap: .25rem; padding: .05rem .55rem .05rem .4rem; border-radius: 8px; font-size: var(--fs-xs); font-weight: 500; line-height: 1.75; white-space: nowrap; }
+  .dsp-fit .i { width: 1.05em; height: 1.05em; }
+  .dsp-fit--ok { background: var(--sage-50); color: var(--sage-800); box-shadow: inset 0 0 0 1px var(--sage-200); }
+  .dsp-fit--miss { background: var(--clay-50); color: var(--clay-700); box-shadow: inset 0 0 0 1px var(--clay-200); }
+  .dsp-fit--plain { background: var(--linen-2); color: var(--ink-2); }
+  .dsp-cand__week { grid-area: week; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem 1.4rem; align-items: end; }
+  .dsp-week__label, .dsp-load__label { display: flex; justify-content: space-between; gap: .5rem; font-size: var(--fs-xs); color: var(--ink-3); margin-bottom: .3rem; }
+  .dsp-load__label b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .dsp-week__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: .25rem; font-size: 11.5px; text-align: center; color: var(--ink-4); line-height: 1.2; }
+  .dsp-week__days span.is-req { color: var(--ink); font-weight: 700; }
+  .dsp-cand .avail i { height: 9px; }
+  .dsp-cand .avail i.is-req { box-shadow: 0 0 0 1.5px var(--ink-2); }
+  .dsp-cand__note { grid-area: note; list-style: none; display: grid; gap: .15rem; font-size: var(--fs-sm); color: var(--clay-700); }
+  .dsp-cand__note li { display: flex; align-items: flex-start; gap: .4rem; }
+  .dsp-cand__note .i { margin-top: .2em; }
+  .dsp-cand__note li.is-ok { color: var(--sage-800); }
+
+  /* ---------- 排班 ---------- */
+  .dsp-arrange { scroll-margin-top: calc(var(--header-h) + 16px); }
+  .dsp-tray-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .8rem 1.5rem; align-items: center; margin-bottom: var(--sp-4); }
+  .dsp-tray { display: flex; flex-wrap: wrap; gap: .6rem; list-style: none; }
+  .dsp-chip {
+    display: inline-flex; align-items: center; gap: .65rem; min-height: 58px; padding: .45rem 1rem .45rem .55rem;
+    border: 1.5px dashed var(--sun-600); border-radius: var(--r); background: var(--sun-50); color: var(--ink);
+    font: inherit; text-align: left; line-height: 1.3;
+    transition: border-color var(--dur-2), background-color var(--dur-2), box-shadow var(--dur-2), transform var(--dur-1);
+  }
+  .dsp-chip:hover { box-shadow: var(--shadow-1); transform: translateY(-1px); }
+  .dsp-chip .dnd-handle { display: grid; place-items: center; width: 28px; height: 40px; border-radius: 8px; }
+  .dsp-chip__text { display: flex; flex-direction: column; }
+  .dsp-chip__day { font-family: var(--font-hand); font-weight: 700; font-size: var(--fs-lg); }
+  .dsp-chip__time { font-size: var(--fs-xs); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .dsp-chip__state { display: inline-flex; align-items: center; gap: .3rem; margin-left: .2rem; padding: .05rem .5rem; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 700; background: var(--sun-100); color: var(--sun-700); white-space: nowrap; }
+  .dsp-chip__state .i { width: 1em; height: 1em; }
+  .dsp-chip.is-ok { border-style: solid; border-color: var(--sage-300); background: var(--paper); }
+  .dsp-chip.is-ok .dsp-chip__state { background: var(--sage-100); color: var(--sage-800); }
+  .dsp-chip.is-bad { border-style: solid; border-color: var(--clay-200); background: var(--clay-50); }
+  .dsp-chip.is-bad .dsp-chip__state { background: var(--clay-100); color: var(--clay-700); }
+  .dsp-tray__actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+  .dsp-pickhint { display: none; align-items: center; gap: .6rem; margin-bottom: var(--sp-3); padding: .55rem .9rem; border-radius: var(--r); background: var(--sun-100); color: var(--ink); font-size: var(--fs-sm); font-weight: 500; }
+  .dsp-arrange.is-picking .dsp-pickhint { display: flex; }
+  .dsp-legend { margin-bottom: var(--sp-3); font-size: var(--fs-xs); }
+  .dsp-sw { width: 22px; height: 14px; border-radius: 4px; flex: none; }
+  .dsp-sw--busy { background: var(--linen-2); box-shadow: inset 3px 0 0 var(--line-2); }
+  .dsp-sw--new { background: var(--sage-100); box-shadow: inset 3px 0 0 var(--sage-700); }
+  .dsp-sw--bad { background: repeating-linear-gradient(135deg, var(--clay-50) 0 4px, var(--clay-100) 4px 8px); box-shadow: inset 3px 0 0 var(--clay); }
+  .dsp-sw--ghost { border: 2px dashed var(--sun-600); background: transparent; }
+  .dsp-sw--off { background: repeating-linear-gradient(135deg, var(--paper) 0 3px, var(--linen-3) 3px 5px); box-shadow: inset 0 0 0 1px var(--line); }
+
+  .dsp-sched-wrap { border: 0; border-radius: var(--r-lg); background: transparent; }
+  .dsp-sched { --row: 1.6rem; position: relative; grid-template-rows: auto repeat(20, var(--row)); }
+  .dsp-sched .sched__day.is-rest { color: var(--ink-3); background: var(--linen-3); }
+  .dsp-sched .sched__hour { padding-top: .2rem; }
+  .dsp-cell {
+    appearance: none; min-height: 0; margin: 0; padding: 0; border: 0;
+    border-top: 1px dashed var(--line); border-left: 1px solid var(--line);
+    background: transparent; font: inherit; color: inherit; cursor: pointer;
+  }
+  .dsp-cell:hover { background-color: var(--sun-50); }
+  .dsp-cell.is-off { cursor: default; background: repeating-linear-gradient(135deg, transparent 0 7px, rgba(163, 152, 137, .14) 7px 9px); }
+  .dsp-cell:focus-visible { position: relative; z-index: 6; outline-offset: -3px; box-shadow: inset 0 0 0 6px var(--focus-halo); }
+  /* 同一格重疊的時段（例如衝突）並排成多欄，既有排班不會被蓋住 */
+  .dsp-sched .sched__block {
+    z-index: 2; justify-self: start; overflow: hidden;
+    width: calc(100% / var(--n, 1) - 7px); margin: 3px 0 3px calc(100% * var(--lane, 0) / var(--n, 1) + 4px);
+  }
+  .dsp-busy { pointer-events: none; }
+  .dsp-busy b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dsp-placed {
+    z-index: 4; border-width: 0 0 0 4px; border-style: solid; text-align: left; font: inherit; font-size: var(--fs-xs);
+    box-shadow: var(--shadow-1); cursor: grab;
+  }
+  .dsp-placed:not(.is-fresh) { animation: none; }
+  .dsp-placed .i { width: 1em; height: 1em; }
+  .dsp-placed__svc { color: var(--ink-3); font-size: 11.5px; letter-spacing: .02em; }
+  .sched__block--conflict.dsp-placed .dsp-placed__svc { color: var(--clay-700); }
+  .dsp-placed.is-picked { outline-offset: -2px; }
+  /* 指標拖曳時，讓指標穿過已排的時段，才量得到底下的格子 */
+  .is-dnd .dsp-placed { pointer-events: none; }
+  /* 原申請時段只畫虛線框，標籤放右下角，不遮住底下既有排班的文字 */
+  .dsp-ghost { position: relative; z-index: 3; margin: 1px 2px; border: 2px dashed var(--sun-600); border-radius: 13px; pointer-events: none; }
+  .dsp-ghost span { position: absolute; right: 4px; bottom: 4px; padding: 0 .4rem; border-radius: var(--r-pill); background: var(--sun-100); color: var(--sun-700); font-size: 11.5px; font-weight: 700; line-height: 1.6; white-space: nowrap; }
+  .dsp-arrange.is-picking .dsp-ghost { border-color: var(--sun-700); }
+
+  .dsp-issues { margin-top: var(--sp-4); }
+  .dsp-issues .notice { align-items: center; }
+  .dsp-issues ul { list-style: none; display: grid; gap: .2rem; margin-top: .2rem; font-size: var(--fs-sm); }
+  .dsp-issues__body { flex: 1; min-width: 0; }
+  .dsp-issues__body > b { font-family: var(--font-hand); font-size: var(--fs-lg); }
+
+  .dsp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem 2rem; margin-top: var(--sp-5); padding-top: var(--sp-5); border-top: 1px dashed var(--line-2); }
+  .dsp-foot__sum { display: grid; gap: .35rem; min-width: min(100%, 22rem); }
+  .dsp-foot__line { font-size: var(--fs-sm); color: var(--ink-2); }
+  .dsp-foot__line b { font-family: var(--font-hand); font-size: var(--fs-xl); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .dsp-foot .meter { width: min(100%, 22rem); }
+  .dsp-load-new { --c: var(--sage-300); }
+
+  /* 全部派完 */
+  .dsp-done { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: var(--sp-6); align-items: center; padding: var(--sp-6) var(--sp-7); }
+  .dsp-done h2 { font-size: var(--fs-3xl); }
+  .dsp-done p { margin-top: .6rem; color: var(--ink-2); font-size: var(--fs-lg); }
+  .dsp-done .cluster { margin-top: var(--sp-5); }
+
+  /* ---------- 確認派案 modal ---------- */
+  .dsp-pair { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .5rem; padding: 1rem 1.1rem; border-radius: var(--r-lg); background: var(--linen); border: 1px solid var(--line); }
+  .dsp-pair__who { display: grid; justify-items: center; gap: .35rem; text-align: center; min-width: 5.5rem; }
+  .dsp-pair__who b { font-family: var(--font-hand); font-size: var(--fs-lg); line-height: 1.2; }
+  .dsp-pair__who small { font-size: var(--fs-xs); color: var(--ink-3); }
+  .dsp-pair__mid { display: grid; justify-items: center; gap: .1rem; min-width: 0; }
+  .dsp-pair__svg { width: 100%; max-width: 240px; height: auto; overflow: visible; }
+  .dsp-pair__line { fill: none; stroke: var(--sage-700); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 2; stroke-dashoffset: 1.05; }
+  .dsp-pair__heart { fill: var(--clay); opacity: 0; transform: scale(.3); transform-box: fill-box; transform-origin: center; }
+  .dsp-pair.is-on .dsp-pair__line { stroke-dashoffset: 0; transition: stroke-dashoffset 1.1s var(--ease-soft) .15s; }
+  .dsp-pair.is-on .dsp-pair__heart { opacity: 1; transform: none; transition: opacity .4s ease 1s, transform .7s var(--ease-spring) 1s; }
+  .dsp-pair__score { font-size: var(--fs-xs); font-weight: 700; color: var(--sage-800); }
+  .dsp-sum { margin-top: 1.1rem; }
+  .dsp-sum dd .cluster { gap: .3rem; }
+  .dsp-sum__slots { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem; }
+  .dsp-confirm-sec { margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px dashed var(--line-2); display: grid; gap: .8rem; }
+  .dsp-confirm-sec .check { align-items: flex-start; min-height: 0; padding-block: .3rem; }
+  .dsp-confirm-sec .check input { margin-top: .15rem; }
+  .dsp-consent { padding: .8rem 1rem; border-radius: var(--r); background: var(--sun-50); border: 1px solid var(--sun-200); }
+  .dsp-consent.is-invalid { background: var(--clay-50); border-color: var(--clay-200); }
+  .dsp-consent .field__error { margin-top: .3rem; }
+  .dsp-consent.is-invalid .field__error { display: flex; }
+  .dsp-rules { list-style: none; display: grid; gap: .6rem; margin: 1rem 0; }
+  .dsp-rules li { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: .75rem; padding: .7rem .9rem; border-radius: var(--r); background: var(--linen); font-size: var(--fs-sm); color: var(--ink-2); }
+  .dsp-rules b { color: var(--ink); font-family: var(--font-hand); font-size: var(--fs-md); }
+
+  /* ---------- Responsive ---------- */
+  @media (min-width: 1081px) and (min-height: 860px) {
+    html:not([data-fontsize="xl"]) .dsp-top__why { position: sticky; top: calc(var(--header-h) + 18px); }
+  }
+  @media (max-width: 1240px) {
+    .dsp-match { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); }
+    .dsp-top { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1080px) {
+    .dsp-head { grid-template-columns: minmax(0, 1fr); }
+    .dsp-head__art { max-width: 340px; }
+    .dsp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dsp-stat:nth-child(3)::before { display: none; }
+    .dsp-stat:nth-child(n+3) { border-top: 1px dashed var(--line-2); }
+    .dsp-match { grid-template-columns: minmax(0, 1fr); }
+    .dsp-left { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .dsp-q[aria-pressed="true"]::after { display: none; }
+    .dsp-top { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .dsp-left { grid-template-columns: minmax(0, 1fr); }
+    /* 佇列改成橫向滑動，選了個案就能直接往下看需求與推薦 */
+    .dsp-qlist { display: flex; gap: .6rem; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 4px 10px; margin-inline: -4px; }
+    .dsp-qlist > li { flex: 0 0 min(84%, 300px); scroll-snap-align: start; display: flex; }
+    .dsp-q { height: 100%; }
+    .dsp-top { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .dsp-head { margin-bottom: var(--sp-5); }
+    .dsp-head__art { max-width: 260px; justify-self: center; order: -1; }
+    .dsp-head__tools { gap: .6rem; }
+    /* 手機：四個步驟排成等寬四欄，圓點在上、文字在下，連接線改畫在圓點之間 */
+    .dsp-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; gap: 0; }
+    .dsp-steps .step { position: relative; flex-direction: column; gap: .3rem; text-align: center; }
+    .dsp-steps .step + .step::before { position: absolute; top: 15px; right: calc(50% + 19px); width: calc(100% - 38px); margin: 0; }
+    .dsp-steps .step__label { font-size: var(--fs-xs); }
+    .dsp-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-radius: var(--r-lg); }
+    .dsp-stat { padding: .9rem 1rem 1rem; }
+    .dsp-stat__num { font-size: 2rem; }
+    .dsp-need__list > div { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+    .dsp-cand { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "ring who" "ring dist" "fit fit" "week week" "note note"; padding: .95rem 1rem; gap: .45rem .9rem; }
+    .dsp-cand__dist { text-align: left; }
+    .dsp-cand__dist small { display: inline; margin-left: .4rem; }
+    .dsp-cand__week { grid-template-columns: minmax(0, 1fr); gap: .7rem; }
+    .dsp-why__row { grid-template-columns: 2.6rem minmax(0, 1fr) 3.3rem; }
+    .dsp-tray-wrap { grid-template-columns: minmax(0, 1fr); }
+    .dsp-tray__actions { justify-content: flex-start; }
+    .dsp-tray__actions .btn { flex: 1 1 auto; }
+    .dsp-tray { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dsp-chip { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .15rem .45rem; width: 100%; min-height: 52px; padding-right: .7rem; }
+    .dsp-chip .dnd-handle { grid-row: 1 / span 2; }
+    .dsp-chip__state { margin-left: 0; justify-self: start; }
+    .dsp-foot .btn--lg { width: 100%; }
+    .dsp-done { grid-template-columns: minmax(0, 1fr); padding: var(--sp-5); text-align: center; }
+    .dsp-done svg { max-width: 220px; justify-self: center; }
+    .dsp-done .cluster { justify-content: center; }
+    .dsp-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .dsp-pair__mid { grid-column: 1 / -1; grid-row: 2; }
+    .dsp-rules li { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="topstrip">
+  <div class="wrap topstrip__inner">
+    <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回目錄</a>
+    <span class="topstrip__org hide-sm">澄港市長期照顧管理中心</span>
+    <span class="topstrip__meta">
+      <span class="hide-sm">長照諮詢專線 0800-178-520</span>
+      <span class="topstrip__date">2026/10/27（二）10:20</span>
+    </span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港長照 申請與派案系統，回到總覽">
+      <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 3.5c11.6 0 20.5 8.4 20.5 20.2S35.4 44.5 23.6 44.5 3.5 35.8 3.5 24 12.6 3.5 24 3.5z" fill="#FBEDCB"/>
+        <path d="M10.5 22.5 24 11l13.5 11.5" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14.5 20v14M33.5 20v14" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M24 33c-4.6-3.1-7.4-5.8-7.4-8.6a3.6 3.6 0 0 1 7.4-1.5 3.6 3.6 0 0 1 7.4 1.5c0 2.8-2.8 5.5-7.4 8.6z" fill="#C4704F"/>
+        <path d="M9.5 37.5c6 1.6 23 1.6 29 0" fill="none" stroke="#6E8B74" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">澄港長照</span><span class="brand__sub">申請與派案系統</span></span>
+    </a>
+
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav">
+        <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>總覽</a></li>
+        <li><a class="nav__link" href="cases.html"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>個案列表</a></li>
+        <li><a class="nav__link" href="case.html"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>個案詳情</a></li>
+        <li><a class="nav__link is-active" href="dispatch.html" aria-current="page"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>派案媒合<span class="nav__count" data-count="dispatch" title="待派案">19</span></a></li>
+      </ul>
+      <div class="site-nav__extra">
+        <span>字級</span>
+        <div class="textsize" role="group" aria-label="字級">
+          <button type="button" data-textsize="md" aria-label="標準" aria-pressed="true">A</button>
+          <button type="button" data-textsize="lg" aria-label="大" aria-pressed="false">A</button>
+          <button type="button" data-textsize="xl" aria-label="特大" aria-pressed="false">A</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="header-tools">
+      <div class="textsize" role="group" aria-label="字級">
+        <svg class="i textsize__icon" aria-hidden="true"><use href="#i-type"/></svg>
+        <button type="button" data-textsize="md" aria-label="標準" aria-pressed="true">A</button>
+        <button type="button" data-textsize="lg" aria-label="大" aria-pressed="false">A</button>
+        <button type="button" data-textsize="xl" aria-label="特大" aria-pressed="false">A</button>
+      </div>
+      <button type="button" class="icon-btn bell" data-bell aria-haspopup="true" aria-expanded="false">
+        <svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>
+        <span class="sr-only">需要關懷的提醒</span>
+        <span class="bell__count" data-count="reminders" data-count-hide-zero>6</span>
+      </button>
+      <div class="me">
+        <span class="seal seal--sm seal--ink" aria-hidden="true"><span class="seal__t">語晴</span></span>
+        <span class="me__text"><b>林語晴</b><small>照管專員・舊城／港埕</small></span>
+      </div>
+      <button type="button" class="icon-btn menu-toggle" data-nav-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單">
+        <svg class="i" aria-hidden="true"><use href="#i-menu"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page wrap">
+
+  <!-- ============ 頁首 ============ -->
+  <section class="dsp-head" aria-labelledby="page-title">
+    <div data-reveal>
+      <p class="eyebrow">派案媒合・下週一 11/2 起開始服務</p>
+      <h1 class="page-title dsp-head__title" id="page-title"><span>為每位長輩，</span><span>找到<span class="mark">對的那雙手</span>。</span></h1>
+      <p class="lede">依照顧技能、語言、性別偏好、距離與可服務時段推薦照服員。把時段卡拖進每週排班表就能安排，時段重疊會用陶土色溫和提醒；確認後同步通知家屬與照服員。</p>
+      <div class="dsp-head__tools">
+        <ol class="steps dsp-steps" id="flow-steps" aria-label="派案步驟"></ol>
+        <button type="button" class="btn btn--quiet btn--sm" id="rules-btn"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>配對分數怎麼算</button>
+      </div>
+    </div>
+    <div class="dsp-head__art draw-scope" data-anim>
+      <svg class="ill" viewBox="0 0 320 150" role="img" aria-label="插畫：照服員騎著機車，沿著小路來到長輩家門口">
+        <path class="ill__blob" data-draw-fill style="--d:0" d="M28 120C8 86 26 38 84 28c46-8 72 16 114 9 54-9 108 18 108 66 0 42-48 54-134 52-62-1-126-7-144-35z"/>
+        <path class="ill__sun" data-draw-fill style="--d:2" d="M280 20a14 14 0 1 1 0 28a14 14 0 1 1 0-28z"/>
+        <path class="ill__door" data-draw-fill style="--d:5" d="M58 132v-20a8 8 0 0 1 16 0v20z"/>
+        <path class="dsp-ill__basket" data-draw-fill style="--d:8" d="M200 88h17l-2 12h-13z"/>
+        <path class="dsp-ill__route" d="M198 129C166 120 128 137 80 129"/>
+        <g class="ill__line">
+          <path data-draw pathLength="1" style="--d:1" d="M12 132c74-5 158 4 296-3"/>
+          <path data-draw pathLength="1" style="--d:2" d="M30 82 66 52l36 30"/>
+          <path data-draw pathLength="1" style="--d:3" d="M40 74v58M92 74v58"/>
+          <path data-draw pathLength="1" style="--d:3" d="M84 67V54h8v20"/>
+          <path data-draw pathLength="1" style="--d:4" d="M58 132v-20a8 8 0 0 1 16 0v20"/>
+          <path class="ill__soft" data-draw pathLength="1" style="--d:6" d="M88 48c-4-4 3-8-1-12s3-8-1-12"/>
+        </g>
+        <g class="dsp-ill__scooter loop">
+          <g class="ill__line">
+            <path data-draw pathLength="1" style="--d:5" d="M206 122a9 9 0 1 0 18 0a9 9 0 1 0-18 0M252 122a9 9 0 1 0 18 0a9 9 0 1 0-18 0"/>
+            <path data-draw pathLength="1" style="--d:6" d="M215 122 224 88M218 86h12"/>
+            <path data-draw pathLength="1" style="--d:6" d="M226 112h24c8 0 14-5 14-12v-4h-24"/>
+            <path data-draw pathLength="1" style="--d:7" d="M240 58a9 9 0 1 0 18 0a9 9 0 1 0-18 0"/>
+            <path data-draw pathLength="1" style="--d:8" d="M249 67c-2 10-2 20 1 29M248 74c-8 3-15 8-20 13M250 96c-9 1-15 6-17 14"/>
+            <path data-draw pathLength="1" style="--d:8" d="M200 88h17l-2 12h-13zM217 92h5"/>
+            <path class="ill__soft" data-draw pathLength="1" style="--d:7" d="M239 56c0-8 5-12 10-12s10 4 10 12"/>
+            <path class="ill__soft" data-draw pathLength="1" style="--d:9" d="M282 84h16M288 96h12"/>
+          </g>
+        </g>
+        <path class="ill__heart" data-draw-fill style="--d:6" d="M66 98c-4-3-7-6-7-9a3.4 3.4 0 0 1 7-1.5 3.4 3.4 0 0 1 7 1.5c0 3-3 6-7 9z"/>
+        <g class="ill__float loop"><path class="ill__heart" data-draw-fill style="--d:11" d="M146 104c-6-5-11-10-11-15a5 5 0 0 1 11-2 5 5 0 0 1 11 2c0 5-5 10-11 15z"/></g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============ 概況 ============ -->
+  <section class="dsp-stats" aria-label="派案概況" data-reveal>
+    <div class="dsp-stat dsp-stat--attn">
+      <span class="dsp-stat__label"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>全市待派案</span>
+      <span class="dsp-stat__num"><span data-count="dispatch">19</span><small>位</small></span>
+      <span class="dsp-stat__sub" id="stat-queue">本頁清單 6 位・各區小組另有 13 位</span>
+    </div>
+    <div class="dsp-stat">
+      <span class="dsp-stat__label"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>清單平均等候</span>
+      <span class="dsp-stat__num"><span id="stat-wait">9.2</span><small>天</small></span>
+      <span class="dsp-waitbar" aria-hidden="true"><i id="stat-wait-bar"></i><b id="stat-wait-target"></b></span>
+      <span class="dsp-stat__sub" id="stat-wait-sub">目標 5 天內完成派案</span>
+    </div>
+    <div class="dsp-stat">
+      <span class="dsp-stat__label"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>照服員可再排</span>
+      <span class="dsp-stat__num"><span id="stat-hours">459</span><small>小時／週</small></span>
+      <span class="dsp-stat__sub" id="stat-hours-sub">15 位照服員・已排 142 小時</span>
+    </div>
+    <div class="dsp-stat">
+      <span class="dsp-stat__label"><svg class="i" aria-hidden="true"><use href="#i-check-circle"/></svg>本次已派</span>
+      <span class="dsp-stat__num"><span id="stat-done">0</span><small>位</small></span>
+      <span class="dsp-stat__sub" id="stat-done-sub">確認派案後會出現在這裡</span>
+    </div>
+  </section>
+
+  <!-- ============ 媒合：左個案、右照服員 ============ -->
+  <div class="dsp-match" id="match">
+    <div class="dsp-left">
+      <section class="panel dsp-queue" aria-labelledby="queue-title" data-reveal>
+        <div class="panel__head">
+          <span class="panel__icon panel__icon--clay"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg></span>
+          <div class="panel__titles">
+            <h2 class="panel__title" id="queue-title">待派個案</h2>
+            <p class="panel__sub">依等候天數排序，等最久的先媒合</p>
+          </div>
+        </div>
+        <div class="seg dsp-queue__seg" id="queue-filter" role="group" aria-label="篩選待派個案">
+          <button type="button" data-value="all" aria-pressed="true">全部 <span class="seg__n">6</span></button>
+          <button type="button" data-value="long" aria-pressed="false">等候 10 天以上 <span class="seg__n">3</span></button>
+          <button type="button" data-value="mine" aria-pressed="false">我承辦 <span class="seg__n">1</span></button>
+        </div>
+        <ul class="dsp-qlist" id="queue-list" aria-label="待派個案清單"></ul>
+        <p class="dsp-queue__note" id="queue-note"></p>
+      </section>
+
+      <section class="panel dsp-need" id="need" aria-labelledby="need-title" data-reveal style="--i:1">
+        <h2 class="sr-only" id="need-title">個案需求</h2>
+        <div id="need-body"></div>
+      </section>
+    </div>
+
+    <section class="panel dsp-cands-panel" id="cands" aria-labelledby="cands-title" data-reveal style="--i:1">
+      <div class="panel__head">
+        <span class="panel__icon"><svg class="i" aria-hidden="true"><use href="#i-hand"/></svg></span>
+        <div class="panel__titles">
+          <h2 class="panel__title" id="cands-title">推薦照服員</h2>
+          <p class="panel__sub" id="cands-sub"></p>
+        </div>
+        <div class="panel__actions dsp-cands__tools">
+          <div class="seg" id="cands-show" role="group" aria-label="顯示人數">
+            <button type="button" data-value="top" aria-pressed="true">前 5 位</button>
+            <button type="button" data-value="all" aria-pressed="false">全部 <span class="seg__n" id="cands-all-n">15</span> 位</button>
+          </div>
+          <label class="sr-only" for="cands-sort">排序方式</label>
+          <select class="select" id="cands-sort">
+            <option value="score">依配對分數</option>
+            <option value="km">依距離</option>
+            <option value="load">依本週負荷</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="dsp-top">
+        <figure class="dsp-map" data-anim>
+          <div class="diagram-scroll" id="map-scroll">
+            <svg class="dsp-map__svg" id="map-svg" viewBox="0 0 552 400" role="img" aria-labelledby="map-title map-desc">
+              <title id="map-title">媒合地圖</title>
+              <desc id="map-desc">個案住家與推薦照服員的位置。</desc>
+              <g aria-hidden="true">
+                <path class="dsp-map__sea" d="M0 0H40C30 40 52 80 44 120S58 170 50 200 30 250 42 290 54 350 40 400H0Z"/>
+                <path class="dsp-map__coast" d="M40 0C30 40 52 80 44 120S58 170 50 200 30 250 42 290 54 350 40 400"/>
+                <path class="dsp-map__wave" d="M8 46q5-5 10 0t10 0M12 132q5-5 10 0t10 0M6 236q5-5 10 0t10 0M10 336q5-5 10 0t10 0"/>
+                <text class="dsp-map__sea-label" x="20" y="152">澄港灣</text>
+                <path class="dsp-map__river" d="M478 198C442 214 412 234 374 238S320 262 290 264 240 250 210 262 150 286 120 270 70 252 44 260"/>
+                <text class="dsp-map__river-label" x="226" y="286">澄溪</text>
+                <g>
+                  <path class="dsp-map__road-casing" id="roads" d="M200 62C196 110 206 150 200 191M86 176C120 190 160 182 200 191M200 191C240 200 280 230 310 248M310 248C380 252 430 290 493 278M310 248C340 210 360 180 386 149M86 176C70 220 80 260 67 301M67 301C100 330 140 350 177 358M200 191C190 250 196 300 177 358M200 62C270 70 330 110 386 149"/>
+                  <path class="dsp-map__road" d="M200 62C196 110 206 150 200 191M86 176C120 190 160 182 200 191M200 191C240 200 280 230 310 248M310 248C380 252 430 290 493 278M310 248C340 210 360 180 386 149M86 176C70 220 80 260 67 301M67 301C100 330 140 350 177 358M200 191C190 250 196 300 177 358M200 62C270 70 330 110 386 149"/>
+                </g>
+                <path class="dsp-map__ridge" d="M424 128l16-22 12 14 14-20 20 28M478 186l18-26 13 16 16-22 22 32M330 92l12-16 10 12 11-14 14 18M450 352l14-18 10 12 12-16 18 22M512 112l12-16 10 12 12-15"/>
+                <path class="dsp-map__salt" d="M92 372h16v12H92zM112 372h16v12h-16zM132 372h16v12h-16zM102 388h16v10h-16zM122 388h16v10h-16z"/>
+                <text class="dsp-map__district" x="92" y="134" text-anchor="middle">港埕區</text>
+                <text class="dsp-map__district" x="262" y="56" text-anchor="middle">北岸區</text>
+                <text class="dsp-map__district" x="206" y="238" text-anchor="middle">舊城區</text>
+                <text class="dsp-map__district" x="392" y="108" text-anchor="middle">山腳區</text>
+                <text class="dsp-map__district" x="124" y="292" text-anchor="middle">新灣區</text>
+                <text class="dsp-map__district" x="238" y="376" text-anchor="middle">鹽田區</text>
+                <text class="dsp-map__district" x="330" y="300" text-anchor="middle">溪洲區</text>
+                <text class="dsp-map__district" x="486" y="234" text-anchor="middle">雲嶺區</text>
+              </g>
+              <g id="map-dyn"></g>
+            </svg>
+          </div>
+          <p class="diagram-scroll__hint"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>可左右滑動查看整張地圖<svg class="i" aria-hidden="true"><use href="#i-arrow-right"/></svg></p>
+          <figcaption>
+            <p class="dsp-map__route-text" id="map-route-text"></p>
+            <ul class="legend">
+              <li class="legend__item"><span class="dsp-lg-dot dsp-lg-dot--home"></span>長輩住家</li>
+              <li class="legend__item"><span class="dsp-lg-dot"></span>推薦照服員（數字為名次）</li>
+              <li class="legend__item"><span class="dsp-lg-dot dsp-lg-dot--minor"></span>其他照服員</li>
+              <li class="legend__item"><span class="dsp-lg-ring"></span>5 公里生活圈</li>
+            </ul>
+          </figcaption>
+        </figure>
+        <div class="dsp-top__why">
+          <div class="dsp-why" id="why" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <ol class="dsp-cands" id="cand-list" aria-label="推薦照服員清單"></ol>
+    </section>
+  </div>
+
+  <!-- ============ 排班 ============ -->
+  <section class="panel section dsp-arrange" id="arrange" aria-labelledby="arrange-title" data-reveal>
+    <div class="panel__head">
+      <span class="panel__icon panel__icon--sun"><svg class="i" aria-hidden="true"><use href="#i-calendar"/></svg></span>
+      <div class="panel__titles">
+        <h2 class="panel__title" id="arrange-title">安排每週服務時段</h2>
+        <p class="panel__sub" id="arrange-sub"></p>
+      </div>
+    </div>
+
+    <div class="dsp-tray-wrap">
+      <div>
+        <p class="toolbar__label" id="tray-label">時段卡（依申請時段預排，可拖曳調整）</p>
+        <ul class="dsp-tray" id="tray" aria-labelledby="tray-label" aria-describedby="tray-help"></ul>
+        <p class="sr-only" id="tray-help">按 Enter 選取時段卡，再到排班表用方向鍵移動、按 Enter 放下；按 Esc 取消。</p>
+      </div>
+      <div class="dsp-tray__actions">
+        <button type="button" class="btn btn--soft btn--sm" id="reset-slots"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>恢復申請時段</button>
+        <button type="button" class="btn btn--quiet btn--sm" id="clear-slots"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>全部移出</button>
+      </div>
+    </div>
+
+    <p class="dsp-pickhint" id="pick-hint"><svg class="i" aria-hidden="true"><use href="#i-hand"/></svg><span id="pick-hint-text"></span></p>
+
+    <ul class="legend dsp-legend">
+      <li class="legend__item"><span class="dsp-sw dsp-sw--busy"></span>照服員既有排班</li>
+      <li class="legend__item"><span class="dsp-sw dsp-sw--new"></span>這次排入</li>
+      <li class="legend__item"><span class="dsp-sw dsp-sw--bad"></span>時段重疊・需調整</li>
+      <li class="legend__item"><span class="dsp-sw dsp-sw--ghost"></span>原申請時段</li>
+      <li class="legend__item"><span class="dsp-sw dsp-sw--off"></span>非服務時段</li>
+    </ul>
+
+    <div class="table-wrap dsp-sched-wrap">
+      <div class="sched dsp-sched" id="sched" style="--days:6" role="group" aria-label="每週排班表"></div>
+    </div>
+    <p class="diagram-scroll__hint"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>排班表可左右滑動；手機上先點時段卡，再點格子排入<svg class="i" aria-hidden="true"><use href="#i-arrow-right"/></svg></p>
+
+    <div class="dsp-issues" id="issues" aria-live="polite"></div>
+
+    <div class="dsp-foot">
+      <div class="dsp-foot__sum" id="foot-sum"></div>
+      <button type="button" class="btn btn--primary btn--lg" id="confirm-open"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>確認派案</button>
+    </div>
+  </section>
+
+  <!-- ============ 全部派完 ============ -->
+  <section class="panel section dsp-done" id="all-done" aria-labelledby="done-title" hidden>
+    <svg viewBox="0 0 220 150" role="img" aria-label="插畫：家門口亮著燈，屋頂上飄著一顆心">
+      <path class="ill__blob" d="M20 116C2 84 22 34 78 26c42-6 64 14 96 10 30-4 44 20 40 54-4 40-40 50-100 48-54-2-80-6-94-22z"/>
+      <path class="ill__door" d="M86 132v-22a9 9 0 0 1 18 0v22z"/>
+      <g class="ill__line">
+        <path d="M10 132c66-4 134 3 200-2"/>
+        <path d="M48 86 95 48l47 38"/>
+        <path d="M58 78v54M132 78v54"/>
+        <path d="M86 132v-22a9 9 0 0 1 18 0v22"/>
+        <path d="M150 132v-18h20v18M160 114c0-10-6-16-12-20M160 112c2-10 8-14 14-16"/>
+      </g>
+      <path class="ill__heart" d="M95 40c-7-6-12-11-12-17a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 6-5 11-12 17z"/>
+      <path class="ill__heart" d="M95 98c-4-3-7-6-7-9a3.4 3.4 0 0 1 7-1.5 3.4 3.4 0 0 1 7 1.5c0 3-3 6-7 9z"/>
+    </svg>
+    <div>
+      <p class="eyebrow">清單都完成了</p>
+      <h2 id="done-title">每位長輩都找到照服員了</h2>
+      <p id="done-text">辛苦了。派案通知已送給家屬與照服員，首次服務前一天系統會再提醒一次。</p>
+      <div class="cluster">
+        <a class="btn btn--primary" href="cases.html?stage=service"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>查看服務中個案</a>
+        <a class="btn" href="index.html"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>回到總覽</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap site-footer__inner">
+    <div class="site-footer__brand">
+      <a class="brand" href="index.html" aria-label="澄港長照 申請與派案系統，回到總覽">
+        <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M24 3.5c11.6 0 20.5 8.4 20.5 20.2S35.4 44.5 23.6 44.5 3.5 35.8 3.5 24 12.6 3.5 24 3.5z" fill="#FBEDCB"/>
+          <path d="M10.5 22.5 24 11l13.5 11.5" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14.5 20v14M33.5 20v14" fill="none" stroke="#2E2A26" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M24 33c-4.6-3.1-7.4-5.8-7.4-8.6a3.6 3.6 0 0 1 7.4-1.5 3.6 3.6 0 0 1 7.4 1.5c0 2.8-2.8 5.5-7.4 8.6z" fill="#C4704F"/>
+          <path d="M9.5 37.5c6 1.6 23 1.6 29 0" fill="none" stroke="#6E8B74" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        <span class="brand__text"><span class="brand__name">澄港長照</span><span class="brand__sub">申請與派案系統</span></span>
+      </a>
+      <p>讓每一位長輩都能在熟悉的家裡被好好照顧。從申請、到宅評估、擬定計畫到媒合照服員，我們陪家屬一起走。</p>
+      <p class="site-footer__hotline">
+        <span class="panel__icon panel__icon--sun"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg></span>
+        <span>長照諮詢專線 <b>0800-178-520</b><small>週一至週六 8:00–20:00，免付費</small></span>
+      </p>
+    </div>
+    <nav aria-label="頁尾導覽">
+      <h2 class="footer-title">系統頁面</h2>
+      <ul class="footer-links">
+        <li><a href="index.html"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>總覽</a></li>
+        <li><a href="cases.html"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>個案列表</a></li>
+        <li><a href="case.html"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>個案詳情</a></li>
+        <li><a href="dispatch.html"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg>派案媒合</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h2 class="footer-title">澄港市長期照顧管理中心</h2>
+      <address>舊城區府前街 1 號 3 樓<br>週一至週五 8:30–17:30<br>傳真 (07) 551-2046</address>
+    </div>
+  </div>
+  <div class="wrap site-footer__bottom">
+    <span>© 2026 澄港市長期照顧管理中心・作品集虛構示範，個案、人名與數據皆為虛構</span>
+    <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回目錄</a>
+  </div>
+</footer>
+
+<!-- ============ 確認派案 ============ -->
+<dialog class="modal" id="confirm-dlg" aria-labelledby="confirm-title">
+  <div class="modal__head">
+    <span class="modal__icon"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg></span>
+    <h2 class="modal__title" id="confirm-title">確認派案</h2>
+    <button type="button" class="icon-btn modal__close" data-close aria-label="關閉"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+  </div>
+  <form class="modal__body" id="confirm-form" novalidate>
+    <div class="dsp-pair" id="pair"></div>
+    <dl class="kv dsp-sum" id="confirm-kv"></dl>
+    <div class="dsp-confirm-sec">
+      <div id="consent-slot"></div>
+      <fieldset class="fieldset">
+        <legend class="label">同步通知</legend>
+        <div id="notify-list"></div>
+      </fieldset>
+      <div class="field">
+        <label class="label" for="handoff">給照服員的交接重點</label>
+        <textarea class="textarea" id="handoff" name="handoff" rows="3" maxlength="200" aria-describedby="handoff-hint"></textarea>
+        <p class="hint" id="handoff-hint">會隨派案通知一起送出，最多 200 字。</p>
+      </div>
+    </div>
+  </form>
+  <div class="modal__foot">
+    <button type="button" class="btn" data-close>再想想</button>
+    <button type="submit" class="btn btn--primary" form="confirm-form"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>確認派案</button>
+  </div>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, fmt, esc, icon, seal, $, $$ } = App;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+  /* ================= 常數與小工具 ================= */
+  const DAYS = [1, 2, 3, 4, 5, 6];           // 週一到週六；長照居服週日不排
+  const H0 = 8, H1 = 18;                      // 排班表 08:00–18:00
+  const DAY_CH = '一二三四五六日';
+  const WEEK = DAYS.map(d => new Date(2026, 10, 1 + d)); // 下週一 11/2 起
+  const TARGET = DATA.stats.targetDays.dispatch;
+  // 照服員本人提供的服務；專業復能、交通接送、喘息由其他單位派員
+  const CARE_GROUPS = ['身體照顧', '日常生活', '陪伴', '外出'];
+  const TODAY = new Date(App.NOW.getFullYear(), App.NOW.getMonth(), App.NOW.getDate());
+  const hr = fmt.hour;
+  const len = s => s.to - s.from;
+  // 半小時一列：第 2 列是 08:00，讓 11:30 這類時段也能對齊格線
+  const rowOf = h => Math.round((Math.min(Math.max(h, H0), H1) - H0) * 2) + 2;
+  const MX = x => 16 + (x - 2.5) * 19, MY = y => 16 + y * 19; // 公里座標 → 地圖 px
+  const MAP_W = 552, MAP_H = 400, KM_PX = 19;
+
+  const waitDays = c => Math.round((TODAY - App.toDate(c.request.since)) / 864e5);
+  const waitTone = d => (d >= 10 ? 'clay' : d > TARGET ? 'sun' : 'sage');
+  const honor = c => (c.age >= 70 ? (c.gender === 'F' ? '阿嬤' : '阿公') : (c.gender === 'F' ? '女士' : '先生'));
+  const travelMin = (km, vehicle) => Math.max(3, Math.round(km / (vehicle === '汽車' ? 30 : 25) * 60) + 2);
+  const slotText = (day, from, to) => `${fmt.dayName(day)} ${hr(from)}–${hr(to)}`;
+  const kmText = km => km.toFixed(1); // 統一一位小數，1 公里也寫成 1.0，清單裡的數字才對得齊
+  // 「山腳區・年資 10 年・汽車」這類短句：每段不拆行，窄螢幕只在「・」處換行（參數須已跳脫）
+  const segs = parts => parts.map(p => `<span class="nowrap">${p}</span>`).join('・');
+  const dateOfDay = d => WEEK[d - 1];
+
+  // 「週一、三、五 09:00–11:00」：同一段時間的日子合併
+  function sessionsSummary(sessions) {
+    const groups = [];
+    sessions.forEach(s => {
+      const g = groups.find(x => x.from === s.from && x.to === s.to);
+      if (g) g.days.push(s.day); else groups.push({ from: s.from, to: s.to, days: [s.day] });
+    });
+    return groups.map(g => `週${g.days.map(d => DAY_CH[d - 1]).join('、')} ${hr(g.from)}–${hr(g.to)}`).join('；');
+  }
+
+  /* ================= 頁面狀態 ================= */
+  const state = {
+    caseId: null,
+    filter: 'all',
+    show: 'top',
+    sort: 'score',
+    plans: {},        // caseId → { cgId, slots: [{day, from} | null] }；切換個案時保留草稿
+    dispatched: [],   // 本次派出的個案 [{ id, cgId }]
+    called: {},       // caseId → 致電家屬的時間（Date）
+    fresh: null,     // 剛放下的時段（只讓它彈一下）
+    focusSess: null,  // 重繪後要把焦點還給哪張時段
+    dataVer: 0,
+  };
+
+  const queue = () => DATA.cases.filter(c => c.stage === 'dispatch' && c.request).sort((a, b) => waitDays(b) - waitDays(a) || a.id.localeCompare(b.id));
+  const current = () => (state.caseId ? App.getCase(state.caseId) : null);
+
+  function ranked(c) {
+    return DATA.caregivers.map(cg => ({ cg, m: App.match(c, cg) }))
+      .sort((a, b) => b.m.score - a.m.score || a.m.km - b.m.km)
+      .map((x, i) => Object.assign(x, { rank: i + 1 }));
+  }
+
+  function planOf(c) {
+    if (!state.plans[c.id]) {
+      state.plans[c.id] = { cgId: ranked(c)[0].cg.id, slots: c.request.sessions.map(s => ({ day: s.day, from: s.from })) };
+    }
+    return state.plans[c.id];
+  }
+
+  // 單一時段對某位照服員是否可排：ok / conflict（和既有排班或同案其他時段重疊）/ off（不在服務時間）/ none（未排入）
+  function slotInfo(c, cg, idx, slots) {
+    const slot = slots[idx];
+    if (!slot) return { status: 'none' };
+    const from = slot.from, to = from + len(c.request.sessions[idx]);
+    const win = cg.avail[slot.day];
+    if (!win) return { status: 'off', text: `${fmt.dayName(slot.day)}不是${cg.name}的服務日` };
+    if (from < win[0] || to > win[1]) return { status: 'off', text: `${cg.name}${fmt.dayName(slot.day)}只服務 ${hr(win[0])}–${hr(win[1])}` };
+    if (to > H1) return { status: 'off', text: '超出排班表的時間範圍' };
+    const hit = App.bookingsOf(cg.id).find(b => b.day === slot.day && b.from < to && from < b.to);
+    if (hit) return { status: 'conflict', text: `和${hit.caseId ? hit.label + '的服務' : '其他個案'}（${hr(hit.from)}–${hr(hit.to)}）重疊` };
+    const twin = slots.findIndex((o, k) => o && k !== idx && o.day === slot.day && o.from < to && from < o.from + len(c.request.sessions[k]));
+    if (twin >= 0) return { status: 'conflict', text: '和這位長輩的另一個時段重疊' };
+    return { status: 'ok' };
+  }
+
+  const infosOf = (c, cg, plan) => plan.slots.map((_, i) => slotInfo(c, cg, i, plan.slots));
+
+  /* ================= 概況 ================= */
+  function renderStats(q) {
+    const others = App.counts().dispatch - q.length;
+    $('#stat-queue').innerHTML = segs([q.length ? `本頁清單 ${q.length} 位` : '本頁清單已全部派出', `各區小組另有 ${others} 位`]);
+    const avg = q.length ? q.reduce((s, c) => s + waitDays(c), 0) / q.length : 0;
+    $('#stat-wait').textContent = q.length ? avg.toFixed(1) : '0';
+    const SCALE = 15; // 等候條以 15 天為滿格
+    $('#stat-wait-bar').style.setProperty('--p', Math.min(avg / SCALE, 1));
+    $('#stat-wait-target').style.setProperty('--t', TARGET / SCALE);
+    $('#stat-wait-sub').textContent = q.length ? `目標 ${TARGET} 天內派案・最久 ${waitDays(q[0])} 天（${q[0].name}）` : `目標 ${TARGET} 天內派案`;
+
+    const booked = DATA.caregivers.reduce((s, cg) => s + App.bookingsOf(cg.id).reduce((t, b) => t + len(b), 0), 0);
+    const cap = DATA.caregivers.reduce((s, cg) => s + cg.cap, 0);
+    $('#stat-hours').textContent = fmt.num(Math.round(cap - booked));
+    $('#stat-hours-sub').innerHTML = segs([`本組 ${DATA.caregivers.length} 位`, `已排 ${fmt.num(Math.round(booked))} 小時`]);
+
+    const done = state.dispatched.map(d => ({ c: App.getCase(d.id), cg: App.getCaregiver(d.cgId) }));
+    $('#stat-done').textContent = done.length;
+    $('#stat-done-sub').innerHTML = done.length
+      ? `<span class="dsp-done-seals">${done.map(({ c, cg }) => `<a href="case.html?id=${c.id}" title="${esc(c.name)} ← ${esc(cg.name)}" aria-label="${esc(c.name)}，已派給${esc(cg.name)}">${seal(c, { size: 'sm' })}</a>`).join('')}</span>`
+      : '確認派案後會出現在這裡';
+  }
+
+  /* ================= 派案步驟 ================= */
+  // c 為 null 代表清單已全部派出，四步都算完成
+  function renderSteps(c, ready) {
+    const steps = [
+      { label: '選個案', done: true },
+      { label: '選照服員', done: true },
+      { label: '排時段', done: !c || ready },
+      { label: '確認派案', done: !c },
+    ];
+    const cur = steps.findIndex(s => !s.done);
+    $('#flow-steps').innerHTML = steps.map((s, i) => `<li class="step${s.done ? ' is-done' : ''}${i === cur ? ' is-current' : ''}"${i === cur ? ' aria-current="step"' : ''}>
+      <span class="step__dot">${s.done ? icon('check') : i + 1}</span><span class="step__label">${s.label}</span></li>`).join('');
+  }
+
+  /* ================= 待派個案 ================= */
+  const filterSeg = App.seg($('#queue-filter'), { onChange: v => { state.filter = v; renderQueue(queue()); } });
+  const FILTERS = {
+    all: () => true,
+    long: c => waitDays(c) >= 10,
+    mine: c => c.staff === App.ME,
+  };
+
+  function queueCard(c) {
+    const w = waitDays(c);
+    return `<li><button type="button" class="dsp-q" data-case="${c.id}" aria-pressed="${c.id === state.caseId}">
+      ${seal(c, { size: 'md' })}
+      <span class="dsp-q__top"><span class="dsp-q__name">${esc(c.name)}</span><span class="dsp-q__age">${c.age} 歲・${esc(c.district)}</span></span>
+      <span class="dsp-q__mid">${App.cms(c.cms)}<span class="dsp-wait dsp-wait--${waitTone(w)}">${icon('clock')}等候 ${w} 天</span></span>
+      <span class="dsp-q__req">${sessionsSummary(c.request.sessions)}・${c.request.skills.map(esc).join('、')}</span>
+    </button></li>`;
+  }
+
+  function renderQueue(q) {
+    Object.keys(FILTERS).forEach(k => { $(`#queue-filter [data-value="${k}"] .seg__n`).textContent = q.filter(FILTERS[k]).length; });
+    const list = q.filter(FILTERS[state.filter]);
+    $('#queue-list').innerHTML = list.length ? list.map(queueCard).join('')
+      : `<li>${App.emptyState({ title: q.length ? '沒有符合條件的個案' : '清單都派完了', text: q.length ? '換個篩選看看，或回到「全部」。' : '新的待派個案會在照顧計畫核定後出現在這裡。', art: 'tea' })}</li>`;
+    const others = App.counts().dispatch - q.length;
+    $('#queue-note').textContent = `全市還有 ${others} 位待派個案，由各區小組媒合中。`;
+  }
+
+  $('#queue-list').addEventListener('click', e => {
+    const b = e.target.closest('.dsp-q');
+    if (!b || b.dataset.case === state.caseId) return;
+    state.caseId = b.dataset.case;
+    renderAll();
+  });
+
+  /* ================= 個案需求 ================= */
+  function renderNeed(c) {
+    const req = c.request, staff = App.getStaff(c.staff), w = waitDays(c);
+    const svc = c.services.map(App.svc).join('');
+    $('#need-body').innerHTML = `
+      <div class="dsp-need__head">
+        ${seal(c, { size: 'lg' })}
+        <div class="dsp-need__who">
+          <p class="eyebrow">正在媒合・${c.id}</p>
+          <p class="dsp-need__name hand">${esc(c.name)}<small>${honor(c)}・${c.age} 歲</small></p>
+          <p class="dsp-need__meta">${esc(c.addr)}</p>
+        </div>
+      </div>
+      <dl class="dsp-need__list">
+        <div><dt>${icon('clipboard')}等級與等候</dt><dd class="cluster cluster--tight">${App.cms(c.cms)}<span class="dsp-wait dsp-wait--${waitTone(w)}">${icon('clock')}${fmt.md(req.since)} 申請派案・等候 ${w} 天</span></dd></div>
+        <div><dt>${icon('hand')}需要的技能</dt><dd class="cluster cluster--tight">${req.skills.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</dd></div>
+        <div><dt>${icon('chat')}語言・性別</dt><dd>${req.langs.length ? `慣用${req.langs.map(esc).join('、')}` : '國語即可'}・${req.gender ? `希望${req.gender === 'F' ? '女性' : '男性'}照服員` : '照服員性別不限'}</dd></div>
+        <div><dt>${icon('calendar')}申請時段</dt><dd><b>${sessionsSummary(req.sessions)}</b><br><span class="muted">每週 ${req.sessions.length} 次・共 ${req.sessions.reduce((s, x) => s + len(x), 0)} 小時</span></dd></div>
+        <div><dt>${icon('leaf')}服務項目</dt><dd class="cluster cluster--tight">${svc}</dd></div>
+        <div><dt>${icon('user')}主要照顧者</dt><dd>${esc(c.carer.name)}<span class="muted">（${esc(c.carer.rel)}・${c.carer.age} 歲）</span> ${App.loadChip(c.carer.zarit)}${c.carer.note ? `<span class="dsp-need__carer">${esc(c.carer.note)}</span>` : ''}</dd></div>
+        <div><dt>${icon('flag')}注意事項</dt><dd class="cluster cluster--tight">${c.flags.map(f => `<span class="tag tag--soft">${esc(f)}</span>`).join('')}<span class="muted">${esc(c.dx)}</span></dd></div>
+      </dl>
+      ${callNotice(c, w)}
+      <div class="dsp-need__foot">
+        <a class="btn btn--sm" href="case.html?id=${c.id}">${icon('folder')}開啟個案詳情</a>
+        <span class="muted" style="font-size:var(--fs-sm);align-self:center">承辦 ${esc(staff.name)}・${esc(staff.role)}</span>
+      </div>`;
+  }
+
+  // 等候超過目標天數的個案，派案前先打電話給家屬說明進度；記下後留在這次的工作狀態裡
+  function callNotice(c, w) {
+    if (w <= TARGET) return '';
+    const who = `${esc(c.carer.name)}（${esc(c.carer.rel)}）`;
+    const at = state.called[c.id];
+    if (at) return `<div class="notice notice--sage dsp-call"><span class="notice__icon">${icon('check')}</span>
+      <p class="dsp-call__body"><span>今天 ${fmt.time(at)} 已致電${who}，說明派案進度。</span></p></div>`;
+    return `<div class="notice notice--sun dsp-call"><span class="notice__icon">${icon('phone')}</span>
+      <div class="dsp-call__body"><p>已等候 <b>${w} 天</b>，超過 ${TARGET} 天的目標。派案前先打通電話給${who}，說明目前進度。</p>
+      <button type="button" class="btn btn--soft btn--sm" data-call="${c.id}">${icon('check')}記下已致電</button></div></div>`;
+  }
+
+  $('#need-body').addEventListener('click', e => {
+    const b = e.target.closest('[data-call]');
+    if (!b) return;
+    const c = App.getCase(b.dataset.call);
+    state.called[c.id] = App.NOW;
+    renderNeed(c);
+    // 按鈕重繪後就不在了，焦點移到完成訊息，鍵盤使用者不會被丟回頁首
+    const done = $('.dsp-call', $('#need-body'));
+    done.tabIndex = -1;
+    done.focus({ preventScroll: true });
+    App.toast(`已記下致電${c.carer.name}`, {
+      tone: 'info', icon: 'phone', desc: '會寫進個案的聯繫紀錄。',
+      action: { label: '復原', onClick: () => { delete state.called[c.id]; if (state.caseId === c.id) renderNeed(c); } },
+    });
+  });
+
+  /* ================= 推薦照服員 ================= */
+  const showSeg = App.seg($('#cands-show'), { onChange: v => { state.show = v; renderCands(current()); } });
+  const sortSel = $('#cands-sort');
+  sortSel.addEventListener('change', () => { state.sort = sortSel.value; renderCands(current()); });
+  const SORTS = {
+    score: (a, b) => a.rank - b.rank,
+    km: (a, b) => a.m.km - b.m.km || a.rank - b.rank,
+    load: (a, b) => a.m.load.pct - b.m.load.pct || a.rank - b.rank,
+  };
+
+  function fitTags(c, cg, m) {
+    const req = c.request;
+    const tags = req.skills.map(s => m.missing.skills.includes(s)
+      ? `<span class="dsp-fit dsp-fit--miss">${icon('x')}缺${esc(s)}</span>`
+      : `<span class="dsp-fit dsp-fit--ok">${icon('check')}${esc(s)}</span>`);
+    req.langs.forEach(l => tags.push(m.missing.langs.includes(l)
+      ? `<span class="dsp-fit dsp-fit--miss">${icon('x')}不會${esc(l)}</span>`
+      : `<span class="dsp-fit dsp-fit--ok">${icon('check')}${esc(l)}</span>`));
+    if (req.gender) tags.push(m.missing.gender
+      ? `<span class="dsp-fit dsp-fit--miss">${icon('user')}家屬希望${req.gender === 'F' ? '女性' : '男性'}</span>`
+      : `<span class="dsp-fit dsp-fit--ok">${icon('user')}符合性別偏好</span>`);
+    const extra = cg.skills.filter(s => !req.skills.includes(s)).slice(0, 2);
+    extra.forEach(s => tags.push(`<span class="dsp-fit dsp-fit--plain">${esc(s)}</span>`));
+    return tags.join('');
+  }
+
+  // 七日小條：可服務日亮起；申請時段和既有排班撞到的日子用柔黃
+  function weekBar(c, cg, m) {
+    const reqDays = new Set(c.request.sessions.map(s => s.day));
+    const busyDays = new Set(m.conflicts.map(x => x.session.day));
+    const cells = [1, 2, 3, 4, 5, 6, 7].map(d => {
+      const cls = [cg.avail[d] ? (busyDays.has(d) ? 'busy' : 'on') : '', reqDays.has(d) ? 'is-req' : ''].filter(Boolean).join(' ');
+      return `<i${cls ? ` class="${cls}"` : ''}></i>`;
+    }).join('');
+    const days = [1, 2, 3, 4, 5, 6, 7].map(d => `<span${reqDays.has(d) ? ' class="is-req"' : ''}>${DAY_CH[d - 1]}</span>`).join('');
+    const workDays = Object.keys(cg.avail).map(Number).sort();
+    return `<div><p class="dsp-week__label"><span>可服務日（粗體為申請日）</span><span>${workDays.length} 天</span></p>
+      <div class="avail" aria-hidden="true">${cells}</div><div class="dsp-week__days" aria-hidden="true">${days}</div>
+      <p class="sr-only">可服務：${workDays.map(d => fmt.dayName(d)).join('、')}</p></div>`;
+  }
+
+  function candNotes(c, cg, m) {
+    // 同一段既有排班撞到好幾天時合併成一句（週一、三、五 09:00 已排莊文雄）
+    const groups = [];
+    m.conflicts.forEach(x => {
+      const who = x.with.caseId ? x.with.label : '其他個案';
+      const key = [who, x.with.from, x.with.to, x.session.from].join('|');
+      const g = groups.find(y => y.key === key);
+      if (g) g.days.push(x.session.day); else groups.push({ key, who, w: x.with, from: x.session.from, days: [x.session.day] });
+    });
+    const notes = groups.map(g => `週${g.days.map(d => DAY_CH[d - 1]).join('、')} ${hr(g.from)} 已排${g.who}（${hr(g.w.from)}–${hr(g.w.to)}）`);
+    m.outside.forEach(s => notes.push(cg.avail[s.day] ? `${fmt.dayName(s.day)} ${hr(s.from)}–${hr(s.to)} 超出服務時間（${hr(cg.avail[s.day][0])}–${hr(cg.avail[s.day][1])}）` : `${fmt.dayName(s.day)}不是服務日`));
+    if (!notes.length) return `<ul class="dsp-cand__note"><li class="is-ok">${icon('check-circle')}申請的 ${c.request.sessions.length} 個時段都有空</li></ul>`;
+    // 括號裡的時間區間不拆行，避免「（09:00–」和「11:00）」分在兩行
+    return `<ul class="dsp-cand__note">${notes.map(n => `<li>${icon('info')}<span>${esc(n).replace(/（[\d:–]+）/g, t => `<span class="nowrap">${t}</span>`)}</span></li>`).join('')}</ul>`;
+  }
+
+  function candCard(c, x, selId) {
+    const { cg, m, rank } = x;
+    const sel = cg.id === selId;
+    const loadAfter = m.load.hours;
+    return `<li class="dsp-cand${sel ? ' is-selected' : ''}" data-cg="${cg.id}">
+      <div class="dsp-cand__ring"><span class="dsp-cand__rank" aria-hidden="true">${rank}</span>${App.scoreRing(m.score, { size: 64, label: `${cg.name}的配對分數` })}</div>
+      <div class="dsp-cand__who">
+        <h3 class="dsp-cand__name hand"><button type="button" class="dsp-cand__pick stretched" aria-pressed="${sel}" aria-describedby="cand-${cg.id}-meta">${esc(cg.name)}</button><span class="badge badge--sage dsp-cand__chosen">${icon('check')}已選擇</span></h3>
+        <p class="dsp-cand__meta" id="cand-${cg.id}-meta">${segs([`第 ${rank} 名`, cg.gender === 'F' ? '女' : '男', `${cg.age} 歲`, esc(cg.district), `年資 ${cg.years} 年`, esc(cg.vehicle), `評價 ${cg.rating}`])}</p>
+      </div>
+      <div class="dsp-cand__dist"><b>${kmText(m.km)}</b> km<small>${esc(cg.vehicle)}約 ${travelMin(m.km, cg.vehicle)} 分鐘</small></div>
+      <div class="dsp-cand__fit">${fitTags(c, cg, m)}</div>
+      <div class="dsp-cand__week">
+        ${weekBar(c, cg, m)}
+        <div><p class="dsp-load__label"><span>本週已排</span><b>${fmt.num(loadAfter)} / ${cg.cap} 小時</b></p>
+          <div class="meter" role="img" aria-label="本週負荷 ${fmt.pct(m.load.pct)}"><span class="meter__fill" style="--p:${Math.min(m.load.pct, 1).toFixed(3)};--c:${m.load.pct >= .8 ? 'var(--clay)' : 'var(--sage)'}"></span></div></div>
+      </div>
+      ${candNotes(c, cg, m)}
+    </li>`;
+  }
+
+  let candsKey = '';
+  function renderCands(c) {
+    const plan = planOf(c);
+    const all = ranked(c);
+    const sorted = all.slice().sort(SORTS[state.sort]);
+    let visible = state.show === 'top' ? sorted.slice(0, 5) : sorted;
+    const selX = all.find(x => x.cg.id === plan.cgId);
+    const extra = visible.includes(selX) ? null : selX;
+    const key = [c.id, state.sort, state.show, state.dataVer, visible.map(x => x.cg.id).join(','), extra ? extra.cg.id : ''].join('|');
+
+    $('#cands-sub').textContent = `為 ${c.name}（${c.district}）計算 ${all.length} 位照服員・技能 40、語言 15、性別 10、距離 20、時段 15`;
+    $('#cands-all-n').textContent = all.length;
+
+    if (key !== candsKey) {
+      candsKey = key;
+      $('#cand-list').innerHTML = visible.map(x => candCard(c, x, plan.cgId)).join('')
+        + (extra ? `<li class="dsp-cands__sep">目前選擇（不在前 5 位）</li>${candCard(c, extra, plan.cgId)}` : '');
+    } else {
+      // 只有選擇改變：切換樣式就好，不重播分數環的動畫
+      $$('.dsp-cand', $('#cand-list')).forEach(li => {
+        const on = li.dataset.cg === plan.cgId;
+        li.classList.toggle('is-selected', on);
+        $('.dsp-cand__pick', li).setAttribute('aria-pressed', on);
+      });
+    }
+    renderMap(c, all, selX);
+    renderWhy(c, selX);
+  }
+
+  $('#cand-list').addEventListener('click', e => {
+    const pick = e.target.closest('.dsp-cand__pick');
+    if (!pick) return;
+    const c = current();
+    const plan = planOf(c);
+    const id = pick.closest('.dsp-cand').dataset.cg;
+    if (plan.cgId === id) return;
+    plan.cgId = id;
+    renderCands(c);
+    renderArrange(c);
+  });
+
+  // 清單與地圖連動：滑過或聚焦卡片時，地圖上的標記與連線一起亮起
+  function hotMarker(id, on) {
+    $$(`[data-mk="${id}"]`, $('#map-dyn')).forEach(el => el.classList.toggle('is-hot', on));
+  }
+  ['mouseover', 'focusin'].forEach(t => $('#cand-list').addEventListener(t, e => {
+    const li = e.target.closest('.dsp-cand');
+    $$('.is-hot', $('#map-dyn')).forEach(el => el.classList.remove('is-hot'));
+    if (li) hotMarker(li.dataset.cg, true);
+  }));
+  ['mouseleave', 'focusout'].forEach(t => $('#cand-list').addEventListener(t, () => $$('.is-hot', $('#map-dyn')).forEach(el => el.classList.remove('is-hot'))));
+
+  /* ================= 媒合地圖 ================= */
+  const mapSvg = $('#map-svg');
+  const mapState = { caseId: null, cgId: null, ver: -1, travelTimer: 0, visible: false };
+  App.whenVisible(mapSvg, () => {
+    mapState.visible = true;
+    mapSvg.classList.add('is-on', 'is-route');
+    startTraveler();
+  });
+  if (reduceMotion.matches) mapSvg.classList.add('is-static');
+
+  // 標記太近時彼此推開（住家固定不動），再用虛線拉回真實位置
+  function relax(home, pts) {
+    for (let k = 0; k < 60; k++) {
+      pts.forEach((p, i) => {
+        const vx = p.x - home.x, vy = p.y - home.y, d = Math.hypot(vx, vy), min = p.r + home.r + 5;
+        if (d < min) {
+          const a = d < .01 ? -Math.PI / 4 + i : Math.atan2(vy, vx);
+          p.x = home.x + Math.cos(a) * min; p.y = home.y + Math.sin(a) * min;
+        }
+        pts.forEach((q, j) => {
+          if (j <= i) return;
+          const wx = q.x - p.x, wy = q.y - p.y, e = Math.hypot(wx, wy), need = p.r + q.r + 4;
+          if (e >= need) return;
+          const a = e < .01 ? i + j : Math.atan2(wy, wx), push = (need - e) / 2;
+          p.x -= Math.cos(a) * push; p.y -= Math.sin(a) * push;
+          q.x += Math.cos(a) * push; q.y += Math.sin(a) * push;
+        });
+      });
+      pts.forEach(p => { p.x = Math.min(Math.max(p.x, p.r + 4), MAP_W - p.r - 4); p.y = Math.min(Math.max(p.y, p.r + 4), MAP_H - p.r - 4); });
+    }
+  }
+
+  // 標籤避讓用的外框（SVG 座標）；文字以 anchor 決定外框從哪裡算起，基線約在字高 85% 處
+  const circleBox = (x, y, r) => ({ x: x - r, y: y - r, w: r * 2, h: r * 2 });
+  const textBox = cd => ({ x: cd.anchor === 'start' ? cd.x : cd.anchor === 'end' ? cd.x - cd.w : cd.x - cd.w / 2, y: cd.y - cd.h * .85, w: cd.w, h: cd.h });
+  const overlapArea = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+  function routePath(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy);
+    const bow = Math.min(46, L * .22);
+    const cx = (a.x + b.x) / 2 - dy / L * bow, cy = (a.y + b.y) / 2 + dx / L * bow;
+    return `M${a.x.toFixed(1)} ${a.y.toFixed(1)}Q${cx.toFixed(1)} ${cy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+  }
+
+  function startTraveler() {
+    clearTimeout(mapState.travelTimer);
+    const dot = $('.dsp-map__traveler', mapSvg);
+    if (!dot || reduceMotion.matches || !mapState.visible) return;
+    // SMIL 以文件時間計算 begin，動態插入的路線要用 beginElement 才會從頭跑
+    mapState.travelTimer = setTimeout(() => {
+      if (!dot.isConnected) return;
+      dot.setAttribute('opacity', '1');
+      $('animateMotion', dot).beginElement();
+    }, 1300);
+  }
+
+  function renderMap(c, all, selX) {
+    const caseChanged = mapState.caseId !== c.id || mapState.ver !== state.dataVer;
+    const cgChanged = mapState.cgId !== selX.cg.id;
+    if (!caseChanged && !cgChanged) return;
+    mapState.caseId = c.id; mapState.cgId = selX.cg.id; mapState.ver = state.dataVer;
+
+    const home = { x: MX(c.xy[0]), y: MY(c.xy[1]), r: 17 };
+    const top = all.slice(0, 5);
+    const big = top.includes(selX) ? top : top.concat(selX);
+    const pts = big.map(x => ({ id: x.cg.id, rank: x.rank, tx: MX(x.cg.xy[0]), ty: MY(x.cg.xy[1]), x: MX(x.cg.xy[0]), y: MY(x.cg.xy[1]), r: 12 }));
+    relax(home, pts);
+    const sel = pts.find(p => p.id === selX.cg.id);
+
+    const ringR = 5 * KM_PX;
+    const minors = all.filter(x => !big.includes(x)).map(x => ({ id: x.cg.id, x: MX(x.cg.xy[0]), y: MY(x.cg.xy[1]) }));
+    // 其他照服員只畫小點；外層 g 掛 is-hot，內層 body 負責放大
+    const minorG = minors.map(p => `<g class="dsp-mk dsp-mk--minor" data-mk="${p.id}"><circle class="dsp-mk__body dsp-mk__dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5"/></g>`).join('');
+
+    const links = pts.filter(p => p !== sel).map((p, i) => `<path class="dsp-map__link" data-mk="${p.id}" pathLength="1" style="--d:${i}" d="M${home.x.toFixed(1)} ${home.y.toFixed(1)}L${p.x.toFixed(1)} ${p.y.toFixed(1)}"/>`).join('');
+    const leaders = pts.filter(p => Math.hypot(p.x - p.tx, p.y - p.ty) > 6).map(p => `<path class="dsp-map__leader" d="M${p.tx.toFixed(1)} ${p.ty.toFixed(1)}L${p.x.toFixed(1)} ${p.y.toFixed(1)}"/><circle class="dsp-map__true" cx="${p.tx.toFixed(1)}" cy="${p.ty.toFixed(1)}" r="2.6"/>`).join('');
+    const markers = pts.slice().sort((a, b) => (a === sel) - (b === sel)).map(p => `<g class="dsp-mk${p === sel ? ' is-sel' : ''}" data-mk="${p.id}" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})">
+        ${p === sel ? '<circle class="dsp-mk__pulse loop" r="13"/>' : ''}
+        <g class="dsp-mk__body"><circle class="dsp-mk__dot" r="${p === sel ? 13 : 12}"/><text class="dsp-mk__num" y="4.6" text-anchor="middle">${p.rank}</text></g></g>`).join('');
+
+    // 三個動態標籤（長輩家、照服員名字、5 公里）依序找不撞到標記與彼此的位置；
+    // 長輩家貼近地圖邊緣、或推薦照服員就住在隔壁時，固定位置的標籤會蓋住標記
+    // 成本加權：蓋住標記最不能接受，其次是蓋住已放好的標籤，壓到其他照服員的小點影響最小
+    const markBoxes = pts.map(p => circleBox(p.x, p.y, p.r + 3)).concat([circleBox(home.x, home.y, home.r + 3)]);
+    const minorBoxes = minors.map(p => circleBox(p.x, p.y, 6));
+    const labels = [];
+    const hit = (b, list, weight) => list.reduce((s, o) => s + overlapArea(b, o) * weight, 0);
+    const placeLabel = cands => {
+      let best = null;
+      cands.forEach(cd => {
+        const b = textBox(cd);
+        const out = b.x < 4 || b.y < 4 || b.x + b.w > MAP_W - 4 || b.y + b.h > MAP_H - 4;
+        const cost = (out ? 1e6 : 0) + hit(b, markBoxes, 6) + hit(b, labels, 3) + hit(b, minorBoxes, 1);
+        if (!best || cost < best.cost) best = { cd, b, cost };
+      });
+      labels.push(best.b);
+      return best.cd;
+    };
+    // 圓點周圍八個方位；side 決定先試右或左，below 則先試正下方
+    const around = (p, r, w, h, first) => {
+      const d = r + 6, dg = r * .72 + 3, side = first === 'left' ? -1 : 1;
+      const list = [
+        { x: p.x + d * side, y: p.y + h * .3, anchor: side > 0 ? 'start' : 'end' },
+        { x: p.x - d * side, y: p.y + h * .3, anchor: side > 0 ? 'end' : 'start' },
+        { x: p.x, y: p.y + r + h * .85 + 3, anchor: 'middle' },
+        { x: p.x, y: p.y - r - 6, anchor: 'middle' },
+        { x: p.x + dg, y: p.y + dg + h * .85, anchor: 'start' },
+        { x: p.x - dg, y: p.y + dg + h * .85, anchor: 'end' },
+        { x: p.x + dg, y: p.y - dg, anchor: 'start' },
+        { x: p.x - dg, y: p.y - dg, anchor: 'end' },
+      ];
+      const ordered = first === 'below' ? [list[2], list[3], list[0], list[1], ...list.slice(4)] : list;
+      return ordered.map(cd => Object.assign(cd, { w, h }));
+    };
+    // 長輩家是整張圖的主角，先佔位；照服員名字再從遠離住家的一側開始找
+    const homeAt = placeLabel(around(home, home.r, (c.name.length + 1) * 16.5 + 4, 18, 'below'));
+    const nameAt = placeLabel(around(sel, 13, selX.cg.name.length * 14.5 + 8, 16, sel.x >= home.x ? 'right' : 'left'));
+    const ringAt = placeLabel([
+      { x: home.x, y: home.y - ringR - 6, w: 40, h: 14, anchor: 'middle' },
+      { x: home.x, y: home.y + ringR + 16, w: 40, h: 14, anchor: 'middle' },
+      { x: home.x + ringR * .72 + 4, y: home.y - ringR * .72, w: 40, h: 14, anchor: 'start' },
+      { x: home.x - ringR * .72 - 4, y: home.y - ringR * .72, w: 40, h: 14, anchor: 'end' },
+    ]);
+    // 路線從標記外緣出發：移動的小點才不會在每一輪開頭蓋住名次數字
+    const gap = Math.hypot(home.x - sel.x, home.y - sel.y);
+    const route = routePath({ x: sel.x + (home.x - sel.x) / gap * 14, y: sel.y + (home.y - sel.y) / gap * 14 }, home);
+    const attrs = at => `x="${at.x.toFixed(1)}" y="${at.y.toFixed(1)}" text-anchor="${at.anchor}"`;
+
+    $('#map-dyn').innerHTML = `
+      <circle class="dsp-map__ring" cx="${home.x.toFixed(1)}" cy="${home.y.toFixed(1)}" r="${ringR}"/>
+      <text class="dsp-map__ring-label" ${attrs(ringAt)}>5 公里</text>
+      ${minorG}${links}
+      <path class="dsp-map__route" pathLength="1" d="${route}"/>
+      ${leaders}${markers}
+      <text class="dsp-mk__name" ${attrs(nameAt)}>${esc(selX.cg.name)}</text>
+      <g transform="translate(${home.x.toFixed(1)} ${home.y.toFixed(1)})"><g class="dsp-home__body">
+        <circle class="dsp-home__dot" r="17"/><use class="dsp-home__icon" href="#i-home" x="-10" y="-10.5" width="20" height="20"/></g></g>
+      <text class="dsp-home__label" ${attrs(homeAt)}>${esc(c.name)}家</text>
+      ${reduceMotion.matches ? '' : `<circle class="dsp-map__traveler" r="5.5" opacity="0"><animateMotion dur="2.6s" repeatCount="indefinite" begin="indefinite" path="${route}"/></circle>`}`;
+
+    // 區名與溪名是底圖文字，被標記或標籤壓到時淡出，讓位給這次媒合的資訊
+    const fronts = markBoxes.concat(labels);
+    $$('.dsp-map__district, .dsp-map__river-label', mapSvg).forEach(t => {
+      const bb = t.getBBox();
+      t.classList.toggle('is-faded', fronts.some(o => overlapArea({ x: bb.x, y: bb.y, w: bb.width, h: bb.height }, o) > 0));
+    });
+
+    // 換個案：連線逐條重畫；只換照服員：只重畫路線
+    if (mapState.visible && !reduceMotion.matches) {
+      if (caseChanged) mapSvg.classList.remove('is-on');
+      mapSvg.classList.remove('is-route');
+      void mapSvg.getBoundingClientRect();
+      mapSvg.classList.add('is-on', 'is-route');
+    }
+    startTraveler();
+
+    $('#map-desc').textContent = `${c.name}家在${c.district}。推薦前五名：${all.slice(0, 5).map(x => `${x.cg.name} ${kmText(x.m.km)} 公里`).join('、')}。目前選擇 ${selX.cg.name}。`;
+    $('#map-route-text').innerHTML = `${icon('route')}<b>${esc(selX.cg.name)}</b>到<b>${esc(c.name)}家</b>約 ${kmText(selX.m.km)} 公里・${esc(selX.cg.vehicle)} ${travelMin(selX.m.km, selX.cg.vehicle)} 分鐘`;
+
+    // 手機上地圖可左右滑動：把長輩家捲到畫面中間
+    const sc = $('#map-scroll');
+    requestAnimationFrame(() => { if (sc.scrollWidth > sc.clientWidth) sc.scrollLeft = home.x / MAP_W * sc.scrollWidth - sc.clientWidth / 2; });
+  }
+
+  /* ================= 配對分數拆解 ================= */
+  function renderWhy(c, x) {
+    const { cg, m } = x, req = c.request;
+    const rows = [
+      { label: '技能', pts: m.parts.skill, max: 40, note: m.missing.skills.length ? `缺${m.missing.skills.join('、')}` : `${req.skills.join('、')}都會` },
+      { label: '語言', pts: m.parts.lang, max: 15, note: req.langs.length ? (m.missing.langs.length ? `不會${m.missing.langs.join('、')}` : `會說${req.langs.join('、')}`) : '沒有特別需求' },
+      { label: '性別', pts: m.parts.gender, max: 10, note: req.gender ? (m.missing.gender ? `家屬希望${req.gender === 'F' ? '女性' : '男性'}照服員` : '符合家屬偏好') : '沒有偏好' },
+      { label: '距離', pts: m.parts.distance, max: 20, note: `${kmText(m.km)} 公里・2 公里內滿分` },
+      { label: '時段', pts: m.parts.time, max: 15, note: m.conflicts.length || m.outside.length ? `${m.conflicts.length + m.outside.length} 個申請時段需要調整` : '申請時段都有空' },
+    ];
+    const box = $('#why');
+    box.innerHTML = `<p class="dsp-why__eyebrow">為什麼推薦這位・第 ${x.rank} 名</p>
+      <div class="dsp-why__head">${seal(cg, { size: 'md', tone: 'sage' })}
+        <p class="dsp-why__name hand">${esc(cg.name)}</p>
+        <p class="dsp-why__total" aria-label="配對分數 ${m.score} 分">${m.score}<small> / 100</small></p>
+        <p class="dsp-why__meta">${segs([esc(cg.district), `年資 ${cg.years} 年`, esc(cg.vehicle), `評價 ${cg.rating}`])}</p></div>
+      <ul class="dsp-why__rows">${rows.map((r, k) => `<li class="dsp-why__row${r.pts === 0 ? ' is-zero' : r.pts < r.max ? ' is-part' : ''}">
+        <b>${r.label}</b><span class="dsp-why__bar" aria-hidden="true"><i style="--k:${k}"></i></span><span class="dsp-why__pts">${r.pts}<small>/${r.max}</small></span>
+        <span class="dsp-why__note">${esc(r.note)}</span></li>`).join('')}</ul>
+      <a class="btn btn--soft btn--sm dsp-why__go" href="#arrange">${icon('calendar')}幫${esc(cg.name)}排時段</a>`;
+    // 先以 0 寬算出樣式，再設定實際值，長條才會從左邊長出來
+    void box.offsetWidth;
+    $$('.dsp-why__bar i', box).forEach((el, k) => el.style.setProperty('--p', rows[k].pts / rows[k].max));
+  }
+
+  /* ================= 排班 ================= */
+  const arrange = $('#arrange');
+  const sched = $('#sched');
+  let activeCell = { day: 1, hour: 9 };
+
+  function renderArrange(c) {
+    const plan = planOf(c), cg = App.getCaregiver(plan.cgId), req = c.request;
+    const infos = infosOf(c, cg, plan);
+    const ready = infos.every(x => x.status === 'ok');
+    $('#arrange-sub').innerHTML = `為 <b>${esc(c.name)}</b> 排進照服員 <b>${esc(cg.name)}</b> 的一週・把時段卡拖進排班表，或先點時段卡再點格子`;
+
+    // 時段卡
+    $('#tray').innerHTML = req.sessions.map((s, i) => {
+      const slot = plan.slots[i], inf = infos[i];
+      const cls = inf.status === 'ok' ? ' is-ok' : inf.status === 'none' ? '' : ' is-bad';
+      const where = slot ? slotText(slot.day, slot.from, slot.from + len(s)) : '';
+      const moved = slot && (slot.day !== s.day || slot.from !== s.from);
+      const stateTxt = inf.status === 'none' ? '未排入' : inf.status === 'ok' ? (moved ? `改排 ${fmt.dayName(slot.day)} ${hr(slot.from)}` : '已排入') : inf.status === 'off' ? '不在服務時間' : '時段重疊';
+      return `<li><button type="button" class="drag-card dsp-chip${cls}" data-sess="${i}" aria-pressed="false" aria-label="申請時段 ${slotText(s.day, s.from, s.to)}，${stateTxt}${slot ? '，目前在 ' + where : ''}">
+        <span class="dnd-handle" aria-hidden="true">${icon('grip')}</span>
+        <span class="dsp-chip__text"><span class="dsp-chip__day">${fmt.dayName(s.day)}</span><span class="dsp-chip__time">${hr(s.from)}–${hr(s.to)}</span></span>
+        <span class="dsp-chip__state">${inf.status === 'ok' ? icon('check') : inf.status === 'none' ? '' : icon('info')}${stateTxt}</span>
+      </button></li>`;
+    }).join('');
+
+    // 排班表
+    const bookings = App.bookingsOf(cg.id).filter(b => b.day <= 6 && b.from < H1 && b.to > H0);
+    const covers = (list, d, h) => list.find(b => b.day === d && b.from < h + 1 && h < b.to);
+    const placed = plan.slots.map((slot, i) => slot && { i, day: slot.day, from: slot.from, to: slot.from + len(req.sessions[i]) }).filter(Boolean);
+    const svcCodes = c.services.filter(code => CARE_GROUPS.includes(App.SERVICES[code].group));
+    if (!DAYS.includes(activeCell.day) || activeCell.hour < H0 || activeCell.hour >= H1) activeCell = { day: 1, hour: 9 };
+
+    let html = '<div class="sched__corner" style="grid-area:1/1">時間</div>';
+    DAYS.forEach(d => {
+      const win = cg.avail[d], dt = dateOfDay(d);
+      html += `<div class="sched__day${win ? '' : ' is-rest'}" style="grid-area:1/${d + 1}">${fmt.dayName(d)}<small>${win ? `${dt.getMonth() + 1}/${dt.getDate()}・${hr(win[0]).slice(0, 2)}–${hr(win[1]).slice(0, 2)} 時` : '休息日'}</small></div>`;
+    });
+    for (let h = H0; h < H1; h++) {
+      const r = rowOf(h);
+      html += `<div class="sched__hour" style="grid-area:${r}/1/span 2">${hr(h)}</div>`;
+      DAYS.forEach(d => {
+        const win = cg.avail[d];
+        const off = !win || h < win[0] || h >= win[1];
+        const b = covers(bookings, d, h), p = covers(placed, d, h);
+        const what = p ? `已排入${c.name}` : b ? `已排${b.caseId ? b.label : '其他個案'}` : off ? '非服務時段' : '空檔';
+        const tab = activeCell.day === d && activeCell.hour === h ? 0 : -1;
+        html += `<button type="button" class="sched__cell drop-zone dsp-cell${off ? ' is-off' : ''}" data-day="${d}" data-hour="${h}" style="grid-area:${r}/${d + 1}/span 2" tabindex="${tab}" aria-label="${fmt.dayName(d)} ${hr(h)}，${what}"></button>`;
+      });
+    }
+    // 每天把既有排班與這次排入的時段分欄：互相重疊的並排，不重疊的吃滿整格
+    const blocks = bookings.map(b => ({ day: b.day, from: b.from, to: b.to, b }))
+      .concat(placed.map(p => ({ day: p.day, from: p.from, to: p.to, p })));
+    DAYS.forEach(d => {
+      const list = blocks.filter(x => x.day === d).sort((a, b) => a.from - b.from || (a.b ? -1 : 1));
+      const laneEnd = [];
+      list.forEach(x => {
+        let lane = laneEnd.findIndex(end => end <= x.from);
+        if (lane < 0) { lane = laneEnd.length; laneEnd.push(x.to); } else laneEnd[lane] = x.to;
+        x.lane = lane;
+      });
+      list.forEach(x => { x.n = 1 + Math.max(...list.filter(y => y.from < x.to && x.from < y.to).map(y => y.lane)); });
+    });
+    blocks.filter(x => x.b).forEach(({ b, lane, n }) => {
+      html += `<span class="sched__block dsp-busy" style="grid-area:${rowOf(b.from)}/${b.day + 1}/${rowOf(b.to)};--lane:${lane};--n:${n}" aria-hidden="true"><b>${esc(b.label)}</b>${hr(b.from)}–${hr(b.to)}</span>`;
+    });
+    req.sessions.forEach((s, i) => {
+      const slot = plan.slots[i];
+      if (slot && slot.day === s.day && slot.from === s.from) return;
+      html += `<span class="dsp-ghost" style="grid-area:${rowOf(s.from)}/${s.day + 1}/${rowOf(s.to)}" aria-hidden="true"><span>原申請</span></span>`;
+    });
+    blocks.filter(x => x.p).forEach(({ p, lane, n }) => {
+      const inf = infos[p.i];
+      const bad = inf.status !== 'ok';
+      const short = inf.status === 'off' ? '不在服務時間' : '時段重疊';
+      html += `<button type="button" class="drag-card sched__block sched__block--${bad ? 'conflict' : 'new'} dsp-placed${state.fresh === p.i ? ' is-fresh' : ''}" data-sess="${p.i}" aria-pressed="false"
+        style="grid-area:${rowOf(p.from)}/${p.day + 1}/${rowOf(p.to)};--lane:${lane};--n:${n}" aria-label="${esc(c.name)} ${slotText(p.day, p.from, p.to)}${bad ? '，' + inf.text : '，已排入'}；按 Enter 後選格子可移動">
+        <b>${bad ? icon('info') : ''}${esc(c.name)}</b><span>${hr(p.from)}–${hr(p.to)}</span><span class="dsp-placed__svc">${bad ? esc(n > 1 ? short : inf.text) : svcCodes.join('・')}</span></button>`;
+    });
+    sched.innerHTML = html;
+    sched.setAttribute('aria-label', `${cg.name} 每週排班表，週一到週六 ${hr(H0)} 到 ${hr(H1)}；方向鍵可在格子間移動`);
+    state.fresh = null;
+
+    // 問題清單
+    const probs = infos.map((inf, i) => ({ i, inf })).filter(x => x.inf.status !== 'ok');
+    const issues = $('#issues');
+    if (!probs.length) {
+      issues.innerHTML = `<p class="notice notice--sage"><span class="notice__icon">${icon('check-circle')}</span><span class="dsp-issues__body"><b>${req.sessions.length} 個時段都排好了</b><br>和${esc(cg.name)}既有的排班沒有重疊，可以確認派案。</span></p>`;
+    } else {
+      issues.innerHTML = `<div class="notice notice--clay"><span class="notice__icon">${icon('leaf')}</span><div class="dsp-issues__body"><b>還有 ${probs.length} 個時段需要調整</b>
+        <ul>${probs.map(({ i, inf }) => {
+          const s = req.sessions[i], slot = plan.slots[i];
+          return `<li>申請「${slotText(s.day, s.from, s.to)}」：${slot ? `排在 ${slotText(slot.day, slot.from, slot.from + len(s))}，${esc(inf.text)}` : '還沒排入排班表'}</li>`;
+        }).join('')}</ul></div>
+        <button type="button" class="btn btn--soft btn--sm" id="find-gaps">${icon('sparkle')}幫我找空檔</button></div>`;
+    }
+
+    // 頁尾小結與負荷
+    const hours = placed.reduce((s, p) => s + (p.to - p.from), 0);
+    const before = App.bookingsOf(cg.id).reduce((s, b) => s + len(b), 0), after = before + hours;
+    $('#foot-sum').innerHTML = `<p class="dsp-foot__line"><b>${placed.length} / ${req.sessions.length}</b> 個時段已排・每週 ${hours} 小時・${esc(cg.name)}本週 ${fmt.num(before)} → ${fmt.num(after)} 小時（上限 ${cg.cap}）</p>
+      <div class="meter" role="img" aria-label="派案後負荷 ${fmt.pct(after / cg.cap)}"><span class="meter__fill dsp-load-new" style="--p:${Math.min(after / cg.cap, 1).toFixed(3)}"></span><span class="meter__fill" style="--p:${Math.min(before / cg.cap, 1).toFixed(3)};--c:var(--sage-700)"></span></div>`;
+
+    renderSteps(c, ready);
+
+    if (state.focusSess != null) {
+      const el = $(`.dsp-placed[data-sess="${state.focusSess}"]`, sched) || $(`.dsp-chip[data-sess="${state.focusSess}"]`, arrange);
+      state.focusSess = null;
+      if (el) el.focus({ preventScroll: true });
+    }
+  }
+
+  // 拖放判斷：不在服務時間就擋下（false），撞到既有排班或同案時段回傳 conflict
+  function verdictFor(item, zone) {
+    const c = current();
+    if (!c || !zone.dataset.day) return false;
+    const plan = planOf(c), cg = App.getCaregiver(plan.cgId), idx = +item.dataset.sess;
+    const trial = plan.slots.slice();
+    trial[idx] = { day: +zone.dataset.day, from: +zone.dataset.hour };
+    const inf = slotInfo(c, cg, idx, trial);
+    return { v: inf.status === 'off' ? false : inf.status === 'conflict' ? 'conflict' : 'ok', inf };
+  }
+
+  // 這兩個監聽要比 App.dnd 先註冊：放不下的格子先給說明，沒選時段卡就點格子則提示做法
+  arrange.addEventListener('click', e => {
+    const cell = e.target.closest('.dsp-cell');
+    if (!cell) return;
+    activeCell = { day: +cell.dataset.day, hour: +cell.dataset.hour };
+    if (arrange.classList.contains('is-picking')) {
+      const item = $('.is-picked', arrange);
+      const res = item && verdictFor(item, cell);
+      if (res && res.v === false) App.toast('這一格放不下', { tone: 'warn', desc: `${res.inf.text}，請換一個時段。` });
+      return;
+    }
+    App.toast('先選一張時段卡', { tone: 'info', icon: 'hand', desc: '點上方的時段卡（或排班表裡綠色的時段），再點這一格就能排入；也可以直接拖曳。' });
+  });
+  addEventListener('pointerup', () => {
+    if (!document.documentElement.classList.contains('is-dnd')) return;
+    const cell = $('.dsp-cell.is-blocked', arrange), item = $('.drag-card.is-dragging', arrange);
+    if (!cell || !item) return;
+    const res = verdictFor(item, cell);
+    if (res && res.v === false) App.toast('這一格放不下', { tone: 'warn', desc: `${res.inf.text}，請換一個時段。` });
+  });
+
+  App.dnd({
+    root: arrange,
+    items: '.dsp-chip, .dsp-placed',
+    zones: '.dsp-cell',
+    check: (item, zone) => { const r = verdictFor(item, zone); return r ? r.v : false; },
+    onPick: item => {
+      const c = current(), plan = planOf(c), idx = +item.dataset.sess, s = c.request.sessions[idx];
+      const at = plan.slots[idx] || { day: s.day, from: s.from };
+      $('#pick-hint-text').textContent = `已拿起「${slotText(s.day, s.from, s.to)}」，點選排班表中的格子放下；按 Esc 取消。`;
+      // 鍵盤使用者按 Tab 進排班表時，從這張卡目前（或申請）的位置開始
+      activeCell = { day: at.day, hour: at.from };
+      $$('.dsp-cell', sched).forEach(cell => { cell.tabIndex = +cell.dataset.day === at.day && +cell.dataset.hour === at.from ? 0 : -1; });
+    },
+    onDrop: (item, zone, verdict) => {
+      const c = current(), plan = planOf(c), idx = +item.dataset.sess;
+      plan.slots[idx] = { day: +zone.dataset.day, from: +zone.dataset.hour };
+      activeCell = { day: +zone.dataset.day, hour: +zone.dataset.hour };
+      state.fresh = idx;
+      state.focusSess = idx;
+      renderArrange(c);
+      if (verdict === 'conflict') {
+        const inf = slotInfo(c, App.getCaregiver(plan.cgId), idx, plan.slots);
+        App.toast(`${slotText(plan.slots[idx].day, plan.slots[idx].from, plan.slots[idx].from + len(c.request.sessions[idx]))} ${inf.text}`, { tone: 'warn', desc: '已先排上去並用陶土色標示；可以再拖到其他時段，或按「幫我找空檔」。' });
+      }
+    },
+  });
+
+  // 排班表內以方向鍵移動（roving tabindex），避免 60 個格子都要按 Tab
+  sched.addEventListener('keydown', e => {
+    const cell = e.target.closest('.dsp-cell');
+    if (!cell) return;
+    const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!mv) return;
+    e.preventDefault();
+    const d = Math.min(Math.max(+cell.dataset.day + mv[0], DAYS[0]), DAYS[DAYS.length - 1]);
+    const h = Math.min(Math.max(+cell.dataset.hour + mv[1], H0), H1 - 1);
+    const next = $(`.dsp-cell[data-day="${d}"][data-hour="${h}"]`, sched);
+    cell.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus();
+    activeCell = { day: d, hour: h };
+  });
+
+  // 幫我找空檔：同一天離申請時間最近的空檔優先，沒有再找鄰近的日子
+  function findSlot(c, cg, idx, slots) {
+    const s = c.request.sessions[idx], base = slots[idx] || { day: s.day, from: s.from };
+    const days = DAYS.slice().sort((a, b) => Math.abs(a - base.day) - Math.abs(b - base.day) || a - b);
+    for (const d of days) {
+      const hours = [];
+      for (let h = H0; h + len(s) <= H1; h++) hours.push(h);
+      hours.sort((a, b) => Math.abs(a - s.from) - Math.abs(b - s.from) || a - b);
+      for (const h of hours) {
+        const trial = slots.slice();
+        trial[idx] = { day: d, from: h };
+        if (slotInfo(c, cg, idx, trial).status === 'ok') return trial[idx];
+      }
+    }
+    return null;
+  }
+
+  function withUndo(c, plan, prev, title, desc) {
+    App.toast(title, {
+      desc,
+      action: { label: '復原', onClick: () => { plan.slots = prev; if (state.caseId === c.id) renderArrange(c); } },
+    });
+  }
+
+  $('#issues').addEventListener('click', e => {
+    if (!e.target.closest('#find-gaps')) return;
+    const c = current(), plan = planOf(c), cg = App.getCaregiver(plan.cgId);
+    const prev = plan.slots.slice();
+    const moves = [], stuck = [];
+    plan.slots.forEach((_, i) => {
+      if (slotInfo(c, cg, i, plan.slots).status === 'ok') return;
+      const s = c.request.sessions[i], found = findSlot(c, cg, i, plan.slots);
+      if (found) { plan.slots[i] = found; moves.push(`${fmt.dayName(s.day)} ${hr(s.from)} → ${fmt.dayName(found.day)} ${hr(found.from)}`); }
+      else stuck.push(fmt.dayName(s.day));
+    });
+    state.focusSess = null;
+    renderArrange(c);
+    if (moves.length) withUndo(c, plan, prev, `已找到 ${moves.length} 個空檔`, moves.join('、') + (stuck.length ? `；${stuck.join('、')}找不到空檔，建議改選其他照服員。` : '。記得和家屬確認新的時間。'));
+    else App.toast(`${cg.name}這週已經排不下了`, { tone: 'warn', desc: '建議改選其他照服員，或和家屬討論減少次數。' });
+  });
+
+  $('#reset-slots').addEventListener('click', () => {
+    const c = current(), plan = planOf(c), prev = plan.slots.slice();
+    const same = c.request.sessions.every((s, i) => prev[i] && prev[i].day === s.day && prev[i].from === s.from);
+    if (same) { App.toast('目前就是申請時段', { tone: 'info', desc: sessionsSummary(c.request.sessions) }); return; }
+    plan.slots = c.request.sessions.map(s => ({ day: s.day, from: s.from }));
+    renderArrange(c);
+    withUndo(c, plan, prev, '已恢復成申請時段', sessionsSummary(c.request.sessions));
+  });
+  $('#clear-slots').addEventListener('click', () => {
+    const c = current(), plan = planOf(c), prev = plan.slots.slice();
+    plan.slots = plan.slots.map(() => null);
+    renderArrange(c);
+    withUndo(c, plan, prev, '時段卡都移出排班表了', '可以一張一張拖到合適的格子。');
+  });
+
+  /* ================= 確認派案 ================= */
+  const dlg = $('#confirm-dlg'), form = $('#confirm-form');
+  let pending = null;
+
+  $('#confirm-open').addEventListener('click', () => {
+    const c = current();
+    if (!c) return;
+    const plan = planOf(c), cg = App.getCaregiver(plan.cgId);
+    const bad = infosOf(c, cg, plan).filter(x => x.status !== 'ok').length;
+    if (bad) {
+      App.toast(`還有 ${bad} 個時段需要調整`, { tone: 'warn', desc: '把陶土色或還沒排入的時段移到空檔，或按「幫我找空檔」。' });
+      $('#issues').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block: 'center' });
+      return;
+    }
+    fillConfirm(c, cg, plan);
+    // 先前排班動作留下的 toast 會跟著移進 dialog、蓋住底部的確認按鈕；進入確認步驟就先收掉
+    $$('.toasts .toast__close').forEach(b => b.click());
+    App.openDialog(dlg);
+    const pair = $('#pair');
+    pair.classList.remove('is-on');
+    void pair.offsetWidth;
+    pair.classList.add('is-on');
+  });
+
+  function fillConfirm(c, cg, plan) {
+    const m = App.match(c, cg), req = c.request;
+    const slots = plan.slots.map((s, i) => ({ day: s.day, from: s.from, to: s.from + len(req.sessions[i]) })).sort((a, b) => a.day - b.day || a.from - b.from);
+    const first = slots[0];
+    const hours = slots.reduce((s, x) => s + x.to - x.from, 0);
+    const before = App.bookingsOf(cg.id).reduce((s, b) => s + len(b), 0);
+    const svcCodes = c.services.filter(code => CARE_GROUPS.includes(App.SERVICES[code].group));
+    const others = c.services.filter(code => !svcCodes.includes(code));
+    pending = { caseId: c.id, cgId: cg.id, slots: plan.slots.map(s => ({ ...s })), first, mismatch: m.missing.gender || m.missing.skills.length > 0 || m.missing.langs.length > 0 };
+
+    $('#pair').innerHTML = `
+      <div class="dsp-pair__who">${seal(c, { size: 'lg' })}<b>${esc(c.name)}</b><small>${c.age} 歲・${esc(c.district)}</small></div>
+      <div class="dsp-pair__mid">
+        <svg class="dsp-pair__svg" viewBox="0 0 220 44" aria-hidden="true"><path class="dsp-pair__line" pathLength="1" d="M6 24C40 6 70 40 110 22S180 6 214 24"/><path class="dsp-pair__heart" d="M110 33c-7-6-12-11-12-16a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 5-5 10-12 16z"/></svg>
+        <span class="dsp-pair__score">配對 ${m.score} 分・${kmText(m.km)} 公里</span>
+      </div>
+      <div class="dsp-pair__who">${seal(cg, { size: 'lg', tone: 'sage' })}<b>${esc(cg.name)}</b><small>照服員・${esc(cg.district)}</small></div>`;
+
+    $('#confirm-kv').innerHTML = `
+      <dt>每週時段</dt><dd><ul class="dsp-sum__slots">${slots.map(s => `<li class="tag">${slotText(s.day, s.from, s.to)}</li>`).join('')}</ul></dd>
+      <dt>首次服務</dt><dd>${fmt.date(dateOfDay(first.day))} ${hr(first.from)} 照服員到宅${c.next ? `<br><span class="muted">${fmt.date(c.next.at)} ${fmt.time(c.next.at)} ${esc(c.next.type)}（${esc(App.getStaff(c.staff).name)}）</span>` : ''}</dd>
+      <dt>照服員負責</dt><dd class="cluster">${svcCodes.map(App.svc).join('')}</dd>
+      ${others.length ? `<dt>另行派員</dt><dd class="cluster">${others.map(App.svc).join('')}</dd>` : ''}
+      <dt>照服員負荷</dt><dd>每週 ${hours} 小時・${fmt.num(before)} → ${fmt.num(before + hours)} 小時（上限 ${cg.cap}）</dd>`;
+
+    const why = [];
+    if (m.missing.gender) why.push(`家屬希望${req.gender === 'F' ? '女性' : '男性'}照服員`);
+    if (m.missing.skills.length) why.push(`${cg.name}尚未完成「${m.missing.skills.join('、')}」訓練`);
+    if (m.missing.langs.length) why.push(`${cg.name}不會${m.missing.langs.join('、')}`);
+    $('#consent-slot').innerHTML = pending.mismatch ? `
+      <div class="dsp-consent" id="consent-field">
+        <p class="hint" style="color:var(--ink-2)">${icon('info')} ${esc(why.join('；'))}。派案前請先和${esc(c.carer.name)}說明。</p>
+        <label class="check"><input type="checkbox" id="consent" name="consent" aria-describedby="consent-err"><span>已和家屬說明並取得同意</span></label>
+        <p class="field__error" id="consent-err">${icon('info')}請先和家屬確認，再送出派案。</p>
+      </div>` : '';
+
+    const staff = App.getStaff(c.staff);
+    $('#notify-list').innerHTML = [
+      `<label class="check"><input type="checkbox" name="notify" value="family" checked><span>簡訊通知主要照顧者 ${esc(c.carer.name)}（${esc(c.carer.rel)}）</span></label>`,
+      `<label class="check"><input type="checkbox" name="notify" value="aide" checked><span>推播通知照服員 ${esc(cg.name)}</span></label>`,
+      c.staff !== App.ME ? `<label class="check"><input type="checkbox" name="notify" value="staff" checked><span>同步通知承辦照管專員 ${esc(staff.name)}</span></label>` : '',
+    ].join('');
+    $('#handoff').value = [c.flags.join('、'), c.carer.note].filter(Boolean).join('。') + '。';
+  }
+
+  form.addEventListener('change', e => {
+    if (e.target.id === 'consent') $('#consent-field').classList.toggle('is-invalid', !e.target.checked);
+  });
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!dlg.open || !pending) return;
+    const consent = $('#consent', form);
+    if (consent && !consent.checked) {
+      $('#consent-field').classList.add('is-invalid');
+      consent.setAttribute('aria-invalid', 'true');
+      consent.focus();
+      return;
+    }
+    const p = pending, c = App.getCase(p.caseId), cg = App.getCaregiver(p.cgId);
+    const notified = $$('input[name="notify"]:checked', form).map(i => ({ family: '家屬', aide: '照服員', staff: '承辦專員' })[i.value]);
+    const snap = { stage: c.stage, aides: c.aides.slice(), schedule: c.schedule };
+    const svcCodes = c.services.filter(code => CARE_GROUPS.includes(App.SERVICES[code].group));
+    c.stage = 'service';
+    c.aides = [cg.id];
+    c.schedule = p.slots.map((s, i) => ({ day: s.day, from: s.from, to: s.from + len(c.request.sessions[i]), aide: cg.id, svc: svcCodes }))
+      .sort((a, b) => a.day - b.day || a.from - b.from);
+    state.dispatched.push({ id: c.id, cgId: cg.id });
+    pending = null;
+    App.closeDialog(dlg);
+    App.emit('case:dispatch', { id: c.id });
+    // 接著媒合下一位：捲回清單，焦點移到新選中的個案（全部派完則移到完成訊息），不讓使用者停在已換人的排班表底部
+    const nextFocus = !state.caseId ? $('#done-title') : $('.dsp-q[aria-pressed="true"]') || $('#queue-title');
+    if (!nextFocus.matches('button')) nextFocus.tabIndex = -1;
+    nextFocus.focus({ preventScroll: true });
+    $(state.caseId ? '#match' : '#all-done').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block: 'start' });
+    App.toast(`已派案：${c.name} ← ${cg.name}`, {
+      desc: `首次服務 ${fmt.date(dateOfDay(p.first.day))} ${hr(p.first.from)}${notified.length ? `，已通知${notified.join('、')}` : ''}。`,
+      action: {
+        label: '復原',
+        onClick: () => {
+          Object.assign(c, snap);
+          state.dispatched = state.dispatched.filter(d => d.id !== c.id);
+          state.caseId = c.id;
+          App.emit('case:undispatch', { id: c.id });
+        },
+      },
+    });
+  });
+
+  dlg.addEventListener('close', () => { pending = null; });
+
+  /* ================= 配對分數說明 ================= */
+  $('#rules-btn').addEventListener('click', () => {
+    App.modal({
+      title: '配對分數怎麼算',
+      icon: 'info',
+      body: `<p class="muted">系統依照顧計畫的需求，替每位照服員算出 0–100 分，只用來排序參考；最後仍由照管專員和家屬討論決定。</p>
+        <ul class="dsp-rules">
+          <li><b>照顧技能 40 分</b><span>依需要的技能逐項比對，例如管灌、翻身拍背、失智照顧、復能。</span></li>
+          <li><b>語言 15 分</b><span>長輩慣用的語言，包含台語、客語、越南語與手語。</span></li>
+          <li><b>性別偏好 10 分</b><span>家屬或長輩對照服員性別有偏好時才計分，沒有偏好就給滿分。</span></li>
+          <li><b>距離 20 分</b><span>以道路距離估算，2 公里內滿分、超過 20 公里不計分。</span></li>
+          <li><b>可服務時段 15 分</b><span>申請時段落在照服員的服務時間內，且沒有和既有排班重疊。</span></li>
+        </ul>
+        <p class="notice notice--sage"><span class="notice__icon">${icon('leaf')}</span><span>排班時另會檢查照服員每週上限時數，避免同一位照服員承接過多個案。</span></p>`,
+      actions: [{ label: '知道了', variant: 'primary' }],
+    });
+  });
+
+  /* ================= 同步重繪 ================= */
+  function renderAll() {
+    const q = queue();
+    if (!q.some(c => c.id === state.caseId)) state.caseId = q[0] ? q[0].id : null;
+    const c = current();
+    renderStats(q);
+    renderQueue(q);
+    $('#match').hidden = !c;
+    arrange.hidden = !c;
+    $('#all-done').hidden = !!c;
+    if (!c) { renderSteps(null, false); return; }
+    renderNeed(c);
+    renderCands(c);
+    renderArrange(c);
+  }
+
+  document.addEventListener('app:data', () => { state.dataVer++; renderAll(); });
+
+  // 從個案詳情帶 ?id= 進來時，直接選那位長輩
+  const want = App.param('id');
+  if (want) {
+    const wc = App.getCase(want);
+    if (wc && wc.stage === 'dispatch') state.caseId = want;
+    else if (wc) App.toast(`${wc.name}目前不在待派案階段`, { tone: 'info', desc: `目前階段：${App.stageOf(wc.stage).label}。先為等候最久的長輩媒合。` });
+  }
+  renderAll();
+});
+</script>
+</body>
+</html>

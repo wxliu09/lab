@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>申請案件 — 澄港市 市政檔案 應用調閱申請</title>
+<meta name="description" content="澄港市政府市政檔案館 應用調閱申請案件總表：依流程階段的點陣分佈、申請目的與審核狀態篩選、法定期限排序與案件速覽。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---- 版面：案件清單 ＋ 速覽側欄 ---- */
+  .rq-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 344px); gap: var(--s-5); align-items: start; margin-top: var(--s-6); }
+  .rq-list { min-width: 0; }
+
+  /* ---- 流程點陣板：每格 1 件，網點密度＝法定期限壓力 ---- */
+  .rq-board { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--ink); }
+  .rq-col { display: grid; grid-template-rows: auto 1fr; min-width: 0; border-left: 1px solid var(--ink); }
+  .rq-col:first-child { border-left: 0; }
+  /* 終結狀態（結案／不予提供）與流程中的五欄以雙線分開 */
+  .rq-col--end { border-left: 4px double var(--ink); }
+  .rq-col--end + .rq-col--end { border-left: 1px solid var(--ink); }
+  .rq-col__head {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 8px;
+    width: 100%; min-height: 58px; padding: 10px 12px; border: 0; border-bottom: 1px dotted var(--ink);
+    background: var(--paper); color: inherit; text-align: left;
+  }
+  .rq-col--end .rq-col__head { background: var(--wash); }
+  .rq-col__head:hover { background: var(--wash-2); }
+  .rq-col__head[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-bottom-style: solid; --dotnum-off: var(--g2); }
+  /* 流程箭頭：背景跟著標題列（反白時也一起反白） */
+  .rq-col--arrow .rq-col__head::after {
+    content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 12px; height: 12px;
+    background: inherit; border-top: 1px solid var(--ink); border-right: 1px solid var(--ink); transform: translateY(-50%) rotate(45deg);
+  }
+  .rq-col__label { display: grid; gap: 4px; min-width: 0; }
+  .rq-col__no { font: 600 10.5px/1 var(--mono); letter-spacing: 0.08em; color: var(--text-3); }
+  .rq-col__head[aria-pressed="true"] .rq-col__no { color: var(--paper); }
+  .rq-col__name { overflow: hidden; font: 700 15px/1.25 var(--serif); letter-spacing: 0.06em; white-space: nowrap; text-overflow: ellipsis; }
+  .rq-col__num { display: block; line-height: 0; }
+  .rq-col__body { display: grid; align-content: space-between; gap: 10px; min-width: 0; padding: 12px 12px 10px; }
+  .rq-cells { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px; min-height: 20px; }
+  .rq-col__note { font: 500 11px/1.45 var(--mono); letter-spacing: 0.02em; color: var(--text-2); }
+  .rq-col__note b { font-weight: 600; color: var(--text); }
+
+  .rq-cell {
+    position: relative; display: block; width: 20px; height: 20px; flex: none; padding: 0;
+    border: 1.5px solid var(--ink); border-radius: 0; background: var(--paper); color: inherit;
+  }
+  span.rq-cell { width: 14px; height: 14px; }
+  .rq-cell[data-k="over"] { background: var(--ink); }
+  .rq-cell[data-k="soon"] { background-image: var(--dot-75); }
+  .rq-cell[data-k="ok"] { background-image: var(--dot-25); }
+  .rq-cell[data-k="paused"] { background-image: var(--hatch); }
+  .rq-cell[data-k="sched"]::after { content: ""; position: absolute; inset: 26%; background: var(--ink); }
+  .rq-cell[data-k="closed"] { border-color: var(--g8); background: var(--g13); }
+  .rq-cell[data-k="rejected"] { background: var(--paper) var(--cross) center / 100% no-repeat; }
+  /* 不符合目前篩選：只留虛線空框，像未刷新的格子 */
+  .rq-cell.is-dim { border: 1px dashed var(--g8); background: var(--paper); }
+  .rq-cell.is-dim::after { display: none; }
+  button.rq-cell:hover { z-index: 1; box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink); }
+  .rq-cell[aria-current="true"] { z-index: 2; box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+  /* 進場：格子依序「反相一瞬 → 定影」逐格填入；結束後狀態就是原本的樣子 */
+  .rq-board.is-filling .rq-cell { animation: rq-cell-in 150ms linear backwards; animation-delay: calc(var(--n, 0) * 18ms); }
+  @keyframes rq-cell-in { 0% { opacity: 0; } 1%, 55% { opacity: 1; filter: invert(1); } 56%, 100% { opacity: 1; filter: none; } }
+  .rq-tip { white-space: nowrap; }
+
+  .rq-key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-2); }
+  .rq-key li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+  /* ---- 篩選列 ---- */
+  .rq-fb { gap: 10px 12px; }
+  .rq-fb .search { flex: 1 1 240px; max-width: 340px; }
+  .rq-fb .input, .rq-fb .select { height: 35px; font-size: 14px; }
+  .rq-fb .select { width: auto; }
+  .rq-fb .filterbar__label { min-width: 4.6em; }
+  .rq-spacer { flex: 1 1 0; }
+  .rq-result { font: 500 12px/1 var(--mono); color: var(--text-2); white-space: nowrap; }
+  .rq-result b { font-size: 17px; font-weight: 600; color: var(--text); }
+  .rq-segn { margin-left: 5px; font: 600 11px/1 var(--mono); }
+  /* 計數跟著按鈕底色走：局部刷新偵測到透明底會補紙色，反白按鈕內的數字就會整個消失 */
+  .rq-segn, .rq-chip .chip__count { background: inherit; }
+  .rq-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .rq-chip .status { gap: 0; }
+  .rq-chip .status__sw { width: 11px; height: 11px; }
+  .rq-chip[aria-pressed="true"] .status__sw { border-color: var(--paper); }
+
+  /* ---- 表格 ---- */
+  .rq-tablewrap { background: var(--paper); }
+  /* 申請人欄吃剩餘寬度；容器不夠時在表格框內橫向捲動，不壓扁姓名 */
+  .rq-table { min-width: 860px; table-layout: fixed; }
+  .rq-table th { padding: 10px; }
+  .rq-table td { padding: 12px 10px; vertical-align: top; }
+  .rq-table th:first-child, .rq-table td:first-child { padding-left: 16px; }
+  .rq-table th:last-child, .rq-table td:last-child { padding-right: 16px; }
+  .rq-th-id { width: 108px; }
+  .rq-th-purpose { width: 92px; }
+  .rq-th-files { width: 156px; }
+  .rq-th-status { width: 128px; }
+  .rq-th-visit { width: 102px; }
+  .rq-th-due { width: 152px; }
+  .rq-id { font: 600 14px/1.3 var(--mono); letter-spacing: 0.02em; text-decoration: none; box-shadow: inset 0 -1px 0 currentColor; }
+  .rq-id:hover { background: var(--ink); color: var(--paper); box-shadow: none; }
+  .rq-idsub { display: flex; margin-top: 8px; }
+  .rq-sub { display: block; margin-top: 5px; font: 500 11.5px/1.35 var(--mono); letter-spacing: 0.02em; color: var(--text-3); }
+  .rq-who { display: grid; gap: 3px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+  .rq-who__name { display: flex; align-items: center; gap: 7px; min-width: 0; font: 700 15px/1.3 var(--serif); letter-spacing: 0.04em; }
+  .rq-who__name b { font-weight: 700; }
+  .rq-who:hover b { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+  .rq-who__org { overflow: hidden; font-size: 12.5px; line-height: 1.45; color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
+  .rq-self { flex: none; padding: 2px 4px; border: 1px solid var(--ink); font: 600 10px/1 var(--mono); letter-spacing: 0.04em; }
+  .rq-snip { display: block; margin-top: 4px; overflow: hidden; font-size: 12px; line-height: 1.45; color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; }
+  .rq-fid { display: block; font: 500 12.5px/1.35 var(--mono); letter-spacing: 0.01em; }
+  .rq-fline { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; margin: 3px 0 0 -2px; }
+  .rq-more { padding-left: 2px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  .rq-visit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .rq-visit b { font: 700 14px/1.3 var(--serif); white-space: nowrap; }
+  .rq-visit--past b { font-weight: 500; color: var(--text-2); }
+  .rq-today { height: 18px; padding: 0 5px; font: 600 10.5px/1 var(--serif); }
+  .rq-wishtag { margin-right: 5px; padding: 1px 4px; border: 1px dashed var(--ink); font-size: 10.5px; color: var(--text); }
+  .rq-settle { display: inline-flex; align-items: center; gap: 6px; font: 700 13px/1.3 var(--serif); }
+  .rq-table .duebar .dots { --dot: 3px; }
+  .rq-table .duebar__label { flex-wrap: wrap; row-gap: 3px; }
+  .rq-empty { display: grid; justify-items: center; padding-bottom: 32px; }
+  .rq-foot .pager { margin-left: auto; }
+  .rq-foot__info b { font-family: var(--mono); color: var(--text); }
+
+  /* ---- 案件速覽（電子書頁） ---- */
+  .rq-peek { position: sticky; top: 16px; min-width: 0; border: 2px solid var(--ink); background: var(--paper); box-shadow: var(--drop-sm); }
+  /* 側欄比視窗高時（多件檔案）改在側欄內捲動，確保底部動作按鈕永遠搆得到 */
+  .rq-peek:not(.rq-peek--modal) #peekBody { max-height: calc(100vh - 32px - 50px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink) var(--wash); }
+  .rq-peek__bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 8px 0 12px; border-bottom: 2px solid var(--ink); background: var(--paper) var(--stripes); }
+  .rq-peek__title { padding: 4px 10px; background: var(--paper); font: 700 15px/1.3 var(--serif); letter-spacing: 0.1em; white-space: nowrap; }
+  .rq-peek__keys { display: inline-flex; gap: 3px; margin-left: auto; padding: 4px; background: var(--paper); }
+  .rq-peek__bar .pager { gap: 6px; padding: 2px; background: var(--paper); }
+  .rq-peek__bar .pager__pos { min-width: 50px; }
+  .rq-peek__page { position: relative; background: var(--paper); }
+  .rq-peek__head { display: grid; gap: 7px; padding: 14px 16px 12px; }
+  .rq-peek__idrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rq-peek__id { font: 600 22px/1 var(--mono); letter-spacing: 0.02em; }
+  .rq-peek__idrow .barcode { flex: none; max-width: 52%; height: auto; }
+  .rq-peek__namerow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+  .rq-peek__name { display: flex; align-items: center; gap: 8px; min-width: 0; font: 900 21px/1.25 var(--serif); letter-spacing: 0.08em; }
+  .rq-peek__org { font-size: 13px; line-height: 1.5; color: var(--text-2); }
+  .rq-peek__reason { display: -webkit-box; overflow: hidden; padding-left: 10px; border-left: 3px solid var(--ink); font-size: 14px; line-height: 1.6; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .rq-peek__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+  .rq-peek__grid > div { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 7px 16px; }
+  .rq-peek__grid > div:nth-child(even) { border-left: 1px dotted var(--ink); }
+  .rq-peek__grid > div:nth-child(n + 3) { border-top: 1px dotted var(--ink); }
+  .rq-peek__grid dt { font: 600 10.5px/1.2 var(--mono); letter-spacing: 0.08em; color: var(--text-2); }
+  .rq-peek__grid dd { margin: 0; font-size: 13.5px; line-height: 1.45; }
+  .rq-peek__grid dd small { margin-left: 6px; font-size: 12px; color: var(--text-3); }
+  .rq-peek__scanwrap { padding: 12px 16px 0; }
+  .rq-scan { --ratio: 8 / 3; }
+  .rq-scan__fx { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; }
+  .rq-scan__badge, .rq-scan__pages { position: absolute; padding: 4px 6px; font: 600 10.5px/1 var(--mono); letter-spacing: 0.06em; }
+  .rq-scan__badge { left: 0; top: 0; background: var(--ink); color: var(--paper); }
+  .rq-scan__badge--dash { background: var(--paper); color: var(--ink); outline: 1px dashed var(--ink); outline-offset: -1px; }
+  .rq-scan__pages { right: 0; bottom: 0; border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); background: var(--paper); color: var(--ink); }
+  /* 遮蔽預覽：黑條在條帶刷新畫完之後才逐條拉出 */
+  .rq-bar { position: absolute; height: 7%; background: var(--ink); transform-origin: left center; animation: redact-bar 560ms steps(8, end) both; animation-delay: calc(var(--i) * 140ms + 640ms); }
+  .rq-bar--mark { background: var(--paper) var(--dot-6); outline: 1px dashed var(--ink); animation: none; }
+  .rq-stamp { background: var(--paper); font-size: 16px; }
+  .rq-stamp.is-pressed { animation-delay: 620ms; }
+  .rq-stamp small { font-size: 9px; letter-spacing: 0.02em; }
+  .rq-files { margin: 0; padding: 6px 16px 4px; list-style: none; }
+  .rq-file { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 2px 10px; width: 100%; padding: 4px 6px; border: 0; border-top: 1px dotted var(--g8); background: none; color: inherit; text-align: left; }
+  .rq-files li:first-child .rq-file { border-top: 0; }
+  .rq-file:hover { background: var(--wash); }
+  .rq-file__no { grid-row: 1 / 3; display: grid; place-items: center; height: 24px; border: 1.5px solid var(--ink); font: 600 11px/1 var(--mono); }
+  .rq-file[aria-pressed="true"] .rq-file__no { background: var(--ink); color: var(--paper); }
+  .rq-file[aria-pressed="true"] .rq-file__title { text-decoration: underline; text-underline-offset: 3px; }
+  .rq-file__title { overflow: hidden; font: 700 13.5px/1.35 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+  .rq-file__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; font: 500 11px/1.2 var(--mono); color: var(--text-3); }
+  .rq-file__meta .restrict, .rq-file__meta .decision { height: 18px; font-size: 11px; }
+  .rq-file__meta .restrict { margin: 2px 2px 2px 4px; }
+  .rq-peek__flow { display: grid; gap: 9px; padding: 11px 16px 12px; border-top: 1px solid var(--ink); }
+  .rq-peek__label { display: flex; justify-content: space-between; gap: 10px; font: 600 10.5px/1.2 var(--mono); letter-spacing: 0.08em; color: var(--text-2); }
+  .rq-stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .rq-stages li { display: grid; gap: 4px; min-width: 0; }
+  .rq-stages i { display: block; height: 12px; box-shadow: inset 0 0 0 1.5px var(--ink); background: var(--paper); }
+  .rq-stages [data-state="done"] i { background: var(--ink); }
+  .rq-stages [data-state="current"] i { background: var(--paper) var(--dot-50); box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ink); }
+  .rq-stages [data-state="skip"] i { border: 1px dashed var(--g8); box-shadow: none; }
+  .rq-stages [data-state="stop"] i { background: var(--paper) var(--cross) center / auto 100% no-repeat; }
+  .rq-stages b { font: 700 12px/1.2 var(--serif); letter-spacing: 0.04em; }
+  .rq-stages [data-state="todo"] b, .rq-stages [data-state="skip"] b { font-weight: 500; color: var(--text-3); }
+  .rq-stages [data-state="skip"] b { text-decoration: line-through; }
+  .rq-stages span { overflow: hidden; font: 500 10.5px/1 var(--mono); color: var(--text-3); white-space: nowrap; }
+  .rq-peek__last { font-size: 13px; line-height: 1.55; }
+  .rq-peek__last .mono { margin-right: 6px; font-size: 11.5px; }
+  .rq-peek__last small { display: block; overflow: hidden; font-size: 12.5px; color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; }
+  .rq-peek__visit { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+  .rq-peek__visit .px { flex: none; }
+  .rq-peek__foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 14px; border-top: 1px dotted var(--ink); }
+  .rq-peek__foot .btn { flex: 1 1 auto; }
+  .rq-modalbody { padding: 0 !important; }
+  .rq-peek--modal { position: static; border: 0; box-shadow: none; }
+
+  /* 欄寬不足以讓名稱與點陣數字並排時，改成「編號＋數字」在上、名稱在下 */
+  @media (min-width: 961px) and (max-width: 1439px) {
+    .rq-col__head { grid-template-areas: "no num" "name name"; align-items: end; row-gap: 6px; }
+    .rq-col__label { display: contents; }
+    .rq-col__no { grid-area: no; align-self: start; }
+    .rq-col__name { grid-area: name; }
+    .rq-col__num { grid-area: num; }
+  }
+  @media (max-width: 1279px) {
+    .rq-layout { grid-template-columns: minmax(0, 1fr); }
+    .rq-peek:not(.rq-peek--modal) { display: none; }
+  }
+  @media (max-width: 960px) {
+    .rq-board { grid-template-columns: minmax(0, 1fr); }
+    .rq-col { grid-template-columns: 168px minmax(0, 1fr); grid-template-rows: none; border-left: 0; border-top: 1px dotted var(--ink); }
+    .rq-col:first-child { border-top: 0; }
+    .rq-col--end { border-left: 0; border-top: 4px double var(--ink); }
+    .rq-col--end + .rq-col--end { border-left: 0; border-top: 1px dotted var(--ink); }
+    .rq-col__head { min-height: 0; border-bottom: 0; border-right: 1px dotted var(--ink); }
+    .rq-col__head[aria-pressed="true"] { border-right-style: solid; }
+    .rq-col--arrow .rq-col__head::after { display: none; }
+    .rq-col__body { align-content: center; gap: 6px; padding: 10px 12px; }
+  }
+  @media (max-width: 720px) {
+    .rq-col { grid-template-columns: 118px minmax(0, 1fr); }
+    .rq-col__head { gap: 0 6px; padding: 8px 10px; }
+    .rq-col__name { font-size: 13.5px; letter-spacing: 0.04em; }
+    .rq-col__num .dotnum { width: 33px; height: 21px; }
+    .rq-cells { gap: 3px; }
+    .rq-cell { width: 18px; height: 18px; }
+    .rq-fb .search { flex-basis: 100%; max-width: none; }
+    .rq-fb .select { flex: 1 1 140px; }
+    .rq-spacer { display: none; }
+    .rq-fb .filterbar__label { flex-basis: 100%; }
+    .rq-table { min-width: 0; }
+    .rq-table td, .rq-table td:first-child, .rq-table td:last-child { padding: 0; }
+    /* 卡片：案號｜狀態 → 申請人 → 目的｜閱覽日 → 檔號 → 期限 */
+    .rq-table td.rq-c-id { order: 1; }
+    .rq-table td.rq-c-status { order: 2; }
+    .rq-table td.rq-c-who { order: 3; grid-column: 1 / -1; }
+    .rq-table td.rq-c-purpose { order: 4; }
+    .rq-table td.rq-c-visit { order: 5; }
+    .rq-table td.rq-c-files { order: 6; grid-column: 1 / -1; }
+    .rq-table td.rq-c-due { order: 7; grid-column: 1 / -1; }
+    .rq-table .duebar .dots { --dot: 4px; }
+    .rq-foot .pager { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="statusbar">
+  <div class="wrap statusbar__inner">
+    <a class="backlink" href="../../index.html"><i data-icon="arrow-l"></i>返回目錄</a>
+    <span class="statusbar__org">澄港市政府 市政檔案館｜檔案應用調閱管理系統</span>
+    <span class="statusbar__spacer"></span>
+    <span class="statusbar__item hide-sm"><i data-icon="thermo"></i>B2 庫房 18.2°C・RH 51%</span>
+    <span class="statusbar__item hide-sm"><i data-icon="refresh"></i>全刷新 <span data-last-refresh>09:14</span></span>
+    <span class="statusbar__clock" data-clock>二 10/27 09:14</span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html" aria-label="市政檔案 應用調閱管理系統，回總覽">
+      <span class="brand__mark" aria-hidden="true"><i data-icon="logo" data-size="24"></i></span>
+      <span><span class="brand__name">市政檔案</span><span class="brand__sub">應用調閱管理系統・CGMA</span></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="nav-item" href="index.html"><i data-icon="overview"></i><span class="nav-item__label">總覽</span></a></li>
+        <li><a class="nav-item" href="requests.html" aria-current="page"><i data-icon="requests"></i><span class="nav-item__label">申請案件</span><span class="nav-item__count"><span class="sr-only">進行中</span><span data-count="active">36</span></span></a></li>
+        <li><a class="nav-item" href="request.html"><i data-icon="request"></i><span class="nav-item__label">申請詳情</span></a></li>
+        <li><a class="nav-item" href="catalog.html"><i data-icon="box"></i><span class="nav-item__label">檔案目錄</span><span class="nav-item__count"><span class="sr-only">申請清單</span><span data-count="cart">2</span></span></a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <button class="icon-btn" type="button" data-search aria-label="全站檢索（快捷鍵 /）"><i data-icon="search"></i></button>
+      <button class="icon-btn" type="button" data-full-refresh aria-label="全刷新畫面"><i data-icon="refresh"></i></button>
+      <div class="user-chip">
+        <span class="avatar" aria-hidden="true">林</span>
+        <span class="user-chip__text"><span class="user-chip__name">林予安</span><span class="user-chip__role">應用服務課・承辦</span></span>
+      </div>
+      <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-controls="siteNav" aria-expanded="false" aria-label="開啟選單"><i data-icon="menu"></i></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="wrap">
+
+    <section class="page-head" aria-labelledby="pageTitle">
+      <div class="page-head__main">
+        <p class="page-head__eyebrow"><span class="invert">申請案件</span><span>REQUESTS</span><span>115 年度</span><span>2026-10-27 TUE</span></p>
+        <h1 class="page-title" id="pageTitle">調閱申請案件</h1>
+        <p class="page-desc">線上與臨櫃受理的調閱申請，從承辦審核到閱覽複製。<br>受理次日起 30 日內准駁，補正期間停止計算，必要時得延長 30 日。</p>
+      </div>
+      <div class="page-head__actions">
+        <button class="btn" type="button" id="printSlips"><i data-icon="print"></i>列印調卷單</button>
+        <button class="btn btn--primary" type="button" id="exportCsv"><i data-icon="download"></i>匯出清單</button>
+      </div>
+    </section>
+
+    <div class="rq-layout">
+      <section class="panel rq-list" id="listPanel" aria-labelledby="listTitle" data-reveal>
+        <div class="panel__head">
+          <h2 class="panel__title" id="listTitle">案件清單</h2>
+          <span class="panel__code">逾期 <span data-count="overdue">1</span>・5 日內 <span data-count="dueSoon">3</span>・補正暫停 <span data-count="supplement">2</span></span>
+          <div class="panel__actions">
+            <ul class="rq-key" aria-label="點陣板圖例：每格 1 件">
+              <li><span class="rq-cell" data-k="over"></span>逾期</li>
+              <li><span class="rq-cell" data-k="soon"></span>5 日內到期</li>
+              <li><span class="rq-cell" data-k="ok"></span>期限內</li>
+              <li><span class="rq-cell" data-k="paused"></span>補正暫停</li>
+              <li><span class="rq-cell" data-k="sched"></span>已排閱覽</li>
+              <li><span class="rq-cell" data-k="closed"></span>已結案</li>
+              <li><span class="rq-cell" data-k="rejected"></span>不予提供</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rq-board" id="board" role="group" aria-label="流程點陣板：依階段分欄，每格 1 件；點選欄位標題可只看該階段"></div>
+
+        <div class="filterbar rq-fb">
+          <div class="search"><i data-icon="search"></i><input class="input" type="search" id="q" placeholder="案號、申請人、單位、檔號或題名" aria-label="搜尋案件" autocomplete="off"></div>
+          <div class="seg" id="scopeSeg" role="group" aria-label="承辦範圍">
+            <button type="button" data-value="all" aria-pressed="true">全部<span class="rq-segn" data-n></span></button>
+            <button type="button" data-value="mine" aria-pressed="false">我承辦<span class="rq-segn" data-n></span></button>
+          </div>
+          <select class="select" id="restrictSel" aria-label="限制應用"></select>
+          <select class="select only-sm" id="sortSel" aria-label="排序方式"></select>
+          <span class="rq-spacer"></span>
+          <span class="rq-result" id="rqResult" aria-live="polite"></span>
+          <button class="btn btn--sm" type="button" id="clearAll" disabled><i data-icon="x"></i>清除篩選</button>
+        </div>
+        <div class="filterbar rq-fb" role="group" aria-labelledby="fbPurpose">
+          <span class="filterbar__label" id="fbPurpose">申請目的</span>
+          <div class="rq-chips" id="purposeChips"></div>
+        </div>
+        <div class="filterbar rq-fb" role="group" aria-labelledby="fbStatus">
+          <span class="filterbar__label" id="fbStatus">審核狀態</span>
+          <div class="rq-chips" id="statusChips"></div>
+        </div>
+
+        <div class="table-wrap rq-tablewrap" id="rqTable"></div>
+
+        <div class="panel__foot rq-foot">
+          <span class="rq-foot__info" id="pageInfo"></span>
+          <nav class="pager" aria-label="清單分頁">
+            <button class="icon-btn icon-btn--sm" type="button" id="pgPrev" aria-label="上一頁"><i data-icon="chev-l"></i></button>
+            <span class="pager__pos" id="pgPos">1 / 1</span>
+            <span class="pager__dots" id="pgDots" aria-hidden="true"></span>
+            <button class="icon-btn icon-btn--sm" type="button" id="pgNext" aria-label="下一頁"><i data-icon="chev-r"></i></button>
+          </nav>
+        </div>
+      </section>
+
+      <aside class="rq-peek" id="rqPeek" aria-labelledby="peekTitle" data-reveal style="--i:1">
+        <div class="rq-peek__bar">
+          <h2 class="rq-peek__title" id="peekTitle">案件速覽</h2>
+          <span class="rq-peek__keys" title="J 下一件・K 上一件" aria-hidden="true"><kbd>J</kbd><kbd>K</kbd></span>
+          <span class="pager">
+            <button class="icon-btn icon-btn--sm" type="button" id="peekPrev" aria-label="上一件（K）"><i data-icon="chev-l"></i></button>
+            <span class="pager__pos" id="peekPos">— / 44</span>
+            <button class="icon-btn icon-btn--sm" type="button" id="peekNext" aria-label="下一件（J）"><i data-icon="chev-r"></i></button>
+          </span>
+        </div>
+        <div id="peekBody"></div>
+      </aside>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <nav class="pageloc-bar" aria-label="頁面位置">
+      <span class="pageloc-bar__label">位置</span>
+      <ol class="pageloc">
+        <li><a href="index.html"><span class="mono">01</span><span class="pageloc__name">總覽</span></a></li>
+        <li><a href="requests.html" aria-current="page"><span class="mono">02</span><span class="pageloc__name">申請案件</span></a></li>
+        <li><a href="request.html"><span class="mono">03</span><span class="pageloc__name">申請詳情</span></a></li>
+        <li><a href="catalog.html"><span class="mono">04</span><span class="pageloc__name">檔案目錄</span></a></li>
+      </ol>
+      <span class="pageloc-bar__pos" data-pageloc>2 / 4</span>
+    </nav>
+    <div class="site-footer__grid">
+      <div>
+        <p class="site-footer__name">澄港市政府 市政檔案館</p>
+        <p>澄港市舊城區文昌路 18 號</p>
+        <p>第一閱覽室 週二至週六 09:00–17:00（12:00–13:30 閉室整理）</p>
+        <p>應用服務課 (07) 562-3180 分機 214</p>
+      </div>
+      <div>
+        <h2 class="site-footer__h">系統</h2>
+        <ul>
+          <li><a href="index.html">總覽</a></li>
+          <li><a href="requests.html">申請案件</a></li>
+          <li><a href="request.html">申請詳情</a></li>
+          <li><a href="catalog.html">檔案目錄</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="site-footer__h">作業依據</h2>
+        <p>依《澄港市市政檔案應用辦法》第 8 條，申請應於受理次日起 30 日內准駁；補正期間不計入，必要時得延長 30 日。</p>
+        <p>涉個人隱私、國家安全或營業秘密者，依第 12 條限制應用，得遮蔽後提供。</p>
+      </div>
+      <div>
+        <h2 class="site-footer__h">顯示</h2>
+        <p>電子紙模式・16 階灰・點陣抖色影像</p>
+        <p>最後全刷新 <span class="mono" data-last-refresh>09:14</span></p>
+        <p style="margin-top:10px"><button class="btn btn--sm" type="button" data-full-refresh><i data-icon="refresh"></i>全刷新</button></p>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 市政檔案館・虛構示範系統</span>
+      <span>EINK-UI 2.6・16 GRAY・BAYER / FLOYD–STEINBERG</span>
+    </div>
+  </div>
+</footer>
+
+<p class="sr-only" id="rqLive" aria-live="polite"></p>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { esc, fmt } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const TODAY = App.TODAY;
+  const PER = 12;
+  const STATUS_KEYS = Object.keys(App.STATUSES);
+  const PURPOSE_KEYS = Object.keys(App.PURPOSES);
+  // 速覽側欄只在寬螢幕常駐；較窄時改以對話框開啟
+  const wide = matchMedia('(min-width: 1280px)');
+
+  const GROUPS = [
+    { key: 'review', no: '01', name: '承辦審核', statuses: ['pending', 'supplement'], arrow: true },
+    { key: 'retrieve', no: '02', name: '檔管調卷', statuses: ['retrieving'], arrow: true },
+    { key: 'redact', no: '03', name: '遮蔽處理', statuses: ['redacting'], arrow: true },
+    { key: 'approve', no: '04', name: '首長核定', statuses: ['approving'], arrow: true },
+    { key: 'access', no: '05', name: '待閱覽', statuses: ['scheduled'] },
+    { key: 'closed', no: 'END', name: '已結案', statuses: ['closed'], end: true },
+    { key: 'rejected', no: 'REJ', name: '不予提供', statuses: ['rejected'], end: true },
+  ];
+  const COLS = [
+    ['id', '案號', 'rq-th-id'], ['name', '申請人', 'rq-th-who'], ['purpose', '申請目的', 'rq-th-purpose'], ['files', '調閱檔號', 'rq-th-files'],
+    ['status', '審核狀態', 'rq-th-status'], ['visit', '預定閱覽日', 'rq-th-visit'], ['due', '法定期限', 'rq-th-due'],
+  ];
+  const SORT_NAMES = { id: '案號', name: '申請人', purpose: '申請目的', files: '調閱件數', status: '審核狀態', visit: '預定閱覽日', due: '法定期限' };
+  const DEFAULT_DIR = { id: -1, name: 1, purpose: 1, files: -1, status: 1, visit: 1, due: 1 };
+  const SORT_OPTS = [['due:1', '法定期限：由急到緩'], ['id:-1', '案號：新到舊'], ['id:1', '案號：舊到新'], ['visit:1', '預定閱覽日：近到遠'], ['status:1', '審核狀態：依流程'], ['name:1', '申請人姓名']];
+  const RESTRICT_OPTS = [['all', '限制應用：全部'], ['privacy', '含個人隱私'], ['security', '含國家安全'], ['trade', '含營業秘密'], ['none', '無限制應用']];
+  const STEP_ACT = {
+    supplement: ['resume', '補正完成', 'check'],
+    retrieving: ['retrieved', '調卷完成', 'box'],
+    redacting: ['redacted', '遮蔽完成', 'redact'],
+    approving: ['approve', '登錄核定', 'stamp'],
+  };
+  const VERBS = { resume: '補正完成，退回承辦審核', retrieved: '調卷完成', redacted: '遮蔽處理完成', approve: '已登錄首長核定', checkin: '已報到', checkout: '閱覽結束・結案' };
+
+  const S = { q: '', scope: 'all', purposes: new Set(), statuses: new Set(), restrict: 'all', sort: { key: 'due', dir: 1 }, page: 0, list: [], sel: null };
+
+  const board = $('#board'), tableWrap = $('#rqTable'), qInput = $('#q'), clearBtn = $('#clearAll');
+  const purposeChips = $('#purposeChips'), statusChips = $('#statusChips'), restrictSel = $('#restrictSel'), sortSel = $('#sortSel');
+  const peekPos = $('#peekPos'), peekPrev = $('#peekPrev'), peekNext = $('#peekNext');
+
+  // 只在內容真的改變時做局部刷新，避免一次動作讓整頁同時閃爍
+  const painted = new WeakMap();
+  function paint(el, html, { how = 'refresh', dir = 1, invert = true } = {}) {
+    if (painted.get(el) === html) return;
+    const first = !painted.has(el);
+    painted.set(el, html);
+    const set = () => { el.innerHTML = html; };
+    if (first || how === 'none') set();
+    else if (how === 'turn') App.eink.turn(el, set, { dir });
+    else App.eink.refresh(el, set, { invert });
+  }
+  // 計數改用 dataset 記錄：局部刷新期間元素內會暫時多一份殘影，textContent 不可靠
+  function setNum(el, n) {
+    const s = String(n);
+    if (el.dataset.n === s) return;
+    const first = el.dataset.n === undefined || el.dataset.n === '';
+    el.dataset.n = s;
+    if (first) el.textContent = s;
+    else App.eink.refresh(el, () => { el.textContent = s; }, { invert: false });
+  }
+
+  /* ---------------- 篩選與排序 ---------------- */
+  const hay = (r) => [r.id, r.name, r.kind, r.org, r.reason, App.PEOPLE[r.officer].name, ...r.files.map((f) => `${f.id} ${f.title}`)].join(' ').toLowerCase();
+  function matches(r, except) {
+    if (S.q && !hay(r).includes(S.q.toLowerCase())) return false;
+    if (except !== 'scope' && S.scope === 'mine' && r.officer !== App.ME) return false;
+    if (except !== 'purpose' && S.purposes.size && !S.purposes.has(r.purpose)) return false;
+    if (except !== 'status' && S.statuses.size && !S.statuses.has(r.status)) return false;
+    if (except !== 'restrict' && S.restrict !== 'all' && !restrictOk(r, S.restrict)) return false;
+    return true;
+  }
+  const restrictOk = (r, k) => (k === 'none' ? r.files.every((f) => f.restriction === 'none') : r.files.some((f) => f.restriction === k));
+  const isFiltering = () => !!(S.q || S.scope !== 'all' || S.purposes.size || S.statuses.size || S.restrict !== 'all');
+  const count = (except, pred) => App.REQUESTS.filter((r) => matches(r, except) && pred(r)).length;
+
+  // 法定期限的「急迫度」：計時中依剩餘日 → 補正暫停 → 已排閱覽依日期 → 已結案（近的在前）→ 不予提供
+  function dueKey(r) {
+    const d = App.deadline(r);
+    if (d && d.state !== 'paused') return [0, d.remaining];
+    if (d) return [1, -d.elapsed];
+    if (r.status === 'scheduled') return [2, App.days(r.visit)];
+    if (r.status === 'closed') return [3, -App.days(r.visit)];
+    return [4, -App.days(r.decidedAt)];
+  }
+  const cmpTuple = (a, b) => a[0] - b[0] || a[1] - b[1];
+  const visitOf = (r) => r.visit || r.wish || '';
+  const SORTERS = {
+    id: (a, b) => a.id.localeCompare(b.id),
+    name: (a, b) => a.name.localeCompare(b.name, 'zh-Hant-TW'),
+    purpose: (a, b) => PURPOSE_KEYS.indexOf(a.purpose) - PURPOSE_KEYS.indexOf(b.purpose),
+    files: (a, b) => a.items.length - b.items.length,
+    status: (a, b) => STATUS_KEYS.indexOf(a.status) - STATUS_KEYS.indexOf(b.status),
+    visit: (a, b) => visitOf(a).localeCompare(visitOf(b)),
+    due: (a, b) => cmpTuple(dueKey(a), dueKey(b)),
+  };
+  function computeList() {
+    const { key, dir } = S.sort;
+    S.list = App.REQUESTS.filter((r) => matches(r)).sort((a, b) => {
+      // 沒有閱覽日的案件不論升降冪都排在最後
+      if (key === 'visit' && !visitOf(a) !== !visitOf(b)) return visitOf(a) ? -1 : 1;
+      return dir * SORTERS[key](a, b) || b.id.localeCompare(a.id);
+    });
+    const pages = Math.max(1, Math.ceil(S.list.length / PER));
+    S.page = Math.min(S.page, pages - 1);
+  }
+  const sortDesc = () => (S.sort.key === 'due'
+    ? `依法定期限・${S.sort.dir > 0 ? '由急到緩' : '由緩到急'}`
+    : `依${SORT_NAMES[S.sort.key]}・${S.sort.dir > 0 ? '遞增' : '遞減'}`);
+
+  /* ---------------- 文字片段 ---------------- */
+  function hl(text) {
+    const s = String(text ?? '');
+    if (!S.q) return esc(s);
+    const lower = s.toLowerCase(), k = S.q.toLowerCase();
+    let out = '', i = 0, j;
+    while ((j = lower.indexOf(k, i)) !== -1) {
+      out += `${esc(s.slice(i, j))}<mark class="hit">${esc(s.slice(j, j + k.length))}</mark>`;
+      i = j + k.length;
+    }
+    return out + esc(s.slice(i));
+  }
+  function snippet(s) {
+    const i = s.toLowerCase().indexOf(S.q.toLowerCase());
+    const a = Math.max(0, i - 8), b = Math.min(s.length, i + S.q.length + 12);
+    return `${a > 0 ? '…' : ''}${hl(s.slice(a, b))}${b < s.length ? '…' : ''}`;
+  }
+  const day = (d) => `${fmt.md(d)}（${fmt.wd(d)}）`;
+  const selfTag = (r) => (r.self ? `<span class="rq-self">${r.kind === '法人' ? '權利人' : '當事人'}</span>` : '');
+  const methodOf = (f) => (f.type === 'photo' ? 'atkinson' : 'fs');
+  function dueText(r) {
+    const d = App.deadline(r);
+    if (d) return d.state === 'paused' ? `補正中・已用 ${d.elapsed} 日` : d.state === 'over' ? `逾期 ${-d.remaining} 日` : `第 ${d.elapsed} 日・剩 ${d.remaining} 日`;
+    if (r.status === 'scheduled') return `${r.visit === TODAY ? '今天' : day(r.visit)} ${App.SLOTS[r.slot].label}・座位 ${r.seat}`;
+    if (r.status === 'closed') return `${fmt.md(r.visit)} 閱覽完畢`;
+    return `${fmt.md(r.decidedAt)} 不予提供`;
+  }
+  function ownerLine(r) {
+    const P = App.PEOPLE;
+    switch (r.status) {
+      case 'pending': return `承辦 ${P[r.officer].name}`;
+      case 'supplement': return `${fmt.md(r.returnedAt)} 通知補正`;
+      case 'retrieving': return `${P[r.retriever].name} ${r.retrieved || 0}/${r.retrieveTotal} 件`;
+      case 'redacting': return `${P[r.redactor].name} ${r.redacted || 0}/${r.redactPages} 頁`;
+      case 'approving': return `館長 ${P.cheng.name}`;
+      case 'scheduled': return r.checkin ? `${r.checkin} 已報到` : '已通知申請人';
+      case 'closed': return r.copies ? `複製 ${r.copies} 頁` : '閱覽完畢';
+      default: return '已函復申請人';
+    }
+  }
+
+  /* ---------------- 流程點陣板 ---------------- */
+  board.innerHTML = GROUPS.map((g) => `
+    <div class="rq-col${g.end ? ' rq-col--end' : ''}${g.arrow ? ' rq-col--arrow' : ''}" data-g="${g.key}">
+      <button class="rq-col__head" type="button" aria-pressed="false" data-group="${g.key}">
+        <span class="rq-col__label"><span class="rq-col__no">${g.no}</span><span class="rq-col__name">${g.name}</span></span>
+        <span class="rq-col__num" data-part="num"></span>
+      </button>
+      <div class="rq-col__body"><div class="rq-cells" data-part="cells" role="group" aria-label="${g.name}的案件"></div><p class="rq-col__note" data-part="note"></p></div>
+    </div>`).join('') + '<div class="chart-tip rq-tip" hidden></div>';
+  const cols = GROUPS.map((g) => {
+    const el = board.querySelector(`[data-g="${g.key}"]`);
+    return { g, head: el.querySelector('.rq-col__head'), num: el.querySelector('[data-part="num"]'), cells: el.querySelector('[data-part="cells"]'), note: el.querySelector('[data-part="note"]') };
+  });
+  const tip = board.querySelector('.rq-tip');
+  const groupPressed = (g) => S.statuses.size === g.statuses.length && g.statuses.every((s) => S.statuses.has(s));
+  const cellKind = (r) => { const d = App.deadline(r); return d ? d.state : { scheduled: 'sched', closed: 'closed', rejected: 'rejected' }[r.status]; };
+  const cellHTML = (r, dim) => `<button class="rq-cell${dim ? ' is-dim' : ''}" type="button" tabindex="-1" data-id="${r.id}" data-k="${cellKind(r)}" aria-label="${esc(`${r.id} ${r.name}，${App.STATUSES[r.status].label}，${dueText(r)}`)}"></button>`;
+  function noteOf(g, rows) {
+    const sum = (f) => rows.reduce((s, r) => s + f(r), 0);
+    const by = (st) => rows.filter((r) => r.status === st).length;
+    const hasLive = (k) => rows.filter((r) => r.files.some((f) => f.restriction === k && f.decision !== 'deny')).length;
+    switch (g.key) {
+      case 'review': return `待審 ${by('pending')}・補正 ${by('supplement')}`;
+      case 'retrieve': return `已調 ${sum((r) => r.retrieved || 0)}／${sum((r) => r.retrieveTotal)} 件`;
+      case 'redact': return `${sum((r) => r.redacted || 0)}／${sum((r) => r.redactPages)} 頁`;
+      case 'approve': return `國安 ${hasLive('security')}・營秘 ${hasLive('trade')}`;
+      case 'access': return `今日 ${rows.filter((r) => r.visit === TODAY).length}・之後 ${rows.filter((r) => r.visit > TODAY).length}`;
+      case 'closed': return `複製 ${sum((r) => r.copies || 0)} 頁`;
+      default: {
+        const c = {};
+        rows.forEach((r) => { const f = r.files.find((x) => x.restriction !== 'none'); const k = f ? App.RESTRICTIONS[f.restriction].short : '其他'; c[k] = (c[k] || 0) + 1; });
+        return Object.entries(c).map(([k, n]) => `${k} ${n}`).join('・') || '—';
+      }
+    }
+  }
+  function renderBoard({ invert = false } = {}) {
+    const hit = new Set(S.list.map((r) => r.id));
+    const filtering = isFiltering();
+    cols.forEach(({ g, head, num, cells, note }) => {
+      const rows = App.REQUESTS.filter((r) => g.statuses.includes(r.status)).sort((a, b) => SORTERS.due(a, b) || b.id.localeCompare(a.id));
+      App.setDotNum(num, pad2(rows.length), { px: 4, label: `${rows.length} 件` });
+      paint(cells, rows.map((r) => cellHTML(r, filtering && !hit.has(r.id))).join(''), { invert });
+      const n = rows.filter((r) => hit.has(r.id)).length;
+      paint(note, `${noteOf(g, rows)}${filtering ? `<br><b>符合 ${n} 件</b>` : ''}`, { invert: false });
+      head.setAttribute('aria-pressed', String(groupPressed(g)));
+      head.setAttribute('aria-label', `只看「${g.name}」階段，共 ${rows.length} 件`);
+    });
+    markSelection();
+  }
+  function showTip(cell) {
+    const r = App.getRequest(cell.dataset.id);
+    tip.innerHTML = `<b>${esc(r.id)} ${esc(r.name)}</b><br>${esc(App.STATUSES[r.status].label)}・${esc(dueText(r))}`;
+    tip.hidden = false;
+    const host = board.getBoundingClientRect(), c = cell.getBoundingClientRect();
+    tip.style.left = `${Math.min(Math.max(0, c.left - host.left + c.width / 2 - tip.offsetWidth / 2), host.width - tip.offsetWidth)}px`;
+    tip.style.top = `${Math.max(0, c.top - host.top - tip.offsetHeight - 8)}px`;
+  }
+  board.addEventListener('mouseover', (e) => { const c = e.target.closest('button.rq-cell'); if (c) showTip(c); });
+  board.addEventListener('mouseleave', () => { tip.hidden = true; });
+  board.addEventListener('click', (e) => {
+    const head = e.target.closest('.rq-col__head');
+    if (head) {
+      const g = GROUPS.find((x) => x.key === head.dataset.group);
+      S.statuses = groupPressed(g) ? new Set() : new Set(g.statuses);
+      update();
+      return;
+    }
+    const cell = e.target.closest('button.rq-cell');
+    if (cell) select(cell.dataset.id);
+  });
+  // 首屏顯影後，點陣格依欄序逐格「反相 → 定影」填入
+  $('#listPanel').addEventListener('reveal', () => {
+    if (App.reduceMotion.matches) return;
+    board.querySelectorAll('.rq-cells:not(.eink-ghost) > .rq-cell').forEach((c, i) => c.style.setProperty('--n', i));
+    board.classList.add('is-filling');
+    setTimeout(() => board.classList.remove('is-filling'), App.REQUESTS.length * 18 + 400);
+  });
+
+  /* ---------------- 篩選控制 ---------------- */
+  purposeChips.innerHTML = Object.entries(App.PURPOSES).map(([k, p]) => `<button class="chip rq-chip" type="button" data-v="${k}" aria-pressed="false">${App.icon(p.icon, { size: 9 })}${p.label}<span class="chip__count" data-n></span></button>`).join('');
+  statusChips.innerHTML = Object.entries(App.STATUSES).map(([k, s]) => `<button class="chip rq-chip" type="button" data-v="${k}" aria-pressed="false"><span class="status" data-s="${k}" aria-hidden="true"><i class="status__sw"></i></span>${s.label}<span class="chip__count" data-n></span></button>`).join('');
+  restrictSel.innerHTML = RESTRICT_OPTS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  sortSel.innerHTML = SORT_OPTS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  const scopeSeg = App.seg($('#scopeSeg'), { onChange: (v) => { S.scope = v; update(); } });
+
+  function renderFacets() {
+    purposeChips.querySelectorAll('[data-v]').forEach((b) => {
+      const k = b.dataset.v, n = count('purpose', (r) => r.purpose === k);
+      b.setAttribute('aria-pressed', String(S.purposes.has(k)));
+      b.classList.toggle('is-zero', n === 0);
+      setNum(b.querySelector('[data-n]'), n);
+    });
+    statusChips.querySelectorAll('[data-v]').forEach((b) => {
+      const k = b.dataset.v, n = count('status', (r) => r.status === k);
+      b.setAttribute('aria-pressed', String(S.statuses.has(k)));
+      b.classList.toggle('is-zero', n === 0);
+      setNum(b.querySelector('[data-n]'), n);
+    });
+    $('#scopeSeg').querySelectorAll('[data-value]').forEach((b) => {
+      setNum(b.querySelector('[data-n]'), count('scope', (r) => b.dataset.value === 'all' || r.officer === App.ME));
+    });
+    [...restrictSel.options].forEach((o, i) => {
+      const n = count('restrict', (r) => o.value === 'all' || restrictOk(r, o.value));
+      o.textContent = `${RESTRICT_OPTS[i][1]}（${n}）`;
+    });
+    restrictSel.value = S.restrict;
+    const sv = `${S.sort.key}:${S.sort.dir}`;
+    sortSel.value = SORT_OPTS.some(([v]) => v === sv) ? sv : '';
+    clearBtn.disabled = !isFiltering();
+    $('#rqResult').innerHTML = `符合 <b>${S.list.length}</b>／${App.REQUESTS.length} 件`;
+  }
+  const toggleIn = (set, v) => { if (set.has(v)) set.delete(v); else set.add(v); };
+  purposeChips.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; toggleIn(S.purposes, b.dataset.v); update(); });
+  statusChips.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; toggleIn(S.statuses, b.dataset.v); update(); });
+  restrictSel.addEventListener('change', () => { S.restrict = restrictSel.value; update(); });
+  sortSel.addEventListener('change', () => {
+    if (!sortSel.value) return;
+    const [key, dir] = sortSel.value.split(':');
+    S.sort = { key, dir: +dir };
+    update({ keepPage: false });
+  });
+  // 搜尋稍候再刷新：電子紙每次刷新都有成本，連續輸入時只刷最後一次
+  let qTimer = 0;
+  const applyQuery = () => { S.q = qInput.value.trim(); update({ invert: false }); };
+  qInput.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(applyQuery, 180); });
+  qInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && qInput.value) { e.stopPropagation(); qInput.value = ''; clearTimeout(qTimer); applyQuery(); }
+  });
+  function clearAll() {
+    Object.assign(S, { q: '', scope: 'all', purposes: new Set(), statuses: new Set(), restrict: 'all' });
+    qInput.value = '';
+    scopeSeg.set('all');
+    update();
+  }
+  clearBtn.addEventListener('click', clearAll);
+  function setSort(key) {
+    S.sort = S.sort.key === key ? { key, dir: -S.sort.dir } : { key, dir: DEFAULT_DIR[key] };
+    update();
+  }
+
+  /* ---------------- 表格 ---------------- */
+  function rowHTML(r) {
+    const k = S.q.toLowerCase();
+    const fileHit = k ? r.files.find((f) => `${f.id} ${f.title}`.toLowerCase().includes(k)) : null;
+    const f0 = fileHit || r.files[0];
+    const reasonHit = k && !fileHit && ![r.id, r.name, r.org, r.kind].join(' ').toLowerCase().includes(k) && r.reason.toLowerCase().includes(k);
+    const rtags = [...new Set(r.files.map((f) => f.restriction))].filter((x) => x !== 'none');
+    const org = [r.kind, r.org].filter(Boolean).join('・');
+    return `<tr class="is-link" data-id="${r.id}">
+      <td class="rq-c-id"><a class="rq-id" href="${App.requestUrl(r.id)}">${hl(r.id)}</a><span class="rq-idsub">${App.flowMini(r)}</span><span class="rq-sub">${fmt.md(r.received)} ${r.channel === 'counter' ? '臨櫃' : '線上'}</span></td>
+      <td class="rq-c-who"><button class="rq-who" type="button"><span class="rq-who__name"><span class="sr-only">速覽 </span><b>${hl(r.name)}</b>${selfTag(r)}</span><span class="rq-who__org">${hl(org)}</span>${reasonHit ? `<span class="rq-snip">${snippet(r.reason)}</span>` : ''}</button></td>
+      <td class="rq-c-purpose" data-label="申請目的">${App.purposeTag(r.purpose)}</td>
+      <td class="rq-c-files" data-label="調閱檔號"><span class="rq-fid">${hl(f0.id)}</span>${fileHit ? `<span class="rq-snip">${hl(fileHit.title)}</span>` : ''}<span class="rq-fline">${r.files.length > 1 ? `<span class="rq-more">等 ${r.files.length} 件</span>` : ''}${rtags.length ? rtags.map((x) => App.restrictTag(x)).join('') : App.restrictTag('none')}</span></td>
+      <td class="rq-c-status" data-label="審核狀態">${App.statusTag(r.status)}<span class="rq-sub">${esc(ownerLine(r))}</span></td>
+      <td class="rq-c-visit" data-label="預定閱覽日">${visitCell(r)}</td>
+      <td class="rq-c-due" data-label="法定期限">${dueCell(r)}</td>
+    </tr>`;
+  }
+  function visitCell(r) {
+    if (r.visit) {
+      const today = r.visit === TODAY;
+      return `<span class="rq-visit${r.visit < TODAY ? ' rq-visit--past' : ''}"><b>${day(r.visit)}</b>${today ? '<span class="tag tag--ink rq-today">今天</span>' : ''}</span><span class="rq-sub">${App.SLOTS[r.slot].label}・座位 ${esc(r.seat)}</span>`;
+    }
+    if (r.wish) return `<span class="rq-visit"><b>${day(r.wish)}</b></span><span class="rq-sub"><span class="rq-wishtag">希望</span>${App.SLOTS[r.wishSlot].label}</span>`;
+    return `<span class="rq-visit rq-visit--past"><b>未指定</b></span><span class="rq-sub">${r.status === 'rejected' ? '不排定' : '補正後排定'}</span>`;
+  }
+  function dueCell(r) {
+    const bar = App.dueBar(r);
+    if (bar) return bar;
+    if (r.status === 'rejected') return `<span class="rq-settle">${App.icon('x', { size: 9 })}${fmt.md(r.decidedAt)} 不予提供</span><span class="rq-sub">收件後第 ${App.diffDays(r.received, r.decidedAt)} 日決定</span>`;
+    const d = App.decidedAt(r);
+    const head = r.status === 'closed' ? `${fmt.md(r.visit)} 結案` : `${fmt.md(d)} 准駁`;
+    return `<span class="rq-settle">${App.icon('check', { size: 9 })}${head}</span><span class="rq-sub">收件後第 ${App.diffDays(r.received, d)} 日准駁</span>`;
+  }
+  function tableHTML(rows) {
+    const { key, dir } = S.sort;
+    const th = COLS.map(([k, label, cls]) => {
+      const on = k === key;
+      return `<th scope="col" class="${cls}" aria-sort="${on ? (dir > 0 ? 'ascending' : 'descending') : 'none'}"><button class="sort" type="button" data-sort="${k}">${label}${App.icon(on ? (dir > 0 ? 'sort-up' : 'sort-down') : 'sort', { size: 9 })}</button></th>`;
+    }).join('');
+    return `<table class="table table--cards rq-table"><caption class="sr-only">調閱申請案件，第 ${S.page + 1} 頁，${sortDesc()}</caption><thead><tr>${th}</tr></thead><tbody>${rows.map(rowHTML).join('')}</tbody></table>`;
+  }
+  const emptyHTML = () => `<div class="rq-empty">${App.emptyState({ title: '沒有符合條件的案件', text: '放寬篩選條件，或改用案號、申請人姓名、檔號搜尋。', icon: 'search' })}<button class="btn btn--sm" type="button" data-clear><i data-icon="x"></i>清除所有篩選</button></div>`;
+  function renderTable({ how = 'refresh', dir = 1, invert = true } = {}) {
+    const rows = S.list.slice(S.page * PER, (S.page + 1) * PER);
+    paint(tableWrap, rows.length ? tableHTML(rows) : emptyHTML(), { how, dir, invert });
+    markSelection();
+  }
+  tableWrap.addEventListener('click', (e) => {
+    const sort = e.target.closest('.sort');
+    if (sort) { setSort(sort.dataset.sort); return; }
+    if (e.target.closest('[data-clear]')) { clearAll(); return; }
+    if (e.target.closest('a')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) select(tr.dataset.id);
+  });
+  function markSelection() {
+    tableWrap.querySelectorAll(':scope > table > tbody > tr').forEach((tr) => tr.classList.toggle('is-selected', tr.dataset.id === S.sel));
+    board.querySelectorAll('.rq-cells:not(.eink-ghost) > .rq-cell').forEach((c) => {
+      if (c.dataset.id === S.sel) c.setAttribute('aria-current', 'true');
+      else c.removeAttribute('aria-current');
+    });
+  }
+
+  /* ---------------- 分頁 ---------------- */
+  const pageCount = () => Math.max(1, Math.ceil(S.list.length / PER));
+  function renderPager() {
+    const pages = pageCount(), n = S.list.length;
+    $('#pgPos').textContent = `${S.page + 1} / ${pages}`;
+    $('#pgDots').innerHTML = Array.from({ length: pages }, (_, k) => `<i class="${k === S.page ? 'on' : ''}"></i>`).join('');
+    $('#pgPrev').disabled = S.page === 0;
+    $('#pgNext').disabled = S.page >= pages - 1;
+    $('#pageInfo').innerHTML = n
+      ? `第 <b>${S.page * PER + 1}–${Math.min(n, (S.page + 1) * PER)}</b> 件・共 ${n} 件・${sortDesc()}`
+      : '沒有符合的案件';
+  }
+  function goPage(p, { scroll = true } = {}) {
+    if (p < 0 || p >= pageCount() || p === S.page) return;
+    const dir = p > S.page ? 1 : -1;
+    S.page = p;
+    renderTable({ how: 'turn', dir });
+    renderPager();
+    // 電子紙不做平滑捲動：翻頁後若表頭已捲出視窗，直接跳回表頭
+    if (scroll && tableWrap.getBoundingClientRect().top < 0) tableWrap.scrollIntoView({ block: 'start' });
+  }
+  $('#pgPrev').addEventListener('click', () => goPage(S.page - 1));
+  $('#pgNext').addEventListener('click', () => goPage(S.page + 1));
+
+  /* ---------------- 案件速覽 ---------------- */
+  const peekShell = (f) => `<div class="rq-peek__page" data-part="page">
+      <div data-part="head"></div>
+      <div class="rq-peek__scanwrap"><div class="scan rq-scan"><canvas data-part="canvas" data-scene="${f.scene}" data-seed="${f.seed}" data-method="${methodOf(f)}" data-levels="2" data-px="2" role="img" aria-label="${esc(f.title)} 抖色掃描影像"></canvas><div class="rq-scan__fx" data-part="fx"></div></div></div>
+      <ol class="rq-files" data-part="files" aria-label="調閱檔案（點選切換掃描影像）"></ol>
+      <div class="rq-peek__flow" data-part="flow"></div>
+      <div class="rq-peek__foot" data-part="foot"></div>
+    </div>`;
+  function createPeek(host, r) {
+    host.innerHTML = peekShell(r.files[0]);
+    const part = (k) => host.querySelector(`[data-part="${k}"]`);
+    const P = { host, page: part('page'), head: part('head'), canvas: part('canvas'), fx: part('fx'), files: part('files'), flow: part('flow'), foot: part('foot'), id: null, file: 0, key: '', scan: '' };
+    P.files.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-file]');
+      if (!b || +b.dataset.file === P.file) return;
+      P.file = +b.dataset.file;
+      showFile(P);
+    });
+    return P;
+  }
+  function headHTML(r) {
+    return `<div class="rq-peek__head">
+        <div class="rq-peek__idrow"><span class="rq-peek__id">${esc(r.id)}</span>${App.barcode(r.id, { height: 24, unit: 1 })}</div>
+        <div class="rq-peek__namerow"><p class="rq-peek__name">${esc(r.name)}${selfTag(r)}</p>${App.statusTag(r.status)}</div>
+        <p class="rq-peek__org">${esc([r.kind, r.org].filter(Boolean).join('・'))}・${esc(r.phone)}</p>
+        <p class="rq-peek__reason">${esc(r.reason)}</p>
+      </div>
+      <dl class="rq-peek__grid">
+        <div><dt>申請目的</dt><dd>${App.purposeTag(r.purpose)}</dd></div>
+        <div><dt>應用方式</dt><dd>${esc(App.MODES[r.mode])}${r.copy ? `<small>${esc(App.COPY[r.copy])}</small>` : ''}</dd></div>
+        <div><dt>收件</dt><dd>${fmt.date(r.received)}<small>${r.channel === 'counter' ? '臨櫃' : '線上'}</small></dd></div>
+        <div><dt>承辦</dt><dd>${esc(App.PEOPLE[r.officer].name)}<small>${esc(App.PEOPLE[r.officer].title)}</small></dd></div>
+      </dl>`;
+  }
+  const filesHTML = (r, sel) => r.files.map((f, i) => `<li><button class="rq-file" type="button" data-file="${i}" aria-pressed="${i === sel}"><span class="rq-file__no">${pad2(i + 1)}</span><span class="rq-file__title">${esc(f.title)}</span><span class="rq-file__meta"><span>${esc(f.id)}</span>${App.restrictTag(f.restriction)}${App.decisionTag(f.decision)}</span></button></li>`).join('');
+  function flowHTML(r) {
+    const st = App.flowState(r);
+    const tl = App.timelineOf(r).filter((e) => !e.future);
+    const last = tl[tl.length - 1];
+    const meta = (s) => (s.date ? fmt.md(s.date) : { current: '進行中', skip: '免辦', stop: '不予' }[s.state] || '—');
+    let tail = App.dueBar(r);
+    if (!tail && r.status === 'scheduled') tail = `<p class="rq-peek__visit">${App.icon('seat')}<span>${r.visit === TODAY ? '今天' : day(r.visit)} ${App.SLOTS[r.slot].label} ${App.SLOTS[r.slot].time}・座位 <b class="mono">${esc(r.seat)}</b></span></p>`;
+    if (!tail && r.status === 'closed') tail = `<p class="rq-peek__visit">${App.icon('check')}<span>${day(r.visit)} ${esc(r.checkin)}–${esc(r.checkout)}・座位 <b class="mono">${esc(r.seat)}</b></span></p>`;
+    return `<p class="rq-peek__label"><span>流程・${App.stageIndex(r) + 1}／6</span><span>${esc(App.STATUSES[r.status].label)}</span></p>
+      <ol class="rq-stages" aria-label="審核流程">${st.map((s) => `<li data-state="${s.state}"${s.state === 'current' ? ' aria-current="step"' : ''}><i aria-hidden="true"></i><b>${esc(s.short)}</b><span>${meta(s)}</span></li>`).join('')}</ol>
+      <p class="rq-peek__last"><span class="mono">${fmt.md(last.date)}</span>${esc(last.title)}・${esc(last.by)}${last.text ? `<small>${esc(last.text)}</small>` : ''}</p>
+      ${tail || ''}`;
+  }
+  function actionOf(r) {
+    if (STEP_ACT[r.status]) return STEP_ACT[r.status];
+    if (r.status === 'scheduled' && r.visit === TODAY) return r.checkin ? ['checkout', '結束閱覽', 'check'] : ['checkin', '報到', 'seat'];
+    return null;
+  }
+  function footHTML(r) {
+    if (r.status === 'pending') return `<a class="btn btn--sm btn--primary" href="${App.requestUrl(r.id)}">${App.icon('pen')}前往限制應用判定（${r.files.length} 件）</a>`;
+    const a = actionOf(r);
+    return `${a ? `<button class="btn btn--sm btn--primary" type="button" data-act="${a[0]}" data-id="${r.id}">${App.icon(a[2])}${a[1]}</button>` : ''}<a class="btn btn--sm" href="${App.requestUrl(r.id)}">申請詳情${App.icon('arrow-r')}</a>`;
+  }
+  // 遮蔽黑條的位置由檔案種子決定，同一件每次看到的都一樣
+  function redactBars(f, mark) {
+    let s = (f.seed * 7919 + 13) % 2147483647;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    return Array.from({ length: 5 }, (_, i) => {
+      const top = 16 + i * 15 + rnd() * 5, left = 8 + rnd() * 28, width = Math.min(22 + rnd() * 42, 92 - left);
+      return `<i class="rq-bar${mark ? ' rq-bar--mark' : ''}" style="--i:${i};top:${top.toFixed(1)}%;left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i>`;
+    }).join('');
+  }
+  function fxHTML(f) {
+    const pages = `<span class="rq-scan__pages">${f.pages} ${f.type === 'photo' ? '張' : '頁'}・${f.date.slice(0, 4)}</span>`;
+    if (f.decision === 'deny') return `<span class="stamp rq-stamp is-pressed">不予提供<small>${esc(App.RESTRICTIONS[f.restriction].basis)}</small></span>${pages}`;
+    if (f.decision === 'redact') return `<span class="rq-scan__badge">遮蔽後提供</span>${redactBars(f, false)}${pages}`;
+    if (f.decision === 'pending') return `<span class="rq-scan__badge rq-scan__badge--dash">待判定${f.restriction !== 'none' ? `・${App.RESTRICTIONS[f.restriction].short}` : ''}</span>${f.restriction !== 'none' ? redactBars(f, true) : ''}${pages}`;
+    return `<span class="rq-scan__badge">准予提供</span>${pages}`;
+  }
+  function drawScan(canvas, opts) {
+    Object.assign(canvas.dataset, opts);
+    // 已有繪製狀態（畫過或正等待尺寸）就直接換圖並帶出舊圖殘影；否則交給 app.js 進入視窗時自動繪製
+    if (App.dither.info(canvas)) App.dither.render(canvas, opts);
+  }
+  function showFile(P) {
+    const f = App.getRequest(P.id).files[P.file];
+    P.files.querySelectorAll('.rq-file').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.file === P.file)));
+    P.fx.innerHTML = fxHTML(f);
+    P.canvas.setAttribute('aria-label', `${f.title}（${f.id}），${App.ITEM_TYPES[f.type]}，抖色掃描影像`);
+    const key = `${f.scene}|${f.seed}`;
+    if (P.scan !== key) { P.scan = key; drawScan(P.canvas, { scene: f.scene, seed: f.seed, method: methodOf(f) }); }
+  }
+  function renderPeek(P, r, { how = 'none', dir = 1 } = {}) {
+    if (P.id !== r.id) { P.id = r.id; P.file = 0; }
+    const parts = { head: headHTML(r), files: filesHTML(r, P.file), flow: flowHTML(r), foot: footHTML(r) };
+    const key = Object.values(parts).join('\u0000');
+    if (key === P.key) return;
+    P.key = key;
+    const mutate = () => { Object.keys(parts).forEach((k) => { P[k].innerHTML = parts[k]; }); showFile(P); };
+    if (how === 'turn') App.eink.turn(P.page, mutate, { dir });
+    else if (how === 'refresh') App.eink.refresh(P.page, mutate);
+    else mutate();
+  }
+  function renderPeekPos() {
+    const i = S.list.findIndex((r) => r.id === S.sel), n = S.list.length;
+    peekPos.textContent = `${i >= 0 ? i + 1 : '—'} / ${n}`;
+    peekPrev.disabled = !n || i === 0;
+    peekNext.disabled = !n || i === n - 1;
+  }
+
+  let asideP = null, modalPeek = null;
+  function openPeekModal(r) {
+    const m = App.modal({ title: '案件速覽', code: r.id });
+    m.body.classList.add('rq-modalbody');
+    const host = document.createElement('div');
+    host.className = 'rq-peek rq-peek--modal';
+    m.body.appendChild(host);
+    const P = createPeek(host, r);
+    renderPeek(P, r);
+    modalPeek = P;
+    m.el.addEventListener('close', () => { if (modalPeek === P) modalPeek = null; });
+  }
+  function select(id, { dir } = {}) {
+    const r = App.getRequest(id);
+    const prevIdx = S.list.findIndex((x) => x.id === S.sel), idx = S.list.findIndex((x) => x.id === id);
+    if (!wide.matches) { S.sel = id; markSelection(); renderPeekPos(); openPeekModal(r); return; }
+    if (id === S.sel) { App.eink.blink(asideP.page); return; }
+    S.sel = id;
+    // 選到別頁的案件時，表格跟著翻到那一頁
+    if (idx >= 0 && Math.floor(idx / PER) !== S.page) goPage(Math.floor(idx / PER), { scroll: false });
+    asideP.host.scrollTop = 0;
+    renderPeek(asideP, r, { how: 'turn', dir: dir || (idx >= prevIdx ? 1 : -1) });
+    renderPeekPos();
+    markSelection();
+    $('#rqLive').textContent = `速覽 ${r.id} ${r.name}，${App.STATUSES[r.status].label}`;
+  }
+  function step(delta) {
+    const n = S.list.length;
+    if (!n) return;
+    const i = S.list.findIndex((r) => r.id === S.sel);
+    const j = i < 0 ? (delta > 0 ? 0 : n - 1) : i + delta;
+    if (j < 0 || j >= n) { App.eink.blink(peekPos); return; }
+    select(S.list[j].id, { dir: delta });
+  }
+  peekPrev.addEventListener('click', () => step(-1));
+  peekNext.addEventListener('click', () => step(1));
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !wide.matches) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.querySelector('dialog[open]')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'j' || k === 'k') { e.preventDefault(); step(k === 'j' ? 1 : -1); }
+  });
+  wide.addEventListener('change', () => {
+    if (!wide.matches || !S.sel) return;
+    renderPeek(asideP, App.getRequest(S.sel));
+    renderPeekPos();
+  });
+
+  /* ---------------- 案件動作（速覽側欄與對話框共用） ---------------- */
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const id = b.dataset.id, act = b.dataset.act, r = App.getRequest(id);
+    const undo = App.actions[act](id);
+    const sched = r.status === 'scheduled' && act !== 'checkin' ? `（${fmt.md(r.visit)} ${App.SLOTS[r.slot].label}・座位 ${r.seat}）` : '';
+    App.toast(`${id} ${VERBS[act]}`, { desc: `${r.name}・目前狀態：${App.STATUSES[r.status].label}${sched}`, tone: 'ok', action: { label: '復原', onClick: undo } });
+  });
+
+  /* ---------------- 頁首動作 ---------------- */
+  $('#exportCsv').addEventListener('click', () => {
+    const head = ['案號', '申請人', '身分', '服務單位', '申請目的', '調閱檔號', '限制應用', '審核狀態', '收件日', '預定閱覽日', '法定期限'];
+    const rows = S.list.map((r) => [
+      r.id, r.name, r.kind, r.org, App.PURPOSES[r.purpose].label, r.items.join(' '),
+      [...new Set(r.files.map((f) => App.RESTRICTIONS[f.restriction].label))].join('、'),
+      App.STATUSES[r.status].label, r.received, r.visit || (r.wish ? `希望 ${r.wish}` : ''), dueText(r),
+    ]);
+    // 加 BOM 讓試算表軟體以 UTF-8 開啟中文
+    const csv = '﻿' + [head, ...rows].map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `申請案件_${TODAY}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    App.toast(`已匯出 ${rows.length} 件案件`, { desc: `申請案件_${TODAY}.csv・${isFiltering() ? '依目前篩選條件' : '全部案件'}，${sortDesc()}。`, tone: 'ok' });
+  });
+  $('#printSlips').addEventListener('click', () => {
+    const ret = App.REQUESTS.filter((r) => r.status === 'retrieving');
+    if (!ret.length) { App.toast('目前沒有調卷中的案件', { desc: '承辦判定完成的案件會自動進入調卷佇列。', tone: 'warn' }); return; }
+    const todo = ret.reduce((s, r) => s + r.retrieveTotal - (r.retrieved || 0), 0);
+    const stacks = [...new Set(ret.flatMap((r) => r.files.filter((f) => f.decision !== 'deny').map((f) => App.catalog.get(f.file).location.split('-')[0])))].sort().join('、');
+    App.toast(`已列印調卷單 ${ret.length} 張`, { desc: `待調出 ${todo} 件（${stacks} 庫房），已送往 B2 庫房印表機。`, tone: 'ok' });
+  });
+
+  /* ---------------- 重繪 ---------------- */
+  function update({ invert = true, keepPage = false } = {}) {
+    if (!keepPage) S.page = 0;
+    computeList();
+    renderTable({ invert });
+    renderBoard();
+    renderFacets();
+    renderPager();
+    renderPeekPos();
+  }
+
+  computeList();
+  S.sel = S.list.length ? S.list[0].id : App.FEATURED;
+  asideP = createPeek($('#peekBody'), App.getRequest(S.sel));
+  renderTable({ how: 'none' });
+  renderBoard();
+  renderFacets();
+  renderPager();
+  renderPeek(asideP, App.getRequest(S.sel));
+  renderPeekPos();
+
+  App.onChange(() => {
+    computeList();
+    renderTable();
+    renderBoard({ invert: true });
+    renderFacets();
+    renderPager();
+    renderPeek(asideP, App.getRequest(S.sel), { how: 'refresh' });
+    renderPeekPos();
+    if (modalPeek && modalPeek.host.isConnected) renderPeek(modalPeek, App.getRequest(modalPeek.id), { how: 'refresh' });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>許可清單 — 澄港市 道路挖掘 管線施工許可</title>
+<meta name="description" content="澄港市道路挖掘管線施工許可清冊：依流程階段、管線類別、行政區與佔用期間篩選，表格與道路佔用甘特圖切換，批次核准與退回補正。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Noto+Sans+TC:wght@400..700&family=Roboto+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     許可清單（permits.html）頁面專屬樣式；class 一律加 pl- 前綴
+     ===================================================================== */
+
+  /* ---------- 流程分布帶：比例長條即是狀態篩選器 ---------- */
+  .pl-band .panel__head { flex-wrap: wrap; }
+  .pl-band__note { font: 500 11.5px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+  .pl-band__note b { color: var(--ink); font-weight: 600; }
+  .pl-ribbon { display: flex; gap: 4px; padding: 16px 16px 14px; }
+  .pl-seg {
+    --n: 1;
+    position: relative; flex: var(--n) 1 76px; min-width: 0;
+    display: flex; flex-direction: column; gap: 7px; padding: 0 0 6px; border-radius: var(--r-sm);
+    text-align: left; transition: flex-grow .6s var(--ease-out), opacity var(--dur-2);
+  }
+  .pl-seg__bar {
+    position: relative; display: block; height: 20px; border-radius: 3px; overflow: hidden;
+    background: var(--surface-3); box-sizing: border-box;
+    transform-origin: left center; animation: pl-bar-in .7s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 55ms);
+    transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2);
+  }
+  .pl-seg__bar > i { position: absolute; inset: 0; display: block; }
+  .pl-seg__n { font-size: 22px; font-weight: 650; line-height: 1; letter-spacing: -.01em; padding-left: 1px; }
+  .pl-seg__lab { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-seg__st { font: 500 10px var(--font-mono); color: var(--ink-4); letter-spacing: .04em; }
+  .pl-seg::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform var(--dur-3) var(--ease-out); }
+  .pl-seg:hover .pl-seg__bar { transform: translateY(-2px); }
+  .pl-seg:hover .pl-seg__lab { color: var(--ink); }
+  .pl-seg.is-zero .pl-seg__n { color: var(--ink-4); }
+  .pl-ribbon.has-pick .pl-seg[aria-pressed="false"] { opacity: .38; }
+  .pl-ribbon.has-pick .pl-seg[aria-pressed="false"]:hover { opacity: .75; }
+  .pl-seg[aria-pressed="true"]::after { transform: scaleX(1); }
+  .pl-seg[aria-pressed="true"] .pl-seg__lab { color: var(--ink); }
+  /* 每個狀態一種「施工圖例」：未成案的用框線與網紋，成案後用實色 */
+  .pl-seg[data-s="returned"] .pl-seg__bar { border: 1.5px solid #B54708; background: repeating-linear-gradient(135deg, #B54708 0 1.5px, #FEF0E6 1.5px 6px); }
+  .pl-seg[data-s="checking"] .pl-seg__bar { border: 1.5px dashed #475467; background: #EEF1F4; }
+  .pl-seg[data-s="coordinating"] .pl-seg__bar { border: 1.5px solid var(--danger); background: repeating-linear-gradient(-45deg, var(--danger) 0 2px, rgba(217, 45, 32, .12) 2px 6px); }
+  .pl-seg[data-s="review"] .pl-seg__bar { border: 1.5px solid var(--warn); background: repeating-linear-gradient(90deg, #EFD08A 0 3px, var(--warn-soft) 3px 6px); }
+  .pl-seg[data-s="approved"] .pl-seg__bar { border: 2.5px solid var(--accent); background: var(--accent-soft); }
+  .pl-seg[data-s="active"] .pl-seg__bar { background: var(--ink); }
+  .pl-seg[data-s="active"] .pl-seg__bar > i { left: -12px; background: repeating-linear-gradient(-45deg, var(--ink) 0 4px, var(--hazard) 4px 8px); animation: pl-crawl 1.4s linear infinite; }
+  .pl-seg[data-s="done"] .pl-seg__bar { background: #8B958F; }
+  .pl-seg[data-s="paving"] .pl-seg__bar { background: repeating-linear-gradient(180deg, var(--info) 0 4px, #4C83DB 4px 6px); }
+  .pl-seg[data-s="accepted"] .pl-seg__bar { background: var(--ok); }
+
+  /* ---------- 版面：清冊 + 位置預覽 ---------- */
+  .pl-layout { display: grid; grid-template-columns: minmax(0, 1fr) 384px; gap: 16px; margin-top: 16px; }
+  .pl-list { position: relative; }
+
+  /* ---------- 篩選列 ---------- */
+  .pl-list .panel__head { flex-wrap: wrap; }
+  .pl-result { font: 500 12px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+  .pl-result b { color: var(--ink); font-weight: 600; }
+  .pl-filters { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: linear-gradient(var(--surface-2), var(--surface)); }
+  .pl-filters__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .pl-search { flex: 1 1 240px; max-width: 360px; }
+  .pl-filters .select { width: auto; min-width: 138px; }
+  .pl-clear { margin-left: auto; }
+  .pl-mtools { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .pl-mtools .select { width: auto; flex: 1; max-width: 220px; }
+
+  /* ---------- 表格 ---------- */
+  .pl-table td { padding: 10px 10px; }
+  .pl-table th { padding: 0 10px; }
+  .pl-table tbody tr { cursor: pointer; }
+  .pl-table tbody tr.is-checked { background: #F3F7F2; }
+  .pl-table tbody tr.is-selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .pl-table th[aria-sort="ascending"] .sort::after { content: '↑'; opacity: 1; }
+  .pl-table th[aria-sort="descending"] .sort::after { content: '↓'; opacity: 1; }
+  .pl-table th[aria-sort="ascending"] .sort, .pl-table th[aria-sort="descending"] .sort { color: var(--ink); }
+  .pl-th-check, .pl-td-check { width: 38px; }
+  .pl-meta { display: block; margin-top: 3px; font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+  .pl-meta.mono { font-size: 11px; }
+  .pl-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .pl-flags:empty { display: none; }
+  .pl-td-util .util { margin-bottom: 1px; }
+  .pl-rowbtn { display: block; text-align: left; border-radius: var(--r-xs); }
+  .pl-road { display: block; font-weight: 600; font-size: 13.5px; line-height: 1.35; }
+  .pl-sta { display: block; font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+  .pl-rowbtn:hover .pl-road { text-decoration: underline; text-decoration-color: var(--line-3); text-underline-offset: 3px; }
+  .pl-area { font-weight: 600; white-space: nowrap; }
+  .pl-area small { font-size: 11px; font-weight: 500; color: var(--ink-3); }
+  .pl-td-area .pl-meta { white-space: nowrap; }
+  .pl-dates { font-size: 12px; white-space: nowrap; }
+  .pl-days { margin-left: 6px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+  /* 期間迷你尺：9–12 月整季，月界白線、今日紅線 */
+  .pl-span {
+    position: relative; display: block; width: 112px; height: 6px; margin-top: 7px; border-radius: 3px;
+    background:
+      linear-gradient(90deg, transparent calc(24.59% - .5px), #fff calc(24.59% - .5px) calc(24.59% + .5px), transparent calc(24.59% + .5px)),
+      linear-gradient(90deg, transparent calc(50% - .5px), #fff calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+      linear-gradient(90deg, transparent calc(75.41% - .5px), #fff calc(75.41% - .5px) calc(75.41% + .5px), transparent calc(75.41% + .5px)),
+      var(--sunken);
+  }
+  .pl-span > i { position: absolute; top: 0; bottom: 0; min-width: 3px; border-radius: 3px; background: var(--u); }
+  .pl-span > b { position: absolute; top: -3px; bottom: -3px; width: 1.5px; margin-left: -.75px; background: var(--danger); border-radius: 1px; }
+  .pl-span--pending > i { background: var(--surface); box-shadow: inset 0 0 0 1.2px var(--u); }
+  .pl-span--past > i { opacity: .45; }
+  .pl-sub { display: block; margin-top: 4px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+  .pl-sub--danger { color: var(--danger-ink); font-weight: 600; }
+  .pl-prog { display: flex; align-items: center; gap: 6px; font: 500 11px var(--font-mono); color: var(--ink-3); }
+  .pl-prog .progress { width: 54px; height: 4px; }
+  .pl-cf { display: flex; align-items: center; gap: 5px; width: max-content; font: 600 11.5px var(--font-mono); color: var(--danger-ink); border-radius: var(--r-xs); }
+  .pl-cf + .pl-cf { margin-top: 4px; }
+  .pl-cf .hatch-swatch { width: 13px; height: 9px; }
+  .pl-cf:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .pl-cf.is-ok { color: var(--ink-3); font-weight: 500; }
+  .pl-cf.is-ok .hatch-swatch { border-color: var(--line-3); background: repeating-linear-gradient(-45deg, var(--ink-4) 0 1.5px, transparent 1.5px 5px); }
+  .pl-empty td { cursor: default; }
+  .pl-empty__act { display: flex; justify-content: center; margin: -18px 0 24px; }
+
+  /* ---------- 分頁 ---------- */
+  .pl-pager { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .pl-pager__info { font-size: 12.5px; color: var(--ink-3); }
+  .pl-pager__info b { color: var(--ink); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }
+  .pl-pager__pages { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .pl-page { min-width: 30px; height: 30px; padding: 0 6px; border-radius: var(--r-sm); font: 500 12.5px var(--font-mono); color: var(--ink-2); }
+  .pl-page:hover { background: var(--surface-3); color: var(--ink); }
+  .pl-page[aria-current="page"] { background: var(--ink); color: #fff; }
+  .pl-pager__per { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+  .pl-pager__per .select { width: auto; }
+
+  /* ---------- 甘特（依道路分組的道路佔用時間） ---------- */
+  .pl-glegend { padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+  .pl-glegend__hint { margin-left: auto; color: var(--ink-3); }
+  .pl-gantt { --label-w: 252px; --row-h: 44px; }
+  .pl-gantt .gantt__scale { overflow: hidden; }
+  /* 窄螢幕橫向捲動時，案號欄固定在左側 */
+  .pl-gantt .gantt__label, .pl-gantt .gantt__head-label { position: sticky; left: 0; z-index: 3; background: var(--surface); }
+  .pl-gantt .gantt__head-label { background: var(--surface-2); }
+  .pl-gantt .gantt__row:hover .gantt__label { background: var(--surface-2); }
+  .pl-gantt .pl-ggroup .gantt__label { background: var(--surface-3); }
+  .pl-gantt .pl-grow.is-selected .gantt__label { background: var(--accent-soft); }
+  .pl-gtoday { position: absolute; bottom: 0; width: 0; height: 0; margin-left: -5px; border: 5px solid transparent; border-bottom: 6px solid var(--danger); border-top: 0; }
+  .pl-gbody { position: relative; }
+  .pl-gunder, .pl-gover { position: absolute; top: 0; bottom: 0; left: var(--label-w); right: 0; pointer-events: none; }
+  .pl-gover { z-index: 2; }
+  .pl-gweekend { position: absolute; top: 0; bottom: 0; background: rgba(28, 46, 36, .035); }
+  .pl-gmonth { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line-2); }
+  .pl-gcursor { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-left: 1.5px dashed var(--ink); opacity: 0; transition: opacity var(--dur-1); }
+  .pl-gtag {
+    position: absolute; left: 0; top: 0; min-width: 132px; padding: 6px 9px; border-radius: var(--r);
+    background: var(--ink); color: #fff; box-shadow: var(--sh-3); font-size: 11.5px; line-height: 1.45; white-space: nowrap;
+    opacity: 0; transition: opacity var(--dur-1);
+  }
+  .pl-gtag b { display: block; font: 600 12px var(--font-mono); }
+  .pl-gtag small { display: block; color: rgba(255, 255, 255, .74); font-size: 11px; }
+  .pl-gantt.is-scrub .pl-gcursor, .pl-gantt.is-scrub .pl-gtag { opacity: 1; }
+  .pl-ggroup { min-height: 36px; background: var(--surface-3); }
+  .pl-ggroup:hover { background: var(--surface-3); }
+  .pl-ggroup .gantt__label { padding: 0 8px; }
+  .pl-gtoggle { display: flex; align-items: center; gap: 7px; width: 100%; height: 100%; min-height: 34px; padding: 0 4px; border-radius: var(--r-xs); font-size: 13px; font-weight: 650; text-align: left; white-space: nowrap; overflow: hidden; }
+  .pl-gtoggle .icon { color: var(--ink-3); transition: transform var(--dur-2) var(--ease-out); }
+  .pl-gtoggle[aria-expanded="false"] .icon { transform: rotate(-90deg); }
+  .pl-gtoggle .tag { height: 18px; font-size: 10.5px; font-family: var(--font-mono); }
+  .pl-gtoggle .count { margin-left: auto; }
+  .pl-occ { position: absolute; top: 14px; height: 8px; border-radius: 2px; background: rgba(24, 32, 29, .2); }
+  .pl-gclash { position: absolute; top: 11px; height: 14px; }
+  .pl-grow { cursor: pointer; }
+  .pl-grow.is-selected { background: var(--accent-soft); }
+  .pl-grow .gantt__label { gap: 9px; }
+  .pl-glabel__main { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+  .pl-glabel__main .pid { font-size: 12px; width: max-content; }
+  .pl-glabel__sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-grow .status { height: 20px; font-size: 11px; padding: 0 6px; }
+  .pl-gantt .gantt__bar { top: 11px; bottom: 11px; padding: 0; z-index: 1; }
+  .pl-bar { transition: box-shadow var(--dur-1), filter var(--dur-1); }
+  .pl-bar:hover { filter: brightness(1.06) saturate(1.1); }
+  .pl-bar.is-selected { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink); }
+  .pl-bar--planned { background: color-mix(in srgb, var(--u) 58%, #fff); }
+  /* 施工中：已施作段實色、剩餘段淡色，底緣白色虛線流動（呼應地圖上施工中路段） */
+  .pl-bar--live { background: linear-gradient(90deg, var(--u) 0 var(--pp), color-mix(in srgb, var(--u) 52%, #fff) var(--pp) 100%); }
+  .pl-bar--live::after {
+    content: ''; position: absolute; left: -10px; right: 0; bottom: 3px; height: 2px;
+    background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .95) 0 4px, transparent 4px 10px);
+    animation: pl-flow .8s linear infinite;
+  }
+  .pl-bar--returned { border-color: #B54708; border-style: dashed; }
+  .pl-blabel { position: absolute; top: 50%; transform: translateY(-50%); font: 500 10.5px var(--font-mono); color: var(--ink-3); white-space: nowrap; pointer-events: none; }
+  .pl-gantt .gantt__clash { z-index: 1; }
+  .pl-clash--ok { animation: none; border-color: var(--line-3); background: repeating-linear-gradient(-45deg, rgba(92, 104, 98, .32) 0 2px, transparent 2px 6px); }
+  .pl-gempty { padding: 8px 0 20px; }
+
+  /* ---------- 批次操作列（黏在視窗底緣） ---------- */
+  .pl-batch {
+    position: sticky; bottom: 16px; z-index: 6; margin: 0 12px 12px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 10px 10px 10px 16px;
+    background: var(--ink); color: #fff; border-radius: var(--r-lg); box-shadow: var(--sh-3);
+    animation: pl-pop .32s var(--ease-spring);
+  }
+  .pl-batch::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 2px 2px 0; background: repeating-linear-gradient(-45deg, var(--hazard) 0 3px, var(--ink) 3px 6px); }
+  .pl-batch__n { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+  .pl-batch__n b { font: 600 16px var(--font-mono); margin-right: 2px; }
+  .pl-batch__ids { font: 500 11.5px var(--font-mono); color: rgba(255, 255, 255, .66); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pl-batch__acts { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .pl-batch .btn:not(.btn--accent) { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .2); color: #fff; box-shadow: none; }
+  .pl-batch .btn:not(.btn--accent):hover { background: rgba(255, 255, 255, .16); }
+  .pl-batch .btn .count { background: rgba(255, 255, 255, .18); color: #fff; }
+  .pl-batch .btn--accent .count { background: rgba(255, 255, 255, .22); color: #fff; }
+  .pl-batch .icon-btn { color: rgba(255, 255, 255, .7); }
+  .pl-batch .icon-btn:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+
+  /* ---------- 位置預覽（側欄） ---------- */
+  .pl-side { min-width: 0; }
+  .pl-pv { position: sticky; top: calc(var(--topbar-h) + 16px); display: flex; flex-direction: column; max-height: calc(100vh - var(--topbar-h) - 32px); overflow: hidden; }
+  .pl-pv .panel__head { flex: none; }
+  .pl-mapdate { margin-left: auto; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pl-mapdate__k { font: 500 10.5px var(--font-mono); letter-spacing: .06em; color: var(--ink-3); }
+  .pl-mapdate__v { font: 600 12.5px var(--font-mono); }
+  .pl-map { height: 256px; flex: none; min-height: 0; border-bottom: 1px solid var(--line); }
+  .pl-maplegend { flex: none; gap: 4px 12px; padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-size: 11px; }
+  .pl-pv__in { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; animation: pl-fade .3s var(--ease-out); }
+  .pl-pv__head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+  .pl-pv__head .pid { font-size: 13.5px; font-weight: 600; }
+  .pl-pv__head .icon-btn { margin-left: auto; margin-right: -6px; }
+  .pl-pv__title { font-size: 16px; font-weight: 650; line-height: 1.4; margin-top: 6px; }
+  .pl-pv__title .mono { font-size: 12px; font-weight: 500; color: var(--ink-3); white-space: nowrap; }
+  .pl-pv__desc { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: 12.5px; color: var(--ink-3); }
+  .pl-pv__h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; font: 600 10.5px var(--font-mono); letter-spacing: .08em; color: var(--ink-3); }
+  .pl-pv__h span { letter-spacing: 0; font-weight: 500; text-align: right; }
+  .pl-pv .flow__label { font-size: 11px; }
+  .pl-pv .flow__date { font-size: 10px; line-height: 1.3; }
+  .pl-pv .flow__step { padding: 0 1px; }
+  .pl-pv .kv { gap: 6px 14px; }
+  .pl-pv .callout { padding: 9px 11px; font-size: 12.5px; }
+  .pl-pv .callout + .callout { margin-top: 8px; }
+  .pl-pv__note { font-size: 12px; color: var(--ink-3); line-height: 1.55; }
+  .pl-pv__actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .pl-pv__actions .btn--primary { flex: 1 1 100%; }
+  .pl-pv__actions .btn:not(.btn--primary) { flex: 1 1 0; }
+  .pl-cos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .pl-cos__i { --c: var(--line-3); display: flex; flex-direction: column; gap: 1px; padding: 7px 8px; border-radius: var(--r-sm); border: 1px solid var(--line); border-top: 3px solid var(--c); font-size: 11.5px; color: var(--ink-3); min-width: 0; }
+  .pl-cos__i b { font-size: 12.5px; color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-cos__i.is-ok { --c: var(--ok); }
+  .pl-cos__i.is-pending { --c: var(--warn); }
+  .pl-cos__i.is-hold { --c: var(--danger); background: #FFFAF9; color: var(--danger-ink); }
+  .pl-cos__i.is-returned { --c: #B54708; }
+
+  /* 路段里程配置：把道路拉直成一條帶狀斷面（上側為行進方向左側） */
+  .pl-strip { position: relative; padding-top: 24px; }
+  .pl-strip__road {
+    position: relative; height: 58px;
+    border-block: 6px solid #DCE2D9;
+    background:
+      linear-gradient(#fff, #fff) top / 100% 1.5px no-repeat,
+      linear-gradient(#fff, #fff) bottom / 100% 1.5px no-repeat,
+      #47534D;
+  }
+  .pl-lane { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px dashed rgba(255, 255, 255, .45); }
+  .pl-lane--center { border-top: 3px double #F5C518; margin-top: -1.5px; }
+  .pl-blk { position: absolute; z-index: 1; border-radius: 2px; background: var(--u); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); transition: transform var(--dur-1) var(--ease-out); }
+  .pl-blk:hover { transform: scaleY(1.12); }
+  .pl-blk.is-async { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--u) 75%, #fff); opacity: .7; }
+  .pl-blk.is-sync { opacity: .92; }
+  .pl-blk.is-self { z-index: 2; opacity: 1; box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--ink); }
+  .pl-strip__clash { position: absolute; z-index: 3; pointer-events: none; border: 1.5px solid #FF5A4D; background: repeating-linear-gradient(-45deg, rgba(255, 90, 77, .85) 0 2px, rgba(255, 90, 77, .15) 2px 6px); animation: clash-blink 1.1s steps(2, jump-none) infinite; }
+  .pl-strip__clash.is-ok { border-color: rgba(255, 255, 255, .55); background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, .4) 0 1.5px, transparent 1.5px 6px); animation: none; }
+  .pl-strip__me { position: absolute; top: 0; transform: translateX(-50%); padding: 2px 7px; border-radius: 3px; background: var(--ink); color: #fff; font: 600 10px/1.4 var(--font-mono); white-space: nowrap; }
+  .pl-strip__me::after { content: ''; position: absolute; left: 50%; bottom: -4px; margin-left: -4px; border: 4px solid transparent; border-bottom: 0; border-top-color: var(--ink); }
+  .pl-strip__ruler { position: relative; height: 22px; margin-top: 4px; }
+  .pl-tick { position: absolute; top: 0; height: 4px; border-left: 1px solid var(--line-3); }
+  .pl-tick.is-major { height: 7px; border-color: var(--ink-3); }
+  .pl-tick i { position: absolute; top: 8px; left: 0; transform: translateX(-50%); font: 500 9.5px var(--font-mono); font-style: normal; color: var(--ink-3); white-space: nowrap; }
+  .pl-strip__legend { gap: 4px 12px; font-size: 11px; }
+
+  /* 未選取時：篩選結果概覽 */
+  .pl-umeter { height: 10px; }
+  .pl-ulegend { gap: 4px 12px; margin-top: 8px; color: var(--ink-2); }
+  .pl-ulegend b { font: 600 11px var(--font-mono); color: var(--ink-3); }
+  .pl-next { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .pl-next__i { position: relative; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 12px 7px 14px; border-top: 1px solid var(--line); font-size: 12.5px; text-align: left; transition: background-color var(--dur-1); }
+  .pl-next li:first-child .pl-next__i { border-top: 0; }
+  .pl-next__i::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--u); }
+  .pl-next__i:hover { background: var(--surface-2); }
+  .pl-next__d { font: 600 12.5px var(--font-mono); }
+  .pl-next__t { min-width: 0; }
+  .pl-next__t b { display: block; font: 500 12px var(--font-mono); }
+  .pl-next__t small { display: block; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-next__r { font: 500 11px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+  .pl-hint { display: flex; gap: 8px; font-size: 12px; color: var(--ink-3); line-height: 1.55; }
+  .pl-hint .icon { color: var(--accent); margin-top: 1px; }
+
+  /* ---------- 對話框內容 ---------- */
+  .pl-mlist { display: flex; flex-direction: column; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .pl-mlist li { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 12px 8px 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.45; }
+  .pl-mlist li:first-child { border-top: 0; }
+  .pl-mlist li::before { content: ''; align-self: stretch; background: var(--u); }
+  .pl-mlist small { display: block; font-size: 11.5px; color: var(--ink-3); }
+  .pl-mlist__r { font-size: 11.5px; color: var(--ink-3); text-align: right; }
+  .pl-mlist__r.is-warn { color: var(--warn-ink); }
+  .pl-presets { margin-bottom: 2px; }
+  .pl-mform { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+  .pl-mform .input[type="date"] { max-width: 200px; font-family: var(--font-mono); font-size: 13px; }
+
+  @keyframes pl-bar-in { from { transform: scaleX(0); } to { transform: none; } }
+  @keyframes pl-crawl { to { transform: translateX(11.31px); } }
+  @keyframes pl-flow { to { transform: translateX(10px); } }
+  @keyframes pl-pop { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes pl-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 1200px) {
+    .pl-layout { grid-template-columns: minmax(0, 1fr) 336px; }
+  }
+  @media (max-width: 1040px) {
+    .pl-layout { grid-template-columns: minmax(0, 1fr); }
+    .pl-pv { position: static; max-height: none; overflow: visible; }
+    .pl-pv__scroll { overflow: visible; }
+    .pl-map { height: 340px; }
+    .pl-pv .map { border-radius: 0; }
+    /* 地圖已不在右側：提示文字不適用（選擇器加權，避免被 .legend > span 的 display 蓋掉） */
+    .pl-glegend .pl-glegend__hint { display: none; }
+  }
+  @media (max-width: 760px) {
+    .pl-ribbon { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; padding: 14px; }
+    .pl-seg { padding-bottom: 6px; }
+    .pl-seg__n { font-size: 20px; }
+    .pl-filters { padding: 12px 14px; }
+    .pl-search { flex-basis: 100%; max-width: none; }
+    .pl-filters .select { flex: 1 1 140px; min-width: 0; }
+    .pl-clear { margin-left: 0; }
+    .pl-list .panel__head .seg { width: 100%; }
+    .pl-list .panel__head .seg > button { flex: 1; justify-content: center; }
+    /* 手機：表格列改成卡片，左緣色條即管線類別 */
+    .pl-table, .pl-table tbody { display: block; }
+    .pl-table thead { display: none; }
+    .pl-table tbody tr {
+      display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
+      grid-template-areas: "ck id st" "ck road road" "ck util area" "ck per per" "ck cf cf";
+      gap: 6px 10px; padding: 12px 14px 12px 10px; border-bottom: 1px solid var(--line); border-left: 4px solid var(--u);
+    }
+    .pl-table tbody tr.is-selected { box-shadow: none; }
+    .pl-table td { display: block; height: auto; padding: 0; border: 0; min-width: 0; }
+    .pl-table td.table__u { display: none; }
+    .pl-td-check { grid-area: ck; width: auto; padding-top: 1px !important; }
+    .pl-td-id { grid-area: id; }
+    .pl-td-status { grid-area: st; text-align: right; }
+    .pl-td-status .pl-sub { white-space: normal; }
+    .pl-td-status .pl-prog { justify-content: flex-end; }
+    .pl-td-road { grid-area: road; }
+    .pl-td-util { grid-area: util; display: flex !important; align-items: center; gap: 8px; }
+    .pl-td-util .pl-meta { margin: 0; }
+    .pl-td-area { grid-area: area; text-align: right; }
+    .pl-td-period { grid-area: per; display: flex !important; align-items: center; flex-wrap: wrap; gap: 2px 8px; }
+    .pl-td-period .pl-days { margin: 0; }
+    .pl-td-period .pl-span { flex: 1; min-width: 80px; margin: 0; }
+    .pl-td-clash { grid-area: cf; display: flex !important; flex-wrap: wrap; gap: 4px 12px; }
+    .pl-td-clash.is-empty { display: none !important; }
+    .pl-cf + .pl-cf { margin-top: 0; }
+    .pl-table tbody tr.pl-empty { display: block; border-left: 0; }
+    .pl-pager { padding: 12px 14px; }
+    .pl-pager__pages { margin-left: 0; order: 3; width: 100%; justify-content: center; }
+    .pl-pager__per { margin-left: auto; }
+    .pl-gantt { --label-w: 156px; min-width: 860px; }
+    .pl-grow .status { display: none; }
+    .pl-gtoggle .tag { display: none; }
+    .pl-batch { margin: 0 8px 8px; bottom: 12px; padding: 10px 10px 10px 14px; }
+    .pl-batch__acts { margin-left: 0; width: 100%; }
+    .pl-batch__acts .btn { flex: 1; }
+    .pl-map { height: 300px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* 靜態仍需看得出衝突與施工中：斜線全亮、虛線靜止 */
+    .pl-strip__clash { animation: none !important; opacity: 1; }
+    .pl-seg[data-s="active"] .pl-seg__bar > i, .pl-bar--live::after { animation: none !important; }
+    .pl-seg__bar { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要內容</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="brand" href="index.html" aria-label="道路挖掘許可 首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#18201D"/>
+        <path d="M4.5 12.5H12M24 12.5h7.5" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M12 12.5 13.6 29h8.8L24 12.5" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="16" cy="25" r="2.5" fill="#F5A623"/>
+        <circle cx="20.4" cy="25" r="2.5" fill="#2F80ED"/>
+        <circle cx="18.2" cy="20.8" r="2.3" fill="#27AE60"/>
+        <path d="M14.5 7h7" stroke="#F5C518" stroke-width="2" stroke-dasharray="2 1.5"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">道路挖掘許可</span><span class="brand__sub">CHENGGANG · ROADWORKS</span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <a class="nav__link" href="index.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>地圖總覽</a>
+      <a class="nav__link" href="permits.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>許可清單<span class="nav__count" data-count="pending" title="審查中件數">10</span></a>
+      <a class="nav__link" href="permit.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>許可詳情</a>
+      <a class="nav__link" href="apply.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 8 6l7 9 5-7"/><circle cx="4" cy="19" r="1.6"/><circle cx="8" cy="6" r="1.6"/><circle cx="15" cy="15" r="1.6"/><circle cx="20" cy="8" r="1.6"/></svg>線上申請</a>
+      <a class="nav__link nav__back" href="../../index.html">← 返回目錄</a>
+    </nav>
+    <div class="topbar__tools">
+      <button class="search-btn" type="button" data-search aria-label="快速搜尋許可"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>搜尋案號、路段</span><span class="kbd">/</span></button>
+      <span class="today-chip" data-today>2026/10/22 週四 10:24</span>
+      <button class="icon-btn" type="button" data-notify aria-label="通知" aria-haspopup="true" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><span class="icon-btn__dot"></span></button>
+      <button class="user" type="button" data-user aria-label="使用者選單：林雅雯" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true">林</span><span class="user__name">林雅雯<small>道路管線科・承辦</small></span></button>
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="page-head">
+    <div class="page-head__main">
+      <p class="eyebrow"><span class="ref">LIST-02</span>許可清單</p>
+      <h1 class="page-title">道路挖掘許可清冊</h1>
+      <p class="page-desc">資料時間 <b>2026/10/22（四）10:24</b>・在案 <b data-count="total">47</b> 件・審查中 <b data-count="pending">10</b> 件・今日施工中 <b data-count="active">16</b> 件・未排解衝突 <b data-count="conflicts">5</b> 件</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button" id="btnExport"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>匯出清冊</button>
+      <a class="btn btn--primary" href="apply.html"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新增申請</a>
+    </div>
+  </div>
+
+  <section class="panel pl-band" data-anim aria-labelledby="bandTitle">
+    <header class="panel__head">
+      <h2 class="panel__title" id="bandTitle"><span class="ref">A1</span>流程分布</h2>
+      <p class="panel__sub hide-sm">申請 → 衝突檢查 → 會辦 → 核准 → 施工 → 完工 → 刨鋪驗收・點選階段可複選篩選</p>
+      <div class="panel__actions">
+        <span class="pl-band__note" id="bandNote"></span>
+        <button class="btn btn--sm btn--ghost" type="button" id="btnAllStages" hidden>全部階段</button>
+      </div>
+    </header>
+    <div class="pl-ribbon" id="ribbon" role="group" aria-label="依流程狀態篩選"></div>
+  </section>
+
+  <div class="pl-layout">
+    <section class="panel pl-list" aria-labelledby="listTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="listTitle"><span class="ref">A2</span>許可清冊</h2>
+        <p class="pl-result" id="resultLine" aria-live="polite"></p>
+        <div class="panel__actions">
+          <div class="seg" role="group" aria-label="檢視方式" id="viewSeg">
+            <button type="button" data-view="table" aria-pressed="true"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>表格</button>
+            <button type="button" data-view="gantt" aria-pressed="false"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9M7 12h11M10 18h7"/><path d="M3 3v18"/></svg>道路佔用甘特</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="pl-filters" role="search" aria-label="篩選許可">
+        <div class="pl-filters__row">
+          <div class="input-wrap pl-search">
+            <svg class="icon icon--sm input-wrap__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+            <input class="input input--sm" id="fq" type="search" placeholder="搜尋案號、路名、工程名稱、廠商" aria-label="搜尋許可" autocomplete="off">
+          </div>
+          <label class="sr-only" for="fDistrict">行政區</label>
+          <select class="select select--sm" id="fDistrict"></select>
+          <label class="sr-only" for="fPeriod">佔用期間</label>
+          <select class="select select--sm" id="fPeriod"></select>
+          <label class="switch"><input type="checkbox" id="fClash"><span>只看衝突案件</span></label>
+        </div>
+        <div class="pl-filters__row">
+          <div class="chip-row" id="fUtil" role="group" aria-label="管線類別"></div>
+          <button class="btn btn--sm btn--ghost pl-clear" type="button" id="btnClear" hidden><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>清除篩選</button>
+        </div>
+      </div>
+
+      <div id="viewTable">
+        <div class="pl-mtools only-sm">
+          <label class="check"><input type="checkbox" data-checkall aria-label="選取本頁全部">全選本頁</label>
+          <label class="sr-only" for="mSort">排序方式</label>
+          <select class="select select--sm" id="mSort">
+            <option value="id:-1">申請編號（新到舊）</option>
+            <option value="start:1">開工日（早到晚）</option>
+            <option value="area:-1">面積（大到小）</option>
+            <option value="status:1">流程階段</option>
+            <option value="segment:1">路段</option>
+            <option value="util:1">管線類別</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="table pl-table">
+            <caption class="sr-only">道路挖掘許可清冊</caption>
+            <thead>
+              <tr>
+                <th class="pl-th-check" scope="col"><label class="check"><input type="checkbox" data-checkall aria-label="選取本頁全部"></label></th>
+                <th class="table__u" scope="col"><span class="sr-only">管線色</span></th>
+                <th scope="col" data-sort="id"><button class="sort" type="button">申請編號</button></th>
+                <th scope="col" data-sort="util"><button class="sort" type="button">管線單位</button></th>
+                <th scope="col" data-sort="segment"><button class="sort" type="button">路段・里程</button></th>
+                <th scope="col" class="num" data-sort="area"><button class="sort" type="button">面積</button></th>
+                <th scope="col" data-sort="start"><button class="sort" type="button">佔用期間</button></th>
+                <th scope="col" data-sort="status"><button class="sort" type="button">狀態</button></th>
+                <th scope="col">衝突</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <nav class="pl-pager" id="pager" aria-label="清冊分頁"></nav>
+      </div>
+
+      <div id="viewGantt" data-anim hidden></div>
+
+      <div class="pl-batch" id="batch" role="region" aria-label="批次操作" hidden></div>
+    </section>
+
+    <aside class="pl-side" aria-label="位置預覽">
+      <section class="panel pl-pv" id="pvPanel" data-anim aria-labelledby="pvTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="pvTitle"><span class="ref">A3</span>位置預覽</h2>
+          <span class="pl-mapdate"><span class="pl-mapdate__k">圖面</span><span class="pl-mapdate__v" id="mapDate">10/22（四）</span><span class="badge" id="mapDateTag">今日</span></span>
+        </header>
+        <div class="pl-map" id="pvMap"></div>
+        <div class="legend pl-maplegend" aria-hidden="true">
+          <span><i style="background:rgba(47,128,237,.4);box-shadow:inset 0 0 0 1.5px #2F80ED"></i>圖面日施工</span>
+          <span><i style="box-shadow:inset 0 0 0 1.5px rgba(47,128,237,.6)"></i>其他日期範圍</span>
+          <span><i class="hatch-swatch" style="width:16px;height:8px"></i>同期衝突</span>
+        </div>
+        <div class="scroll-area pl-pv__scroll" id="pvBody"></div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__in">
+    <div class="titleblock">
+      <div class="titleblock__cell"><span class="titleblock__k">系統</span><span class="titleblock__v">道路挖掘管線施工許可</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">主管機關</span><span class="titleblock__v">澄港市政府工務局 道路管線科</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">圖資版本</span><span class="titleblock__v mono">CG-GIS 2026.10</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">座標系統</span><span class="titleblock__v mono">CG-TM 平面座標</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">版次</span><span class="titleblock__v mono">v3.8.2</span></div>
+    </div>
+    <p class="site-footer__note">本系統為作品集虛構示範：澄港市、機關、管線單位、施工廠商、人名與案件皆為虛構，地圖為自繪示意圖，不對應任何真實地點。</p>
+    <div class="site-footer__end">
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <span class="mono muted" style="font-size:11px">澄港市政府工務局（虛構）</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { UTIL, UTIL_ORDER, STATUS, STATUS_ORDER, fmt, icon, esc, utilChip, statusBadge, clamp } = App;
+  const PERMITS = App.DATA.permits;
+  const TODAY = App.TODAY;
+  const T = App.day(TODAY);
+  // 甘特與期間迷你尺共用的時間窗：9–12 月整季
+  const G0 = App.day('2026-09-01');
+  const GN = App.day('2026-12-31') - G0 + 1;
+  const xPct = n => (n - G0) / GN * 100;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const narrow = matchMedia('(max-width: 1040px)');
+  const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const DISTRICT_ORDER = ['gangcheng', 'beian', 'jiucheng', 'shanjiao', 'xinwan', 'yantian', 'xizhou', 'yunling'];
+  const ROAD_ORDER = App.DATA.roads.map(r => r.name);
+  const RETURNABLE = new Set(['checking', 'coordinating', 'review']);
+  const LANES = { A: 6, B: 4, C: 2 };
+  const CLS_LABEL = { A: '主要幹道', B: '次要幹道', C: '區域道路' };
+  const PERIODS = [['all', '全部期間'], ['today', '今日佔用中'], ['soon', '7 日內進場'], ['nov', '11 月有佔用'], ['dec', '12 月有佔用'], ['ended', '已結束佔用']];
+  const SORT_DIR = { id: -1, util: 1, segment: 1, area: -1, start: 1, status: 1 };
+  const COS_LABEL = { ok: '同意', pending: '會辦中', hold: '暫緩', returned: '退回', idle: '未送會辦' };
+
+  /* ---------- 狀態（可由網址預設：?status=checking,coordinating、?view=gantt、?id=…） ---------- */
+  const state = {
+    q: '', util: new Set(), district: '', period: 'all', clash: false, status: new Set(),
+    sort: { key: 'id', dir: -1 }, page: 1, per: 15, view: 'table',
+    selected: null, checked: new Set(), collapsed: new Set(),
+  };
+  (App.param('status') || '').split(',').forEach(s => { if (STATUS[s]) state.status.add(s); });
+  (App.param('utility') || '').split(',').forEach(u => { if (UTIL[u]) state.util.add(u); });
+  if (App.param('view') === 'gantt') state.view = 'gantt';
+  if (App.param('q')) state.q = App.param('q').trim();
+  if (App.DATA.districts.some(d => d.id === App.param('district'))) state.district = App.param('district');
+
+  const openCf = p => App.conflictsOf(p).filter(c => c.status !== 'resolved');
+
+  function inPeriod(p) {
+    switch (state.period) {
+      case 'today': return p.status !== 'returned' && p.d0 <= T && p.d1 >= T;
+      case 'soon': return p.status !== 'returned' && p.d0 > T && p.d0 - T <= 7;
+      case 'nov': return p.d0 <= App.day('2026-11-30') && p.d1 >= App.day('2026-11-01');
+      case 'dec': return p.d0 <= App.day('2026-12-31') && p.d1 >= App.day('2026-12-01');
+      case 'ended': return p.d1 < T;
+      default: return true;
+    }
+  }
+  // skip：計算某一維度的件數時忽略該維度本身（facet 計數）
+  function passes(p, skip) {
+    if (skip !== 'status' && state.status.size && !state.status.has(p.status)) return false;
+    if (skip !== 'util' && state.util.size && !state.util.has(p.utility)) return false;
+    if (skip !== 'district' && state.district && p.districtId !== state.district) return false;
+    if (!inPeriod(p)) return false;
+    if (state.clash && !openCf(p).length) return false;
+    if (state.q) {
+      const hay = [p.id, p.road, p.segment, p.address, p.station, p.purpose, p.org, UTIL[p.utility].short, UTIL[p.utility].name, p.contractor, p.district].join(' ').toLowerCase();
+      if (!hay.includes(state.q.toLowerCase())) return false;
+    }
+    return true;
+  }
+  const SORT_VAL = {
+    id: p => p.id,
+    util: p => UTIL_ORDER.indexOf(p.utility),
+    segment: p => p.segment,
+    area: p => p.area,
+    start: p => p.d0 * 1000 + p.days,
+    status: p => STATUS_ORDER.indexOf(p.status),
+  };
+  function sortList(list) {
+    const { key, dir } = state.sort, f = SORT_VAL[key];
+    return list.slice().sort((a, b) => {
+      const va = f(a), vb = f(b);
+      const c = typeof va === 'string' ? va.localeCompare(vb, 'zh-Hant') : va - vb;
+      return c * dir || b.id.localeCompare(a.id);
+    });
+  }
+  const filtersActive = () => !!(state.q || state.util.size || state.district || state.period !== 'all' || state.clash || state.status.size);
+
+  /* ---------- 元素 ---------- */
+  const ribbon = $('#ribbon'), tbody = $('#tbody'), pager = $('#pager'), batch = $('#batch');
+  const viewTable = $('#viewTable'), viewGantt = $('#viewGantt');
+  const fq = $('#fq'), fDistrict = $('#fDistrict'), fPeriod = $('#fPeriod'), fClash = $('#fClash'), fUtil = $('#fUtil');
+  const pvPanel = $('#pvPanel'), pvBody = $('#pvBody'), mapDateEl = $('#mapDate'), mapDateTag = $('#mapDateTag');
+
+  /* ---------- 流程分布帶（結構只建一次，之後原地更新，比例變化才有過場） ---------- */
+  ribbon.innerHTML = STATUS_ORDER.map((s, i) => `
+    <button class="pl-seg" type="button" data-s="${s}" aria-pressed="false" style="--i:${i}">
+      <span class="pl-seg__bar" aria-hidden="true"><i></i></span>
+      <span class="pl-seg__n">0</span>
+      <span class="pl-seg__lab">${STATUS[s].label}<span class="pl-seg__st">S${STATUS[s].stage}</span></span>
+    </button>`).join('');
+  function updateRibbon() {
+    const base = PERMITS.filter(p => passes(p, 'status'));
+    STATUS_ORDER.forEach(s => {
+      const b = ribbon.querySelector(`[data-s="${s}"]`);
+      const n = base.filter(p => p.status === s).length;
+      b.style.setProperty('--n', n);
+      b.querySelector('.pl-seg__n').textContent = n;
+      b.classList.toggle('is-zero', !n);
+      b.setAttribute('aria-pressed', String(state.status.has(s)));
+      b.setAttribute('aria-label', `${STATUS[s].label} ${n} 件`);
+    });
+    ribbon.classList.toggle('has-pick', state.status.size > 0);
+    $('#btnAllStages').hidden = !state.status.size;
+    $('#bandNote').innerHTML = `在案 <b>${PERMITS.length}</b> 件${state.status.size ? `・已選 <b>${state.status.size}</b> 個狀態` : ''}`;
+  }
+
+  /* ---------- 篩選控制項 ---------- */
+  fUtil.innerHTML = UTIL_ORDER.map(u => `<button class="chip" type="button" data-u="${u}" aria-pressed="false"><span class="swatch" style="--u:${UTIL[u].color}"></span>${UTIL[u].name}<span class="chip__n">0</span></button>`).join('');
+  fDistrict.innerHTML = `<option value="">全部行政區</option>` + DISTRICT_ORDER.map(id => `<option value="${id}"></option>`).join('');
+  fPeriod.innerHTML = PERIODS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  fq.value = state.q;
+  fDistrict.value = state.district;
+
+  function updateFilters() {
+    const byUtil = PERMITS.filter(p => passes(p, 'util'));
+    $$('.chip', fUtil).forEach(c => {
+      const u = c.dataset.u;
+      c.setAttribute('aria-pressed', String(state.util.has(u)));
+      c.querySelector('.chip__n').textContent = byUtil.filter(p => p.utility === u).length;
+    });
+    const byDist = PERMITS.filter(p => passes(p, 'district'));
+    $$('option', fDistrict).forEach(o => {
+      if (!o.value) { o.textContent = `全部行政區（${byDist.length}）`; return; }
+      const d = App.DATA.districts.find(x => x.id === o.value);
+      o.textContent = `${d.name}（${byDist.filter(p => p.districtId === d.id).length}）`;
+    });
+    $('#btnClear').hidden = !filtersActive();
+  }
+
+  /* ---------- 衍生顯示 ---------- */
+  function statusSub(p) {
+    switch (p.status) {
+      case 'returned': return `${p.returned ? fmt.md(p.returned) + ' ' : ''}退回・待補正`;
+      case 'checking': return `自動檢查中・${fmt.md(p.applied)} 申請`;
+      case 'coordinating': { const c = openCf(p)[0]; return c ? `<span class="pl-sub--danger">待協調 ${c.id}</span>` : '衝突協調中'; }
+      case 'review': {
+        const cos = App.cosignOf(p);
+        const ok = cos.filter(c => c.state === 'ok').length;
+        const hold = cos.find(c => c.state === 'hold');
+        return hold ? `會辦 ${ok}/3・<span class="pl-sub--danger">${hold.name}暫緩</span>` : `會辦 ${ok}/3・已等 ${T - App.day(p.applied)} 天`;
+      }
+      case 'approved': return p.d0 > T ? `${fmt.rel(p.start)}進場` : '待申報開工';
+      case 'active': {
+        const pr = App.progress(p, TODAY);
+        return `<span class="pl-prog"><span class="progress" style="--u:${UTIL[p.utility].color}"><i style="--p:${pr.frac.toFixed(3)}"></i></span>${pr.day}/${pr.total} 天</span>`;
+      }
+      case 'done': return `${fmt.md(p.end)} 完工・已等 ${T - p.d1} 天`;
+      case 'paving': {
+        const acc = App.acceptanceOf(p);
+        const pass = acc.filter(a => a.state === 'pass').length;
+        return acc.some(a => a.state === 'fail') ? `驗收 ${pass}/${acc.length}・<span class="pl-sub--danger">平整度複驗</span>` : `驗收 ${pass}/${acc.length} 項`;
+      }
+      case 'accepted': return `${fmt.md(p.accepted)} 驗收結案`;
+      default: return '';
+    }
+  }
+  function periodSpan(p) {
+    const l = clamp(xPct(p.d0), 0, 100), r = clamp(xPct(p.d1 + 1), 0, 100);
+    const cls = App.isPending(p) ? ' pl-span--pending' : p.d1 < T ? ' pl-span--past' : '';
+    return `<span class="pl-span${cls}" aria-hidden="true"><i style="left:${l.toFixed(2)}%;width:${Math.max(1.5, r - l).toFixed(2)}%"></i><b style="left:${xPct(T + .5).toFixed(2)}%"></b></span>`;
+  }
+  function conflictLinks(p) {
+    return App.conflictsOf(p).map(c => {
+      const st = App.CONFLICT_STATUS[c.status];
+      return `<a class="pl-cf${c.status === 'resolved' ? ' is-ok' : ''}" href="index.html?focus=${c.id}" title="${esc(c.road)}・重疊 ${c.length} m・${fmt.range(c.from, c.to)}・${st.label}（在地圖定位）"><i class="hatch-swatch"></i>${c.id}${c.status === 'resolved' ? '・已排解' : ''}</a>`;
+    }).join('');
+  }
+
+  /* ---------- 表格 ---------- */
+  let current = [];
+  function rowHtml(p) {
+    const u = UTIL[p.utility];
+    const cfs = conflictLinks(p);
+    return `<tr data-id="${p.id}" class="${state.selected === p.id ? 'is-selected' : ''}${state.checked.has(p.id) ? ' is-checked' : ''}" style="--u:${u.color}">
+      <td class="pl-td-check"><label class="check"><input type="checkbox" data-check="${p.id}"${state.checked.has(p.id) ? ' checked' : ''} aria-label="選取 ${p.id}"></label></td>
+      <td class="table__u" aria-hidden="true"></td>
+      <td class="pl-td-id"><a class="pid" href="${App.permitUrl(p.id)}">${p.id}</a><span class="pl-meta mono">申請 ${fmt.md(p.applied)}</span><span class="pl-flags">${p.emergency ? '<span class="badge badge--danger">搶修補辦</span>' : ''}${p.conditional ? '<span class="badge badge--accent">附條件</span>' : ''}</span></td>
+      <td class="pl-td-util">${utilChip(p.utility)}<span class="pl-meta">${esc(u.short)}</span></td>
+      <td class="pl-td-road"><button class="pl-rowbtn" type="button" data-pick="${p.id}" aria-label="在地圖預覽 ${p.id} ${esc(p.segment)}"><span class="pl-road">${esc(p.segment)}</span><span class="pl-sta mono">${p.station}</span></button><span class="pl-meta">${esc(p.district)}・${esc(p.purpose)}</span></td>
+      <td class="num pl-td-area"><span class="pl-area">${fmt.num(p.area)}<small> m²</small></span><span class="pl-meta">長 ${p.length} m・深 ${p.depth} m</span></td>
+      <td class="pl-td-period"><span class="pl-dates mono">${fmt.range(p.start, p.end)}</span><span class="pl-days">${p.days} 天</span>${periodSpan(p)}</td>
+      <td class="pl-td-status">${statusBadge(p.status)}<span class="pl-sub">${statusSub(p)}</span></td>
+      <td class="pl-td-clash${cfs ? '' : ' is-empty'}">${cfs || '<span class="dim" aria-label="無衝突">—</span>'}</td>
+    </tr>`;
+  }
+  function renderTable() {
+    const pages = Math.max(1, Math.ceil(current.length / state.per));
+    state.page = clamp(state.page, 1, pages);
+    const from = (state.page - 1) * state.per;
+    const rows = current.slice(from, from + state.per);
+    tbody.innerHTML = rows.length ? rows.map(rowHtml).join('') : `<tr class="pl-empty"><td colspan="9">${App.emptyState({ art: 'search', title: '沒有符合條件的許可', text: '調整關鍵字或篩選條件；也可以清除全部篩選重新查詢。' })}<div class="pl-empty__act"><button class="btn btn--sm" type="button" data-clear>清除全部篩選</button></div></td></tr>`;
+    $$('.pl-table th[data-sort]').forEach(th => th.setAttribute('aria-sort', th.dataset.sort === state.sort.key ? (state.sort.dir > 0 ? 'ascending' : 'descending') : 'none'));
+    $('#mSort').value = `${state.sort.key}:${state.sort.dir}`;
+    renderPager(pages, from, rows.length);
+    syncCheckAll();
+  }
+  function renderPager(pages, from, n) {
+    const info = current.length ? `第 <b>${from + 1}–${from + n}</b> 筆，共 <b>${current.length}</b> 筆` : '共 <b>0</b> 筆';
+    const nums = Array.from({ length: pages }, (_, i) => i + 1).map(i => `<button class="pl-page" type="button" data-page="${i}"${i === state.page ? ' aria-current="page"' : ''} aria-label="第 ${i} 頁">${i}</button>`).join('');
+    pager.innerHTML = `<span class="pl-pager__info">${info}</span>
+      ${pages > 1 ? `<div class="pl-pager__pages">
+        <button class="btn btn--sm btn--icon btn--ghost" type="button" data-page="prev" aria-label="上一頁"${state.page === 1 ? ' disabled' : ''}>${icon('chevL', 'icon icon--sm')}</button>${nums}
+        <button class="btn btn--sm btn--icon btn--ghost" type="button" data-page="next" aria-label="下一頁"${state.page === pages ? ' disabled' : ''}>${icon('chevR', 'icon icon--sm')}</button>
+      </div>` : ''}
+      <label class="pl-pager__per"><span>每頁</span><select class="select select--sm" data-per aria-label="每頁筆數">${[15, 30, 50].map(v => `<option value="${v}"${v === state.per ? ' selected' : ''}>${v} 筆</option>`).join('')}</select></label>`;
+  }
+  function pageIds() { return $$('[data-check]', tbody).map(c => c.dataset.check); }
+  function syncCheckAll() {
+    const ids = pageIds();
+    const n = ids.filter(id => state.checked.has(id)).length;
+    $$('[data-checkall]').forEach(c => { c.checked = !!ids.length && n === ids.length; c.indeterminate = n > 0 && n < ids.length; c.disabled = !ids.length; });
+  }
+
+  /* ---------- 甘特：依道路分組，看得出同路段的時間重疊 ---------- */
+  function ganttHtml() {
+    if (!current.length) return `<div class="pl-gempty">${App.emptyState({ art: 'search', title: '沒有符合條件的許可', text: '調整篩選條件後，道路佔用時間會依路段排列在這裡。' })}<div class="pl-empty__act"><button class="btn btn--sm" type="button" data-clear>清除全部篩選</button></div></div>`;
+    const groups = new Map();
+    current.slice().sort((a, b) => a.d0 - b.d0 || a.s0 - b.s0).forEach(p => { if (!groups.has(p.road)) groups.set(p.road, []); groups.get(p.road).push(p); });
+    const order = name => { const i = ROAD_ORDER.indexOf(name); return i < 0 ? 99 : i; };
+    const keys = [...groups.keys()].sort((a, b) => order(a) - order(b));
+    const ids = new Set(current.map(p => p.id));
+    const pos = (d0, d1) => { const l = clamp(xPct(d0), 0, 100), r = clamp(xPct(d1 + 1), 0, 100); return `left:${l.toFixed(3)}%;width:${Math.max(.4, r - l).toFixed(3)}%`; };
+
+    let scale = '', under = '';
+    for (let i = 0; i < GN; i++) {
+      const iso = App.iso(G0 + i);
+      if (iso.endsWith('-01')) {
+        const days = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7), 0)).getUTCDate();
+        scale += `<span class="gantt__month" style="left:${xPct(G0 + i).toFixed(3)}%;width:${(days / GN * 100).toFixed(3)}%">2026・${+iso.slice(5, 7)} 月</span>`;
+        if (i) under += `<span class="pl-gmonth" style="left:${xPct(G0 + i).toFixed(3)}%"></span>`;
+      } else if (App.weekday(iso) === '一') {
+        scale += `<span class="gantt__week" style="left:${xPct(G0 + i).toFixed(3)}%"><span>${+iso.slice(8)}</span></span>`;
+      }
+      if (App.weekday(iso) === '六') under += `<span class="pl-gweekend" style="${pos(G0 + i, G0 + i + 1)}"></span>`;
+    }
+    scale += `<span class="pl-gtoday" style="left:${xPct(T + .5).toFixed(3)}%" aria-hidden="true"></span>`;
+
+    const rows = keys.map(key => {
+      const ps = groups.get(key);
+      const road = App.roadOf(ps[0]);
+      const closed = state.collapsed.has(key);
+      // 群組列：整條路的佔用聯集（灰）＋同路段衝突期間（紅斜線）
+      const iv = ps.filter(p => p.status !== 'returned').map(p => [p.d0, p.d1]).sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      iv.forEach(([a, b]) => { const last = merged[merged.length - 1]; if (last && a <= last[1] + 1) last[1] = Math.max(last[1], b); else merged.push([a, b]); });
+      const cfs = App.conflicts().filter(c => c.status !== 'resolved' && (ids.has(c.a.id) || ids.has(c.b.id)) && (c.a.road === key || c.b.road === key));
+      const head = `<div class="gantt__row pl-ggroup">
+        <div class="gantt__label"><button class="pl-gtoggle" type="button" data-toggle="${esc(key)}" aria-expanded="${!closed}">${icon('chevD', 'icon icon--sm')}${esc(key)}${road ? `<span class="tag">${road.cls} 級</span>` : ''}<span class="count">${ps.length}</span></button></div>
+        <div class="gantt__track" aria-hidden="true">${merged.map(([a, b]) => `<span class="pl-occ" style="${pos(a, b)}"></span>`).join('')}${cfs.map(c => `<span class="pl-gclash clash-band" style="${pos(c.d0, c.d1)}"></span>`).join('')}</div>
+      </div>`;
+      if (closed) return head;
+      return head + ps.map(p => {
+        const u = UTIL[p.utility];
+        const pend = App.isPending(p);
+        const live = p.status === 'active' && p.d0 <= T && p.d1 >= T;
+        const cls = pend ? ' gantt__bar--pending' + (p.status === 'returned' ? ' pl-bar--returned' : '') : live ? ' pl-bar--live' : p.d1 < T ? ' gantt__bar--past' : p.d0 > T ? ' pl-bar--planned' : '';
+        const pp = live ? (App.progress(p, TODAY).frac * 100).toFixed(1) + '%' : '0%';
+        const endPct = xPct(p.d1 + 1), startPct = xPct(p.d0);
+        const label = `${fmt.range(p.start, p.end)}・${p.days} 天`;
+        // 長條靠右時把標籤放到左邊，避免超出時間窗
+        const lab = endPct > 76 ? `right:calc(${(100 - startPct).toFixed(3)}% + 7px)` : `left:calc(${endPct.toFixed(3)}% + 7px)`;
+        const clashes = App.conflictsOf(p).map(c => `<span class="gantt__clash${c.status === 'resolved' ? ' pl-clash--ok' : ''}" style="${pos(c.d0, c.d1)}"></span>`).join('');
+        return `<div class="gantt__row pl-grow${state.selected === p.id ? ' is-selected' : ''}" data-row="${p.id}" style="--u:${u.color}">
+          <div class="gantt__label"><span class="swatch" style="--u:${u.color}" aria-hidden="true"></span><span class="pl-glabel__main"><a class="pid" href="${App.permitUrl(p.id)}">${p.id}</a><span class="pl-glabel__sub">${u.name}・${p.station}</span></span>${statusBadge(p.status)}</div>
+          <div class="gantt__track">
+            <button class="gantt__bar pl-bar${cls}${state.selected === p.id ? ' is-selected' : ''}" type="button" data-sel="${p.id}" style="${pos(p.d0, p.d1)};--pp:${pp}" aria-label="${p.id} ${u.name} ${esc(p.segment)} ${label} ${STATUS[p.status].label}"></button>
+            ${clashes}<span class="pl-blabel" style="${lab}" aria-hidden="true">${label}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }).join('');
+
+    return `<div class="legend pl-glegend" aria-hidden="true">
+        <span><i style="background:#F5A623"></i>已核准・施工</span>
+        <span><i style="background:linear-gradient(90deg,#F5A623 55%,#FAD291 55%)"></i>施工中（已施作／剩餘）</span>
+        <span><i style="background:#fff;border:1.5px dashed #8B958F"></i>審查中</span>
+        <span><i style="background:#F5A623;opacity:.5"></i>已完工</span>
+        <span><i class="hatch-swatch" style="width:24px;height:10px"></i>同路段衝突</span>
+        <span class="pl-glegend__hint">移動游標檢視任一日，右側地圖同步切換日期</span>
+      </div>
+      <div class="gantt-wrap">
+        <div class="gantt pl-gantt">
+          <div class="gantt__head"><div class="gantt__head-label">路段 ／ 許可</div><div class="gantt__scale">${scale}</div></div>
+          <div class="pl-gbody">
+            <div class="pl-gunder" aria-hidden="true">${under}</div>
+            ${rows}
+            <div class="pl-gover" aria-hidden="true"><span class="gantt__today" style="left:${xPct(T + .5).toFixed(3)}%"></span><span class="pl-gcursor"></span><span class="pl-gtag"></span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+  let ganttScroll = null;
+  function renderGantt() {
+    const old = $('.gantt-wrap', viewGantt);
+    if (old) ganttScroll = old.scrollLeft;
+    viewGantt.innerHTML = ganttHtml();
+    scrubDay = -1;
+    const wrap = $('.gantt-wrap', viewGantt);
+    if (!wrap || wrap.scrollWidth <= wrap.clientWidth) return;
+    // 第一次在窄螢幕打開：捲到本月 1 日（月份標籤完整、今日落在可視範圍內）；之後重繪保留使用者的捲動位置
+    if (ganttScroll == null) {
+      const g = $('.pl-gantt', wrap);
+      const lw = $('.gantt__head-label', g).offsetWidth;
+      ganttScroll = Math.round(xPct(App.day(TODAY.slice(0, 8) + '01')) / 100 * (g.offsetWidth - lw));
+    }
+    wrap.scrollLeft = ganttScroll;
+  }
+
+  /* 甘特游標：時間 ↔ 地圖同步（游標所在日期即右側地圖的圖面日期） */
+  let scrubDay = -1;
+  function scrub(e) {
+    const g = $('.pl-gantt', viewGantt);
+    const over = g && $('.pl-gover', g);
+    if (!over) return;
+    const r = over.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (x < 0 || x > r.width || y < 0) { endScrub(); return; }
+    const i = clamp(Math.floor(x / r.width * GN), 0, GN - 1);
+    const iso = App.iso(G0 + i);
+    const bar = e.target.closest && e.target.closest('.pl-bar');
+    g.classList.add('is-scrub');
+    $('.pl-gcursor', g).style.transform = `translateX(${((i + .5) / GN * r.width).toFixed(1)}px)`;
+    const tag = $('.pl-gtag', g);
+    const key = i + (bar ? bar.dataset.sel : '');
+    if (key !== String(scrubDay)) {
+      scrubDay = key;
+      const n = G0 + i;
+      const on = current.filter(p => p.status !== 'returned' && p.d0 <= n && p.d1 >= n);
+      const cf = App.conflicts().filter(c => c.status !== 'resolved' && c.d0 <= n && c.d1 >= n && (on.includes(c.a) || on.includes(c.b)));
+      const p = bar && App.getPermit(bar.dataset.sel);
+      tag.innerHTML = `<b>${fmt.mdw(iso)}</b>` + (p
+        ? `${p.id}・${UTIL[p.utility].name}<small>${esc(p.segment)}・${STATUS[p.status].label}</small>`
+        : `佔用道路 ${on.length} 件${cf.length ? `・衝突 ${cf.length}` : ''}<small>${on.length ? UTIL_ORDER.filter(u => on.some(q => q.utility === u)).map(u => `${UTIL[u].name} ${on.filter(q => q.utility === u).length}`).join('・') : '當日無施工'}</small>`);
+      hoverDate = iso;
+      applyMapDate();
+    }
+    const tw = tag.offsetWidth, th = tag.offsetHeight;
+    const cx = (i + .5) / GN * r.width;
+    const tx = cx + 12 + tw > r.width ? cx - 12 - tw : cx + 12;
+    const ty = clamp(y - th - 14, 4, Math.max(4, r.height - th - 4));
+    tag.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px)`;
+  }
+  function endScrub() {
+    const g = $('.pl-gantt', viewGantt);
+    if (g) g.classList.remove('is-scrub');
+    scrubDay = -1;
+    if (hoverDate) { hoverDate = null; applyMapDate(); }
+  }
+  viewGantt.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || e.pointerType === 'pen') scrub(e); });
+  viewGantt.addEventListener('pointerleave', endScrub);
+
+  /* ---------- 地圖：只畫篩選結果；非圖面日期的範圍以細框標出 ---------- */
+  current = sortList(PERMITS.filter(p => passes(p)));
+  let mapKey = current.map(p => p.id).sort().join(',');
+  let hoverDate = null, hoverId = null;
+  const map = App.map.create($('#pvMap'), {
+    permits: current.slice(), date: TODAY, controls: 'compact', fit: 'permits', pad: 22, maxK: 3.2,
+    label: '許可位置預覽地圖',
+    onSelect: p => { const id = p ? p.id : null; if (id !== state.selected) select(id, { source: 'map' }); },
+  });
+  const fpG = App.svgEl('g', { 'pointer-events': 'none' });
+  const hoverG = App.svgEl('g', { 'pointer-events': 'none' });
+  map.overlay.append(fpG, hoverG);
+
+  function outline(p, color, width, dash) {
+    const d = App.geo.pathD(p.poly);
+    return `<path d="${d}" fill="none" stroke="#FFFFFF" stroke-width="${width + 4}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><path d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''} vector-effect="non-scaling-stroke"/>`;
+  }
+  function drawFootprints() {
+    const v = map.visible();
+    const shown = new Set(v.permits.concat(v.soon).map(p => p.id));
+    const sel = state.selected && App.getPermit(state.selected);
+    fpG.innerHTML = current.filter(p => !shown.has(p.id)).map(p => {
+      const c = UTIL[p.utility].color;
+      return `<path d="${App.geo.pathD(p.poly)}" fill="${c}" fill-opacity=".1" stroke="${c}" stroke-opacity=".62" stroke-width="2.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    }).join('') + (sel ? outline(sel, '#18201D', 2, '6 4') : '');
+  }
+  function setHover(id) {
+    if (id === hoverId) return;
+    hoverId = id;
+    const p = id && App.getPermit(id);
+    hoverG.innerHTML = p ? outline(p, '#18201D', 2.5, '') : '';
+    map.highlight(p ? [p.id] : null);
+  }
+  // 圖面日期：選了許可就跳到它看得見的那天（今日在期間內用今日，否則用開工日）
+  function baseDate() {
+    const p = state.selected && App.getPermit(state.selected);
+    if (!p || p.status === 'returned' || (p.d0 <= T && p.d1 >= T)) return TODAY;
+    return p.start;
+  }
+  function applyMapDate() {
+    const d = hoverDate || baseDate();
+    if (map.date() !== d) map.setDate(d);
+    drawFootprints();
+    const p = state.selected && App.getPermit(state.selected);
+    mapDateEl.textContent = fmt.mdw(d);
+    const tag = hoverDate ? ['甘特游標', 'badge--accent'] : d === TODAY ? ['今日', 'badge--dark'] : p && d === p.start ? ['本案開工日', ''] : ['', ''];
+    mapDateTag.textContent = tag[0];
+    mapDateTag.className = 'badge ' + tag[1];
+    mapDateTag.hidden = !tag[0];
+  }
+  function syncMap() {
+    const key = current.map(p => p.id).sort().join(',');
+    if (key !== mapKey) {
+      mapKey = key;
+      map.setPermits(current.slice());
+      if (!state.selected) map.fit();
+    }
+    const msel = map.selected();
+    if ((msel ? msel.id : null) !== state.selected) map.select(state.selected);
+    applyMapDate();
+  }
+
+  /* ---------- 位置預覽面板 ---------- */
+  function stripHtml(p) {
+    const road = App.roadOf(p);
+    if (!road) return `<p class="pl-pv__note">自繪範圍申請，無道路里程資料。</p>`;
+    const L = road.len;
+    const span = Math.min(L, Math.max(1200, (p.s1 - p.s0) * 3));
+    const a = clamp((p.s0 + p.s1) / 2 - span / 2, 0, L - span), b = a + span;
+    const X = s => (clamp(s, a, b) - a) / span * 100;
+    const half = road.w / 2;
+    const box = q => `left:${X(q.s0).toFixed(2)}%;width:${Math.max(.8, X(q.s1) - X(q.s0)).toFixed(2)}%;top:${((q.o0 + half) / road.w * 100).toFixed(2)}%;height:${((q.o1 - q.o0) / road.w * 100).toFixed(2)}%`;
+    const sync = q => q.d0 <= p.d1 && q.d1 >= p.d0;
+    const others = PERMITS.filter(q => q !== p && q.roadId === p.roadId && q.status !== 'returned' && q.s1 > a && q.s0 < b);
+    const lanes = LANES[road.cls];
+    let lines = '';
+    for (let i = 1; i < lanes; i++) lines += `<span class="pl-lane${i === lanes / 2 ? ' pl-lane--center' : ''}" style="top:${(i / lanes * 100).toFixed(2)}%"></span>`;
+    const cfs = App.conflictsOf(p).filter(c => c.roadId === p.roadId && c.length > 0 && c.s1 > a && c.s0 < b);
+    const clash = cfs.map(c => {
+      const o0 = Math.min(c.a.o0, c.b.o0), o1 = Math.max(c.a.o1, c.b.o1);
+      return `<span class="pl-strip__clash${c.status === 'resolved' ? ' is-ok' : ''}" style="${box({ s0: c.s0, s1: c.s1, o0, o1 })}"></span>`;
+    }).join('');
+    let ticks = '';
+    for (let s = Math.ceil(a / 100) * 100; s <= b; s += 100) {
+      const x = X(s), major = s % 200 === 0 && x > 7 && x < 93;
+      ticks += `<span class="pl-tick${major ? ' is-major' : ''}" style="left:${x.toFixed(2)}%">${major ? `<i>${fmt.station(s)}</i>` : ''}</span>`;
+    }
+    const syncN = others.filter(sync).length;
+    const me = clamp((X(p.s0) + X(p.s1)) / 2, 12, 88);
+    return `<h3 class="pl-pv__h">路段里程配置<span>${esc(road.name)}・${fmt.station(a)} – ${fmt.station(b)}</span></h3>
+      <div class="pl-strip" role="group" aria-label="${esc(road.name)} 里程 ${fmt.station(a)} 至 ${fmt.station(b)}：本案 ${p.station}，同期施工 ${syncN} 件，衝突 ${cfs.filter(c => c.status !== 'resolved').length} 處">
+        <span class="pl-strip__me" style="left:${me.toFixed(2)}%">本案 ${p.id.slice(-4)}</span>
+        <div class="pl-strip__road">${lines}
+          ${others.map(q => `<button class="pl-blk ${sync(q) ? 'is-sync' : 'is-async'}" type="button" data-sel="${q.id}" style="${box(q)};--u:${UTIL[q.utility].color}" title="${q.id}・${UTIL[q.utility].name}・${fmt.range(q.start, q.end)}・${STATUS[q.status].label}" aria-label="${q.id} ${UTIL[q.utility].name} ${fmt.range(q.start, q.end)}${sync(q) ? '（同期）' : ''}"></button>`).join('')}
+          <span class="pl-blk is-self" style="${box(p)};--u:${UTIL[p.utility].color}"></span>${clash}
+        </div>
+        <div class="pl-strip__ruler" aria-hidden="true">${ticks}</div>
+      </div>
+      <div class="legend pl-strip__legend" aria-hidden="true">
+        <span><i style="background:${UTIL[p.utility].color};box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px #18201D"></i>本案</span>
+        <span><i style="background:linear-gradient(90deg,#2F80ED 0 33%,#9B51E0 33% 66%,#27AE60 66%)"></i>同期施工 ${syncN}</span>
+        <span><i style="box-shadow:inset 0 0 0 1.5px #AEB8AD"></i>非同期</span>
+        <span><i class="hatch-swatch" style="width:16px;height:8px"></i>衝突重疊</span>
+        <span>上側＝行進方向左側・${road.cls} 級${CLS_LABEL[road.cls]}</span>
+      </div>`;
+  }
+
+  function approveBlock(p) {
+    if (p.status !== 'review') return `目前為「${STATUS[p.status].label}」，不在會辦階段`;
+    const hold = App.cosignOf(p).find(c => c.state === 'hold' || c.state === 'returned');
+    if (hold) return `${hold.name}會辦${COS_LABEL[hold.state]}`;
+    const cf = openCf(p)[0];
+    if (cf) return `尚有未排解衝突 ${cf.id}`;
+    return '';
+  }
+
+  function previewHtml(p) {
+    const u = UTIL[p.utility];
+    const n = T;
+    const pr = App.progress(p, TODAY);
+    const state0 = p.status === 'returned' ? '已退回，暫停佔用' : n < p.d0 ? `尚未進場（${p.d0 - n} 天後）` : n > p.d1 ? `已於 ${fmt.md(p.end)} 完成佔用` : null;
+    const cfs = App.conflictsOf(p);
+    const pend = ['checking', 'coordinating', 'review', 'returned'].includes(p.status);
+    const cos = App.cosignOf(p);
+    const block = approveBlock(p);
+    const acts = [];
+    if (p.status === 'review' && !block) acts.push(`<button class="btn btn--sm btn--accent" type="button" data-act="approve">${icon('check', 'icon icon--sm')}核准</button>`);
+    if (RETURNABLE.has(p.status)) acts.push(`<button class="btn btn--sm" type="button" data-act="return">${icon('undo', 'icon icon--sm')}退回補正</button>`);
+    if (p.status === 'checking') acts.push(`<button class="btn btn--sm btn--accent" type="button" data-act="advance">${icon('stack', 'icon icon--sm')}完成檢查・送會辦</button>`);
+    if (p.status === 'coordinating' || (p.status === 'review' && openCf(p).length)) { const c = openCf(p)[0]; if (c) acts.push(`<a class="btn btn--sm" href="index.html?focus=${c.id}">${icon('map', 'icon icon--sm')}地圖檢視 ${c.id}</a>`); }
+    if (p.status === 'approved') acts.push(`<button class="btn btn--sm" type="button" data-act="notify">${icon('bell', 'icon icon--sm')}通知進場</button>`);
+    if (p.status === 'active') acts.push(`<a class="btn btn--sm" href="index.html?id=${p.id}">${icon('map', 'icon icon--sm')}總覽地圖定位</a>`);
+    if (p.status === 'done') acts.push(`<button class="btn btn--sm btn--accent" type="button" data-act="paving">${icon('paving', 'icon icon--sm')}排定刨鋪驗收</button>`);
+    if (p.status === 'returned') acts.push(`<button class="btn btn--sm" type="button" data-act="remind">${icon('bell', 'icon icon--sm')}催辦補正</button>`);
+    return `<div class="pl-pv__in" style="--u:${u.color}">
+      <div>
+        <div class="pl-pv__head"><span class="pid">${p.id}</span>${statusBadge(p.status)}${p.emergency ? '<span class="badge badge--danger">搶修補辦</span>' : ''}${p.conditional ? '<span class="badge badge--accent">附條件</span>' : ''}<button class="icon-btn icon-btn--sm" type="button" data-close aria-label="關閉預覽">${icon('x', 'icon icon--sm')}</button></div>
+        <p class="pl-pv__title">${esc(p.segment)} <span class="mono">${p.station}</span></p>
+        <p class="pl-pv__desc">${utilChip(p.utility)}<span>${esc(u.short)}・${esc(p.purpose)}</span></p>
+      </div>
+      ${App.flowTrack(p)}
+      <div>${stripHtml(p)}</div>
+      <dl class="kv kv--tight">
+        <dt>佔用期間</dt><dd class="mono">${fmt.range(p.start, p.end)}（${p.days} 天）</dd>
+        <dt>施工進度</dt><dd>${state0 ? esc(state0) : `<span class="pl-prog"><span class="progress" style="--u:${u.color};width:96px"><i style="--p:${pr.frac.toFixed(3)}"></i></span>第 ${pr.day}/${pr.total} 天</span>`}</dd>
+        <dt>範圍</dt><dd class="mono">${fmt.area(p.area)}・長 ${p.length} m・深 ${p.depth} m</dd>
+        <dt>門牌</dt><dd>${esc(p.address)}</dd>
+        <dt>行政區</dt><dd>${esc(p.district)}</dd>
+        <dt>工法／時段</dt><dd>${esc(p.method)}・${esc(p.hours)}</dd>
+        <dt>施工廠商</dt><dd>${esc(p.contractor)}</dd>
+        <dt>申請／核准</dt><dd class="mono">${fmt.md(p.applied)} ／ ${p.approved ? fmt.md(p.approved) : '—'}</dd>
+      </dl>
+      ${cfs.length ? `<div>${cfs.map(c => {
+        const other = c.a === p ? c.b : c.a;
+        const st = App.CONFLICT_STATUS[c.status];
+        return `<div class="callout callout--${c.status === 'resolved' ? 'ok' : 'danger'}"><span class="callout__icon">${icon(c.status === 'resolved' ? 'check' : 'alert', 'icon icon--sm')}</span><div class="callout__body"><p class="callout__title">${c.id}・${st.label}</p>與 ${other.id}（${UTIL[other.utility].name}）重疊 ${c.length} m・${fmt.range(c.from, c.to)}。${esc(c.note)}</div></div>`;
+      }).join('')}</div>` : ''}
+      ${pend ? `<div><h3 class="pl-pv__h">會辦單位</h3><ul class="pl-cos">${cos.map(c => `<li class="pl-cos__i is-${c.state}"><b>${c.name}</b><span>${c.state === 'ok' && c.date ? fmt.md(c.date) + ' 同意' : COS_LABEL[c.state]}</span></li>`).join('')}</ul></div>` : ''}
+      ${p.status === 'review' && block ? `<p class="pl-pv__note">${icon('info', 'icon icon--sm')} 暫不可核准：${esc(block)}。</p>` : ''}
+      <div class="pl-pv__actions"><a class="btn btn--sm btn--primary" href="${App.permitUrl(p.id)}">查看許可詳情${icon('arrowR', 'icon icon--sm')}</a>${acts.join('')}</div>
+    </div>`;
+  }
+
+  function summaryHtml() {
+    const list = current;
+    const area = list.reduce((s, p) => s + p.area, 0);
+    const active = list.filter(p => p.status === 'active').length;
+    const ids = new Set(list.map(p => p.id));
+    const cf = App.conflicts().filter(c => c.status !== 'resolved' && (ids.has(c.a.id) || ids.has(c.b.id))).length;
+    const byU = UTIL_ORDER.map(u => [u, list.filter(p => p.utility === u).length]);
+    const next = list.filter(p => p.status !== 'returned' && p.d0 > T).sort((a, b) => a.d0 - b.d0).slice(0, 3);
+    return `<div class="pl-pv__in">
+      <div class="statgrid">
+        <div class="statgrid__cell"><span class="statgrid__k">篩選結果</span><span class="statgrid__v">${list.length}<small>件</small></span></div>
+        <div class="statgrid__cell"><span class="statgrid__k">挖掘面積</span><span class="statgrid__v">${fmt.num(area)}<small>m²</small></span></div>
+        <div class="statgrid__cell"><span class="statgrid__k">施工中</span><span class="statgrid__v">${active}<small>件</small></span></div>
+        <div class="statgrid__cell${cf ? ' statgrid__cell--danger' : ''}"><span class="statgrid__k">未排解衝突</span><span class="statgrid__v">${cf}<small>件</small></span></div>
+      </div>
+      <div>
+        <h3 class="pl-pv__h">管線類別<span>件數</span></h3>
+        <div class="meter pl-umeter" role="img" aria-label="${byU.map(([u, n]) => `${UTIL[u].name} ${n} 件`).join('、')}">${byU.filter(([, n]) => n).map(([u, n]) => `<i style="flex:${n};background:${UTIL[u].color}"></i>`).join('')}</div>
+        <ul class="legend pl-ulegend">${byU.map(([u, n]) => `<li><i class="swatch" style="--u:${UTIL[u].color}"></i>${UTIL[u].name} <b>${n}</b></li>`).join('')}</ul>
+      </div>
+      <div>
+        <h3 class="pl-pv__h">近期進場<span>${next.length ? '依開工日' : ''}</span></h3>
+        ${next.length ? `<ul class="pl-next">${next.map(p => `<li><button class="pl-next__i" type="button" data-sel="${p.id}" style="--u:${UTIL[p.utility].color}"><span class="pl-next__d">${fmt.md(p.start)}</span><span class="pl-next__t"><b>${p.id}・${UTIL[p.utility].name}</b><small>${esc(p.segment)}・${esc(p.purpose)}</small></span><span class="pl-next__r">${fmt.rel(p.start)}</span></button></li>`).join('')}</ul>` : `<p class="pl-pv__note">篩選結果中沒有尚未進場的許可。</p>`}
+      </div>
+      <p class="pl-hint">${icon('info', 'icon icon--sm')}<span>點選清冊列或甘特條預覽位置與里程配置；甘特游標所在日期會同步到地圖。</span></p>
+    </div>`;
+  }
+  function renderPreview() {
+    const p = state.selected && App.getPermit(state.selected);
+    pvBody.innerHTML = p ? previewHtml(p) : summaryHtml();
+  }
+
+  /* ---------- 批次操作列 ---------- */
+  function renderBatch() {
+    const ps = [...state.checked].map(App.getPermit).filter(Boolean);
+    batch.hidden = !ps.length;
+    if (!ps.length) { batch.innerHTML = ''; return; }
+    const okA = ps.filter(p => !approveBlock(p)).length;
+    const okR = ps.filter(p => RETURNABLE.has(p.status)).length;
+    batch.innerHTML = `<span class="pl-batch__n"><b>${ps.length}</b> 件已選取</span>
+      <span class="pl-batch__ids">${ps.slice(0, 4).map(p => p.id.slice(-4)).join('・')}${ps.length > 4 ? ' 等' : ''}</span>
+      <div class="pl-batch__acts">
+        <button class="btn btn--sm btn--accent" type="button" data-batch="approve">${icon('check', 'icon icon--sm')}核准<span class="count">${okA}</span></button>
+        <button class="btn btn--sm" type="button" data-batch="return">${icon('undo', 'icon icon--sm')}退回補正<span class="count">${okR}</span></button>
+        <button class="btn btn--sm" type="button" data-batch="export">${icon('download', 'icon icon--sm')}匯出</button>
+        <button class="icon-btn icon-btn--sm" type="button" data-batch="clear" aria-label="取消選取">${icon('x', 'icon icon--sm')}</button>
+      </div>`;
+  }
+
+  /* ---------- 核准 / 退回補正（一律走 App.setStatus，toast 附復原） ---------- */
+  const mItem = (p, right, warn) => `<li style="--u:${UTIL[p.utility].color}"><span><span class="pid">${p.id}</span>・${UTIL[p.utility].name}<small>${esc(p.segment)}・${fmt.range(p.start, p.end)}</small></span><span class="pl-mlist__r${warn ? ' is-warn' : ''}">${esc(right)}</span></li>`;
+  function undoToast(title, desc, undos, doneMsg) {
+    App.toast(title, {
+      desc, tone: 'ok',
+      action: { label: '復原', onClick: () => { undos.slice().reverse().forEach(u => u.undo()); App.toast(doneMsg, { tone: 'info' }); } },
+      duration: 6500,
+    });
+  }
+  function openApprove(list) {
+    const ok = list.filter(p => !approveBlock(p));
+    const skip = list.filter(p => approveBlock(p));
+    if (!ok.length) {
+      App.toast(list.length > 1 ? `選取的 ${list.length} 件都無法核准` : `${list[0].id} 目前無法核准`, { desc: skip.slice(0, 3).map(p => `${p.id}：${approveBlock(p)}`).join('；'), tone: 'warn' });
+      return;
+    }
+    const waiting = p => App.cosignOf(p).filter(c => c.state === 'pending').map(c => c.name);
+    const body = `<p>以下 <b>${ok.length}</b> 件會辦中許可將於 <b class="mono">2026/10/22</b> 核准。尚未回覆的會辦單位，其意見列為核准附帶條件。</p>
+      <ul class="pl-mlist">${ok.map(p => { const w = waiting(p); return mItem(p, w.length ? `${w.join('、')} 未回覆` : '會辦完成', w.length > 0); }).join('')}</ul>
+      ${skip.length ? `<div class="callout callout--warn"><span class="callout__icon">${icon('alert', 'icon icon--sm')}</span><div class="callout__body"><p class="callout__title">略過 ${skip.length} 件</p>${skip.map(p => `${p.id}：${esc(approveBlock(p))}`).join('<br>')}</div></div>` : ''}`;
+    App.modal({
+      eyebrow: '核准・道路管線科', title: `核准 ${ok.length} 件道路挖掘許可`, body,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: `核准 ${ok.length} 件`, variant: 'primary', autofocus: true, onClick: close => {
+          close();
+          // 先取消勾選再改狀態：setStatus 觸發的 renderAll 才會畫出未勾選的列與正確的批次列
+          ok.forEach(p => state.checked.delete(p.id));
+          const undos = ok.map(p => App.setStatus(p, 'approved', { note: '會辦完成，核准挖掘' }));
+          undoToast(`已核准 ${ok.length} 件`, ok.map(p => p.id).join('、') + '・已通知申請單位', undos, `已復原 ${ok.length} 件核准`);
+        } },
+      ],
+    });
+  }
+  const PRESETS = ['交通維持計畫缺夜間照明及警示燈配置', '管線圖資與現況不符，請補試挖報告', '施工期間與既有許可重疊，請調整工期', '缺路段刨鋪範圍圖說'];
+  function openReturn(list) {
+    const ok = list.filter(p => RETURNABLE.has(p.status));
+    if (!ok.length) {
+      App.toast('選取的許可都不在審查階段', { desc: '只有衝突檢查、衝突協調與會辦中的申請可以退回補正。', tone: 'warn' });
+      return;
+    }
+    const due = App.addDays(TODAY, 7);
+    const m = App.modal({
+      eyebrow: '退回補正', title: ok.length > 1 ? `退回 ${ok.length} 件申請` : `退回 ${ok[0].id}`,
+      body: `<p>申請單位須於補正期限內修正後重新送審，逾期視為撤回。</p>
+        <ul class="pl-mlist">${ok.map(p => mItem(p, STATUS[p.status].label)).join('')}</ul>
+        <div class="pl-mform">
+          <div class="field" id="rfReason">
+            <label class="label req" for="rReason">退回理由</label>
+            <div class="chip-row pl-presets" role="group" aria-label="常用理由">${PRESETS.map(t => `<button class="chip chip--sm" type="button" data-preset="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+            <textarea class="textarea" id="rReason" rows="3" placeholder="請具體說明需補正的項目，例如缺少的圖說或需調整的工期" aria-describedby="rReasonErr"></textarea>
+            <p class="field__error" id="rReasonErr">請填寫退回理由（至少 8 個字）。</p>
+          </div>
+          <div class="field" id="rfDue">
+            <label class="label req" for="rDue">補正期限</label>
+            <input class="input" type="date" id="rDue" value="${due}" min="${App.addDays(TODAY, 1)}" max="2026-12-31" aria-describedby="rDueErr">
+            <p class="hint">預設 7 日（${fmt.mdw(due)}）。</p>
+            <p class="field__error" id="rDueErr">補正期限須在 10/23 至 12/31 之間。</p>
+          </div>
+        </div>`,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: '確認退回', variant: 'danger', onClick: close => {
+          const reason = $('#rReason', m.body).value.trim();
+          const dueV = $('#rDue', m.body).value;
+          const badR = reason.length < 8;
+          const badD = !/^\d{4}-\d{2}-\d{2}$/.test(dueV) || dueV <= TODAY || dueV > '2026-12-31';
+          $('#rfReason', m.body).classList.toggle('is-invalid', badR);
+          $('#rfDue', m.body).classList.toggle('is-invalid', badD);
+          if (badR || badD) { (badR ? $('#rReason', m.body) : $('#rDue', m.body)).focus(); return; }
+          close();
+          ok.forEach(p => state.checked.delete(p.id));
+          const undos = ok.map(p => App.setStatus(p, 'returned', { note: `${reason}（補正期限 ${fmt.md(dueV)}）` }));
+          undoToast(`已退回 ${ok.length} 件`, `${ok.map(p => p.id).join('、')}・補正期限 ${fmt.mdw(dueV)}`, undos, `已復原 ${ok.length} 件退回`);
+        } },
+      ],
+    });
+    const ta = $('#rReason', m.body);
+    m.body.addEventListener('click', e => {
+      const b = e.target.closest('[data-preset]');
+      if (!b) return;
+      ta.value = ta.value.trim() ? `${ta.value.trim()}；${b.dataset.preset}` : b.dataset.preset;
+      $('#rfReason', m.body).classList.remove('is-invalid');
+      ta.focus();
+    });
+    ta.addEventListener('input', () => { if (ta.value.trim().length >= 8) $('#rfReason', m.body).classList.remove('is-invalid'); });
+    ta.focus();
+  }
+
+  /* ---------- 選取（清冊、甘特、地圖、里程條共用） ---------- */
+  function markSelection() {
+    $$('tr[data-id]', tbody).forEach(tr => tr.classList.toggle('is-selected', tr.dataset.id === state.selected));
+    $$('[data-row]', viewGantt).forEach(r => r.classList.toggle('is-selected', r.dataset.row === state.selected));
+    $$('.pl-bar', viewGantt).forEach(b => b.classList.toggle('is-selected', b.dataset.sel === state.selected));
+  }
+  function select(id, { source = 'list' } = {}) {
+    const p = id ? App.getPermit(id) : null;
+    state.selected = p ? p.id : null;
+    // 從地圖、預覽面板或網址 ?id= 選到的許可若在其他頁，翻到它所在的那一頁
+    if (p && source !== 'list' && state.view === 'table') {
+      const idx = current.indexOf(p);
+      if (idx >= 0 && Math.floor(idx / state.per) + 1 !== state.page) { state.page = Math.floor(idx / state.per) + 1; renderTable(); }
+    }
+    markSelection();
+    if (map.selected() !== p) map.select(state.selected);
+    applyMapDate();
+    if (p) map.focusPermit(p.id); else map.fit();
+    renderPreview();
+    pvBody.scrollTop = 0;
+    if (p && source === 'list' && narrow.matches) pvPanel.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  /* ---------- 檢視切換 ---------- */
+  function renderView() {
+    $$('#viewSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+    viewTable.hidden = state.view !== 'table';
+    viewGantt.hidden = state.view !== 'gantt';
+    if (state.view === 'table') renderTable(); else renderGantt();
+  }
+
+  /* ---------- 全部重繪：任何資料或篩選變動都走這裡 ---------- */
+  function renderAll() {
+    current = sortList(PERMITS.filter(p => passes(p)));
+    const ids = new Set(current.map(p => p.id));
+    state.checked.forEach(id => { if (!ids.has(id)) state.checked.delete(id); });
+    if (state.selected && !ids.has(state.selected)) state.selected = null;
+    updateRibbon();
+    updateFilters();
+    $('#resultLine').innerHTML = `顯示 <b>${current.length}</b> / ${PERMITS.length} 件`;
+    renderView();
+    renderBatch();
+    syncMap();
+    renderPreview();
+  }
+  function refilter() { state.page = 1; renderAll(); }
+  function clearFilters() {
+    state.q = ''; state.util.clear(); state.district = ''; state.period = 'all'; state.clash = false; state.status.clear();
+    fq.value = ''; fDistrict.value = ''; fPeriod.value = 'all'; fClash.checked = false;
+    refilter();
+  }
+
+  /* ---------- 事件 ---------- */
+  ribbon.addEventListener('click', e => {
+    const b = e.target.closest('[data-s]');
+    if (!b) return;
+    const s = b.dataset.s;
+    state.status.has(s) ? state.status.delete(s) : state.status.add(s);
+    refilter();
+  });
+  $('#btnAllStages').addEventListener('click', () => { state.status.clear(); refilter(); });
+  fUtil.addEventListener('click', e => {
+    const c = e.target.closest('[data-u]');
+    if (!c) return;
+    state.util.has(c.dataset.u) ? state.util.delete(c.dataset.u) : state.util.add(c.dataset.u);
+    refilter();
+  });
+  fq.addEventListener('input', () => { state.q = fq.value.trim(); refilter(); });
+  fDistrict.addEventListener('change', () => { state.district = fDistrict.value; refilter(); });
+  fPeriod.addEventListener('change', () => { state.period = fPeriod.value; refilter(); });
+  fClash.addEventListener('change', () => { state.clash = fClash.checked; refilter(); });
+  $('#btnClear').addEventListener('click', clearFilters);
+  document.addEventListener('click', e => { if (e.target.closest('[data-clear]')) clearFilters(); });
+
+  $('#viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('[data-view]');
+    if (!b || b.dataset.view === state.view) return;
+    state.view = b.dataset.view;
+    endScrub();
+    renderView();
+  });
+
+  // 排序：表頭按鈕（桌機）與下拉（手機）
+  $('.pl-table thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th || !e.target.closest('.sort')) return;
+    const key = th.dataset.sort;
+    state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : SORT_DIR[key] };
+    current = sortList(current);
+    state.page = 1;
+    renderTable();
+  });
+  $('#mSort').addEventListener('change', e => {
+    const [key, dir] = e.target.value.split(':');
+    state.sort = { key, dir: +dir };
+    current = sortList(current);
+    state.page = 1;
+    renderTable();
+  });
+
+  tbody.addEventListener('click', e => {
+    if (e.target.closest('a, label, input')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) select(tr.dataset.id, { source: 'list' });
+  });
+  tbody.addEventListener('change', e => {
+    const cb = e.target.closest('[data-check]');
+    if (!cb) return;
+    cb.checked ? state.checked.add(cb.dataset.check) : state.checked.delete(cb.dataset.check);
+    cb.closest('tr').classList.toggle('is-checked', cb.checked);
+    syncCheckAll();
+    renderBatch();
+  });
+  $$('[data-checkall]').forEach(c => c.addEventListener('change', () => {
+    pageIds().forEach(id => (c.checked ? state.checked.add(id) : state.checked.delete(id)));
+    renderTable();
+    renderBatch();
+  }));
+  tbody.addEventListener('mouseover', e => { const tr = e.target.closest('tr[data-id]'); setHover(tr ? tr.dataset.id : null); });
+  tbody.addEventListener('mouseleave', () => setHover(null));
+
+  pager.addEventListener('click', e => {
+    const b = e.target.closest('[data-page]');
+    if (!b || b.disabled) return;
+    const v = b.dataset.page;
+    state.page = v === 'prev' ? state.page - 1 : v === 'next' ? state.page + 1 : +v;
+    renderTable();
+    const top = viewTable.getBoundingClientRect().top;
+    if (top < 0) viewTable.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+  });
+  pager.addEventListener('change', e => {
+    if (!e.target.matches('[data-per]')) return;
+    state.per = +e.target.value;
+    state.page = 1;
+    renderTable();
+  });
+
+  viewGantt.addEventListener('click', e => {
+    const t = e.target.closest('[data-toggle]');
+    if (t) {
+      const k = t.dataset.toggle;
+      state.collapsed.has(k) ? state.collapsed.delete(k) : state.collapsed.add(k);
+      renderGantt();
+      const again = $$('[data-toggle]', viewGantt).find(x => x.dataset.toggle === k);
+      if (again) again.focus();
+      return;
+    }
+    if (e.target.closest('a')) return;
+    const b = e.target.closest('[data-sel]') || e.target.closest('[data-row]');
+    if (b) select(b.dataset.sel || b.dataset.row, { source: 'list' });
+  });
+  viewGantt.addEventListener('mouseover', e => { const r = e.target.closest('[data-row]'); setHover(r ? r.dataset.row : null); });
+  viewGantt.addEventListener('mouseleave', () => setHover(null));
+
+  pvBody.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) { select(null, { source: 'preview' }); return; }
+    const s = e.target.closest('[data-sel]');
+    if (s) { select(s.dataset.sel, { source: 'preview' }); return; }
+    const a = e.target.closest('[data-act]');
+    const p = a && App.getPermit(state.selected);
+    if (!p) return;
+    const u = UTIL[p.utility];
+    switch (a.dataset.act) {
+      case 'approve': openApprove([p]); break;
+      case 'return': openReturn([p]); break;
+      case 'advance': {
+        const cf = openCf(p);
+        const next = cf.length ? 'coordinating' : 'review';
+        const undo = App.setStatus(p, next, { note: cf.length ? `自動檢查發現 ${cf.length} 件衝突，轉管線協調` : '自動衝突檢查無衝突，送交通、管線協調、環保會辦' });
+        undoToast(`${p.id} ${next === 'review' ? '已送會辦' : '轉衝突協調'}`, next === 'review' ? '已通知交通局陳柏翰、管線協調股吳思妤、環保局黃志豪會辦。' : '已通知管線協調股吳思妤。', [undo], `已復原 ${p.id}`);
+        break;
+      }
+      case 'paving': {
+        const undo = App.setStatus(p, 'paving', { note: '排定刨鋪驗收，驗收人員許文傑' });
+        undoToast(`${p.id} 已排定刨鋪驗收`, `驗收人員許文傑・預定 ${fmt.mdw(App.addDays(TODAY, 5))} 現場量測平整度與標線。`, [undo], `已復原 ${p.id}`);
+        break;
+      }
+      case 'notify':
+        App.toast(`已通知 ${u.short} 進場`, { desc: `聯絡人 ${u.contact}・${fmt.md(p.start)} 開工前 3 日須申報開工並上傳試挖照片。`, tone: 'ok' });
+        break;
+      case 'remind':
+        App.toast(`已催辦 ${p.id} 補正`, { desc: `已寄送通知給 ${u.contact}（${u.short} ${u.unit}）。`, tone: 'info' });
+        break;
+    }
+  });
+
+  batch.addEventListener('click', e => {
+    const b = e.target.closest('[data-batch]');
+    if (!b) return;
+    const ps = [...state.checked].map(App.getPermit).filter(Boolean);
+    switch (b.dataset.batch) {
+      case 'approve': openApprove(ps); break;
+      case 'return': openReturn(ps); break;
+      case 'export':
+        App.toast(`已匯出 ${ps.length} 件許可`, { desc: `${ps.map(p => p.id).slice(0, 4).join('、')}${ps.length > 4 ? ' 等' : ''}・CSV（UTF-8）`, tone: 'ok' });
+        break;
+      case 'clear':
+        state.checked.clear();
+        renderBatch();
+        $$('tr.is-checked', tbody).forEach(tr => tr.classList.remove('is-checked'));
+        $$('[data-check]', tbody).forEach(c => { c.checked = false; });
+        syncCheckAll();
+        break;
+    }
+  });
+
+  $('#btnExport').addEventListener('click', () => {
+    App.toast('已匯出許可清冊', { desc: `${filtersActive() ? '篩選結果' : '全部在案'} ${current.length} 件・CSV（UTF-8）・欄位含案號、管線單位、路段、面積、期間、狀態`, tone: 'ok' });
+  });
+
+  // 資料變更（核准、退回、送會辦與各種復原）走同一套重繪
+  App.on('data', renderAll);
+
+  fPeriod.value = state.period;
+  fClash.checked = state.clash;
+  renderAll();
+  const pre = App.param('id');
+  if (pre && App.getPermit(pre) && current.includes(App.getPermit(pre))) select(pre, { source: 'preview' });
+});
+</script>
+</body>
+</html>

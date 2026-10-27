@@ -1,0 +1,2180 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>閱讀數據 — 澄港市立圖書館 · 2026 城市閱讀節</title>
+<meta name="description" content="澄港市立圖書館 2026 年 1–10 月借閱數據小誌：各分館借閱熱度地圖、年度借閱 Top 20、全市閱讀挑戰累計與借閱時段熱圖。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Noto+Sans+TC:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* 熱圖格子的網點大小（--l）註冊成數值，切換館舍時才能逐格補間成「網點長大／縮小」 */
+  @property --l {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+  }
+
+  /* ============ Hero：數據小誌封面 ============ */
+  .st-hero {
+    position: relative;
+    padding-top: clamp(28px, 3.4vw, 52px);
+    overflow-x: clip;
+  }
+  .st-hero__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+    gap: 0 clamp(24px, 3vw, 56px);
+    align-items: start;
+  }
+  .st-hero__copy { position: relative; z-index: 2; }
+
+  /* 三版大標的共用結構在 style.css（.ptitle），這裡只定字級與行縮排 */
+  .st-title {
+    --hl-x: .08em;
+    --hl-y: .14em;
+    margin: 22px 0 0;
+    font: 900 clamp(4rem, 1.2rem + 7.4vw, 8.4rem)/.98 var(--font-body);
+    letter-spacing: -.02em;
+  }
+  .st-title__line--2 { padding-left: .86em; }
+  /* 「讀」字外的手繪圈：粉色線條在藍版裡 multiply，像用螢光筆圈起來 */
+  .st-circle { position: relative; display: inline-block; }
+  .st-circle svg {
+    position: absolute;
+    left: -.2em;
+    top: -.16em;
+    width: 1.42em;
+    max-width: none;
+    height: 1.3em;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .st-circle path {
+    fill: none;
+    stroke: var(--pink);
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: ink-draw 1.2s var(--ease-ink) 1.1s both;
+  }
+
+  .st-hero__lede { margin-top: clamp(20px, 2.4vw, 30px); max-width: 31em; font-size: 17px; }
+  .st-hero__lede b { color: var(--ink); font-family: var(--font-mono); font-weight: 700; }
+
+  /* 小誌目錄：點線導引到頁碼 */
+  .st-toc { margin-top: 30px; max-width: 34em; border-top: var(--bw) solid var(--ink); }
+  .st-toc__head {
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 0 8px;
+    border-bottom: 2px dashed var(--ink);
+    font: 700 11px/1.3 var(--font-mono);
+    letter-spacing: .16em;
+    color: var(--ink-2);
+  }
+  .st-toc ol { margin: 0; padding: 0; list-style: none; }
+  .st-toc a {
+    display: grid;
+    grid-template-columns: 2.4em auto minmax(1.5em, 1fr) auto;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 2px 9px;
+    border-bottom: 1px dashed var(--rule);
+    color: var(--ink);
+    font-weight: 700;
+    text-decoration: none;
+    background: linear-gradient(transparent 58%, var(--yellow) 58%) left / 0 100% no-repeat;
+    transition: background-size var(--t-med) var(--ease-out);
+  }
+  .st-toc a:hover { background-size: 100% 100%; }
+  .st-toc__no { font: 400 17px/1 var(--font-black); color: var(--pink-text); }
+  .st-toc__lead { height: 2px; background: radial-gradient(circle, var(--ink-3) .9px, transparent 1.2px) 0 0 / 6px 2px repeat-x; }
+  .st-toc__p { font: 700 12px/1 var(--font-mono); color: var(--ink-2); }
+
+  /* 閱讀時鐘（hero 插圖） */
+  .st-clock { position: relative; z-index: 1; margin: 0; }
+  .st-clock__sun {
+    position: absolute;
+    z-index: -1;
+    top: 6%;
+    right: -18%;
+    width: 92%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    --ht-r: 2.6px;
+    --ht-s: 11px;
+  }
+  .st-clock svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .st-clock__ring { transform-box: view-box; transform-origin: 320px 320px; animation: st-spin 90s linear infinite; }
+  .st-clock.is-paused .st-clock__ring { animation-play-state: paused; }
+  @keyframes st-spin { to { transform: rotate(360deg); } }
+  .st-clock__hand { transform-box: view-box; transform-origin: 320px 320px; transition: transform 1.2s var(--ease-spring); }
+  .st-clock__wedge { cursor: crosshair; }
+  .st-clock__wedge:hover { fill: var(--ink); }
+  .st-clock__tick { font: 700 12px var(--font-mono); fill: var(--ink-2); }
+  .st-clock__tick--major { font-size: 15px; fill: var(--ink); }
+  .st-clock__ringtext { font: 700 12.5px var(--font-mono); fill: var(--ink); letter-spacing: .12em; }
+  .st-clock__night { font: 700 12px var(--font-body); fill: var(--blue-text); letter-spacing: .18em; }
+  .st-clock__now-k { font: 700 12px var(--font-mono); fill: var(--ink-2); letter-spacing: .14em; }
+  .st-clock__now-t { font: 400 44px var(--font-black); fill: var(--ink); letter-spacing: -.02em; }
+  .st-clock__now-l { font: 700 12px var(--font-body); fill: var(--ink-2); }
+  .st-clock__now-v { font: 700 16px var(--font-mono); fill: var(--pink-text); }
+  .st-clock__cap {
+    margin-top: 6px;
+    font: 700 11px/1.6 var(--font-mono);
+    letter-spacing: .04em;
+    color: var(--ink-3);
+    text-align: right;
+  }
+
+  /* 數字較長（1,683,580），字級比其他頁的資訊條小一號 */
+  .st-facts { --facts-cols: 1.5fr repeat(4, minmax(0, 1fr)); --facts-fs: 36px; }
+
+  /* ============ 數據跑馬燈帶 ============ */
+  .st-band-wrap { position: relative; height: 112px; overflow-x: clip; }
+  .st-band {
+    position: absolute;
+    top: 30px;
+    left: -3%;
+    right: -3%;
+    padding: 11px 0;
+    border-block: var(--bw) solid var(--ink);
+    background: var(--ink);
+    color: var(--paper-hi);
+    rotate: -1.6deg;
+    box-shadow: 0 7px 0 0 var(--pink);
+  }
+  .st-band__item { padding: 0 18px; font: 900 21px/1.3 var(--font-body); letter-spacing: .04em; white-space: nowrap; }
+  .st-band__item small { margin-right: 8px; font: 700 12px/1 var(--font-mono); letter-spacing: .06em; color: var(--yellow); }
+  .st-band__star { padding: 0 4px; font: 400 18px/1 var(--font-black); color: var(--pink); }
+
+  /* ============ 01 分館借閱熱度：地圖 ============ */
+  .st-map-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+    gap: 32px clamp(28px, 3.5vw, 56px);
+    align-items: start;
+  }
+  .st-map-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+    margin-bottom: 18px;
+  }
+  .st-map-bar__label { font: 700 12px/1.3 var(--font-mono); letter-spacing: .12em; color: var(--ink-2); }
+  .st-map-bar__group { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .st-map {
+    position: relative;
+    margin: 0;
+    padding: 12px;
+    border: var(--bw) solid var(--ink);
+    background: var(--paper-hi);
+    box-shadow: 9px 9px 0 0 var(--blue-tint);
+  }
+  .st-map svg { display: block; width: 100%; height: auto; }
+  .st-map__stamp {
+    position: absolute;
+    bottom: 16px;
+    left: 18px;
+    padding: 6px 10px 5px;
+    border: var(--bw) solid var(--ink);
+    background: var(--paper-hi);
+    font: 700 11px/1.35 var(--font-mono);
+    letter-spacing: .08em;
+    pointer-events: none;
+  }
+  .st-map__stamp b { display: block; font: 900 15px/1.3 var(--font-body); letter-spacing: .06em; }
+
+  .st-water { fill: url(#rf-hatch-blue); opacity: .55; }
+  .st-river { fill: none; stroke: var(--blue); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+  .st-d { cursor: pointer; }
+  .st-d__base { fill: var(--paper-hi); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; transition: fill var(--t-med); }
+  .st-d:hover .st-d__base { fill: var(--yellow-tint); }
+  .st-d.is-sel .st-d__base { fill: var(--pink-tint); stroke-width: 3.5; }
+  /* 網點半徑就是資料：--r 由 JS 寫入，換指標時依 --i 錯開，像墨一格一格暈開 */
+  .st-dot {
+    r: calc(var(--r, 1) * 1px);
+    fill: var(--blue);
+    transition: r .9s var(--ease-spring) calc(var(--i, 0) * 60ms);
+  }
+  /* 粉版：慢 0.25 秒才跟上，換指標時兩版會先分開、再對回 */
+  .st-dotp {
+    r: calc(var(--r, 1) * 1px);
+    fill: var(--pink);
+    transition: r 1.1s var(--ease-spring) calc(var(--i, 0) * 60ms + 250ms);
+  }
+  .st-d__pink { opacity: 0; mix-blend-mode: multiply; transition: opacity var(--t-med); pointer-events: none; }
+  .st-d.is-sel .st-d__pink { opacity: 1; }
+  .st-deco { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .5; pointer-events: none; }
+  .st-lbl {
+    font: 900 21px var(--font-body);
+    letter-spacing: .04em;
+    fill: var(--ink);
+    paint-order: stroke;
+    stroke: var(--paper-hi);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .st-d.is-sel .st-lbl { stroke: var(--yellow); }
+  .st-d.is-sel .st-lbl-v { fill: var(--ink); }
+  .st-lbl-v { font: 700 14px var(--font-mono); letter-spacing: 0; fill: var(--ink-2); }
+  .st-route { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 2 7; stroke-linecap: round; pointer-events: none; }
+  .st-mk { cursor: pointer; }
+  .st-mk__blot { fill: var(--pink); mix-blend-mode: multiply; transform-box: fill-box; transform-origin: center; transition: translate var(--t-med) var(--ease-spring); }
+  .st-mk__ring { fill: none; stroke: var(--ink); stroke-width: 2; }
+  .st-mk__core { fill: var(--ink); }
+  .st-mk:hover .st-mk__blot,
+  .st-mk.is-on .st-mk__blot { translate: 6px -5px; }
+  .st-mk.is-flash .st-mk__blot { animation: st-blot-split .8s var(--ease-spring); }
+  @keyframes st-blot-split {
+    0%, 100% { translate: 0 0; }
+    35% { translate: 12px -9px; }
+    70% { translate: -3px 2px; }
+  }
+  .st-mk__tag rect { fill: var(--ink); }
+  .st-mk__tag text { font: 700 13px var(--font-body); fill: var(--paper-hi); letter-spacing: .04em; }
+  .st-mk__tag tspan { font: 700 12px var(--font-mono); fill: var(--yellow); }
+  .st-bus rect { fill: var(--paper-hi); stroke: var(--ink); stroke-width: 2; }
+  .st-bus circle { fill: var(--ink); }
+  .st-map-note { font: 700 12px var(--font-mono); fill: var(--blue-text); letter-spacing: .3em; }
+  .st-compass path { fill: var(--ink); }
+  .st-compass circle { fill: var(--paper-hi); stroke: var(--ink); stroke-width: 2; }
+  .st-compass text { font: 400 14px var(--font-black); fill: var(--ink); }
+
+  .st-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 28px;
+    margin-top: 18px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+  .st-legend > div { display: flex; align-items: center; gap: 10px; }
+  .st-legend svg { flex: none; overflow: visible; }
+  .st-legend b { color: var(--ink); font-weight: 700; }
+  .st-legend .num { font-size: 12px; }
+
+  .st-map-side { display: grid; gap: 30px; position: sticky; top: calc(var(--header-h) + 24px); }
+  .st-district { --card-ht: var(--pink); --sh-x: 10px; --sh-y: 10px; padding: 0; }
+  .st-district__head {
+    margin: 2px 2px 0;
+    padding: 18px 22px 16px;
+    background: var(--blue);
+    color: var(--paper-hi);
+    border-bottom: var(--bw) solid var(--ink);
+  }
+  .st-district__k { font: 700 11px/1.4 var(--font-mono); letter-spacing: .14em; }
+  .st-district__name { margin-top: 4px; font: 900 34px/1.1 var(--font-body); letter-spacing: .06em; }
+  .st-district__pop { margin-top: 4px; font: 700 13px/1.4 var(--font-mono); }
+  .st-district__body { display: grid; gap: 14px; padding: 18px 22px 22px; }
+  .st-district__big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .st-district__big b { font: 400 46px/1 var(--font-black); letter-spacing: -.02em; }
+  .st-district__big span { font-weight: 900; font-size: 15px; }
+  .st-district__big .sticker { margin-left: auto; }
+  .st-district__metric { font: 700 12px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--ink-2); }
+  .st-district__note { padding-top: 12px; border-top: 2px dashed var(--ink); font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  .st-district.is-swap .st-district__body > *,
+  .st-district.is-swap .st-district__head > * { animation: type-in .45s var(--ease-out) both; }
+
+  .st-rank h3 { margin-bottom: 10px; font: 700 12px/1.3 var(--font-mono); letter-spacing: .12em; color: var(--ink-2); }
+  .st-rank ol { margin: 0; padding: 0; list-style: none; border-top: var(--bw) solid var(--ink); }
+  .st-rank li { border-bottom: 1px dashed var(--rule); }
+  .st-rank__btn {
+    display: grid;
+    grid-template-columns: 1.5em 3.4em minmax(0, 1fr) 4.4em;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 6px 6px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 700 14px/1.3 var(--font-body);
+    text-align: left;
+    transition: background var(--t-fast);
+  }
+  .st-rank__btn:hover { background: var(--yellow-tint); }
+  .st-rank__btn[aria-pressed="true"] { background: var(--yellow); box-shadow: inset 4px 0 0 var(--ink); }
+  .st-rank__no { font: 400 14px/1 var(--font-black); color: var(--ink-3); }
+  .st-rank__bar { position: relative; height: 12px; }
+  .st-rank__bar i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--v, 0) * 100%);
+    background: var(--blue);
+    transition: width .9s var(--ease-out);
+  }
+  .st-rank__bar i::after {
+    content: "";
+    position: absolute;
+    inset: -3px -4px 3px 4px;
+    background: radial-gradient(circle, var(--pink) 1.2px, transparent 1.7px) 0 0 / 5px 5px;
+    mix-blend-mode: multiply;
+  }
+  .st-rank__val { font: 700 12px/1 var(--font-mono); text-align: right; white-space: nowrap; }
+
+  /* 分館票根列 */
+  .st-branches {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 20px 18px;
+    margin-top: 48px;
+  }
+  .st-bt {
+    --stub-h: 92px;
+    position: relative;
+    rotate: var(--rot, 0deg);
+    transition: translate var(--t-med) var(--ease-spring), rotate var(--t-med) var(--ease-spring), background-color var(--t-fast);
+  }
+  .st-bt:hover,
+  .st-bt:focus-within { translate: 0 -6px; rotate: 0deg; }
+  .st-bt.is-on { background: var(--pink); rotate: 0deg; }
+  .st-bt .ticket__main { padding: 16px 16px 14px; }
+  .st-bt__btn {
+    display: block;
+    margin-top: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: 900 19px/1.3 var(--font-body);
+    letter-spacing: .04em;
+    text-align: left;
+  }
+  /* 整張票都可點：按鈕延伸覆蓋票面 */
+  .st-bt__btn::before { content: ""; position: absolute; inset: 0; z-index: 1; }
+  .st-bt__btn:focus-visible { outline: none; }
+  .st-bt:has(.st-bt__btn:focus-visible) { outline: 3px solid var(--blue); outline-offset: 4px; }
+  .st-bt__num { margin-top: 10px; font: 400 26px/1 var(--font-black); letter-spacing: -.02em; }
+  .st-bt__num small { margin-left: 3px; font: 900 13px/1 var(--font-body); }
+  .st-bt__yoy { margin-top: 6px; font: 700 12px/1.3 var(--font-mono); }
+  .st-bt .ticket__stub { justify-items: start; text-align: left; padding: 12px 16px; gap: 4px; font-size: 11px; line-height: 1.45; }
+  .st-bt .ticket__stub b { font: 700 13px/1.3 var(--font-body); letter-spacing: 0; }
+
+  /* ============ 02 Top 20 ============ */
+  .st-top {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    gap: 40px clamp(32px, 4vw, 64px);
+    align-items: start;
+  }
+  .st-top__aside { position: sticky; top: calc(var(--header-h) + 28px); display: grid; gap: 22px; }
+  .st-pick { --card-ht: var(--pink); --sh-x: 12px; --sh-y: 12px; padding: 0; }
+  .st-pick__cover {
+    position: relative;
+    display: grid;
+    place-items: center start;
+    margin: 2px 2px 0;
+    padding: 46px 24px 30px clamp(28px, 13%, 64px);
+    border-bottom: var(--bw) solid var(--ink);
+    background: radial-gradient(circle, var(--blue-tint) 1.2px, transparent 1.7px) 0 0 / 8px 8px, var(--paper-hi);
+  }
+  .st-pick__cover svg { display: block; width: min(170px, 56%); height: auto; rotate: -3deg; box-shadow: 7px 7px 0 0 var(--ink); }
+  .st-pick__no { position: absolute; top: 16px; left: 16px; }
+  .st-pick__rank {
+    position: absolute;
+    right: 16px;
+    bottom: 10px;
+    font: 400 64px/1 var(--font-black);
+    letter-spacing: -.04em;
+    color: transparent;
+    -webkit-text-stroke: 2px var(--ink);
+  }
+  .st-pick__body { display: grid; gap: 12px; padding: 20px 24px 24px; }
+  .st-pick__title { font: 900 26px/1.3 var(--font-body); }
+  .st-pick__by { margin-top: -6px; font-size: 14px; color: var(--ink-2); }
+  .st-pick__nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: var(--bw) solid var(--ink); }
+  .st-pick__nums div { padding: 10px 0 10px 12px; border-left: 2px dashed var(--rule); }
+  .st-pick__nums div:first-child { padding-left: 0; border-left: 0; }
+  .st-pick__nums b { display: block; font: 400 24px/1.1 var(--font-black); letter-spacing: -.01em; }
+  .st-pick__nums span { font: 700 11px/1.3 var(--font-body); color: var(--ink-2); }
+  .st-pick__note { font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  .st-pick__note b { color: var(--ink); }
+  .st-pick .btn[aria-pressed="true"] { --btn-bg: var(--yellow); }
+  .st-pick.is-swap .st-pick__body > *,
+  .st-pick.is-swap .st-pick__cover svg { animation: type-in .45s var(--ease-out) both; }
+
+  .st-top__list .tabs { --tab-bg: var(--paper-2); }
+  .st-top__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 16px;
+    margin: 0 0 12px;
+    font: 700 12px/1.4 var(--font-mono);
+    letter-spacing: .06em;
+    color: var(--ink-2);
+  }
+  .st-bars { gap: 0; }
+  .st-bars li { border-bottom: 1px dashed var(--rule); }
+  .st-row {
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    transition: background var(--t-fast);
+  }
+  .st-row:hover { background: var(--yellow-tint); }
+  .st-row[aria-pressed="true"] { background: var(--yellow); box-shadow: inset 5px 0 0 var(--ink); }
+  .st-row .bars__rank { color: var(--ink-3); }
+  .st-row.is-top .bars__rank { color: var(--pink-text); font-size: 24px; }
+  .st-row .bars__label { font-size: 15px; }
+  .st-row .bars__label small { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+  .st-tag {
+    padding: 1px 6px 0;
+    border: 1.5px solid var(--blue-text);
+    color: var(--blue-text);
+    font: 700 10px/1.5 var(--font-body);
+    letter-spacing: .08em;
+  }
+  .st-row .bars__val small { display: block; margin-top: 3px; font-size: 10px; color: var(--ink-3); }
+  /* 換分頁時讓橫條從 0 重新印出 */
+  .st-bars.is-reset .bars__fill { width: 0; transition: none; }
+
+  /* ============ 03 閱讀挑戰 ============ */
+  .st-ch {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 32px clamp(32px, 4.5vw, 72px);
+    align-items: end;
+  }
+  .st-ch__big { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; }
+  .st-odo { font: 400 clamp(52px, 1.4rem + 7vw, 132px)/1 var(--font-black); letter-spacing: -.035em; }
+  .st-ch__unit { padding-bottom: .3em; font: 900 clamp(28px, 1rem + 1.8vw, 44px)/1 var(--font-body); }
+  .st-ch__sum { margin-top: 12px; font-size: 16px; color: var(--ink-2); }
+  .st-ch__sum b { color: var(--ink); font-family: var(--font-mono); }
+  .st-ch__sum .st-pct { color: var(--pink-text); }
+  .st-ch__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 22px; }
+
+  .st-chart { --card-ht: var(--blue); --sh-x: 10px; --sh-y: 10px; margin-top: 52px; padding: 22px 24px 20px; }
+  .st-chart__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin-bottom: 10px;
+  }
+  .st-chart__title { font: 900 20px/1.35 var(--font-body); }
+  .st-chart__title small { display: block; font: 700 11px/1.4 var(--font-mono); letter-spacing: .1em; color: var(--ink-3); }
+  .st-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; font: 700 12px/1.4 var(--font-body); color: var(--ink-2); }
+  .st-key li { display: inline-flex; align-items: center; gap: 6px; }
+  .st-key i { display: inline-block; flex: none; width: 18px; height: 10px; }
+  .st-key .k-line { height: 3px; background: var(--blue); }
+  .st-key .k-proj { height: 0; border-top: 3px dashed var(--pink-text); }
+  .st-key .k-area { background: radial-gradient(circle, var(--pink) 1.2px, transparent 1.7px) 0 0 / 4px 4px; }
+  .st-key .k-wd { width: 10px; background: var(--blue); }
+  .st-key .k-we { width: 10px; background: var(--pink); }
+  .st-key .k-mon { width: 10px; background: repeating-linear-gradient(-45deg, var(--blue) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--blue); }
+  .st-key .k-fest { background: radial-gradient(circle, var(--yellow) 1.6px, transparent 2.1px) 0 0 / 5px 5px; box-shadow: inset 0 0 0 1px var(--ink-3); }
+  .st-readout {
+    min-height: 3em;
+    margin: 6px 0 4px;
+    padding: 8px 12px;
+    background: var(--paper-2);
+    font: 700 13px/1.5 var(--font-mono);
+  }
+  .st-readout b { font-family: var(--font-body); font-weight: 900; }
+  .st-plot { position: relative; cursor: crosshair; touch-action: pan-y; }
+  .st-plot:focus-visible { outline-offset: 6px; }
+  .st-plot svg { display: block; width: 100%; overflow: visible; }
+  .st-ax { font: 700 11px var(--font-mono); fill: var(--ink-3); }
+  .st-ax--strong { fill: var(--ink); }
+  .st-grid { stroke: var(--rule); stroke-width: 1; }
+  .st-goal { stroke: var(--ink); stroke-width: 2; }
+  .st-thr { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 5 5; }
+  .st-cum-line {
+    fill: none;
+    stroke: var(--blue);
+    stroke-width: 3;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 2s var(--ease-ink) .2s;
+  }
+  .st-cum-area { fill: url(#rf-ht-pink); mix-blend-mode: multiply; transition: opacity 1s var(--ease-out) 1s; }
+  .js .st-chart:not(.is-in) .st-cum-line { stroke-dashoffset: 1; }
+  .js .st-chart:not(.is-in) .st-cum-area { opacity: 0; }
+  .st-proj { fill: none; stroke: var(--pink-text); stroke-width: 2.5; stroke-dasharray: 7 6; stroke-linecap: round; }
+  .st-fest { fill: url(#rf-ht-yellow); mix-blend-mode: multiply; }
+  .st-fest-l { font: 700 11px var(--font-mono); fill: var(--ink); letter-spacing: .1em; }
+  .st-ms-dot { fill: var(--yellow); stroke: var(--ink); stroke-width: 2; }
+  .st-ms-l { font: 700 11px var(--font-mono); fill: var(--ink); }
+  .st-ms-l--b { font: 900 12px var(--font-body); }
+  .st-today { stroke: var(--ink); stroke-width: 1.5; }
+  .st-tag-bg { fill: var(--ink); }
+  .st-tag-t { font: 700 11px var(--font-mono); fill: var(--paper-hi); letter-spacing: .04em; }
+  .st-eta-bg { fill: var(--pink); stroke: var(--ink); stroke-width: 2; }
+  .st-eta-t { font: 900 12px var(--font-body); fill: var(--ink); }
+  .st-bar-wd { fill: var(--blue); }
+  .st-bar-we { fill: var(--pink); }
+  .st-bar-mon { fill: url(#rf-hatch-blue); stroke: var(--blue); stroke-width: 1; }
+  .st-bar.is-cur { stroke: var(--ink); stroke-width: 2; }
+  .st-avg { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 4 5; }
+  .st-xhair { stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+  .st-xdot { fill: var(--yellow); stroke: var(--ink); stroke-width: 2.5; pointer-events: none; }
+  .st-xg { opacity: 0; transition: opacity .12s; }
+  .st-plot.is-cursor .st-xg { opacity: 1; }
+  .st-chart__cap { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+
+  .st-ms {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 48px;
+    border-top: var(--bw) solid var(--ink);
+  }
+  .st-ms li { position: relative; padding: 16px 18px 6px 0; }
+  .st-ms li + li { padding-left: 18px; border-left: 2px dashed var(--rule); }
+  .st-ms b { display: block; font: 400 22px/1.2 var(--font-black); }
+  .st-ms p { margin-top: 4px; font-size: 14px; line-height: 1.6; }
+  .st-ms small { display: block; margin-top: 6px; font: 700 11px/1.4 var(--font-mono); color: var(--ink-3); }
+  .st-ms .is-done small { color: var(--green); }
+  .st-ms .is-done b::after { content: " ✓"; color: var(--green); font-size: .8em; }
+  .st-table-acc { margin-top: 40px; }
+  .st-table-acc .acc__body { padding-right: 4px; }
+  .st-table-acc .table-wrap { max-height: 420px; overflow-y: auto; }
+  .st-table-acc .table th { position: sticky; top: 0; z-index: 1; }
+  .table tr.is-mark td { background: var(--yellow-tint); font-weight: 700; }
+
+  /* ============ 04 時段熱圖 ============ */
+  .st-hours__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-bottom: 26px; }
+  .st-hours__label { font: 700 12px/1.3 var(--font-mono); letter-spacing: .12em; }
+  .st-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .st-heatcard {
+    --card-ht: var(--yellow);
+    --sh-x: 12px;
+    --sh-y: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
+    gap: 28px clamp(24px, 3vw, 44px);
+    padding: 26px 28px 24px;
+  }
+  .st-heat {
+    grid-template-columns: 2.2em repeat(13, minmax(0, 1fr)) 4.6em;
+    gap: 3px;
+    align-items: center;
+    outline-offset: 8px;
+  }
+  .st-heat .heat__cell {
+    transition: transform var(--t-fast) var(--ease-spring), --l .75s var(--ease-out) calc(var(--d, 0) * 16ms);
+  }
+  .st-heat .heat__cell.is-cur { transform: scale(1.18); position: relative; z-index: 1; border: 2px solid var(--ink); }
+  .st-heat__closed {
+    aspect-ratio: 1;
+    border: 1px dashed var(--ink-3);
+    background: repeating-linear-gradient(-45deg, var(--paper-2) 0 3px, var(--paper-hi) 3px 7px);
+  }
+  .st-heat__closed-l {
+    z-index: 1;
+    justify-self: center;
+    padding: 4px 10px 3px;
+    background: var(--ink);
+    color: var(--paper-hi);
+    font: 700 12px/1.3 var(--font-body);
+    letter-spacing: .06em;
+    white-space: nowrap;
+    rotate: -1.5deg;
+    pointer-events: none;
+  }
+  .st-heat__day { font: 900 14px/1 var(--font-body); color: var(--ink); }
+  .st-heat__hour { font: 700 11px/1 var(--font-mono); color: var(--ink-3); text-align: center; padding-bottom: 4px; }
+  .st-heat__tot { font: 700 11px/1 var(--font-mono); color: var(--ink-2); text-align: right; }
+  .st-heat__tot-h { font: 700 10px/1.2 var(--font-mono); color: var(--ink-3); text-align: right; letter-spacing: .06em; }
+  .st-hist { align-self: end; height: 54px; display: flex; align-items: flex-end; }
+  .st-hist i {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--blue);
+    transform: scaleY(var(--h, 0));
+    transform-origin: bottom;
+    transition: transform .75s var(--ease-out) calc(var(--d, 0) * 20ms);
+  }
+  .st-hist.is-peak i { background: var(--pink); }
+  .st-hist-l { align-self: end; font: 700 10px/1.25 var(--font-mono); color: var(--ink-3); }
+  .st-heat-side { display: grid; gap: 18px; align-content: start; }
+  .st-heat-read { min-height: 4.6em; padding: 12px 14px; background: var(--ink); color: var(--paper-hi); font-size: 14px; line-height: 1.6; box-shadow: 4px 4px 0 0 var(--pink); }
+  .st-heat-read b { display: block; color: var(--yellow); font: 700 12px/1.4 var(--font-mono); letter-spacing: .06em; }
+  .st-insights { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border-top: var(--bw) solid var(--ink); }
+  .st-insights li { padding: 11px 0 10px; border-bottom: 1px dashed var(--rule); }
+  .st-insights span { display: block; font: 700 11px/1.4 var(--font-mono); letter-spacing: .08em; color: var(--ink-3); }
+  .st-insights b { display: block; margin-top: 2px; font: 900 18px/1.35 var(--font-body); }
+  .st-insights small { display: block; font-size: 13px; color: var(--ink-2); }
+  .st-heat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font: 700 11px/1.3 var(--font-mono); color: var(--ink-2); }
+  .st-heat-legend .heat__cell { width: 22px; flex: none; }
+  .st-heat-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* ============ 05 資料說明 ============ */
+  .st-notes {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    gap: 40px clamp(32px, 4.5vw, 72px);
+    align-items: start;
+  }
+  .st-editor { --card-ht: var(--blue); --sh-x: 12px; --sh-y: 12px; padding: 0; }
+  .st-editor__face {
+    margin: 2px 2px 0;
+    padding: 24px 24px 0;
+    border-bottom: var(--bw) solid var(--ink);
+    background: radial-gradient(circle, var(--pink-tint) 1.4px, transparent 1.9px) 0 0 / 8px 8px, var(--paper-hi);
+  }
+  .st-editor__face .portrait { width: min(190px, 64%); margin: 0 auto; }
+  .st-editor__body { display: grid; gap: 12px; padding: 20px 24px 24px; }
+  .st-editor__name { font: 900 28px/1.2 var(--font-body); letter-spacing: .06em; }
+  .st-editor__name small { display: block; margin-top: 4px; font: 700 13px/1.4 var(--font-body); letter-spacing: .04em; color: var(--ink-2); }
+  .st-editor blockquote { margin: 0; font: 900 17px/1.6 var(--font-body); }
+  .st-talk {
+    display: grid;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 14px 16px;
+    border: var(--bw) solid var(--ink);
+    background: var(--yellow);
+    color: var(--ink);
+    text-decoration: none;
+    transition: translate var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+  }
+  .st-talk:hover { translate: -2px -2px; box-shadow: 5px 5px 0 0 var(--ink); }
+  .st-talk__k { font: 700 11px/1.3 var(--font-mono); letter-spacing: .1em; }
+  .st-talk__t { font: 900 17px/1.45 var(--font-body); }
+  .st-talk__v { margin-top: -4px; font-size: 13px; color: var(--ink-2); }
+  .st-talk .quota__bar { background: var(--paper-hi); }
+
+  .st-spec {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0 0 30px;
+    border-block: var(--bw) solid var(--ink);
+  }
+  .st-spec > div { padding: 12px 16px 14px; border-left: 2px dashed var(--ink); }
+  .st-spec > div:first-child { padding-left: 0; border-left: 0; }
+  .st-spec dt { font: 700 11px/1.3 var(--font-mono); letter-spacing: .14em; color: var(--ink-2); }
+  .st-spec dd { margin: 6px 0 0; font-weight: 900; font-size: 15px; line-height: 1.45; }
+  .st-notes__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 20px; margin-top: 30px; }
+  .st-notes__actions p { flex: 1 1 16em; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+  .st-colophon {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-top: 34px;
+    padding-top: 14px;
+    border-top: 2px dashed var(--ink);
+    font: 700 11px/1.5 var(--font-mono);
+    letter-spacing: .06em;
+    color: var(--ink-2);
+  }
+
+  /* ============ Responsive ============ */
+  @media (max-width: 1200px) {
+    .st-branches { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1100px) {
+    .st-map-layout, .st-top, .st-notes, .st-ch { grid-template-columns: minmax(0, 1fr); }
+    .st-map-side, .st-top__aside { position: static; }
+    .st-map-side { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .st-top__aside { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .st-heatcard { grid-template-columns: minmax(0, 1fr); }
+    .st-heat-side { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .st-heat-read { grid-column: 1 / -1; }
+    .st-ch { align-items: start; }
+  }
+  @media (max-width: 900px) {
+    .st-hero__grid { grid-template-columns: minmax(0, 1fr); }
+    .st-clock { max-width: 520px; width: 100%; margin: 32px auto 0; }
+    .st-clock__sun { right: -8%; }
+    .st-ms { grid-template-columns: 1fr 1fr; }
+    .st-ms li:nth-child(3) { padding-left: 0; border-left: 0; }
+    .st-ms li:nth-child(n + 3) { border-top: 2px dashed var(--rule); }
+    .st-spec { grid-template-columns: 1fr 1fr; }
+    .st-spec > div:nth-child(3) { padding-left: 0; border-left: 0; }
+    .st-spec > div:nth-child(n + 3) { border-top: 2px dashed var(--ink); }
+  }
+  @media (max-width: 760px) {
+    .st-map-side, .st-top__aside, .st-heat-side { grid-template-columns: minmax(0, 1fr); }
+    .st-heat { grid-template-columns: 1.6em repeat(13, minmax(0, 1fr)); gap: 2px; }
+    .st-heat__tot, .st-heat__tot-h { display: none; }
+    .st-heat__hour.is-odd { visibility: hidden; }
+    .st-hist { height: 40px; }
+  }
+  @media (max-width: 640px) {
+    .st-title { font-size: min(18.5vw, 5rem); }
+    .st-hero__lede { font-size: 16px; }
+    .st-band__item { font-size: 17px; padding: 0 14px; }
+    .st-band-wrap { height: 92px; }
+    .st-band { top: 24px; }
+    .st-map { padding: 6px; box-shadow: 6px 6px 0 0 var(--blue-tint); }
+    .st-map__stamp { position: static; display: inline-block; margin: 6px 0 8px 6px; }
+    .st-lbl { font-size: 38px; stroke-width: 9px; }
+    .st-lbl-v, .st-mk__tag, .st-map-note--lg { display: none; }
+    .st-map-note { font-size: 26px; letter-spacing: .1em; }
+    .st-branches { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+    .st-bt { --rot: 0deg !important; }
+    .st-bt .ticket__main { padding: 14px 12px 12px; }
+    .st-bt .ticket__stub { padding: 10px 12px; }
+    .st-bt__num { font-size: 22px; }
+    .st-pick__title { font-size: 22px; }
+    .st-pick__nums b { font-size: 20px; }
+    .st-chart { padding: 16px 14px 16px; }
+    .st-heatcard { padding: 16px 14px 18px; }
+    .st-ms { grid-template-columns: 1fr; }
+    .st-ms li + li { padding-left: 0; border-left: 0; border-top: 2px dashed var(--rule); }
+    .st-spec { grid-template-columns: 1fr; }
+    .st-spec > div { padding-left: 0; border-left: 0; }
+    .st-spec > div + div { border-top: 2px dashed var(--ink); }
+    .st-heat-legend .heat__cell { width: 18px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="util-bar">
+  <div class="container util-bar__inner">
+    <a class="util-bar__back" href="../../index.html">← 返回目錄</a>
+    <p class="util-bar__issue">第七屆 · 2026 秋季號 · 雙色孔版印刷</p>
+    <div class="util-bar__right">
+      <span>VOL.07</span>
+      <div class="color-bar" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港市立圖書館 2026 城市閱讀節 首頁">
+      <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <g class="mult ink-yellow"><circle cx="24" cy="25" r="10"/></g>
+        <g class="mult ink-blue"><path d="M4 10l18-4v34L4 44z"/></g>
+        <g class="mult ink-pink mk-pink"><path d="M44 10L26 6v34l18 4z"/></g>
+      </svg>
+      <span>
+        <span class="brand__org">澄港市立圖書館</span>
+        <span class="brand__name">城市閱讀節<b>2026</b></span>
+      </span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+      <span class="nav-toggle__bars" aria-hidden="true"><span></span></span><span class="nav-toggle__label">選單</span>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__no">01</span>首頁</a></li>
+        <li><a class="site-nav__link" href="events.html"><span class="site-nav__no">02</span>活動總表</a></li>
+        <li><a class="site-nav__link" href="event.html"><span class="site-nav__no">03</span>焦點講座</a></li>
+        <li><a class="site-nav__link is-active" href="stats.html" aria-current="page"><span class="site-nav__no">04</span>閱讀數據</a></li>
+      </ul>
+      <p class="site-nav__date">10.31 — 11.16</p>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ================= Hero：數據小誌封面 ================= -->
+  <section class="st-hero" aria-labelledby="st-title">
+    <div class="container">
+      <div class="st-hero__grid">
+        <div class="st-hero__copy">
+          <div class="page-meta">
+            <p class="kicker">DATA ISSUE · 2026.01.01 — 10.21</p>
+            <span class="sticker sticker--blue">數據特輯</span>
+          </div>
+
+          <h1 class="ptitle st-title" id="st-title">
+            <span class="sr-only">閱讀數據：這座城市在讀什麼</span>
+            <span class="ptitle__plate ptitle__plate--yellow" aria-hidden="true" data-drift="1.1">
+              <span class="ptitle__line">這座城市</span>
+              <span class="ptitle__line st-title__line--2">在<span class="ptitle__hl">讀什麼</span></span>
+            </span>
+            <span class="ptitle__plate ptitle__plate--blue" aria-hidden="true" data-drift="-0.35">
+              <span class="ptitle__line">這座城市</span>
+              <span class="ptitle__line st-title__line--2">在<span class="st-circle">讀<svg viewBox="0 0 140 130" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path pathLength="1" d="M92 12C52 2 10 24 8 66c-2 40 34 60 72 56 38-4 56-32 52-62-3-26-26-44-58-46-18-1-34 4-44 12"/></svg></span>什麼</span>
+            </span>
+            <span class="ptitle__plate ptitle__plate--pink" aria-hidden="true" data-drift="0.75">
+              <span class="ptitle__line">這座城市</span>
+              <span class="ptitle__line st-title__line--2">在讀什麼</span>
+            </span>
+          </h1>
+
+          <p class="lede st-hero__lede">今年一到十月，澄港人在五座館舍借走 <b>1,683,580</b> 冊書，走進圖書館 <b>3,081,700</b> 人次。誰在哪一區讀、讀了什麼、幾點來借——這一期小誌把數字攤開來給你看。</p>
+
+          <nav class="st-toc" aria-label="本期目錄">
+            <p class="st-toc__head"><span>CONTENTS</span><span>本期目錄</span></p>
+            <ol>
+              <li><a href="#branches"><span class="st-toc__no">01</span><span>各分館借閱熱度</span><span class="st-toc__lead" aria-hidden="true"></span><span class="st-toc__p">p.02</span></a></li>
+              <li><a href="#top20"><span class="st-toc__no">02</span><span>年度借閱 Top 20</span><span class="st-toc__lead" aria-hidden="true"></span><span class="st-toc__p">p.06</span></a></li>
+              <li><a href="#challenge"><span class="st-toc__no">03</span><span>市民閱讀挑戰累計</span><span class="st-toc__lead" aria-hidden="true"></span><span class="st-toc__p">p.10</span></a></li>
+              <li><a href="#hours"><span class="st-toc__no">04</span><span>借閱時段熱圖</span><span class="st-toc__lead" aria-hidden="true"></span><span class="st-toc__p">p.13</span></a></li>
+              <li><a href="#notes"><span class="st-toc__no">05</span><span>資料說明</span><span class="st-toc__lead" aria-hidden="true"></span><span class="st-toc__p">p.16</span></a></li>
+            </ol>
+          </nav>
+        </div>
+
+        <figure class="st-clock" id="st-clock">
+          <div class="st-clock__sun ht ht--yellow" data-pulse aria-hidden="true"></div>
+          <div id="st-clock-art"></div>
+          <figcaption class="st-clock__cap">fig.1 — 閱讀時鐘：全市開館日每小時平均借出冊數。<br>21:00 後由 24 小時智慧借書站接手。</figcaption>
+        </figure>
+      </div>
+
+      <dl class="facts st-facts">
+        <div><dt>借閱冊數 LOANS</dt><dd><b>1,683,580</b>冊<span>2026.01.01 — 10.21 · 五館＋書車</span></dd></div>
+        <div><dt>較去年同期 YOY</dt><dd><b><i>+</i>8.1%</b><span>六個服務點全數成長</span></dd></div>
+        <div><dt>入館人次 VISITS</dt><dd><b>308</b>萬<span>3,081,700 人次</span></dd></div>
+        <div><dt>每千人借閱 PER 1K</dt><dd><b>1,719</b>冊<span>人口 979,400</span></dd></div>
+        <div><dt>有效借閱證 CARDS</dt><dd><b>186,240</b>張<span>今年新辦 9,214 張</span></dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ================= 數據跑馬燈 ================= -->
+  <div class="st-band-wrap" aria-hidden="true">
+    <div class="st-band">
+      <div class="marquee" data-marquee data-speed="42">
+        <div class="marquee__track">
+          <span class="st-band__item"><small>LOANS</small>全市借出 1,683,580 冊</span><span class="st-band__star">✺</span>
+          <span class="st-band__item"><small>NO.1</small>《潮間帶的圖書館》412 人排隊預約</span><span class="st-band__star">✺</span>
+          <span class="st-band__item"><small>PER 1K</small>雲嶺區每千人借閱 2,242 冊</span><span class="st-band__star">✺</span>
+          <span class="st-band__item"><small>CHALLENGE</small>全市閱讀挑戰 72.8%</span><span class="st-band__star">✺</span>
+          <span class="st-band__item"><small>YOY</small>新灣分館借閱成長 12.6%</span><span class="st-band__star">✺</span>
+          <span class="st-band__item"><small>PICTURE BOOK</small>《港口的貓》借出 2,114 次</span><span class="st-band__star">✺</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 01 分館借閱熱度 ================= -->
+  <section class="section" id="branches" aria-labelledby="br-title">
+    <div class="container">
+      <header class="sec-head">
+        <span class="sec-head__no" data-pulse aria-hidden="true">01</span>
+        <div class="sec-head__main">
+          <p class="kicker">BRANCH HEAT · 2026.01.01 — 10.21</p>
+          <h2 class="sec-head__title plates" id="br-title" data-text="各分館借閱熱度" data-reveal="plate">各分館借閱熱度</h2>
+        </div>
+        <div class="sec-head__aside">
+          <p>網點越大，那一區越愛借書；粉色墨點是館舍本身的借閱量。點地圖或右側排行切換行政區。</p>
+        </div>
+      </header>
+
+      <div class="st-map-layout">
+        <div class="st-map-main">
+          <div class="st-map-bar">
+            <div class="st-map-bar__group">
+              <span class="st-map-bar__label" id="st-metric-label">網點代表</span>
+              <div class="segmented" data-segmented role="group" aria-labelledby="st-metric-label" id="st-metric">
+                <button type="button" data-value="per1k" aria-pressed="true">每千人借閱</button>
+                <button type="button" data-value="loans" aria-pressed="false">借閱冊數</button>
+                <button type="button" data-value="pages" aria-pressed="false">挑戰頁數</button>
+              </div>
+            </div>
+            <span class="reg" aria-hidden="true"></span>
+          </div>
+          <figure class="st-map crop" id="st-map">
+            <p class="st-map__stamp" aria-hidden="true"><b>澄港市示意圖</b>依居住地統計 · 不依比例</p>
+            <div id="st-map-art"></div>
+          </figure>
+          <div class="st-legend" id="st-legend"></div>
+        </div>
+
+        <aside class="st-map-side" aria-label="行政區詳細資料">
+          <article class="card st-district" id="st-district" aria-live="polite"></article>
+          <div class="st-rank">
+            <h3 id="st-rank-title">八區排行 · 每千人借閱</h3>
+            <ol id="st-rank" aria-labelledby="st-rank-title"></ol>
+          </div>
+        </aside>
+      </div>
+
+      <ul class="st-branches" id="st-branches" aria-label="各館舍借閱量"></ul>
+    </div>
+  </section>
+
+  <!-- ================= 02 Top 20 ================= -->
+  <section class="section section--tint" id="top20" aria-labelledby="top-title">
+    <div class="container">
+      <header class="sec-head">
+        <span class="sec-head__no" data-pulse aria-hidden="true">02</span>
+        <div class="sec-head__main">
+          <p class="kicker">MOST BORROWED · 2026.01.01 — 10.21</p>
+          <h2 class="sec-head__title plates" id="top-title" data-text="年度借閱 Top 20" data-reveal="plate">年度借閱 Top 20</h2>
+        </div>
+        <div class="sec-head__aside">
+          <p>五館與行動書車合併計算，同一本書的不同版本算在一起。點書名看借閱細節。</p>
+        </div>
+      </header>
+
+      <div class="st-top">
+        <aside class="st-top__aside" aria-label="選取的書">
+          <article class="card st-pick" id="st-pick" aria-live="polite"></article>
+          <p class="field__hint">標示「閱讀節講者／活動」的書，這一季在閱讀節有相關場次；選了書之後可以直接連到那一場。</p>
+        </aside>
+
+        <div class="st-top__list">
+          <div class="tabs" role="tablist" data-tabs aria-label="排行分類" id="st-top-tabs">
+            <button class="tab" role="tab" type="button" id="tab-lit" aria-controls="panel-lit" aria-selected="true"><span class="tab__no">A</span>文學<span class="tab__count">20</span></button>
+            <button class="tab" role="tab" type="button" id="tab-non" aria-controls="panel-non" aria-selected="false"><span class="tab__no">B</span>非文學<span class="tab__count">20</span></button>
+            <button class="tab" role="tab" type="button" id="tab-pic" aria-controls="panel-pic" aria-selected="false"><span class="tab__no">C</span>繪本<span class="tab__count">20</span></button>
+          </div>
+          <div class="tab-panel" role="tabpanel" id="panel-lit" aria-labelledby="tab-lit"></div>
+          <div class="tab-panel" role="tabpanel" id="panel-non" aria-labelledby="tab-non" hidden></div>
+          <div class="tab-panel" role="tabpanel" id="panel-pic" aria-labelledby="tab-pic" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 閱讀挑戰 ================= -->
+  <section class="section" id="challenge" aria-labelledby="ch-title">
+    <div class="container">
+      <header class="sec-head">
+        <span class="sec-head__no" data-pulse aria-hidden="true">03</span>
+        <div class="sec-head__main">
+          <p class="kicker">CITY READING CHALLENGE · 09.01 — 11.16</p>
+          <h2 class="sec-head__title plates" id="ch-title" data-text="市民閱讀挑戰累計" data-reveal="plate">市民閱讀挑戰累計</h2>
+        </div>
+        <div class="sec-head__aside">
+          <p>借還書自動計頁，自己的書可在首頁補登。每天早上 8 點結算前一天。</p>
+          <a class="link-arrow" href="index.html#challenge">到首頁登錄頁數</a>
+        </div>
+      </header>
+
+      <div class="st-ch">
+        <div>
+          <p class="kicker">截至 10.22 08:00 · 全市累計</p>
+          <div class="st-ch__big">
+            <div class="st-odo odo-plates">
+              <span class="odo--pink" data-odometer="2184650" aria-hidden="true">2,184,650</span>
+              <span class="odo--blue" data-odometer="2184650">2,184,650</span>
+            </div>
+            <span class="st-ch__unit">頁</span>
+          </div>
+          <p class="st-ch__sum">目標 <b>3,000,000</b> 頁 · 已完成 <b class="st-pct" id="st-pct">72.8%</b> · 還差 <b id="st-left">815,350</b> 頁</p>
+        </div>
+        <div class="st-ch__stats" id="st-ch-stats"></div>
+      </div>
+
+      <figure class="card st-chart" id="st-chart" data-reveal>
+        <div class="st-chart__head">
+          <p class="st-chart__title"><small>CUMULATIVE PAGES · 09.01 — 11.16</small>累計頁數走勢與達標預估</p>
+          <ul class="st-key" aria-label="圖例">
+            <li><i class="k-line"></i>實際累計</li>
+            <li><i class="k-proj"></i>依近 7 日平均推估</li>
+            <li><i class="k-fest"></i>閱讀節會期</li>
+            <li><i class="k-wd"></i>平日</li>
+            <li><i class="k-we"></i>週末</li>
+            <li><i class="k-mon"></i>週一（休館）</li>
+          </ul>
+        </div>
+        <p class="st-readout" id="st-readout" aria-live="polite"></p>
+        <div class="st-plot" id="st-plot" tabindex="0" role="group" aria-label="每日閱讀挑戰頁數圖。用左右方向鍵逐日查看。" aria-describedby="st-readout">
+          <div id="st-cum"></div>
+          <div id="st-daily"></div>
+        </div>
+        <figcaption class="st-chart__cap">上圖為累計頁數，下圖為每日新增；週一休館只計線上補登，所以每週都有一道凹口。10/9–10/11 連假三天合計 197,540 頁。</figcaption>
+      </figure>
+
+      <ol class="st-ms" id="st-ms" aria-label="挑戰里程碑"></ol>
+
+      <details class="acc st-table-acc">
+        <summary><span class="acc__no">TABLE</span><span>每日數據表（09.01 — 10.21，共 51 天）</span><span class="acc__icon" aria-hidden="true"></span></summary>
+        <div class="acc__body">
+          <div class="table-wrap">
+            <table class="table table--compact">
+              <caption class="sr-only">閱讀挑戰每日新增與累計頁數</caption>
+              <thead><tr><th scope="col">日期</th><th scope="col">星期</th><th scope="col" class="num">當日新增</th><th scope="col" class="num">累計</th><th scope="col">備註</th></tr></thead>
+              <tbody id="st-daily-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= 04 時段熱圖 ================= -->
+  <section class="section section--blue" id="hours" aria-labelledby="hr-title">
+    <div class="container">
+      <header class="sec-head">
+        <span class="sec-head__no" data-pulse aria-hidden="true">04</span>
+        <div class="sec-head__main">
+          <p class="kicker">WHEN WE BORROW · 2026.01 — 10</p>
+          <h2 class="sec-head__title plates" id="hr-title" data-text="借閱時段熱圖" data-reveal="plate">借閱時段熱圖</h2>
+        </div>
+        <div class="sec-head__aside">
+          <p>每一格是「這個星期幾、這個小時」平均借出幾冊。網點越大越忙，粉色是最擠的一成時段。</p>
+        </div>
+      </header>
+
+      <div class="st-hours__bar">
+        <span class="st-hours__label" id="st-branch-label">館舍</span>
+        <div class="st-chips" role="group" aria-labelledby="st-branch-label" id="st-branch-chips"></div>
+      </div>
+
+      <div class="card st-heatcard">
+        <div>
+          <div class="heat st-heat" id="st-heat" tabindex="0" role="group" aria-label="借閱時段熱圖，用方向鍵移動查看各時段" aria-describedby="st-heat-read"></div>
+        </div>
+        <aside class="st-heat-side">
+          <p class="st-heat-read" id="st-heat-read" aria-live="polite"></p>
+          <ul class="st-insights" id="st-insights"></ul>
+          <div class="st-heat-legend" id="st-heat-legend"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 05 資料說明 ================= -->
+  <section class="section section--pink-tint" id="notes" aria-labelledby="nt-title">
+    <div class="container">
+      <header class="sec-head">
+        <span class="sec-head__no" data-pulse aria-hidden="true">05</span>
+        <div class="sec-head__main">
+          <p class="kicker">DATA NOTES · v2026.10.22</p>
+          <h2 class="sec-head__title plates" id="nt-title" data-text="資料說明" data-reveal="plate">資料說明</h2>
+        </div>
+        <div class="sec-head__aside">
+          <p>這些數字怎麼算、從哪裡來、哪些看不到。</p>
+        </div>
+      </header>
+
+      <div class="st-notes">
+        <aside class="card st-editor" aria-label="資料整理者">
+          <div class="st-editor__face" data-portrait="xu"></div>
+          <div class="st-editor__body">
+            <p class="kicker">資料整理 · DATA EDITOR</p>
+            <h3 class="st-editor__name">許安<small>總館數位服務組館員</small></h3>
+            <blockquote>「數字不會告訴你誰在讀書，但會告訴你大家幾點來、在哪裡排隊。」</blockquote>
+            <a class="st-talk" id="st-talk" href="events.html#RF26-L07"></a>
+          </div>
+        </aside>
+
+        <div>
+          <dl class="st-spec">
+            <div><dt>資料來源</dt><dd>館藏流通系統<br>閱讀挑戰登錄平台</dd></div>
+            <div><dt>統計期間</dt><dd>借閱 01.01—10.21<br>挑戰 09.01 起</dd></div>
+            <div><dt>更新頻率</dt><dd>每日 08:00 結算前一日</dd></div>
+            <div><dt>人口基準</dt><dd>2026 年 9 月底戶籍人口</dd></div>
+          </dl>
+
+          <details class="acc" open>
+            <summary><span class="acc__no">N1</span><span>借閱冊數怎麼算？</span><span class="acc__icon" aria-hidden="true"></span></summary>
+            <div class="acc__body">一次借出算一冊，續借不重複計算；館際互借算在取書的館舍。行政區的數字依借閱證登記的居住地歸戶，所以總館所在的港埕區，居民借閱量只有總館借出量的一半多——另一半是外區讀者特地來借。</div>
+          </details>
+          <details class="acc">
+            <summary><span class="acc__no">N2</span><span>為什麼雲嶺區的「每千人借閱」最高？</span><span class="acc__icon" aria-hidden="true"></span></summary>
+            <div class="acc__body">雲嶺區人口只有 52,900 人，居民卻借了 118,600 冊。分館開在步道口，假日上午有許多登山客順路借還書；山區冬季夜長，也是館員常聽到的理由。人口少的區，數字容易被少數重度讀者拉高，請和「借閱冊數」一起看。</div>
+          </details>
+          <details class="acc">
+            <summary><span class="acc__no">N3</span><span>閱讀挑戰的頁數從哪裡來？</span><span class="acc__icon" aria-hidden="true"></span></summary>
+            <div class="acc__body">9 月 1 日起在任一館借還的書，依館藏紀錄的頁數自動計入；自己的書與電子書由市民自行補登，單次上限 2,000 頁，異常數值由館員人工複核。推估線以最近 7 日平均每日 45,900 頁往後延伸，不含閱讀節期間可能的加速。</div>
+          </details>
+          <details class="acc">
+            <summary><span class="acc__no">N4</span><span>時段熱圖為什麼週一是空的？</span><span class="acc__icon" aria-hidden="true"></span></summary>
+            <div class="acc__body">各館平日週一休館，統計期間內週一沒有臨櫃借閱；智慧借書站的借閱另計，不放進熱圖。閱讀節期間（10/31—11/16）週一照常開館，這段資料會在 12 月的下一期小誌補上。</div>
+          </details>
+          <details class="acc">
+            <summary><span class="acc__no">N5</span><span>我的借閱紀錄會被看到嗎？</span><span class="acc__icon" aria-hidden="true"></span></summary>
+            <div class="acc__body">不會。本頁只用彙總後的數字，所有資料在離開流通系統前就去除借閱證號；任何一格少於 20 筆的統計不單獨公開。個人借閱紀錄依館方隱私政策保存，還書後 30 天自動刪除。</div>
+          </details>
+
+          <div class="st-notes__actions">
+            <button class="btn btn--primary" type="button" id="st-csv">下載本頁數據 CSV</button>
+            <button class="btn btn--ghost" type="button" data-modal-open="st-report">回報資料問題</button>
+            <p>CSV 以 UTF-8 編碼，可直接用試算表開啟；欄位說明附在檔案第一列。</p>
+          </div>
+
+          <div class="st-colophon">
+            <span class="reg reg--sm" aria-hidden="true"></span>
+            <span>資料版本 v2026.10.22 · 整理 許安 · 校對 林朝暉</span>
+            <div class="color-bar" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container colophon">
+    <div>
+      <p class="colophon__mega">讀進<br>城市的縫隙</p>
+      <p class="colophon__credit"><b>主辦</b>澄港市政府文化局<br><b>承辦</b>澄港市立圖書館<br><b>協辦</b>澄港獨立書店聯盟・澄港社區大學</p>
+    </div>
+    <div>
+      <h2 class="colophon__h">館舍 · BRANCHES</h2>
+      <ul class="colophon__list">
+        <li>總館<small>港埕區書院路 1 號</small></li>
+        <li>北岸分館<small>北岸區燈塔街 88 號</small></li>
+        <li>舊城分館<small>舊城區城隍巷 3 號</small></li>
+        <li>新灣分館<small>新灣區海景大道 210 號</small></li>
+        <li>雲嶺分館<small>雲嶺區杉林路 15 號</small></li>
+      </ul>
+    </div>
+    <div>
+      <h2 class="colophon__h">導覽 · INDEX</h2>
+      <ul class="colophon__list">
+        <li><a href="index.html">首頁</a></li>
+        <li><a href="events.html">活動總表</a></li>
+        <li><a href="event.html">焦點講座</a></li>
+        <li><a href="stats.html">閱讀數據</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2 class="colophon__h">閱讀節小誌 · NEWSLETTER</h2>
+      <form class="newsletter" data-newsletter novalidate>
+        <p>每週五寄出一期電子小誌：下週活動、館員選書與候補釋出通知。</p>
+        <div class="field">
+          <label class="sr-only" for="nl-email">Email</label>
+          <div class="newsletter__row">
+            <input class="input" id="nl-email" type="email" name="email" placeholder="you@example.com" autocomplete="email">
+            <button class="btn btn--ink" type="submit">訂閱</button>
+          </div>
+          <p class="field__error" id="nl-email-err"></p>
+        </div>
+        <p>服務專線 0800-031-116 · 總館 1F 閱讀節服務台</p>
+      </form>
+    </div>
+  </div>
+  <div class="container colophon__base">
+    <div class="color-bar" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <span>© 2026 澄港市立圖書館 · 雙色孔版印刷 · 第 2 刷</span>
+    <span>開館 08:30–21:00（閱讀節期間週一照常開館）</span>
+    <a href="../../index.html">← 返回目錄</a>
+  </div>
+</footer>
+
+<!-- 回報資料問題 -->
+<dialog class="modal" id="st-report" aria-labelledby="st-report-title">
+  <form id="st-report-form" novalidate>
+    <div class="modal__head">
+      <div>
+        <h2 class="modal__title" id="st-report-title">回報資料問題</h2>
+        <p class="modal__sub">DATA FEEDBACK · 由數位服務組許安回覆</p>
+      </div>
+      <button class="icon-btn modal__close" type="button" data-modal-close aria-label="關閉">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <p class="field__hint" style="margin-bottom:20px">看到不合理的數字、或想要某個統計？告訴我們，三個工作天內回覆。</p>
+      <div class="form-grid">
+        <div class="field field--full">
+          <label class="field__label" for="rp-section">哪一個區塊 <span class="field__req">必填</span></label>
+          <select class="select" id="rp-section" name="section">
+            <option value="">請選擇</option>
+            <option>01 各分館借閱熱度</option>
+            <option>02 年度借閱 Top 20</option>
+            <option>03 市民閱讀挑戰累計</option>
+            <option>04 借閱時段熱圖</option>
+            <option>05 資料說明</option>
+          </select>
+          <p class="field__error" id="rp-section-err"></p>
+        </div>
+        <div class="field field--full">
+          <label class="field__label" for="rp-msg">問題說明 <span class="field__req">必填</span></label>
+          <textarea class="textarea" id="rp-msg" name="msg" placeholder="例：溪洲區的挑戰人數和我們社區的統計對不起來" maxlength="500"></textarea>
+          <p class="field__hint">至少 10 個字，最多 500 字</p>
+          <p class="field__error" id="rp-msg-err"></p>
+        </div>
+        <div class="field field--full">
+          <label class="field__label" for="rp-email">Email（選填，需要回覆時才填）</label>
+          <input class="input" id="rp-email" name="email" type="email" placeholder="you@example.com" autocomplete="email">
+          <p class="field__error" id="rp-email-err"></p>
+        </div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--ghost" type="button" data-modal-close>取消</button>
+      <button class="btn btn--primary" type="submit">送出回報</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { data, fmt, esc } = App;
+  const ch = data.challenge;
+  const SVGNS_OPEN = 'xmlns="http://www.w3.org/2000/svg"';
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+  const pct = (v, d = 1) => `${(v * 100).toFixed(d)}%`;
+  const WD = ['一', '二', '三', '四', '五', '六', '日']; // 熱圖以週一起算
+
+  /* ==================================================================
+     資料：統計期間 2026.01.01–10.21（294 天，剛好 42 週）
+     ================================================================== */
+  const WEEKS = 42;
+  // 館舍：loans 借出冊數、yoy 年增、visits 入館人次、xy 地圖座標
+  const BRANCHES = [
+    { key: 'main',  loans: 612480, yoy: 0.068, visits: 1284300, xy: [594, 392], tag: [30, -72] },
+    { key: 'north', loans: 268930, yoy: 0.041, visits: 512600,  xy: [728, 150], tag: [38, -40] },
+    { key: 'old',   loans: 241760, yoy: 0.093, visits: 468900,  xy: [440, 364], tag: [-60, -58] },
+    { key: 'bay',   loans: 305140, yoy: 0.126, visits: 601200,  xy: [812, 446], tag: [-96, 46] },
+    { key: 'cloud', loans: 158420, yoy: 0.032, visits: 214700,  xy: [112, 118], tag: [30, -26] },
+  ].map(b => ({ ...b, ...App.branch(b.key) }));
+  const MOBILE = { key: 'mobile', name: '行動書車＋智慧借書站', short: '書車與借書站', loans: 96850, yoy: 0.214, stops: 18 };
+
+  // 行政區：順序同 App.data.districts；loans 依借閱證居住地歸戶，總和＝全市借出量
+  const DISTRICTS = [
+    { name: '港埕區', en: 'GANGCHENG', pop: 186400, loans: 352610, serve: '總館',
+      d: 'M494 336 L600 330 L648 342 L656 488 H522 Z', lbl: [528, 470],
+      note: '總館所在地。上班族午休來借書，撐起中午 12 點的小高峰；外區讀者也常專程來總館。' },
+    { name: '北岸區', en: 'BEI\'AN', pop: 142300, loans: 236150, serve: '北岸分館',
+      d: 'M246 30 H905 V256 L640 280 L560 262 L440 208 L330 150 Z', lbl: [400, 96],
+      note: '放學後的 16–17 點是北岸分館最擠的時候，學生族群占借閱人數近四成。' },
+    { name: '舊城區', en: 'JIUCHENG', pop: 98700, loans: 214880, serve: '舊城分館',
+      d: 'M314 380 L370 296 L474 330 L498 436 H330 Z', lbl: [336, 420],
+      note: '長輩讀者多、上午就來借書。人口不到十萬，每千人借閱卻排全市第二。' },
+    { name: '山腳區', en: 'SHANJIAO', pop: 121500, loans: 141260, serve: '行動書車＋智慧借書站',
+      d: 'M30 262 H200 L310 168 L356 270 L300 360 H30 Z', lbl: [46, 300],
+      note: '沒有分館，靠每週三趟行動書車與兩座智慧借書站；每千人借閱是全市最低的一區。' },
+    { name: '新灣區', en: 'XINWAN', pop: 203600, loans: 318130, serve: '新灣分館',
+      d: 'M666 350 L905 352 V552 H700 Z', lbl: [688, 392],
+      note: '人口最多的新市鎮。下班後的 18 點以後是借閱主力，分館借閱年增 12.6% 全市最高。' },
+    { name: '鹽田區', en: 'YANTIAN', pop: 64800, loans: 98640, serve: '行動書車＋智慧借書站',
+      d: 'M30 374 H300 L320 446 L512 500 H668 L684 552 H30 Z', lbl: [46, 420],
+      note: '人口最少的沿海區之一，借閱冊數全市最少；鹽田風書店與書車停靠點是主要的借書入口。' },
+    { name: '溪洲區', en: 'XIZHOU', pop: 109200, loans: 203310, serve: '行動書車＋智慧借書站',
+      d: 'M360 186 L452 234 L560 282 L598 300 L540 316 L446 300 L390 268 L362 218 Z', lbl: [382, 230], rot: 22,
+      note: '河中沙洲上的住宅區。沒有分館，卻有全市使用率最高的智慧借書站，深夜也有人借書。' },
+    { name: '雲嶺區', en: 'YUNLING', pop: 52900, loans: 118600, serve: '雲嶺分館',
+      d: 'M30 30 H222 L296 150 L196 246 H30 Z', lbl: [46, 214],
+      note: '人口全市最少，每千人借閱卻是第一。分館開在步道口，假日上午擠滿順路借書的登山客。' },
+  ].map((dt, i) => {
+    const c = ch.districts.find(x => x.name === dt.name);
+    return { ...dt, i, pages: c.pages, readers: c.readers, per1k: dt.loans / dt.pop * 1000 };
+  });
+
+  const TOTAL_LOANS = sum(BRANCHES.map(b => b.loans)) + MOBILE.loans;
+  // 兩種歸戶方式（館舍 vs 居住地）總數必須一致，否則代表資料被改壞，直接中止
+  if (TOTAL_LOANS !== sum(DISTRICTS.map(dt => dt.loans))) throw new Error('stats: branch loans and district loans disagree');
+  if (sum(DISTRICTS.map(dt => dt.pages)) !== ch.pages) throw new Error('stats: district pages do not sum to challenge.pages');
+
+  /* ---------- 時段資料：每館一張 7×13 週表（週一休館），值＝該時段每週平均借出冊數 ---------- */
+  const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]; // 8 點那格只有 08:30–09:00
+  const gauss = (x, m, s) => Math.exp(-((x - m) ** 2) / (2 * s * s));
+  const baseWeight = (d, h) => {
+    if (d === 0) return 0;
+    const t = h + 0.5;
+    let w = d >= 5
+      ? 0.8 * gauss(t, 10.8, 1.3) + 1.25 * gauss(t, 15.3, 2)
+      : 0.5 * gauss(t, 10.5, 1.2) + 0.35 * gauss(t, 12.5, 0.7) + gauss(t, 17.2, 1.4) + 0.5 * gauss(t, 19.6, 1);
+    if (d === 1) w *= 1.18;            // 週二：休館隔天的還借潮
+    if (d === 4 && h >= 18) w *= 0.82; // 週五晚上外出的人多
+    if (d === 6 && h >= 17) w *= 0.8;  // 週日傍晚提早散場
+    if (h === 8) w *= 0.5;             // 只開半小時
+    return w;
+  };
+  const BRANCH_MOD = {
+    main:  (d, h) => (h === 12 && d < 5 ? 1.6 : 1) * (d < 5 && h >= 17 ? 1.1 : 1),
+    north: (d, h) => (d < 5 && (h === 16 || h === 17) ? 1.4 : 1),
+    old:   (d, h) => (d < 5 && h >= 9 && h <= 11 ? 1.55 : 1) * (h >= 18 ? 0.7 : 1),
+    bay:   (d, h) => (h >= 18 ? 1.5 : 1) * (h <= 10 ? 0.7 : 1),
+    cloud: (d, h) => (d >= 5 && h >= 9 && h <= 11 ? 1.85 : 1) * (d < 5 ? 0.75 : 1) * (h >= 18 ? 0.6 : 1),
+  };
+  const HEAT = {};
+  BRANCHES.forEach(b => {
+    const raw = WD.map((_, d) => HOURS.map(h => baseWeight(d, h) * BRANCH_MOD[b.key](d, h)));
+    const total = sum(raw.flat());
+    const weekly = b.loans / WEEKS;
+    HEAT[b.key] = raw.map(row => row.map(w => Math.round(w / total * weekly)));
+  });
+  HEAT.all = WD.map((_, d) => HOURS.map((__, c) => sum(BRANCHES.map(b => HEAT[b.key][d][c]))));
+  const peakOf = m => {
+    let best = { d: 0, c: 0, v: -1 };
+    m.forEach((row, d) => row.forEach((v, c) => { if (v > best.v) best = { d, c, v }; }));
+    return best;
+  };
+  const slotLabel = (d, c) => `週${WD[d]} ${HOURS[c] === 8 ? '08:30' : `${fmt.pad(HOURS[c])}:00`}`;
+
+  /* ==================================================================
+     Hero：閱讀時鐘
+     ================================================================== */
+  // 21:00–08:00 由智慧借書站接手（不在熱圖內），每日平均冊數
+  const NIGHT = { 21: 34, 22: 27, 23: 18, 0: 9, 1: 4, 2: 2, 3: 1, 4: 1, 5: 2, 6: 6, 7: 16 };
+  const hourly = h => (h >= 8 && h <= 20) ? Math.round(sum(HEAT.all.map(row => row[h - 8])) / 6) : NIGHT[h];
+  const C = 320;
+  const polar = (r, deg) => {
+    const a = (deg - 90) * Math.PI / 180;
+    return [C + r * Math.cos(a), C + r * Math.sin(a)].map(n => n.toFixed(1)).join(' ');
+  };
+  const sector = (a1, a2, r1, r2) =>
+    `M${polar(r1, a1)} L${polar(r2, a1)} A${r2} ${r2} 0 0 1 ${polar(r2, a2)} L${polar(r1, a2)} A${r1} ${r1} 0 0 0 ${polar(r1, a1)}Z`;
+
+  const R0 = 104;
+  const RLEN = 150;
+  const hourVals = Array.from({ length: 24 }, (_, h) => hourly(h));
+  const hourMax = Math.max(...hourVals);
+  const rayLen = v => Math.max(7, RLEN * v / hourMax);
+  const clockArt = document.getElementById('st-clock-art');
+  const isNight = h => h >= 21 || h < 8;
+  const wedges = (cls, fillFn) => hourVals.map((v, h) =>
+    `<path class="${cls}" data-h="${h}" ${fillFn(h)} d="${sector(h * 15 + 1.6, (h + 1) * 15 - 1.6, R0, R0 + rayLen(v))}"/>`).join('');
+  const ticks = Array.from({ length: 24 }, (_, h) => {
+    if (h % 3) return `<path class="stroke-ink" stroke-width="1.5" d="M${polar(R0 + RLEN + 12, h * 15)} L${polar(R0 + RLEN + 18, h * 15)}"/>`;
+    const [x, y] = polar(R0 + RLEN + 28, h * 15).split(' ');
+    return `<text class="st-clock__tick${h % 6 === 0 ? ' st-clock__tick--major' : ''}" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">${fmt.pad(h)}</text>`;
+  }).join('');
+  // 靜態部分只畫一次；之後每 30 秒只更新指針、時間與黃版的「現在」扇形
+  clockArt.innerHTML = `<svg ${SVGNS_OPEN} viewBox="0 0 640 640" role="img" aria-labelledby="st-clock-t">
+    <title id="st-clock-t">閱讀時鐘：全市開館日每小時平均借出冊數，下午 3 點前後與傍晚 5 點最忙；21 點到早上 8 點只剩智慧借書站。</title>
+    <defs><path id="st-ring" d="M${C} ${C - 300} a300 300 0 1 1 -0.01 0"/><path id="st-night-arc" d="M${polar(196, 318)} A196 196 0 0 1 ${polar(196, 102)}"/></defs>
+    <g class="mult" data-drift="1"><path class="ink-yellow" id="st-clock-now"/></g>
+    <g class="mult" data-drift="-0.3">${wedges('st-clock__wedge ink-blue', h => (isNight(h) ? 'fill="url(#rf-hatch-blue)"' : ''))}</g>
+    <g class="mult" data-drift="0.6">
+      <g transform="translate(5 -4)">${wedges('st-clock__pp', h => (isNight(h) ? 'fill="none"' : 'fill="url(#rf-ht-pink-lg)"'))}</g>
+    </g>
+    <circle cx="${C}" cy="${C}" r="${R0 + RLEN + 6}" class="stroke-ink" stroke-width="1" fill="none" opacity=".35"/>
+    ${ticks}
+    <text class="st-clock__night"><textPath href="#st-night-arc" startOffset="50%" text-anchor="middle">夜裡 · 智慧借書站接手</textPath></text>
+    <g class="st-clock__ring"><text class="st-clock__ringtext"><textPath href="#st-ring" textLength="1860" lengthAdjust="spacing">READING CLOCK ✺ 全市每小時借出冊數 ✺ 2026.01—10 ✺ READING CLOCK ✺ 開館日平均 ✺ 澄港市立圖書館 ✺</textPath></text></g>
+    <g class="st-clock__hand" id="st-clock-hand">
+      <path class="stroke-ink" stroke-width="3" d="M${C} ${C - 94} V${C - (R0 + RLEN + 6)}"/>
+      <circle cx="${C}" cy="${C - (R0 + RLEN + 6)}" r="7" class="ink-pink stroke-ink" stroke-width="2"/>
+    </g>
+    <circle cx="${C}" cy="${C}" r="92" class="ink-paper stroke-ink" stroke-width="2"/>
+    <text class="st-clock__now-k" x="${C}" y="${C - 42}" text-anchor="middle">NOW · 現在</text>
+    <text class="st-clock__now-t" id="st-clock-time" x="${C}" y="${C + 8}" text-anchor="middle"></text>
+    <text class="st-clock__now-l" id="st-clock-lbl" x="${C}" y="${C + 32}" text-anchor="middle"></text>
+    <text class="st-clock__now-v" id="st-clock-val" x="${C}" y="${C + 54}" text-anchor="middle"></text>
+  </svg>`;
+  const updateClock = () => {
+    const now = App.now();
+    const H = now.getHours();
+    document.getElementById('st-clock-now').setAttribute('d', sector(H * 15 - 1, (H + 1) * 15 + 1, R0 - 8, R0 + rayLen(hourVals[H]) + 16));
+    document.getElementById('st-clock-hand').style.transform = `rotate(${((H + now.getMinutes() / 60) * 15).toFixed(2)}deg)`;
+    document.getElementById('st-clock-time').textContent = `${fmt.pad(H)}:${fmt.pad(now.getMinutes())}`;
+    document.getElementById('st-clock-lbl').textContent = isNight(H) ? '智慧借書站平均' : '這一小時平均借出';
+    document.getElementById('st-clock-val').textContent = `${fmt.num(hourVals[H])} 冊`;
+  };
+  updateClock();
+  setInterval(updateClock, 30000);
+  clockArt.addEventListener('pointermove', e => {
+    const w = e.target.closest('[data-h]');
+    if (!w) {
+      App.tooltip.hide();
+      return;
+    }
+    const h = Number(w.dataset.h);
+    const range = `${fmt.pad(h)}:00–${fmt.pad((h + 1) % 24)}:00`;
+    App.tooltip.show(`<b>${range}</b><br>${h >= 21 || h < 8 ? '智慧借書站' : '五館合計'} · 平均 ${fmt.num(hourVals[h])} 冊`, e.clientX, e.clientY);
+  });
+  clockArt.addEventListener('pointerleave', App.tooltip.hide);
+  // 旋轉的字環離開視窗就停，不在背景空轉
+  new IntersectionObserver(([entry]) => document.getElementById('st-clock').classList.toggle('is-paused', !entry.isIntersecting))
+    .observe(document.getElementById('st-clock'));
+
+  /* ==================================================================
+     01 地圖
+     ================================================================== */
+  const METRICS = {
+    per1k: { label: '每千人借閱', unit: '冊／千人', get: dt => dt.per1k, fmt: v => fmt.num(Math.round(v)) },
+    loans: { label: '借閱冊數', unit: '冊', get: dt => dt.loans, fmt: v => fmt.num(v) },
+    pages: { label: '挑戰頁數', unit: '頁', get: dt => dt.pages, fmt: v => fmt.num(v) },
+  };
+  let metric = 'per1k';
+  let selected = 7; // 預設雲嶺區：每千人借閱第一
+  const DOT_STEP = 11;
+  // 八區數值差距不到一倍，從 0 起算的話網點幾乎一樣大；改從「最小值 × 0.7」起算拉開差異，
+  // 圖例直接標出最小／中間／最大三種點的實際數值，讀者不需要自己換算
+  const domainOf = vals => ({ lo: Math.min(...vals) * 0.7, hi: Math.max(...vals) });
+  const dotR = (v, dom) => 1.1 + 4.1 * (v - dom.lo) / (dom.hi - dom.lo);
+  const maxLoans = Math.max(...BRANCHES.map(b => b.loans));
+  const blotR = loans => 48 * Math.sqrt(loans / maxLoans);
+  const BUS_STOPS = [[226, 300], [554, 298], [300, 512]];
+
+  const mapArt = document.getElementById('st-map-art');
+  const patterns = DISTRICTS.map(dt => `
+    <pattern id="st-pb-${dt.i}" width="${DOT_STEP}" height="${DOT_STEP}" patternUnits="userSpaceOnUse"><circle class="st-dot" cx="${DOT_STEP / 2}" cy="${DOT_STEP / 2}" style="--i:${dt.i}"/></pattern>
+    <pattern id="st-pp-${dt.i}" width="${DOT_STEP}" height="${DOT_STEP}" patternUnits="userSpaceOnUse"><circle class="st-dotp" cx="${DOT_STEP / 2}" cy="${DOT_STEP / 2}" style="--i:${dt.i}"/></pattern>`).join('');
+  const districtsSVG = DISTRICTS.map(dt => {
+    const [lx, ly] = dt.lbl;
+    const rot = dt.rot ? ` transform="rotate(${dt.rot} ${lx} ${ly})"` : '';
+    return `<g class="st-d" data-d="${dt.i}">
+      <path class="st-d__base" d="${dt.d}"/>
+      <path d="${dt.d}" fill="url(#st-pb-${dt.i})" pointer-events="none"/>
+      <path class="st-d__pink" d="${dt.d}" fill="url(#st-pp-${dt.i})" transform="translate(5 -4)"/>
+      <text class="st-lbl" x="${lx}" y="${ly}"${rot}>${dt.name}<tspan class="st-lbl-v" dx="8" data-v="${dt.i}"></tspan></text>
+    </g>`;
+  }).join('');
+  const markersSVG = BRANCHES.map((b, i) => {
+    const [x, y] = b.xy;
+    const r = blotR(b.loans);
+    const [tx, ty] = b.tag;
+    const label = `${b.name} ${(b.loans / 10000).toFixed(1)} 萬`;
+    const w = 26 + b.name.length * 14 + 66;
+    return `<g class="st-mk" data-b="${i}">
+      <circle class="st-mk__blot" cx="${x}" cy="${y}" r="${r.toFixed(1)}"/>
+      <circle class="st-mk__ring" cx="${x}" cy="${y}" r="${r.toFixed(1)}"/>
+      <rect class="st-mk__core" x="${x - 5}" y="${y - 5}" width="10" height="10"/>
+      <g class="st-mk__tag"><rect x="${x + tx}" y="${y + ty}" width="${w}" height="24"/>
+        <text x="${x + tx + 10}" y="${y + ty + 17}">${b.name}<tspan dx="6">${(b.loans / 10000).toFixed(1)}萬</tspan></text></g>
+      <title>${label} 冊</title>
+    </g>`;
+  }).join('');
+  const busSVG = BUS_STOPS.map(([x, y]) => `<g class="st-bus" transform="translate(${x - 13} ${y - 9})"><rect width="26" height="15" rx="3"/><circle cx="7" cy="16" r="3"/><circle cx="19" cy="16" r="3"/></g>`).join('');
+
+  mapArt.innerHTML = `<svg ${SVGNS_OPEN} viewBox="0 0 960 620" role="img" aria-labelledby="st-map-t">
+    <title id="st-map-t">澄港市八個行政區借閱熱度示意圖，數據同右側排行。</title>
+    <defs>${patterns}</defs>
+    <path class="st-water" d="M918 0 H960 V620 H0 V566 H918 Z"/>
+    <path class="st-water" d="M918 250 L644 274 L604 302 L646 340 L918 346 Z"/>
+    <path class="st-river" d="M232 14 L300 140 L344 172 L450 222 L560 272 L612 296"/>
+    <path class="st-river" d="M344 172 L354 232 L388 286 L446 310 L520 324 L606 308"/>
+    <g id="st-dists">${districtsSVG}</g>
+    <path class="st-deco" d="M128 74l20-30 13 17 10-13 22 26M150 92h44"/>
+    <path class="st-deco" d="M92 474h150M92 498h150M92 522h150M122 462v72M162 462v72M202 462v72"/>
+    <path class="st-deco" d="M868 196v-40h14v40zM862 196h26M875 156l-9-10h18zM886 140l18-8M886 152l18 4"/>
+    <path class="st-route" d="M${BUS_STOPS[0].join(' ')} L${BUS_STOPS[1].join(' ')} L${BRANCHES[0].xy.join(' ')} L${BUS_STOPS[2].join(' ')} Z"/>
+    ${busSVG}
+    <g id="st-markers">${markersSVG}</g>
+    <g class="st-compass" transform="translate(846 82)"><circle r="22"/><path d="M0 -17 L6 4 L0 0 L-6 4 Z"/><text y="40" text-anchor="middle">N</text></g>
+    <text class="st-map-note" x="836" y="312" text-anchor="middle">澄 港 灣</text>
+    <text class="st-map-note st-map-note--lg" x="640" y="598" text-anchor="middle">外 海 · OPEN SEA</text>
+  </svg>`;
+
+  const distEls = [...mapArt.querySelectorAll('.st-d')];
+  const markerEls = [...mapArt.querySelectorAll('.st-mk')];
+  const rankList = document.getElementById('st-rank');
+  rankList.innerHTML = DISTRICTS.map(dt => `<li data-d="${dt.i}"><button class="st-rank__btn" type="button" data-d="${dt.i}" aria-pressed="false">
+      <span class="st-rank__no"></span><span>${dt.name}</span><span class="st-rank__bar" aria-hidden="true"><i></i></span><span class="st-rank__val"></span></button></li>`).join('');
+  const rankItems = [...rankList.children];
+
+  const rankOf = key => [...DISTRICTS].sort((a, b) => METRICS[key].get(b) - METRICS[key].get(a));
+  const applyMetric = (animate = true) => {
+    const M = METRICS[metric];
+    const vals = DISTRICTS.map(M.get);
+    const max = Math.max(...vals);
+    const dom = domainOf(vals);
+    DISTRICTS.forEach(dt => {
+      const r = dotR(M.get(dt), dom);
+      mapArt.querySelector(`#st-pb-${dt.i} circle`).style.setProperty('--r', r.toFixed(2));
+      // 粉版點小一號：選取區疊印時藍點仍清楚，粉點只負責「錯版」的味道
+      mapArt.querySelector(`#st-pp-${dt.i} circle`).style.setProperty('--r', (r * 0.6).toFixed(2));
+      mapArt.querySelector(`[data-v="${dt.i}"]`).textContent = M.fmt(M.get(dt));
+    });
+    // 排行重新排序：先記下舊位置，換完順序再從舊位置滑過去（FLIP）
+    const before = new Map(rankItems.map(li => [li, li.getBoundingClientRect().top]));
+    rankOf(metric).forEach((dt, n) => {
+      const li = rankItems[dt.i];
+      li.querySelector('.st-rank__no').textContent = fmt.pad(n + 1);
+      li.querySelector('.st-rank__bar').style.setProperty('--v', (M.get(dt) / max).toFixed(3));
+      li.querySelector('.st-rank__val').textContent = M.fmt(M.get(dt));
+      rankList.append(li);
+    });
+    if (animate && !App.reducedMotion) {
+      rankItems.forEach(li => {
+        const dy = before.get(li) - li.getBoundingClientRect().top;
+        if (Math.abs(dy) > 1) li.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 650, easing: 'cubic-bezier(.16,1,.3,1)' });
+      });
+    }
+    document.getElementById('st-rank-title').textContent = `八區排行 · ${M.label}`;
+    renderLegend(vals, dom);
+    renderDistrictCard();
+  };
+
+  const districtCard = document.getElementById('st-district');
+  const renderDistrictCard = () => {
+    const dt = DISTRICTS[selected];
+    const M = METRICS[metric];
+    const rank = rankOf(metric).indexOf(dt) + 1;
+    districtCard.innerHTML = `
+      <div class="st-district__head">
+        <p class="st-district__k">DISTRICT ${fmt.pad(dt.i + 1)} / 08 · ${dt.en}</p>
+        <h3 class="st-district__name">${dt.name}</h3>
+        <p class="st-district__pop">人口 ${fmt.num(dt.pop)} · ${esc(dt.serve)}</p>
+      </div>
+      <div class="st-district__body">
+        <p class="st-district__metric">${M.label}</p>
+        <p class="st-district__big"><b>${M.fmt(M.get(dt))}</b><span>${M.unit}</span><span class="sticker${rank === 1 ? ' sticker--pink' : ''}">全市第 ${rank}</span></p>
+        <dl class="dl">
+          <dt>借閱冊數</dt><dd>${fmt.num(dt.loans)} 冊 · 占全市 ${pct(dt.loans / TOTAL_LOANS)}</dd>
+          <dt>每千人</dt><dd>${fmt.num(Math.round(dt.per1k))} 冊</dd>
+          <dt>挑戰頁數</dt><dd>${fmt.num(dt.pages)} 頁 · ${fmt.num(dt.readers)} 人參加</dd>
+          <dt>人均頁數</dt><dd>${(dt.pages / dt.readers).toFixed(1)} 頁</dd>
+        </dl>
+        <p class="st-district__note">${esc(dt.note)}</p>
+      </div>`;
+    districtCard.classList.remove('is-swap');
+    void districtCard.offsetWidth; // 重新觸發換卡動畫
+    districtCard.classList.add('is-swap');
+  };
+
+  const selectDistrict = (i, { flashBranch = true } = {}) => {
+    selected = i;
+    distEls.forEach(el => el.classList.toggle('is-sel', Number(el.dataset.d) === i));
+    rankList.querySelectorAll('.st-rank__btn').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === i)));
+    // 對應館舍：有分館的區點亮分館墨點與票根；沒有分館的區點亮書車票根
+    const branchIdx = BRANCHES.findIndex(b => b.district === DISTRICTS[i].name);
+    markerEls.forEach((m, n) => m.classList.toggle('is-on', n === branchIdx));
+    document.querySelectorAll('.st-bt').forEach(t => t.classList.toggle('is-on', t.dataset.b === String(branchIdx === -1 ? 'mobile' : branchIdx)));
+    if (flashBranch && branchIdx > -1 && !App.reducedMotion) {
+      const m = markerEls[branchIdx];
+      m.classList.remove('is-flash');
+      void m.getBoundingClientRect();
+      m.classList.add('is-flash');
+    }
+    renderDistrictCard();
+  };
+
+  mapArt.addEventListener('click', e => {
+    const mk = e.target.closest('.st-mk');
+    if (mk) {
+      selectDistrict(DISTRICTS.findIndex(dt => dt.name === BRANCHES[Number(mk.dataset.b)].district));
+      return;
+    }
+    const d = e.target.closest('.st-d');
+    if (d) selectDistrict(Number(d.dataset.d));
+  });
+  mapArt.addEventListener('pointermove', e => {
+    const mk = e.target.closest('.st-mk');
+    const d = e.target.closest('.st-d');
+    if (mk) {
+      const b = BRANCHES[Number(mk.dataset.b)];
+      App.tooltip.show(`<b>${b.name}</b><br>借出 ${fmt.num(b.loans)} 冊 · 年增 ${pct(b.yoy)}`, e.clientX, e.clientY);
+    } else if (d) {
+      const dt = DISTRICTS[Number(d.dataset.d)];
+      const M = METRICS[metric];
+      App.tooltip.show(`<b>${dt.name}</b><br>${M.label} ${M.fmt(M.get(dt))} ${M.unit}`, e.clientX, e.clientY);
+    } else App.tooltip.hide();
+  });
+  mapArt.addEventListener('pointerleave', App.tooltip.hide);
+  rankList.addEventListener('click', e => {
+    const b = e.target.closest('.st-rank__btn');
+    if (b) selectDistrict(Number(b.dataset.d));
+  });
+  document.getElementById('st-metric').addEventListener('segchange', e => {
+    metric = e.detail.value;
+    applyMetric();
+  });
+
+  const legendEl = document.getElementById('st-legend');
+  function renderLegend(vals, dom) {
+    const M = METRICS[metric];
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const samples = [lo, (lo + hi) / 2, hi].map(v => ({ r: dotR(v, dom).toFixed(2), v: M.fmt(v) }));
+    legendEl.innerHTML = `
+      <div><svg width="70" height="16" aria-hidden="true">${samples.map((s, n) => `<circle cx="${8 + n * 24}" cy="8" r="${s.r}" class="ink-blue"/>`).join('')}</svg>
+        <span><b>網點：${M.label}</b><br><span class="num">${samples.map(s => s.v).join(' / ')} ${M.unit}</span></span></div>
+      <div><svg width="58" height="44" aria-hidden="true"><circle cx="24" cy="${44 - blotR(600000) * 0.45}" r="${(blotR(600000) * 0.45).toFixed(1)}" class="ink-pink mult"/><circle cx="24" cy="${44 - blotR(150000) * 0.45}" r="${(blotR(150000) * 0.45).toFixed(1)}" fill="none" class="stroke-ink" stroke-width="1.5"/></svg>
+        <span><b>粉色墨點：館舍借出量</b><br><span class="num">圓面積 · 外圈 60 萬 / 內圈 15 萬冊</span></span></div>
+      <div><svg width="30" height="20" aria-hidden="true"><g class="st-bus" transform="translate(2 1)"><rect width="26" height="15" rx="3"/><circle cx="7" cy="16" r="3"/><circle cx="19" cy="16" r="3"/></g></svg>
+        <span><b>行動書車停靠區</b><br><span class="num">山腳 · 溪洲 · 鹽田</span></span></div>`;
+  }
+
+  // 館舍票根
+  const busiest = key => {
+    const p = peakOf(HEAT[key]);
+    return slotLabel(p.d, p.c);
+  };
+  const tickets = [...BRANCHES.map((b, i) => ({ ...b, id: String(i), sub: b.district, peak: busiest(b.key), visitsTxt: `${fmt.num(b.visits)} 人次` })),
+    { ...MOBILE, id: 'mobile', name: MOBILE.short, sub: '山腳／溪洲／鹽田', peak: '每週三趟巡迴', visitsTxt: `${MOBILE.stops} 個停靠點` }];
+  const rankByLoans = [...tickets].sort((a, b) => b.loans - a.loans);
+  document.getElementById('st-branches').innerHTML = tickets.map((t, n) => `
+    <li class="ticket ticket--v st-bt" data-b="${t.id}" style="--rot:${[-1.5, 1, -0.5, 1.5, -1, 0.8][n]}deg">
+      <div class="ticket__main">
+        <p class="ticket__eyebrow">No.${rankByLoans.indexOf(t) + 1} · ${esc(t.sub)}</p>
+        <h3><button class="st-bt__btn" type="button" data-b="${t.id}">${esc(t.name)}</button></h3>
+        <p class="st-bt__num">${fmt.num(t.loans)}<small>冊</small></p>
+        <p class="st-bt__yoy">▲ ${pct(t.yoy)} 較去年同期</p>
+      </div>
+      <div class="ticket__stub">
+        <span>入館 / 服務</span><b>${esc(t.visitsTxt)}</b>
+        <span>最忙時段</span><b>${esc(t.peak)}</b>
+      </div>
+    </li>`).join('');
+  document.getElementById('st-branches').addEventListener('click', e => {
+    const btn = e.target.closest('.st-bt__btn');
+    if (!btn) return;
+    if (btn.dataset.b === 'mobile') {
+      // 書車服務三個沒有分館的區：選其中借閱最多的溪洲，並提示路線
+      selectDistrict(DISTRICTS.findIndex(dt => dt.name === '溪洲區'), { flashBranch: false });
+      App.toast('行動書車每週二、四、六巡迴山腳、溪洲、鹽田三區，共 18 個停靠點。', { tone: 'blue', title: '書車與智慧借書站' });
+      return;
+    }
+    const b = BRANCHES[Number(btn.dataset.b)];
+    selectDistrict(DISTRICTS.findIndex(dt => dt.name === b.district));
+    document.getElementById('st-map').scrollIntoView({ behavior: App.reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  });
+
+  applyMetric(false);
+  selectDistrict(selected, { flashBranch: false });
+
+  /* ==================================================================
+     02 Top 20
+     ================================================================== */
+  // [書名, 作者, 借閱次數, 預約人數, 相關活動]
+  const TOP = {
+    lit: { label: '文學', ink: ['blue', 'pink'], books: [
+      ['潮間帶的圖書館', '韓若潮', 1826, 412, 'RF26-L04'],
+      ['夜班公車詩集', '鄭霧', 1535, 138, 'RF26-L01'],
+      ['最後一班渡輪', '宋祈', 1390, 96],
+      ['雲嶺郵差', '白芮安', 1331, 154, 'RF26-L08'],
+      ['霧中讀信', '溫若雪', 1279, 61],
+      ['失眠者地圖', '何澄', 1196, 44],
+      ['鹽田手記', '韓若潮', 1122, 187, 'RF26-N02'],
+      ['十七個轉角', '夏以寧', 1037, 22],
+      ['樓梯間的天文台', '程遠', 984, 35],
+      ['退潮時間表', '莫里斯・韓德 著／梁思遠 譯', 941, 28, 'RF26-L09'],
+      ['路燈下的十四行', '鄭霧', 890, 53, 'RF26-L01'],
+      ['海風翻頁', '林予安', 839, 12],
+      ['凌晨四點的麵包店', '簡嘉', 797, 18],
+      ['門牌號碼之間', '李沐', 754, 9],
+      ['守夜人筆記', '羅一舟', 716, 14],
+      ['巷口雜貨店的帳本', '周品妤', 687, 21],
+      ['堤防上的跑者', '柯以晨', 660, 7],
+      ['南風旅社', '邵若綾', 632, 16],
+      ['雨季的郵筒', '唐予恩', 606, 11],
+      ['第九號月台', '范書亭', 584, 8],
+    ] },
+    non: { label: '非文學', ink: ['yellow', 'blue'], books: [
+      ['巷弄裡的索引', '林朝暉', 1472, 126, 'RF26-L03'],
+      ['舊城街名考', '杜望舒', 1368, 88, 'RF26-L06'],
+      ['新灣填海記', '杜望舒', 1174, 47, 'RF26-L06'],
+      ['碼頭工人的讀書會', '吳曉嵐', 1109, 52, 'RF26-L02'],
+      ['貓走過的路線', '葉宛真', 1063, 39],
+      ['一個人的退休理財', '賴承恩', 1021, 64],
+      ['燈塔看守人的書櫃', '歐陽靜', 978, 25],
+      ['鐵窗花圖鑑', '高嵐', 931, 19],
+      ['不關燈的圖書館', '方靜禾', 887, 31],
+      ['給新手爸媽的睡眠書', '簡如茵', 846, 42],
+      ['打鐵街最後一家打鐵店', '王紹彥', 812, 13],
+      ['星期五書與酒', '陳硯', 779, 36, 'RF26-N04'],
+      ['北岸漁火', '黃啟明', 743, 10],
+      ['山徑植物日記', '呂青嵐', 716, 15],
+      ['夜市的語言學', '潘允', 690, 12],
+      ['慢跑的科學', '戴維平', 662, 9],
+      ['騎樓下的午睡', '莊孟庭', 641, 7],
+      ['城隍巷的春聯', '方禾', 617, 6],
+      ['潮汐與月亮', '歐子晴', 598, 11],
+      ['一碗鹹粥的地理學', '彭昱', 571, 8],
+    ] },
+    pic: { label: '繪本', ink: ['pink', 'yellow'], books: [
+      ['港口的貓', '白芮安', 2114, 98, 'RF26-F07'],
+      ['紙箱城市', '呂小禾', 1968, 61, 'RF26-F02'],
+      ['溪洲小舟', '蔡沛文', 1822, 44],
+      ['月亮在鹽田', '蔡沛文', 1706, 37],
+      ['貓咪館員的一天', '何小滿', 1587, 29],
+      ['鹽田的白鷺', '柯芽', 1511, 33, 'RF26-F01'],
+      ['床底下的帳篷', '陶可可', 1433, 21],
+      ['公車上的大象', '鄭小雨', 1358, 18],
+      ['下雨天的書店', '宋蔓', 1282, 15],
+      ['樹屋小書櫃', '江禾', 1229, 26],
+      ['燈塔爺爺', '黎平', 1181, 12],
+      ['一起去碼頭', '方小雨', 1126, 10],
+      ['誰在圖書館睡覺', '卓米', 1084, 17],
+      ['白鷺鷥的長腳', '柯芽', 1035, 8],
+      ['夜市的燈', '潘小樂', 995, 9],
+      ['爺爺的打鐵鋪', '王小榕', 946, 6],
+      ['我的街道我的家', '林小晴', 905, 11],
+      ['霧來了', '溫小禾', 858, 7],
+      ['蝸牛搭渡輪', '葛布', 821, 5],
+      ['數到一百的螃蟹', '杜可', 775, 4],
+    ] },
+  };
+  // 館藏冊數：熱門書每冊十個月約借出 8.4–12 次；由名次與預約數固定推出，同一本書每次都一樣
+  const copiesOf = (b, n) => Math.round(b[2] / (8.4 + ((n * 7 + b[3]) % 37) / 10));
+  // 作者是閱讀節講者（或活動以這本書為題）才標「閱讀節講者／活動」
+  const isSpeaker = b => Object.values(data.speakers).some(sp => sp.books.some(t => t.replace('（譯）', '') === b[0]));
+
+  const COVER_SHAPES = [
+    c => `<circle cx="70" cy="62" r="38" class="ink-${c}"/>`,
+    c => `<path d="M0 168L60 40l60 128z" class="ink-${c}"/>`,
+    c => `<g class="ink-${c}"><rect y="30" width="120" height="12"/><rect y="56" width="120" height="12"/><rect y="82" width="120" height="12"/></g>`,
+    c => `<path d="M26 168V86a34 34 0 0 1 68 0v82z" class="ink-${c}"/>`,
+  ];
+  const coverSVG = (b, n, cat) => {
+    const [bg, fg] = TOP[cat].ink;
+    const len = [...b[0]].length;
+    const fs = Math.min(18, 128 / len).toFixed(1);
+    const titleInk = bg === 'blue' ? 'ink-paper' : 'ink-ink';
+    return `<svg viewBox="0 0 120 168" aria-hidden="true" focusable="false">
+      <rect width="120" height="168" class="ink-${bg}"/>
+      <g class="mult">${COVER_SHAPES[n % COVER_SHAPES.length](fg)}</g>
+      <text x="100" y="18" class="${titleInk}" font-family="Noto Sans TC, sans-serif" font-weight="900" font-size="${fs}" style="writing-mode: vertical-rl" letter-spacing="1">${esc(b[0])}</text>
+      <rect x="8" y="140" width="76" height="20" class="ink-paper"/>
+      <text x="46" y="154" text-anchor="middle" class="ink-ink" font-family="Space Mono, monospace" font-weight="700" font-size="9">No.${fmt.pad(n + 1)} · 2026</text>
+    </svg>`;
+  };
+
+  const holds = new Set();
+  const pick = { cat: 'lit', n: 0 };
+  const pickEl = document.getElementById('st-pick');
+  const renderPick = () => {
+    const { cat, n } = pick;
+    const b = TOP[cat].books[n];
+    const ev = b[4] ? App.event(b[4]) : null;
+    const copies = copiesOf(b, n);
+    const held = holds.has(b[0]);
+    const speaker = isSpeaker(b);
+    pickEl.innerHTML = `
+      <div class="st-pick__cover">
+        <span class="sticker sticker--ink st-pick__no">${TOP[cat].label} · 第 ${n + 1} 名</span>
+        ${coverSVG(b, n, cat)}
+        <span class="st-pick__rank" aria-hidden="true">${fmt.pad(n + 1)}</span>
+      </div>
+      <div class="st-pick__body">
+        <h3 class="st-pick__title">《${esc(b[0])}》</h3>
+        <p class="st-pick__by">${esc(b[1])}${b[1].includes('譯') ? '' : ' 著'}</p>
+        <div class="st-pick__nums">
+          <div><b>${fmt.num(b[2])}</b><span>次借閱</span></div>
+          <div><b>${fmt.num(b[3])}</b><span>人預約中</span></div>
+          <div><b>${fmt.num(copies)}</b><span>冊館藏</span></div>
+        </div>
+        <p class="st-pick__note">平均每冊借出 <b>${(b[2] / copies).toFixed(1)}</b> 次${b[3] > copies ? '，預約人數比館藏還多，現在預約大約要排 ' + Math.ceil(b[3] / copies) * 3 + ' 週' : '，現在預約通常一週內可取書'}。${ev ? `<br>${speaker ? '作者' : '這本書'}在閱讀節有活動：<b>${fmt.md(ev.date)}（${fmt.wd(ev.date)}）${esc(ev.title)}</b>` : ''}</p>
+        <div class="cluster">
+          <button class="btn btn--sm btn--pink" type="button" data-hold aria-pressed="${held}">${held ? '已預約 · 取消' : '預約這本書'}</button>
+          ${ev ? `<a class="link-arrow" href="${App.eventURL(ev)}">看這場活動</a>` : ''}
+        </div>
+      </div>`;
+    pickEl.classList.remove('is-swap');
+    void pickEl.offsetWidth;
+    pickEl.classList.add('is-swap');
+  };
+  pickEl.addEventListener('click', e => {
+    if (!e.target.closest('[data-hold]')) return;
+    const b = TOP[pick.cat].books[pick.n];
+    const on = !holds.has(b[0]);
+    if (on) holds.add(b[0]);
+    else holds.delete(b[0]);
+    renderPick();
+    App.toast(on ? `前面還有 ${fmt.num(b[3])} 人，書到館會以簡訊通知，保留 7 天。` : `已取消《${b[0]}》的預約。`, { tone: on ? 'pink' : 'ink', title: on ? `已預約《${b[0]}》` : '' });
+  });
+
+  Object.entries(TOP).forEach(([cat, group]) => {
+    const max = group.books[0][2];
+    document.getElementById(`panel-${cat}`).innerHTML = `
+      <p class="st-top__meta"><span>借閱次數 · 2026.01.01—10.21</span><span>第 1 名 ${fmt.num(max)} 次 · 第 20 名 ${fmt.num(group.books[19][2])} 次</span></p>
+      <ol class="bars st-bars" data-reveal>${group.books.map((b, n) => {
+        const ev = b[4] ? App.event(b[4]) : null;
+        const tag = ev ? `<span class="st-tag">${isSpeaker(b) ? '閱讀節講者' : '閱讀節活動'} ${fmt.md(ev.date)}</span>` : '';
+        return `<li><button class="bars__row st-row${n < 3 ? ' is-top' : ''}" type="button" data-cat="${cat}" data-n="${n}" aria-pressed="false" style="--v:${(b[2] / max).toFixed(3)};--i:${n}">
+          <span class="bars__rank">${fmt.pad(n + 1)}</span>
+          <span class="bars__label">${esc(b[0])}<small>${esc(b[1])}${tag}</small></span>
+          <span class="bars__track" aria-hidden="true"><span class="bars__fill"></span></span>
+          <span class="bars__val">${fmt.num(b[2])}<small>預約 ${fmt.num(b[3])}</small></span>
+        </button></li>`;
+      }).join('')}</ol>`;
+  });
+  const topList = document.querySelector('.st-top__list');
+  const syncRows = () => topList.querySelectorAll('.st-row').forEach(r =>
+    r.setAttribute('aria-pressed', String(r.dataset.cat === pick.cat && Number(r.dataset.n) === pick.n)));
+  topList.addEventListener('click', e => {
+    const row = e.target.closest('.st-row');
+    if (!row) return;
+    pick.cat = row.dataset.cat;
+    pick.n = Number(row.dataset.n);
+    syncRows();
+    renderPick();
+    // 單欄時選取卡在清單上方，捲回去讓人看到結果
+    if (matchMedia('(max-width: 1100px)').matches) pickEl.scrollIntoView({ behavior: App.reducedMotion ? 'auto' : 'smooth', block: 'nearest' });
+  });
+  document.getElementById('st-top-tabs').addEventListener('tabchange', e => {
+    const cat = e.detail.panel.id.replace('panel-', '');
+    // 換分類：橫條從 0 重新印出，選取卡換成該分類第 1 名
+    const bars = e.detail.panel.querySelector('.st-bars');
+    bars.classList.add('is-reset');
+    void bars.offsetWidth;
+    bars.classList.remove('is-reset');
+    pick.cat = cat;
+    pick.n = 0;
+    syncRows();
+    renderPick();
+  });
+  syncRows();
+  renderPick();
+
+  /* ==================================================================
+     03 閱讀挑戰
+     ================================================================== */
+  // 9/1–10/21 每日新增頁數；10/22 只到 08:00，另計
+  const DAILY = [26750, 26780, 26240, 29820, 36990, 34560, 21110, 36900, 34420, 36280, 35520, 45050, 43470, 23080, 44100, 39710, 38210, 41900, 48150, 45730, 26570, 44540, 42590, 42210, 41110, 52790, 47900, 28810, 54360, 46780, 46890, 49550, 55970, 55110, 30420, 51710, 50190, 47310, 53640, 78870, 65030, 30420, 55270, 47326, 43180, 44920, 50310, 49870, 36240, 49470, 47310];
+  const TODAY_PARTIAL = 3214;
+  const CUM = [];
+  DAILY.reduce((acc, v, i) => (CUM[i] = acc + v), 0);
+  if (CUM[CUM.length - 1] + TODAY_PARTIAL !== ch.pages) throw new Error('stats: daily series does not sum to challenge.pages');
+  if (DAILY[DAILY.length - 1] !== ch.yesterday) throw new Error('stats: last day does not match challenge.yesterday');
+
+  const DAY0 = App.date(ch.start);
+  const dayOf = i => {
+    const d = new Date(DAY0);
+    d.setDate(d.getDate() + i);
+    return d;
+  };
+  const mdOf = d => `${fmt.pad(d.getMonth() + 1)}.${fmt.pad(d.getDate())}`;
+  const WD_SUN = ['日', '一', '二', '三', '四', '五', '六'];
+  const TOTAL_DAYS = 77;                     // 09.01–11.16
+  const TODAY_X = DAILY.length + 8 / 24;     // 10.22 08:00
+  const daysToGoal = (ch.goal - ch.pages) / ch.avg7d;
+  const ETA_X = TODAY_X + daysToGoal;
+  const etaDate = x => mdOf(dayOf(Math.floor(x)));
+  if (etaDate(ETA_X) !== ch.eta) throw new Error('stats: projected date does not match challenge.eta');
+  const crossing = target => {
+    const i = CUM.findIndex(v => v >= target);
+    const prev = i ? CUM[i - 1] : 0;
+    return { i, x: i + (target - prev) / DAILY[i] };
+  };
+  const peakDay = DAILY.indexOf(Math.max(...DAILY));
+
+  document.getElementById('st-pct').textContent = pct(ch.pages / ch.goal);
+  document.getElementById('st-left').textContent = fmt.num(ch.goal - ch.pages);
+  document.getElementById('st-ch-stats').innerHTML = `
+    <div class="stat"><span class="stat__label">參加市民</span><span class="stat__value"><span data-count="${ch.readers}">${fmt.num(ch.readers)}</span><small>人</small></span><span class="stat__note">平均每人 ${(ch.pages / ch.readers).toFixed(1)} 頁</span></div>
+    <div class="stat"><span class="stat__label">昨日新增</span><span class="stat__value"><span data-count="${ch.yesterday}">${fmt.num(ch.yesterday)}</span><small>頁</small></span><span class="stat__note">10.21（三）全天</span></div>
+    <div class="stat"><span class="stat__label">近 7 日平均</span><span class="stat__value"><span data-count="${ch.avg7d}">${fmt.num(ch.avg7d)}</span><small>頁／日</small></span><span class="stat__note">10.15—10.21</span></div>
+    <div class="stat"><span class="stat__label">預計達標</span><span class="stat__value">${ch.eta}</span><span class="stat__note">還要約 ${Math.ceil(daysToGoal)} 天 · 閱讀節第 10 天</span></div>`;
+
+  document.getElementById('st-ms').innerHTML = ch.milestones.map(m => {
+    const eta = m.reached ? null : etaDate(TODAY_X + (m.at - ch.pages) / ch.avg7d);
+    return `<li class="${m.reached ? 'is-done' : ''}"><b>${m.label}</b><p>${esc(m.reward)}</p>
+      <small>${m.reached ? `${m.reached} 達成` : `尚差 ${fmt.num(m.at - ch.pages)} 頁 · 預計 ${eta}`}</small></li>`;
+  }).join('');
+
+  const NOTES = { 26: '突破 100 萬頁', 39: '連假 · 單日最高', 38: '連假首日', 40: '連假', 47: '突破 200 萬頁' };
+  document.getElementById('st-daily-table').innerHTML = DAILY.map((v, i) => {
+    const d = dayOf(i);
+    return `<tr class="${NOTES[i] && NOTES[i].includes('突破') ? 'is-mark' : ''}"><td class="num">${mdOf(d)}</td><td>${WD_SUN[d.getDay()]}</td><td class="num">${fmt.num(v)}</td><td class="num">${fmt.num(CUM[i])}</td><td>${NOTES[i] || (d.getDay() === 1 ? '休館日' : '')}</td></tr>`;
+  }).join('');
+
+  const plot = document.getElementById('st-plot');
+  const cumBox = document.getElementById('st-cum');
+  const dailyBox = document.getElementById('st-daily');
+  const readout = document.getElementById('st-readout');
+  let scale = null;
+  let cursor = DAILY.length - 1;
+
+  const tagSVG = (x, y, text, anchor = 'middle') => {
+    const w = text.length * 7.4 + 14;
+    const left = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+    return `<rect class="st-tag-bg" x="${left.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="19"/><text class="st-tag-t" x="${(left + w / 2).toFixed(1)}" y="${y + 13.5}" text-anchor="middle">${text}</text>`;
+  };
+
+  function drawChallenge() {
+    const W = Math.round(plot.clientWidth);
+    if (!W) return;
+    const narrow = W < 600;
+    const H = narrow ? 250 : 340;
+    const M = { l: narrow ? 44 : 62, r: narrow ? 8 : 16, t: 30, b: 28 };
+    const Y_MAX = 3200000;
+    const x = i => M.l + (i / TOTAL_DAYS) * (W - M.l - M.r);
+    const y = v => M.t + (1 - v / Y_MAX) * (H - M.t - M.b);
+    const base = y(0);
+
+    // 累計折線：第 i 天結束時的累計畫在 x(i+1)
+    const pts = [[x(0), y(0)], ...CUM.map((v, i) => [x(i + 1), y(v)]), [x(TODAY_X), y(ch.pages)]];
+    const line = pts.map((p, n) => `${n ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
+    const area = `${line}L${x(TODAY_X).toFixed(1)} ${base}L${x(0)} ${base}Z`;
+    const xTicks = (narrow ? [0, 30, 60, 76] : [0, 14, 30, 44, 60, 76]).map(i =>
+      `<text class="st-ax" x="${x(i + 0.5).toFixed(1)}" y="${H - 8}" text-anchor="${i === 76 ? 'end' : i === 0 ? 'start' : 'middle'}">${mdOf(dayOf(i))}</text>`).join('');
+    const yTicks = [0, 1e6, 2e6].map(v => `<line class="st-grid" x1="${M.l}" x2="${W - M.r}" y1="${y(v)}" y2="${y(v)}"/>
+      <text class="st-ax" x="${M.l - 8}" y="${y(v) + 4}" text-anchor="end">${v ? `${v / 1e4} 萬` : '0'}</text>`).join('');
+    const ms = [1e6, 2e6].map(t => {
+      const c = crossing(t);
+      const cx = x(c.x);
+      return `<circle class="st-ms-dot" cx="${cx.toFixed(1)}" cy="${y(t)}" r="6"/>
+        <text class="st-ms-l" x="${(cx - 10).toFixed(1)}" y="${y(t) - 12}" text-anchor="end">${t / 1e4} 萬 · ${mdOf(dayOf(c.i))}</text>`;
+    }).join('');
+    const etaX = x(ETA_X);
+    const etaW = narrow ? 104 : 124;
+    // 窄版時預估點靠近右緣，標籤改往左長，避免超出卡片
+    const etaLeft = Math.min(etaX - etaW / 2, W - M.r - etaW);
+    cumBox.innerHTML = `<svg ${SVGNS_OPEN} width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+      <rect class="st-fest" x="${x(60)}" y="${M.t - 22}" width="${x(77) - x(60)}" height="${base - M.t + 22}"/>
+      <text class="st-fest-l" x="${((x(60) + x(77)) / 2).toFixed(1)}" y="${M.t - 8}" text-anchor="middle">${narrow ? '閱讀節' : '閱讀節 10.31—11.16'}</text>
+      ${yTicks}
+      <line class="st-thr" x1="${M.l}" x2="${W - M.r}" y1="${y(2.5e6)}" y2="${y(2.5e6)}"/>
+      <text class="st-ax" x="${M.l - 8}" y="${y(2.5e6) + 4}" text-anchor="end">250 萬</text>
+      <line class="st-goal" x1="${M.l}" x2="${W - M.r}" y1="${y(ch.goal)}" y2="${y(ch.goal)}"/>
+      <text class="st-ax st-ax--strong" x="${M.l - 8}" y="${y(ch.goal) + 4}" text-anchor="end">300 萬</text>
+      <path class="st-cum-area" d="${area}" transform="translate(4 -3)"/>
+      <path class="st-proj" d="M${x(TODAY_X).toFixed(1)} ${y(ch.pages).toFixed(1)}L${etaX.toFixed(1)} ${y(ch.goal).toFixed(1)}"/>
+      <path class="st-cum-line" pathLength="1" d="${line}"/>
+      ${ms}
+      <line class="st-today" x1="${x(TODAY_X)}" x2="${x(TODAY_X)}" y1="${M.t - 22}" y2="${base}"/>
+      ${tagSVG(x(TODAY_X), M.t - 24, '今天 10.22', 'end')}
+      <circle class="st-ms-dot" cx="${etaX.toFixed(1)}" cy="${y(ch.goal)}" r="6"/>
+      <rect class="st-eta-bg" x="${etaLeft.toFixed(1)}" y="${y(ch.goal) + 12}" width="${etaW}" height="24"/>
+      <text class="st-eta-t" x="${(etaLeft + etaW / 2).toFixed(1)}" y="${y(ch.goal) + 29}" text-anchor="middle">預計 ${ch.eta} 達標</text>
+      <text class="st-ax st-ax--strong" x="${(x(TODAY_X) + 10).toFixed(1)}" y="${(y(ch.pages) + 16).toFixed(1)}">${narrow ? '' : `${fmt.num(ch.pages)} 頁`}</text>
+      ${xTicks}
+      <g class="st-xg"><line class="st-xhair" id="st-xh1" y1="${M.t}" y2="${base}"/><circle class="st-xdot" id="st-xdot" r="7"/></g>
+    </svg>`;
+
+    // 每日新增
+    const H2 = narrow ? 92 : 118;
+    const M2 = { t: 20, b: 6 };
+    const D_MAX = 90000;
+    const yd = v => H2 - M2.b - (v / D_MAX) * (H2 - M2.t - M2.b);
+    const step = x(1) - x(0);
+    const gap = step > 6 ? 2 : 1;
+    const bars = DAILY.map((v, i) => {
+      const wd = dayOf(i).getDay();
+      const cls = wd === 1 ? 'st-bar-mon' : (wd === 0 || wd === 6) ? 'st-bar-we' : 'st-bar-wd';
+      return `<rect class="st-bar ${cls}" data-i="${i}" x="${(x(i) + gap / 2).toFixed(1)}" y="${yd(v).toFixed(1)}" width="${(step - gap).toFixed(1)}" height="${(H2 - M2.b - yd(v)).toFixed(1)}"/>`;
+    }).join('');
+    const peakX = x(peakDay + 0.5);
+    dailyBox.innerHTML = `<svg ${SVGNS_OPEN} width="${W}" height="${H2}" viewBox="0 0 ${W} ${H2}" aria-hidden="true">
+      <line class="st-grid" x1="${M.l}" x2="${W - M.r}" y1="${yd(0)}" y2="${yd(0)}"/>
+      <line class="st-grid" x1="${M.l}" x2="${W - M.r}" y1="${yd(40000)}" y2="${yd(40000)}"/>
+      <text class="st-ax" x="${M.l - 8}" y="${yd(40000) + 4}" text-anchor="end">4 萬</text>
+      <text class="st-ax" x="${M.l - 8}" y="${yd(0)}" text-anchor="end">每日</text>
+      ${bars}
+      <line class="st-avg" x1="${x(TODAY_X)}" x2="${W - M.r}" y1="${yd(ch.avg7d)}" y2="${yd(ch.avg7d)}"/>
+      <text class="st-ax" x="${W - M.r}" y="${yd(ch.avg7d) - 6}" text-anchor="end">${narrow ? '推估' : '推估每日'} ${fmt.num(ch.avg7d)}</text>
+      <text class="st-ms-l" x="${(peakX + 8).toFixed(1)}" y="${(yd(DAILY[peakDay]) + 8).toFixed(1)}">${narrow ? '' : `${mdOf(dayOf(peakDay))} 最高 ${fmt.num(DAILY[peakDay])}`}</text>
+      <g class="st-xg"><line class="st-xhair" id="st-xh2" y1="${M2.t - 10}" y2="${H2 - M2.b}"/></g>
+    </svg>`;
+    scale = { x, y, M, W };
+    setCursor(cursor);
+  }
+
+  function setCursor(i, ev) {
+    cursor = clamp(i, 0, DAILY.length - 1);
+    const d = dayOf(cursor);
+    const cx = scale.x(cursor + 1).toFixed(1);
+    const mid = scale.x(cursor + 0.5).toFixed(1);
+    const xh1 = document.getElementById('st-xh1');
+    xh1.setAttribute('x1', cx);
+    xh1.setAttribute('x2', cx);
+    const dot = document.getElementById('st-xdot');
+    dot.setAttribute('cx', cx);
+    dot.setAttribute('cy', scale.y(CUM[cursor]).toFixed(1));
+    const xh2 = document.getElementById('st-xh2');
+    xh2.setAttribute('x1', mid);
+    xh2.setAttribute('x2', mid);
+    dailyBox.querySelectorAll('.st-bar').forEach(b => b.classList.toggle('is-cur', Number(b.dataset.i) === cursor && plot.classList.contains('is-cursor')));
+    const text = `${mdOf(d)}（${WD_SUN[d.getDay()]}）當日 ${fmt.num(DAILY[cursor])} 頁 · 累計 ${fmt.num(CUM[cursor])} 頁`;
+    readout.innerHTML = plot.classList.contains('is-cursor')
+      ? `<b>${mdOf(d)}（${WD_SUN[d.getDay()]}）</b> 當日 ${fmt.num(DAILY[cursor])} 頁 · 累計 ${fmt.num(CUM[cursor])} 頁${NOTES[cursor] ? ` · ${NOTES[cursor]}` : ''}`
+      : `<b>移動游標或用方向鍵逐日查看</b> 最新 ${mdOf(dayOf(DAILY.length - 1))}：當日 ${fmt.num(ch.yesterday)} 頁 · 累計 ${fmt.num(CUM[CUM.length - 1])} 頁`;
+    if (ev) App.tooltip.show(text, ev.clientX, ev.clientY);
+  }
+  plot.addEventListener('pointermove', e => {
+    if (!scale) return;
+    const r = cumBox.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    const i = Math.floor((px - scale.M.l) / (scale.W - scale.M.l - scale.M.r) * TOTAL_DAYS);
+    plot.classList.add('is-cursor');
+    setCursor(i, e);
+  });
+  plot.addEventListener('pointerleave', () => {
+    plot.classList.remove('is-cursor');
+    App.tooltip.hide();
+    setCursor(cursor);
+  });
+  plot.addEventListener('focus', () => {
+    plot.classList.add('is-cursor');
+    setCursor(cursor);
+  });
+  plot.addEventListener('blur', () => {
+    plot.classList.remove('is-cursor');
+    setCursor(cursor);
+  });
+  plot.addEventListener('keydown', e => {
+    const next = { ArrowLeft: cursor - 1, ArrowRight: cursor + 1, Home: 0, End: DAILY.length - 1, PageUp: cursor - 7, PageDown: cursor + 7 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    plot.classList.add('is-cursor');
+    setCursor(next);
+  });
+  new ResizeObserver(() => {
+    if (scale && Math.round(plot.clientWidth) === scale.W) return;
+    drawChallenge();
+  }).observe(plot);
+  drawChallenge();
+
+  /* ==================================================================
+     04 時段熱圖
+     ================================================================== */
+  const FILTERS = [{ key: 'all', label: '全市' }, ...BRANCHES.map(b => ({ key: b.key, label: b.name }))];
+  let heatKey = 'all';
+  let heatCur = null;
+  const chipsEl = document.getElementById('st-branch-chips');
+  chipsEl.innerHTML = FILTERS.map(f => `<button class="chip" type="button" data-k="${f.key}" aria-pressed="${f.key === heatKey}">${f.label}</button>`).join('');
+
+  const heatEl = document.getElementById('st-heat');
+  const COLS = HOURS.length;
+  // 每個元素明確指定格位，週一休館列才能在同一列疊上標籤
+  let heatHTML = '<span class="st-hist-l" style="grid-row:1;grid-column:1">冊</span>';
+  HOURS.forEach((h, c) => { heatHTML += `<span class="st-hist" style="grid-row:1;grid-column:${c + 2};--d:${c}" data-col="${c}"><i></i></span>`; });
+  heatHTML += '<span style="grid-row:2;grid-column:1"></span>';
+  HOURS.forEach((h, c) => { heatHTML += `<span class="st-heat__hour${c % 2 ? ' is-odd' : ''}" style="grid-row:2;grid-column:${c + 2}">${fmt.pad(h)}</span>`; });
+  heatHTML += `<span class="st-heat__tot-h" style="grid-row:2;grid-column:${COLS + 2}">每週</span>`;
+  WD.forEach((wd, d) => {
+    const row = d + 3;
+    heatHTML += `<span class="st-heat__day" style="grid-row:${row};grid-column:1">${wd}</span>`;
+    if (d === 0) {
+      HOURS.forEach((h, c) => { heatHTML += `<span class="st-heat__closed" style="grid-row:${row};grid-column:${c + 2}"></span>`; });
+      heatHTML += `<span class="st-heat__closed-l" style="grid-row:${row};grid-column:2 / span ${COLS}">週一休館 · 閱讀節期間照常開館</span>`;
+    } else {
+      HOURS.forEach((h, c) => { heatHTML += `<span class="heat__cell" style="grid-row:${row};grid-column:${c + 2};--d:${d + c}" data-d="${d}" data-c="${c}"></span>`; });
+    }
+    heatHTML += `<span class="st-heat__tot" style="grid-row:${row};grid-column:${COLS + 2}" data-tot="${d}"></span>`;
+  });
+  heatEl.innerHTML = heatHTML;
+  const cells = [...heatEl.querySelectorAll('.heat__cell')];
+  const hists = [...heatEl.querySelectorAll('.st-hist')];
+  const heatRead = document.getElementById('st-heat-read');
+  const curMatrix = () => HEAT[heatKey];
+  const curLabel = () => FILTERS.find(f => f.key === heatKey).label;
+  const describe = (d, c) => {
+    const v = curMatrix()[d][c];
+    const end = HOURS[c] === 8 ? '09:00' : `${fmt.pad(HOURS[c] + 1)}:00`;
+    return { title: `${slotLabel(d, c)}–${end}`, text: `${curLabel()}平均借出 ${fmt.num(v)} 冊` };
+  };
+
+  function applyHeat() {
+    const m = curMatrix();
+    const max = Math.max(...m.flat());
+    // 最熱的一成時段（開館的 78 格取前 8 格）標成粉版
+    const hotCut = [...m.slice(1).flat()].sort((a, b) => b - a)[7];
+    cells.forEach(cell => {
+      const v = m[Number(cell.dataset.d)][Number(cell.dataset.c)];
+      cell.style.setProperty('--l', (v / max).toFixed(3));
+      cell.classList.toggle('heat__cell--hot', v >= hotCut);
+    });
+    const colSums = HOURS.map((_, c) => sum(m.map(row => row[c])));
+    const colMax = Math.max(...colSums);
+    hists.forEach((el, c) => {
+      el.style.setProperty('--h', (colSums[c] / colMax).toFixed(3));
+      el.classList.toggle('is-peak', colSums[c] === colMax);
+    });
+    heatEl.querySelectorAll('[data-tot]').forEach(el => {
+      const t = sum(m[Number(el.dataset.tot)]);
+      el.textContent = t ? fmt.num(t) : '—';
+    });
+
+    const peak = peakOf(m);
+    const daySums = m.map(sum);
+    const bestDay = daySums.indexOf(Math.max(...daySums));
+    const week = sum(daySums);
+    const evening = sum(m.map(row => sum(row.slice(HOURS.indexOf(18)))));
+    const peakHour = colSums.indexOf(colMax);
+    document.getElementById('st-insights').innerHTML = `
+      <li><span>最熱的一小時</span><b>${slotLabel(peak.d, peak.c)}</b><small>平均借出 ${fmt.num(peak.v)} 冊</small></li>
+      <li><span>一週最忙的一天</span><b>週${WD[bestDay]} · ${fmt.num(daySums[bestDay])} 冊</b><small>${bestDay === 1 ? '休館隔天，還書和借書一起湧進來' : `占一週的 ${pct(daySums[bestDay] / week)}`}</small></li>
+      <li><span>晚上 6 點以後</span><b>占全週 ${pct(evening / week)}</b><small>每天最忙的鐘點是 ${fmt.pad(HOURS[peakHour])}:00</small></li>`;
+    const samples = [0.25, 0.5, 0.75, 1];
+    document.getElementById('st-heat-legend').innerHTML = `${samples.map(f => `<span><i class="heat__cell" style="--l:${f}"></i>${fmt.num(Math.round(max * f))}</span>`).join('')}
+      <span><i class="heat__cell heat__cell--hot" style="--l:1"></i>最熱一成</span>`;
+    if (!heatCur) heatCur = { d: peak.d, c: peak.c };
+    updateHeatRead();
+  }
+  function updateHeatRead(active = false) {
+    const { title, text } = describe(heatCur.d, heatCur.c);
+    heatRead.innerHTML = active ? `<b>${title}</b>${text}` : `<b>滑過格子或用方向鍵查看</b>${title}：${text}`;
+    cells.forEach(cell => cell.classList.toggle('is-cur', active && Number(cell.dataset.d) === heatCur.d && Number(cell.dataset.c) === heatCur.c));
+  }
+  chipsEl.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip || chip.getAttribute('aria-pressed') === 'true') return;
+    heatKey = chip.dataset.k;
+    chipsEl.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
+    heatCur = null;
+    applyHeat();
+  });
+  heatEl.addEventListener('pointermove', e => {
+    const cell = e.target.closest('.heat__cell');
+    if (!cell) {
+      App.tooltip.hide();
+      return;
+    }
+    heatCur = { d: Number(cell.dataset.d), c: Number(cell.dataset.c) };
+    const { title, text } = describe(heatCur.d, heatCur.c);
+    App.tooltip.show(`<b>${title}</b><br>${text}`, e.clientX, e.clientY);
+    updateHeatRead(true);
+  });
+  heatEl.addEventListener('pointerleave', () => {
+    App.tooltip.hide();
+    updateHeatRead(false);
+  });
+  heatEl.addEventListener('focus', () => updateHeatRead(true));
+  heatEl.addEventListener('blur', () => updateHeatRead(false));
+  heatEl.addEventListener('keydown', e => {
+    const move = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[e.key];
+    if (!move) return;
+    e.preventDefault();
+    // 週一（第 0 列）休館，不停在那一列
+    heatCur = { d: clamp(heatCur.d + move[0], 1, 6), c: clamp(heatCur.c + move[1], 0, COLS - 1) };
+    updateHeatRead(true);
+  });
+  applyHeat();
+
+  /* ==================================================================
+     05 資料說明：講座連結、CSV、回報表單
+     ================================================================== */
+  const talk = App.event('RF26-L07');
+  document.getElementById('st-talk').innerHTML = `
+    <span class="st-talk__k">${talk.id} · ${fmt.md(talk.date)}（${fmt.wd(talk.date)}）${talk.start}–${talk.end}</span>
+    <span class="st-talk__t">${esc(talk.title)} →</span>
+    <span class="st-talk__v">${esc(talk.venue)} · 許安主講</span>
+    ${App.quotaHTML(talk)}`;
+
+  document.getElementById('st-csv').addEventListener('click', () => {
+    const rows = [['區塊', '項目', '指標', '數值']];
+    BRANCHES.forEach(b => rows.push(['館舍', b.name, '借閱冊數', b.loans], ['館舍', b.name, '年增率', pct(b.yoy)], ['館舍', b.name, '入館人次', b.visits]));
+    rows.push(['館舍', MOBILE.name, '借閱冊數', MOBILE.loans], ['館舍', MOBILE.name, '年增率', pct(MOBILE.yoy)]);
+    DISTRICTS.forEach(dt => rows.push(['行政區', dt.name, '人口', dt.pop], ['行政區', dt.name, '借閱冊數', dt.loans], ['行政區', dt.name, '每千人借閱', Math.round(dt.per1k)], ['行政區', dt.name, '挑戰頁數', dt.pages], ['行政區', dt.name, '挑戰人數', dt.readers]));
+    Object.values(TOP).forEach(g => g.books.forEach((b, n) => rows.push([`Top20 ${g.label}`, `${n + 1}. ${b[0]}（${b[1]}）`, '借閱次數', b[2]])));
+    DAILY.forEach((v, i) => rows.push(['閱讀挑戰', mdOf(dayOf(i)), '當日頁數', v]));
+    WD.forEach((wd, d) => HOURS.forEach((h, c) => { if (d) rows.push(['時段（全市）', `週${wd} ${fmt.pad(h)}時`, '平均借出冊數', HEAT.all[d][c]]); }));
+    const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    // 加 BOM，試算表才會用 UTF-8 解讀中文
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chenggang-library-data-2026-10-22.csv';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    App.toast(`共 ${fmt.num(rows.length - 1)} 列，已下載到你的裝置。`, { tone: 'blue', title: 'CSV 已產生' });
+  });
+
+  const reportForm = document.getElementById('st-report-form');
+  reportForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = reportForm.elements;
+    const msg = f.msg.value.trim();
+    const email = f.email.value.trim();
+    const checks = [
+      [f.section, f.section.value ? '' : '請選擇區塊'],
+      [f.msg, !msg ? '請描述你看到的問題' : [...msg].length < 10 ? '再多寫一點，至少 10 個字' : ''],
+      [f.email, email && !App.valid.email(email) ? 'Email 格式不太對，例如 reader@example.com' : ''],
+    ];
+    checks.forEach(([input, m]) => App.field.setError(input, m));
+    const bad = checks.find(([, m]) => m);
+    if (bad) {
+      bad[0].focus();
+      return;
+    }
+    const section = f.section.value;
+    App.modal.close('st-report');
+    reportForm.reset();
+    App.field.clear(reportForm);
+    App.toast(email ? `許安會在三個工作天內回信到 ${email}。` : '沒有留 Email，處理結果會公告在下一期數據小誌。', { tone: 'blue', title: `已收到「${section}」的回報` });
+  });
+  reportForm.addEventListener('input', e => {
+    if (e.target.getAttribute('aria-invalid') === 'true') App.field.setError(e.target, '');
+  });
+
+  App.scan(document.getElementById('main'));
+});
+</script>
+</body>
+</html>

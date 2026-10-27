@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>老屋名錄 — 澄港舊城 · 老屋再生</title>
+  <meta name="description" content="澄港舊城列冊老屋名錄：以年代尺、立面風格與修復狀態篩選，查看每棟老屋修復前後的立面線稿。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+  <style>
+    /* ===== 頁首補充 ===== */
+    #register { padding-top: clamp(28px, 3vw, 44px); }
+
+    /* ===== 年代尺面板 ===== */
+    .hx-panel { position: relative; background: var(--ivory-hi); border: 1px solid var(--rule); border-radius: var(--r-2); box-shadow: var(--sh-1); overflow: hidden; }
+    .hx-panel__inner { padding: 26px 32px 30px; }
+    .hx-panel__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 40px; margin-bottom: 14px; }
+    .hx-panel__kicker { font-family: var(--font-latin); font-style: italic; font-weight: 600; color: var(--brick); font-size: 1rem; line-height: 1; }
+    .hx-panel__title { font-size: var(--fs-2xl); margin-top: 6px; }
+    .hx-panel__hint { font-size: var(--fs-sm); color: var(--ink-3); margin-top: 2px; }
+    .hx-readout { display: flex; align-items: baseline; gap: 14px; }
+    .hx-readout__years { display: flex; align-items: baseline; gap: 12px; font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-weight: 600; font-size: clamp(1.9rem, 1.3rem + 1.5vw, 2.7rem); line-height: 1; }
+    .hx-readout__years i { width: 26px; height: 2px; background: var(--brick); align-self: center; }
+    .hx-readout__n { font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); letter-spacing: .08em; white-space: nowrap; }
+    .hx-readout__n b { font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-size: 1.45rem; color: var(--brick); margin: 0 4px; }
+
+    /* 年代尺：--pad 等於滑桿把手半寬，讓菱形、刻度與把手對在同一個年份上 */
+    .hx-ruler { --pad: 10px; --span: calc(100% - 2 * var(--pad)); --gem: 15px; --step: 26px; position: relative; }
+    .hx-stage { position: relative; height: calc(var(--rows, 4) * var(--step) + 34px); }
+    /* 每十年一條淡色帶，幫助對位年份；只畫在 1890–1970 之間 */
+    .hx-stage::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--pad); right: var(--pad); background: linear-gradient(90deg, rgba(42, 31, 26, .036) 50%, transparent 50%) 0 0 / 25% 100% repeat-x; }
+    .hx-shade { position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none; background: repeating-linear-gradient(-45deg, rgba(246, 238, 220, .7) 0 5px, rgba(226, 212, 182, .7) 5px 6px); }
+    .hx-shade--l { left: 0; width: calc(var(--pad) + var(--span) * var(--ta, 0)); border-right: 1px dashed var(--brick); }
+    .hx-shade--r { right: 0; width: calc(var(--pad) + var(--span) * (1 - var(--tb, 1))); border-left: 1px dashed var(--brick); }
+    .hx-bins, .hx-swarm { position: absolute; inset: 0; }
+    .hx-bin {
+      position: absolute; left: calc(var(--pad) + var(--span) * var(--t)); bottom: calc(var(--k) * var(--step) + 10px);
+      transform: translateX(-50%); font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-style: italic; font-weight: 600;
+      font-size: .82rem; line-height: 1; color: var(--ink-3); transition: opacity var(--t-med);
+    }
+    .hx-bin:empty { opacity: 0; }
+    .hx-pin {
+      --c: var(--ink-2);
+      position: absolute; left: calc(var(--pad) + var(--span) * var(--t)); bottom: calc(var(--k) * var(--step) + 2px); z-index: 2;
+      width: var(--step); height: var(--step); margin-left: calc(var(--step) / -2); padding: 0; border: 0; background: none;
+      display: grid; place-items: center; border-radius: var(--r-1);
+    }
+    .hx-pin:hover, .hx-pin:focus-visible { z-index: 3; }
+    .hx-pin:focus-visible { outline-offset: 0; }
+    .hx-pin--minnan { --c: var(--brick); }
+    .hx-pin--western { --c: var(--cobalt); }
+    .hx-pin--wayo { --c: var(--peacock); }
+    .hx-pin--modern { --c: var(--ink-2); }
+    .hx-pin__gem {
+      width: var(--gem); height: var(--gem); transform: rotate(45deg); background: var(--c);
+      box-shadow: 0 0 0 2px var(--ivory-hi); transition: transform var(--t-med) var(--ease-spring), opacity var(--t-med);
+    }
+    /* 狀態以填色表示：實心＝已活化、半填＝修復中、空心＝待修（旋轉 45° 後 135deg 漸層剛好是下半部） */
+    .hx-pin--restoring .hx-pin__gem { background: linear-gradient(135deg, var(--ivory-hi) 50%, var(--c) 50%); box-shadow: inset 0 0 0 2px var(--c), 0 0 0 2px var(--ivory-hi); }
+    .hx-pin--pending .hx-pin__gem { background: var(--ivory-hi); box-shadow: inset 0 0 0 2px var(--c), 0 0 0 2px var(--ivory-hi); }
+    .hx-pin.is-off .hx-pin__gem { opacity: .2; transform: rotate(45deg) scale(.66); }
+    .hx-pin:hover .hx-pin__gem, .hx-pin:focus-visible .hx-pin__gem { opacity: 1; transform: rotate(45deg) scale(1.3); }
+    .hx-pin.is-hot .hx-pin__gem { box-shadow: inset 0 0 0 2px var(--c), 0 0 0 2px var(--ivory-hi), 0 0 0 4px var(--mustard); }
+    .hx-swarm.is-play .hx-pin__gem { animation: hx-drop 700ms var(--ease-spring) backwards; animation-delay: var(--d, 0ms); }
+    @keyframes hx-drop { from { opacity: 0; transform: translateY(-46px) rotate(45deg) scale(.4); } }
+
+    .hx-range { margin-top: -6px; }
+    .hx-axis { position: relative; height: 34px; }
+    .hx-tick { position: absolute; top: 0; left: calc(var(--pad) + var(--span) * var(--t)); width: 1px; height: 6px; background: var(--rule-strong); }
+    .hx-tick--major { height: 10px; background: var(--ink-3); }
+    .hx-tick b { position: absolute; top: 13px; left: 0; transform: translateX(-50%); font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-style: italic; font-weight: 600; font-size: .86rem; line-height: 1; color: var(--ink-3); white-space: nowrap; }
+
+    /* 風格流行年代色帶：同時是風格篩選按鈕 */
+    .hx-eras { position: relative; height: calc(3 * 28px); margin-top: 6px; }
+    .hx-era {
+      --c: var(--ink-2);
+      position: absolute; top: calc(var(--lane) * 28px); left: calc(var(--pad) + var(--span) * var(--t0)); width: calc(var(--span) * (var(--t1) - var(--t0)));
+      height: 26px; display: flex; align-items: flex-start; padding: 0; border: 0; background: none; border-radius: var(--r-1);
+      color: var(--c); font-size: .8rem; font-weight: 700; letter-spacing: .06em; white-space: nowrap; text-align: left;
+    }
+    .hx-era--end { justify-content: flex-end; }
+    .hx-era > span { display: inline-flex; align-items: baseline; gap: 6px; line-height: 1.2; }
+    .hx-era .latin { font-weight: 600; font-style: italic; letter-spacing: .02em; }
+    .hx-era::after { content: ""; position: absolute; left: 0; right: 0; bottom: 3px; height: 4px; border-radius: 2px; background: currentColor; opacity: .28; transition: opacity var(--t-fast), box-shadow var(--t-fast); }
+    .hx-era:hover::after { opacity: .55; }
+    .hx-era[aria-pressed="true"]::after { opacity: 1; box-shadow: 0 0 0 2px var(--ivory-hi), 0 0 0 3px currentColor; }
+    .hx-era--minnan { --c: var(--brick); }
+    .hx-era--western { --c: var(--cobalt); }
+    .hx-era--wayo { --c: var(--peacock); }
+
+    .hx-panel__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 10px; }
+    .hx-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .hx-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .16em; color: var(--ink-3); margin-right: 4px; white-space: nowrap; }
+    .hx-preset {
+      display: inline-flex; align-items: baseline; gap: 7px; min-height: 34px; padding: 5px 12px;
+      border: 1px solid var(--rule-strong); border-radius: var(--r-1); background: var(--ivory-hi);
+      font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+    }
+    .hx-preset .latin { font-weight: 600; font-style: italic; color: var(--brick); }
+    .hx-preset:hover { border-color: var(--ink); color: var(--ink); }
+    .hx-preset[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--ivory); }
+    .hx-preset[aria-pressed="true"] .latin { color: var(--mustard); }
+    .hx-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--fs-xs); color: var(--ink-3); }
+    .hx-legend > span { display: inline-flex; align-items: center; gap: 8px; }
+
+    /* 狀態與風格的菱形圖例（chips、圖例共用） */
+    .hx-dot { --c: var(--ink-2); width: 9px; height: 9px; flex: none; transform: rotate(45deg); }
+    .hx-dot--revived { background: var(--c); }
+    .hx-dot--restoring { background: linear-gradient(135deg, transparent 50%, var(--c) 50%); box-shadow: inset 0 0 0 1.5px var(--c); }
+    .hx-dot--pending { box-shadow: inset 0 0 0 1.5px var(--c); }
+    .hx-dot--minnan { background: var(--brick); }
+    .hx-dot--western { background: var(--cobalt); }
+    .hx-dot--wayo { background: var(--peacock); }
+    .hx-dot--modern { background: var(--ink-2); }
+    .chip[aria-pressed="true"] .hx-dot { --c: var(--ivory); }
+    .chip[aria-pressed="true"] .hx-dot--minnan, .chip[aria-pressed="true"] .hx-dot--western,
+    .chip[aria-pressed="true"] .hx-dot--wayo, .chip[aria-pressed="true"] .hx-dot--modern { box-shadow: 0 0 0 1.5px var(--ivory); }
+
+    .hx-tools { display: grid; gap: 16px; margin-top: 22px; padding-top: 22px; border-top: 1px dashed var(--rule-strong); }
+    .hx-tools__row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+    .hx-tools__search { flex: 1 1 320px; min-width: 0; }
+    .hx-tools__search .input { -webkit-appearance: none; appearance: none; }
+    .hx-tools__sort { flex: 0 1 220px; min-width: 0; }
+    .hx-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+    .hx-tools__row--chips { justify-content: space-between; gap: 14px 32px; }
+    .hx-view span { display: inline-flex; align-items: center; gap: 7px; }
+    .hx-view .icon { width: 1.05em; height: 1.05em; }
+
+    /* ===== 結果 ===== */
+    .hx-results { margin-top: 44px; scroll-margin-top: calc(var(--header-h) + 20px); }
+    .hx-results__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-bottom: 14px; border-bottom: 1px solid var(--ink); }
+    .hx-count { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-sm); color: var(--ink-3); white-space: nowrap; }
+    .hx-count:focus-visible { outline-offset: 6px; }
+    .hx-count b { font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-size: 1.9rem; font-weight: 600; line-height: 1; color: var(--ink); }
+    .hx-count__sort { color: var(--ink-3); }
+    .hx-tags { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+    .hx-tag {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 6px 0 10px;
+      border: 1px solid var(--rule-strong); border-radius: var(--r-1); background: var(--ivory-hi);
+      font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); letter-spacing: .04em;
+    }
+    .hx-tag .icon { width: 14px; height: 14px; }
+    .hx-tag:hover { border-color: var(--brick); color: var(--brick); }
+    .hx-reset { margin-left: auto; }
+
+    .hx-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 30px 22px; margin-top: 28px; }
+    .hx-flag { position: absolute; top: 10px; right: 10px; }
+    .hx-empty { margin-top: 28px; }
+    .hx-empty__acts { justify-content: center; margin-top: 10px; }
+
+    /* 街景：同一比例尺把結果排成一條街 */
+    .hx-street { margin-top: 28px; border: 1px solid var(--rule); border-radius: var(--r-2); background: linear-gradient(var(--ivory-hi), var(--ivory) 70%); overflow: hidden; }
+    .hx-street__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 16px 0 20px; }
+    .hx-street__hint { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-3); }
+    .hx-street__hint .icon { color: var(--brick); }
+    .hx-street__nav { display: flex; gap: 8px; }
+    .hx-street__scroll { overflow-x: auto; overscroll-behavior-x: contain; padding: 18px 0 14px; scrollbar-width: thin; scrollbar-color: var(--ivory-3) transparent; }
+    .hx-street__scroll:focus-visible { outline-offset: -4px; }
+    .hx-street__canvas { position: relative; }
+    .hx-street__svg { width: 100%; height: 100%; max-width: none; }
+    .hx-street__house { transition: opacity var(--t-med); }
+    .hx-street__svg.is-hovering .hx-street__house:not(.is-hover) { opacity: .3; }
+    .hx-street__link { position: absolute; top: 0; bottom: 0; padding: 0; border: 0; background: none; border-radius: var(--r-1); }
+    .hx-street__link:focus-visible { outline-offset: -3px; }
+
+    /* ===== 立面風格速查 ===== */
+    .hx-styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+    .hx-style { --c: var(--ink-2); display: flex; flex-direction: column; background: var(--ivory-hi); border: 1px solid var(--rule); border-radius: var(--r-2); overflow: hidden; box-shadow: var(--sh-1); }
+    .hx-style--minnan { --c: var(--brick); }
+    .hx-style--western { --c: var(--cobalt); }
+    .hx-style--wayo { --c: var(--peacock); }
+    .hx-style__art { height: 230px; padding: 24px 18px 0; background: linear-gradient(var(--ivory-2), var(--ivory-2)) 0 100% / 100% 12px no-repeat, var(--ivory); border-bottom: 3px solid var(--c); }
+    .hx-style__art .facade { width: 100%; height: 100%; }
+    .hx-style__body { display: flex; flex-direction: column; gap: 10px; padding: 20px 22px 20px; flex: 1; }
+    .hx-style__era { font-style: italic; font-weight: 600; font-size: 1.3rem; line-height: 1; color: var(--c); }
+    .hx-style__name { font-size: var(--fs-xl); line-height: 1.3; }
+    .hx-style__name .latin { display: block; margin-top: 2px; font-size: .86rem; font-weight: 400; font-style: italic; letter-spacing: .02em; color: var(--ink-3); }
+    .hx-style__desc { font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.75; }
+    .hx-style__look { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .hx-style__look .tag { color: var(--ink-2); }
+    .hx-style__foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+    .hx-style__count { font-size: var(--fs-xs); color: var(--ink-3); }
+    .hx-style__count b { font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-size: 1.05rem; color: var(--ink); margin: 0 2px; }
+    .hx-style__btn { padding: 6px 0; border: 0; background: none; font-size: var(--fs-sm); color: var(--c); }
+
+    /* ===== 名錄外的老屋 ===== */
+    .hx-report { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 5vw, 80px); align-items: center; }
+    .hx-report__title { font-size: var(--fs-3xl); line-height: 1.3; margin: 16px 0 18px; }
+    .hx-report__text { color: var(--ink-2); font-size: var(--fs-lg); line-height: 1.85; max-width: 34em; }
+    .hx-report__stat { margin-top: 18px; font-size: var(--fs-sm); color: var(--ink-3); }
+    .hx-report__stat b { font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-size: 1.2rem; color: var(--ink); margin: 0 2px; }
+    .hx-report__cta { margin-top: 28px; gap: 12px; }
+    .hx-gapwall { margin: 0; justify-self: end; width: min(100%, 440px); }
+    .hx-gapwall__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--mortar) var(--grain); box-shadow: inset 0 2px 6px rgba(42, 31, 26, .18), 0 0 0 1px var(--rule-strong), var(--sh-2); }
+    .hx-gapwall__grid > span { position: relative; display: block; aspect-ratio: 1; overflow: hidden; }
+    .hx-gapwall__grid > span::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 64%, rgba(42, 31, 26, .1)); }
+    .hx-gapwall__grid .tile__rose { transition: transform var(--t-slow) var(--ease-out); }
+    .hx-gapwall__grid > span:hover .tile__rose { transform: rotate(45deg); }
+    .hx-gapwall__gap {
+      display: grid; place-items: center; aspect-ratio: 1; padding: 0; border: 2px dashed var(--brick); border-radius: 1px;
+      background: var(--ivory-hi); color: var(--brick); transition: background var(--t-fast), color var(--t-fast);
+    }
+    .hx-gapwall__gap .icon { width: 30%; height: 30%; transition: transform var(--t-med) var(--ease-spring); }
+    .hx-gapwall__gap:hover { background: var(--brick); color: var(--ivory-hi); }
+    .hx-gapwall__gap:hover .icon { transform: rotate(90deg); }
+    .hx-gapwall figcaption { margin-top: 12px; font-size: var(--fs-sm); color: var(--ink-3); display: flex; align-items: center; gap: 10px; }
+    .hx-gapwall figcaption .latin { font-style: italic; color: var(--brick); }
+
+    /* ===== 老屋檔案 modal ===== */
+    .hx-modal__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+    .hx-modal__fig { margin: 0; position: sticky; top: 0; }
+    .hx-modal__fig figcaption { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.6; }
+    .hx-modal__fig figcaption .icon { flex: none; margin-top: 1px; color: var(--brick); }
+    .hx-modal__tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .hx-modal__sum { font-family: var(--font-serif); font-size: var(--fs-lg); font-weight: 500; line-height: 1.75; margin: 14px 0 18px; }
+    .hx-modal__progress { margin-bottom: 18px; }
+    .hx-modal__progress p { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--mustard-text); letter-spacing: .08em; }
+    .hx-modal__progress b { font-size: 1.15rem; }
+    .hx-modal .facts { font-size: .88rem; gap: 8px 18px; }
+    .hx-modal__sub { display: flex; align-items: center; gap: 12px; margin: 24px 0 8px; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .18em; color: var(--brick); }
+    .hx-modal__sub::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+    .hx-mtiles { list-style: none; display: grid; gap: 4px; }
+    .hx-mtile { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 14px; align-items: center; padding: 6px; border-radius: var(--r-2); text-decoration: none; transition: background var(--t-fast); }
+    .hx-mtile:hover { background: var(--ivory); }
+    .hx-mtile__art { width: 50px; height: 50px; }
+    .hx-mtile__name { display: block; font-family: var(--font-serif); font-weight: 700; }
+    .hx-mtile__name .latin { font-style: italic; font-weight: 600; color: var(--brick); margin-right: 8px; }
+    .hx-mtile small { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
+    .hx-mtile:hover .hx-mtile__name { color: var(--brick); }
+    .hx-modal__none { font-size: var(--fs-sm); color: var(--ink-3); }
+    .hx-modal__notice { margin-top: 18px; }
+    .hx-modal__notice .icon { flex: none; margin-top: 3px; color: var(--brick-deep); }
+    .hx-modal__notice a { color: var(--brick-deep); font-weight: 700; }
+    .hx-modal__foot { justify-content: space-between; align-items: center; }
+    .hx-modal__nav { display: flex; align-items: center; gap: 6px; }
+    .hx-modal__pos { min-width: 4.6em; text-align: center; font-family: var(--font-latin); font-feature-settings: "lnum" 1; font-size: var(--fs-sm); color: var(--ink-3); }
+
+    /* ===== RWD ===== */
+    @media (max-width: 1180px) {
+      .hx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .hx-styles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 860px) {
+      .hx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .hx-report { grid-template-columns: 1fr; }
+      .hx-gapwall { justify-self: start; }
+    }
+    @media (max-width: 720px) {
+      .hx-modal__grid { grid-template-columns: 1fr; gap: 20px; }
+      .hx-modal__fig { position: static; }
+    }
+    @media (max-width: 640px) {
+      .hx-panel__inner { padding: 20px 16px 22px; }
+      .hx-panel__title { font-size: var(--fs-xl); }
+      .hx-readout { width: 100%; justify-content: space-between; }
+      .hx-ruler { --gem: 10px; --step: 17px; }
+      .hx-stage { height: calc(var(--rows, 4) * var(--step) + 26px); }
+      .hx-bin { font-size: .7rem; bottom: calc(var(--k) * var(--step) + 6px); }
+      .hx-tick b { font-size: .76rem; }
+      .hx-tick--even b { display: none; }
+      .hx-panel__foot { display: grid; gap: 14px; }
+      .hx-presets { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding: 2px 16px 6px; scrollbar-width: none; }
+      .hx-presets::-webkit-scrollbar { display: none; }
+      .hx-preset { flex: none; white-space: nowrap; }
+      .hx-era { font-size: .72rem; letter-spacing: .02em; }
+      .hx-era > span { gap: 4px; }
+      .hx-tools__sort { flex: 1 1 100%; }
+      .hx-view { width: 100%; }
+      .hx-view label { flex: 1; }
+      .hx-view span { justify-content: center; }
+      /* 手機直接滑動街景，不需要左右按鈕 */
+      .hx-street__nav { display: none; }
+      .hx-results__head { gap: 10px; }
+      .hx-reset { margin-left: 0; }
+      .hx-styles { grid-template-columns: 1fr; }
+      .hx-style__art { height: 210px; }
+      .hx-report__text { font-size: var(--fs-md); }
+      .hx-report__cta .btn { flex: 1 1 100%; }
+      .hx-modal__foot .hx-modal__nav { flex: 1 1 100%; justify-content: space-between; }
+      .hx-modal__foot .hx-modal__nav .btn { flex: 0 1 auto; }
+    }
+    @media (max-width: 560px) {
+      /* 橫式小卡的樣式在 style.css 的 .house-cards */
+      .hx-grid { grid-template-columns: 1fr; gap: 14px; margin-top: 18px; }
+      /* 窄欄裡縮成小徽章放右上角，不壓住立面 */
+      .hx-flag { top: 8px; right: 6px; min-height: 20px; padding: 0 6px; font-size: .66rem; letter-spacing: .04em; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要內容</a>
+
+  <div class="util-bar">
+    <div class="container util-bar__inner">
+      <a class="util-bar__back" href="../../index.html">← 返回目錄</a>
+      <p class="util-bar__note">澄港市政府文化局 · 舊城街區再生辦公室</p>
+      <p class="util-bar__meta">秋季老屋開放日 11.07–11.08</p>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="index.html" aria-label="澄港舊城 老屋再生 首頁">
+        <span class="brand__mark" data-brand-mark aria-hidden="true"></span>
+        <span class="brand__text">
+          <span class="brand__name">澄港舊城</span>
+          <span class="brand__sub">老屋再生 · <span class="latin">Old Town Revival</span></span>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="開啟選單"><span class="nav-toggle__bars"></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+        <ul class="site-nav__list">
+          <li><a class="site-nav__link" href="index.html"><span class="site-nav__no">壹</span>首頁</a></li>
+          <li><a class="site-nav__link is-active" href="houses.html" aria-current="page"><span class="site-nav__no">貳</span>老屋名錄</a></li>
+          <li><a class="site-nav__link" href="house.html"><span class="site-nav__no">參</span>焦點老屋</a></li>
+          <li><a class="site-nav__link" href="tiles.html"><span class="site-nav__no">肆</span>花磚圖鑑</a></li>
+        </ul>
+        <a class="btn btn--primary btn--sm site-nav__cta" href="index.html#subsidy">修復補助申請</a>
+      </nav>
+    </div>
+    <div class="tile-band" aria-hidden="true"></div>
+  </header>
+
+  <main id="main">
+    <!-- ===== 頁首 ===== -->
+    <section class="page-head" aria-labelledby="page-title">
+      <div class="container page-head__grid">
+        <div>
+          <nav aria-label="麵包屑"><ol class="crumbs"><li><a href="index.html">首頁</a></li><li aria-current="page">老屋名錄</li></ol></nav>
+          <p class="kicker page-head__kicker"><span class="latin">Register of Old Houses</span>舊城區 · 列冊老屋名錄</p>
+          <h1 class="page-head__title" id="page-title"><span class="latin" data-bind="houses">32</span> 棟老屋，依年代排開。</h1>
+          <p class="page-head__lede">舊城歷史街區列冊的老屋，最早是 <b data-bind="oldest">1896 年的黃氏古厝街屋</b>，最晚是 <b data-bind="newest">1969 年的文成書局</b>。拖動年代尺、依立面風格與修復狀態篩選，點開任一棟，看它修復前後的立面。</p>
+          <div class="page-head__meta" id="hx-meta"></div>
+        </div>
+        <div class="page-head__tiles" aria-hidden="true"><span data-tile="MJ-08"></span><span data-tile="MJ-08"></span><span data-tile="MJ-08"></span><span data-tile="MJ-08"></span></div>
+      </div>
+    </section>
+
+    <!-- ===== 名錄：年代尺＋篩選＋結果 ===== -->
+    <section class="section section--tight" id="register" aria-labelledby="ruler-title">
+      <div class="container">
+        <div class="hx-panel band-top">
+          <div class="hx-panel__inner">
+            <div class="hx-panel__head">
+              <div>
+                <p class="hx-panel__kicker">Timeline</p>
+                <h2 class="hx-panel__title" id="ruler-title">年代尺</h2>
+                <p class="hx-panel__hint">每個菱形是一棟老屋。拖曳兩端的菱形把手框出年代，點菱形看那棟老屋。</p>
+              </div>
+              <div class="hx-readout">
+                <p class="hx-readout__years"><span id="hx-from">1890</span><i aria-hidden="true"></i><span id="hx-to">1970</span></p>
+                <p class="hx-readout__n">符合<b data-result-count>32</b>棟</p>
+              </div>
+            </div>
+
+            <div class="hx-ruler" id="hx-ruler">
+              <div class="hx-stage" id="hx-stage">
+                <div class="hx-shade hx-shade--l" id="hx-shade-l" hidden></div>
+                <div class="hx-shade hx-shade--r" id="hx-shade-r" hidden></div>
+                <div class="hx-bins" id="hx-bins" aria-hidden="true"></div>
+                <div class="hx-swarm" id="hx-swarm" role="group" aria-label="老屋年代分布：方向鍵移動，Enter 查看該棟老屋"></div>
+              </div>
+              <div class="dual-range hx-range" data-dual-range id="hx-range">
+                <input type="range" min="1890" max="1970" step="1" value="1890" data-min aria-label="起始年份">
+                <input type="range" min="1890" max="1970" step="1" value="1970" data-max aria-label="結束年份">
+              </div>
+              <div class="hx-axis" id="hx-axis" aria-hidden="true"></div>
+              <div class="hx-eras" id="hx-eras" role="group" aria-label="各風格的流行年代，點一下篩選該風格"></div>
+            </div>
+
+            <div class="hx-panel__foot">
+              <div class="hx-presets" id="hx-presets" role="group" aria-label="快速選擇年代">
+                <span class="hx-label">快速選擇</span>
+                <button class="hx-preset" type="button" data-range="1890-1970" aria-pressed="true">全部年代</button>
+                <button class="hx-preset" type="button" data-range="1890-1925" aria-pressed="false"><span class="latin">1890–1925</span>米市與布行</button>
+                <button class="hx-preset" type="button" data-range="1910-1945" aria-pressed="false"><span class="latin">1910–1945</span>洋樓與花磚</button>
+                <button class="hx-preset" type="button" data-range="1950-1970" aria-pressed="false"><span class="latin">1950–1970</span>戰後店屋</button>
+              </div>
+              <div class="hx-legend" id="hx-legend"></div>
+            </div>
+
+            <div class="hx-tools">
+              <div class="hx-tools__row">
+                <div class="search hx-tools__search">
+                  <span data-icon="search"></span>
+                  <label class="sr-only" for="hx-q">搜尋老屋</label>
+                  <input class="input" type="search" id="hx-q" placeholder="搜尋屋名、街道、原用途或屋主" autocomplete="off">
+                </div>
+                <label class="sr-only" for="hx-sort">排序方式</label>
+                <select class="select hx-tools__sort" id="hx-sort"></select>
+                <div class="seg hx-view" role="radiogroup" aria-label="顯示方式">
+                  <label><input type="radio" name="hx-view" value="grid" checked><span><span data-icon="grid"></span>卡片</span></label>
+                  <label><input type="radio" name="hx-view" value="street"><span><span data-icon="house"></span>街景立面</span></label>
+                </div>
+              </div>
+              <div class="hx-tools__row hx-tools__row--chips">
+                <div class="hx-group">
+                  <span class="hx-label" id="hx-status-label">修復狀態</span>
+                  <div class="chips" data-chips="single" id="hx-status" role="group" aria-labelledby="hx-status-label"></div>
+                </div>
+                <div class="hx-group">
+                  <span class="hx-label" id="hx-style-label">立面風格</span>
+                  <div class="chips" data-chips="multi" id="hx-style-chips" role="group" aria-labelledby="hx-style-label"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hx-results" id="hx-results">
+          <h2 class="sr-only">篩選結果</h2>
+          <div class="hx-results__head">
+            <p class="hx-count" id="hx-count" tabindex="-1" aria-live="polite">列出 <b data-result-count>32</b> / <span data-bind="houses">32</span> 棟<span class="hx-count__sort" id="hx-sort-note"></span></p>
+            <div class="hx-tags" id="hx-tags"></div>
+            <button class="btn btn--ghost btn--sm hx-reset" type="button" data-reset hidden><span data-icon="undo"></span>清除全部條件</button>
+          </div>
+
+          <div class="hx-grid house-cards" id="hx-grid"></div>
+
+          <div class="hx-street" id="hx-street" hidden>
+            <div class="hx-street__bar">
+              <p class="hx-street__hint"><span data-icon="ruler"></span><span>同一比例尺，<span id="hx-street-sort">依年代由舊到新</span>由左到右排開；點任一棟看詳細資料。</span></p>
+              <div class="hx-street__nav">
+                <button class="icon-btn" type="button" id="hx-street-prev" aria-label="街景向左捲動"><span data-icon="arrow-left"></span></button>
+                <button class="icon-btn" type="button" id="hx-street-next" aria-label="街景向右捲動"><span data-icon="arrow"></span></button>
+              </div>
+            </div>
+            <div class="hx-street__scroll" id="hx-street-scroll" tabindex="0" role="region" aria-label="街景立面，可左右捲動"></div>
+          </div>
+
+          <div class="empty hx-empty" id="hx-empty" hidden>
+            <div class="empty__art" aria-hidden="true"></div>
+            <p class="empty__title">這個條件下，沒有找到老屋</p>
+            <p class="empty__text">試著放寬年代範圍、少選一種風格，或換個關鍵字。也可能那棟老屋還沒被列冊。</p>
+            <div class="cluster hx-empty__acts">
+              <button class="btn btn--primary btn--sm" type="button" data-reset>清除全部條件</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-modal-open="report-modal">通報名錄外的老屋</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="tile-band tile-band--lg" aria-hidden="true"></div>
+
+    <!-- ===== 立面風格速查 ===== -->
+    <section class="section section--paper" id="styles" aria-labelledby="styles-title">
+      <div class="container">
+        <header class="sec-head">
+          <p class="sec-head__no"><span class="latin">Field Guide</span>立面風格速查</p>
+          <h2 class="sec-head__title" id="styles-title">四種立面，看懂老屋的年紀</h2>
+          <p class="sec-head__lede">名錄依立面風格分成四類。認得山頭、拱圈、屋瓦與遮陽板，走在舊城就能大概說出一棟房子是哪個年代蓋的。</p>
+        </header>
+        <div class="hx-styles" id="hx-style-guide"></div>
+      </div>
+    </section>
+
+    <!-- ===== 名錄外的老屋 ===== -->
+    <section class="section" id="report" aria-labelledby="report-sec-title">
+      <div class="container hx-report">
+        <div>
+          <p class="kicker"><span class="latin">Not Yet Listed</span>名錄外的老屋</p>
+          <h2 class="hx-report__title" id="report-sec-title">你家巷口那棟老屋，<br>也許還沒被記下來。</h2>
+          <p class="hx-report__text">名錄每年隨調查增補。看到有花磚、山頭、洗石子柱，或只是「看起來很老」的房子，都可以通報給再生辦公室；研究員會到場初勘，確認是否列冊。</p>
+          <p class="hx-report__stat"><span data-bind="year">2026</span> 年已收到 <b data-bind="reports">17</b> 件通報，研究員完成初勘 <b data-bind="surveyed">12</b> 件。</p>
+          <div class="cluster hx-report__cta">
+            <button class="btn btn--primary btn--lg" type="button" data-modal-open="report-modal">通報一棟老屋<span data-icon="arrow" class="icon--move"></span></button>
+            <a class="btn btn--ghost btn--lg" href="index.html#subsidy">我是屋主，想申請修復補助</a>
+          </div>
+        </div>
+        <figure class="hx-gapwall">
+          <div class="hx-gapwall__grid">
+            <span data-tile="MJ-01" aria-hidden="true"></span>
+            <span data-tile="MJ-08" aria-hidden="true"></span>
+            <span data-tile="MJ-05" aria-hidden="true"></span>
+            <span data-tile="MJ-13" aria-hidden="true"></span>
+            <span data-tile="MJ-22" aria-hidden="true"></span>
+            <span data-tile="MJ-11" aria-hidden="true"></span>
+            <button class="hx-gapwall__gap" type="button" data-modal-open="report-modal" aria-label="通報名錄外的老屋"><span data-icon="plus"></span></button>
+            <span data-tile="MJ-03" aria-hidden="true"></span>
+            <span data-tile="MJ-19" aria-hidden="true"></span>
+            <span data-tile="MJ-14" aria-hidden="true"></span>
+            <span data-tile="MJ-04" aria-hidden="true"></span>
+            <span data-tile="MJ-17" aria-hidden="true"></span>
+          </div>
+          <figcaption><span class="latin">No. ?</span>缺的那一片，也許就在你家巷口。</figcaption>
+        </figure>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="tile-band tile-band--lg tile-band--dark" aria-hidden="true"></div>
+    <div class="container site-footer__grid">
+      <div class="site-footer__brand">
+        <a class="brand" href="index.html" aria-label="澄港舊城 老屋再生 首頁">
+          <span class="brand__mark" data-brand-mark aria-hidden="true"></span>
+          <span class="brand__text"><span class="brand__name">澄港舊城</span><span class="brand__sub">老屋再生 · <span class="latin">Old Town Revival</span></span></span>
+        </a>
+        <p class="site-footer__about">澄港市政府文化局舊城街區再生辦公室，2016 年起陪伴舊城屋主調查、修復與活化老屋，並建立舊城花磚的數位圖鑑。</p>
+      </div>
+      <nav aria-label="頁尾導覽">
+        <h2 class="site-footer__title">網站導覽</h2>
+        <ul class="site-footer__list">
+          <li><a href="index.html">首頁</a></li>
+          <li><a href="houses.html">老屋名錄</a></li>
+          <li><a href="house.html">焦點老屋：林家洋樓</a></li>
+          <li><a href="tiles.html">花磚圖鑑與產生器</a></li>
+        </ul>
+      </nav>
+      <div>
+        <h2 class="site-footer__title">舊城再生工作站</h2>
+        <address class="site-footer__contact">
+          <p><span data-icon="pin"></span>澄港市舊城區會館街 18 號（合益商行）</p>
+          <p><span data-icon="clock"></span>週二至週日 09:30–17:30（週一休）</p>
+          <p><span data-icon="phone"></span>(07) 521-1928</p>
+          <p><span data-icon="mail"></span>oldtown@chenggang.example</p>
+        </address>
+      </div>
+      <form class="site-footer__news" data-newsletter novalidate>
+        <h2 class="site-footer__title">街區通訊</h2>
+        <div class="field">
+          <label class="field__label" for="news-email">每月一封，寄送導覽與補助消息</label>
+          <div class="cluster" style="flex-wrap:nowrap">
+            <input class="input" type="email" id="news-email" name="email" placeholder="name@example.com" autocomplete="email">
+            <button class="btn btn--primary" type="submit">訂閱</button>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="container site-footer__base">
+      <p>© 2026 澄港市政府文化局 舊城街區再生辦公室 · 本站為作品集虛構示範，人物、建物與數據皆屬虛構。</p>
+      <a class="site-footer__back" href="../../index.html">← 返回目錄</a>
+    </div>
+  </footer>
+
+  <!-- 老屋檔案 -->
+  <dialog class="modal modal--wide hx-modal" id="house-modal" aria-labelledby="hm-title">
+    <div class="modal__frame">
+      <div class="modal__head">
+        <div>
+          <p class="modal__kicker" id="hm-kicker">老屋檔案</p>
+          <h2 class="modal__title" id="hm-title" tabindex="-1" autofocus>老屋名稱</h2>
+        </div>
+        <button class="icon-btn modal__close" type="button" data-modal-close aria-label="關閉"><span data-icon="close"></span></button>
+      </div>
+      <div class="modal__body" id="hm-body">
+        <div class="hx-modal__grid">
+          <figure class="hx-modal__fig">
+            <div class="compare" data-compare id="hm-compare">
+              <div class="compare__layer compare__after" id="hm-after"></div>
+              <div class="compare__layer compare__before" id="hm-before"></div>
+              <input class="compare__range" type="range" min="0" max="100" value="50" aria-label="修復前後對照：向左拖曳看修復後，向右看修復前">
+              <div class="compare__handle" aria-hidden="true"><span class="compare__knob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></svg></span></div>
+              <span class="compare__tag compare__tag--before" id="hm-tag-before">修復前</span>
+              <span class="compare__tag compare__tag--after" id="hm-tag-after">修復後</span>
+            </div>
+            <figcaption><span data-icon="eye"></span><span id="hm-cap">拖曳菱形把手比較修復前後。</span></figcaption>
+          </figure>
+          <div id="hm-info"></div>
+        </div>
+      </div>
+      <div class="modal__foot hx-modal__foot">
+        <div class="hx-modal__nav">
+          <button class="btn btn--ghost btn--sm" type="button" id="hm-prev"><span data-icon="arrow-left"></span>上一棟</button>
+          <span class="hx-modal__pos" id="hm-pos" aria-live="polite">1 / 32</span>
+          <button class="btn btn--ghost btn--sm" type="button" id="hm-next">下一棟<span data-icon="arrow"></span></button>
+        </div>
+        <a class="btn btn--primary btn--sm" id="hm-cta" href="house.html" hidden>看完整修復故事<span data-icon="arrow" class="icon--move"></span></a>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 通報名錄外的老屋 -->
+  <dialog class="modal" id="report-modal" aria-labelledby="report-title">
+    <form class="modal__frame" id="report-form" novalidate>
+      <div class="modal__head">
+        <div>
+          <p class="modal__kicker">名錄外的老屋 · 通報</p>
+          <h2 class="modal__title" id="report-title">告訴我們，那棟老屋在哪裡</h2>
+        </div>
+        <button class="icon-btn modal__close" type="button" data-modal-close aria-label="關閉"><span data-icon="close"></span></button>
+      </div>
+      <div class="modal__body">
+        <p class="notice" style="margin-bottom:18px"><span data-icon="info"></span><span>研究員會在 14 天內到場初勘。通報不會自動列冊，也不會影響屋主的任何權益。</span></p>
+        <div class="form-grid">
+          <div class="field full">
+            <label class="field__label" for="rf-addr">老屋地址或位置<span class="field__req">*</span></label>
+            <input class="input" id="rf-addr" name="addr" placeholder="例：舊城區糖行街 22 號" autofocus>
+            <p class="field__hint">門牌不確定時，寫路口或鄰近的老屋也可以，例如「打鐵巷口，蔡家三連棟對面」。</p>
+          </div>
+          <div class="field">
+            <label class="field__label" for="rf-era">推估興建年代</label>
+            <select class="select" id="rf-era" name="era">
+              <option value="">不確定</option>
+              <option>1890–1919</option>
+              <option>1920–1945</option>
+              <option>1946–1970</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field__label" id="rf-role-label">你和這棟老屋的關係</span>
+            <div class="seg" role="radiogroup" aria-labelledby="rf-role-label">
+              <label><input type="radio" name="role" value="owner"><span>屋主或家人</span></label>
+              <label><input type="radio" name="role" value="tenant"><span>住戶</span></label>
+              <label><input type="radio" name="role" value="neighbor" checked><span>街坊路人</span></label>
+            </div>
+          </div>
+          <div class="field full">
+            <label class="field__label" for="rf-note">你注意到什麼<span class="field__req">*</span></label>
+            <textarea class="textarea" id="rf-note" name="note" placeholder="例：二樓窗楣有一排藍色花磚，一樓是鐵捲門，看起來很久沒人住。"></textarea>
+            <p class="field__hint">至少 10 個字：外觀特徵、花磚位置、目前有沒有人使用。</p>
+          </div>
+          <div class="field full">
+            <label class="field__label" for="rf-email">聯絡 Email（選填）</label>
+            <input class="input" type="email" id="rf-email" name="email" placeholder="name@example.com" autocomplete="email">
+            <p class="field__hint">留下 Email，初勘結果會寄給你。</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal__foot">
+        <button class="btn btn--ghost" type="button" data-modal-close>取消</button>
+        <button class="btn btn--primary" type="submit">送出通報</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const { data, fmt, esc } = App;
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const paintIcons = root => $$('[data-icon]', root).forEach(el => { el.outerHTML = App.icon(el.dataset.icon, el.className); });
+
+      const houses = data.houses;
+      const STYLE_KEYS = Object.keys(data.styles);
+      const STATUS_KEYS = Object.keys(data.statuses);
+      const YEAR_MIN = 1890, YEAR_MAX = 1970;
+      const tOf = y => (y - YEAR_MIN) / (YEAR_MAX - YEAR_MIN);
+      const byYear = houses.slice().sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
+      const counts = App.countBy(houses, 'status');
+
+      // 頁面專屬資料：通報件數（送出通報後遞增，頁面上的數字與序號都讀這裡）
+      const reports = { received: 17, surveyed: 12 };
+      // 色帶泳道：閩式與現代主義年代不重疊，共用第一道
+      const ERA_LANE = { minnan: 0, modern: 0, western: 1, wayo: 2 };
+      const REPRESENTATIVE = { minnan: 'OT-07', western: 'OT-28', wayo: 'OT-10', modern: 'OT-06' };
+      const LOOK_FOR = {
+        minnan: ['山牆商號', '亭仔腳', '女兒牆花磚'],
+        western: ['巴洛克山頭', '拱圈', '寶瓶欄杆'],
+        wayo: ['黑瓦屋頂', '雨淋板', '弧拱開口'],
+        modern: ['平屋頂', '水平遮陽板', '直立招牌'],
+      };
+      const STATUS_ORDER = { restoring: 0, revived: 1, pending: 2 };
+      const SORTS = {
+        year: { label: '依年代由舊到新', fn: (a, b) => a.year - b.year },
+        'year-desc': { label: '依年代由新到舊', fn: (a, b) => b.year - a.year },
+        id: { label: '依名錄編號', fn: (a, b) => a.id.localeCompare(b.id) },
+        progress: { label: '依修復進度', fn: (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.progress || 0) - (a.progress || 0) || a.year - b.year },
+      };
+
+      const state = { q: '', status: 'all', styles: [], from: YEAR_MIN, to: YEAR_MAX, sort: 'year', view: 'grid' };
+
+      /* ---------- 由資料推導的文字 ---------- */
+      const year = App.TODAY.slice(0, 4);
+      const bindAll = () => {
+        const binds = {
+          houses: houses.length,
+          oldest: `${byYear[0].year} 年的${byYear[0].name}`,
+          newest: `${byYear[byYear.length - 1].year} 年的${byYear[byYear.length - 1].name}`,
+          year, reports: reports.received, surveyed: reports.surveyed,
+        };
+        $$('[data-bind]').forEach(el => { el.textContent = binds[el.dataset.bind]; });
+      };
+      bindAll();
+      $('#hx-meta').innerHTML = STATUS_KEYS.map(k => `<span>${App.statusHTML(k)}<b>${counts[k]}</b> 棟</span>`).join('') +
+        `<span><span data-icon="calendar"></span>資料更新 <time datetime="${App.TODAY}">${App.TODAY.replace(/-/g, '.')}</time></span>`;
+
+      $('#hx-sort').innerHTML = Object.entries(SORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('');
+      $('#hx-status').innerHTML = `<button class="chip" type="button" data-value="all" aria-pressed="true">全部<span class="chip__count" data-status-count="all"></span></button>` +
+        STATUS_KEYS.map(k => `<button class="chip" type="button" data-value="${k}" aria-pressed="false"><span class="hx-dot hx-dot--${k}" aria-hidden="true"></span>${data.statuses[k].name}<span class="chip__count" data-status-count="${k}"></span></button>`).join('');
+      $('#hx-style-chips').innerHTML = STYLE_KEYS.map(k => `<button class="chip" type="button" data-value="${k}" aria-pressed="false"><span class="hx-dot hx-dot--${k}" aria-hidden="true"></span>${data.styles[k].name}<span class="chip__count" data-style-count="${k}"></span></button>`).join('');
+      $('#hx-legend').innerHTML = '<span class="hx-label">菱形填色</span>' +
+        STATUS_KEYS.map(k => `<span><i class="hx-dot hx-dot--${k}" aria-hidden="true"></i>${data.statuses[k].name}</span>`).join('');
+
+      /* ---------- 年代尺 ---------- */
+      const ruler = $('#hx-ruler'), swarm = $('#hx-swarm'), stage = $('#hx-stage');
+      // 以五年為一欄堆疊（點狀直方圖）：欄高就是那五年蓋了幾棟，一眼看出 1920 年代是興建高峰
+      const binOf = h => Math.floor((h.year - YEAR_MIN) / 5);
+      const binCenter = b => tOf(YEAR_MIN + b * 5 + 2.5);
+      const binSize = {};
+      swarm.innerHTML = byYear.map((h, i) => {
+        const b = binOf(h);
+        const k = binSize[b] = (binSize[b] || 0) + 1;
+        return `<button type="button" class="hx-pin hx-pin--${h.style} hx-pin--${h.status}" data-id="${h.id}" tabindex="${i ? -1 : 0}" style="--t:${binCenter(b)};--k:${k - 1};--d:${i * 30}ms" aria-label="${esc(`${h.name}，${h.year} 年，${data.styles[h.style].name}，${data.statuses[h.status].name}`)}"><span class="hx-pin__gem"></span></button>`;
+      }).join('');
+      ruler.style.setProperty('--rows', Math.max(...Object.values(binSize)));
+      $('#hx-bins').innerHTML = Object.entries(binSize).map(([b, n]) => `<span class="hx-bin" data-bin="${b}" style="--t:${binCenter(+b)};--k:${n}"></span>`).join('');
+      const pins = new Map($$('.hx-pin', swarm).map(p => [p.dataset.id, p]));
+      const pinList = [...pins.values()];
+
+      let ticks = '';
+      for (let y = YEAR_MIN; y <= YEAR_MAX; y += 5) {
+        const major = y % 10 === 0;
+        ticks += `<span class="hx-tick${major ? ' hx-tick--major' : ''}${y % 20 === 0 ? ' hx-tick--even' : ''}" style="--t:${tOf(y)}">${major ? `<b>${y}</b>` : ''}</span>`;
+      }
+      $('#hx-axis').innerHTML = ticks;
+
+      $('#hx-eras').innerHTML = STYLE_KEYS.map(k => {
+        const st = data.styles[k];
+        const [a, z] = st.era.split('–').map(Number);
+        return `<button type="button" class="hx-era hx-era--${k}${z >= YEAR_MAX ? ' hx-era--end' : ''}" data-style="${k}" aria-pressed="false" style="--t0:${tOf(a)};--t1:${tOf(z)};--lane:${ERA_LANE[k]}" aria-label="${esc(`${st.name}，流行年代 ${st.era}，只看這種風格`)}"><span>${st.name}<span class="latin">${st.era}</span></span></button>`;
+      }).join('');
+
+      // 菱形依年代一片片落下鋪好；不先隱藏，動畫沒播也一定看得到
+      const playSwarm = () => swarm.classList.add('is-play');
+      if (stage.getBoundingClientRect().top < innerHeight) playSwarm();
+      else {
+        const io = new IntersectionObserver(es => { if (es.some(en => en.isIntersecting)) { io.disconnect(); playSwarm(); } });
+        io.observe(stage);
+      }
+
+      const tip = document.createElement('div');
+      tip.className = 'tooltip';
+      tip.setAttribute('role', 'tooltip');
+      tip.hidden = true;
+      document.body.appendChild(tip);
+      const showTip = p => {
+        const h = App.house(p.dataset.id);
+        tip.innerHTML = `<strong>${esc(h.name)}</strong>${h.year} · ${data.styles[h.style].name} · ${data.statuses[h.status].name}`;
+        tip.hidden = false;
+        const r = p.getBoundingClientRect(), tr = tip.getBoundingClientRect();
+        tip.style.left = App.clamp(r.left + r.width / 2 - tr.width / 2, 8, innerWidth - tr.width - 8) + 'px';
+        tip.style.top = Math.max(8, r.top - tr.height - 10) + 'px';
+      };
+      const hideTip = () => { tip.hidden = true; };
+      pinList.forEach(p => {
+        p.addEventListener('pointerenter', () => showTip(p));
+        p.addEventListener('pointerleave', hideTip);
+        p.addEventListener('focus', () => showTip(p));
+        p.addEventListener('blur', hideTip);
+      });
+      addEventListener('scroll', hideTip, { passive: true });
+      swarm.addEventListener('click', e => {
+        const p = e.target.closest('.hx-pin');
+        if (!p) return;
+        hideTip();
+        openHouse(p.dataset.id);
+      });
+      // roving tabindex：整條尺只佔一個 Tab 停留點，方向鍵在 32 棟之間移動
+      swarm.addEventListener('keydown', e => {
+        const i = pinList.indexOf(document.activeElement);
+        if (i < 0) return;
+        const next = { ArrowRight: i + 1, ArrowUp: i + 1, ArrowLeft: i - 1, ArrowDown: i - 1, Home: 0, End: pinList.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        const p = pinList[(next + pinList.length) % pinList.length];
+        pinList.forEach(x => { x.tabIndex = x === p ? 0 : -1; });
+        p.focus();
+      });
+
+      const rangeEl = $('#hx-range');
+      const range = App.dualRange(rangeEl);
+      rangeEl.addEventListener('rangechange', e => { state.from = e.detail.min; state.to = e.detail.max; render(); });
+      $('#hx-presets').addEventListener('click', e => {
+        const b = e.target.closest('[data-range]');
+        if (!b) return;
+        const [a, z] = b.dataset.range.split('-').map(Number);
+        range.set(a, z);
+      });
+      $('#hx-eras').addEventListener('click', e => {
+        const b = e.target.closest('[data-style]');
+        if (!b) return;
+        const k = b.dataset.style;
+        state.styles = state.styles.includes(k) ? state.styles.filter(x => x !== k) : [...state.styles, k];
+        render();
+      });
+
+      /* ---------- 篩選工具 ---------- */
+      const search = $('#hx-q'), sortSel = $('#hx-sort');
+      search.addEventListener('input', () => { state.q = search.value; render(); });
+      sortSel.addEventListener('change', () => { state.sort = sortSel.value; render(); });
+      $('#hx-status').addEventListener('chipchange', e => { state.status = e.detail.values[0] || 'all'; render(); });
+      $('#hx-style-chips').addEventListener('chipchange', e => { state.styles = e.detail.values; render(); });
+      $$('input[name="hx-view"]').forEach(r => r.addEventListener('change', () => { state.view = r.value; render(); }));
+
+      const norm = s => String(s).toLowerCase().replace(/\s+/g, '');
+      const haystack = new Map(houses.map(h => [h.id, norm([h.id, h.name, h.street + h.no, h.origin, h.now, h.owner,
+        data.styles[h.style].name, data.statuses[h.status].name, h.year].join('|'))]));
+      let qn = '';
+      // skip：計算某一組 chips 的數字時，略過該組自己的條件（faceted count）
+      const pass = (h, skip) =>
+        (skip === 'q' || !qn || haystack.get(h.id).includes(qn)) &&
+        (skip === 'status' || state.status === 'all' || h.status === state.status) &&
+        (skip === 'style' || !state.styles.length || state.styles.includes(h.style)) &&
+        (skip === 'year' || (h.year >= state.from && h.year <= state.to));
+
+      const resetAll = () => {
+        Object.assign(state, { q: '', status: 'all', styles: [] });
+        range.set(YEAR_MIN, YEAR_MAX); // 會觸發 rangechange → render
+      };
+      document.addEventListener('click', e => { if (e.target.closest('[data-reset]')) { resetAll(); $('#hx-count').focus({ preventScroll: true }); } });
+
+      const tagsEl = $('#hx-tags');
+      tagsEl.addEventListener('click', e => {
+        const b = e.target.closest('[data-clear]');
+        if (!b) return;
+        const key = b.dataset.clear;
+        if (key === 'year') range.set(YEAR_MIN, YEAR_MAX);
+        else {
+          if (key === 'status') state.status = 'all';
+          else if (key === 'q') state.q = '';
+          else state.styles = state.styles.filter(k => `style:${k}` !== key);
+          render();
+        }
+        (tagsEl.querySelector('.hx-tag') || $('#hx-count')).focus({ preventScroll: true });
+      });
+
+      /* ---------- 卡片 ---------- */
+      const grid = $('#hx-grid');
+      grid.innerHTML = byYear.map(h => App.houseCardHTML(h)).join('');
+      const cards = new Map($$('.house-card', grid).map(c => [c.dataset.id, c]));
+      // 首次描線：同一列依欄位錯開，像一排立面依序被畫出來
+      [...cards.values()].forEach((c, i) => {
+        const lag = (i % 4) * 140;
+        c.style.setProperty('--lag', lag + 'ms');
+        c.querySelector('svg.facade').dataset.drawLag = lag;
+        const h = App.house(c.dataset.id);
+        if (h.featured) c.querySelector('.house-card__art').insertAdjacentHTML('beforeend', '<span class="badge badge--brick hx-flag">焦點老屋</span>');
+      });
+      App.scan(grid);
+      grid.addEventListener('click', e => {
+        const a = e.target.closest('.house-card__name a');
+        if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const h = App.house(a.closest('.house-card').dataset.id);
+        if (h.featured) return; // 焦點老屋有自己的詳情頁，照常導頁
+        e.preventDefault();
+        openHouse(h.id);
+      });
+
+      // FLIP：保留下來的卡片從舊位置滑到新位置，新出現的淡入
+      const applyGrid = (list, animate) => {
+        const before = new Map();
+        if (animate) cards.forEach((c, id) => { if (!c.hidden) before.set(id, c.getBoundingClientRect()); });
+        const ids = new Set(list.map(h => h.id));
+        cards.forEach((c, id) => { c.hidden = !ids.has(id); });
+        list.forEach(h => grid.appendChild(cards.get(h.id)));
+        if (!animate || App.reducedMotion) return;
+        list.forEach((h, i) => {
+          const c = cards.get(h.id);
+          c.getAnimations().forEach(a => a.cancel());
+          const was = before.get(h.id), now = c.getBoundingClientRect();
+          if (was) {
+            const dx = was.left - now.left, dy = was.top - now.top;
+            if (Math.abs(dx) + Math.abs(dy) > 1) c.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+          } else {
+            c.animate([{ opacity: 0, transform: 'translateY(18px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 460, delay: Math.min(i, 12) * 30, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'backwards' });
+          }
+        });
+      };
+
+      /* ---------- 街景 ---------- */
+      const streetBox = $('#hx-street'), streetScroll = $('#hx-street-scroll');
+      const narrow = matchMedia('(max-width: 640px)');
+      const LAG = 120;
+      const buildStreet = list => {
+        const parts = list.map(h => ({ h, fd: App.facade.group(h) }));
+        const maxH = Math.max(...parts.map(p => p.fd.H));
+        const GAP = 16;
+        let x = 0;
+        const body = parts.map((p, k) => {
+          const { h, fd } = p, cx = x + fd.W / 2;
+          p.x = x;
+          x += fd.W + GAP;
+          return `<g class="hx-street__house" data-id="${h.id}" style="--lag:${Math.min(k, 8) * LAG}ms">
+            <g transform="translate(${p.x} ${maxH - fd.H})">${fd.body}</g>
+            <text x="${cx}" y="${maxH + 36}" text-anchor="middle" font-family="'Playfair Display',serif" font-style="italic" font-weight="600" font-size="17" fill="#B5443A" stroke="none">${h.year}</text>
+            <text x="${cx}" y="${maxH + 58}" text-anchor="middle" font-family="'Noto Serif TC',serif" font-weight="700" font-size="15" letter-spacing="2" fill="#2A1F1A" stroke="none">${esc(h.name)}</text>
+            <text x="${cx}" y="${maxH + 77}" text-anchor="middle" font-family="'Noto Sans TC',sans-serif" font-size="11" letter-spacing="1.5" fill="#75614F" stroke="none">${h.id} · ${data.statuses[h.status].name}</text>
+          </g>`;
+        }).join('');
+        const vbX = -40, vbY = -16, vbW = x - GAP + 80, vbH = maxH + 16 + 88;
+        const pxH = narrow.matches ? 300 : 430;
+        const pxW = Math.round(pxH * vbW / vbH);
+        const links = parts.map(({ h, fd, x: hx }) => `<button type="button" class="hx-street__link" data-id="${h.id}" style="left:${((hx - vbX) / vbW * 100).toFixed(3)}%;width:${(fd.W / vbW * 100).toFixed(3)}%" aria-label="${esc(`${h.name}，${h.year} 年，${data.styles[h.style].name}，${data.statuses[h.status].name}，查看老屋檔案`)}"></button>`).join('');
+        streetScroll.innerHTML = `<div class="hx-street__canvas" style="width:${pxW}px;height:${pxH}px">
+          <svg class="facade hx-street__svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" role="img" aria-label="${esc(`${list.length} 棟老屋依${SORTS[state.sort].label.slice(1)}排成的連續立面`)}" data-draw-lag="${Math.min(list.length - 1, 8) * LAG}">
+            <rect x="${vbX}" y="${maxH}" width="${vbW}" height="12" fill="#EDE2CA" stroke="none"/>
+            <g fill="none" stroke="#2A1F1A" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" font-family="'Noto Serif TC',serif">${body}</g>
+          </svg>${links}</div>`;
+        streetScroll.scrollLeft = 0;
+        App.draw(streetScroll.querySelector('svg'));
+        updateStreetNav();
+      };
+      const updateStreetNav = () => {
+        $('#hx-street-prev').disabled = streetScroll.scrollLeft <= 1;
+        $('#hx-street-next').disabled = streetScroll.scrollLeft + streetScroll.clientWidth >= streetScroll.scrollWidth - 1;
+      };
+      streetScroll.addEventListener('scroll', updateStreetNav, { passive: true });
+      const scrollStreet = dir => streetScroll.scrollBy({ left: dir * streetScroll.clientWidth * 0.8, behavior: App.reducedMotion ? 'auto' : 'smooth' });
+      $('#hx-street-prev').addEventListener('click', () => scrollStreet(-1));
+      $('#hx-street-next').addEventListener('click', () => scrollStreet(1));
+      const hoverStreet = id => {
+        const svg = streetScroll.querySelector('svg');
+        if (!svg) return;
+        svg.classList.toggle('is-hovering', !!id);
+        $$('.hx-street__house', svg).forEach(g => g.classList.toggle('is-hover', g.dataset.id === id));
+      };
+      streetScroll.addEventListener('pointerover', e => { const b = e.target.closest('.hx-street__link'); if (b) hoverStreet(b.dataset.id); });
+      streetScroll.addEventListener('pointerout', e => { if (e.target.closest('.hx-street__link')) hoverStreet(null); });
+      streetScroll.addEventListener('focusin', e => { const b = e.target.closest('.hx-street__link'); if (b) hoverStreet(b.dataset.id); });
+      streetScroll.addEventListener('focusout', () => hoverStreet(null));
+      streetScroll.addEventListener('click', e => { const b = e.target.closest('.hx-street__link'); if (b) openHouse(b.dataset.id); });
+      narrow.addEventListener('change', () => { if (state.view === 'street' && current.length) buildStreet(current); });
+
+      /* ---------- 單一重繪入口：任何條件改變都走這裡 ---------- */
+      let current = [], lastSig = '';
+      function render() {
+        qn = norm(state.q);
+        const list = houses.filter(h => pass(h)).sort(SORTS[state.sort].fn);
+        const inList = new Set(list.map(h => h.id));
+        current = list;
+
+        const forStatus = houses.filter(h => pass(h, 'status'));
+        $$('[data-status-count]').forEach(el => {
+          const k = el.dataset.statusCount;
+          el.textContent = k === 'all' ? forStatus.length : forStatus.filter(h => h.status === k).length;
+        });
+        const forStyle = houses.filter(h => pass(h, 'style'));
+        $$('[data-style-count]').forEach(el => { el.textContent = forStyle.filter(h => h.style === el.dataset.styleCount).length; });
+
+        // 控制項外觀一律由 state 回推，不論變更來自 chips、色帶、標籤或「只看此風格」
+        $$('#hx-status .chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.value === state.status)));
+        $$('#hx-style-chips .chip').forEach(c => c.setAttribute('aria-pressed', String(state.styles.includes(c.dataset.value))));
+        $$('.hx-era').forEach(b => b.setAttribute('aria-pressed', String(state.styles.includes(b.dataset.style))));
+        $$('.hx-preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === `${state.from}-${state.to}`)));
+        if (search.value !== state.q) search.value = state.q;
+        sortSel.value = state.sort;
+        $(`input[name="hx-view"][value="${state.view}"]`).checked = true;
+
+        ruler.style.setProperty('--ta', tOf(state.from));
+        ruler.style.setProperty('--tb', tOf(state.to));
+        $('#hx-shade-l').hidden = state.from === YEAR_MIN;
+        $('#hx-shade-r').hidden = state.to === YEAR_MAX;
+        $('#hx-from').textContent = state.from;
+        $('#hx-to').textContent = state.to;
+        pins.forEach((p, id) => p.classList.toggle('is-off', !inList.has(id)));
+        const perBin = App.countBy(list.map(h => ({ b: binOf(h) })), 'b');
+        $$('.hx-bin').forEach(el => { el.textContent = perBin[el.dataset.bin] || ''; });
+        $$('[data-result-count]').forEach(el => { el.textContent = list.length; });
+        $('#hx-sort-note').textContent = ` · ${SORTS[state.sort].label}`;
+        $('#hx-street-sort').textContent = SORTS[state.sort].label;
+
+        const tags = [];
+        if (state.from !== YEAR_MIN || state.to !== YEAR_MAX) tags.push(['year', `年代 ${state.from}–${state.to}`]);
+        if (state.status !== 'all') tags.push(['status', `狀態：${data.statuses[state.status].name}`]);
+        state.styles.forEach(k => tags.push([`style:${k}`, `風格：${data.styles[k].name}`]));
+        if (state.q.trim()) tags.push(['q', `搜尋「${state.q.trim()}」`]);
+        tagsEl.innerHTML = tags.map(([key, label]) => `<button type="button" class="hx-tag" data-clear="${esc(key)}" aria-label="${esc(`移除條件：${label}`)}">${esc(label)}${App.icon('close')}</button>`).join('');
+        $('.hx-reset').hidden = !tags.length;
+
+        // 結果清單（含順序）沒變就不重排，拖曳年代把手時才不會一直重播動畫
+        const sig = state.view + '|' + list.map(h => h.id).join();
+        if (sig === lastSig) return;
+        const first = !lastSig;
+        lastSig = sig;
+        $('#hx-empty').hidden = list.length > 0;
+        grid.hidden = state.view !== 'grid' || !list.length;
+        streetBox.hidden = state.view !== 'street' || !list.length;
+        if (!list.length) return;
+        if (state.view === 'grid') applyGrid(list, !first);
+        else buildStreet(list);
+      }
+      render();
+
+      /* ---------- 老屋檔案 modal ---------- */
+      const modal = $('#house-modal'), compare = $('#hm-compare');
+      const STAGE = {
+        revived: { before: '修復前', after: '活化後', cap: '拖曳菱形把手，比較修復前與活化後的立面。' },
+        restoring: { before: '修復前', after: '修復完成示意', cap: '右側是依修復計畫繪製的完成示意；拖曳菱形把手比較。' },
+        pending: { before: `現況 · ${year}`, after: '修復後示意', cap: '右側是再生辦公室依調查繪製的修復示意，供屋主評估參考。' },
+      };
+      const NO_TILE = {
+        modern: '戰後店屋不貼花磚；立面上的水泥花格磚、磨石子與直立招牌，才是它的時代記號。',
+        wayo: '本棟未登錄花磚。看點在黑瓦屋頂、雨淋板外牆與弧拱開口。',
+      };
+      const grantText = h => (h.grant > 0 ? fmt.money(h.grant) : h.grant === 0 ? '市府自辦修復，未申請補助' : '尚未申請');
+      const openedText = iso => { const [y, m] = iso.split('-'); return `${y} 年 ${+m} 月`; };
+      let openId = null, navIds = [];
+
+      const fillModal = id => {
+        const h = App.house(id), st = data.styles[h.style], stg = STAGE[h.status];
+        openId = id;
+        $('#hm-kicker').textContent = `${h.id} · ${h.year} · ${st.name}`;
+        $('#hm-title').textContent = h.name;
+        $('#hm-before').innerHTML = App.facade.svg(h, { state: 'before', frame: 'tight', title: `${h.name}立面（${stg.before}）` });
+        $('#hm-after').innerHTML = App.facade.svg(h, { state: 'after', frame: 'tight', title: `${h.name}立面（${stg.after}）` });
+        $('#hm-tag-before').textContent = stg.before;
+        $('#hm-tag-after').textContent = h.opened ? `${stg.after} · ${h.opened.slice(0, 4)}` : stg.after;
+        $('#hm-cap').textContent = stg.cap;
+        compare.setPos(50);
+
+        const tiles = h.tiles.map(App.tile.get);
+        $('#hm-info').innerHTML = `
+          <div class="hx-modal__tags">${App.styleTagHTML(h.style)}${App.statusHTML(h.status)}</div>
+          <p class="hx-modal__sum">${esc(h.summary)}</p>
+          ${h.status === 'restoring' ? `<div class="hx-modal__progress"><p><span>修復進度</span><b class="latin">${h.progress}%</b></p><div class="meter" role="img" aria-label="修復進度 ${h.progress}%"><span class="meter__bar" style="--v:${h.progress}%"></span></div></div>` : ''}
+          <dl class="facts">
+            <dt>地址</dt><dd>${esc(h.address)}</dd>
+            <dt>原用途</dt><dd>${esc(h.origin)}</dd>
+            <dt>現況</dt><dd>${esc(h.now)}</dd>
+            ${h.opened ? `<dt>活化啟用</dt><dd>${openedText(h.opened)}</dd>` : ''}
+            <dt>屋主</dt><dd>${esc(h.owner)}</dd>
+            <dt>修復補助</dt><dd>${grantText(h)}</dd>
+            <dt>開放參觀</dt><dd>${esc(h.open || '暫不開放')}</dd>
+          </dl>
+          <h3 class="hx-modal__sub">登錄花磚</h3>
+          ${tiles.length
+            ? `<ul class="hx-mtiles">${tiles.map(t => `<li><a class="hx-mtile" href="${App.tileURL(t.id)}"><span class="hx-mtile__art tile-box">${App.tile.svg(t.opts)}</span><span><span class="hx-mtile__name"><span class="latin">${t.id.replace('MJ-', 'No. ')}</span>${esc(t.name)}</span><small>${App.tile.cats[t.cat].name} · 約 ${t.year} 年 · 舊城現存 ${t.count} 片</small></span></a></li>`).join('')}</ul>`
+            : `<p class="hx-modal__none">${NO_TILE[h.style]}</p>`}
+          ${h.status === 'pending' ? `<p class="notice notice--brick hx-modal__notice">${App.icon('info')}<span>這棟老屋還在等待修復。屋主或經同意的承租人可申請 ${year} 年度第二期立面修復補助，<a href="index.html#subsidy">看補助重點與試算</a>。</span></p>` : ''}`;
+
+        const i = navIds.indexOf(id);
+        $('#hm-pos').textContent = `${i + 1} / ${navIds.length}`;
+        $('#hm-cta').hidden = !h.featured;
+        $('#hm-body').scrollTop = 0;
+        pins.forEach((p, pid) => p.classList.toggle('is-hot', pid === id));
+      };
+      // 上一棟／下一棟走「開啟當下」的篩選結果；從年代尺點到被篩掉的老屋時改走全部名錄
+      function openHouse(id) {
+        navIds = (current.some(h => h.id === id) ? current : byYear).map(h => h.id);
+        fillModal(id);
+        App.modal.open(modal);
+      }
+      const stepHouse = d => fillModal(navIds[(navIds.indexOf(openId) + d + navIds.length) % navIds.length]);
+      $('#hm-prev').addEventListener('click', () => stepHouse(-1));
+      $('#hm-next').addEventListener('click', () => stepHouse(1));
+      modal.addEventListener('keydown', e => {
+        if (e.target.matches('input, select, textarea')) return;
+        if (e.key === 'ArrowRight') stepHouse(1);
+        else if (e.key === 'ArrowLeft') stepHouse(-1);
+      });
+
+      /* ---------- 立面風格速查 ---------- */
+      const guide = $('#hx-style-guide');
+      guide.innerHTML = STYLE_KEYS.map((k, i) => {
+        const st = data.styles[k], rep = App.house(REPRESENTATIVE[k]);
+        return `<article class="hx-style hx-style--${k}" data-reveal style="--rd:${i * 90}ms">
+          <div class="hx-style__art" data-draw>${App.facade.svg(rep, { frame: 'tight', draw: true })}</div>
+          <div class="hx-style__body">
+            <p class="hx-style__era latin">${st.era}</p>
+            <h3 class="hx-style__name">${st.name}<span class="latin">${st.en}</span></h3>
+            <p class="hx-style__desc">${esc(st.desc)}</p>
+            <p class="hx-style__look"><span class="hx-label">看這裡</span>${LOOK_FOR[k].map(t => `<span class="tag">${t}</span>`).join('')}</p>
+            <div class="hx-style__foot">
+              <p class="hx-style__count">名錄中<b>${houses.filter(h => h.style === k).length}</b>棟 · 圖為${esc(rep.name)}</p>
+              <button class="link-arrow hx-style__btn" type="button" data-only-style="${k}">只看${st.name}${App.icon('arrow')}</button>
+            </div>
+          </div>
+        </article>`;
+      }).join('');
+      App.scan(guide);
+      guide.addEventListener('click', e => {
+        const b = e.target.closest('[data-only-style]');
+        if (!b) return;
+        Object.assign(state, { q: '', status: 'all', styles: [b.dataset.onlyStyle] });
+        range.set(YEAR_MIN, YEAR_MAX);
+        $('#hx-results').scrollIntoView({ block: 'start' });
+        $('#hx-count').focus({ preventScroll: true });
+      });
+
+      /* ---------- 通報表單 ---------- */
+      const reportForm = $('#report-form');
+      reportForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const addr = $('#rf-addr'), note = $('#rf-note'), email = $('#rf-email');
+        const len = note.value.trim().length;
+        App.field.setError(addr, App.valid.required(addr.value) ? '' : '請填寫地址，或寫下路口、鄰近的老屋');
+        App.field.setError(note, len >= 10 ? '' : `請再多描述一些（目前 ${len} 字，至少 10 字）`);
+        App.field.setError(email, !email.value.trim() || App.valid.email(email.value) ? '' : '電子郵件格式不正確，例如 name@example.com');
+        const bad = reportForm.querySelector('[aria-invalid="true"]');
+        if (bad) { bad.focus(); return; }
+        reports.received += 1;
+        bindAll();
+        const no = `RP-${year}-${String(reports.received).padStart(3, '0')}`;
+        const mail = email.value.trim();
+        App.modal.close('report-modal');
+        App.toast(`通報編號 ${no}。研究員會在 14 天內到場初勘${mail ? `，結果寄到 ${mail}` : ''}。`, { title: '謝謝你，替舊城多記下一棟老屋', tone: 'green', timeout: 5600 });
+        reportForm.reset();
+        App.field.clear(reportForm);
+      });
+
+      /* ---------- 從其他頁帶 #OT-xx 進來：高亮該卡片 ---------- */
+      const focusHash = () => {
+        const id = decodeURIComponent(location.hash.slice(1)).toUpperCase();
+        const card = cards.get(id);
+        if (!card) return;
+        if (card.hidden || state.view !== 'grid') { state.view = 'grid'; resetAll(); }
+        cards.forEach(c => c.classList.toggle('is-highlight', c === card));
+        pins.forEach((p, pid) => p.classList.toggle('is-hot', pid === id));
+        card.scrollIntoView({ block: 'center' });
+        return card;
+      };
+      if (focusHash()) {
+        // 字型載入後版面會變高，使用者還沒捲動的話再對準一次
+        const y0 = scrollY;
+        document.fonts.ready.then(() => { if (scrollY === y0) focusHash(); });
+      }
+      addEventListener('hashchange', focusHash);
+
+      paintIcons(document);
+    });
+  </script>
+</body>
+</html>

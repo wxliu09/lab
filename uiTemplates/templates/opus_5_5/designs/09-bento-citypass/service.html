@@ -1,0 +1,1770 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="has-subnav">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>垃圾車動態 — 城市通 CityPass 澄港市民數位服務</title>
+<meta name="description" content="北岸 2 線垃圾車即時位置、各站預估到達時間、到站提醒設定、資源回收日曆與常見問題。">
+<script>
+  /* 在第一次繪製前套用使用者選過的主題，避免深淺閃爍（其餘主題邏輯在 app.js） */
+  (function () { var t = localStorage.getItem('citypass-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =============== Hero：標題＋我的站點倒數 =============== */
+  .sv-hero { position: relative; overflow: clip; padding: clamp(40px, 6vw, 88px) 0 clamp(36px, 4.5vw, 64px); }
+  .sv-hero__glow {
+    position: absolute; right: max(-240px, calc(50% - 860px)); top: -260px;
+    width: 860px; height: 860px;
+    background: radial-gradient(closest-side, rgba(91, 91, 246, .15), rgba(34, 211, 238, .08) 55%, transparent 100%);
+    pointer-events: none;
+  }
+  .sv-hero__grid { position: relative; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr); gap: clamp(32px, 5vw, 80px); align-items: center; }
+  .sv-hero__title { font-size: var(--fs-display); font-weight: 800; letter-spacing: -.035em; line-height: 1.04; }
+  .sv-hero .lede { max-width: 31em; margin-top: 24px; }
+  .sv-facts { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 10px 26px; font-size: 14px; color: var(--text-2); }
+  .sv-facts li { display: inline-flex; align-items: center; gap: 7px; }
+  .sv-facts [data-icon] { display: inline-flex; color: var(--text-2); }
+  .sv-facts .i { width: 18px; height: 18px; }
+  .sv-facts strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .sv-eta { gap: 20px; padding: clamp(24px, 2.6vw, 36px); border-radius: var(--radius-3xl); box-shadow: var(--shadow-lift); }
+  .sv-eta__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .sv-eta__head .badge .live-dot { width: 7px; height: 7px; }
+  .sv-eta__stop { font-size: var(--fs-h3); font-weight: 700; letter-spacing: -.02em; }
+  .sv-eta__addr { margin-top: 4px; font-size: var(--fs-sm); color: var(--text-2); }
+  .sv-eta__count { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-height: clamp(64px, 6.6vw, 98px); }
+  .sv-eta__big { font-family: var(--font-display); font-size: clamp(64px, 6.6vw, 98px); font-weight: 700; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .sv-eta__word { font-family: var(--font-display); font-size: clamp(48px, 4.8vw, 72px); font-weight: 700; letter-spacing: -.035em; line-height: 1.05; }
+  .sv-eta__unit { font-size: var(--fs-lg); font-weight: 600; color: var(--text-2); }
+  /* 每秒都會跳一次：滾動時間縮短，讓數字有一半時間是靜止可讀的 */
+  .sv-eta__big .odo__strip { transition-duration: 480ms; }
+  .sv-eta__track { display: grid; gap: 12px; }
+  .sv-eta__bar { position: relative; height: 10px; margin: 0 4px; border-radius: var(--radius-pill); background: var(--fill); }
+  .sv-eta__fill { position: absolute; inset: 0; border-radius: inherit; background: var(--grad); transform-origin: left; transform: scaleX(var(--k, 0)); transition: transform 1s linear; }
+  .sv-eta__rider { position: absolute; inset: 0; transform: translateX(calc(var(--k, 0) * 100%)); transition: transform 1s linear; pointer-events: none; }
+  .sv-eta__truck {
+    position: absolute; left: 0; top: 50%;
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--accent); color: #FFFFFF;
+    box-shadow: 0 0 0 4px var(--surface), 0 8px 18px -6px rgba(91, 91, 246, .7);
+  }
+  .sv-eta__truck .i { width: 19px; height: 19px; }
+  .sv-eta__ends { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .sv-eta__ends span:last-child { text-align: right; color: var(--text); font-weight: 600; }
+  .sv-eta__note { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .sv-eta__note > [data-icon] { display: inline-flex; margin-top: 1px; color: var(--accent-text); }
+  .sv-eta__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  /* =============== 即時地圖 bento =============== */
+  .sv-bento {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.3fr);
+    grid-template-areas:
+      "map map map line"
+      "truck prog today miss";
+  }
+  .sv-mapTile { gap: 20px; }
+  .sv-mapTile__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+  .sv-mapTile__head .tile__eyebrow .live-dot { margin: 0 2px; }
+  .sv-mapTile__head .tile__title { margin-top: 12px; }
+  .sv-clock { flex: none; display: flex; align-items: center; gap: 14px; }
+  .sv-clock__read { display: grid; justify-items: end; }
+  .sv-clock__label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .sv-clock__time { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .sv-livebtn { gap: 7px; }
+  .sv-livebtn[aria-pressed="true"] { background: var(--ok-soft); color: var(--ok-text); }
+  .sv-livebtn[aria-pressed="false"] .live-dot { background: var(--accent); }
+  .sv-livebtn[aria-pressed="false"] .live-dot::after { display: none; }
+
+  .sv-map { position: relative; border-radius: 20px; overflow: hidden; background: var(--map-land); box-shadow: inset 0 0 0 .5px var(--line); }
+  .sv-map__scroller { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .sv-map__scroller::-webkit-scrollbar { display: none; }
+  /* 畫布長寬比與地圖 viewBox 相同，SVG 座標可直接換算成像素，車輛標籤才能貼著車走 */
+  .sv-map__canvas { position: relative; min-width: 620px; aspect-ratio: 600 / 330; }
+  .sv-map__canvas > svg.gmap { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .sv-gmap .gmap__stop { cursor: pointer; }
+  .sv-selring { color: var(--accent); opacity: .5; }
+  .sv-ripple { color: var(--accent); transform-box: fill-box; transform-origin: center; animation: sv-ripple 1.2s var(--ease-out) forwards; pointer-events: none; }
+  @keyframes sv-ripple { from { transform: scale(1); opacity: .9; } to { transform: scale(3.4); opacity: 0; } }
+  .sv-map__tag {
+    position: absolute; left: 0; top: 0; z-index: 2;
+    display: flex; align-items: center; gap: 7px;
+    height: 30px; padding: 0 12px 0 10px;
+    border-radius: var(--radius-pill);
+    background: var(--text); color: var(--bg);
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    box-shadow: 0 8px 18px -8px rgba(0, 0, 0, .45);
+    pointer-events: none;
+    will-change: transform;
+  }
+  .sv-map__tag b { font-family: var(--font-display); font-weight: 700; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  .sv-map__tag span { opacity: .72; font-weight: 500; }
+  .sv-map__tag::after {
+    content: ""; position: absolute; left: var(--ax, 50%); bottom: -4px;
+    width: 9px; height: 9px; margin-left: -4.5px;
+    border-radius: 2px; background: inherit; transform: rotate(45deg);
+  }
+  .sv-map__chip {
+    position: absolute; z-index: 3;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 12px;
+    border: 0; border-radius: var(--radius-pill);
+    background: var(--glass);
+    -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px);
+    box-shadow: 0 4px 14px -6px rgba(0, 0, 0, .25), inset 0 0 0 .5px var(--line);
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .sv-map__chip .i { width: 15px; height: 15px; }
+  .sv-map__chip > [data-icon] { display: inline-flex; }
+  .sv-map__mode { left: 12px; top: 12px; color: var(--accent-text); }
+  .sv-map__follow { right: 12px; top: 12px; }
+  .sv-map__follow[aria-pressed="true"] { color: var(--accent-text); }
+
+  .sv-stopcard {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 12px;
+    padding: 10px 10px 10px 12px;
+    border-radius: 18px;
+    background: var(--surface-2);
+  }
+  .sv-stopcard__pin { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: var(--accent-soft); color: var(--accent-text); }
+  .sv-stopcard__pin .i { width: 19px; height: 19px; }
+  .sv-stopcard__body { flex: 1; min-width: 0; }
+  .sv-stopcard__name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; line-height: 1.35; }
+  .sv-stopcard__name .badge { height: 20px; padding: 0 8px; font-size: 11px; }
+  .sv-stopcard__meta { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sv-stopcard .btn { flex: none; }
+  [data-tone="next"], [data-tone="soon"] { color: var(--accent-text); }
+  [data-tone="done"] { color: var(--text-2); }
+
+  .sv-ctrl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+  .sv-play { --s: 42px; background: var(--text); color: var(--bg); }
+  .sv-play:hover { background: var(--text); opacity: .86; }
+  .sv-play .i { width: 18px; height: 18px; }
+  .sv-scrub { display: grid; gap: 2px; min-width: 0; }
+  /* 刻度左右各內縮 12px：滑桿拇指 24px，中心只會走到兩端往內 12px 的位置 */
+  .sv-scrub__ticks, .sv-scrub__scale { position: relative; margin: 0 12px; }
+  .sv-scrub__ticks { height: 12px; }
+  .sv-scrub__tick { position: absolute; left: calc(var(--at) * 1%); top: 2px; width: 3px; height: 9px; margin-left: -1.5px; border-radius: 2px; background: var(--fill-2); transition: background-color var(--dur-2); }
+  .sv-scrub__tick.is-passed { background: var(--accent); }
+  .sv-scrub__tick.is-mine { top: 0; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--grad); box-shadow: 0 0 0 2.5px var(--surface); }
+  .sv-scrub__scale { height: 16px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .sv-scrub__scale span { position: absolute; top: 0; left: calc(var(--at) * 1%); transform: translateX(-50%); white-space: nowrap; }
+  .sv-scrub__scale span:first-child { transform: translateX(-12px); }
+  .sv-scrub__scale span:last-child { transform: translateX(calc(-100% + 12px)); }
+
+  /* 各站時間軸 */
+  .sv-lineTile { gap: 16px; }
+  .sv-lineTile .tile__title { font-size: clamp(1.375rem, 1.1rem + .6vw, 1.75rem); }
+  .sv-lineTile .tile__title span + span { color: var(--text-2); }
+  .sv-tl .timeline__item { gap: 6px; padding-bottom: 2px; }
+  .sv-tl .timeline__item::before { top: 18px; bottom: -18px; }
+  .sv-tl .timeline__dot { margin-top: 11px; }
+  .sv-tl .timeline__item.is-mine .timeline__dot { margin-top: 9px; }
+  /* 正在行駛的那一段：線條依車輛在兩站間的進度填色 */
+  .sv-tl .timeline__item.is-leg::before { background: linear-gradient(to bottom, var(--accent) calc(var(--k, 0) * 100%), var(--fill-2) calc(var(--k, 0) * 100%)); }
+  .sv-tl__row {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    width: 100%; padding: 7px 10px;
+    border: 0; border-radius: 14px;
+    background: none; color: inherit; text-align: left;
+  }
+  button.sv-tl__row { cursor: pointer; transition: background-color var(--dur-1); }
+  button.sv-tl__row:hover { background: var(--fill); }
+  button.sv-tl__row[aria-pressed="true"] { background: var(--accent-soft); }
+  .sv-tl__main { display: grid; gap: 1px; min-width: 0; }
+  .sv-tl .timeline__title { font-size: 15.5px; line-height: 1.35; }
+  .sv-tl .timeline__meta { font-size: 12.5px; line-height: 1.45; }
+  .sv-tl__side { flex: none; display: grid; justify-items: end; gap: 1px; text-align: right; }
+  .sv-tl .timeline__time { font-size: 15px; line-height: 1.35; }
+  .sv-tl__status { font-size: 12px; font-weight: 600; line-height: 1.45; color: var(--text-2); white-space: nowrap; }
+  .sv-tl .is-done:not(.is-mine) .timeline__title { color: var(--text-2); }
+  .sv-tl__mine { margin-right: 4px; font-weight: 700; background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sv-lineTile__note { margin-top: auto; font-size: 12.5px; color: var(--text-2); }
+
+  /* 車輛 */
+  .sv-truck { gap: 14px; }
+  .sv-truck__art { width: 100%; max-width: 280px; margin: 4px -6px 0; }
+  .sv-tk { display: block; width: 100%; height: auto; overflow: visible; }
+  .sv-tk-shadow { fill: rgba(0, 0, 0, .08); }
+  .sv-tk-road { stroke: var(--line-2); }
+  .sv-tk-speed { stroke: var(--text-3); opacity: 0; transition: opacity var(--dur-2); }
+  .sv-tk-dark { fill: var(--text-2); }
+  .sv-tk-body { fill: var(--surface-3); }
+  .sv-tk-rib { stroke: var(--line-2); }
+  .sv-tk-text { fill: var(--text); font-family: var(--font-text); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+  .sv-tk-text--sub { fill: var(--text-2); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
+  .sv-tk-cab { fill: var(--accent); }
+  .sv-tk-glass { fill: #DFF7FD; }
+  .sv-tk-light { fill: #FFD60A; }
+  .sv-tk-tire { fill: #1D1D1F; stroke: var(--line-2); }
+  .sv-tk-hub { fill: var(--surface-3); }
+  .sv-tk-spoke { stroke: var(--text-2); }
+  .sv-tk-spin { transform-box: fill-box; transform-origin: center; }
+  .sv-truck.is-live .sv-tk-spin { animation: cp-spin .6s linear infinite; }
+  .sv-truck.is-live .sv-tk-rig { animation: sv-bump .32s var(--ease-in-out) infinite alternate; }
+  .sv-truck.is-live .sv-tk-road { animation: sv-road .45s linear infinite; }
+  .sv-truck.is-live .sv-tk-speed { opacity: 1; }
+  .sv-truck.is-live .sv-tk-speed path { animation: sv-whoosh .6s linear infinite; }
+  .sv-truck.is-live .sv-tk-light { filter: drop-shadow(0 0 4px #FFD60A); }
+  @keyframes sv-bump { to { transform: translateY(-1.6px); } }
+  @keyframes sv-road { to { stroke-dashoffset: 24; } }
+  @keyframes sv-whoosh { from { transform: translateX(6px); opacity: 0; } 50% { opacity: 1; } to { transform: translateX(-8px); opacity: 0; } }
+  .sv-truck__id { display: flex; align-items: center; gap: 12px; }
+  .sv-truck__id .plate { min-width: 0; height: 38px; padding: 0 12px; font-size: 19px; }
+  .sv-truck__team { font-size: 16px; font-weight: 600; letter-spacing: -.005em; line-height: 1.35; }
+  .sv-truck .tile__text { margin-top: -10px; }
+
+  /* 本趟進度 */
+  .sv-prog { align-items: stretch; }
+  .sv-prog__ring { width: 148px; height: 148px; margin: 2px 0; }
+  .sv-prog__val { font-family: var(--font-display); font-size: 38px; font-weight: 700; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .sv-prog__val small { font-size: 17px; font-weight: 600; color: var(--text-2); letter-spacing: 0; }
+  .sv-prog__unit { margin-top: 4px; font-size: 12px; color: var(--text-2); }
+  .sv-prog__note { margin-top: auto; font-size: 14px; color: var(--text-2); text-align: center; line-height: 1.55; }
+  .sv-prog__note strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 今天回收 */
+  .sv-rc {
+    --c: var(--accent);
+    flex: none; width: 36px; height: 36px;
+    display: grid; place-items: center;
+    border-radius: 11px;
+    background: color-mix(in oklab, var(--c) 15%, transparent);
+    color: var(--c);
+  }
+  .sv-rc .i { width: 20px; height: 20px; }
+  .sv-today__count { font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+  .sv-today__items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+  .sv-today__items li { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+  .sv-today.is-live .sv-today__items li { animation: sv-pop .6s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes sv-pop { from { opacity: 0; transform: translateY(8px) scale(.9); } }
+  .sv-today__next { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+  .sv-today__next b { color: var(--text); font-weight: 600; }
+  .sv-today .link { font-size: 14px; }
+
+  /* 錯過了 */
+  .sv-miss__title { font-size: 22px; font-weight: 700; letter-spacing: -.015em; }
+  .sv-miss__hours { margin-top: 4px; font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .sv-walk { display: grid; gap: 10px; padding: 16px; border-radius: var(--radius-lg); background: var(--surface-2); }
+  .sv-walk__line { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+  .sv-walk__end { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; }
+  .sv-walk__end--from { background: var(--grad); color: #FFFFFF; }
+  .sv-walk__end--to { border-radius: 9px; background: var(--text); color: var(--bg); }
+  .sv-walk__end .i { width: 16px; height: 16px; }
+  .sv-walk__path { position: relative; height: 3px; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--text-3) 0 6px, transparent 6px 11px); }
+  .sv-walk__dot { position: absolute; left: 0; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--surface-2); }
+  .sv-miss.is-live .sv-walk__dot { animation: sv-walk 2.2s var(--ease-in-out) infinite; }
+  @keyframes sv-walk { 0% { left: 0; } 70%, 100% { left: 100%; } }
+  .sv-walk__names { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-2); }
+  .sv-walk__names b { color: var(--text); font-weight: 600; }
+  .sv-walk__dist { font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; text-align: center; font-variant-numeric: tabular-nums; }
+  .sv-walk__dist small { margin-left: 4px; font-family: var(--font-text); font-size: 13px; font-weight: 500; color: var(--text-2); letter-spacing: 0; }
+
+  /* =============== 到站提醒 =============== */
+  .sv-alerts { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--bento-gap); align-items: stretch; }
+  .sv-form { gap: 24px; }
+  .sv-form__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .sv-form__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .sv-form .seg--block .seg__btn { height: 42px; font-size: 15px; }
+  .sv-form .seg--block { padding: 3px; }
+  .sv-days { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sv-days .chip { min-width: 54px; height: 42px; justify-content: center; font-size: 15px; }
+  .sv-days .chip:disabled { flex-direction: column; gap: 0; border-style: dashed; background: none; color: var(--text-3); line-height: 1.1; cursor: not-allowed; }
+  .sv-days .chip small { font-size: 10px; font-weight: 600; }
+  .sv-switches { background: var(--surface-2); box-shadow: none; border-radius: var(--radius-lg); }
+  .sv-switches .list-row { min-height: 62px; padding: 10px 16px; --inset: 62px; cursor: pointer; }
+  .sv-switches .list-row__title { font-size: 15.5px; }
+  .sv-form__actions { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .sv-form__actions .hint { margin-left: auto; }
+  .sv-form .callout p { color: var(--text); }
+
+  .sv-preview { align-items: center; justify-content: center; gap: 22px; padding-block: 36px 28px; }
+  .sv-preview::after {
+    content: ""; position: absolute; left: 50%; top: 44%; z-index: -1;
+    width: 520px; height: 520px; margin: -260px 0 0 -260px;
+    background: radial-gradient(closest-side, rgba(91, 91, 246, .14), rgba(34, 211, 238, .07) 55%, transparent);
+    pointer-events: none;
+  }
+  .sv-phone { --pw: 290px; }
+  .sv-phone.is-buzz { animation: sv-buzz .55s linear; }
+  @keyframes sv-buzz { 0%, 100% { transform: none; } 12%, 52%, 88% { transform: translateX(-3px) rotate(-.7deg); } 32%, 72% { transform: translateX(3px) rotate(.7deg); } }
+  .sv-lock__top { position: absolute; left: 0; right: 0; top: 60px; text-align: center; }
+  .sv-lock__date { font-size: 14px; font-weight: 600; opacity: .86; }
+  .sv-lock__clock { font-family: var(--font-display); font-size: 70px; font-weight: 600; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .sv-lock__stack { position: absolute; left: 10px; right: 10px; top: 188px; display: grid; gap: 8px; }
+  .sv-lock .notif { font-size: 12.5px; }
+  .sv-lock .notif__title { font-size: 13px; }
+  .sv-lock__stack.is-drop .notif { animation: sv-drop .7s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 120ms); }
+  @keyframes sv-drop { from { opacity: 0; transform: translateY(-26px) scale(.94); } }
+  .sv-lock__empty { display: grid; justify-items: center; gap: 8px; padding-top: 30px; font-size: 13px; color: rgba(255, 255, 255, .7); text-align: center; }
+  .sv-lock__empty .i { width: 26px; height: 26px; }
+  .sv-lock__bottom { position: absolute; left: 26px; right: 26px; bottom: 30px; display: flex; justify-content: space-between; }
+  .sv-lock__btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .16); color: #FFFFFF; }
+  .sv-lock__btn .i { width: 20px; height: 20px; }
+  .sv-preview__cap { display: grid; justify-items: center; gap: 4px; text-align: center; }
+  .sv-preview__when { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sv-preview__when > [data-icon] { display: inline-flex; color: var(--accent-text); }
+  .sv-preview__when .i { width: 18px; height: 18px; }
+
+  /* =============== 回收日曆 =============== */
+  .sv-calwrap { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--bento-gap); align-items: stretch; }
+  .sv-calTile { gap: 18px; }
+  .sv-cal .cal__grid { gap: 6px; }
+  .sv-cal .cal__grid.is-swap { animation: sv-swap .5s var(--ease-out); }
+  @keyframes sv-swap { from { opacity: 0; translate: 0 10px; } }
+  .sv-cal .cal__day { min-height: 66px; border-radius: 16px; font-size: 15px; gap: 6px; }
+  .sv-cal .cal__day.is-past:not(.is-today) .cal__dots { opacity: .45; }
+  .sv-cal .cal__day.is-past:not(.is-today) > span:first-child { color: var(--text-2); }
+  .sv-cal .cal__day.is-off:not(.is-today) > span:first-child { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .sv-cal .cal__dot { width: 6px; height: 6px; }
+  .sv-cal__flag { position: absolute; top: 9px; left: calc(50% + 13px); width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--text); }
+  .cal__day.is-today .sv-cal__flag { box-shadow: inset 0 0 0 2px var(--bg); }
+  .sv-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--text-2); }
+  .sv-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .sv-legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .sv-legend i.is-flag { width: 9px; height: 9px; background: none; box-shadow: inset 0 0 0 2px var(--text); }
+  .sv-legend s { color: var(--text-3); }
+
+  .sv-day { gap: 18px; }
+  .sv-day__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .sv-day__date { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .sv-day__title { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-2); }
+  .sv-day__list { display: grid; }
+  .sv-day__item { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: start; padding: 11px 0; }
+  .sv-day__item + .sv-day__item { border-top: 1px solid var(--line); }
+  .sv-day__item b { display: block; font-size: 15px; font-weight: 600; line-height: 1.4; }
+  .sv-day__item span { display: block; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .sv-day__body { display: grid; gap: 14px; }
+  .sv-day__body.is-swap { animation: sv-swap .45s var(--ease-out); }
+  .sv-day__off { display: grid; justify-items: start; gap: 8px; padding: 22px; border-radius: var(--radius-lg); background: var(--surface-2); }
+  .sv-day__off strong { font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .sv-day__off p { font-size: 14px; color: var(--text-2); }
+  .sv-day__foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+  .sv-day__foot b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* =============== 常見問題 =============== */
+  .sv-faq { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4.5vw, 72px); align-items: start; }
+  .sv-faq__side { position: sticky; top: calc(var(--header-h) + var(--subnav-h) + 28px); display: grid; gap: 28px; }
+  .sv-faq__side .section-head { margin-bottom: 0; }
+  .sv-faq__side .headline { font-size: var(--fs-h1); }
+  #faq { padding-bottom: 0; }
+  .sv-contact .list-row__title { font-size: 16px; }
+  .sv-contact a.list-row:hover .list-row__title { color: var(--accent-text); }
+  .sv-contact .list-row__trail .i { width: 18px; height: 18px; }
+  .acc__body a { font-weight: 500; }
+
+  /* Modal 內的表單 */
+  .sv-pick { display: grid; margin-top: 14px; border-radius: var(--radius-lg); background: var(--surface-2); overflow: hidden; }
+  .sv-pick__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; transition: background-color var(--dur-1); }
+  .sv-pick__row + .sv-pick__row { border-top: 1px solid var(--line); }
+  .sv-pick__row:hover { background: var(--fill); }
+  .sv-pick__row b { display: block; color: var(--text); font-weight: 600; line-height: 1.4; }
+  .sv-pick__row span span { display: block; font-size: 12.5px; line-height: 1.45; }
+  .sv-pick__time { color: var(--text); font-weight: 600; }
+  .sv-report { display: grid; gap: 18px; padding-top: 4px; }
+  .sv-report fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .sv-report legend { padding: 0; margin-bottom: 8px; }
+  .sv-report__types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; color: var(--text); }
+  .sv-report .check-row { color: var(--text); }
+
+  /* =============== Responsive =============== */
+  @media (max-width: 1068px) {
+    .sv-hero__grid { grid-template-columns: minmax(0, 1fr); }
+    .sv-eta { max-width: 600px; }
+    .sv-bento {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas: "map map" "line truck" "line prog" "today miss";
+    }
+    .sv-faq { grid-template-columns: minmax(0, 1fr); }
+    .sv-faq__side { position: static; }
+  }
+  @media (max-width: 900px) {
+    .sv-alerts, .sv-calwrap { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 734px) {
+    .sv-facts { gap: 8px 18px; margin-top: 26px; }
+    .sv-eta { border-radius: var(--radius-2xl); }
+    .sv-eta__actions .btn { flex: 1; }
+    .sv-bento { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "line" "truck" "prog" "today" "miss"; }
+    .sv-mapTile { padding: 22px 16px 18px; gap: 16px; }
+    .sv-mapTile__head { flex-direction: column; align-items: stretch; gap: 14px; padding: 0 6px; }
+    .sv-clock { justify-content: space-between; }
+    .sv-clock__read { justify-items: start; }
+    .sv-map { border-radius: 16px; }
+    .sv-stopcard { margin-top: 10px; flex-wrap: wrap; }
+    .sv-stopcard__body { flex-basis: calc(100% - 48px); }
+    .sv-stopcard .btn { width: 100%; }
+    .sv-stopcard__meta { white-space: normal; }
+    .sv-ctrl { grid-template-columns: auto minmax(0, 1fr); gap: 12px 14px; padding: 0 4px; }
+    .sv-ctrl .seg { grid-column: 1 / -1; justify-self: stretch; display: flex; width: auto; }
+    .sv-ctrl .seg__btn { flex: 1; }
+    .sv-form__row { grid-template-columns: minmax(0, 1fr); }
+    .sv-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+    .sv-days .chip { min-width: 0; padding: 0; }
+    .sv-form__actions .btn { flex: 1; }
+    .sv-form__actions .hint { margin-left: 0; width: 100%; text-align: center; }
+    .sv-phone { --pw: 272px; }
+    .sv-lock__clock { font-size: 64px; }
+    .sv-lock__stack { top: 176px; }
+    .sv-cal .cal__grid { gap: 3px; }
+    .sv-cal .cal__day { min-height: 50px; border-radius: 12px; font-size: 14px; gap: 4px; }
+    .sv-cal .cal__dot { width: 5px; height: 5px; }
+    .sv-cal__flag { top: 5px; left: calc(50% + 10px); width: 7px; height: 7px; }
+    .sv-calTile .cal__head { flex-wrap: wrap; }
+    .sv-report__types { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sv-eta__fill, .sv-eta__rider { transition: none; }
+    .sv-ripple { display: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<header class="site-header">
+  <div class="site-header__inner container">
+    <a class="brand" href="index.html" aria-label="城市通 CityPass 首頁">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+      <span class="brand__name">城市通</span>
+      <span class="brand__en">CityPass</span>
+    </a>
+    <nav class="nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li><a class="nav__link" href="index.html">首頁</a></li>
+        <li><a class="nav__link" href="services.html">服務總覽</a></li>
+        <li><a class="nav__link is-active" href="service.html" aria-current="page">垃圾車動態</a></li>
+        <li><a class="nav__link" href="account.html">我的市民卡</a></li>
+      </ul>
+    </nav>
+    <div class="site-header__actions">
+      <a class="nav__back" href="../../index.html">← 返回目錄</a>
+      <button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="切換深色模式">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <mask id="tt-mask"><rect width="24" height="24" fill="#FFFFFF"/><circle class="tt-mask" cx="24" cy="4" r="6" fill="#000000"/></mask>
+          <circle class="tt-core" cx="12" cy="12" r="4.2" fill="currentColor" mask="url(#tt-mask)"/>
+          <g class="tt-rays" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.8v1.8M12 19.4v1.8M4.4 4.4l1.3 1.3M18.3 18.3l1.3 1.3M2.8 12h1.8M19.4 12h1.8M4.4 19.6l1.3-1.3M18.3 5.7l1.3-1.3"/></g>
+        </svg>
+      </button>
+      <a class="btn btn--primary btn--sm" href="index.html#download">下載 App</a>
+      <button class="icon-btn menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="mobile-menu" aria-label="開啟選單"><span class="menu-toggle__bars" aria-hidden="true"></span></button>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" id="mobile-menu" hidden>
+  <nav aria-label="行動版導覽">
+    <ul class="mobile-menu__list">
+      <li><a class="mobile-menu__link" href="index.html">首頁</a></li>
+      <li><a class="mobile-menu__link" href="services.html">服務總覽</a></li>
+      <li><a class="mobile-menu__link is-active" href="service.html" aria-current="page">垃圾車動態</a></li>
+      <li><a class="mobile-menu__link" href="account.html">我的市民卡</a></li>
+    </ul>
+  </nav>
+  <div class="mobile-menu__foot">
+    <a class="btn btn--primary btn--lg btn--block" href="index.html#download">下載 App</a>
+    <div class="seg" data-seg role="group" aria-label="外觀主題">
+      <button class="seg__btn" type="button" data-theme-option="auto" aria-pressed="true">自動</button>
+      <button class="seg__btn" type="button" data-theme-option="light" aria-pressed="false">淺色</button>
+      <button class="seg__btn" type="button" data-theme-option="dark" aria-pressed="false">深色</button>
+    </div>
+    <a class="site-footer__back" href="../../index.html">← 返回目錄</a>
+  </div>
+</div>
+
+<nav class="subnav" aria-label="垃圾車動態段落" data-scrollspy>
+  <div class="subnav__inner container">
+    <p class="subnav__title">垃圾車動態</p>
+    <div class="subnav__links">
+      <a class="subnav__link" href="#map">即時地圖</a>
+      <a class="subnav__link" href="#alerts">到站提醒</a>
+      <a class="subnav__link" href="#calendar">回收日曆</a>
+      <a class="subnav__link" href="#faq">常見問題</a>
+    </div>
+    <div class="subnav__actions">
+      <!-- 用 button 而非 #alerts 連結：scrollSpy 會把次導覽內所有 # 連結當成段落，重複的目標會讓標示錯亂 -->
+      <button class="btn btn--primary btn--sm" type="button" data-goto-alerts>設定提醒</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+  <!-- ================= Hero ================= -->
+  <section class="sv-hero" aria-labelledby="page-title">
+    <div class="sv-hero__glow" aria-hidden="true"></div>
+    <div class="container sv-hero__grid">
+      <div>
+        <p class="eyebrow" data-intro style="--d:0ms">生活 · <span data-bind="garbage.route" data-format="text">北岸 2 線</span></p>
+        <h1 class="page-title sv-hero__title" id="page-title" data-intro style="--d:80ms"><span>垃圾車到哪了，</span><span class="grad-text">打開就知道。</span></h1>
+        <p class="lede" data-intro style="--d:160ms">北岸 2 線每晚 <span data-bind="garbage.depart" data-format="text">18:30</span> 從清潔隊出發，沿途停靠 <span data-stop-count>8</span> 個站點。看垃圾車即時位置與各站預估時間，快到你家時，手機會先提醒你。</p>
+        <ul class="sv-facts" data-intro style="--d:240ms">
+          <li><span data-icon="truck"></span>車號 <strong data-bind="garbage.plate" data-format="text">KEA-3021</strong></li>
+          <li><span data-icon="route"></span>全程 <strong data-route-km>5.3 km</strong></li>
+          <li><span data-icon="calendar"></span><strong data-off-days>週三、週日</strong>停收</li>
+        </ul>
+      </div>
+
+      <article class="tile sv-eta" data-intro style="--d:200ms" data-tilt data-anim aria-labelledby="eta-title">
+        <div class="sv-eta__head">
+          <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="map-pin"></span>我的站點</p>
+          <span class="badge badge--ok"><span class="live-dot" aria-hidden="true"></span>即時</span>
+        </div>
+        <div>
+          <h2 class="sv-eta__stop" id="eta-title" data-eta-stop>紅樹林社區</h2>
+          <p class="sv-eta__addr" data-eta-addr>紅樹林街 8 巷口 · 表定 18:58</p>
+        </div>
+        <div class="sv-eta__count">
+          <span class="sv-eta__big" data-eta-odo>06:00</span>
+          <span class="sv-eta__word" data-eta-word hidden></span>
+          <span class="sv-eta__unit" data-eta-unit>後抵達</span>
+        </div>
+        <div class="sv-eta__track">
+          <div class="sv-eta__bar" data-eta-bar aria-hidden="true">
+            <span class="sv-eta__fill"></span>
+            <span class="sv-eta__rider"><span class="sv-eta__truck" data-icon="truck"></span></span>
+          </div>
+          <div class="sv-eta__ends"><span data-eta-from>和平市場 18:47</span><span data-eta-to>紅樹林社區 18:58</span></div>
+        </div>
+        <p class="sv-eta__note"><span data-icon="info"></span><span data-eta-note>垃圾車剛離開和平市場，下一站就是你。</span></p>
+        <div class="sv-eta__actions">
+          <a class="btn btn--primary" href="#alerts"><span data-icon="bell"></span>設定到站提醒</a>
+          <button class="btn btn--ghost" type="button" data-change-stop>更換站點</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ================= 即時地圖 ================= -->
+  <section id="map" aria-label="即時地圖與各站預估">
+    <div class="container">
+      <div class="bento sv-bento" data-sim-root>
+        <article class="tile sv-mapTile" style="grid-area:map" data-reveal data-anim aria-labelledby="map-title">
+          <header class="sv-mapTile__head">
+            <div>
+              <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="navigation"></span>即時地圖 · <span data-bind="garbage.team" data-format="text">北岸區清潔隊 第三分隊</span></p>
+              <h2 class="tile__title" id="map-title"><span>垃圾車在哪，</span><span class="grad-text">看地圖就懂。</span></h2>
+            </div>
+            <div class="sv-clock">
+              <div class="sv-clock__read">
+                <span class="sv-clock__label" data-sim-label>即時位置</span>
+                <span class="sv-clock__time" data-sim-time>18:52:00</span>
+              </div>
+              <button class="btn btn--sm sv-livebtn" type="button" data-live aria-pressed="true"><span class="live-dot" aria-hidden="true"></span><span data-live-text>即時</span></button>
+            </div>
+          </header>
+
+          <div class="sv-mapwrap">
+            <div class="sv-map">
+              <div class="sv-map__scroller" data-map-scroller>
+                <div class="sv-map__canvas" data-map-canvas>
+                  <div class="sv-map__tag" data-truck-tag aria-hidden="true"><b data-bind="garbage.plate" data-format="text">KEA-3021</b><span data-tag-text>往 紅樹林社區</span></div>
+                </div>
+              </div>
+              <span class="sv-map__chip sv-map__mode" data-map-mode hidden>模擬回放</span>
+              <button class="sv-map__chip sv-map__follow" type="button" data-follow aria-pressed="true" hidden><span data-icon="navigation"></span><span data-follow-text>跟隨中</span></button>
+            </div>
+            <div class="sv-stopcard" data-stop-card aria-live="polite"></div>
+          </div>
+
+          <div class="sv-ctrl">
+            <button class="icon-btn sv-play" type="button" data-play aria-label="暫停"></button>
+            <div class="sv-scrub">
+              <div class="sv-scrub__ticks" data-ticks aria-hidden="true"></div>
+              <input class="range" type="range" min="0" max="3600" step="1" value="0" data-scrub aria-label="拖曳時間軸，查看垃圾車在各時間點的位置">
+              <div class="sv-scrub__scale" data-scale aria-hidden="true"></div>
+            </div>
+            <div class="seg seg--sm" data-seg data-speed role="group" aria-label="回放速度">
+              <button class="seg__btn" type="button" data-value="1" aria-pressed="true">1×</button>
+              <button class="seg__btn" type="button" data-value="10" aria-pressed="false">10×</button>
+              <button class="seg__btn" type="button" data-value="60" aria-pressed="false">60×</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile sv-lineTile" style="grid-area:line" data-reveal aria-labelledby="line-title">
+          <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="clock"></span>各站預估到達</p>
+          <h2 class="tile__title" id="line-title"><span data-line-a>還有 5 站，</span><span data-line-b>預計 19:30 收完。</span></h2>
+          <ol class="timeline sv-tl" data-line aria-label="各站點與預估到達時間"></ol>
+          <p class="sv-lineTile__note">時間為表定時刻；實際會因路況與垃圾量前後約 3 分鐘。點站名可在地圖上查看。</p>
+        </article>
+
+        <article class="tile sv-truck" style="grid-area:truck" data-reveal data-tilt data-demo data-anim aria-labelledby="truck-title">
+          <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="truck"></span>今晚出勤</p>
+          <div class="sv-truck__art" aria-hidden="true">
+            <svg class="sv-tk" viewBox="0 0 240 100" focusable="false">
+              <ellipse class="sv-tk-shadow" cx="122" cy="93" rx="106" ry="4"/>
+              <line class="sv-tk-road" x1="0" y1="97" x2="240" y2="97" stroke-width="2" stroke-linecap="round" stroke-dasharray="14 10"/>
+              <g class="sv-tk-speed" fill="none" stroke-width="2.5" stroke-linecap="round"><path d="M0 34h14"/><path d="M-4 48h16"/><path d="M2 62h10"/></g>
+              <g class="sv-tk-rig">
+                <path class="sv-tk-dark" d="M28 26L13 35.5a6 6 0 0 0-2.8 4.8L9 70a6 6 0 0 0 6 6h13z"/>
+                <rect class="sv-tk-body" x="24" y="16" width="124" height="60" rx="10"/>
+                <path class="sv-tk-rib" d="M118 25v28M129 25v28M140 25v28" fill="none" stroke-width="2" stroke-linecap="round"/>
+                <rect x="24" y="58" width="124" height="7" fill="url(#cp-grad)"/>
+                <rect x="36" y="26" width="24" height="24" rx="7" fill="url(#cp-grad)"/>
+                <g transform="translate(39 29) scale(.75)" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="#FFFFFF" stroke="none"/></g>
+                <text class="sv-tk-text" x="68" y="37">城市通</text>
+                <text class="sv-tk-text sv-tk-text--sub" x="68" y="50">北岸 2 線</text>
+                <path class="sv-tk-cab" d="M150 32h40a10 10 0 0 1 8.3 4.4l14.4 21.2a10 10 0 0 1 1.7 5.6V72a4 4 0 0 1-4 4h-60.4z"/>
+                <path class="sv-tk-glass" d="M160 39h28.6a5 5 0 0 1 4.2 2.3L202.2 56H160z"/>
+                <rect class="sv-tk-light" x="208" y="64" width="7" height="4.5" rx="2.2"/>
+                <rect class="sv-tk-dark" x="146" y="73" width="72" height="6" rx="3"/>
+              </g>
+              <g transform="translate(56 81)"><g class="sv-tk-spin"><circle class="sv-tk-tire" r="12" stroke-width="2"/><circle class="sv-tk-hub" r="5"/><path class="sv-tk-spoke" d="M0-9V9M-9 0H9" stroke-width="2" stroke-linecap="round"/></g></g>
+              <g transform="translate(118 81)"><g class="sv-tk-spin"><circle class="sv-tk-tire" r="12" stroke-width="2"/><circle class="sv-tk-hub" r="5"/><path class="sv-tk-spoke" d="M0-9V9M-9 0H9" stroke-width="2" stroke-linecap="round"/></g></g>
+              <g transform="translate(190 81)"><g class="sv-tk-spin"><circle class="sv-tk-tire" r="12" stroke-width="2"/><circle class="sv-tk-hub" r="5"/><path class="sv-tk-spoke" d="M0-9V9M-9 0H9" stroke-width="2" stroke-linecap="round"/></g></g>
+            </svg>
+          </div>
+          <div class="sv-truck__id"><span class="plate" data-bind="garbage.plate" data-format="text">KEA-3021</span></div>
+          <h3 class="sv-truck__team" id="truck-title" data-bind="garbage.team" data-format="text">北岸區清潔隊 第三分隊</h3>
+          <p class="tile__text"><span data-bind="garbage.depart" data-format="text">18:30</span> 發車 · 隨車人員 2 名 · 資源回收車同行</p>
+          <div class="tile__foot"><button class="btn btn--tinted btn--sm" type="button" data-report><span data-icon="megaphone"></span>回報問題</button></div>
+        </article>
+
+        <article class="tile sv-prog" style="grid-area:prog" data-reveal data-tilt data-demo aria-labelledby="prog-title">
+          <p class="tile__eyebrow" id="prog-title"><span class="app-icon app-icon--xs app-icon--grad" data-icon="route"></span>本趟進度</p>
+          <div class="sv-prog__ring ring-box" data-prog-ring>
+            <div class="ring-box__center" aria-hidden="true">
+              <span class="sv-prog__val"><span data-prog-done>3</span><small> / <span data-prog-total>8</span></small></span>
+              <span class="sv-prog__unit">站已收運</span>
+            </div>
+          </div>
+          <p class="sv-prog__note">已行駛 <strong data-prog-km>2.2</strong> km · 全程 <span data-prog-len>5.3</span> km<br>預計 <strong data-prog-end>19:30</strong> 收運完畢</p>
+        </article>
+
+        <article class="tile sv-today" style="grid-area:today" data-reveal data-tilt data-demo aria-labelledby="today-title">
+          <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="recycle"></span><span data-today-label>今天（五）回收</span></p>
+          <h3 class="sv-today__count" id="today-title" data-today-count>4 類資源回收</h3>
+          <ul class="sv-today__items" data-today-items></ul>
+          <p class="sv-today__next" data-today-next></p>
+          <a class="link link--chev" href="#calendar">看整個月的回收日曆</a>
+        </article>
+
+        <article class="tile sv-miss" style="grid-area:miss" data-reveal data-tilt data-demo data-anim aria-labelledby="miss-title">
+          <p class="tile__eyebrow"><span class="app-icon app-icon--xs app-icon--life" data-icon="history"></span>錯過了？</p>
+          <div>
+            <h3 class="sv-miss__title" id="miss-title">夜間定點收集站</h3>
+            <p class="sv-miss__hours">收運日 20:00–22:00 開放</p>
+          </div>
+          <div class="sv-walk">
+            <div class="sv-walk__dist" data-walk-dist>1.4 km<small>步行約 17 分</small></div>
+            <div class="sv-walk__line" aria-hidden="true">
+              <span class="sv-walk__end sv-walk__end--from" data-icon="map-pin"></span>
+              <span class="sv-walk__path"><span class="sv-walk__dot"></span></span>
+              <span class="sv-walk__end sv-walk__end--to" data-icon="trash"></span>
+            </div>
+            <div class="sv-walk__names"><span data-walk-from>紅樹林社區</span><b>清潔隊 第三分隊</b></div>
+          </div>
+          <p class="tile__text">北岸大道 6 號，可投放分類好的一般垃圾與資源回收。</p>
+          <div class="tile__foot"><button class="btn btn--ghost btn--sm" type="button" data-nav><span data-icon="navigation"></span>規劃路線</button></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 到站提醒 ================= -->
+  <section class="section" id="alerts" aria-labelledby="alerts-title">
+    <div class="container">
+      <header class="section-head" data-reveal>
+        <p class="eyebrow">到站提醒</p>
+        <h2 class="headline" id="alerts-title"><span>垃圾車快到了，</span><span>手機先知道。</span></h2>
+        <p class="lede">選好站點和提前幾分鐘，城市通依垃圾車的即時位置推播提醒。預覽中的鎖定畫面，就是你會收到的樣子。</p>
+      </header>
+
+      <div class="sv-alerts">
+        <form class="tile sv-form" data-alert-form data-reveal novalidate aria-labelledby="form-title">
+          <div class="sv-form__head">
+            <div>
+              <h3 class="card__title" id="form-title">提醒設定</h3>
+              <p class="card__sub">設定會同步到你登入城市通的每一台裝置。</p>
+            </div>
+            <span class="badge badge--ok" data-f-status>已儲存</span>
+          </div>
+
+          <div class="sv-form__row">
+            <div class="field">
+              <label class="label" for="f-stop">提醒站點</label>
+              <div class="select-wrap"><select class="select" id="f-stop" aria-describedby="f-stop-hint"></select></div>
+              <p class="hint" id="f-stop-hint" data-f-stop-hint></p>
+            </div>
+            <div class="field">
+              <p class="label" id="f-lead-label">提前通知</p>
+              <div class="seg seg--block" data-seg data-f-lead role="group" aria-labelledby="f-lead-label">
+                <button class="seg__btn" type="button" data-value="3" aria-pressed="false">3 分</button>
+                <button class="seg__btn" type="button" data-value="5" aria-pressed="true">5 分</button>
+                <button class="seg__btn" type="button" data-value="10" aria-pressed="false">10 分</button>
+                <button class="seg__btn" type="button" data-value="15" aria-pressed="false">15 分</button>
+              </div>
+              <p class="hint" data-f-lead-hint></p>
+            </div>
+          </div>
+          <div class="callout callout--warn" data-f-early hidden></div>
+
+          <div class="field" data-field-days>
+            <p class="label" id="f-days-label">提醒日</p>
+            <div class="sv-days" role="group" aria-labelledby="f-days-label" data-f-days></div>
+            <p class="field__error"><span data-icon="alert"></span>請至少選擇一個提醒日</p>
+          </div>
+
+          <div class="field" data-field-ch>
+            <p class="label">通知方式</p>
+            <div class="list-group sv-switches">
+              <label class="list-row"><span class="app-icon app-icon--sm app-icon--life" data-icon="bell"></span><span class="list-row__body"><span class="list-row__title">App 推播通知</span><span class="list-row__sub">鎖定畫面與通知中心</span></span><input class="switch" type="checkbox" role="switch" id="f-push"></label>
+              <label class="list-row"><span class="app-icon app-icon--sm app-icon--life" data-icon="message"></span><span class="list-row__body"><span class="list-row__title">簡訊</span><span class="list-row__sub"><span data-bind="user.phone" data-format="text">0912-***-678</span> · 免費</span></span><input class="switch" type="checkbox" role="switch" id="f-sms"></label>
+              <label class="list-row"><span class="app-icon app-icon--sm app-icon--grad" data-icon="recycle"></span><span class="list-row__body"><span class="list-row__title">附上當天回收項目</span><span class="list-row__sub">例如「今天收：紙類、紙容器」</span></span><input class="switch" type="checkbox" role="switch" id="f-recycle"></label>
+              <label class="list-row"><span class="app-icon app-icon--sm app-icon--grad" data-icon="moon"></span><span class="list-row__body"><span class="list-row__title">停收日前一晚提醒</span><span class="list-row__sub" data-f-eve-sub>週二、週六 20:00 提醒明天停收</span></span><input class="switch" type="checkbox" role="switch" id="f-eve"></label>
+            </div>
+            <p class="field__error"><span data-icon="alert"></span>請至少開啟 App 推播或簡訊其中一種</p>
+          </div>
+
+          <div class="sv-form__actions">
+            <button class="btn btn--primary" type="submit">儲存提醒</button>
+            <button class="btn btn--ghost" type="button" data-test><span data-icon="bell"></span>傳送測試通知</button>
+            <p class="hint" data-f-saved-hint>上次儲存：2026/10/09 21:14</p>
+          </div>
+        </form>
+
+        <div class="tile sv-preview" data-reveal>
+          <div class="phone sv-phone" data-phone>
+            <div class="phone__screen lockscreen sv-lock" aria-hidden="true">
+              <div class="phone__island"></div>
+              <div class="phone__status">
+                <span></span>
+                <span class="phone__status-icons">
+                  <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx=".8"/><rect x="4.6" y="5" width="3" height="6" rx=".8"/><rect x="9.2" y="2.6" width="3" height="8.4" rx=".8"/><rect x="13.8" y="0" width="3" height="11" rx=".8"/></svg>
+                  <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 2.3c2 0 3.8.8 5.2 2.1l1-1A8.8 8.8 0 0 0 7.5.9 8.8 8.8 0 0 0 1.3 3.4l1 1a7.4 7.4 0 0 1 5.2-2.1zm0 2.9c1.2 0 2.3.5 3.1 1.3l1-1a5.8 5.8 0 0 0-8.2 0l1 1c.8-.8 1.9-1.3 3.1-1.3zm0 2.9c-.5 0-.9.2-1.2.5l1.2 1.2 1.2-1.2c-.3-.3-.7-.5-1.2-.5z"/></svg>
+                  <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="15" height="8" rx="2" fill="currentColor"/><path d="M23 4v4c.8-.3 1.3-1.1 1.3-2S23.8 4.3 23 4z" fill="currentColor" opacity=".45"/></svg>
+                </span>
+              </div>
+              <div class="sv-lock__top">
+                <p class="sv-lock__date" data-lock-date>10月23日 星期五</p>
+                <p class="sv-lock__clock" data-lock-clock>18:53</p>
+              </div>
+              <div class="sv-lock__stack" data-lock-stack></div>
+              <div class="sv-lock__bottom">
+                <span class="sv-lock__btn" data-icon="bolt"></span>
+                <span class="sv-lock__btn" data-icon="scan"></span>
+              </div>
+              <div class="phone__homebar"></div>
+            </div>
+          </div>
+          <div class="sv-preview__cap" aria-live="polite">
+            <p class="sv-preview__when"><span data-icon="bell"></span><span data-preview-when>下次提醒：今天（五）18:53</span></p>
+            <p class="hint" data-preview-eve></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 回收日曆 ================= -->
+  <section class="section section--flush-top" id="calendar" aria-labelledby="cal-title">
+    <div class="container">
+      <header class="section-head" data-reveal>
+        <p class="eyebrow">資源回收日曆</p>
+        <h2 class="headline" id="cal-title"><span>今天收什麼，</span><span>不用再背。</span></h2>
+        <p class="lede">北岸區每週一、二、四、五、六收運，每天回收的項目不同。點日期看當天要準備什麼，和分類小提醒。</p>
+      </header>
+
+      <div class="sv-calwrap">
+        <div class="tile sv-calTile" data-reveal>
+          <div class="cal sv-cal">
+            <div class="cal__head">
+              <h3 class="cal__title" data-cal-title>2026 年 10 月</h3>
+              <div class="seg seg--sm" data-seg data-cal-seg role="group" aria-label="切換月份">
+                <button class="seg__btn" type="button" data-value="10" aria-pressed="true">10 月</button>
+                <button class="seg__btn" type="button" data-value="11" aria-pressed="false">11 月</button>
+              </div>
+            </div>
+            <div class="cal__grid" data-cal-grid></div>
+          </div>
+          <div class="sv-legend" data-legend></div>
+        </div>
+
+        <div class="tile sv-day" data-reveal aria-live="polite" data-day-panel></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 常見問題 ================= -->
+  <section class="section section--flush-top" id="faq" aria-labelledby="faq-title">
+    <div class="container sv-faq">
+      <div class="sv-faq__side" data-reveal>
+        <header class="section-head section-head--left">
+          <p class="eyebrow">常見問題</p>
+          <h2 class="headline" id="faq-title"><span>還有疑問？</span><span>先在這裡找找。</span></h2>
+        </header>
+        <div class="list-group sv-contact">
+          <a class="list-row" href="tel:1999">
+            <span class="app-icon app-icon--sm app-icon--life" data-icon="headset"></span>
+            <span class="list-row__body"><span class="list-row__title">市民服務專線 1999</span><span class="list-row__sub">轉 3 清潔隊 · 每日 08:00–22:00</span></span>
+            <span class="list-row__trail" data-icon="chevron-right"></span>
+          </a>
+          <div class="list-row">
+            <span class="app-icon app-icon--sm app-icon--life" data-icon="map-pin"></span>
+            <span class="list-row__body"><span class="list-row__title" data-bind="garbage.team" data-format="text">北岸區清潔隊 第三分隊</span><span class="list-row__sub">北岸大道 6 號 · 夜間定點收集 20:00–22:00</span></span>
+            <span class="list-row__trail"></span>
+          </div>
+          <button class="list-row" type="button" data-report>
+            <span class="app-icon app-icon--sm app-icon--grad" data-icon="megaphone"></span>
+            <span class="list-row__body"><span class="list-row__title">回報垃圾車問題</span><span class="list-row__sub">沒來、延誤、漏收，平均 30 分鐘內回覆</span></span>
+            <span class="list-row__trail" data-icon="chevron-right"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="acc-group" data-acc-single data-reveal>
+        <details class="acc">
+          <summary class="acc__sum">垃圾車的位置多久更新一次？準確嗎？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>車上的定位裝置每 10 秒回傳一次位置，城市通收到後立即更新地圖。各站「約幾分」的預估，是依目前位置、表定時刻與過去 4 週同時段的平均車速計算。</p>
+            <p>遇到路口管制或站點垃圾量特別多時，實際到站可能比表定晚 3–5 分鐘；延誤超過 15 分鐘，有訂閱提醒的市民會另外收到延誤通知。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">垃圾車已經過站，還能去哪裡丟？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>收運日晚上 20:00–22:00，可以把分類好的垃圾與資源回收，拿到北岸區清潔隊 第三分隊（北岸大道 6 號）的夜間定點收集站。</p>
+            <p>請不要把垃圾放在路邊或站點等隔天，依《澄港市廢棄物清理自治條例》可處新臺幣 1,200 元以上罰鍰。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">為什麼週三和週日不收？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>北岸區清潔隊每週三、週日輪休並進行車輛保養，全區停收一般垃圾與資源回收。在<a href="#alerts">到站提醒</a>開啟「停收日前一晚提醒」，週二與週六晚上 20:00 會提醒你明天停收。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">一般垃圾一定要用專用袋嗎？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>要。一般垃圾須使用澄港市專用垃圾袋，可在便利商店、超市與各區公所購買。資源回收不需要專用袋，分類後用透明袋或紙箱裝好即可。</p>
+            <p>廚餘請另外用有蓋容器盛裝，交給隨車人員倒入車尾的廚餘桶。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">沙發、床墊可以直接拿給垃圾車嗎？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>不行。沙發、床墊、衣櫃等大型廢棄物請先預約「大型廢棄物清運」，清潔隊會和你約時間到府收運，每戶每月 5 件內免費。可以在<a href="services.html?cat=life">服務總覽 › 生活</a>找到預約入口。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">設定了提醒卻沒收到通知？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>請先確認手機的通知權限、省電模式沒有封鎖城市通，再到上方<a href="#alerts">到站提醒</a>按「傳送測試通知」。</p>
+            <p>如果簡訊也沒收到，可能是門號更換過，請到<a href="account.html">我的市民卡</a>更新聯絡方式。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">使用垃圾車動態，會蒐集我的位置嗎？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>不會。你的站點是自己選的，城市通不需要定位權限，也不會記錄你的行蹤；我們只保存你設定的站點與提醒時間，隨時可以在本頁修改或關閉。</p>
+          </div>
+        </details>
+        <details class="acc">
+          <summary class="acc__sum">颱風或豪雨時，垃圾車還會來嗎？<span class="acc__icon" aria-hidden="true"></span></summary>
+          <div class="acc__body">
+            <p>澄港市宣布停止上班時，垃圾車當天停收。恢復收運的時間會以推播通知，並同步更新本頁的回收日曆。</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div>
+        <a class="brand" href="index.html" aria-label="城市通 CityPass 首頁">
+          <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M16.4 7.6a6.2 6.2 0 1 0 0 8.8"/><circle cx="17.4" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+          <span class="brand__name">城市通</span>
+          <span class="brand__en">CityPass</span>
+        </a>
+        <p class="site-footer__tagline">澄港市政府官方市民 App。交通、生活、健康、繳費與文化服務，收進同一個帳號與同一張市民卡。</p>
+      </div>
+      <p class="site-footer__hotline">市民服務專線<strong>1999</strong>每日 08:00–22:00 · 外縣市請撥 0800-021-999</p>
+    </div>
+    <nav class="footer-cols" aria-label="頁尾導覽">
+      <div class="footer-col">
+        <h2 class="footer-col__title">服務</h2>
+        <ul>
+          <li><a class="footer-link" href="services.html?cat=transit">交通出行</a></li>
+          <li><a class="footer-link" href="services.html?cat=life">生活便民</a></li>
+          <li><a class="footer-link" href="services.html?cat=health">醫療健康</a></li>
+          <li><a class="footer-link" href="services.html?cat=pay">繳費服務</a></li>
+          <li><a class="footer-link" href="services.html?cat=culture">文化休閒</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">即時資訊</h2>
+        <ul>
+          <li><a class="footer-link" href="service.html">垃圾車動態</a></li>
+          <li><a class="footer-link" href="service.html#alerts">到站提醒設定</a></li>
+          <li><a class="footer-link" href="service.html#calendar">資源回收日曆</a></li>
+          <li><a class="footer-link" href="service.html#faq">常見問題</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">市民卡</h2>
+        <ul>
+          <li><a class="footer-link" href="account.html">我的市民卡</a></li>
+          <li><a class="footer-link" href="account.html#points">點數與繳費紀錄</a></li>
+          <li><a class="footer-link" href="account.html#bindings">綁定服務管理</a></li>
+          <li><a class="footer-link" href="account.html#devices">裝置與登入紀錄</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2 class="footer-col__title">支援</h2>
+        <ul>
+          <li><a class="footer-link" href="index.html#download">下載與綁定</a></li>
+          <li><a class="footer-link" href="index.html#privacy">隱私與安全</a></li>
+          <li><button class="footer-link" type="button" data-legal="a11y">無障礙聲明</button></li>
+          <li><button class="footer-link" type="button" data-toast="已為你接通線上客服" data-toast-desc="目前等候 2 人，預計 1 分鐘內回覆。">線上客服</button></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="site-footer__bottom">
+      <div class="site-footer__legal">
+        <span>© 2026 澄港市政府 數位服務處</span>
+        <button class="footer-link" type="button" data-legal="privacy">隱私權政策</button>
+        <button class="footer-link" type="button" data-legal="terms">使用條款</button>
+        <a class="site-footer__back" href="../../index.html">← 返回目錄</a>
+      </div>
+      <div class="seg seg--sm" data-seg role="group" aria-label="外觀主題">
+        <button class="seg__btn" type="button" data-theme-option="auto" aria-pressed="true"><span data-icon="monitor"></span>自動</button>
+        <button class="seg__btn" type="button" data-theme-option="light" aria-pressed="false"><span data-icon="sun"></span>淺色</button>
+        <button class="seg__btn" type="button" data-theme-option="dark" aria-pressed="false"><span data-icon="moon"></span>深色</button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, fmt, esc, icon } = App;
+  const G = DATA.garbage;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const reduce = App.reduceMotion();
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const pad = (n) => String(n).padStart(2, '0');
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+
+  /* ---------- 時間工具（一律以 App.now() 的 UTC+8 日期為準） ---------- */
+  const isoDate = (ms) => { const p = App.parts(ms); return `${p.y}-${pad(p.m)}-${pad(p.d)}`; };
+  const addDays = (iso, n) => isoDate(App.time(iso) + n * 86400000);
+  const dowOf = (iso) => App.parts(App.time(iso)).dow;
+  const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const hhmm = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+  const TODAY = isoDate(App.now());
+  const LAST = G.stops[G.stops.length - 1];
+  const T_START = App.time(`${TODAY}T${G.depart}`);
+  const T_END = App.time(`${TODAY}T${LAST.time}`);
+  const SPAN = (T_END - T_START) / 1000;
+  // 地圖 1 單位約 5 公尺：北岸 2 線全長 1,060 單位 ≈ 5.3 km
+  const M_PER_UNIT = 5;
+  const kmOf = (units) => (units * M_PER_UNIT) / 1000;
+  const dayWord = (iso) => {
+    const k = Math.round((App.time(iso) - App.time(TODAY)) / 86400000);
+    const w = `（${WEEK[dowOf(iso)]}）`;
+    if (k === 0) return `今天${w}`;
+    if (k === 1) return `明天${w}`;
+    return fmt.dateWeek(iso);
+  };
+  const dayShort = (iso) => {
+    const k = Math.round((App.time(iso) - App.time(TODAY)) / 86400000);
+    return k === 0 ? '今天' : k === 1 ? '明天' : `週${WEEK[dowOf(iso)]}`;
+  };
+
+  /* ---------- 收運與回收資料（頁面專屬：分類提示、特殊公告） ---------- */
+  const GROUPS = {
+    paper: { label: '紙類、紙容器', color: 'var(--c-pay)' },
+    plastic: { label: '塑膠、保麗龍', color: 'var(--c-life)' },
+    metal: { label: '鐵鋁罐、玻璃', color: 'var(--c-transit)' },
+    special: { label: '舊衣、電池、小家電', color: 'var(--c-culture)' },
+  };
+  const ITEMS = {
+    '紙類': { g: 'paper', tip: '攤平後綑綁；沾到油汙的紙餐盒請丟一般垃圾。', path: '<path d="M7 3.5h7.5l3.5 3.5v13.5H7z"/><path d="M14.5 3.5V7H18M9.8 11h5.4M9.8 14h5.4M9.8 17h3.4"/>' },
+    '紙容器': { g: 'paper', tip: '鋁箔包、紙杯沖洗後壓扁，吸管與塑膠蓋分開。', path: '<path d="M7.5 8.5l1.8-5h5.4l1.8 5v12h-9z"/><path d="M7.5 8.5h9M10 12.5h4"/>' },
+    '塑膠類': { g: 'plastic', tip: '瓶罐沖淨、壓扁，瓶蓋另外收集。', path: '<path d="M10 3.5h4v2.8l1.6 2.4V19a1.5 1.5 0 0 1-1.5 1.5H9.9A1.5 1.5 0 0 1 8.4 19V8.7L10 6.3z"/><path d="M8.4 12h7.2M8.4 16h7.2"/>' },
+    '保麗龍': { g: 'plastic', tip: '刮除食物殘渣、清洗晾乾，可堆疊後綁起。', path: '<path d="M4 10.5h16l-1.8 8a1.5 1.5 0 0 1-1.5 1.2H7.3a1.5 1.5 0 0 1-1.5-1.2z"/><path d="M3.5 10.5h17L18.6 6.4a1.5 1.5 0 0 0-1.4-.9H6.8a1.5 1.5 0 0 0-1.4.9z"/>' },
+    '鐵鋁罐': { g: 'metal', tip: '沖洗後壓扁；噴霧罐請用完並戳洞洩壓。', path: '<ellipse cx="12" cy="5.5" rx="5" ry="2"/><path d="M7 5.5v13c0 1.1 2.2 2 5 2s5-.9 5-2v-13M7 10c0 1.1 2.2 2 5 2s5-.9 5-2"/>' },
+    '玻璃瓶': { g: 'metal', tip: '取下瓶蓋；破碎玻璃以報紙包好並註明。', path: '<path d="M10.5 3h3v4.4c2 1 3 2.6 3 4.6v7.5a1.5 1.5 0 0 1-1.5 1.5H9a1.5 1.5 0 0 1-1.5-1.5V12c0-2 1-3.6 3-4.6z"/><path d="M7.5 14.5h9"/>' },
+    '舊衣': { g: 'special', tip: '洗淨晾乾後裝袋，鞋子成對綁好。', path: '<path d="M9 3.5L4 6.5l2 3.8 2.2-1v11.2h7.6V9.3l2.2 1 2-3.8-5-3c-.5 1.4-1.6 2.2-3 2.2s-2.5-.8-3-2.2z"/>' },
+    '乾電池': { g: 'special', tip: '電極以膠帶貼住，直接交給隨車人員。', path: '<rect x="7.5" y="5" width="9" height="15.5" rx="2"/><path d="M10.5 3h3v2M12 9.8v4.4M9.8 12h4.4"/>' },
+    '小家電': { g: 'special', tip: '電池先取出；單件長度不超過 30 公分。', path: '<rect x="4" y="8" width="16" height="11" rx="3"/><path d="M8 8V6M16 8V6M7.5 13h5.5M16.5 13h.01M6.5 19v1.5M17.5 19v1.5"/>' },
+  };
+  const GENERAL = { name: '一般垃圾', tip: '使用澄港市專用垃圾袋，廚餘另以有蓋容器交給隨車人員。' };
+  const rcIcon = (name) => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ITEMS[name].path}</svg>`;
+  // 特殊收運公告（10/31 港灣節提前、11/19 車輛年檢停收）
+  const SPECIAL = {
+    '2026-10-31': { tone: 'warn', shift: -60, title: '澄港港灣節 · 提前 1 小時收運', text: '港埕區煙火交通管制，北岸 2 線改為 17:30 發車，各站時間同步提前 1 小時。' },
+    '2026-11-19': { tone: 'danger', off: true, title: '車輛年度檢驗 · 停收一天', text: '北岸區清潔隊車輛年度檢驗，本日停收；11/20（五）照常收運。' },
+  };
+  const isCollect = (iso) => G.days.includes(dowOf(iso)) && !(SPECIAL[iso] && SPECIAL[iso].off);
+  function nextCollect(fromIso, inclusive) {
+    for (let k = inclusive ? 0 : 1; k < 60; k++) {
+      const iso = addDays(fromIso, k);
+      if (isCollect(iso)) return iso;
+    }
+    throw new Error('service: no collection day within 60 days');
+  }
+  const offDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => !G.days.includes(d)).sort((a, b) => (a || 7) - (b || 7));
+
+  /* ---------- 靜態摘要（數量、距離一律由資料計算） ---------- */
+  $$('[data-stop-count]').forEach((el) => { el.textContent = G.stops.length; });
+  $$('[data-route-km]').forEach((el) => { el.textContent = `${fmt.num(kmOf(App.garbage.measure.total), 1)} km`; });
+  $$('[data-off-days]').forEach((el) => { el.textContent = offDays.map((d) => `週${WEEK[d]}`).join('、'); });
+
+  /* ================= 我的站點倒數（真實時間） ================= */
+  const hero = {
+    stop: $('[data-eta-stop]'), addr: $('[data-eta-addr]'), odo: $('[data-eta-odo]'), word: $('[data-eta-word]'),
+    unit: $('[data-eta-unit]'), bar: $('[data-eta-bar]'), from: $('[data-eta-from]'), to: $('[data-eta-to]'), note: $('[data-eta-note]'),
+  };
+  function renderHero() {
+    const now = App.now();
+    const mine = App.garbage.stop(G.myStop);
+    const idx = G.stops.indexOf(mine);
+    const prev = idx > 0 ? G.stops[idx - 1] : null;
+    const fromDist = prev ? App.garbage.stopDist(prev.id) : 0;
+    const myDist = App.garbage.stopDist(mine.id);
+    const tr = App.garbage.truck(now);
+    const eta = App.garbage.eta(mine.id, now);
+    hero.stop.textContent = mine.name;
+    hero.addr.textContent = `${mine.addr} · 表定 ${mine.time}`;
+    hero.from.textContent = prev ? `${prev.name} ${prev.time}` : `清潔隊發車 ${G.depart}`;
+    hero.to.textContent = `${mine.name} ${mine.time}`;
+    const k = tr.status === 'done' ? 1 : tr.status === 'off' ? 0 : clamp((tr.dist - fromDist) / (myDist - fromDist), 0, 1);
+    hero.bar.style.setProperty('--k', k.toFixed(4));
+
+    let word = '', note = '';
+    if (tr.status === 'off') {
+      word = '今日停收';
+      note = `今天停收，下一班 ${dayWord(nextCollect(TODAY, false))} ${mine.time} 抵達。`;
+    } else if (eta > 0) {
+      const ahead = G.stops.slice(0, idx).filter((s) => App.garbage.stopDist(s.id) > tr.dist + 0.5).length;
+      if (tr.status === 'before') note = `${G.depart} 從清潔隊發車，前面還有 ${ahead} 站。`;
+      else if (ahead === 0) note = eta <= 120 ? '垃圾車就在附近，現在出門剛剛好。' : `垃圾車剛離開${prev ? prev.name : '清潔隊'}，下一站就是你。`;
+      else note = `前面還有 ${ahead} 站，垃圾車正前往${tr.next.name}。`;
+    } else if (eta > -180) {
+      word = '到站了';
+      note = `垃圾車正停靠${mine.name}，約停 3 分鐘。`;
+    } else {
+      word = '已過站';
+      note = `今晚已收運，下一班 ${dayWord(nextCollect(TODAY, false))} ${mine.time}。`;
+    }
+    hero.odo.hidden = !!word;
+    hero.word.hidden = !word;
+    hero.unit.hidden = !!word;
+    if (word) hero.word.textContent = word;
+    else App.odometer(hero.odo, Math.ceil(eta), { format: fmt.mmss });
+    hero.note.textContent = note;
+  }
+
+  /* ================= 即時地圖：模擬時鐘 ================= */
+  const simRoot = $('[data-sim-root]');
+  const mapTile = $('.sv-mapTile');
+  const canvas = $('[data-map-canvas]');
+  const scroller = $('[data-map-scroller]');
+  const tag = $('[data-truck-tag]');
+  const tagText = $('[data-tag-text]');
+  const followBtn = $('[data-follow]');
+  const scrub = $('[data-scrub]');
+  const playBtn = $('[data-play]');
+  const liveBtn = $('[data-live]');
+  const simLabel = $('[data-sim-label]');
+  const simTimeEl = $('[data-sim-time]');
+  const modeChip = $('[data-map-mode]');
+  const stopCard = $('[data-stop-card]');
+  const lineList = $('[data-line]');
+  const ICON_PLAY = '<svg class="i" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 5.6v12.8a1 1 0 0 0 1.53.85l10.1-6.4a1 1 0 0 0 0-1.7L9.53 4.75A1 1 0 0 0 8 5.6z"/></svg>';
+  const ICON_PAUSE = '<svg class="i" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>';
+
+  // live：跟著真實時間；否則為回放（可暫停、可 1/10/60 倍速、可拖曳時間軸）
+  const sim = { live: true, playing: true, speed: 1, t: App.now(), hold: 0, dragging: false };
+  let mapSvg = null, canvasW = 0, follow = true, lastSetLeft = -1;
+  let selStop = G.myStop, prevPassed = null, lastSec = -1, cardHtml = '', tagStr = '', tagW = 0;
+  let lineItems = [];
+
+  function stateAt(t) {
+    const tr = App.garbage.truck(t);
+    const passed = new Set(G.stops.filter((s) => tr.status === 'done' || (tr.status === 'running' && App.garbage.stopDist(s.id) <= tr.dist + 0.5)).map((s) => s.id));
+    return { tr, passed };
+  }
+  function stopStatus(s, t, tr, passed) {
+    if (tr.status === 'off') return { text: '今日停收', tone: 'done' };
+    if (passed.has(s.id)) return { text: '已收運', tone: 'done' };
+    const eta = App.garbage.eta(s.id, t);
+    if (eta <= 60) return { text: '即將抵達', tone: 'soon' };
+    const m = Math.ceil(eta / 60);
+    const text = m >= 60 ? `約 ${Math.floor(m / 60)} 小時 ${m % 60} 分` : `約 ${m} 分`;
+    return { text, tone: tr.next && tr.next.id === s.id ? 'next' : '' };
+  }
+
+  function renderMap() {
+    if (mapSvg) mapSvg.remove();
+    canvas.insertAdjacentHTML('afterbegin', App.garbageMap({ labels: true, stopLabels: true, cls: 'sv-gmap' }));
+    mapSvg = $('svg.gmap', canvas);
+    prevPassed = null; // 重建後第一次繪製不播到站漣漪
+    markSelected();
+  }
+  function svgEl(name, attrs) {
+    const el = document.createElementNS(SVGNS, name);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
+  }
+  function markSelected() {
+    $$('.sv-selring', mapSvg).forEach((c) => c.remove());
+    const g = $(`.gmap__stop[data-stop="${selStop}"]`, mapSvg);
+    g.prepend(svgEl('circle', { class: 'sv-selring', r: 15, fill: 'none', stroke: 'currentColor', 'stroke-width': 2.5 }));
+  }
+  function ripple(id) {
+    if (reduce) return;
+    const c = svgEl('circle', { class: 'sv-ripple', r: 9, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 });
+    c.addEventListener('animationend', () => c.remove());
+    $(`.gmap__stop[data-stop="${id}"]`, mapSvg).prepend(c);
+  }
+
+  function buildLine() {
+    const depot = `<li class="timeline__item" data-id="depot"><span class="timeline__dot"></span><div class="sv-tl__row"><span class="sv-tl__main"><span class="timeline__title">清潔隊發車</span><span class="timeline__meta">${esc(G.team)}</span></span><span class="sv-tl__side"><span class="timeline__time">${G.depart}</span><span class="sv-tl__status" data-status></span></span></div></li>`;
+    lineList.innerHTML = depot + G.stops.map((s) => {
+      const mine = s.id === G.myStop;
+      return `<li class="timeline__item${mine ? ' is-mine' : ''}" data-id="${s.id}"><span class="timeline__dot"></span>`
+        + `<button class="sv-tl__row" type="button" data-stop="${s.id}" aria-pressed="${s.id === selStop}">`
+        + `<span class="sv-tl__main"><span class="timeline__title">${esc(s.name)}</span><span class="timeline__meta">${mine ? '<span class="sv-tl__mine">我的站點</span>' : ''}${esc(s.addr)}</span></span>`
+        + `<span class="sv-tl__side"><span class="timeline__time">${s.time}</span><span class="sv-tl__status" data-status></span></span></button></li>`;
+    }).join('');
+    lineItems = $$('.timeline__item', lineList).map((li) => ({ id: li.dataset.id, li, status: $('[data-status]', li) }));
+  }
+  const lineA = $('[data-line-a]'), lineB = $('[data-line-b]');
+  function updateLine(t, tr, passed) {
+    lineItems.forEach(({ id, li, status }) => {
+      let st;
+      if (id === 'depot') {
+        const gone = tr.status === 'running' || tr.status === 'done';
+        li.classList.toggle('is-done', gone);
+        st = tr.status === 'off' ? { text: '今日停收', tone: 'done' }
+          : gone ? { text: '已發車', tone: 'done' }
+          : { text: `${Math.max(1, Math.ceil((T_START - t) / 60000))} 分後發車`, tone: 'next' };
+      } else {
+        const s = App.garbage.stop(id);
+        st = stopStatus(s, t, tr, passed);
+        li.classList.toggle('is-done', passed.has(id));
+        li.classList.toggle('is-current', !!tr.next && tr.next.id === id);
+      }
+      if (status.textContent !== st.text) status.textContent = st.text;
+      status.dataset.tone = st.tone;
+    });
+    const left = G.stops.length - passed.size;
+    let a, b;
+    if (tr.status === 'off') { a = '今天停收，'; b = `${dayShort(nextCollect(TODAY, false))} ${G.depart} 再出發。`; }
+    else if (tr.status === 'done') { a = '今晚收運完畢，'; b = `${dayShort(nextCollect(TODAY, false))} ${G.depart} 再出發。`; }
+    else if (tr.status === 'before') { a = `${G.depart} 發車，`; b = `沿途 ${G.stops.length} 站。`; }
+    else { a = `還有 ${left} 站，`; b = `預計 ${LAST.time} 收完。`; }
+    if (lineA.textContent !== a) lineA.textContent = a;
+    if (lineB.textContent !== b) lineB.textContent = b;
+  }
+  // 正在行駛的那一段：前一個節點的連接線依兩站間進度填色（每個 frame 更新）
+  function setLeg(tr) {
+    const nextIdx = tr.next && (tr.status === 'running' || tr.status === 'before') ? lineItems.findIndex((x) => x.id === tr.next.id) : -1;
+    lineItems.forEach((x, i) => {
+      const leg = i === nextIdx - 1;
+      x.li.classList.toggle('is-leg', leg);
+      if (!leg) return;
+      const from = x.id === 'depot' ? 0 : App.garbage.stopDist(x.id);
+      const to = App.garbage.stopDist(tr.next.id);
+      x.li.style.setProperty('--k', clamp((tr.dist - from) / (to - from), 0, 1).toFixed(4));
+    });
+  }
+
+  /* 本趟進度環 */
+  const ringHost = $('[data-prog-ring]');
+  ringHost.insertAdjacentHTML('afterbegin', App.ring(0, G.stops.length, { size: 148, stroke: 12, label: '本趟收運進度' }));
+  const ringSvg = $('svg.ring', ringHost);
+  const progDone = $('[data-prog-done]'), progKm = $('[data-prog-km]');
+  $('[data-prog-total]').textContent = G.stops.length;
+  $('[data-prog-len]').textContent = fmt.num(kmOf(App.garbage.measure.total), 1);
+  $('[data-prog-end]').textContent = LAST.time;
+  let ringDone = -1, ringKm = -1;
+  function updateProgress(tr, passed) {
+    if (passed.size !== ringDone) {
+      ringDone = passed.size;
+      App.setRing(ringSvg, ringDone, G.stops.length);
+      ringSvg.setAttribute('aria-label', `本趟收運進度：${ringDone} / ${G.stops.length} 站`);
+      progDone.textContent = ringDone;
+    }
+    const km = Math.round(kmOf(tr.dist) * 10) / 10;
+    if (km !== ringKm) { ringKm = km; App.odometer(progKm, km, { format: (v) => fmt.num(v, 1) }); }
+  }
+  $('.sv-prog').addEventListener('cp:demo', (e) => {
+    if (!e.detail.active || reduce) return;
+    // 滑入時進度環從 0 重畫、里程從 0 滾回目前數字
+    ringHost.classList.add('no-trans');
+    App.setRing(ringSvg, 0, G.stops.length);
+    void ringHost.offsetWidth;
+    ringHost.classList.remove('no-trans');
+    App.setRing(ringSvg, ringDone, G.stops.length);
+    App.odometer(progKm, ringKm, { format: (v) => fmt.num(v, 1), reset: true });
+  });
+
+  /* 時間軸刻度（站點位置） */
+  const ticks = $('[data-ticks]');
+  const tickAt = (hm) => ((toMin(hm) - toMin(G.depart)) * 60 / SPAN) * 100;
+  function buildTicks() {
+    ticks.innerHTML = G.stops.map((s) => `<span class="sv-scrub__tick${s.id === G.myStop ? ' is-mine' : ''}" data-tick="${s.id}" style="--at:${tickAt(s.time).toFixed(2)}" title="${esc(s.name)} ${s.time}"></span>`).join('');
+  }
+  const midMin = Math.round((toMin(G.depart) + toMin(LAST.time)) / 2);
+  $('[data-scale]').innerHTML = `<span style="--at:0">${G.depart} 發車</span><span style="--at:${tickAt(hhmm(midMin)).toFixed(2)}">${hhmm(midMin)}</span><span style="--at:100">${LAST.time} 收完</span>`;
+  scrub.max = String(SPAN);
+
+  function placeTag(tr) {
+    const str = tr.status === 'running' ? `往 ${tr.next.name}` : tr.status === 'before' ? `${G.depart} 發車` : tr.status === 'done' ? '收運完畢' : '今日停收';
+    if (str !== tagStr) { tagStr = str; tagText.textContent = str; tagW = tag.offsetWidth; }
+    const k = canvasW / G.map.w;
+    const tx = tr.x * k;
+    const x = clamp(tx, tagW / 2 + 8, canvasW - tagW / 2 - 8);
+    const y = (tr.y - 22) * k - 6; // 車輛光暈上緣再往上留一點
+    tag.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    tag.style.setProperty('--ax', `${(tx - x + tagW / 2).toFixed(1)}px`);
+  }
+  function followTruck(tr) {
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    if (!follow || max <= 1) return;
+    const target = clamp((tr.x * canvasW) / G.map.w - scroller.clientWidth / 2, 0, max);
+    const cur = scroller.scrollLeft;
+    if (Math.abs(target - cur) < 0.6) return;
+    scroller.scrollLeft = reduce || Math.abs(target - cur) > 260 ? target : cur + (target - cur) * 0.12;
+    lastSetLeft = scroller.scrollLeft;
+  }
+  function setFollow(v) {
+    follow = v;
+    followBtn.setAttribute('aria-pressed', String(v));
+    $('[data-follow-text]', followBtn).textContent = v ? '跟隨中' : '跟隨垃圾車';
+  }
+
+  function renderStopCard(t, tr, passed) {
+    const s = App.garbage.stop(selStop);
+    const mine = s.id === G.myStop;
+    const st = stopStatus(s, t, tr, passed);
+    const html = `<span class="sv-stopcard__pin">${icon('map-pin')}</span>`
+      + `<div class="sv-stopcard__body"><p class="sv-stopcard__name">${esc(s.name)}${mine ? '<span class="badge badge--grad">我的站點</span>' : ''}</p>`
+      + `<p class="sv-stopcard__meta">${esc(s.addr)} · 表定 <span class="num">${s.time}</span> · <b data-tone="${st.tone}">${st.text}</b></p></div>`
+      + (mine ? '' : `<button class="btn btn--tinted btn--sm" type="button" data-set-mine="${s.id}">設為我的站點</button>`);
+    if (html !== cardHtml) { cardHtml = html; stopCard.innerHTML = html; }
+  }
+  const fmtClock = (t) => { const p = App.parts(t); return `${pad(p.h)}:${pad(p.min)}:${pad(p.s)}`; };
+  function setScrub(t) {
+    const v = clamp((t - T_START) / 1000, 0, SPAN);
+    scrub.value = String(v);
+    scrub.style.setProperty('--p', ((v / SPAN) * 100).toFixed(2));
+    scrub.setAttribute('aria-valuetext', fmtClock(T_START + v * 1000));
+  }
+
+  function drawSim(force) {
+    const t = sim.t;
+    const { tr, passed } = stateAt(t);
+    App.garbage.setTruck(mapSvg, tr.dist);
+    if (prevPassed && !force) passed.forEach((id) => { if (!prevPassed.has(id)) ripple(id); });
+    prevPassed = passed;
+    placeTag(tr);
+    followTruck(tr);
+    setLeg(tr);
+    const sec = Math.floor(t / 1000);
+    if (force || sec !== lastSec) {
+      lastSec = sec;
+      simTimeEl.textContent = fmtClock(t);
+      if (!sim.dragging) setScrub(t);
+      $$('[data-tick]', ticks).forEach((el) => el.classList.toggle('is-passed', passed.has(el.dataset.tick)));
+      updateLine(t, tr, passed);
+      updateProgress(tr, passed);
+      renderStopCard(t, tr, passed);
+    }
+  }
+
+  function syncMode() {
+    liveBtn.setAttribute('aria-pressed', String(sim.live));
+    $('[data-live-text]', liveBtn).textContent = sim.live ? '即時' : '回到即時';
+    simLabel.textContent = sim.live ? '即時位置' : sim.playing ? `模擬回放 ${sim.speed}×` : '回放已暫停';
+    modeChip.hidden = sim.live;
+    modeChip.textContent = sim.playing ? `模擬回放 · ${sim.speed}×` : '模擬回放 · 已暫停';
+    playBtn.innerHTML = sim.playing ? ICON_PAUSE : ICON_PLAY;
+    playBtn.setAttribute('aria-label', sim.playing ? '暫停' : '播放');
+  }
+  const speedSeg = App.seg($('[data-speed]'), {
+    onChange: (v) => {
+      sim.speed = Number(v);
+      if (sim.speed !== 1) { sim.live = false; sim.playing = true; }
+      syncMode();
+    },
+  });
+  function goLive() {
+    sim.live = true; sim.playing = true; sim.speed = 1; sim.hold = 0;
+    speedSeg.select(0, { silent: true });
+    sim.t = App.now();
+    drawSim(true);
+    syncMode();
+  }
+  liveBtn.addEventListener('click', () => {
+    if (sim.live) { App.toast('目前就是即時位置', { desc: '車上定位每 10 秒回傳一次，畫面會持續更新。' }); return; }
+    goLive();
+  });
+  playBtn.addEventListener('click', () => {
+    if (sim.playing) { sim.playing = false; sim.live = false; }
+    else sim.playing = true;
+    syncMode();
+  });
+  scrub.addEventListener('pointerdown', () => { sim.dragging = true; });
+  // 觸控拖曳時瀏覽器可能接手捲動，只會收到 pointercancel，兩者都要結束拖曳狀態
+  ['pointerup', 'pointercancel'].forEach((ev) => window.addEventListener(ev, () => { sim.dragging = false; }));
+  scrub.addEventListener('input', () => {
+    sim.live = false;
+    sim.hold = 0;
+    sim.t = T_START + Number(scrub.value) * 1000;
+    drawSim(false);
+    syncMode();
+  });
+
+  const simLoop = App.loop((dt) => {
+    if (sim.live) sim.t = App.now();
+    else if (sim.playing && !sim.dragging) {
+      if (sim.t >= T_END) {
+        // 回放到終點停 1.6 秒，再從發車重播
+        sim.hold += dt;
+        if (sim.hold > 1600) { sim.hold = 0; sim.t = T_START; prevPassed = null; }
+      } else sim.t = Math.min(T_END, sim.t + dt * sim.speed);
+    }
+    drawSim(false);
+  });
+  App.inView(simRoot, (visible) => { if (visible) simLoop.start(); else simLoop.stop(); }, { rootMargin: '120px' });
+
+  function selectStop(id) {
+    selStop = id;
+    markSelected();
+    $$('[data-stop]', lineList).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.stop === id)));
+    drawSim(true);
+    // 地圖可橫向捲動時（手機），把選到的站點捲進畫面中央
+    if (scroller.scrollWidth > scroller.clientWidth + 1) {
+      setFollow(false);
+      const [x] = G.points[App.garbage.stop(id).v];
+      scroller.scrollTo({ left: (x * canvasW) / G.map.w - scroller.clientWidth / 2, behavior: reduce ? 'auto' : 'smooth' });
+    }
+  }
+  canvas.addEventListener('click', (e) => { const g = e.target.closest('.gmap__stop'); if (g) selectStop(g.dataset.stop); });
+  lineList.addEventListener('click', (e) => { const b = e.target.closest('[data-stop]'); if (b) selectStop(b.dataset.stop); });
+  stopCard.addEventListener('click', (e) => { const b = e.target.closest('[data-set-mine]'); if (b) setMyStop(b.dataset.setMine); });
+
+  // 使用者自己橫向拖動地圖 → 停止跟隨（程式捲動時 scrollLeft 會等於上次設定的值）
+  scroller.addEventListener('scroll', () => { if (follow && Math.abs(scroller.scrollLeft - lastSetLeft) > 3) setFollow(false); }, { passive: true });
+  followBtn.addEventListener('click', () => { setFollow(!follow); drawSim(true); });
+  new ResizeObserver(() => {
+    canvasW = canvas.clientWidth;
+    followBtn.hidden = scroller.scrollWidth <= scroller.clientWidth + 1;
+    tagW = tag.offsetWidth;
+    drawSim(true);
+  }).observe(canvas);
+
+  /* ================= 今天回收、錯過了 ================= */
+  function itemsOn(iso) { return isCollect(iso) ? G.recycle[dowOf(iso)] : []; }
+  function renderToday() {
+    const items = itemsOn(TODAY);
+    $('[data-today-label]').textContent = `今天（${WEEK[dowOf(TODAY)]}）回收`;
+    $('[data-today-count]').textContent = items.length ? `${items.length} 類資源回收` : '今天停收';
+    $('[data-today-items]').innerHTML = items.map((n, i) => `<li style="--i:${i}"><span class="sv-rc" style="--c:${GROUPS[ITEMS[n].g].color}">${rcIcon(n)}</span>${esc(n)}</li>`).join('');
+    const nx = nextCollect(TODAY, false);
+    $('[data-today-next]').innerHTML = `<b>${dayWord(nx)}</b><br>${itemsOn(nx).map(esc).join('、')}`;
+  }
+  function renderMiss() {
+    const s = App.garbage.stop(G.myStop);
+    const [x, y] = G.points[s.v];
+    const [dx, dy] = G.points[0];
+    // 沿道路走：先沿所在道路接到最近的南北向幹道，再往北接北岸大道回到清潔隊
+    const mainX = G.map.xs.filter((v) => v > 0 && v < G.map.w);
+    let pts;
+    if (y === dy) pts = [[x, y], [dx, dy]];
+    else if (mainX.includes(x)) pts = [[x, y], [x, dy], [dx, dy]];
+    else {
+      const nx = mainX.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
+      pts = [[x, y], [nx, y], [nx, dy], [dx, dy]];
+    }
+    const meters = App.polyline.measure(pts).total * M_PER_UNIT;
+    $('[data-walk-dist]').innerHTML = `${fmt.num(meters / 1000, 1)} km<small>步行約 ${Math.round(meters / 80)} 分</small>`;
+    $('[data-walk-from]').textContent = s.name;
+  }
+  $('[data-nav]').addEventListener('click', () => {
+    const s = App.garbage.stop(G.myStop);
+    App.toast('已在地圖 App 開啟步行路線', { desc: `${s.name} → ${G.team}（北岸大道 6 號）`, icon: 'navigation' });
+  });
+
+  /* ================= 我的站點：更換、回報 ================= */
+  function setMyStop(id) {
+    const prev = G.myStop;
+    if (id === prev) return;
+    const s = App.garbage.stop(id);
+    selStop = id;
+    App.update('garbage', (g) => { g.myStop = id; });
+    App.toast(`我的站點已改為「${s.name}」`, {
+      tone: 'ok',
+      desc: `表定 ${s.time} 抵達，倒數與到站提醒已同步更新。`,
+      action: { label: '復原', onClick: () => { selStop = prev; App.update('garbage', (g) => { g.myStop = prev; }); } },
+    });
+  }
+  $('[data-change-stop]').addEventListener('click', () => {
+    const body = `<p>選擇你平常倒垃圾的站點，倒數、地圖與到站提醒會一起更新。</p><div class="sv-pick">${G.stops.map((s) => `<label class="sv-pick__row"><input class="radio" type="radio" name="pick-stop" value="${s.id}"${s.id === G.myStop ? ' checked' : ''}><span><b>${esc(s.name)}</b><span>${esc(s.addr)}</span></span><span class="sv-pick__time num">${s.time}</span></label>`).join('')}</div>`;
+    const m = App.modal({
+      eyebrow: G.route, title: '更換我的站點', body, size: 'sm',
+      actions: [
+        { label: '取消' },
+        { label: '確定', variant: 'primary', onClick: (close) => { const v = $('input[name="pick-stop"]:checked', m.body).value; close(); setMyStop(v); } },
+      ],
+    });
+  });
+
+  let reportSeq = 417;
+  function openReport() {
+    const types = ['垃圾車沒有來', '比表定晚 15 分鐘以上', '漏收我家的垃圾', '噪音、滴漏或違規停車', '其他'];
+    const rf = document.createElement('form');
+    rf.className = 'sv-report';
+    rf.noValidate = true;
+    rf.innerHTML = `<fieldset class="field" data-r-type><legend class="label">問題類型<span class="label__req">必填</span></legend>`
+      + `<div class="sv-report__types">${types.map((t, i) => `<label class="check-row"><input class="radio" type="radio" name="r-type" value="${i}">${t}</label>`).join('')}</div>`
+      + `<p class="field__error">${icon('alert')}請選擇問題類型</p></fieldset>`
+      + `<div class="field"><label class="label" for="r-stop">發生站點</label><div class="select-wrap"><select class="select" id="r-stop">${G.stops.map((s) => `<option value="${s.id}"${s.id === G.myStop ? ' selected' : ''}>${esc(s.name)}（表定 ${s.time}）</option>`).join('')}</select></div></div>`
+      + `<div class="field" data-r-note><label class="label" for="r-note">補充說明</label><textarea class="textarea" id="r-note" maxlength="200" rows="3" placeholder="例如：19:05 還沒看到垃圾車，巷口有十幾位鄰居在等。"></textarea>`
+      + `<p class="hint">選「其他」時請至少寫 10 個字 · <span class="num" data-r-count>0</span> / 200</p><p class="field__error">${icon('alert')}請描述狀況，至少 10 個字</p></div>`
+      + `<label class="check-row"><input class="check" type="checkbox" checked>同意清潔隊以 ${esc(DATA.user.phone)} 與我聯絡</label>`;
+    let rTried = false;
+    const note = $('#r-note', rf);
+    const check = () => {
+      const type = $('input[name="r-type"]:checked', rf);
+      const typeOk = !!type;
+      const noteOk = !(type && type.value === String(types.length - 1)) || note.value.trim().length >= 10;
+      $('[data-r-type]', rf).classList.toggle('is-invalid', rTried && !typeOk);
+      $('[data-r-note]', rf).classList.toggle('is-invalid', rTried && !noteOk);
+      return { ok: typeOk && noteOk, typeOk };
+    };
+    rf.addEventListener('input', () => { $('[data-r-count]', rf).textContent = note.value.length; check(); });
+    rf.addEventListener('change', check);
+    const submit = (close) => {
+      rTried = true;
+      const r = check();
+      if (!r.ok) { (r.typeOk ? note : $('input[name="r-type"]', rf)).focus(); return; }
+      const stop = App.garbage.stop($('#r-stop', rf).value);
+      close();
+      reportSeq += 1;
+      const p = App.parts(App.now());
+      App.toast('回報已送出', { tone: 'ok', desc: `案號 G-${String(p.y).slice(2)}${pad(p.m)}${pad(p.d)}-${pad(Math.floor(reportSeq / 100))}${pad(reportSeq % 100)} · ${stop.name} · 清潔隊會在 30 分鐘內回覆` });
+    };
+    rf.addEventListener('submit', (e) => { e.preventDefault(); submit(m.close); });
+    const m = App.modal({
+      eyebrow: `${G.route} · ${G.team}`, title: '回報垃圾車問題', body: rf,
+      actions: [{ label: '取消' }, { label: '送出回報', variant: 'primary', onClick: submit }],
+    });
+  }
+  $$('[data-report]').forEach((b) => b.addEventListener('click', openReport));
+
+  /* ================= 到站提醒 ================= */
+  const form = $('[data-alert-form]');
+  const fStop = $('#f-stop');
+  const fLead = $('[data-f-lead]');
+  const fDays = $('[data-f-days]');
+  const sw = { push: $('#f-push'), sms: $('#f-sms'), recycle: $('#f-recycle'), eve: $('#f-eve') };
+  const statusBadge = $('[data-f-status]');
+  // 已儲存的提醒（站點本身存在 DATA.garbage.myStop，與倒數、地圖共用）
+  let saved = { lead: 5, days: [...G.days], push: true, sms: false, recycle: true, eve: true };
+  let savedAt = '2026/10/09 21:14';
+  const clone = (o) => ({ ...o, days: [...o.days] });
+  let draft = { ...clone(saved), stop: G.myStop };
+  let tried = false;
+  const sameSettings = (a, b) => a.stop === b.stop && a.lead === b.lead && a.push === b.push && a.sms === b.sms && a.recycle === b.recycle && a.eve === b.eve
+    && [...a.days].sort().join() === [...b.days].sort().join();
+
+  fStop.innerHTML = G.stops.map((s) => `<option value="${s.id}">${esc(s.name)}（表定 ${s.time}）</option>`).join('');
+  fDays.innerHTML = [1, 2, 3, 4, 5, 6, 0].map((d) => (G.days.includes(d)
+    ? `<button class="chip" type="button" data-wd="${d}" aria-pressed="false" aria-label="週${WEEK[d]}">${WEEK[d]}</button>`
+    : `<button class="chip" type="button" disabled aria-label="週${WEEK[d]}停收"><span>${WEEK[d]}</span><small>停收</small></button>`)).join('');
+  const eveDays = offDays.map((d) => `週${WEEK[(d + 6) % 7]}`).join('、');
+  $('[data-f-eve-sub]').textContent = `${eveDays} 20:00 提醒明天停收`;
+
+  const leadSeg = App.seg(fLead, { onChange: (v) => { draft.lead = Number(v); renderForm(); } });
+  fStop.addEventListener('change', () => { draft.stop = fStop.value; renderForm(); });
+  fDays.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-wd]');
+    if (!b) return;
+    const d = Number(b.dataset.wd);
+    draft.days = draft.days.includes(d) ? draft.days.filter((x) => x !== d) : [...draft.days, d];
+    renderForm();
+  });
+  Object.entries(sw).forEach(([k, el]) => el.addEventListener('change', () => { draft[k] = el.checked; renderForm(); }));
+
+  function notifyMinOf(stopId, lead) {
+    return Math.max(toMin(G.depart), toMin(App.garbage.stop(stopId).time) - lead);
+  }
+  function validate() {
+    const okDays = draft.days.length > 0;
+    const okCh = draft.push || draft.sms;
+    $('[data-field-days]').classList.toggle('is-invalid', tried && !okDays);
+    $('[data-field-ch]').classList.toggle('is-invalid', tried && !okCh);
+    return { okDays, okCh };
+  }
+  function renderForm() {
+    const s = App.garbage.stop(draft.stop);
+    fStop.value = draft.stop;
+    $('[data-f-stop-hint]').textContent = s.addr;
+    const leadBtn = $$('.seg__btn', fLead).find((b) => Number(b.dataset.value) === draft.lead);
+    if (leadBtn.getAttribute('aria-pressed') !== 'true') leadSeg.select(leadBtn, { silent: true });
+    const nm = notifyMinOf(draft.stop, draft.lead);
+    $('[data-f-lead-hint]').textContent = `約 ${hhmm(nm)} 收到通知`;
+    $$('[data-wd]', fDays).forEach((b) => b.setAttribute('aria-pressed', String(draft.days.includes(Number(b.dataset.wd)))));
+    Object.entries(sw).forEach(([k, el]) => { el.checked = draft[k]; });
+    const early = $('[data-f-early]');
+    const gap = toMin(s.time) - toMin(G.depart);
+    early.hidden = draft.lead <= gap;
+    if (!early.hidden) early.innerHTML = `${icon('alert')}<p>${esc(s.name)} 表定 ${s.time}，距離 ${G.depart} 發車只有 ${gap} 分鐘；提醒會在發車時送出。</p>`;
+    const dirty = !sameSettings(draft, { ...saved, stop: G.myStop });
+    statusBadge.className = `badge ${dirty ? 'badge--warn' : 'badge--ok'}`;
+    statusBadge.textContent = dirty ? '尚未儲存' : '已儲存';
+    $('[data-f-saved-hint]').textContent = `上次儲存：${savedAt}`;
+    validate();
+    renderPreview(false);
+  }
+
+  /* 鎖定畫面預覽 */
+  const lockStack = $('[data-lock-stack]');
+  const phone = $('[data-phone]');
+  let lastLock = '';
+  function nextOccurrence(days, notifyMin) {
+    for (let k = 0; k < 21; k++) {
+      const iso = addDays(TODAY, k);
+      if (!days.includes(dowOf(iso)) || !isCollect(iso)) continue;
+      if (App.time(`${iso}T${hhmm(notifyMin)}`) > App.now()) return iso;
+    }
+    return null;
+  }
+  function notifCard(i, { app, iconName, cat, title, text }) {
+    return `<div class="notif" style="--i:${i}"><span class="app-icon app-icon--${cat} notif__icon" style="--s:38px">${icon(iconName, { sw: 2.1 })}</span>`
+      + `<div class="notif__head"><span class="notif__app">${esc(app)}</span><span class="notif__time">現在</span></div>`
+      + `<div><p class="notif__title">${esc(title)}</p><p class="notif__text">${esc(text)}</p></div></div>`;
+  }
+  function renderPreview(animate) {
+    const s = App.garbage.stop(draft.stop);
+    const nm = notifyMinOf(draft.stop, draft.lead);
+    const lead = toMin(s.time) - nm;
+    const occ = nextOccurrence(draft.days, nm);
+    const p = App.parts(App.time(occ || TODAY));
+    $('[data-lock-date]').textContent = `${p.m}月${p.d}日 星期${WEEK[p.dow]}`;
+    $('[data-lock-clock]').textContent = hhmm(nm);
+    const items = G.recycle[p.dow];
+    const cards = [];
+    if (draft.push) {
+      cards.push(notifCard(cards.length, {
+        app: '垃圾車動態', iconName: 'truck', cat: 'life',
+        title: `垃圾車約 ${lead} 分鐘後抵達`,
+        text: `${G.route} · ${s.name}（${s.addr}）表定 ${s.time}` + (draft.recycle && items.length ? `。今天收：${items.join('、')}` : '。'),
+      }));
+    }
+    if (draft.sms) {
+      cards.push(notifCard(cards.length, {
+        app: '簡訊', iconName: 'message', cat: 'transit',
+        title: '1999 澄港市政府',
+        text: `【城市通】${G.route}約 ${lead} 分鐘後抵達${s.name}，請準備出門。`,
+      }));
+    }
+    const html = cards.length ? cards.join('') : `<p class="sv-lock__empty">${icon('bell')}未開啟任何通知方式<br>這個時間不會收到提醒</p>`;
+    if (html !== lastLock || animate) {
+      lastLock = html;
+      lockStack.innerHTML = html;
+      if (!reduce) {
+        lockStack.classList.remove('is-drop');
+        void lockStack.offsetWidth; // 重新觸發進場動畫
+        lockStack.classList.add('is-drop');
+      }
+    }
+    $('[data-preview-when]').textContent = occ ? `下次提醒：${dayWord(occ)} ${hhmm(nm)}` : '尚未選擇提醒日';
+    $('[data-preview-eve]').textContent = draft.eve ? `停收日前一晚（${eveDays}）20:00 另外提醒` : '停收日前一晚不另外提醒';
+  }
+  const summary = (o) => `${App.garbage.stop(o.stop).name} · 提前 ${o.lead} 分鐘 · ${[o.push && 'App 推播', o.sms && '簡訊'].filter(Boolean).join('、')}`;
+  function commit(next) {
+    saved = { lead: next.lead, days: [...next.days], push: next.push, sms: next.sms, recycle: next.recycle, eve: next.eve };
+    draft = clone(next);
+    // 換站點走 App.update：首頁倒數、地圖、時間軸都掛在 cp:data 上一起重繪
+    if (G.myStop !== next.stop) App.update('garbage', (g) => { g.myStop = next.stop; });
+    renderForm();
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    tried = true;
+    const v = validate();
+    if (!v.okDays || !v.okCh) {
+      App.toast('還有設定需要確認', { tone: 'warn', desc: '請至少選一個提醒日，並開啟一種通知方式。' });
+      (v.okDays ? sw.push : $('[data-wd]', fDays)).focus();
+      return;
+    }
+    const before = { ...clone(saved), stop: G.myStop };
+    const beforeAt = savedAt;
+    const p = App.parts(App.now());
+    savedAt = `${p.y}/${pad(p.m)}/${pad(p.d)} ${pad(p.h)}:${pad(p.min)}`;
+    commit({ ...clone(draft) });
+    App.toast('到站提醒已儲存', {
+      tone: 'ok',
+      desc: summary(draft),
+      action: { label: '復原', onClick: () => { savedAt = beforeAt; commit(before); } },
+    });
+  });
+  $('[data-test]').addEventListener('click', () => {
+    if (!draft.push && !draft.sms) {
+      tried = true;
+      validate();
+      App.toast('沒有可用的通知方式', { tone: 'warn', desc: '請先開啟 App 推播或簡訊，再傳送測試通知。' });
+      return;
+    }
+    renderPreview(true);
+    if (!reduce) {
+      phone.classList.remove('is-buzz');
+      void phone.offsetWidth;
+      phone.classList.add('is-buzz');
+    }
+    App.toast('測試通知已送出', { desc: `已傳到${DATA.user.shortName}的手機，內容與鎖定畫面預覽相同。`, icon: 'bell' });
+  });
+  phone.addEventListener('animationend', (e) => { if (e.target === phone) phone.classList.remove('is-buzz'); });
+  $('[data-goto-alerts]').addEventListener('click', () => {
+    $('#alerts').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    fStop.focus({ preventScroll: true });
+  });
+
+  // 已儲存的提醒時間一到就送出（模擬推播），讓停在頁面上的人也能收到
+  let lastFireCheck = App.now();
+  function checkAlertFire() {
+    const now = App.now();
+    const nm = notifyMinOf(G.myStop, saved.lead);
+    const at = App.time(`${TODAY}T${hhmm(nm)}`);
+    const due = lastFireCheck < at && at <= now && saved.days.includes(dowOf(TODAY)) && isCollect(TODAY) && saved.push;
+    lastFireCheck = now;
+    if (!due) return;
+    const s = App.garbage.stop(G.myStop);
+    App.toast(`垃圾車約 ${toMin(s.time) - nm} 分鐘後抵達`, { icon: 'truck', desc: `${G.route} · ${s.name} 表定 ${s.time}，請準備出門。`, duration: 8000 });
+  }
+
+  /* ================= 回收日曆 ================= */
+  const calGrid = $('[data-cal-grid]');
+  const dayPanel = $('[data-day-panel]');
+  const CAL_YEAR = Number(TODAY.slice(0, 4));
+  let calMonth = Number(TODAY.slice(5, 7));
+  let calSel = TODAY;
+  $('[data-legend]').innerHTML = Object.values(GROUPS).map((g) => `<span><i style="--c:${g.color}"></i>${g.label}</span>`).join('')
+    + '<span><i class="is-flag"></i>特殊公告</span><span><s>23</s> 停收日</span>';
+  function renderCal(animate) {
+    const first = `${CAL_YEAR}-${pad(calMonth)}-01`;
+    const lead = dowOf(first);
+    const days = new Date(Date.UTC(CAL_YEAR, calMonth, 0)).getUTCDate();
+    let html = WEEK.map((w) => `<span class="cal__dow" aria-hidden="true">${w}</span>`).join('');
+    for (let i = lead; i > 0; i--) html += `<span class="cal__day is-muted" aria-hidden="true">${Number(addDays(first, -i).slice(8))}</span>`;
+    for (let d = 1; d <= days; d++) {
+      const iso = `${CAL_YEAR}-${pad(calMonth)}-${pad(d)}`;
+      const on = isCollect(iso);
+      const items = itemsOn(iso);
+      const groups = [...new Set(items.map((n) => ITEMS[n].g))];
+      const sp = SPECIAL[iso];
+      const cls = ['cal__day', iso === TODAY && 'is-today', !on && 'is-off', iso < TODAY && 'is-past'].filter(Boolean).join(' ');
+      const label = `${calMonth} 月 ${d} 日 星期${WEEK[dowOf(iso)]}，${on ? `回收${items.join('、')}` : '停收'}${sp ? `，${sp.title}` : ''}`;
+      html += `<button class="${cls}" type="button" data-date="${iso}" aria-pressed="${iso === calSel}" aria-label="${esc(label)}"><span>${d}</span>`
+        + `<span class="cal__dots">${groups.map((g) => `<span class="cal__dot" style="--c:${GROUPS[g].color}"></span>`).join('')}</span>`
+        + (sp ? '<span class="sv-cal__flag"></span>' : '') + '</button>';
+    }
+    const tail = (7 - ((lead + days) % 7)) % 7;
+    for (let i = 1; i <= tail; i++) html += `<span class="cal__day is-muted" aria-hidden="true">${i}</span>`;
+    calGrid.innerHTML = html;
+    $('[data-cal-title]').textContent = `${CAL_YEAR} 年 ${calMonth} 月`;
+    if (animate && !reduce) { calGrid.classList.remove('is-swap'); void calGrid.offsetWidth; calGrid.classList.add('is-swap'); }
+  }
+  function renderDay(animate) {
+    const iso = calSel;
+    const p = App.parts(App.time(iso));
+    const on = isCollect(iso);
+    const items = itemsOn(iso);
+    const sp = SPECIAL[iso];
+    const mine = App.garbage.stop(G.myStop);
+    const shift = sp && sp.shift ? sp.shift : 0;
+    const rel = iso === TODAY ? '<span class="badge badge--accent">今天</span>'
+      : iso < TODAY ? '<span class="badge">已過</span>'
+      : iso === addDays(TODAY, 1) ? '<span class="badge badge--outline">明天</span>' : '';
+    const head = `<div class="sv-day__head"><div><p class="sv-day__date">${p.m} 月 ${p.d} 日（${WEEK[p.dow]}）</p><p class="sv-day__title">${on ? `一般垃圾＋${items.length} 類資源回收` : '停收日'}</p></div>${rel}</div>`;
+    const notice = sp ? `<div class="callout callout--${sp.tone}">${icon('alert')}<p><b>${esc(sp.title)}</b><br>${esc(sp.text)}</p></div>` : '';
+    let body;
+    if (on) {
+      body = '<div class="sv-day__list">'
+        + `<div class="sv-day__item"><span class="sv-rc" style="--c:var(--text-2)">${icon('trash')}</span><p><b>${GENERAL.name}</b><span>${GENERAL.tip}</span></p></div>`
+        + items.map((n) => `<div class="sv-day__item"><span class="sv-rc" style="--c:${GROUPS[ITEMS[n].g].color}">${rcIcon(n)}</span><p><b>${esc(n)}</b><span>${esc(ITEMS[n].tip)}</span></p></div>`).join('')
+        + '</div>';
+    } else {
+      const nx = nextCollect(iso, false);
+      body = `<div class="sv-day__off"><strong>垃圾車不會來</strong><p>${sp && sp.off ? '本日因故停收' : `北岸區每週${offDays.map((d) => WEEK[d]).join('、')}停收`}，請把垃圾留到 <b>${fmt.dateWeek(nx)}</b>，當天回收${itemsOn(nx).map(esc).join('、')}。</p></div>`;
+    }
+    const foot = on
+      ? `<p>${G.route} <b>${hhmm(toMin(G.depart) + shift)}</b> 發車 · ${esc(mine.name)} 表定 <b>${hhmm(toMin(mine.time) + shift)}</b></p><a class="link link--chev" href="#alerts">設定到站提醒</a>`
+      : `<p>停收日前一晚 20:00 可收到提醒</p><button class="btn btn--ghost btn--sm" type="button" data-subscribe>${icon('calendar')}訂閱回收日曆</button>`;
+    dayPanel.innerHTML = `${head}<div class="sv-day__body">${notice}${body}</div><div class="sv-day__foot">${foot}</div>`;
+    if (animate && !reduce) $('.sv-day__body', dayPanel).classList.add('is-swap');
+  }
+  App.seg($('[data-cal-seg]'), {
+    onChange: (v) => {
+      calMonth = Number(v);
+      if (Number(calSel.slice(5, 7)) !== calMonth) {
+        const first = `${CAL_YEAR}-${pad(calMonth)}-01`;
+        calSel = TODAY.slice(0, 7) === first.slice(0, 7) ? TODAY : nextCollect(first, true);
+      }
+      renderCal(true);
+      renderDay(true);
+    },
+  });
+  calGrid.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-date]');
+    if (!b) return;
+    calSel = b.dataset.date;
+    $$('[data-date]', calGrid).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    renderDay(true);
+  });
+  dayPanel.addEventListener('click', (e) => {
+    if (e.target.closest('[data-subscribe]')) App.toast('已訂閱北岸 2 線回收日曆', { tone: 'ok', desc: '停收日與特殊收運公告會自動加進你的行事曆。' });
+  });
+
+  /* ================= 資料變動：同一套重繪 ================= */
+  document.addEventListener('cp:data', (e) => {
+    if (e.detail.key !== 'garbage') return;
+    renderMap();
+    buildLine();
+    buildTicks();
+    cardHtml = '';
+    drawSim(true);
+    renderHero();
+    renderMiss();
+    draft.stop = G.myStop;
+    renderForm();
+    renderDay(false);
+  });
+
+  /* ---------- 初始化 ---------- */
+  renderMap();
+  buildLine();
+  buildTicks();
+  canvasW = canvas.clientWidth;
+  syncMode();
+  drawSim(true);
+  renderHero();
+  renderToday();
+  renderMiss();
+  renderForm();
+  renderCal(false);
+  renderDay(false);
+  App.every(1000, () => { renderHero(); checkAlertFire(); renderPreview(false); });
+});
+</script>
+</body>
+</html>

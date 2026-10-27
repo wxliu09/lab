@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公文詳情 — 澄港市政府 公文線上簽核 流程中樞</title>
+<meta name="description" content="單件公文的函稿樣張、簽章欄、意見欄與泳道簽核軌跡；token 依實際工作時間重播這件公文走過的 BPMN 路徑。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=LXGW+WenKai+TC:wght@400;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ── 公文詳情專屬（前綴 dc-） ── */
+  .dc-head .page-head__main { max-width: 940px; }
+  .dc-title { font-size: 28px; line-height: 1.38; letter-spacing: 0; }
+  .dc-crumb { color: var(--ink-3); text-decoration: none; }
+  .dc-crumb:hover { color: var(--token-ink); text-decoration: underline; }
+  /* 每段資訊不拆行；分隔點畫在段與段的間隙裡，折到行首的那一點落在容器外被裁掉，不會吊在行尾或行首 */
+  .dc-lede { display: flex; flex-wrap: wrap; gap: 2px 1.3em; overflow: hidden; max-width: none; font-size: var(--fs-14); color: var(--ink-3); }
+  .dc-lede > span { position: relative; white-space: nowrap; }
+  .dc-lede > span::before { content: "·"; position: absolute; left: -.9em; color: var(--ink-4); }
+  .dc-lede b { color: var(--ink-2); font-weight: 500; }
+  .dc-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 14px; }
+  .dc-queue {
+    display: inline-flex; align-items: center; gap: 2px; height: 40px; padding: 0 4px 0 12px;
+    background: var(--sheet); border: 1px solid var(--line-2); border-radius: var(--r-md); font-size: var(--fs-13); color: var(--ink-3);
+  }
+  .dc-queue b { font: 600 var(--fs-13)/1 var(--font-mono); color: var(--ink); padding: 0 8px 0 6px; white-space: nowrap; }
+  .dc-queue .btn { --btn-h: 30px; }
+  .dc-queue .is-disabled { opacity: .3; pointer-events: none; }
+  .dc-switch { position: relative; }
+  .dc-switch > .btn .icon { transition: transform var(--dur-2) var(--ease-out); }
+  .dc-switch > .btn[aria-expanded="true"] .icon { transform: rotate(180deg); }
+  .dc-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; width: 420px; max-width: calc(100vw - 32px);
+    padding: 6px 0; background: var(--sheet); border: 1.5px solid var(--ink); border-radius: 12px; box-shadow: var(--sh-3);
+    animation: card-in var(--dur-2) var(--ease-out);
+  }
+  .dc-menu__cap { padding: 8px 14px 4px; font: 500 var(--fs-11)/1.4 var(--font-mono); letter-spacing: .06em; color: var(--ink-3); }
+  .dc-menu__item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 8px 14px; color: var(--ink); text-decoration: none; }
+  .dc-menu__item:hover { background: var(--sheet-2); color: var(--ink); }
+  .dc-menu__item[aria-current="page"] { background: var(--token-soft); box-shadow: inset 3px 0 0 var(--token); }
+  .dc-menu__subj { font-size: var(--fs-13); font-weight: 500; }
+  .dc-menu__meta { grid-column: 2; font-size: var(--fs-12); color: var(--ink-3); }
+
+  /* 辦理狀態列：像工程圖的標題欄 */
+  .dc-status { display: grid; grid-template-columns: minmax(0, 2.1fr) repeat(4, minmax(0, 1fr)); margin-bottom: 24px; }
+  .dc-stat { padding: 14px 18px; border-left: 1px solid var(--line); min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .dc-stat:first-child { border-left: 0; }
+  .dc-stat__k { font: 500 var(--fs-11)/1.4 var(--font-mono); letter-spacing: .06em; color: var(--ink-3); }
+  .dc-stat__v { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-17); font-weight: 600; line-height: 1.3; color: var(--ink); }
+  .dc-stat__v small { font-size: var(--fs-13); font-weight: 500; color: var(--ink-3); }
+  .dc-stat__s { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.45; }
+  .dc-stat__s.is-bad { color: var(--danger-ink); font-weight: 600; }
+  .dc-stat .mini-flow--lg { max-width: 520px; margin-top: 4px; }
+  .dc-countdown { font: 600 var(--fs-13)/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--warn-ink); }
+  .dc-countdown.is-bad { color: var(--danger-ink); }
+
+  /* 主體：公文樣張 + 側欄 */
+  .dc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 24px; align-items: start; }
+  .dc-side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .dc-paper-panel .tabs { padding: 0 12px; }
+  .dc-desk {
+    padding: 32px 28px 40px; border-radius: 0 0 var(--r-md) var(--r-md);
+    background-color: var(--paper-2);
+    background-image: linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+  .gov-doc.dc-lg { font-size: 19px; }
+  .gov-doc.dc-press { animation: dc-press 420ms 280ms var(--ease-out); }
+  @keyframes dc-press { 35% { transform: translateY(1.5px); box-shadow: var(--sh-1); } }
+  /* 密等浮水印：只旋轉文字本身，避免旋轉後的外框撐出版面 */
+  .gov-doc[data-mark]::after {
+    content: attr(data-mark); position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) rotate(-22deg);
+    font-size: 132px; font-weight: 700; letter-spacing: .3em; color: rgba(201, 48, 58, .065); pointer-events: none; white-space: nowrap;
+  }
+  .dc-draftmark { position: absolute; left: 84px; top: 18px; width: 34px; height: 34px; display: grid; place-items: center; border: 1.5px solid #15181D; font-size: 18px; font-weight: 700; line-height: 1; }
+  .dc-blank { font-family: var(--font-sans); font-size: 13px; color: var(--ink-3); }
+  .gov-doc .gov-doc__sign { min-height: 0; margin-top: 30px; }
+  .dc-sign-head { display: flex; align-items: baseline; gap: 18px; margin: 14px 0 2px; }
+  .dc-sign-head__kind { font-size: 30px; font-weight: 700; letter-spacing: .2em; }
+  .dc-sign-head__from { font-size: 18px; }
+  .dc-sign-date { font-size: 15px; color: #3A3F47; margin-bottom: 14px; }
+  .dc-sign-to { margin-top: 18px; font-size: 18px; letter-spacing: .1em; }
+
+  /* 簽核章戳欄：完成的關卡蓋上職章，決行蓋決行章 */
+  .dc-seals { display: flex; flex-wrap: wrap; margin-top: 30px; border-top: 1px solid #D3CCBD; border-left: 1px solid #D3CCBD; font-family: var(--font-sans); }
+  .dc-slot { flex: 1 1 104px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px 9px; border-right: 1px solid #D3CCBD; border-bottom: 1px solid #D3CCBD; min-width: 0; }
+  .dc-slot__label { font-size: 11.5px; color: #4A505A; letter-spacing: .06em; white-space: nowrap; }
+  .dc-slot__mark { position: relative; display: grid; place-items: center; width: 100%; height: 100px; }
+  .dc-sealbox { position: relative; display: inline-block; }
+  .dc-slot__mark .seal--name { width: 58px; transform: rotate(var(--rot, -4deg)); }
+  .dc-slot__mark .seal--decide { width: 88px; transform: rotate(var(--rot, -4deg)); }
+  .dc-slot__mark .seal.dc-later { animation-delay: .34s; }
+  .dc-slot__wait {
+    display: grid; place-items: center; width: 56px; height: 78px; padding: 4px;
+    border: 1.5px dashed #D3CCBD; border-radius: 4px; font-size: 11px; line-height: 1.45; color: var(--ink-3); text-align: center;
+  }
+  .dc-slot.is-pending .dc-slot__wait { border-color: var(--line-3); color: var(--ink-2); }
+  .dc-slot.is-mine .dc-slot__wait { border-color: var(--token); color: var(--token-ink); background: rgba(0, 163, 255, .06); font-weight: 600; }
+  .dc-slot.is-mine .dc-slot__mark::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 56px; height: 78px; margin: -39px 0 0 -28px; border-radius: 4px;
+    border: 1.5px solid var(--token); animation: dc-await 2.4s var(--ease-out) infinite; pointer-events: none;
+  }
+  @keyframes dc-await { 0% { opacity: .7; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(1.18); } }
+  .dc-slot__time { font: 500 11px/1.3 var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+
+  /* 來文與附件 */
+  .dc-incoming {
+    position: relative; max-width: 760px; margin: 0 auto; padding: 36px 44px 40px; background: #FDFDFB; color: #15181D;
+    border: 1px solid var(--line-2); box-shadow: var(--sh-2); font-family: var(--font-kai); font-size: 16px; line-height: 1.8;
+  }
+  .dc-incoming__org { text-align: center; font-size: 24px; font-weight: 700; letter-spacing: .12em; }
+  .dc-incoming__org small { font-size: 19px; margin-left: .5em; }
+  .dc-incoming__meta { display: grid; grid-template-columns: max-content 1fr; gap: 0 4px; margin: 18px 0 14px; font-size: 15px; }
+  .dc-incoming__meta dd { margin: 0; }
+  .dc-incoming__meta .mono { font-size: 13.5px; }
+  .dc-incoming__subject { display: grid; grid-template-columns: max-content 1fr; font-size: 17px; }
+  .dc-incoming__note { margin-top: 18px; padding-top: 12px; border-top: 1px dashed var(--line-2); font-family: var(--font-sans); font-size: 13px; color: var(--ink-3); }
+  .dc-recv-stamp { position: absolute; right: 26px; top: 92px; width: 168px; color: #34465F; mix-blend-mode: multiply; transform: rotate(-3deg); }
+  .dc-recv-stamp text { font-family: var(--font-kai); fill: currentColor; text-anchor: middle; dominant-baseline: central; }
+  .dc-recv-stamp .dc-mono { font-family: var(--font-mono); font-weight: 600; }
+  .dc-att { list-style: none; max-width: 760px; margin: 0 auto; background: var(--sheet); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--sh-1); }
+  .dc-att__row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .dc-att__row:last-child { border-bottom: 0; }
+  .dc-att__ext { display: grid; place-items: center; width: 40px; height: 48px; border: 1.5px solid var(--ink-2); border-radius: 3px 10px 3px 3px; font: 600 10.5px/1 var(--font-mono); letter-spacing: .04em; color: var(--ink-2); text-transform: uppercase; }
+  .dc-att__name { font-weight: 600; font-size: var(--fs-14); }
+  .dc-att__meta { font-size: var(--fs-12); color: var(--ink-3); }
+
+  /* 側欄 */
+  .dc-kv { grid-template-columns: 76px minmax(0, 1fr); font-size: var(--fs-13); gap: 9px 12px; }
+  .dc-kv dd { overflow-wrap: anywhere; }
+  .dc-opinions { padding: 0 18px; }
+  /* 共用 .opinion 只鎖定列，頭像與印章會先佔走前兩欄；這裡明確指定欄位 */
+  .dc-opinions .opinion__head, .dc-opinions .opinion__body { grid-column: 2; }
+  .dc-opinions .opinion__stamp { grid-column: 3; }
+  .dc-opinions .opinion__head .muted { font-size: var(--fs-12); }
+  .dc-opinions .opinion__time { margin-left: auto; }
+  .dc-opinions .opinion__body { font-size: 15.5px; }
+  .dc-opinions .opinion.dc-new { animation: dc-new 1.4s var(--ease-out); }
+  @keyframes dc-new { from { background: var(--token-soft); } }
+  .dc-composer { padding: 14px 18px 18px; border-top: 1px dashed var(--line-2); background: var(--sheet-2); border-radius: 0 0 var(--r-md) var(--r-md); }
+  .dc-composer .textarea { font-family: var(--font-kai); font-size: 16px; min-height: 84px; }
+  .dc-composer__foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-3); }
+  .dc-secret { margin-bottom: 16px; }
+
+  /* 簽核軌跡：流程路徑 + 重播 + 泳道時間軸 */
+  .dc-trail-panel { margin-top: 24px; }
+  .dc-trail-panel > .panel__head { align-items: flex-start; }
+  .dc-sw { display: inline-block; width: 22px; height: 0; border-top: 2.6px solid var(--token); border-radius: 2px; }
+  .dc-sw--next { border-top: 1.5px dashed var(--ink-3); }
+  .dc-route .flow-stage { border-bottom: 1px solid var(--line); }
+  .dc-route .flow__edge-dash { display: none; }
+  .dc-route .flow__node:not(.is-visited):not(.dc-next) { opacity: .4; }
+  .dc-route .flow__edge:not(.is-path):not(.dc-next) { opacity: .34; }
+  .dc-route .flow__edge.dc-next:not(.is-path) .flow__edge-line { stroke: var(--ink-3); stroke-dasharray: 5 4; }
+  .dc-route .flow__edge.dc-next:not(.is-path) .flow__edge-dash { display: block; opacity: .85; }
+  /* 這張圖不跑即時 token，引擎會標 is-paused；預計路徑的流動點與熱度光暈仍要動（離開視窗由 data-anim 暫停） */
+  .dc-route .flow.is-paused .flow__edge.dc-next .flow__edge-dash,
+  .dc-route .flow.is-paused .flow__node.is-hot .flow__halo { animation-play-state: running; }
+  .dc-route .flow.dc-replaying .flow__node.dc-next:not(.is-visited) { opacity: .4; }
+  .dc-route .flow.dc-replaying .flow__edge.dc-next:not(.is-path) { opacity: .34; }
+  .dc-route .flow.dc-replaying .flow__edge.dc-next .flow__edge-dash { display: none; }
+  .dc-route .flow__node.dc-here .flow__shape { stroke: var(--token); stroke-width: 2.6; fill: #EEF8FF; }
+  .dc-tk-layer { pointer-events: none; }
+  .dc-tk__glow { fill: var(--token); opacity: .24; }
+  .dc-tk__core { fill: var(--token); stroke: #fff; stroke-width: 2; }
+  .dc-tk--wait .dc-tk__glow { opacity: 0; }
+  .dc-tk--wait .dc-tk__core { fill: #fff; stroke: var(--token); stroke-width: 2.4; }
+  .dc-tk__ping { fill: none; stroke: var(--token); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: token-ping 2.2s var(--ease-out) infinite; }
+
+  .dc-replay { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(240px, 300px); align-items: center; gap: 10px 20px; padding: 12px 18px; border-bottom: 1.5px solid var(--ink); background: var(--sheet); }
+  .dc-replay__btn { min-width: 112px; }
+  .dc-scrub { position: relative; padding-top: 16px; min-width: 0; }
+  .dc-ticks { position: absolute; left: 8px; right: 8px; top: 0; height: 14px; }
+  .dc-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; line-height: 1; color: var(--ink-3); white-space: nowrap; }
+  .dc-tick::after { content: ""; position: absolute; left: 50%; top: 15px; width: 1px; height: 6px; background: var(--line-3); }
+  .dc-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 26px; margin: 0; background: transparent; cursor: pointer; --pct: 100%; }
+  .dc-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--token) 0 var(--pct), var(--line-2) var(--pct) 100%); }
+  .dc-range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line-2); }
+  .dc-range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--token); }
+  .dc-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: var(--token); border: 2.5px solid #fff; box-shadow: 0 0 0 1px var(--token-line), 0 1px 3px rgba(27, 42, 65, .3); }
+  .dc-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--token); border: 2.5px solid #fff; box-shadow: 0 0 0 1px var(--token-line); }
+  .dc-range:focus-visible { outline: none; }
+  .dc-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--token-soft), 0 0 0 1.5px var(--token); }
+  .dc-readout { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-left: 16px; border-left: 1px dashed var(--line-2); }
+  .dc-readout__time { font: 600 var(--fs-15)/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .dc-readout__text { font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .dc-trail-wrap { padding-bottom: 4px; }
+  .dc-trail { grid-template-columns: 112px minmax(130px, 1fr) minmax(140px, 1fr) minmax(230px, 1.5fr) minmax(150px, 1fr) minmax(124px, .82fr); min-width: 1000px; }
+  .dc-row { display: contents; }
+  .dc-trail .trail__head { grid-row: 1; }
+  .dc-trail .trail__time, .dc-trail .trail__cell { grid-row: var(--row); transition: opacity var(--dur-3); }
+  .dc-trail .trail__time b { font-weight: 600; }
+  .dc-trail .trail__note { font-size: var(--fs-12); line-height: 1.55; }
+  .dc-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .dc-step-foot { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 6px; font: 500 11px/1.4 var(--font-mono); color: var(--ink-3); }
+  .dc-step-foot .is-over { color: var(--danger-ink); font-weight: 600; }
+  .dc-lane-tag { display: none; margin-left: auto; font-size: 10.5px; font-weight: 500; color: var(--ink-3); padding: 1px 6px; border: 1px solid var(--line-2); border-radius: 4px; white-space: nowrap; }
+  .dc-row.is-dim > * { opacity: .3; }
+  .dc-row.is-live .trail__step { border-color: var(--token); box-shadow: 0 0 0 3px var(--token-soft); }
+  .dc-row.is-future .trail__step { background: transparent; }
+  .dc-row.is-future .trail__time { color: var(--ink-4); }
+  .dc-event { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--ink-2); padding: 4px 2px; }
+  .dc-event .glyph { width: 22px; height: 22px; color: var(--ink); background: var(--sheet); border-radius: 50%; }
+  .dc-event small { display: block; font-size: var(--fs-12); color: var(--ink-3); }
+  /* 平行會辦的分支軌道：實線＝辦理中，點線＝已完成、在會合閘道等待其他分支 */
+  .dc-railed { display: flex; flex-direction: column; justify-content: center; }
+  .dc-rail { position: absolute; left: var(--x); top: -1px; bottom: -1px; width: 0; border-left: 1.5px solid var(--ink-2); pointer-events: none; }
+  .dc-rail--from-mid { top: 50%; }
+  .dc-rail--end, .dc-rail--wait-end { bottom: 50%; }
+  .dc-rail--wait, .dc-rail--wait-end, .dc-rail--wait-from-mid { border-left-style: dotted; border-left-color: var(--ink-3); }
+  .dc-rail--wait-from-mid { top: 50%; }
+  .dc-rail.is-pending { border-left-color: var(--token); }
+  .dc-rail-dot { position: absolute; left: calc(var(--x) - 3.25px); top: calc(50% - 4px); width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
+  .dc-rail-dot.is-pending { background: var(--sheet); border: 1.5px solid var(--token); }
+  .dc-rail-tie { position: absolute; left: var(--x); width: calc(var(--pad) - var(--x)); top: 50%; border-top: 1.5px solid var(--ink-2); }
+  .dc-rail-tie.is-pending { border-top: 1.5px dashed var(--token); }
+  .dc-gw { position: absolute; left: calc(var(--x) - 10px); top: calc(50% - 10px); width: 20px; height: 20px; color: var(--ink); }
+  .dc-gwtext { font-size: var(--fs-12); color: var(--ink-2); line-height: 1.45; padding: 6px 0; }
+  .dc-gwtext b { color: var(--ink); font-weight: 600; }
+
+  /* 頁底動作列 */
+  .dc-actionbar { padding: 12px 14px 12px 20px; border: 1.5px solid var(--ink); border-bottom: 0; border-radius: 14px 14px 0 0; }
+  /* 分隔點同頁首 lede：畫在間隙裡，手機折行時行首那一點被裁掉 */
+  .dc-bar__info { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1.1em; overflow: hidden; }
+  .dc-bar__info > * { position: relative; }
+  .dc-bar__info > *::before { content: "·"; position: absolute; left: -.8em; color: var(--ink-4); font-weight: 400; }
+  .dc-bar__info b { color: var(--ink); font-size: var(--fs-14); }
+  .dc-bar__info .is-bad { color: var(--danger-ink); font-weight: 600; }
+  .dc-has-bar .toasts { bottom: 92px; }
+
+  /* 對話框內容 */
+  .dc-dlg-units { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 0; margin: 0; padding: 0; }
+  .dc-unit { align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--sheet); }
+  .dc-unit input { margin-top: 2px; }
+  .dc-unit b { display: block; font-size: var(--fs-14); font-weight: 600; }
+  .dc-unit small { display: block; font-size: var(--fs-12); color: var(--ink-3); }
+  .dc-unit:has(input:checked) { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .dc-unit:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+  .dc-lvl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .dc-lvl__box { padding: 10px 14px; border: 1.5px solid var(--ink); border-radius: var(--r-md); background: var(--sheet); }
+  .dc-lvl__box small { display: block; font: 500 var(--fs-11)/1.4 var(--font-mono); color: var(--ink-3); letter-spacing: .06em; }
+  .dc-lvl__box b { font-size: var(--fs-15); }
+  .dc-lvl__box.is-to { border-color: var(--token); box-shadow: 0 0 0 3px var(--token-soft); }
+  .dc-lvl .icon { color: var(--ink-3); }
+
+  @media (max-width: 1240px) {
+    .dc-status { grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1100px) {
+    .dc-layout { grid-template-columns: minmax(0, 1fr); }
+    .dc-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dc-stat:first-child { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
+    .dc-stat:nth-child(2n) { border-left: 0; }
+    .dc-stat:nth-child(n+4) { border-top: 1px solid var(--line); }
+    .dc-replay { grid-template-columns: auto minmax(0, 1fr); }
+    .dc-readout { grid-column: 1 / -1; padding-left: 0; border-left: 0; flex-direction: row; align-items: baseline; gap: 10px; }
+  }
+  @media (max-width: 720px) {
+    .dc-title { font-size: 21px; line-height: 1.45; }
+    .dc-head__aside { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+    .dc-menu { right: auto; left: 0; }
+    .dc-desk { padding: 16px 10px 22px; }
+    .dc-draftmark { left: 44px; top: 12px; width: 28px; height: 28px; font-size: 15px; }
+    .gov-doc[data-mark]::after { font-size: 76px; }
+    /* 手機欄寬不夠放「密等及解密條件或保密期限」整欄，改成「欄名：內容」逐行接續 */
+    .dc-desk .gov-doc__meta { display: block; }
+    .dc-desk .gov-doc__meta dt, .dc-desk .gov-doc__meta dd { display: inline; }
+    .dc-desk .gov-doc__meta dd::after { content: "\A"; white-space: pre; }
+    .dc-slot { flex-basis: 92px; }
+    .dc-incoming { padding: 26px 18px 28px; font-size: 15px; }
+    .dc-recv-stamp { position: static; display: block; margin: 0 0 12px auto; width: 140px; }
+    .dc-replay { padding: 10px 14px; gap: 8px 12px; }
+    .dc-replay__btn { min-width: 0; }
+    .dc-tick { display: none; }
+    .dc-tick:nth-child(1) { display: block; }
+    .dc-scrub { padding-top: 0; }
+    .dc-ticks { display: none; }
+    .dc-readout { flex-direction: column; align-items: flex-start; gap: 2px; }
+    /* 手機改成單欄時間軸：每列自成一格 grid，泳道改以標籤顯示 */
+    .dc-trail { display: block; min-width: 0; }
+    .dc-trail .trail__head, .dc-trail .trail__guide { display: none; }
+    .dc-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); }
+    .dc-trail .trail__time { grid-row: 1 / span 2; grid-column: 1; padding: 12px 6px 8px 12px; font-size: 11px; }
+    .dc-trail .trail__cell { grid-row: auto; grid-column: 2; padding-right: 12px; }
+    .dc-lane-tag { display: inline-block; }
+    .dc-actionbar { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); border-radius: 0; border-left: 0; border-right: 0; padding: 10px 12px; }
+    .dc-dlg-units { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .dc-has-bar .toasts { bottom: 128px; }
+    .dc-actionbar .btn--lg { --btn-h: 38px; padding: 0 12px; font-size: var(--fs-14); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dc-slot.is-mine .dc-slot__mark::after, .dc-tk__ping { display: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="sheet-bar" data-anim>
+  <div class="sheet-bar__inner">
+    <a class="sheet-bar__back" href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a>
+    <div class="sheet-bar__meta">
+      <span class="sheet-bar__item">圖號 <b>CG-BPMN-012</b></span>
+      <span class="sheet-bar__item">流程定義 <b>公文簽核 v3.2</b>（2026-09-30 生效）</span>
+      <span class="sheet-bar__item sheet-bar__item--keep live"><span class="live__dot"></span><time data-clock>10/27（二）14:20:00</time></span>
+    </div>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="index.html" aria-label="公文線上簽核 流程中樞 首頁">
+      <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+      <span class="brand__text"><span class="brand__org">澄港市政府</span><span class="brand__name">公文線上簽核<small>流程中樞</small></span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li class="nav__item"><a class="nav__link" href="index.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.6" cy="10" r="2"/><rect x="7.2" y="7" width="5.2" height="6" rx="1.3"/><path d="m16.5 7.2 2.8 2.8-2.8 2.8-2.8-2.8z"/><path d="M5.6 10h1.6M12.4 10h1.3"/></svg><span class="nav__label">流程總覽</span></a></li>
+        <li class="nav__item"><a class="nav__link" href="docs.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 5.5h9M7.5 10h9M7.5 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5"/></svg><span class="nav__label">公文清單</span><span class="nav__count" data-count="overdue" title="逾期公文件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link is-active" href="doc.html" aria-current="page"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h6l3.5 3.5v11.5h-9.5z"/><path d="M11.5 2.5V6H15M8 10h5M8 13h5"/></svg><span class="nav__label">公文詳情</span><span class="nav__count nav__count--token" data-count="mine" title="待我核閱件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="designer.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="6" width="10" height="8" rx="1.8"/><path d="M2.5 3.5h2v2h-2zM15.5 3.5h2v2h-2zM2.5 14.5h2v2h-2zM15.5 14.5h2v2h-2z"/></svg><span class="nav__label">流程設計器</span></a></li>
+      </ul>
+    </nav>
+    <div class="header-tools">
+      <div class="user-chip" title="目前登入：王正宏（交通局 運輸規劃科 科長）">
+        <span class="avatar avatar--me" aria-hidden="true">王</span>
+        <span class="user-chip__text"><span class="user-chip__name">王正宏</span><span class="user-chip__role">交通局 運輸規劃科 科長</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="container">
+
+    <section class="page-head" id="dc-missing" aria-labelledby="dc-missing-title" hidden>
+      <div class="page-head__main">
+        <p class="eyebrow"><span class="sheet-no">SHEET 03 / 04</span><a class="dc-crumb" href="docs.html">公文清單</a><span aria-hidden="true">›</span><span>公文詳情</span></p>
+        <h1 class="page-title" id="dc-missing-title">查無此公文</h1>
+      </div>
+    </section>
+    <div class="panel" id="dc-missing-body" hidden></div>
+
+    <div id="dc-root">
+      <section class="page-head dc-head" aria-labelledby="page-title">
+        <div class="page-head__main">
+          <p class="eyebrow"><span class="sheet-no">SHEET 03 / 04</span><a class="dc-crumb" href="docs.html">公文清單</a><span aria-hidden="true">›</span><span>收文號 <span class="doc-no" id="dc-id"></span></span></p>
+          <h1 class="page-title dc-title" id="page-title">公文詳情</h1>
+          <p class="page-lede dc-lede" id="dc-lede"></p>
+          <div class="dc-tags" id="dc-tags"></div>
+        </div>
+        <div class="page-head__aside page-head__aside--stack dc-head__aside">
+          <nav class="dc-queue" id="dc-queue" aria-label="待我核公文"></nav>
+          <div class="dc-switch">
+            <button type="button" class="btn btn--sm" id="dc-switch-btn" aria-expanded="false" aria-controls="dc-switch-menu">切換公文<span data-icon="chevron-down"></span></button>
+            <div class="dc-menu" id="dc-switch-menu" hidden></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel corner-marks dc-status" id="dc-status" aria-label="辦理狀態" data-anim data-reveal></section>
+
+      <div class="dc-layout">
+        <section class="panel dc-paper-panel" aria-labelledby="dc-paper-title" data-reveal data-anim>
+          <header class="panel__head">
+            <h2 class="panel__title" id="dc-paper-title"><span data-glyph="task"></span>公文樣張<span class="panel__sub" id="dc-paper-sub"></span></h2>
+            <div class="panel__tools">
+              <div class="seg" data-seg id="dc-size-seg" role="group" aria-label="樣張字級">
+                <button type="button" aria-pressed="true" data-value="md">標準字級</button>
+                <button type="button" aria-pressed="false" data-value="lg">放大</button>
+              </div>
+            </div>
+          </header>
+          <div class="tabs" id="dc-tabs" role="tablist" aria-label="公文內容"></div>
+          <div class="dc-desk">
+            <div class="tab-panel" role="tabpanel" id="dc-panel-draft" aria-labelledby="dc-tab-draft" tabindex="0"></div>
+            <div class="tab-panel" role="tabpanel" id="dc-panel-in" aria-labelledby="dc-tab-in" tabindex="0" hidden></div>
+            <div class="tab-panel" role="tabpanel" id="dc-panel-att" aria-labelledby="dc-tab-att" tabindex="0" hidden></div>
+          </div>
+        </section>
+
+        <aside class="dc-side" aria-label="案件資訊與意見">
+          <section class="panel" aria-labelledby="dc-info-title" data-reveal style="--i:1">
+            <header class="panel__head"><h2 class="panel__title" id="dc-info-title"><span data-glyph="lane"></span>案件資訊</h2></header>
+            <div class="panel__body"><dl class="kv dc-kv" id="dc-info"></dl></div>
+          </section>
+          <section class="panel" aria-labelledby="dc-op-title" data-reveal style="--i:2">
+            <header class="panel__head"><h2 class="panel__title" id="dc-op-title"><span data-glyph="task-user"></span>意見欄<span class="count" id="dc-op-count"></span></h2><span class="panel__sub">依簽核順序</span></header>
+            <ol class="opinion-list dc-opinions" id="dc-opinions"></ol>
+            <div class="composer dc-composer" id="dc-composer" hidden>
+              <label class="field__label" for="dc-opinion" id="dc-opinion-label">您的意見</label>
+              <textarea class="textarea" id="dc-opinion" maxlength="300" placeholder="未填寫時以「如擬。」送出"></textarea>
+              <div class="composer__phrases" id="dc-phrases"></div>
+              <div class="dc-composer__foot"><span id="dc-opinion-hint">意見將隨簽章寫入意見欄</span><span class="mono" id="dc-opinion-count">0 / 300</span></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="panel corner-marks dc-trail-panel" aria-labelledby="dc-trail-title" data-reveal>
+        <header class="panel__head">
+          <h2 class="panel__title" id="dc-trail-title"><span data-glyph="flow"></span>簽核軌跡<span class="panel__sub" id="dc-trail-sub"></span></h2>
+          <div class="legend" aria-label="圖例">
+            <span class="legend__item"><span class="legend__swatch legend__swatch--token"></span>這件公文</span>
+            <span class="legend__item"><span class="dc-sw"></span>已走路徑</span>
+            <span class="legend__item"><span class="dc-sw dc-sw--next"></span>預計路徑</span>
+            <span class="legend__item">停留逾時限<span class="legend__swatch legend__swatch--heat"></span></span>
+          </div>
+        </header>
+        <div class="dc-route" data-anim>
+          <div class="flow-stage" id="dc-stage"><svg id="dc-flow"></svg></div>
+          <p class="flow-hint"><span data-glyph="flow"></span>左右滑動可看完整流程；點節點可跳到該關卡</p>
+        </div>
+        <div class="dc-replay">
+          <button type="button" class="btn btn--token btn--sm dc-replay__btn" id="dc-play" aria-describedby="dc-readout-text"></button>
+          <div class="dc-scrub">
+            <div class="dc-ticks" id="dc-ticks" aria-hidden="true"></div>
+            <input type="range" class="dc-range" id="dc-range" min="0" max="1000" step="1" value="1000" aria-label="軌跡重播進度" aria-describedby="dc-readout-text">
+          </div>
+          <output class="dc-readout" for="dc-range" aria-live="off"><span class="dc-readout__time" id="dc-readout-time"></span><span class="dc-readout__text" id="dc-readout-text"></span></output>
+        </div>
+        <div class="trail-wrap dc-trail-wrap" data-anim>
+          <div class="trail dc-trail" id="dc-trail"></div>
+        </div>
+      </section>
+
+      <div class="action-bar dc-actionbar" id="dc-actionbar" role="region" aria-label="簽核動作"></div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="title-block">
+      <div class="tb-cell tb-cell--brand">
+        <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+        <div><strong>公文線上簽核 流程中樞</strong><span>澄港市政府 秘書處 文書科 維護</span></div>
+      </div>
+      <div class="tb-cell"><span class="tb-k">圖號 DWG NO.</span><span class="tb-v mono">CG-BPMN-012</span></div>
+      <div class="tb-cell"><span class="tb-k">流程定義 PROCESS</span><span class="tb-v">公文簽核 v3.2</span></div>
+      <div class="tb-cell"><span class="tb-k">生效日期 EFFECTIVE</span><span class="tb-v mono">2026-09-30</span></div>
+      <div class="tb-cell"><span class="tb-k">系統服務 SUPPORT</span><span class="tb-v">分機 2120 · 平日 08:30–17:30</span></div>
+      <nav class="tb-cell tb-cell--nav" aria-label="頁尾導覽">
+        <span class="tb-k">圖紙索引</span>
+        <a href="index.html">01 流程總覽</a>
+        <a href="docs.html">02 公文清單</a>
+        <a href="doc.html">03 公文詳情</a>
+        <a href="designer.html">04 流程設計器</a>
+      </nav>
+      <div class="tb-cell tb-cell--back"><a href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a></div>
+      <div class="tb-cell tb-cell--note"><span>本系統為作品集虛構示範：澄港市、機關、人名、文號與統計資料均為虛構。</span><span class="mono">SHEET 03 / 04 · 比例 1:1 · 時間單位：工作小時</span></div>
+    </div>
+  </div>
+</footer>
+
+<dialog class="modal" id="dc-dlg-return" aria-labelledby="dc-dlg-return-title">
+  <div class="modal__head"><h2 class="modal__title" id="dc-dlg-return-title"><span data-glyph="return"></span>退回承辦人</h2><button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button></div>
+  <div class="modal__body">
+    <p id="dc-ret-summary"></p>
+    <div class="field" id="dc-ret-field">
+      <label class="field__label req" for="dc-ret-note">退回理由</label>
+      <textarea class="textarea" id="dc-ret-note" maxlength="300" aria-describedby="dc-ret-error"></textarea>
+      <div class="composer__phrases" id="dc-ret-phrases"></div>
+      <p class="field__error" id="dc-ret-error">請具體說明退回理由（至少 6 個字），承辦人才知道要補正什麼。</p>
+    </div>
+  </div>
+  <div class="modal__foot"><button type="button" class="btn btn--ghost" data-modal-close>取消</button><button type="button" class="btn btn--danger" id="dc-ret-ok"><span data-icon="return"></span>確認退回</button></div>
+</dialog>
+
+<dialog class="modal modal--wide" id="dc-dlg-cosign" aria-labelledby="dc-dlg-cosign-title">
+  <div class="modal__head"><h2 class="modal__title" id="dc-dlg-cosign-title"><span data-glyph="and"></span>加會單位</h2><button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button></div>
+  <div class="modal__body">
+    <p>勾選的單位會同時收到本件（平行會辦），全部簽註完成後回到您核稿。</p>
+    <div class="field" id="dc-cs-field">
+      <fieldset class="dc-dlg-units" id="dc-cs-list" aria-describedby="dc-cs-error"><legend class="sr-only">會辦單位</legend></fieldset>
+      <p class="field__error" id="dc-cs-error">請至少勾選一個會辦單位。</p>
+    </div>
+    <div class="field">
+      <label class="field__label" for="dc-cs-note">加會說明（選填）</label>
+      <textarea class="textarea" id="dc-cs-note" maxlength="200" placeholder="例如：請就契約違約責任條款表示意見"></textarea>
+    </div>
+  </div>
+  <div class="modal__foot"><button type="button" class="btn btn--ghost" data-modal-close>取消</button><button type="button" class="btn btn--primary" id="dc-cs-ok"><span data-icon="branch"></span>送出加會</button></div>
+</dialog>
+
+<dialog class="modal" id="dc-dlg-escalate" aria-labelledby="dc-dlg-escalate-title">
+  <div class="modal__head"><h2 class="modal__title" id="dc-dlg-escalate-title"><span data-glyph="escalate"></span>陳核</h2><button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button></div>
+  <div class="modal__body">
+    <div class="dc-lvl" id="dc-esc-levels"></div>
+    <p id="dc-esc-text"></p>
+    <div class="field">
+      <label class="field__label" for="dc-esc-note">陳核說明（選填）</label>
+      <textarea class="textarea" id="dc-esc-note" maxlength="300" placeholder="未填寫時以「陳請核示。」送出"></textarea>
+    </div>
+  </div>
+  <div class="modal__foot"><button type="button" class="btn btn--ghost" data-modal-close>取消</button><button type="button" class="btn btn--primary" id="dc-esc-ok"><span data-icon="stamp"></span>簽章並陳核</button></div>
+</dialog>
+
+<dialog class="modal" id="dc-dlg-att" aria-labelledby="dc-dlg-att-title">
+  <div class="modal__head"><h2 class="modal__title" id="dc-dlg-att-title"><span data-glyph="task"></span>附件資訊</h2><button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button></div>
+  <div class="modal__body"><dl class="kv dc-kv" id="dc-att-kv"></dl></div>
+  <div class="modal__foot"><button type="button" class="btn btn--primary" data-modal-close>關閉</button></div>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt } = App;
+  $$('[data-glyph]').forEach(el => { el.outerHTML = App.glyph(el.dataset.glyph, el.className); });
+  $$('[data-icon]').forEach(el => { el.outerHTML = App.icon(el.dataset.icon, el.className); });
+
+  const ME = App.DATA.me;
+  const LEVELS = App.DATA.levels;
+  const LANES = App.DATA.lanes;
+  const LANE_IX = Object.fromEntries(LANES.map((l, i) => [l.id, i]));
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const pad2 = n => String(n).padStart(2, '0');
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const once = fn => { let done = false; return () => { if (done) return; done = true; fn(); }; };
+
+  /* ── 讀取公文：網址參數是外部輸入，查不到就顯示空狀態 ── */
+  const idParam = App.param('id');
+  const doc = idParam == null ? App.featured('bikeway') : App.doc(idParam.trim());
+  if (!doc) {
+    $('#dc-root').hidden = true;
+    $('#dc-missing').hidden = false;
+    const body = $('#dc-missing-body');
+    body.hidden = false;
+    body.innerHTML = App.emptyState({
+      title: `收文號「${idParam}」不存在`,
+      text: '請確認收文號是否正確，或回公文清單重新搜尋。',
+      glyph: 'end',
+      actions: `<a class="btn btn--primary" href="docs.html">回公文清單</a><a class="btn" href="doc.html">看示範公文</a>`,
+    });
+    return;
+  }
+
+  const person = id => App.person(id);
+  const unitOf = code => App.unit(code);
+  const U = () => unitOf(doc.unit);
+  // 局長屬於整個局，不掛在科底下
+  const orgOf = id => { const u = unitOf(person(id).unit); return u.code === 'MAYOR' ? '市長室' : u.director === id ? u.org : u.org + (u.name || ''); };
+  const dayLabel = ms => `${fmt.date(ms)}（${fmt.weekday(ms)}）`;
+  // 剛簽出的公文 stageAt 是走動中的現在，工作時數為 0，顯示「0.0 小時」不像人話
+  const stay = h => h < .05 ? '剛送達' : `已停留 ${fmt.dur(h)}`;
+  const SEALED = new Set(['擬辦', '修正後陳核', '擬辦陳核', '會辦', '核稿', '核稿・決行', '陳核', '決行', '決行（代判）']);
+  const STAGE_GLYPH = { register: 'start-msg', assign: 'task', draft: 'task-user', cosign: 'task-user', review: 'task-user', approve: 'xor', dispatch: 'end-msg', archive: 'task' };
+  const TICK = { register: '收文', assign: '分文', draft: '承辦', review: '核稿', 'approve-dg': '決行', 'approve-mayor': '決行', dispatch: '發文', archive: '歸檔' };
+  const state = { stampFrom: null, advanceFrom: null, lastUndo: null, reminded: new Set(), busy: false, big: false };
+
+  /* ── 流程圖：整個 v3.2 模型，只突顯這件公文走過與將要走的路徑 ── */
+  const flow = App.Flow($('#dc-flow'), App.processModel(), {
+    live: false,
+    label: `收文 ${doc.id} 的簽核路徑：公文簽核 v3.2 流程圖`,
+    onNodeClick: node => seekToNode(node.id),
+  });
+  const svg = flow.svg;
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const gNodes = svg.querySelector('.flow__nodes');
+  const tkUnder = document.createElementNS(SVGNS, 'g');
+  const tkOver = document.createElementNS(SVGNS, 'g');
+  tkUnder.setAttribute('class', 'dc-tk-layer');
+  tkOver.setAttribute('class', 'dc-tk-layer');
+  // 移動中的 token 走在節點底下（穿過閘道時被菱形蓋住）；停駐的 token 疊在節點上方
+  gNodes.before(tkUnder);
+  gNodes.after(tkOver);
+  const stageName = id => flow.node(id).label;
+
+  // 用實際繪出的連線取樣，token 就能沿著圓角折線等速移動
+  const edgeGeo = new Map();
+  function geoOf(id) {
+    let g = edgeGeo.get(id);
+    if (!g) {
+      const path = flow.edgeEl(id).querySelector('.flow__edge-line');
+      const len = path.getTotalLength();
+      const n = Math.max(2, Math.ceil(len / 4));
+      const pts = [];
+      for (let i = 0; i <= n; i++) { const p = path.getPointAtLength(len * i / n); pts.push([p.x, p.y]); }
+      g = { len, pts };
+      edgeGeo.set(id, g);
+    }
+    return g;
+  }
+  function pointOn(g, s) {
+    const k = clamp(s / g.len, 0, 1) * (g.pts.length - 1);
+    const i = Math.floor(k), t = k - i, a = g.pts[i], b = g.pts[Math.min(i + 1, g.pts.length - 1)];
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  }
+  function anchorOf(id, side) {
+    const n = flow.node(id), { w } = App.Flow.size(n);
+    return side === 'l' ? [n.x - w / 2, n.y] : side === 'r' ? [n.x + w / 2, n.y] : [n.x, n.y];
+  }
+  // 依順序流找最短路徑；預設不走「退回補正」，只有上一站確實是退回時才允許
+  function routeBetween(from, to, allowReturn) {
+    if (from === to) return [];
+    const prev = new Map([[from, null]]);
+    const queue = [from];
+    while (queue.length) {
+      const id = queue.shift();
+      for (const e of flow.outEdges(id)) {
+        if ((e.kind === 'return' && !allowReturn) || prev.has(e.to)) continue;
+        prev.set(e.to, e);
+        if (e.to === to) {
+          const path = [];
+          for (let x = e; x; x = prev.get(x.from)) path.unshift(x);
+          return path;
+        }
+        queue.push(e.to);
+      }
+    }
+    return null;
+  }
+
+  /* ── 軌跡模型：trail → 停靠站（任務 / 平行會辦群組 / 結案） ── */
+  function buildStops() {
+    const stops = [];
+    let prevDepart = doc.received, group = null;
+    const closeGroup = () => {
+      if (!group) return;
+      stops.push(group);
+      if (!group.open) prevDepart = Math.max(...group.branches.map(b => b.done));
+      group = null;
+    };
+    doc.trail.forEach((e, i) => {
+      if (e.key === 'cosign' && e.branch) {
+        if (!group) group = { kind: 'par', start: prevDepart, branches: [], open: false };
+        group.branches.push({ branch: e.branch, node: e.node, unit: e.unit, who: e.who, done: e.at, entry: i });
+        return;
+      }
+      closeGroup();
+      stops.push({ kind: 'task', node: e.node, arrive: prevDepart, depart: e.at, entry: i, who: e.who, ret: !!e.ret });
+      prevDepart = e.at;
+    });
+    const pend = App.pending(doc);
+    if (doc.stage === 'cosign') {
+      if (!group) group = { kind: 'par', start: doc.stageAt, branches: [], open: false };
+      pend.forEach(p => group.branches.push({ branch: p.branch, node: p.node, unit: p.unit, who: p.who, done: null, entry: null }));
+      group.open = true;
+      closeGroup();
+    } else {
+      closeGroup();
+      if (pend.length) stops.push({ kind: 'task', node: pend[0].node, arrive: doc.stageAt, depart: null, entry: null, who: pend[0].who, current: true });
+    }
+    if (doc.stage === 'closed') stops.push({ kind: 'end', arrive: doc.closedAt });
+    return stops;
+  }
+
+  // 重播時間：移動依路徑長度，停留依工作時數開根號壓縮（0.4 小時與 3 天都看得出差異）
+  const moveDur = len => clamp(len / 520, .28, 1.3);
+  const dwellDur = h => clamp(.35 + Math.sqrt(h) * .42, .4, 2.6);
+  const easeInOut = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const interp = (knots, x) => {
+    for (let i = 1; i < knots.length; i++) {
+      const [x0, y0] = knots[i - 1], [x1, y1] = knots[i];
+      if (x <= x1) return x1 === x0 ? y1 : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+    return knots[knots.length - 1][1];
+  };
+
+  function buildPlan() {
+    const stops = buildStops();
+    const legs = [];
+    let cursor = 'recv', pt = anchorOf('recv', 'r'), allowRet = false;
+    const goTo = (node, at) => {
+      if (node === cursor) return;
+      const edges = routeBetween(cursor, node, false) || (allowRet ? routeBetween(cursor, node, true) : null);
+      if (edges) {
+        const len = edges.reduce((s, e) => s + geoOf(e.id).len, 0);
+        const back = edges.some(e => e.kind === 'return');
+        legs.push({ kind: 'move', edges: edges.map(e => e.id), len, dur: moveDur(len), t0: at, t1: at, text: `${back ? '退回' : '移交'}「${stageName(node)}」` });
+        pt = geoOf(edges[edges.length - 1].id).pts.at(-1);
+      } else {
+        // 模型裡沒有對應順序流（例如核稿時加會、決行時退回），token 直接轉送過去
+        const to = flow.node(node).type === 'task' ? anchorOf(node, 'l') : anchorOf(node, 'c');
+        legs.push({ kind: 'jump', from: pt, to, node, dur: .55, t0: at, t1: at, text: `轉送「${stageName(node)}」` });
+        pt = to;
+      }
+      cursor = node;
+      allowRet = false;
+    };
+    stops.forEach(s => {
+      if (s.kind === 'task') {
+        goTo(s.node, s.arrive);
+        const end = s.depart ?? Math.max(s.arrive, App.NOW0);
+        const hours = App.workHours(s.arrive, end);
+        legs.push({ kind: 'dwell', node: s.node, who: s.who, hours, dur: dwellDur(hours), t0: s.arrive, t1: end, entry: s.entry, final: s.depart == null, pt });
+        allowRet = s.ret;
+      } else if (s.kind === 'par') {
+        goTo('split', s.start);
+        const branches = s.branches.map(b => {
+          const inE = flow.outEdges('split').find(e => e.to === b.node);
+          const outE = flow.outEdges(b.node).find(e => e.to === 'join');
+          if (!inE || !outE) throw new Error('doc route: no cosign edges for ' + b.node);
+          const hours = App.workHours(s.start, b.done ?? Math.max(s.start, App.NOW0));
+          return Object.assign({}, b, { inE: inE.id, outE: outE.id, hours, dwell: dwellDur(hours) });
+        });
+        const dIn = moveDur(Math.max(...branches.map(b => geoOf(b.inE).len)));
+        const dOut = moveDur(Math.max(...branches.map(b => geoOf(b.outE).len)));
+        const maxDwell = Math.max(...branches.map(b => b.dwell));
+        const knots = [[0, 0], ...branches.map(b => [b.dwell, b.hours]).sort((a, b) => a[0] - b[0])];
+        const t1 = s.open ? Math.max(s.start, App.NOW0) : Math.max(...branches.map(b => b.done));
+        legs.push({ kind: 'par', branches, dIn, dOut, maxDwell, knots, dur: dIn + maxDwell + (s.open ? 0 : dOut), t0: s.start, t1, open: s.open, final: s.open });
+        if (!s.open) { cursor = 'join'; pt = anchorOf('join', 'c'); }
+      } else {
+        goTo('end', s.arrive);
+        legs.push({ kind: 'finish', dur: .5, t0: s.arrive, t1: s.arrive, pt });
+      }
+    });
+    let p = 0;
+    legs.forEach(l => { l.p0 = p; p += l.dur; l.p1 = p; });
+    return { stops, legs, total: p };
+  }
+
+  // 目前關卡之後的預期節點（平行會辦以 {par:[]} 表示），用來畫「預計路徑」與時間軸的待辦列
+  function expected() {
+    const approveNode = doc.level === 1 ? 'approve-mayor' : 'approve-dg';
+    const afterApprove = doc.send ? ['dispatch', 'archive', 'end'] : ['archive', 'end'];
+    const afterReview = doc.level === 3 ? afterApprove : [approveNode, ...afterApprove];
+    const pendingCs = doc.cosign.filter(c => c.state === 'pending').map(c => 'cs-' + c.branch);
+    const cs = pendingCs.length ? [{ par: [...new Set(pendingCs)] }] : [];
+    switch (doc.stage) {
+      case 'register': return ['register', 'assign', 'draft', ...cs, 'review', ...afterReview];
+      case 'assign': return ['assign', 'draft', ...cs, 'review', ...afterReview];
+      case 'draft': return ['draft', ...cs, 'review', ...afterReview];
+      case 'cosign': return [...cs, 'review', ...afterReview];
+      case 'review': return ['review', ...afterReview];
+      case 'approve': return [approveNode, ...afterApprove];
+      case 'dispatch': return ['dispatch', 'archive', 'end'];
+      case 'archive': return ['archive', 'end'];
+      default: return [];
+    }
+  }
+  function expectedMarks() {
+    const nodes = new Set(), edges = new Set();
+    let cur = null;
+    const link = (a, b) => (routeBetween(a, b, false) || []).forEach(e => { edges.add(e.id); nodes.add(e.to); });
+    expected().forEach(item => {
+      if (typeof item === 'string') { if (cur) link(cur, item); cur = item; return; }
+      if (cur) link(cur, 'split');
+      item.par.forEach(cs => {
+        edges.add(flow.outEdges('split').find(e => e.to === cs).id);
+        edges.add(flow.outEdges(cs).find(e => e.to === 'join').id);
+        nodes.add(cs);
+      });
+      nodes.add('join');
+      cur = 'join';
+    });
+    return { nodes, edges };
+  }
+
+  /* ── 重播狀態：給定進度 p（秒）算出 token、已走路徑、各節點停留時數 ── */
+  function stateAt(p) {
+    const st = { tokens: [], nodes: new Set(['recv']), edges: new Set(), hours: {}, active: new Map(), rt: doc.received, text: '收文' };
+    for (const leg of plan.legs) {
+      if (p < leg.p0) break;
+      const full = p >= leg.p1 - 1e-6;
+      const u = full ? leg.dur : p - leg.p0;
+      if (leg.kind === 'move') {
+        const s = full ? leg.len : leg.len * easeInOut(u / leg.dur);
+        let acc = 0;
+        for (const id of leg.edges) {
+          const g = geoOf(id);
+          if (s > acc + .01) st.edges.add(id);
+          if (s >= acc + g.len - .01) st.nodes.add(flow.edge(id).to);
+          else if (s >= acc) { st.tokens.push({ at: pointOn(g, s - acc), mode: 'move' }); break; }
+          acc += g.len;
+        }
+        st.rt = leg.t0; st.text = leg.text;
+      } else if (leg.kind === 'jump') {
+        if (full) { st.nodes.add(leg.node); continue; }
+        const f = easeInOut(u / leg.dur);
+        st.tokens.push({ at: [leg.from[0] + (leg.to[0] - leg.from[0]) * f, leg.from[1] + (leg.to[1] - leg.from[1]) * f], mode: 'jump' });
+        st.rt = leg.t0; st.text = leg.text;
+      } else if (leg.kind === 'dwell') {
+        const live = !full || leg.final;
+        const h = leg.hours * (full ? 1 : u / leg.dur);
+        st.hours[leg.node] = (st.hours[leg.node] || 0) + h;
+        st.nodes.add(leg.node);
+        st.rt = full ? leg.t1 : App.addWork(leg.t0, h);
+        if (live) {
+          const atEnd = full && leg.final;
+          st.active.set(leg.node, { hours: h, final: atEnd });
+          st.tokens.push({ at: leg.pt, mode: atEnd ? 'here' : 'park' });
+          st.text = `${stageName(leg.node)} · ${person(leg.who).name}${atEnd ? ' 辦理中' : ''}`;
+        }
+      } else if (leg.kind === 'par') {
+        st.nodes.add('split');
+        const names = [];
+        leg.branches.forEach(b => {
+          const gIn = geoOf(b.inE), gOut = geoOf(b.outE);
+          const org = unitOf(b.unit).org;
+          if (u > 0) st.edges.add(b.inE);
+          if (u < leg.dIn) { st.tokens.push({ at: pointOn(gIn, gIn.len * easeInOut(u / leg.dIn)), mode: 'move' }); names.push(org); return; }
+          st.nodes.add(b.node);
+          const du = u - leg.dIn;
+          const hb = b.hours * Math.min(1, du / b.dwell);
+          st.hours[b.node] = Math.max(st.hours[b.node] || 0, hb);
+          if (b.done == null || du < b.dwell) {
+            const atEnd = full && leg.open;
+            st.active.set(b.node, { hours: hb, final: atEnd });
+            st.tokens.push({ at: gIn.pts.at(-1), mode: atEnd ? 'here' : 'park' });
+            names.push(org);
+            return;
+          }
+          names.push(org + ' ✓');
+          const mu = du - b.dwell;
+          if (mu > 0) st.edges.add(b.outE);
+          if (mu < leg.dOut) { st.tokens.push({ at: pointOn(gOut, gOut.len * easeInOut(mu / leg.dOut)), mode: 'move' }); return; }
+          st.nodes.add('join');
+          if (!full || leg.open) st.tokens.push({ at: gOut.pts.at(-1), mode: 'wait' });
+        });
+        st.rt = full && !leg.open ? leg.t1 : App.addWork(leg.t0, interp(leg.knots, Math.max(0, u - leg.dIn)));
+        st.text = `平行會辦：${names.join('、')}`;
+      } else {
+        st.nodes.add('end');
+        if (!full) st.tokens.push({ at: leg.pt, mode: 'fade', opacity: 1 - u / leg.dur });
+        st.rt = leg.t0; st.text = '歸檔結案';
+      }
+    }
+    return st;
+  }
+
+  const DUE_HEAT = { over: 1, today: .62, soon: .32 };
+  function heatOf(nodeId, hours, final) {
+    const n = flow.node(nodeId);
+    const sla = clamp((hours / n.sla - .55) / .9, 0, 1);
+    return final ? Math.max(sla, DUE_HEAT[App.dueState(doc).state] || 0) : sla;
+  }
+
+  let plan = null, nextMarks = { nodes: new Set(), edges: new Set() };
+  let pathKey = '', tokUnder = '', tokOver = '', lastTokens = [];
+  const metaSig = new Map();
+  const rangeEl = $('#dc-range');
+  function paint(p) {
+    const st = stateAt(p);
+    const final = p >= plan.total - 1e-6;
+    const key = [...st.nodes].sort().join() + '|' + [...st.edges].sort().join();
+    if (key !== pathKey) {
+      pathKey = key;
+      flow.clearPath();
+      flow.markPath({ nodes: [...st.nodes], edges: [...st.edges] });
+    }
+    flow.model.nodes.forEach(n => {
+      flow.nodeEl(n.id).classList.toggle('dc-here', st.active.has(n.id));
+      if (n.type !== 'task') return;
+      const a = st.active.get(n.id), h = st.hours[n.id];
+      const text = a ? (a.final && a.hours < .05 ? '剛送達' : `停留 ${fmt.dur(a.hours)}`) : h != null ? fmt.dur(h) : (n.sub || '');
+      const heat = a ? heatOf(n.id, a.hours, a.final) : 0;
+      const sig = text + '|' + heat.toFixed(2);
+      if (metaSig.get(n.id) !== sig) { metaSig.set(n.id, sig); flow.setMeta({ [n.id]: { text, heat } }); }
+    });
+    svg.classList.toggle('dc-replaying', !final);
+    // token：字串相同就不重寫，停駐 token 的脈動動畫才不會每幀重來
+    let under = '', over = '';
+    st.tokens.forEach(t => {
+      const tr = `transform="translate(${t.at[0].toFixed(1)} ${t.at[1].toFixed(1)})"`;
+      const body = `<circle class="dc-tk__glow" r="11"/><circle class="dc-tk__core" r="5.5"/>`;
+      if (t.mode === 'move') under += `<g class="dc-tk" ${tr}>${body}</g>`;
+      else over += `<g class="dc-tk dc-tk--${t.mode}" ${tr}${t.opacity != null ? ` opacity="${t.opacity.toFixed(2)}"` : ''}>${t.mode === 'here' ? '<circle class="dc-tk__ping" r="6"/>' : ''}${body}</g>`;
+    });
+    if (under !== tokUnder) { tokUnder = under; tkUnder.innerHTML = under; }
+    if (over !== tokOver) { tokOver = over; tkOver.innerHTML = over; }
+    lastTokens = st.tokens;
+    const pct = plan.total ? p / plan.total : 1;
+    rangeEl.value = String(Math.round(pct * 1000));
+    rangeEl.style.setProperty('--pct', (pct * 100).toFixed(2) + '%');
+    rangeEl.setAttribute('aria-valuetext', `${fmt.dt(st.rt)} ${st.text}`);
+    $('#dc-readout-time').textContent = `${dayLabel(st.rt)} ${fmt.time(st.rt)}`;
+    $('#dc-readout-text').textContent = final ? finalText() : st.text;
+    paintRows(st.rt, final);
+  }
+  function finalText() {
+    if (doc.stage === 'closed') return `已於 ${fmt.dt(doc.closedAt)} 歸檔結案`;
+    const pend = App.pending(doc);
+    return `目前：${App.stageLabel(doc)} · 待 ${[...new Set(pend.map(x => person(x.who).name))].join('、')}`;
+  }
+
+  /* ── 重播控制：分頁隱藏或離開視窗時停止 rAF ── */
+  const replay = { p: 0, playing: false, raf: 0, last: 0, inView: false, touched: false, userScrollUntil: 0 };
+  const playBtn = $('#dc-play');
+  const routeEl = $('.dc-route');
+  const stage = $('#dc-stage');
+  function syncPlayBtn() {
+    const atEnd = replay.p >= plan.total - 1e-6;
+    playBtn.innerHTML = replay.playing ? `${App.icon('pause')}暫停` : atEnd ? `${App.icon('sim')}重播軌跡` : `${App.icon('play')}繼續`;
+    playBtn.setAttribute('aria-pressed', String(replay.playing));
+  }
+  function stopRaf() { if (replay.raf) { cancelAnimationFrame(replay.raf); replay.raf = 0; } }
+  function kick() {
+    if (replay.playing && replay.inView && !document.hidden && !replay.raf) { replay.last = 0; replay.raf = requestAnimationFrame(tick); }
+  }
+  function tick(ts) {
+    replay.raf = 0;
+    const dt = replay.last ? Math.min(.05, (ts - replay.last) / 1000) : 0;
+    replay.last = ts;
+    replay.p = Math.min(plan.total, replay.p + dt);
+    paint(replay.p);
+    follow();
+    if (replay.p >= plan.total) { replay.playing = false; syncPlayBtn(); return; }
+    kick();
+  }
+  function play(from) {
+    replay.touched = true;
+    if (from != null) replay.p = clamp(from, 0, plan.total);
+    if (replay.p >= plan.total - 1e-6) replay.p = 0;
+    replay.playing = true;
+    paint(replay.p);
+    syncPlayBtn();
+    kick();
+  }
+  function pause() { replay.playing = false; stopRaf(); syncPlayBtn(); }
+  function seek(p, byUser = true) {
+    if (byUser) replay.touched = true;
+    pause();
+    replay.p = clamp(p, 0, plan.total);
+    paint(replay.p);
+    syncPlayBtn();
+  }
+  // 手機上流程圖可橫向捲動：播放時讓移動中的 token 留在畫面內（使用者自己在滑就不搶）
+  const scrollable = () => stage.scrollWidth > stage.clientWidth + 2;
+  const tokenX = tk => tk.at[0] * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+  function follow() {
+    if (!scrollable() || performance.now() < replay.userScrollUntil) return;
+    const tk = lastTokens.find(t => t.mode === 'move' || t.mode === 'jump') || lastTokens[0];
+    if (!tk) return;
+    const x = tokenX(tk);
+    if (x < stage.scrollLeft + 40 || x > stage.scrollLeft + stage.clientWidth - 40) stage.scrollLeft = x - stage.clientWidth * .4;
+  }
+  // 靜態畫面（未播放、reduced-motion）也要一眼看到公文目前停在哪一關
+  function centerToken() {
+    const tk = lastTokens.find(t => t.mode === 'here');
+    if (tk && scrollable()) stage.scrollLeft = tokenX(tk) - stage.clientWidth / 2;
+  }
+  ['pointerdown', 'wheel', 'touchstart'].forEach(t => stage.addEventListener(t, () => { replay.userScrollUntil = performance.now() + 2500; }, { passive: true }));
+  playBtn.addEventListener('click', () => { if (replay.playing) pause(); else play(); });
+  rangeEl.addEventListener('input', () => seek(rangeEl.value / 1000 * plan.total));
+  new IntersectionObserver(es => {
+    replay.inView = es[es.length - 1].isIntersecting;
+    if (replay.inView) kick(); else stopRaf();
+  }).observe(routeEl);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopRaf(); else kick(); });
+  // 第一次捲到流程圖且停留片刻才自動重播一次；只是快速滑過不播，減少動態干擾
+  if (!App.reducedMotion()) {
+    let timer = 0;
+    const autoIO = new IntersectionObserver(es => {
+      const ratio = es[es.length - 1].intersectionRatio;
+      if (ratio >= .6 && !replay.touched) {
+        if (!timer) timer = setTimeout(() => { autoIO.disconnect(); if (!replay.touched) play(0); }, 900);
+      } else { clearTimeout(timer); timer = 0; }
+    }, { threshold: [0, .6] });
+    autoIO.observe(stage);
+  }
+
+  function seekToNode(id) {
+    const n = flow.node(id);
+    let target = id === 'recv' ? 0 : null;
+    plan.legs.forEach(l => {
+      if (l.kind === 'dwell' && l.node === id) target = l.final ? plan.total : l.p1;
+      else if (l.kind === 'par' && l.branches.some(b => b.node === id)) {
+        const b = l.branches.find(x => x.node === id);
+        target = b.done == null ? plan.total : l.p0 + l.dIn + b.dwell;
+      } else if (l.kind === 'par' && (id === 'split' || id === 'join')) target = id === 'split' ? l.p0 + l.dIn : l.p1;
+      else if (l.kind === 'move' && l.edges.some(e => flow.edge(e).to === id)) target = l.p1;
+      else if (l.kind === 'finish' && id === 'end') target = l.p1;
+    });
+    if (target == null) {
+      App.toast(`這件公文尚未經過「${n.label}」`, { tone: 'token', duration: 2600 });
+      return;
+    }
+    seek(target);
+  }
+
+  function renderTicks() {
+    const marks = [];
+    plan.legs.forEach(l => {
+      if (l.kind === 'dwell') marks.push([l.p0, TICK[l.node] || stageName(l.node)]);
+      else if (l.kind === 'par') marks.push([l.p0, '會辦']);
+      else if (l.kind === 'finish') marks.push([l.p0, '結案']);
+    });
+    $('#dc-ticks').innerHTML = marks.map(([p, label]) => `<span class="dc-tick" style="left:${(p / plan.total * 100).toFixed(2)}%">${label}</span>`).join('');
+  }
+
+  function rebuildRoute() {
+    replay.playing = false;
+    stopRaf();
+    plan = buildPlan();
+    nextMarks = expectedMarks();
+    flow.model.nodes.forEach(n => flow.nodeEl(n.id).classList.toggle('dc-next', nextMarks.nodes.has(n.id)));
+    flow.model.edges.forEach(e => flow.edgeEl(e.id).classList.toggle('dc-next', nextMarks.edges.has(e.id)));
+    renderTicks();
+    const from = state.advanceFrom;
+    state.advanceFrom = null;
+    renderTrail();
+    if (from == null) { seek(plan.total, false); centerToken(); return; }
+    // 剛簽核完：從被結束的那段停留開始播，token 走到新的關卡（流程圖不在視窗內就等捲到時再播）
+    let p0 = plan.total;
+    for (const l of plan.legs) {
+      if (l.kind === 'dwell' && l.entry != null && l.entry >= from) { p0 = l.p1; break; }
+      if (l.kind === 'par') {
+        const b = l.branches.find(x => x.entry != null && x.entry >= from);
+        if (b) { p0 = l.p0 + l.dIn + b.dwell; break; }
+      }
+    }
+    if (p0 < plan.total - .05 && !App.reducedMotion()) play(p0); else { seek(plan.total, false); centerToken(); }
+  }
+
+  /* ── 泳道時間軸 ── */
+  let rowEls = [];
+  function whoFor(node) {
+    const u = U();
+    return { register: 'cai-yz', assign: 'zheng-wc', draft: doc.owner, review: u.chief, 'approve-dg': u.director, 'approve-mayor': 'shen-sy', dispatch: 'guo-py', archive: 'wen-zh' }[node] || null;
+  }
+  const laneOfNode = id => LANE_IX[flow.node(id).lane];
+  function stepHTML(e, arrive) {
+    const p = person(e.who);
+    const glyph = e.ret ? 'return' : e.action === '陳核' ? 'escalate' : e.action === '加會' ? 'and' : STAGE_GLYPH[e.key];
+    const n = flow.node(e.node);
+    const hours = arrive != null ? App.workHours(arrive, e.at) : null;
+    const over = n && n.sla && hours > n.sla;
+    const title = e.key === 'cosign' ? `${unitOf(e.unit).org}會辦` : e.action;
+    return `<div class="trail__step${e.ret ? ' trail__step--return' : ''}">
+      <div class="trail__step-head">${App.glyph(glyph)}<span>${esc(title)}</span><span class="dc-lane-tag">${LANES[LANE_IX[e.lane]].label}</span></div>
+      <div class="trail__who">${esc(p.name)} · ${esc(orgOf(e.who))} ${esc(p.title)}</div>
+      ${e.note ? `<p class="trail__note dc-clamp" title="${esc(e.note)}">${esc(e.note)}</p>` : ''}
+      ${hours != null ? `<p class="dc-step-foot"><span>歷時 ${fmt.dur(hours)}</span>${n && n.sla ? `<span class="${over ? 'is-over' : ''}">時限 ${fmt.dur(n.sla)}${over ? ' · 逾時' : ''}</span>` : ''}</p>` : ''}
+    </div>`;
+  }
+  function pendingHTML(node, who, since, title) {
+    const n = flow.node(node), p = person(who);
+    const hours = App.workHours(since, Math.max(since, App.NOW0));
+    const over = hours > n.sla;
+    return `<div class="trail__step trail__step--current">
+      <div class="trail__step-head">${App.glyph('token')}<span>${esc(title)}</span>${who === ME ? '<span class="badge badge--token">待您處理</span>' : ''}<span class="dc-lane-tag">${LANES[laneOfNode(node)].label}</span></div>
+      <div class="trail__who">待 ${esc(p.name)} · ${esc(orgOf(who))} ${esc(p.title)}</div>
+      <p class="dc-step-foot"><span>${stay(hours)}</span><span class="${over ? 'is-over' : ''}">時限 ${fmt.dur(n.sla)}${over ? ' · 逾時' : ''}</span></p>
+    </div>`;
+  }
+  function futureHTML(node) {
+    const n = flow.node(node), who = whoFor(node);
+    return `<div class="trail__step trail__step--pending">
+      <div class="trail__step-head">${App.glyph(n.type === 'task' ? 'task' : 'and')}<span>${esc(n.label)}</span><span class="dc-lane-tag">${LANES[laneOfNode(node)].label}</span></div>
+      <div class="trail__who">${who ? `${esc(person(who).name)} · ${esc(person(who).title)}` : '分文後指定承辦人'}</div>
+      <p class="dc-step-foot"><span>時限 ${fmt.dur(n.sla)}</span></p>
+    </div>`;
+  }
+  const eventHTML = (glyph, title, sub) => `<div class="dc-event">${App.glyph(glyph)}<span><b>${esc(title)}</b><small>${esc(sub)}</small></span></div>`;
+  // 分支 k（依完成先後）在第 r 列的軌道樣式；最早完成的放最右邊，連到卡片的短線才不會穿過仍在進行的軌道
+  function railSeg(r, k, done, n) {
+    const own = k + 1, join = n + 1;
+    if (r === 0) return ['from-mid'];
+    if (r < own) return ['full'];
+    if (r === own) return done && r < join ? ['end', 'wait-from-mid'] : ['end'];
+    if (r < join) return done ? ['wait'] : [];
+    return done ? ['wait-end'] : [];
+  }
+  const RAIL_X0 = 12, RAIL_GAP = 10;
+  function railsHTML(cell) {
+    const { n, r, branches } = cell.rails;
+    return branches.map((b, k) => {
+      const x = RAIL_X0 + (n - 1 - k) * RAIL_GAP;
+      const pend = b.done == null ? ' is-pending' : '';
+      return railSeg(r, k, b.done != null, n).map(seg => {
+        let s = `<i class="dc-rail dc-rail--${seg}${pend}" style="--x:${x}px"></i>`;
+        if (seg === 'end') s += `<i class="dc-rail-tie${pend}" style="--x:${x}px"></i><i class="dc-rail-dot${pend}" style="--x:${x}px"></i>`;
+        return s;
+      }).join('');
+    }).join('');
+  }
+  const gwSVG = '<svg class="dc-gw" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 18.5 10 10 18.5 1.5 10Z" fill="#fff" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 6.2v7.6M6.2 10h7.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+  function buildRows() {
+    const rows = [];
+    const add = r => { rows.push(r); return r; };
+    add({ from: doc.received, at: doc.received, time: doc.received, cells: [{ lane: 0, html: eventHTML('start-msg', doc.fromKey === 'self' ? '簽辦開始' : '來文', doc.from) }] });
+    plan.stops.forEach(s => {
+      if (s.kind === 'task' && s.entry != null) {
+        const e = doc.trail[s.entry];
+        add({ from: s.arrive, at: e.at, time: e.at, cells: [{ lane: LANE_IX[e.lane], html: stepHTML(e, s.arrive) }] });
+      } else if (s.kind === 'task') {
+        const title = s.node === 'review' && doc.level === 3 ? '核稿・決行' : stageName(s.node);
+        add({ from: s.arrive, at: Infinity, timeHTML: `<b>辦理中</b>${fmt.dt(s.arrive)} 起`, cells: [{ lane: laneOfNode(s.node), html: pendingHTML(s.node, s.who, s.arrive, title) }] });
+      } else if (s.kind === 'par') {
+        const n = s.branches.length;
+        const bRows = s.branches.map(b => b.done != null
+          ? add({ from: s.start, at: b.done, time: b.done, cells: [{ lane: 2, html: stepHTML(doc.trail[b.entry], s.start) }] })
+          : add({ from: s.start, at: Infinity, timeHTML: `<b>會辦中</b>${fmt.dt(s.start)} 起`, cells: [{ lane: 2, html: pendingHTML(b.node, b.who, s.start, `${unitOf(b.unit).org}會辦`) }] }));
+        if (n < 2) return;
+        const doneN = s.branches.filter(b => b.done != null).length;
+        const trig = rows[rows.length - n - 1];
+        const fork = { lane: 2, html: `<p class="dc-gwtext"><b>平行會辦</b> · 同時分送 ${n} 個單位</p>` };
+        trig.cells.push(fork);
+        const joinAt = s.open ? Infinity : Math.max(...s.branches.map(b => b.done));
+        const span = App.workHours(s.start, s.open ? Math.max(s.start, App.NOW0) : joinAt);
+        const join = { lane: 2, html: `<p class="dc-gwtext"><b>${s.open ? '等待合流' : '會辦完成'}</b> · ${doneN} / ${n} 已簽註${s.open ? '' : ` · 歷時 ${fmt.dur(span)}`}</p>` };
+        add({ from: s.start, at: joinAt, time: s.open ? null : joinAt, timeHTML: s.open ? '<b>合流</b>尚待簽註' : null, cells: [join], cls: 'is-join' });
+        [fork, ...bRows.map(r => r.cells[0]), join].forEach((cell, r) => {
+          cell.rails = { n, r, branches: s.branches };
+          cell.pad = RAIL_X0 + (n - 1) * RAIL_GAP + 18;
+          cell.gw = r === 0 || r === n + 1;
+        });
+      } else {
+        add({ from: s.arrive, at: s.arrive, time: s.arrive, cells: [{ lane: 0, html: eventHTML('end', '結案', '軌跡封存，可供調閱') }] });
+      }
+    });
+    // 預計後續關卡
+    expected().slice(1).forEach(item => {
+      if (item === 'end') return;
+      if (typeof item === 'string') add({ future: true, timeHTML: '<b>預計</b>', cells: [{ lane: laneOfNode(item), html: futureHTML(item) }] });
+      else add({ future: true, timeHTML: '<b>預計</b>', cells: [{ lane: 2, html: `<div class="trail__step trail__step--pending"><div class="trail__step-head">${App.glyph('and')}<span>平行會辦</span><span class="dc-lane-tag">會辦單位</span></div><div class="trail__who">${doc.cosign.filter(c => c.state === 'pending').map(c => esc(unitOf(c.unit).org)).join('、')}</div></div>` }] });
+    });
+    return rows;
+  }
+
+  function renderTrail() {
+    const rows = buildRows();
+    const head = `<div class="trail__head" style="grid-column:1">時間</div>` + LANES.map((l, i) => `<div class="trail__head" style="grid-column:${i + 2}">${esc(l.label)}<small>${esc(l.sub)}</small></div>`).join('');
+    const guides = LANES.map((l, i) => `<div class="trail__guide" style="grid-column:${i + 2}" aria-hidden="true"></div>`).join('');
+    const body = rows.map((r, i) => {
+      const row = i + 2;
+      const time = r.timeHTML || (r.time != null ? `<b>${dayLabel(r.time)}</b>${fmt.time(r.time)}` : '');
+      const cells = r.cells.map(c => {
+        const railed = !!c.rails;
+        const style = `--lane:${c.lane};--row:${row}${railed ? `;padding-left:${c.pad}px;--pad:${c.pad}px` : ''}`;
+        const gw = c.gw ? gwSVG.replace('class="dc-gw"', `class="dc-gw" style="--x:${RAIL_X0 + (c.rails.n - 1) * RAIL_GAP / 2}px"`) : '';
+        return `<div class="trail__cell${railed ? ' dc-railed' : ''}" style="${style}">${railed ? railsHTML(c) : ''}${gw}${c.html}</div>`;
+      }).join('');
+      return `<div class="dc-row${r.future ? ' is-future' : ''}${r.cls ? ' ' + r.cls : ''}"${r.future ? '' : ` data-from="${r.from}" data-at="${r.at}"`}><div class="trail__time" style="--row:${row}">${time}</div>${cells}</div>`;
+    }).join('');
+    const box = $('#dc-trail');
+    box.style.gridTemplateRows = `repeat(${rows.length + 1}, auto)`;
+    box.innerHTML = head + guides + body;
+    rowEls = $$('.dc-row[data-from]', box).map(el => ({ el, from: +el.dataset.from, at: el.dataset.at === 'Infinity' ? Infinity : +el.dataset.at }));
+    const done = doc.trail.length;
+    const span = App.workHours(doc.received, doc.closedAt ?? App.NOW0);
+    $('#dc-trail-sub').textContent = `${done} 筆簽核紀錄 · 全程 ${fmt.dur(span)}（工作時間）`;
+  }
+  // 重播時：已完成的列正常顯示、進行中的列加框、尚未發生的列淡出
+  function paintRows(rt, final) {
+    rowEls.forEach(({ el, from, at }) => {
+      el.classList.toggle('is-dim', !final && rt < from);
+      el.classList.toggle('is-live', !final && from <= rt && rt < at && at !== Infinity);
+    });
+  }
+
+  /* ── 頁首、狀態列 ── */
+  const mineList = () => App.DATA.docs.filter(d => App.actors(d).includes(ME)).sort((a, b) => a.due - b.due || a.received - b.received);
+  const SCENARIOS = [['bikeway', '三單位平行會辦'], ['winter', '最速件 · 主計處會辦逾期'], ['zoning', '密件 · 第一層決行'], ['pothole', '1999 陳情轉辦'], ['audit', '機密 · 曾退回補正']];
+  function renderHead() {
+    const u = U();
+    $('#dc-id').textContent = doc.id;
+    $('#page-title').textContent = doc.subject;
+    $('#dc-lede').innerHTML = [
+      `<span>${doc.fromKey === 'self' ? '簽陳' : '來文'} <b>${esc(doc.from)}</b></span>`,
+      doc.ref ? `<span class="mono">${esc(doc.ref)}</span>` : '',
+      `<span>${doc.kind} · 附件 ${doc.attachments} 件</span>`,
+      `<span>承辦 <b>${esc(u.org + u.name)}${doc.owner ? ' ' + esc(person(doc.owner).name) : '（待分文）'}</b></span>`,
+    ].join('');
+    $('#dc-tags').innerHTML = App.speedBadge(doc.speed) + (doc.secret !== 'none' ? App.secretBadge(doc.secret) : '') + App.dueTag(doc)
+      + `<span class="badge badge--outline">${LEVELS[doc.level].label}決行</span>` + App.stageTag(doc);
+    const list = mineList();
+    const i = list.indexOf(doc);
+    const nav = (d, label, icon) => d
+      ? `<a class="btn btn--sm btn--icon btn--ghost" href="${App.docUrl(d.id)}" aria-label="${label}：${d.id}" title="${label}">${App.icon(icon)}</a>`
+      : `<span class="btn btn--sm btn--icon btn--ghost is-disabled" aria-hidden="true">${App.icon(icon)}</span>`;
+    $('#dc-queue').innerHTML = i >= 0
+      ? `<span>待我核</span><b>${i + 1} / ${list.length}</b>${nav(list[i - 1], '上一件', 'chevron-left')}${nav(list[i + 1], '下一件', 'chevron-right')}`
+      : `<span>待我核</span><b>${list.length} 件</b>${list.length ? `<a class="btn btn--sm btn--ghost" href="${App.docUrl(list[0].id)}">開始處理${App.icon('arrow-right')}</a>` : ''}`;
+    const item = (d, meta) => `<a class="dc-menu__item" href="${App.docUrl(d.id)}"${d === doc ? ' aria-current="page"' : ''}><span class="doc-no">${d.id}</span><span class="dc-menu__subj truncate">${esc(d.subject)}</span><span class="dc-menu__meta">${esc(meta)}</span></a>`;
+    $('#dc-switch-menu').innerHTML = `<p class="dc-menu__cap">待我核 · ${list.length} 件</p>${list.map(d => item(d, `${App.stageLabel(d)} · ${App.dueState(d).label}`)).join('')}`
+      + `<p class="dc-menu__cap">情境範例</p>${SCENARIOS.map(([slug, note]) => { const d = App.featured(slug); return item(d, `${note} · 目前${App.stageLabel(d)}`); }).join('')}`;
+  }
+
+  function renderStatus() {
+    const pend = App.pending(doc);
+    const u = U();
+    const due = App.dueState(doc);
+    let cur;
+    if (pend.length) {
+      const hours = App.workHours(doc.stageAt, Math.max(doc.stageAt, App.NOW0));
+      const sla = Math.max(...pend.map(x => flow.node(x.node).sla));
+      const who = [...new Set(pend.map(x => x.who === ME ? `${person(x.who).name}（您）` : person(x.who).name))].join('、');
+      cur = `<span class="dc-stat__v">${esc(App.stageLabel(doc))}</span><span class="dc-stat__s">待 ${esc(who)}</span><span class="dc-stat__s${hours > sla ? ' is-bad' : ''}">${stay(hours)} / 時限 ${fmt.dur(sla)}</span>`;
+    } else {
+      cur = `<span class="dc-stat__v">已結案</span><span class="dc-stat__s">${dayLabel(doc.closedAt)} ${fmt.time(doc.closedAt)} 歸檔</span>`;
+    }
+    let dueHTML = `<span class="dc-stat__v">${dayLabel(doc.due)}<small>${fmt.time(doc.due)}</small></span>`;
+    if (due.state === 'today') dueHTML += `<span class="dc-countdown" id="dc-countdown"></span>`;
+    else dueHTML += `<span class="dc-stat__s${due.state === 'over' || due.state === 'late' ? ' is-bad' : ''}">${esc(due.label)}${doc.doneAt ? ` · ${fmt.dt(doc.doneAt)} 決行` : ''}</span>`;
+    const decider = doc.level === 1 ? 'shen-sy' : doc.level === 2 ? u.director : u.chief;
+    const approveEntry = [...doc.trail].reverse().find(e => e.action === '決行（代判）' || e.action === '決行' || e.action === '核稿・決行');
+    const total = App.workHours(doc.received, doc.closedAt ?? App.NOW0);
+    $('#dc-status').innerHTML = `
+      <div class="dc-stat"><span class="dc-stat__k">流程進度 PROGRESS</span>${App.miniFlow(doc, { lg: true })}</div>
+      <div class="dc-stat"><span class="dc-stat__k">目前關卡 STAGE</span>${cur}</div>
+      <div class="dc-stat"><span class="dc-stat__k">限辦期限 DUE</span>${dueHTML}</div>
+      <div class="dc-stat"><span class="dc-stat__k">決行層級 LEVEL</span><span class="dc-stat__v">${LEVELS[doc.level].label}<small>${LEVELS[doc.level].who}</small></span><span class="dc-stat__s">${approveEntry ? `${esc(person(approveEntry.who).name)} 已決行` : `由 ${esc(person(decider).name)} 決行`}</span></div>
+      <div class="dc-stat"><span class="dc-stat__k">全程歷時 ELAPSED</span><span class="dc-stat__v">${fmt.dur(total)}</span><span class="dc-stat__s">收文 ${fmt.dt(doc.received)}</span></div>`;
+    tickCountdown();
+  }
+  function tickCountdown() {
+    const el = $('#dc-countdown');
+    if (!el) return;
+    const left = doc.due - App.now();
+    if (left <= 0) { el.textContent = '已超過限辦時間'; el.classList.add('is-bad'); return; }
+    const s = Math.floor(left / 1000);
+    el.textContent = `今日到期 · 剩 ${pad2(Math.floor(s / 3600))}:${pad2(Math.floor(s % 3600 / 60))}:${pad2(s % 60)}`;
+  }
+  setInterval(tickCountdown, 1000);
+
+  /* ── 公文樣張 ── */
+  const hasDraft = () => !['register', 'assign'].includes(doc.stage);
+  const lastIndex = pred => { for (let i = doc.trail.length - 1; i >= 0; i--) if (pred(doc.trail[i], i)) return i; return -1; };
+  function sealSlots() {
+    const u = U();
+    const lastRet = lastIndex(e => e.ret);
+    const slots = [];
+    const mineKey = (App.pending(doc).find(x => x.who === ME) || {}).key;
+    const slot = (label, idx, who, pending, kind = 'name') => slots.push({ label, idx, who, pending: idx < 0 && pending, kind, mine: idx < 0 && pending && who === ME });
+    const di = doc.stage === 'draft' ? -1 : lastIndex(e => e.key === 'draft');
+    slot('承辦人', di, doc.owner, doc.stage === 'draft');
+    doc.cosign.filter(c => c.state !== 'cancelled').forEach(c => {
+      const i = c.state === 'done' ? lastIndex(e => e.key === 'cosign' && e.unit === c.unit) : -1;
+      slot(`會辦 · ${unitOf(c.unit).org}`, i, c.by, c.state === 'pending');
+    });
+    const ri = lastIndex((e, i) => e.key === 'review' && !e.ret && i > lastRet && e.action !== '加會');
+    slot(doc.level === 3 ? '核稿・決行' : '核稿', ri, u.chief, doc.stage === 'review');
+    const ai = doc.level === 3 ? (ri >= 0 && doc.trail[ri].action === '核稿・決行' ? ri : -1) : lastIndex((e, i) => e.key === 'approve' && !e.ret && /決行/.test(e.action) && i > lastRet);
+    const decider = doc.level === 1 ? 'shen-sy' : doc.level === 2 ? u.director : u.chief;
+    slot(doc.level === 3 ? '決行（科長）' : doc.level === 2 ? '決行（局長）' : '決行（市長）', ai, ai >= 0 ? doc.trail[ai].who : decider, doc.stage === 'approve' || (doc.level === 3 && doc.stage === 'review'), 'decide');
+    if (mineKey === 'review' && doc.level === 3) slots[slots.length - 1].mine = false;
+    return slots;
+  }
+  function sealsHTML() {
+    return `<div class="dc-seals" aria-label="簽核章戳欄">${sealSlots().map((s, k) => {
+      const e = s.idx >= 0 ? doc.trail[s.idx] : null;
+      const stamping = e && state.stampFrom != null && s.idx >= state.stampFrom;
+      let mark;
+      if (e) {
+        const p = person(e.who);
+        const seal = s.kind === 'decide' ? App.seal({ kind: 'decide', name: p.name, date: e.at }) : App.seal({ name: p.name, title: p.title });
+        const sealEl = stamping ? seal.replace('class="seal ', `class="seal is-stamping ${s.kind === 'decide' ? 'dc-later ' : ''}`) : seal;
+        mark = `<span class="dc-sealbox" style="--rot:${[-5, -2, -6, -3, -4][k % 5]}deg">${sealEl}${stamping ? '<span class="seal-impact is-on"></span>' : ''}</span>`;
+      } else {
+        const name = s.who ? person(s.who).name : '未指定';
+        mark = `<span class="dc-slot__wait">${s.mine ? '請在此<br>簽章' : s.pending ? `待<br>${esc(name)}` : '—'}</span>`;
+      }
+      return `<div class="dc-slot${s.pending ? ' is-pending' : ''}${s.mine ? ' is-mine' : ''}"><span class="dc-slot__label">${esc(s.label)}</span><div class="dc-slot__mark">${mark}</div><span class="dc-slot__time">${e ? fmt.dt(e.at) : s.pending ? '辦理中' : '　'}</span></div>`;
+    }).join('')}</div>`;
+  }
+  function renderPaper() {
+    const host = $('#dc-panel-draft');
+    if (!hasDraft()) {
+      $('#dc-paper-sub').textContent = '尚未擬稿';
+      host.innerHTML = App.emptyState({ title: '承辦人尚未擬稿', text: doc.stage === 'register' ? '公文正在收發室登錄，分文後由承辦人擬稿。' : '公文待分文，指定承辦人後即可開始擬稿。', glyph: 'task-user' });
+      return;
+    }
+    const d = App.draftOf(doc);
+    const u = U();
+    const isSign = d.kind === '簽';
+    const li = arr => arr.map(x => `<li>${esc(x)}</li>`).join('');
+    const archived = doc.trail.find(e => e.key === 'archive');
+    const fileNo = archived ? (archived.note.match(/檔號 (\S+)/) || [])[1] : null;
+    const draftAt = (doc.trail.filter(e => e.key === 'draft').pop() || {}).at ?? App.NOW0;
+    $('#dc-paper-sub').textContent = d.no ? `已發文 · ${d.no}` : isSign ? '簽稿 · 陳核中' : '函稿 · 尚未發文';
+    const head = isSign
+      ? `<div class="dc-sign-head"><span class="dc-sign-head__kind">簽</span><span class="dc-sign-head__from">於 ${esc(u.org + u.name)}</span></div>
+         <p class="dc-sign-date">${fmt.rocLong(draftAt)}</p>`
+      : `<h3 class="gov-doc__org">${esc(d.org)}<small>${esc(d.kind)}</small></h3>
+         <p class="gov-doc__addr">地址：${esc(d.addr.line)}<br>承辦人：${esc(d.addr.contact)}<br>電話：${esc(d.addr.tel)}</p>
+         <p class="gov-doc__to">受文者：${esc(d.to)}</p>
+         <dl class="gov-doc__meta">
+           <dt>發文日期：</dt><dd>${d.date ? fmt.rocLong(d.date) : '<span class="dc-blank">（決行後由系統帶入）</span>'}</dd>
+           <dt>發文字號：</dt><dd>${d.no ? `<span class="doc-no">${esc(d.no)}</span>` : `${esc(u.word)}字第<span class="dc-blank">（發文時編號）</span>號`}</dd>
+           <dt>速別：</dt><dd>${esc(d.speed)}</dd>
+           <dt>密等及解密條件或保密期限：</dt><dd>${esc(d.secret)}</dd>
+           <dt>附件：</dt><dd>${d.attachments.length ? esc(d.attachments.join('、')) : '無'}</dd>
+         </dl>`;
+    const foot = isSign
+      ? `<p class="dc-sign-to">敬陳　${esc(d.to)}</p>`
+      : `<div class="gov-doc__cc"><span>正本：</span><span>${esc(d.to)}</span></div>
+         <div class="gov-doc__cc"><span>副本：</span><span>${d.cc.length ? esc(d.cc.join('、')) : '無'}</span></div>
+         <div class="gov-doc__sign"><span class="gov-doc__signer">${esc(d.signer)}</span></div>`;
+    const mark = doc.secret === 'confidential' ? '機密' : doc.secret === 'restricted' ? '密' : '';
+    host.innerHTML = `<article class="gov-doc${state.big ? ' dc-lg' : ''}${state.stampFrom != null ? ' dc-press' : ''}"${mark ? ` data-mark="${mark}"` : ''} aria-label="${isSign ? '簽稿' : '函稿'}樣張">
+      ${!isSign && !d.no ? '<span class="dc-draftmark" aria-hidden="true">稿</span>' : ''}
+      <p class="gov-doc__file">檔　　號：${fileNo ? esc(fileNo) : '（歸檔時編定）'}<br>收 文 號：${doc.id}</p>
+      ${head}
+      <div class="gov-doc__subject"><span class="gov-doc__head-word">主旨：</span><span>${esc(d.subject)}</span></div>
+      <div class="gov-doc__section"><span class="gov-doc__head-word">說明：</span><ol class="gov-doc__list">${li(d.desc)}</ol></div>
+      ${d.actions && d.actions.length ? `<div class="gov-doc__section"><span class="gov-doc__head-word">${isSign ? '擬辦' : '辦法'}：</span><ol class="gov-doc__list">${li(d.actions)}</ol></div>` : ''}
+      ${foot}
+      ${sealsHTML()}
+    </article>`;
+  }
+
+  /* 來文與附件（內容不隨簽核變動，只產生一次） */
+  const hashOf = str => [...str].reduce((a, c) => (Math.imul(a, 31) + c.charCodeAt(0)) >>> 0, 2166136261);
+  function attachmentList() {
+    const out = [];
+    const reg = doc.trail.find(e => e.key === 'register');
+    const named = reg && reg.note.match(/附件 \d+ 件（(.+)）/);
+    const pools = {
+      citizen: ['陳情人提供現場照片', '陳情位置示意圖', '1999 通話紀錄摘要'],
+      self: ['簽辦說明附表', '經費概算表', '相關法規條文對照', '前次會議紀錄'],
+    };
+    const names = named ? named[1].split('、') : (pools[doc.fromKey] || ['來文本文', '來文附件一', '來文附件二', '來文附件三']);
+    for (let i = 0; i < doc.attachments; i++) out.push({ name: names[i] || `附件${i + 1}`, src: doc.fromKey === 'self' ? '簽陳附件' : '來文附件', ext: 'pdf', at: doc.received, by: doc.fromKey === 'self' ? person(doc.owner || U().staff[0]).name : '電子交換系統' });
+    if (hasDraft()) {
+      const draftAt = (doc.trail.filter(e => e.key === 'draft').pop() || {}).at ?? doc.stageAt;
+      App.draftOf(doc).attachments.forEach(n => out.push({ name: n.replace(/ \d+ 份$/, ''), src: '函稿附件', ext: 'odt', at: draftAt, by: person(doc.owner).name }));
+    }
+    return out.map((a, i) => {
+      const h = hashOf(doc.id + a.name + i);
+      let hex = '', x = h;
+      for (let k = 0; k < 16; k++) { x = (Math.imul(x ^ (x >>> 15), 2246822507) + k) >>> 0; hex += (x >>> 16).toString(16).padStart(4, '0'); }
+      return Object.assign(a, { pages: 1 + h % 14, size: (.18 + (h % 380) / 100).toFixed(1), sha: hex });
+    });
+  }
+  const ATT = attachmentList();
+  function renderIncoming() {
+    const d = new Date(doc.received);
+    const stamp = `<svg class="dc-recv-stamp" viewBox="0 0 168 74" role="img" aria-label="收文章：${fmt.roc(doc.received)} ${fmt.time(doc.received)}，收文號 ${doc.id}">
+      <defs><filter id="dc-rough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="${d.getUTCDate()}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="1.4" xChannelSelector="R" yChannelSelector="G"/></filter></defs>
+      <g filter="url(#dc-rough)"><rect x="2" y="2" width="164" height="70" rx="4" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M6 25h156M6 48h156" stroke="currentColor" stroke-width=".9"/>
+      <text x="84" y="14" font-size="12.5" font-weight="700" letter-spacing="3">澄港市政府　收文</text><text class="dc-mono" x="84" y="36.5" font-size="13">${fmt.roc(doc.received)} ${fmt.time(doc.received)}</text><text class="dc-mono" x="84" y="60" font-size="13">${doc.id}</text></g></svg>`;
+    const citizen = doc.fromKey === 'citizen';
+    const pages = doc.trail.find(e => e.key === 'register');
+    $('#dc-panel-in').innerHTML = `<article class="dc-incoming" aria-label="${citizen ? '陳情轉辦單' : '來文'}">
+      ${stamp}
+      <p class="dc-incoming__org">${citizen ? '澄港市 1999 市民專線' : esc(doc.from)}<small>${citizen ? '陳情轉辦單' : esc(doc.kind)}</small></p>
+      <dl class="dc-incoming__meta">
+        ${citizen
+          ? `<dt>陳情案號：</dt><dd class="mono">${esc(doc.ref.replace(/^陳情案號 /, ''))}</dd><dt>陳情管道：</dt><dd>1999 市民專線（電話）</dd><dt>陳情人：</dt><dd>○○○（個人資料已遮蔽）</dd><dt>轉辦機關：</dt><dd>${esc(U().org)}</dd>`
+          : `<dt>受文者：</dt><dd>澄港市政府</dd><dt>發文字號：</dt><dd class="mono">${esc(doc.ref || '—')}</dd><dt>速別：</dt><dd>${esc(App.DATA.speeds[doc.speed].label)}</dd><dt>附件：</dt><dd>${doc.attachments ? `${doc.attachments} 件` : '無'}</dd>`}
+      </dl>
+      <div class="dc-incoming__subject"><b>${citizen ? '案由：' : '主旨：'}</b><span>${esc(doc.subject)}</span></div>
+      <p class="dc-incoming__note">${esc(pages ? pages.note : '收文登錄中')}。${citizen ? '陳情摘要與附件已建檔' : pages && /^紙本/.test(pages.note) ? '紙本原件已掃描存檔' : '來文全文與附件以電子交換方式保存'}，請見「附件」頁籤。</p>
+    </article>`;
+  }
+  function renderAttachments() {
+    $('#dc-panel-att').innerHTML = ATT.length
+      ? `<ul class="dc-att">${ATT.map((a, i) => `<li class="dc-att__row"><span class="dc-att__ext">${a.ext}</span><span><span class="dc-att__name">${esc(a.name)}.${a.ext}</span><span class="dc-att__meta"> · ${esc(a.src)}<br>${a.pages} 頁 · ${a.size} MB · ${esc(a.by)} 於 ${fmt.dt(a.at)} 上傳</span></span><button type="button" class="btn btn--sm" data-att="${i}">${App.icon('info')}檔案資訊</button></li>`).join('')}</ul>`
+      : App.emptyState({ title: '本件沒有附件', text: '來文與函稿皆未夾帶附件。', glyph: 'task' });
+  }
+  $('#dc-panel-att').addEventListener('click', e => {
+    const b = e.target.closest('[data-att]');
+    if (!b) return;
+    const a = ATT[+b.dataset.att];
+    $('#dc-att-kv').innerHTML = `<dt>檔名</dt><dd>${esc(a.name)}.${a.ext}</dd><dt>類別</dt><dd>${esc(a.src)}</dd><dt>頁數</dt><dd>${a.pages} 頁</dd><dt>大小</dt><dd>${a.size} MB</dd>
+      <dt>上傳</dt><dd>${esc(a.by)} · ${fmt.dt(a.at)}</dd><dt>SHA-256</dt><dd class="mono" style="font-size:12px">${a.sha}</dd><dt>驗章</dt><dd><span class="badge badge--ok">${App.icon('check')}電子簽章有效</span></dd>`;
+    App.modal.open($('#dc-dlg-att'));
+  });
+
+  // 分頁籤依公文類型產生：自行簽辦的公文沒有「原來文」
+  const tabs = [['draft', doc.kind === '簽' ? '簽稿' : '函稿'], doc.fromKey !== 'self' && ['in', doc.fromKey === 'citizen' ? '陳情內容' : '原來文'], ['att', '附件', ATT.length]].filter(Boolean);
+  const firstTab = hasDraft() || doc.fromKey === 'self' ? 'draft' : 'in';
+  $('#dc-tabs').innerHTML = tabs.map(([k, label, n]) => `<button type="button" class="tab" role="tab" id="dc-tab-${k}" aria-controls="dc-panel-${k}" aria-selected="${k === firstTab}">${label}${n != null ? `<span class="tab__count">${n}</span>` : ''}</button>`).join('');
+  $$('.dc-desk > .tab-panel').forEach(p => { p.hidden = p.id !== 'dc-panel-' + firstTab; });
+  App.tabs($('#dc-tabs'));
+  $('#dc-size-seg').addEventListener('change', e => {
+    state.big = e.detail.value === 'lg';
+    const g = $('#dc-panel-draft .gov-doc');
+    if (g) g.classList.toggle('dc-lg', state.big);
+  });
+
+  /* ── 案件資訊、意見欄 ── */
+  function renderInfo() {
+    const u = U();
+    const cs = doc.cosign.filter(c => c.state !== 'cancelled');
+    const decider = doc.level === 1 ? '市長 沈書韞' : doc.level === 2 ? `局長 ${person(u.director).name}` : `科長 ${person(u.chief).name}`;
+    $('#dc-info').innerHTML = `
+      <dt>收文號</dt><dd>${App.docNo(doc.id)}</dd>
+      <dt>收文時間</dt><dd>${fmt.roc(doc.received)} ${fmt.time(doc.received)}</dd>
+      <dt>來文</dt><dd>${esc(doc.from)}${doc.ref ? `<br><span class="mono muted" style="font-size:12px">${esc(doc.ref)}</span>` : ''}</dd>
+      <dt>承辦</dt><dd>${esc(u.org + u.name)}<br>${doc.owner ? App.personTag(doc.owner, { role: false }) : '<span class="muted">待分文</span>'}</dd>
+      <dt>會辦</dt><dd>${cs.length ? cs.map(c => `${esc(unitOf(c.unit).org)}${c.state === 'done' ? ' ✓' : '（中）'}`).join('、') : '免會辦'}</dd>
+      <dt>決行</dt><dd>${LEVELS[doc.level].label} · ${esc(decider)}</dd>
+      <dt>發文</dt><dd>${doc.outNo ? `<span class="doc-no">${esc(doc.outNo)}</span>` : doc.send ? '決行後對外發文' : '決行後存查，不對外發文'}</dd>`;
+  }
+  const OPINION_KEYS = new Set(['draft', 'cosign', 'review', 'approve']);
+  function renderOpinions() {
+    const items = doc.trail.map((e, i) => [e, i]).filter(([e]) => OPINION_KEYS.has(e.key) && e.note);
+    $('#dc-op-count').textContent = items.length;
+    $('#dc-opinions').innerHTML = items.length ? items.map(([e, i]) => {
+      const p = person(e.who);
+      const tone = e.ret ? 'danger' : e.action === '加會' ? 'token' : /決行/.test(e.action) ? 'ink' : 'outline';
+      const label = e.key === 'cosign' ? `${unitOf(e.unit).org}會辦` : e.action;
+      const isNew = state.stampFrom != null && i >= state.stampFrom;
+      return `<li class="opinion${isNew ? ' dc-new' : ''}">${App.avatar(e.who)}
+        <div class="opinion__head"><b>${esc(p.name)}</b><span class="muted">${esc(p.title)}</span><span class="badge badge--${tone}">${esc(label)}</span><time class="opinion__time" datetime="${new Date(e.at).toISOString()}">${fmt.dt(e.at)}</time></div>
+        <p class="opinion__body">${esc(e.note)}</p>
+        ${SEALED.has(e.action) ? `<span class="opinion__stamp">${App.seal({ name: p.name, title: p.title })}</span>` : ''}
+      </li>`;
+    }).join('') : `<li>${App.emptyState({ title: '尚無簽註意見', text: '承辦人擬辦後，各關卡的意見會依序列在這裡。', glyph: 'task-user' })}</li>`;
+  }
+  const PHRASES = {
+    review: ['如擬。', '文字已修正，如擬。', '請依法制處意見修正後陳核。', '核稿，陳請核示。'],
+    approve: ['如擬。', '可。', '准予備查。'],
+    cosign: ['敬會，本局無意見。', '請副知本局，以利後續配合。', '本局將配合辦理。'],
+  };
+  const opinionEl = $('#dc-opinion');
+  const updateCount = () => { $('#dc-opinion-count').textContent = `${opinionEl.value.length} / 300`; };
+  opinionEl.addEventListener('input', updateCount);
+  function renderComposer() {
+    const t = App.pending(doc).find(x => x.who === ME);
+    const box = $('#dc-composer');
+    box.hidden = !t;
+    if (!t) return;
+    const what = t.key === 'cosign' ? `會辦意見（${unitOf(doc.cosign.find(c => c.by === ME && c.state === 'pending').unit).org}）` : t.key === 'review' ? '核稿意見' : '決行意見';
+    $('#dc-opinion-label').innerHTML = `您的${what}<span class="muted" style="font-weight:400"> · ${esc(person(ME).name)}</span>`;
+    opinionEl.placeholder = `未填寫時以「${t.key === 'cosign' ? '敬會，本局無意見。' : '如擬。'}」送出`;
+    $('#dc-phrases').innerHTML = (PHRASES[t.key] || []).map(s => `<button type="button" class="phrase">${esc(s)}</button>`).join('');
+  }
+  const insertPhrase = (field, text) => {
+    field.value = field.value.trim() ? `${field.value.trim()}${text}` : text;
+    field.dispatchEvent(new Event('input'));
+    field.focus();
+  };
+  $('#dc-phrases').addEventListener('click', e => { const b = e.target.closest('.phrase'); if (b) insertPhrase(opinionEl, b.textContent); });
+
+  /* ── 動作 ── */
+  function myTask() { return App.pending(doc).find(x => x.who === ME) || null; }
+  const ACTIONS = { review: ['approve', 'escalate', 'cosign', 'return'], approve: ['approve', 'cosign', 'return'], cosign: ['approve'] };
+  function can(action) {
+    const t = myTask();
+    if (!t || state.busy) return false;
+    if (action === 'escalate' && t.key === 'approve') return doc.level === 2;
+    return (ACTIONS[t.key] || []).includes(action);
+  }
+  function successText(action, before) {
+    const u = U();
+    if (action === 'return') return `已退回 ${person(doc.owner).name} 補正，退回理由已寫入意見欄`;
+    if (action === 'cosign') return `已加會 ${doc.cosign.filter(c => c.state === 'pending').map(c => unitOf(c.unit).org).join('、')}，全部簽註後回到您核稿`;
+    if (action === 'escalate') return `已陳核，改由 ${doc.level === 1 ? '沈書韞 市長' : `${person(u.director).name} 局長`} 決行`;
+    if (before.stage === 'cosign') {
+      const left = doc.cosign.filter(c => c.state === 'pending').map(c => unitOf(c.unit).org);
+      return left.length ? `已簽註會畢，尚待 ${left.join('、')} 會辦` : `已簽註會畢，會辦完成，送回 ${person(u.chief).name} 核稿`;
+    }
+    if (doc.doneAt != null && before.doneAt == null) return `已核稿並決行，送收發室${doc.send ? '發文' : '歸檔存查'}`;
+    return `已核稿，送 ${doc.level === 1 ? '沈書韞 市長' : `${person(u.director).name} 局長`} 決行`;
+  }
+  function act(action, opts) {
+    if (!can(action)) { App.toast('公文狀態已變更，這個動作目前無法執行', { tone: 'warn' }); return; }
+    const before = { stage: doc.stage, doneAt: doc.doneAt };
+    state.stampFrom = doc.trail.length;
+    state.advanceFrom = doc.trail.length;
+    const res = App.act(doc.id, action, opts);
+    state.stampFrom = null;
+    const undo = once(() => { state.lastUndo = null; res.undo(); App.toast('已復原，公文回到您手上', { tone: 'token', duration: 2600 }); });
+    state.lastUndo = undo;
+    opinionEl.value = '';
+    updateCount();
+    renderActionBar();
+    App.toast(successText(action, before), { tone: action === 'return' ? 'warn' : 'ok', action: { label: '復原', onClick: undo }, duration: 6000 });
+  }
+  // 蓋章類動作：先把簽章欄捲進視窗，讓使用者看到章蓋下去
+  async function stampAct(action, opts) {
+    if (!can(action)) return;
+    const tab = $('#dc-tab-draft');
+    if (tab.getAttribute('aria-selected') !== 'true') tab.click();
+    const slot = $('.dc-slot.is-mine') || $('.dc-seals');
+    if (slot) {
+      const r = slot.getBoundingClientRect();
+      if (r.top < 80 || r.bottom > innerHeight - 120) {
+        state.busy = true;
+        slot.scrollIntoView({ behavior: App.reducedMotion() ? 'auto' : 'smooth', block: 'center' });
+        if (!App.reducedMotion()) await wait(520);
+        state.busy = false;
+      }
+    }
+    act(action, opts);
+  }
+  const noteOr = fallback => opinionEl.value.trim() || fallback;
+
+  function renderActionBar() {
+    const bar = $('#dc-actionbar');
+    const t = myTask();
+    const pend = App.pending(doc);
+    const due = App.dueState(doc);
+    const dueSpan = `<span class="${due.state === 'over' ? 'is-bad' : ''}">限辦 ${fmt.dt(doc.due)}（${esc(due.label)}）</span>`;
+    const btn = (act, label, icon, cls = '') => `<button type="button" class="btn ${cls}" data-act="${act}">${App.icon(icon)}${label}</button>`;
+    let info, btns = '';
+    if (t) {
+      const hours = App.workHours(doc.stageAt, Math.max(doc.stageAt, App.NOW0));
+      const what = t.key === 'cosign' ? '會辦簽註' : t.key === 'review' ? (doc.level === 3 ? '核稿・決行' : '核稿') : '決行';
+      info = `<b>待您${what}</b><span>${stay(hours)}</span>${App.isOpen(doc) ? dueSpan : ''}`;
+      btns = t.key === 'cosign'
+        ? btn('approve', '簽註會畢', 'stamp', 'btn--primary btn--lg')
+        : [can('return') && btn('return', '退回', 'return', 'btn--danger'), can('cosign') && btn('cosign', '加會', 'branch'), can('escalate') && btn('escalate', '陳核', 'escalate'), btn('approve', '核可', 'stamp', 'btn--primary btn--lg')].filter(Boolean).join('');
+    } else if (pend.length) {
+      const names = [...new Set(pend.map(x => person(x.who).name))];
+      const hours = App.workHours(doc.stageAt, Math.max(doc.stageAt, App.NOW0));
+      info = `<span>目前由 <b>${esc(names.join('、'))}</b> ${esc(App.stageLabel(doc))}</span><span>${stay(hours)}</span>${App.isOpen(doc) ? dueSpan : ''}`;
+      btns = (state.lastUndo ? btn('undo', '撤回我的簽核', 'undo', 'btn--ghost') : '') + btn('remind', '催辦', 'bolt');
+    } else {
+      const archived = doc.trail.find(e => e.key === 'archive');
+      info = `<span>已於 <b>${fmt.dt(doc.closedAt)}</b> 歸檔結案</span>${archived ? `<span class="mono">${esc(archived.note)}</span>` : ''}`;
+      btns = `<a class="btn" href="docs.html">${App.icon('list')}回公文清單</a>`;
+    }
+    bar.innerHTML = `<div class="action-bar__info dc-bar__info">${info}</div>${btns}`;
+    document.body.classList.add('dc-has-bar');
+  }
+  $('#dc-actionbar').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const a = b.dataset.act;
+    if (a === 'approve') stampAct('approve', { note: noteOr(myTask() && myTask().key === 'cosign' ? '敬會，本局無意見。' : '如擬。'), branch: (myTask() || {}).branch });
+    else if (a === 'return') openReturn();
+    else if (a === 'cosign') openCosign();
+    else if (a === 'escalate') openEscalate();
+    else if (a === 'undo' && state.lastUndo) state.lastUndo();
+    else if (a === 'remind') {
+      const names = [...new Set(App.pending(doc).map(x => person(x.who).name))].join('、');
+      if (state.reminded.has(doc.stage)) { App.toast(`今天已催辦過 ${names}，請稍後再追蹤`, { tone: 'warn', duration: 3000 }); return; }
+      state.reminded.add(doc.stage);
+      App.toast(`已發送催辦通知給 ${names}`, { tone: 'ok', duration: 3000 });
+    }
+  });
+
+  /* 退回 */
+  const retDlg = $('#dc-dlg-return'), retNote = $('#dc-ret-note');
+  $('#dc-ret-phrases').innerHTML = ['請補充經費來源及分年需求後再陳。', '說明二數據與附件不符，請查明修正。', '請先會辦法制處再陳。', '主旨文字過長，請精簡後再陳。'].map(s => `<button type="button" class="phrase">${esc(s)}</button>`).join('');
+  $('#dc-ret-phrases').addEventListener('click', e => { const b = e.target.closest('.phrase'); if (b) insertPhrase(retNote, b.textContent); });
+  retNote.addEventListener('input', () => { if (retNote.value.trim().length >= 6) $('#dc-ret-field').classList.remove('is-invalid'); });
+  function openReturn() {
+    if (!can('return')) return;
+    const pendingCs = doc.cosign.some(c => c.state === 'pending');
+    $('#dc-ret-summary').innerHTML = `本件將退回 <b>${esc(person(doc.owner).name)}</b>（${esc(orgOf(doc.owner))}）重新擬辦${pendingCs ? '，進行中的會辦一併取消' : ''}。退回理由會寫入意見欄並通知承辦人。`;
+    retNote.value = opinionEl.value.trim();
+    $('#dc-ret-field').classList.remove('is-invalid');
+    App.modal.open(retDlg);
+    retNote.focus();
+  }
+  $('#dc-ret-ok').addEventListener('click', () => {
+    if (!retDlg.open) return;
+    const note = retNote.value.trim();
+    if (note.length < 6) { $('#dc-ret-field').classList.add('is-invalid'); retNote.focus(); return; }
+    App.modal.close(retDlg);
+    act('return', { note });
+  });
+
+  /* 加會 */
+  const csDlg = $('#dc-dlg-cosign');
+  function renderCosignChoices() {
+    const choices = [...App.DATA.cosignUnits, ...App.DATA.units.filter(u => u.code !== doc.unit)];
+    $('#dc-cs-list').innerHTML = '<legend class="sr-only">會辦單位</legend>' + choices.map(u => {
+      const who = person(u.person || u.chief);
+      const done = doc.cosign.some(c => c.unit === u.code && c.state === 'done');
+      const pend = doc.cosign.some(c => c.unit === u.code && c.state === 'pending');
+      return `<label class="check dc-unit"><input type="checkbox" value="${u.code}"${pend ? ' disabled' : ''}><span><b>${esc(u.org)}</b><small>${esc(u.name)} · ${esc(who.name)}${done ? ' · 本件已會辦過' : ''}${pend ? ' · 會辦中' : ''}</small></span></label>`;
+    }).join('');
+  }
+  renderCosignChoices();
+  $('#dc-cs-list').addEventListener('change', () => { if ($$('#dc-cs-list input:checked').length) $('#dc-cs-field').classList.remove('is-invalid'); });
+  function openCosign() {
+    if (!can('cosign')) return;
+    renderCosignChoices();
+    $('#dc-cs-note').value = '';
+    $('#dc-cs-field').classList.remove('is-invalid');
+    App.modal.open(csDlg);
+  }
+  $('#dc-cs-ok').addEventListener('click', () => {
+    if (!csDlg.open) return;
+    const units = $$('#dc-cs-list input:checked').map(i => i.value);
+    if (!units.length) { $('#dc-cs-field').classList.add('is-invalid'); return; }
+    App.modal.close(csDlg);
+    const note = $('#dc-cs-note').value.trim();
+    act('cosign', note ? { units, note } : { units });
+  });
+
+  /* 陳核 */
+  const escDlg = $('#dc-dlg-escalate');
+  function openEscalate() {
+    if (!can('escalate')) return;
+    const u = U();
+    const lv = n => `${LEVELS[n].label} · ${n === 1 ? '市長 沈書韞' : n === 2 ? `局長 ${person(u.director).name}` : `科長 ${person(u.chief).name}`}`;
+    const from = doc.level, to = doc.stage === 'approve' ? 1 : Math.min(2, doc.level);
+    const decider = lv(to).split(' · ')[1];
+    const box = (label, value, cls = '') => `<div class="dc-lvl__box${cls}"><small>${label}</small><b>${esc(value)}</b></div>`;
+    // 層級不變時比的是「送到誰手上」，兩個一樣的層級方塊沒有資訊量
+    $('#dc-esc-levels').innerHTML = from !== to
+      ? box('目前決行層級', lv(from)) + App.icon('arrow-right') + box('陳核後', lv(to), ' is-to')
+      : box('目前關卡', `核稿 · ${person(ME).name}（您）`) + App.icon('arrow-right') + box('陳核送往', `決行 · ${decider}`, ' is-to');
+    $('#dc-esc-text').textContent = from !== to
+      ? `本件將提高決行層級，改由${decider}決行；您的職章蓋於核稿欄。`
+      : `本件依分層負責原即由${decider}決行。陳核表示不另加註核稿意見，直接送請核示。`;
+    $('#dc-esc-note').value = opinionEl.value.trim();
+    App.modal.open(escDlg);
+  }
+  $('#dc-esc-ok').addEventListener('click', () => {
+    if (!escDlg.open) return;
+    App.modal.close(escDlg);
+    stampAct('escalate', { note: $('#dc-esc-note').value.trim() || '陳請核示。' });
+  });
+
+  /* ── 切換公文選單 ── */
+  const swBtn = $('#dc-switch-btn'), swMenu = $('#dc-switch-menu');
+  const setMenu = open => { swMenu.hidden = !open; swBtn.setAttribute('aria-expanded', String(open)); };
+  swBtn.addEventListener('click', () => setMenu(swMenu.hidden));
+  document.addEventListener('click', e => { if (!swMenu.hidden && !e.composedPath().includes(swMenu.parentElement)) setMenu(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !swMenu.hidden) { setMenu(false); swBtn.focus(); } });
+
+  /* ── 啟動與重繪：任何資料變動（含復原）都走同一套 ── */
+  function renderAll() {
+    renderHead();
+    renderStatus();
+    renderPaper();
+    renderInfo();
+    renderOpinions();
+    renderComposer();
+    renderActionBar();
+  }
+  if (doc.fromKey !== 'self') renderIncoming();
+  renderAttachments();
+  renderAll();
+  rebuildRoute();
+  App.on('docs', () => { renderAll(); rebuildRoute(); });
+});
+</script>
+</body>
+</html>

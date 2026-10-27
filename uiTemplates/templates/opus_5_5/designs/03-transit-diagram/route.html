@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>路線詳情 — 澄港市 2027 新公車路網</title>
+<meta name="description" content="澄港市 2027 新公車路網單一路線詳情：橫向站序圖與轉乘、模擬即時到站與運行圖、平日／假日時刻表，以及新舊路線對照。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ==========================================================================
+     route.html 專屬元件（前綴 rt-）
+     整頁的 --c 由 main 上的 .c-{路線色} 決定，切換路線時只換這一個 class。
+     ========================================================================== */
+
+  /* ---------- Hero：路線方向幕 ---------- */
+  .rt-hero { padding: var(--sp-5) 0 var(--sp-8); }
+  .rt-hero__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3) var(--sp-5);
+    padding-bottom: var(--sp-4);
+    border-bottom: var(--hair);
+  }
+  .rt-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; padding: 0; list-style: none; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .rt-crumbs li { display: inline-flex; align-items: center; }
+  /* 麵包屑的分隔也是一小段路線 */
+  .rt-crumbs li + li::before { content: ""; width: 14px; height: 4px; margin: 0 10px; border-radius: 2px; background: var(--rule-2); }
+  .rt-crumbs li:last-child::before { background: var(--c); }
+  .rt-crumbs a { color: var(--ink-2); text-decoration: none; }
+  .rt-crumbs a:hover { color: var(--ink); text-decoration: underline; }
+  .rt-crumbs [aria-current] { color: var(--ink); font-weight: 800; }
+  .rt-switch { display: flex; align-items: center; gap: var(--sp-2); }
+  .rt-switch__label { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+  .rt-switch .select { width: auto; min-width: 260px; min-height: 40px; padding-block: 6px; font-size: var(--fs-sm); font-weight: 700; }
+
+  .rt-hero__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(340px, 4fr);
+    gap: var(--sp-7) var(--sp-8);
+    align-items: start;
+    padding-top: var(--sp-7);
+  }
+  .rt-id { display: flex; align-items: center; gap: var(--sp-5); margin-top: var(--sp-4); }
+  .rt-pill.pill { --h: 64px; min-width: 118px; padding: 0 24px; font-size: 30px; border-width: 4px; letter-spacing: 0; }
+  .rt-pill.pill--branch { border-width: 6px; }
+  .rt-pill.pill--night::before { font-size: 20px; margin-right: 6px; }
+  .rt-id__meta { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .rt-id__meta b { color: var(--ink); font-weight: 800; }
+  .rt-id__old { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .rt-id__old a { font-weight: 700; color: var(--ink); }
+
+  /* 起訖之間的粗線：站距依行車時間比例，車輛依模擬時鐘移動 */
+  .rt-bar-host { margin-top: var(--sp-7); }
+  .rt-bar__cap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 2px var(--sp-4);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+  }
+  .rt-bar__cap b { color: var(--ink); font-family: var(--font-num); }
+  .rt-bar { position: relative; height: 64px; margin: 4px 18px 0; }
+  .rt-bar__line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 10px;
+    margin-top: -5px;
+    border-radius: 5px;
+    background: var(--c);
+    transform-origin: left;
+    animation: rt-draw 1s var(--ease-draw) both;
+  }
+  .rt-bar[data-type="feeder"] .rt-bar__line { height: 6px; margin-top: -3px; border-radius: 0; background: repeating-linear-gradient(90deg, var(--c) 0 18px, transparent 18px 28px); }
+  .rt-bar[data-type="night"] .rt-bar__line { height: 8px; margin-top: -4px; border-radius: 0; background: radial-gradient(circle, var(--ink) 3px, transparent 3.5px) 0 50% / 12px 8px repeat-x; }
+  .rt-bar[data-type="trunk"].is-yellow .rt-bar__line { box-shadow: inset 0 0 0 1.5px #D9B300; }
+  @keyframes rt-draw { from { transform: scaleX(0); } }
+  .rt-bar__stop {
+    position: absolute;
+    top: 50%;
+    left: calc(var(--x) * 100%);
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 4px solid var(--c);
+    border-radius: var(--r-pill);
+    background: var(--white);
+    /* 站點在線畫到該處時才彈出 */
+    animation: rt-pop .45s var(--ease-spring) both;
+    animation-delay: calc(var(--x) * 850ms + 120ms);
+  }
+  .rt-bar[data-type="night"] .rt-bar__stop { border-color: var(--ink); }
+  .rt-bar__stop.is-end { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-width: 6px; }
+  .rt-bar__stop.is-xfer { width: 28px; height: 18px; margin: -9px 0 0 -14px; border-color: var(--ink); }
+  .rt-bar__stop.is-end.is-xfer { width: 38px; height: 26px; margin: -13px 0 0 -19px; border-width: 5px; }
+  @keyframes rt-pop { from { transform: scale(0); opacity: 0; } }
+  .rt-bar__buses { position: absolute; inset: 0; pointer-events: none; }
+  /* 實心墨色小車＋白色行進箭頭，和白心的站點膠囊區分開 */
+  .rt-bar__bus {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 20px;
+    height: 10px;
+    margin: -23px 0 0 -10px;
+    border-radius: 5px;
+    background: var(--ink);
+  }
+  .rt-bar__bus::after { content: ""; position: absolute; right: 4px; top: 50%; margin-top: -3px; border-left: 5px solid #FFFFFF; border-block: 3px solid transparent; }
+  .rt-bar__bus.is-back { margin-top: 13px; }
+
+  .rt-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-2) var(--sp-5);
+    margin-top: var(--sp-2);
+    font-size: clamp(2.25rem, 1.2rem + 2.6vw, 3.5rem);
+    font-weight: 900;
+    line-height: 1.08;
+    letter-spacing: -.01em;
+  }
+  .rt-title > span { display: block; }
+  .rt-title__to { margin-left: auto; text-align: right; }
+  .rt-title small { display: block; margin-bottom: 8px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .16em; color: var(--ink-3); }
+  .rt-desc { margin-top: var(--sp-5); color: var(--ink-2); max-width: 40em; }
+
+  .rt-facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: var(--sp-6) 0 0; border-top: 3px solid var(--ink); }
+  .rt-facts > div { padding: var(--sp-3) var(--sp-4) 0; border-left: var(--hair); }
+  .rt-facts > div:first-child { padding-left: 0; border-left: 0; }
+  .rt-facts dt { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; color: var(--ink-3); }
+  .rt-facts dd { margin: 4px 0 0; font: 800 1.75rem/1.1 var(--font-num); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .rt-facts dd small { margin-left: 3px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: 0; }
+
+  /* 下一班車：像站牌上的到站看板 */
+  .rt-next { position: relative; border: 3px solid var(--ink); border-radius: var(--r-3); background: var(--white); overflow: hidden; }
+  .rt-next__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: 14px var(--sp-5);
+    background: var(--ink);
+    color: #FFFFFF;
+  }
+  .rt-next__title { font-size: var(--fs-md); font-weight: 800; letter-spacing: .06em; }
+  .rt-next__clock { display: inline-flex; align-items: center; gap: 8px; font: 700 var(--fs-sm)/1 var(--font-num); color: #E4E4DE; font-variant-numeric: tabular-nums; }
+  .rt-next__clock .live-dot { background: var(--c); }
+  .rt-next__clock .live-dot::after { border-color: var(--c); }
+  /* 夜間路線的路線色是墨色，在墨色標頭上改用白點 */
+  main.c-ink .rt-next__clock .live-dot { background: #FFFFFF; }
+  main.c-ink .rt-next__clock .live-dot::after { border-color: #FFFFFF; }
+  .rt-next__clock.is-sim .live-dot { display: none; }
+  .rt-next__stop { display: grid; gap: 6px; padding: var(--sp-4) var(--sp-5); border-bottom: var(--hair); }
+  .rt-next__pos { font-size: var(--fs-xs); color: var(--ink-3); }
+  .rt-dir { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px var(--sp-4); padding: var(--sp-4) var(--sp-5); border-bottom: var(--hair); }
+  .rt-dir__to { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: var(--fs-sm); font-weight: 800; }
+  /* 方向箭頭：一小段路線色加三角形 */
+  .rt-arrow { position: relative; flex: none; width: 26px; height: 6px; border-radius: 3px 0 0 3px; background: var(--c); margin-right: 13px; }
+  .rt-arrow::after { content: ""; position: absolute; right: -7px; top: -4px; border-left: 8px solid var(--c); border-block: 7px solid transparent; }
+  /* 翻面後箭頭尖端改在左側：左右留白互換，兩個方向的箭頭佔一樣寬、文字對齊 */
+  .rt-arrow.is-back { transform: scaleX(-1); margin-left: 7px; margin-right: 6px; }
+  .rt-dir__eta { font: 900 3rem/1 var(--font-num); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .rt-dir__eta small { margin-left: 4px; font-size: var(--fs-md); font-weight: 800; letter-spacing: 0; }
+  .rt-dir__eta .rt-dir__word { display: inline-flex; align-items: center; gap: 10px; font-size: 1.5rem; letter-spacing: 0; }
+  .rt-dir__eta .rt-dir__muted { font-size: 1.125rem; font-weight: 800; letter-spacing: 0; color: var(--ink-3); }
+  .rt-dir__more { text-align: right; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.6; }
+  .rt-dir__more b { color: var(--ink); font: 800 var(--fs-sm)/1.4 var(--font-num); }
+  .rt-next__xfer { display: grid; gap: 8px; padding: var(--sp-4) var(--sp-5) 6px; }
+  .rt-next__label { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .rt-next__note { padding: 6px var(--sp-5) var(--sp-4); font-size: var(--fs-xs); color: var(--ink-3); }
+
+  /* ---------- 01 站序與即時 ---------- */
+  .rt-ctl {
+    display: grid;
+    grid-template-columns: auto auto minmax(220px, 1fr) auto auto;
+    grid-template-areas: "dir clock range speed now";
+    align-items: center;
+    gap: var(--sp-4) var(--sp-5);
+    padding: var(--sp-4) var(--sp-5);
+    border: var(--hair);
+    border-radius: var(--r-3);
+    background: var(--paper);
+  }
+  .rt-ctl__dir { grid-area: dir; }
+  .rt-ctl__clock { grid-area: clock; display: flex; align-items: center; gap: 10px; }
+  .rt-ctl__range { grid-area: range; }
+  .rt-ctl__speed { grid-area: speed; }
+  .rt-ctl__now { grid-area: now; }
+  .rt-clock { font: 800 1.75rem/1 var(--font-num); letter-spacing: -.02em; font-variant-numeric: tabular-nums; min-width: 4.6em; }
+  .rt-ctl .segmented button { white-space: nowrap; }
+
+  /* 時間軸（style.css .range--bus）：軌道整條換成當日營運與尖峰色段（--track，JS 設定），
+     Firefox 的已走段不另外塗墨色，才看得到色段 */
+  .rt-range .range { --range-fill: transparent; }
+  .rt-range__ticks { position: relative; height: 14px; margin-top: 2px; font: 600 10px/14px var(--font-num); color: var(--ink-3); }
+  .rt-range__ticks span { position: absolute; left: calc(15px + (100% - 30px) * var(--f)); transform: translateX(-50%); }
+  .rt-live-note { margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); }
+
+  .rt-strip { position: relative; margin-top: var(--sp-6); }
+  .rt-strip .stop-strip { padding-top: 0; }
+  .rt-track { position: relative; min-width: calc(var(--n, 8) * 108px); }
+  .rt-strip .stop-strip__list { min-width: 0; }
+  /* 桌機：最長的幹1（14 站）也能一眼看完整條線，車隊位置不用捲動找 */
+  @media (min-width: 1101px) {
+    .rt-track { min-width: calc(var(--n, 8) * 84px); }
+    .rt-strip .stop-strip__list { grid-auto-columns: minmax(84px, 1fr); }
+    .rt-strip .stop-strip__stop { padding: 0 2px; }
+    /* 提高權重：後面的 .rt-stopbtn 基本樣式同權重會蓋掉這裡 */
+    .rt-strip .rt-stopbtn { padding-inline: 4px; font-size: 13.5px; }
+  }
+  /* 站數少的路線不要把每站拉得太開 */
+  .rt-strip.is-short .rt-track { max-width: calc(var(--n) * 200px); margin-inline: auto; }
+  /* 到站時間與線之間多一條「車道」：車在線上方行駛（同 hero 起訖粗線），
+     不會疊在白心站點、轉乘膠囊上，被看成另一個站 */
+  .rt-strip .stop-strip__stop { grid-template-rows: 22px 22px 32px auto auto; }
+  .rt-strip .stop-strip__stop::before { top: 56px; }
+  .rt-strip .stop-strip__dot { grid-row: 3; }
+  .rt-strip .stop-strip__name { grid-row: 4; }
+  .rt-strip .stop-strip__xfer { grid-row: 5; }
+  .rt-strip .stop-strip__stop:hover .stop-strip__dot { transform: scale(1.15); }
+  /* 我的站：白心＋墨點＋外圈，與路網圖上的「目前位置」記號一致，不和實心的車混淆 */
+  .rt-strip .stop-strip__stop.is-current .stop-strip__dot {
+    border-color: var(--ink);
+    background: radial-gradient(circle, var(--ink) 0 4px, var(--white) 4.5px);
+    box-shadow: 0 0 0 3px var(--white), 0 0 0 6px var(--ink);
+    transform: none;
+  }
+  /* 環線：頭尾都接到邊緣，車從右端駛出、左端駛回 */
+  .rt-strip .stop-strip.is-loop .stop-strip__stop:first-child::before { left: 0; border-radius: 0; }
+  .rt-strip .stop-strip__xfer { position: relative; z-index: 3; }
+  .rt-eta { white-space: nowrap; font-weight: 700; }
+  .rt-eta.is-soon { color: var(--c-text); font-weight: 800; }
+  .rt-eta.is-at { color: var(--ink); font-weight: 800; }
+  .rt-eta.is-end { color: var(--ink-3); font-weight: 600; }
+  .rt-stopbtn {
+    position: static;
+    margin-top: 8px;
+    padding: 3px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  /* 整欄都可點：按鈕的偽元素蓋滿該站 */
+  .rt-stopbtn::after { content: ""; position: absolute; inset: 0; }
+  .rt-stopbtn small { display: block; font: 600 11px/1.3 var(--font-num); color: var(--ink-3); }
+  .rt-stopbtn:hover { text-decoration: underline; }
+  .rt-stopbtn[aria-pressed="true"] { background: var(--ink); color: #FFFFFF; }
+  .rt-stopbtn[aria-pressed="true"] small { color: #D6D6D0; }
+  .rt-buses { position: absolute; left: 0; right: 0; top: 0; height: 46px; overflow: hidden; pointer-events: none; z-index: 2; }
+  .rt-buses .stop-strip__bus { left: 0; top: 33px; width: 26px; height: 15px; margin: -7.5px 0 0 -13px; border-width: 2px; border-radius: 8px; transition: none; }
+  .rt-buses .stop-strip__bus::after { content: ""; position: absolute; right: 3px; top: 50%; margin-top: -3.5px; border-left: 5px solid #FFFFFF; border-block: 3.5px solid transparent; }
+  .rt-strip::before, .rt-strip::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: var(--sp-4);
+    z-index: 4;
+    width: 56px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--t-2);
+  }
+  .rt-strip::before { left: 0; background: linear-gradient(90deg, var(--white), rgba(255, 255, 255, 0)); }
+  .rt-strip::after { right: 0; background: linear-gradient(270deg, var(--white), rgba(255, 255, 255, 0)); }
+  .rt-strip.can-left::before, .rt-strip.can-right::after { opacity: 1; }
+  .rt-strip__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-3) var(--sp-5); padding-top: var(--sp-3); border-top: var(--hair); }
+  .rt-strip__nav { display: flex; gap: 6px; margin-left: auto; }
+  .rt-strip__nav .icon-btn:disabled { opacity: .35; cursor: default; }
+  .rt-busicon { display: inline-block; width: 22px; height: 13px; border-radius: 7px; background: var(--ink); border: 2px solid var(--white); box-shadow: 0 0 0 1px var(--ink); vertical-align: middle; }
+  .rt-mine { display: inline-block; width: 14px; height: 14px; margin-inline: 4px; border: 3px solid var(--ink); border-radius: var(--r-pill); background: radial-gradient(circle, var(--ink) 0 1.5px, var(--white) 2px); box-shadow: 0 0 0 2px var(--white), 0 0 0 4px var(--ink); vertical-align: middle; }
+
+  /* 運行圖（Marey 圖） */
+  .rt-marey { margin-top: var(--sp-7); }
+  /* 以實際像素寬繪製（width 屬性＝viewBox 寬），手機上字不會被縮小，改為水平捲動 */
+  .rt-marey__svg { max-width: none; font-family: var(--font-sans); -webkit-user-select: none; user-select: none; }
+  .rt-mhit { cursor: pointer; }
+  .rt-mrow { cursor: pointer; }
+  .rt-mrow:hover text { text-decoration: underline; }
+
+  /* ---------- 02 時刻表 ---------- */
+  .rt-tt { display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 4fr); gap: var(--sp-7); align-items: start; }
+  .rt-tt__controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+  .rt-tt .tab small { margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--ink); color: #FFFFFF; font-size: 10px; font-weight: 700; vertical-align: 2px; }
+  .rt-tt__sum { display: flex; flex-wrap: wrap; gap: 4px var(--sp-4); margin-bottom: var(--sp-4); font-size: var(--fs-sm); color: var(--ink-2); }
+  .rt-tt__sum b { color: var(--ink); }
+  .rt-tt .tt__mins { gap: 4px 4px; }
+  .rt-tt .notice { margin-bottom: var(--sp-4); }
+  .rt-sum { position: sticky; top: calc(var(--header-h) + 24px); padding: var(--sp-5); border: var(--hair); border-radius: var(--r-3); background: var(--white); }
+  .rt-sum__stop { display: flex; align-items: center; gap: 10px; font-size: var(--fs-xl); font-weight: 900; line-height: 1.3; }
+  .rt-sum__dir { margin-top: 4px; font-size: var(--fs-sm); color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+  .rt-sum__dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); margin: var(--sp-5) 0; padding: var(--sp-4) 0; border-block: var(--hair); }
+  .rt-sum__dl dt { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+  .rt-sum__dl dd { margin: 2px 0 0; font: 800 var(--fs-xl)/1.2 var(--font-num); font-variant-numeric: tabular-nums; }
+  .rt-sum__dl dd small { margin-left: 3px; font-size: var(--fs-xs); font-weight: 700; }
+  .rt-hw { display: grid; gap: 8px; margin: 0; }
+  .rt-hw > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-3); align-items: baseline; font-size: var(--fs-sm); }
+  .rt-hw dt { color: var(--ink-2); }
+  .rt-hw dt small { display: block; font-size: var(--fs-2xs); color: var(--ink-3); }
+  .rt-hw dd { margin: 0; font: 800 var(--fs-md)/1.2 var(--font-num); }
+  .rt-sum__label { margin: var(--sp-5) 0 var(--sp-3); }
+  /* 每小時班次：直條，尖峰用路線色 */
+  .rt-bars { display: flex; align-items: flex-end; gap: 3px; height: 128px; padding-bottom: 18px; position: relative; border-bottom: 2px solid var(--ink); }
+  .rt-bars__col { position: relative; flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+  .rt-bars__bar { width: 100%; max-width: 16px; height: calc(var(--h) * 82%); min-height: 3px; border-radius: 3px 3px 0 0; background: var(--fill-2); transform-origin: bottom; transition: height .5s var(--ease-out); }
+  .rt-bars__col.is-peak .rt-bars__bar { background: var(--c); }
+  .rt-bars__col.is-now .rt-bars__bar { box-shadow: 0 0 0 2px var(--ink); }
+  .rt-bars__n { margin-bottom: 3px; font: 700 9px/1 var(--font-num); color: var(--ink-3); }
+  .rt-bars__h { position: absolute; bottom: -18px; font: 600 9px/16px var(--font-num); color: var(--ink-3); }
+  .rt-bars__col:nth-child(even) .rt-bars__h { visibility: hidden; }
+  .rt-bars__legend { display: flex; flex-wrap: wrap; gap: 4px var(--sp-4); margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); }
+  .rt-bars__legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; background: var(--fill-2); }
+  .rt-bars__legend i.is-peak { background: var(--c); }
+  .rt-sum .btn { margin-top: var(--sp-5); }
+
+  /* ---------- 03 新舊對照 ---------- */
+  .rt-cmp { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--sp-6); align-items: start; }
+  .rt-olds__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+  .rt-olds { display: grid; gap: var(--sp-3); margin: 0; padding: 0; }
+  .rt-old {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px var(--sp-3);
+    width: 100%;
+    padding: var(--sp-4);
+    border: 2px solid var(--rule);
+    border-radius: var(--r-2);
+    background: var(--white);
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    transition: border-color var(--t-1), box-shadow var(--t-1);
+  }
+  .rt-old:hover { border-color: var(--ink-3); }
+  .rt-old[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .rt-old__name { font-weight: 800; line-height: 1.35; }
+  .rt-old__name small { display: block; font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .rt-old__hw { text-align: right; font: 800 var(--fs-xl)/1 var(--font-num); }
+  .rt-old__hw small { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; color: var(--ink-3); }
+  .rt-old__fate { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-top: 10px; border-top: 1px dashed var(--rule-2); font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.6; }
+  .rt-old__fate b { color: var(--ink); }
+  .rt-olds__hint { margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); }
+  .rt-olds .empty { padding: var(--sp-6) var(--sp-4); border: var(--hair); border-radius: var(--r-2); background: var(--white); }
+
+  /* 三欄並排的指標（style.css .metric--ruled） */
+  .rt-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); margin-top: var(--sp-7); }
+  .rt-metrics .vs__row { grid-template-columns: 3.6em minmax(0, 1fr) 6.4em; }
+  .rt-metrics .vs__val { white-space: nowrap; }
+  .rt-legs { display: grid; gap: 8px; margin-top: var(--sp-4); font-size: var(--fs-xs); color: var(--ink-3); }
+  .rt-legs > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .rt-legs__k { width: 2.4em; font-weight: 800; color: var(--ink-2); }
+  .rt-legs svg { width: 14px; height: 10px; flex: none; }
+  .rt-cmp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-4); margin-top: var(--sp-7); padding: var(--sp-5) var(--sp-6); border: 2px solid var(--ink); border-radius: var(--r-3); background: var(--white); }
+  .rt-cmp-foot p { font-weight: 700; }
+  .rt-cmp-foot p small { display: block; font-weight: 500; font-size: var(--fs-sm); color: var(--ink-3); }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1100px) {
+    .rt-hero__grid { grid-template-columns: minmax(0, 1fr); }
+    .rt-next { max-width: 620px; }
+    .rt-ctl { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "dir clock" "range range" "speed now"; }
+    .rt-ctl__now { justify-self: end; }
+  }
+  @media (max-width: 960px) {
+    .rt-tt, .rt-cmp { grid-template-columns: minmax(0, 1fr); }
+    .rt-sum { position: static; }
+    .rt-metrics { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
+  }
+  @media (max-width: 760px) {
+    #rt-map { min-width: 620px; }
+  }
+  @media (max-width: 640px) {
+    .rt-hero__top { flex-direction: column; align-items: stretch; }
+    .rt-switch { flex-wrap: wrap; }
+    .rt-switch__label { flex-basis: 100%; }
+    .rt-switch .select { flex: 1; min-width: 0; }
+    .rt-id { gap: var(--sp-4); }
+    .rt-pill.pill { --h: 52px; min-width: 92px; padding: 0 18px; font-size: 24px; }
+    /* 手機上 14 站擠在 350px 內：站點、車輛都縮一號 */
+    .rt-bar { margin-inline: 14px; }
+    .rt-bar__line { height: 8px; margin-top: -4px; }
+    .rt-bar__stop { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-width: 3px; }
+    .rt-bar__stop.is-xfer { width: 18px; height: 12px; margin: -6px 0 0 -9px; }
+    .rt-bar__stop.is-end { width: 20px; height: 20px; margin: -10px 0 0 -10px; border-width: 5px; }
+    .rt-bar__stop.is-end.is-xfer { width: 26px; height: 18px; margin: -9px 0 0 -13px; border-width: 4px; }
+    .rt-bar__bus { width: 15px; height: 8px; margin: -19px 0 0 -7.5px; }
+    .rt-bar__bus::after { right: 3px; margin-top: -2.5px; border-left-width: 4px; border-block-width: 2.5px; }
+    .rt-bar__bus.is-back { margin-top: 11px; }
+    .rt-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--sp-4); }
+    .rt-facts > div { padding-inline: var(--sp-3) 0; }
+    .rt-facts > div:nth-child(4) { padding-left: 0; border-left: 0; }
+    .rt-facts dd { font-size: 1.375rem; }
+    .rt-ctl { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "dir dir" "clock clock" "range range" "speed now"; padding: var(--sp-4); }
+    .rt-ctl__dir { display: flex; }
+    .rt-ctl__dir button { flex: 1; padding-inline: 10px; }
+    .rt-tt__controls { grid-template-columns: minmax(0, 1fr); }
+    .rt-tt__controls .segmented { display: flex; }
+    .rt-tt__controls .segmented button { flex: 1; padding-inline: 10px; }
+    .rt-cmp-foot { padding: var(--sp-5); }
+  }
+</style>
+</head>
+<body data-rail="red">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="util-bar" data-pause-offscreen>
+  <div class="container util-bar__inner">
+    <a class="back-link" href="../../index.html">← 返回目錄</a>
+    <p class="util-bar__note"><span class="live-dot" aria-hidden="true"></span><span class="util-bar__long">新路網第一階段</span> <strong>2027.01.01</strong> 上路・倒數 <strong data-countdown="2027-01-01">70</strong> 天</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+        <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+        <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+        <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+      </svg>
+      <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="開啟選單"><span></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ol class="site-nav__line">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路網總覽</span></a></li>
+        <li><a class="site-nav__link" href="routes.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">全部路線</span></a></li>
+        <li><a class="site-nav__link is-active" href="route.html" aria-current="page"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路線詳情</span></a></li>
+        <li><a class="site-nav__link" href="compare.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">新舊比較</span></a></li>
+      </ol>
+    </nav>
+    <a class="btn btn--ink btn--sm site-header__cta" href="compare.html#feedback">提供意見</a>
+  </div>
+</header>
+
+<main id="main" class="c-red">
+  <p class="sr-only" id="rt-announce" aria-live="polite"></p>
+
+  <!-- 起站：路線方向幕＋下一班車 -->
+  <section class="rt-hero" id="top" data-stop="路線資訊" aria-labelledby="rt-title">
+    <div class="container">
+      <div class="rt-hero__top">
+        <nav class="rt-crumbs" aria-label="麵包屑">
+          <ol>
+            <li><a href="index.html">路網總覽</a></li>
+            <li><a href="routes.html">全部路線</a></li>
+            <li id="rt-crumb-type">幹線</li>
+            <li aria-current="page" id="rt-crumb-code">幹1</li>
+          </ol>
+        </nav>
+        <div class="rt-switch">
+          <label class="rt-switch__label" for="rt-route-select">切換路線</label>
+          <select class="select" id="rt-route-select"></select>
+          <button class="icon-btn icon-btn--line" type="button" id="rt-prev" aria-label="上一條路線">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 L7 10 L12.5 15.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="icon-btn icon-btn--line" type="button" id="rt-next" aria-label="下一條路線">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4.5 L13 10 L7.5 15.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="rt-hero__grid">
+        <div class="rt-hero__main">
+          <div id="rt-id"></div>
+          <div class="rt-bar-host" id="rt-bar-host"></div>
+          <h1 class="rt-title" id="rt-title" tabindex="-1"></h1>
+          <p class="rt-desc" id="rt-desc"></p>
+          <dl class="rt-facts" id="rt-facts"></dl>
+        </div>
+
+        <aside class="rt-next" aria-labelledby="rt-next-title" data-pause-offscreen>
+          <div class="rt-next__head">
+            <h2 class="rt-next__title" id="rt-next-title">下一班車</h2>
+            <span class="rt-next__clock" id="rt-next-clock"><span class="live-dot" aria-hidden="true"></span><span id="rt-next-clock-text">即時</span></span>
+          </div>
+          <div class="rt-next__stop">
+            <label class="field__label" for="rt-stop-select">我的站</label>
+            <select class="select" id="rt-stop-select"></select>
+            <p class="rt-next__pos" id="rt-next-pos"></p>
+          </div>
+          <div id="rt-next-dirs"></div>
+          <div class="rt-next__xfer" id="rt-next-xfer"></div>
+          <p class="rt-next__note">到站時間為模擬：依班表與各站行車時間推算。</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 1 站：站序與即時位置 -->
+  <section class="section section--white" id="stops" data-stop="站序與即時" aria-labelledby="stops-title">
+    <div class="container">
+      <header class="sec-head">
+        <p class="sec-head__stop"><span class="sec-head__no">01</span>站序與即時位置</p>
+        <h2 class="sec-head__title" id="stops-title">沿線各站，車開到哪了</h2>
+        <p class="sec-head__lede">站名下方是可以同站轉乘的路線，上方是下一班到站時間；黑色膠囊是行駛中的公車。點站名可設為「我的站」，下一班車與時刻表會一起切換。</p>
+      </header>
+
+      <div class="rt-ctl" data-pause-offscreen>
+        <div class="segmented rt-ctl__dir" role="group" aria-label="行駛方向" data-dir-group></div>
+        <div class="rt-ctl__clock">
+          <time class="rt-clock" id="rt-clock">00:00:00</time>
+          <span class="tag tag--live" id="rt-clock-tag"><span class="live-dot" aria-hidden="true"></span>即時</span>
+        </div>
+        <div class="rt-range rt-ctl__range">
+          <label class="sr-only" for="rt-range">模擬時間（拖曳查看任一時刻的車輛位置）</label>
+          <input class="range range--bus" type="range" id="rt-range" min="0" max="1439" step="1" value="0">
+          <div class="rt-range__ticks" aria-hidden="true">
+            <span style="--f:0">00</span><span style="--f:.25">06</span><span style="--f:.5">12</span><span style="--f:.75">18</span><span style="--f:1">24</span>
+          </div>
+        </div>
+        <div class="segmented rt-ctl__speed" role="group" aria-label="模擬速度">
+          <button type="button" aria-pressed="true" data-speed="1">1×</button>
+          <button type="button" aria-pressed="false" data-speed="10">10×</button>
+          <button type="button" aria-pressed="false" data-speed="60">60×</button>
+        </div>
+        <button class="btn btn--sm btn--line rt-ctl__now" type="button" id="rt-now" disabled>回到現在</button>
+      </div>
+      <p class="rt-live-note">車輛位置為模擬：依平日班表與各站行車時間推算，不是車機定位。拖曳時間軸或加速播放，可以看尖峰與離峰的車隊差別。</p>
+
+      <div class="rt-strip" id="rt-strip"></div>
+      <div class="rt-strip__foot">
+        <span class="legend">
+          <span class="legend__item"><span class="dot-stop" aria-hidden="true"></span>一般站</span>
+          <span class="legend__item"><span class="capsule" aria-hidden="true"></span>轉乘站</span>
+          <span class="legend__item"><span class="rt-mine" aria-hidden="true"></span>我的站</span>
+          <span class="legend__item"><span class="rt-busicon" aria-hidden="true"></span><span id="rt-strip-legend">行駛中公車</span></span>
+        </span>
+        <div class="rt-strip__nav">
+          <button class="icon-btn icon-btn--sm icon-btn--line" type="button" data-strip-scroll="-1" aria-label="站序往前捲動">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 L7 10 L12.5 15.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="icon-btn icon-btn--sm icon-btn--line" type="button" data-strip-scroll="1" aria-label="站序往後捲動">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4.5 L13 10 L7.5 15.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <figure class="map-panel rt-marey">
+        <div class="map-panel__bar">
+          <p class="map-panel__title">運行圖 <span class="muted" style="font-weight:500" id="rt-marey-window">平日班表・前 20 分鐘到後 70 分鐘</span></p>
+          <span class="legend" id="rt-marey-legend"></span>
+        </div>
+        <div class="map-panel__scroll" id="rt-marey-scroll">
+          <svg class="rt-marey__svg" id="rt-marey" role="img" aria-label="運行圖：橫軸為時間、縱軸為站序，每條斜線是一班車，垂直的時間線上的圓點是目前在路上的車。"></svg>
+        </div>
+        <p class="swipe-hint" aria-hidden="true">← 左右滑動看完整時段 →</p>
+        <figcaption class="map-panel__foot"><span>橫軸是時間、縱軸是站序：每一條斜線是一班車，線越密班次越密；時間線上的圓點就是此刻在路上的車。滑過斜線看班次。</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 第 2 站：時刻表 -->
+  <section class="section" id="timetable" data-stop="時刻表" aria-labelledby="tt-title">
+    <div class="container">
+      <header class="sec-head">
+        <p class="sec-head__stop"><span class="sec-head__no">02</span>時刻表</p>
+        <h2 class="sec-head__title" id="tt-title">每一班車，幾點到你的站</h2>
+        <p class="sec-head__lede" id="tt-lede"></p>
+      </header>
+
+      <div class="rt-tt">
+        <div class="rt-tt__main">
+          <div class="rt-tt__controls">
+            <div class="field">
+              <label class="field__label" for="rt-tt-stop">上車站</label>
+              <select class="select" id="rt-tt-stop"></select>
+            </div>
+            <div class="field">
+              <span class="field__label" id="rt-tt-dir-label">方向</span>
+              <div class="segmented" role="group" aria-labelledby="rt-tt-dir-label" data-dir-group></div>
+            </div>
+          </div>
+          <div class="tabs" data-tabs id="rt-tt-tabs">
+            <div role="tablist" aria-label="班表日別">
+              <button class="tab" type="button" role="tab" id="rt-tab-weekday" aria-controls="rt-panel-weekday" aria-selected="true">平日 <small>今天</small></button>
+              <button class="tab" type="button" role="tab" id="rt-tab-holiday" aria-controls="rt-panel-holiday" aria-selected="false">週六、日與國定假日</button>
+            </div>
+            <div class="tab-panel" id="rt-panel-weekday" role="tabpanel" aria-labelledby="rt-tab-weekday" tabindex="0"></div>
+            <div class="tab-panel" id="rt-panel-holiday" role="tabpanel" aria-labelledby="rt-tab-holiday" tabindex="0" hidden></div>
+          </div>
+        </div>
+
+        <aside class="rt-tt__side" aria-label="本站班次摘要">
+          <div class="rt-sum" id="rt-sum"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 3 站：新舊對照 -->
+  <section class="section section--white" id="compare" data-stop="新舊對照" aria-labelledby="cmp-title">
+    <div class="container">
+      <header class="sec-head">
+        <p class="sec-head__stop"><span class="sec-head__no">03</span>新舊對照</p>
+        <h2 class="sec-head__title" id="cmp-title">新路線取代了哪些舊路線</h2>
+        <p class="sec-head__lede" id="cmp-lede"></p>
+      </header>
+
+      <div class="rt-cmp">
+        <figure class="map-panel">
+          <div class="map-panel__bar">
+            <p class="map-panel__title"><span class="capsule" aria-hidden="true"></span>新舊路線疊圖 <span class="muted">點其他路線可切換</span></p>
+            <div class="map-panel__tools">
+              <label class="switch"><input type="checkbox" id="rt-old-toggle" checked>顯示舊路線</label>
+            </div>
+          </div>
+          <div class="map-panel__scroll" id="rt-map-scroll">
+            <svg class="map-panel__canvas" id="rt-map" data-pause-offscreen aria-label="新舊路線疊圖：彩色粗線是新路線，灰色虛線是被取代的舊路線。"></svg>
+          </div>
+          <p class="swipe-hint" aria-hidden="true">← 左右滑動看全圖 →</p>
+          <figcaption class="map-panel__foot">
+            <span class="legend">
+              <span class="legend__item"><span class="route-swatch" id="rt-map-swatch" aria-hidden="true"></span><span id="rt-map-legend-new">新路線</span></span>
+              <span class="legend__item"><span class="route-swatch route-swatch--old" aria-hidden="true"></span>被取代的舊路線</span>
+              <span class="legend__item"><span class="capsule" aria-hidden="true"></span>轉乘站</span>
+            </span>
+            <span>示意圖・非實際比例</span>
+          </figcaption>
+        </figure>
+
+        <div class="rt-cmp__side">
+          <div class="rt-olds__head">
+            <p class="eyebrow" id="rt-olds-title">被取代的舊路線</p>
+          </div>
+          <ul class="rt-olds" id="rt-olds"></ul>
+          <p class="rt-olds__hint" id="rt-olds-hint">點一條舊路線，圖上只顯示它；再點一次恢復全部。</p>
+        </div>
+      </div>
+
+      <div class="rt-metrics" id="rt-metrics"></div>
+
+      <div class="rt-cmp-foot">
+        <p>想知道自己的通勤會快多少？<small>選擇起點與終點，比較新舊路網的時間、轉乘與步行距離。</small></p>
+        <div class="cluster">
+          <a class="btn btn--primary" href="compare.html">起訖站比較</a>
+          <a class="btn btn--line" href="compare.html#feedback">對這條路線提供意見</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer" data-stop="終點站">
+  <div class="container">
+    <div class="site-footer__terminal" aria-hidden="true"><span class="site-footer__stop">終點站 <small>TERMINUS</small></span></div>
+    <div class="site-footer__grid">
+      <div class="site-footer__col">
+        <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+          <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+            <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+            <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+            <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+            <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+          </svg>
+          <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+        </a>
+        <p>澄港市政府交通局・公車路網改版辦公室。新路網自 2027 年 1 月 1 日起分三階段上路。</p>
+        <form class="subscribe" data-subscribe novalidate>
+          <div class="field">
+            <label class="sr-only" for="sub-email">電子郵件</label>
+            <input class="input" id="sub-email" name="email" type="email" placeholder="訂閱路線異動通知" autocomplete="email">
+          </div>
+          <button class="btn btn--ink" type="submit">訂閱</button>
+        </form>
+      </div>
+      <nav class="site-footer__col" aria-label="頁尾導覽">
+        <p class="site-footer__title">路網資訊</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html">路網總覽</a></li>
+          <li><a href="routes.html">全部路線</a></li>
+          <li><a href="route.html">路線詳情</a></li>
+          <li><a href="compare.html">新舊比較</a></li>
+          <li><a href="index.html#timeline">改版時程</a></li>
+        </ul>
+      </nav>
+      <div class="site-footer__col">
+        <p class="site-footer__title">乘車服務</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html#finder">查我的路線</a></li>
+          <li><a href="index.html#faq">票價與轉乘優惠</a></li>
+          <li><a href="compare.html#feedback">意見回饋</a></li>
+          <li><button type="button" data-toast="路網圖 PDF 將於 11 月 30 日站牌更換完成後提供下載。">下載路網圖 PDF</button></li>
+        </ul>
+      </div>
+      <div class="site-footer__col">
+        <p class="site-footer__title">聯絡我們</p>
+        <p>公車客服 <b class="num">0800-012-027</b><br>週一至週六 07:00–21:00<br>澄港市舊城區府前路 1 號 交通局 3 樓</p>
+      </div>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 澄港市政府交通局・本站為作品集虛構示範，路線與數據皆為模擬</span>
+      <span>資料更新：2026.10.23</span>
+      <a class="back-link" href="../../index.html">← 返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$ } = App;
+  const S = App.station;
+  const TYPES = App.data.types;
+  const esc = App.esc;
+  const hm = App.fmt.hm;
+  const pad2 = n => String(n).padStart(2, '0');
+  const ORDER = App.routesOf().map(r => r.id);
+
+  // 車在每站先停靠再開；與 app.js 推算車程時每站加的停靠時間一致，巴士動起來才像真的進站
+  const DWELL = App.data.sim.dwellMin;
+  const PEAKS = [[420, 540], [1020, 1170]];      // 平日尖峰 07:00–09:00、17:00–19:30（同 App.headwayAt）
+  const LIVE_DAY = 'weekday';                     // 故事裡的今天 2026-10-23 是週五
+
+  /* ==========================================================================
+     路線模型：兩個方向各自的站序、列（運行圖）、距發車分鐘數
+     環線多一個「繞回起點」的位置，車才能從最後一站接回第一站。
+     ========================================================================== */
+  const models = {};
+  function modelOf(id) {
+    if (models[id]) return models[id];
+    const r = App.route(id);
+    const n = r.stops.length;
+    const cum = [0];
+    for (let i = 0; i < n - 1; i++) cum.push(cum[i] + r.segMin[i]);
+    const total = r.loop ? cum[n - 1] + r.segMin[n - 1] : cum[n - 1];
+    const d0 = { stop: [], row: [], off: [] };
+    const d1 = { stop: [], row: [], off: [] };
+    for (let i = 0; i < n; i++) { d0.stop.push(i); d0.row.push(i); d0.off.push(cum[i]); }
+    if (r.loop) {
+      d0.stop.push(0); d0.row.push(n); d0.off.push(total);
+      d1.stop.push(0); d1.row.push(n); d1.off.push(0);
+      for (let i = n - 1; i >= 1; i--) { d1.stop.push(i); d1.row.push(i); d1.off.push(total - cum[i]); }
+      d1.stop.push(0); d1.row.push(0); d1.off.push(total);
+    } else {
+      for (let i = n - 1; i >= 0; i--) { d1.stop.push(i); d1.row.push(i); d1.off.push(total - cum[i]); }
+    }
+    const sched = day => [App.schedule(id, day, 0), App.schedule(id, day, 1)];
+    return (models[id] = { r, n, cum, total, dirs: [d0, d1], sched: { weekday: sched('weekday'), holiday: sched('holiday') } });
+  }
+
+  // 某方向的起訖站 id
+  const endsOf = (r, d) => d === 0 ? [r.from, r.loop ? r.from : r.to] : [r.loop ? r.from : r.to, r.from];
+  const dirName = (r, d) => r.loop ? (d === 0 ? '順時針' : '逆時針') : `往 ${S(d === 0 ? r.to : r.from).name}`;
+  const dirLong = (r, d) => r.loop
+    ? `${d === 0 ? '順時針' : '逆時針'}（經 ${S(r.stops[d === 0 ? 1 : r.stops.length - 1]).name}）`
+    : dirName(r, d);
+
+  // 該站在某方向的「上車位置」：終點站（非環線）沒有上車位置，回傳 -1
+  const boardPos = (m, d, i) => {
+    const D = m.dirs[d];
+    const last = D.stop.length - 1;
+    return D.stop.findIndex((s, k) => s === i && k !== last);
+  };
+
+  // 在 c 時刻之後（含正在停靠）到站的班次；前一天、隔天的班次用 ±1440 分攤平，夜間路線跨午夜才算得對。
+  // k 是該班在當日班表的序號（0＝首班），用來分辨「還沒發車」與「班距較長」
+  function arrivals(m, d, i, c, count) {
+    const p = boardPos(m, d, i);
+    if (p < 0) return null;
+    const off = m.dirs[d].off[p];
+    const out = [];
+    m.sched[LIVE_DAY][d].forEach((dep, k) => [-1440, 0, 1440].forEach(sh => {
+      const t = dep + sh + off;
+      if (t >= c - DWELL) out.push({ t, k, eta: t - c });
+    }));
+    out.sort((a, b) => a.t - b.t);
+    return out.slice(0, count);
+  }
+  const nextArrival = (m, d, i, c) => { const list = arrivals(m, d, i, c, 1); return list && list[0]; };
+  // 下一班超過這個分鐘數就改顯示時刻（首班前、深夜疏運），「180 分」這種數字對乘客沒有意義
+  const LONG_WAIT = 45;
+
+  // 正在路上的班次（e＝已行駛分鐘）
+  function activeTrips(m, d, c) {
+    const out = [];
+    m.sched[LIVE_DAY][d].forEach((dep, k) => [-1440, 0].forEach(sh => {
+      const e = c - (dep + sh);
+      if (e >= 0 && e <= m.total) out.push({ s: dep + sh, e, k: k + 1 });
+    }));
+    return out;
+  }
+
+  // 行駛 e 分鐘時位於第 p 段、段內比例 f（先停靠再行駛）
+  function locate(D, e) {
+    let p = 0;
+    while (p < D.off.length - 2 && e >= D.off[p + 1]) p++;
+    const seg = D.off[p + 1] - D.off[p];
+    const local = e - D.off[p];
+    const f = local <= DWELL ? 0 : Math.min(1, (local - DWELL) / (seg - DWELL));
+    return { p, f };
+  }
+
+  /* ==========================================================================
+     模擬時鐘：即時（跟著 App.now()）或從某時刻以 1×／10×／60× 播放
+     以「錨點＋經過時間」計算而非逐格累加，動畫暫停時時鐘也不會停。
+     ========================================================================== */
+  const wrap = v => ((v % 1440) + 1440) % 1440;
+  const clock = { live: true, speed: 1, base: 0, at: 0 };
+  const realMinute = () => {
+    const d = App.now();
+    return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60 + d.getMilliseconds() / 60000;
+  };
+  const now = () => clock.live ? realMinute() : wrap(clock.base + (performance.now() - clock.at) / 60000 * clock.speed);
+  function setClock(minute, speed) {
+    clock.live = false;
+    clock.base = wrap(minute);
+    clock.at = performance.now();
+    if (speed) clock.speed = speed;
+    tick(true);
+  }
+  function goLive() {
+    clock.live = true;
+    clock.speed = 1;
+    tick(true);
+  }
+
+  /* ==========================================================================
+     狀態
+     ========================================================================== */
+  const state = { id: null, r: null, m: null, stop: null, dir: 0, ttDay: 'weekday', oldShown: true, oldOnly: null };
+  const main = $('#main');
+  const stopIdx = () => state.r.stops.indexOf(state.stop);
+
+  // 預設「我的站」：可轉乘路線最多的中途站（同數取前面的）；不選端點，兩個方向才都有車可搭
+  const defaultStop = r => {
+    const day = s => S(s).routes.filter(x => App.route(x).type !== 'night').length;
+    const mid = r.loop ? r.stops : r.stops.slice(1, -1);
+    return mid.reduce((best, sid) => day(sid) > day(best) ? sid : best, mid[0]);
+  };
+
+  /* ---------- 路線切換下拉 ---------- */
+  const routeSelect = $('#rt-route-select');
+  routeSelect.innerHTML = App.data.typeOrder.map(t => `<optgroup label="${TYPES[t].label}">${App.routesOf(t).map(r => `<option value="${r.id}">${r.code}　${esc(r.name)}</option>`).join('')}</optgroup>`).join('');
+
+  /* ==========================================================================
+     Hero
+     ========================================================================== */
+  function renderHero() {
+    const { r, m } = state;
+    const n = r.stops.length;
+    const type = TYPES[r.type];
+    const family = r.type === 'branch' ? App.route('T' + r.code.replace(/\D/g, '')[0]) : null;
+    const kicker = r.type === 'trunk' ? `${type.label}・${r.alias}`
+      : r.type === 'branch' ? `${type.label}・接${family.code}`
+      : r.type === 'feeder' ? `${type.label}・中型巴士`
+      : `${type.label}・${r.first}–${r.last}`;
+    $('#rt-crumb-type').textContent = type.label;
+    $('#rt-crumb-code').textContent = r.code;
+
+    $('#rt-id').innerHTML = `
+      <p class="kicker">${esc(kicker)}</p>
+      <div class="rt-id">
+        ${App.pillHTML(r.id, { cls: 'rt-pill', title: false })}
+        <div class="rt-id__meta">
+          <p><b class="num">${n}</b> 站・<b class="num">${r.km}</b> km・全程約 <b class="num">${r.minutes}</b> 分${r.loop ? '（繞一圈）' : ''}</p>
+          <p class="rt-id__old">${r.replaces.length
+            ? `取代 ${r.replaces.map(o => App.oldPillHTML(o, { size: 'sm' })).join('')} <a href="#compare">看新舊對照</a>`
+            : '<span class="tag tag--new">新增路線</span> 舊路網沒有對應的路線'}</p>
+        </div>
+      </div>`;
+
+    // 站距依行車時間比例：站越密代表站間越短
+    const stops = r.stops.map((sid, i) => {
+      const cls = ['rt-bar__stop'];
+      if (S(sid).transfer) cls.push('is-xfer');
+      if (i === 0 || (!r.loop && i === n - 1)) cls.push('is-end');
+      return `<span class="${cls.join(' ')}" style="--x:${(m.cum[i] / m.total).toFixed(4)}"></span>`;
+    });
+    if (r.loop) stops.push(`<span class="rt-bar__stop is-end${S(r.from).transfer ? ' is-xfer' : ''}" style="--x:1"></span>`);
+    $('#rt-bar-host').innerHTML = `
+      <p class="rt-bar__cap"><span id="rt-bar-count">路上 0 輛車</span><span>站距依行車時間比例</span></p>
+      <div class="rt-bar${r.color === 'yellow' ? ' is-yellow' : ''}" data-type="${r.type}" aria-hidden="true">
+        <span class="rt-bar__line"></span>${stops.join('')}<div class="rt-bar__buses"></div>
+      </div>`;
+
+    $('#rt-title').innerHTML = r.loop
+      ? `<span class="sr-only">${r.code}，</span><span class="rt-title__from"><small aria-hidden="true">起訖站</small>${esc(S(r.from).name)}</span><span class="sr-only">，</span><span class="rt-title__to"><small aria-hidden="true">環狀・雙向</small>${esc(r.name)}</span>`
+      : `<span class="sr-only">${r.code}，</span><span class="rt-title__from"><small aria-hidden="true">起站</small>${esc(S(r.from).name)}</span><span class="sr-only">至</span><span class="rt-title__to"><small aria-hidden="true">訖站</small>${esc(S(r.to).name)}</span>`;
+    $('#rt-desc').textContent = r.desc;
+
+    const hw = r.headway;
+    const facts = r.type === 'night'
+      ? [['全夜班距', hw.off, '分'], ['首班', r.first], ['末班', r.last], ['每晚班次', m.sched.weekday[0].length + m.sched.weekday[1].length, '班・雙向'], ['路線長', r.km, 'km']]
+      : [['尖峰班距', hw.peak, '分'], ['離峰班距', hw.off, '分'], ['假日班距', hw.holiday, '分'], ['首班', r.first], ['末班', r.last]];
+    $('#rt-facts').innerHTML = facts.map(([k, v, u]) => `<div><dt>${k}</dt><dd>${v}${u ? `<small>${u}</small>` : ''}</dd></div>`).join('');
+  }
+
+  /* ---------- 下一班車看板 ---------- */
+  const stopOptions = () => state.r.stops.map((sid, i) => `<option value="${sid}">${pad2(i + 1)}　${esc(S(sid).name)}${S(sid).transfer ? '（轉乘站）' : ''}</option>`).join('');
+
+  function renderNext() {
+    const { r } = state;
+    const s = S(state.stop);
+    $('#rt-next-pos').textContent = `第 ${stopIdx() + 1} 站／共 ${r.stops.length} 站・${s.district}`;
+    $('#rt-next-dirs').innerHTML = [0, 1].map(d => `
+      <div class="rt-dir" data-dir="${d}">
+        <p class="rt-dir__to"><span class="rt-arrow${d ? ' is-back' : ''}" aria-hidden="true"></span>${esc(dirLong(r, d))}</p>
+        <p class="rt-dir__eta"></p>
+        <p class="rt-dir__more"></p>
+      </div>`).join('');
+    const others = App.routesOf().filter(x => x.id !== r.id && s.routes.includes(x.id));
+    $('#rt-next-xfer').innerHTML = others.length
+      ? `<span class="rt-next__label">本站可同站轉乘</span><span class="pill-group">${others.map(x => App.pillHTML(x.id, { size: 'sm', link: true })).join('')}</span>`
+      : `<span class="rt-next__label">本站只有 ${r.code} 停靠</span>`;
+  }
+
+  const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
+  const etaWord = eta => eta < 0.5 ? '進站中' : `${Math.max(1, Math.round(eta))} 分`;
+
+  function updateNext(c) {
+    const { r, m } = state;
+    const i = stopIdx();
+    $$('#rt-next-dirs .rt-dir').forEach(el => {
+      const d = Number(el.dataset.dir);
+      const list = arrivals(m, d, i, c, 3);
+      let eta, more;
+      const first = list && list[0];
+      if (!list) {
+        eta = '<span class="rt-dir__muted">本站為終點</span>';
+        more = `請搭${esc(dirName(r, 1 - d))}方向`;
+      } else if (first.eta < 0.5) {
+        eta = '<span class="rt-dir__word"><span class="live-dot" aria-hidden="true"></span>進站中</span>';
+        more = '請準備上車';
+      } else if (first.eta > LONG_WAIT) {
+        // 下一班是首班：落在隔天＝今天已收班；同一天＝還沒發車（例如白天查夜間路線）
+        eta = `${hm(first.t)}<small>${first.k === 0 ? '首班' : '到站'}</small>`;
+        more = first.k !== 0 ? `約 ${Math.round(first.eta)} 分後到站` : first.t >= 1440 ? '今日已收班' : '尚未發車';
+      } else {
+        eta = `${Math.round(first.eta) || 1}<small>分</small>`;
+        more = `<b>${hm(first.t)}</b> 到站`;
+      }
+      if (first && first.eta <= LONG_WAIT) {
+        const rest = list.slice(1).filter(x => x.eta <= 180).map(x => Math.round(x.eta));
+        if (rest.length) more += `<br>之後 ${rest.join('、')} 分`;
+      }
+      setHTML(el.querySelector('.rt-dir__eta'), eta);
+      setHTML(el.querySelector('.rt-dir__more'), more);
+    });
+  }
+
+  /* ==========================================================================
+     01 站序圖＋即時位置
+     ========================================================================== */
+  const stripHost = $('#rt-strip');
+  let stripW = 0, barW = 0;
+  const sizeObs = new ResizeObserver(() => {
+    const track = $('.rt-track', stripHost);
+    const bar = $('.rt-bar');
+    stripW = track ? track.offsetWidth : 0;
+    barW = bar ? bar.offsetWidth : 0;
+    syncStripFade();
+    drawLive(now());
+  });
+
+  function renderStrip() {
+    const { r } = state;
+    stripHost.innerHTML = App.stopStripHTML(r.id, { times: false, current: state.stop });
+    stripHost.classList.toggle('is-short', r.stops.length <= 5);
+    const strip = $('.stop-strip', stripHost);
+    const list = $('.stop-strip__list', strip);
+    // 包一層定位容器：巴士圖層跟著整條站序一起水平捲動
+    const track = document.createElement('div');
+    track.className = 'rt-track';
+    list.before(track);
+    track.append(list);
+    track.insertAdjacentHTML('beforeend', '<div class="rt-buses" aria-hidden="true"></div>');
+    $$('.stop-strip__stop', list).forEach(li => {
+      const name = $('.stop-strip__name', li);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'stop-strip__name rt-stopbtn';
+      btn.dataset.station = li.dataset.station;
+      btn.title = '設為我的站';
+      btn.innerHTML = `${esc(name.textContent)}<small></small>`;
+      name.replaceWith(btn);
+      li.insertAdjacentHTML('afterbegin', '<span class="stop-strip__time rt-eta"></span>');
+    });
+    stripW = track.offsetWidth;
+    syncStripOffsets();
+    syncStripFade();
+  }
+
+  // 站名下的「距發車 +N 分」依方向不同
+  function syncStripOffsets() {
+    const { m } = state;
+    const D = m.dirs[state.dir];
+    $$('.rt-stopbtn', stripHost).forEach((btn, i) => {
+      const p = D.stop.indexOf(i);
+      btn.querySelector('small').textContent = `+${Math.round(D.off[p])} 分`;
+      btn.setAttribute('aria-pressed', btn.dataset.station === state.stop);
+    });
+    $('#rt-strip-legend').textContent = `行駛中公車（${dirName(state.r, state.dir)}）`;
+  }
+
+  function syncStripFade() {
+    const strip = $('.stop-strip', stripHost);
+    if (!strip) return;
+    const max = strip.scrollWidth - strip.clientWidth;
+    stripHost.classList.toggle('can-left', strip.scrollLeft > 4);
+    stripHost.classList.toggle('can-right', strip.scrollLeft < max - 4);
+    $$('[data-strip-scroll]').forEach(b => {
+      b.disabled = b.dataset.stripScroll === '-1' ? strip.scrollLeft <= 4 : strip.scrollLeft >= max - 4;
+    });
+    $('.rt-strip__nav').hidden = max <= 4;
+  }
+
+  function scrollStripTo(sid, smooth) {
+    const strip = $('.stop-strip', stripHost);
+    const li = $(`.stop-strip__stop[data-station="${sid}"]`, strip);
+    if (!strip || !li || strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollTo({ left: li.offsetLeft - (strip.clientWidth - li.offsetWidth) / 2, behavior: smooth && !App.reducedMotion ? 'smooth' : 'auto' });
+  }
+
+  function updateStripEtas(c) {
+    const { m } = state;
+    const d = state.dir;
+    $$('.rt-eta', stripHost).forEach((el, i) => {
+      const a = nextArrival(m, d, i, c);
+      let text, cls;
+      if (!a) { text = '終點'; cls = 'is-end'; }
+      else if (a.eta < 0.5) { text = '進站中'; cls = 'is-at'; }
+      else if (a.eta > LONG_WAIT) { text = `${a.k === 0 ? '首班 ' : ''}${hm(a.t)}`; cls = 'is-end'; }
+      else { text = etaWord(a.eta); cls = a.eta <= 3 ? 'is-soon' : ''; }
+      if (el.textContent !== text) el.textContent = text;
+      el.className = `stop-strip__time rt-eta ${cls}`.trim();
+    });
+  }
+
+  // 每個容器一組 DOM 池，數量跟著當下班次增減
+  function pool(host, count, make) {
+    while (host.children.length < count) host.appendChild(make());
+    while (host.children.length > count) host.lastChild.remove();
+    return [...host.children];
+  }
+  const busEl = cls => () => { const b = document.createElement('span'); b.className = cls; return b; };
+
+  function drawStrip(c) {
+    const host = $('.rt-buses', stripHost);
+    if (!host || !stripW) return;
+    const { m, r } = state;
+    const d = state.dir;
+    const D = m.dirs[d];
+    const trips = activeTrips(m, d, c);
+    const els = pool(host, trips.length, busEl('stop-strip__bus'));
+    trips.forEach((tr, j) => {
+      const { p, f } = locate(D, tr.e);
+      let a = D.stop[p], b = D.stop[p + 1];
+      // 環線跨越起點的那一段：在站序圖上從右端駛出、左端駛回
+      if (r.loop && d === 0 && p === D.stop.length - 2) b = m.n;
+      if (r.loop && d === 1 && p === 0) a = m.n;
+      const pos = a + (b - a) * f;
+      const x = wrap01((pos + 0.5) / m.n) * stripW;
+      els[j].style.transform = `translate3d(${x.toFixed(1)}px,0,0)${d ? ' scaleX(-1)' : ''}`;
+    });
+  }
+  const wrap01 = v => ((v % 1) + 1) % 1;
+
+  function drawBar(c) {
+    const host = $('.rt-bar__buses');
+    if (!host || !barW) return;
+    const { m, r } = state;
+    const t0 = activeTrips(m, 0, c), t1 = activeTrips(m, 1, c);
+    const els = pool(host, t0.length + t1.length, busEl('rt-bar__bus'));
+    [...t0.map(t => [t, 0]), ...t1.map(t => [t, 1])].forEach(([t, d], j) => {
+      const x = (d === 0 ? t.e : m.total - t.e) / m.total * barW;
+      els[j].classList.toggle('is-back', d === 1);
+      els[j].style.transform = `translate3d(${x.toFixed(1)}px,0,0)${d ? ' scaleX(-1)' : ''}`;
+    });
+    const total = t0.length + t1.length;
+    const text = total
+      ? `路上 ${total} 輛車：上排${dirName(r, 0)}、下排${dirName(r, 1)}`
+      : `目前沒有車在路上（營運時間 ${r.first}–${r.last}）`;
+    const cap = $('#rt-bar-count');
+    if (cap.textContent !== text) cap.textContent = text;
+  }
+
+  /* ==========================================================================
+     運行圖（Marey 圖）：橫軸時間、縱軸站序；時間線固定，班次線往左流動
+     ========================================================================== */
+  const marey = { svg: $('#rt-marey'), rowY: [], plotTop: 0, plotBot: 0, base: null, trips: [], labels: [], H: 0 };
+  const mareyScroll = $('#rt-marey-scroll');
+  const MR = 20, MT = 58, MB = 46, AFTER = 70;
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  // 寬度跟著容器（至少 720），以 1:1 像素繪製；窄螢幕改水平捲動。
+  // 窄螢幕時站名欄與「已過去」的時段都收窄，第一屏才看得到接下來的班次
+  let MW = 1100, ML = 150, BEFORE = 20, MK = 0, NOW_X = 0;
+  const mareyWidth = () => Math.max(720, Math.floor(mareyScroll.clientWidth));
+  new ResizeObserver(() => {
+    if (!state.m || mareyWidth() === MW) return;
+    renderMarey();
+    drawMarey(now());
+  }).observe(mareyScroll);
+
+  function renderMarey() {
+    const { r, m } = state;
+    MW = mareyWidth();
+    const narrow = mareyScroll.clientWidth < 720;
+    ML = narrow ? 112 : 150;
+    BEFORE = narrow ? 8 : 20;
+    MK = (MW - ML - MR) / (BEFORE + AFTER);
+    NOW_X = ML + BEFORE * MK;
+    $('#rt-marey-window').textContent = `平日班表・前 ${BEFORE} 分鐘到後 ${AFTER} 分鐘`;
+    const rows = m.n + (r.loop ? 1 : 0);
+    const H0 = Math.min(460, Math.max(210, (rows - 1) * 34));
+    // 列距依行車時間比例，但至少 24，站名才不會擠在一起
+    const ys = [MT + 14];
+    for (let j = 0; j < rows - 1; j++) ys.push(ys[j] + Math.max(24, r.segMin[j] / m.total * H0));
+    marey.rowY = ys;
+    marey.plotTop = MT;
+    marey.plotBot = ys[rows - 1] + 14;
+    marey.H = marey.plotBot + MB;
+    marey.base = null;
+    const svg = marey.svg;
+    svg.setAttribute('viewBox', `0 0 ${MW} ${marey.H}`);
+    svg.setAttribute('width', MW);
+    svg.setAttribute('height', marey.H);
+    const plotH = marey.plotBot - MT;
+    const fade = (36 / (MW - ML - MR)).toFixed(4);
+    const rowLabels = ys.map((y, j) => {
+      const i = j < m.n ? j : 0;
+      const s = S(r.stops[i]);
+      const name = j < m.n ? s.name : `${s.name}（繞回）`;
+      const major = s.transfer || i === 0 || (!r.loop && i === m.n - 1);
+      const mark = s.transfer
+        ? `<rect x="${ML - 13}" y="${y - 5.5}" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="2.5"/>`
+        : `<circle cx="${ML - 4}" cy="${y}" r="4.5" fill="#FFFFFF" stroke="${r.type === 'night' ? '#1C1C1C' : r.colorHex}" stroke-width="2.5"/>`;
+      return `<g class="rt-mrow" data-station="${s.id}">
+        <rect x="0" y="${y - 12}" width="${ML - 18}" height="24" fill="#FFFFFF" fill-opacity="0"/>
+        <text x="${ML - 22}" y="${y + 4.5}" text-anchor="end" font-size="13" font-weight="${major ? 700 : 500}" fill="#1C1C1C">${esc(name)}</text>
+        ${mark}
+      </g>`;
+    }).join('');
+    svg.innerHTML = `
+      <defs>
+        <clipPath id="rt-mclip"><rect x="${ML}" y="0" width="${MW - ML - MR}" height="${marey.H}"/></clipPath>
+        <linearGradient id="rt-mfade-g" gradientUnits="userSpaceOnUse" x1="${ML}" y1="0" x2="${MW - MR}" y2="0">
+          <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="${fade}" stop-color="#FFFFFF"/>
+          <stop offset="${1 - fade}" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+        </linearGradient>
+        <mask id="rt-mfade" maskUnits="userSpaceOnUse" x="0" y="0" width="${MW}" height="${marey.H}"><rect x="${ML}" y="0" width="${MW - ML - MR}" height="${marey.H}" fill="url(#rt-mfade-g)"/></mask>
+      </defs>
+      <g id="rt-mband"></g>
+      <g aria-hidden="true">${ys.map(y => `<path d="M${ML} ${y} H${MW - MR}" fill="none" stroke="#E4E4DE" stroke-width="1"/>`).join('')}</g>
+      <!-- 時間往左流：班次線兩端淡出；時刻標籤不進遮罩，由 drawMarey 逐格調整透明度，才不會留下半個字 -->
+      <g clip-path="url(#rt-mclip)"><g mask="url(#rt-mfade)"><g id="rt-mmove"></g></g><g id="rt-mlabels"></g></g>
+      <rect x="${ML}" y="${MT}" width="${BEFORE * MK}" height="${plotH}" fill="#FFFFFF" fill-opacity=".6" pointer-events="none"/>
+      <g id="rt-mdots" pointer-events="none"></g>
+      <g pointer-events="none">
+        <path d="M${NOW_X} ${MT - 6} V${marey.plotBot + 6}" fill="none" stroke="#1C1C1C" stroke-width="2"/>
+        <rect id="rt-mnow-bg" x="${NOW_X - 48}" y="${marey.plotBot + 10}" width="96" height="24" rx="12" fill="#1C1C1C"/>
+        <text id="rt-mnow" x="${NOW_X}" y="${marey.plotBot + 26.5}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#FFFFFF"></text>
+      </g>
+      <g>${rowLabels}</g>`;
+    renderMareyBand();
+    $('#rt-marey-legend').innerHTML = `
+      <span class="legend__item"><svg width="26" height="10" viewBox="0 0 26 10" aria-hidden="true"><path d="M1 9 L25 1" stroke="${lineColor(r)}" stroke-width="3" stroke-linecap="round"/></svg>${esc(dirName(r, state.dir))}</span>
+      <span class="legend__item"><svg width="26" height="10" viewBox="0 0 26 10" aria-hidden="true"><path d="M1 1 L25 9" stroke="#1C1C1C" stroke-opacity=".35" stroke-width="1.6" stroke-linecap="round"/></svg>${esc(dirName(r, 1 - state.dir))}</span>
+      ${r.type === 'night' ? '' : `<span class="legend__item"><svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true"><rect width="16" height="12" rx="2" fill="${r.colorHex}" fill-opacity=".14"/></svg>尖峰時段</span>`}`;
+  }
+  // 黃線在白底上太淡，運行圖的細線改用同色系深黃
+  const lineColor = r => r.color === 'yellow' ? '#C9A400' : r.colorHex;
+
+  // 「我的站」那一列加底色；環線起點在頂、底各一列，兩列都標
+  function renderMareyBand() {
+    const i = stopIdx();
+    const rows = marey.rowY.filter((y, j) => (j < state.m.n ? j : 0) === i);
+    $('#rt-mband').innerHTML = rows.map(y => `<rect x="6" y="${y - 13}" width="${MW - MR - 6}" height="26" rx="5" fill="#F2F2EE"/>`).join('');
+    $$('.rt-mrow text', marey.svg).forEach(t => {
+      const sid = t.parentNode.dataset.station;
+      t.setAttribute('font-weight', sid === state.stop ? 900 : S(sid).transfer ? 700 : 500);
+    });
+  }
+
+  // 一班車在運行圖上的折線：每站先停靠（水平一小段）再斜向下一站
+  function tripPath(D, s, base) {
+    let d = '';
+    D.off.forEach((off, p) => {
+      const x0 = (s + off - base) * MK, y = marey.rowY[D.row[p]];
+      d += (p ? ' L' : 'M') + x0.toFixed(1) + ' ' + y.toFixed(1);
+      if (p < D.off.length - 1) d += ' H' + ((s + off + DWELL - base) * MK).toFixed(1);
+    });
+    return d;
+  }
+
+  function buildMarey(c) {
+    const { r, m } = state;
+    const base = Math.floor(c);
+    const lo = base - BEFORE - 2, hi = base + 30 + AFTER + 2;
+    marey.base = base;
+    marey.trips = [];
+    let grid = '', labels = '', bands = '', lines = ['', ''], hits = '';
+    // 尖峰時段底色（夜間路線沒有尖峰）
+    if (r.type !== 'night') {
+      [-1440, 0, 1440].forEach(sh => PEAKS.forEach(([a, b]) => {
+        if (b + sh < lo || a + sh > hi) return;
+        const x = (a + sh - base) * MK, w = (b - a) * MK;
+        bands += `<rect x="${x}" y="${MT}" width="${w}" height="${marey.plotBot - MT}" fill="${r.colorHex}" fill-opacity=".065"/>`;
+        labels += `<text class="rt-mpeak" data-x0="${x}" data-x1="${x + w}" x="${x + 6}" y="${MT - 34}" font-size="11" font-weight="800" letter-spacing="2" fill="${App.colors[r.color].text}">尖峰</text>`;
+      }));
+    }
+    for (let t = Math.ceil(lo / 10) * 10; t <= hi; t += 10) {
+      const x = ((t - base) * MK).toFixed(1);
+      const hour = wrap(t) % 60 === 0;
+      grid += `<path d="M${x} ${MT} V${marey.plotBot}" fill="none" stroke="${hour ? '#D3D3CC' : '#EEEEE9'}" stroke-width="${hour ? 1.5 : 1}"/>`;
+      if (wrap(t) % 30 === 0) labels += `<text class="rt-mtime" data-x="${x}" x="${x}" y="${MT - 14}" text-anchor="middle" font-size="12" font-weight="${hour ? 800 : 600}" fill="${hour ? '#1C1C1C' : '#6B6B66'}">${hm(t)}</text>`;
+    }
+    [0, 1].forEach(d => {
+      const D = m.dirs[d];
+      m.sched[LIVE_DAY][d].forEach((dep, k) => [-1440, 0, 1440].forEach(sh => {
+        const s = dep + sh;
+        if (s + m.total < lo || s > hi) return;
+        const path = tripPath(D, s, base);
+        marey.trips.push({ d, s, k: k + 1 });
+        lines[d] += `<path d="${path}"/>`;
+        hits += `<path class="rt-mhit" d="${path}" data-d="${d}" data-s="${s}" data-k="${k + 1}"/>`;
+      }));
+    });
+    const act = state.dir;
+    const yellowUnder = r.color === 'yellow' ? `<g fill="none" stroke="#9E8200" stroke-width="4.2" stroke-linejoin="round" stroke-opacity=".35">${lines[act]}</g>` : '';
+    $('#rt-mlabels').innerHTML = labels;
+    marey.labels = $$('#rt-mlabels text').map(el => el.classList.contains('rt-mpeak')
+      ? { el, peak: true, x0: Number(el.dataset.x0), x1: Number(el.dataset.x1) }
+      : { el, x: Number(el.dataset.x) });
+    $('#rt-mmove').innerHTML = `${bands}<g aria-hidden="true">${grid}</g>
+      <g fill="none" stroke="#1C1C1C" stroke-opacity=".3" stroke-width="1.5" stroke-linejoin="round">${lines[1 - act]}</g>
+      ${yellowUnder}<g fill="none" stroke="${lineColor(r)}" stroke-width="2.6" stroke-linejoin="round">${lines[act]}</g>
+      <g fill="none" stroke="#000000" stroke-opacity="0" stroke-width="12" pointer-events="stroke">${hits}</g>`;
+  }
+
+  function drawMarey(c) {
+    if (marey.base === null || c < marey.base || c >= marey.base + 30) buildMarey(c);
+    const { m } = state;
+    const tx = NOW_X + (marey.base - c) * MK;
+    const shift = `translate(${tx.toFixed(2)} 0)`;
+    $('#rt-mmove').setAttribute('transform', shift);
+    $('#rt-mlabels').setAttribute('transform', shift);
+    const left = ML, right = MW - MR;
+    const fadeIn = v => Math.max(0, Math.min(1, v)).toFixed(2);
+    marey.labels.forEach(l => {
+      if (l.peak) {
+        // 「尖峰」黏在時段左緣；時段的開頭滑出圖框後，標籤停在圖框左側直到時段結束
+        const x = Math.min(Math.max(l.x0 + 6, left + 6 - tx), l.x1 - 32);
+        l.el.setAttribute('x', x.toFixed(1));
+        const sx = tx + x;
+        l.el.setAttribute('opacity', fadeIn(Math.min(sx - left + 4, right - 28 - sx) / 10));
+      } else {
+        const sx = tx + l.x;
+        l.el.setAttribute('opacity', fadeIn((Math.min(sx - left, right - sx) - 22) / 18));
+      }
+    });
+    const live = marey.trips.filter(t => c >= t.s && c <= t.s + m.total);
+    const els = pool($('#rt-mdots'), live.length, () => document.createElementNS(SVGNS, 'circle'));
+    live.forEach((t, j) => {
+      const D = m.dirs[t.d];
+      const { p, f } = locate(D, c - t.s);
+      const y = marey.rowY[D.row[p]] + (marey.rowY[D.row[p + 1]] - marey.rowY[D.row[p]]) * f;
+      const on = t.d === state.dir;
+      const el = els[j];
+      el.setAttribute('cx', NOW_X);
+      el.setAttribute('cy', y.toFixed(1));
+      el.setAttribute('r', on ? 6 : 3.5);
+      el.setAttribute('fill', '#1C1C1C');
+      el.setAttribute('fill-opacity', on ? 1 : .4);
+      el.setAttribute('stroke', '#FFFFFF');
+      el.setAttribute('stroke-width', on ? 2.5 : 0);
+    });
+    const label = `${clock.live ? '現在' : '模擬'} ${hm(Math.floor(c))}`;
+    const txt = $('#rt-mnow');
+    if (txt.textContent !== label) txt.textContent = label;
+  }
+
+  marey.svg.addEventListener('pointerover', e => {
+    const hit = e.target.closest('.rt-mhit');
+    if (!hit) return;
+    const { r, m } = state;
+    const d = Number(hit.dataset.d), s = Number(hit.dataset.s);
+    const [o, dest] = endsOf(r, d);
+    const p = boardPos(m, d, stopIdx());
+    const mine = p < 0 ? '' : `<span>${hm(s + m.dirs[d].off[p])} 經過 ${esc(S(state.stop).name)}</span>`;
+    App.tip.show(`${App.pillHTML(r.id, { size: 'sm', title: false })}<strong>第 ${hit.dataset.k} 班・${esc(dirName(r, d))}</strong><span>${hm(s)} ${esc(S(o).name)} 發車</span>${mine}<span>${hm(s + m.total)} 抵達 ${esc(S(dest).name)}</span>`, e.clientX, e.clientY);
+  });
+  marey.svg.addEventListener('pointermove', e => { if (e.target.closest('.rt-mhit')) App.tip.move(e.clientX, e.clientY); });
+  marey.svg.addEventListener('pointerout', e => { if (e.target.closest('.rt-mhit')) App.tip.hide(); });
+  marey.svg.addEventListener('click', e => {
+    const row = e.target.closest('.rt-mrow');
+    if (row) setStop(row.dataset.station, { scroll: true });
+  });
+
+  /* ==========================================================================
+     02 時刻表
+     ========================================================================== */
+  // 某日某方向在「我的站」的所有到站時刻；跨午夜的班次接續加 1440，排序才正確
+  function ttData(day) {
+    const { r, m } = state;
+    const d = state.dir;
+    const D = m.dirs[d];
+    let p = boardPos(m, d, stopIdx());
+    const role = p < 0 ? 'end' : p === 0 ? 'start' : 'mid';
+    if (p < 0) p = D.stop.length - 1;
+    let add = 0, prev = -1;
+    const items = m.sched[day][d].map((dep, k) => {
+      if (dep < prev) add = 1440;
+      prev = dep;
+      const depU = dep + add;
+      const peak = day === 'weekday' && r.type !== 'night' && PEAKS.some(([a, b]) => wrap(depU) >= a && wrap(depU) < b);
+      return { t: Math.round(depU + D.off[p]), k: k + 1, peak };
+    });
+    const groups = [];
+    items.forEach(it => {
+      const h = Math.floor(it.t / 60) % 24;
+      const g = groups[groups.length - 1];
+      if (g && g.h === h) g.items.push(it); else groups.push({ h, items: [it] });
+    });
+    groups.forEach(g => { g.peak = g.items.filter(x => x.peak).length * 2 >= g.items.length; });
+    return { role, items, groups };
+  }
+
+  function renderTimetable() {
+    const { r } = state;
+    ['weekday', 'holiday'].forEach(day => {
+      const { role, items, groups } = ttData(day);
+      const roleText = role === 'start' ? '起站發車時刻' : role === 'end' ? '終點到站時刻' : '預估到站時刻';
+      const note = role === 'end'
+        ? `<div class="notice"><div><strong>${esc(S(state.stop).name)}是這個方向的終點站</strong>下表為到站時刻；要從這裡上車，請切換為${esc(dirName(r, 1 - state.dir))}。</div></div>`
+        : '';
+      const dayNote = day === 'weekday' ? '今天 10 月 23 日（五）適用' : '週六、週日與國定假日適用';
+      $(`#rt-panel-${day}`).innerHTML = `${note}
+        <p class="rt-tt__sum"><span><b>${roleText}</b>・${dayNote}</span><span>共 <b class="num">${items.length}</b> 班・首班 <b class="num">${hm(items[0].t)}</b>・末班 <b class="num">${hm(items[items.length - 1].t)}</b></span></p>
+        <div class="tt" role="list" aria-label="${esc(S(state.stop).name)} ${esc(dirName(r, state.dir))} ${day === 'weekday' ? '平日' : '假日'}時刻">
+          ${groups.map(g => `<div class="tt__row${g.peak ? ' is-peak' : ''}" role="listitem"><span class="tt__hour">${pad2(g.h)}</span><span class="tt__mins">${g.items.map(it => `<span class="tt__min" data-t="${it.t}">${pad2(it.t % 60)}</span>`).join('')}</span></div>`).join('')}
+        </div>`;
+    });
+    renderSummary();
+    markTimetable(now());
+  }
+
+  // 平日（今天）依模擬時鐘標出已過與下一班
+  function markTimetable(c) {
+    const mins = $$('#rt-panel-weekday .tt__min');
+    if (!mins.length) return;
+    const last = Number(mins[mins.length - 1].dataset.t);
+    // 末班跨過午夜時（t > 1440），凌晨還在前一個營運日的尾段，接在 24 時之後比較；
+    // 過了末班就是今天的營運日，白天查夜間路線時整張表都還沒開始
+    const cu = Math.floor(c + 1440 <= last ? c + 1440 : c);
+    let next = null;
+    mins.forEach(el => {
+      const t = Number(el.dataset.t);
+      el.classList.toggle('is-past', t < cu);
+      el.classList.remove('is-next');
+      if (next === null && t >= cu) next = el;
+    });
+    if (next) next.classList.add('is-next');
+    $$('.rt-bars__col', $('#rt-sum')).forEach(col => col.classList.toggle('is-now', state.ttDay === 'weekday' && Number(col.dataset.h) === Math.floor(c / 60)));
+  }
+
+  function renderSummary() {
+    const { r } = state;
+    const data = { weekday: ttData('weekday'), holiday: ttData('holiday') };
+    const cur = data[state.ttDay];
+    const max = Math.max(...cur.groups.map(g => g.items.length));
+    const hw = r.headway;
+    const hwRows = r.type === 'night'
+      ? [[`全夜`, `${r.first}–${r.last}`, hw.off]]
+      : [[`平日尖峰`, '07:00–09:00、17:00–19:30', hw.peak], ['平日離峰', '尖峰以外至 21:00', hw.off], ['平日晚間', '21:00 以後', Math.round(hw.off * 1.5)], ['假日', '全日', hw.holiday]];
+    $('#rt-sum').innerHTML = `
+      <p class="rt-sum__stop"><span class="capsule" aria-hidden="true"></span>${esc(S(state.stop).name)}</p>
+      <p class="rt-sum__dir">${App.pillHTML(r.id, { size: 'sm', title: false })}${esc(dirLong(r, state.dir))}</p>
+      <dl class="rt-sum__dl">
+        <div><dt>平日首班</dt><dd>${hm(data.weekday.items[0].t)}</dd></div>
+        <div><dt>平日末班</dt><dd>${hm(data.weekday.items[data.weekday.items.length - 1].t)}</dd></div>
+        <div><dt>平日班次</dt><dd>${data.weekday.items.length}<small>班</small></dd></div>
+        <div><dt>假日班次</dt><dd>${data.holiday.items.length}<small>班</small></dd></div>
+      </dl>
+      <dl class="rt-hw">${hwRows.map(([k, note, v]) => `<div><dt>${k}<small>${note}</small></dt><dd>每 ${v} 分</dd></div>`).join('')}</dl>
+      <p class="eyebrow rt-sum__label">每小時班次・${state.ttDay === 'weekday' ? '平日' : '假日'}</p>
+      <div class="rt-bars" role="img" aria-label="${cur.groups.map(g => `${pad2(g.h)} 時 ${g.items.length} 班`).join('，')}">
+        ${cur.groups.map(g => `<div class="rt-bars__col${g.peak ? ' is-peak' : ''}" data-h="${g.h}" style="--h:${(g.items.length / max).toFixed(3)}"><span class="rt-bars__n">${g.items.length}</span><span class="rt-bars__bar"></span><span class="rt-bars__h">${pad2(g.h)}</span></div>`).join('')}
+      </div>
+      <p class="rt-bars__legend">${r.type === 'night' ? '' : '<span><i class="is-peak"></i>尖峰</span>'}<span><i></i>${r.type === 'night' ? '每小時班次' : '其他時段'}</span>${state.ttDay === 'weekday' ? '<span>黑框為目前時段</span>' : ''}</p>
+      <button class="btn btn--line btn--sm btn--block" type="button" data-toast="${esc(r.code)} 各站時刻表 PDF 將於 12 月 1 日起提供下載，屆時也會張貼在站牌上。">下載 PDF 時刻表</button>`;
+  }
+
+  $('#rt-tt-tabs').addEventListener('tabchange', e => {
+    state.ttDay = e.detail.index === 0 ? 'weekday' : 'holiday';
+    renderSummary();
+    markTimetable(now());
+  });
+
+  /* ==========================================================================
+     03 新舊對照
+     ========================================================================== */
+  const mapSvg = $('#rt-map');
+  const map = App.map.create(mapSvg, {
+    labels: 'major', animate: false, buses: false, link: false,
+    onStation: id => {
+      if (state.r.stops.includes(id)) { setStop(id, { scroll: true }); return; }
+      const s = S(id);
+      App.toast(`${state.r.code} 沒有停靠${s.name}，這站可搭 ${s.routes.map(x => App.route(x).code).join('、')}。點圖上的路線可切換過去。`, { title: s.name });
+    },
+  });
+  // 點圖上的其他路線：原地切換到該路線
+  mapSvg.addEventListener('click', e => {
+    const hit = e.target.closest('.nm-hit');
+    if (hit && !e.target.closest('.nm-st') && hit.dataset.route !== state.id) { App.tip.hide(); setRoute(hit.dataset.route, { push: true, announce: true }); }
+  });
+
+  function applyOld() {
+    const { r } = state;
+    const ids = !state.oldShown || !r.replaces.length ? null : state.oldOnly ? [state.oldOnly] : r.replaces;
+    map.showOld(ids);
+    $$('.rt-old').forEach(b => b.setAttribute('aria-pressed', b.dataset.old === state.oldOnly));
+  }
+
+  // 舊線行經、但新路線沒停的站，改搭哪些路線：優先取舊線的承接路線
+  function fateOf(o, r) {
+    const shared = o.stops.filter(s => r.stops.includes(s));
+    const rest = o.stops.filter(s => !r.stops.includes(s));
+    const set = new Set();
+    rest.forEach(sid => {
+      const own = o.to.filter(x => x !== r.id && S(sid).routes.includes(x));
+      (own.length ? own : S(sid).routes.filter(x => App.route(x).type !== 'night')).forEach(x => set.add(x));
+    });
+    return { shared, rest, via: ORDER.filter(x => set.has(x)) };
+  }
+
+  const arrowSVG = '<svg viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5 H12 M8.5 1.5 L12 5 L8.5 8.5" fill="none" stroke="#6B6B66" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function comparePair(r) {
+    const n = r.stops.length;
+    if (!r.loop) return [r.from, r.to];
+    // 環線起訖相同：取繞半圈內、新路網確實會搭這條線的最遠一站
+    for (let k = Math.floor(n / 2); k > 1; k--) {
+      const p = App.plan(r.stops[0], r.stops[k], { network: 'new', period: 'peak' });
+      if (p && p.legs.length === 1 && p.legs[0].route === r.id) return [r.stops[0], r.stops[k]];
+    }
+    return [r.stops[0], r.stops[1]];
+  }
+
+  function deltaHTML(oldV, newV) {
+    const change = (newV - oldV) / oldV * 100;
+    if (Math.abs(change) < 3) return `<span class="delta">≈ 持平</span>`;
+    return change < 0
+      ? `<span class="delta delta--good">−${Math.abs(change).toFixed(0)}%</span>`
+      : `<span class="delta delta--bad">+${change.toFixed(0)}%</span>`;
+  }
+  const vsHTML = (oldV, newV, unit, fmt = v => v) => {
+    const max = Math.max(oldV, newV);
+    return `<div class="vs">
+      <div class="vs__row vs__row--old"><span class="vs__label">舊路網</span><span class="vs__bar vs__bar--old" data-v="${(oldV / max).toFixed(3)}" style="--v:0"></span><span class="vs__val">${fmt(oldV)} ${unit}</span></div>
+      <div class="vs__row"><span class="vs__label">新路網</span><span class="vs__bar vs__bar--new" data-v="${(newV / max).toFixed(3)}" style="--v:0;--rd:160ms"></span><span class="vs__val">${fmt(newV)} ${unit}</span></div>
+    </div>`;
+  };
+  const legsHTML = (plan, old) => plan.legs.map(l => old ? App.oldPillHTML(l.route, { size: 'sm' }) : App.pillHTML(l.route, { size: 'sm', title: false })).join(arrowSVG)
+    + ` <span>${plan.transfers ? `轉乘 ${plan.transfers} 次` : '直達'}</span>`;
+
+  function renderCompare() {
+    const { r } = state;
+    state.oldOnly = null;
+    const lastOld = App.data.oldRoutes.reduce((a, o) => App.toMin(o.last) > App.toMin(a) ? o.last : a, '00:00');
+
+    // 圖：夜間路線要打開夜間圖層才看得到自己
+    map.setLayers({ night: r.type === 'night' });
+    map.focusRoute(r.id);
+    map.focusStation(state.stop);
+    map.fit([r.id, ...r.replaces], 50, 520);
+    $('#rt-map-swatch').className = `route-swatch route-swatch--${r.type} c-${r.color}`;
+    $('#rt-map-legend-new').textContent = `${r.code}（新）`;
+    const toggle = $('#rt-old-toggle');
+    toggle.disabled = !r.replaces.length;
+    toggle.checked = state.oldShown && !!r.replaces.length;
+
+    $('#rt-olds-title').textContent = r.replaces.length ? `被取代的 ${r.replaces.length} 條舊路線` : '被取代的舊路線';
+    $('#rt-olds-hint').hidden = !r.replaces.length;
+    $('#rt-olds').innerHTML = r.replaces.length ? r.replaces.map(oid => {
+      const o = App.oldRoute(oid);
+      const f = fateOf(o, r);
+      const names = f.rest.slice(0, 3).map(s => S(s).name).join('、') + (f.rest.length > 3 ? ` 等 ${f.rest.length} 站` : '');
+      return `<li><button class="rt-old" type="button" data-old="${oid}" aria-pressed="false">
+        ${App.oldPillHTML(oid)}
+        <span class="rt-old__name">${esc(o.name)}<small>${o.first}–${o.last}・${o.stops.length} 站${o.loop ? '・循環' : ''}・全程 ${o.minutes} 分</small></span>
+        <span class="rt-old__hw">${o.headway.peak}<small>尖峰 分/班</small></span>
+        <span class="rt-old__fate"><span><b>${f.shared.length}</b> 站改由 ${esc(r.code)} 停靠${f.rest.length ? `；${esc(names)}改搭` : '，全線由本路線取代'}</span>${f.via.map(x => App.pillHTML(x, { size: 'sm', title: false })).join('')}</span>
+      </button></li>`;
+    }).join('') : `<li class="empty"><p class="empty__title">全新的路線</p><p class="empty__text">舊路網 ${lastOld} 以後就沒有公車，${esc(r.code)} 沒有被取代的舊路線。</p></li>`;
+    applyOld();
+
+    // 指標
+    const metrics = $('#rt-metrics');
+    if (r.type === 'night') {
+      $('#cmp-title').textContent = '新增路線，舊路網沒有夜車';
+      $('#cmp-lede').textContent = `舊路網最晚的末班車是 ${lastOld}，之後全市沒有公車。${r.code} 從 ${r.first} 開到 ${r.last}，整夜每 ${r.headway.off} 分鐘一班。`;
+      metrics.innerHTML = `<div class="notice" style="grid-column: 1 / -1"><div><strong>夜間沒有可比較的舊路線</strong>${esc(r.desc)}</div></div>`;
+      return;
+    }
+    const [a, b] = comparePair(r);
+    const pn = App.plan(a, b, { network: 'new', period: 'peak' });
+    const po = App.plan(a, b, { network: 'old', period: 'peak' });
+    const best = r.replaces.map(App.oldRoute).reduce((x, y) => y.headway.peak < x.headway.peak ? y : x);
+    const diff = po.minutes - pn.minutes;
+    $('#cmp-title').textContent = `取代 ${r.replaces.length} 條舊路線，${diff > 0 ? `全程快 ${diff} 分鐘` : diff < 0 ? `全程慢 ${-diff} 分鐘` : '全程時間持平'}`;
+    $('#cmp-lede').textContent = '灰色虛線是被取代的舊路線：站與站之間彎繞、彼此重疊。新路線把同一條走廊拉直、班次集中，轉乘改在同一個站牌。';
+    const slower = diff < 0
+      ? `<p class="metric__note">這一段新路網反而慢 ${-diff} 分鐘${pn.wait > po.wait ? `，主要差在候車：${r.code} 尖峰每 ${r.headway.peak} 分一班，舊 ${best.id} 路每 ${best.headway.peak} 分一班` : ''}。${r.headway.holiday < r.headway.peak ? `假日 ${r.code} 加密為每 ${r.headway.holiday} 分一班。` : ''}</p>`
+      : '';
+    metrics.innerHTML = `
+      <div class="metric metric--ruled" data-reveal>
+        <div class="metric__head"><p class="metric__name">全程時間<small>尖峰・${esc(S(a).name)} → ${esc(S(b).name)}，含步行與候車</small></p>${deltaHTML(po.minutes, pn.minutes)}</div>
+        ${vsHTML(po.minutes, pn.minutes, '分')}
+        <div class="rt-legs"><div><span class="rt-legs__k">舊</span>${legsHTML(po, true)}</div><div><span class="rt-legs__k">新</span>${legsHTML(pn, false)}</div></div>
+        ${slower}
+      </div>
+      <div class="metric metric--ruled" data-reveal style="--rd:80ms">
+        <div class="metric__head"><p class="metric__name">尖峰班距<small>舊線取最密的舊 ${best.id} 路（${esc(best.name)}）</small></p>${deltaHTML(best.headway.peak, r.headway.peak)}</div>
+        ${vsHTML(best.headway.peak, r.headway.peak, '分')}
+        <p class="metric__note">平日 ${r.code} 單向 <b class="num">${state.m.sched.weekday[0].length}</b> 班；舊 ${best.id} 路尖峰每小時 ${Math.round(60 / best.headway.peak)} 班，${r.code} 每小時 ${Math.round(60 / r.headway.peak)} 班。</p>
+      </div>
+      <div class="metric metric--ruled" data-reveal style="--rd:160ms">
+        <div class="metric__head"><p class="metric__name">步行距離<small>走到站牌、轉乘換站、走到目的地</small></p>${deltaHTML(po.walk, pn.walk)}</div>
+        ${vsHTML(po.walk, pn.walk, '公尺', v => App.fmt.num(v))}
+        <p class="metric__note">新路網轉乘站同站換車約 ${App.data.sim.xferWalk.new} 公尺；舊路網平均要走 ${App.data.sim.xferWalk.old} 公尺到另一個站牌。</p>
+      </div>`;
+    App.scan(metrics);
+    // 長條在下一格才套上目標值，切換路線時也看得到長條長出來
+    requestAnimationFrame(() => requestAnimationFrame(() => $$('.vs__bar', metrics).forEach(el => el.style.setProperty('--v', el.dataset.v))));
+  }
+
+  $('#rt-olds').addEventListener('click', e => {
+    const b = e.target.closest('.rt-old');
+    if (!b) return;
+    state.oldOnly = state.oldOnly === b.dataset.old ? null : b.dataset.old;
+    if (state.oldOnly) state.oldShown = true;
+    $('#rt-old-toggle').checked = state.oldShown;
+    applyOld();
+    map.fit(state.oldOnly ? [state.id, state.oldOnly] : [state.id, ...state.r.replaces], 50, 520);
+  });
+  // 滑過／聚焦時預覽單一舊路線，離開後回到目前的選擇
+  const previewOld = id => { if (state.oldShown && !state.oldOnly) map.showOld(id ? [id] : state.r.replaces); };
+  $('#rt-olds').addEventListener('pointerover', e => { const b = e.target.closest('.rt-old'); if (b) previewOld(b.dataset.old); });
+  $('#rt-olds').addEventListener('pointerleave', () => previewOld(null));
+  $('#rt-olds').addEventListener('focusin', e => { const b = e.target.closest('.rt-old'); if (b) previewOld(b.dataset.old); });
+  $('#rt-olds').addEventListener('focusout', e => { if (!$('#rt-olds').contains(e.relatedTarget)) previewOld(null); });
+  $('#rt-old-toggle').addEventListener('change', e => {
+    state.oldShown = e.target.checked;
+    if (!state.oldShown) state.oldOnly = null;
+    applyOld();
+  });
+
+  /* ==========================================================================
+     共用：方向、我的站、時鐘介面
+     ========================================================================== */
+  function renderDirGroups() {
+    $$('[data-dir-group]').forEach(g => {
+      g.innerHTML = [0, 1].map(d => `<button type="button" data-dir="${d}" aria-pressed="${d === state.dir}">${esc(dirName(state.r, d))}</button>`).join('');
+    });
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-dir-group] button[data-dir]');
+    if (b) setDir(Number(b.dataset.dir));
+  });
+
+  function setDir(d) {
+    if (d === state.dir) return;
+    state.dir = d;
+    $$('[data-dir-group] button').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.dir) === d));
+    syncStripOffsets();
+    renderMarey();
+    renderTimetable();
+    tick(true);
+  }
+
+  function setStop(sid, opts = {}) {
+    state.stop = sid;
+    $('#rt-stop-select').value = sid;
+    $('#rt-tt-stop').value = sid;
+    $$('.stop-strip__stop', stripHost).forEach(li => li.classList.toggle('is-current', li.dataset.station === sid));
+    syncStripOffsets();
+    renderNext();
+    renderMareyBand();
+    renderTimetable();
+    map.focusStation(sid);
+    if (opts.scroll) scrollStripTo(sid, true);
+    tick(true);
+  }
+
+  stripHost.addEventListener('click', e => {
+    const btn = e.target.closest('.rt-stopbtn');
+    if (btn) setStop(btn.dataset.station);
+  });
+  stripHost.addEventListener('scroll', syncStripFade, true);
+  $$('[data-strip-scroll]').forEach(b => b.addEventListener('click', () => {
+    const strip = $('.stop-strip', stripHost);
+    strip.scrollBy({ left: Number(b.dataset.stripScroll) * strip.clientWidth * 0.7, behavior: App.reducedMotion ? 'auto' : 'smooth' });
+  }));
+  $('#rt-stop-select').addEventListener('change', e => setStop(e.target.value, { scroll: true }));
+  $('#rt-tt-stop').addEventListener('change', e => setStop(e.target.value, { scroll: true }));
+
+  // 時鐘控制
+  const range = $('#rt-range');
+  let dragging = false;
+  range.addEventListener('pointerdown', () => { dragging = true; });
+  window.addEventListener('pointerup', () => { dragging = false; });
+  range.addEventListener('input', () => setClock(Number(range.value)));
+  $$('[data-speed]').forEach(b => b.addEventListener('click', () => {
+    const sp = Number(b.dataset.speed);
+    if (clock.live && sp === 1) return;
+    setClock(now(), sp);
+  }));
+  $('#rt-now').addEventListener('click', goLive);
+
+  // 時間軸本身就是當日的一條路線：非營運淺灰、營運時段墨灰、尖峰路線色
+  // 位置要扣掉拖把半寬（15px），色段才會對準拖把中心代表的時刻
+  function paintTrack() {
+    const { r } = state;
+    const at = v => `calc(15px + (100% - 30px) * ${(v / 1440).toFixed(4)})`;
+    const a = App.toMin(r.first), b = App.toMin(r.last);
+    const inService = t => a < b ? t >= a && t <= b : t >= a || t <= b;
+    const colorAt = t => r.type !== 'night' && PEAKS.some(([x, y]) => t >= x && t < y) ? 'var(--c)'
+      : inService(t) ? 'var(--ink-3)' : 'var(--rule-2)';
+    const stops = [];
+    let from = 0;
+    for (let t = 1; t <= 1440; t++) {
+      if (t === 1440 || colorAt(t) !== colorAt(from)) {
+        stops.push(`${colorAt(from)} ${at(from)} ${at(t)}`);
+        from = t;
+      }
+    }
+    range.style.setProperty('--track', `linear-gradient(90deg, ${stops.join(', ')})`);
+  }
+
+  function renderClockUI(c) {
+    const s = Math.floor(c * 60);
+    const text = `${pad2(Math.floor(s / 3600) % 24)}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}`;
+    const el = $('#rt-clock');
+    if (el.textContent !== text) el.textContent = text;
+    el.setAttribute('datetime', text);
+    if (!dragging && Number(range.value) !== Math.floor(c)) range.value = Math.floor(c);
+    range.setAttribute('aria-valuetext', `${hm(Math.floor(c))}${clock.live ? '（現在）' : '（模擬）'}`);
+    const tag = $('#rt-clock-tag');
+    const tagHTML = clock.live ? '<span class="live-dot" aria-hidden="true"></span>即時' : `模擬・${clock.speed}× 播放`;
+    if (tag._html !== tagHTML) { tag._html = tagHTML; tag.innerHTML = tagHTML; tag.className = clock.live ? 'tag tag--live' : 'tag'; }
+    $('#rt-now').disabled = clock.live;
+    $$('[data-speed]').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.speed) === clock.speed));
+    const head = $('#rt-next-clock');
+    head.classList.toggle('is-sim', !clock.live);
+    const ht = `${clock.live ? '即時' : '模擬'} ${hm(Math.floor(c))}`;
+    const htEl = $('#rt-next-clock-text');
+    if (htEl.textContent !== ht) htEl.textContent = ht;
+  }
+
+  /* ---------- 心跳：文字每 250ms、圖形每格（可見時） ---------- */
+  let lastMin = -1, lastQuarter = -1;
+  function drawLive(c) {
+    if (!state.m) return;
+    drawStrip(c);
+    drawBar(c);
+  }
+  function tick(force) {
+    if (!state.m) return;
+    const c = now();
+    const q = Math.floor(c * 240);
+    if (!force && q === lastQuarter) return;
+    lastQuarter = q;
+    renderClockUI(c);
+    updateNext(c);
+    updateStripEtas(c);
+    if (force || Math.floor(c) !== lastMin) { lastMin = Math.floor(c); markTimetable(c); }
+    // 減少動態或強制重繪時，車輛位置跟著心跳更新（不跑 rAF 動畫）
+    if (force || App.reducedMotion) { drawLive(c); drawMarey(c); }
+  }
+  setInterval(() => { if (!document.hidden) tick(); }, 250);
+  App.animate(stripHost, () => drawStrip(now()));
+  App.animate($('#rt-bar-host'), () => drawBar(now()));
+  App.animate(marey.svg, () => drawMarey(now()));
+
+  /* ==========================================================================
+     切換路線（原地重繪，網址用 pushState 同步，上一頁可回到前一條）
+     ========================================================================== */
+  function setRoute(id, opts = {}) {
+    const r = App.route(id);
+    state.id = id;
+    state.r = r;
+    state.m = modelOf(id);
+    if (!r.stops.includes(state.stop)) state.stop = defaultStop(r);
+    if (opts.resetDir !== false) state.dir = 0;
+
+    document.title = `${r.code} ${r.name}・路線詳情 — 澄港市 2027 新公車路網`;
+    main.className = `c-${r.color}`;
+    $$('.rail, .rail-bar').forEach(el => {
+      [...el.classList].filter(k => k.startsWith('c-')).forEach(k => el.classList.remove(k));
+      el.classList.add(`c-${r.color}`);
+    });
+    routeSelect.value = id;
+    const k = ORDER.indexOf(id);
+    const prev = App.route(ORDER[(k - 1 + ORDER.length) % ORDER.length]), next = App.route(ORDER[(k + 1) % ORDER.length]);
+    $('#rt-prev').title = `上一條：${prev.code} ${prev.name}`;
+    $('#rt-next').title = `下一條：${next.code} ${next.name}`;
+    $('#rt-prev').setAttribute('aria-label', `上一條路線：${prev.code}`);
+    $('#rt-next').setAttribute('aria-label', `下一條路線：${next.code}`);
+    $('#rt-stop-select').innerHTML = stopOptions();
+    $('#rt-tt-stop').innerHTML = stopOptions();
+    $('#rt-stop-select').value = state.stop;
+    $('#rt-tt-stop').value = state.stop;
+    $('#tt-lede').textContent = r.type === 'night'
+      ? `夜間路線全夜固定班距，平日與假日相同。到站時刻依起站發車時刻加上各站行車時間推算，跨午夜的班次接在 23 時之後。`
+      : `到站時刻依起站發車時刻加上各站行車時間推算。平日尖峰 07:00–09:00、17:00–19:30 每 ${r.headway.peak} 分一班，21 點以後疏運；今天 10 月 23 日（五）適用平日班表。`;
+
+    renderHero();
+    renderNext();
+    renderStrip();
+    renderDirGroups();
+    renderMarey();
+    renderTimetable();
+    renderCompare();
+    paintTrack();
+    // 站序圖與起訖粗線每次切換都是新元素，重新觀察尺寸
+    sizeObs.disconnect();
+    sizeObs.observe($('.rt-track', stripHost));
+    sizeObs.observe($('.rt-bar'));
+    barW = $('.rt-bar').offsetWidth;
+
+    if (opts.push) history.pushState({ id }, '', App.routeURL(id));
+    if (opts.announce) $('#rt-announce').textContent = `已切換到 ${r.code} ${r.name}`;
+    if (opts.top) {
+      window.scrollTo({ top: 0, behavior: App.reducedMotion ? 'auto' : 'smooth' });
+      $('#rt-title').focus({ preventScroll: true });
+    }
+    scrollStripTo(state.stop, false);
+    // 內容高度變了，讓左側捲動進度路線重新量測各站位置
+    window.dispatchEvent(new Event('resize'));
+    tick(true);
+  }
+
+  routeSelect.addEventListener('change', () => setRoute(routeSelect.value, { push: true, announce: true }));
+  $('#rt-prev').addEventListener('click', () => setRoute(ORDER[(ORDER.indexOf(state.id) - 1 + ORDER.length) % ORDER.length], { push: true, announce: true }));
+  $('#rt-next').addEventListener('click', () => setRoute(ORDER[(ORDER.indexOf(state.id) + 1) % ORDER.length], { push: true, announce: true }));
+
+  // 頁內連到其他路線（轉乘 pill 等）時原地切換；按住修飾鍵仍照瀏覽器預設開新分頁
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href^="route.html?id="]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const id = new URLSearchParams(a.getAttribute('href').split('?')[1]).get('id');
+    if (!App.route(id)) return;
+    e.preventDefault();
+    App.tip.hide();
+    if (id !== state.id) setRoute(id, { push: true, top: true, announce: true });
+  });
+  window.addEventListener('popstate', () => {
+    const id = (App.param('id') || 'T1').toUpperCase();
+    setRoute(App.route(id) ? id : 'T1', { announce: true });
+  });
+
+  /* ---------- 啟動 ---------- */
+  const asked = App.param('id');
+  const startId = asked ? asked.toUpperCase() : 'T1';
+  if (App.route(startId)) setRoute(startId);
+  else {
+    setRoute('T1');
+    App.toast(`找不到路線「${asked}」，先為你顯示幹1。可以用上方的「切換路線」選擇其他路線。`, { tone: 'warn', title: '查無此路線' });
+  }
+});
+</script>
+</body>
+</html>

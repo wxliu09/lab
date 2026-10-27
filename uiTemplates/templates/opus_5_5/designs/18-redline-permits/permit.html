@@ -1,0 +1,1701 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件詳情 — 澄港市建照圖說審查系統</title>
+<meta name="description" content="澄港市建築執照圖說線上審查系統：單一案件的基本資料、審查時程尺寸鏈與回合歷程、各科會簽意見、補正通知書預覽與核發流程。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     A-04 案件詳情（permit.html）頁面專屬樣式；class 一律以 pd- 為前綴
+     ===================================================================== */
+
+  /* ---------- 頁首 ---------- */
+  .pd-head .page-head__main { flex: 1; }
+  .pd-head .page-title { overflow-wrap: anywhere; }
+  .pd-head .page-desc { text-wrap: pretty; }
+  .pd-missing { margin-top: 10px; }
+  /* 狀態列固定兩列：階段／回合／期限一列，五科燈號獨立一列，避免換行後右上留白 */
+  .pd-status {
+    display: inline-grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: stretch;
+    margin-top: 16px;
+    border: 1px solid var(--ink);
+    background: var(--sheet-solid);
+    box-shadow: 4px 5px 0 -1px var(--sheet-under), 4px 5px 0 0 var(--line-2);
+    max-width: 100%;
+  }
+  .pd-status__cell { display: flex; align-items: center; gap: 8px; padding: 7px 14px; min-height: 42px; min-width: 0; }
+  .pd-status__cell + .pd-status__cell { border-left: 1px solid var(--line-2); }
+  .pd-status__k { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; color: var(--ink-3); white-space: nowrap; }
+  .pd-status__v { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .pd-status .mono { font-size: 12px; }
+  .pd-status .pd-status__cell--wide { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line-2); }
+
+  .pd-pager { display: inline-flex; border: 1px solid var(--line-3); background: var(--sheet-solid); border-radius: var(--r-1); }
+  .pd-pager a {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 34px; padding: 0 11px;
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--ink-2); text-decoration: none;
+    transition: background var(--dur-1), color var(--dur-1);
+  }
+  .pd-pager a + a { border-left: 1px solid var(--line-2); }
+  .pd-pager a:hover { background: var(--hl); color: var(--ink); }
+  .pd-pager svg { width: 14px; height: 14px; }
+
+  /* ---------- 版面：主欄＋右側動作欄（桌機 sticky） ---------- */
+  .pd-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 376px;
+    grid-template-areas: "sum rail" "rest rail";
+    gap: var(--s-8) var(--s-6);
+    align-items: start;
+  }
+  .pd-sum { grid-area: sum; }
+  .pd-rail { grid-area: rail; min-width: 0; }
+  .pd-rest { grid-area: rest; display: flex; flex-direction: column; gap: var(--s-8); min-width: 0; }
+  /* 動作欄只在畫面夠高時黏住，避免下半部按鈕永遠捲不到 */
+  @media (min-width: 1101px) and (min-height: 760px) {
+    .pd-rail { position: sticky; top: calc(var(--header-h) + 20px); }
+  }
+
+  /* ---------- D-01 案件概要 ---------- */
+  .pd-sum__body { display: grid; grid-template-columns: 244px minmax(0, 1fr); }
+  .pd-massing { margin: 0; padding: 14px 12px 16px 16px; border-right: 1px dashed var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+  .pd-massing svg { width: 100%; height: auto; color: var(--ink); }
+  .pd-massing figcaption { font-size: 12px; color: var(--ink-3); line-height: 1.5; padding: 0 4px; }
+  .pd-massing figcaption b { color: var(--ink); font-weight: 600; }
+  .pd-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; padding: 8px 22px 16px; align-content: start; }
+  .pd-kv .kv { font-size: 13.5px; }
+  .pd-kv .kv dt { padding-right: 14px; white-space: nowrap; }
+  .pd-kv__sub { display: block; font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+  .pd-kv .due { margin-left: 6px; }
+  .pd-crew { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--line-2); background: rgba(236, 233, 223, .35); }
+  .pd-crew__cell { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .pd-crew__cell + .pd-crew__cell { border-left: 1px dashed var(--line-2); }
+  .pd-crew__top { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; }
+  .pd-crew__top .lamp { margin-left: auto; }
+  .pd-crew__who { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+  .pd-crew__who span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pd-crew__na { font-size: 12.5px; color: var(--ink-3); }
+
+  /* ---------- D-02 核發流程與動作（右欄） ---------- */
+  .pd-flow { position: relative; padding: 40px 8px 6px; }
+  .pd-flow .flow__label { font-size: 12.5px; }
+  .pd-flow .flow__dot svg { width: 13px; height: 13px; }
+  .pd-flow__loop { position: absolute; top: 6px; left: 50%; width: 20%; height: 40px; pointer-events: none; }
+  .pd-flow__loop svg { position: absolute; left: 0; top: 14px; width: 100%; height: 22px; overflow: visible; max-width: none; }
+  .pd-flow__loop span {
+    position: absolute; left: 50%; top: -2px;
+    transform: translateX(-50%) rotate(-3deg);
+    font-family: var(--font-hand); font-size: 14px; color: var(--red-ink);
+    white-space: nowrap; background: var(--sheet-solid); padding: 0 4px; line-height: 1.2;
+  }
+  .pd-rail__stamp {
+    position: absolute; right: 10px; top: 4px;
+    font-size: 15px; padding: 3px 10px;
+    pointer-events: none;
+  }
+  .pd-now { padding: 14px 20px 12px; border-top: 1px dashed var(--line-2); }
+  .pd-now__title { font-family: var(--font-hand); font-size: 22px; line-height: 1.3; color: var(--ink); }
+  .pd-now__title.is-red { color: var(--red-ink); }
+  .pd-now__sub { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+  .pd-checks { padding: 0 20px; }
+  .pd-checks li {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--line-2);
+    font-size: 13.5px;
+  }
+  .pd-checks li:first-child { border-top: 1px solid var(--line-2); }
+  .pd-checks__v { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  .pd-ico {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    border: 1.5px solid var(--line-3); border-radius: 50%;
+    color: var(--ink-3);
+  }
+  .pd-ico svg { width: 11px; height: 11px; }
+  .pd-ico.is-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .pd-ico.is-red { background: var(--red); border-color: var(--red); color: #fff; }
+  .pd-ico.is-wait { border-style: dashed; }
+  .pd-ico.is-warn { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); font: 700 11px/1 var(--font-mono); }
+  .pd-actions { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 18px; }
+  .pd-actions__why { font-size: 12px; color: var(--ink-3); text-align: center; line-height: 1.5; }
+  .pd-actions__row { display: flex; gap: 8px; }
+  .pd-actions__row > .btn { flex: 1 1 0; min-width: 0; }
+  .pd-log { padding: 12px 20px 16px; border-top: 1px solid var(--line-2); background: rgba(236, 233, 223, .4); }
+  .pd-log__title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; color: var(--ink-3); margin-bottom: 4px; }
+  .pd-log li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; font-size: 12.5px; padding: 3px 0; line-height: 1.45; }
+  .pd-log li .mono { font-size: 11px; color: var(--ink-3); padding-top: 1px; }
+  .pd-log li.pd-log__empty { display: block; color: var(--ink-3); }
+
+  /* ---------- D-03 審查時程尺寸鏈 ---------- */
+  .pd-chain-sum { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 28px; margin-bottom: 8px; }
+  .pd-chain-total { display: flex; align-items: flex-end; gap: 14px; }
+  .pd-chain-total .stat__value { font-size: 44px; }
+  .pd-chain-total__note { font-size: 13px; color: var(--ink-3); line-height: 1.45; padding-bottom: 5px; }
+  .pd-chain-total__note b { color: var(--ink); font-weight: 600; }
+  .pd-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); }
+  .pd-legend li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pd-legend b { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+  .pd-sw { width: 18px; height: 10px; flex-shrink: 0; background: var(--seg); }
+  .pd-sw[data-kind="remain"] { background: none; border: 1.5px dashed var(--ink-3); }
+  .pd-sw[data-kind="over"] { background: repeating-linear-gradient(135deg, var(--red) 0 2px, rgba(215, 38, 61, .2) 2px 4px); }
+  [data-kind="admin"] { --seg: var(--chart-1); }
+  [data-kind="tech"] { --seg: var(--chart-2); }
+  [data-kind="fix"] { --seg: var(--chart-3); }
+
+  .pd-chain-wrap { position: relative; padding: 0 2px; }
+  .pd-chain { position: relative; }
+  .pd-chain__dim { position: absolute; left: 0; right: 0; top: 74px; border-top: 1px solid var(--ink-2); transform-origin: left center; }
+  .pd-seg {
+    position: absolute; top: 20px; height: 54px;
+    padding: 0; margin: 0;
+    border: 0; border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+    transition: background var(--dur-1);
+  }
+  .pd-seg__bar {
+    position: absolute; left: 1px; right: 1px; top: 8px; height: 20px;
+    background: var(--seg);
+    transform-origin: left center;
+    transition: box-shadow var(--dur-1);
+  }
+  .pd-seg[data-kind="remain"] .pd-seg__bar {
+    background: repeating-linear-gradient(135deg, var(--seg) 0 1.2px, transparent 1.2px 6px);
+    border: 1.5px dashed var(--seg);
+    opacity: .9;
+  }
+  .pd-seg[data-kind="remain"][data-mode="agency"],
+  .pd-seg[data-kind="over"][data-mode="agency"] { --seg: var(--chart-2); }
+  .pd-seg[data-kind="remain"][data-mode="applicant"] { --seg: var(--chart-3); }
+  .pd-seg[data-kind="over"] .pd-seg__bar { background: repeating-linear-gradient(135deg, var(--red) 0 3px, rgba(215, 38, 61, .22) 3px 6px); }
+  .pd-seg__num {
+    position: absolute; left: 0; right: 0; top: 33px;
+    text-align: center;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; line-height: 1.2;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .pd-seg__num small { font-size: 10px; font-weight: 400; color: var(--ink-3); margin-left: 1px; }
+  .pd-seg[data-kind="over"] .pd-seg__num { color: var(--red-ink); }
+  .pd-seg:hover .pd-seg__bar { box-shadow: 0 0 0 2px var(--sheet-solid), 0 0 0 3.5px var(--ink); }
+  .pd-seg.is-active { background: rgba(255, 241, 118, .6); }
+  .pd-seg.is-active .pd-seg__bar { box-shadow: 0 0 0 2px var(--sheet-solid), 0 0 0 3.5px var(--ink); }
+  .pd-seg:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  /* 尺寸界線＋建築斜線記號 */
+  .pd-tick { position: absolute; top: 22px; height: 58px; width: 0; border-left: 1px solid var(--line-3); pointer-events: none; }
+  .pd-tick::after {
+    content: ""; position: absolute; left: -6px; top: 46px;
+    width: 12px; height: 0; border-top: 1.6px solid var(--ink);
+    transform: rotate(-45deg);
+  }
+  .pd-revmark { position: absolute; top: -2px; transform: translateX(-50%); pointer-events: none; }
+  .pd-revmark .rev { width: 22px; height: 19px; }
+  .pd-revmark .rev > b { font-size: 9.5px; margin-top: 4px; }
+  .pd-today { position: absolute; top: 14px; height: 70px; width: 12px; margin-left: -6px; pointer-events: none; }
+  .pd-today::before { content: ""; position: absolute; inset: 0; background: rgba(255, 241, 118, .75); border-radius: 3px; mix-blend-mode: multiply; }
+  .pd-today::after { content: ""; position: absolute; left: 5.5px; top: 0; bottom: 0; border-left: 1px dashed var(--ink); }
+  .pd-lab { position: absolute; width: 84px; text-align: center; line-height: 1.25; pointer-events: none; }
+  .pd-lab::before { content: ""; position: absolute; left: var(--lx); bottom: 100%; height: var(--lead); border-left: 1px solid var(--line-3); }
+  .pd-lab b { display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--ink); }
+  .pd-lab span { display: block; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pd-lab.is-today b { background: var(--hl); display: inline-block; padding: 0 3px; }
+  .pd-lab.is-due span { color: var(--red-ink); font-weight: 600; }
+  .pd-chain__cap {
+    min-height: 44px;
+    margin-top: 4px;
+    padding: 10px 14px;
+    border: 1px dashed var(--line-3);
+    background: #FFFEFA;
+    font-size: 13.5px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  }
+  .pd-chain__cap .hand { color: var(--red-ink); font-size: 16px; }
+  .pd-chain__cap .mono { font-size: 12px; color: var(--ink-2); }
+
+  .pd-time__grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 32px; margin-top: 24px; padding-top: 22px; border-top: 1px dashed var(--line-2); }
+  .pd-subhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .pd-subhead h3 { font-size: 15px; font-weight: 700; }
+  .pd-subhead .mono { font-size: 10.5px; letter-spacing: .1em; color: var(--ink-3); }
+  .pd-tl .tl-item { transition: opacity var(--dur-2); }
+  .pd-tl .tl-item__body { border-radius: 2px; transition: background var(--dur-2), box-shadow var(--dur-2); }
+  .pd-tl.has-hl .tl-item:not(.pd-hl) { opacity: .42; }
+  .pd-tl .tl-item.pd-hl .tl-item__body { background: rgba(255, 241, 118, .55); box-shadow: 0 0 0 5px rgba(255, 241, 118, .55); }
+  .pd-tl .tag { height: 19px; font-size: 11px; }
+  .pd-rounds { display: flex; flex-direction: column; gap: 12px; }
+  .pd-round {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 2px 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--line-2);
+    background: #FFFEFA;
+    position: relative;
+  }
+  .pd-round.is-current { border-color: var(--ink); box-shadow: 3px 3px 0 var(--hl); }
+  .pd-round__mark { grid-row: 1 / span 3; padding-top: 2px; }
+  .pd-round__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; }
+  .pd-round__period { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); }
+  .pd-round__bar { display: flex; height: 6px; margin: 8px 0 6px; background: var(--paper-2); }
+  .pd-round__bar i { display: block; height: 100%; background: var(--seg); }
+  .pd-round__bar i + i { margin-left: 2px; }
+  .pd-round__nums { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: var(--ink-3); }
+  .pd-round__nums b { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+
+  /* ---------- D-04 各科意見彙整 ---------- */
+  .pd-op-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 12px 20px; border-bottom: 1px solid var(--line-2); background: rgba(236, 233, 223, .35); font-size: 12.5px; color: var(--ink-2); }
+  .pd-op-sum b { font-family: var(--font-mono); color: var(--ink); margin-left: 2px; }
+  .pd-op-sum .hand-note { font-size: 15px; margin-left: auto; }
+  .pd-ops { columns: 2 340px; column-gap: 20px; }
+  .pd-ops > .opinion { break-inside: avoid; margin: 0 0 20px; display: inline-block; width: 100%; vertical-align: top; }
+  .opinion[data-s="fix"] { border-left: 3px solid var(--red); }
+  .opinion[data-s="pass"] { border-left: 3px solid var(--ok); }
+  .opinion[data-s="review"] { border-left: 3px solid var(--blue); }
+  .opinion[data-s="na"] { background: transparent; border-style: dashed; }
+  .pd-op__titles { min-width: 0; flex: 1; line-height: 1.3; }
+  .pd-op__unit { display: block; font-size: 12px; color: var(--ink-3); font-weight: 400; }
+  .pd-op__mark {
+    position: absolute; right: 14px; top: -14px;
+    font-family: var(--font-hand); font-size: 19px; line-height: 1;
+    color: var(--red-ink);
+    padding: 2px 6px;
+    background: var(--sheet-solid);
+    transform: rotate(-5deg);
+    pointer-events: none;
+  }
+  .pd-op__mark::after { content: ""; position: absolute; left: 4px; right: 2px; bottom: -2px; border-bottom: 1.6px solid var(--red); border-radius: 50%; transform: rotate(-2deg); }
+  .pd-op__stamp { position: absolute; right: 14px; top: -11px; background: var(--sheet-solid); pointer-events: none; }
+  .pd-op-list { padding: 4px 14px 8px; }
+  .pd-op-item { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 4px 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .pd-op-item:last-child { border-bottom: 0; }
+  .pd-op-item__no { padding-top: 1px; }
+  .pd-op-item__no .bubble { text-decoration: none; }
+  .pd-op-item__no .bubble:hover { background: var(--hl); }
+  .pd-op-item__num { font-size: 12.5px; color: var(--ink-3); padding-top: 1px; }
+  .pd-op-item__text { font-size: 14px; line-height: 1.6; }
+  .pd-op-item.is-resolved .pd-op-item__text { color: var(--ink-3); text-decoration: line-through; text-decoration-color: rgba(46, 125, 91, .7); text-decoration-thickness: 1.5px; }
+  .pd-op-item.is-muted .pd-op-item__text { color: var(--ink-3); }
+  .pd-op-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+  .pd-op-item__meta .rev { width: 22px; height: 19px; }
+  .pd-op-item__meta .rev > b { font-size: 9.5px; margin-top: 4px; }
+  .pd-op-item__meta .tag { height: 20px; font-size: 11.5px; }
+  .pd-op-item__reply { margin-top: 6px; padding-left: 10px; border-left: 2px solid var(--line-2); font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+  .pd-op-item__reply b { color: var(--ink-2); font-weight: 600; }
+  .pd-op-include { margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+  .pd-op-include input { width: 16px; height: 16px; }
+  .pd-op-include input::after { width: 8px; height: 5px; }
+  .pd-op-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--line-2); background: rgba(236, 233, 223, .45); }
+  .pd-op-actions__label { font-size: 12px; font-weight: 600; color: var(--ink-3); margin-right: auto; }
+  .pd-btn-fix { border-color: var(--red); color: var(--red-ink); }
+  .pd-btn-fix:hover { background: #FFF6F6; box-shadow: 2px 2px 0 var(--red-line); }
+  .pd-btn-pass { border-color: var(--ok); color: var(--ok); }
+  .pd-btn-pass:hover { background: #F3FAF6; box-shadow: 2px 2px 0 rgba(46, 125, 91, .35); }
+  .pd-confirm { margin-bottom: 4px; }
+  .pd-confirm dd { font-weight: 600; }
+  .pd-confirm__note { margin-top: 14px; }
+  .pd-confirm__list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .pd-confirm__list li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13.5px; }
+
+  /* ---------- D-05 補正通知書 ---------- */
+  .pd-desk {
+    padding: 36px 28px 48px;
+    background-color: var(--paper-2);
+    background-image:
+      linear-gradient(rgba(45, 58, 74, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45, 58, 74, .05) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .pd-doc-note { max-width: 820px; margin: 0 auto 14px; display: flex; gap: 8px; align-items: baseline; }
+  .pd-docstack { position: relative; max-width: 820px; margin: 0 auto; }
+  /* 公文下方再墊兩張紙，像一疊待發文的稿件 */
+  .pd-docstack::before,
+  .pd-docstack::after { content: ""; position: absolute; border: 1px solid var(--line-2); background: #F8F6EF; }
+  .pd-docstack::before { inset: 14px -10px -12px 12px; transform: rotate(1.4deg); }
+  .pd-docstack::after { inset: 8px 6px -7px -6px; transform: rotate(-.8deg); background: #FBFAF4; }
+  .pd-doc { z-index: 1; overflow: hidden; }
+  .pd-doc .gov-doc__row > div,
+  .pd-doc .gov-doc__section div { min-width: 0; }
+  .pd-doc .gov-doc__section ol { margin-top: 2px; }
+  .pd-doc__tbd { color: var(--ink-3); }
+  /* 署名與上方副本留出印信的位置，印才會蓋在署名旁而不是壓住副本受文單位 */
+  .pd-doc__sign { margin-top: 64px; padding-right: 150px; text-align: right; font-size: 19px; font-weight: 700; letter-spacing: .4em; }
+  .pd-doc__sent { position: absolute; right: 48px; top: 40px; font-size: 14px; padding: 2px 10px; }
+  .pd-draft {
+    position: absolute; left: 50%; top: 46%;
+    transform: translate(-50%, -50%) rotate(-18deg);
+    font-size: 160px; font-weight: 700; letter-spacing: .35em; line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 2px rgba(215, 38, 61, .17);
+    white-space: nowrap;
+    pointer-events: none; user-select: none;
+  }
+  /* 用印：印章由上方蓋下、回彈，外圈留一圈暈開的印泥 */
+  .pd-slam { animation: pd-slam .62s var(--ease-out) .45s both; }
+  .pd-slam::after {
+    content: ""; position: absolute; inset: -9px;
+    border: 2px solid currentColor; border-radius: 6px;
+    opacity: 0;
+    animation: pd-ink .7s ease-out 1s both;
+  }
+  .pd-rail__stamp.pd-slam { animation-delay: .1s; }
+  .pd-rail__stamp.pd-slam::after { animation-delay: .5s; }
+  @keyframes pd-slam {
+    0% { opacity: 0; transform: rotate(-17deg) scale(2.1); }
+    55% { opacity: 1; transform: rotate(var(--rot, -6deg)) scale(.92); }
+    78% { transform: rotate(var(--rot, -6deg)) scale(1.04); }
+    100% { opacity: var(--op, .85); transform: rotate(var(--rot, -6deg)) scale(1); }
+  }
+  @keyframes pd-ink { from { opacity: .45; transform: scale(.92); } to { opacity: 0; transform: scale(1.28); } }
+  .gov-doc__seal.pd-slam { --rot: -6deg; --op: .85; }
+  .pd-doc__sent.pd-slam { --rot: -5deg; --op: 1; }
+  .pd-rail__stamp.pd-slam { --rot: -5deg; --op: 1; }
+  .pd-doc-foot { max-width: 820px; margin: 18px auto 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 12.5px; color: var(--ink-3); }
+  .pd-issued-empty .stamp { font-size: 22px; padding: 6px 16px; margin: 6px 0 10px; }
+
+  /* ---------- 中尺寸 ---------- */
+  @media (max-width: 1100px) {
+    .pd-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "sum" "rail" "rest"; }
+    .pd-head { flex-direction: column; align-items: stretch; }
+    .pd-head .page-head__actions { justify-content: flex-start; }
+  }
+
+  /* ---------- 手機 ---------- */
+  @media (max-width: 720px) {
+    .pd-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+    .pd-status__cell { padding: 7px 12px; }
+    .pd-status__cell + .pd-status__cell { border-left: 0; }
+    .pd-status__cell:nth-child(even) { border-left: 1px solid var(--line-2); }
+    .pd-status__cell:nth-child(n+3) { border-top: 1px solid var(--line-2); }
+    .pd-status__cell:nth-child(3) { grid-column: 1 / -1; }
+    .pd-status__cell--wide { grid-column: 1 / -1; border-left: 0 !important; flex-wrap: wrap; }
+    .pd-pager { flex: 1 1 100%; }
+    .pd-pager a { flex: 1; justify-content: center; }
+    .pd-sum__body { grid-template-columns: minmax(0, 1fr); }
+    .pd-massing { border-right: 0; border-bottom: 1px dashed var(--line-2); align-items: center; padding: 12px 16px; }
+    .pd-massing svg { max-width: 260px; }
+    .pd-kv { grid-template-columns: minmax(0, 1fr); padding: 4px 16px 12px; }
+    .pd-crew { grid-template-columns: minmax(0, 1fr); }
+    .pd-crew__cell { flex-direction: row; align-items: center; justify-content: space-between; padding: 9px 16px; }
+    .pd-crew__cell + .pd-crew__cell { border-left: 0; border-top: 1px dashed var(--line-2); }
+    .pd-crew__top .lamp { margin-left: 4px; }
+    .pd-flow { padding-top: 6px; }
+    .pd-flow__loop { display: none; }
+    .pd-rail__stamp { top: auto; bottom: 14px; right: 16px; }
+    .pd-now,
+    .pd-actions,
+    .pd-log { padding-left: 16px; padding-right: 16px; }
+    .pd-checks { padding: 0 16px; }
+    .pd-chain-total .stat__value { font-size: 38px; }
+    .pd-chain-total { flex-direction: column; align-items: flex-start; gap: 4px; }
+    .pd-time__grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .pd-op-sum { padding: 10px 16px; }
+    .pd-op-sum .hand-note { margin-left: 0; }
+    .pd-desk { padding: 20px 12px 28px; }
+    .pd-docstack::before { inset: 10px -4px -8px 6px; }
+    .pd-docstack::after { inset: 6px 3px -5px -3px; }
+    .pd-draft { font-size: 92px; }
+    .pd-doc__sign { margin-top: 40px; padding-right: 0; text-align: left; font-size: 17px; }
+    .pd-doc.is-draft { padding-bottom: 36px; }
+    /* 手機上「主旨／說明」改為標籤在上，把寬度留給條列內文 */
+    .pd-doc .gov-doc__row { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+    .pd-doc .gov-doc__row > b { text-align-last: auto; letter-spacing: .4em; }
+    .pd-doc .gov-doc__section ol > li { grid-template-columns: 2.3em minmax(0, 1fr); }
+    .pd-doc .gov-doc__meta { grid-template-columns: 5.6em minmax(0, 1fr); }
+    .pd-doc__sent { right: 14px; top: 16px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="edge">
+  <div class="wrap edge__inner">
+    <a class="backlink" href="../../index.html"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>返回目錄</a>
+    <span class="edge__org">澄港市政府都市發展局・建築管理處｜建築執照圖說線上審查系統</span>
+    <span class="edge__plot" data-clock>PLOT 2026-10-21 09:40</span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="3.5" y="7.5" width="26" height="29" fill="#ECE9DF" stroke="#2D3A4A" stroke-width="1.2" transform="rotate(-7 16.5 22)"/>
+        <rect x="8.5" y="4.5" width="27" height="30" fill="#FFFEFA" stroke="#2D3A4A" stroke-width="1.4"/>
+        <path d="M12.5 9.5h19M12.5 9.5v6M31.5 9.5v4M22 9.5v4" fill="none" stroke="#2D3A4A" stroke-width="1.2"/>
+        <path d="M14.0 15.0 A3.3 3.3 0 0 1 19.5 15.0 A3.1 3.1 0 0 1 25.0 15.0 A3.3 3.3 0 0 1 30.5 15.0 A2.2 2.2 0 0 1 33.0 18.0 A3.0 3.0 0 0 1 33.0 23.5 A2.8 2.8 0 0 1 33.0 29.0 A2.9 2.9 0 0 1 27.5 29.0 A3.4 3.4 0 0 1 22.0 29.0 A3.1 3.1 0 0 1 16.5 29.0 A2.0 2.0 0 0 1 14.0 26.0 A3.3 3.3 0 0 1 14.0 20.5 A3.1 3.1 0 0 1 14.0 15.0Z" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M23.5 18.2 28.6 26.4H18.4z" fill="#FFF176" stroke="#2D3A4A" stroke-width="1.1" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">建照圖說審查</span><span class="brand__sub">REDLINE · CHENGGANG</span></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="nav-tab" href="index.html"><span class="nav-tab__no">A-01</span><span class="nav-tab__label">審查總覽</span></a></li>
+        <li><a class="nav-tab" href="permits.html"><span class="nav-tab__no">A-02</span><span class="nav-tab__label">案件清單</span><span class="nav-tab__count" data-count="active" title="審查中案件數">32</span></a></li>
+        <li><a class="nav-tab" href="review.html"><span class="nav-tab__no">A-03</span><span class="nav-tab__label">圖說審查</span><span class="nav-tab__count nav-tab__count--red" data-count="myQueue" title="待我審查">4</span></a></li>
+        <li><a class="nav-tab" href="permit.html" aria-current="page"><span class="nav-tab__no">A-04</span><span class="nav-tab__label">案件詳情</span></a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <button class="icon-btn" type="button" data-search aria-label="搜尋案件（快捷鍵 /）" title="搜尋案件（/）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg></button>
+      <div class="user-chip"><span class="avatar" aria-hidden="true">許</span><span class="user-chip__text"><b>許若晴</b><small>建築科 審查員</small></span></div>
+      <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="siteNav" aria-label="開啟選單"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="wrap">
+
+    <header class="page-head pd-head" data-reveal>
+      <div class="page-head__main">
+        <div class="page-head__code"><span>A-04</span><span>案件詳情 · PERMIT DOSSIER</span><span id="headId">115-0412</span></div>
+        <h1 class="page-title" id="pTitle">海濱路集合住宅新建工程</h1>
+        <p class="page-desc" id="pDesc">115建審字第0412號・港埕置業股份有限公司・澄港市港埕區海濱路一段 128 號</p>
+        <p class="hand-note pd-missing" id="pMissing" hidden></p>
+        <div class="pd-status" id="pStatus"></div>
+      </div>
+      <div class="page-head__actions">
+        <span class="margin-note margin-note--arrow hide-sm" id="headNote"></span>
+        <nav class="pd-pager" id="pager" aria-label="切換案件"></nav>
+        <a class="btn btn--primary" id="reviewLink" href="review.html?id=115-0412"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 2.6 13.4 5.4 5.6 13.2 2.4 13.6l.4-3.2z"/><path d="m9.2 4 2.8 2.8"/></svg>開啟圖說審查</a>
+      </div>
+    </header>
+
+    <div class="pd-layout">
+
+      <!-- D-01 案件概要：剖面量體＋基本資料＋會簽人員 -->
+      <article class="sheet sheet--marks pd-sum" data-reveal style="--i:1" aria-labelledby="sumTitle" id="sumSheet">
+        <div class="sheet__head">
+          <span class="sheet__code">D-01</span>
+          <div class="sheet__titles">
+            <h2 class="sheet__title" id="sumTitle">案件概要</h2>
+            <p class="sheet__sub">起造人、設計人與建築物概要；剖面依樓層數自動繪製</p>
+          </div>
+          <div class="sheet__actions"><span class="mono muted" id="sumUpdated" style="font-size:12px"></span></div>
+        </div>
+        <div class="pd-sum__body">
+          <figure class="pd-massing" id="massing"></figure>
+          <div class="pd-kv" id="kv"></div>
+        </div>
+        <div class="pd-crew" id="crew" aria-label="各科會簽人員"></div>
+      </article>
+
+      <!-- D-02 核發流程與動作（桌機黏在右側） -->
+      <aside class="pd-rail" aria-labelledby="railTitle">
+        <div class="sheet" data-reveal style="--i:2" id="railSheet">
+          <div class="sheet__head">
+            <span class="sheet__code">D-02</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="railTitle">核發流程與動作</h2>
+              <p class="sheet__sub">依五科會簽結果發補正通知或核發建照</p>
+            </div>
+          </div>
+          <div class="pd-flow" id="railFlow" data-anim></div>
+          <div class="pd-now" id="railNow" aria-live="polite"></div>
+          <ul class="pd-checks" id="railChecks" aria-label="核發條件"></ul>
+          <div class="pd-actions" id="railActions"></div>
+          <div class="pd-log">
+            <p class="pd-log__title">SESSION LOG・本次作業紀錄</p>
+            <ul id="railLog"></ul>
+          </div>
+        </div>
+      </aside>
+
+      <div class="pd-rest">
+
+        <!-- D-03 審查時程：尺寸鏈＋歷程＋回合摘要 -->
+        <section class="sheet" id="timeSheet" data-reveal aria-labelledby="timeTitle">
+          <div class="sheet__head">
+            <span class="sheet__code">D-03</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="timeTitle">審查時程與回合歷程</h2>
+              <p class="sheet__sub">以尺寸線標出每段歷時；機關審查與起造人補正分色計算</p>
+            </div>
+          </div>
+          <div class="sheet__body">
+            <div class="pd-chain-sum" id="chainSum"></div>
+            <div class="pd-chain-wrap">
+              <div class="pd-chain" id="chain" role="group" aria-label="審查時程尺寸鏈：每段可選取以對照歷程"></div>
+            </div>
+            <p class="pd-chain__cap" id="chainCap" aria-live="polite"></p>
+            <div class="pd-time__grid">
+              <div>
+                <div class="pd-subhead"><h3>審查歷程</h3><span class="mono">TIMELINE</span></div>
+                <ol class="timeline pd-tl" id="tl"></ol>
+              </div>
+              <div>
+                <div class="pd-subhead"><h3>回合摘要</h3><span class="mono">REVISIONS</span></div>
+                <ul class="pd-rounds" id="rounds"></ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- D-04 各科意見彙整 -->
+        <section class="sheet" id="opSheet" data-reveal aria-labelledby="opTitle">
+          <div class="sheet__head">
+            <span class="sheet__code">D-04</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="opTitle">各科意見彙整</h2>
+              <p class="sheet__sub" id="opSub">建築、消防、結構、無障礙、都設五科會簽</p>
+            </div>
+            <div class="sheet__actions">
+              <a class="link-arrow" id="opReviewLink" href="review.html?id=115-0412">在圖說上查看批註<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+            </div>
+          </div>
+          <div class="pd-op-sum" id="opSum"></div>
+          <div class="sheet__body">
+            <div class="pd-ops" id="ops"></div>
+          </div>
+        </section>
+
+        <!-- D-05 補正通知書預覽 -->
+        <section class="sheet" id="noticeSheet" data-reveal aria-labelledby="noticeTitle">
+          <div class="sheet__head">
+            <span class="sheet__code">D-05</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="noticeTitle">補正通知書預覽</h2>
+              <p class="sheet__sub" id="noticeSub">公文格式；草稿依勾選的補正事項即時組成</p>
+            </div>
+            <div class="sheet__actions">
+              <div class="seg" id="noticeSeg" role="group" aria-label="通知書回合"></div>
+              <button class="btn btn--sm" type="button" id="printBtn"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2"/><rect x="4.5" y="9.5" width="7" height="4"/></svg>列印</button>
+            </div>
+          </div>
+          <div class="pd-desk" id="desk"></div>
+        </section>
+
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div class="titleblock__cell titleblock__cell--org">
+        <span class="tb-label">機關 AGENCY</span>
+        <strong>澄港市政府都市發展局 建築管理處</strong>
+        <span>建築執照圖說線上審查系統・3.2 版</span>
+        <span class="muted">所有案件、人名與地址均為作品集虛構資料</span>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">圖說索引 SHEETS</span>
+        <ul class="tb-links">
+          <li><a href="index.html"><span class="mono">A-01</span><span>審查總覽</span></a></li>
+          <li><a href="permits.html"><span class="mono">A-02</span><span>案件清單</span></a></li>
+          <li><a href="review.html"><span class="mono">A-03</span><span>圖說審查</span></a></li>
+          <li><a href="permit.html"><span class="mono">A-04</span><span>案件詳情</span></a></li>
+        </ul>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">審查服務 SERVICE</span>
+        <span>週一至週五 08:30–17:30</span>
+        <span class="mono">(08) 2250-6600 #3180</span>
+        <span>澄港市港埕區市府路 1 號 7 樓</span>
+      </div>
+      <div class="titleblock__cell titleblock__cell--rev">
+        <span class="tb-label">修訂 REVISIONS</span>
+        <table class="rev-table">
+          <tbody>
+            <tr><td><span class="rev" data-round="3" role="img" aria-label="修訂 3"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>3</b></span></td><td>2026.10</td><td>回合疊圖比較上線</td></tr>
+            <tr><td><span class="rev" data-round="2" role="img" aria-label="修訂 2"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>2</b></span></td><td>2026.07</td><td>消防・無障礙套繪圖層</td></tr>
+            <tr><td><span class="rev" data-round="1" role="img" aria-label="修訂 1"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>1</b></span></td><td>2026.04</td><td>線上圖說審查啟用</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="titleblock__cell titleblock__cell--stamp">
+        <svg viewBox="0 0 120 120" role="img" aria-label="澄港市政府建築管理處 審查專用章">
+          <defs><path id="stampArc" d="M24 62a36 36 0 1 1 72 0"/></defs>
+          <g transform="rotate(-8 60 60)" opacity=".88">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#D7263D" stroke-width="3"/>
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#D7263D" stroke-width="1"/>
+            <text font-size="10.5" fill="#D7263D" letter-spacing="1.5"><textPath href="#stampArc" startOffset="50%" text-anchor="middle">澄港市政府建築管理處</textPath></text>
+            <path d="M28 70h64" stroke="#D7263D" stroke-width="1"/>
+            <text x="60" y="64" font-size="17" font-weight="700" fill="#D7263D" text-anchor="middle">審查專用</text>
+            <text x="60" y="86" font-size="10" fill="#D7263D" text-anchor="middle" font-family="IBM Plex Mono, monospace">115.10.21</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 建築管理處（虛構城市作品集展示）</span>
+      <span class="mono">SHEET A-04 / 04 · SCALE 1:100 · PLOTTED ON TRACE PAPER</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const { esc, fmt } = App;
+  const F = App.FEATURED;
+  const RM = App.reduceMotion;
+  const TODAY = App.TODAY;
+  const CN = '一二三四五六七八九十';
+  const cn = (i) => (i < 10 ? CN[i] : `十${CN[i - 10]}`);
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const who = (id) => App.PEOPLE[id]?.name || '—';
+  const dayDiff = (a, b) => App.days(b) - App.days(a);
+  const STRUCT = { RC: '鋼筋混凝土造（RC）', SRC: '鋼骨鋼筋混凝土造（SRC）', SC: '鋼構造（SC）' };
+
+  /* ---------- 讀取案件 ---------- */
+  const reqId = App.param('id');
+  const found = reqId ? App.getPermit(reqId) : null;
+  const p = found || App.getPermit(F.id);
+  const isFeatured = p.id === F.id;
+  // 進頁當下的案件狀態：歷程以它為基準，之後的動作再推導成新事件，復原時新事件自然消失
+  const orig = JSON.parse(JSON.stringify(p));
+
+  if (reqId && !found) {
+    $('#pMissing').hidden = false;
+    $('#pMissing').textContent = `找不到案號「${reqId}」，以下顯示焦點案件 ${p.id}。`;
+  }
+
+  /* ---------- 頁面狀態（只在記憶體） ---------- */
+  const excluded = new Set();      // 不列入補正通知的意見 key
+  const sessionLog = [];           // 本次作業紀錄，新的在前
+  let logSeq = 0;
+  let noticeView = null;           // 補正通知書目前顯示：回合數字或 'draft'
+  let fresh = {};                  // 剛發生的事件（觸發用印、螢光等一次性動態）
+
+  /* ---------- 衍生資料 ---------- */
+  const activeDiscs = () => App.DISC.map((d) => d.key).filter((k) => p.lamps[k] !== 'na');
+  const pendingDiscs = () => activeDiscs().filter((k) => p.lamps[k] === 'review' || p.lamps[k] === 'wait');
+  const fixDiscs = () => activeDiscs().filter((k) => p.lamps[k] === 'fix');
+  const openAnnos = (disc) => (isFeatured ? F.annotations.filter((a) => a.status === 'open' && (!disc || a.disc === disc)) : []);
+  const itemKey = (disc, it, idx) => (it.no ? `n${it.no}` : `${disc}-${idx}`);
+
+  // 目前各科「待改善」的意見（含尚在會簽中的科別，供草稿預先彙整）
+  function openItems() {
+    const out = [];
+    App.opinionsOf(p).forEach((op) => {
+      if (op.status === 'pass' || op.status === 'na') return;
+      op.items.forEach((it, idx) => {
+        if (it.status !== 'open') return;
+        out.push({ disc: op.disc.key, key: itemKey(op.disc.key, it, idx), text: it.text, cite: it.cite || '', no: it.no || null });
+      });
+    });
+    return out;
+  }
+  const draftItems = () => openItems().filter((it) => !excluded.has(it.key));
+
+  // 已發文的補正通知：焦點案件有 R1 原始資料；其他補正中的案件以目前意見重建本回合通知
+  const notices = {};
+  if (isFeatured) {
+    const R1 = F.rounds[0];
+    notices[1] = {
+      date: R1.notice, no: R1.noticeNo, due: R1.fixDue,
+      items: F.annotations.filter((a) => a.round === 1).map((a) => ({ disc: a.disc, key: `n${a.no}`, text: a.text, cite: a.cite, no: a.no })),
+    };
+  } else if (p.stage === 'fix') {
+    notices[p.round] = { date: p.updated, no: App.noticeNo(p, p.round), due: p.due, items: openItems() };
+  }
+
+  /* ---------- 歷程：基準歷程＋由動作推導的新事件 ---------- */
+  function stepsSinceLoad() {
+    // 由進頁狀態沿合法流程走到目前狀態（所有動作只往前走；復原會回到較早狀態）
+    const steps = [];
+    let st = orig.stage, r = orig.round;
+    for (let guard = 0; guard < 12 && !(st === p.stage && r === p.round); guard++) {
+      if (st === 'intake') { steps.push({ type: 'accept', round: r }); st = 'admin'; }
+      else if (st === 'admin') { steps.push({ type: 'toTech', round: r }); st = 'tech'; }
+      else if (st === 'tech') {
+        if (p.stage === 'issued' && r === p.round) { steps.push({ type: 'issue', round: r }); st = 'issued'; }
+        else { steps.push({ type: 'notice', round: r }); st = 'fix'; }
+      } else if (st === 'fix') { r += 1; steps.push({ type: 'receive', round: r }); st = 'tech'; }
+      else break;
+    }
+    return steps;
+  }
+  function timeline() {
+    const base = App.timelineOf(orig).map((e) => ({ ...e }));
+    const steps = stepsSinceLoad();
+    if (!steps.length) return base;
+    const extra = [];
+    steps.forEach((s) => {
+      if (s.type === 'accept') extra.push({ date: TODAY, title: '受理掛號', text: `承辦 ${who(p.officer)} 受理，移送行政審查。`, tone: 'ok', round: 1 });
+      if (s.type === 'toTech') {
+        extra.push({ date: TODAY, title: '行政審查完成', text: '起造人、設計人資格及土地權利證明文件齊備。', tone: 'ok', round: 1 });
+        extra.push({ date: TODAY, title: 'R1 技術審查開始', text: `分送${activeDiscs().map((k) => App.DISC_MAP[k].name).join('、')}各科同步審查。`, tone: '', round: 1 });
+      }
+      if (s.type === 'notice') {
+        const n = notices[s.round];
+        extra.push({ date: n.date, title: `R${s.round} 補正通知`, text: `發文 ${n.no}，共 ${n.items.length} 項補正意見，補正期限 ${fmt.date(n.due)}。`, tone: 'red', round: s.round });
+      }
+      if (s.type === 'receive') extra.push({ date: TODAY, title: `R${s.round} 補正收件・審查開始`, text: '起造人提送修正圖說及逐項回覆說明書，分送各科複審。', tone: '', round: s.round });
+      if (s.type === 'issue') extra.push({ date: p.issuedAt, title: '核發建造執照', text: `${p.permitNo}，副本送工務、消防與地政單位。`, tone: 'ok', round: s.round });
+    });
+    const tail = [];
+    if (p.stage === 'admin') tail.push({ date: TODAY, title: '行政審查中', text: `${who('adm2')} 檢核書件；期限 ${fmt.date(p.due)}。`, tone: 'current', round: 1 });
+    if (p.stage === 'tech') tail.push({ date: TODAY, title: `R${p.round} 審查中`, text: `技術審查期限 ${fmt.date(p.due)}。`, tone: 'current', round: p.round });
+    if (p.stage === 'fix') tail.push({ date: p.due, title: '補正期限', text: '逾期未補正者依規定駁回。', tone: 'current', round: p.round });
+    // 原本的「進行中」與尚未到期的預定事件已被新動作取代
+    const kept = base.filter((e) => App.days(e.date) <= 0).map((e) => (e.tone === 'current' ? { ...e, tone: '' } : e));
+    return kept.concat(extra, tail);
+  }
+
+  /* ---------- 尺寸鏈模型：把歷程切成「行政／技術／補正／剩餘／逾期」各段 ---------- */
+  const KIND = {
+    admin: { name: '收件・行政審查', short: '行政' },
+    tech: { name: '技術審查', short: '技術' },
+    fix: { name: '補正期間（起造人）', short: '補正' },
+    remain: { name: '剩餘期限', short: '剩餘' },
+    over: { name: '逾期', short: '逾期' },
+  };
+  const shortTitle = (t) => t.replace('・審查開始', '').replace('技術審查開始', '開審').replace('受理掛號', '受理').replace('掛號收件', '收件')
+    .replace('行政審查完成', '行政完成').replace('行政審查中', '行政審查').replace('補正收件', '收件');
+  function chainModel(ev) {
+    const issued = p.stage === 'issued';
+    const end = issued ? p.issuedAt : TODAY;
+    const pts = [];
+    let kind = 'admin';
+    ev.forEach((e) => {
+      if (dayDiff(e.date, end) < 0) return;
+      let k = kind;
+      if (/補正通知/.test(e.title)) k = 'fix';
+      else if (/補正收件|技術審查開始|行政審查完成/.test(e.title)) k = 'tech';
+      else if (/掛號|行政審查/.test(e.title)) k = 'admin';
+      pts.push({ date: e.date, kind: k, round: e.round, title: e.title });
+      kind = k;
+    });
+    const raw = [];
+    pts.forEach((pt, i) => {
+      const to = pts[i + 1] ? pts[i + 1].date : end;
+      const last = raw[raw.length - 1];
+      if (last && last.kind === pt.kind) { last.end = to; return; }
+      raw.push({ kind: pt.kind, start: pt.date, end: to, round: pt.round, title: pt.title });
+    });
+    const mode = raw.length && raw[raw.length - 1].kind === 'fix' ? 'applicant' : 'agency';
+    const segs = raw.filter((s) => dayDiff(s.start, s.end) > 0);
+    if (!issued && p.due) {
+      const last = segs[segs.length - 1];
+      if (App.days(p.due) < 0 && last && dayDiff(last.start, p.due) > 0) {
+        segs.push({ kind: 'over', mode, start: p.due, end, round: last.round, title: '期限' });
+        last.end = p.due;
+      } else if (App.days(p.due) > 0) {
+        segs.push({ kind: 'remain', mode, start: end, end: p.due, round: p.round, title: '今天' });
+      }
+    }
+    segs.forEach((s) => { s.days = dayDiff(s.start, s.end); s.mode = s.mode || (s.kind === 'fix' ? 'applicant' : 'agency'); });
+    const sum = (f) => segs.filter(f).reduce((n, s) => n + s.days, 0);
+    return {
+      segs, end, issued, mode,
+      admin: sum((s) => s.kind === 'admin'),
+      tech: sum((s) => s.kind === 'tech'),
+      fix: sum((s) => s.kind === 'fix'),
+      over: sum((s) => s.kind === 'over'),
+      remain: sum((s) => s.kind === 'remain'),
+    };
+  }
+
+  /* =====================================================================
+   * 頁首
+   * ===================================================================== */
+  function renderHead() {
+    $('#headId').textContent = p.id;
+    $('#pTitle').textContent = p.name;
+    $('#pDesc').textContent = `${App.caseNo(p)}・${p.applicant}・${App.address(p)}`;
+    $('#reviewLink').href = App.reviewUrl(p.id);
+    $('#opReviewLink').href = App.reviewUrl(p.id);
+    const dueCell = p.stage === 'issued'
+      ? `<span class="pd-status__k">PERMIT</span><span class="pd-status__v mono">${esc(p.permitNo)}</span>`
+      : `<span class="pd-status__k">DUE</span><span class="pd-status__v">${esc(App.dueLabel(p).replace('（申請人）', ''))}</span><span class="mono">${fmt.md(p.due)}</span>${App.dueChip(p)}`;
+    $('#pStatus').innerHTML = `
+      <span class="pd-status__cell"><span class="pd-status__k">STAGE</span>${App.stageChip(p.stage)}</span>
+      <span class="pd-status__cell"><span class="pd-status__k">REV</span>${App.rev(p.round)}<span class="pd-status__v">第 ${p.round} 回合</span></span>
+      <span class="pd-status__cell">${dueCell}</span>
+      <span class="pd-status__cell pd-status__cell--wide"><span class="pd-status__k">SIGN-OFF</span>${App.lampRow(p, { labels: true })}</span>`;
+    $('#headNote').textContent = headNote();
+    $('#headNote').hidden = !$('#headNote').textContent;
+  }
+  function headNote() {
+    const pend = pendingDiscs(), fixes = fixDiscs();
+    if (p.stage === 'intake') return '新收件，待受理掛號';
+    if (p.stage === 'admin') return `行政審查 ${fmt.md(p.due)} 到期`;
+    if (p.stage === 'tech') {
+      const n = openAnnos().length;
+      if (pend.length && n) return `R${p.round} 尚有 ${n} 項批註待改善`;
+      if (pend.length) return `待 ${pend.length} 科會簽・${fmt.md(p.due)} 到期`;
+      if (fixes.length) return p.round < 3 ? `可發 R${p.round} 補正通知` : '發最後一次補正通知';
+      return '各科皆通過，可核發';
+    }
+    if (p.stage === 'fix') return `等候起造人補正・${fmt.md(p.due)} 截止`;
+    return `已核發 ${p.permitNo}`;
+  }
+  function renderPager() {
+    const list = App.permits;
+    const i = list.indexOf(p);
+    const prev = list[(i - 1 + list.length) % list.length], next = list[(i + 1) % list.length];
+    $('#pager').innerHTML = `
+      <a href="${App.permitUrl(prev.id)}" title="上一件：${esc(prev.name)}">${App.icon('arrow-left')}<span>${prev.id}</span></a>
+      <a href="${App.permitUrl(next.id)}" title="下一件：${esc(next.name)}"><span>${next.id}</span>${App.icon('arrow-right')}</a>`;
+  }
+
+  /* =====================================================================
+   * D-01 案件概要
+   * ===================================================================== */
+  // 剖面量體：樓層數、地下層與高度依案件資料繪製；焦點案件以螢光標出 R2 審查中的 A-201 標準層
+  function massingSvg() {
+    const W = 236, H = 272;
+    const up = p.up, dn = p.down;
+    const fh = Math.max(8, Math.min(22, 226 / (up + dn + 1.4)));
+    const roofH = up >= 3 ? Math.min(fh * .95, 16) : 0;
+    const used = roofH + (up + dn) * fh;
+    const top = 30 + (226 - used) * .55;
+    const gl = top + roofH + up * fh;
+    const bw = Math.round(Math.min(140, Math.max(62, 36 + Math.sqrt(p.area / Math.max(1, up + dn)) * 2.6)));
+    const x0 = Math.round((W - bw) / 2) - 14, x1 = x0 + bw;
+    const bx0 = x0 - 8, bx1 = x1 + 8;
+    const L = (a, b, c, d, w = 1, extra = '') => `<line x1="${r1(a)}" y1="${r1(b)}" x2="${r1(c)}" y2="${r1(d)}" stroke="currentColor" stroke-width="${w}"${extra}/>`;
+    const T = (x, y, s, { size = 10, anchor = 'end', fill = '#59646F', weight = 400, rot = 0 } = {}) =>
+      `<text x="${r1(x)}" y="${r1(y)}" font-size="${size}" font-family="IBM Plex Mono, monospace" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}"${rot ? ` transform="rotate(${rot} ${r1(x)} ${r1(y)})"` : ''}>${esc(s)}</text>`;
+    const yOf = (floor) => gl - floor * fh;   // 第 floor 層樓板頂（0 = GL）
+    let s = '';
+    if (isFeatured) {
+      // A-201 標準層 4F–12F
+      s += `<rect x="${x0 - 4}" y="${r1(yOf(12))}" width="${bw + 8}" height="${r1(9 * fh)}" fill="#FFF176" fill-opacity=".85"/>`;
+    }
+    if (dn) {
+      s += `<rect x="${bx0}" y="${r1(gl)}" width="${bx1 - bx0}" height="${r1(dn * fh)}" fill="url(#pdHatch)" stroke="currentColor" stroke-width="1.4"/>`;
+      for (let j = 1; j < dn; j++) s += L(bx0, gl + j * fh, bx1, gl + j * fh, .7);
+    }
+    s += `<rect x="${x0}" y="${r1(yOf(up))}" width="${bw}" height="${r1(up * fh)}" fill="none" stroke="currentColor" stroke-width="1.6"/>`;
+    for (let i = 1; i < up; i++) s += L(x0, yOf(i), x1, yOf(i), i === 1 ? .9 : .6);
+    if (fh >= 12) {
+      // 樓層夠高才畫窗帶，避免高樓層數時糊成一片
+      for (let i = 0; i < up; i++) s += L(x0 + 7, yOf(i + 1) + fh * .42, x1 - 7, yOf(i + 1) + fh * .42, .5, ' stroke-dasharray="7 4"');
+    }
+    if (roofH) {
+      const px = x0 + bw * .56, pw = bw * .26;
+      s += `<rect x="${r1(px)}" y="${r1(yOf(up) - roofH)}" width="${r1(pw)}" height="${r1(roofH)}" fill="none" stroke="currentColor" stroke-width="1"/>`;
+      s += L(x0, yOf(up) - 4, x1, yOf(up) - 4, .6) + L(x0, yOf(up), x0, yOf(up) - 4, .6) + L(x1, yOf(up), x1, yOf(up) - 4, .6);
+    }
+    s += L(6, gl, W - 6, gl, 1.8);
+    for (let x = 12; x < W - 8; x += 9) {
+      if (dn && x > bx0 - 2 && x < bx1 + 8) continue;
+      s += L(x, gl + 1, x - 6, gl + 7, .7);
+    }
+    // 高度尺寸線
+    const dx = (dn ? bx1 : x1) + 16, yt = yOf(up);
+    s += L(x1 + 4, yt, dx + 5, yt, .6) + L(x1 + 4, gl, dx + 5, gl, .6) + L(dx, gl, dx, yt, .8);
+    s += L(dx - 4, gl + 4, dx + 4, gl - 4, 1.3) + L(dx - 4, yt + 4, dx + 4, yt - 4, 1.3);
+    s += T(dx + 12, (gl + yt) / 2, `H ${p.height} m`, { size: 11, anchor: 'middle', fill: '#2D3A4A', weight: 600, rot: -90 });
+    // 樓層標籤
+    s += T(x0 - 6, yOf(1) + fh / 2 + 3.5, '1F');
+    if (up > 1) s += T(x0 - 6, yOf(up) + fh / 2 + 3.5, `${up}F`);
+    if (roofH) s += T(x0 - 6, yOf(up) - roofH / 2 + 3.5, 'RF');
+    if (dn) s += T(bx0 - 5, gl + dn * fh - fh / 2 + 3.5, `B${dn}`);
+    if (isFeatured) {
+      s += T(x0 + bw / 2, yOf(8) + 3.5, 'A-201 · 4F–12F', { size: 9.5, anchor: 'middle', fill: '#2D3A4A', weight: 600 });
+      s += T(x0 - 6, yOf(4) + fh / 2 + 3.5, '4F');
+    }
+    s += T(W - 6, gl - 6, 'GL±0', { size: 9.5 });
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="剖面量體示意：地上 ${up} 層、地下 ${dn} 層，建築物高度 ${p.height} 公尺">
+      <defs><pattern id="pdHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8A939D" stroke-width="1"/></pattern></defs>
+      ${s}</svg>`;
+  }
+  function renderMassing() {
+    $('#massing').innerHTML = `${massingSvg()}
+      <figcaption><b>剖面量體示意</b><br>地上 ${p.up} 層／地下 ${p.down} 層・高 ${p.height} m${isFeatured ? '<br><mark class="hl">黃色</mark>為 R2 審查中的 A-201 標準層' : ''}</figcaption>`;
+  }
+
+  function renderSummary() {
+    const A = App.ARCHITECTS[p.architect];
+    const kv = (rows) => `<dl class="kv kv--ruled">${rows.filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    const dueRow = p.stage === 'issued'
+      ? ['核發日期', `<span class="mono">${fmt.date(p.issuedAt)}</span>（${fmt.wd(p.issuedAt)}）`]
+      : [esc(App.dueLabel(p).replace('（申請人）', '')), `<span class="mono">${fmt.date(p.due)}</span>${App.dueChip(p)}`];
+    const left = [
+      ['案號', `<span class="mono">${esc(App.caseNo(p))}</span>`],
+      p.permitNo && ['建照號碼', `<span class="mono">${esc(p.permitNo)}</span>`],
+      ['起造人', esc(p.applicant)],
+      ['設計人', `${esc(A.name)}<span class="pd-kv__sub">建築師 ${esc(A.architect)}・${esc(A.license)}</span>`],
+      ['基地位置', esc(App.address(p))],
+      ['用途／類組', `${esc(p.use)}・${esc(p.cls)}${p.units ? `・${p.units} 戶` : ''}`],
+      ['構造', STRUCT[p.struct]],
+    ];
+    const right = [
+      ['樓層', `地上 ${p.up} 層／地下 ${p.down} 層`],
+      ['建築物高度', `<span class="mono">${p.height} m</span>`],
+      ['基地面積', `<span class="mono">${fmt.area(p.site)} m²</span>`],
+      ['總樓地板面積', `<span class="mono">${fmt.area(p.area)} m²</span>`],
+      ['承辦人', App.person(p.officer)],
+      ['收件日期', `<span class="mono">${fmt.date(p.received)}</span>（${fmt.wd(p.received)}）`],
+      dueRow,
+    ];
+    $('#kv').innerHTML = kv(left) + kv(right);
+    $('#sumUpdated').textContent = `最後異動 ${fmt.date(p.updated)}`;
+    $('#crew').innerHTML = App.DISC.map((d) => {
+      const s = p.lamps[d.key];
+      const id = d.key === 'arc' ? p.officer : p.reviewers[d.key];
+      return `<div class="pd-crew__cell">
+        <span class="pd-crew__top">${App.disc(d.key)}${esc(d.name)}${App.lamp(s, { disc: d.key })}</span>
+        ${s === 'na' || !id ? '<span class="pd-crew__na">本案免審</span>' : `<span class="pd-crew__who">${App.avatar(id, 'sm')}<span>${esc(who(id))}</span></span>`}
+      </div>`;
+    }).join('');
+  }
+
+  /* =====================================================================
+   * D-02 核發流程與動作
+   * ===================================================================== */
+  function renderRail() {
+    const ev = timeline();
+    const idx = App.STAGES.findIndex((s) => s.key === p.stage);
+    const noticeCount = ev.filter((e) => /補正通知/.test(e.title)).length;
+    const adminDone = ev.find((e) => e.title === '行政審查完成');
+    const metas = {
+      intake: fmt.md(p.received),
+      admin: adminDone ? fmt.md(adminDone.date) : (p.stage === 'admin' ? `期限 ${fmt.md(p.due)}` : '—'),
+      tech: idx >= 2 ? `R${p.round}` : '—',
+      fix: noticeCount ? `已 ${noticeCount} 次` : '—',
+      issued: p.issuedAt ? fmt.md(p.issuedAt) : '—',
+    };
+    const steps = App.STAGES.map((s, i) => {
+      let cls = '';
+      if (p.stage === 'issued' || i < idx) cls = 'is-done';
+      else if (i === idx) cls = p.stage === 'fix' ? 'is-blocked' : 'is-current';
+      // 技術審查中時，前面的補正回合已走過，但流程上它在「下一步」，維持中性
+      if (p.stage === 'tech' && s.key === 'fix') cls = '';
+      const dot = cls === 'is-done' ? App.icon('check') : i + 1;
+      return `<li class="flow__step ${cls}"${i === idx ? ' aria-current="step"' : ''}><span class="flow__dot">${dot}</span><span class="flow__label">${esc(s.name)}</span><span class="flow__meta">${esc(metas[s.key])}</span></li>`;
+    }).join('');
+    const stamp = p.stage === 'issued' ? `<span class="stamp stamp--ok pd-rail__stamp${fresh.issued ? ' pd-slam' : ''}" aria-hidden="true">核 發</span>` : '';
+    $('#railFlow').innerHTML = `
+      <div class="pd-flow__loop" aria-hidden="true">
+        <svg viewBox="0 0 100 22" preserveAspectRatio="none"><path id="loopPath" d="M100 22 C 100 0, 0 0, 0 20" fill="none" stroke="#D7263D" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/></svg>
+        <span>補正後 R+1</span>
+      </div>
+      <ol class="flow" aria-label="核發流程">${steps}</ol>${stamp}`;
+    renderRailNow();
+    renderChecks();
+    renderActions();
+    renderLog();
+  }
+
+  function renderRailNow() {
+    const pend = pendingDiscs(), fixes = fixDiscs();
+    let title = '', red = false, sub = '';
+    if (p.stage === 'intake') { title = '新收件・待受理掛號'; sub = `收件審核期限 ${fmt.date(p.due)}`; }
+    else if (p.stage === 'admin') { title = '行政審查中'; sub = `${who('adm2')} 檢核書件・期限 ${fmt.date(p.due)}`; }
+    else if (p.stage === 'tech') {
+      if (pend.length) { title = `R${p.round} 審查中・待 ${pend.length} 科會簽`; }
+      else if (fixes.length) { title = `${fixes.length} 科須補正・可發通知`; red = true; }
+      else { title = '各科皆通過・可核發建照'; }
+      sub = `技術審查期限 ${fmt.date(p.due)}`;
+    } else if (p.stage === 'fix') {
+      title = `R${p.round} 補正中・等候起造人`; red = App.days(p.due) < 0;
+      sub = `補正期限 ${fmt.date(p.due)}`;
+    } else { title = `已核發 ${p.permitNo}`; sub = `核發日期 ${fmt.date(p.issuedAt)}`; }
+    $('#railNow').innerHTML = `<p class="pd-now__title${red ? ' is-red' : ''}">${esc(title)}</p><p class="pd-now__sub">${esc(sub)}${p.due && p.stage !== 'issued' ? ` ${App.dueChip(p)}` : ''}</p>`;
+  }
+
+  function renderChecks() {
+    const ico = (state) => `<span class="pd-ico is-${state}" aria-hidden="true">${state === 'ok' ? App.icon('check') : state === 'red' ? App.icon('x') : state === 'warn' ? '!' : ''}</span>`;
+    const keys = activeDiscs(), pend = pendingDiscs(), fixes = fixDiscs();
+    const pastAdmin = ['tech', 'fix', 'issued'].includes(p.stage);
+    const rows = [];
+    rows.push([pastAdmin ? 'ok' : 'wait', '書件齊備（行政審查）', pastAdmin ? '完成' : '進行中']);
+    rows.push([pastAdmin && !pend.length ? 'ok' : 'wait', '各科會簽完成', `${keys.length - pend.length} / ${keys.length} 科`]);
+    if (p.stage === 'issued') rows.push(['ok', '補正事項', '無']);
+    else if (p.stage === 'fix') rows.push(['red', '補正事項', `${(notices[p.round]?.items.length) ?? fixes.length} 項待補正`]);
+    else if (p.stage === 'tech') rows.push([fixes.length ? 'red' : pend.length ? 'wait' : 'ok', '補正事項', fixes.length ? `${fixes.length} 科須補正` : pend.length ? '待會簽' : '無']);
+    else rows.push(['wait', '補正事項', '—']);
+    // R3 審查中仍可核發或發最後一次通知，只算警示；R3 補正中已無下一回合才是阻擋
+    const lastRound = p.round >= 3 && p.stage !== 'issued';
+    rows.push([!lastRound ? 'ok' : p.stage === 'fix' ? 'red' : 'warn', '補正回合上限', `R${p.round} / R3${lastRound ? '・最後一次' : ''}`]);
+    $('#railChecks').innerHTML = rows.map(([st, label, v]) => `<li>${ico(st)}<span>${esc(label)}</span><span class="pd-checks__v">${esc(v)}</span></li>`).join('');
+  }
+
+  function renderActions() {
+    const pend = pendingDiscs(), fixes = fixDiscs();
+    const btn = (act, label, { variant = '', icon = '', size = 'btn--lg', disabled = false } = {}) =>
+      `<button class="btn ${size} btn--block${variant ? ' btn--' + variant : ''}" type="button" data-act="${act}" data-fk="act-${act}"${disabled ? ' disabled' : ''}>${icon ? App.icon(icon) : ''}${esc(label)}</button>`;
+    const why = (t) => `<p class="pd-actions__why">${esc(t)}</p>`;
+    let html = '';
+    if (p.stage === 'intake') {
+      html = btn('accept', '受理掛號，移送行政審查', { variant: 'primary', icon: 'check' }) + why('收件櫃台已點收書件；受理後行政審查期限 7 日。');
+    } else if (p.stage === 'admin') {
+      html = btn('toTech', '行政審查完成，分送各科', { variant: 'primary', icon: 'send' }) + why(`分送 ${activeDiscs().length} 科同步技術審查，期限 28 日。`);
+    } else if (p.stage === 'tech') {
+      const items = draftItems();
+      if (pend.length) {
+        html = btn('notice', `待 ${pend.length} 科會簽完成`, { variant: 'red', icon: 'send', disabled: true });
+        const row = [];
+        if (isFeatured) row.push(`<button class="btn btn--sm" type="button" data-act="prefill" data-fk="act-prefill">${App.icon('pen')}依批註帶入結果</button>`);
+        row.push(`<button class="btn btn--sm" type="button" data-act="remind" data-fk="act-remind"${p.reminded ? ' disabled' : ''}>${App.icon('bell')}${p.reminded ? `已催辦（${fmt.md(p.reminded)}）` : `催辦未會簽（${pend.length}）`}</button>`);
+        html += `<div class="pd-actions__row">${row.join('')}</div>`;
+        html += why(`尚未會簽：${pend.map((k) => App.DISC_MAP[k].name).join('、')}。各科結果可在下方「各科意見彙整」登錄。`);
+      } else if (fixes.length) {
+        html = btn('notice', `發 R${p.round} 補正通知${p.round === 3 ? '（最後一次）' : ''}`, { variant: 'red', icon: 'send', disabled: !items.length });
+        html += why(items.length ? `${items.length} 項補正事項將列入通知書；起造人補正期限 90 日。` : '目前沒有勾選任何補正事項，請在各科意見中勾選「列入補正通知」。');
+      } else {
+        html = btn('issue', '核發建造執照', { variant: 'primary', icon: 'stamp' }) + why('各科皆已通過；核發後自動編列建照號碼並副知相關機關。');
+      }
+    } else if (p.stage === 'fix') {
+      if (p.round < 3) html = btn('receive', `登錄 R${p.round + 1} 補正收件`, { variant: 'primary', icon: 'file' });
+      else html = btn('receive', '已達補正上限 R3', { variant: 'primary', icon: 'file', disabled: true });
+      html += `<div class="pd-actions__row"><button class="btn btn--sm" type="button" data-act="remind" data-fk="act-remind"${p.reminded ? ' disabled' : ''}>${App.icon('bell')}${p.reminded ? `已通知（${fmt.md(p.reminded)}）` : '通知起造人期限'}</button>${p.round >= 3 ? `<button class="btn btn--sm" type="button" data-act="reject" data-fk="act-reject">${App.icon('file')}預擬駁回函</button>` : ''}</div>`;
+      html += why(p.round < 3 ? '起造人送回修正圖說後登錄收件，須補正的科別轉為審查中。' : 'R3 為最後一次補正；逾期未補正或仍不符規定者依規定駁回。');
+    } else {
+      html = `<div class="pd-actions__row"><button class="btn btn--sm" type="button" data-act="pdf" data-fk="act-pdf">${App.icon('download')}下載執照 PDF</button><button class="btn btn--sm" type="button" data-act="pickup" data-fk="act-pickup">${App.icon('bell')}通知領照</button></div>`;
+      html += why(`建照號碼 ${p.permitNo}；副本已送工務、消防與地政單位。`);
+    }
+    $('#railActions').innerHTML = html;
+  }
+
+  function renderLog() {
+    $('#railLog').innerHTML = sessionLog.length
+      ? sessionLog.map((l) => `<li><span class="mono">${l.time}</span><span>${esc(l.text)}</span></li>`).join('')
+      : '<li class="pd-log__empty">本次尚無異動；所有動作都可從提示訊息復原。</li>';
+  }
+
+  /* =====================================================================
+   * D-03 審查時程尺寸鏈＋歷程＋回合摘要
+   * ===================================================================== */
+  let chainSel = null;       // 釘選中的段（index）
+  let chainHover = null;     // 滑過或聚焦中的段
+  let chainCache = null;     // 最近一次的模型（給互動用）
+  let chainKeys = new Set(); // 上次已畫出的段，用來只為新段播放動態
+  let chainWidth = 0;
+
+  function renderChainSum(m) {
+    const agency = m.admin + m.tech + (m.mode === 'agency' ? m.over : 0);
+    const applicant = m.fix + (m.mode === 'applicant' ? m.over : 0);
+    const elapsed = m.admin + m.tech + m.fix + m.over;
+    const tailItem = m.issued
+      ? `<li><span class="stage" data-stage="issued">核發</span><b>${fmt.md(p.issuedAt)}</b></li>`
+      : m.over ? `<li><i class="pd-sw" data-kind="over"></i>已逾期 <b>${m.over}</b> 日</li>`
+      : `<li><i class="pd-sw" data-kind="remain"></i>距期限 <b>${m.remain}</b> 日</li>`;
+    $('#chainSum').innerHTML = `
+      <div class="pd-chain-total">
+        <div class="stat"><span class="stat__label">總歷時<span class="stat__code">ELAPSED</span></span><span class="stat__value">${elapsed}<span class="stat__unit">日</span></span></div>
+        <p class="pd-chain-total__note">機關審查 <b>${agency}</b> 日・起造人補正 <b>${applicant}</b> 日<br>收件 ${fmt.date(p.received)} 起算</p>
+      </div>
+      <ul class="pd-legend" aria-label="圖例">
+        <li><i class="pd-sw" data-kind="admin"></i>行政 <b>${m.admin}</b> 日</li>
+        <li><i class="pd-sw" data-kind="tech"></i>技術 <b>${m.tech}</b> 日</li>
+        <li><i class="pd-sw" data-kind="fix"></i>起造人補正 <b>${m.fix}</b> 日</li>
+        ${tailItem}
+      </ul>`;
+  }
+
+  function renderChain(animate = 'new') {
+    const host = $('#chain');
+    const W = host.clientWidth;
+    if (!W) return;
+    chainWidth = W;
+    const m = chainCache;
+    const segs = m.segs;
+    if (!segs.length) {
+      host.style.height = '';
+      host.innerHTML = `<p class="muted" style="padding:20px 0">今日收件，尚未開始計算審查天數。</p>`;
+      return;
+    }
+    // 依天數分配寬度，但每段至少能放下數字（窄螢幕時短段不會擠成一條線）
+    const total = segs.reduce((n, s) => n + s.days, 0);
+    const minPct = Math.min(100 / segs.length, Math.max(3, (32 / W) * 100));
+    let pct = segs.map((s) => (s.days / total) * 100);
+    // 被撐到最小寬的段要保持固定，否則下一輪又按比例縮回去，結果在兩種寬度間來回
+    const small = segs.map(() => false);
+    for (let k = 0; k < segs.length; k++) {
+      let grew = false;
+      pct.forEach((v, i) => { if (!small[i] && v < minPct - 1e-6) { small[i] = true; grew = true; } });
+      if (!grew) break;
+      const fixed = small.filter(Boolean).length * minPct;
+      const free = segs.reduce((n, s, i) => n + (small[i] ? 0 : s.days), 0) || 1;
+      pct = segs.map((s, i) => (small[i] ? minPct : (s.days / free) * (100 - fixed)));
+    }
+    const xs = [0];
+    pct.forEach((v, i) => xs.push(xs[i] + v));
+
+    // 邊界標籤：日期＋事件；擠在一起時往下錯排
+    const bounds = xs.map((x, i) => {
+      if (i < segs.length) {
+        const s = segs[i];
+        const name = s.kind === 'remain' ? '今天' : s.kind === 'over' ? '期限' : shortTitle(s.title);
+        return { x, date: s.start, name, cls: s.kind === 'remain' ? 'is-today' : s.kind === 'over' ? 'is-due' : '' };
+      }
+      const last = segs[segs.length - 1];
+      if (m.issued) return { x, date: last.end, name: '核發', cls: '' };
+      if (last.kind === 'remain') return { x, date: last.end, name: p.stage === 'fix' ? '補正期限' : '審查期限', cls: 'is-due' };
+      return { x, date: last.end, name: p.due === TODAY ? '今天到期' : '今天', cls: 'is-today' };
+    });
+    const LW = 84, ROWH = 34, rowEnd = [-1e9, -1e9, -1e9];
+    bounds.forEach((b) => {
+      const px = (b.x / 100) * W;
+      b.left = Math.max(0, Math.min(W - LW, px - LW / 2));
+      let row = rowEnd.findIndex((e) => b.left >= e + 6);
+      if (row < 0) row = rowEnd.indexOf(Math.min(...rowEnd));
+      b.row = row;
+      rowEnd[row] = b.left + LW;
+      b.lx = px - b.left;
+    });
+    const rows = Math.max(...bounds.map((b) => b.row)) + 1;
+    host.style.height = `${88 + rows * ROWH}px`;
+
+    const todayX = m.issued ? null : (segs.findIndex((s) => s.kind === 'remain') >= 0 ? xs[segs.findIndex((s) => s.kind === 'remain')] : 100);
+    const revs = [];
+    segs.forEach((s, i) => {
+      if (s.kind === 'tech' && !revs.some((r) => r.round === s.round)) revs.push({ round: s.round, x: xs[i] });
+    });
+
+    host.innerHTML = `
+      <span class="pd-chain__dim" aria-hidden="true"></span>
+      ${xs.map((x) => `<span class="pd-tick" style="left:${x}%" aria-hidden="true"></span>`).join('')}
+      ${todayX === null ? '' : `<span class="pd-today" style="left:${todayX}%" aria-hidden="true"></span>`}
+      ${segs.map((s, i) => {
+        const label = `${s.kind === 'tech' || s.kind === 'fix' ? `R${s.round} ` : ''}${KIND[s.kind].name}：${fmt.date(s.start)} 至 ${fmt.date(s.end)}，${s.days} 日`;
+        return `<button type="button" class="pd-seg${chainSel === i ? ' is-active' : ''}" data-i="${i}" data-kind="${s.kind}" data-mode="${s.mode}" style="left:${xs[i]}%;width:${pct[i]}%" aria-label="${esc(label)}" aria-pressed="${chainSel === i}">
+          <span class="pd-seg__bar"></span><span class="pd-seg__num">${s.days}<small>日</small></span></button>`;
+      }).join('')}
+      ${revs.map((r) => `<span class="pd-revmark" style="left:${Math.min(97, Math.max(2, r.x + 1.2))}%">${App.rev(r.round)}</span>`).join('')}
+      ${bounds.map((b) => `<span class="pd-lab ${b.cls}" style="left:${r1(b.left)}px;top:${88 + b.row * ROWH}px;--lx:${r1(b.lx)}px;--lead:${8 + b.row * ROWH}px" aria-hidden="true"><b>${fmt.md(b.date)}</b><span>${esc(b.name)}</span></span>`).join('')}`;
+
+    const keys = new Set(segs.map((s) => `${s.kind}@${s.start}`));
+    if (animate && !RM.matches) {
+      const els = $$('.pd-seg', host);
+      const targets = animate === 'all' ? els : els.filter((el) => !chainKeys.has(`${segs[+el.dataset.i].kind}@${segs[+el.dataset.i].start}`));
+      if (animate === 'all') {
+        $('.pd-chain__dim', host).animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 900, easing: 'cubic-bezier(.45,.05,.25,1)', fill: 'backwards' });
+        $$('.pd-tick, .pd-lab, .pd-revmark, .pd-today', host).forEach((el, i) => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, delay: 300 + i * 40, fill: 'backwards' }));
+      }
+      targets.forEach((el, i) => {
+        $('.pd-seg__bar', el).animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 560, delay: 120 + i * 150, easing: 'cubic-bezier(.45,.05,.25,1)', fill: 'backwards' });
+        $('.pd-seg__num', el).animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: 420 + i * 150, easing: 'ease-out', fill: 'backwards' });
+      });
+    }
+    chainKeys = keys;
+    applyChainFocus();
+  }
+
+  function renderTimeline(ev) {
+    const seen = new Set();
+    $('#tl').innerHTML = ev.map((e) => {
+      const firstOfRound = !seen.has(e.round);
+      seen.add(e.round);
+      const future = App.days(e.date) > 0;
+      const cls = firstOfRound ? 'tl-item--round' : e.tone === 'ok' ? 'tl-item--ok' : e.tone === 'red' ? 'tl-item--red' : e.tone === 'current' ? 'tl-item--current' : '';
+      return `<li class="tl-item ${cls}" data-date="${e.date}">
+        <span class="tl-item__marker">${firstOfRound ? App.rev(e.round) : ''}</span>
+        <div class="tl-item__body">
+          <div class="tl-item__head"><span class="tl-item__title">${esc(e.title)}</span><span class="tl-item__time">${fmt.date(e.date)}（${fmt.wd(e.date)}）</span>${future ? '<span class="tag">預定</span>' : ''}${e.tone === 'current' && !future ? '<span class="tag tag--hl">目前</span>' : ''}</div>
+          <p class="tl-item__text">${esc(e.text)}</p>
+        </div></li>`;
+    }).join('');
+  }
+
+  function renderRounds(m) {
+    // 非焦點案件只有本回合的通知條列；較早回合以歷程上的發文紀錄判斷是否已發通知
+    const noticed = new Set(timeline().filter((e) => /補正通知/.test(e.title)).map((e) => e.round));
+    const cards = [];
+    for (let r = 1; r <= p.round; r++) {
+      const segs = m.segs.filter((s) => s.round === r);
+      const agency = segs.filter((s) => s.kind === 'admin' || s.kind === 'tech').reduce((n, s) => n + s.days, 0);
+      const applicant = segs.filter((s) => s.kind === 'fix').reduce((n, s) => n + s.days, 0);
+      const real = segs.filter((s) => s.kind !== 'remain');
+      const start = real.length ? real[0].start : (segs[0]?.start || TODAY);
+      const end = real.length ? real[real.length - 1].end : start;
+      const n = notices[r];
+      const current = r === p.round;
+      let status = '已補正送回';
+      if (current) status = { intake: '收件中', admin: '行政審查', tech: '審查中', fix: '補正中', issued: '核發' }[p.stage];
+      const tagCls = !current ? 'tag--ok' : p.stage === 'fix' ? 'tag--red' : p.stage === 'issued' ? 'tag--ok' : 'tag--blue';
+      const totalDays = Math.max(1, agency + applicant);
+      cards.push(`<li class="pd-round${current ? ' is-current' : ''}">
+        <span class="pd-round__mark">${App.rev(r, { lg: true })}</span>
+        <div class="pd-round__title"><span>第 ${r} 回合</span><span class="tag ${tagCls}">${esc(status)}</span></div>
+        <div class="pd-round__period">${fmt.date(start)} → ${fmt.date(end)}</div>
+        <div style="grid-column:2">
+          <div class="pd-round__bar" aria-hidden="true">${agency ? `<i data-kind="tech" style="width:${(agency / totalDays) * 100}%"></i>` : ''}${applicant ? `<i data-kind="fix" style="width:${(applicant / totalDays) * 100}%"></i>` : ''}</div>
+          <div class="pd-round__nums"><span>機關 <b>${agency}</b> 日</span><span>補正 <b>${applicant}</b> 日</span><span>${n ? `通知 <b>${n.items.length}</b> 項` : current && p.stage === 'tech' ? `待改善 <b>${draftItems().length}</b> 項` : noticed.has(r) ? '已發補正通知' : '未發通知'}</span></div>
+        </div>
+      </li>`);
+    }
+    $('#rounds').innerHTML = cards.reverse().join('');
+  }
+
+  function applyChainFocus() {
+    const i = chainHover ?? chainSel;
+    const m = chainCache;
+    $$('#chain .pd-seg').forEach((el) => {
+      const on = +el.dataset.i === chainSel;
+      el.classList.toggle('is-active', on || +el.dataset.i === chainHover);
+      el.setAttribute('aria-pressed', String(on));
+    });
+    const tl = $('#tl');
+    const s = i === null || i === undefined ? null : m.segs[i];
+    tl.classList.toggle('has-hl', !!s);
+    $$('.tl-item', tl).forEach((li) => {
+      const d = li.dataset.date;
+      li.classList.toggle('pd-hl', !!s && dayDiff(s.start, d) >= 0 && dayDiff(d, s.end) >= 0);
+    });
+    const agencyWord = s && s.mode === 'applicant' ? '起造人' : '機關';
+    $('#chainCap').innerHTML = s
+      ? `${s.kind === 'tech' || s.kind === 'fix' ? App.rev(s.round) : ''}<b>${esc(KIND[s.kind].name)}</b><span class="mono">${fmt.date(s.start)} → ${fmt.date(s.end)}</span><span><b>${s.days}</b> 日・${s.kind === 'remain' ? `${agencyWord}剩餘時間` : s.kind === 'over' ? `${agencyWord}逾期` : s.mode === 'applicant' ? '計入起造人補正' : '計入機關審查'}</span>${chainSel === i ? '<span class="hand">已釘選，再點一次取消</span>' : ''}`
+      : '<span class="hand">點選或滑過尺寸段，對照下方歷程</span><span class="muted">尺寸線上的數字為該段天數；黃色直線為今天。</span>';
+  }
+
+  function renderTime() {
+    const ev = timeline();
+    chainCache = chainModel(ev);
+    if (chainSel !== null && chainSel >= chainCache.segs.length) chainSel = null;
+    chainHover = null;
+    renderChainSum(chainCache);
+    renderTimeline(ev);
+    renderRounds(chainCache);
+    renderChain(fresh.chain === false ? false : 'new');
+  }
+
+  const chainHost = $('#chain');
+  chainHost.addEventListener('click', (e) => {
+    const b = e.target.closest('.pd-seg');
+    if (!b) return;
+    const i = +b.dataset.i;
+    chainSel = chainSel === i ? null : i;
+    applyChainFocus();
+  });
+  chainHost.addEventListener('mouseover', (e) => {
+    const b = e.target.closest('.pd-seg');
+    const i = b ? +b.dataset.i : null;
+    if (i !== chainHover) { chainHover = i; applyChainFocus(); }
+  });
+  chainHost.addEventListener('mouseleave', () => { chainHover = null; applyChainFocus(); });
+  chainHost.addEventListener('focusin', (e) => {
+    const b = e.target.closest('.pd-seg');
+    if (b) { chainHover = +b.dataset.i; applyChainFocus(); }
+  });
+  chainHost.addEventListener('focusout', () => { chainHover = null; applyChainFocus(); });
+  // 容器寬度改變時重排（標籤錯排與最小段寬都依實際像素計算）
+  new ResizeObserver(() => {
+    if (chainCache && chainHost.clientWidth !== chainWidth) renderChain(false);
+  }).observe(chainHost);
+  let chainPlayed = false;
+  $('#timeSheet').addEventListener('reveal', () => {
+    if (chainPlayed) return;
+    chainPlayed = true;
+    renderChain('all');
+  });
+
+  /* =====================================================================
+   * D-04 各科意見彙整
+   * ===================================================================== */
+  function renderOpinions() {
+    const ops = App.opinionsOf(p);
+    const editable = p.stage === 'tech';
+    const count = (s) => ops.filter((o) => o.status === s).length;
+    const openN = openAnnos().length;
+    $('#opSub').textContent = `第 ${p.round} 回合・${ops.filter((o) => o.status !== 'na').length} 科會簽${isFeatured ? `・圖說批註 ${F.annotations.length} 則` : ''}`;
+    $('#opSum').innerHTML = ['pass', 'fix', 'review', 'wait', 'na'].filter((s) => count(s)).map((s) => `<span>${App.lamp(s, { label: true })}<b>${count(s)}</b></span>`).join('')
+      + (isFeatured && p.stage !== 'issued' ? `<span class="hand-note">${openN ? `尚有 ${openN} 則批註待改善` : '批註皆已改善'}</span>` : '');
+    $('#ops').innerHTML = ops.map((op) => {
+      const k = op.disc.key, s = op.status;
+      const items = op.items.map((it, idx) => {
+        const key = itemKey(k, it, idx);
+        const a = it.no ? F.annotations.find((x) => x.no === it.no) : null;
+        const open = it.status === 'open';
+        const cls = it.status === 'resolved' && a ? ' is-resolved' : (it.status !== 'open' ? ' is-muted' : '');
+        const no = it.no
+          ? `<a class="bubble bubble--sm${it.status === 'resolved' ? ' bubble--ok' : ''}" href="${App.reviewUrl(p.id)}&amp;anno=${it.no}" aria-label="在圖說審查開啟批註 ${it.no}" title="在圖說上開啟批註 ${it.no}">${it.no}</a>`
+          : `<span class="pd-op-item__num">${cn(idx)}、</span>`;
+        const tags = [];
+        if (it.round) tags.push(App.rev(it.round));
+        if (it.cite) tags.push(`<span class="cite">${esc(it.cite)}</span>`);
+        if (a) tags.push(a.status === 'resolved' ? `<span class="tag tag--ok">已改善${a.resolvedAt ? ` ${fmt.md(a.resolvedAt)}` : ''}</span>` : a.carried ? '<span class="tag tag--red">R1 延續</span>' : '<span class="tag tag--red">待補正</span>');
+        else if (open) tags.push('<span class="tag tag--red">待補正</span>');
+        const reply = a && a.reply ? `<p class="pd-op-item__reply"><b>起造人回覆：</b>${esc(a.reply)}</p>` : '';
+        const include = open && editable && s !== 'pass'
+          ? `<label class="check pd-op-include"><input type="checkbox" data-include="${key}" data-fk="inc-${key}"${excluded.has(key) ? '' : ' checked'}>列入補正通知</label>` : '';
+        return `<li class="pd-op-item${cls}"><span class="pd-op-item__no">${no}</span><div>
+          <p class="pd-op-item__text">${esc(it.text)}</p>
+          ${tags.length ? `<div class="pd-op-item__meta">${tags.join('')}</div>` : ''}${reply}${include}</div></li>`;
+      }).join('');
+      const reviewer = op.reviewer;
+      const mark = s === 'fix' ? '<span class="pd-op__mark" aria-hidden="true">須補正</span>'
+        : s === 'pass' ? '<span class="stamp stamp--ok stamp--sm pd-op__stamp" aria-hidden="true">通過</span>' : '';
+      let actions = '';
+      if (editable && (s === 'review' || s === 'wait')) {
+        actions = `<div class="pd-op-actions"><span class="pd-op-actions__label">登錄會簽結果</span>
+          <button class="btn btn--sm pd-btn-pass" type="button" data-verdict="pass" data-disc="${k}" data-fk="v-${k}-pass">${App.icon('check')}通過</button>
+          <button class="btn btn--sm pd-btn-fix" type="button" data-verdict="fix" data-disc="${k}" data-fk="v-${k}-fix">${App.icon('alert')}須補正</button></div>`;
+      } else if (editable && (s === 'pass' || s === 'fix')) {
+        actions = `<div class="pd-op-actions"><span class="pd-op-actions__label">已登錄：${esc(App.LAMPS[s].label)}</span>
+          <button class="btn btn--sm btn--ghost" type="button" data-verdict="review" data-disc="${k}" data-fk="v-${k}-review">${App.icon('undo')}改回審查中</button></div>`;
+      }
+      const sign = s === 'na'
+        ? '<span>本案規模免經本科審查</span>'
+        : `<span>${s === 'wait' ? '指派審查員' : '審查員'}</span><span class="hand">${esc(who(reviewer))}</span><span class="mono">${s === 'wait' ? '尚未開始' : fmt.date(op.date)}</span>`;
+      return `<article class="opinion" data-s="${s}" aria-labelledby="op-${k}">
+        ${mark}
+        <header class="opinion__head">${App.disc(k, { lg: true })}<div class="pd-op__titles"><span class="opinion__title" id="op-${k}">${esc(op.disc.name)}科</span><span class="pd-op__unit">${esc(op.disc.unit)}</span></div>${App.lamp(s, { label: true })}</header>
+        <ul class="pd-op-list">${items}</ul>
+        ${actions}
+        <footer class="opinion__sign">${sign}</footer>
+      </article>`;
+    }).join('');
+  }
+
+  $('#ops').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-verdict]');
+    if (b) setVerdict(b.dataset.disc, b.dataset.verdict);
+  });
+  $('#ops').addEventListener('change', (e) => {
+    const c = e.target.closest('[data-include]');
+    if (!c) return;
+    // 勾選只影響本頁的通知書草稿，不是案件資料，因此不走 App.commit
+    if (c.checked) excluded.delete(c.dataset.include); else excluded.add(c.dataset.include);
+    fresh = { itemKey: c.checked ? c.dataset.include : null };
+    if (p.stage === 'tech') noticeView = 'draft';
+    renderNotice();
+    renderActions();
+    renderRounds(chainCache);
+    fresh = {};
+  });
+
+  /* =====================================================================
+   * D-05 補正通知書
+   * ===================================================================== */
+  function noticeOptions() {
+    const opts = Object.keys(notices).map(Number).sort((a, b) => a - b).map((r) => ({ value: String(r), label: `R${r}`, sub: fmt.md(notices[r].date) }));
+    if (p.stage === 'tech') opts.push({ value: 'draft', label: `R${p.round} 草稿`, sub: '' });
+    return opts;
+  }
+  function submissionDate(round) {
+    const e = timeline().find((x) => x.round === round && /掛號收件|受理掛號|補正收件/.test(x.title));
+    return e ? e.date : p.received;
+  }
+  function docHtml(m) {
+    const A = App.ARCHITECTS[p.architect];
+    const units = [...new Set(m.items.map((it) => it.disc))].filter((k) => k !== 'arc').map((k) => App.DISC_MAP[k].unit.replace(/^(消防局|都市設計科|建築管理處)/, '本府$1').replace('本府建築管理處', '本局建築管理處'));
+    const items = m.items.map((it, i) => {
+      const body = `〔${esc(App.DISC_MAP[it.disc].name)}〕${esc(it.text)}${it.cite || it.no ? `（${[it.cite, it.no ? `批註 #${it.no}` : ''].filter(Boolean).join('；')}）` : ''}`;
+      return `<li><span>(${cn(i)})</span><div>${fresh.itemKey === it.key ? `<mark class="hl hl--sweep">${body}</mark>` : body}</div></li>`;
+    }).join('');
+    const third = m.round < 3
+      ? `本件為第 ${m.round} 次補正通知；補正以 3 次為限，屆期仍未符合規定者，依規定駁回。`
+      : '本件為第 3 次（最後一次）補正通知，屆期未補正或補正後仍不符規定者，依規定駁回。';
+    const sealCls = fresh.notice === m.round ? ' pd-slam' : '';
+    return `<article class="gov-doc pd-doc${m.draft ? ' is-draft' : ''}" aria-label="${m.draft ? '補正通知書草稿' : `第 ${m.round} 回合補正通知書`}">
+      ${m.draft ? '<div class="pd-draft" aria-hidden="true">草稿</div>' : ''}
+      <p class="gov-doc__org">澄港市政府都市發展局</p>
+      <p class="gov-doc__title">補正通知書</p>
+      <p class="gov-doc__addr">地址：80046 澄港市港埕區市府路 1 號 7 樓<br>承辦人：${esc(who(p.officer))}（建築管理處建築科）<br>電話：(08) 2250-6600 #3182<br>傳真：(08) 2250-6611</p>
+      <div class="gov-doc__row" style="margin:0 0 12px"><b>受文者</b><div>${esc(p.applicant)}</div></div>
+      <dl class="gov-doc__meta">
+        <dt>發文日期</dt><dd>中華民國 ${fmt.roc(m.date)}</dd>
+        <dt>發文字號</dt><dd>${m.draft ? '<span class="pd-doc__tbd">（發文時自動編號）</span>' : esc(m.no)}</dd>
+        <dt>速別</dt><dd>普通件</dd>
+        <dt>密等</dt><dd>普通</dd>
+        <dt>附件</dt><dd>審查意見表 1 份、圖說批註 ${m.items.length} 則</dd>
+      </dl>
+      <div class="gov-doc__row"><b>主旨</b><div>貴公司申請「${esc(p.name)}」建造執照（${esc(App.caseNo(p))}）一案，經第 ${m.round} 回合審查尚有應補正事項，請於文到次日起 ${dayDiff(m.date, m.due)} 日內（${fmt.roc(m.due)}前）補正送府，請查照。</div></div>
+      <div class="gov-doc__row"><b>說明</b><ol class="gov-doc__section">
+        <li><span>一、</span><div>依據 貴公司 ${fmt.roc(submissionDate(m.round))}${m.round > 1 ? '補正' : '申請'}送審圖說及本市建築管理自治條例辦理。</div></li>
+        <li><span>二、</span><div>應補正事項計 ${m.items.length} 項，臚列如下：<ol>${items}</ol></div></li>
+        <li><span>三、</span><div>${third}</div></li>
+        <li><span>四、</span><div>修正圖說請以雲線圈示修改處並加註修訂三角 △${Math.min(3, m.round + 1)}，檢附逐項回覆說明書送府。</div></li>
+        <li><span>五、</span><div>審查意見及圖說批註可至本府建築執照圖說線上審查系統查閱。</div></li>
+      </ol></div>
+      <p class="gov-doc__copy">正本：${esc(p.applicant)}、${esc(A.name)}<br>副本：本局建築管理處建築科${units.length ? `、${units.map(esc).join('、')}` : ''}</p>
+      <p class="pd-doc__sign">局長 方志遠</p>
+      ${m.draft ? '' : `<div class="gov-doc__seal${sealCls}" aria-hidden="true">澄港市政府<br>都市發展局<br>之印</div><span class="stamp pd-doc__sent${sealCls}" aria-hidden="true">已發文</span>`}
+    </article>`;
+  }
+
+  function renderNotice() {
+    const opts = noticeOptions();
+    if (!opts.some((o) => o.value === noticeView)) noticeView = opts.length ? opts[opts.length - 1].value : null;
+    $('#noticeSeg').hidden = opts.length < 2;
+    $('#noticeSeg').innerHTML = opts.map((o) => `<button type="button" data-value="${o.value}" aria-pressed="${o.value === noticeView}">${esc(o.label)}${o.sub ? `<span class="mono">${o.sub}</span>` : ''}</button>`).join('');
+    $('#printBtn').disabled = !noticeView || (noticeView === 'draft' && !draftItems().length);
+    const desk = $('#desk');
+    if (!noticeView) {
+      if (p.stage === 'issued') {
+        desk.innerHTML = `<div class="empty pd-issued-empty"><span class="stamp stamp--ok">核 發</span><div class="empty__title">本案已於 ${fmt.date(p.issuedAt)} 核發</div><div class="empty__text">建照號碼 ${esc(p.permitNo)}；歷次補正通知已歸檔，無待發文件。</div></div>`;
+      } else {
+        desk.innerHTML = App.emptyState({ title: '技術審查尚未開始', text: '行政審查完成、分送各科後，須補正的意見會在這裡組成補正通知書。' });
+      }
+      $('#noticeSub').textContent = p.stage === 'issued' ? '本案已核發，歷次補正通知已歸檔' : '分送各科後，須補正的意見會即時組成通知書';
+      return;
+    }
+    let model;
+    if (noticeView === 'draft') {
+      const items = draftItems();
+      if (!items.length) {
+        desk.innerHTML = App.emptyState({ title: '尚無可列入通知的補正事項', text: '各科登錄「須補正」或勾選「列入補正通知」後，這裡會即時組成補正通知書。' });
+        $('#noticeSub').textContent = `R${p.round} 草稿・尚無補正事項`;
+        return;
+      }
+      model = { round: p.round, draft: true, date: TODAY, no: null, due: App.addDays(TODAY, 90), items };
+    } else {
+      const n = notices[noticeView];
+      model = { round: +noticeView, draft: false, ...n };
+    }
+    const pend = pendingDiscs();
+    const note = model.draft
+      ? `<p class="pd-doc-note hand-note">${pend.length ? `尚有 ${pend.length} 科會簽中（${pend.map((k) => App.DISC_MAP[k].name).join('、')}），此為依目前意見即時組成的草稿。` : '各科會簽完成；確認條列無誤後，可由右側「發補正通知」正式發文。'}</p>`
+      : '';
+    desk.innerHTML = `${note}<div class="pd-docstack">${docHtml(model)}</div>
+      <div class="pd-doc-foot"><span>${model.draft ? `草稿・${model.items.length} 項・取消勾選的意見不會列入` : `已發文 ${fmt.date(model.date)}・${esc(model.no)}`}</span><span class="mono">${esc(App.caseNo(p))} · R${model.round}</span></div>`;
+    $('#noticeSub').textContent = model.draft ? `R${model.round} 草稿・依勾選的 ${model.items.length} 項補正事項即時組成` : `R${model.round} 已發文・補正期限 ${fmt.date(model.due)}`;
+    const sweep = $('.hl--sweep', desk);
+    if (sweep) requestAnimationFrame(() => requestAnimationFrame(() => sweep.classList.add('is-in')));
+  }
+  $('#noticeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-value]');
+    if (!b) return;
+    noticeView = b.dataset.value;
+    renderNotice();
+  });
+  $('#printBtn').addEventListener('click', () => {
+    App.toast('已送出列印', { desc: `${noticeView === 'draft' ? '補正通知書草稿' : `R${noticeView} 補正通知書`}已送至建築科 7F 印表機（雙面、A4）。`, tone: 'ok' });
+  });
+
+  /* =====================================================================
+   * 動作：所有改資料的動作都走 perform()，最後 App.commit，提示附「復原」
+   * ===================================================================== */
+  function snapshot() {
+    return {
+      p: { stage: p.stage, round: p.round, lamps: { ...p.lamps }, due: p.due, updated: p.updated, issuedAt: p.issuedAt, permitNo: p.permitNo, reminded: p.reminded },
+      annos: isFeatured ? F.annotations.map((a) => ({ no: a.no, status: a.status, resolvedAt: a.resolvedAt, reply: a.reply })) : null,
+      notices: JSON.parse(JSON.stringify(notices)),
+    };
+  }
+  function restore(s) {
+    Object.assign(p, s.p, { lamps: { ...s.p.lamps } });
+    if (s.annos) s.annos.forEach((x) => Object.assign(F.annotations.find((a) => a.no === x.no), x));
+    Object.keys(notices).forEach((k) => { delete notices[k]; });
+    Object.assign(notices, s.notices);
+  }
+  function perform({ log, title, desc = '', tone = 'ok', mutate, effect = {} }) {
+    const snap = snapshot();
+    mutate();
+    p.updated = TODAY;
+    const entry = { id: ++logSeq, time: fmt.clock(App.now()).slice(11), text: log };
+    sessionLog.unshift(entry);
+    fresh = effect;
+    App.commit('permit-detail');
+    App.toast(title, { desc, tone, action: { label: '復原', onClick: () => undo(entry, snap) } });
+  }
+  function undo(entry, snap) {
+    if (!sessionLog.includes(entry)) { App.toast('這個動作已經復原', { tone: 'info' }); return; }
+    if (sessionLog[0] !== entry) { App.toast('只能復原最近一次動作', { desc: `最近一次：${sessionLog[0].text}`, tone: 'info' }); return; }
+    sessionLog.shift();
+    restore(snap);
+    fresh = {};
+    App.commit('permit-detail:undo');
+    App.toast('已復原', { desc: entry.text, tone: 'info' });
+  }
+  // 確認框：避免狀態在框開著時被別的動作改掉，執行前再驗一次前提
+  function confirmAction({ title, code, rows, note = '', list = '', label, variant, icon, guard, run }) {
+    const body = `<dl class="kv kv--ruled pd-confirm">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>${list}${note ? `<p class="hand-note pd-confirm__note">${esc(note)}</p>` : ''}`;
+    App.modal({
+      title, code, body,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label, variant, icon, onClick: (close) => {
+          close();
+          if (!guard()) { App.toast('案件狀態已變更，未執行', { desc: '請確認右側流程後再試一次。', tone: 'info' }); return; }
+          run();
+        } },
+      ],
+    });
+  }
+
+  function setVerdict(k, s) {
+    const d = App.DISC_MAP[k];
+    if (p.stage !== 'tech' || p.lamps[k] === 'na' || p.lamps[k] === s) return;
+    const opens = s === 'pass' ? openAnnos(k) : [];
+    const apply = () => perform({
+      log: s === 'review' ? `${d.name}科改回審查中` : `登錄${d.name}科會簽：${App.LAMPS[s].label}`,
+      title: s === 'review' ? `${d.name}科改回審查中` : `${d.name}科會簽：${App.LAMPS[s].label}`,
+      desc: s === 'pass' ? (opens.length ? `批註 ${opens.map((a) => `#${a.no}`).join('、')} 一併標為已改善。` : `審查員 ${who(k === 'arc' ? p.officer : p.reviewers[k])} 簽核。`)
+        : s === 'fix' ? '意見已列入補正通知書草稿。' : '',
+      tone: s === 'fix' ? 'red' : s === 'pass' ? 'ok' : 'info',
+      mutate: () => {
+        p.lamps[k] = s;
+        opens.forEach((a) => { a.status = 'resolved'; a.resolvedAt = TODAY; a.reply = a.reply || '審查員確認已依意見修正。'; });
+      },
+    });
+    if (opens.length) {
+      confirmAction({
+        title: `${d.name}科登錄「通過」`, code: `SIGN-${d.en}`,
+        rows: [['科別', esc(d.unit)], ['待改善批註', `${opens.length} 則`]],
+        list: `<ul class="pd-confirm__list">${opens.map((a) => `<li><span class="bubble bubble--sm">${a.no}</span><span>${esc(a.short)}<br><span class="muted" style="font-size:12.5px">${esc(a.cite)}${a.reply ? `・回覆：${esc(a.reply)}` : ''}</span></span></li>`).join('')}</ul>`,
+        note: '登錄通過後，上列批註會標為「已改善」，不再列入補正通知。',
+        label: '確認通過', variant: 'primary', icon: 'check',
+        guard: () => p.stage === 'tech' && p.lamps[k] !== 'pass',
+        run: apply,
+      });
+      return;
+    }
+    apply();
+  }
+
+  const ACTIONS = {
+    accept() {
+      const due = App.addDays(TODAY, 7);
+      confirmAction({
+        title: '受理掛號', code: 'INTAKE',
+        rows: [['案號', `<span class="mono">${esc(App.caseNo(p))}</span>`], ['起造人', esc(p.applicant)], ['行政審查期限', `<span class="mono">${fmt.date(due)}</span>`]],
+        note: '受理後移送行政審查，檢核起造人、設計人資格及土地權利文件。',
+        label: '受理掛號', variant: 'primary', icon: 'check',
+        guard: () => p.stage === 'intake',
+        run: () => perform({ log: '受理掛號，移送行政審查', title: `已受理 ${p.id}`, desc: `行政審查期限 ${fmt.date(due)}。`, mutate: () => { p.stage = 'admin'; p.due = due; p.reminded = null; } }),
+      });
+    },
+    toTech() {
+      const due = App.addDays(TODAY, 28);
+      const names = activeDiscs().map((k) => App.DISC_MAP[k].name).join('、');
+      confirmAction({
+        title: '行政審查完成・分送技術審查', code: 'ADMIN',
+        rows: [['分送科別', esc(names)], ['技術審查期限', `<span class="mono">${fmt.date(due)}</span>`]],
+        note: '各科燈號轉為「審查中」，同步開始 R1 技術審查。',
+        label: '分送各科', variant: 'primary', icon: 'send',
+        guard: () => p.stage === 'admin',
+        run: () => perform({
+          log: `行政審查完成，分送 ${activeDiscs().length} 科`, title: '已分送技術審查', desc: `${names}；期限 ${fmt.date(due)}。`,
+          mutate: () => { p.stage = 'tech'; p.due = due; p.reminded = null; activeDiscs().forEach((k) => { p.lamps[k] = 'review'; }); },
+        }),
+      });
+    },
+    notice() {
+      const items = draftItems();
+      const r = p.round;
+      const due = App.addDays(TODAY, 90);
+      const no = App.noticeNo(p, r);
+      const byDisc = App.DISC.map((d) => [d.name, items.filter((it) => it.disc === d.key).length]).filter(([, n]) => n).map(([n, c]) => `${n} ${c}`).join('、');
+      confirmAction({
+        title: `發 R${r} 補正通知`, code: `NOTICE-R${r}`,
+        rows: [['受文者', esc(p.applicant)], ['補正事項', `${items.length} 項（${esc(byDisc)}）`], ['補正期限', `<span class="mono">${fmt.date(due)}</span>（文到次日起 90 日）`], ['發文字號', `<span class="mono">${esc(no)}</span>`]],
+        note: r === 3 ? '這是最後一次補正通知；逾期未補正依規定駁回。' : '發文後案件轉為「補正中」，各科燈號保留至補正收件。',
+        label: '確認發文並用印', variant: 'red', icon: 'send',
+        guard: () => p.stage === 'tech' && !pendingDiscs().length && fixDiscs().length > 0 && draftItems().length > 0,
+        run: () => {
+          const list = draftItems();
+          perform({
+            log: `發 R${r} 補正通知（${list.length} 項）`, title: `已發 R${r} 補正通知`, desc: `${no}・補正期限 ${fmt.date(due)}`,
+            mutate: () => {
+              notices[r] = { date: TODAY, no, due, items: list.map((it) => ({ ...it })) };
+              p.stage = 'fix'; p.due = due; p.reminded = null;
+            },
+            effect: { notice: r },
+          });
+          noticeView = String(r);
+          renderNotice();
+          $('#noticeSheet').scrollIntoView({ behavior: RM.matches ? 'auto' : 'smooth', block: 'start' });
+        },
+      });
+    },
+    issue() {
+      const max = Math.max(...App.permits.filter((x) => x.permitNo).map((x) => +x.permitNo.match(/第(\d+)號/)[1]));
+      const no = `115建字第${String(max + 1).padStart(4, '0')}號`;
+      confirmAction({
+        title: '核發建造執照', code: 'ISSUE',
+        rows: [['建照號碼', `<span class="mono">${esc(no)}</span>`], ['核發日期', `中華民國 ${fmt.roc(TODAY)}`], ['起造人', esc(p.applicant)], ['副本', '工務局、消防局、地政事務所']],
+        note: '核發後案件結案，執照 PDF 會寄送起造人與設計人。',
+        label: '核發並用印', variant: 'primary', icon: 'stamp',
+        guard: () => p.stage === 'tech' && activeDiscs().every((k) => p.lamps[k] === 'pass'),
+        run: () => perform({
+          log: `核發建造執照 ${no}`, title: `已核發 ${no}`, desc: `${p.name}・副本已送工務、消防與地政單位。`,
+          mutate: () => { p.stage = 'issued'; p.issuedAt = TODAY; p.permitNo = no; p.due = null; p.reminded = null; },
+          effect: { issued: true },
+        }),
+      });
+    },
+    receive() {
+      const r = p.round + 1;
+      const due = App.addDays(TODAY, 28);
+      const back = fixDiscs();
+      confirmAction({
+        title: `登錄 R${r} 補正收件`, code: `RECV-R${r}`,
+        rows: [['回合', `${App.rev(p.round)} → ${App.rev(r)}`], ['複審科別', esc(back.map((k) => App.DISC_MAP[k].name).join('、') || '—')], ['技術審查期限', `<span class="mono">${fmt.date(due)}</span>`]],
+        note: '收件後「須補正」的科別轉為審查中，修正圖說以 △ 標示的雲線為複審範圍。',
+        label: '登錄收件', variant: 'primary', icon: 'file',
+        guard: () => p.stage === 'fix' && p.round < 3,
+        run: () => perform({
+          log: `登錄 R${r} 補正收件`, title: `已登錄 R${r} 補正收件`, desc: `${back.length} 科複審；技術審查期限 ${fmt.date(due)}。`,
+          mutate: () => { p.round = r; p.stage = 'tech'; p.due = due; p.reminded = null; back.forEach((k) => { p.lamps[k] = 'review'; }); },
+        }),
+      });
+    },
+    remind() {
+      if (p.reminded) return;
+      const pend = pendingDiscs();
+      const isFix = p.stage === 'fix';
+      perform({
+        log: isFix ? '通知起造人補正期限' : `催辦未會簽：${pend.map((k) => App.DISC_MAP[k].name).join('、')}`,
+        title: isFix ? '已通知起造人' : `已催辦 ${pend.length} 科`,
+        desc: isFix ? `系統訊息已送達 ${p.applicant}，補正期限 ${fmt.date(p.due)}。` : pend.map((k) => `${App.DISC_MAP[k].name}・${who(k === 'arc' ? p.officer : p.reviewers[k])}`).join('、'),
+        mutate: () => { p.reminded = TODAY; },
+      });
+    },
+    prefill() {
+      const pend = pendingDiscs();
+      if (!pend.length) return;
+      const result = (k) => (openAnnos(k).length ? 'fix' : 'pass');
+      perform({
+        log: `依批註帶入會簽結果（${pend.length} 科）`, title: '已帶入各科會簽結果',
+        desc: pend.map((k) => `${App.DISC_MAP[k].name}：${App.LAMPS[result(k)].label}`).join('、'),
+        tone: 'info',
+        mutate: () => { pend.forEach((k) => { p.lamps[k] = result(k); }); },
+      });
+    },
+    reject() {
+      App.toast('已預擬駁回函稿', { desc: `送股長 ${who('arc3')} 核判；補正期限 ${fmt.date(p.due)} 屆滿後才會發文。`, tone: 'info' });
+    },
+    pdf() {
+      App.toast('已產生建造執照 PDF', { desc: `${p.permitNo}・含核定圖說 ${isFeatured ? F.sheets.length : 6} 張，已寄至設計人信箱。`, tone: 'ok' });
+    },
+    pickup() {
+      App.toast('已通知起造人領照', { desc: `${p.applicant} 可於 ${fmt.date(App.addDays(TODAY, 3))} 起至 7 樓櫃台領取執照正本。`, tone: 'ok' });
+    },
+  };
+  $('#railActions').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (b && !b.disabled) ACTIONS[b.dataset.act]();
+  });
+
+  /* =====================================================================
+   * 重繪：資料異動一律走這裡（含復原）
+   * ===================================================================== */
+  function renderAll() {
+    // 重繪會換掉按鈕；記住焦點，畫完再放回同一個控制項
+    const fk = document.activeElement?.dataset?.fk;
+    renderHead();
+    renderSummary();
+    renderRail();
+    renderTime();
+    renderOpinions();
+    renderNotice();
+    if (fk) $(`[data-fk="${CSS.escape(fk)}"]`)?.focus({ preventScroll: true });
+    fresh = {};
+  }
+  App.onChange(renderAll);
+
+  renderPager();
+  renderMassing();
+  fresh = { chain: false };
+  renderAll();
+
+  // 剖面量體與流程回圈：進場時用墨線描出
+  $('#sumSheet').addEventListener('reveal', () => {
+    App.draw($$('#massing svg line, #massing svg rect, #massing svg text').filter((el) => !el.closest('defs')), { duration: 650, stagger: 12, delay: 150 });
+  });
+  $('#railSheet').addEventListener('reveal', () => {
+    const loop = $('#loopPath');
+    if (loop) App.draw([loop], { duration: 900, delay: 500 });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受理建案 — 澄港市 1999 陳情案件管理系統</title>
+<meta name="description" content="澄港市 1999 市民熱線來電受理：即時語音轉文字、依關鍵字推薦類別與承辦局處、相似案件比對、地點與行政區選擇，驗證後建案並直接派案。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300..900&family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     受理建案（intake）頁面專屬樣式；class 前綴 ik-
+     ===================================================================== */
+
+  /* ---------- 版面：左側工作區 + 右側建案摘要 ---------- */
+  .ik-layout { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 24px; align-items: start; }
+  .ik-work, .ik-form { display: grid; gap: var(--gap); min-width: 0; }
+  .ik-side { display: grid; gap: 14px; min-width: 0; }
+  /* 視窗夠高才讓摘要 sticky，避免摘要比視窗高時下半部永遠看不到 */
+  @media (min-width: 1200px) and (min-height: 840px) {
+    .ik-side { position: sticky; top: calc(var(--topbar-h) + 14px); }
+  }
+  @media (max-width: 1199px) {
+    .ik-layout { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ---------- 通話卡 ---------- */
+  .ik-call {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; gap: 16px;
+    padding: 22px 24px 20px;
+    border-radius: var(--r-3xl) var(--r-3xl) var(--r-lg) var(--r-3xl);
+    background: var(--primary); color: #fff;
+    transition: background-color .5s var(--ease-effects);
+  }
+  .ik-call[data-state="hold"] { background: var(--primary-strong); }
+  .ik-call[data-state="ended"] { background: var(--inverse-surface); }
+  .ik-call__deco {
+    position: absolute; z-index: -1; right: -110px; top: -150px; width: 380px; height: 380px;
+    color: rgb(255 255 255 / .06); pointer-events: none; animation: spin 90s linear infinite;
+  }
+  .ik-call__top {
+    display: grid; grid-template-columns: auto minmax(110px, 1fr) auto auto;
+    grid-template-areas: "who wave time ctrl";
+    align-items: center; gap: 14px 22px;
+  }
+  .ik-call__who { grid-area: who; display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .ik-avatar { position: relative; display: grid; place-items: center; width: 58px; height: 58px; flex-shrink: 0; color: var(--tertiary-vivid); transition: color .4s var(--ease-effects); }
+  .ik-avatar .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ik-avatar .ico { position: relative; width: 26px; height: 26px; color: #fff; }
+  .ik-ripple { position: absolute; inset: 3px; border-radius: 50%; border: 2px solid var(--tertiary-vivid); opacity: 0; }
+  .ik-call[data-state="active"] .ik-ripple { animation: ring-pulse 2.4s var(--ease-decel) infinite; }
+  .ik-call[data-state="active"] .ik-ripple + .ik-ripple { animation-delay: 1.2s; }
+  .ik-call[data-state="hold"] .ik-avatar { color: var(--warn-vivid); }
+  .ik-call[data-state="ended"] .ik-avatar { color: rgb(255 255 255 / .2); }
+  .ik-call__id { min-width: 0; }
+  .ik-call__state { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; font-size: var(--fs-label-m); font-weight: 800; letter-spacing: .03em; opacity: .9; }
+  .ik-call__state b { font-family: var(--font-num); font-weight: 800; }
+  .ik-call__sep { opacity: .55; }
+  .ik-call__num { margin: 2px 0 1px; font-family: var(--font-num); font-size: 31px; font-weight: 760; font-stretch: 60%; letter-spacing: .02em; line-height: 1.05; white-space: nowrap; }
+  .ik-call__meta { font-size: var(--fs-body-s); opacity: .78; }
+  .ik-call__meta span { display: inline-block; }
+  .ik-wave { grid-area: wave; display: block; width: 100%; height: 56px; min-width: 0; }
+  .ik-call__time { grid-area: time; display: grid; justify-items: end; line-height: 1; }
+  .ik-call__time .num-display { font-size: 52px; font-stretch: 32%; }
+  .ik-call__time small { margin-top: 5px; font-size: 12px; font-weight: 700; opacity: .72; }
+  .ik-ctrl { grid-area: ctrl; display: flex; gap: 6px; }
+  .ik-cbtn {
+    position: relative; display: grid; justify-items: center; gap: 5px; min-width: 58px;
+    padding: 0; border: 0; border-radius: 16px; background: none; color: inherit;
+    font: 700 12px/1.2 var(--font-sans); cursor: pointer;
+  }
+  .ik-cbtn__ic {
+    position: relative; display: grid; place-items: center; width: 52px; height: 52px;
+    border-radius: 26px; background: rgb(255 255 255 / .14); color: #fff;
+    transition: border-radius var(--spring-bouncy-dur) var(--spring-bouncy), width var(--spring-default-dur) var(--spring-default), background-color .25s, color .25s, transform var(--spring-bouncy-dur) var(--spring-bouncy);
+  }
+  .ik-cbtn__ic .ico { width: 24px; height: 24px; transition: transform var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .ik-cbtn:hover .ik-cbtn__ic { background: rgb(255 255 255 / .24); }
+  .ik-cbtn:active .ik-cbtn__ic { transform: scale(.92); border-radius: 14px; transition-duration: 100ms; }
+  .ik-cbtn[aria-pressed="true"] .ik-cbtn__ic { border-radius: 16px; background: #fff; color: var(--primary); }
+  .ik-cbtn .ik-ic-b { display: none; }
+  .ik-cbtn[aria-pressed="true"] .ik-ic-a { display: none; }
+  .ik-cbtn[aria-pressed="true"] .ik-ic-b { display: block; }
+  .ik-cbtn:disabled { opacity: .38; cursor: not-allowed; }
+  .ik-cbtn:disabled .ik-cbtn__ic { transform: none; }
+  /* 主要通話鍵：通話中是紅色掛斷膠囊，結束後 morph 成綠色接聽方塊 */
+  .ik-cbtn--end .ik-cbtn__ic { width: 70px; background: #E3685F; }
+  .ik-cbtn--end:hover .ik-cbtn__ic { background: #EC7D74; }
+  .ik-cbtn--end .ik-cbtn__ic .ico { transform: rotate(135deg); }
+  .ik-cbtn--answer .ik-cbtn__ic { width: 70px; border-radius: 18px; background: #7EF0C4; color: #00391F; }
+  .ik-cbtn--answer:hover .ik-cbtn__ic { background: #9AF5D2; }
+  .ik-cbtn__badge {
+    position: absolute; top: -5px; right: -6px; min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 10px; background: var(--tertiary-vivid); color: #fff;
+    font: 800 11px/20px var(--font-num); text-align: center; box-shadow: 0 0 0 2px var(--inverse-surface);
+  }
+  .ik-cbtn--end .ik-cbtn__badge { display: none; }
+
+  /* 語音轉文字 */
+  .ik-asr { padding: 12px 16px 14px; border-radius: 26px 26px 26px 10px; background: rgb(255 255 255 / .1); }
+  .ik-asr__head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+  .ik-asr__title { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-label-m); font-weight: 800; letter-spacing: .06em; opacity: .9; }
+  .ik-asr__title .ico { width: 17px; height: 17px; }
+  .ik-asr__more {
+    margin-left: auto; padding: 8px 6px; border: 0; border-radius: 8px; background: none; color: inherit;
+    font: 700 var(--fs-label-m)/1 var(--font-sans); cursor: pointer; opacity: .88;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .ik-asr__more:hover { opacity: 1; }
+  .ik-asr .btn:disabled { --btn-bg: rgb(255 255 255 / .14); --btn-fg: rgb(255 255 255 / .82); }
+  .ik-asr .btn.is-pop { animation: ik-pop var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .ik-asr__list { display: grid; gap: 7px; margin-top: 8px; }
+  .ik-asr__list:not(.is-all) > li:nth-last-child(n+4) { display: none; }
+  .ik-utt { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: start; animation: ik-utt-in var(--spring-default-dur) var(--spring-default); }
+  .ik-utt__who { display: grid; gap: 3px; padding-top: 3px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .ik-utt__who span { display: inline-flex; align-items: center; gap: 6px; }
+  .ik-utt__who i { width: 8px; height: 8px; border-radius: 50%; background: rgb(255 255 255 / .5); }
+  .ik-utt--caller .ik-utt__who i { background: var(--tertiary-vivid); }
+  .ik-utt__who small { font: 600 11px/1 var(--font-num); opacity: .68; padding-left: 14px; }
+  .ik-utt__text { font-size: var(--fs-body-m); line-height: 1.6; }
+  .ik-utt--agent .ik-utt__text { opacity: .8; }
+  .ik-utt--caller .ik-utt__text { font-weight: 600; }
+  .ik-utt.is-typing .ik-utt__text::after {
+    content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 3px; vertical-align: -.17em;
+    background: currentColor; animation: ik-blink 1s steps(2, jump-none) infinite;
+  }
+  .ik-utt--note { grid-template-columns: 1fr; font-size: var(--fs-body-m); opacity: .85; }
+  .ik-asr mark { padding: 0 4px; border-radius: 5px; background: var(--c-container); color: var(--c-ink); font-weight: 700; }
+  @keyframes ik-utt-in { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes ik-blink { 50% { opacity: 0; } }
+
+  /* ---------- 表單區塊（步驟徽章：未填 circle → 編輯中 sunny → 完成 cookie12） ---------- */
+  .ik-sec { padding: 24px 28px 28px; border-radius: var(--r-3xl) var(--r-lg) var(--r-3xl) var(--r-3xl); }
+  .ik-sec__head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .ik-sec__title { font-size: var(--fs-title-l); font-weight: 800; line-height: 1.3; }
+  .ik-sec__sub { font-size: var(--fs-body-s); color: var(--on-surface-variant); margin-top: 1px; }
+  .ik-badge { position: relative; display: grid; place-items: center; width: 50px; height: 50px; flex-shrink: 0; color: var(--surface-container-highest); transition: color .4s var(--ease-effects); }
+  .ik-badge .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ik-badge b { position: relative; font: 800 20px/1 var(--font-num); font-stretch: 70%; color: var(--on-surface-variant); transition: opacity .2s, transform var(--spring-bouncy-dur) var(--spring-bouncy), color .3s; }
+  .ik-badge .ico { position: absolute; width: 22px; height: 22px; color: var(--on-primary); opacity: 0; transform: scale(.3) rotate(-40deg); transition: opacity .2s, transform var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .ik-sec[data-step="current"] .ik-badge { color: var(--tertiary-vivid); }
+  .ik-sec[data-step="current"] .ik-badge b { color: #fff; }
+  .ik-sec[data-step="current"] .ik-badge .shape { animation: spin 10s linear infinite; }
+  .ik-sec[data-step="done"] .ik-badge { color: var(--primary); }
+  .ik-sec[data-step="done"] .ik-badge b { opacity: 0; transform: scale(.3); }
+  .ik-sec[data-step="done"] .ik-badge .ico { opacity: 1; transform: none; }
+  .ik-label { display: block; font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); letter-spacing: .04em; }
+  .ik-help { font-size: var(--fs-body-s); color: var(--on-surface-variant); line-height: 1.5; }
+  .ik-linkbtn {
+    display: inline; padding: 0 2px; border: 0; background: none; color: var(--primary);
+    font: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  }
+
+  /* 陳情內容：textarea 背後疊一層同字距的 mirror，把命中的關鍵字依類別上色 */
+  .ik-desc__box { position: relative; }
+  .ik-desc__box .tf__input { position: relative; z-index: 1; min-height: 148px; resize: none; overflow: hidden; }
+  .ik-desc__box .tf__label { z-index: 2; }
+  .ik-hl {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+    padding: 18px 16px 16px; border: 1px solid transparent; border-radius: var(--r-md);
+    font-size: var(--fs-body-l); line-height: 1.45; color: transparent;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .ik-hl mark { color: transparent; border-radius: 4px; background: var(--c-container); box-shadow: 0 0 0 2px var(--c-container); }
+  .ik-hl mark.is-top { background: color-mix(in srgb, var(--c) 30%, #fff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 30%, #fff), inset 0 -2px 0 var(--c); }
+
+  .ik-analysis { display: grid; grid-template-columns: minmax(0, 292px) minmax(0, 1fr); gap: 18px 22px; margin-top: 18px; align-items: start; }
+  .ik-verdict {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; justify-items: center; align-content: start; gap: 4px; text-align: center;
+    padding: 20px 18px 18px;
+    border-radius: 40px 40px 40px 14px;
+    background: var(--c-container, var(--surface-container-high));
+    color: var(--c-ink, var(--on-surface-variant));
+    transition: background-color .5s var(--ease-effects), color .5s var(--ease-effects);
+  }
+  .ik-ring { margin-bottom: 8px; color: var(--c, var(--outline-variant)); transition: color .5s var(--ease-effects); }
+  .ik-ring__shape { width: 84px; height: 84px; color: var(--c, var(--surface-container-highest)); transition: color .5s var(--ease-effects); }
+  .ik-verdict__eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .06em; opacity: .9; }
+  .ik-verdict__name { display: block; font-size: 27px; font-weight: 850; line-height: 1.2; color: var(--c-ink, var(--on-surface)); }
+  .ik-verdict__score { display: flex; align-items: baseline; justify-content: center; gap: 2px; margin-top: 2px; }
+  .ik-verdict__score .num-display { font-size: 46px; transition: font-stretch var(--spring-slow-dur) var(--spring-bouncy), font-weight var(--spring-slow-dur) var(--spring-bouncy); }
+  .ik-verdict__score.is-pop .num-display { font-stretch: 125%; font-weight: 380; }
+  .ik-verdict__score small { font-size: 18px; font-weight: 800; }
+  .ik-verdict__score em { margin-left: 6px; font-style: normal; font-size: var(--fs-label-m); font-weight: 750; }
+  .ik-verdict__hits { margin-top: 6px; font-size: var(--fs-body-s); line-height: 1.75; max-width: 30ch; }
+  .ik-verdict__hits mark { padding: 1px 7px; margin: 0 2px; border-radius: 7px; background: rgb(255 255 255 / .8); color: var(--c-ink); font-weight: 800; }
+  .ik-verdict__alt { display: block; margin-top: 2px; opacity: .85; }
+
+  .ik-pick { display: grid; gap: 10px; align-content: start; min-width: 0; }
+  .ik-pick__head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .ik-pick__head .btn { margin-left: auto; }
+  .ik-pick__sep { height: 1px; margin: 8px 0 2px; background: var(--outline-variant); }
+  .ik-pick.is-error [data-cats] .chip { border-color: var(--error); }
+  .ik-pick.is-error [data-msg="cat"] { color: var(--error); font-weight: 700; }
+  .ik-pick .chip-set:empty { display: none; }
+  [data-units] .chip { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; white-space: normal; text-align: left; line-height: 1.3; }
+
+  .ik-row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 292px); gap: 16px 22px; margin-top: 22px; align-items: start; }
+  .ik-toggle {
+    display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 10px 14px 10px 16px;
+    border-radius: 20px; background: var(--surface-container); cursor: pointer;
+    transition: background-color .3s var(--ease-effects), color .3s;
+  }
+  .ik-toggle > span { flex: 1; min-width: 0; }
+  .ik-toggle b { display: block; font-size: var(--fs-body-m); font-weight: 800; line-height: 1.35; }
+  .ik-toggle small { display: block; font-size: var(--fs-body-s); line-height: 1.45; opacity: .85; }
+  .ik-toggle--urgent:has(.switch:checked) { background: var(--error-container); color: var(--on-error-container); }
+  .ik-toggle--urgent .switch:checked { background: var(--error); border-color: var(--error); }
+
+  /* 地點 */
+  .ik-loc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 20px 24px; align-items: start; }
+  .ik-loc__fields { display: grid; gap: 20px; }
+  .ik-sugg {
+    position: absolute; z-index: 20; left: 0; right: 0; top: 62px;
+    padding: 6px; border-radius: 22px; background: var(--surface-container-lowest); box-shadow: var(--elev-3);
+    transform-origin: 50% 0; animation: pop-in var(--spring-fast-dur) var(--spring-fast);
+  }
+  .ik-sugg li {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 9px 12px; border-radius: 16px; cursor: pointer;
+  }
+  .ik-sugg li .ico { width: 20px; height: 20px; color: var(--on-surface-variant); }
+  .ik-sugg li[aria-selected="true"], .ik-sugg li:hover { background: var(--surface-container-high); }
+  .ik-sugg b { display: block; font-weight: 750; }
+  .ik-sugg b mark { background: none; color: var(--primary); }
+  .ik-sugg small { display: block; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .ik-map__cap { margin-top: 8px; font-size: var(--fs-body-s); color: var(--on-surface-variant); text-align: center; }
+  .ik-field-in { animation: enter-up var(--spring-slow-dur) var(--spring-bouncy); }
+
+  /* 相似案件比對 */
+  .ik-dup {
+    margin-top: 22px; padding: 16px 18px;
+    border-radius: 28px 28px 28px 10px; background: var(--surface-container);
+    transition: background-color .4s var(--ease-effects), color .4s;
+  }
+  .ik-dup[data-state="ok"] { background: var(--success-container); color: var(--on-success-container); }
+  .ik-dup[data-state="warn"] { background: var(--warn-container); color: var(--on-warn-container); }
+  .ik-dup__head { display: flex; align-items: center; gap: 12px; }
+  .ik-dup__shape { width: 32px; height: 32px; color: var(--outline-variant); transition: color .4s var(--ease-effects); }
+  .ik-dup[data-state="ok"] .ik-dup__shape { color: var(--success-vivid); }
+  .ik-dup[data-state="warn"] .ik-dup__shape { color: var(--warn-vivid); animation: spin 8s linear infinite; }
+  .ik-dup__title { font-weight: 800; }
+  .ik-dup__sub { font-size: var(--fs-body-s); opacity: .85; }
+  .ik-dup__list { display: grid; gap: 8px; margin-top: 12px; }
+  .ik-dup__list:empty { display: none; }
+  .ik-dupitem {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 2px 14px; align-items: center;
+    padding: 12px 14px; border-radius: 22px; background: rgb(255 255 255 / .8); color: var(--on-surface);
+  }
+  .ik-dupitem__shape { width: 40px; height: 40px; color: var(--c); }
+  .ik-dupitem__top { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .ik-dupitem__top a { font-weight: 800; color: var(--on-surface); }
+  .ik-dupitem__title { font-weight: 800; font-size: var(--fs-body-m); line-height: 1.4; }
+  .ik-dupitem__why { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .ik-dupitem__why span { padding: 2px 8px; border-radius: var(--r-full); background: var(--warn-container); color: var(--on-warn-container); font-size: 11.5px; font-weight: 800; }
+  .ik-dupitem__side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+  /* 來電者 */
+  .ik-caller { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .ik-fs { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .ik-fs legend { padding: 0; margin-bottom: 10px; }
+  .ik-radios { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-height: 40px; }
+  .ik-history { margin-top: 18px; }
+
+  /* ---------- 右側：建案摘要 ---------- */
+  .ik-sum {
+    display: grid; gap: 14px; padding: 18px;
+    border-radius: var(--r-3xl) var(--r-3xl) var(--r-lg) var(--r-3xl);
+    background: var(--surface-container);
+  }
+  .ik-sum__head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 0; }
+  .ik-sum__title { font-size: var(--fs-title-l); font-weight: 800; }
+  .ik-sum__will { margin-left: auto; font-size: var(--fs-label-m); font-weight: 700; color: var(--on-surface-variant); }
+  .ik-ticket { position: relative; padding: 16px 18px 16px; border-radius: 24px; background: var(--surface-container-lowest); box-shadow: var(--elev-1); }
+  .ik-ticket__top { position: relative; display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 12px; border-bottom: 2px dashed var(--outline-variant); }
+  /* 票根左右的半圓缺口 */
+  .ik-ticket__top::before, .ik-ticket__top::after {
+    content: ""; position: absolute; bottom: -11px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-container);
+  }
+  .ik-ticket__top::before { left: -28px; }
+  .ik-ticket__top::after { right: -28px; }
+  .ik-ticket__shape { width: 46px; height: 46px; flex-shrink: 0; color: var(--c, var(--surface-container-highest)); transition: color .5s var(--ease-effects); }
+  .ik-ticket__label { font-size: 12px; font-weight: 700; color: var(--on-surface-variant); }
+  .ik-ticket__id { font-family: var(--font-num); font-size: 25px; font-weight: 780; font-stretch: 58%; line-height: 1.1; letter-spacing: .02em; }
+  .ik-ticket__id span { color: var(--outline); letter-spacing: .14em; }
+  .ik-ticket__top .tag { margin-left: auto; }
+  .ik-ticket__title { font-weight: 800; font-size: var(--fs-body-l); line-height: 1.45; }
+  .ik-ticket__title.is-empty { color: var(--outline); font-weight: 600; font-size: var(--fs-body-m); }
+  .ik-ticket__kv { display: grid; gap: 8px; margin: 10px 0 0; }
+  .ik-ticket__kv > div { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; font-size: var(--fs-body-s); line-height: 1.5; }
+  .ik-ticket__kv dt { color: var(--on-surface-variant); font-weight: 700; }
+  .ik-ticket__kv dd { margin: 0; min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
+  .ik-ticket__kv dd small { display: block; color: var(--on-surface-variant); font-weight: 600; }
+  .ik-ticket__kv dd b { font-family: var(--font-num); font-weight: 800; }
+  .ik-ticket__kv dd .cat-tag { height: 24px; }
+  /* 尚未填寫時以骨架條表示「這裡之後會出現內容」 */
+  .ik-ticket__kv dd.is-empty { color: transparent; }
+  .ik-ticket__kv dd.is-empty::before { content: ""; display: block; width: var(--w, 62%); height: 9px; margin-top: 6px; border-radius: 5px; background: var(--surface-container-high); }
+  .ik-ticket__dup {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 9px 12px; border-radius: 14px;
+    background: var(--warn-container); color: var(--on-warn-container); font-size: var(--fs-body-s); font-weight: 800; text-decoration: none;
+  }
+  .ik-ticket__dup .shape { width: 18px; height: 18px; color: var(--warn-vivid); }
+  .ik-ticket__dup:hover { text-decoration: underline; }
+
+  .ik-check { display: grid; gap: 8px; padding: 0 4px; }
+  .ik-check__head { display: flex; align-items: baseline; justify-content: space-between; font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); letter-spacing: .04em; }
+  .ik-check__head b { font-family: var(--font-num); font-size: 22px; font-weight: 800; font-stretch: 58%; color: var(--on-surface); letter-spacing: 0; }
+  .ik-check__wave { height: 18px; }
+  .ik-check__list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ik-ck {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 6px;
+    border: 0; border-radius: var(--r-full); background: var(--surface-container-high); color: var(--on-surface-variant);
+    font: 700 var(--fs-label-m)/1 var(--font-sans); cursor: pointer;
+    transition: background-color .3s, color .3s, transform var(--spring-bouncy-dur) var(--spring-bouncy);
+  }
+  .ik-ck:active { transform: scale(.95); transition-duration: 100ms; }
+  .ik-ck__mark { position: relative; display: grid; place-items: center; width: 22px; height: 22px; color: var(--outline-variant); transition: color .35s; }
+  .ik-ck__mark .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ik-ck__mark .ico { position: relative; width: 13px; height: 13px; color: #fff; opacity: 0; transform: scale(.3); transition: opacity .2s, transform var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .ik-ck.is-done { background: var(--primary-container); color: var(--on-primary-container); }
+  .ik-ck.is-done .ik-ck__mark { color: var(--primary); }
+  .ik-ck.is-done .ik-ck__mark .ico { opacity: 1; transform: none; }
+  .ik-ck.is-error { background: var(--error-container); color: var(--on-error-container); }
+  .ik-ck.is-error .ik-ck__mark { color: var(--error); }
+  .ik-ck.is-shake { animation: ik-shake .44s var(--ease-emphasized); }
+  @keyframes ik-shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+
+  .ik-toggle--sum { background: var(--surface-container-lowest); }
+  /* 送出鍵：未完成是方形 tonal，必填齊全後 morph 成實心膠囊 */
+  .ik-submit { height: 62px; border-radius: 20px; font-size: var(--fs-body-l); --btn-bg: var(--primary-container); --btn-fg: var(--on-primary-container); }
+  .ik-submit.is-ready { border-radius: var(--r-full); --btn-bg: var(--primary); --btn-fg: var(--on-primary); box-shadow: var(--elev-2); }
+  .ik-submit.is-pop { animation: ik-pop var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .ik-submit:active { border-radius: 14px; }
+  .ik-submit .loader { width: 28px; height: 28px; background: none; color: currentColor; }
+  @keyframes ik-pop { 40% { transform: scale(1.045); } }
+  .ik-sum__hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+
+  /* ---------- 今日受理 ---------- */
+  .ik-recent { margin-top: var(--gap); }
+  .ik-recent__list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .ik-rc {
+    position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 3px 12px; align-content: start;
+    padding: 14px 16px 14px 14px; border-radius: 22px; background: var(--surface-container-lowest);
+    transition: box-shadow .2s;
+  }
+  .ik-rc:hover { box-shadow: var(--elev-1); }
+  .ik-rc.is-mine { box-shadow: inset 0 0 0 2px var(--primary); }
+  .ik-rc.is-entering { animation: enter-up var(--spring-slow-dur) var(--spring-bouncy); }
+  .ik-rc__shape { grid-row: span 3; width: 36px; height: 36px; color: var(--c); }
+  .ik-rc__top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12px; color: var(--on-surface-variant); }
+  .ik-rc__top .mono { font-weight: 700; color: var(--on-surface); }
+  .ik-rc__new { padding: 1px 8px; border-radius: var(--r-full); background: var(--primary); color: var(--on-primary); font-weight: 800; }
+  .ik-rc__title {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    font-weight: 800; font-size: var(--fs-body-m); line-height: 1.45; color: var(--on-surface); text-decoration: none;
+  }
+  a.ik-rc__title::before { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  a.ik-rc__title:hover { color: var(--primary); }
+  a.ik-rc__title:focus-visible { outline: none; }
+  a.ik-rc__title:focus-visible::before { outline: 3px solid var(--primary); outline-offset: 2px; }
+  .ik-rc__meta { font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .ik-rc__foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .ik-rc__foot .status, .ik-rc__foot .sla, .ik-rc__foot .btn { position: relative; }
+  .ik-rc__foot .btn { margin-left: auto; }
+
+  /* ---------- 建案完成收據（modal 內容） ---------- */
+  .ik-rcpt { display: grid; gap: 16px; }
+  .ik-rcpt__hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px;
+    padding: 18px 20px; border-radius: 30px 30px 30px 10px;
+    background: var(--c-container); color: var(--c-ink);
+  }
+  .ik-rcpt__deco { position: absolute; z-index: -1; right: -58px; top: -70px; width: 210px; height: 210px; color: var(--c); opacity: .16; }
+  .ik-rcpt__shape { width: 62px; height: 62px; color: var(--c); }
+  .ik-rcpt__label { font-size: 12.5px; font-weight: 800; letter-spacing: .05em; }
+  .ik-rcpt__id { display: flex; align-items: baseline; margin-top: 4px; font-family: var(--font-num); font-size: 50px; font-weight: 780; font-stretch: 40%; line-height: .95; color: var(--on-surface); }
+  .ik-rcpt__title { margin-top: 6px; font-weight: 700; color: var(--on-surface); line-height: 1.45; }
+  .ik-rcpt__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ik-route { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+  .ik-route li { position: relative; display: grid; justify-items: center; gap: 6px; padding: 0 4px; text-align: center; }
+  .ik-route li + li::before { content: ""; position: absolute; top: 19px; left: calc(-50% + 26px); right: calc(50% + 26px); height: 4px; border-radius: 2px; background: var(--surface-container-highest); }
+  .ik-route li.is-done::before { background: var(--primary); }
+  .ik-route .shape { width: 42px; height: 42px; color: var(--surface-container-highest); }
+  .ik-route li.is-done .shape { color: var(--s); }
+  .ik-route b { font-size: var(--fs-label-m); font-weight: 800; line-height: 1.3; }
+  .ik-route small { font-size: 12px; color: var(--on-surface-variant); line-height: 1.35; }
+
+  .ik-ref { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ik-ref__item { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; padding: 14px 16px; border-radius: 22px; background: var(--surface-container-lowest); }
+  .ik-ref__item .shape { width: 42px; height: 42px; color: var(--c); }
+  .ik-ref__item b { display: block; font-weight: 800; }
+  .ik-ref__item small { display: block; font-size: var(--fs-body-s); color: var(--on-surface-variant); line-height: 1.4; }
+  .ik-ref__sla { font-family: var(--font-num); font-size: 30px; font-weight: 780; font-stretch: 45%; line-height: 1; color: var(--c-ink); text-align: right; }
+  .ik-ref__sla small { font-size: 12px; font-stretch: 100%; color: var(--on-surface-variant); }
+  .ik-ref__kw { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+  .ik-ref__kw span { padding: 2px 8px; border-radius: var(--r-full); background: var(--c-container); color: var(--c-ink); font-size: 12px; font-weight: 700; }
+
+  .ik-dupmodal { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 4px 14px; align-items: start; padding: 16px; border-radius: 24px; background: var(--surface-container-lowest); }
+  .ik-dupmodal > .shape { width: 52px; height: 52px; color: var(--c); grid-row: span 4; }
+  .ik-dupmodal .cluster { margin-top: 6px; }
+
+  /* ---------- 中尺寸 / 手機 ---------- */
+  @media (max-width: 1199px) {
+    .ik-side { max-width: 640px; }
+  }
+  @media (max-width: 899px) {
+    .ik-call__top { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who time" "wave wave" "ctrl ctrl"; }
+    .ik-ctrl { display: grid; grid-template-columns: 1fr 1fr 1.3fr; }
+    .ik-cbtn__ic { width: 100%; }
+    .ik-cbtn--end .ik-cbtn__ic, .ik-cbtn--answer .ik-cbtn__ic { width: 100%; }
+    .ik-analysis, .ik-row2, .ik-loc { grid-template-columns: minmax(0, 1fr); }
+    .ik-recent__list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 599px) {
+    .ik-call { padding: 18px 16px 16px; border-radius: 32px 32px 12px 32px; gap: 14px; }
+    .ik-call__deco { width: 260px; height: 260px; right: -110px; top: -120px; }
+    .ik-avatar { width: 48px; height: 48px; }
+    .ik-avatar .ico { width: 22px; height: 22px; }
+    .ik-call__num { font-size: 26px; }
+    .ik-call__time .num-display { font-size: 42px; }
+    .ik-wave { height: 44px; }
+    .ik-asr { padding: 12px 14px; }
+    .ik-utt { grid-template-columns: 46px minmax(0, 1fr); gap: 8px; }
+    .ik-sec { padding: 18px 16px 20px; border-radius: 28px 12px 28px 28px; }
+    .ik-sec__head { gap: 12px; margin-bottom: 16px; }
+    .ik-badge { width: 44px; height: 44px; }
+    .ik-caller { grid-template-columns: minmax(0, 1fr); }
+    .ik-dupitem { grid-template-columns: 34px minmax(0, 1fr); padding: 12px; }
+    .ik-dupitem__shape { width: 34px; height: 34px; }
+    .ik-dupitem__side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .ik-recent__list { grid-template-columns: minmax(0, 1fr); }
+    .ik-sum { padding: 16px; }
+    .ik-ref { grid-template-columns: minmax(0, 1fr); }
+    .ik-rcpt__id { font-size: 42px; }
+    .ik-route .shape { width: 36px; height: 36px; }
+    .ik-route li + li::before { top: 16px; left: calc(-50% + 22px); right: calc(50% + 22px); }
+  }
+</style>
+</head>
+<body class="app">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="shell">
+  <!-- ===== 導覽軌（手機版自動變成底部導覽列）===== -->
+  <nav class="rail" aria-label="主要導覽">
+    <a class="rail__brand" href="index.html" aria-label="1999 陳情案件管理 總覽">
+      <svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie12"/></svg>
+      <span class="rail__brand-num" aria-hidden="true">1999</span>
+    </a>
+    <ul class="rail__list">
+      <li><a class="rail__item" href="index.html" data-nav="index"><span class="rail__ind"><svg data-icon="dashboard"></svg></span><span class="rail__label">總覽</span></a></li>
+      <li><a class="rail__item" href="cases.html" data-nav="cases"><span class="rail__ind"><svg data-icon="list"></svg><span class="rail__badge" data-count="received" aria-label="待派案件數"></span></span><span class="rail__label">案件列表</span></a></li>
+      <li><a class="rail__item" href="case.html" data-nav="case"><span class="rail__ind"><svg data-icon="detail"></svg></span><span class="rail__label">案件詳情</span></a></li>
+      <li><a class="rail__item active" href="intake.html" data-nav="intake" aria-current="page"><span class="rail__ind"><svg data-icon="callAdd"></svg></span><span class="rail__label">受理建案</span></a></li>
+    </ul>
+    <a class="rail__back" href="../../index.html"><svg class="ico ico--sm" data-icon="back"></svg>返回目錄</a>
+  </nav>
+
+  <div class="shell__main">
+    <!-- ===== 頂列 ===== -->
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" type="button" data-drawer-open aria-label="開啟選單"><svg data-icon="menu"></svg></button>
+      <div class="topbar__title">
+        <span class="topbar__org">澄港市 1999 市民熱線</span>
+        <span class="topbar__sys">陳情案件管理系統</span>
+      </div>
+      <form class="search" role="search" data-search action="cases.html">
+        <svg data-icon="search"></svg>
+        <input type="search" name="q" placeholder="搜尋案號、地址、行政區或電話末三碼" aria-label="搜尋案件">
+        <span class="kbd search__kbd" aria-hidden="true">/</span>
+      </form>
+      <div class="topbar__actions">
+        <button class="icon-btn search-toggle" type="button" data-search-toggle aria-label="搜尋案件"><svg data-icon="search"></svg></button>
+        <button class="duty" type="button" data-duty aria-pressed="true" aria-label="接聽狀態"><span class="duty__dot"></span><span data-duty-label>接聽中</span><small>D-02</small></button>
+        <button class="icon-btn" type="button" data-notify aria-label="通知"><svg data-icon="bell"></svg><span class="badge" data-count="notices"></span></button>
+        <button class="avatar-btn" type="button" data-profile aria-label="個人選單：周品妤"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie9"/></svg><span aria-hidden="true">品妤</span></button>
+      </div>
+    </header>
+
+    <main class="page" id="main">
+      <section class="page-head" aria-labelledby="page-title">
+        <div class="page-head__text">
+          <p class="page-head__eyebrow"><span class="live-chip live-chip--coral"><i aria-hidden="true"></i>來電受理</span><span data-today>10 月 26 日 星期一</span><span data-clock>14:20</span><span>席位 D-02 · 周品妤</span></p>
+          <h1 class="page-head__title" id="page-title">受理建案</h1>
+          <p class="page-head__desc">今天已受理 <b data-count="today">23</b> 件，<a href="cases.html?status=received">目前 <b data-count="received">6</b> 件待派案</a>。邊聽邊填：描述一輸入就推薦類別與承辦局處，並比對 72 小時內的相似案件。</p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn btn--outlined" type="button" data-ref><svg data-icon="info"></svg>時限與權責</button>
+          <button class="btn btn--tonal" type="button" data-clear><svg data-icon="refresh"></svg>清空表單</button>
+        </div>
+      </section>
+
+      <div class="ik-layout">
+        <div class="ik-work">
+          <!-- ===== 通話中（來電顯示、聲紋、語音轉文字）===== -->
+          <section class="ik-call on-dark" data-anim data-state="active" aria-labelledby="ik-call-title">
+            <svg class="shape ik-call__deco" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie12"/></svg>
+            <div class="ik-call__top">
+              <div class="ik-call__who">
+                <span class="ik-avatar" aria-hidden="true"><i class="ik-ripple"></i><i class="ik-ripple"></i><svg class="shape" viewBox="0 0 100 100" data-call-avatar><path data-shape="cookie9"/></svg><svg data-icon="phone"></svg></span>
+                <div class="ik-call__id">
+                  <p class="ik-call__state"><span data-call-state>通話中</span><span class="ik-call__sep">·</span><span class="hide-sm">線路 3</span><span class="ik-call__sep hide-sm">·</span><span>等候 <b data-queue>3</b> 通</span></p>
+                  <h2 class="ik-call__num" id="ik-call-title"><span class="sr-only">來電號碼 </span><span data-call-num>—</span></h2>
+                  <p class="ik-call__meta" data-call-meta>行動電話</p>
+                </div>
+              </div>
+              <canvas class="ik-wave" data-wave aria-hidden="true"></canvas>
+              <p class="ik-call__time"><span class="num-display" data-call-time>00:00</span><small>通話時間</small></p>
+              <div class="ik-ctrl" role="group" aria-label="通話控制">
+                <button type="button" class="ik-cbtn" data-call-mute aria-pressed="false">
+                  <span class="ik-cbtn__ic">
+                    <svg class="ico ik-ic-a" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></svg>
+                    <svg class="ico ik-ic-b" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5M4 4l16 16"/></svg>
+                  </span><span data-mute-label>靜音</span>
+                </button>
+                <button type="button" class="ik-cbtn" data-call-hold aria-pressed="false">
+                  <span class="ik-cbtn__ic">
+                    <svg class="ico ik-ic-a" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6v12M15 6v12"/></svg>
+                    <svg class="ico ik-ic-b" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5l11 6.5-11 6.5z"/></svg>
+                  </span><span data-hold-label>保留</span>
+                </button>
+                <button type="button" class="ik-cbtn ik-cbtn--end" data-call-main aria-label="結束通話">
+                  <span class="ik-cbtn__ic"><svg data-icon="phone"></svg><span class="ik-cbtn__badge" data-queue-badge>3</span></span><span data-call-main-label>結束</span>
+                </button>
+              </div>
+            </div>
+            <div class="ik-asr">
+              <div class="ik-asr__head">
+                <span class="ik-asr__title"><svg data-icon="mic"></svg>語音轉文字 · 即時</span>
+                <button type="button" class="ik-asr__more" data-asr-all aria-expanded="false">顯示全部</button>
+                <button type="button" class="btn btn--white btn--sm" data-fill><svg data-icon="sparkle"></svg><span data-fill-label>帶入通話重點</span></button>
+              </div>
+              <ol class="ik-asr__list" data-asr aria-label="通話逐字稿"></ol>
+            </div>
+          </section>
+
+          <form class="ik-form" id="ik-form" novalidate aria-label="來電受理表單">
+            <!-- ===== 1 陳情內容 ===== -->
+            <section class="panel ik-sec" id="ik-sec-desc" data-step="todo" aria-labelledby="ik-s1">
+              <header class="ik-sec__head">
+                <span class="ik-badge" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="circle"/></svg><b>1</b><svg data-icon="check"></svg></span>
+                <div>
+                  <h2 class="ik-sec__title" id="ik-s1">陳情內容</h2>
+                  <p class="ik-sec__sub">描述地點、狀況與影響，系統依關鍵字即時判讀類別與權責</p>
+                </div>
+              </header>
+              <div class="tf" data-field="desc">
+                <div class="ik-desc__box">
+                  <div class="ik-hl" aria-hidden="true" data-hl></div>
+                  <textarea class="tf__input" id="ik-desc" placeholder=" " maxlength="500" aria-describedby="ik-desc-s"></textarea>
+                  <label class="tf__label" for="ik-desc">陳情內容<span class="tf__req">*</span></label>
+                </div>
+                <p class="tf__support" id="ik-desc-s"><span data-msg="desc">描述地點、狀況與影響</span><span class="tf__count" data-desc-count>0/500</span></p>
+              </div>
+
+              <div class="ik-analysis">
+                <div class="ik-verdict" data-verdict>
+                  <div class="ik-ring" data-ring><span class="wavy-ring__label"><svg class="shape ik-ring__shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg></span></div>
+                  <p class="ik-verdict__eyebrow" data-v-mode>智慧分案 · 等待描述</p>
+                  <p class="ik-verdict__name" data-v-name>尚未判讀</p>
+                  <p class="ik-verdict__score" data-v-scorebox><span class="num-display" data-v-score>0</span><small>%</small><em>判讀信心</em></p>
+                  <p class="ik-verdict__hits" data-v-hits>輸入或帶入通話重點後即時判讀</p>
+                  <p class="sr-only" aria-live="polite" data-v-live></p>
+                </div>
+                <div class="ik-pick" data-field="cat">
+                  <div class="ik-pick__head">
+                    <span class="ik-label" id="ik-cat-label">案件類別<span class="tf__req">*</span></span>
+                    <button type="button" class="btn btn--text btn--sm" data-cat-auto hidden><svg data-icon="sparkle"></svg>改回自動判讀</button>
+                  </div>
+                  <div class="chip-set" role="radiogroup" aria-labelledby="ik-cat-label" data-cats></div>
+                  <p class="ik-help" data-msg="cat">依命中關鍵字排序，可手動改選</p>
+                  <div class="ik-pick__sep" aria-hidden="true"></div>
+                  <div class="ik-pick__head"><span class="ik-label" id="ik-unit-label">承辦局處</span></div>
+                  <div class="chip-set" role="radiogroup" aria-labelledby="ik-unit-label" data-units></div>
+                  <p class="ik-help" data-unit-msg>判讀類別後自動帶入承辦局處</p>
+                </div>
+              </div>
+
+              <div class="ik-row2">
+                <div class="tf" data-field="title">
+                  <input class="tf__input" id="ik-title" placeholder=" " maxlength="40" autocomplete="off" aria-describedby="ik-title-s">
+                  <label class="tf__label" for="ik-title">案件標題</label>
+                  <p class="tf__support" id="ik-title-s"><span data-msg="title">選定類別與地點後自動產生</span><span class="tf__count" data-title-count>0/40</span></p>
+                </div>
+                <label class="ik-toggle ik-toggle--urgent">
+                  <span><b>列為緊急案件</b><small data-urgent-hint>動物受困受傷、倒塌風險、消防栓違停等建議列為緊急</small></span>
+                  <input type="checkbox" class="switch" role="switch" data-urgent aria-label="列為緊急案件">
+                </label>
+              </div>
+            </section>
+
+            <!-- ===== 2 地點 ===== -->
+            <section class="panel ik-sec" id="ik-sec-loc" data-step="todo" aria-labelledby="ik-s2">
+              <header class="ik-sec__head">
+                <span class="ik-badge" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="circle"/></svg><b>2</b><svg data-icon="check"></svg></span>
+                <div>
+                  <h2 class="ik-sec__title" id="ik-s2">地點</h2>
+                  <p class="ik-sec__sub">輸入路名或地標，系統自動判定行政區並比對相似案件</p>
+                </div>
+              </header>
+              <div class="ik-loc">
+                <div class="ik-loc__fields">
+                  <div class="tf tf--lead" data-field="address">
+                    <svg class="tf__lead" data-icon="pin"></svg>
+                    <input class="tf__input" id="ik-address" placeholder=" " maxlength="60" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ik-sugg" aria-describedby="ik-address-s">
+                    <label class="tf__label" for="ik-address">地點 / 地址<span class="tf__req">*</span></label>
+                    <ul class="ik-sugg" id="ik-sugg" role="listbox" aria-label="地點建議" hidden></ul>
+                    <p class="tf__support" id="ik-address-s"><span data-msg="address">輸入路名或地標，例：文昌街、港埕漁市場</span></p>
+                  </div>
+                  <div class="tf tf--select" data-field="district">
+                    <select class="tf__input" id="ik-district" aria-describedby="ik-district-s"></select>
+                    <label class="tf__label" for="ik-district">行政區<span class="tf__req">*</span></label>
+                    <p class="tf__support" id="ik-district-s"><span data-msg="district">也可以直接點選地圖上的行政區</span></p>
+                  </div>
+                  <div class="tf" data-field="pole" hidden>
+                    <input class="tf__input" id="ik-pole" placeholder=" " maxlength="7" autocomplete="off" aria-describedby="ik-pole-s">
+                    <label class="tf__label" for="ik-pole">燈桿編號（選填）</label>
+                    <p class="tf__support" id="ik-pole-s"><span data-msg="pole">燈桿上的白色編號牌，例：SJ-0263</span></p>
+                  </div>
+                  <div class="tf" data-field="plate" hidden>
+                    <input class="tf__input" id="ik-plate" placeholder=" " maxlength="9" autocomplete="off" aria-describedby="ik-plate-s">
+                    <label class="tf__label" for="ik-plate">車牌號碼（選填）</label>
+                    <p class="tf__support" id="ik-plate-s"><span data-msg="plate">例：ABC-1234；民眾不確定可留空</span></p>
+                  </div>
+                </div>
+                <div>
+                  <div class="ik-map" id="ik-map"></div>
+                  <p class="ik-map__cap">點選行政區 · 方向鍵與 Enter 也可操作</p>
+                </div>
+              </div>
+              <div class="ik-dup" id="ik-dup" data-state="idle">
+                <div class="ik-dup__head">
+                  <svg class="shape ik-dup__shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg>
+                  <div>
+                    <p class="ik-dup__title" data-dup-title aria-live="polite">相似案件比對</p>
+                    <p class="ik-dup__sub" data-dup-sub>選定類別與地點後，自動比對近 7 日案件</p>
+                  </div>
+                </div>
+                <ul class="ik-dup__list" data-dup-list></ul>
+              </div>
+            </section>
+
+            <!-- ===== 3 來電者與回覆 ===== -->
+            <section class="panel ik-sec" id="ik-sec-caller" data-step="todo" aria-labelledby="ik-s3">
+              <header class="ik-sec__head">
+                <span class="ik-badge" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="circle"/></svg><b>3</b><svg data-icon="check"></svg></span>
+                <div>
+                  <h2 class="ik-sec__title" id="ik-s3">來電者與回覆</h2>
+                  <p class="ik-sec__sub">來電顯示已自動帶入；個資僅供本案聯繫使用</p>
+                </div>
+              </header>
+              <div class="ik-caller">
+                <div class="tf" data-field="phone">
+                  <input class="tf__input" id="ik-phone" type="tel" inputmode="tel" placeholder=" " maxlength="16" autocomplete="off" aria-describedby="ik-phone-s">
+                  <label class="tf__label" for="ik-phone">來電號碼<span class="tf__req">*</span></label>
+                  <p class="tf__support" id="ik-phone-s"><span data-msg="phone">來電顯示自動帶入 · 存檔時遮蔽中間三碼</span></p>
+                </div>
+                <div class="tf" data-field="name">
+                  <input class="tf__input" id="ik-name" placeholder=" " maxlength="12" autocomplete="off" aria-describedby="ik-name-s">
+                  <label class="tf__label" for="ik-name">稱呼（選填）</label>
+                  <p class="tf__support" id="ik-name-s"><span>例：陳先生；未提供時記為「來電民眾」</span></p>
+                </div>
+                <fieldset class="ik-fs">
+                  <legend class="ik-label">受理管道</legend>
+                  <div class="btn-group" role="group" aria-label="受理管道" data-channel>
+                    <button type="button" data-value="電話" aria-pressed="true">電話</button>
+                    <button type="button" data-value="App" aria-pressed="false">App</button>
+                    <button type="button" data-value="網站" aria-pressed="false">網站</button>
+                    <button type="button" data-value="LINE" aria-pressed="false">LINE</button>
+                  </div>
+                </fieldset>
+                <fieldset class="ik-fs">
+                  <legend class="ik-label">處理結果回覆方式</legend>
+                  <div class="ik-radios">
+                    <label class="radio"><input type="radio" name="reply" value="call" checked>電話回覆＋簡訊</label>
+                    <label class="radio"><input type="radio" name="reply" value="sms">僅簡訊通知</label>
+                  </div>
+                </fieldset>
+              </div>
+              <div class="callout callout--info ik-history" data-history hidden></div>
+            </section>
+          </form>
+        </div>
+
+        <!-- ===== 建案摘要（桌機 sticky）===== -->
+        <aside class="ik-side" aria-label="建案摘要">
+          <section class="ik-sum" aria-labelledby="ik-sum-title">
+            <header class="ik-sum__head">
+              <h2 class="ik-sum__title" id="ik-sum-title">建案摘要</h2>
+              <span class="ik-sum__will">建立後</span>
+              <span class="status" data-status="received" data-sum-status><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><span class="status__label">待派案</span></span>
+            </header>
+            <div class="ik-ticket" data-ticket>
+              <div class="ik-ticket__top">
+                <svg class="shape ik-ticket__shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg>
+                <div>
+                  <p class="ik-ticket__label">案號（建立時編號）</p>
+                  <p class="ik-ticket__id"><b data-sum-prefix>C1026-</b><span aria-hidden="true">····</span></p>
+                </div>
+                <span class="tag tag--error" data-sum-urgent hidden>緊急</span>
+              </div>
+              <p class="ik-ticket__title is-empty" data-sum-title>標題將依地點與類別自動產生</p>
+              <dl class="ik-ticket__kv">
+                <div><dt>類別</dt><dd data-sum-cat style="--w:40%"></dd></div>
+                <div><dt>地點</dt><dd data-sum-loc style="--w:78%"></dd></div>
+                <div><dt>承辦</dt><dd data-sum-unit style="--w:66%"></dd></div>
+                <div><dt>時限</dt><dd data-sum-sla style="--w:54%"></dd></div>
+                <div><dt>來電</dt><dd data-sum-caller style="--w:70%"></dd></div>
+              </dl>
+              <a class="ik-ticket__dup" href="#ik-dup" data-sum-dup hidden></a>
+            </div>
+            <div class="ik-check">
+              <p class="ik-check__head"><span>必填檢核</span><b><span data-check-n>0</span> / 5</b></p>
+              <div class="ik-check__wave" data-check-wave></div>
+              <ul class="ik-check__list">
+                <li><button type="button" class="ik-ck" data-ck="desc"><span class="ik-ck__mark"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><svg data-icon="check"></svg></span>陳情內容</button></li>
+                <li><button type="button" class="ik-ck" data-ck="cat"><span class="ik-ck__mark"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><svg data-icon="check"></svg></span>案件類別</button></li>
+                <li><button type="button" class="ik-ck" data-ck="address"><span class="ik-ck__mark"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><svg data-icon="check"></svg></span>地點</button></li>
+                <li><button type="button" class="ik-ck" data-ck="district"><span class="ik-ck__mark"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><svg data-icon="check"></svg></span>行政區</button></li>
+                <li><button type="button" class="ik-ck" data-ck="phone"><span class="ik-ck__mark"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="circle"/></svg><svg data-icon="check"></svg></span>來電號碼</button></li>
+              </ul>
+            </div>
+            <label class="ik-toggle ik-toggle--sum">
+              <span><b>建案後立即派案</b><small data-dispatch-hint>判讀出承辦局處後可直接派案</small></span>
+              <input type="checkbox" class="switch" role="switch" data-auto-dispatch checked aria-label="建案後立即派案">
+            </label>
+            <button type="submit" form="ik-form" class="btn btn--lg btn--block ik-submit" data-submit><svg data-icon="send"></svg><span data-submit-label>建立並派案</span></button>
+            <p class="ik-sum__hint"><span class="hide-sm"><span class="kbd">Ctrl</span> + <span class="kbd">Enter</span> 也可送出 · </span>受理人 周品妤（D-02）</p>
+          </section>
+        </aside>
+      </div>
+
+      <!-- ===== 今日受理 ===== -->
+      <section class="panel ik-recent" aria-labelledby="ik-recent-title" data-reveal>
+        <header class="panel__head">
+          <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="clover8"/></svg>
+          <div>
+            <h2 class="panel__title" id="ik-recent-title">今日受理 <span class="badge badge--primary" data-count="today"></span></h2>
+            <p class="panel__sub">全中心最新 6 件 · 本頁剛建立的案件以外框標示</p>
+          </div>
+          <div class="panel__actions"><a class="btn btn--text btn--sm" href="cases.html">全部案件<svg data-icon="forward"></svg></a></div>
+        </header>
+        <ul class="ik-recent__list" data-recent></ul>
+      </section>
+    </main>
+
+    <!-- ===== 頁尾 ===== -->
+    <footer class="footer">
+      <div class="footer__inner">
+        <div class="footer__brand">
+          <span class="footer__mark" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="cookie12"/></svg><b>1999</b></span>
+          <div>
+            <p class="footer__name">澄港市 1999 市民熱線<br>陳情案件管理系統</p>
+            <p class="footer__desc">從話務受理、分類派案、局處承辦到回覆民眾與滿意度回訪，一條流程追到底。</p>
+          </div>
+        </div>
+        <nav class="footer__nav" aria-label="頁尾導覽">
+          <p class="footer__label">頁面</p>
+          <ul>
+            <li><a href="index.html" data-nav="index">總覽</a></li>
+            <li><a href="cases.html" data-nav="cases">案件列表</a></li>
+            <li><a href="case.html" data-nav="case">案件詳情</a></li>
+            <li><a href="intake.html" data-nav="intake" aria-current="page">受理建案</a></li>
+          </ul>
+        </nav>
+        <div class="footer__info">
+          <p class="footer__label">話務中心</p>
+          <p>市民熱線 <b>24 小時</b>服務，派案組 07:00–24:00 輪值</p>
+          <p>系統問題請洽資訊股 分機 <b>3305</b></p>
+          <p>本系統所有案件、人名與電話皆為虛構示範資料</p>
+        </div>
+        <div class="footer__meta">
+          <span>© 2026 澄港市政府 1999 話務中心</span>
+          <span>系統版本 4.12.0 · 資料同步於 <span data-clock>14:20</span></span>
+          <a class="footer__back" href="../../index.html">← 返回目錄</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, CATS, CAT_KEYS, UNITS, DISTRICTS, STATUS } = App;
+  const HOUR = 3600e3;
+  const reduce = () => App.reduceMotion();
+  const pad = n => String(n).padStart(2, '0');
+  const mmss = sec => `${pad(Math.floor(sec / 60))}:${pad(Math.floor(sec % 60))}`;
+
+  /* ===================================================================
+     規則常數
+     =================================================================== */
+  const { PHONE_RE, maskPhone } = App;
+  const POLE_RE = /^[A-Z]{2}-\d{4}$/;
+  const PLATE_RE = /^[A-Z0-9]{2,4}-[A-Z0-9]{2,4}$/;
+  // 出現這些字眼時建議列為緊急（人身安全或動物生命風險）
+  const URGENT_RE = /(流血|受傷|受困|倒塌|傾斜|消防栓|鋼筋|咬傷|漏電|起火)/;
+  const TITLE_SUFFIX = { pothole: '路面坑洞', noise: '噪音陳情', parking: '違規停車', light: '路燈故障', litter: '環境髒亂', animal: '動物救援' };
+  const PLACES = DISTRICTS.flatMap(d => [
+    ...d.streets.map(name => ({ name, district: d.name, kind: '路名' })),
+    ...d.landmarks.map(name => ({ name, district: d.name, kind: '地標' })),
+  ]);
+  // 關鍵字由長到短比對，「坑洞」優先於「坑」，標記才不會切碎
+  const KEYWORDS = CAT_KEYS.flatMap(k => CATS[k].keywords.map(([kw]) => ({ kw, cat: k }))).sort((a, b) => b.kw.length - a.kw.length);
+
+  /* ===================================================================
+     等候中的來電（話務腳本：逐字稿依通話秒數陸續出現）
+     =================================================================== */
+  const CALLS = [
+    {
+      phone: '0935-118-772', name: '陳先生', callback: true, district: '舊城區', address: '文昌街與米市街口（往米市街方向）', ready: 23,
+      draft: '民眾表示文昌街與米市街口的坑洞又破了，雨天積水看不出深淺，',
+      summary: '民眾表示文昌街與米市街口（往米市街方向）斑馬線前的坑洞再次破損，雨天積水看不出深淺，剛才又有機車騎士經過時差點摔車；現場警示錐遭車輛撞歪，請儘速修補並重新擺放警示錐，完成後以電話回覆。',
+      lines: [
+        ['agent', 0, '澄港市 1999 市民熱線您好，敝姓周，很高興為您服務。'],
+        ['caller', 5, '你好，我昨天晚上有打來報文昌街的坑洞，現在又破了。'],
+        ['agent', 12, '好的，請問是文昌街哪個位置？'],
+        ['caller', 16, '文昌街跟米市街口，往米市街那邊，斑馬線前面。現在又在下雨，積水整片看不到坑。'],
+        ['agent', 29, '了解，現場目前有造成危險嗎？'],
+        ['caller', 33, '剛剛又有一台機車騎過去差點摔倒，旁邊的警示錐也被車撞歪了。'],
+        ['agent', 45, '謝謝您。系統顯示這個坑洞已排定今天下午修補，我幫您併案並催辦，請養護分隊先把警示錐扶正。'],
+        ['caller', 59, '好，拜託今天一定要補好，修好可以打給我嗎？'],
+        ['agent', 66, '可以，完成後會以電話回覆您，謝謝您的來電。'],
+      ],
+    },
+    {
+      phone: '0926-507-341', name: '王小姐', callback: true, district: '北岸區', address: '觀潮街 61 號', ready: 21,
+      summary: '民眾表示觀潮街 61 號 4 樓住戶近一週每晚 11 點後唱卡拉 OK、大聲喧嘩至深夜兩三點，家中小孩吵得睡不著，希望派員到場勸導。',
+      lines: [
+        ['agent', 0, '澄港市 1999 市民熱線您好，敝姓周，很高興為您服務。'],
+        ['caller', 5, '你好，我要反映噪音，我樓上每天半夜都在唱卡拉 OK。'],
+        ['agent', 12, '請問您的地址是？'],
+        ['caller', 15, '北岸區觀潮街 61 號，我住三樓，吵的是四樓。'],
+        ['agent', 23, '大概幾點開始、會持續多久？'],
+        ['caller', 27, '晚上十一點多開始，大聲喧嘩到兩三點，已經一個禮拜了，小孩都睡不著。'],
+        ['agent', 40, '了解，住宅內的人為噪音會轉請轄區分局員警到場勸導，處理結果再回電給您。'],
+        ['caller', 52, '好，麻煩快一點。'],
+      ],
+    },
+    {
+      phone: '0952-318-907', name: '蔡小姐', callback: true, district: '新灣區', address: '灣岸一路 灣岸公園旁', ready: 24,
+      summary: '民眾表示灣岸一路灣岸公園旁的排水溝內有兩隻幼貓受困，從早上叫到現在，溝蓋沉重無法掀開，擔心午後下雨水位上升，請儘速派員救援。',
+      lines: [
+        ['agent', 0, '澄港市 1999 市民熱線您好，敝姓周，很高興為您服務。'],
+        ['caller', 5, '你好，灣岸公園旁邊的排水溝裡面有小貓在叫，叫一整個早上了。'],
+        ['agent', 14, '請問看得到幾隻嗎？在哪個位置？'],
+        ['caller', 18, '灣岸一路靠公園那側，至少兩隻幼貓卡在溝蓋下面，蓋子很重我打不開。'],
+        ['agent', 31, '好的，請先不要徒手伸進去。午後可能會下雨，我會以緊急案件請動物保護處派人。'],
+        ['caller', 45, '好，我先在旁邊看著。'],
+      ],
+    },
+    {
+      phone: '0910-552-136', name: '許先生', callback: false, district: '港埕區', address: '漁人碼頭街 88 號前', ready: 21,
+      summary: '民眾表示漁人碼頭街 88 號前的路燈（燈桿編號 GC-0532）整晚閃爍不停，住家二樓房間忽明忽暗，已持續三天，請派員檢修。',
+      lines: [
+        ['agent', 0, '澄港市 1999 市民熱線您好，敝姓周，很高興為您服務。'],
+        ['caller', 5, '你好，我家門口的路燈一直在閃，已經三天了。'],
+        ['agent', 11, '請問地址是？燈桿上應該有一塊白色的編號牌。'],
+        ['caller', 16, '港埕區漁人碼頭街 88 號前面，編號是 GC-0532。'],
+        ['agent', 25, '好的，整晚都會閃嗎？'],
+        ['caller', 28, '對，閃到我二樓房間一下亮一下暗，晚上很難睡。'],
+        ['agent', 37, '了解，我會轉請路燈管理所派維修班檢修，結果會以簡訊通知您。'],
+      ],
+    },
+  ];
+  // 每句的「打字」速度：必須在下一句開始前說完（最慢 5.5 字/秒）
+  CALLS.forEach(s => {
+    s.lines = s.lines.map(([who, t, text], i, arr) => {
+      const next = i + 1 < arr.length ? arr[i + 1][1] : t + text.length / 5 + 2;
+      return { who, t, text, rate: Math.max(5.5, text.length / Math.max(1.2, next - t - 0.8)) };
+    });
+  });
+
+  /* ===================================================================
+     元素與狀態
+     =================================================================== */
+  const form = $('#ik-form');
+  const descEl = $('#ik-desc'), hlEl = $('[data-hl]'), titleEl = $('#ik-title');
+  const addrEl = $('#ik-address'), distEl = $('#ik-district'), poleEl = $('#ik-pole'), plateEl = $('#ik-plate');
+  const phoneEl = $('#ik-phone'), nameEl = $('#ik-name');
+  const urgentEl = $('[data-urgent]'), dispatchEl = $('[data-auto-dispatch]');
+  const catBox = $('[data-cats]'), unitBox = $('[data-units]');
+  const submitBtn = $('[data-submit]');
+  const msg = name => $(`[data-msg="${name}"]`);
+  const fieldBox = name => $(`[data-field="${name}"]`);
+
+  const state = {
+    cat: null, manualCat: false, unit: null, manualUnit: false,
+    manualUrgent: false, manualDistrict: false, titleAuto: true, poleAuto: true, busy: false,
+  };
+  const errors = {};
+  const touched = new Set();
+  const session = new Set(); // 本頁建立的案號：今日受理清單會以外框標示
+  let rank = [];
+  let dupList = [];
+  let typing = null; // 「帶入通話重點」逐字填入中
+
+  distEl.innerHTML = `<option value="">請選擇行政區</option>${DISTRICTS.map(d => `<option value="${d.name}">${d.name}</option>`).join('')}`;
+  const [mo, dd] = fmt.date(App.now()).split('/');
+  $('[data-sum-prefix]').textContent = `C${pad(mo)}${pad(dd)}-`;
+
+  /* ===================================================================
+     工具
+     =================================================================== */
+  const replyIsCall = () => $('input[name="reply"]:checked').value === 'call';
+  const setReply = call => { $(`input[name="reply"][value="${call ? 'call' : 'sms'}"]`).checked = true; };
+  const channel = App.segmented($('[data-channel]'), { onChange: () => paintSummary() });
+
+  const historyOf = raw => {
+    const m = maskPhone(raw);
+    return m ? App.DATA.cases.filter(c => c.caller.phone === m) : [];
+  };
+  /** 地址或描述中出現的已知路名 / 地標（取最長者） */
+  function placeIn(text) {
+    let best = null;
+    for (const p of PLACES) if (text.includes(p.name) && (!best || p.name.length > best.name.length)) best = p;
+    return best;
+  }
+  /** 依類別色標出關鍵字；topCat 的命中加底線強調 */
+  function markText(text, topCat = null) {
+    const taken = new Uint8Array(text.length);
+    const hits = [];
+    for (const { kw, cat } of KEYWORDS) {
+      for (let i = text.indexOf(kw); i !== -1; i = text.indexOf(kw, i + 1)) {
+        let free = true;
+        for (let j = i; j < i + kw.length; j++) if (taken[j]) { free = false; break; }
+        if (!free) continue;
+        taken.fill(1, i, i + kw.length);
+        hits.push({ s: i, e: i + kw.length, cat });
+      }
+    }
+    hits.sort((a, b) => a.s - b.s);
+    let out = '', pos = 0;
+    for (const h of hits) {
+      out += `${esc(text.slice(pos, h.s))}<mark data-cat="${h.cat}"${h.cat === topCat ? ' class="is-top"' : ''}>${esc(text.slice(h.s, h.e))}</mark>`;
+      pos = h.e;
+    }
+    return out + esc(text.slice(pos));
+  }
+  /** 文字翻轉更新（執行當下讀最新目標值，連續快速切換不會停在舊字） */
+  function flipText(el, text) {
+    el._flipTo = text;
+    if (reduce()) { el.textContent = text; return; }
+    if (el._flipT) return;
+    el.getAnimations().forEach(a => a.cancel());
+    el.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-40%)', opacity: 0 }], { duration: 120, easing: 'ease-in', fill: 'forwards' });
+    el._flipT = setTimeout(() => {
+      el._flipT = 0;
+      el.textContent = el._flipTo;
+      el.getAnimations().forEach(a => a.cancel());
+      el.animate([{ transform: 'translateY(45%)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: App.spring.easing('bouncy') });
+    }, 120);
+  }
+  /** 依新順序重排 chips，並以 FLIP + 彈簧讓 chips 滑到新位置 */
+  function reorder(box, items) {
+    if (items.every((el, i) => box.children[i] === el)) return;
+    const before = new Map(items.map(el => [el, el.getBoundingClientRect()]));
+    const focused = document.activeElement;
+    items.forEach(el => box.append(el));
+    if (items.includes(focused)) focused.focus({ preventScroll: true });
+    if (reduce()) return;
+    const easing = App.spring.easing('bouncy');
+    for (const el of items) {
+      const a = before.get(el), b = el.getBoundingClientRect();
+      const dx = a.left - b.left, dy = a.top - b.top;
+      if (dx || dy) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 560, easing });
+    }
+  }
+  /** radiogroup 的 roving tabindex 與方向鍵 */
+  function rove(group) {
+    const items = $$('[role="radio"]', group);
+    const on = items.find(b => b.getAttribute('aria-checked') === 'true') || items[0];
+    items.forEach(b => { b.tabIndex = b === on ? 0 : -1; });
+  }
+  function radioKeys(group) {
+    group.addEventListener('keydown', e => {
+      const k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!k) return;
+      const items = $$('[role="radio"]', group);
+      const i = items.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      const next = items[(i + k + items.length) % items.length];
+      next.click();
+      next.focus();
+    });
+  }
+  function toggleField(box, show) {
+    if (box.hidden === !show) return;
+    box.hidden = !show;
+    if (show && !reduce()) {
+      box.classList.add('ik-field-in');
+      box.addEventListener('animationend', () => box.classList.remove('ik-field-in'), { once: true });
+    }
+  }
+  function autosize() {
+    descEl.style.height = 'auto';
+    descEl.style.height = `${descEl.scrollHeight + 2}px`;
+  }
+
+  /* ===================================================================
+     驗證
+     =================================================================== */
+  const VALIDATE = {
+    desc: () => {
+      const v = descEl.value.trim();
+      return v.length >= 8 ? null : v ? '請至少輸入 8 個字，說明地點與狀況' : '請輸入陳情內容';
+    },
+    cat: () => (state.cat ? null : '請選擇案件類別'),
+    address: () => (addrEl.value.trim().length >= 3 ? null : '請輸入地點或地址（至少 3 個字）'),
+    district: () => (distEl.value ? null : '請選擇行政區'),
+    phone: () => {
+      const v = phoneEl.value.trim();
+      return PHONE_RE.test(v) ? null : v ? '號碼格式不正確，例：0912-345-678 或 07-1234567' : '請輸入來電號碼';
+    },
+    pole: () => (state.cat !== 'light' || !poleEl.value.trim() || POLE_RE.test(poleEl.value.trim()) ? null : '格式為兩碼英文加四碼數字，例：SJ-0263'),
+    plate: () => (state.cat !== 'parking' || !plateEl.value.trim() || PLATE_RE.test(plateEl.value.trim()) ? null : '車牌格式不正確，例：ABC-1234'),
+  };
+  const CHECKS = {
+    desc: () => !VALIDATE.desc(), cat: () => !VALIDATE.cat(), address: () => !VALIDATE.address(),
+    district: () => !VALIDATE.district(), phone: () => !VALIDATE.phone(),
+  };
+  // 只對碰過的欄位顯示錯誤；送出時全部視為碰過
+  function revalidate() {
+    for (const k of Object.keys(VALIDATE)) errors[k] = touched.has(k) ? VALIDATE[k]() : null;
+  }
+
+  /* ===================================================================
+     繪製：任何輸入或資料異動都走 refresh()
+     =================================================================== */
+  catBox.innerHTML = CAT_KEYS.map(k => `<button type="button" class="chip chip--cat" role="radio" aria-checked="false" data-cat="${k}">${App.shape.svg(CATS[k].shape)}${CATS[k].name}<span class="chip__score" hidden></span></button>`).join('');
+  const ring = App.wavyRing($('[data-ring]'), { value: 0, size: 132, thickness: 9, waves: 10, amplitude: 2.6 });
+  const ckWave = App.wavy($('[data-check-wave]'), { value: 0, amplitude: 3, wavelength: 22, thickness: 6 });
+  const map = App.cityMap($('#ik-map'), {
+    mode: 'select',
+    onSelect: name => { setDistrict(name); state.manualDistrict = true; touched.add('district'); refresh(); },
+  });
+
+  function refresh() {
+    rank = App.classify(descEl.value);
+    if (!state.manualCat) state.cat = rank[0]?.cat || null;
+    detectDistrict();
+    paintHighlight();
+    paintCats();
+    paintVerdict();
+    paintUnits();
+    paintUrgent();
+    paintConditional();
+    paintTitle();
+    revalidate();
+    paintMessages();
+    paintDup();
+    paintHistory();
+    paintSummary();
+    paintChecklist();
+  }
+  let refreshT = 0;
+  const scheduleRefresh = () => { clearTimeout(refreshT); refreshT = setTimeout(refresh, 110); };
+
+  function paintHighlight() {
+    // 結尾補一個空白，textarea 以換行結束時 mirror 才會多一行，兩邊行高對齊
+    hlEl.innerHTML = `${markText(descEl.value, state.cat)} `;
+    $('[data-desc-count]').textContent = `${descEl.value.length}/500`;
+  }
+
+  function paintCats() {
+    const order = [...rank.map(r => r.cat), ...CAT_KEYS.filter(k => !rank.some(r => r.cat === k))];
+    reorder(catBox, order.map(k => catBox.querySelector(`[data-cat="${k}"]`)));
+    for (const b of $$('[role="radio"]', catBox)) {
+      const k = b.dataset.cat;
+      const r = rank.find(x => x.cat === k);
+      const sc = b.querySelector('.chip__score');
+      sc.hidden = !r;
+      if (r) sc.textContent = `${Math.round(r.score * 100)}%`;
+      b.classList.toggle('chip--suggest', !!r && k !== state.cat);
+      b.setAttribute('aria-checked', String(k === state.cat));
+      b.setAttribute('aria-label', `${CATS[k].name}${r ? `，判讀信心 ${Math.round(r.score * 100)}%` : ''}，處理時限 ${fmt.slaHours(CATS[k].sla)}`);
+    }
+    rove(catBox);
+    $('[data-cat-auto]').hidden = !state.manualCat;
+  }
+
+  let vCat; // 上次繪製的判讀類別（undefined = 尚未繪製）
+  function paintVerdict() {
+    const v = $('[data-verdict]');
+    const r = rank.find(x => x.cat === state.cat);
+    if (state.cat) v.dataset.cat = state.cat; else delete v.dataset.cat;
+    if (state.cat !== vCat) {
+      // 類別改變：形狀 morph 成新類別的形狀，名稱翻轉，信心數字由寬變窄
+      App.shape.morph($('.ik-ring__shape'), state.cat ? CATS[state.cat].shape : 'circle', { rotate: vCat === undefined ? 0 : 72 });
+      flipText($('[data-v-name]'), state.cat ? CATS[state.cat].name : '尚未判讀');
+      const box = $('[data-v-scorebox]');
+      if (vCat !== undefined && !reduce()) {
+        box.classList.add('is-pop');
+        requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove('is-pop')));
+      }
+      $('[data-v-live]').textContent = state.cat ? `推薦類別：${CATS[state.cat].name}${r ? `，信心 ${Math.round(r.score * 100)}%` : ''}` : '';
+      vCat = state.cat;
+    }
+    ring.set(r ? r.score : 0);
+    App.countTo($('[data-v-score]'), r ? Math.round(r.score * 100) : 0, { duration: 520 });
+    $('[data-v-mode]').textContent = !state.cat ? (descEl.value.trim() ? '智慧分案 · 未命中關鍵字' : '智慧分案 · 等待描述')
+      : state.manualCat ? '人工指定類別' : '自動判讀 · 關鍵字規則';
+    const second = rank.find(x => x.cat !== state.cat);
+    $('[data-v-hits]').innerHTML = r
+      ? `命中${r.hits.map(h => `<mark>${esc(h)}</mark>`).join('')}${second ? `<span class="ik-verdict__alt">次高：${CATS[second.cat].name} ${Math.round(second.score * 100)}%</span>` : ''}`
+      : state.cat ? '人工指定，描述中沒有此類別的關鍵字'
+        : descEl.value.trim() ? '找不到明確關鍵字，請在右側手動選擇類別' : '輸入或帶入通話重點後即時判讀';
+  }
+
+  function paintUnits() {
+    if (!state.cat) {
+      state.unit = null; state.manualUnit = false;
+      unitBox.innerHTML = ''; unitBox.dataset.key = '';
+      $('[data-unit-msg]').textContent = '判讀類別後自動帶入承辦局處';
+      return;
+    }
+    const routes = App.route(state.cat, descEl.value);
+    if (!state.manualUnit || !routes.some(r => r.unit === state.unit)) { state.unit = routes[0].unit; state.manualUnit = false; }
+    const key = routes.map(r => `${r.unit}:${r.primary}`).join('|');
+    if (unitBox.dataset.key !== key) {
+      unitBox.dataset.key = key;
+      unitBox.innerHTML = routes.map(r => `<button type="button" class="chip" role="radio" aria-checked="false" data-unit="${r.unit}"><span class="chip__check">${App.icon('check')}</span>${UNITS[r.unit].full}${r.primary ? '<span class="chip__score">建議</span>' : ''}</button>`).join('');
+      if (!reduce()) $$('.chip', unitBox).forEach((c, i) => c.animate([{ opacity: 0, transform: 'scale(.86)' }, { opacity: 1, transform: 'none' }], { duration: 460, delay: i * 60, easing: App.spring.easing('bouncy'), fill: 'backwards' }));
+    }
+    $$('[data-unit]', unitBox).forEach(b => b.setAttribute('aria-checked', String(b.dataset.unit === state.unit)));
+    rove(unitBox);
+    const r = routes.find(x => x.unit === state.unit);
+    const d = distEl.value;
+    $('[data-unit-msg]').textContent = `${r.reason}${d ? ` · 交辦 ${App.teamFor(state.unit, d)}` : ' · 選定行政區後帶入處理區隊'}`;
+  }
+
+  function paintUrgent() {
+    const m = URGENT_RE.exec(descEl.value);
+    if (!state.manualUrgent) urgentEl.checked = !!m;
+    $('[data-urgent-hint]').textContent = m
+      ? (urgentEl.checked ? `偵測到「${m[1]}」，已標示為緊急` : `偵測到「${m[1]}」，建議列為緊急`)
+      : urgentEl.checked ? '已標示為緊急，派案後局處優先處理' : '動物受困受傷、倒塌風險、消防栓違停等建議列為緊急';
+  }
+
+  let distSource = null; // 行政區的判定依據 {place, from}
+  function setDistrict(name) {
+    distEl.value = name;
+    map.select(name || null);
+  }
+  function detectDistrict() {
+    const a = addrEl.value.trim();
+    const fromAddr = placeIn(a);
+    const p = fromAddr || (a ? null : placeIn(descEl.value));
+    distSource = p ? { place: p, from: fromAddr ? '地址' : '描述' } : null;
+    if (!state.manualDistrict && p && distEl.value !== p.district) setDistrict(p.district);
+  }
+
+  function paintConditional() {
+    toggleField(fieldBox('pole'), state.cat === 'light');
+    toggleField(fieldBox('plate'), state.cat === 'parking');
+    if (state.cat === 'light' && state.poleAuto) {
+      const m = /([A-Z]{2}-\d{4})/.exec(descEl.value.toUpperCase());
+      poleEl.value = m ? m[1] : '';
+    }
+  }
+
+  function autoTitle() {
+    if (!state.cat) return '';
+    const place = addrEl.value.trim().replace(/（[^）]*）|\([^)]*\)/g, '').trim();
+    const base = place || distEl.value;
+    return base ? `${base}${TITLE_SUFFIX[state.cat]}`.slice(0, 40) : '';
+  }
+  function paintTitle() {
+    if (state.titleAuto) titleEl.value = autoTitle();
+    $('[data-title-count]').textContent = `${titleEl.value.length}/40`;
+  }
+
+  function paintMessages() {
+    const hits = rank.reduce((s, r) => s + r.hits.length, 0);
+    const d = distEl.value;
+    const HINTS = {
+      desc: () => (descEl.value.trim()
+        ? (hits ? `命中 ${hits} 個關鍵字，${CATS[rank[0].cat].name}最相符` : '沒有命中任何類別關鍵字')
+        : '描述地點、狀況與影響；通話中可按「帶入通話重點」'),
+      cat: () => (state.cat
+        ? `處理時限 ${fmt.slaHours(CATS[state.cat].sla)}${state.manualCat ? ' · 人工指定' : ' · 依命中關鍵字排序，可手動改選'}`
+        : '依命中關鍵字排序，可手動改選'),
+      address: () => '輸入路名或地標，例：文昌街、港埕漁市場',
+      phone: () => '來電顯示自動帶入 · 存檔時遮蔽中間三碼',
+      pole: () => {
+        const v = poleEl.value.trim();
+        const code = d && App.district(d).code;
+        if (v && code && POLE_RE.test(v) && !v.startsWith(code)) {
+          const owner = DISTRICTS.find(x => x.code === v.slice(0, 2));
+          return `編號開頭 ${v.slice(0, 2)}${owner ? ` 屬${owner.name}` : ''}，與所選行政區不同，請再確認`;
+        }
+        return v && state.poleAuto ? '已從描述擷取燈桿編號' : '燈桿上的白色編號牌，例：SJ-0263';
+      },
+      plate: () => '例：ABC-1234；民眾不確定可留空',
+      title: () => (state.titleAuto ? (titleEl.value ? '依地點與類別自動產生，可直接修改' : '選定類別與地點後自動產生') : '已手動修改；清空後恢復自動產生'),
+    };
+    for (const [name, hint] of Object.entries(HINTS)) {
+      const box = fieldBox(name);
+      const err = errors[name];
+      box.classList.toggle('is-error', !!err);
+      if (name !== 'title' && name !== 'cat') box.classList.toggle('is-valid', touched.has(name) && !err && !!VALIDATE[name] && name !== 'pole' && name !== 'plate');
+      msg(name).textContent = err || hint();
+    }
+    // 行政區：判定依據或「地址與行政區不一致」的提示（附一鍵修正）
+    const dBox = fieldBox('district');
+    dBox.classList.toggle('is-error', !!errors.district);
+    const p = distSource?.place;
+    if (errors.district) msg('district').textContent = errors.district;
+    else if (p && d && p.district !== d) msg('district').innerHTML = `「${esc(p.name)}」位於${p.district}，與所選不同 <button type="button" class="ik-linkbtn" data-fix-district="${p.district}">改為${p.district}</button>`;
+    else if (p && !state.manualDistrict) msg('district').textContent = `依${distSource.from}中的「${p.name}」自動判定`;
+    else msg('district').textContent = '也可以直接點選地圖上的行政區';
+  }
+
+  const DUP_SHAPE = { idle: 'circle', ok: 'cookie12', warn: 'sunny' };
+  function paintDup() {
+    const box = $('#ik-dup');
+    const cat = state.cat, d = distEl.value, a = addrEl.value.trim();
+    dupList = !cat || (!d && a.length < 2) ? [] : App.findSimilar({ cat, district: d, address: a, text: descEl.value }, 3);
+    const st = !cat || (!d && a.length < 2) ? 'idle' : dupList.length ? 'warn' : 'ok';
+    const key = `${st}|${dupList.map(s => `${s.c.id}:${s.c.status}:${s.c.urged}:${s.reasons.join()}`).join()}`;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    if (box.dataset.state !== st) App.shape.morph($('.ik-dup__shape', box), DUP_SHAPE[st], { rotate: 60 });
+    box.dataset.state = st;
+    $('[data-dup-title]', box).textContent = { idle: '相似案件比對', ok: '未發現相似案件', warn: `可能是重複陳情（${dupList.length} 件）` }[st];
+    $('[data-dup-sub]', box).textContent = {
+      idle: '選定類別與地點後，自動比對近 7 日案件（同路段、同類別、72 小時內）',
+      ok: `已比對近 7 日 ${fmt.num(App.count('all'))} 件案件，可以建立新案`,
+      warn: '同路段、同類別且仍在處理中的案件，建議併案催辦，避免重複派工',
+    }[st];
+    $('[data-dup-list]', box).innerHTML = dupList.map(({ c, reasons }) => {
+      const action = App.isActive(c)
+        ? `<button type="button" class="btn btn--sm" data-merge="${c.id}">${App.icon('bolt')}併案並催辦</button>`
+        : c.status === 'received'
+          ? `<button type="button" class="btn btn--sm btn--tonal" data-dispatch="${c.id}">${App.icon('dispatch')}前往派案</button>`
+          : '<span class="t-small muted">已回覆，請建立新案</span>';
+      return `<li class="ik-dupitem" data-cat="${c.cat}">
+        ${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-dupitem__shape' })}
+        <div>
+          <p class="ik-dupitem__top"><a class="mono" href="case.html?id=${c.id}">${c.id}</a><span>${fmt.rel(c.created)}受理</span><span>${c.district}</span>${c.repeat ? `<span>已重複陳情 ${c.repeat} 次</span>` : ''}</p>
+          <p class="ik-dupitem__title">${esc(c.title)}</p>
+          <p class="ik-dupitem__why">${reasons.map(r => `<span>${r}</span>`).join('')}</p>
+        </div>
+        <div class="ik-dupitem__side">${App.statusBadge(c.status)}${action}</div>
+      </li>`;
+    }).join('');
+  }
+
+  function paintHistory() {
+    const box = $('[data-history]');
+    const list = historyOf(phoneEl.value);
+    box.hidden = !list.length;
+    if (!list.length) return;
+    box.innerHTML = `${App.icon('history')}<div class="callout__title">此號碼近 7 日陳情 ${list.length} 件</div>
+      <div>${list.slice(0, 3).map(c => `<a href="case.html?id=${c.id}">${c.id}</a> ${esc(c.title)}（${fmt.dateTime(c.created)}，${STATUS[c.status].name}）`).join('<br>')}</div>`;
+  }
+
+  let sumCat; // 摘要票根上次的類別
+  function paintSummary() {
+    const cat = state.cat, d = distEl.value, a = addrEl.value.trim(), unit = state.unit;
+    const ticket = $('[data-ticket]');
+    if (cat) ticket.dataset.cat = cat; else delete ticket.dataset.cat;
+    if (cat !== sumCat) { App.shape.morph($('.ik-ticket__shape'), cat ? CATS[cat].shape : 'circle', { rotate: sumCat === undefined ? 0 : 60 }); sumCat = cat; }
+    const set = (sel, html) => {
+      const el = $(sel);
+      el.classList.toggle('is-empty', !html);
+      el.innerHTML = html || '<span class="sr-only">未填寫</span>';
+    };
+    const t = titleEl.value.trim();
+    const titleOut = $('[data-sum-title]');
+    titleOut.textContent = t || '標題將依地點與類別自動產生';
+    titleOut.classList.toggle('is-empty', !t);
+    set('[data-sum-cat]', cat ? App.catTag(cat) : '');
+    set('[data-sum-loc]', d || a ? esc(`${d}${d && a ? ' ' : ''}${a}`) : '');
+    set('[data-sum-unit]', unit ? `${esc(UNITS[unit].full)}${d ? `<small>→ ${esc(App.teamFor(unit, d))}</small>` : ''}` : '');
+    set('[data-sum-sla]', cat ? `${fmt.slaHours(CATS[cat].sla)}<small><b>${fmt.dateTime(App.now() + CATS[cat].sla * HOUR)}</b> 前回覆民眾</small>` : '');
+    const masked = maskPhone(phoneEl.value);
+    set('[data-sum-caller]', masked ? `${esc(nameEl.value.trim() || '來電民眾')} · ${esc(masked)}<small>${channel.value()}受理 · ${replyIsCall() ? '電話回覆＋簡訊' : '僅簡訊通知'}</small>` : '');
+    $('[data-sum-urgent]').hidden = !urgentEl.checked;
+    const willDispatch = dispatchEl.checked && !!unit;
+    App.setStatusBadge($('[data-sum-status]'), willDispatch ? 'dispatched' : 'received');
+    $('[data-dispatch-hint]').textContent = unit
+      ? (dispatchEl.checked ? `派至 ${UNITS[unit].full}，狀態直接為「已派案」` : '關閉時建為「待派案」，由派案組分派')
+      : '判讀出承辦局處後可直接派案';
+    if (!state.busy) $('[data-submit-label]').textContent = willDispatch ? '建立並派案' : '建立案件';
+    const dupLink = $('[data-sum-dup]');
+    const strong = strongDup();
+    dupLink.hidden = !dupList.length;
+    if (dupList.length) dupLink.innerHTML = `${App.shape.svg('sunny')}${strong ? `可能與 ${strong.c.id} 重複，建議併案` : `有 ${dupList.length} 件相似案件，請確認`}`;
+  }
+
+  const ckLast = {};
+  const SECS = [['#ik-sec-desc', ['desc', 'cat']], ['#ik-sec-loc', ['address', 'district']], ['#ik-sec-caller', ['phone']]];
+  let currentSec = null;
+  let wasReady = null;
+  function paintChecklist() {
+    let n = 0;
+    for (const [k, fn] of Object.entries(CHECKS)) {
+      const ok = fn();
+      if (ok) n++;
+      const b = $(`[data-ck="${k}"]`);
+      if (ckLast[k] !== ok) {
+        b.classList.toggle('is-done', ok);
+        App.shape.morph($('.shape', b), ok ? 'cookie12' : 'circle', { rotate: ok ? 60 : -60 });
+        ckLast[k] = ok;
+      }
+      b.classList.toggle('is-error', !!errors[k]);
+      b.setAttribute('aria-label', `${b.textContent.trim()}：${ok ? '已完成' : '未完成'}，前往欄位`);
+    }
+    $('[data-check-n]').textContent = n;
+    const ready = n === 5;
+    // 必填未齊時波浪持續擺動；齊全後拉平成青色直線
+    ckWave.set(n / 5, { amplitude: ready ? 0 : 3.2, speed: ready ? 0 : 1 });
+    $('[data-check-wave]').classList.toggle('wavy--teal', ready);
+    submitBtn.classList.toggle('is-ready', ready);
+    if (ready && wasReady === false && !reduce()) {
+      submitBtn.classList.remove('is-pop');
+      void submitBtn.offsetWidth;
+      submitBtn.classList.add('is-pop');
+    }
+    wasReady = ready;
+    paintSteps();
+  }
+  function paintSteps() {
+    for (const [sel, keys] of SECS) {
+      const sec = $(sel);
+      const done = keys.every(k => CHECKS[k]()) && !(sel === '#ik-sec-loc' && (errors.pole || errors.plate));
+      const step = done ? 'done' : sec === currentSec ? 'current' : 'todo';
+      if (sec.dataset.step === step) continue;
+      sec.dataset.step = step;
+      App.shape.morph($('.ik-badge .shape', sec), { done: 'cookie12', current: 'sunny', todo: 'circle' }[step], { rotate: 45 });
+    }
+  }
+  /** 最可能重複：同路段、同類別且尚未回覆 */
+  const strongDup = () => dupList.find(s => s.reasons.includes('同路段') && s.reasons.includes('同類別') && !s.c.repliedAt);
+
+  /* ===================================================================
+     今日受理清單（依資料重繪；狀態改變時徽章 morph 而不重建）
+     =================================================================== */
+  const recentEl = $('[data-recent]');
+  function recentInner(c) {
+    const mine = session.has(c.id);
+    // 本頁新建的案件只存在記憶體中，重新整理後就不存在，所以不提供詳情連結
+    const title = mine ? `<p class="ik-rc__title">${esc(c.title)}</p>` : `<a class="ik-rc__title" href="case.html?id=${c.id}">${esc(c.title)}</a>`;
+    return `${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-rc__shape' })}
+      <p class="ik-rc__top"><span class="mono">${c.id}</span><span>${fmt.time(c.created)}</span><span>${c.channel}</span>${mine ? '<span class="ik-rc__new">剛建立</span>' : ''}</p>
+      ${title}
+      <p class="ik-rc__meta">${c.district} · ${esc(c.address)}</p>
+      <div class="ik-rc__foot">${App.statusBadge(c.status)}${App.slaChip(c)}<button type="button" class="btn btn--sm btn--tonal" data-dispatch="${c.id}"${c.status === 'received' ? '' : ' hidden'}>${App.icon('dispatch')}派案</button></div>`;
+  }
+  function paintRecent(animate = true) {
+    const today = App.DATA.cases.filter(c => App.isToday(c.created)).slice(0, 6);
+    const want = new Map(today.map(c => [c.id, c]));
+    $$('.ik-rc', recentEl).forEach(li => { if (!want.has(li.dataset.id)) li.remove(); });
+    let ref = recentEl.firstElementChild;
+    for (const [id, c] of want) {
+      let li = recentEl.querySelector(`.ik-rc[data-id="${id}"]`);
+      if (!li) {
+        li = document.createElement('li');
+        li.className = 'ik-rc';
+        li.dataset.id = id;
+        li.dataset.cat = c.cat;
+        li.innerHTML = recentInner(c);
+        if (animate && !reduce()) {
+          li.classList.add('is-entering');
+          li.addEventListener('animationend', () => li.classList.remove('is-entering'), { once: true });
+        }
+      } else {
+        const badge = $('.status', li);
+        if (badge.dataset.status !== c.status) App.setStatusBadge(badge, c.status);
+        $('[data-dispatch]', li).hidden = c.status !== 'received';
+      }
+      li.classList.toggle('is-mine', session.has(id));
+      if (li !== ref) recentEl.insertBefore(li, ref);
+      else ref = ref.nextElementSibling;
+    }
+    App.refreshSla();
+  }
+
+  /* ===================================================================
+     通話：來電顯示、計時、聲紋、逐字稿、等候佇列
+     =================================================================== */
+  const callCard = $('.ik-call');
+  const asrEl = $('[data-asr]');
+  const muteBtn = $('[data-call-mute]'), holdBtn = $('[data-call-hold]'), mainBtn = $('[data-call-main]');
+  const fillBtn = $('[data-fill]'), asrAllBtn = $('[data-asr-all]');
+  const call = { idx: -1, s: null, mode: 'scenario', phone: '', state: 'active', startedAt: 0, holdMs: 0, holdStart: 0, endedAt: 0, muted: false, speaker: null };
+  const queue = { n: 3, nextAt: performance.now() + 30e3 };
+
+  function paintCallMeta() {
+    // 每段各自成塊，窄螢幕換行時整段一起換，不會把「1 件」單獨擠到下一行
+    let segs = ['由快速受理轉入', '欄位已帶入表單'];
+    if (call.mode !== 'transfer') {
+      const n = historyOf(call.phone).length;
+      segs = [call.phone.startsWith('09') ? '行動電話' : '市內電話', n ? `此號碼近 7 日陳情 ${n} 件` : '近 7 日無陳情紀錄'];
+    }
+    $('[data-call-meta]').innerHTML = segs.map(s => `<span>${esc(s)}</span>`).join(' · ');
+  }
+  function paintQueue() {
+    $('[data-queue]').textContent = queue.n;
+    $('[data-queue-badge]').textContent = queue.n;
+    if (call.state === 'ended') {
+      mainBtn.disabled = queue.n === 0;
+      mainBtn.setAttribute('aria-label', queue.n ? `接聽下一通（等候 ${queue.n} 通）` : '目前沒有等候中的來電');
+    }
+  }
+  function setCallState(st) {
+    call.state = st;
+    callCard.dataset.state = st;
+    $('[data-call-state]').textContent = { active: '通話中', hold: '保留中', ended: '通話結束 · 後處理' }[st];
+    App.shape.morph($('[data-call-avatar]'), { active: 'cookie9', hold: 'pill', ended: 'squircle' }[st], { rotate: 40 });
+    muteBtn.disabled = holdBtn.disabled = st === 'ended';
+    holdBtn.setAttribute('aria-pressed', String(st === 'hold'));
+    $('[data-hold-label]').textContent = st === 'hold' ? '恢復' : '保留';
+    const ended = st === 'ended';
+    mainBtn.classList.toggle('ik-cbtn--end', !ended);
+    mainBtn.classList.toggle('ik-cbtn--answer', ended);
+    $('[data-call-main-label]').textContent = ended ? '接聽' : '結束';
+    if (ended) $$('.ik-utt.is-typing', asrEl).forEach(li => li.classList.remove('is-typing'));
+    else { mainBtn.disabled = false; mainBtn.setAttribute('aria-label', '結束通話'); }
+    paintQueue();
+    drawWave(performance.now(), true);
+  }
+  function setMuted(on) {
+    call.muted = on;
+    muteBtn.setAttribute('aria-pressed', String(on));
+    $('[data-mute-label]').textContent = on ? '已靜音' : '靜音';
+  }
+  function answer(idx, offsetSec) {
+    cancelTyping();
+    call.idx = idx;
+    call.s = CALLS[idx];
+    call.mode = 'scenario';
+    call.phone = call.s.phone;
+    call.startedAt = performance.now() - offsetSec * 1000;
+    call.holdMs = 0;
+    call.speaker = null;
+    setMuted(false);
+    asrEl.innerHTML = '';
+    asrEl.classList.remove('is-all');
+    asrAllBtn.hidden = true;
+    asrAllBtn.textContent = '顯示全部';
+    asrAllBtn.setAttribute('aria-expanded', 'false');
+    fillBtn.hidden = false;
+    $('[data-call-num]').textContent = call.phone;
+    setCallState('active');
+    paintCallMeta();
+    tickCall();
+  }
+  function endCall({ quiet = false } = {}) {
+    if (call.state === 'ended') return;
+    const now = performance.now();
+    if (call.state === 'hold') call.holdMs += now - call.holdStart;
+    call.endedAt = now;
+    tickCall();
+    setCallState('ended');
+    if (!quiet) App.toast(`通話已結束（${mmss((now - call.startedAt) / 1000)}）`, { sub: isDirty() ? '完成建案後即可接聽下一通' : `等候中 ${queue.n} 通，可接聽下一通` });
+  }
+  function answerNext() {
+    if (call.state !== 'ended') endCall({ quiet: true });
+    if (queue.n <= 0) { App.toast('目前沒有等候中的來電'); return; }
+    const snap = isDirty() ? snapshot() : null;
+    queue.n--;
+    answer((call.idx + 1) % CALLS.length, 0);
+    resetForm();
+    App.toast(`已接聽 ${call.phone}`, {
+      sub: snap ? '上一通未建案的表單已清空' : `線路 3 · 等候中 ${queue.n} 通`,
+      action: snap ? { label: '復原表單', onClick: () => { restore(snap); App.toast('已還原上一通的表單內容'); } } : null,
+    });
+  }
+
+  function uttHTML(ln) {
+    return `<span class="ik-utt__who"><span><i aria-hidden="true"></i>${ln.who === 'caller' ? '民眾' : '話務'}</span><small>${mmss(ln.t)}</small></span><p class="ik-utt__text"></p>`;
+  }
+  /** 每 250ms：通話計時、等候佇列、逐字稿依「通話秒數（扣除保留）」逐字出現 */
+  function tickCall() {
+    const now = performance.now();
+    const end = call.state === 'ended' ? call.endedAt : now;
+    $('[data-call-time]').textContent = mmss((end - call.startedAt) / 1000);
+    if (now > queue.nextAt) {
+      queue.n = Math.min(6, queue.n + 1);
+      queue.nextAt = now + (24 + Math.random() * 26) * 1000;
+    }
+    paintQueue();
+    if (call.mode !== 'scenario') { call.speaker = null; return; }
+    const talk = (end - call.startedAt - call.holdMs - (call.state === 'hold' ? now - call.holdStart : 0)) / 1000;
+    let speaker = null;
+    call.s.lines.forEach((ln, i) => {
+      if (talk < ln.t) return;
+      let li = asrEl.children[i];
+      if (!li) {
+        li = document.createElement('li');
+        li.className = `ik-utt ik-utt--${ln.who}`;
+        li.innerHTML = uttHTML(ln);
+        asrEl.append(li);
+        // 收合時只顯示最新 3 句，超過才需要「顯示全部」
+        asrAllBtn.hidden = asrEl.children.length <= 3;
+        asrAllBtn.textContent = asrEl.classList.contains('is-all') ? '只看最新' : `顯示全部（${asrEl.children.length}）`;
+      }
+      const n = reduce() ? ln.text.length : Math.min(ln.text.length, Math.floor((talk - ln.t) * ln.rate));
+      if (+li.dataset.n !== n) {
+        li.dataset.n = n;
+        const done = n >= ln.text.length;
+        li.classList.toggle('is-typing', !done && call.state !== 'ended');
+        $('.ik-utt__text', li).innerHTML = done && ln.who === 'caller' ? markText(ln.text) : esc(ln.text.slice(0, n));
+      }
+      if (n < ln.text.length) speaker = ln.who;
+    });
+    call.speaker = call.state === 'active' ? speaker : null;
+    // 民眾說出地點與狀況之後才有「通話重點」可以帶入
+    const ready = talk >= call.s.ready;
+    if (fillBtn.disabled === ready) {
+      fillBtn.disabled = !ready;
+      $('[data-fill-label]').textContent = ready ? '帶入通話重點' : '聆聽中…';
+      if (ready && !reduce()) {
+        fillBtn.classList.remove('is-pop');
+        void fillBtn.offsetWidth;
+        fillBtn.classList.add('is-pop');
+      }
+    }
+  }
+
+  // 聲紋：膠囊長條，民眾說話時白色高振幅，話務說話時淡紫；保留/結束時收成圓點
+  const canvas = $('[data-wave]');
+  const ctx = canvas.getContext('2d');
+  const wave = { w: 0, h: 0, level: 0 };
+  function drawWave(t, settle = false) {
+    if (!wave.w) return;
+    const sp = call.speaker;
+    let target = call.state !== 'active' ? 0 : sp === 'caller' ? 1 : sp === 'agent' ? (call.muted ? .04 : .62) : .3;
+    // 減少動態時只畫一張靜態聲紋，給一個中等振幅讓畫面仍成立
+    if (reduce()) target = call.state === 'active' ? .5 : 0;
+    wave.level = settle || reduce() ? target : wave.level + (target - wave.level) * .14;
+    const { w, h } = wave;
+    ctx.clearRect(0, 0, w, h);
+    const bw = 4, gap = 4;
+    const n = Math.max(1, Math.floor((w + gap) / (bw + gap)));
+    const x0 = (w - (n * (bw + gap) - gap)) / 2;
+    ctx.fillStyle = call.state !== 'active' ? 'rgba(255,255,255,.34)' : sp === 'agent' ? '#D0BCFF' : sp === 'caller' ? '#FFFFFF' : 'rgba(255,255,255,.6)';
+    for (let i = 0; i < n; i++) {
+      const u = n > 1 ? i / (n - 1) : .5;
+      const env = Math.pow(Math.sin(Math.PI * (.08 + u * .84)), .7);
+      const nz = .5 + .38 * Math.sin(i * .9 + t * .011) * Math.sin(i * .37 - t * .0067) + .16 * Math.sin(i * 2.3 + t * .019);
+      const amp = Math.min(1, Math.max(.06, nz)) * env * wave.level;
+      const bh = Math.max(bw, amp * (h - 4));
+      ctx.beginPath();
+      ctx.roundRect(x0 + i * (bw + gap), (h - bh) / 2, bw, bh, bw / 2);
+      ctx.fill();
+    }
+  }
+  new ResizeObserver(() => {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    wave.w = r.width; wave.h = r.height;
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawWave(performance.now(), true);
+  }).observe(canvas);
+  // App.ticker 會在通話卡離開視窗或分頁隱藏時暫停
+  App.ticker.add(canvas, t => drawWave(t));
+
+  muteBtn.addEventListener('click', () => setMuted(!call.muted));
+  holdBtn.addEventListener('click', () => {
+    const now = performance.now();
+    if (call.state === 'active') { call.holdStart = now; setCallState('hold'); }
+    else if (call.state === 'hold') { call.holdMs += now - call.holdStart; setCallState('active'); }
+  });
+  mainBtn.addEventListener('click', () => { if (call.state === 'ended') answerNext(); else endCall(); });
+  asrAllBtn.addEventListener('click', () => {
+    const all = asrEl.classList.toggle('is-all');
+    asrAllBtn.setAttribute('aria-expanded', String(all));
+    asrAllBtn.textContent = all ? '只看最新' : `顯示全部（${asrEl.children.length}）`;
+  });
+  setInterval(() => { if (!document.hidden) tickCall(); }, 250);
+
+  /* ---------- 帶入通話重點：逐字填入描述與地點，讓判讀即時跟著跑 ---------- */
+  function cancelTyping(fill = false) {
+    if (!typing) return;
+    if (fill) typing.finish(); else typing.stop();
+  }
+  fillBtn.addEventListener('click', () => {
+    const s = call.s;
+    if (!s || fillBtn.disabled) return;
+    cancelTyping();
+    const snap = isDirty() ? snapshot() : null;
+    if (!nameEl.value.trim()) nameEl.value = s.name;
+    if (!PHONE_RE.test(phoneEl.value.trim())) phoneEl.value = call.phone;
+    setReply(s.callback);
+    channel.set('電話', false);
+    Object.assign(state, { manualCat: false, manualUnit: false, manualUrgent: false, manualDistrict: false, titleAuto: true, poleAuto: true });
+    App.toast('已帶入通話重點', { sub: `${s.name} · ${call.phone} · 請再確認內容`, action: snap ? { label: '復原', onClick: () => { cancelTyping(); restore(snap); App.toast('已還原原本的表單內容'); } } : null });
+    const steps = [[descEl, s.summary], [addrEl, s.address]];
+    if (reduce()) {
+      steps.forEach(([el, text]) => { el.value = text; });
+      autosize();
+      refresh();
+      return;
+    }
+    const sec = $('#ik-sec-desc').getBoundingClientRect();
+    if (sec.top > innerHeight * .55 || sec.bottom < 80) $('#ik-sec-desc').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    steps.forEach(([el]) => { el.value = ''; });
+    let si = 0, ci = 0;
+    const done = () => { clearInterval(timer); typing = null; autosize(); refresh(); };
+    const timer = setInterval(() => {
+      const [el, text] = steps[si];
+      ci = Math.min(text.length, ci + 2);
+      el.value = text.slice(0, ci);
+      if (el === descEl) { autosize(); paintHighlight(); }
+      scheduleRefresh();
+      if (ci >= text.length) { si++; ci = 0; if (si >= steps.length) done(); }
+    }, 34);
+    typing = {
+      finish: () => { steps.forEach(([el, text]) => { el.value = text; }); done(); },
+      stop: () => { clearInterval(timer); typing = null; },
+    };
+  });
+  // 逐字填入時使用者自己動手打字：立即補完，讓使用者接手
+  [descEl, addrEl, titleEl].forEach(el => el.addEventListener('keydown', () => cancelTyping(true)));
+
+  /* ===================================================================
+     表單狀態：快照 / 還原 / 清空
+     =================================================================== */
+  const FIELDS = [descEl, titleEl, addrEl, distEl, poleEl, plateEl, phoneEl, nameEl];
+  function isDirty() {
+    return !!(descEl.value.trim() || addrEl.value.trim() || nameEl.value.trim() || (!state.titleAuto && titleEl.value.trim()));
+  }
+  function snapshot() {
+    return {
+      values: FIELDS.map(el => el.value),
+      reply: replyIsCall(), channel: channel.value(), urgent: urgentEl.checked,
+      state: { ...state, busy: false },
+    };
+  }
+  function restore(sn) {
+    cancelTyping();
+    FIELDS.forEach((el, i) => { el.value = sn.values[i]; });
+    map.select(distEl.value || null);
+    setReply(sn.reply);
+    channel.set(sn.channel, false);
+    urgentEl.checked = sn.urgent;
+    Object.assign(state, sn.state);
+    touched.clear();
+    autosize();
+    refresh();
+  }
+  function resetForm() {
+    cancelTyping();
+    [descEl, titleEl, addrEl, poleEl, plateEl, nameEl].forEach(el => { el.value = ''; });
+    phoneEl.value = call.mode === 'scenario' ? call.phone : '';
+    setDistrict('');
+    urgentEl.checked = false;
+    setReply(true);
+    channel.set('電話', false);
+    Object.assign(state, { cat: null, manualCat: false, unit: null, manualUnit: false, manualUrgent: false, manualDistrict: false, titleAuto: true, poleAuto: true });
+    touched.clear();
+    hideSugg();
+    autosize();
+    refresh();
+  }
+
+  /* ===================================================================
+     欄位事件
+     =================================================================== */
+  descEl.addEventListener('input', () => { autosize(); paintHighlight(); scheduleRefresh(); });
+  addEventListener('resize', autosize);
+  catBox.addEventListener('click', e => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    state.cat = b.dataset.cat;
+    state.manualCat = true;
+    touched.add('cat');
+    refresh();
+  });
+  $('[data-cat-auto]').addEventListener('click', () => { state.manualCat = false; refresh(); catBox.querySelector('[tabindex="0"]').focus(); });
+  unitBox.addEventListener('click', e => {
+    const b = e.target.closest('[data-unit]');
+    if (!b) return;
+    state.unit = b.dataset.unit;
+    state.manualUnit = true;
+    refresh();
+  });
+  radioKeys(catBox);
+  radioKeys(unitBox);
+  titleEl.addEventListener('input', () => { state.titleAuto = !titleEl.value.trim(); refresh(); });
+  urgentEl.addEventListener('change', () => { state.manualUrgent = true; refresh(); });
+  dispatchEl.addEventListener('change', paintSummary);
+  distEl.addEventListener('change', () => {
+    state.manualDistrict = !!distEl.value;
+    map.select(distEl.value || null);
+    touched.add('district');
+    refresh();
+  });
+  poleEl.addEventListener('input', () => { poleEl.value = poleEl.value.toUpperCase(); state.poleAuto = !poleEl.value.trim(); touched.add('pole'); refresh(); });
+  plateEl.addEventListener('input', () => { plateEl.value = plateEl.value.toUpperCase(); touched.add('plate'); refresh(); });
+  phoneEl.addEventListener('input', () => { if (errors.phone) touched.add('phone'); refresh(); });
+  nameEl.addEventListener('input', paintSummary);
+  $$('input[name="reply"]').forEach(r => r.addEventListener('change', paintSummary));
+  [['desc', descEl], ['address', addrEl], ['phone', phoneEl]].forEach(([k, el]) => el.addEventListener('blur', () => {
+    if (el.value.trim()) { touched.add(k); refresh(); }
+  }));
+  form.addEventListener('click', e => {
+    const fix = e.target.closest('[data-fix-district]');
+    if (fix) { setDistrict(fix.dataset.fixDistrict); state.manualDistrict = false; refresh(); distEl.focus(); return; }
+    const merge = e.target.closest('[data-merge]');
+    if (merge) { mergeInto(merge.dataset.merge); return; }
+    const disp = e.target.closest('[data-dispatch]');
+    if (disp) App.dispatchDialog([disp.dataset.dispatch]);
+  });
+  recentEl.addEventListener('click', e => {
+    const disp = e.target.closest('[data-dispatch]');
+    if (disp) App.dispatchDialog([disp.dataset.dispatch]);
+  });
+
+  // 目前編輯中的區塊：步驟徽章變成旋轉的 sunny
+  form.addEventListener('focusin', e => {
+    const s = e.target.closest('.ik-sec');
+    if (s !== currentSec) { currentSec = s; paintSteps(); }
+  });
+  form.addEventListener('focusout', e => {
+    if (!form.contains(e.relatedTarget)) { currentSec = null; paintSteps(); }
+  });
+  form.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); form.requestSubmit(); return; }
+    // 單行欄位按 Enter 不送出，避免通話中誤觸建案
+    if (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio') e.preventDefault();
+  });
+
+  /* ---------- 地址自動完成（combobox） ---------- */
+  const sugg = $('#ik-sugg');
+  let suggItems = [], suggCursor = -1;
+  function hideSugg() {
+    sugg.hidden = true;
+    addrEl.setAttribute('aria-expanded', 'false');
+    addrEl.removeAttribute('aria-activedescendant');
+    suggCursor = -1;
+  }
+  function showSugg() {
+    const q = addrEl.value.trim();
+    if (!q || placeIn(q) || document.activeElement !== addrEl) { hideSugg(); return; }
+    suggItems = PLACES.filter(p => p.name.includes(q)).slice(0, 6);
+    if (!suggItems.length) { hideSugg(); return; }
+    sugg.innerHTML = suggItems.map((p, i) => {
+      const at = p.name.indexOf(q);
+      const name = `${esc(p.name.slice(0, at))}<mark>${esc(q)}</mark>${esc(p.name.slice(at + q.length))}`;
+      return `<li role="option" id="ik-sugg-${i}" aria-selected="false" data-i="${i}">${App.icon(p.kind === '路名' ? 'map' : 'pin')}<span><b>${name}</b><small>${p.district}</small></span><span class="tag tag--outline">${p.kind}</span></li>`;
+    }).join('');
+    sugg.hidden = false;
+    addrEl.setAttribute('aria-expanded', 'true');
+    suggCursor = -1;
+    addrEl.removeAttribute('aria-activedescendant');
+  }
+  function moveSugg(d) {
+    const opts = $$('[role="option"]', sugg);
+    if (!opts.length) return;
+    suggCursor = (suggCursor + d + opts.length) % opts.length;
+    opts.forEach((o, i) => o.setAttribute('aria-selected', String(i === suggCursor)));
+    addrEl.setAttribute('aria-activedescendant', opts[suggCursor].id);
+  }
+  function pickSugg(i) {
+    const p = suggItems[i];
+    addrEl.value = p.kind === '路名' ? `${p.name} ` : p.name;
+    // 明確選了某條路：行政區跟著它走
+    setDistrict(p.district);
+    state.manualDistrict = false;
+    hideSugg();
+    addrEl.focus();
+    addrEl.setSelectionRange(addrEl.value.length, addrEl.value.length);
+    touched.add('address');
+    refresh();
+  }
+  addrEl.addEventListener('input', () => { showSugg(); refresh(); });
+  addrEl.addEventListener('focus', showSugg);
+  addrEl.addEventListener('blur', () => setTimeout(hideSugg, 120));
+  addrEl.addEventListener('keydown', e => {
+    if (sugg.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSugg(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSugg(-1); }
+    else if (e.key === 'Enter' && suggCursor >= 0) { e.preventDefault(); pickSugg(suggCursor); }
+    else if (e.key === 'Escape') hideSugg();
+  });
+  sugg.addEventListener('mousedown', e => e.preventDefault()); // 保留輸入框焦點
+  sugg.addEventListener('click', e => {
+    const li = e.target.closest('[data-i]');
+    if (li) pickSugg(+li.dataset.i);
+  });
+
+  /* ---------- 檢核清單：點了跳到對應欄位 ---------- */
+  $('.ik-check__list').addEventListener('click', e => {
+    const b = e.target.closest('[data-ck]');
+    if (!b) return;
+    const target = { desc: descEl, address: addrEl, district: distEl, phone: phoneEl, cat: catBox.querySelector('[tabindex="0"]') }[b.dataset.ck];
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' });
+  });
+
+  /* ===================================================================
+     送出：驗證 → 重複確認 → 建案（＋直接派案）→ 收據
+     =================================================================== */
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (state.busy) return;
+    cancelTyping(true);
+    hideSugg();
+    ['desc', 'cat', 'address', 'district', 'phone', 'pole', 'plate'].forEach(k => touched.add(k));
+    refresh();
+    const order = ['desc', 'cat', 'address', 'district', 'pole', 'plate', 'phone'];
+    const bad = order.filter(k => errors[k]);
+    if (bad.length) {
+      const focusEl = { desc: descEl, cat: catBox.querySelector('[tabindex="0"]'), address: addrEl, district: distEl, pole: poleEl, plate: plateEl, phone: phoneEl }[bad[0]];
+      focusEl.focus({ preventScroll: true });
+      focusEl.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' });
+      if (!reduce()) $$('.ik-ck.is-error').forEach(b => { b.classList.remove('is-shake'); void b.offsetWidth; b.classList.add('is-shake'); });
+      App.toast(`尚有 ${bad.length} 個欄位需要確認`, { tone: 'error', sub: bad.map(k => ({ desc: '陳情內容', cat: '類別', address: '地點', district: '行政區', pole: '燈桿編號', plate: '車牌', phone: '來電號碼' }[k])).join('、') });
+      return;
+    }
+    const dup = strongDup();
+    if (dup) { confirmDuplicate(dup.c); return; }
+    create();
+  });
+
+  function setBusy(on) {
+    state.busy = on;
+    submitBtn.setAttribute('aria-busy', String(on));
+    form.inert = on;
+    if (on) {
+      $('.ico', submitBtn).replaceWith(App.loader({ size: 28, bare: true }));
+      $('[data-submit-label]').textContent = '建立中…';
+    } else {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = App.icon('send');
+      $('.loader', submitBtn).replaceWith(tpl.content.firstElementChild);
+    }
+  }
+
+  function create() {
+    if (state.busy) return;
+    setBusy(true);
+    const snap = snapshot();
+    // 模擬送出延遲，讓形狀 loader 有時間被看見
+    setTimeout(() => {
+      const draft = {
+        phone: maskPhone(phoneEl.value), name: nameEl.value.trim() || '來電民眾', desc: descEl.value.trim(),
+        cat: state.cat, district: distEl.value, address: addrEl.value.trim(), channel: channel.value(),
+        priority: urgentEl.checked ? 'urgent' : 'normal', title: titleEl.value.trim() || autoTitle(), callback: replyIsCall(),
+      };
+      const pole = state.cat === 'light' ? poleEl.value.trim() : '';
+      const unit = state.unit;
+      const willDispatch = dispatchEl.checked && !!unit;
+      const { c, undo } = App.createCase(draft);
+      if (pole) c.pole = pole;
+      session.add(c.id);
+      const undoDispatch = willDispatch ? App.dispatch([c.id], { unit, team: App.teamFor(unit, c.district), note: '受理時直接派案' }) : null;
+      setBusy(false);
+      resetForm();
+      const receipt = showReceipt(c, !!undoDispatch);
+      App.toast(`已建立 ${c.id}`, {
+        sub: `${CATS[c.cat].name} · ${c.district} · ${undoDispatch ? `已派 ${UNITS[unit].short}` : '待派案'}`,
+        tone: 'success',
+        action: { label: '復原', onClick: () => { undoDispatch?.(); undo(); session.delete(c.id); receipt.close(); restore(snap); App.toast(`已撤銷 ${c.id}，表單內容已還原`); } },
+      });
+    }, reduce() ? 200 : 950);
+  }
+
+  function routeHTML(c) {
+    const u = c.unit ? UNITS[c.unit] : null;
+    const idx = STATUS[c.status].index;
+    const steps = [
+      { st: 'received', name: '1999 話務中心', sub: `${fmt.dateTime(c.created)} 受理`, done: true },
+      { st: 'dispatched', name: u ? u.full : '待分類派案', sub: !u ? '派案組分派中' : idx >= 2 && c.officer ? `承辦 ${c.officer}` : '已派案', done: idx >= 1 },
+      { st: 'field', name: c.team || (u ? App.teamFor(u.key, c.district) : '處理區隊'), sub: idx >= 3 ? '到場處理中' : '待局處交辦', done: idx >= 3 },
+    ];
+    return `<ol class="ik-route" aria-label="派案路徑">${steps.map(s => `<li class="${s.done ? 'is-done' : ''}" data-status="${s.st}">${App.shape.svg(STATUS[s.st].shape)}<b>${esc(s.name)}</b><small>${s.sub}</small></li>`).join('')}</ol>`;
+  }
+
+  function showReceipt(c, dispatched) {
+    const body = document.createElement('div');
+    body.className = 'ik-rcpt';
+    body.innerHTML = `
+      <div class="ik-rcpt__hero" data-cat="${c.cat}">
+        ${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-rcpt__deco', rotate: 24 })}
+        ${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-rcpt__shape' })}
+        <div>
+          <p class="ik-rcpt__label">案號 · 請告知民眾</p>
+          <p class="ik-rcpt__id" aria-label="${c.id}"><span aria-hidden="true">${c.id.slice(0, 6)}</span><span data-rid aria-hidden="true"></span></p>
+          <p class="ik-rcpt__title">${esc(c.title)}</p>
+        </div>
+      </div>
+      <div class="ik-rcpt__row">${App.statusBadge('received', { lg: true })}${App.slaChip(c)}${App.catTag(c.cat)}${c.priority === 'urgent' ? '<span class="tag tag--error">緊急</span>' : ''}</div>
+      ${routeHTML(c)}
+      <dl class="kv">
+        <dt>陳情人</dt><dd>${esc(c.caller.name)} · ${esc(c.caller.phone)}</dd>
+        <dt>回覆方式</dt><dd>${c.caller.callback ? '電話回覆＋簡訊' : '僅簡訊通知'}</dd>
+        <dt>處理時限</dt><dd>${fmt.slaHours(CATS[c.cat].sla)}，${fmt.full(c.due)} 前</dd>
+      </dl>`;
+    const actions = [
+      ...(dispatched ? [] : [{ label: '立即派案', variant: 'tonal', icon: 'dispatch' }]),
+      { label: '接聽下一通', variant: 'outlined', icon: 'phone' },
+      { label: '完成', icon: 'check' },
+    ];
+    const m = App.modal({
+      title: dispatched ? '建案並派案完成' : '建案完成',
+      sub: `${fmt.full(c.created)} 受理 · 簡訊回條已排入發送`,
+      icon: 'check', shape: 'cookie12', body, actions,
+      onClose: v => {
+        if (v === '立即派案' && App.getCase(c.id)) App.dispatchDialog([c.id]);
+        else if (v === '接聽下一通') answerNext();
+      },
+    });
+    App.odometer($('[data-rid]', body), +c.id.slice(6), { format: v => String(v).padStart(4, '0') });
+    // 收據上的狀態徽章：待派案 → 已派案，形狀 circle morph 成 pentagon
+    if (dispatched) setTimeout(() => {
+      const badge = $('.status', body);
+      const now = App.getCase(c.id);
+      if (badge.isConnected && now) App.setStatusBadge(badge, now.status);
+    }, reduce() ? 0 : 700);
+    return m;
+  }
+
+  function confirmDuplicate(c) {
+    const active = App.isActive(c);
+    App.modal({
+      title: '可能是重複陳情',
+      sub: `72 小時內同路段已有${CATS[c.cat].name}案件`,
+      icon: 'copy', shape: 'sunny',
+      body: `<div class="ik-dupmodal" data-cat="${c.cat}">${App.shape.svg(CATS[c.cat].shape)}
+          <p class="mono strong">${c.id} · ${fmt.dateTime(c.created)} 受理</p>
+          <p class="strong">${esc(c.title)}</p>
+          <p class="t-small muted">${esc(c.team || '尚未派案')}${c.urged ? ` · 已催辦 ${c.urged} 次` : ''}</p>
+          <div class="cluster">${App.statusBadge(c.status)}${App.slaChip(c)}</div>
+        </div>
+        <p class="t-small muted">${active ? '併案會在原案件寫入催辦紀錄並通知承辦區隊，不另建新案。' : '原案件尚未派案，可直接派案並一併處理。'}若民眾反映的是不同問題，請選「仍建立新案」。</p>`,
+      actions: [
+        { label: '返回修改', variant: 'text' },
+        { label: '仍建立新案', variant: 'outlined' },
+        active ? { label: '併案並催辦', icon: 'bolt' } : { label: '前往派案', icon: 'dispatch' },
+      ],
+      onClose: v => {
+        if (v === '仍建立新案') create();
+        else if (v === '併案並催辦') mergeInto(c.id);
+        else if (v === '前往派案') App.dispatchDialog([c.id]);
+      },
+    });
+  }
+
+  /** 併案：在既有案件寫入催辦紀錄（只有已派案～區隊處理中的案件可以催辦） */
+  function mergeInto(id) {
+    const c = App.getCase(id);
+    if (!c || !App.isActive(c) || state.busy) return;
+    cancelTyping(true);
+    const snap = snapshot();
+    const masked = maskPhone(phoneEl.value);
+    const who = nameEl.value.trim() || '來電民眾';
+    const undo = App.urge(id, `${who}${masked ? `（${masked}）` : ''}再次來電反映，已併案`);
+    resetForm();
+    const body = document.createElement('div');
+    body.className = 'ik-rcpt';
+    body.innerHTML = `
+      <div class="ik-rcpt__hero" data-cat="${c.cat}">
+        ${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-rcpt__deco', rotate: 24 })}
+        ${App.shape.svg(CATS[c.cat].shape, { cls: 'ik-rcpt__shape' })}
+        <div>
+          <p class="ik-rcpt__label">已併入既有案件 · 請告知民眾原案號</p>
+          <p class="ik-rcpt__id">${c.id}</p>
+          <p class="ik-rcpt__title">${esc(c.title)}</p>
+        </div>
+      </div>
+      <div class="ik-rcpt__row">${App.statusBadge(c.status, { lg: true })}${App.slaChip(c)}<span class="tag tag--coral">${App.icon('bolt')}已催辦 ${c.urged} 次</span></div>
+      ${routeHTML(c)}
+      <p class="t-small muted">催辦通知已送至 ${esc(c.team || App.unitOf(c).full)}，處理結果會一併回覆兩位陳情人。</p>`;
+    const m = App.modal({
+      title: '已併案並催辦', sub: `${fmt.full(App.now())} · 不另建新案`, icon: 'bolt', shape: 'sunny', body,
+      actions: [{ label: '接聽下一通', variant: 'outlined', icon: 'phone' }, { label: '完成', icon: 'check' }],
+      onClose: v => { if (v === '接聽下一通') answerNext(); },
+    });
+    App.toast(`已併入 ${c.id} 並催辦`, {
+      sub: c.team || App.unitOf(c).full, tone: 'success', shape: 'sunny',
+      action: { label: '復原', onClick: () => { undo(); m.close(); restore(snap); App.toast('已撤回併案，表單已還原'); } },
+    });
+  }
+
+  /* ===================================================================
+     頁首按鈕
+     =================================================================== */
+  $('[data-clear]').addEventListener('click', () => {
+    if (!isDirty()) { App.toast('表單目前沒有內容'); return; }
+    const snap = snapshot();
+    resetForm();
+    App.toast('已清空表單', { sub: '來電號碼保留為目前通話', action: { label: '復原', onClick: () => { restore(snap); App.toast('已還原表單內容'); } } });
+  });
+  $('[data-ref]').addEventListener('click', () => {
+    App.modal({
+      title: '類別時限與權責', sub: '1999 派案作業準則（2026 年版）· 時限自受理起算', icon: 'info', shape: 'flower', size: 'lg',
+      body: `<div class="ik-ref">${CAT_KEYS.map(k => {
+        const c = CATS[k];
+        return `<div class="ik-ref__item" data-cat="${k}">${App.shape.svg(c.shape)}<div><b>${c.name}</b><small>${UNITS[c.unit].full}</small></div>
+          <p class="ik-ref__sla">${c.sla >= 48 ? c.sla / 24 : c.sla}<small>${c.sla >= 48 ? ' 天' : ' 小時'}</small></p>
+          <p class="ik-ref__kw">${c.keywords.slice(0, 7).map(([w]) => `<span>${esc(w)}</span>`).join('')}</p></div>`;
+      }).join('')}</div>
+      <div class="callout callout--info">${App.icon('info')}<div class="callout__title">權責例外</div><div>住宅內人為噪音（樓上敲擊、鄰居喧嘩、唱歌）改由警察局轄區分局處理；側溝阻塞、人孔蓋另會建議工務局水利工程處協辦。</div></div>`,
+      actions: [{ label: '知道了' }],
+    });
+  });
+
+  /* ===================================================================
+     初始：URL 參數（快速受理轉入）或接聽第一通等候來電
+     =================================================================== */
+  const P = Object.fromEntries(['phone', 'desc', 'district', 'address', 'cat'].map(k => [k, (App.param(k) || '').trim()]));
+  const carried = Object.values(P).filter(Boolean).length;
+  if (carried) {
+    call.mode = 'transfer';
+    call.phone = P.phone;
+    call.startedAt = performance.now() - 95e3;
+    $('[data-call-num]').textContent = P.phone || '未顯示號碼';
+    asrEl.innerHTML = `<li class="ik-utt ik-utt--note"><p class="ik-utt__text">此通來電由快速受理轉入，已帶入 ${carried} 個欄位；逐字稿會在通話結束後同步到案件。</p></li>`;
+    fillBtn.hidden = true;
+    asrAllBtn.hidden = true;
+    setCallState('active');
+    paintCallMeta();
+    descEl.value = P.desc.slice(0, 500);
+    addrEl.value = P.address.slice(0, 60);
+    phoneEl.value = P.phone.slice(0, 16);
+    if (App.district(P.district)) { setDistrict(P.district); state.manualDistrict = true; }
+    if (CATS[P.cat]) {
+      state.cat = P.cat;
+      // 與自動判讀相同就維持自動模式，不同才視為人工指定
+      state.manualCat = P.cat !== App.classify(P.desc)[0]?.cat;
+    }
+    setTimeout(() => App.toast(`已帶入快速受理的 ${carried} 個欄位`, { sub: '請確認內容後建立案件' }), 400);
+  } else {
+    // 第一通已通話 38 秒，話務員邊聽邊打了一半的描述
+    answer(0, 38);
+    phoneEl.value = call.phone;
+    descEl.value = CALLS[0].draft;
+  }
+  autosize();
+  refresh();
+  paintRecent(false);
+
+  // 任何資料異動（含復原）：今日受理、相似案件、來電紀錄、摘要一起重繪
+  App.on('change', () => {
+    paintRecent();
+    paintDup();
+    paintHistory();
+    paintCallMeta();
+    paintSummary();
+  });
+  // 時間往前走：每 30 秒更新摘要上的到期時間
+  setInterval(() => { if (!document.hidden) paintSummary(); }, 30000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-season="autumn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>步道總覽 — 雲嶺森林遊樂區</title>
+<meta name="description" content="雲嶺森林遊樂區十條步道：依難度、距離與時間篩選排序，剪紙步道總覽圖、十條步道高度剖面比較與即時路況。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ============ 頁首：統計紙籤 ============ */
+  /* 桌機上第二句獨立一行，避免在詞中間斷行 */
+  @media (min-width: 721px) { .tr-hero-s { display: block; } }
+  .tr-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 7px 13px 7px 11px;
+    border-radius: var(--r-sm);
+    background: rgb(255 252 247 / .88);
+    box-shadow: 3px 3px 0 var(--sheet-1), var(--sh-1);
+    font-size: 14px;
+    color: var(--ink-2);
+    transition: box-shadow var(--dur-season) var(--ease);
+  }
+  .tr-stat b { font-size: 21px; font-weight: 500; line-height: 1; color: var(--ink); }
+  .tr-stat:nth-child(odd) { rotate: -.6deg; }
+  .tr-stat:nth-child(even) { rotate: .5deg; }
+  .tr-stat--status { align-items: center; gap: 14px; }
+
+  /* ============ 篩選紙板：疊在頁首山腳上 ============ */
+  .tr-finder { padding-top: 0; }
+  .tr-filter {
+    position: relative;
+    z-index: 3;
+    margin-top: clamp(-104px, -7vw, -56px);
+    padding: 22px clamp(18px, 2.4vw, 30px) 0;
+  }
+  .tr-f { display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .tr-f__label { font-size: 12px; font-weight: 700; line-height: 1.4; letter-spacing: .16em; color: var(--ink-3); }
+  /* 桌機排成三欄表單：搜尋｜難度｜排序 / 距離｜時間｜其他；.tr-filter__more 只在手機收合時才是獨立區塊 */
+  .tr-filter__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(250px, auto);
+    grid-template-areas: "search diff sort" "dist time opts";
+    align-items: end;
+    gap: 20px 36px;
+  }
+  .tr-filter__search { grid-area: search; }
+  .tr-filter__sort { grid-area: sort; }
+  .tr-filter__more { display: contents; }
+  .tr-f--diff { grid-area: diff; }
+  .tr-f--dist { grid-area: dist; }
+  .tr-f--time { grid-area: time; }
+  .tr-f--opts { grid-area: opts; }
+  .tr-filter__toggle { display: none; }
+  .tr-filter__n {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: var(--r-pill);
+    background: var(--accent);
+    color: #fff;
+    font: 600 12px/20px var(--font-en);
+    text-align: center;
+  }
+  .tr-filter__n:empty { display: none; }
+  .tr-chips { gap: 8px; min-height: 44px; }
+  /* 難度 chip 前的小山：座數＝難度，與 .badge 同一套語彙 */
+  .tr-chip-m { width: 12px; height: 8px; flex: none; background: currentColor; clip-path: polygon(0 100%, 50% 0, 100% 100%); }
+  .tr-chip-m--general { width: 17px; clip-path: polygon(0 100%, 30% 15%, 50% 55%, 72% 0, 100% 100%); }
+  .tr-chip-m--challenge { width: 22px; clip-path: polygon(0 100%, 18% 35%, 32% 70%, 50% 0, 68% 70%, 82% 30%, 100% 100%); }
+  .tr-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; min-height: 44px; }
+  .tr-filter__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 20px;
+    margin-top: 20px;
+    padding: 14px 0 16px;
+    border-top: 1.5px dashed var(--line-2);
+  }
+  .tr-count { font-size: 15px; color: var(--ink-2); }
+  .tr-count b { margin-right: 2px; font-size: 24px; font-weight: 500; line-height: 1; color: var(--ink); }
+  .tr-count span { margin-left: 8px; font-size: 13px; color: var(--ink-3); }
+
+  /* ============ 結果：步道卡＋黏著的總覽圖 ============ */
+  .tr-results {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 36vw, 480px);
+    gap: 48px;
+    align-items: start;
+    margin-top: 52px;
+  }
+  .tr-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 44px 34px; padding-right: 14px; }
+  .tr-cards .trail-card {
+    outline: 2.5px solid transparent;
+    outline-offset: 6px;
+    /* 保留 [data-reveal] 的進場過渡，另加抬起與外框 */
+    transition: opacity .8s var(--ease-out) var(--rd, 0ms), translate .9s var(--ease-out) var(--rd, 0ms),
+      transform var(--dur-2) var(--ease-paper), box-shadow var(--dur-2) var(--ease-out), outline-color var(--dur-2) var(--ease);
+  }
+  .tr-cards .trail-card.tr-is-focus {
+    --lift: 8px;
+    outline-color: var(--accent);
+    transform: translateY(-8px);
+    box-shadow:
+      7px calc(7px + var(--lift)) 0 -1px var(--sheet-1),
+      14px calc(13px + var(--lift)) 0 -3px var(--sheet-2),
+      var(--sh-3), inset 0 0 0 1px rgb(var(--shadow-rgb) / .06);
+  }
+  .tr-cards .trail-card.is-target { animation: tr-target 2.4s var(--ease-out); }
+  @keyframes tr-target {
+    0% { outline-color: var(--accent); outline-offset: 22px; rotate: -1.2deg; }
+    30% { outline-color: var(--accent); outline-offset: 6px; rotate: 0deg; }
+  }
+  .trail-card__en { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  /* 當季推薦：貼在卡片上的一小段色紙 */
+  .tr-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    padding: 1px 9px 1px 7px;
+    border-radius: var(--r-xs);
+    background: var(--accent);
+    color: #fff;
+    font: 700 12px/1.6 var(--font-sans);
+    font-style: normal;
+    letter-spacing: .08em;
+    box-shadow: 2px 2px 0 var(--sheet-1);
+    rotate: 1.5deg;
+  }
+  .tr-pick svg { width: 13px; height: 13px; }
+
+  .tr-side { position: sticky; top: calc(var(--header-h) + 24px); display: grid; gap: 16px; }
+  .tr-side__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .tr-side__title { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 900; }
+  .tr-side__title svg { width: 22px; height: 22px; color: var(--accent); }
+  .tr-side__hint { font-size: 13px; color: var(--ink-3); }
+  .tr-map { isolation: isolate; }
+  .tr-map > svg { overflow: hidden; }
+  .tr-map .map__trail { transition: opacity var(--dur-3) var(--ease); }
+  .tr-map .map__trail.is-out { opacity: .12; pointer-events: none; }
+  .tr-marks { opacity: 0; pointer-events: none; transition: opacity var(--dur-2) var(--ease); }
+  .tr-marks.is-on { opacity: 1; }
+  .tr-map__tag {
+    position: absolute;
+    z-index: 2;
+    padding: 4px 10px;
+    border-radius: var(--r-xs);
+    background: var(--ink);
+    color: var(--card);
+    font: 700 13px/1.35 var(--font-sans);
+    white-space: nowrap;
+    pointer-events: none;
+    translate: -50% calc(-100% - 12px);
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease);
+  }
+  .tr-map__tag.is-below { translate: -50% 14px; }
+  .tr-map__tag.is-on { opacity: 1; }
+  .tr-map__tag small { margin-left: 6px; font: 500 12px/1 var(--font-en); color: var(--flora-2); }
+
+  .tr-info { min-height: 228px; padding: 18px 20px 20px; }
+  .tr-info__hint { display: flex; gap: 10px; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  .tr-info__hint svg { width: 18px; height: 18px; flex: none; margin-top: 3px; color: var(--accent); }
+  .tr-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 16px 0 0; padding: 14px 0 0; border-top: 1px dashed var(--line-2); list-style: none; font-size: 13px; color: var(--ink-2); }
+  .tr-legend li { display: flex; align-items: center; gap: 10px; }
+  .tr-legend svg { width: 40px; height: 10px; flex: none; }
+  .tr-info__sum { margin-top: 16px; font-size: 13px; color: var(--ink-3); }
+  .tr-info__sum b { font: 600 17px/1 var(--font-en); color: var(--ink); }
+  .tr-info__flags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .tr-info__close { margin: -8px -8px 0 auto; width: 34px; height: 34px; }
+  .tr-info__name { margin-top: 10px; font-size: 24px; font-weight: 900; line-height: 1.3; }
+  .tr-info__en { font-size: 13px; color: var(--ink-3); }
+  .tr-info__note { display: flex; gap: 8px; margin-top: 10px; font-size: 14px; line-height: 1.65; color: var(--ink-2); }
+  .tr-info__note svg { width: 16px; height: 16px; flex: none; margin-top: 3px; color: var(--ink-3); }
+  .tr-info .trail-stats { margin: 12px 0 0; }
+  .tr-info__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+  .tr-empty .btn { margin-top: 8px; }
+
+  /* ============ 剖面比較：十張剪紙疊成一座山 ============ */
+  .tr-compare { overflow-x: clip; }
+  .tr-cmp { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: clamp(28px, 3vw, 48px); align-items: start; }
+  .tr-cmp__stage { margin: 0; }
+  .tr-cmp__box {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    background: linear-gradient(var(--sky-1), var(--sky-2) 78%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / .12), 0 30px 60px -24px rgb(0 0 0 / .72);
+    transition: background var(--dur-season) var(--ease);
+  }
+  .tr-cmp__svg { width: 100%; height: auto; overflow: hidden; cursor: crosshair; touch-action: pan-y; }
+  .tr-cmp__layer {
+    transform: translateY(var(--shift, 0px));
+    transition: transform .8s var(--ease-paper) calc(var(--k) * 45ms), opacity .55s var(--ease) calc(var(--k) * 45ms);
+  }
+  .tr-cmp__pop { transition: transform .8s var(--ease-paper); }
+  /* 被篩掉的步道沉到紙台下 */
+  .tr-cmp__layer.is-out { transform: translateY(var(--sink)); opacity: 0; pointer-events: none; }
+  .tr-cmp__grid { stroke: var(--ink); stroke-opacity: .14; }
+  .tr-cmp__axis { font: 500 11px/1 var(--font-en); fill: var(--ink-3); }
+  .tr-cmp__axis--x { fill: var(--night-ink-2); }
+  .tr-cmp__name { font: 700 13px/1 var(--font-sans); fill: var(--ink-2); transition: fill var(--dur-1); }
+  .tr-cmp__svg.is-narrow .tr-cmp__name { font-size: 11.5px; }
+  .tr-cmp__layer.is-focus .tr-cmp__name { fill: var(--accent-ink); }
+  .tr-cmp__over, .tr-cmp__hover { pointer-events: none; }
+  .tr-cmp__over .profile__line { animation-duration: .9s; }
+  .tr-cmp__over text { animation: fade-in .4s var(--ease) .25s both; }
+  .tr-cmp__lbl { font: 900 18px/1 var(--font-serif); fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+  .tr-cmp__lbl--num { font: 600 13px/1 var(--font-en); fill: var(--ink-2); }
+  .tr-cmp__hover { opacity: 0; transition: opacity var(--dur-1); }
+  .tr-cmp__hover.is-on { opacity: 1; }
+  .tr-cmp__cap { margin-top: 16px; font-size: 13px; color: var(--night-ink-2); letter-spacing: .04em; }
+
+  .tr-cmp__h { font: 700 13px/1.4 var(--font-sans); letter-spacing: .16em; color: var(--flora-2); }
+  .tr-lgd { display: grid; gap: 2px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .tr-lg {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 12px 8px 8px;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--night-ink);
+    text-align: left;
+    transition: background-color var(--dur-1), opacity var(--dur-2), box-shadow var(--dur-1);
+  }
+  .tr-lg__sw {
+    width: 26px;
+    height: 15px;
+    background: var(--c);
+    clip-path: polygon(0 100%, 28% 28%, 46% 62%, 68% 0, 100% 100%);
+    transition: background-color var(--dur-season) var(--ease);
+  }
+  .tr-lg__name { font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .tr-lg__meta { font-size: 13px; color: var(--night-ink-2); }
+  .tr-lg:hover, .tr-lg.is-focus { background: rgb(247 241 232 / .08); }
+  .tr-lg[aria-pressed="true"] { background: rgb(247 241 232 / .14); box-shadow: inset 3px 0 0 var(--flora-2); }
+  .tr-lg:disabled { opacity: .32; cursor: not-allowed; background: transparent; }
+
+  .tr-records { margin-top: clamp(32px, 4vw, 48px); }
+  .tr-records__h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .tr-records__h span { font-size: 13px; color: var(--night-ink-2); }
+  .tr-records__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .tr-rec {
+    display: grid;
+    gap: 6px;
+    padding: 16px 18px 15px;
+    border: 1.5px solid rgb(247 241 232 / .2);
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--night-ink);
+    text-align: left;
+    transition: border-color var(--dur-1), background-color var(--dur-2), color var(--dur-2), transform var(--dur-2) var(--ease-paper), box-shadow var(--dur-2);
+  }
+  .tr-rec:hover { border-color: rgb(247 241 232 / .55); transform: translateY(-3px); }
+  .tr-rec__k { font-size: 12px; font-weight: 700; letter-spacing: .16em; color: var(--flora-2); }
+  .tr-rec__v { font: 400 34px/1 var(--font-en); font-variant-numeric: lining-nums tabular-nums; }
+  .tr-rec__v small { margin: 0 3px 0 2px; font: 400 14px/1 var(--font-sans); color: var(--night-ink-2); }
+  .tr-rec__n { font-size: 14px; color: var(--night-ink-2); }
+  .tr-rec[aria-pressed="true"] { border-color: var(--night-ink); background: var(--night-ink); color: var(--night); box-shadow: 5px 5px 0 var(--l5); }
+  .tr-rec[aria-pressed="true"] .tr-rec__k { color: var(--accent-ink); }
+  .tr-rec[aria-pressed="true"] .tr-rec__v small, .tr-rec[aria-pressed="true"] .tr-rec__n { color: var(--ink-3); }
+  .tr-records__none { font-size: 14px; color: var(--night-ink-2); }
+
+  /* ============ 出發之前：難度分級與路況 ============ */
+  .tr-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px 34px; }
+  .tr-level { display: flex; flex-direction: column; min-width: 0; }
+  .tr-level__art { position: relative; height: 96px; overflow: hidden; border-radius: var(--r-md) var(--r-md) 0 0; background: linear-gradient(var(--sky-1), var(--sky-2)); }
+  .tr-level__art svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+  .tr-level__body { display: grid; gap: 12px; padding: 16px 24px 24px; }
+  .tr-level__title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 26px; font-weight: 900; }
+  .tr-level__note { font-size: 14px; color: var(--ink-2); }
+  .tr-level .dl { gap: 7px 16px; padding: 12px 0; border-block: 1px dashed var(--line-2); font-size: 14px; }
+  .tr-level .dl dd .num { font-size: 15px; }
+  .tr-level__list { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; padding: 0; list-style: none; }
+  .tr-level__list a {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: var(--r-sm);
+    background: var(--paper-2);
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 2px 2px 0 var(--sheet-1);
+    transition: transform var(--dur-2) var(--ease-paper), box-shadow var(--dur-2), background-color var(--dur-season) var(--ease);
+  }
+  .tr-level__list a:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--sheet-1); }
+  .tr-level__list small { font: 500 12px/1 var(--font-en); color: var(--ink-3); }
+
+  .tr-board { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 36px; align-items: start; margin-top: clamp(40px, 5vw, 64px); }
+  .tr-board__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; }
+  .tr-road { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .tr-road li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 13px 0; border-bottom: 1px dashed var(--line-2); }
+  .tr-road li:last-child { border-bottom: 0; }
+  .tr-road b { font-size: 16px; }
+  .tr-road p { margin-top: 2px; font-size: 14px; color: var(--ink-2); }
+  .tr-road .status { align-self: start; margin-top: 3px; }
+  .tr-board__sub { margin: 20px 0 6px; font: 700 13px/1.4 var(--font-sans); letter-spacing: .16em; color: var(--ink-3); }
+  .tr-notes { display: grid; margin: 0; padding: 0; list-style: none; }
+  .tr-notes li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; padding: 12px 0; border-bottom: 1px dashed var(--line-2); font-size: 14px; }
+  .tr-notes li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .tr-notes time { font: 600 15px/1.5 var(--font-en); color: var(--ink-2); }
+  .tr-notes b { display: block; font-size: 15px; line-height: 1.6; }
+  .tr-notes p { margin-top: 4px; color: var(--ink-2); line-height: 1.7; }
+
+  .tr-steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: tip; }
+  .tr-steps li { position: relative; padding-left: 40px; font-size: 15px; line-height: 1.7; counter-increment: tip; }
+  .tr-steps li::before {
+    content: counter(tip);
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font: 600 13px/1 var(--font-en);
+    box-shadow: 3px 3px 0 var(--sheet-1);
+    transition: background-color var(--dur-season) var(--ease);
+  }
+  .tr-steps b { color: var(--ink); }
+  .tr-sos { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-top: 20px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--accent-soft); font-size: 14px; transition: background-color var(--dur-season) var(--ease); }
+  .tr-sos a { font: 600 19px/1 var(--font-en); color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
+  .tr-sos a:hover { text-decoration: underline; }
+  .tr-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+
+  /* ============ 步道快覽 modal ============ */
+  .tr-quick__art { position: relative; height: 200px; overflow: hidden; border-radius: var(--r-md); background: linear-gradient(var(--sky-1), var(--sky-2)); }
+  .tr-quick__art svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+  .tr-quick__lbl { font: 600 12px/1 var(--font-en); fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+  .tr-quick__axis { display: flex; justify-content: space-between; margin-top: 6px; font: 500 12px/1 var(--font-en); color: var(--ink-3); }
+  .tr-quick__grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px 32px; margin-top: 20px; }
+  .tr-quick__desc { font-size: 15px; line-height: 1.85; color: var(--ink-2); }
+  .tr-quick__grid .trail-stats { margin: 16px 0 0; }
+  .tr-quick__grid .dl { font-size: 14px; align-content: start; }
+  .tr-quick__grid .dl dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .tr-season {
+    --sw: var(--swatch-autumn);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 10px 1px 8px;
+    border-radius: var(--r-pill);
+    background: rgb(var(--shadow-rgb) / .07);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .tr-season::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sw); }
+  .tr-season[data-s="spring"] { --sw: var(--swatch-spring); }
+  .tr-season[data-s="summer"] { --sw: var(--swatch-summer); }
+  .tr-season[data-s="winter"] { --sw: var(--swatch-winter); }
+
+  /* ============ RWD ============ */
+  @media (max-width: 1200px) {
+    .tr-filter__grid { display: flex; flex-wrap: wrap; gap: 18px 32px; }
+    .tr-filter__search { flex: 1 1 360px; }
+    .tr-filter__sort { flex: 0 1 240px; }
+  }
+  @media (max-width: 1080px) {
+    .tr-results { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+    .tr-side { position: static; order: -1; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
+    .tr-side__head { grid-column: 1 / -1; }
+    .tr-cmp { grid-template-columns: minmax(0, 1fr); }
+    .tr-lgd { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }
+    .tr-levels { grid-template-columns: minmax(0, 1fr); max-width: 680px; }
+    .tr-board { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .tr-records__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .tr-filter__grid { gap: 14px; }
+    .tr-filter__search { flex-basis: 100%; }
+    .tr-filter__toggle { display: inline-flex; }
+    .tr-filter__sort { flex: 1 1 130px; }
+    .tr-filter:not(.is-open) .tr-filter__more { display: none; }
+    .tr-filter .seg { display: flex; }
+    .tr-filter .seg__btn { flex: 1 1 auto; padding-inline: 8px; }
+    .tr-filter__more > .tr-f { flex-basis: 100%; }
+    .tr-filter__more > .tr-f:first-child { margin-top: 6px; }
+    .tr-side { grid-template-columns: minmax(0, 1fr); }
+    .tr-cards { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+    .tr-info { min-height: 0; }
+  }
+  @media (max-width: 560px) {
+    .tr-stat--status { gap: 10px; }
+    .tr-stat b { font-size: 18px; }
+    .tr-lg { grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding-inline: 6px; }
+    .tr-lg__sw { width: 22px; height: 13px; }
+    .tr-lg__name { font-size: 14px; }
+    .tr-lg__meta { display: none; }
+    .tr-records__grid { gap: 12px; }
+    .tr-rec { padding: 14px; }
+    .tr-rec__v { font-size: 28px; }
+    .tr-road li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .tr-quick__grid { grid-template-columns: minmax(0, 1fr); }
+    .tr-quick__art { height: 170px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="topbar" data-playzone>
+  <div class="wrap topbar__inner">
+    <a class="topbar__back" href="../../index.html"><span data-icon="arrow-left"></span>返回目錄</a>
+    <p class="topbar__org">澄港市政府 · 雲嶺森林遊樂區管理所</p>
+    <p class="topbar__status"><span class="live-dot" aria-hidden="true"></span>今日開放 07:00–17:00 · 16:00 停止入園</p>
+  </div>
+</div>
+
+<header class="site-header" data-header>
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html" aria-label="雲嶺森林遊樂區 首頁">
+      <svg class="brand__mark" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+        <rect class="f-sky1" width="44" height="44"/>
+        <circle class="f-sun" cx="29" cy="15" r="6"/>
+        <path class="f-l2" d="M0 25C6 19 10 13 16 16C21 19 24 10 30 12C36 14 40 20 44 19V44H0Z"/>
+        <path class="f-l4" d="M0 31C7 26 12 23 18 27C23 30 28 24 34 25C39 26 42 30 44 29V44H0Z"/>
+        <path class="f-l6" d="M0 37C8 33 14 34 22 36C30 38 36 33 44 35V44H0Z"/>
+      </svg>
+      <span class="brand__text"><b class="brand__name">雲嶺森林遊樂區</b><span class="brand__en">Yunling Forest · Chenggang</span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主選單">
+      <ul class="nav__list">
+        <li><a class="nav__link" href="index.html">園區首頁</a></li>
+        <li><a class="nav__link is-active" href="trails.html" aria-current="page">步道總覽</a></li>
+        <li><a class="nav__link" href="trail.html">霧林古道</a></li>
+        <li><a class="nav__link" href="visit.html">入園預約</a></li>
+      </ul>
+    </nav>
+    <div class="season-switch" role="group" aria-label="季節配色">
+      <button class="season-switch__btn" type="button" data-season-btn="spring" aria-pressed="false" title="春櫻配色"><span aria-hidden="true">春</span><span class="sr-only">春季配色</span></button>
+      <button class="season-switch__btn" type="button" data-season-btn="summer" aria-pressed="false" title="夏螢配色"><span aria-hidden="true">夏</span><span class="sr-only">夏季配色</span></button>
+      <button class="season-switch__btn" type="button" data-season-btn="autumn" aria-pressed="true" title="秋楓配色"><span aria-hidden="true">秋</span><span class="sr-only">秋季配色</span></button>
+      <button class="season-switch__btn" type="button" data-season-btn="winter" aria-pressed="false" title="冬雲海配色"><span aria-hidden="true">冬</span><span class="sr-only">冬季配色</span></button>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav"><span class="nav-toggle__bars" aria-hidden="true"></span><span class="nav-toggle__label">選單</span></button>
+  </div>
+</header>
+
+<main id="main">
+  <!-- ============ 頁首 ============ -->
+  <section class="page-hero" data-scene aria-labelledby="page-title">
+    <div class="page-hero__scene" data-papercut="page" data-seed="trails"></div>
+    <div class="wrap page-hero__inner" data-scene-copy>
+      <nav class="crumbs" aria-label="麵包屑">
+        <ol>
+          <li><a href="index.html">園區首頁</a></li>
+          <li><span aria-current="page">步道總覽</span></li>
+        </ol>
+      </nav>
+      <h1 class="page-hero__title" id="page-title">步道總覽</h1>
+      <p class="page-hero__lede tr-hero-lede">十條步道，從湖邊能推嬰兒車的木棧道，到一路陡上主峰的石階。<span class="tr-hero-s">依難度、距離與時間篩一篩，挑一條適合今天的路。</span></p>
+      <div class="page-hero__meta" id="tr-hero-meta"></div>
+    </div>
+  </section>
+
+  <!-- ============ 篩選與結果 ============ -->
+  <section class="section tr-finder" id="finder" aria-labelledby="finder-title">
+    <div class="wrap">
+      <h2 class="sr-only" id="finder-title">篩選與排序步道</h2>
+      <form class="card card--stack tr-filter" id="tr-filter" role="search" aria-label="篩選步道" novalidate>
+        <div class="tr-filter__grid">
+          <div class="tr-f tr-filter__search">
+            <label class="tr-f__label" for="tr-q">找步道</label>
+            <div class="search">
+              <span data-icon="search"></span>
+              <input class="input" id="tr-q" type="search" placeholder="名稱、景點或標籤，如：吊橋" autocomplete="off">
+            </div>
+          </div>
+          <button class="btn btn--paper tr-filter__toggle" type="button" id="tr-toggle" aria-expanded="false" aria-controls="tr-filter-more"><span data-icon="filter"></span>篩選條件<span class="tr-filter__n" id="tr-filter-n"></span></button>
+          <div class="tr-f tr-filter__sort">
+            <label class="tr-f__label" for="tr-sort">排序</label>
+            <select class="select" id="tr-sort">
+              <option value="recommend">當季推薦優先</option>
+              <option value="km">距離：短到長</option>
+              <option value="min">所需時間：短到長</option>
+              <option value="climb">爬升：少到多</option>
+              <option value="high">最高海拔：高到低</option>
+            </select>
+          </div>
+
+          <div class="tr-filter__more" id="tr-filter-more">
+          <div class="tr-f tr-f--diff" role="group" aria-labelledby="tr-l-diff">
+            <span class="tr-f__label" id="tr-l-diff">難度</span>
+            <div class="cluster tr-chips" id="tr-chips">
+              <button class="chip" type="button" data-diff="all" aria-pressed="true">全部<span class="chip__count"></span></button>
+              <button class="chip" type="button" data-diff="family" aria-pressed="false"><span class="tr-chip-m" aria-hidden="true"></span>親子<span class="chip__count"></span></button>
+              <button class="chip" type="button" data-diff="general" aria-pressed="false"><span class="tr-chip-m tr-chip-m--general" aria-hidden="true"></span>一般<span class="chip__count"></span></button>
+              <button class="chip" type="button" data-diff="challenge" aria-pressed="false"><span class="tr-chip-m tr-chip-m--challenge" aria-hidden="true"></span>挑戰<span class="chip__count"></span></button>
+            </div>
+          </div>
+          <div class="tr-f tr-f--dist" role="group" aria-labelledby="tr-l-dist">
+            <span class="tr-f__label" id="tr-l-dist">距離</span>
+            <div class="seg" data-segmented data-filter="dist">
+              <button class="seg__btn" type="button" data-value="all" aria-pressed="true">不限</button>
+              <button class="seg__btn" type="button" data-value="short" aria-pressed="false">2 km 內</button>
+              <button class="seg__btn" type="button" data-value="mid" aria-pressed="false">2–5 km</button>
+              <button class="seg__btn" type="button" data-value="long" aria-pressed="false">5 km 以上</button>
+            </div>
+          </div>
+          <div class="tr-f tr-f--time" role="group" aria-labelledby="tr-l-time">
+            <span class="tr-f__label" id="tr-l-time">所需時間</span>
+            <div class="seg" data-segmented data-filter="time">
+              <button class="seg__btn" type="button" data-value="all" aria-pressed="true">不限</button>
+              <button class="seg__btn" type="button" data-value="short" aria-pressed="false">1 小時內</button>
+              <button class="seg__btn" type="button" data-value="mid" aria-pressed="false">1–3 小時</button>
+              <button class="seg__btn" type="button" data-value="long" aria-pressed="false">3 小時以上</button>
+            </div>
+          </div>
+          <div class="tr-f tr-f--opts" role="group" aria-labelledby="tr-l-opt">
+            <span class="tr-f__label" id="tr-l-opt">其他</span>
+            <div class="tr-opts">
+              <label class="check"><input type="checkbox" id="tr-open">隱藏封閉步道</label>
+              <label class="check"><input type="checkbox" id="tr-seasonal"><span id="tr-seasonal-label">只看秋季適合</span></label>
+            </div>
+          </div>
+          </div>
+        </div>
+
+        <div class="tr-filter__foot">
+          <p class="tr-count" id="tr-count" aria-live="polite"></p>
+          <button class="btn btn--ghost btn--sm" type="button" data-reset hidden><span data-icon="close"></span>清除條件</button>
+        </div>
+      </form>
+
+      <div class="tr-results">
+        <div>
+          <div class="tr-cards" id="tr-cards"></div>
+          <div class="empty tr-empty" id="tr-empty" hidden>
+            <svg class="empty__art" viewBox="0 0 140 84" aria-hidden="true" focusable="false">
+              <circle class="f-sun" cx="108" cy="22" r="10"/>
+              <path class="f-l2" d="M0,66 L26,36 L40,50 L66,18 L92,50 L106,40 L140,62 V84 H0Z"/>
+              <path class="f-l4" filter="url(#pc-shadow)" d="M0,76 C26,64 52,72 76,68 S118,60 140,70 V84 H0Z"/>
+              <path class="f-l7" d="M88,78 V44 H91 V78Z M70,44 H101 L107,49.5 L101,55 H70Z"/>
+            </svg>
+            <p class="empty__title">這組條件找不到步道</p>
+            <p class="empty__text" id="tr-empty-text"></p>
+            <button class="btn btn--paper" type="button" data-reset><span data-icon="history"></span>清除所有條件</button>
+          </div>
+        </div>
+
+        <aside class="tr-side" aria-labelledby="tr-map-title">
+          <div class="tr-side__head">
+            <h2 class="tr-side__title" id="tr-map-title"><span data-icon="map"></span>剪紙步道總覽圖</h2>
+            <p class="tr-side__hint">點選路線查看步道</p>
+          </div>
+          <div class="map tr-map" id="tr-map">
+            <svg id="tr-map-svg" role="img" aria-label="雲嶺園區步道位置圖：十條步道的路線與起訖點"></svg>
+            <span class="tr-map__tag" id="tr-map-tag" aria-hidden="true"></span>
+          </div>
+          <div class="card tr-info" id="tr-info"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 剖面比較 ============ -->
+  <div class="cut-divider" data-cut-divider="trails-compare" style="--from: var(--paper); --to: var(--night)" aria-hidden="true"></div>
+  <section class="section section--night tr-compare" id="compare" aria-labelledby="compare-title">
+    <div class="wrap">
+      <header class="sec-head">
+        <span class="sec-head__no" aria-hidden="true">壹</span>
+        <div>
+          <p class="eyebrow">ELEVATION · 剖面比較</p>
+          <h2 class="sec-head__title" id="compare-title">同一把尺，量十條路</h2>
+          <p class="sec-head__lede">把每條步道的高度剖面剪成一張紙，用同一個比例尺由後往前疊起來：橫向是距離，隆起的高度是爬升，後排的紙山越高越累。上方篩掉的步道會沉下去；滑過任何一層，讀出那一點的里程與海拔。</p>
+        </div>
+      </header>
+      <div class="tr-cmp">
+        <figure class="tr-cmp__stage" data-reveal="scale">
+          <div class="tr-cmp__box" id="tr-cmp-box">
+            <svg class="tr-cmp__svg" id="tr-cmp-svg" role="img" aria-labelledby="tr-cmp-cap"></svg>
+          </div>
+          <figcaption class="tr-cmp__cap" id="tr-cmp-cap"></figcaption>
+        </figure>
+        <div data-reveal style="--rd:120ms">
+          <h3 class="tr-cmp__h">依總爬升排序 · 點選固定</h3>
+          <ol class="tr-lgd" id="tr-lgd"></ol>
+        </div>
+      </div>
+      <div class="tr-records" id="tr-records" data-reveal style="--rd:160ms"></div>
+    </div>
+  </section>
+  <div class="cut-divider" data-cut-divider="trails-before" style="--from: var(--night); --to: var(--paper-2)" aria-hidden="true"></div>
+
+  <!-- ============ 出發之前 ============ -->
+  <section class="section section--alt" id="before" aria-labelledby="before-title">
+    <div class="wrap">
+      <header class="sec-head">
+        <span class="sec-head__no" aria-hidden="true">貳</span>
+        <div>
+          <p class="eyebrow">BEFORE YOU GO · 出發之前</p>
+          <h2 class="sec-head__title" id="before-title">先對一下難度，再看一眼路況</h2>
+          <p class="sec-head__lede">難度依距離、爬升與路面分成三級，下面的範圍由十條步道的實際數據算出。出發前也請看一眼即時路況與安全須知。</p>
+        </div>
+      </header>
+      <div class="tr-levels" id="tr-levels"></div>
+
+      <div class="tr-board">
+        <article class="card card--pad" aria-labelledby="road-title" data-reveal data-playzone>
+          <header class="tr-board__head">
+            <h3 class="card-title" id="road-title"><span data-icon="alert"></span>即時路況</h3>
+            <p class="live-note"><span class="live-dot live-dot--ok" aria-hidden="true"></span><span><span class="num" id="tr-road-time"></span> 更新</span></p>
+          </header>
+          <ul class="tr-road" id="tr-road"></ul>
+          <h4 class="tr-board__sub">路況公告</h4>
+          <ul class="tr-notes" id="tr-notes"></ul>
+        </article>
+        <article class="card card--pad card--stack" aria-labelledby="safety-title" data-reveal style="--rd:120ms">
+          <header class="tr-board__head">
+            <h3 class="card-title" id="safety-title"><span data-icon="backpack"></span>上山前的五件事</h3>
+          </header>
+          <ol class="tr-steps" id="tr-steps"></ol>
+          <p class="tr-sos"><span>管理站 24 小時救援</span><a id="tr-sos" href="tel:+886657182119"></a></p>
+          <div class="tr-cta">
+            <a class="btn btn--primary" href="visit.html">預約入園<span data-icon="arrow-right"></span></a>
+            <a class="btn btn--paper" href="trail.html"><span data-icon="route"></span>霧林古道完整介紹</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer" style="--footer-from: var(--paper-2)">
+  <div class="cut-divider" data-cut-divider="footer" aria-hidden="true"></div>
+  <div class="site-footer__body">
+    <div class="wrap site-footer__grid">
+      <div class="site-footer__brand">
+        <a class="brand" href="index.html" aria-label="雲嶺森林遊樂區 首頁">
+          <svg class="brand__mark" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+            <rect class="f-sky1" width="44" height="44"/>
+            <circle class="f-sun" cx="29" cy="15" r="6"/>
+            <path class="f-l2" d="M0 25C6 19 10 13 16 16C21 19 24 10 30 12C36 14 40 20 44 19V44H0Z"/>
+            <path class="f-l4" d="M0 31C7 26 12 23 18 27C23 30 28 24 34 25C39 26 42 30 44 29V44H0Z"/>
+            <path class="f-l6" d="M0 37C8 33 14 34 22 36C30 38 36 33 44 35V44H0Z"/>
+          </svg>
+          <span class="brand__text"><b class="brand__name">雲嶺森林遊樂區</b><span class="brand__en">Yunling Forest · Chenggang</span></span>
+        </a>
+        <p>澄港市政府管理的森林遊樂區，面積 9,860 公頃、海拔 620 至 1,846 公尺，保存柳杉林、鐵杉林與螢溪溪谷的生態。</p>
+      </div>
+      <nav class="site-footer__col" aria-label="頁尾導覽">
+        <h2>網站導覽</h2>
+        <ul>
+          <li><a href="index.html">園區首頁</a></li>
+          <li><a href="trails.html">步道總覽</a></li>
+          <li><a href="trail.html">霧林古道</a></li>
+          <li><a href="visit.html">入園預約</a></li>
+        </ul>
+      </nav>
+      <div class="site-footer__col">
+        <h2>開放時間</h2>
+        <p>每日 07:00–17:00<br>16:00 停止入園<br>每月第二個週二休園維護</p>
+      </div>
+      <div class="site-footer__col">
+        <h2>聯絡我們</h2>
+        <p>澄港市雲嶺區雲嶺路三段 88 號<br>服務專線 <a class="num" href="tel:+886657182026">(06) 5718-2026</a><br>緊急救援 <a class="num" href="tel:+886657182119">(06) 5718-2119</a></p>
+      </div>
+    </div>
+    <div class="wrap site-footer__base">
+      <p>© 2026 澄港市政府 雲嶺森林遊樂區管理所 · 本站為作品集虛構示範，地名、人物與數據皆為虛構</p>
+      <a href="../../index.html">← 返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<dialog class="modal modal--wide" id="tr-quick" aria-labelledby="tr-quick-title">
+  <div class="modal__inner">
+    <header class="modal__head">
+      <div>
+        <p class="en modal__sub" id="tr-quick-en"></p>
+        <h2 class="modal__title" id="tr-quick-title">步道快覽</h2>
+        <p class="modal__sub" id="tr-quick-sub"></p>
+      </div>
+      <button class="icon-btn modal__close" type="button" data-modal-close aria-label="關閉步道快覽"><span data-icon="close"></span></button>
+    </header>
+    <div class="modal__body" id="tr-quick-body"></div>
+    <footer class="modal__foot">
+      <button class="btn btn--paper" type="button" id="tr-quick-map"><span data-icon="map"></span>在總覽圖上看</button>
+      <a class="btn btn--primary" href="visit.html">預約入園<span data-icon="arrow-right"></span></a>
+    </footer>
+  </div>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, data, fmt, esc, icon, clamp } = App;
+  const L = App.label;
+  const trails = data.trails;
+  const byId = id => App.trail(id);
+  const wide = matchMedia('(min-width: 1081px)');
+  const smooth = () => (App.reduced ? 'auto' : 'smooth');
+  const range = (a, b, f) => (a === b ? f(a) : `${f(a)}–${f(b)}`);
+  const minMax = (list, key) => [Math.min(...list.map(t => t[key])), Math.max(...list.map(t => t[key]))];
+  const maxBy = (list, f) => list.reduce((a, b) => (f(b) > f(a) ? b : a));
+  const durHTML = min => {
+    const h = Math.floor(min / 60), m = min % 60;
+    return h ? `${h}<small>h</small>${m ? `${m}<small>m</small>` : ''}` : `${m}<small>m</small>`;
+  };
+  const statsHTML = t => `<dl class="trail-stats">
+      <div><dt>距離</dt><dd>${fmt.km(t.km)}<small>km</small></dd></div>
+      <div><dt>爬升</dt><dd>${fmt.num(t.climb)}<small>m</small></dd></div>
+      <div><dt>時間</dt><dd>${durHTML(t.min)}</dd></div>
+    </dl>`;
+  const routeText = t => (t.type === 'loop' ? `${t.from} 環線` : `${t.from} ${t.type === 'return' ? '⇄' : '→'} ${t.to}`);
+  const seasonPicks = () => App.season.meta().picks;
+
+  /* ---------- 頁首統計 ---------- */
+  const status = { open: 0, partial: 0, closed: 0 };
+  trails.forEach(t => { status[t.status] += 1; });
+  const totalKm = trails.reduce((s, t) => s + t.km, 0);
+  const [eleLo] = minMax(trails, 'eleMin');
+  const [, eleHi] = minMax(trails, 'eleMax');
+  $('#tr-hero-meta').innerHTML = `
+    <span class="tr-stat"><b class="num">${trails.length}</b>條步道</span>
+    <span class="tr-stat"><b class="num">${fmt.km(totalKm)}</b>公里總長</span>
+    <span class="tr-stat"><b class="num">${fmt.num(eleLo)}–${fmt.num(eleHi)}</b>公尺</span>
+    <span class="tr-stat tr-stat--status">${['open', 'partial', 'closed'].map(s => `<span class="status status--${s}">${status[s]} 條${L.status[s]}</span>`).join('')}</span>`;
+
+  /* ---------- 篩選狀態（唯一來源；所有計數、卡片、地圖、剖面都由它重繪） ---------- */
+  const DIST = { all: () => true, short: t => t.km < 2, mid: t => t.km >= 2 && t.km < 5, long: t => t.km >= 5 };
+  const TIME = { all: () => true, short: t => t.min <= 60, mid: t => t.min > 60 && t.min <= 180, long: t => t.min > 180 };
+  const SORTS = {
+    km: (a, b) => a.km - b.km,
+    min: (a, b) => a.min - b.min,
+    climb: (a, b) => a.climb - b.climb,
+    high: (a, b) => b.eleMax - a.eleMax,
+  };
+  const SORT_NOTE = { km: '依距離由短到長', min: '依所需時間由短到長', climb: '依爬升由少到多', high: '依最高海拔由高到低' };
+  const STATUS_RANK = { open: 0, partial: 1, closed: 2 };
+  const DEFAULT = { diff: 'all', dist: 'all', time: 'all', q: '', hideClosed: false, seasonal: false, sort: 'recommend' };
+  const state = { ...DEFAULT };
+
+  // 搜尋範圍：名稱、英文名、起訖點、介紹、標籤、沿途景點，打「吊橋」也找得到霧林古道
+  const hay = new Map(trails.map(t => [t.id, [t.name, t.en, t.from, t.to, t.desc, L.diff[t.diff], L.type[t.type], ...t.tags, ...(t.pois || []).map(p => p.name)].join(' ').toLowerCase()]));
+  // skipDiff：算難度 chip 的數字時要套用「其他」條件，但不套用難度本身
+  const matcher = () => {
+    const words = state.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const season = App.season.get();
+    return (t, skipDiff = false) =>
+      (skipDiff || state.diff === 'all' || t.diff === state.diff) &&
+      DIST[state.dist](t) && TIME[state.time](t) &&
+      (!state.hideClosed || t.status !== 'closed') &&
+      (!state.seasonal || t.best.includes(season)) &&
+      words.every(w => hay.get(t.id).includes(w));
+  };
+  const sortList = list => {
+    if (state.sort !== 'recommend') return [...list].sort(SORTS[state.sort]);
+    const picks = seasonPicks().map(p => p.id);
+    const rank = t => (picks.includes(t.id) ? picks.indexOf(t.id) : 10 + STATUS_RANK[t.status] * 10 + trails.indexOf(t));
+    return [...list].sort((a, b) => rank(a) - rank(b));
+  };
+
+  /* ---------- 步道卡 ---------- */
+  const cardsBox = $('#tr-cards');
+  cardsBox.innerHTML = trails.map(t => App.trailCardHTML(t, { note: t.statusNote })).join('');
+  App.scan(cardsBox);
+  const cards = new Map($$('.trail-card', cardsBox).map(el => [el.dataset.trail, el]));
+
+  const markPicks = () => {
+    const meta = App.season.meta();
+    $$('.tr-pick', cardsBox).forEach(el => el.remove());
+    meta.picks.forEach(p => {
+      $('.trail-card__en', cards.get(p.id)).insertAdjacentHTML('beforeend', `<span class="tr-pick">${icon('leaf', 'i')}${meta.short}季推薦</span>`);
+    });
+  };
+
+  // FLIP：留下來的卡片從舊位置滑到新位置，新出現的像紙片落下
+  const placeCards = (list, animate) => {
+    const els = [...cards.values()];
+    const before = animate && !App.reduced ? new Map(els.map(el => [el, el.hidden ? null : el.getBoundingClientRect()])) : null;
+    const keep = new Set(list.map(t => t.id));
+    els.forEach(el => { el.hidden = !keep.has(el.dataset.trail); });
+    const order = list.map(t => cards.get(t.id));
+    const domOrder = [...cardsBox.children].filter(el => !el.hidden);
+    // 順序沒變就不搬動 DOM，避免鍵盤焦點在卡片上時被移除
+    if (order.some((el, i) => domOrder[i] !== el)) order.forEach(el => cardsBox.append(el));
+    if (!before) return;
+    let n = 0;
+    order.forEach(el => {
+      const a = before.get(el);
+      const b = el.getBoundingClientRect();
+      if (!a) {
+        // 還沒進場的卡交給 [data-reveal]，不在這裡疊動畫
+        if (el.classList.contains('is-in')) {
+          el.animate([{ opacity: 0, transform: 'translateY(-22px) rotate(-1.5deg)' }, { opacity: 1, transform: 'none' }], { duration: 560, delay: 50 * n++, easing: 'cubic-bezier(.34,1.36,.64,1)', fill: 'backwards' });
+        }
+      } else if (Math.abs(a.left - b.left) > 1 || Math.abs(a.top - b.top) > 1) {
+        el.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)` }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.22,1,.36,1)' });
+      }
+    });
+  };
+
+  /* ---------- 剪紙步道總覽圖 ---------- */
+  const mapBox = $('#tr-map');
+  const mapSvg = App.map.render($('#tr-map-svg'), { facilities: false });
+  mapSvg.insertAdjacentHTML('beforeend', `<g class="tr-marks" aria-hidden="true">
+      <circle class="tr-mark-end f-card" r="7" style="stroke:var(--ink)" stroke-width="3"/>
+      <circle class="tr-mark-start f-ink" r="7.5" style="stroke:var(--card)" stroke-width="3"/>
+      <g class="tr-hiker"><circle class="f-accent" r="14" opacity=".28"/><circle class="f-accent" r="6.5" style="stroke:var(--card)" stroke-width="2.5"/></g>
+    </g>`);
+  const mapTrails = new Map($$('.map__trail', mapSvg).map(g => [g.dataset.trail, g]));
+  const marks = $('.tr-marks', mapSvg);
+  const markStart = $('.tr-mark-start', marks);
+  const markEnd = $('.tr-mark-end', marks);
+  const hiker = $('.tr-hiker', marks);
+  const mapTag = $('#tr-map-tag');
+
+  let hike = null;
+  const placeHiker = s => {
+    const p = hike.path.getPointAtLength(s);
+    hiker.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
+  };
+  const placeMarks = id => {
+    if ((hike ? hike.id : null) === id) return;
+    marks.classList.toggle('is-on', !!id);
+    mapTag.classList.toggle('is-on', !!id);
+    if (!id) { hike = null; return; }
+    const t = byId(id);
+    const path = $('.map__trail-line', mapTrails.get(id));
+    const len = path.getTotalLength();
+    const a = path.getPointAtLength(0), b = path.getPointAtLength(len);
+    markStart.setAttribute('cx', a.x); markStart.setAttribute('cy', a.y);
+    markEnd.setAttribute('cx', b.x); markEnd.setAttribute('cy', b.y);
+    markEnd.setAttribute('visibility', t.type === 'loop' ? 'hidden' : 'visible');
+    // 名牌掛在路線最高處；太靠上緣就改掛在下方，免得被地圖邊框裁掉
+    let top = a;
+    for (let k = 1; k <= 24; k++) {
+      const p = path.getPointAtLength((len * k) / 24);
+      if (p.y < top.y) top = p;
+    }
+    mapTag.innerHTML = `${esc(t.name)}<small>${fmt.km(t.km)} km</small>`;
+    mapTag.classList.toggle('is-below', top.y < 120);
+    const mw = mapBox.clientWidth, half = mapTag.offsetWidth / 2 + 8;
+    mapTag.style.left = `${(clamp((top.x / 1000) * mw, half, mw - half) / mw) * 100}%`;
+    mapTag.style.top = `${(top.y / 640) * 100}%`;
+    hike = { id, path, len, loop: t.type === 'loop', t0: performance.now() };
+    placeHiker(App.reduced ? len / 2 : 0);
+  };
+  // 小登山客沿著選中的路線走：環線一路繞，單程與往返就來回走
+  App.animator(mapBox, t => {
+    if (!hike) return;
+    const d = Math.max(0, ((t - hike.t0) / 1000) * 46);
+    const cycle = d % (hike.len * 2);
+    placeHiker(hike.loop ? d % hike.len : cycle > hike.len ? hike.len * 2 - cycle : cycle);
+  });
+
+  /* ---------- 地圖旁的資訊卡 ---------- */
+  const info = $('#tr-info');
+  let infoKey = '';
+  const lineSample = (diff, dash) => `<svg viewBox="0 0 40 10" aria-hidden="true" focusable="false"><path d="M3,5 H37" fill="none" class="s-card" stroke-width="8" stroke-linecap="round"/><path d="M3,5 H37" fill="none" style="stroke:var(--d-${diff})" stroke-width="4" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/></svg>`;
+  const renderInfo = id => {
+    const isPinned = !!id && id === pinned;
+    // 無選取時顯示「圖上幾條、合計幾 km」，篩選後條數相同但組合不同時也要重畫
+    const key = `${id}|${isPinned}|${visible.join(',')}|${App.season.get()}`;
+    if (key === infoKey) return;
+    infoKey = key;
+    if (!id) {
+      const km = visible.reduce((s, v) => s + byId(v).km, 0);
+      info.innerHTML = `
+        <p class="tr-info__hint">${icon('pin')}<span>滑過步道卡，或點選地圖上的路線，看它在園區的哪裡；選取後小登山客會沿著路線走一遍。</span></p>
+        <ul class="tr-legend" aria-label="圖例">
+          <li>${lineSample('family')}親子步道</li>
+          <li>${lineSample('general')}一般步道</li>
+          <li>${lineSample('challenge', '10 5')}挑戰步道</li>
+          <li>${lineSample('general', '2 7')}封閉整修中</li>
+        </ul>
+        <p class="tr-info__sum">圖上顯示 <b>${visible.length}</b> 條 · 合計 <b>${fmt.km(km)}</b> km</p>`;
+      return;
+    }
+    const t = byId(id);
+    const pick = seasonPicks().find(p => p.id === id);
+    info.innerHTML = `
+      <div class="tr-info__flags">
+        <span class="badge badge--${t.diff}">${L.diff[t.diff]}</span>
+        <span class="status status--${t.status}">${L.status[t.status]}</span>
+        ${isPinned ? `<button class="icon-btn tr-info__close" type="button" data-unpin aria-label="取消選取${esc(t.name)}">${icon('close')}</button>` : ''}
+      </div>
+      <h3 class="tr-info__name">${esc(t.name)}</h3>
+      <p class="en tr-info__en">${esc(t.en)}</p>
+      <p class="tr-info__note">${icon('route')}<span>${esc(routeText(t))} · ${L.type[t.type]}</span></p>
+      <p class="tr-info__note">${icon(t.status === 'open' ? 'info' : 'alert')}<span>${esc(pick ? pick.note : t.statusNote)}</span></p>
+      ${statsHTML(t)}
+      ${isPinned ? `<div class="tr-info__actions">${t.id === 'mist'
+        ? `<a class="btn btn--primary btn--sm" href="trail.html">完整介紹${icon('arrow-right')}</a>`
+        : `<button class="btn btn--primary btn--sm" type="button" data-quick="${t.id}">步道快覽${icon('arrow-right')}</button>`}</div>` : ''}`;
+  };
+
+  /* ---------- 剖面比較：十張剪紙用同一個比例尺由後往前疊起來 ---------- */
+  const cmpBox = $('#tr-cmp-box');
+  const cmpSvg = $('#tr-cmp-svg');
+  const KM = 10;
+  // 爬升最多的放最後一排：高的紙山在後面，才不會擋住前排的平緩步道
+  const stackOrder = [...trails].sort((a, b) => b.climb - a.climb);
+  // 最遠的一層用最淡的季節色，越近越深，跟頁首剪紙山同一套景深
+  const layerTone = k => 2 + Math.round((k * 5) / (stackOrder.length - 1));
+  let G = null;
+
+  const buildCmp = () => {
+    const W = cmpBox.clientWidth;
+    if (!W || (G && G.W === W)) return;
+    const narrow = W < 560;
+    const N = stackOrder.length;
+    const pad = { t: 22, r: narrow ? 12 : 22, b: 34, l: narrow ? 84 : 118 };
+    const gap = narrow ? 22 : 30;
+    // 十排紙的高度是固定的，要再留足夠的天空給後排的紙山，否則窄螢幕上全部被壓成平的條紋
+    const H = Math.round(Math.min(540, Math.max(W * .56, (N - 1) * gap + pad.t + pad.b + 16 + (narrow ? 130 : 180))));
+    const plotW = W - pad.l - pad.r;
+    const front = H - pad.b - 16;
+    const back = front - (N - 1) * gap;
+    // 每公尺幾 px：十條共用同一個比例，隆起的高度才比得出來
+    const k = (back - pad.t - 8) / Math.max(...stackOrder.map(t => t.eleMax - t.eleMin));
+    const x = km => pad.l + (km / KM) * plotW;
+    const rows = new Map(stackOrder.map((t, i) => {
+      const base = back + i * gap;
+      const lo = t.eleMin - (H - base) / k;
+      const g = App.profile.geom(t, { w: pad.l + (plotW * t.km) / KM, h: H, pad: [0, 0, 0, pad.l], lo, hi: lo + H / k });
+      const first = g.pts[0], last = g.pts[g.pts.length - 1];
+      const run = clamp((base - last.y) * .5 + 12, 14, 46);
+      // 終點之後順著剪刀收回底線，讓每張紙都橫貫全寬
+      const ridge = `L${first.x.toFixed(1)},${first.y.toFixed(1)}${g.line.slice(g.line.indexOf('C'))}C${(last.x + run * .55).toFixed(1)},${last.y.toFixed(1)} ${(last.x + run * .45).toFixed(1)},${base} ${(last.x + run).toFixed(1)},${base}`;
+      return [t.id, { t, i, base, g, y: ele => H - (ele - lo) * k, sheet: `M${pad.l},${H + 12}V${base}${ridge}H${W + 12}V${H + 12}Z`, bump: `M${pad.l},${base}${ridge}Z` }];
+    }));
+    const S = App.svg;
+    const bar = 200 * k;
+    let h = `<g aria-hidden="true">
+      <circle class="f-sun" cx="${W * .88}" cy="${pad.t + 46}" r="${narrow ? 20 : 32}"/>
+      <path class="f-mist" opacity=".92" d="${S.cloud(W * .34, pad.t + 92, narrow ? 60 : 116)}${S.cloud(W * .62, pad.t + 40, narrow ? 44 : 80)}"/>
+      <path class="s-ink" d="M${pad.l - 14},${pad.t + 6}v${bar.toFixed(1)}M${pad.l - 19},${pad.t + 6}h10M${pad.l - 19},${(pad.t + 6 + bar).toFixed(1)}h10" stroke-width="1.5" fill="none"/>
+      <text class="tr-cmp__axis" x="${pad.l - 24}" y="${(pad.t + 10 + bar / 2).toFixed(1)}" text-anchor="end">200 m</text>
+    </g>`;
+    h += stackOrder.map((t, i) => {
+      const r = rows.get(t.id);
+      return `<g class="tr-cmp__layer" data-trail="${t.id}" style="--k:${i};--sink:${gap * 3}px">
+        <path class="tr-cmp__sheet f-l${layerTone(i)}" style="--i:${i}" filter="url(#pc-layer)" d="${r.sheet}"/>
+        <path class="s-ink" d="M${pad.l - 7},${r.base}H${pad.l - 1}" stroke-width="1.5" fill="none" opacity=".45"/>
+        <text class="tr-cmp__name" x="${pad.l - 11}" y="${r.base + 4.5}" text-anchor="end">${esc(t.name)}</text>
+      </g>`;
+    }).join('');
+    // 公里格線畫在紙層上面、很淡：像紙上印的刻度
+    h += `<g class="tr-cmp__grid" stroke-width="1" stroke-dasharray="2 5" fill="none" aria-hidden="true">${Array.from({ length: KM + 1 }, (_, km) => `<path d="M${x(km).toFixed(1)},${pad.t} V${H - pad.b}"/>`).join('')}</g>`;
+    // 紙台：被篩掉的紙層沉到這一條後面
+    h += `<rect class="f-l8" x="-10" y="${H - pad.b}" width="${W + 20}" height="${pad.b + 10}" filter="url(#pc-layer)"/>`;
+    const step = narrow ? 2 : 1;
+    for (let km = 0; km <= KM; km += step) {
+      h += `<text class="tr-cmp__axis tr-cmp__axis--x" x="${x(km)}" y="${H - pad.b + 22}" text-anchor="${km === KM ? 'end' : 'middle'}">${km}${km === KM ? ' km' : ''}</text>`;
+    }
+    h += `<g class="tr-cmp__over is-in" style="--draw-delay:0s"></g>
+      <g class="tr-cmp__hover"><path class="s-ink" d="M0,${pad.t} V${H - pad.b}" stroke-width="1" stroke-dasharray="3 4" fill="none"/><circle class="f-card" r="5.5" style="stroke:var(--ink)" stroke-width="2.5"/></g>`;
+    cmpSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    cmpSvg.classList.toggle('is-narrow', narrow);
+    cmpSvg.innerHTML = h;
+    G = { W, H, pad, plotW, gap, x, rows, overId: undefined, over: $('.tr-cmp__over', cmpSvg), hover: $('.tr-cmp__hover', cmpSvg), layers: new Map($$('.tr-cmp__layer', cmpSvg).map(l => [l.dataset.trail, l])) };
+    syncCmp();
+  };
+
+  // 聚焦的那張紙被抽到最前面（往上抬 3px），描線並標出起點、最高點、終點
+  const LIFT = 3;
+  const drawTrace = id => {
+    if (G.overId === id) {
+      // 同一條步道因篩選換排時，描線跟著紙層一起滑過去
+      const lifted = $('.tr-cmp__pop', G.over);
+      if (lifted) lifted.style.transform = `translateY(${G.rows.get(id).shift - LIFT}px)`;
+      return;
+    }
+    G.overId = id;
+    G.over.innerHTML = '';
+    if (!id) return;
+    const r = G.rows.get(id), t = r.t, g = r.g;
+    const first = g.pts[0], last = g.pts[g.pts.length - 1];
+    const top = g.pts.reduce((a, p) => (p.ele > a.ele ? p : a), first);
+    const dot = p => `<circle class="f-card" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5" style="stroke:var(--ink)" stroke-width="2.5"/>`;
+    const lx = G.pad.l + 14, ly = G.pad.t + 18;
+    // 新插入的 .profile__line 在 .is-in 底下會自動重播描線
+    G.over.innerHTML = `<g class="tr-cmp__pop" style="transform:translateY(${r.shift - LIFT}px)">
+        <path class="f-l${layerTone(r.i)}" filter="url(#pc-layer)" d="${r.bump}"/>
+        <path class="profile__line s-ink" d="${g.line}" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+        ${dot(first)}${dot(last)}${top !== first && top !== last ? dot(top) : ''}
+      </g>
+      <text class="tr-cmp__lbl" x="${lx}" y="${ly}">${esc(t.name)}</text>
+      <text class="tr-cmp__lbl tr-cmp__lbl--num" x="${lx}" y="${ly + 20}">${fmt.km(t.km)} km · 最高 ${fmt.num(top.ele)} m · 爬升 ${fmt.num(t.climb)} m</text>`;
+  };
+
+  const syncCmp = () => {
+    if (!G) return;
+    const id = focusId();
+    // 被篩掉的紙沉下去，留下來的依原本前後順序往前排補位，不會只剩一大片後排的紙
+    const shown = stackOrder.filter(t => visible.includes(t.id));
+    const offset = stackOrder.length - shown.length;
+    G.layers.forEach((l, k) => {
+      const row = G.rows.get(k);
+      const j = shown.findIndex(t => t.id === k);
+      row.shift = j < 0 ? 0 : (offset + j - row.i) * G.gap;
+      l.style.setProperty('--shift', `${row.shift}px`);
+      l.classList.toggle('is-out', j < 0);
+      l.classList.toggle('is-focus', k === id);
+    });
+    drawTrace(id);
+  };
+  new ResizeObserver(buildCmp).observe(cmpBox);
+
+  // 滑過紙層：十字線讀出該點的里程與海拔
+  const hideCross = () => { if (G) G.hover.classList.remove('is-on'); App.tip.hide(); };
+  cmpSvg.addEventListener('pointermove', e => {
+    const layer = e.target.closest('.tr-cmp__layer');
+    const id = layer ? layer.dataset.trail : null;
+    if (id !== hovered) { hovered = id; syncFocus(); }
+    if (!id) { hideCross(); return; }
+    const t = byId(id);
+    const r = cmpSvg.getBoundingClientRect();
+    const lx = ((e.clientX - r.left) * G.W) / r.width;
+    const km = clamp(((lx - G.pad.l) / G.plotW) * KM, 0, t.km);
+    const row = G.rows.get(id);
+    const ele = row.g.eleAt(km);
+    const px = G.x(km), py = row.y(ele) + row.shift - LIFT;
+    G.hover.classList.add('is-on');
+    $('path', G.hover).setAttribute('transform', `translate(${px.toFixed(1)} 0)`);
+    const c = $('circle', G.hover);
+    c.setAttribute('cx', px.toFixed(1));
+    c.setAttribute('cy', py.toFixed(1));
+    App.tip.show(`<b>${esc(t.name)}</b>里程 <span class="num">${km.toFixed(1)}</span> km · 海拔 <span class="num">${fmt.num(Math.round(ele))}</span> m`, e.clientX, r.top + (py * r.height) / G.H - 6);
+  });
+  cmpSvg.addEventListener('pointerleave', () => { hideCross(); if (hovered) { hovered = null; syncFocus(); } });
+  cmpSvg.addEventListener('click', e => {
+    const layer = e.target.closest('.tr-cmp__layer');
+    if (layer) togglePin(layer.dataset.trail);
+  });
+
+  const [most, least] = [stackOrder[0], stackOrder[stackOrder.length - 1]];
+  $('#tr-cmp-cap').textContent = `橫向是距離（0–10 公里），每一層隆起的高度是相對起點的海拔落差，十條步道共用同一個比例尺，依總爬升由多到少、由後往前疊放：最後一排的${most.name}爬升 ${fmt.num(most.climb)} 公尺，最前排的${least.name}只有 ${fmt.num(least.climb)} 公尺，幾乎是一張平的紙條。`;
+
+  // 圖例：與紙層同一個疊放順序
+  const lgd = $('#tr-lgd');
+  lgd.innerHTML = stackOrder.map((t, k) => `<li><button class="tr-lg" type="button" data-trail="${t.id}" aria-pressed="false" style="--c:var(--l${layerTone(k)})">
+      <span class="tr-lg__sw" aria-hidden="true"></span><span class="tr-lg__name">${esc(t.name)}</span><span class="tr-lg__meta num">+${fmt.num(t.climb)} m</span></button></li>`).join('');
+  const lgdBtns = new Map($$('.tr-lg', lgd).map(b => [b.dataset.trail, b]));
+  lgdBtns.forEach((b, id) => {
+    b.addEventListener('mouseenter', () => { hovered = id; syncFocus(); });
+    b.addEventListener('mouseleave', () => { hovered = null; syncFocus(); });
+    b.addEventListener('focus', () => { hovered = id; syncFocus(); });
+    b.addEventListener('blur', () => { hovered = null; syncFocus(); });
+    b.addEventListener('click', () => togglePin(id));
+  });
+
+  // 紀錄：只算目前篩選結果裡的步道
+  const RECORDS = [
+    { k: '最長', pick: l => maxBy(l, t => t.km), v: t => `${fmt.km(t.km)}<small>km</small>` },
+    { k: '爬升最多', pick: l => maxBy(l, t => t.climb), v: t => `${fmt.num(t.climb)}<small>m</small>` },
+    { k: '最快走完', pick: l => maxBy(l, t => -t.min), v: t => (t.min >= 60 ? `${Math.floor(t.min / 60)}<small>小時</small>${t.min % 60 ? `${t.min % 60}<small>分</small>` : ''}` : `${t.min}<small>分鐘</small>`) },
+    { k: '最平緩', pick: l => maxBy(l, t => -t.climb), v: t => `${fmt.num(t.climb)}<small>m 爬升</small>` },
+  ];
+  const recBox = $('#tr-records');
+  const renderRecords = () => {
+    const list = visible.map(byId);
+    recBox.innerHTML = `<p class="tr-records__h"><span class="tr-cmp__h">目前條件下的紀錄</span><span>${list.length} 條步道</span></p>` + (list.length
+      ? `<div class="tr-records__grid">${RECORDS.map(r => {
+        const t = r.pick(list);
+        return `<button class="tr-rec" type="button" data-trail="${t.id}" aria-pressed="${t.id === pinned}"><span class="tr-rec__k">${r.k}</span><span class="tr-rec__v">${r.v(t)}</span><span class="tr-rec__n">${esc(t.name)}</span></button>`;
+      }).join('')}</div>`
+      : '<p class="tr-records__none">沒有符合條件的步道，放寬上方的篩選後再比一次。</p>');
+  };
+  recBox.addEventListener('click', e => {
+    const b = e.target.closest('.tr-rec');
+    if (b) togglePin(b.dataset.trail);
+  });
+
+  /* ---------- 焦點：滑過（hovered）優先於點選固定（pinned），三個視圖一起連動 ---------- */
+  let visible = trails.map(t => t.id);
+  let pinned = null, hovered = null;
+  const focusId = () => hovered || pinned;
+  const syncFocus = () => {
+    const id = focusId();
+    cards.forEach((el, k) => el.classList.toggle('tr-is-focus', k === id));
+    mapBox.classList.toggle('has-active', !!id);
+    mapTrails.forEach((g, k) => g.classList.toggle('is-active', k === id));
+    placeMarks(id);
+    renderInfo(id);
+    lgdBtns.forEach((b, k) => {
+      b.setAttribute('aria-pressed', String(k === pinned));
+      b.classList.toggle('is-focus', k === id);
+    });
+    $$('.tr-rec', recBox).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.trail === pinned)));
+    syncCmp();
+  };
+  const setPinned = (id, { scroll = false } = {}) => {
+    pinned = id;
+    syncFocus();
+    // 只有桌機（卡片與地圖並排）才把卡片捲進來；手機上地圖在卡片上方，捲走反而看不到地圖
+    if (!scroll || !id || !wide.matches) return;
+    const r = cards.get(id).getBoundingClientRect();
+    if (r.top < 90 || r.bottom > innerHeight) cards.get(id).scrollIntoView({ block: 'center', behavior: smooth() });
+  };
+  const togglePin = (id, opts) => setPinned(pinned === id ? null : id, opts);
+
+  cards.forEach((el, id) => {
+    el.addEventListener('mouseenter', () => { hovered = id; syncFocus(); });
+    el.addEventListener('mouseleave', () => { hovered = null; syncFocus(); });
+    el.addEventListener('focusin', () => { hovered = id; syncFocus(); });
+    el.addEventListener('focusout', () => { hovered = null; syncFocus(); });
+  });
+  // 地圖路線只給滑鼠／觸控；鍵盤由步道卡（聚焦即預覽）與剖面圖例按鈕（固定選取）負責
+  mapTrails.forEach((g, id) => {
+    g.addEventListener('mouseenter', () => { hovered = id; syncFocus(); });
+    g.addEventListener('mouseleave', () => { hovered = null; syncFocus(); });
+    g.addEventListener('click', () => togglePin(id, { scroll: true }));
+  });
+  info.addEventListener('click', e => {
+    if (e.target.closest('[data-unpin]')) setPinned(null);
+    const q = e.target.closest('[data-quick]');
+    if (q) openQuick(q.dataset.quick);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && pinned && !$('dialog[open]')) setPinned(null);
+  });
+  addEventListener('scroll', App.tip.hide, { passive: true });
+
+  /* ---------- 重繪：任何改變篩選的動作都走這一條 ---------- */
+  const filterForm = $('#tr-filter');
+  const activeCount = () => ['diff', 'dist', 'time', 'hideClosed', 'seasonal'].filter(k => state[k] !== DEFAULT[k]).length;
+  const render = ({ animate = true } = {}) => {
+    const test = matcher();
+    const list = sortList(trails.filter(t => test(t)));
+    visible = list.map(t => t.id);
+    $$('.chip[data-diff]', filterForm).forEach(c => {
+      const d = c.dataset.diff;
+      c.setAttribute('aria-pressed', String(d === state.diff));
+      $('.chip__count', c).textContent = trails.filter(t => test(t, true) && (d === 'all' || t.diff === d)).length;
+    });
+    placeCards(list, animate);
+    mapTrails.forEach((g, id) => g.classList.toggle('is-out', !visible.includes(id)));
+    lgdBtns.forEach((b, id) => { b.disabled = !visible.includes(id); });
+    const sortNote = state.sort === 'recommend' ? `依${App.season.meta().short}季推薦排序` : SORT_NOTE[state.sort];
+    $('#tr-count').innerHTML = `符合 <b class="num">${list.length}</b> 條步道<span>共 ${trails.length} 條 · ${sortNote}</span>`;
+    $('#tr-empty').hidden = list.length > 0;
+    const changed = Object.keys(DEFAULT).some(k => state[k] !== DEFAULT[k]);
+    $$('[data-reset]', filterForm).forEach(b => { b.hidden = !changed; });
+    $('#tr-filter-n').textContent = activeCount() || '';
+    if (pinned && !visible.includes(pinned)) pinned = null;
+    if (hovered && !visible.includes(hovered)) hovered = null;
+    renderRecords();
+    syncFocus();
+  };
+
+  const resetFilters = () => {
+    Object.assign(state, DEFAULT);
+    $('#tr-q').value = '';
+    $('#tr-sort').value = DEFAULT.sort;
+    $('#tr-open').checked = false;
+    $('#tr-seasonal').checked = false;
+    $$('[data-filter] .seg__btn', filterForm).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === 'all')));
+    render();
+  };
+
+  filterForm.addEventListener('submit', e => e.preventDefault());
+  $('#tr-q').addEventListener('input', e => { state.q = e.target.value; render(); });
+  $('#tr-sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
+  $('#tr-open').addEventListener('change', e => { state.hideClosed = e.target.checked; render(); });
+  $('#tr-seasonal').addEventListener('change', e => { state.seasonal = e.target.checked; render(); });
+  $('#tr-chips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.diff = chip.dataset.diff;
+    render();
+  });
+  $$('[data-filter]', filterForm).forEach(seg => seg.addEventListener('segchange', e => {
+    state[seg.dataset.filter] = e.detail.value;
+    render();
+  }));
+  document.addEventListener('click', e => {
+    if (e.target.closest('[data-reset]')) resetFilters();
+  });
+  const toggle = $('#tr-toggle');
+  toggle.addEventListener('click', () => {
+    const open = !filterForm.classList.contains('is-open');
+    filterForm.classList.toggle('is-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+
+  const shortest = maxBy(trails, t => -t.km);
+  $('#tr-empty-text').textContent = `試著放寬距離或時間，或換個關鍵字。雲嶺最短的是 ${fmt.km(shortest.km)} 公里的${shortest.name}，大約 ${fmt.dur(shortest.min)}。`;
+
+  /* ---------- 步道快覽 ---------- */
+  const quick = $('#tr-quick');
+  let quickId = null;
+  const quickProfile = (t, W, H) => {
+    const g = App.profile.geom(t, { w: W, h: H, pad: [46, 18, 16, 18] });
+    const far = App.svg.ridge({ w: W, base: H * .58, amp: H * .3, peaks: 3, step: 24, seed: t.id + 'quick' });
+    const first = g.pts[0], last = g.pts[g.pts.length - 1];
+    const top = g.pts.reduce((a, p) => (p.ele > a.ele ? p : a), first);
+    // 與步道卡同一種剪法：剖面紙層兩端延伸到邊緣
+    const land = `M-4,${first.y.toFixed(1)}L${first.x.toFixed(1)},${first.y.toFixed(1)}${g.line.slice(g.line.indexOf('C'))}L${W + 4},${last.y.toFixed(1)}L${W + 4},${H + 4}L-4,${H + 4}Z`;
+    const lbl = (p, dx, anchor, dy = -12) => `<text class="tr-quick__lbl" x="${(p.x + dx).toFixed(1)}" y="${(p.y + dy).toFixed(1)}" text-anchor="${anchor}">${fmt.num(p.ele)} m</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">
+      <path class="f-l2" d="${App.svg.ridgePath(far, W, H)}"/>
+      <path class="f-l4" filter="url(#pc-shadow)" d="${land}"/>
+      <path class="profile__line s-ink" d="${g.line}" fill="none" stroke-width="2.6" stroke-linecap="round" pathLength="1"/>
+      <path class="f-card" filter="url(#pc-shadow)" d="M-4,${H - 8} C${W * .25},${H - 14} ${W * .6},${H - 3} ${W + 4},${H - 10} L${W + 4},${H + 4} L-4,${H + 4}Z"/>
+      ${lbl(first, 2, 'start')}${lbl(last, -2, 'end')}${top !== first && top !== last ? lbl(top, 0, 'middle') : ''}
+    </svg>`;
+  };
+  const openQuick = id => {
+    quickId = id;
+    const t = byId(id);
+    $('#tr-quick-en').textContent = t.en;
+    $('#tr-quick-title').textContent = t.name;
+    $('#tr-quick-sub').innerHTML = `<span class="badge badge--${t.diff}">${L.diff[t.diff]}</span>　${esc(L.type[t.type])} · 海拔 ${fmt.num(t.eleMin)}–${fmt.num(t.eleMax)} m`;
+    const body = $('#tr-quick-body');
+    body.innerHTML = `
+      <div class="tr-quick__art"></div>
+      <p class="tr-quick__axis num" aria-hidden="true"><span>0 km</span><span>${fmt.km(t.km / 2)} km</span><span>${fmt.km(t.km)} km</span></p>
+      <div class="tr-quick__grid">
+        <div><p class="tr-quick__desc">${esc(t.desc)}</p>${statsHTML(t)}</div>
+        <dl class="dl">
+          <dt>路線</dt><dd>${esc(routeText(t))}</dd>
+          <dt>路況</dt><dd><span class="status status--${t.status}">${L.status[t.status]}</span>${esc(t.statusNote)}</dd>
+          <dt>適合季節</dt><dd>${t.best.map(s => `<span class="tr-season" data-s="${s}">${App.data.seasons[s].name}</span>`).join('')}</dd>
+          <dt>標籤</dt><dd>${t.tags.map(g => `<span class="tag">${esc(g)}</span>`).join('')}</dd>
+        </dl>
+      </div>`;
+    App.modal.open(quick);
+    // 開啟後才量得到寬度，剖面依實際像素畫，文字不會被拉伸
+    const art = $('.tr-quick__art', body);
+    art.innerHTML = quickProfile(t, art.clientWidth, art.clientHeight);
+    requestAnimationFrame(() => art.classList.add('is-in'));
+  };
+  $('#tr-quick-map').addEventListener('click', () => {
+    App.modal.close(quick);
+    setPinned(quickId);
+    mapBox.scrollIntoView({ block: 'center', behavior: smooth() });
+  });
+  // 霧林古道有獨立介紹頁，其餘步道的卡片點開快覽（沒有 JS 時連結仍會跳到卡片錨點）
+  cardsBox.addEventListener('click', e => {
+    const a = e.target.closest('.trail-card__name a');
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const id = a.closest('.trail-card').dataset.trail;
+    if (id === 'mist') return;
+    e.preventDefault();
+    openQuick(id);
+  });
+
+  /* ---------- 錨點：首頁連到 trails.html#trail-maple 這類網址 ---------- */
+  const goToTrail = (id, { flash = true, behavior = 'auto' } = {}) => {
+    const card = cards.get(id);
+    if (!card) return;
+    if (card.hidden) {
+      resetFilters();
+      App.toast(`已清除篩選條件，顯示「${byId(id).name}」。`, { title: '已定位步道', tone: 'info' });
+    }
+    setPinned(id);
+    card.scrollIntoView({ block: 'center', behavior });
+    if (!flash) return;
+    card.classList.remove('is-target');
+    void card.offsetWidth;
+    card.classList.add('is-target');
+  };
+  const hashId = () => (location.hash.match(/^#trail-([a-z]+)$/) || [])[1];
+  addEventListener('hashchange', () => { if (hashId()) goToTrail(hashId(), { behavior: smooth() }); });
+  // 頁內連到其他步道卡的連結：不讓瀏覽器先跳一次，改由 goToTrail 置中並高亮
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href^="trails.html#trail-"]');
+    if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    const id = a.getAttribute('href').split('#trail-')[1];
+    history.pushState(null, '', `#trail-${id}`);
+    goToTrail(id, { behavior: smooth() });
+  });
+
+  /* ---------- 出發之前：難度分級（範圍由資料算出） ---------- */
+  const LEVEL = {
+    family: { peaks: [[.5, .62, .2]], who: '帶長輩、推嬰兒車，或第一次來雲嶺', gear: '好走的鞋、飲水、一件薄外套' },
+    general: { peaks: [[.3, .7, .12], [.68, .9, .12]], who: '平常有運動習慣、想走上半天的人', gear: '止滑運動鞋或登山鞋、500 ml 以上飲水、雨具' },
+    challenge: { peaks: [[.18, .62, .09], [.5, 1, .09], [.82, .78, .09]], who: '有登山經驗、能結伴且早起出發的隊伍', gear: '登山鞋、頭燈、保暖衣物、1.5 L 飲水與行動糧' },
+  };
+  const levelArt = diff => {
+    const W = 420, H = 96, S = App.svg;
+    const back = S.ridge({ w: W, base: 92, amp: 58, peaks: LEVEL[diff].peaks, step: 14, seed: 'lv-' + diff, jag: .6 });
+    const front = S.ridge({ w: W, base: 98, amp: 16, peaks: 2, step: 14, seed: 'lvf-' + diff });
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+      <circle class="f-sun" cx="352" cy="28" r="14"/>
+      <path class="f-l3" filter="url(#pc-shadow)" d="${S.ridgePath(back, W, H)}${S.trees(back, { seed: 'lvt-' + diff, w: W, h: [8, 14], gap: [8, 16], skip: .3 })}"/>
+      <path class="f-card" filter="url(#pc-shadow)" d="${S.ridgePath(front, W, H)}"/>
+    </svg>`;
+  };
+  const levels = $('#tr-levels');
+  levels.innerHTML = Object.keys(L.diff).map((diff, i) => {
+    const list = trails.filter(t => t.diff === diff);
+    const km = minMax(list, 'km'), climb = minMax(list, 'climb'), min = minMax(list, 'min');
+    const access = list.filter(t => t.tags.includes('無障礙'));
+    return `<article class="card card--stack tr-level" data-reveal style="--rd:${i * 100}ms">
+      <div class="tr-level__art">${levelArt(diff)}</div>
+      <div class="tr-level__body">
+        <h3 class="tr-level__title">${L.diff[diff]}<span class="badge badge--${diff}">${list.length} 條步道</span></h3>
+        <p class="tr-level__note">${L.diffNote[diff]}。</p>
+        <dl class="dl">
+          <dt>適合</dt><dd>${LEVEL[diff].who}</dd>
+          <dt>距離</dt><dd><span class="num">${range(km[0], km[1], fmt.km)}</span> km</dd>
+          <dt>爬升</dt><dd><span class="num">${range(climb[0], climb[1], fmt.num)}</span> m</dd>
+          <dt>時間</dt><dd>${range(min[0], min[1], fmt.dur)}</dd>
+          <dt>裝備</dt><dd>${LEVEL[diff].gear}</dd>
+          ${access.length ? `<dt>無障礙</dt><dd>${access.map(t => esc(t.name)).join('、')}可通行輪椅</dd>` : ''}
+        </dl>
+        <ul class="tr-level__list">${list.map(t => `<li><a href="${App.trailURL(t)}">${esc(t.name)}<small>${fmt.km(t.km)} km</small></a></li>`).join('')}</ul>
+      </div>
+    </article>`;
+  }).join('');
+  App.scan(levels);
+
+  /* ---------- 即時路況與安全須知 ---------- */
+  $('#tr-road-time').textContent = fmt.time(App.now());
+  const issues = trails.filter(t => t.status !== 'open').sort((a, b) => STATUS_RANK[b.status] - STATUS_RANK[a.status]);
+  const fine = trails.filter(t => t.status === 'open');
+  $('#tr-road').innerHTML = issues.map(t => `<li><span class="status status--${t.status}">${L.status[t.status]}</span><div><b>${esc(t.name)}</b><p>${esc(t.statusNote)}</p></div></li>`).join('') +
+    `<li><span class="status status--open">${L.status.open}</span><div><b>其餘 ${fine.length} 條步道</b><p>${fine.map(t => esc(t.name)).join('、')}</p></div></li>`;
+  $('#tr-notes').innerHTML = data.notices.filter(n => n.cat === 'trail').map(n => `<li><time datetime="${n.date}">${fmt.md(n.date)}</time><div><b>${esc(n.title)}</b><p>${esc(n.body)}</p></div></li>`).join('');
+  const wx = data.today;
+  $('#tr-steps').innerHTML = [
+    `<b>挑戰級步道請在 10:00 前出發。</b>雲嶺主峰步道 13:00 後請勿上行，稜線步道 15:30 前下撤至雲海觀景台。`,
+    `<b>今天山上 ${wx.temp.low}–${wx.temp.high}°C、降雨機率 ${wx.weather.rain}%。</b>午後容易起霧，帶一件防風外套與雨具。`,
+    `<b>霧林古道 3.4K–5.2K 與稜線步道收訊不穩。</b>出發前先下載離線地圖，並告訴家人預計下山的時間。`,
+    `<b>霧林吊橋單次限 10 人，強風時封閉。</b>封閉中的步道請勿跨越圍籬進入。`,
+    `<b>不餵食野生動物、不採集植物。</b>園區步道沿線不設垃圾桶，垃圾請帶下山。`,
+  ].map(s => `<li>${s}</li>`).join('');
+  const sos = $('#tr-sos');
+  sos.textContent = data.park.emergency;
+
+  /* ---------- 季節：推薦標籤、排序、季節篩選都會跟著換 ---------- */
+  const syncSeason = () => {
+    $('#tr-seasonal-label').textContent = `只看${App.season.meta().short}季適合`;
+    markPicks();
+  };
+  document.addEventListener('seasonchange', () => { syncSeason(); render(); });
+
+  syncSeason();
+  render({ animate: false });
+  if (hashId()) {
+    // 卡片是 JS 產生的，瀏覽器原生的錨點捲動發生在卡片出現之前：先定位一次，字型載完版面變動後再對齊一次
+    requestAnimationFrame(() => goToTrail(hashId()));
+    addEventListener('load', () => { if (hashId()) cards.get(hashId())?.scrollIntoView({ block: 'center' }); }, { once: true });
+  }
+});
+</script>
+</body>
+</html>

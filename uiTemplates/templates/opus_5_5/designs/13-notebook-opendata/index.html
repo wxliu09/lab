@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>營運總覽 — 澄港市 開放資料平台 · 資料集上架管理</title>
+<meta name="description" content="澄港市開放資料平台的營運總覽 notebook：資料集健康度、即時處理管線、失敗工作、品質分數分布、下載量趨勢與待審上架。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,500..700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 左欄：排程卡與快捷鍵 ---------- */
+  .sched { display: flex; flex-direction: column; gap: 8px; padding: 14px 14px 12px; }
+  .sched__label { display: flex; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); letter-spacing: .06em; }
+  .sched__count { font-family: var(--font-mono); font-size: 28px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .sched__count small { font-size: var(--fs-12); font-weight: 500; color: var(--ink-3); letter-spacing: 0; margin-left: 6px; }
+  .sched__bar { height: 4px; border-radius: 2px; background: var(--paper-3); overflow: hidden; }
+  .sched__bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 1s linear; }
+  .sched__meta { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.55; }
+
+  /* ---------- [1] 健康度 ---------- */
+  .stat__value .num-anim { font-variant-numeric: tabular-nums; }
+  .stat__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .stat__chips .badge { height: 20px; font-size: var(--fs-11); padding: 0 7px; }
+  .grade-meter { display: flex; flex-direction: column; gap: 6px; flex: 1; max-width: 120px; }
+  .grade-meter .meter { height: 6px; }
+
+  /* ---------- [2] 管線 ---------- */
+  .pipe-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; margin-bottom: 18px; }
+  .pipe-head .legend { flex: 1 1 auto; }
+  .legend__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--c); opacity: .9; }
+  .legend__dash { width: 16px; height: 0; border-top: 2px dashed var(--c); }
+  #pipe { margin: 0 -2px; }
+  .runs { margin-top: 26px; }
+  .runs__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+  .runs__title { font-weight: 600; font-size: var(--fs-14); }
+  .runs .table td { padding-top: 8px; padding-bottom: 8px; }
+  .stepdots { display: inline-flex; gap: 3px; vertical-align: middle; margin-right: 8px; }
+  .stepdots i { width: 14px; height: 4px; border-radius: 2px; background: var(--line-2); }
+  .stepdots i.d { background: var(--accent); }
+  .stepdots i.a { background: var(--accent); opacity: .45; }
+  .stepdots i.f { background: var(--err); }
+  .progress { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+  .progress__track { flex: 1; height: 6px; border-radius: 3px; background: var(--paper-3); overflow: hidden; }
+  .progress__fill { display: block; width: 100%; height: 100%; background: var(--accent); border-radius: 3px; transform-origin: left; transition: transform .8s linear; }
+  .progress__pct { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); width: 34px; text-align: right; }
+  .runs__empty { padding: 18px; text-align: center; color: var(--ink-3); font-size: var(--fs-13); }
+
+  /* ---------- [3] 失敗工作 ---------- */
+  .jobs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .jobs-bar .spacer { min-width: 8px; }
+  .err-name { display: inline-block; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; color: var(--err-text); background: var(--err-soft); padding: 0 6px; border-radius: var(--r-xs); margin-bottom: 3px; }
+  .jobs-table td { vertical-align: top; }
+  .jobs-table .table__sub { display: block; margin-top: 3px; max-width: 38ch; }
+  .jobs-table td:first-child { min-width: 200px; }
+  .jobs-table td:nth-child(3) { min-width: 240px; }
+  .jobs-table .table__title { display: inline-block; margin-bottom: 1px; }
+  .jobs-table .badge { margin-top: 6px; }
+  .jobstep__label { font-size: var(--fs-12); font-weight: 600; color: var(--err-text); }
+  .retry-at { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .row-actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: nowrap; }
+  .jobs-table tr.is-running { background: var(--accent-tint); }
+  .jobs-table tr.is-running .err-name { opacity: .5; }
+
+  /* ---------- [4] 品質 ---------- */
+  .q-grid { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 32px; align-items: start; }
+  .q-ringbox { display: flex; align-items: center; gap: 22px; }
+  .q-dims { flex: 1; display: grid; gap: 9px; min-width: 0; }
+  .q-hist { position: relative; }
+  .q-hist__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; align-items: center; margin-bottom: 8px; }
+  .q-hist__title { font-size: var(--fs-13); font-weight: 600; }
+  .q-hist .bar { transition: opacity var(--dur-1); }
+  .q-hist .bar.is-hot { opacity: .78; }
+  /* 長條的點擊區用 HTML 連結疊在 SVG 上：鍵盤可達、也讓連結檢查器讀得到一般 href */
+  .q-hit { position: absolute; border-radius: var(--r-sm); }
+  .q-hit:hover { background: rgba(27, 29, 32, .03); }
+  .q-hit:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+  .q-low { margin-top: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .q-low__item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--white); transition: border-color var(--dur-1), background var(--dur-1); }
+  .q-low__item:hover { border-color: var(--line-3); background: #FCFCFB; }
+  .q-low__title { font-weight: 600; font-size: var(--fs-13); }
+  .q-low__sub { font-size: var(--fs-12); color: var(--ink-3); }
+  .q-low__label { grid-column: 1 / -1; font-size: var(--fs-12); color: var(--ink-3); margin-bottom: -2px; }
+
+  /* ---------- [5] 下載量 ---------- */
+  .dl-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 32px; align-items: start; }
+  .dl-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  #dl-chart { min-height: 260px; }
+  #dl-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: var(--r-sm); }
+  .dl-top__title { font-size: var(--fs-13); font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .dl-top { display: flex; flex-direction: column; }
+  .dl-top li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 9px 0; border-top: 1px dashed var(--line); }
+  .dl-top li:first-child { border-top: 0; }
+  .dl-top__rank { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--ink-3); }
+  .dl-top__name { font-weight: 600; font-size: var(--fs-13); display: block; }
+  .dl-top__name:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+  .dl-top__sub { font-size: var(--fs-12); color: var(--ink-3); }
+  .dl-top__val { text-align: right; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--ink); font-weight: 600; }
+  .dl-top__val .spark { margin-left: auto; margin-bottom: 2px; }
+
+  /* ---------- [6] 待審上架 ---------- */
+  .stage-strip { display: flex; align-items: stretch; margin-bottom: 18px; }
+  .stage { flex: 1 1 0; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--white); display: flex; flex-direction: column; gap: 4px; position: relative; }
+  .stage__label { font-size: var(--fs-12); color: var(--ink-3); font-weight: 500; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .stage__n { font-family: var(--font-mono); font-size: 26px; font-weight: 600; color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stage__n small { font-size: var(--fs-12); font-weight: 500; color: var(--ink-3); margin-left: 4px; font-family: var(--font-sans); }
+  .stage__sub { font-size: var(--fs-11); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage[data-tone="info"] { border-color: rgba(63, 111, 214, .35); background: linear-gradient(180deg, var(--info-soft), #fff 70%); }
+  .stage[data-tone="cdo"] { border-color: rgba(122, 85, 198, .35); background: linear-gradient(180deg, var(--cdo-soft), #fff 70%); }
+  .stage[data-tone="ok"] { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-tint), #fff 70%); }
+  .stage-strip .flow__link { flex: 0 1 44px; min-width: 18px; margin: 0 6px; align-self: center; }
+  .pend-table td { vertical-align: middle; }
+  .wait { font-family: var(--font-mono); font-size: var(--fs-12); white-space: nowrap; }
+  .wait.is-long { color: var(--warn-text); font-weight: 600; }
+  .review-sum { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); margin-bottom: 14px; }
+  .review-sum__rules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+  /* ---------- [7] 活動 ---------- */
+  .feed-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .feed__more { margin-top: 10px; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1180px) {
+    .q-grid { grid-template-columns: minmax(0, 1fr); }
+    .dl-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 760px) {
+    .q-ringbox { flex-direction: column; align-items: stretch; }
+    .q-ringbox .ring { align-self: center; }
+    .q-low { grid-template-columns: minmax(0, 1fr); }
+    .stage-strip { flex-wrap: wrap; gap: 8px; }
+    .stage { flex: 1 1 calc(50% - 4px); }
+    .stage-strip .flow__link { display: none; }
+    .row-actions { justify-content: flex-start; }
+    .jobs-table .table__sub { max-width: none; }
+    .runs .table-wrap { margin: 0 -16px; border-left: 0; border-right: 0; border-radius: 0; }
+    .runs .progress { min-width: 0; }
+    .runs .stepdots { display: none; }
+  }
+</style>
+</head>
+<body data-page="index">
+<a class="skip-link" href="#main">跳至主要內容</a>
+
+<div class="utilbar">
+  <div class="utilbar__inner">
+    <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    <span class="utilbar__sep utilbar__sep--path" aria-hidden="true"></span>
+    <span class="utilbar__path"><span>澄港市政府</span><span>數位發展處</span><span>開放資料平台</span></span>
+    <div class="utilbar__right">
+      <span class="env-dot utilbar__env">正式環境 · v4.8.2</span>
+      <span data-clock aria-label="系統時間">2026-10-22（四）09:41:00</span>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="index.html" aria-label="澄港開放資料 資料集上架管理，回總覽">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">澄港開放資料</span><span class="brand__sub">資料集上架管理</span></span>
+    </a>
+    <nav class="mainnav" id="mainnav" aria-label="主要導覽">
+      <form class="gsearch only-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-m">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-m" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+      </form>
+      <a class="mainnav__link is-active" href="index.html" aria-current="page"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.75h7.75l1.25 1.25v11.25H3.5zM5.75 5h4.5M5.75 7.5h4.5M5.75 10h2.5M1.75 4h1.75M1.75 7h1.75M1.75 10h1.75"/></svg>總覽</a>
+      <a class="mainnav__link" href="datasets.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 3h11.5v10H2.25zM2.25 6.25h11.5M2.25 9.5h11.5M6.25 6.25V13"/></svg>資料集清單</a>
+      <a class="mainnav__link" href="dataset.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.5l3 3v9.5H4zM9.5 1.75v3h3M6 8h4.5M6 10.5h4.5"/></svg>資料集詳情</a>
+      <a class="mainnav__link" href="publish.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10.25V2.75M5 5.5l3-2.75 3 2.75M2.75 9.5v3.75h10.5V9.5"/></svg>上架申請</a>
+    </nav>
+    <div class="topbar__tools">
+      <form class="gsearch hide-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-d">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-d" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+        <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+      </form>
+      <span class="kernel" data-kernel role="status"><span class="kernel__dot" aria-hidden="true"></span><span class="kernel__label">核心 閒置</span></span>
+      <div class="whoami">
+        <span class="avatar" style="--h:170" aria-hidden="true">婷</span>
+        <span class="whoami__text"><span class="whoami__name">許雅婷</span><span class="whoami__role">資料治理科 承辦</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="mainnav" aria-label="開啟選單"><span class="menu-btn__bars" aria-hidden="true"><span></span><span></span><span></span></span></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="nb">
+    <aside class="nb-aside" aria-label="本頁大綱與排程">
+      <div>
+        <h2 class="aside-title">大綱</h2>
+        <nav data-outline aria-label="cell 大綱"></nav>
+      </div>
+      <div class="panel sched" aria-live="off">
+        <p class="sched__label"><span>下一批次</span><span id="next-batch-at">10:00</span></p>
+        <p class="sched__count" id="next-batch"><span>18:42</span><small>後</small></p>
+        <div class="sched__bar" aria-hidden="true"><span id="next-batch-bar" style="transform:scaleX(.68)"></span></div>
+        <p class="sched__meta">每小時整點批次 · 上一批 09:00 完成 214 個工作、失敗 1 個</p>
+      </div>
+      <div class="keys" aria-label="快捷鍵">
+        <div><span>執行目前 cell</span><span><kbd class="kbd">Shift</kbd> <kbd class="kbd">Enter</kbd></span></div>
+        <div><span>搜尋資料集</span><kbd class="kbd">/</kbd></div>
+      </div>
+    </aside>
+
+    <div class="nb-main">
+      <div class="sheet">
+        <!-- 摘要（markdown cell） -->
+        <section class="cell cell--md" id="c-intro" data-outline-title="摘要" aria-labelledby="page-title">
+          <div class="cell__body">
+            <div class="doc-head">
+              <p class="doc-head__path"><span>notebooks</span><span class="sep">/</span><span>營運</span><span class="sep">/</span><span class="file">總覽.ipynb</span></p>
+              <h1 class="doc-head__title" id="page-title">資料集健康度總覽</h1>
+              <p class="doc-head__lead" id="lead">截至 09:41，已發布的 50 個資料集中有 46 個準時更新。</p>
+              <p class="doc-head__meta">
+                  <span><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>2026 年 10 月第 4 週</span>
+                  <span id="meta-count"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2c3 0 5.5.9 5.5 2s-2.5 2-5.5 2-5.5-.9-5.5-2S5 2 8 2zM2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg><span>60 個資料集 · 14 個提供機關</span></span>
+                  <span><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2.5 14c.8-2.6 2.9-4 5.5-4s4.7 1.4 5.5 4"/></svg>由 許雅婷 執行</span>
+              </p>
+              <div class="doc-head__actions">
+                <button class="switch" type="button" role="switch" aria-checked="true" id="toggle-code"><span class="switch__track" aria-hidden="true"></span>顯示程式碼</button>
+                <button class="btn" type="button" id="export"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.75M5 7.25l3 3 3-3M2.75 12.75h10.5"/></svg>匯出報告</button>
+                <button class="btn btn--primary" type="button" id="run-all"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.25v9.5L12.75 8z"/></svg>全部執行</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [1] 處理管線（招牌動態放在第一屏） -->
+        <section class="cell" data-cell id="c-pipeline" aria-labelledby="t-pipeline">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-pipeline">處理管線</h2><span class="cell__tag">live</span></div>
+            <pre class="code"><code data-lang="py">pipeline.watch(stages=["extract", "validate", "transform", "publish"], live=True)</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[1]:</b><span>LiveStream · 今日排程 <span id="pipe-scheduled">1,248</span> 個工作 · 點選步驟可篩選下方工作</span></p>
+              <div class="pipe-head" data-stream>
+                <div class="legend" aria-label="圖例">
+                  <span class="legend__item"><span class="legend__dot" style="--c: var(--accent)"></span>處理中的工作</span>
+                  <span class="legend__item"><span class="legend__dash" style="--c: var(--err)"></span>驗證／轉換失敗</span>
+                  <span class="legend__item"><span class="legend__dash" style="--c: var(--warn)"></span>退避後重新擷取</span>
+                </div>
+                <button class="btn btn--sm" type="button" id="pipe-toggle" aria-pressed="false"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg><span>暫停串流</span></button>
+              </div>
+              <div id="pipe" data-stream></div>
+              <div class="runs" data-stream>
+                <div class="runs__head">
+                  <span class="runs__title">目前處理中</span>
+                  <span class="badge badge--muted" id="runs-filter">全部步驟</span>
+                  <button class="btn btn--sm btn--ghost" type="button" id="runs-clear" hidden>清除篩選</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="table table--compact">
+                    <caption class="sr-only">目前在管線中處理的工作</caption>
+                    <thead><tr><th scope="col" class="hide-mobile">工作</th><th scope="col">資料集</th><th scope="col">步驟</th><th scope="col">進度</th><th scope="col" class="num hide-mobile">已執行</th></tr></thead>
+                    <tbody id="runs-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [2] 健康度指標 -->
+        <section class="cell" data-cell id="c-health" aria-labelledby="t-health">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-health">健康度指標</h2><span class="cell__tag">HealthSummary</span></div>
+            <pre class="code"><code data-lang="py">health = catalog.health(as_of="2026-10-22", grace=1.5)
+health.summary(metrics=["on_time", "quality", "downloads_30d", "pending"])</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[2]:</b><span>HealthSummary · 以已發布資料集計 · 截至 <span data-clock="time">09:41:00</span></span></p>
+              <div class="stat-grid">
+                <div class="stat" data-stream>
+                  <p class="stat__label"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12zM8 4.75V8l2.25 1.5"/></svg>更新準時率</p>
+                  <div class="stat__row">
+                    <p class="stat__value"><span id="k-ontime" data-decimals="1">92.0</span><span class="stat__unit">%</span></p>
+                    <span class="stat__spark" id="k-ontime-spark"></span>
+                  </div>
+                  <p class="stat__foot"><span class="stat__delta" id="k-ontime-delta"></span><span id="k-ontime-foot"></span></p>
+                </div>
+                <div class="stat" data-stream>
+                  <p class="stat__label"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l1.7 3.75 4.05.4-3.05 2.75.9 4L8 10.85 4.4 12.9l.9-4-3.05-2.75 4.05-.4z"/></svg>平均品質分數</p>
+                  <div class="stat__row">
+                    <p class="stat__value"><span id="k-quality" data-decimals="1">87.2</span><span class="stat__unit">/ 100</span></p>
+                    <div class="grade-meter" id="k-quality-meter"></div>
+                  </div>
+                  <p class="stat__foot" id="k-quality-foot"></p>
+                </div>
+                <div class="stat" data-stream>
+                  <p class="stat__label"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.75M5 7.25l3 3 3-3M2.75 12.75h10.5"/></svg>近 30 日下載</p>
+                  <div class="stat__row">
+                    <p class="stat__value"><span id="k-dl" data-decimals="1">31.4</span><span class="stat__unit">萬次</span></p>
+                    <span class="stat__spark" id="k-dl-spark"></span>
+                  </div>
+                  <p class="stat__foot"><span class="stat__delta" id="k-dl-delta"></span><span id="k-dl-foot"></span></p>
+                </div>
+                <div class="stat" data-stream>
+                  <p class="stat__label"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 9.5l1.6-5.2a1 1 0 0 1 .96-.7h5.88a1 1 0 0 1 .96.7l1.6 5.2v3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1zM2.5 9.5h3l1 1.5h3l1-1.5h3"/></svg>待審上架</p>
+                  <div class="stat__row">
+                    <p class="stat__value"><span id="k-pending">8</span><span class="stat__unit">件</span></p>
+                    <div class="stat__chips" id="k-pending-chips"></div>
+                  </div>
+                  <p class="stat__foot" id="k-pending-foot"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [3] 失敗工作 -->
+        <section class="cell" data-cell id="c-jobs" aria-labelledby="t-jobs">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-jobs">失敗工作</h2><span class="cell__tag">stderr</span></div>
+            <pre class="code"><code data-lang="py">jobs.failed(since="2026-10-21 18:00").sort_values("next_retry")  # 含已停止自動重試者</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[3]:</b><span id="jobs-shape">DataFrame 6 rows × 7 columns</span></p>
+              <div class="jobs-bar" data-stream id="jobs-bar"></div>
+              <div class="table-wrap table-wrap--cards" id="jobs-wrap">
+                <table class="table jobs-table">
+                  <caption class="sr-only">失敗工作清單</caption>
+                  <thead><tr><th scope="col">資料集 · 工作</th><th scope="col">失敗步驟</th><th scope="col">錯誤</th><th scope="col">重試</th><th scope="col"><span class="sr-only">動作</span></th></tr></thead>
+                  <tbody id="jobs-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [4] 品質分數分布 -->
+        <section class="cell" data-cell id="c-quality" aria-labelledby="t-quality">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-quality">品質分數分布</h2><span class="cell__tag">QualityReport</span></div>
+            <pre class="code"><code data-lang="py">q = catalog.quality(status="published")
+q.score(), q.dimensions(), q.histogram(bins=range(50, 101, 5))</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[4]:</b><span id="q-label">QualityReport · 50 個已發布資料集</span></p>
+              <div class="q-grid">
+                <div class="q-ringbox" data-stream>
+                  <div id="q-ring"></div>
+                  <div class="q-dims" id="q-dims"></div>
+                </div>
+                <div class="q-hist" data-stream>
+                  <div class="q-hist__head">
+                    <span class="q-hist__title">資料集分數分布 <span class="muted">（點選長條篩選清單）</span></span>
+                    <div class="legend" id="q-legend"></div>
+                  </div>
+                  <div class="chart" id="q-hist"></div>
+                </div>
+              </div>
+              <div class="q-low" id="q-low" data-stream></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [5] 下載量趨勢 -->
+        <section class="cell" data-cell id="c-downloads" aria-labelledby="t-downloads">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-downloads">下載量趨勢</h2><span class="cell__tag">plot</span></div>
+            <pre class="code"><code data-lang="py">downloads.weekly(weeks=26).plot(series=["api", "file"])  # 單位：次／週</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[5]:</b><span id="dl-label">Figure · 近 26 週</span></p>
+              <div class="dl-grid">
+                <div data-stream>
+                  <div class="dl-head">
+                    <div class="legend" aria-label="圖例">
+                      <span class="legend__item"><span class="legend__swatch legend__swatch--line" style="--c: var(--series-1)"></span>API 呼叫</span>
+                      <span class="legend__item"><span class="legend__swatch legend__swatch--line" style="--c: var(--series-2)"></span>檔案下載</span>
+                    </div>
+                    <div class="seg" role="group" aria-label="期間" id="dl-range">
+                      <button type="button" data-weeks="12" aria-pressed="false">12 週</button>
+                      <button type="button" data-weeks="26" aria-pressed="true">26 週</button>
+                      <button type="button" data-weeks="52" aria-pressed="false">52 週</button>
+                    </div>
+                  </div>
+                  <div class="chart" id="dl-chart" tabindex="0" role="group" aria-label="每週下載量折線圖，可用左右方向鍵逐週檢視數值" aria-describedby="dl-live"></div>
+                  <p class="sr-only" id="dl-live" aria-live="polite"></p>
+                </div>
+                <div data-stream>
+                  <p class="dl-top__title"><span>近 30 日下載前 5 名</span><span class="muted mono">次</span></p>
+                  <ol class="dl-top" id="dl-top"></ol>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [6] 待審上架 -->
+        <section class="cell" data-cell id="c-pending" aria-labelledby="t-pending">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-pending">待審上架</h2><span class="cell__tag">applications</span></div>
+            <pre class="code"><code data-lang="py">applications.pending().groupby("stage").agg(waiting="max")</code></pre>
+            <div class="cell__output" data-anim>
+              <p class="out-label" data-stream><b data-out>Out[6]:</b><span id="pend-label">8 件待審 · 上架申請 → 自動驗證 → 承辦審核 → 資料長核定 → 發布</span></p>
+              <div class="stage-strip" id="stage-strip" data-stream></div>
+              <div class="table-wrap table-wrap--cards" data-stream>
+                <table class="table pend-table">
+                  <caption class="sr-only">待審上架申請</caption>
+                  <thead><tr><th scope="col">案號</th><th scope="col">資料集</th><th scope="col">階段</th><th scope="col">等候</th><th scope="col">負責人</th><th scope="col"><span class="sr-only">動作</span></th></tr></thead>
+                  <tbody id="pend-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [7] 最近活動 -->
+        <section class="cell" data-cell id="c-activity" aria-labelledby="t-activity">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-activity">最近活動</h2><span class="cell__tag">audit log</span></div>
+            <pre class="code"><code data-lang="py">audit.log(since="2026-10-20")  # 新到舊，含排程器與人工操作</code></pre>
+            <div class="cell__output">
+              <div class="feed-head" data-stream>
+                <p class="out-label" style="margin:0"><b data-out>Out[7]:</b><span id="feed-label">16 筆</span></p>
+                <div class="seg" role="group" aria-label="活動類型" id="feed-filter">
+                  <button type="button" data-kind="all" aria-pressed="true">全部</button>
+                  <button type="button" data-kind="publish" aria-pressed="false">發布</button>
+                  <button type="button" data-kind="fail" aria-pressed="false">異常</button>
+                  <button type="button" data-kind="review" aria-pressed="false">審核</button>
+                  <button type="button" data-kind="submit" aria-pressed="false">申請</button>
+                </div>
+              </div>
+              <ol class="feed" id="feed"></ol>
+              <button class="btn btn--sm btn--ghost feed__more" type="button" id="feed-more" aria-expanded="false">顯示全部</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <div>
+        <p class="site-footer__name">澄港市 開放資料平台</p>
+        <p class="site-footer__desc">由數位發展處資料治理科維運。資料集經自動驗證、承辦審核與資料長核定後發布，預設以「澄港開放授權 1.0」釋出。</p>
+      </div>
+    </div>
+    <nav aria-label="頁尾導覽">
+      <h2>管理功能</h2>
+      <ul>
+        <li><a href="index.html">營運總覽</a></li>
+        <li><a href="datasets.html">資料集清單</a></li>
+        <li><a href="dataset.html">資料集詳情</a></li>
+        <li><a href="publish.html">上架申請</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h2>平台維運</h2>
+      <ul>
+        <li>資料治理科 分機 6402</li>
+        <li>opendata@chenggang.gov.example</li>
+        <li>排程：每小時整點、每日 02:00</li>
+        <li>服務時間：週一至週五 08:30–17:30</li>
+      </ul>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 數位發展處</span>
+      <span>kernel opendata-kit 4.8.2 · Python 3.12</span>
+      <span>最後同步 <span data-clock="time">09:41:00</span></span>
+      <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const { DATA, fmt, esc, icon } = App;
+  const STG = App.PIPE_STAGES.map((s) => s.key);
+  const stageLabel = (k) => App.PIPE_STAGES.find((s) => s.key === k).label;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // 依容器寬度重畫的圖表共用：寬度沒變就不重畫
+  const onResize = (el, fn) => { let w = 0; new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; fn(); } }).observe(el); };
+  const dsText = (entry) => {
+    const ds = entry.ds && App.dataset(entry.ds);
+    const parts = esc(entry.text).split('{ds}');
+    const link = ds ? `<a href="${App.datasetUrl(ds.id)}">${esc(ds.title)}</a>` : '';
+    return parts.length > 1 ? parts.join(link) : esc(entry.text) + (ds ? `：${link}` : '');
+  };
+
+  /* ================= 摘要 ================= */
+  const renderLead = () => {
+    const s = App.stats();
+    const dataIssue = s.failedJobs - s.transientJobs;
+    const failParts = [
+      s.transientJobs ? `<b>${s.transientJobs}</b> 個為暫時性錯誤、將自動重試` : '',
+      dataIssue ? `<b>${dataIssue}</b> 個為資料或格式問題，需機關修正` : '',
+    ].filter(Boolean).join('，');
+    $('#lead').innerHTML =
+      `截至 <b>${fmt.time(App.now())}</b>，已發布的 <b>${s.published}</b> 個資料集中有 <b>${s.onTime}</b> 個準時更新（${fmt.pct(s.onTimeRate)}）。` +
+      (s.failedJobs ? `昨夜批次至今有 <b>${s.failedJobs}</b> 個工作失敗：${failParts}。` : '目前沒有失敗的工作。') +
+      (s.pending ? `待審上架 <b>${s.pending}</b> 件，最久一件已等候 <b>${fmt.days(s.oldestPending.waited)}</b>。` : '待審上架已全部處理完畢。');
+    $('#meta-count span').textContent = `${s.total} 個資料集 · ${s.agencies} 個提供機關`;
+  };
+
+  /* ================= [1] 健康度指標 ================= */
+  const setNum = (el, v, animate) => {
+    if (animate) App.countUp(el, v);
+    else el.textContent = fmt.num(v, Number(el.dataset.decimals || 0));
+  };
+  const delta = (el, v, unit, goodUp = true) => {
+    const dir = Math.abs(v) < 0.05 ? 'flat' : (v > 0) === goodUp ? 'up' : 'down';
+    el.className = `stat__delta stat__delta--${dir}`;
+    el.textContent = `${v > 0 ? '▲' : v < 0 ? '▼' : '—'} ${Math.abs(v).toFixed(1)}${unit}`;
+  };
+  const renderKpis = (animate = false) => {
+    const s = App.stats();
+    const ontime = s.onTimeRate * 100;
+    setNum($('#k-ontime'), ontime, animate);
+    delta($('#k-ontime-delta'), ontime - DATA.onTimeWeekly[DATA.onTimeWeekly.length - 1], ' pt 較上週');
+    $('#k-ontime-spark').innerHTML = App.spark([...DATA.onTimeWeekly, ontime], { w: 92, h: 34, label: `近 12 週準時率，本週 ${ontime.toFixed(1)}%` });
+    $('#k-ontime-foot').textContent = `逾期 ${s.late.length} · 失敗 ${s.failedDatasets}`;
+
+    setNum($('#k-quality'), s.avgQuality, animate);
+    const g = s.grades, tot = s.published;
+    $('#k-quality-meter').innerHTML = `<div class="meter" role="img" aria-label="品質等級分布：A ${g.A}、B ${g.B}、C ${g.C}、D ${g.D}">` +
+      ['A', 'B', 'C', 'D'].filter((k) => g[k]).map((k) => `<span class="meter__seg" style="--c: var(--g-${k.toLowerCase()}); flex:${g[k] / tot}"></span>`).join('') + '</div>';
+    $('#k-quality-foot').innerHTML = ['A', 'B', 'C', 'D'].map((k) => `<span class="cluster" style="gap:5px">${App.gradeBadge({ A: 95, B: 85, C: 75, D: 60 }[k])}<span class="num">${g[k]}</span></span>`).join('');
+
+    setNum($('#k-dl'), s.downloads30 / 1e4, animate);
+    delta($('#k-dl-delta'), s.downloadsDelta * 100, '% 較前 30 日');
+    $('#k-dl-spark').innerHTML = App.spark(DATA.weekly.slice(-12).map((w) => w.api + w.file), { w: 92, h: 34, color: 'var(--series-1)', label: '近 12 週下載量' });
+    $('#k-dl-foot').textContent = `API ${Math.round(s.apiShare * 100)}% · 檔案 ${100 - Math.round(s.apiShare * 100)}%`;
+
+    setNum($('#k-pending'), s.pending, animate);
+    const st = s.pendingByStage;
+    $('#k-pending-chips').innerHTML = `<span class="badge">驗證 ${st.validating}</span><span class="badge badge--info">承辦 ${st.review}</span><span class="badge badge--cdo">資料長 ${st.approval}</span>`;
+    $('#k-pending-foot').innerHTML = s.oldestPending
+      ? `<span>最久等候 <b class="strong">${fmt.days(s.oldestPending.waited)}</b> · ${esc(s.oldestPending.ds.title)}</span>`
+      : '目前沒有待審案件';
+  };
+  document.addEventListener('cell:done', (e) => {
+    if (e.detail.cell.id !== 'c-health' || reduce) return;
+    ['#k-ontime', '#k-quality', '#k-dl', '#k-pending'].forEach((sel) => { $(sel).textContent = '0'; });
+    renderKpis(true);
+  });
+
+  /* ================= [2] 處理管線 ================= */
+  const S = DATA.pipeline.stages;
+  const POOL = ['bike-stations', 'arts-events', 'school-lunch', 'garbage-truck', 'clinics', 'flu-vaccine', 'aed-locations', 'hotels', 'parks', 'streetlights', 'ferry-schedule', 'traffic-volume', 'cpi', 'population', 'shelters', 'schools', 'recycling-points', 'factories'];
+  const rr = App.rng('runs-sim');
+  let runSeq = 941;
+  const mkRun = (stage, progress) => ({
+    id: `JOB-1022-${String(runSeq++).padStart(4, '0')}`,
+    ds: POOL[Math.floor(rr() * POOL.length)],
+    stage, progress,
+    speed: 0.05 + rr() * 0.09,
+    started: App.now() - Math.floor(rr() * 70e3),
+  });
+  let runs = [mkRun('extract', 0.3), mkRun('extract', 0.72), mkRun('validate', 0.15), mkRun('validate', 0.6), mkRun('transform', 0.4), mkRun('publish', 0.82), mkRun('extract', 0.05)];
+  let runFilter = null;
+  let publishedTicks = 0;
+
+  const pipe = App.pipeline($('#pipe'), {
+    stages: App.PIPE_STAGES.map((st) => ({ ...st, ...S[st.key] })),
+    source: { label: '排程觸發', value: String(DATA.pipeline.perHour), unit: '個/時' },
+    sink: { label: '今日已發布', value: S.publish.today },
+    retry: { label: '自動重試佇列', value: App.stats().retryQueue, note: '退避 5 → 15 → 45 分' },
+    rate: 1.4,
+    onSelect: (k) => { runFilter = k; renderRuns(true); },
+    onEvent: (type) => {
+      if (type !== 'publish') return;
+      // 每 60 個發布事件寫一筆排程更新到活動紀錄，讓 feed 也跟著管線活著
+      publishedTicks += 1;
+      if (publishedTicks % 60 === 0) {
+        const ds = App.dataset(POOL[Math.floor(rr() * POOL.length)]);
+        App.log({ kind: 'publish', actor: 'system', ds: ds.id, text: '排程更新「{ds}」', detail: `${ds.version}+${fmt.date(App.now()).replace(/-/g, '')}.${fmt.time(App.now()).replace(':', '')} · ${fmt.num(ds.rows)} 列` });
+      }
+    },
+  });
+  $('#pipe-toggle').addEventListener('click', (e) => {
+    const paused = pipe.toggle();
+    const b = e.currentTarget;
+    b.setAttribute('aria-pressed', paused ? 'true' : 'false');
+    b.innerHTML = paused
+      ? `${icon('play', 'i--sm')}<span>繼續串流</span>`
+      : `${icon('pause', 'i--sm')}<span>暫停串流</span>`;
+    App.toast(paused ? '已暫停即時串流' : '已恢復即時串流', { tone: 'info', desc: paused ? '管線仍在背景執行，只是畫面不再更新。' : '' });
+  });
+  $('#runs-clear').addEventListener('click', () => { runFilter = null; pipe.select(null); renderRuns(true); });
+
+  const stepDots = (stage, progress) => STG.map((k, i) => {
+    const idx = STG.indexOf(stage);
+    return `<i class="${i < idx ? 'd' : i === idx ? 'a' : ''}"></i>`;
+  }).join('');
+  const renderRuns = (rebuild = false) => {
+    const list = runs.filter((j) => !runFilter || j.stage === runFilter);
+    $('#runs-filter').textContent = runFilter ? `僅顯示「${stageLabel(runFilter)}」` : '全部步驟';
+    $('#runs-clear').hidden = !runFilter;
+    const body = $('#runs-body');
+    const ids = list.map((j) => j.id).join(',');
+    if (rebuild || body.dataset.ids !== ids) {
+      body.dataset.ids = ids;
+      body.innerHTML = list.length ? list.map((j) => {
+        const ds = App.dataset(j.ds);
+        return `<tr data-run="${j.id}">
+          <td class="hide-mobile"><span class="mono">${j.id}</span></td>
+          <td><a class="table__title" href="${App.datasetUrl(ds.id)}">${esc(ds.title)}</a> <span class="table__sub hide-mobile">· ${App.agencyLabel(ds.agency)}</span></td>
+          <td class="nowrap"><span class="stepdots" aria-hidden="true">${stepDots(j.stage)}</span><span data-f="stage">${stageLabel(j.stage)}</span></td>
+          <td><span class="progress"><span class="progress__track"><span class="progress__fill" data-f="bar" style="transform:scaleX(${j.progress.toFixed(3)})"></span></span><span class="progress__pct" data-f="pct">${Math.round(j.progress * 100)}%</span></span></td>
+          <td class="num hide-mobile" data-f="elapsed">${Math.round((App.now() - j.started) / 1000)} 秒</td></tr>`;
+      }).join('') : `<tr><td colspan="5" class="runs__empty">「${stageLabel(runFilter)}」目前沒有工作，點選其他步驟或清除篩選。</td></tr>`;
+      return;
+    }
+    list.forEach((j) => {
+      const tr = body.querySelector(`[data-run="${j.id}"]`);
+      const stageEl = $('[data-f="stage"]', tr);
+      const bar = $('[data-f="bar"]', tr);
+      // 換到下一步驟時進度歸零：直接跳回起點，不要讓長條倒著播 0.8 秒（數字已顯示 0% 會對不上）
+      const restart = stageEl.textContent !== stageLabel(j.stage);
+      stageEl.textContent = stageLabel(j.stage);
+      $('.stepdots', tr).innerHTML = stepDots(j.stage);
+      if (restart) bar.style.transition = 'none';
+      bar.style.transform = `scaleX(${j.progress.toFixed(3)})`;
+      if (restart) { void bar.offsetWidth; bar.style.transition = ''; }
+      $('[data-f="pct"]', tr).textContent = `${Math.round(j.progress * 100)}%`;
+      $('[data-f="elapsed"]', tr).textContent = `${Math.round((App.now() - j.started) / 1000)} 秒`;
+    });
+  };
+  let runsVisible = true;
+  new IntersectionObserver((en) => { runsVisible = en[en.length - 1].isIntersecting; }).observe($('#c-pipeline'));
+  setInterval(() => {
+    if (pipe.paused || document.hidden || !runsVisible) return;
+    runs = runs.map((j) => {
+      const p = j.progress + j.speed;
+      if (p < 1) return { ...j, progress: p };
+      const i = STG.indexOf(j.stage);
+      return i < STG.length - 1 ? { ...j, stage: STG[i + 1], progress: 0 } : mkRun('extract', 0);
+    });
+    renderRuns();
+  }, 900);
+
+  /* ================= [3] 失敗工作 ================= */
+  const retrying = new Set();
+  const pips = (j) => Array.from({ length: j.max }, (_, i) => `<span class="pip${i < j.attempts ? (j.state === 'exhausted' ? ' is-fail' : ' is-on') : ''}"></span>`).join('');
+  const jobRow = (j) => {
+    const ds = App.dataset(j.ds);
+    const ag = App.AGENCIES[ds.agency];
+    const busy = retrying.has(j.id);
+    const idx = STG.indexOf(j.stage);
+    const steps = STG.map((k, i) => `<i class="${i < idx ? 'd' : i === idx ? 'f' : ''}"></i>`).join('');
+    const next = j.state === 'exhausted'
+      ? '<span class="table__sub"><span class="badge badge--err">已停止 · 需人工處理</span></span>'
+      : `<span class="table__sub"><span class="retry-at" data-retry-at="${j.next}">${fmt.countdown(j.next - App.now())}</span> 後自動重試（${fmt.time(j.next)}）</span>`;
+    return `<tr data-job="${j.id}" class="${busy ? 'is-running' : ''}" data-stream>
+      <td data-label="資料集"><a class="table__title" href="${App.datasetUrl(ds.id)}">${esc(ds.title)}</a><span class="table__sub"><span class="mono">${j.id}</span> · ${esc(ag.name)}</span></td>
+      <td data-label="失敗步驟" class="nowrap"><span class="stepdots" aria-hidden="true">${steps}</span><span class="jobstep__label">${stageLabel(j.stage)}</span></td>
+      <td data-label="錯誤"><code class="err-name">${esc(j.error)}</code><span class="table__sub">${esc(j.msg)}</span></td>
+      <td data-label="重試" class="nowrap"><span class="pips" aria-hidden="true">${pips(j)}</span> <span class="mono">第 ${j.attempts}/${j.max} 次</span>${next}</td>
+      <td data-label=""><div class="row-actions">
+        <button type="button" class="btn btn--sm${busy ? ' is-loading' : ''}" data-act="retry" ${busy ? 'aria-busy="true"' : ''}>${icon('retry', 'i--sm')}重試</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-act="log">${icon('terminal', 'i--sm')}記錄</button>
+        <button type="button" class="btn btn--sm btn--ghost btn--icon" data-act="notify" aria-label="通知${esc(ag.name)}" data-tip="通知${esc(ag.name)}">${icon('bell', 'i--sm')}</button>
+      </div></td></tr>`;
+  };
+  const renderJobs = () => {
+    const s = App.stats();
+    const cell = $('#c-jobs');
+    const jobs = [...DATA.jobs].sort((a, b) => (a.next || Infinity) - (b.next || Infinity));
+    $('#jobs-shape').textContent = `DataFrame ${jobs.length} rows × 7 columns`;
+    App.cell.badge(cell, jobs.length ? String(jobs.length) : null, 'err');
+    App.cell.setState(cell, jobs.length ? 'warn' : 'done');
+    $('#jobs-bar').innerHTML = jobs.length
+      ? `<span class="badge badge--warn">${icon('retry', 'i--sm')}暫時性 ${s.transientJobs}</span><span class="badge badge--err">${icon('alert', 'i--sm')}資料問題 ${s.failedJobs - s.transientJobs}</span><span class="badge badge--muted">已停止自動重試 ${s.exhaustedJobs}</span><span class="spacer"></span>` +
+        `<button type="button" class="btn btn--sm" id="retry-transient" ${s.transientJobs ? '' : 'disabled'}>${icon('retry', 'i--sm')}重試全部暫時性錯誤（${s.transientJobs}）</button>`
+      : '';
+    const body = $('#jobs-body');
+    $('#jobs-wrap').hidden = !jobs.length;
+    body.innerHTML = jobs.map(jobRow).join('');
+    if (!jobs.length && !$('#jobs-empty')) {
+      $('#jobs-wrap').insertAdjacentHTML('afterend', `<div id="jobs-empty">${App.emptyState({ title: '沒有失敗的工作', text: '所有排程都已成功完成，下一批次整點執行。' })}</div>`);
+    }
+    if (jobs.length && $('#jobs-empty')) $('#jobs-empty').remove();
+    pipe.set('retry', s.retryQueue);
+  };
+  const doRetry = async (id, { auto = false } = {}) => {
+    if (retrying.has(id) || !App.job(id)) return;
+    retrying.add(id);
+    renderJobs();
+    const res = await App.retryJob(id);
+    retrying.delete(id);
+    renderJobs();
+    const { job, ds } = res;
+    if (res.ok) {
+      App.toast(`${auto ? '自動' : ''}重試成功：${ds.title}`, { desc: `${job.id} · 已於 ${fmt.time(App.now())} 更新`, tone: 'ok' });
+    } else {
+      App.toast(`重試仍失敗：${ds.title}`, {
+        tone: 'err',
+        desc: `${job.error} · 第 ${job.attempts}/${job.max} 次${job.state === 'exhausted' ? '，已停止自動重試' : ''}`,
+        action: { label: '通知機關', onClick: () => notify(job) },
+      });
+    }
+  };
+  const notify = (j) => {
+    const ds = App.dataset(j.ds);
+    const ag = App.AGENCIES[ds.agency];
+    const who = App.person(ds.contact);
+    const entry = App.log({ kind: 'notify', ds: ds.id, text: `通知${ag.name}處理「{ds}」`, detail: `${j.id} · ${j.error} · 收件人 ${who.name}` });
+    App.toast(`已通知${ag.name} ${who.name}`, { tone: 'info', desc: `${j.id} · 附上錯誤摘要與執行記錄`, action: { label: '復原', onClick: () => App.unlog(entry) } });
+  };
+  const openLog = (j) => {
+    const ds = App.dataset(j.ds);
+    let printing = null;
+    const m = App.modal({
+      title: `${j.id} 執行記錄`,
+      eyebrow: `${ds.title} · ${stageLabel(j.stage)}步驟失敗`,
+      icon: 'terminal', tone: 'err', size: 'lg',
+      body: `<dl class="kv kv--cols" style="margin-bottom:14px">
+          <dt>資料集</dt><dd>${esc(ds.title)}（${esc(ds.code)}）</dd>
+          <dt>提供機關</dt><dd>${esc(App.AGENCIES[ds.agency].full)}</dd>
+          <dt>錯誤</dt><dd><code class="err-name">${esc(j.error)}</code></dd>
+          <dt>嘗試</dt><dd>${j.attempts} / ${j.max}${j.next ? ` · 下次 ${fmt.time(j.next)}` : ' · 已停止自動重試'}</dd>
+        </dl><div class="log" data-log aria-live="polite"></div>`,
+      note: `開始於 ${fmt.full(j.started)}`,
+      actions: [
+        { label: '關閉', variant: 'ghost' },
+        { label: '重試此工作', variant: 'primary', icon: 'retry', onClick: (close) => { close(); doRetry(j.id); } },
+      ],
+      onClose: () => { if (printing) printing.cancel(); },
+    });
+    // 時間戳記單調遞增：一般步驟間隔約 1.7 秒，第一個錯誤前多等 30 秒（逾時或長時間處理）
+    let t = j.started, prev = null;
+    const lines = j.log.map(([level, msg], i) => {
+      if (i) t += level === 'err' && prev !== 'err' ? 30000 : 1700;
+      prev = level;
+      return { t: fmt.clock(t), level, msg };
+    });
+    printing = App.streamLines($('[data-log]', m.body), lines);
+  };
+  $('#c-jobs').addEventListener('click', (e) => {
+    if (e.target.closest('#retry-transient')) {
+      DATA.jobs.filter((j) => j.transient && j.state === 'retrying').forEach((j) => doRetry(j.id));
+      return;
+    }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const j = App.job(b.closest('[data-job]').dataset.job);
+    if (!j) return;
+    if (b.dataset.act === 'retry') doRetry(j.id);
+    if (b.dataset.act === 'log') openLog(j);
+    if (b.dataset.act === 'notify') notify(j);
+  });
+  // 倒數每秒更新；暫時性錯誤倒數歸零時自動重試
+  setInterval(() => {
+    $$('[data-retry-at]').forEach((el) => {
+      const left = Number(el.dataset.retryAt) - App.now();
+      el.textContent = fmt.countdown(left);
+      if (left <= 0) {
+        const id = el.closest('[data-job]').dataset.job;
+        if (!retrying.has(id)) doRetry(id, { auto: true });
+      }
+    });
+  }, 1000);
+
+  /* ================= [4] 品質分數分布 ================= */
+  let qSig = '';
+  const gradeColor = { A: 'var(--g-a)', B: 'var(--g-b)', C: 'var(--g-c)', D: 'var(--g-d)' };
+  const renderQuality = (force = false) => {
+    const s = App.stats();
+    const pub = DATA.datasets.filter((d) => d.status === 'published');
+    const sig = pub.map((d) => d.id + d.quality).join() + s.avgQuality;
+    if (!force && sig === qSig) return;
+    qSig = sig;
+    $('#q-label').textContent = `QualityReport · ${s.published} 個已發布資料集 · 平均 ${s.avgQuality.toFixed(1)}`;
+    $('#q-ring').innerHTML = App.ring(Number(s.avgQuality.toFixed(1)), { size: 156, stroke: 10, dims: s.dims, sub: `平台平均 · ${App.grade(s.avgQuality)} 級` });
+    App.watchRings($('#q-ring'));
+    $('#q-dims').innerHTML = App.QUALITY_DIMS.map((d) => {
+      const v = s.dims[d.key];
+      return `<div class="dimbar" title="${esc(d.desc)}"><span>${esc(d.label)}</span><span class="dimbar__track"><span style="transform:scaleX(${(v / 100).toFixed(3)}); background:${gradeColor[App.grade(v)]}"></span></span><b>${v.toFixed(0)}</b></div>`;
+    }).join('');
+    $('#q-legend').innerHTML = ['A', 'B', 'C', 'D'].map((k) => `<span class="legend__item"><span class="legend__swatch" style="--c:${gradeColor[k]}"></span>${k} ${{ A: '≥ 90', B: '80–89', C: '70–79', D: '< 70' }[k]}</span>`).join('');
+    drawHist();
+    const low = [...pub].sort((a, b) => a.quality - b.quality).slice(0, 3);
+    $('#q-low').innerHTML = `<p class="q-low__label" style="grid-column:1/-1">最需改善的資料集</p>` + low.map((d) => {
+      const weakest = App.QUALITY_DIMS.reduce((m, q) => (d.dims[q.key] < d.dims[m.key] ? q : m), App.QUALITY_DIMS[0]);
+      return `<a class="q-low__item" href="${App.datasetUrl(d.id)}">${App.gradeBadge(d.quality, { lg: true })}<span><span class="q-low__title">${esc(d.title)}</span><br><span class="q-low__sub">${App.agencyLabel(d.agency)} · 最弱：${esc(weakest.label)} ${d.dims[weakest.key]}</span></span><span class="mono strong">${d.quality}</span></a>`;
+    }).join('');
+  };
+  const drawHist = () => {
+    const box = $('#q-hist');
+    const pub = DATA.datasets.filter((d) => d.status === 'published');
+    const W = Math.max(280, box.clientWidth), H = 210;
+    const m = { l: 30, r: 8, t: 22, b: 26 };
+    const bins = Array.from({ length: 10 }, (_, i) => ({ lo: 50 + i * 5, n: 0 }));
+    pub.forEach((d) => { bins[Math.min(9, Math.floor((d.quality - 50) / 5))].n += 1; });
+    const max = Math.max(...bins.map((b) => b.n));
+    const top = Math.ceil((max + 3) / 5) * 5;
+    const bw = (W - m.l - m.r) / bins.length;
+    const y = (v) => m.t + (1 - v / top) * (H - m.t - m.b);
+    const mean = App.stats().avgQuality;
+    const xMean = m.l + (mean - 50) / 50 * (W - m.l - m.r);
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">`;
+    const meanLine = `<line x1="${xMean}" x2="${xMean}" y1="${m.t - 10}" y2="${y(0)}" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="3 3"/><text class="chart-axis" x="${xMean - 5}" y="${m.t - 12}" text-anchor="end" fill="var(--ink-2)">平均 ${mean.toFixed(1)}</text>`;
+    let hits = '';
+    for (let v = 0; v <= top; v += 5) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--chart-grid)" stroke-width="1"/><text class="chart-axis" x="${m.l - 8}" y="${y(v) + 3.5}" text-anchor="end" fill="var(--ink-3)">${v}</text>`;
+    svg += meanLine;
+    bins.forEach((b, i) => {
+      const g = App.grade(b.lo);
+      const x = m.l + i * bw;
+      const w = Math.min(24, bw - 6);
+      const bx = x + (bw - w) / 2;
+      const label = `${b.lo}–${b.lo + 4} 分：${b.n} 個資料集（${g} 級）`;
+      if (b.n) {
+        svg += `<path class="bar" data-i="${i}" d="M${bx} ${y(0)}V${y(b.n) + 4}a4 4 0 0 1 4-4h${w - 8}a4 4 0 0 1 4 4V${y(0)}Z" fill="${gradeColor[g]}"/>` +
+          `<text x="${bx + w / 2}" y="${y(b.n) - 6}" text-anchor="middle" class="chart-axis" fill="var(--ink-2)" font-weight="600">${b.n}</text>`;
+      }
+      hits += `<a class="q-hit" href="datasets.html?quality=${g}" data-i="${i}" style="left:${(x + 1).toFixed(1)}px;top:${m.t}px;width:${(bw - 2).toFixed(1)}px;height:${H - m.t - m.b}px" aria-label="${label}，檢視 ${g} 級清單" data-tipx="${x + bw / 2}" data-tipy="${y(b.n)}" data-n="${b.n}" data-range="${b.lo}–${b.lo + 4} 分" data-color="${gradeColor[g]}"></a>`;
+      if (i % 2 === 0 || bw > 40) svg += `<text class="chart-axis" x="${x}" y="${H - 8}" text-anchor="middle" fill="var(--ink-3)">${b.lo}</text>`;
+    });
+    svg += `<text class="chart-axis" x="${W - m.r}" y="${H - 8}" text-anchor="end" fill="var(--ink-3)">100</text>`;
+    svg += '</svg>';
+    box.innerHTML = svg + hits + '<div class="chart__tip" aria-hidden="true"></div>';
+    const tip = $('.chart__tip', box);
+    const hot = (i, on) => { const bar = box.querySelector(`.bar[data-i="${i}"]`); if (bar) bar.classList.toggle('is-hot', on); };
+    const show = (a) => {
+      tip.innerHTML = `<div class="chart__tip-title">${esc(a.dataset.range)}</div><div class="chart__tip-row"><span class="chart__tip-sw" style="background:${a.dataset.color}"></span><span>資料集數</span><b>${a.dataset.n}</b></div>`;
+      tip.style.left = `${Math.min(W - 160, Math.max(0, Number(a.dataset.tipx) - 75))}px`;
+      tip.style.top = `${Math.max(0, Number(a.dataset.tipy) - 64)}px`;
+      tip.classList.add('is-on');
+      hot(a.dataset.i, true);
+    };
+    const hide = (a) => { tip.classList.remove('is-on'); hot(a.dataset.i, false); };
+    $$('.q-hit', box).forEach((a) => {
+      a.addEventListener('pointerenter', () => show(a));
+      a.addEventListener('focus', () => show(a));
+      a.addEventListener('pointerleave', () => hide(a));
+      a.addEventListener('blur', () => hide(a));
+    });
+  };
+  onResize($('#q-hist'), drawHist);
+
+  /* ================= [5] 下載量趨勢 ================= */
+  let dlWeeks = 26, dlIdx = null;
+  const wanLabel = (v) => (v === 0 ? '0' : `${(v / 1e4).toFixed(v % 1e4 ? 1 : 0)} 萬`);
+  const drawDl = () => {
+    const box = $('#dl-chart');
+    const data = DATA.weekly.slice(-dlWeeks);
+    const W = Math.max(280, box.clientWidth), H = W < 520 ? 230 : 268;
+    const m = { l: 46, r: W < 520 ? 16 : 78, t: 34, b: 28 };
+    const rawMax = Math.max(...data.map((d) => Math.max(d.api, d.file)));
+    const step = rawMax > 60000 ? 20000 : 10000;
+    const top = Math.ceil(rawMax * 1.08 / step) * step;
+    const x = (i) => m.l + i / (data.length - 1) * (W - m.l - m.r);
+    const y = (v) => m.t + (1 - v / top) * (H - m.t - m.b);
+    const line = (key) => data.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(d[key]).toFixed(1)}`).join('');
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">`;
+    for (let v = 0; v <= top; v += step) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--chart-grid)" stroke-width="1"/><text class="chart-axis" x="${m.l - 8}" y="${y(v) + 3.5}" text-anchor="end" fill="var(--ink-3)">${wanLabel(v)}</text>`;
+    // 颱風警報週：淡色底帶 + 標註
+    const ty = data.findIndex((d) => fmt.date(d.week) === '2026-09-28');
+    if (ty >= 0) {
+      const half = (W - m.l - m.r) / (data.length - 1) / 2;
+      svg += `<rect x="${x(ty) - half}" y="${m.t - 14}" width="${half * 2}" height="${H - m.t - m.b + 14}" fill="var(--warn-soft)"/><text class="chart-axis" x="${x(ty)}" y="${m.t - 19}" text-anchor="${ty > data.length - 4 ? 'end' : 'middle'}" fill="var(--warn-text)">颱風警報週</text>`;
+    }
+    // x 軸：每月第一週標月份
+    let lastM = null, lastX = -Infinity;
+    data.forEach((d, i) => {
+      const mo = Number(fmt.date(d.week).slice(5, 7));
+      if (mo === lastM) return;
+      lastM = mo;
+      // 第一週若不是月初，月份標籤會和下個月擠在一起：間距不足就略過
+      if (x(i) - lastX < (W < 520 ? 34 : 52) || (dlWeeks === 52 && mo % 2 === 0)) return;
+      lastX = x(i);
+      svg += `<text class="chart-axis" x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : 'middle'}" fill="var(--ink-3)">${mo} 月</text>`;
+    });
+    svg += `<path d="${line('file')}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svg += `<path d="${line('api')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const L = data[data.length - 1], li = data.length - 1;
+    svg += `<circle cx="${x(li)}" cy="${y(L.api)}" r="4" fill="var(--series-1)" stroke="#fff" stroke-width="2"/><circle cx="${x(li)}" cy="${y(L.file)}" r="4" fill="var(--series-2)" stroke="#fff" stroke-width="2"/>`;
+    if (W >= 520) {
+      // 直接標示末端數值；兩線太接近時拉開，避免標籤重疊
+      let ya = y(L.api), yf = y(L.file);
+      if (Math.abs(ya - yf) < 26) { const mid = (ya + yf) / 2; ya = mid + (L.api > L.file ? -13 : 13); yf = mid + (L.api > L.file ? 13 : -13); }
+      svg += `<text x="${x(li) + 10}" y="${ya - 2}" font-size="11" fill="var(--ink-3)">API</text><text x="${x(li) + 10}" y="${ya + 12}" class="chart-axis" font-weight="600" fill="var(--ink)">${wanLabel(L.api)}</text>`;
+      svg += `<text x="${x(li) + 10}" y="${yf - 2}" font-size="11" fill="var(--ink-3)">檔案</text><text x="${x(li) + 10}" y="${yf + 12}" class="chart-axis" font-weight="600" fill="var(--ink)">${wanLabel(L.file)}</text>`;
+    }
+    svg += `<g class="dl-cross" opacity="0"><line y1="${m.t - 6}" y2="${y(0)}" stroke="var(--ink-3)" stroke-width="1"/><circle r="4.5" fill="var(--series-1)" stroke="#fff" stroke-width="2" data-k="api"/><circle r="4.5" fill="var(--series-2)" stroke="#fff" stroke-width="2" data-k="file"/></g>`;
+    svg += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" data-hit/></svg><div class="chart__tip" aria-hidden="true"></div>`;
+    box.innerHTML = svg;
+    box.__geo = { x, y, data, W, m };
+    $('#dl-label').textContent = `Figure · 近 ${dlWeeks} 週 · 合計 ${fmt.wan(data.reduce((s, d) => s + d.api + d.file, 0))} 次`;
+    $('[data-hit]', box).addEventListener('pointermove', (e) => {
+      const r = box.getBoundingClientRect();
+      const px = e.clientX - r.left;
+      const i = Math.round((px - m.l) / (W - m.l - m.r) * (data.length - 1));
+      showDl(Math.max(0, Math.min(data.length - 1, i)));
+    });
+    $('[data-hit]', box).addEventListener('pointerleave', hideDl);
+    if (dlIdx != null) showDl(Math.min(dlIdx, data.length - 1));
+  };
+  const showDl = (i) => {
+    const box = $('#dl-chart');
+    const { x, y, data, W } = box.__geo;
+    dlIdx = i;
+    const d = data[i];
+    const g = $('.dl-cross', box);
+    g.setAttribute('opacity', '1');
+    $('line', g).setAttribute('x1', x(i)); $('line', g).setAttribute('x2', x(i));
+    $$('circle', g).forEach((c) => { c.setAttribute('cx', x(i)); c.setAttribute('cy', y(d[c.dataset.k])); });
+    const tip = $('.chart__tip', box);
+    const end = d.week + 6 * 864e5;
+    tip.innerHTML = `<div class="chart__tip-title">${fmt.md(d.week)}–${fmt.md(end)}</div>` +
+      `<div class="chart__tip-row"><span class="chart__tip-sw" style="background:var(--series-1)"></span><span>API 呼叫</span><b>${fmt.num(d.api)}</b></div>` +
+      `<div class="chart__tip-row"><span class="chart__tip-sw" style="background:var(--series-2)"></span><span>檔案下載</span><b>${fmt.num(d.file)}</b></div>` +
+      `<div class="chart__tip-row"><span></span><span>合計</span><b>${fmt.num(d.api + d.file)}</b></div>`;
+    const left = x(i) + 14 + 170 > W ? x(i) - 184 : x(i) + 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, y(Math.max(d.api, d.file)) - 30)}px`;
+    tip.classList.add('is-on');
+    $('#dl-live').textContent = `${fmt.md(d.week)} 起一週：API ${fmt.num(d.api)} 次，檔案 ${fmt.num(d.file)} 次`;
+  };
+  const hideDl = () => {
+    const box = $('#dl-chart');
+    dlIdx = null;
+    const g = $('.dl-cross', box);
+    if (g) g.setAttribute('opacity', '0');
+    $('.chart__tip', box).classList.remove('is-on');
+  };
+  $('#dl-chart').addEventListener('keydown', (e) => {
+    const n = DATA.weekly.slice(-dlWeeks).length;
+    const k = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (k) { e.preventDefault(); showDl(Math.max(0, Math.min(n - 1, (dlIdx ?? n - 1) + (dlIdx == null ? 0 : k)))); }
+    if (e.key === 'Home') { e.preventDefault(); showDl(0); }
+    if (e.key === 'End') { e.preventDefault(); showDl(n - 1); }
+    if (e.key === 'Escape') hideDl();
+  });
+  $('#dl-chart').addEventListener('blur', hideDl);
+  $('#dl-range').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-weeks]');
+    if (!b) return;
+    dlWeeks = Number(b.dataset.weeks);
+    $$('#dl-range button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    $('#c-downloads code').querySelectorAll('.tok-num')[0].textContent = String(dlWeeks);
+    dlIdx = null;
+    drawDl();
+  });
+  const renderTop = () => {
+    const top = [...DATA.datasets].sort((a, b) => b.downloads30 - a.downloads30).slice(0, 5);
+    $('#dl-top').innerHTML = top.map((d, i) => `<li><span class="dl-top__rank">${i + 1}</span><span><a class="dl-top__name" href="${App.datasetUrl(d.id)}">${esc(d.title)}</a><span class="dl-top__sub">${App.agencyLabel(d.agency)} · ${d.formats.includes('API') ? 'API' : d.formats[0]}</span></span><span class="dl-top__val">${App.spark(d.weekly, { w: 64, h: 20, color: 'var(--series-1)', fill: false, label: `${d.title} 近 12 週下載` })}${fmt.num(d.downloads30)}</span></li>`).join('');
+  };
+  onResize($('#dl-chart'), drawDl);
+
+  /* ================= [6] 待審上架 ================= */
+  const renderPending = () => {
+    const s = App.stats();
+    const pend = App.pendingApps();
+    const st = s.pendingByStage;
+    const today = App.time(fmt.date(App.now()));
+    const pubToday = DATA.activity.filter((a) => a.kind === 'approve' && a.at >= today).length;
+    const avgWait = (status) => {
+      const xs = DATA.datasets.filter((d) => d.status === status);
+      return xs.length ? fmt.days(xs.reduce((sum, d) => sum + (App.now() - d.app.stageAt), 0) / xs.length) : '—';
+    };
+    const box = (label, n, sub, tone, unit = '件') => `<div class="stage" data-tone="${n ? tone : ''}"><span class="stage__label">${label}</span><span class="stage__n">${n}<small>${unit}</small></span><span class="stage__sub">${sub}</span></div>`;
+    const link = (active) => `<span class="flow__link" data-state="${active ? 'active' : 'todo'}" aria-hidden="true"></span>`;
+    const drafts = (s.byStatus.draft || 0) + s.returned;
+    $('#stage-strip').innerHTML =
+      box('上架申請', drafts, `草稿 ${s.byStatus.draft || 0} · 退回補正 ${s.returned}`, '') + link(st.validating > 0) +
+      box('自動驗證', st.validating, `平均 ${avgWait('validating')}`, 'ok') + link(st.review > 0) +
+      box('承辦審核', st.review, `平均 ${avgWait('review')}`, 'info') + link(st.approval > 0) +
+      box('資料長核定', st.approval, `平均 ${avgWait('approval')}`, 'cdo') + link(pubToday > 0) +
+      box('今日發布', pubToday, '核定後自動上架', 'ok', '個');
+    $('#pend-label').textContent = `${pend.length} 件待審 · 上架申請 → 自動驗證 → 承辦審核 → 資料長核定 → 發布`;
+    App.cell.badge($('#c-pending'), pend.length ? String(pend.length) : null, 'accent');
+    $('#pend-body').innerHTML = pend.length ? pend.map((d) => {
+      const waited = App.now() - d.app.submitted;
+      const inStage = App.now() - d.app.stageAt;
+      const owner = d.status === 'approval' ? 'chou' : d.app.assignee;
+      const action = d.status === 'review'
+        ? `<button type="button" class="btn btn--sm btn--primary" data-act="review" data-id="${d.id}">${icon('check', 'i--sm')}審核</button>`
+        : d.status === 'approval'
+          ? `<button type="button" class="btn btn--sm" data-act="remind" data-id="${d.id}">${icon('bell', 'i--sm')}提醒資料長</button>`
+          : `<a class="btn btn--sm btn--ghost" href="${App.datasetUrl(d.id)}">${icon('eye', 'i--sm')}檢視驗證</a>`;
+      return `<tr data-stream>
+        <td data-label="案號"><span class="mono strong">${esc(d.app.no)}</span><span class="table__sub" style="display:block">${fmt.dateTime(d.app.submitted)} 送件</span></td>
+        <td data-label="資料集"><a class="table__title" href="${App.datasetUrl(d.id)}">${esc(d.title)}</a><span class="table__sub" style="display:block">${App.agencyLabel(d.agency)} · ${esc(App.person(d.app.by).name)}</span></td>
+        <td data-label="階段">${App.statusBadge(d.status, { pill: true })}</td>
+        <td data-label="等候"><span class="wait${waited > 5 * 864e5 ? ' is-long' : ''}">共 ${fmt.days(waited)}</span><span class="table__sub" style="display:block">本階段 ${fmt.days(inStage)}</span></td>
+        <td data-label="負責人">${App.personChip(owner)}</td>
+        <td data-label=""><div class="row-actions">${action}</div></td></tr>`;
+    }).join('') : `<tr><td colspan="6">${App.emptyState({ title: '沒有待審案件', text: '新的上架申請送出後會出現在這裡。' })}</td></tr>`;
+  };
+  const openReview = (d) => {
+    const rules = App.rules(d);
+    const cnt = (k) => rules.filter((r) => r.state === k).length;
+    const m = App.modal({
+      title: `審核「${d.title}」`,
+      eyebrow: `${d.app.no} · ${App.AGENCIES[d.agency].full}`,
+      icon: 'check', size: 'md',
+      body: `<div class="review-sum">${App.ring(d.quality, { size: 72, stroke: 9 })}<div>
+          <p><b class="strong">自動驗證品質 ${d.quality} 分</b>（${App.grade(d.quality)} 級）· ${fmt.num(d.rows)} 列 × ${d.cols} 欄</p>
+          <div class="review-sum__rules"><span class="badge badge--ok">${icon('check', 'i--sm')}通過 ${cnt('pass')}</span>${cnt('warn') ? `<span class="badge badge--warn">${icon('alert', 'i--sm')}警示 ${cnt('warn')}</span>` : ''}${cnt('fail') ? `<span class="badge badge--err">失敗 ${cnt('fail')}</span>` : ''}<span class="badge badge--muted">略過 ${cnt('skip')}</span></div>
+        </div></div>
+        ${rules.filter((r) => r.state === 'warn' || r.state === 'fail').map((r) => `<div class="callout" data-tone="${r.state === 'fail' ? 'err' : 'warn'}" style="margin-bottom:12px">${icon('alert')}<div><b>${esc(r.name)}</b>：${esc(r.detail)}</div></div>`).join('')}
+        <div class="field" id="review-field">
+          <label class="label" for="review-note">審核意見 <span class="label__sub">退回時必填</span></label>
+          <textarea class="textarea" id="review-note" rows="3" placeholder="例：欄位說明完整，座標抽查 20 筆無誤。"></textarea>
+          <p class="field__error">${icon('alert', 'i--sm')}退回補正需說明原因，機關才知道要修正什麼。</p>
+        </div>`,
+      note: `送件人 ${App.person(d.app.by).name} · 已等候 ${fmt.days(App.now() - d.app.submitted)}`,
+      actions: [
+        { label: '退回補正', variant: 'danger', icon: 'undo', onClick: (close) => {
+          const note = $('#review-note', m.body).value.trim();
+          const field = $('#review-field', m.body);
+          field.classList.toggle('is-invalid', !note);
+          if (!note) { $('#review-note', m.body).focus(); return; }
+          close();
+          const t = App.transition(d.id, 'returned', { note });
+          App.toast(`已退回「${d.title}」補正`, { tone: 'warn', desc: `已通知 ${App.person(d.app.by).name}`, action: { label: '復原', onClick: () => t.undo() } });
+        } },
+        { label: '審核通過，送資料長', variant: 'primary', icon: 'send', autofocus: true, onClick: (close) => {
+          const note = $('#review-note', m.body).value.trim();
+          close();
+          const t = App.transition(d.id, 'approval', { note: note || '欄位與驗證結果無誤。' });
+          App.toast(`「${d.title}」已送資料長核定`, { desc: `${d.app.no} · 周敬言 將收到通知`, action: { label: '復原', onClick: () => t.undo() } });
+        } },
+      ],
+    });
+    App.watchRings(m.body);
+  };
+  $('#c-pending').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const d = App.dataset(b.dataset.id);
+    if (b.dataset.act === 'review') openReview(d);
+    if (b.dataset.act === 'remind') {
+      const entry = App.log({ kind: 'notify', ds: d.id, text: '提醒資料長核定「{ds}」', detail: `${d.app.no} · 已在核定階段 ${fmt.days(App.now() - d.app.stageAt)}` });
+      App.toast('已提醒資料長 周敬言', { tone: 'info', desc: `${d.title} · ${d.app.no}`, action: { label: '復原', onClick: () => App.unlog(entry) } });
+    }
+  });
+
+  /* ================= [7] 最近活動 ================= */
+  const KIND = {
+    publish: { icon: 'globe', group: 'publish' }, schedule: { icon: 'clock', group: 'publish' },
+    fail: { icon: 'alert', group: 'fail' }, notify: { icon: 'bell', group: 'fail' },
+    review: { icon: 'check', group: 'review' }, approve: { icon: 'shield', group: 'review' }, return: { icon: 'undo', group: 'review' },
+    submit: { icon: 'send', group: 'submit' }, draft: { icon: 'file', group: 'submit' },
+  };
+  let feedKind = 'all', feedAll = false, feedTop = DATA.activity[0] && DATA.activity[0].id;
+  const renderFeed = () => {
+    const list = DATA.activity.filter((a) => feedKind === 'all' || KIND[a.kind].group === feedKind);
+    const shown = feedAll ? list : list.slice(0, 8);
+    const prevTop = feedTop;
+    feedTop = DATA.activity[0] && DATA.activity[0].id;
+    $('#feed-label').textContent = `${list.length} 筆${feedKind === 'all' ? '' : '（已篩選）'}`;
+    $('#feed').innerHTML = shown.length ? shown.map((a) => {
+      const who = App.person(a.actor);
+      const fresh = prevTop && a.at > (DATA.activity.find((x) => x.id === prevTop) || { at: Infinity }).at;
+      return `<li class="feed__item${fresh ? ' is-new' : ''}" data-stream><span class="feed__icon" data-kind="${a.kind}">${icon(KIND[a.kind].icon, 'i--sm')}</span>` +
+        `<div class="feed__body"><b>${esc(who.name)}</b> ${dsText(a)}${a.detail ? `<span class="feed__detail">${esc(a.detail)}</span>` : ''}</div>` +
+        `<time class="feed__time" datetime="${new Date(a.at).toISOString()}" title="${fmt.full(a.at)}">${fmt.rel(a.at)}</time></li>`;
+    }).join('') : `<li>${App.emptyState({ title: '這個類型目前沒有活動' })}</li>`;
+    const more = $('#feed-more');
+    more.hidden = list.length <= 8;
+    more.textContent = feedAll ? '收合' : `顯示全部 ${list.length} 筆`;
+    more.setAttribute('aria-expanded', feedAll ? 'true' : 'false');
+  };
+  $('#feed-filter').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-kind]');
+    if (!b) return;
+    feedKind = b.dataset.kind;
+    $$('#feed-filter button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    renderFeed();
+  });
+  $('#feed-more').addEventListener('click', () => { feedAll = !feedAll; renderFeed(); });
+  setInterval(() => $$('#feed .feed__time').forEach((t) => { t.textContent = fmt.rel(Date.parse(t.getAttribute('datetime'))); }), 30000);
+
+  /* ================= 左欄：下一批次倒數 ================= */
+  const tickBatch = () => {
+    const t = App.now();
+    const next = Math.ceil(t / 36e5) * 36e5;
+    const left = next - t;
+    $('#next-batch-at').textContent = fmt.time(next);
+    $('#next-batch span').textContent = fmt.countdown(left);
+    $('#next-batch-bar').style.transform = `scaleX(${(1 - left / 36e5).toFixed(4)})`;
+  };
+  tickBatch();
+  setInterval(tickBatch, 1000);
+
+  /* ================= 文件層級動作 ================= */
+  $('#run-all').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    await App.cell.runAll();
+    b.disabled = false;
+    App.toast('全部 cell 已重新執行', { desc: `共 7 格 · 執行序號到 [${App.cell.count}]` });
+  });
+  $('#toggle-code').addEventListener('click', (e) => {
+    const on = e.currentTarget.getAttribute('aria-checked') !== 'true';
+    e.currentTarget.setAttribute('aria-checked', on ? 'true' : 'false');
+    App.cell.foldAll(!on);
+  });
+  $('#export').addEventListener('click', () => {
+    App.toast('報告已排入匯出', { tone: 'info', desc: `營運總覽_${fmt.date(App.now()).replace(/-/g, '')}.pdf · 完成後寄至 ${App.ME.name} 的信箱` });
+  });
+
+  /* ================= 重新執行時重算輸出、資料異動時同步重繪 ================= */
+  const renderAll = () => { renderLead(); renderKpis(true); renderJobs(); renderQuality(); renderPending(); renderFeed(); };
+  App.cell.define('c-health', { run: () => renderKpis(false) });
+  App.cell.define('c-pipeline', { run: () => renderRuns(true) });
+  App.cell.define('c-jobs', { run: () => { renderJobs(); return { state: DATA.jobs.length ? 'warn' : 'done' }; } });
+  App.cell.define('c-quality', { run: () => renderQuality(true) });
+  App.cell.define('c-downloads', { run: () => { drawDl(); renderTop(); } });
+  App.cell.define('c-pending', { run: renderPending });
+  App.cell.define('c-activity', { run: renderFeed });
+  App.on('data', (d) => {
+    // 管線自動寫入的排程紀錄只影響 feed；其餘異動全部重繪，確保計數、徽章、摘要一致
+    if (d && d.type === 'activity' && d.entry && d.entry.actor === 'system' && d.entry.kind === 'publish' && !d.undo) { renderFeed(); return; }
+    renderAll();
+  });
+
+  renderLead();
+  renderKpis(false);
+  renderRuns(true);
+  renderJobs();
+  renderQuality(true);
+  drawDl();
+  renderTop();
+  renderPending();
+  renderFeed();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件列表 — 澄港市 1999 陳情案件管理系統</title>
+<meta name="description" content="澄港市 1999 市民熱線陳情案件列表：處理流程管線、類別與時限篩選、即時計數、卡片與列表切換、多選批次派案。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300..900&family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     cases.html 專屬樣式（前綴 cl-）
+     ===================================================================== */
+
+  /* ---------- 頁首 ---------- */
+  .cl-titlerow { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; }
+  .cl-badge {
+    position: relative; display: grid; place-items: center; align-content: center;
+    width: 78px; height: 78px; flex-shrink: 0; color: var(--tertiary-container);
+  }
+  .cl-badge .shape { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform var(--spring-slow-dur) var(--spring-bouncy); }
+  .cl-badge:hover .shape { transform: rotate(50deg) scale(1.06); }
+  .cl-badge b { position: relative; font-family: var(--font-num); font-size: 30px; font-weight: 800; font-stretch: 42%; line-height: .95; color: var(--on-tertiary-container); font-variant-numeric: tabular-nums; }
+  .cl-badge small { position: relative; font-size: 11px; font-weight: 800; color: var(--tertiary); letter-spacing: .06em; }
+  .page-head__desc .cl-d-warn { color: var(--warn); }
+  .page-head__desc .cl-d-over { color: var(--error); }
+
+  /* ---------- 處理流程管線（招牌：形狀大小＝件數，點選即篩選，狀態異動時形狀沿弧線飛行） ---------- */
+  .cl-flowpanel { padding: 20px 24px 14px; }
+  .cl-flowpanel .panel__head { margin-bottom: 8px; }
+  .cl-flowpanel .panel__title { font-size: var(--fs-title-m); }
+  .cl-flow {
+    --stage: 118px;
+    position: relative;
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: 8px; row-gap: 0;
+  }
+  /* 流向線：穿過六個形狀中心的波浪，持續往右流動，表示案件往下一階段推進 */
+  .cl-flow__line {
+    position: absolute; z-index: 0; pointer-events: none; overflow: hidden;
+    left: calc(100% / 12); right: calc(100% / 12);
+    top: calc(8px + var(--stage) / 2 - 8px); height: 16px;
+  }
+  .cl-flow__line::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: -28px; right: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='16' viewBox='0 0 28 16'%3E%3Cpath d='M0 8Q7 1 14 8T28 8' fill='none' stroke='%23CDBDF0' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") repeat-x 0 50% / 28px 16px;
+    animation: cl-flow 1.5s linear infinite;
+  }
+  @keyframes cl-flow { to { transform: translateX(28px); } }
+
+  .cl-node {
+    position: relative; z-index: 1; min-width: 0;
+    display: grid; justify-items: center; align-content: start; gap: 1px;
+    padding: 8px 4px 12px; border: 0; border-radius: 30px;
+    background: transparent; color: inherit; font: inherit; text-align: center; cursor: pointer;
+    transition: background-color .25s var(--ease-effects), border-radius var(--spring-fast-dur) var(--spring-fast);
+  }
+  .cl-node:hover { background: color-mix(in srgb, var(--s) 9%, transparent); }
+  .cl-node[aria-pressed="true"] { background: color-mix(in srgb, var(--s-container) 70%, transparent); border-radius: 22px; }
+  .cl-node:focus-visible { outline-offset: 0; border-radius: 22px; }
+  .cl-node__stage { position: relative; display: grid; place-items: center; width: var(--stage); height: var(--stage); margin-bottom: 8px; }
+  .cl-node__shape {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    color: var(--s-container);
+    transform: scale(var(--k, .6));
+    transition: transform var(--spring-slow-dur) var(--spring-bouncy), color .35s var(--ease-effects);
+  }
+  .cl-node:hover .cl-node__shape { transform: scale(calc(var(--k, .6) * 1.06)) rotate(14deg); }
+  .cl-node.is-on .cl-node__shape { color: var(--s); }
+  .cl-node__num {
+    position: relative; font-family: var(--font-num); font-weight: 800; font-stretch: 34%;
+    font-size: 46px; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums;
+    color: var(--on-s-container); transition: color .3s var(--ease-effects);
+  }
+  .cl-node.is-on .cl-node__num { color: #fff; }
+  .cl-node__tick {
+    position: absolute; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+    right: calc((1 - var(--k, .6)) * var(--stage) / 2 - 4px); top: calc((1 - var(--k, .6)) * var(--stage) / 2 - 4px);
+    background: var(--on-surface); color: var(--surface);
+    transform: scale(0); transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), right var(--spring-slow-dur) var(--spring-bouncy), top var(--spring-slow-dur) var(--spring-bouncy);
+  }
+  .cl-node__tick .ico { width: 16px; height: 16px; }
+  .cl-node[aria-pressed="true"] .cl-node__tick { transform: scale(1); }
+  .cl-node__name { font-size: var(--fs-title-m); font-weight: 800; line-height: 1.3; }
+  .cl-node__step { font-size: var(--fs-label-m); font-weight: 650; color: var(--on-surface-variant); line-height: 1.4; }
+  .cl-node__step b { font-family: var(--font-num); font-weight: 800; color: var(--s); filter: brightness(.82); margin-right: 3px; }
+  .cl-node__meta { margin-top: 5px; font-size: var(--fs-body-s); color: var(--on-surface-variant); line-height: 1.45; min-height: 1.45em; font-variant-numeric: tabular-nums; }
+  .cl-node__meta b { font-family: var(--font-num); font-weight: 800; color: var(--on-surface); }
+  .cl-node__meta .cl-over { color: var(--error); }
+  /* 以片段為單位換行，窄欄時不會把「12 時 30 分」從中間拆開 */
+  .cl-seg { display: inline-block; white-space: nowrap; }
+  .cl-seg + .cl-seg { margin-left: .35em; }
+
+  /* 「處理中」括號：一次選取已派案～區隊處理三個階段（對應總覽 KPI 與 ?status=active） */
+  .cl-bracket {
+    grid-column: 2 / span 3; grid-row: 2;
+    position: relative; display: flex; justify-content: center; align-items: flex-end;
+    height: 40px; margin-top: -2px; padding: 0; border: 0; background: none;
+    color: var(--on-surface-variant); font: inherit; cursor: pointer;
+  }
+  .cl-bracket::before {
+    content: ""; position: absolute; left: calc(100% / 6); right: calc(100% / 6); top: 0; height: 22px;
+    border: 2px solid var(--outline-variant); border-top: 0; border-radius: 0 0 20px 20px;
+    transition: border-color .25s;
+  }
+  .cl-bracket__label {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 14px; border-radius: var(--r-full);
+    background: var(--surface-container-low); font-size: var(--fs-label-l); font-weight: 750;
+    transition: background-color .2s, color .2s, border-radius var(--spring-fast-dur) var(--spring-fast);
+  }
+  .cl-bracket__label b { font-family: var(--font-num); font-weight: 800; font-stretch: 70%; font-size: 16px; color: var(--on-surface); }
+  .cl-bracket:hover .cl-bracket__label { background: var(--surface-container-high); }
+  .cl-bracket[aria-pressed="true"]::before { border-color: var(--primary); }
+  .cl-bracket[aria-pressed="true"] .cl-bracket__label { background: var(--primary); color: var(--on-primary); border-radius: var(--r-md); }
+  .cl-bracket[aria-pressed="true"] .cl-bracket__label b { color: inherit; }
+  .cl-bracket:focus-visible { outline: none; }
+  .cl-bracket:focus-visible .cl-bracket__label { outline: 3px solid var(--primary); outline-offset: 2px; }
+
+  /* 飛行中的狀態形狀（派案、復原、新建案時） */
+  .cl-particle {
+    position: absolute; z-index: 5; width: 28px; height: 28px; margin: -14px 0 0 -14px;
+    color: var(--s); pointer-events: none;
+    filter: drop-shadow(0 3px 6px rgb(33 0 93 / .28));
+    transition: color .3s var(--ease-effects);
+  }
+  .cl-particle .shape { width: 100%; height: 100%; }
+
+  /* ---------- 工作區：篩選 + 結果 ---------- */
+  .cl-work { margin-top: var(--gap); padding: 22px 24px 30px; }
+  .cl-filters { display: grid; gap: 14px; }
+  .cl-filters__row { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 12px; }
+  .cl-search .tf__input { padding-right: 52px; }
+  .cl-search .tf__input::-webkit-search-cancel-button { display: none; }
+  .icon-btn.cl-search__clear { position: absolute; right: 8px; top: 8px; }
+  .cl-chiprow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+  .cl-chipgroup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .cl-chipgroup__label { flex-shrink: 0; font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); letter-spacing: .06em; }
+  .cl-chipgroup .chip-set { flex-wrap: wrap; }
+  .chip[data-tone="ok"]     { --c: var(--secondary-vivid); --c-container: var(--secondary-container); --c-ink: var(--on-secondary-container); }
+  .chip[data-tone="soon"]   { --c: var(--warn-vivid); --c-container: var(--warn-container); --c-ink: var(--on-warn-container); }
+  .chip[data-tone="over"]   { --c: var(--error); --c-container: var(--error-container); --c-ink: var(--on-error-container); }
+  .chip[data-tone="urgent"] { --c: var(--error); --c-container: var(--error-container); --c-ink: var(--on-error-container); }
+
+  .cl-active { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding-top: 2px; }
+  .cl-active__label { font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); letter-spacing: .06em; }
+  .cl-active .chip--input { height: 32px; border-radius: var(--r-sm); background: var(--surface-container-lowest); border-color: var(--outline-variant); color: var(--on-surface); font-size: var(--fs-label-m); }
+
+  /* 結果列：捲動時黏在頂列下方，保留計數、全選、排序、檢視切換 */
+  .cl-bar {
+    --tf-bg: var(--surface-container-low);
+    position: sticky; top: var(--topbar-h); z-index: 6;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px;
+    margin: 18px -24px 0; padding: 12px 24px;
+    background: var(--surface-container-low);
+    transition: box-shadow .25s var(--ease-effects), background-color .25s;
+  }
+  .cl-bar.is-stuck { --tf-bg: var(--surface-container); background: var(--surface-container); box-shadow: 0 1px 0 var(--outline-variant), 0 8px 16px -12px rgb(33 0 93 / .25); }
+  .cl-pagechk { font-weight: 700; white-space: nowrap; }
+  .cl-pagechk input:disabled { opacity: .4; cursor: not-allowed; }
+  .cl-count { display: flex; align-items: baseline; gap: 8px; margin-right: auto; white-space: nowrap; }
+  .cl-count__num { font-family: var(--font-num); font-size: 30px; font-weight: 800; font-stretch: 48%; line-height: 1; color: var(--primary); }
+  .cl-count__unit { font-weight: 800; }
+  .cl-count small { font-size: var(--fs-body-s); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .cl-sort { width: 236px; }
+  .cl-banner {
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 10px;
+    margin-top: 12px; padding: 8px 16px; border-radius: var(--r-lg);
+    background: var(--primary-container); color: var(--on-primary-container); font-weight: 650;
+  }
+  .cl-banner .btn { height: 32px; }
+
+  /* ---------- 卡片 ---------- */
+  .cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; margin-top: 14px; }
+  .cl-card {
+    --tf-bg: var(--surface-container-lowest);
+    position: relative; min-width: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px 18px 15px;
+    border-radius: 28px; background: var(--surface-container-lowest);
+    transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), border-radius var(--spring-fast-dur) var(--spring-fast), background-color .25s, box-shadow .25s;
+  }
+  .cl-card:hover { box-shadow: var(--elev-2); }
+  .cl-card.is-selected { border-radius: 16px; background: color-mix(in srgb, var(--primary-container) 52%, var(--surface-container-lowest)); box-shadow: inset 0 0 0 2px var(--primary); }
+  .cl-card.is-urgent::before { content: ""; position: absolute; left: 0; top: 22px; width: 4px; height: 44px; border-radius: 0 4px 4px 0; background: var(--error); }
+  .cl-card__head { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+  .cl-card__ids { display: grid; min-width: 0; line-height: 1.35; }
+  .cl-card__sub { font-size: var(--fs-body-s); color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cl-id { font-family: var(--font-num); font-size: 15px; font-weight: 750; font-stretch: 86%; letter-spacing: .02em; color: var(--on-surface); font-variant-numeric: tabular-nums; }
+
+  /* 選取鈕＝類別形狀；選中時 morph 成 cookie12 並出現勾號（形狀即狀態） */
+  .cl-sel {
+    position: relative; z-index: 2; display: grid; place-items: center;
+    width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%;
+    background: none; color: var(--c); cursor: pointer;
+  }
+  .cl-sel__shape { position: absolute; inset: 0; width: 100%; height: 100%; transition: color .3s var(--ease-effects), transform var(--spring-bouncy-dur) var(--spring-bouncy); }
+  .cl-card:hover .cl-sel__shape { transform: rotate(18deg); }
+  .cl-sel:hover .cl-sel__shape { transform: rotate(24deg) scale(1.08); }
+  .cl-sel__check, .cl-rowshape .cl-sel__check {
+    position: relative; width: 22px; height: 22px; color: #fff;
+    opacity: 0; transform: scale(.4) rotate(-40deg);
+    transition: opacity .18s, transform var(--spring-bouncy-dur) var(--spring-bouncy);
+  }
+  .cl-sel:hover .cl-sel__check { opacity: .75; transform: scale(.8); }
+  .cl-sel[aria-pressed="true"] .cl-sel__shape { color: var(--primary); }
+  .cl-sel[aria-pressed="true"] .cl-sel__check { opacity: 1; transform: none; }
+  .cl-sel:focus-visible { outline-offset: 1px; border-radius: 50%; }
+
+  .cl-card__title { font-size: var(--fs-title-m); font-weight: 800; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cl-card__title a { color: inherit; text-decoration: none; }
+  .cl-card__title a::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+  .cl-card__title a:hover { color: var(--primary); }
+  .cl-card__title a:focus-visible { outline: none; }
+  .cl-card__title a:focus-visible::after { outline: 3px solid var(--primary); outline-offset: 2px; }
+  .cl-card__place { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: -4px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cl-card__place .ico { flex-shrink: 0; opacity: .8; }
+  .cl-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cl-flags:empty { display: none; }
+  .cl-flags .tag { height: 24px; padding: 0 8px; font-size: 12px; }
+  .cl-flags .tag .ico { width: 14px; height: 14px; }
+  .cl-card__sla { display: grid; gap: 7px; margin-top: auto; padding-top: 2px; }
+  .cl-card__slahead { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 650; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .cl-card__slarow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+  .cl-act { position: relative; z-index: 2; display: inline-flex; }
+  .cl-card__unit { display: flex; align-items: center; gap: 6px; min-width: 0; padding-top: 10px; border-top: 1px dashed var(--outline-variant); font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cl-card__unit .ico { flex-shrink: 0; }
+  .cl-card__unit b { color: var(--on-surface); font-weight: 750; }
+
+  /* SLA 剩餘時間條（M3 線性進度：作用段 + 間隙 + 軌道 + 終點圓點） */
+  .cl-slabar { --sv: var(--secondary-vivid); --st: var(--secondary-container); display: flex; align-items: center; gap: 4px; height: 8px; }
+  .cl-slabar__act { display: block; flex: 0 0 auto; width: max(8px, calc(var(--f, 1) * (100% - 12px))); height: 8px; border-radius: 4px; background: var(--sv); }
+  .cl-slabar__track { display: block; flex: 1; min-width: 0; height: 8px; border-radius: 4px; background: var(--st); }
+  .cl-slabar::after { content: ""; flex-shrink: 0; width: 4px; height: 4px; border-radius: 50%; background: var(--sv); }
+  .cl-slabar[data-state="soon"] { --sv: var(--warn-vivid); --st: var(--warn-container); }
+  .cl-slabar[data-state="over"] { --sv: var(--error); --st: var(--error-container); }
+  .cl-slabar[data-state="over"] .cl-slabar__act { display: none; }
+  .cl-slabar[data-state="over"] .cl-slabar__track { background: repeating-linear-gradient(-45deg, var(--error-container) 0 6px, color-mix(in srgb, var(--error) 30%, var(--error-container)) 6px 10px); }
+  .cl-slabar[data-state="done"] { --sv: var(--success-vivid); }
+  .cl-slabar[data-state="late"] { --sv: color-mix(in srgb, var(--error) 55%, var(--outline-variant)); }
+  .cl-slabar[data-state="done"] .cl-slabar__track, .cl-slabar[data-state="late"] .cl-slabar__track, .cl-slabar[data-state="done"]::after, .cl-slabar[data-state="late"]::after { display: none; }
+  .cl-slabar[data-state="done"] .cl-slabar__act, .cl-slabar[data-state="late"] .cl-slabar__act { flex: 1; width: auto; }
+
+  .cl-hl { background: var(--tertiary-container); color: var(--on-tertiary-container); border-radius: 4px; padding: 0 2px; }
+
+  /* ---------- 列表（segmented rows：中間小圓角、首尾大圓角，hover / 選取時圓角 morph） ---------- */
+  .cl-tablewrap { margin-top: 10px; overflow-x: auto; }
+  .cl-table { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0 3px; font-size: var(--fs-body-m); }
+  .cl-table thead th {
+    padding: 6px 14px 6px; text-align: left; white-space: nowrap;
+    font-size: var(--fs-label-m); font-weight: 750; color: var(--on-surface-variant);
+  }
+  .cl-table td {
+    padding: 12px 14px; vertical-align: middle;
+    background: var(--surface-container-lowest);
+    transition: background-color .2s, border-radius var(--spring-fast-dur) var(--spring-fast);
+  }
+  .cl-table td:first-child { border-radius: 8px 0 0 8px; padding-left: 16px; padding-right: 4px; }
+  .cl-table td:last-child { border-radius: 0 8px 8px 0; padding-right: 16px; text-align: right; }
+  .cl-table tbody tr:first-child td:first-child { border-top-left-radius: 24px; }
+  .cl-table tbody tr:first-child td:last-child { border-top-right-radius: 24px; }
+  .cl-table tbody tr:last-child td:first-child { border-bottom-left-radius: 24px; }
+  .cl-table tbody tr:last-child td:last-child { border-bottom-right-radius: 24px; }
+  .cl-row { cursor: pointer; }
+  .cl-row:hover td { background: color-mix(in srgb, var(--primary) 4%, var(--surface-container-lowest)); }
+  .cl-row:hover td:first-child, .cl-row.is-selected td:first-child { border-radius: 24px 0 0 24px; }
+  .cl-row:hover td:last-child, .cl-row.is-selected td:last-child { border-radius: 0 24px 24px 0; }
+  .cl-row.is-selected td { background: color-mix(in srgb, var(--primary-container) 55%, var(--surface-container-lowest)); }
+  .cl-row.is-urgent td:first-child { box-shadow: inset 4px 0 0 var(--error); }
+  .cl-td-sel { width: 44px; }
+  .cl-td-sel .check { padding: 10px; margin: -10px; }
+  .cl-td-id { width: 150px; white-space: nowrap; }
+  .cl-td-id > span { vertical-align: middle; }
+  .cl-rowshape { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 10px; color: var(--c); }
+  .cl-rowshape .shape { position: absolute; inset: 0; width: 100%; height: 100%; transition: color .3s; }
+  .cl-rowshape .cl-sel__check { width: 18px; height: 18px; }
+  .cl-row.is-selected .cl-rowshape { color: var(--primary); }
+  .cl-row.is-selected .cl-rowshape .cl-sel__check { opacity: 1; transform: none; }
+  .cl-td-id__txt { display: inline-grid; line-height: 1.3; }
+  .cl-td-id__txt small, .cl-td-time small, .cl-td-unit small { font-size: 12px; color: var(--on-surface-variant); }
+  .cl-td-main { min-width: 0; }
+  .cl-row__title { display: block; color: var(--on-surface); font-weight: 750; text-decoration: none; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+  .cl-row__title:hover { color: var(--primary); text-decoration: underline; }
+  .cl-row__place { display: block; font-size: var(--fs-body-s); color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px; }
+  .cl-td-main .cl-flags { margin-top: 6px; }
+  .cl-td-status { width: 120px; }
+  .cl-td-sla { width: 176px; }
+  .cl-td-unit { width: 168px; line-height: 1.35; }
+  .cl-td-unit b { display: block; font-weight: 700; font-size: var(--fs-body-s); }
+  .cl-td-unit .cl-unit--none { color: var(--tertiary); }
+  .cl-td-time { width: 112px; line-height: 1.35; white-space: nowrap; }
+  .cl-td-time span { display: block; font-weight: 650; }
+  .cl-td-time small { display: block; }
+  .cl-td-act { width: 96px; white-space: nowrap; }
+  .cl-td-act .btn, .cl-td-act .icon-btn { position: relative; }
+
+  /* ---------- 載入更多 / 空狀態 ---------- */
+  .cl-more { display: grid; justify-items: center; gap: 12px; margin-top: 26px; }
+  .cl-more__meter { display: flex; align-items: center; gap: 14px; font-size: var(--fs-body-s); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .cl-more__meter b { font-family: var(--font-num); color: var(--on-surface); font-weight: 800; }
+  .cl-more__wave { width: 220px; height: 18px; }
+  .cl-more .btn .loader { margin-left: -6px; }
+  .cl-empty { display: grid; justify-items: center; gap: 4px; margin-top: 14px; padding: 8px 20px 32px; border-radius: 28px; background: var(--surface-container-lowest); }
+
+  /* ---------- 批次操作列（M3 Expressive floating toolbar；黏在結果區底部） ---------- */
+  .cl-dock { position: sticky; bottom: 24px; z-index: 8; height: 0; display: flex; justify-content: center; pointer-events: none; }
+  /* 開啟時在結果區尾端保留自己的高度，捲到底時才不會蓋住最後一列、載入更多或空狀態按鈕 */
+  .cl-dock.is-open { height: 84px; }
+  .cl-batch.is-open { pointer-events: auto; }
+  .cl-batch {
+    position: absolute; bottom: 0;
+    display: flex; align-items: center; gap: 8px;
+    max-width: 100%; padding: 8px 10px 8px 8px;
+    border-radius: var(--r-full);
+    background: var(--primary); color: var(--on-primary);
+    box-shadow: var(--elev-4);
+    opacity: 0; visibility: hidden; transform: translateY(calc(100% + 48px)) scale(.86);
+    transition: transform var(--spring-default-dur) var(--spring-default), opacity .18s, visibility 0s linear .4s;
+  }
+  .cl-batch.is-open {
+    opacity: 1; visibility: visible; transform: none;
+    transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), opacity .2s, visibility 0s;
+  }
+  .cl-batch :focus-visible { outline-color: #fff; }
+  .cl-batch .icon-btn { color: #fff; }
+  .cl-batch__badge { position: relative; display: grid; place-items: center; width: 46px; height: 46px; flex-shrink: 0; color: #fff; }
+  .cl-batch__badge .shape { position: absolute; inset: 0; width: 100%; height: 100%; animation: spin 14s linear infinite; }
+  .cl-batch__badge b { position: relative; font-family: var(--font-num); font-size: 21px; font-weight: 800; font-stretch: 55%; color: var(--primary); }
+  .cl-batch__label { display: grid; line-height: 1.25; margin-right: 6px; white-space: nowrap; }
+  .cl-batch__label b { font-weight: 800; }
+  .cl-batch__label small { font-size: 12px; opacity: .82; }
+  .cl-batch__sep { width: 1px; height: 28px; background: rgb(255 255 255 / .28); margin: 0 4px; }
+  .cl-batch .btn { height: 44px; }
+  .cl-batch__ghost { --btn-bg: rgb(255 255 255 / .12); --btn-fg: #fff; }
+  .cl-batch .btn:disabled { --btn-bg: rgb(255 255 255 / .1); --btn-fg: rgb(255 255 255 / .5); }
+  .cl-batch__n { min-width: 22px; height: 22px; padding: 0 6px; margin-right: -6px; border-radius: 11px; background: var(--primary); color: #fff; font: 800 12px/22px var(--font-num); text-align: center; }
+  .cl-batch__ghost .cl-batch__n { background: rgb(255 255 255 / .22); }
+  .cl-batch .btn:disabled .cl-batch__n { display: none; }
+  /* 有選取時：snackbar 往上讓位，避免蓋住工具列 */
+  body.cl-selecting > .toast-host { bottom: 112px; }
+
+  /* ---------- 中尺寸 ---------- */
+  @media (max-width: 1199px) {
+    .cl-flow { --stage: 96px; }
+    .cl-node__num { font-size: 38px; }
+  }
+  /* 列表在 1100px 以下改成堆疊列，不需要水平捲動 */
+  @media (max-width: 1099px) {
+    .cl-tablewrap { overflow: visible; }
+    .cl-table, .cl-table tbody { display: block; min-width: 0; width: 100%; }
+    .cl-table thead { display: none; }
+    .cl-table tbody { display: grid; gap: 3px; }
+    .cl-row {
+      display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+      grid-template-areas: "sel id status" "sel main main" "sel sla act" "sel unit unit";
+      gap: 8px 10px; padding: 14px 14px 14px 10px;
+      border-radius: 8px; background: var(--surface-container-lowest);
+      transition: background-color .2s, border-radius var(--spring-fast-dur) var(--spring-fast);
+    }
+    .cl-table tbody tr:first-child { border-radius: 24px 24px 8px 8px; }
+    .cl-table tbody tr:last-child { border-radius: 8px 8px 24px 24px; }
+    .cl-table tbody tr:only-child { border-radius: 24px; }
+    .cl-row:hover, .cl-row.is-selected { border-radius: 24px; }
+    .cl-row.is-selected { background: color-mix(in srgb, var(--primary-container) 55%, var(--surface-container-lowest)); }
+    .cl-row { position: relative; }
+    .cl-row.is-urgent::before { content: ""; position: absolute; left: 0; top: 18px; width: 4px; height: 40px; border-radius: 0 4px 4px 0; background: var(--error); }
+    .cl-table td, .cl-row:hover td, .cl-row.is-selected td { display: block; width: auto; padding: 0; background: none; border-radius: 0 !important; box-shadow: none !important; text-align: left; }
+    .cl-td-sel { grid-area: sel; padding-top: 6px !important; }
+    .cl-td-id { grid-area: id; }
+    .cl-td-status { grid-area: status; justify-self: end; }
+    .cl-td-main { grid-area: main; }
+    .cl-td-sla { grid-area: sla; }
+    .cl-table td.cl-td-act { grid-area: act; justify-self: end; text-align: right; }
+    .cl-td-unit { grid-area: unit; display: flex !important; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+    .cl-td-unit b { display: inline; }
+    .cl-td-time { display: none !important; }
+    .cl-row__title { -webkit-line-clamp: 2; }
+    .cl-row__place { max-width: none; }
+  }
+
+  /* ---------- 手機 ---------- */
+  @media (max-width: 599px) {
+    .cl-badge { width: 64px; height: 64px; }
+    .cl-badge b { font-size: 25px; }
+    .cl-flowpanel { padding: 16px 12px 12px; }
+    .cl-flowpanel .panel__head { padding: 0 4px; flex-wrap: nowrap; align-items: flex-start; }
+    .cl-flowpanel .panel__head > div:not(.panel__actions) { flex: 1; min-width: 0; }
+    .cl-flowpanel .panel__actions { width: auto; margin-left: 0; flex-shrink: 0; }
+    .cl-flowpanel [data-flow-reset]:disabled { display: none; }
+    .cl-flow { --stage: 86px; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 4px; row-gap: 4px; }
+    .cl-flow__line { display: none; }
+    .cl-node { padding: 6px 2px 10px; border-radius: 22px; }
+    .cl-node__stage { margin-bottom: 4px; }
+    .cl-node__num { font-size: 33px; }
+    .cl-node__name { font-size: var(--fs-label-l); }
+    .cl-node__meta { font-size: 11.5px; }
+    .cl-bracket { grid-column: 1 / -1; grid-row: auto; height: auto; margin-top: 4px; }
+    .cl-bracket::before { display: none; }
+    .cl-bracket__label { width: 100%; justify-content: center; height: 40px; background: var(--surface-container-high); }
+
+    .cl-work { padding: 18px 16px 24px; }
+    .cl-filters__row { grid-template-columns: 1fr; }
+    .cl-chiprow { display: grid; gap: 12px; }
+    .cl-chipgroup { display: grid; gap: 6px; }
+    .cl-chipgroup .chip-set { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px 4px; }
+    .cl-chipgroup .chip-set::-webkit-scrollbar { display: none; }
+    .cl-chipgroup .chip-set > .chip { flex-shrink: 0; }
+    .cl-bar { position: static; margin: 16px -16px 0; padding: 4px 16px 0; gap: 12px; }
+    .cl-count { order: -2; width: 100%; }
+    .cl-sort { order: -1; flex: 1 1 100%; width: auto; }
+    .cl-bar .btn-group { margin-left: auto; }
+    .cl-grid { grid-template-columns: 1fr; gap: 10px; }
+    .cl-card { padding: 14px 14px 13px; border-radius: 24px; }
+    .cl-card__head { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; }
+    .cl-sel { width: 44px; height: 44px; }
+    .cl-dock { bottom: calc(var(--navbar-h) + 12px + env(safe-area-inset-bottom, 0px)); }
+    .cl-batch { left: 0; right: 0; gap: 4px; padding: 6px 6px 6px 4px; }
+    .cl-batch__label, .cl-batch__sep { display: none; }
+    .cl-batch .btn { flex-shrink: 0; height: 42px; padding: 0 12px; gap: 6px; }
+    /* 窄螢幕省掉動作圖示，保留文字與件數，確保四個控制項放得下 */
+    .cl-batch [data-batch-dispatch] .ico, .cl-batch [data-batch-urge] .ico { display: none; }
+    .cl-batch .btn[data-batch-dispatch] { margin-left: auto; }
+    .cl-batch .btn[data-batch-export] { width: 42px; padding: 0; }
+    .cl-batch .btn[data-batch-export] .ico { margin: 0; }
+    .cl-batch__badge { width: 40px; height: 40px; }
+    body.cl-selecting .fab { opacity: 0; transform: scale(.7); pointer-events: none; }
+    body.cl-selecting > .toast-host { bottom: calc(var(--navbar-h) + 84px + env(safe-area-inset-bottom, 0px)); }
+  }
+</style>
+</head>
+<body class="app">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="shell">
+  <!-- ===== 導覽軌（手機版自動變成底部導覽列）===== -->
+  <nav class="rail" aria-label="主要導覽">
+    <a class="rail__brand" href="index.html" aria-label="1999 陳情案件管理 總覽">
+      <svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie12"/></svg>
+      <span class="rail__brand-num" aria-hidden="true">1999</span>
+    </a>
+    <ul class="rail__list">
+      <li><a class="rail__item" href="index.html" data-nav="index"><span class="rail__ind"><svg data-icon="dashboard"></svg></span><span class="rail__label">總覽</span></a></li>
+      <li><a class="rail__item active" href="cases.html" data-nav="cases" aria-current="page"><span class="rail__ind"><svg data-icon="list"></svg><span class="rail__badge" data-count="received" aria-label="待派案件數"></span></span><span class="rail__label">案件列表</span></a></li>
+      <li><a class="rail__item" href="case.html" data-nav="case"><span class="rail__ind"><svg data-icon="detail"></svg></span><span class="rail__label">案件詳情</span></a></li>
+      <li><a class="rail__item" href="intake.html" data-nav="intake"><span class="rail__ind"><svg data-icon="callAdd"></svg></span><span class="rail__label">受理建案</span></a></li>
+    </ul>
+    <a class="rail__back" href="../../index.html"><svg class="ico ico--sm" data-icon="back"></svg>返回目錄</a>
+  </nav>
+
+  <div class="shell__main">
+    <!-- ===== 頂列 ===== -->
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" type="button" data-drawer-open aria-label="開啟選單"><svg data-icon="menu"></svg></button>
+      <div class="topbar__title">
+        <span class="topbar__org">澄港市 1999 市民熱線</span>
+        <span class="topbar__sys">陳情案件管理系統</span>
+      </div>
+      <form class="search" role="search" data-search action="cases.html">
+        <svg data-icon="search"></svg>
+        <input type="search" name="q" placeholder="搜尋案號、地址、行政區或電話末三碼" aria-label="搜尋案件">
+        <span class="kbd search__kbd" aria-hidden="true">/</span>
+      </form>
+      <div class="topbar__actions">
+        <button class="icon-btn search-toggle" type="button" data-search-toggle aria-label="搜尋案件"><svg data-icon="search"></svg></button>
+        <button class="duty" type="button" data-duty aria-pressed="true" aria-label="接聽狀態"><span class="duty__dot"></span><span data-duty-label>接聽中</span><small>D-02</small></button>
+        <button class="icon-btn" type="button" data-notify aria-label="通知"><svg data-icon="bell"></svg><span class="badge" data-count="notices"></span></button>
+        <button class="avatar-btn" type="button" data-profile aria-label="個人選單：周品妤"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie9"/></svg><span aria-hidden="true">品妤</span></button>
+      </div>
+    </header>
+
+    <main class="page" id="main">
+      <section class="page-head" aria-labelledby="page-title">
+        <div class="page-head__text">
+          <p class="page-head__eyebrow"><span class="live-chip live-chip--teal"><i aria-hidden="true"></i>即時同步</span><span>受理期間 <span data-range>10/20–10/26</span></span><span>更新於 <span data-clock>14:20</span></span></p>
+          <div class="cl-titlerow">
+            <h1 class="page-head__title" id="page-title">案件列表</h1>
+            <span class="cl-badge" title="尚未回覆民眾的案件（待派案＋處理中）">
+              <svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie12"/></svg>
+              <b data-open-n>0</b><small>在辦</small>
+            </span>
+          </div>
+          <p class="page-head__desc">近 7 日共 <b data-count="all">0</b> 件陳情：<b data-count="received">0</b> 件待派案、<b class="cl-d-warn" data-count="soon">0</b> 件即將逾期、<b class="cl-d-over" data-count="over">0</b> 件已逾期。</p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn btn--outlined" type="button" data-export><svg data-icon="download"></svg>匯出 CSV</button>
+          <a class="btn btn--tonal" href="intake.html"><svg data-icon="callAdd"></svg>受理建案</a>
+        </div>
+      </section>
+
+      <!-- 處理流程管線 -->
+      <section class="panel cl-flowpanel" aria-labelledby="flow-title">
+        <header class="panel__head">
+          <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie9"/></svg>
+          <div>
+            <h2 class="panel__title" id="flow-title">處理流程</h2>
+            <p class="panel__sub" data-flow-sub>形狀大小代表件數 · 點選階段即可篩選</p>
+          </div>
+          <div class="panel__actions">
+            <button class="btn btn--text btn--sm" type="button" data-flow-reset disabled><svg data-icon="refresh"></svg>全部階段</button>
+          </div>
+        </header>
+        <div class="cl-flow" data-flow role="group" aria-label="依處理階段篩選">
+          <span class="cl-flow__line" aria-hidden="true"></span>
+        </div>
+      </section>
+
+      <!-- 篩選與結果 -->
+      <section class="panel cl-work" aria-labelledby="work-title">
+        <h2 class="sr-only" id="work-title">案件清單</h2>
+        <div class="cl-filters">
+          <div class="cl-filters__row">
+            <div class="tf tf--lead cl-search">
+              <input class="tf__input" id="cl-q" type="search" placeholder=" " autocomplete="off" enterkeyhint="search">
+              <label class="tf__label" for="cl-q">篩選關鍵字：案號、標題、地址、陳情人、電話末三碼</label>
+              <svg class="tf__lead" data-icon="search"></svg>
+              <button class="icon-btn cl-search__clear" type="button" data-q-clear aria-label="清除關鍵字" hidden><svg data-icon="close"></svg></button>
+            </div>
+            <div class="tf tf--select">
+              <select class="tf__input" id="cl-district" data-district></select>
+              <label class="tf__label" for="cl-district">行政區</label>
+            </div>
+          </div>
+          <div class="cl-chiprow">
+            <div class="cl-chipgroup">
+              <span class="cl-chipgroup__label" id="cat-label">類別</span>
+              <div class="chip-set" role="group" aria-labelledby="cat-label" data-cat-chips></div>
+            </div>
+            <div class="cl-chipgroup">
+              <span class="cl-chipgroup__label" id="sla-label">時限與優先</span>
+              <div class="chip-set" role="group" aria-labelledby="sla-label" data-sla-chips></div>
+            </div>
+          </div>
+          <div class="cl-active" data-active hidden>
+            <span class="cl-active__label">已套用</span>
+            <div class="chip-set" data-active-chips></div>
+            <button class="btn btn--text btn--sm" type="button" data-clear-all>清除全部條件</button>
+          </div>
+        </div>
+
+        <span data-stuck-sentinel aria-hidden="true"></span>
+        <div class="cl-bar" data-bar>
+          <label class="check cl-pagechk"><input type="checkbox" data-select-page><span>全選本頁</span></label>
+          <p class="cl-count"><span class="cl-count__num" data-result-num>0</span><span class="cl-count__unit">件符合</span><small data-result-range></small></p>
+          <div class="tf tf--select tf--sm cl-sort">
+            <select class="tf__input" id="cl-sort" data-sort></select>
+            <label class="tf__label" for="cl-sort">排序</label>
+          </div>
+          <div class="btn-group" role="group" aria-label="檢視方式" data-view>
+            <button type="button" data-value="cards" aria-pressed="true"><svg data-icon="grid"></svg>卡片</button>
+            <button type="button" data-value="rows" aria-pressed="false"><svg data-icon="rows"></svg>列表</button>
+          </div>
+        </div>
+        <div class="cl-banner" data-banner hidden></div>
+        <p class="sr-only" role="status" aria-live="polite" data-live></p>
+
+        <div data-results></div>
+        <div class="cl-empty" data-empty hidden></div>
+
+        <div class="cl-more" data-more>
+          <div class="cl-more__meter"><span data-more-text></span><span class="cl-more__wave" data-more-wave></span></div>
+          <button class="btn btn--tonal" type="button" data-more-btn></button>
+        </div>
+
+        <div class="cl-dock">
+          <div class="cl-batch" role="region" aria-label="批次操作" data-batch inert>
+            <button type="button" class="icon-btn" data-batch-clear aria-label="取消全部選取"><svg data-icon="close"></svg></button>
+            <span class="cl-batch__badge" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="cookie9"/></svg><b data-batch-num>0</b></span>
+            <span class="cl-batch__label"><b>件已選取</b><small data-batch-mix></small></span><span class="sr-only only-sm">件已選取</span>
+            <span class="cl-batch__sep" aria-hidden="true"></span>
+            <button type="button" class="btn btn--white" data-batch-dispatch disabled><svg data-icon="dispatch"></svg>派案<span class="cl-batch__n" data-n-dispatch></span></button>
+            <button type="button" class="btn cl-batch__ghost" data-batch-urge disabled><svg data-icon="bolt"></svg>催辦<span class="cl-batch__n" data-n-urge></span></button>
+            <button type="button" class="btn cl-batch__ghost" data-batch-export disabled aria-label="匯出選取案件"><svg data-icon="download"></svg><span class="hide-sm">匯出</span></button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ===== 頁尾 ===== -->
+    <footer class="footer">
+      <div class="footer__inner">
+        <div class="footer__brand">
+          <span class="footer__mark" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="cookie12"/></svg><b>1999</b></span>
+          <div>
+            <p class="footer__name">澄港市 1999 市民熱線<br>陳情案件管理系統</p>
+            <p class="footer__desc">從話務受理、分類派案、局處承辦到回覆民眾與滿意度回訪，一條流程追到底。</p>
+          </div>
+        </div>
+        <nav class="footer__nav" aria-label="頁尾導覽">
+          <p class="footer__label">頁面</p>
+          <ul>
+            <li><a href="index.html" data-nav="index">總覽</a></li>
+            <li><a href="cases.html" data-nav="cases" aria-current="page">案件列表</a></li>
+            <li><a href="case.html" data-nav="case">案件詳情</a></li>
+            <li><a href="intake.html" data-nav="intake">受理建案</a></li>
+          </ul>
+        </nav>
+        <div class="footer__info">
+          <p class="footer__label">話務中心</p>
+          <p>市民熱線 <b>24 小時</b>服務，派案組 07:00–24:00 輪值</p>
+          <p>系統問題請洽資訊股 分機 <b>3305</b></p>
+          <p>本系統所有案件、人名與電話皆為虛構示範資料</p>
+        </div>
+        <div class="footer__meta">
+          <span>© 2026 澄港市政府 1999 話務中心</span>
+          <span>系統版本 4.12.0 · 資料同步於 <span data-clock>14:20</span></span>
+          <a class="footer__back" href="../../index.html">← 返回目錄</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<button class="fab" type="button" data-fab><svg data-icon="callAdd"></svg><span class="fab__label">受理來電</span></button>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, fmt, CATS, CAT_KEYS, STATUS, FLOW, UNITS, DISTRICTS, DATA, esc } = App;
+  const PAGE = 24;
+  const ACTIVE_SET = ['dispatched', 'bureau', 'field'];
+  const SLA_CHIPS = { ok: ['時限內', 'cookie6'], soon: ['即將逾期', 'sunny'], over: ['已逾期', 'boom'] };
+  const reduce = () => App.reduceMotion();
+
+  /* =====================================================================
+     篩選狀態（記憶體內）；URL 參數只在載入時讀一次
+     file:// 下 history.replaceState 會丟 SecurityError，所以不回寫網址
+     ===================================================================== */
+  const state = { q: '', cats: new Set(), statuses: new Set(), sla: new Set(), district: '', urgent: false, sort: 'urgency', view: 'cards', limit: PAGE };
+  const selected = new Set();
+  let current = [];      // 符合條件、已排序的完整清單
+  let shownIds = [];     // 目前畫面上依序顯示的案號
+  let lastIdx = null;    // Shift 連續選取的起點
+  let terms = [];
+
+  const qp = App.param('q');
+  if (qp) state.q = qp.trim();
+  if (CATS[App.param('cat')]) state.cats.add(App.param('cat'));
+  const sp = App.param('status');
+  if (sp === 'active') ACTIVE_SET.forEach(k => state.statuses.add(k));
+  else if (STATUS[sp]) state.statuses.add(sp);
+  if (SLA_CHIPS[App.param('sla')]) state.sla.add(App.param('sla'));
+  if (App.district(App.param('district'))) state.district = App.param('district');
+  if (App.param('view') === 'rows') state.view = 'rows';
+
+  /* ---------- 比對與排序 ---------- */
+  // 每一輪重算時 App.sla 的結果先快取；undo 會原地覆寫案件物件，所以每輪都要重建快取
+  let slaMemo = new Map();
+  const slaOf = c => {
+    let s = slaMemo.get(c);
+    if (!s) { s = App.sla(c); slaMemo.set(c, s); }
+    return s;
+  };
+  const hit = (c, t) => {
+    const tl = t.toLowerCase();
+    return c.id.toLowerCase().includes(tl) || c.title.includes(t) || c.address.includes(t) || c.district.includes(t)
+      || c.caller.name.includes(t) || c.caller.phone.includes(t) || CATS[c.cat].name.includes(t)
+      || (c.unit ? UNITS[c.unit].full.includes(t) : false) || (c.team || '').includes(t);
+  };
+  // except：計算某個維度的即時計數時，排除該維度本身的條件（faceted count）
+  function matches(c, except = '') {
+    if (except !== 'q' && terms.length && !terms.every(t => hit(c, t))) return false;
+    if (except !== 'cat' && state.cats.size && !state.cats.has(c.cat)) return false;
+    if (except !== 'status' && state.statuses.size && !state.statuses.has(c.status)) return false;
+    if (except !== 'sla' && state.sla.size && !state.sla.has(slaOf(c).state)) return false;
+    if (except !== 'district' && state.district && c.district !== state.district) return false;
+    if (except !== 'urgent' && state.urgent && c.priority !== 'urgent') return false;
+    return true;
+  }
+  // 急迫度：已逾期 → 待派案（緊急、退件優先）→ 即將逾期 → 其他處理中 → 待回訪 → 已回覆 → 已結案
+  function urgKey(c) {
+    const s = slaOf(c);
+    if (!c.repliedAt) {
+      if (s.state === 'over') return [0, 0, c.due];
+      if (c.status === 'received') return [1, c.priority === 'urgent' ? 0 : c.returned ? 1 : 2, c.created];
+      if (s.state === 'soon') return [2, 0, c.due];
+      return [3, 0, c.due];
+    }
+    if (c.status === 'replied') return [4, c.callbackBy === 'me' ? 0 : 1, -c.repliedAt];
+    return [5, 0, -(c.closedAt || c.repliedAt)];
+  }
+  const cmpKeys = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  const dueCmp = dir => (a, b) => (!!a.repliedAt - !!b.repliedAt) || (a.repliedAt ? b.repliedAt - a.repliedAt : dir * (a.due - b.due));
+  const SORTS = {
+    urgency: ['急迫度（逾期、待派優先）', (a, b) => cmpKeys(urgKey(a), urgKey(b))],
+    'created:desc': ['受理時間：新 → 舊', (a, b) => b.created - a.created],
+    'created:asc': ['受理時間：舊 → 新', (a, b) => a.created - b.created],
+    'due:asc': ['剩餘時限：少 → 多', dueCmp(1)],
+    'due:desc': ['剩餘時限：多 → 少', dueCmp(-1)],
+    'id:asc': ['案號：小 → 大', (a, b) => (a.id > b.id) - (a.id < b.id)],
+    'id:desc': ['案號：大 → 小', (a, b) => (a.id < b.id) - (a.id > b.id)],
+  };
+  function compute() {
+    slaMemo = new Map();
+    terms = state.q.split(/\s+/).filter(Boolean);
+    const fn = SORTS[state.sort][1];
+    return DATA.cases.filter(c => matches(c)).sort((a, b) => fn(a, b) || (a.id < b.id ? 1 : -1));
+  }
+
+  /* ---------- 標記產生 ---------- */
+  const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 先切段再逐段 escape，避免關鍵字命中 &amp; 之類的實體
+  function hl(text) {
+    if (!terms.length) return esc(text);
+    const re = new RegExp(`(${[...terms].sort((a, b) => b.length - a.length).map(reEsc).join('|')})`, 'gi');
+    return String(text).split(re).map((part, i) => (i % 2 ? `<mark class="cl-hl">${esc(part)}</mark>` : esc(part))).join('');
+  }
+  const placeHTML = c => `${c.district} · ${hl(c.address)}`;
+  function flagsHTML(c) {
+    const f = [];
+    if (c.priority === 'urgent') f.push('<span class="tag tag--error">緊急</span>');
+    if (c.returned) f.push(`<span class="tag tag--coral">${App.icon('undo')}退件待改派</span>`);
+    if (c.repeat) f.push(`<span class="tag tag--warn">${App.icon('copy')}重複陳情 · 第 ${c.repeat + 1} 次</span>`);
+    if (c.urged) f.push(`<span class="tag tag--outline">${App.icon('bolt')}已催辦 ${c.urged} 次</span>`);
+    if (c.rating) f.push(`<span class="tag tag--outline">滿意度 ${c.rating} 分</span>`);
+    return f.join('');
+  }
+  function unitHTML(c, row) {
+    if (c.unit) {
+      const u = UNITS[c.unit];
+      const team = esc(c.team || '待局處交辦');
+      return row ? `<b>${u.name}</b><small>${u.org} · ${team}</small>`
+        : `${App.icon('building', 'ico--sm')}<span class="truncate"><b>${u.full}</b> · ${team}</span>`;
+    }
+    // 尚未派案：直接顯示路由規則建議的承辦單位，派案員不用點進去就能判斷
+    const rec = UNITS[App.route(c.cat, c.desc)[0].unit];
+    // 列表欄位窄，退件只寫單位名（「稽查大隊退件」），整串局處全名會把「件」擠到第二行
+    const lead = c.returned ? `${esc(row ? c.returned.by.split(' ').pop() : c.returned.by)}退件` : '尚未派案';
+    return row ? `<b class="cl-unit--none">${lead}</b><small>建議 ${rec.name}</small>`
+      : `${App.icon('sparkle', 'ico--sm')}<span class="truncate">${lead} · 建議 <b>${rec.full}</b></span>`;
+  }
+  function actionOf(c) {
+    if (c.status === 'received') return c.returned ? { kind: 'reassign', label: '改派', icon: 'dispatch', cls: ' btn--coral' } : { kind: 'dispatch', label: '派案', icon: 'dispatch', cls: '' };
+    if (App.isActive(c) && (slaOf(c).state === 'over' || slaOf(c).state === 'soon')) return { kind: 'urge', label: '催辦', icon: 'bolt', cls: ' btn--tonal' };
+    if (c.status === 'replied' && c.callbackBy === 'me') return { kind: 'callback', label: '回訪', icon: 'phone', cls: ' btn--teal' };
+    return null;
+  }
+  function actionHTML(c, row) {
+    const a = actionOf(c);
+    if (a) return `<button type="button" class="btn btn--sm${a.cls}" data-act="${a.kind}" data-id="${c.id}">${App.icon(a.icon)}${a.label}</button>`;
+    return row ? `<a class="icon-btn icon-btn--sm" href="case.html?id=${c.id}" aria-label="查看 ${c.id}">${App.icon('chevronRight')}</a>` : '';
+  }
+  function barState(c) {
+    const s = slaOf(c);
+    return { state: s.state, f: (s.state === 'done' || s.state === 'late' ? 1 : s.state === 'over' ? 0 : s.frac).toFixed(3) };
+  }
+  const slaHeadHTML = c => `<span>時限 ${fmt.slaHours(CATS[c.cat].sla)}</span><span>${c.repliedAt ? `${fmt.dateTime(c.repliedAt)} 回覆` : `${fmt.dateTime(c.due)} 到期`}</span>`;
+
+  function cardHTML(c) {
+    const on = selected.has(c.id);
+    const b = barState(c);
+    return `<article class="cl-card pressable${on ? ' is-selected' : ''}${c.priority === 'urgent' ? ' is-urgent' : ''}" data-id="${c.id}" data-cat="${c.cat}" data-st="${c.status}">
+      <div class="cl-card__head">
+        <button type="button" class="cl-sel" data-select="${c.id}" aria-pressed="${on}" aria-label="選取 ${c.id}">${App.shape.svg(on ? 'cookie12' : CATS[c.cat].shape, { cls: 'cl-sel__shape', attrs: 'data-selshape' })}${App.icon('check', 'cl-sel__check')}</button>
+        <div class="cl-card__ids"><span class="cl-id">${c.id}</span><span class="cl-card__sub">${CATS[c.cat].name} · ${fmt.dateTime(c.created)} 受理 · ${c.channel}</span></div>
+        ${App.statusBadge(c.status)}
+      </div>
+      <h3 class="cl-card__title"><a href="case.html?id=${c.id}" data-title>${hl(c.title)}</a></h3>
+      <p class="cl-card__place">${App.icon('pin', 'ico--sm')}<span class="truncate" data-place>${placeHTML(c)}</span></p>
+      <div class="cl-flags" data-flags>${flagsHTML(c)}</div>
+      <div class="cl-card__sla">
+        <div class="cl-card__slahead" data-slahead>${slaHeadHTML(c)}</div>
+        <div class="cl-slabar" data-slabar data-state="${b.state}" style="--f:${b.f}" aria-hidden="true"><i class="cl-slabar__act"></i><i class="cl-slabar__track"></i></div>
+        <div class="cl-card__slarow">${App.slaChip(c)}<span class="cl-act" data-act-slot>${actionHTML(c, false)}</span></div>
+      </div>
+      <p class="cl-card__unit" data-unit>${unitHTML(c, false)}</p>
+    </article>`;
+  }
+  function rowHTML(c) {
+    const on = selected.has(c.id);
+    return `<tr class="cl-row${on ? ' is-selected' : ''}${c.priority === 'urgent' ? ' is-urgent' : ''}" data-id="${c.id}" data-cat="${c.cat}" data-st="${c.status}">
+      <td class="cl-td-sel"><label class="check"><input type="checkbox" data-select="${c.id}"${on ? ' checked' : ''} aria-label="選取 ${c.id}"></label></td>
+      <td class="cl-td-id"><span class="cl-rowshape">${App.shape.svg(on ? 'cookie12' : CATS[c.cat].shape, { attrs: 'data-selshape' })}${App.icon('check', 'cl-sel__check')}</span><span class="cl-td-id__txt"><span class="cl-id">${c.id}</span><small>${CATS[c.cat].name}</small></span></td>
+      <td class="cl-td-main"><a class="cl-row__title" href="case.html?id=${c.id}" title="${esc(c.title)}" data-title>${hl(c.title)}</a><span class="cl-row__place" data-place>${placeHTML(c)}</span><span class="cl-flags" data-flags>${flagsHTML(c)}</span></td>
+      <td class="cl-td-status">${App.statusBadge(c.status)}</td>
+      <td class="cl-td-sla">${App.slaChip(c)}</td>
+      <td class="cl-td-unit" data-unit>${unitHTML(c, true)}</td>
+      <td class="cl-td-time"><span class="num">${fmt.dateTime(c.created)}</span><small>${c.channel} · ${esc(c.caller.name)}</small></td>
+      <td class="cl-td-act" data-act-slot>${actionHTML(c, true)}</td>
+    </tr>`;
+  }
+
+  /* =====================================================================
+     處理流程管線
+     ===================================================================== */
+  const flowEl = $('[data-flow]');
+  flowEl.insertAdjacentHTML('beforeend', FLOW.map((k, i) => `
+    <button type="button" class="cl-node is-on" data-status="${k}" data-node="${k}" aria-pressed="false">
+      <span class="cl-node__stage">${App.shape.svg(STATUS[k].shape, { cls: 'cl-node__shape' })}<span class="cl-node__num" data-node-num>0</span><span class="cl-node__tick" aria-hidden="true">${App.icon('check')}</span></span>
+      <span class="cl-node__name">${STATUS[k].name}</span>
+      <span class="cl-node__step"><b>${String(i + 1).padStart(2, '0')}</b>${STATUS[k].stage}</span>
+      <span class="cl-node__meta" data-node-meta></span>
+    </button>`).join('') +
+    `<button type="button" class="cl-bracket" data-bracket aria-pressed="false"><span class="cl-bracket__label">處理中 <b data-bracket-n>0</b> 件</span></button>`);
+  const nodeOf = k => flowEl.querySelector(`[data-node="${k}"]`);
+  const bracket = $('[data-bracket]');
+
+  // 階段平均停留：從進入該階段到進入下一個流程階段的時間（只算已離開的案件）
+  function dwell(k, list) {
+    const i = FLOW.indexOf(k);
+    let sum = 0, n = 0;
+    for (const c of list) {
+      const enter = c.log.find(e => e.type === k);
+      if (!enter) continue;
+      const next = c.log.find(e => FLOW.indexOf(e.type) > i && e.at >= enter.at);
+      if (!next) continue;
+      sum += next.at - enter.at;
+      n++;
+    }
+    return n ? sum / n : 0;
+  }
+  function nodeMeta(k, base) {
+    const inStage = base.filter(c => c.status === k);
+    if (k === 'received') {
+      if (!inStage.length) return '目前沒有待派案';
+      const oldest = Math.min(...inStage.map(c => c.created));
+      const ret = inStage.filter(c => c.returned).length;
+      return `<span class="cl-seg">最久等候 <b>${fmt.durShort(App.now() - oldest)}</b></span>${ret ? `<span class="cl-seg">· 退件 <b>${ret}</b></span>` : ''}`;
+    }
+    if (k === 'replied') {
+      const n = inStage.filter(c => c.caller.callback && !c.rating).length;
+      return n ? `待回訪 <b>${n}</b> 件` : '沒有待回訪';
+    }
+    if (k === 'closed') {
+      const r = inStage.filter(c => c.rating);
+      return r.length ? `平均滿意度 <b>${(r.reduce((s, c) => s + c.rating, 0) / r.length).toFixed(2)}</b>` : '尚無回訪評分';
+    }
+    const d = dwell(k, base);
+    const over = inStage.filter(c => slaOf(c).state === 'over').length;
+    return `<span class="cl-seg">${d ? `平均停留 <b>${fmt.durShort(d)}</b>` : '尚無完成資料'}</span>${over ? `<span class="cl-seg cl-over">· 逾期 <b class="cl-over">${over}</b></span>` : ''}`;
+  }
+
+  let prevFlow = null;
+  function paintFlow(fromData) {
+    const base = DATA.cases.filter(c => matches(c, 'status'));
+    const counts = Object.fromEntries(FLOW.map(k => [k, 0]));
+    base.forEach(c => { counts[c.status]++; });
+    const max = Math.max(1, ...Object.values(counts));
+    const any = state.statuses.size > 0;
+    FLOW.forEach(k => {
+      const node = nodeOf(k);
+      const n = counts[k];
+      const on = state.statuses.has(k);
+      // 形狀面積與件數成正比 → 縮放取平方根；下限 .5 讓 0 件的階段仍看得到形狀
+      node.style.setProperty('--k', (0.5 + 0.5 * Math.sqrt(n / max)).toFixed(3));
+      App.countTo($('[data-node-num]', node), n, { duration: 700 });
+      node.classList.toggle('is-on', !any || on);
+      node.setAttribute('aria-pressed', String(on));
+      node.setAttribute('aria-label', `${STATUS[k].name} ${n} 件（${STATUS[k].stage}階段），${on ? '已篩選，再按一次取消' : '按下篩選此階段'}`);
+      $('[data-node-meta]', node).innerHTML = nodeMeta(k, base);
+    });
+    const bOn = state.statuses.size === ACTIVE_SET.length && ACTIVE_SET.every(k => state.statuses.has(k));
+    bracket.setAttribute('aria-pressed', String(bOn));
+    $('[data-bracket-n]').textContent = counts.dispatched + counts.bureau + counts.field;
+    $('[data-flow-reset]').disabled = !any;
+    const others = activeKeys().filter(k => k !== 'status').length;
+    $('[data-flow-sub]').innerHTML = `${others ? `依其他篩選條件共 ${fmt.num(base.length)} 件` : `近 7 日全部 ${fmt.num(base.length)} 件`} · 形狀大小＝件數<span class="hide-sm">，點選即篩選</span>`;
+    if (fromData && prevFlow) fly(prevFlow, counts);
+    prevFlow = counts;
+  }
+
+  // 資料異動時：件數減少的階段飛出形狀、增加的階段接住，途中 morph 成目標階段的形狀
+  function fly(prev, next) {
+    if (reduce() || document.hidden) return;
+    const r = flowEl.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight) return;
+    const src = [], dst = [];
+    FLOW.forEach(k => {
+      const d = next[k] - prev[k];
+      for (let i = 0; i < Math.abs(d); i++) (d < 0 ? src : dst).push(k);
+    });
+    const n = Math.min(8, Math.max(src.length, dst.length));
+    for (let i = 0; i < n; i++) launch(src[i] || null, dst[i] || null, i);
+  }
+  function launch(from, to, i) {
+    const box = flowEl.getBoundingClientRect();
+    const center = k => {
+      const s = $('.cl-node__stage', nodeOf(k)).getBoundingClientRect();
+      return [s.left + s.width / 2 - box.left, s.top + s.height / 2 - box.top];
+    };
+    // 新建案從上方落入「待派案」；撤銷建案則從節點往上飄走
+    const [x0, y0] = from ? center(from) : ((p) => [p[0], p[1] - 120])(center(to));
+    const [x1, y1] = to ? center(to) : [x0, y0 - 120];
+    const el = document.createElement('span');
+    el.className = 'cl-particle';
+    el.dataset.status = from || to;
+    el.innerHTML = App.shape.svg(STATUS[from || to].shape);
+    el.style.left = `${x0}px`;
+    el.style.top = `${y0}px`;
+    flowEl.append(el);
+    const dx = x1 - x0, dy = y1 - y0;
+    const lift = from && to ? Math.min(96, 46 + Math.abs(dx) * .12) : 0;
+    const frames = Array.from({ length: 13 }, (_, j) => {
+      const t = j / 12;
+      const x = dx * t, y = dy * t - lift * 4 * t * (1 - t);
+      const s = 1 + .4 * Math.sin(Math.PI * t);
+      return { transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${s.toFixed(3)}) rotate(${Math.round(t * 200)}deg)`, opacity: t < .08 || t > .92 ? 0 : 1 };
+    });
+    const dur = 820, delay = i * 90;
+    const anim = el.animate(frames, { duration: dur, delay, easing: 'cubic-bezier(.45,0,.2,1)', fill: 'both' });
+    if (from && to) {
+      setTimeout(() => {
+        el.dataset.status = to;
+        App.shape.morph(el.querySelector('svg'), STATUS[to].shape, { spring: 'fast', rotate: 60 });
+      }, delay + dur * .42);
+    }
+    anim.onfinish = () => {
+      el.remove();
+      if (to) $('.cl-node__stage', nodeOf(to)).animate([{ transform: 'scale(1)' }, { transform: 'scale(1.13, .9)' }, { transform: 'scale(1)' }], { duration: 460, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+    };
+  }
+
+  flowEl.addEventListener('click', e => {
+    const node = e.target.closest('[data-node]');
+    if (node) {
+      const k = node.dataset.node;
+      const on = !state.statuses.has(k);
+      applyFilter(() => { if (on) state.statuses.add(k); else state.statuses.delete(k); });
+      App.shape.morph($('.cl-node__shape', node), STATUS[k].shape, { rotate: on ? 72 : -72 });
+      return;
+    }
+    if (e.target.closest('[data-bracket]')) {
+      const bOn = bracket.getAttribute('aria-pressed') === 'true';
+      applyFilter(() => { state.statuses.clear(); if (!bOn) ACTIVE_SET.forEach(k => state.statuses.add(k)); });
+    }
+  });
+  $('[data-flow-reset]').addEventListener('click', () => applyFilter(() => state.statuses.clear()));
+
+  /* =====================================================================
+     篩選控制項
+     ===================================================================== */
+  const catBox = $('[data-cat-chips]');
+  catBox.innerHTML = CAT_KEYS.map(k => `<button type="button" class="chip chip--cat" data-cat="${k}" data-f-cat="${k}" aria-pressed="false">${App.shape.svg(CATS[k].shape)}${CATS[k].name}<span class="chip__count">0</span></button>`).join('');
+  const slaBox = $('[data-sla-chips]');
+  slaBox.innerHTML = Object.entries(SLA_CHIPS).map(([k, [label, shape]]) => `<button type="button" class="chip chip--cat" data-tone="${k}" data-f-sla="${k}" aria-pressed="false">${App.shape.svg(shape)}${label}<span class="chip__count">0</span></button>`).join('')
+    + `<button type="button" class="chip chip--cat" data-tone="urgent" data-f-urgent aria-pressed="false">${App.shape.svg('burst')}只看緊急<span class="chip__count">0</span></button>`;
+
+  function setChip(chip, n, on) {
+    chip.setAttribute('aria-pressed', String(on));
+    // 0 件的條件不讓選（避免篩成空結果的死路），但已選中的仍可取消
+    chip.disabled = n === 0 && !on;
+    const cnt = $('.chip__count', chip);
+    if (cnt.textContent !== String(n)) {
+      if (cnt.dataset.ready && !reduce()) cnt.animate([{ transform: 'scale(1.4)' }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+      cnt.textContent = n;
+    }
+    cnt.dataset.ready = '1';
+  }
+  const chipSpin = (chip, on) => App.shape.morph($('.shape', chip), $('.shape path', chip).dataset.shape, { rotate: on ? 90 : -90 });
+  catBox.addEventListener('click', e => {
+    const chip = e.target.closest('[data-f-cat]');
+    if (!chip) return;
+    const k = chip.dataset.fCat;
+    const on = !state.cats.has(k);
+    applyFilter(() => { if (on) state.cats.add(k); else state.cats.delete(k); });
+    chipSpin(chip, on);
+  });
+  slaBox.addEventListener('click', e => {
+    const chip = e.target.closest('[data-f-sla], [data-f-urgent]');
+    if (!chip) return;
+    if (chip.hasAttribute('data-f-urgent')) {
+      const on = !state.urgent;
+      applyFilter(() => { state.urgent = on; });
+      chipSpin(chip, on);
+      return;
+    }
+    const k = chip.dataset.fSla;
+    const on = !state.sla.has(k);
+    applyFilter(() => { if (on) state.sla.add(k); else state.sla.delete(k); });
+    chipSpin(chip, on);
+  });
+
+  const districtSel = $('[data-district]');
+  districtSel.innerHTML = `<option value="">全部行政區</option>${DISTRICTS.map(d => `<option value="${d.name}">${d.name}</option>`).join('')}`;
+  districtSel.addEventListener('change', () => applyFilter(() => { state.district = districtSel.value; }));
+
+  const sortSel = $('[data-sort]');
+  sortSel.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${label}</option>`).join('');
+  sortSel.addEventListener('change', () => setSort(sortSel.value));
+  function setSort(key) {
+    state.sort = key;
+    sortSel.value = key;
+    lastIdx = null;
+    refresh('filter');
+  }
+
+  const qInput = $('#cl-q');
+  const qClear = $('[data-q-clear]');
+  qInput.value = state.q;
+  let qTimer = 0;
+  qInput.addEventListener('input', () => {
+    qClear.hidden = !qInput.value;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => applyFilter(() => { state.q = qInput.value.trim(); }), 160);
+  });
+  qInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && qInput.value) { e.stopPropagation(); clearFilter('q'); }
+  });
+  qClear.addEventListener('click', () => { clearFilter('q'); qInput.focus(); });
+
+  /* ---------- 已套用條件 ---------- */
+  const activeBox = $('[data-active]');
+  const activeChips = $('[data-active-chips]');
+  function activeKeys() {
+    return ['q', 'status', 'cat', 'sla', 'district', 'urgent'].filter(k => ({
+      q: !!state.q, status: state.statuses.size > 0, cat: state.cats.size > 0, sla: state.sla.size > 0, district: !!state.district, urgent: state.urgent,
+    })[k]);
+  }
+  const FILTER_LABEL = {
+    q: () => `關鍵字「${state.q}」`,
+    status: () => (bracket.getAttribute('aria-pressed') === 'true' ? '狀態：處理中（3 個階段）' : `狀態：${[...state.statuses].map(k => STATUS[k].name).join('、')}`),
+    cat: () => `類別：${[...state.cats].map(k => CATS[k].name).join('、')}`,
+    sla: () => `時限：${[...state.sla].map(k => SLA_CHIPS[k][0]).join('、')}`,
+    district: () => `行政區：${state.district}`,
+    urgent: () => '只看緊急',
+  };
+  function paintActive() {
+    const keys = activeKeys();
+    activeBox.hidden = !keys.length;
+    activeChips.innerHTML = keys.map(k => {
+      const label = esc(FILTER_LABEL[k]());
+      return `<span class="chip chip--input">${label}<button type="button" class="chip__x" data-clear="${k}" aria-label="移除條件：${label}">${App.icon('close')}</button></span>`;
+    }).join('');
+  }
+  function clearFilter(k) {
+    applyFilter(() => {
+      if (k === 'q') { state.q = ''; qInput.value = ''; qClear.hidden = true; }
+      if (k === 'status') state.statuses.clear();
+      if (k === 'cat') state.cats.clear();
+      if (k === 'sla') state.sla.clear();
+      if (k === 'district') state.district = '';
+      if (k === 'urgent') state.urgent = false;
+    });
+  }
+  function clearAll() { ['q', 'status', 'cat', 'sla', 'district', 'urgent'].forEach(clearFilter); }
+  activeChips.addEventListener('click', e => {
+    const b = e.target.closest('[data-clear]');
+    if (!b) return;
+    clearFilter(b.dataset.clear);
+    // 移除後焦點留在條件列，條件都清空時回到關鍵字欄
+    (activeChips.querySelector('.chip__x') || qInput).focus();
+  });
+  $('[data-clear-all]').addEventListener('click', () => { clearAll(); qInput.focus(); });
+
+  /* ---------- 檢視切換 ---------- */
+  const viewSeg = App.segmented($('[data-view]'), { onChange: v => { state.view = v; lastIdx = null; refresh('view'); } });
+  viewSeg.set(state.view, false);
+
+  function applyFilter(mutate) {
+    mutate();
+    state.limit = PAGE;
+    lastIdx = null;
+    refresh('filter');
+  }
+
+  /* =====================================================================
+     結果：keyed 重繪 + FLIP（保留的項目以彈簧滑到新位置，狀態徽章原地 morph）
+     ===================================================================== */
+  const resultsEl = $('[data-results]');
+  let host = null;
+  const nodes = new Map();
+  // 卡片內 SLA 徽章有循環動畫；離開視窗就暫停
+  const itemIO = new IntersectionObserver(es => es.forEach(e => e.target.classList.toggle('is-paused', !e.isIntersecting)));
+
+  function buildView() {
+    itemIO.disconnect();
+    nodes.clear();
+    if (state.view === 'cards') {
+      resultsEl.innerHTML = '<div class="cl-grid" data-host></div>';
+    } else {
+      const th = (col, label) => `<th scope="col" data-sort-th="${col}"><button type="button" class="th-sort" data-sort-col="${col}">${label}${App.icon('chevronDown')}</button></th>`;
+      resultsEl.innerHTML = `<div class="cl-tablewrap"><table class="cl-table"><caption class="sr-only">案件清單（點選列即可選取）</caption>
+        <thead><tr><th scope="col"><span class="sr-only">選取</span></th>${th('id', '案號')}<th scope="col">案件與地點</th><th scope="col">狀態</th>${th('due', '處理時限')}<th scope="col">承辦單位</th>${th('created', '受理時間')}<th scope="col"><span class="sr-only">動作</span></th></tr></thead>
+        <tbody data-host></tbody></table></div>`;
+    }
+    host = $('[data-host]', resultsEl);
+  }
+  const tpl = document.createElement('template');
+  function createItem(c) {
+    tpl.innerHTML = state.view === 'cards' ? cardHTML(c) : rowHTML(c);
+    const el = tpl.content.firstElementChild;
+    // 記下各區塊目前的 HTML，之後只在內容真的改變時才換，避免打掉使用者正在操作的按鈕焦點
+    ['[data-title]', '[data-place]', '[data-flags]', '[data-unit]', '[data-act-slot]', '[data-slahead]'].forEach(s => { const n = $(s, el); if (n) n._html = n.innerHTML; });
+    itemIO.observe(el);
+    return el;
+  }
+  const setIf = (n, html) => { if (n && n._html !== html) { n.innerHTML = html; n._html = html; } };
+  function updateItem(el, c) {
+    const row = state.view === 'rows';
+    const badge = $('.status', el);
+    if (badge.dataset.status !== c.status) App.setStatusBadge(badge, c.status);
+    el.dataset.st = c.status;
+    el.classList.toggle('is-urgent', c.priority === 'urgent');
+    setIf($('[data-title]', el), hl(c.title));
+    setIf($('[data-place]', el), placeHTML(c));
+    setIf($('[data-flags]', el), flagsHTML(c));
+    setIf($('[data-unit]', el), unitHTML(c, row));
+    setIf($('[data-act-slot]', el), actionHTML(c, row));
+    setIf($('[data-slahead]', el), slaHeadHTML(c));
+    const bar = $('[data-slabar]', el);
+    if (bar) { const b = barState(c); bar.dataset.state = b.state; bar.style.setProperty('--f', b.f); }
+  }
+  function inPlace() {
+    let morph = false;
+    for (const [id, el] of nodes) {
+      const c = App.getCase(id);
+      if (!c) continue;
+      if (el.dataset.st !== c.status) morph = true;
+      updateItem(el, c);
+    }
+    return morph;
+  }
+
+  let reconTimer = 0, leaveTimer = 0;
+  function reconcile(delay) {
+    clearTimeout(reconTimer);
+    reconTimer = setTimeout(runReconcile, delay);
+  }
+  function runReconcile() {
+    clearTimeout(leaveTimer);
+    $$(':scope > .is-leaving', host).forEach(n => n.remove());
+    current = compute();
+    const shown = current.slice(0, state.limit);
+    const want = new Set(shown.map(c => c.id));
+    const gone = [...nodes].filter(([id]) => !want.has(id));
+    gone.forEach(([id, el]) => { nodes.delete(id); itemIO.unobserve(el); });
+    if (gone.length && !reduce()) {
+      gone.forEach(([, el]) => {
+        el.classList.add('is-leaving');
+        el.inert = true;
+        el.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.93)' }], { duration: 170, easing: 'ease-in', fill: 'forwards' });
+      });
+      leaveTimer = setTimeout(() => place(shown), 170);
+    } else {
+      gone.forEach(([, el]) => el.remove());
+      place(shown);
+    }
+  }
+  function place(shown) {
+    const before = new Map();
+    if (!reduce()) for (const el of nodes.values()) before.set(el, el.getBoundingClientRect());
+    $$(':scope > .is-leaving', host).forEach(n => n.remove());
+    const fresh = [];
+    let ref = host.firstElementChild;
+    for (const c of shown) {
+      let el = nodes.get(c.id);
+      if (!el) { el = createItem(c); nodes.set(c.id, el); fresh.push(el); }
+      else updateItem(el, c);
+      if (el !== ref) host.insertBefore(el, ref);
+      else ref = ref.nextElementSibling;
+    }
+    if (!reduce()) {
+      const ease = App.spring.easing('default');
+      for (const [el, a] of before) {
+        const b = el.getBoundingClientRect();
+        const dx = a.left - b.left, dy = a.top - b.top;
+        if (Math.abs(dx) + Math.abs(dy) < 1) continue;
+        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 560, easing: ease });
+      }
+      fresh.forEach((el, i) => el.animate(
+        [{ opacity: 0, transform: 'translateY(16px) scale(.96)' }, { opacity: 1, transform: 'none' }],
+        { duration: 480, delay: Math.min(i, 12) * 30, easing: ease, fill: 'backwards' },
+      ));
+    }
+    shownIds = shown.map(c => c.id);
+    $('[data-empty]').hidden = shown.length > 0;
+    resultsEl.hidden = shown.length === 0;
+    paintCount();
+    paintMore();
+    paintSelection();
+  }
+
+  /* ---------- 計數、排序表頭、載入更多 ---------- */
+  const resultNum = $('[data-result-num]');
+  function paintCount() {
+    const n = current.length;
+    App.odometer(resultNum, n);
+    $('[data-result-range]').innerHTML = n ? `顯示 ${Math.min(n, state.limit)} 件 · ${SORTS[state.sort][0].replace(/（.+）/, '')}排序<span class="hide-sm"> · 點形狀多選，Shift 連選</span>` : '';
+    $('[data-live]').textContent = `符合條件 ${n} 件`;
+    $('[data-open-n]').textContent = App.count('received') + App.count('active');
+    $$('[data-sort-th]', resultsEl).forEach(th => {
+      const [k, d] = state.sort.split(':');
+      th.setAttribute('aria-sort', k === th.dataset.sortTh ? (d === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+  }
+  const moreBox = $('[data-more]');
+  const moreBtn = $('[data-more-btn]');
+  const moreWave = App.wavy($('[data-more-wave]'), { value: 0, thickness: 4, amplitude: 2.4, wavelength: 20 });
+  $('[data-more-wave]').setAttribute('aria-label', '已載入的比例');
+  function paintMore() {
+    const total = current.length, shown = Math.min(total, state.limit);
+    moreBox.hidden = total === 0;
+    $('[data-more-text]').innerHTML = shown >= total ? `已顯示全部 <b>${total}</b> 件` : `已顯示 <b>${shown}</b> / ${total} 件`;
+    moreWave.set(total ? shown / total : 0);
+    moreBtn.hidden = shown >= total;
+    if (!moreBtn.dataset.busy) moreBtn.innerHTML = `${App.icon('chevronDown')}再載入 ${Math.min(PAGE, total - shown)} 件`;
+  }
+  moreBtn.addEventListener('click', () => {
+    if (moreBtn.dataset.busy) return;
+    moreBtn.dataset.busy = '1';
+    moreBtn.setAttribute('aria-busy', 'true');
+    moreBtn.replaceChildren(App.loader({ size: 26, bare: true }), document.createTextNode('載入中'));
+    // 模擬分頁讀取的短暫延遲，讓 M3 形狀載入指示有意義地出現
+    setTimeout(() => {
+      delete moreBtn.dataset.busy;
+      moreBtn.removeAttribute('aria-busy');
+      state.limit += PAGE;
+      reconcile(0);
+    }, reduce() ? 0 : 420);
+  });
+
+  /* =====================================================================
+     選取與批次操作
+     ===================================================================== */
+  const pageChk = $('[data-select-page]');
+  const banner = $('[data-banner]');
+  const batch = $('[data-batch]');
+  const dock = $('.cl-dock');
+  function toggle(id, shift) {
+    const idx = shownIds.indexOf(id);
+    if (shift && lastIdx != null && idx >= 0 && lastIdx !== idx) {
+      // Shift 連續選取：範圍內全部套用「起點」的選取狀態
+      const on = selected.has(shownIds[lastIdx]);
+      const [a, b] = [Math.min(lastIdx, idx), Math.max(lastIdx, idx)];
+      for (let i = a; i <= b; i++) { if (on) selected.add(shownIds[i]); else selected.delete(shownIds[i]); }
+    } else if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    lastIdx = idx;
+    paintSelection();
+  }
+  function paintSelection() {
+    for (const [id, el] of nodes) {
+      const on = selected.has(id);
+      el.classList.toggle('is-selected', on);
+      const ctl = $('[data-select]', el);
+      if (ctl.tagName === 'INPUT') ctl.checked = on; else ctl.setAttribute('aria-pressed', String(on));
+      const path = $('[data-selshape] path', el);
+      const want = on ? 'cookie12' : CATS[el.dataset.cat].shape;
+      if (path.dataset.shape !== want) App.shape.morph(path, want, { rotate: on ? 90 : -90 });
+    }
+    const onPage = shownIds.filter(id => selected.has(id)).length;
+    pageChk.disabled = !shownIds.length;
+    pageChk.checked = shownIds.length > 0 && onPage === shownIds.length;
+    pageChk.indeterminate = onPage > 0 && onPage < shownIds.length;
+
+    const allMatch = current.length > 0 && current.every(c => selected.has(c.id));
+    if (current.length > shownIds.length && allMatch) {
+      banner.hidden = false;
+      banner.innerHTML = `<span>已選取全部 <b>${current.length}</b> 件符合條件的案件</span><button type="button" class="btn btn--text btn--sm" data-sel-none>取消選取</button>`;
+    } else if (current.length > shownIds.length && pageChk.checked) {
+      banner.hidden = false;
+      banner.innerHTML = `<span>已選取本頁 <b>${shownIds.length}</b> 件</span><button type="button" class="btn btn--text btn--sm" data-sel-all>選取全部 ${current.length} 件符合條件的案件</button>`;
+    } else banner.hidden = true;
+
+    const sel = [...selected].map(App.getCase).filter(Boolean);
+    const rec = sel.filter(c => c.status === 'received');
+    const act = sel.filter(App.isActive);
+    const hiddenN = sel.filter(c => !shownIds.includes(c.id)).length;
+    const open = sel.length > 0;
+    batch.classList.toggle('is-open', open);
+    dock.classList.toggle('is-open', open);
+    batch.inert = !open;
+    document.body.classList.toggle('cl-selecting', open);
+    App.odometer($('[data-batch-num]', batch), sel.length);
+    const other = sel.length - rec.length - act.length;
+    $('[data-batch-mix]', batch).textContent = [rec.length && `待派案 ${rec.length}`, act.length && `處理中 ${act.length}`, other && `其他 ${other}`, hiddenN && `含 ${hiddenN} 件不在畫面上`].filter(Boolean).join(' · ');
+    const bd = $('[data-batch-dispatch]', batch), bu = $('[data-batch-urge]', batch);
+    bd.disabled = !rec.length;
+    bu.disabled = !act.length;
+    $('[data-batch-export]', batch).disabled = !sel.length;
+    $('[data-n-dispatch]', batch).textContent = rec.length;
+    $('[data-n-urge]', batch).textContent = act.length;
+    bd.title = rec.length ? `派案 ${rec.length} 件待派案件${rec.length < sel.length ? '（其他狀態的案件不受影響）' : ''}` : '選取的案件中沒有待派案';
+    bu.title = act.length ? `催辦 ${act.length} 件處理中案件` : '選取的案件中沒有處理中的案件';
+  }
+
+  resultsEl.addEventListener('click', e => {
+    const sortBtn = e.target.closest('[data-sort-col]');
+    if (sortBtn) {
+      const col = sortBtn.dataset.sortCol;
+      const [k, d] = state.sort.split(':');
+      setSort(`${col}:${k === col ? (d === 'asc' ? 'desc' : 'asc') : ({ id: 'asc', due: 'asc', created: 'desc' })[col]}`);
+      return;
+    }
+    const sel = e.target.closest('[data-select]');
+    if (sel) { toggle(sel.dataset.select, e.shiftKey); return; }
+    const act = e.target.closest('[data-act]');
+    if (act) { runAction(act.dataset.act, act.dataset.id); return; }
+    // 列表模式：點整列（連結、按鈕、勾選框以外）即切換選取
+    const row = e.target.closest('.cl-row');
+    if (row && !e.target.closest('a, button, input, label')) toggle(row.dataset.id, e.shiftKey);
+  });
+  function runAction(kind, id) {
+    if (kind === 'dispatch' || kind === 'reassign') App.dispatchDialog([id], { onDone: () => { selected.delete(id); paintSelection(); } });
+    else if (kind === 'urge') App.urgeCase(id);
+    else if (kind === 'callback') App.callbackDialog(id);
+  }
+  pageChk.addEventListener('change', () => {
+    const all = shownIds.every(id => selected.has(id));
+    shownIds.forEach(id => { if (all) selected.delete(id); else selected.add(id); });
+    lastIdx = null;
+    paintSelection();
+  });
+  banner.addEventListener('click', e => {
+    if (e.target.closest('[data-sel-all]')) current.forEach(c => selected.add(c.id));
+    else if (e.target.closest('[data-sel-none]')) selected.clear();
+    else return;
+    paintSelection();
+  });
+  $('[data-batch-clear]').addEventListener('click', () => { selected.clear(); lastIdx = null; paintSelection(); });
+  $('[data-batch-dispatch]').addEventListener('click', () => {
+    const ids = [...selected].map(App.getCase).filter(c => c && c.status === 'received').map(c => c.id);
+    if (!ids.length) return;
+    App.dispatchDialog(ids, { onDone: () => { ids.forEach(id => selected.delete(id)); paintSelection(); } });
+  });
+  $('[data-batch-urge]').addEventListener('click', () => {
+    const list = [...selected].map(App.getCase).filter(c => c && App.isActive(c));
+    if (!list.length) return;
+    const undos = list.map(c => App.urge(c.id, '批次催辦'));
+    list.forEach(c => selected.delete(c.id));
+    paintSelection();
+    const teams = new Set(list.map(c => c.team || App.unitOf(c).full));
+    App.toast(`已催辦 ${list.length} 件`, {
+      sub: `通知 ${teams.size} 個承辦區隊 · ${[...teams].slice(0, 2).join('、')}${teams.size > 2 ? ' 等' : ''}`,
+      tone: 'success', shape: 'sunny',
+      action: { label: '復原', onClick: () => { undos.reverse().forEach(u => u()); App.toast(`已撤回 ${list.length} 件催辦`); } },
+    });
+  });
+  $('[data-batch-export]').addEventListener('click', () => {
+    const list = current.filter(c => selected.has(c.id));
+    const extra = [...selected].map(App.getCase).filter(c => c && !list.includes(c));
+    exportCSV([...list, ...extra], 'selected');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !selected.size || document.querySelector('dialog[open], .fab-sheet.is-open, .popover')) return;
+    if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    selected.clear();
+    paintSelection();
+  });
+
+  /* ---------- 匯出 CSV（Blob 下載，file:// 也可用） ---------- */
+  function exportCSV(list, label) {
+    const head = ['案號', '類別', '狀態', '緊急', '標題', '行政區', '地點', '承辦單位', '處理區隊', '受理時間', '到期時間', '處理時限狀態', '陳情人', '來源'];
+    const rows = list.map(c => {
+      const u = App.unitOf(c);
+      return [c.id, CATS[c.cat].name, STATUS[c.status].name, c.priority === 'urgent' ? '是' : '', c.title, c.district, c.address, u ? u.full : '', c.team || '', fmt.dateTime(c.created), fmt.dateTime(c.due), App.sla(c).label, c.caller.name, c.channel];
+    });
+    const csv = '﻿' + [head, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const d = new Date(App.now() + 8 * 3600e3);
+    const stamp = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `1999-cases-${label}-${stamp}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    App.toast(`已匯出 ${list.length} 件案件`, { sub: `CSV（UTF-8）· ${a.download}`, tone: 'success' });
+  }
+  $('[data-export]').addEventListener('click', () => {
+    if (!current.length) { App.toast('目前沒有符合條件的案件可匯出', { tone: 'error' }); return; }
+    exportCSV(current, activeKeys().length ? 'filtered' : 'all');
+  });
+
+  /* ---------- 結果列黏住時加上分隔陰影 ---------- */
+  const bar = $('[data-bar]');
+  const topH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 76;
+  new IntersectionObserver(([e]) => bar.classList.toggle('is-stuck', !e.isIntersecting && e.boundingClientRect.top < topH + 2), { rootMargin: `-${topH + 1}px 0px 0px 0px` })
+    .observe($('[data-stuck-sentinel]'));
+
+  /* ---------- 空狀態 ---------- */
+  $('[data-empty]').innerHTML = `${App.emptyState({ title: '沒有符合條件的案件', text: '試著放寬篩選條件，或改用案號、路名、陳情人姓氏搜尋。', shape: 'cookie9' })}<button type="button" class="btn btn--tonal" data-empty-clear>${App.icon('refresh')}清除全部條件</button>`;
+  $('[data-empty-clear]').addEventListener('click', () => { clearAll(); qInput.focus(); });
+
+  /* ---------- 頁首期間 ---------- */
+  const first = Math.min(...DATA.cases.map(c => c.created));
+  $('[data-range]').textContent = `${fmt.date(first)}–${fmt.date(App.now())}`;
+
+  /* =====================================================================
+     統一重繪入口：篩選、資料異動（含復原）、檢視切換、時間推進都走這裡
+     ===================================================================== */
+  function paintFacets() {
+    const catBase = DATA.cases.filter(c => matches(c, 'cat'));
+    CAT_KEYS.forEach(k => setChip($(`[data-f-cat="${k}"]`, catBox), catBase.filter(c => c.cat === k).length, state.cats.has(k)));
+    const slaBase = DATA.cases.filter(c => matches(c, 'sla'));
+    Object.keys(SLA_CHIPS).forEach(k => setChip($(`[data-f-sla="${k}"]`, slaBox), slaBase.filter(c => slaOf(c).state === k).length, state.sla.has(k)));
+    setChip($('[data-f-urgent]', slaBox), DATA.cases.filter(c => matches(c, 'urgent') && c.priority === 'urgent').length, state.urgent);
+    const dBase = DATA.cases.filter(c => matches(c, 'district'));
+    districtSel.options[0].textContent = `全部行政區（${dBase.length}）`;
+    DISTRICTS.forEach((d, i) => { districtSel.options[i + 1].textContent = `${d.name}（${dBase.filter(c => c.district === d.name).length}）`; });
+    districtSel.value = state.district;
+  }
+  function refresh(reason) {
+    current = compute();
+    paintFlow(reason === 'data');
+    paintFacets();
+    paintActive();
+    if (reason === 'init' || reason === 'view') {
+      buildView();
+      place(current.slice(0, state.limit));
+      return;
+    }
+    paintCount();
+    if (reason === 'data') {
+      // 先讓畫面上的徽章原地 morph，morph 結束後才重排或移出，使用者看得到「發生了什麼」
+      const morphing = inPlace();
+      reconcile(morphing ? 950 : 60);
+      paintSelection();
+    } else if (reason === 'tick') {
+      inPlace();
+    } else {
+      reconcile(0);
+    }
+  }
+
+  App.on('change', () => {
+    [...selected].forEach(id => { if (!App.getCase(id)) selected.delete(id); });
+    refresh('data');
+  });
+  // 時間持續往前走：SLA 條、計數與即將逾期分類每 30 秒重算（不重排，避免清單在使用者眼前跳動）
+  setInterval(() => { if (!document.hidden) refresh('tick'); }, 30000);
+
+  sortSel.value = state.sort;
+  qClear.hidden = !state.q;
+  refresh('init');
+});
+</script>
+</body>
+</html>

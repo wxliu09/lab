@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>圖說審查 — 澄港市建照圖說審查系統</title>
+<meta name="description" content="澄港市建築執照圖說線上審查工作區：A-201 標準層平面圖紅筆批註、結構／消防／無障礙套繪、R1 與 R2 回合疊圖與拉簾比對、建築科檢核表與法規條文速查。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首：旁註一列、動作一列 ---------- */
+  .rv-head-actions { flex-direction: column; align-items: flex-end; gap: 12px; }
+  .rv-head-actions__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+  .rv-queue {
+    display: inline-flex; align-items: stretch;
+    height: 36px;
+    border: 1px solid var(--line-3);
+    border-radius: var(--r-1);
+    background: #FFFEFA;
+  }
+  .rv-queue__btn { width: 32px; display: grid; place-items: center; color: var(--ink); text-decoration: none; transition: background var(--dur-1); }
+  .rv-queue__btn:hover { background: var(--hl); }
+  .rv-queue__label {
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 10px;
+    border-left: 1px solid var(--line-2); border-right: 1px solid var(--line-2);
+    font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap;
+  }
+  .rv-queue__label b { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+  #submitSlot { display: contents; }
+  /* 案號＋起造人＋地址是一行資訊，不套 .page-desc 的 68ch 行寬 */
+  #caseDesc { max-width: none; }
+
+  /* ---------- 案件摘要列：標題欄格線（gap 1px 露出墨色底當格線，任何斷點都不必重算邊框） ---------- */
+  .rv-case {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 2.35fr 1.35fr;
+    gap: 1px;
+    background: var(--ink);
+    border: 1.5px solid var(--ink);
+    box-shadow: var(--sh-under), var(--sh-1);
+  }
+  .rv-case__cell {
+    display: flex; flex-direction: column; gap: 3px;
+    min-width: 0;
+    padding: 14px 18px;
+    background: var(--sheet-solid);
+    font-size: var(--fs-13); color: var(--ink-2);
+  }
+  .rv-case__cell strong { font-size: var(--fs-15); color: var(--ink); line-height: 1.35; }
+  .rv-case__cell .tb-label { display: flex; justify-content: space-between; gap: 8px; }
+  .rv-case__status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 6px; }
+
+  /* 審查回合：以尺寸線表示（N.T.S. 不依比例，各段等寬、上方標天數） */
+  .rv-dim { position: relative; height: 70px; margin: 6px 34px 0 6px; }
+  .rv-dim__base { position: absolute; left: -8px; right: -8px; top: 32px; border-top: 1px solid var(--ink-2); }
+  .rv-dim__seg {
+    position: absolute; top: 0; height: 32px;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-bottom: 4px;
+    text-align: center; line-height: 1.15;
+  }
+  .rv-dim__seg b { font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; color: var(--ink); }
+  .rv-dim__seg small { font-size: var(--fs-11); color: var(--ink-3); order: -1; }
+  .rv-dim__seg.is-future::after,
+  .rv-dim__seg.is-over::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: -2px;
+    border-top: 3px solid var(--red);
+  }
+  .rv-dim__seg.is-future::after { border-top-style: dashed; border-top-width: 2px; bottom: -1px; }
+  .rv-dim__seg.is-future b,
+  .rv-dim__seg.is-over b { color: var(--red-ink); }
+  .rv-dim__pt { position: absolute; top: 32px; width: 0; height: 0; }
+  /* 尺寸線端點：45° 斜短線＋延伸線 */
+  .rv-dim__pt::before {
+    content: "";
+    position: absolute; left: -6px; top: 0;
+    width: 12px; border-top: 1.5px solid var(--ink);
+    transform: rotate(-45deg);
+  }
+  .rv-dim__pt::after { content: ""; position: absolute; left: 0; top: -10px; height: 16px; border-left: 1px solid var(--ink-2); }
+  .rv-dim__pt.is-today::before { border-color: var(--red); }
+  .rv-dim__pt.is-today::after { border-left: 2px solid var(--red); top: -14px; height: 22px; }
+  .rv-dim__label {
+    position: absolute; top: 9px; left: 0;
+    transform: translateX(-50%);
+    white-space: nowrap; text-align: center;
+    font-size: var(--fs-11); line-height: 1.25; color: var(--ink-3);
+  }
+  .rv-dim__label b { display: block; font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 500; color: var(--ink); }
+  .rv-dim__pt.is-first .rv-dim__label { transform: translateX(-6px); text-align: left; }
+  .rv-dim__pt.is-today .rv-dim__label,
+  .rv-dim__pt.is-today .rv-dim__label b { color: var(--red-ink); font-weight: 600; }
+  .rv-dim__pt.is-red .rv-dim__label { color: var(--red-ink); }
+
+  /* ---------- 工作區：畫布＋批註側欄 ---------- */
+  .rv-board .canvas { border-left: 0; border-right: 0; border-bottom: 0; }
+  .rv-board .sheet__sub kbd { font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--line-3); border-radius: 2px; padding: 0 4px; background: #FFFEFA; }
+  .rv-canvas .seg > button { display: inline-flex; align-items: center; gap: 5px; }
+  .rv-canvas .seg > button .i { width: 14px; height: 14px; }
+  .rv-canvas .seg > button[disabled] { opacity: .4; cursor: not-allowed; }
+  .rv-canvas .seg > button[data-value="pen"][aria-pressed="true"] { background: var(--red); color: #fff; }
+  .rv-layers { margin-left: auto; }
+  .rv-canvas .canvas__viewport.is-annotating { box-shadow: inset 0 0 0 2px var(--red-line); }
+
+  .rv-pen-banner {
+    position: absolute; left: 10px; top: 10px; z-index: 2;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    max-width: calc(100% - 20px);
+    padding: 5px 10px;
+    border: 1px solid var(--red);
+    border-left-width: 4px;
+    background: rgba(255, 255, 255, .95);
+    color: var(--red-ink);
+    font-size: var(--fs-13); font-weight: 600;
+    pointer-events: none;
+  }
+  .rv-pen-banner__esc { font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 500; color: var(--ink-3); }
+
+  /* 紅筆游標：跟著指標走的預覽雲線（虛線走動） */
+  .rv-ghost { color: var(--red); opacity: 0; transition: opacity var(--dur-1); }
+  .rv-ghost.is-on { opacity: .85; }
+  .rv-ghost.is-on .rv-ghost__cloud { animation: rv-march 1.1s linear infinite; }
+  @keyframes rv-march { to { stroke-dashoffset: -24; } }
+  /* 回合變更定位：螢光筆圈（multiply 讓底下線條透出來） */
+  .rv-focus circle { mix-blend-mode: multiply; transform-box: fill-box; transform-origin: center; animation: rv-pulse 1.8s var(--ease-in-out) infinite; }
+  @keyframes rv-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+
+  /* 拉簾比對：左側疊一張 R1，clip-path 裁切；簾線是一把帶刻度的尺 */
+  .rv-swipe { position: absolute; inset: 0; z-index: 1; pointer-events: none; --x: 50%; }
+  .rv-swipe__pane {
+    position: absolute; inset: 0;
+    clip-path: inset(0 calc(100% - var(--x)) 0 0);
+    background-color: #FCFBF7;
+    background-image:
+      linear-gradient(rgba(45, 58, 74, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45, 58, 74, .05) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .rv-swipe__pane > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .rv-swipe__handle {
+    position: absolute; top: 0; bottom: 0; left: var(--x);
+    width: 30px; margin-left: -15px;
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .rv-swipe__handle:focus-visible { outline: none; }
+  .rv-swipe__handle::before { content: ""; position: absolute; left: 14px; top: 0; bottom: 0; width: 2px; background: var(--ink); }
+  .rv-swipe__handle::after {
+    content: "";
+    position: absolute; left: 10px; top: 0; bottom: 0; width: 10px;
+    background: repeating-linear-gradient(to bottom, var(--ink) 0 1px, transparent 1px 12px);
+    opacity: .55;
+  }
+  .rv-swipe__grip {
+    position: absolute; left: 50%; top: 50%; z-index: 1;
+    width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    display: grid; place-items: center;
+    border: 1.5px solid var(--ink); border-radius: 50%;
+    background: var(--sheet-solid);
+    color: var(--ink);
+    box-shadow: 2px 3px 0 -1px var(--sheet-under), 2px 3px 0 0 var(--line-2);
+    transition: background var(--dur-1), transform var(--dur-2) var(--ease-spring);
+  }
+  .rv-swipe__grip svg { width: 22px; height: 22px; }
+  .rv-swipe__handle:hover .rv-swipe__grip,
+  .rv-swipe__handle.is-drag .rv-swipe__grip { background: var(--hl); transform: scale(1.08); }
+  .rv-swipe__handle:focus-visible .rv-swipe__grip { outline: 2px solid var(--red); outline-offset: 3px; }
+  .rv-swipe__tag {
+    position: absolute; top: 10px;
+    padding: 2px 8px;
+    font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 600;
+    border: 1px solid currentColor;
+    background: rgba(255, 255, 255, .94);
+  }
+  .rv-swipe__tag--l { left: 10px; color: var(--diff-old); }
+  .rv-swipe__tag--r { right: 10px; color: #0B6E86; }
+
+  /* 圖說索引：一列小圖 */
+  .rv-sheets {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    border-top: 1px solid var(--line-2);
+    background: rgba(236, 233, 223, .5);
+  }
+  .rv-sheet {
+    position: relative;
+    display: flex; align-items: center; gap: 9px;
+    min-width: 0;
+    padding: 9px 12px;
+    border: 0; border-right: 1px dashed var(--line-2);
+    background: transparent;
+    text-align: left;
+    transition: background var(--dur-1);
+  }
+  .rv-sheet:last-child { border-right: 0; }
+  .rv-sheet:hover { background: rgba(255, 241, 118, .3); }
+  .rv-sheet__thumb { width: 40px; height: 30px; flex-shrink: 0; color: var(--ink-2); background: #FFFEFA; border: 1px solid var(--line-2); }
+  .rv-sheet__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .rv-sheet__no { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  .rv-sheet__name { font-size: var(--fs-13); font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-sheet__meta { font-size: var(--fs-11); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rv-sheet[aria-current="true"] { background: var(--sheet-solid); }
+  .rv-sheet[aria-current="true"]::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 3px; background: var(--red); }
+  .rv-sheet[aria-current="true"] .rv-sheet__thumb { border-color: var(--ink); color: var(--ink); }
+  .rv-sheet[aria-current="true"] .rv-sheet__meta { color: var(--red-ink); font-weight: 600; }
+  .rv-sheet[aria-pressed="true"] .rv-sheet__thumb { color: var(--layer-str); border-color: var(--layer-str); }
+  .rv-sheet[aria-pressed="true"] .rv-sheet__meta { color: #245A98; font-weight: 600; }
+
+  /* 側欄 */
+  .rv-panel .tabs { padding: 10px 16px 0; }
+  .rv-progress { padding: 14px 16px 12px; border-bottom: 1px dashed var(--line-2); }
+  .rv-progress__top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; font-size: var(--fs-13); color: var(--ink-3); }
+  .rv-progress__top b { font-family: var(--font-mono); font-size: var(--fs-15); color: var(--ink); }
+  .rv-progress__top .red-ink b { color: var(--red-ink); }
+  .rv-progress__bar { display: flex; gap: 2px; height: 10px; margin-top: 8px; padding: 1px; border: 1px solid var(--ink); background: #FFFEFA; }
+  .rv-progress__bar > span { transition: flex-grow var(--dur-4) var(--ease-out); min-width: 0; }
+  .rv-progress__ok { background: var(--ok); }
+  .rv-progress__open { background: repeating-linear-gradient(135deg, var(--red) 0 3px, rgba(215, 38, 61, .3) 3px 6px); }
+  .rv-progress__sub { margin-top: 6px; font-size: var(--fs-12); color: var(--ink-3); }
+
+  .rv-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+  .rv-filters .cluster { gap: 6px; }
+  .rv-disc-filter { display: inline-flex; gap: 4px; margin-left: auto; }
+  .rv-disc-btn { padding: 0; border: 0; background: none; border-radius: 2px; line-height: 0; }
+  .rv-disc-btn .disc { width: 26px; height: 26px; font-size: 13px; transition: opacity var(--dur-1), background var(--dur-1); }
+  .rv-disc-btn:hover .disc { background: var(--hl); }
+  .rv-disc-btn[aria-pressed="false"] .disc { opacity: .38; border-style: dashed; background: transparent; }
+
+  .rv-anno { position: relative; border-bottom: 1px dashed var(--line-2); }
+  .rv-anno .anno { border-bottom: 0; }
+  .rv-anno.is-open { background: rgba(255, 241, 118, .34); }
+  .rv-anno.is-open::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--red); }
+  .rv-anno.is-open .anno.is-active { background: transparent; }
+  .rv-anno.is-open .anno.is-active::before { display: none; }
+  .rv-anno__detail { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 14px 56px; }
+  .rv-anno__detail .hand-note { font-size: var(--fs-15); line-height: 1.55; }
+  .rv-anno__by { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-12); color: var(--ink-3); }
+  .rv-anno__by b { color: var(--ink); font-weight: 600; }
+  .rv-reply { border-left: 3px solid var(--ink); background: #FFFEFA; padding: 7px 10px; font-size: var(--fs-13); color: var(--ink-2); }
+  .rv-reply__label { display: block; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 2px; }
+  .rv-anno__state { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); font-weight: 600; color: var(--ok); }
+  .rv-anno__state .i { width: 14px; height: 14px; }
+  .rv-anno__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rv-anno__actions .btn--danger { color: var(--red-ink); border-color: var(--red-line); }
+  .rv-panel .sheet__foot { justify-content: space-between; }
+
+  /* 回合變更清單 */
+  .rv-diff-intro { padding: 12px 16px; border-bottom: 1px dashed var(--line-2); font-size: var(--fs-13); color: var(--ink-3); }
+  .rv-diff { display: flex; flex-direction: column; }
+  .rv-diff__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; border-bottom: 1px dashed var(--line-2); position: relative; }
+  .rv-diff__item.is-active { background: rgba(255, 241, 118, .34); }
+  .rv-diff__item.is-active::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--diff-new); }
+  .rv-diff__btn {
+    display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px;
+    padding: 12px 8px 12px 16px;
+    border: 0; background: transparent; text-align: left; color: inherit;
+  }
+  .rv-diff__btn:hover { background: rgba(255, 241, 118, .22); }
+  .rv-diff__mark { width: 28px; height: 24px; color: var(--diff-new); }
+  .rv-diff__mark text { font-family: var(--font-mono); }
+  .rv-diff__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .rv-diff__title { font-weight: 700; line-height: 1.35; }
+  .rv-diff__row { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr); align-items: baseline; font-size: var(--fs-12); color: var(--ink-2); }
+  .rv-diff__row i { display: inline-block; width: 16px; border-top: 2px solid var(--sw); transform: translateY(-3px); }
+  .rv-diff__row--old i { --sw: var(--diff-old); border-top-style: dashed; }
+  .rv-diff__row--new i { --sw: var(--diff-new); }
+  .rv-diff__row span { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  .rv-diff__ref {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    margin: 10px 12px 0 0; padding: 4px 6px;
+    border: 1px solid transparent; border-radius: var(--r-1);
+    background: transparent; font-size: var(--fs-11); color: var(--ink-3); white-space: nowrap;
+  }
+  .rv-diff__ref:hover { border-color: var(--line-3); background: #FFFEFA; }
+
+  /* ---------- 檢核表 ---------- */
+  .rv-ck-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 20px; border-bottom: 1px solid var(--line-2); }
+  .rv-ck-sum__num { display: flex; align-items: baseline; gap: 6px; }
+  .rv-ck-sum__num b { font-size: var(--fs-38); font-weight: 600; line-height: 1; letter-spacing: -.01em; }
+  .rv-ck-sum__num span { font-size: var(--fs-13); color: var(--ink-3); }
+  .rv-ck-sum__bar { flex: 1 1 240px; display: flex; flex-direction: column; gap: 6px; }
+  .rv-ck-sum__legend { font-size: var(--fs-12); color: var(--ink-3); }
+  .rv-ck-sum__legend b { font-family: var(--font-mono); color: var(--ink); }
+  .rv-ck-group__title {
+    padding: 14px 20px 6px;
+    font-size: var(--fs-12); font-weight: 700; letter-spacing: .08em; color: var(--ink-3);
+    border-bottom: 1px solid var(--line-2);
+    background: rgba(236, 233, 223, .35);
+  }
+  .rv-ck { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 20px; border-bottom: 1px dashed var(--line-2); }
+  .rv-ck__mark { width: 24px; height: 24px; display: grid; place-items: center; border: 1.5px dashed var(--line-3); border-radius: 2px; color: var(--ink-3); background: #FFFEFA; }
+  .rv-ck__mark .i { width: 15px; height: 15px; }
+  .rv-ck[data-state="ok"] .rv-ck__mark { border-style: solid; border-color: var(--ok); color: var(--ok); }
+  .rv-ck[data-state="ng"] .rv-ck__mark { border-style: solid; border-color: var(--red); background: var(--red); color: #fff; }
+  .rv-ck__title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-weight: 600; line-height: 1.35; }
+  .rv-ck__value { margin-top: 2px; font-size: var(--fs-13); color: var(--ink-3); }
+  .rv-ck[data-state="ng"] .rv-ck__value { font-family: var(--font-hand); font-size: var(--fs-15); color: var(--red-ink); }
+  .rv-ck__side { display: flex; align-items: center; gap: 8px; }
+  .rv-ck__anno { padding: 0; border: 0; background: none; border-radius: 50%; }
+  .rv-seg-sm > button { height: 24px; padding: 0 9px; font-size: var(--fs-12); }
+  .rv-seg-sm > button[data-v="ng"][aria-pressed="true"] { background: var(--red); color: #fff; }
+  /* 「符合」是常態，用淡綠底，讓整欄判定裡只有紅色的「不符」跳出來 */
+  .rv-seg-sm > button[data-v="ok"][aria-pressed="true"] { background: #DCEDE4; color: #1D6347; }
+  .rv-ck.is-new .rv-ck__mark { animation: rv-stamp var(--dur-3) var(--ease-spring); }
+  @keyframes rv-stamp { from { transform: scale(1.5) rotate(-12deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ---------- 法規速查 ---------- */
+  .rv-reg-filter { flex-direction: column; align-items: stretch; gap: 10px; }
+  /* .filterbar .search 的 flex-basis 240px 在直向排列時會變成高度 */
+  .rv-reg-filter .search { flex: none; width: 100%; }
+  .rv-reg {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start;
+    padding: 12px 20px;
+    border-bottom: 1px dashed var(--line-2);
+  }
+  .rv-reg__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .rv-reg__title { font-weight: 700; }
+  .rv-reg__text { grid-column: 1; font-size: var(--fs-13); color: var(--ink-2); line-height: 1.55; }
+  .rv-reg__used { grid-column: 1; font-size: var(--fs-12); color: var(--ink-3); }
+  .rv-reg .btn { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  .rv-reg__used.is-used { color: var(--red-ink); font-weight: 600; }
+
+  /* ---------- 新增批註表單 ---------- */
+  .rv-form { display: flex; flex-direction: column; gap: 14px; }
+  .rv-form__loc {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+    padding: 8px 10px;
+    border: 1px dashed var(--red-line);
+    background: var(--red-soft);
+    font-size: var(--fs-13); color: var(--ink-2);
+  }
+  .rv-form__loc .i { color: var(--red); }
+  .rv-form__loc b { color: var(--ink); }
+  .rv-form__loc .mono { font-size: var(--fs-12); color: var(--ink-3); }
+  .rv-form__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+  .rv-form .seg { align-self: flex-start; }
+  .rv-form .seg > button { height: 30px; padding: 0 14px; }
+  .rv-submit { display: flex; flex-direction: column; gap: 14px; }
+  .rv-submit__verdict { display: flex; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--line-2); background: #FFFEFA; }
+  .rv-submit__verdict p { font-size: var(--fs-13); color: var(--ink-3); }
+  .rv-submit__verdict strong { display: block; font-size: var(--fs-16); color: var(--ink); }
+  .rv-submit__list { display: flex; flex-direction: column; gap: 8px; }
+  .rv-submit__list li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: start; font-size: var(--fs-14); }
+  .rv-submit__list .cite { margin-top: 3px; }
+  .rv-submit .hand-note { font-size: var(--fs-15); }
+
+  /* ---------- 斷點 ---------- */
+  /* 桌機：畫布欄 sticky，往下讀長串批註時圖面仍在眼前 */
+  @media (min-width: 1101px) and (min-height: 860px) {
+    .rv-work__main { position: sticky; top: calc(var(--header-h) + 14px); }
+  }
+  @media (max-width: 1100px) {
+    .rv-case { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .rv-case__cell--wide { grid-column: 1 / -1; order: 1; }
+    .rv-sheets { display: flex; overflow-x: auto; scrollbar-width: thin; }
+    .rv-sheet { flex: 0 0 160px; }
+  }
+  @media (max-width: 720px) {
+    .rv-head-actions { align-items: stretch; }
+    .rv-head-actions__row { justify-content: flex-start; }
+    .rv-head-actions__row > .btn,
+    .rv-head-actions__row > #submitSlot > .btn { flex: 1 1 auto; }
+    .rv-queue { width: 100%; }
+    .rv-queue__label { flex: 1; justify-content: center; }
+    .rv-case { grid-template-columns: minmax(0, 1fr); }
+    .rv-dim { margin-right: 26px; }
+    .rv-dim__label { font-size: 10.5px; }
+    .rv-dim__seg small { display: none; }
+    .rv-canvas .canvas__viewport { aspect-ratio: 1 / .9; }
+    .rv-layers { margin-left: 0; }
+    .rv-canvas .seg > button .mono { display: none; }
+    .canvas__hint { white-space: normal; width: max-content; max-width: 84%; text-align: center; }
+    .rv-anno__detail { padding-left: 16px; }
+    .rv-ck { grid-template-columns: 26px minmax(0, 1fr); padding: 10px 16px; }
+    .rv-ck__side { grid-column: 2; justify-content: flex-end; }
+    .rv-ck__side > :first-child:not(.seg) { margin-right: auto; }
+    .rv-ck-sum { padding: 14px 16px; }
+    .rv-ck-group__title { padding: 12px 16px 6px; }
+    .rv-reg { padding: 12px 16px; }
+    .rv-form__row { grid-template-columns: minmax(0, 1fr); }
+    .rv-swipe__tag { top: auto; bottom: 48px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="edge">
+  <div class="wrap edge__inner">
+    <a class="backlink" href="../../index.html"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>返回目錄</a>
+    <span class="edge__org">澄港市政府都市發展局・建築管理處｜建築執照圖說線上審查系統</span>
+    <span class="edge__plot" data-clock>PLOT 2026-10-21 09:40</span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="3.5" y="7.5" width="26" height="29" fill="#ECE9DF" stroke="#2D3A4A" stroke-width="1.2" transform="rotate(-7 16.5 22)"/>
+        <rect x="8.5" y="4.5" width="27" height="30" fill="#FFFEFA" stroke="#2D3A4A" stroke-width="1.4"/>
+        <path d="M12.5 9.5h19M12.5 9.5v6M31.5 9.5v4M22 9.5v4" fill="none" stroke="#2D3A4A" stroke-width="1.2"/>
+        <path d="M14.0 15.0 A3.3 3.3 0 0 1 19.5 15.0 A3.1 3.1 0 0 1 25.0 15.0 A3.3 3.3 0 0 1 30.5 15.0 A2.2 2.2 0 0 1 33.0 18.0 A3.0 3.0 0 0 1 33.0 23.5 A2.8 2.8 0 0 1 33.0 29.0 A2.9 2.9 0 0 1 27.5 29.0 A3.4 3.4 0 0 1 22.0 29.0 A3.1 3.1 0 0 1 16.5 29.0 A2.0 2.0 0 0 1 14.0 26.0 A3.3 3.3 0 0 1 14.0 20.5 A3.1 3.1 0 0 1 14.0 15.0Z" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M23.5 18.2 28.6 26.4H18.4z" fill="#FFF176" stroke="#2D3A4A" stroke-width="1.1" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">建照圖說審查</span><span class="brand__sub">REDLINE · CHENGGANG</span></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="nav-tab" href="index.html"><span class="nav-tab__no">A-01</span><span class="nav-tab__label">審查總覽</span></a></li>
+        <li><a class="nav-tab" href="permits.html"><span class="nav-tab__no">A-02</span><span class="nav-tab__label">案件清單</span><span class="nav-tab__count" data-count="active" title="審查中案件數">32</span></a></li>
+        <li><a class="nav-tab" href="review.html" aria-current="page"><span class="nav-tab__no">A-03</span><span class="nav-tab__label">圖說審查</span><span class="nav-tab__count nav-tab__count--red" data-count="myQueue" title="待我審查">4</span></a></li>
+        <li><a class="nav-tab" href="permit.html"><span class="nav-tab__no">A-04</span><span class="nav-tab__label">案件詳情</span></a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <button class="icon-btn" type="button" data-search aria-label="搜尋案件（快捷鍵 /）" title="搜尋案件（/）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg></button>
+      <div class="user-chip"><span class="avatar" aria-hidden="true">許</span><span class="user-chip__text"><b>許若晴</b><small>建築科 審查員</small></span></div>
+      <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="siteNav" aria-label="開啟選單"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="wrap">
+
+    <header class="page-head" data-reveal>
+      <div class="page-head__main">
+        <div class="page-head__code"><span>A-03</span><span>圖說審查 · REVIEW</span><span id="headId">115-0412</span></div>
+        <h1 class="page-title" id="caseTitle">海濱路集合住宅新建工程</h1>
+        <p class="page-desc" id="caseDesc"><span class="mono">115建審字第0412號</span>｜港埕置業股份有限公司｜澄港市港埕區海濱路一段 128 號</p>
+      </div>
+      <div class="page-head__actions rv-head-actions">
+        <span class="margin-note margin-note--arrow hide-sm" id="headNote">R2 尚有 4 項待處理</span>
+        <div class="rv-head-actions__row">
+          <nav class="rv-queue" id="queueNav" aria-label="我的技術審查案件"></nav>
+          <a class="btn" id="detailLink" href="permit.html?id=115-0412"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5M6 8.2h4.5M6 10.6h4.5"/></svg>案件詳情</a>
+          <span id="submitSlot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 案件摘要：標題欄式 -->
+    <section class="rv-case" aria-label="案件摘要" data-reveal style="--i:1">
+      <div class="rv-case__cell">
+        <span class="tb-label">規模 SCALE</span>
+        <strong id="caseScale">地上 12 層・地下 3 層</strong>
+        <span id="caseUse">集合住宅（H-2）・RC 造</span>
+        <span class="mono" id="caseArea">18,642.36 m²</span>
+      </div>
+      <div class="rv-case__cell">
+        <span class="tb-label">設計人 ARCHITECT</span>
+        <strong id="caseArch">陳建宏建築師事務所</strong>
+        <span id="caseArchSub">陳建宏・建字第 0381 號</span>
+      </div>
+      <div class="rv-case__cell rv-case__cell--wide">
+        <span class="tb-label"><span>審查回合 ROUNDS</span><span>N.T.S.</span></span>
+        <div class="rv-dim" id="roundDim" role="img" aria-label="審查回合時程"></div>
+      </div>
+      <div class="rv-case__cell">
+        <span class="tb-label">目前狀態 STATUS</span>
+        <div class="rv-case__status" id="caseStatus"></div>
+        <div id="caseLamps"></div>
+      </div>
+    </section>
+
+    <!-- 工作區：平面圖畫布＋紅筆批註 -->
+    <section class="section grid rv-work" aria-label="圖說審查工作區">
+      <div class="col-8 rv-work__main">
+        <article class="sheet sheet--marks rv-board" id="board" data-reveal data-anim style="--i:2">
+          <div class="sheet__head">
+            <span class="sheet__code">A-201</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="boardTitle">標準層平面圖（4F–12F）</h2>
+              <p class="sheet__sub" id="boardSub">比例 1:100<span class="hide-sm">・滾輪縮放、拖曳平移・<kbd>C</kbd> 紅筆 <kbd>V</kbd> 檢視</span><span class="only-sm">・雙指縮放、左右拖曳平移</span></p>
+            </div>
+            <div class="sheet__actions">
+              <button class="btn btn--sm btn--ghost" type="button" id="replayBtn" title="重新描繪平面圖與批註"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5V5h-2.5"/></svg>重播描繪</button>
+            </div>
+          </div>
+          <div class="canvas rv-canvas">
+            <div class="canvas__toolbar">
+              <div class="seg" id="toolSeg" role="group" aria-label="工具">
+                <button type="button" data-value="view" aria-pressed="true" title="檢視（V）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>檢視</button>
+                <button type="button" data-value="pen" aria-pressed="false" title="紅筆批註（C）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 2.6 13.4 5.4 5.6 13.2 2.4 13.6l.4-3.2z"/><path d="m9.2 4 2.8 2.8"/></svg>紅筆批註</button>
+              </div>
+              <span class="canvas__toolbar-sep" aria-hidden="true"></span>
+              <div class="seg" id="viewSeg" role="group" aria-label="圖說回合">
+                <button type="button" data-value="r1" aria-pressed="false">R1<span class="mono">07/02</span></button>
+                <button type="button" data-value="r2" aria-pressed="true">R2<span class="mono">09/30</span></button>
+                <button type="button" data-value="diff" aria-pressed="false">疊圖</button>
+                <button type="button" data-value="swipe" aria-pressed="false">拉簾比對</button>
+              </div>
+              <div class="cluster rv-layers" role="group" aria-label="套繪圖層">
+                <button class="layer-btn" type="button" data-layer="str" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>結構</button>
+                <button class="layer-btn" type="button" data-layer="fir" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>消防</button>
+                <button class="layer-btn" type="button" data-layer="acc" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>無障礙</button>
+              </div>
+            </div>
+            <div class="canvas__viewport" id="viewport" role="group" aria-roledescription="平面圖畫布" aria-label="平面圖畫布：拖曳平移、滾輪或 +／− 縮放；紅筆模式下點選圖面或按 Enter 加入批註">
+              <div class="rv-swipe" id="swipe" hidden>
+                <div class="rv-swipe__pane" id="swipePane" aria-hidden="true"></div>
+                <span class="rv-swipe__tag rv-swipe__tag--l" id="swipeTagL">R1 · 2026.07.02</span>
+                <span class="rv-swipe__tag rv-swipe__tag--r" id="swipeTagR">R2 · 2026.09.30</span>
+                <div class="rv-swipe__handle" id="swipeHandle" role="slider" tabindex="0" aria-label="拉簾位置：左側 R1、右側 R2" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+                  <span class="rv-swipe__grip" aria-hidden="true"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6 3 11l5 5M14 6l5 5-5 5"/></svg></span>
+                </div>
+              </div>
+              <div class="canvas__legend" id="diffLegend" hidden>
+                <span><i class="diff-legend__line diff-legend__line--dash" style="--sw: var(--diff-old)"></i>R1 刪除（虛線）</span>
+                <span><i class="diff-legend__line" style="--sw: var(--diff-new)"></i>R2 新增・修改</span>
+              </div>
+              <div class="rv-pen-banner" id="penBanner" hidden>
+                <svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 2.6 13.4 5.4 5.6 13.2 2.4 13.6l.4-3.2z"/><path d="m9.2 4 2.8 2.8"/></svg>
+                <span>紅筆模式：點選圖面位置加入批註</span>
+                <span class="cite" id="penCite" hidden></span>
+                <span class="rv-pen-banner__esc hide-sm">Esc 離開</span>
+              </div>
+              <div class="canvas__hud" aria-hidden="true"><span>X <b id="hudX">—</b></span><span>Y <b id="hudY">—</b></span><span>軸 <b id="hudGrid">—</b></span><span id="hudView">R2 · A-201</span></div>
+              <div class="canvas__zoom" role="group" aria-label="縮放">
+                <button type="button" id="zoomIn" aria-label="放大"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+                <button type="button" id="zoomOut" aria-label="縮小"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+                <button type="button" id="zoomFit" aria-label="全圖"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+                <span class="canvas__zoom-level" id="zoomLevel" aria-live="polite">100%</span>
+              </div>
+              <div class="canvas__hint" id="canvasHint" role="status"></div>
+            </div>
+            <div class="rv-sheets" id="sheetIndex" role="group" aria-label="圖說索引"></div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="col-4 rv-side" aria-labelledby="sideTitle">
+        <div class="sheet rv-panel" data-reveal style="--i:3">
+          <div class="sheet__head">
+            <span class="sheet__code">RL</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="sideTitle">紅筆批註</h2>
+              <p class="sheet__sub" id="sideSub">R1 提出 6 項・R2 新增 2 項</p>
+            </div>
+          </div>
+          <div class="tabs" role="tablist" aria-label="批註與回合變更" id="sideTabs">
+            <button class="tab" type="button" role="tab" id="tabAnno" aria-controls="panelAnno" aria-selected="true">批註 <span class="mono" id="tabAnnoN">8</span></button>
+            <button class="tab" type="button" role="tab" id="tabDiff" aria-controls="panelDiff" aria-selected="false">回合變更 <span class="mono" id="tabDiffN">5</span></button>
+          </div>
+          <div id="panelAnno" role="tabpanel" aria-labelledby="tabAnno">
+            <div class="rv-progress" id="annoProgress"></div>
+            <div class="rv-filters">
+              <div class="cluster" role="group" aria-label="批註狀態篩選" id="annoFilter">
+                <button class="chip" type="button" data-filter="all" aria-pressed="true">全部 <span class="chip__count" data-n="all"></span></button>
+                <button class="chip" type="button" data-filter="open" aria-pressed="false">待處理 <span class="chip__count" data-n="open"></span></button>
+                <button class="chip" type="button" data-filter="resolved" aria-pressed="false">已改善 <span class="chip__count" data-n="resolved"></span></button>
+                <button class="chip" type="button" data-filter="mine" aria-pressed="false">我的 <span class="chip__count" data-n="mine"></span></button>
+              </div>
+              <div class="rv-disc-filter" role="group" aria-label="科別篩選" id="discFilter"></div>
+            </div>
+            <ul class="anno-list" id="annoList"></ul>
+            <div class="sheet__foot">
+              <button class="btn btn--sm" type="button" id="addAnnoBtn"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>新增批註</button>
+              <a class="link-arrow" id="sideDetailLink" href="permit.html?id=115-0412">各科意見彙整<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+            </div>
+          </div>
+          <div id="panelDiff" role="tabpanel" aria-labelledby="tabDiff" hidden>
+            <p class="rv-diff-intro" id="diffIntro"></p>
+            <ol class="rv-diff" id="diffList"></ol>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- 檢核表與法規速查 -->
+    <section class="section grid" aria-label="建築科檢核與法規">
+      <div class="col-7">
+        <article class="sheet" data-reveal>
+          <div class="sheet__head">
+            <span class="sheet__code">CK</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="ckTitle">建築科審查檢核表</h2>
+              <p class="sheet__sub">逐項判定；不符項目可直接在圖面加紅筆批註</p>
+            </div>
+            <div class="sheet__actions">
+              <div class="seg" id="ckSeg" role="group" aria-label="檢核項目篩選">
+                <button type="button" data-value="all" aria-pressed="true">全部</button>
+                <button type="button" data-value="todo" aria-pressed="false">未檢</button>
+                <button type="button" data-value="ng" aria-pressed="false">不符</button>
+              </div>
+            </div>
+          </div>
+          <div class="rv-ck-sum" id="ckSum"></div>
+          <ul id="ckList"></ul>
+        </article>
+      </div>
+      <div class="col-5">
+        <article class="sheet sheet--marks" data-reveal style="--i:1">
+          <div class="sheet__head">
+            <span class="sheet__code">LAW</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title">法規條文速查</h2>
+              <p class="sheet__sub" id="regSub">本案常用條文</p>
+            </div>
+          </div>
+          <div class="filterbar rv-reg-filter">
+            <label class="search"><span class="sr-only">搜尋法規條文</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg><input class="input" type="search" id="regSearch" placeholder="條號、關鍵字，例如：欄杆、§33" autocomplete="off"></label>
+            <div class="cluster" role="group" aria-label="條文科別篩選" id="regDisc"></div>
+          </div>
+          <ul id="regList"></ul>
+        </article>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div class="titleblock__cell titleblock__cell--org">
+        <span class="tb-label">機關 AGENCY</span>
+        <strong>澄港市政府都市發展局 建築管理處</strong>
+        <span>建築執照圖說線上審查系統・3.2 版</span>
+        <span class="muted">所有案件、人名與地址均為作品集虛構資料</span>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">圖說索引 SHEETS</span>
+        <ul class="tb-links">
+          <li><a href="index.html"><span class="mono">A-01</span><span>審查總覽</span></a></li>
+          <li><a href="permits.html"><span class="mono">A-02</span><span>案件清單</span></a></li>
+          <li><a href="review.html"><span class="mono">A-03</span><span>圖說審查</span></a></li>
+          <li><a href="permit.html"><span class="mono">A-04</span><span>案件詳情</span></a></li>
+        </ul>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">審查服務 SERVICE</span>
+        <span>週一至週五 08:30–17:30</span>
+        <span class="mono">(08) 2250-6600 #3180</span>
+        <span>澄港市港埕區市府路 1 號 7 樓</span>
+      </div>
+      <div class="titleblock__cell titleblock__cell--rev">
+        <span class="tb-label">修訂 REVISIONS</span>
+        <table class="rev-table">
+          <tbody>
+            <tr><td><span class="rev" data-round="3" role="img" aria-label="修訂 3"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>3</b></span></td><td>2026.10</td><td>回合疊圖比較上線</td></tr>
+            <tr><td><span class="rev" data-round="2" role="img" aria-label="修訂 2"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>2</b></span></td><td>2026.07</td><td>消防・無障礙套繪圖層</td></tr>
+            <tr><td><span class="rev" data-round="1" role="img" aria-label="修訂 1"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>1</b></span></td><td>2026.04</td><td>線上圖說審查啟用</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="titleblock__cell titleblock__cell--stamp">
+        <svg viewBox="0 0 120 120" role="img" aria-label="澄港市政府建築管理處 審查專用章">
+          <defs><path id="stampArc" d="M24 62a36 36 0 1 1 72 0"/></defs>
+          <g transform="rotate(-8 60 60)" opacity=".88">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#D7263D" stroke-width="3"/>
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#D7263D" stroke-width="1"/>
+            <text font-size="10.5" fill="#D7263D" letter-spacing="1.5"><textPath href="#stampArc" startOffset="50%" text-anchor="middle">澄港市政府建築管理處</textPath></text>
+            <path d="M28 70h64" stroke="#D7263D" stroke-width="1"/>
+            <text x="60" y="64" font-size="17" font-weight="700" fill="#D7263D" text-anchor="middle">審查專用</text>
+            <text x="60" y="86" font-size="10" fill="#D7263D" text-anchor="middle" font-family="IBM Plex Mono, monospace">115.10.21</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 建築管理處（虛構城市作品集展示）</span>
+      <span class="mono">SHEET A-03 / 04 · SCALE 1:100 · PLOTTED ON TRACE PAPER</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const { esc, fmt } = App;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const F = App.FEATURED;
+  const VB = App.plan.VIEWBOX;
+  const MM = App.plan.MM;
+  const ME = App.ME;
+  const MY_DISC = App.PEOPLE[ME].disc;
+  const wide = window.matchMedia('(min-width: 1101px)');
+  const smooth = () => (App.reduceMotion.matches ? 'auto' : 'smooth');
+
+  /* ---------- 案件：?id= 是外部輸入，查無此案時退回焦點案件並明確告知 ---------- */
+  const askedId = App.param('id');
+  const p = App.getPermit(askedId || F.id) || App.getPermit(F.id);
+  if (askedId && p.id !== askedId) {
+    App.toast(`查無案件「${askedId}」`, { tone: 'red', desc: `已改為開啟 ${F.id} ${p.name}。` });
+  }
+  const isFeatured = p.id === F.id;
+  // 只有焦點案件有前回合圖說與批註資料；其他案件的批註只存在本頁記憶體
+  const annos = isFeatured ? F.annotations : [];
+  const curRound = isFeatured ? 2 : p.round;
+  const baseView = curRound >= 2 ? 'r2' : 'r1';
+  const canCompare = isFeatured;
+
+  /* ---------- 平面圖座標：軸線（與 app.js 平面圖產生器一致） ---------- */
+  const GX = [150, 390, 630, 870, 1110];
+  const GY = [170, 380, 470, 680];
+  const SIZES = { s: [64, 52], m: [96, 76], l: [140, 108] };
+
+  /* ---------- 法規條文庫（批註引用與速查共用） ---------- */
+  const REGS = [
+    { code: '技規設施編 §33', disc: 'arc', title: '直通樓梯梯寬', text: 'H-2 類組集合住宅之直通樓梯，梯段及平台淨寬不得小於 120 公分。' },
+    { code: '技規設施編 §38', disc: 'arc', title: '欄杆扶手高度', text: '陽台、露臺及室外走廊之欄杆扶手高度不得小於 110 公分；十層以上不得小於 120 公分。' },
+    { code: '技規設施編 §41', disc: 'arc', title: '居室採光', text: '居室有效採光面積不得小於該居室樓地板面積八分之一。' },
+    { code: '技規設施編 §43', disc: 'arc', title: '浴廁通風', text: '浴廁應設有效通風之對外窗，或設置機械通風設備並於圖面標示換氣量。' },
+    { code: '技規設施編 §60', disc: 'arc', title: '停車空間', text: '停車位尺寸不得小於 2.5 × 5.5 公尺，車道坡度不得超過一比六。' },
+    { code: '技規設施編 §93', disc: 'arc', title: '直通樓梯步行距離', text: '居室任一點至直通樓梯之步行距離，主要構造為防火構造者不得超過 50 公尺。' },
+    { code: '技規設施編 §76', disc: 'fir', title: '防火門', text: '安全梯出入口之防火門應朝避難方向開啟，並具常時關閉或隨火警自動關閉之機能。' },
+    { code: '技規設施編 §101', disc: 'fir', title: '排煙設備', text: '排煙口有效開口面積不得小於防煙區劃面積之 2%，並應檢附計算書。' },
+    { code: 'RC 規範 第 11 章', disc: 'str', title: '剪力牆設計', text: '特殊結構牆應檢核邊界構材需求，並於結構圖附配筋詳圖。' },
+    { code: '無障礙規範 206.2.5', disc: 'acc', title: '迴轉空間', text: '無障礙通路於出入口前應留設直徑 150 公分以上之輪椅迴轉空間。' },
+    { code: '無障礙規範 407.2', disc: 'acc', title: '昇降機車廂', text: '無障礙昇降機車廂深度不得小於 135 公分，寬度不得小於 110 公分。' },
+    { code: '澄港都設準則 §9', disc: 'udr', title: '開放空間綠化', text: '沿街退縮開放空間之植栽覆土深度不得小於 1.5 公尺。' },
+  ];
+
+  /* ---------- 建築科檢核表：req 為規定、val 為焦點案件的設計值 ---------- */
+  const CK = [
+    { title: '一、基地與量體', items: [
+      { id: 'bcr', title: '建蔽率', cite: '澄港土管要點 §12', req: '住宅區建蔽率不得超過 60%', val: '設計 48.62%（≤ 60%）', state: 'ok' },
+      { id: 'far', title: '容積率', cite: '澄港土管要點 §13', req: '第三種住宅區容積率不得超過 360%', val: '設計 359.86%（≤ 360%）', state: 'ok' },
+      { id: 'hgt', title: '建築物高度', cite: '澄港土管要點 §17', req: '依面前道路寬度與退縮距離檢討高度比', val: '41.6 m（面前道路 20 m、退縮 4 m）', state: 'ok' },
+      { id: 'park', title: '停車空間尺寸與車道坡度', cite: '技規設施編 §60', req: '車位 2.5 × 5.5 m 以上、車道坡度 ≤ 1:6', val: '地下層 B1–B3 共 92 位，A-1B1 圖說待核', state: null },
+    ] },
+    { title: '二、避難與防火', items: [
+      { id: 'walk', title: '直通樓梯步行距離', cite: '技規設施編 §93', req: '居室至直通樓梯 ≤ 50 m', val: '最遠點 13.2 m（≤ 50 m）', state: 'ok' },
+      { id: 'stair', title: '直通樓梯梯段淨寬', cite: '技規設施編 §33', req: '梯段及平台淨寬 ≥ 120 cm', val: 'R2 二號梯改為 153 cm', state: 'ok', anno: 2 },
+      { id: 'door', title: '安全梯防火門', cite: '技規設施編 §76', req: '朝避難方向開啟、常時關閉', val: 'R2 一號梯改向梯間內開啟（會同消防科）', state: 'ok', anno: 1 },
+      { id: 'corr', title: '公共走廊淨寬', cite: '技規設施編 §92', req: '兩側有居室者淨寬 ≥ 160 cm', val: '淨寬 246 cm', state: 'ok' },
+    ] },
+    { title: '三、衛生與設備', items: [
+      { id: 'light', title: '居室採光', cite: '技規設施編 §41', req: '有效採光面積 ≥ 樓地板面積 1/8', val: '最小為 C 戶臥室 1/6.4', state: 'ok' },
+      { id: 'vent', title: '浴廁通風', cite: '技規設施編 §43', req: '設對外窗或機械通風設備', val: 'R2 外牆增設 0.6 × 1.6 m 通風窗', state: 'ok', anno: 6 },
+      { id: 'rail', title: '陽台欄杆扶手高度', cite: '技規設施編 §38', req: '十層以上 ≥ 120 cm', val: 'B 戶陽台欄杆高度未標示', state: 'ng', anno: 8 },
+      { id: 'elev', title: '昇降機設置', cite: '技規設施編 §55', req: '六層以上建築物應設昇降機', val: '15 人份昇降機 1 部（會同無障礙小組）', state: 'ok' },
+    ] },
+    { title: '四、其他設施', items: [
+      { id: 'roof', title: '屋頂突出物', cite: '澄港土管要點 §21', req: '高度 ≤ 6 m、面積 ≤ 建築面積 1/8', val: '機房與水箱間，屋頂層平面待核', state: null },
+      { id: 'shelter', title: '防空避難設備', cite: '澄港建管自治條例 §9', req: '地下層面積應達規定比例', val: '地下一層兼作防空避難室，面積待核', state: null },
+      { id: 'trash', title: '垃圾儲存空間', cite: '澄港建管自治條例 §14', req: '集合住宅應每層或集中設置', val: '標準層各設垃圾儲存室 5.1 m²', state: 'ok' },
+    ] },
+  ];
+  // 判定結果是可變資料：非焦點案件一律從「未檢」開始
+  const ck = {};
+  CK.forEach((g) => g.items.forEach((it) => {
+    ck[it.id] = isFeatured ? { state: it.state, anno: it.anno || null } : { state: null, anno: null };
+  }));
+  const CK_ITEMS = CK.flatMap((g) => g.items);
+
+  /* ---------- R1 → R2 圖面變更（對應平面圖上的 △ 變更標記） ---------- */
+  const CHANGES = [
+    { no: 1, mark: [216, 418], box: [170, 410, 100, 110], title: '一號梯防火門改向', r1: '門扇向公共走廊開啟', r2: '改朝梯間內開啟，加註常時關閉式', anno: 1 },
+    { no: 2, mark: [1004, 724], box: [980, 470, 136, 260], title: '二號梯間西移 1,020 mm', r1: '梯間寬 2,580 mm，梯段淨寬 108 cm', r2: '併入機電室，梯間寬 3,600 mm、梯段淨寬 153 cm', anno: 2 },
+    { no: 3, mark: [400, 592], box: [280, 580, 140, 106], title: '昇降機車廂加深', r1: '車廂深 1,260 mm', r2: '改 15 人份車廂，深 1,560 mm，坑道同步加深', anno: 3 },
+    { no: 4, mark: [126, 336], box: [110, 296, 80, 76], title: 'A 戶浴室增設通風窗', r1: '外牆為實牆', r2: '增設 0.6 × 1.6 m 通風窗', anno: 6 },
+    { no: 5, mark: [1134, 336], box: [1070, 296, 80, 76], title: 'B 戶浴室增設通風窗', r1: '外牆為實牆', r2: '增設 0.6 × 1.6 m 通風窗', anno: 6 },
+  ];
+
+  /* ---------- 圖說索引 ---------- */
+  const SHEETS = isFeatured ? F.sheets : [
+    { no: 'A-001', name: '配置圖', rounds: [p.round] },
+    { no: 'A-101', name: '一層平面圖', rounds: [p.round] },
+    { no: 'A-201', name: `標準層平面圖（2F–${p.up}F）`, rounds: [p.round], current: true },
+    { no: 'A-301', name: '立面圖', rounds: [p.round] },
+    { no: 'A-401', name: '剖面圖', rounds: [p.round] },
+    { no: 'S-201', name: '標準層結構平面圖', rounds: [p.round] },
+  ];
+  const SHEET_SHORT = { 'A-001': '配置圖', 'A-101': '一層平面', 'A-201': '標準層平面', 'A-301': '立面圖', 'A-401': '剖面圖', 'S-201': '結構平面' };
+  const THUMBS = {
+    'A-001': '<rect x="4" y="3" width="36" height="20" stroke-dasharray="2 1.5"/><rect x="12" y="7" width="20" height="11" fill="currentColor" fill-opacity=".14"/><path d="M2 27h40" stroke-width="1.6"/><path d="M37 5.5v5M35.4 7.5 37 5.5l1.6 2"/>',
+    'A-101': '<rect x="4" y="5" width="36" height="22"/><path d="M4 15h14M18 5v10M28 15v12M28 15h12"/><path d="M18 21a6 6 0 0 1 6 6" stroke-width=".7"/>',
+    'A-201': '<rect x="4" y="5" width="36" height="22"/><path d="M4 13h36M4 17h36M22 5v8M12 17v10M32 17v10"/><path d="M14 18h5v8h-5z" stroke-width=".6"/>',
+    'A-301': '<path d="M2 29h40" stroke-width="1.6"/><rect x="11" y="4" width="22" height="25"/><path d="M11 9h22M11 14h22M11 19h22M11 24h22M15 4v25M29 4v25" stroke-width=".5"/>',
+    'A-401': '<path d="M2 21h40" stroke-width="1.4"/><rect x="10" y="3" width="24" height="26"/><path d="M10 8h24M10 13h24M10 18h24M10 25h24" stroke-width=".6"/><path d="M5 21v8M39 21v8" stroke-dasharray="1.5 1.5"/>',
+    'S-201': '<path d="M8 4v24M22 4v24M36 4v24M4 8h36M4 18h36M4 28h36" stroke-dasharray="3 1.5" stroke-width=".6"/><path d="M6.5 6.5h3v3h-3zM20.5 6.5h3v3h-3zM34.5 6.5h3v3h-3zM6.5 16.5h3v3h-3zM20.5 16.5h3v3h-3zM34.5 16.5h3v3h-3zM6.5 26.5h3v3h-3zM20.5 26.5h3v3h-3zM34.5 26.5h3v3h-3z" fill="currentColor"/>',
+  };
+
+  /* ---------- 頁面狀態（非資料：檢視方式、篩選、選取） ---------- */
+  const state = {
+    view: baseView,
+    tool: 'view',
+    active: null,          // 選取中的批註編號
+    change: null,          // 選取中的回合變更編號
+    filter: 'all',
+    discs: new Set(App.DISC.map((d) => d.key)),
+    size: 'm',
+    pending: null,         // 進入紅筆模式時預帶的 {cite, disc, ck}
+    ckFilter: 'all',
+    regQuery: '',
+    regDisc: 'all',
+    submitted: null,       // 本次送出的建築科意見（供撤回）
+  };
+  const findAnno = (no) => annos.find((a) => a.no === no);
+  const isOpen = (a) => a.status !== 'resolved';
+  const nextNo = () => annos.reduce((m, a) => Math.max(m, a.no), 0) + 1;
+
+  /* =====================================================================
+   * 頁首、佇列與案件摘要
+   * ===================================================================== */
+  $('#headId').textContent = p.id;
+  $('#caseTitle').textContent = p.name;
+  $('#caseDesc').innerHTML = `<span class="mono">${esc(App.caseNo(p))}</span>｜${esc(p.applicant)}｜${esc(App.address(p))}`;
+  $('#detailLink').href = App.permitUrl(p.id);
+  $('#sideDetailLink').href = App.permitUrl(p.id);
+
+  // 我承辦的技術審查案件，依期限排序；上一件／下一件循環
+  const queue = App.permits
+    .filter((x) => x.stage === 'tech' && x.officer === ME)
+    .sort((a, b) => a.due.localeCompare(b.due) || a.id.localeCompare(b.id));
+  (function renderQueue() {
+    const i = queue.indexOf(p);
+    const prev = queue[i < 0 ? queue.length - 1 : (i - 1 + queue.length) % queue.length];
+    const next = queue[i < 0 ? 0 : (i + 1) % queue.length];
+    const arrow = (d) => `<svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+    $('#queueNav').innerHTML = `
+      <a class="rv-queue__btn" href="${App.reviewUrl(prev.id)}" aria-label="上一件：${esc(prev.id)} ${esc(prev.name)}" title="上一件：${esc(prev.id)}">${arrow('m10 4-4 4 4 4')}</a>
+      <span class="rv-queue__label">${i >= 0 ? `我的技術審查 <b>${i + 1}</b> / ${queue.length}` : `我的技術審查 ${queue.length} 件`}</span>
+      <a class="rv-queue__btn" href="${App.reviewUrl(next.id)}" aria-label="下一件：${esc(next.id)} ${esc(next.name)}" title="下一件：${esc(next.id)}">${arrow('m6 4 4 4-4 4')}</a>`;
+  })();
+
+  const arch = App.ARCHITECTS[p.architect];
+  $('#caseScale').textContent = `地上 ${p.up} 層${p.down ? `・地下 ${p.down} 層` : ''}`;
+  $('#caseUse').textContent = `${p.use}（${p.cls}）・${p.struct} 造`;
+  $('#caseArea').textContent = `${fmt.area(p.area)} m²${p.units ? `・${p.units} 戶` : ''}`;
+  $('#caseArch').textContent = arch.name;
+  $('#caseArchSub').textContent = `${arch.architect}・${arch.license}`;
+  $('#boardTitle').textContent = SHEETS.find((s) => s.no === 'A-201').name;
+
+  /* 回合尺寸線：不依比例（N.T.S.），各段等寬、上方標天數 */
+  function roundPoints() {
+    if (isFeatured) {
+      const [r1, r2] = F.rounds;
+      return {
+        pts: [
+          { date: r1.submitted, label: '掛號收件' },
+          { date: r1.notice, label: 'R1 補正通知', tone: 'red' },
+          { date: r1.resubmitted, label: 'R2 收件' },
+          { date: App.TODAY, label: '今日', tone: 'today' },
+          { date: r2.due, label: '審查期限' },
+        ],
+        captions: ['R1 審查', '申請人補正', 'R2 審查', '剩餘'],
+      };
+    }
+    const pts = [{ date: p.received, label: '掛號收件' }];
+    if (p.round >= 2) {
+      const ev = App.timelineOf(p).filter((e) => /補正收件/.test(e.title)).pop();
+      if (ev) pts.push({ date: ev.date, label: `R${p.round} 收件` });
+    }
+    if (p.stage === 'issued') {
+      pts.push({ date: p.issuedAt, label: '核發' });
+    } else {
+      if (!pts.some((x) => x.date === App.TODAY)) pts.push({ date: App.TODAY, label: '今日', tone: 'today' });
+      const dueName = { intake: '收件期限', admin: '行政期限', tech: '審查期限', fix: '補正期限' }[p.stage];
+      if (p.due) pts.push({ date: p.due, label: dueName, tone: App.days(p.due) < 0 ? 'red' : '' });
+    }
+    pts.sort((a, b) => a.date.localeCompare(b.date));
+    return { pts, captions: [] };
+  }
+  (function renderDim() {
+    const { pts, captions } = roundPoints();
+    const n = pts.length;
+    const pos = (i) => (i / (n - 1)) * 100;
+    let segs = '';
+    for (let i = 1; i < n; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const d = App.days(b.date) - App.days(a.date);
+      const future = App.days(a.date) >= 0 && App.days(b.date) > 0;
+      const over = a.tone === 'red' && b.tone === 'today';
+      const cap = captions[i - 1] || (future ? '剩餘' : over ? '已逾期' : '');
+      segs += `<div class="rv-dim__seg${future ? ' is-future' : ''}${over ? ' is-over' : ''}" style="left:${pos(i - 1)}%;width:${100 / (n - 1)}%">${cap ? `<small>${cap}</small>` : ''}<b>${d} 日</b></div>`;
+    }
+    const marks = pts.map((pt, i) => `<div class="rv-dim__pt${pt.tone ? ' is-' + pt.tone : ''}${i === 0 ? ' is-first' : ''}" style="left:${pos(i)}%"><span class="rv-dim__label"><b>${fmt.md(pt.date)}</b>${esc(pt.label)}</span></div>`).join('');
+    const el = $('#roundDim');
+    el.innerHTML = `<div class="rv-dim__base"></div>${segs}${marks}`;
+    el.setAttribute('aria-label', `審查回合時程：${pts.map((pt) => `${fmt.date(pt.date)} ${pt.label}`).join('、')}`);
+  })();
+
+  /* =====================================================================
+   * 畫布
+   * ===================================================================== */
+  const vp = $('#viewport');
+  vp.insertAdjacentHTML('afterbegin', App.plan.svg({
+    id: 'rvPlan', view: baseView, layers: [], annotations: annos,
+    label: `${p.id} A-201 標準層平面圖（第 ${curRound} 回合），含紅筆批註`,
+  }));
+  const svg = $('#rvPlan');
+  // 本頁自有的兩個圖層：回合變更的螢光圈、紅筆模式的預覽雲線（放最上層，pointer-events 關閉）
+  svg.insertAdjacentHTML('beforeend',
+    `<g class="rv-focus" aria-hidden="true" pointer-events="none"></g>` +
+    `<g class="rv-ghost" aria-hidden="true" pointer-events="none"><path class="rv-ghost__cloud" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="7 5" stroke-linejoin="round"/><path d="M-7 0h14M0-7v14" stroke="currentColor" stroke-width="1.4"/></g>`);
+  const ghost = $('.rv-ghost', svg);
+  const ghostCloud = $('.rv-ghost__cloud', svg);
+  const focusLayer = $('.rv-focus', svg);
+  let ghostPinned = false;
+
+  // 拉簾比對用的 R1 疊圖：只有 R1 提出的批註，viewBox 與主圖同步
+  let svgR1 = null;
+  if (canCompare) {
+    $('#swipePane').innerHTML = App.plan.svg({
+      id: 'rvPlanR1', view: 'r1', layers: [], annotations: annos.filter((a) => a.round === 1),
+      label: 'R1 圖說（2026.07.02）',
+    });
+    svgR1 = $('#rvPlanR1');
+  }
+
+  const VIEW_LABEL = { r1: 'R1 · A-201', r2: `R${curRound} · A-201`, diff: 'R1 ⇄ R2 疊圖', swipe: 'R1 ｜ R2 拉簾' };
+
+  function gridRef(pt) {
+    const part = (v, axes, labels, lo, hi) => {
+      if (v < axes[0]) return `${labels[0]} ${lo}`;
+      if (v > axes[axes.length - 1]) return `${labels[labels.length - 1]} ${hi}`;
+      const i = axes.findIndex((a, k) => v >= a && v <= axes[k + 1]);
+      return `${labels[i]}–${labels[i + 1]}`;
+    };
+    return `${part(pt.x, GX, ['1', '2', '3', '4', '5'], '以西', '以東')} / ${part(pt.y, GY, ['A', 'B', 'C', 'D'], '以北', '以南')}`;
+  }
+  // 以 X1 / A 軸交點為原點，換算成公釐
+  const toMm = (pt) => ({ x: Math.round((pt.x - GX[0]) * MM), y: Math.round((pt.y - GY[0]) * MM) });
+
+  const pz = App.panZoom(svg, {
+    host: vp,
+    wheel: 'always',
+    max: 8,
+    onChange: (s) => {
+      $('#zoomLevel').textContent = `${Math.round(s * 100)}%`;
+      if (svgR1) svgR1.setAttribute('viewBox', svg.getAttribute('viewBox'));
+    },
+    onMove: (pt) => {
+      const mm = toMm(pt);
+      $('#hudX').textContent = fmt.num(mm.x);
+      $('#hudY').textContent = fmt.num(mm.y);
+      $('#hudGrid').textContent = gridRef(pt);
+      moveGhost(pt);
+    },
+    onTap: (pt, e) => handleTap(pt, e),
+  });
+  $('#zoomIn').addEventListener('click', pz.zoomIn);
+  $('#zoomOut').addEventListener('click', pz.zoomOut);
+  $('#zoomFit').addEventListener('click', pz.fit);
+  // 已是全圖時往下滾動交還給頁面捲動：游標停在畫布上也能繼續往下讀
+  vp.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey && e.deltaY > 0 && pz.scale() <= 1.001) e.stopImmediatePropagation();
+  }, { capture: true });
+
+  let hintTimer = 0;
+  function showHint(text) {
+    const h = $('#canvasHint');
+    h.textContent = text;
+    h.classList.add('is-show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => h.classList.remove('is-show'), 1700);
+  }
+
+  /* ---------- 紅筆預覽雲線 ---------- */
+  function setGhostSize() {
+    const [w, h] = SIZES[state.size];
+    ghostCloud.setAttribute('d', App.cloudPath(-w / 2, -h / 2, w, h, { arc: 13, seed: 5 }));
+  }
+  function placeGhost(pt) { ghost.setAttribute('transform', `translate(${pt.x.toFixed(1)} ${pt.y.toFixed(1)})`); }
+  function moveGhost(pt) {
+    if (state.tool !== 'pen' || ghostPinned) return;
+    placeGhost(pt);
+    ghost.classList.add('is-on');
+  }
+  vp.addEventListener('pointerleave', () => { if (!ghostPinned) ghost.classList.remove('is-on'); });
+  setGhostSize();
+
+  /* ---------- 工具與檢視 ---------- */
+  const toolSeg = App.seg($('#toolSeg'), { onChange: (v) => setTool(v) });
+  const viewSeg = App.seg($('#viewSeg'), { onChange: (v) => setView(v) });
+
+  // 非焦點案件沒有前回合圖說可比：停用比較，回合標籤改用本案回合
+  if (!canCompare) {
+    const btns = $$('#viewSeg button');
+    btns.forEach((b) => {
+      b.querySelector('.mono')?.remove();
+      if (b.dataset.value !== baseView) {
+        b.disabled = true;
+        b.title = p.round === 1 ? '本案為第 1 回合，尚無前回合圖說' : '前回合圖說尚未轉入線上審查';
+      }
+    });
+    if (baseView === 'r2') btns[1].firstChild.textContent = `R${curRound}`;
+    viewSeg.set(baseView, false);
+    $('#tabDiffN').textContent = '0';
+  }
+  $('#hudView').textContent = VIEW_LABEL[state.view];
+
+  function setTool(t, { pending = null } = {}) {
+    state.tool = t;
+    state.pending = t === 'pen' ? pending : null;
+    toolSeg.set(t, false);
+    vp.classList.toggle('is-annotating', t === 'pen');
+    $('#penBanner').hidden = t !== 'pen';
+    const cite = $('#penCite');
+    cite.hidden = !state.pending?.cite;
+    cite.textContent = state.pending?.cite ? `引用 ${state.pending.cite}` : '';
+    if (t === 'pen') {
+      // 新批註一律落在本回合圖面上
+      if (state.view !== baseView) setView(baseView);
+    } else {
+      ghost.classList.remove('is-on');
+    }
+  }
+
+  function setView(v) {
+    state.view = v;
+    viewSeg.set(v, false);
+    App.plan.setView(svg, v === 'swipe' ? baseView : v);
+    $('#diffLegend').hidden = v !== 'diff';
+    $('#swipe').hidden = v !== 'swipe';
+    $('#hudView').textContent = VIEW_LABEL[v];
+    if (v === 'swipe') startSwipe();
+    else cancelAnimationFrame(swipeRaf);
+    if (v !== baseView && state.tool === 'pen') setTool('view');
+    if (v !== 'diff' && v !== 'swipe') { state.change = null; drawFocus(); }
+    renderAnnoList();
+    renderDiff();
+    syncMarks();
+  }
+
+  /* ---------- 套繪圖層（主圖與 R1 疊圖同步） ---------- */
+  function toggleLayer(key, on) {
+    const v = App.plan.toggleLayer(svg, key, on);
+    if (svgR1) App.plan.toggleLayer(svgR1, key, v);
+    $$(`.layer-btn[data-layer="${key}"]`).forEach((b) => b.setAttribute('aria-pressed', String(v)));
+    if (state.view === 'diff' && v) showHint('疊圖模式不顯示套繪圖層，切回 R1／R2 即可看到');
+    renderSheets();
+    return v;
+  }
+  $$('.layer-btn').forEach((b) => b.addEventListener('click', () => toggleLayer(b.dataset.layer)));
+
+  /* ---------- 拉簾比對 ---------- */
+  const swipeEl = $('#swipe');
+  const handle = $('#swipeHandle');
+  let swipeX = 50;
+  let swipeRaf = 0;
+  if (!canCompare) swipeEl.remove();
+  function setSwipe(x) {
+    swipeX = clamp(x, 0, 100);
+    swipeEl.style.setProperty('--x', `${swipeX.toFixed(2)}%`);
+    handle.setAttribute('aria-valuenow', String(Math.round(swipeX)));
+    handle.setAttribute('aria-valuetext', `左側 R1 佔 ${Math.round(swipeX)}%`);
+  }
+  // 進入拉簾時簾線從右側滑到中間，提示「這條線可以拉」
+  function startSwipe() {
+    cancelAnimationFrame(swipeRaf);
+    if (App.reduceMotion.matches) { setSwipe(50); return; }
+    const from = 90, to = 50, dur = 1100, t0 = performance.now();
+    setSwipe(from);
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur);
+      setSwipe(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) swipeRaf = requestAnimationFrame(step);
+    };
+    swipeRaf = requestAnimationFrame(step);
+  }
+  handle.addEventListener('pointerdown', (e) => {
+    // 不讓 panZoom 收到：拖簾線不是平移畫布
+    e.stopPropagation();
+    e.preventDefault();
+    cancelAnimationFrame(swipeRaf);
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('is-drag');
+    handle.focus({ preventScroll: true });
+    const move = (ev) => {
+      const r = vp.getBoundingClientRect();
+      setSwipe(((ev.clientX - r.left) / r.width) * 100);
+    };
+    const up = () => {
+      handle.classList.remove('is-drag');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+  handle.addEventListener('keydown', (e) => {
+    const step = { ArrowLeft: -2, ArrowDown: -2, ArrowRight: 2, ArrowUp: 2, PageDown: -10, PageUp: 10 }[e.key];
+    if (step) setSwipe(swipeX + step);
+    else if (e.key === 'Home') setSwipe(0);
+    else if (e.key === 'End') setSwipe(100);
+    else return;
+    cancelAnimationFrame(swipeRaf);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  /* ---------- 點擊畫布 ---------- */
+  function handleTap(pt, e) {
+    if (e.target.closest('.rv-swipe__handle')) return;
+    const mark = e.target.closest('.anno-mark');
+    if (mark) { selectAnno(+mark.dataset.anno, { from: 'plan' }); return; }
+    if (state.tool === 'pen') { openAddModal(pt); return; }
+    if (state.active) selectAnno(null);
+  }
+  const viewCenter = () => {
+    const [x, y, w, h] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+    return { x: x + w / 2, y: y + h / 2 };
+  };
+
+  /* ---------- 回合變更的螢光圈 ---------- */
+  function drawFocus() {
+    const c = CHANGES.find((x) => x.no === state.change);
+    focusLayer.innerHTML = c ? `<circle cx="${c.mark[0]}" cy="${c.mark[1]}" r="30" fill="#FFF176" fill-opacity=".8"/>` : '';
+  }
+
+  /* =====================================================================
+   * 批註：選取、清單、篩選
+   * ===================================================================== */
+  const matches = (a) => state.discs.has(a.disc) && (
+    state.filter === 'all' ||
+    (state.filter === 'open' && isOpen(a)) ||
+    (state.filter === 'resolved' && !isOpen(a)) ||
+    (state.filter === 'mine' && a.by === ME));
+
+  function selectAnno(no, { from } = {}) {
+    if (no == null || (state.active === no && from !== 'goto')) {
+      state.active = null;
+      renderAnnoList();
+      syncMarks();
+      return;
+    }
+    const a = findAnno(no);
+    if (!a) return;
+    // 被篩掉的批註要先放回清單，否則選了看不到
+    if (!matches(a)) {
+      state.filter = 'all';
+      state.discs.add(a.disc);
+      renderFilters();
+    }
+    if (state.view === 'diff' || state.view === 'swipe' || (state.view === 'r1' && a.round > 1)) setView(baseView);
+    sideTabs.select(0);
+    state.active = no;
+    state.change = null;
+    drawFocus();
+    renderAnnoList();
+    syncMarks();
+    pz.focus(a.box, { pad: 110, max: 2.6 });
+    const item = $(`#annoList .rv-anno[data-anno="${no}"]`);
+    // 手機上畫布與清單上下排列，從圖面點選時不捲走畫面
+    if (item && from === 'plan' && wide.matches) item.scrollIntoView({ block: 'nearest', behavior: smooth() });
+  }
+
+  function statusTags(a) {
+    let t = !isOpen(a) ? '<span class="tag tag--ok">已改善</span>'
+      : a.carried ? '<span class="tag tag--red">R1 延續</span>'
+      : '<span class="tag tag--red">待補正</span>';
+    if (a.created) t += '<span class="tag tag--hl">本次新增</span>';
+    if (a.pinged) t += `<span class="tag tag--blue">已通知 ${fmt.md(a.pinged)}</span>`;
+    return t;
+  }
+
+  function annoActions(a) {
+    const btn = (act, label, cls = '', ic = '') => `<button class="btn btn--sm ${cls}" type="button" data-act="${act}" data-no="${a.no}">${ic ? App.icon(ic) : ''}${label}</button>`;
+    let out = btn('focus', '置中顯示', 'btn--ghost', 'fit');
+    if (a.disc === MY_DISC) {
+      out += isOpen(a) ? btn('resolve', '判定已改善', '', 'check') : btn('reopen', '重新開啟', '', 'undo');
+    } else if (isOpen(a)) {
+      const who = App.PEOPLE[a.by].name;
+      out += a.pinged ? btn('unping', '撤回通知', 'btn--ghost', 'undo') : btn('ping', `通知 ${who} 複核`, '', 'bell');
+    }
+    if (a.created) out += btn('delete', '刪除', 'btn--ghost btn--danger', 'x');
+    return out;
+  }
+
+  function annoDetail(a) {
+    const by = App.PEOPLE[a.by];
+    return `<div class="rv-anno__detail" id="annoDetail${a.no}">
+      <p class="hand-note">${esc(a.text)}</p>
+      <div class="rv-anno__by">${App.avatar(a.by, 'sm')}<b>${esc(by.name)}</b><span>${esc(by.title)}</span><span class="mono">${fmt.date(a.at)}</span></div>
+      ${a.reply ? `<div class="rv-reply"><span class="rv-reply__label">起造人回覆・R2 回覆說明書</span>${esc(a.reply)}</div>` : ''}
+      ${!isOpen(a) && a.resolvedAt ? `<p class="rv-anno__state">${App.icon('check')}${fmt.date(a.resolvedAt)} 判定已改善</p>` : ''}
+      <div class="rv-anno__actions">${annoActions(a)}</div>
+    </div>`;
+  }
+
+  function renderAnnoList() {
+    const list = annos.filter(matches).sort((a, b) => a.no - b.no);
+    const view = state.view;
+    $('#annoList').innerHTML = list.length ? list.map((a) => {
+      const on = state.active === a.no;
+      // R1 檢視時本回合新增的批註尚不存在，淡化；R1 當時全部未改善，不畫刪除線
+      const dim = view === 'r1' && a.round > 1;
+      const resolved = !isOpen(a) && view !== 'r1';
+      return `<li class="rv-anno${on ? ' is-open' : ''}" data-anno="${a.no}">
+        <button type="button" class="anno${resolved ? ' is-resolved' : ''}${dim ? ' is-dim' : ''}${on ? ' is-active' : ''}" data-anno="${a.no}" aria-expanded="${on}"${on ? ` aria-controls="annoDetail${a.no}"` : ''}>
+          <span class="bubble">${a.no}</span>
+          <span class="anno__body">
+            <span class="anno__title">${esc(a.short)}</span>
+            <span class="anno__meta">${App.disc(a.disc)}${App.rev(a.round)}<span class="cite">${esc(a.cite)}</span>${statusTags(a)}</span>
+          </span>
+        </button>
+        ${on ? annoDetail(a) : ''}
+      </li>`;
+    }).join('') : `<li>${annos.length
+      ? App.emptyState({ title: '沒有符合的批註', text: '換個狀態或科別篩選看看。' })
+      : App.emptyState({ title: '本案尚未建立批註', text: `第 ${p.round} 回合圖說已收件；切換「紅筆批註」工具即可在圖面上加註。` })}</li>`;
+  }
+
+  function syncMarks() {
+    $$('.anno-mark', svg).forEach((g) => {
+      const a = findAnno(+g.dataset.anno);
+      if (!a) return;
+      g.dataset.status = a.status;
+      g.classList.toggle('is-hidden', !matches(a));
+      g.classList.toggle('is-active', state.active === a.no);
+    });
+  }
+
+  function renderFilters() {
+    $$('#annoFilter .chip').forEach((c) => {
+      c.setAttribute('aria-pressed', String(c.dataset.filter === state.filter));
+      const k = c.dataset.filter;
+      $('.chip__count', c).textContent = annos.filter((a) => k === 'all' || (k === 'open' ? isOpen(a) : k === 'resolved' ? !isOpen(a) : a.by === ME)).length;
+    });
+    $('#discFilter').innerHTML = App.DISC.map((d) => `<button class="rv-disc-btn" type="button" data-disc="${d.key}" aria-pressed="${state.discs.has(d.key)}" aria-label="${d.name}科批註" title="${d.name}科">${App.disc(d.key)}</button>`).join('');
+  }
+
+  function renderProgress() {
+    const open = annos.filter(isOpen);
+    const done = annos.length - open.length;
+    const carried = open.filter((a) => a.carried).length;
+    const fresh = open.length - carried;
+    const el = $('#annoProgress');
+    if (!annos.length) {
+      el.innerHTML = `<div class="rv-progress__top"><span>R${curRound} 審查進度</span><span>尚無批註</span></div><div class="rv-progress__bar" aria-hidden="true"></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="rv-progress__top"><span>R${curRound} 審查進度</span><span>已改善 <b>${done}</b>・<span class="red-ink">待處理 <b>${open.length}</b></span></span></div>
+      <div class="rv-progress__bar" role="img" aria-label="共 ${annos.length} 項批註，已改善 ${done} 項、待處理 ${open.length} 項">
+        <span class="rv-progress__ok" style="flex-grow:${done}"></span><span class="rv-progress__open" style="flex-grow:${open.length}"></span>
+      </div>
+      <p class="rv-progress__sub">${isFeatured ? `待處理中 R1 延續 ${carried} 項、本回合新增 ${fresh} 項` : `第 ${p.round} 回合共 ${annos.length} 項批註`}</p>`;
+  }
+
+  /* 清單與畫布雙向聯動：hover 互相標亮 */
+  $('#annoList').addEventListener('mouseover', (e) => {
+    const b = e.target.closest('.anno');
+    $$('.anno-mark', svg).forEach((g) => g.classList.toggle('is-active', (b && +g.dataset.anno === +b.dataset.anno) || +g.dataset.anno === state.active));
+  });
+  $('#annoList').addEventListener('mouseleave', () => syncMarks());
+  svg.addEventListener('mouseover', (e) => {
+    const g = e.target.closest('.anno-mark');
+    $$('#annoList .anno').forEach((b) => b.classList.toggle('is-active', (g && +b.dataset.anno === +g.dataset.anno) || +b.dataset.anno === state.active));
+  });
+
+  $('#annoList').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]');
+    if (act) { runAction(act.dataset.act, +act.dataset.no); return; }
+    const b = e.target.closest('.anno');
+    if (!b) return;
+    const no = +b.dataset.anno;
+    selectAnno(no);
+    $(`#annoList .anno[data-anno="${no}"]`)?.focus({ preventScroll: true });
+  });
+  $('#annoFilter').addEventListener('click', (e) => {
+    const c = e.target.closest('.chip');
+    if (!c) return;
+    state.filter = c.dataset.filter;
+    if (state.active && !matches(findAnno(state.active))) state.active = null;
+    renderFilters();
+    renderAnnoList();
+    syncMarks();
+  });
+  $('#discFilter').addEventListener('click', (e) => {
+    const b = e.target.closest('.rv-disc-btn');
+    if (!b) return;
+    const k = b.dataset.disc;
+    if (state.discs.has(k)) state.discs.delete(k); else state.discs.add(k);
+    if (state.active && !matches(findAnno(state.active))) state.active = null;
+    renderFilters();
+    renderAnnoList();
+    syncMarks();
+    $(`#discFilter [data-disc="${k}"]`).focus();
+  });
+
+  /* ---------- 批註動作：一律改資料後 App.commit，畫面由 renderAll 統一重繪 ---------- */
+  function runAction(act, no) {
+    const a = findAnno(no);
+    if (!a) return;
+    if (act === 'focus') { pz.focus(a.box, { pad: 110, max: 2.6 }); return; }
+    if (act === 'resolve' || act === 'reopen') {
+      const prev = { status: a.status, resolvedAt: a.resolvedAt };
+      a.status = act === 'resolve' ? 'resolved' : 'open';
+      a.resolvedAt = act === 'resolve' ? App.TODAY : null;
+      App.commit('anno-status');
+      App.toast(act === 'resolve' ? `批註 ${no} 判定已改善` : `批註 ${no} 重新開啟`, {
+        tone: act === 'resolve' ? 'ok' : 'red',
+        desc: a.short,
+        action: { label: '復原', onClick: () => { Object.assign(a, prev); App.commit('anno-status'); } },
+      });
+    } else if (act === 'ping' || act === 'unping') {
+      const prev = a.pinged || null;
+      a.pinged = act === 'ping' ? App.TODAY : null;
+      App.commit('anno-ping');
+      const who = App.PEOPLE[a.by];
+      App.toast(act === 'ping' ? `已通知 ${who.name} 複核批註 ${no}` : `已撤回批註 ${no} 的複核通知`, {
+        tone: 'info',
+        desc: act === 'ping' ? `${who.title}・系統訊息已送達，期限 ${fmt.date(p.due)}。` : '',
+        action: act === 'ping' ? { label: '復原', onClick: () => { a.pinged = prev; App.commit('anno-ping'); } } : null,
+      });
+    } else if (act === 'delete') {
+      const removed = removeAnno(no);
+      App.toast(`已刪除批註 ${no}`, { tone: 'info', desc: removed.short, action: { label: '復原', onClick: () => restoreAnno(removed) } });
+    }
+    $(`#annoList .anno[data-anno="${no}"]`)?.focus({ preventScroll: true });
+  }
+
+  /* ---------- 新增／移除批註 ---------- */
+  function linkChecklist(a) {
+    if (a.ck) ck[a.ck.id] = { state: 'ng', anno: a.no };
+  }
+  function insertAnno(a) {
+    annos.push(a);
+    annos.sort((m, n) => m.no - n.no);
+    svg.querySelector('.pl-annos').insertAdjacentHTML('beforeend', App.plan.annoMarkup(a));
+    linkChecklist(a);
+    if (!matches(a)) { state.filter = 'all'; state.discs.add(a.disc); renderFilters(); }
+    state.active = a.no;
+  }
+  function removeAnno(no) {
+    const i = annos.findIndex((a) => a.no === no);
+    const [a] = annos.splice(i, 1);
+    $(`.anno-mark[data-anno="${no}"]`, svg)?.remove();
+    // 從檢核表帶出來的批註，移除時把該項還原成原本的判定
+    if (a.ck) ck[a.ck.id] = { ...a.ck.prev };
+    if (state.active === no) state.active = null;
+    App.commit('anno-remove');
+    return a;
+  }
+  function restoreAnno(a) {
+    insertAnno(a);
+    App.commit('anno-add');
+    App.plan.drawAnno(svg, a.no);
+  }
+
+  function addAnno({ pt, disc, cite, short, text, note }) {
+    const [w, h] = SIZES[state.size];
+    const x = Math.round(clamp(pt.x - w / 2, 24, VB.w - 24 - w));
+    const y = Math.round(clamp(pt.y - h / 2, 24, VB.h - 44 - h));
+    // 編號圈放右上；太靠右就放左上
+    const right = x + w + 44 <= VB.w;
+    const a = {
+      no: nextNo(), round: curRound, disc, status: 'open',
+      box: [x, y, w, h],
+      bubble: [right ? x + w + 22 : x - 22, Math.max(22, y - 4)],
+      note: note ? [x, Math.min(VB.h - 8, y + h + 26), note] : null,
+      short, text, cite, by: ME, at: App.TODAY, reply: null, resolvedAt: null, created: true,
+      ck: state.pending?.ck ? { id: state.pending.ck, prev: { ...ck[state.pending.ck] } } : null,
+    };
+    insertAnno(a);
+    state.pending = null;
+    $('#penCite').hidden = true;
+    App.commit('anno-add');
+    App.plan.drawAnno(svg, a.no);
+    // 桌機畫布 sticky，把新批註的展開內容捲進側欄可視範圍不會把圖面捲走
+    if (wide.matches) $(`#annoList .rv-anno[data-anno="${a.no}"]`)?.scrollIntoView({ block: 'nearest', behavior: smooth() });
+    App.toast(`已加入批註 ${a.no}・${short}`, {
+      tone: 'red',
+      desc: `${App.DISC_MAP[disc].name}・${cite}`,
+      action: { label: '復原', onClick: () => removeAnno(a.no) },
+    });
+  }
+
+  function regOptions(selected) {
+    const extra = selected && !REGS.some((r) => r.code === selected) ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : '';
+    return extra + App.DISC.map((d) => {
+      const rs = REGS.filter((r) => r.disc === d.key);
+      return rs.length ? `<optgroup label="${d.name}">${rs.map((r) => `<option value="${esc(r.code)}"${r.code === selected ? ' selected' : ''}>${esc(r.code)}・${esc(r.title)}</option>`).join('')}</optgroup>` : '';
+    }).join('');
+  }
+
+  function openAddModal(pt) {
+    ghostPinned = true;
+    placeGhost(pt);
+    ghost.classList.add('is-on');
+    const pend = state.pending || {};
+    const disc0 = pend.disc || MY_DISC;
+    const cite0 = pend.cite || REGS.find((r) => r.disc === disc0)?.code || REGS[0].code;
+    const mm = toMm(pt);
+    const no = nextNo();
+    const form = document.createElement('form');
+    form.className = 'rv-form';
+    form.noValidate = true;
+    form.innerHTML = `
+      <p class="rv-form__loc">${App.icon('ruler')}<span>位置 <b>軸 ${esc(gridRef(pt))}</b></span><span class="mono">X ${fmt.num(mm.x)}・Y ${fmt.num(mm.y)} mm</span><span>${App.rev(curRound)}</span></p>
+      <div class="rv-form__row">
+        <div class="field"><label class="label" for="fDisc">審查科別<span class="req">*</span></label>
+          <select class="select" id="fDisc">${App.DISC.map((d) => `<option value="${d.key}"${d.key === disc0 ? ' selected' : ''}>${d.name}・${d.unit}</option>`).join('')}</select></div>
+        <div class="field"><span class="label" id="fSizeLabel">雲線範圍</span>
+          <div class="seg" id="fSize" role="group" aria-labelledby="fSizeLabel">
+            ${Object.keys(SIZES).map((k) => `<button type="button" data-value="${k}" aria-pressed="${k === state.size}">${{ s: '小', m: '中', l: '大' }[k]}</button>`).join('')}
+          </div></div>
+      </div>
+      <div class="field" id="fCiteField"><label class="label" for="fCite">引用法規條文<span class="req">*</span></label>
+        <select class="select" id="fCite">${regOptions(cite0)}</select>
+        <span class="field__error">請選擇引用的法規條文。</span></div>
+      <div class="field" id="fShortField"><label class="label" for="fShort">批註標題<span class="req">*</span></label>
+        <input class="input" id="fShort" maxlength="16" autocomplete="off" placeholder="例：C 戶廚房排氣口位置">
+        <span class="hint">16 字內，顯示於批註清單</span><span class="field__error">請輸入批註標題。</span></div>
+      <div class="field" id="fTextField"><label class="label" for="fText">審查意見<span class="req">*</span></label>
+        <textarea class="textarea hand" id="fText" rows="4" placeholder="寫下需補正的內容與理由"></textarea>
+        <span class="field__error">審查意見至少 10 個字，請具體說明應補正的內容。</span></div>
+      <div class="field"><label class="label" for="fNote">圖面手寫短註（選填）</label>
+        <input class="input" id="fNote" maxlength="10" autocomplete="off" placeholder="例：排氣口？">
+        <span class="hint">10 字內，以紅筆寫在雲線下方</span></div>`;
+
+    const f = (id) => $(id, form);
+    App.seg(f('#fSize'), { onChange: (v) => { state.size = v; setGhostSize(); } });
+    f('#fDisc').addEventListener('change', () => {
+      const first = REGS.find((r) => r.disc === f('#fDisc').value);
+      if (first) f('#fCite').value = first.code;
+    });
+    const rules = [
+      ['#fShortField', () => f('#fShort').value.trim().length > 0],
+      ['#fTextField', () => f('#fText').value.trim().length >= 10],
+      ['#fCiteField', () => !!f('#fCite').value],
+    ];
+    const validate = () => {
+      let firstBad = null;
+      rules.forEach(([sel, ok]) => {
+        const bad = !ok();
+        f(sel).classList.toggle('is-invalid', bad);
+        if (bad && !firstBad) firstBad = f(sel).querySelector('input, textarea, select');
+      });
+      firstBad?.focus();
+      return !firstBad;
+    };
+    // 已顯示錯誤的欄位，修正後即時清掉紅框
+    form.addEventListener('input', (e) => {
+      const rule = rules.find(([sel]) => f(sel).contains(e.target));
+      if (rule && f(rule[0]).classList.contains('is-invalid') && rule[1]()) f(rule[0]).classList.remove('is-invalid');
+    });
+    const submit = () => {
+      if (!validate()) return;
+      const data = {
+        pt, disc: f('#fDisc').value, cite: f('#fCite').value,
+        short: f('#fShort').value.trim(), text: f('#fText').value.trim(), note: f('#fNote').value.trim(),
+      };
+      m.close();
+      addAnno(data);
+    };
+    form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); submit(); }
+    });
+    const m = App.modal({
+      title: '加入紅筆批註',
+      code: `RL-${String(no).padStart(2, '0')}`,
+      body: form,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: '加入批註', variant: 'red', icon: 'pen', onClick: submit },
+      ],
+      onClose: () => { ghostPinned = false; ghost.classList.remove('is-on'); },
+    });
+    f('#fShort').focus();
+  }
+
+  /* ---------- 新增入口：工具列、側欄按鈕、鍵盤 ---------- */
+  function startPen(pending = null) {
+    setTool('pen', { pending });
+    if (!wide.matches || $('#board').getBoundingClientRect().top < 0) {
+      $('#board').scrollIntoView({ block: 'start', behavior: smooth() });
+    }
+  }
+  $('#addAnnoBtn').addEventListener('click', () => startPen());
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    // 合成事件可能直接派發在 document 上，target 不一定是 Element
+    const t = e.target instanceof Element ? e.target : null;
+    if (t?.closest('input, textarea, select, [contenteditable]') || $('dialog[open]')) return;
+    const k = e.key;
+    if (k === 'c' || k === 'C') setTool('pen');
+    else if (k === 'v' || k === 'V') setTool('view');
+    else if (k === 'Escape' && state.tool === 'pen') setTool('view');
+    else if (k === 'Enter' && state.tool === 'pen' && e.target === vp) openAddModal(viewCenter());
+    else return;
+    e.preventDefault();
+  });
+
+  /* =====================================================================
+   * 回合變更清單
+   * ===================================================================== */
+  const sideTabs = App.tabs($('#sideTabs'), {
+    onChange: (i) => {
+      // 切到回合變更時順手把畫布切成疊圖，兩邊講的是同一件事
+      if (i === 1 && canCompare && (state.view === 'r1' || state.view === 'r2')) setView('diff');
+    },
+  });
+  const diffTri = (n) => `<svg class="rv-diff__mark" viewBox="0 0 28 24" aria-hidden="true"><path d="M14 2 26 22H2z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><text x="14" y="19" font-size="11" font-weight="700" fill="currentColor" text-anchor="middle">${n}</text></svg>`;
+  function renderDiff() {
+    if (!canCompare) {
+      $('#diffIntro').textContent = p.round === 1 ? '本案為第 1 回合，尚無前回合圖說可比對。' : '前回合圖說尚未轉入線上審查，無法比對。';
+      $('#diffList').innerHTML = `<li>${App.emptyState({ title: '沒有回合變更資料', text: '起造人補正後再次送審時，系統會自動比對兩回合圖面。' })}</li>`;
+      return;
+    }
+    $('#diffIntro').innerHTML = `R1（${fmt.date(F.rounds[0].submitted)}）與 R2（${fmt.date(F.rounds[1].submitted)}）圖面差異 ${CHANGES.length} 處；點選定位，疊圖以 <i class="diff-legend__line diff-legend__line--dash" style="--sw: var(--diff-old)"></i>R1、<i class="diff-legend__line" style="--sw: var(--diff-new)"></i>R2 呈現。`;
+    $('#diffList').innerHTML = CHANGES.map((c) => {
+      const a = findAnno(c.anno);
+      const on = state.change === c.no;
+      return `<li class="rv-diff__item${on ? ' is-active' : ''}">
+        <button type="button" class="rv-diff__btn" data-change="${c.no}" aria-pressed="${on}">
+          ${diffTri(c.no)}
+          <span class="rv-diff__body">
+            <span class="rv-diff__title">${esc(c.title)}</span>
+            <span class="rv-diff__row rv-diff__row--old"><i></i><span>R1</span>${esc(c.r1)}</span>
+            <span class="rv-diff__row rv-diff__row--new"><i></i><span>R2</span>${esc(c.r2)}</span>
+          </span>
+        </button>
+        ${a ? `<button type="button" class="rv-diff__ref" data-goto="${a.no}" aria-label="查看批註 ${a.no}：${esc(a.short)}"><span class="bubble bubble--sm${isOpen(a) ? '' : ' bubble--ok'}">${a.no}</span>${isOpen(a) ? '待處理' : '已改善'}</button>` : ''}
+      </li>`;
+    }).join('');
+  }
+  $('#diffList').addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) { selectAnno(+g.dataset.goto, { from: 'goto' }); return; }
+    const b = e.target.closest('[data-change]');
+    if (!b) return;
+    const c = CHANGES.find((x) => x.no === +b.dataset.change);
+    if (state.view !== 'diff' && state.view !== 'swipe') setView('diff');
+    state.change = state.change === c.no ? null : c.no;
+    state.active = null;
+    drawFocus();
+    renderDiff();
+    renderAnnoList();
+    syncMarks();
+    if (state.change) pz.focus(c.box, { pad: 120, max: 2.4 });
+    $(`#diffList [data-change="${c.no}"]`)?.focus({ preventScroll: true });
+  });
+
+  /* =====================================================================
+   * 圖說索引
+   * ===================================================================== */
+  function renderSheets() {
+    const strOn = (svg.getAttribute('data-layers') || '').split(' ').includes('str');
+    $('#sheetIndex').innerHTML = SHEETS.map((s) => {
+      const latest = Math.max(...s.rounds);
+      let meta = latest < curRound ? `沿用 R${latest} 版` : `R${latest}・無批註`;
+      let attr = '';
+      if (s.no === 'A-201') { meta = `批註 ${annos.length} 項`; attr = ' aria-current="true"'; }
+      if (s.no === 'S-201') { meta = strOn ? '套繪中' : '可套繪至 A-201'; attr = ` aria-pressed="${strOn}"`; }
+      return `<button type="button" class="rv-sheet" data-sheet="${s.no}"${attr} title="${esc(s.no)} ${esc(s.name)}">
+        <svg class="rv-sheet__thumb" viewBox="0 0 44 32" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">${THUMBS[s.no]}</svg>
+        <span class="rv-sheet__text"><span class="rv-sheet__no">${s.no}</span><span class="rv-sheet__name">${SHEET_SHORT[s.no]}</span><span class="rv-sheet__meta">${meta}</span></span>
+      </button>`;
+    }).join('');
+  }
+  $('#sheetIndex').addEventListener('click', (e) => {
+    const b = e.target.closest('.rv-sheet');
+    if (!b) return;
+    const s = SHEETS.find((x) => x.no === b.dataset.sheet);
+    if (s.no === 'A-201') { pz.fit(); showHint(`${s.no} ${s.name}・全圖`); return; }
+    if (s.no === 'S-201') {
+      const on = toggleLayer('str');
+      showHint(on ? '已套繪 S-201：梁、柱、剪力牆' : '已關閉 S-201 結構套繪');
+      $('#sheetIndex [data-sheet="S-201"]').focus();
+      return;
+    }
+    const latest = Math.max(...s.rounds);
+    App.toast(`${s.no} ${s.name}`, {
+      tone: 'info',
+      desc: latest < curRound ? `R${curRound} 未更新，沿用 R${latest} 版；本回合無紅筆批註。` : `R${latest} 版已審閱，本回合無紅筆批註。`,
+    });
+  });
+
+  /* =====================================================================
+   * 檢核表
+   * ===================================================================== */
+  const MARK_ICON = { ok: App.icon('check'), ng: App.icon('x'), todo: App.icon('minus') };
+  let ckJustChanged = null;
+  function renderChecklist() {
+    const st = (it) => ck[it.id].state;
+    const done = CK_ITEMS.filter(st).length;
+    const ng = CK_ITEMS.filter((it) => st(it) === 'ng').length;
+    const okN = done - ng;
+    $('#ckTitle').textContent = `建築科審查檢核表（R${curRound}）`;
+    $('#ckSum').innerHTML = `
+      <div class="rv-ck-sum__num"><b>${done}</b><span>/ ${CK_ITEMS.length} 項已檢核</span></div>
+      <div class="rv-ck-sum__bar">
+        <div class="meter" role="img" aria-label="已檢核 ${done} 項，共 ${CK_ITEMS.length} 項"><span class="meter__fill${ng ? '' : ' meter__fill--ok'}" style="--p:${Math.round((done / CK_ITEMS.length) * 100)}"></span></div>
+        <span class="rv-ck-sum__legend">符合 <b>${okN}</b>・<span class="red-ink">不符 <b>${ng}</b></span>・未檢 <b>${CK_ITEMS.length - done}</b></span>
+      </div>`;
+    const visible = (it) => state.ckFilter === 'all' || (state.ckFilter === 'todo' ? !st(it) : st(it) === 'ng');
+    const groups = CK.map((g) => ({ ...g, items: g.items.filter(visible) })).filter((g) => g.items.length);
+    $('#ckList').innerHTML = groups.length ? groups.map((g) => `<li>
+      <h3 class="rv-ck-group__title">${esc(g.title)}</h3>
+      <ul>${g.items.map((it) => {
+        const c = ck[it.id];
+        const s = c.state || 'todo';
+        const a = c.anno ? findAnno(c.anno) : null;
+        const value = isFeatured ? it.val : it.req;
+        return `<li class="rv-ck${ckJustChanged === it.id ? ' is-new' : ''}" data-state="${s}">
+          <span class="rv-ck__mark" aria-hidden="true">${MARK_ICON[s]}</span>
+          <div class="rv-ck__main">
+            <div class="rv-ck__title">${esc(it.title)}<span class="cite">${esc(it.cite)}</span></div>
+            <div class="rv-ck__value">${esc(s === 'todo' && !isFeatured ? `規定：${it.req}` : value)}</div>
+          </div>
+          <div class="rv-ck__side">
+            ${a ? `<button type="button" class="rv-ck__anno" data-goto="${a.no}" aria-label="查看批註 ${a.no}：${esc(a.short)}" title="批註 ${a.no}"><span class="bubble bubble--sm${isOpen(a) ? '' : ' bubble--ok'}">${a.no}</span></button>` : ''}
+            ${s === 'ng' && !a ? `<button type="button" class="btn btn--sm btn--ghost" data-ckpen="${it.id}">${App.icon('pen')}加紅筆批註</button>` : ''}
+            <div class="seg rv-seg-sm" role="group" aria-label="${esc(it.title)}檢核結果">
+              <button type="button" data-ck="${it.id}" data-v="ok" aria-pressed="${s === 'ok'}">符合</button>
+              <button type="button" data-ck="${it.id}" data-v="ng" aria-pressed="${s === 'ng'}">不符</button>
+            </div>
+          </div>
+        </li>`;
+      }).join('')}</ul></li>`).join('')
+      : `<li>${App.emptyState({ title: state.ckFilter === 'ng' ? '沒有不符項目' : '全部項目都已檢核', text: '切回「全部」檢視完整檢核表。' })}</li>`;
+    ckJustChanged = null;
+  }
+  App.seg($('#ckSeg'), { onChange: (v) => { state.ckFilter = v; renderChecklist(); } });
+  $('#ckList').addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) {
+      selectAnno(+g.dataset.goto, { from: 'goto' });
+      $('#board').scrollIntoView({ block: 'start', behavior: smooth() });
+      return;
+    }
+    const pen = e.target.closest('[data-ckpen]');
+    if (pen) {
+      const it = CK_ITEMS.find((x) => x.id === pen.dataset.ckpen);
+      startPen({ cite: it.cite, disc: MY_DISC, ck: it.id });
+      return;
+    }
+    const b = e.target.closest('[data-ck]');
+    if (!b) return;
+    const id = b.dataset.ck, v = b.dataset.v;
+    // 再按一次已選的判定 = 清回未檢
+    ck[id].state = ck[id].state === v ? null : v;
+    ckJustChanged = id;
+    App.commit('check');
+    $(`#ckList [data-ck="${id}"][data-v="${v}"]`)?.focus({ preventScroll: true });
+  });
+
+  /* =====================================================================
+   * 法規條文速查
+   * ===================================================================== */
+  function hl(s, q) {
+    if (!q) return esc(s);
+    const i = s.toLowerCase().indexOf(q.toLowerCase());
+    if (i < 0) return esc(s);
+    return `${esc(s.slice(0, i))}<mark class="hl">${esc(s.slice(i, i + q.length))}</mark>${hl(s.slice(i + q.length), q)}`;
+  }
+  $('#regDisc').innerHTML = [{ key: 'all', name: '全部' }, ...App.DISC]
+    .map((d) => `<button class="chip" type="button" data-disc="${d.key}" aria-pressed="${d.key === 'all'}">${d.name}</button>`).join('');
+  function renderRegs() {
+    const q = state.regQuery.trim();
+    const list = REGS.filter((r) => (state.regDisc === 'all' || r.disc === state.regDisc) &&
+      (!q || [r.code, r.title, r.text].some((s) => s.toLowerCase().includes(q.toLowerCase()))));
+    $('#regSub').textContent = `共 ${REGS.length} 條・目前顯示 ${list.length} 條`;
+    $('#regList').innerHTML = list.length ? list.map((r) => {
+      const used = annos.filter((a) => a.cite === r.code);
+      return `<li class="rv-reg">
+        <div class="rv-reg__head">${App.disc(r.disc)}<span class="cite">${hl(r.code, q)}</span><span class="rv-reg__title">${hl(r.title, q)}</span></div>
+        <p class="rv-reg__text">${hl(r.text, q)}</p>
+        <span class="rv-reg__used${used.length ? ' is-used' : ''}">${used.length ? `本案引用：${used.map((a) => `#${a.no}`).join('、')}` : '本案尚未引用'}</span>
+        <button class="btn btn--sm" type="button" data-cite="${esc(r.code)}" data-disc="${r.disc}" aria-label="引用 ${esc(r.code)} 至新批註">${App.icon('pen')}引用</button>
+      </li>`;
+    }).join('') : `<li>${App.emptyState({ title: '找不到符合的條文', text: '試試條號（例如 §38）或關鍵字（例如 欄杆）。' })}</li>`;
+  }
+  $('#regSearch').addEventListener('input', (e) => { state.regQuery = e.target.value; renderRegs(); });
+  $('#regDisc').addEventListener('click', (e) => {
+    const c = e.target.closest('.chip');
+    if (!c) return;
+    state.regDisc = c.dataset.disc;
+    $$('#regDisc .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)));
+    renderRegs();
+  });
+  $('#regList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cite]');
+    if (b) startPen({ cite: b.dataset.cite, disc: b.dataset.disc });
+  });
+
+  /* =====================================================================
+   * 送出建築科意見（改燈號 → App.commit，可撤回）
+   * ===================================================================== */
+  function renderHead() {
+    const open = annos.filter(isOpen).length;
+    $('#headNote').textContent = !annos.length ? '本回合尚未建立批註'
+      : open ? `R${curRound} 尚有 ${open} 項待處理`
+      : `R${curRound} 批註均已改善`;
+    $('#sideSub').textContent = isFeatured
+      ? `R1 提出 ${annos.filter((a) => a.round === 1).length} 項・R2 新增 ${annos.filter((a) => a.round === 2).length} 項`
+      : `第 ${p.round} 回合・${annos.length} 項批註`;
+    $('#tabAnnoN').textContent = annos.length;
+
+    const slot = $('#submitSlot');
+    const arc = p.lamps.arc;
+    if (state.submitted) {
+      slot.innerHTML = `<button class="btn" type="button" data-submit="withdraw">${App.icon('undo')}撤回建築科意見</button>`;
+    } else if (p.officer !== ME) {
+      slot.innerHTML = `<span class="tag">建築科承辦 ${esc(App.PEOPLE[p.officer].name)}</span>`;
+    } else if (arc === 'review' || arc === 'wait') {
+      slot.innerHTML = `<button class="btn btn--red" type="button" data-submit="open">${App.icon('send')}送出建築科意見</button>`;
+    } else {
+      slot.innerHTML = `<span class="tag ${arc === 'fix' ? 'tag--red' : 'tag--ok'}">建築科已判定：${App.LAMPS[arc].label}</span>`;
+    }
+  }
+  function renderCase() {
+    $('#caseStatus').innerHTML = `${App.stageChip(p.stage)}${App.rev(p.round)}${App.dueChip(p)}`;
+    $('#caseLamps').innerHTML = App.lampRow(p, { labels: true });
+  }
+
+  function withdraw() {
+    if (!state.submitted) return;
+    p.lamps.arc = state.submitted.prevLamp;
+    p.updated = state.submitted.prevUpdated;
+    state.submitted = null;
+    App.commit('opinion-withdraw');
+  }
+  function openSubmit() {
+    const mine = annos.filter((a) => a.disc === MY_DISC && isOpen(a)).sort((a, b) => a.no - b.no);
+    const decision = mine.length ? 'fix' : 'pass';
+    const todo = CK_ITEMS.filter((it) => !ck[it.id].state);
+    const others = App.DISC.filter((d) => d.key !== MY_DISC && ['review', 'wait'].includes(p.lamps[d.key]));
+    const body = document.createElement('div');
+    body.className = 'rv-submit';
+    body.innerHTML = `
+      <div class="rv-submit__verdict">
+        <span class="stamp ${decision === 'fix' ? '' : 'stamp--ok'}">${decision === 'fix' ? '須補正' : '通過'}</span>
+        <p><strong>建築科 R${curRound} 審查結果</strong>${decision === 'fix' ? `待補正 ${mine.length} 項，將併入本回合補正通知書。` : '本回合建築科批註均已改善。'}</p>
+      </div>
+      ${mine.length ? `<ol class="rv-submit__list">${mine.map((a) => `<li><span class="bubble bubble--sm">${a.no}</span><span>${esc(a.text)}<br><span class="cite">${esc(a.cite)}</span></span></li>`).join('')}</ol>` : ''}
+      ${todo.length ? `<p class="hand-note">檢核表尚有 ${todo.length} 項未檢：${todo.map((it) => esc(it.title)).join('、')}。送出後仍可補檢。</p>` : ''}
+      <p class="muted">其他科別：${others.length ? `${others.map((d) => d.name).join('、')}尚在審查，全部完成後由股長 ${esc(App.PEOPLE.arc3.name)} 彙整發文。` : '均已完成判定。'}</p>
+      <div class="field" id="fConfirmField">
+        <label class="check"><input type="checkbox" id="fConfirm">我已確認上列意見內容，並以審查員身分送出</label>
+        <span class="field__error">請先勾選確認。</span>
+      </div>`;
+    const confirmField = $('#fConfirmField', body);
+    $('#fConfirm', body).addEventListener('change', (e) => { if (e.target.checked) confirmField.classList.remove('is-invalid'); });
+    App.modal({
+      title: '送出建築科審查意見',
+      code: `${p.id} · R${curRound}`,
+      body,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        {
+          label: '送出意見', variant: 'red', icon: 'send',
+          onClick: (close) => {
+            if (!$('#fConfirm', body).checked) { confirmField.classList.add('is-invalid'); $('#fConfirm', body).focus(); return; }
+            close();
+            state.submitted = { prevLamp: p.lamps.arc, prevUpdated: p.updated };
+            p.lamps.arc = decision;
+            p.updated = App.TODAY;
+            App.commit('opinion');
+            App.toast(`已送出建築科意見・${decision === 'fix' ? `須補正 ${mine.length} 項` : '通過'}`, {
+              tone: decision === 'fix' ? 'red' : 'ok',
+              desc: others.length ? `待${others.map((d) => d.name).join('、')}完成後彙整發文。` : '五科均已判定，可由股長彙整發文。',
+              action: { label: '復原', onClick: withdraw },
+            });
+          },
+        },
+      ],
+    });
+  }
+  $('#submitSlot').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-submit]');
+    if (!b) return;
+    if (b.dataset.submit === 'open') openSubmit();
+    else { withdraw(); App.toast('已撤回建築科意見', { tone: 'info', desc: `燈號回復為「${App.LAMPS[p.lamps.arc].label}」。` }); }
+  });
+
+  /* =====================================================================
+   * 描繪動畫：畫布進入視窗才開始
+   * ===================================================================== */
+  // plan.animate 會取消 svg 內所有動畫（含本頁的虛線走動與螢光圈），播放後重新掛回
+  function restartLoops() {
+    [ghostCloud, ...$$('circle', focusLayer)].forEach((el) => {
+      el.style.animation = 'none';
+      void el.getBoundingClientRect();
+      el.style.animation = '';
+    });
+  }
+  let started = false;
+  const startDraw = () => {
+    if (started) return;
+    started = true;
+    App.plan.animate(svg);
+    restartLoops();
+  };
+  const io = new IntersectionObserver((en) => {
+    if (en.some((x) => x.isIntersecting)) { startDraw(); io.disconnect(); }
+  }, { threshold: 0.15 });
+  io.observe($('#board'));
+  $('#replayBtn').addEventListener('click', () => {
+    pz.fit();
+    App.plan.animate(svg);
+    restartLoops();
+  });
+
+  /* =====================================================================
+   * 資料異動：所有衍生顯示走同一套重繪
+   * ===================================================================== */
+  function renderAll() {
+    renderHead();
+    renderCase();
+    renderProgress();
+    renderFilters();
+    renderAnnoList();
+    syncMarks();
+    renderDiff();
+    renderSheets();
+    renderChecklist();
+    renderRegs();
+  }
+  App.onChange(renderAll);
+  renderAll();
+
+  // 案件詳情的批註氣泡會帶 &anno=N 進來：直接展開該批註、圖面定位過去（?anno 是外部輸入，查無就忽略）
+  const deepAnno = Number(App.param('anno'));
+  if (deepAnno && findAnno(deepAnno)) {
+    selectAnno(deepAnno, { from: 'goto' });
+    $('#board').scrollIntoView({ block: 'start' });
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全部路線 — 澄港市 2027 新公車路網</title>
+<meta name="description" content="澄港市 2027 新公車路網全部 19 條路線：依幹線、支線、接駁、夜間篩選，搜尋站名或舊路線編號，查看班距、首末班與舊路線對照。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- Hero：左側文案＋此刻讀數，右側全日發車條碼（版面見 style.css .page-hero） ---------- */
+  /* 此刻讀數：跟著時間軸走的全市狀態 */
+  .rl-now { padding-top: var(--sp-4); border-top: 3px solid var(--ink); }
+  .rl-now__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .rl-now__clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--sp-4); margin-top: var(--sp-2); }
+  .rl-now__time { font: 900 clamp(3rem, 2rem + 2.4vw, 4.25rem)/1 var(--font-num); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .rl-now__period { font-weight: 800; color: var(--ink-2); }
+  .rl-now__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: var(--sp-4) 0 0; border-top: var(--hair); }
+  .rl-now__stats > div { padding: var(--sp-3) var(--sp-3) 0 0; }
+  .rl-now__stats > div + div { padding-left: var(--sp-3); border-left: var(--hair); }
+  .rl-now__stats dt { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em; color: var(--ink-3); }
+  .rl-now__stats dd { margin: 4px 0 0; font: 800 var(--fs-2xl)/1.1 var(--font-num); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rl-now__stats dd small { margin-left: 2px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0; color: var(--ink-2); }
+
+  /* ---------- 全日發車條碼 ---------- */
+  .rl-bc {
+    --bc-l: 58px;    /* 左欄：路線 pill */
+    --bc-r: 44px;    /* 右欄：此刻班距 */
+    --bc-g: 12px;
+    --p: 0;          /* 時間軸位置 0–1，由 JS 每格更新 */
+    padding: var(--sp-4) var(--sp-5) var(--sp-3);
+  }
+  .rl-bc__plot { position: relative; }
+  .rl-bc__axis, .rl-bc__row, .rl-bc__scrub {
+    display: grid;
+    grid-template-columns: var(--bc-l) minmax(0, 1fr) var(--bc-r);
+    column-gap: var(--bc-g);
+    align-items: center;
+  }
+  .rl-bc__axis { height: 28px; align-items: start; }
+  .rl-bc__colhead { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .08em; color: var(--ink-3); padding-top: 3px; }
+  .rl-bc__colhead:last-child { text-align: right; }
+  .rl-bc__hours { position: relative; height: 100%; }
+  .rl-bc__hr {
+    position: absolute;
+    top: 4px;
+    transform: translateX(-50%);
+    font: 600 var(--fs-2xs)/1 var(--font-num);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .rl-bc__hr.is-mid { color: var(--ink); font-weight: 800; }
+  .rl-bc__rows { position: relative; z-index: 1; -webkit-user-select: none; user-select: none; }
+  .rl-bc__row { height: 20px; transition: opacity var(--t-2) var(--ease-out); }
+  .rl-bc__row.is-gap { margin-top: 9px; }
+  .rl-bc__row .pill { justify-self: start; }
+  .rl-bc__lane { width: 100%; height: 14px; cursor: crosshair; }
+  .rl-bc__hw { justify-self: end; font: 700 var(--fs-xs)/1 var(--font-num); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rl-bc__hw small { margin-left: 1px; font-size: 10px; font-weight: 600; color: var(--ink-3); }
+  .rl-bc__hw.is-off { color: var(--ink-3); font-weight: 500; }
+  .rl-bc__row.is-dim { opacity: .28; }
+  .rl-bc.has-hover .rl-bc__row:not(.is-hover) { opacity: .2; }
+  .rl-bc.has-hover .rl-bc__row.is-hover { opacity: 1; }
+
+  /* 下層：每 3 小時一條格線、平日尖峰底色；上層：時間游標 */
+  .rl-bc__under, .rl-bc__over {
+    position: absolute;
+    top: 28px;
+    bottom: 0;
+    left: calc(var(--bc-l) + var(--bc-g));
+    right: calc(var(--bc-r) + var(--bc-g));
+    pointer-events: none;
+  }
+  .rl-bc__under {
+    background: linear-gradient(90deg, var(--rule) 1px, transparent 1px) 0 0 / 12.5% 100%;
+    border-right: 1px solid var(--rule);
+  }
+  .rl-bc__band { position: absolute; top: 0; bottom: 0; background: rgba(28, 28, 28, .055); }
+  .rl-bc__over { top: 0; z-index: 2; }
+  /* 游標本身與軌道同寬，用 translateX(p × 100%) 移動：只動 transform，不觸發版面重排 */
+  .rl-bc__cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    transform: translateX(calc(var(--p) * 100%));
+  }
+  .rl-bc__cursor::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    top: 20px;
+    bottom: -6px;
+    width: 2px;
+    background: var(--ink);
+  }
+  .rl-bc__flag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translateX(-50%);
+    padding: 3px 9px;
+    border-radius: var(--r-pill);
+    background: var(--ink);
+    color: #FFFFFF;
+    font: 800 var(--fs-2xs)/1.3 var(--font-num);
+    letter-spacing: .02em;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 進場：每條車道由左而右「印」出條碼（遮罩縮掉，只動 transform） */
+  .rl-bc__lane-wrap { position: relative; overflow: hidden; }
+  .rl-bc__lane-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--white);
+    transform-origin: right;
+    transform: scaleX(0);
+    transition: transform 1.1s var(--ease-draw) var(--ld, 0ms);
+  }
+  .rl-bc.is-pre .rl-bc__lane-wrap::after { transform: scaleX(1); transition: none; }
+
+  /* 時間軸（style.css .range）：--p 由條碼容器 .rl-bc 傳下來 */
+  .rl-bc__scrub { margin-top: var(--sp-2); }
+  .rl-bc__scrub-label { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .08em; color: var(--ink-3); }
+  /* 左右各外推半個把手寬，讓把手中心的 0–100% 剛好對齊上方條碼車道 */
+  .rl-range { width: calc(100% + var(--thumb)); margin: 0 calc(var(--thumb) / -2); height: 34px; }
+
+  .rl-key { display: inline-block; width: 18px; height: 12px; border-radius: 2px; background: rgba(28, 28, 28, .08); box-shadow: inset 0 0 0 1px var(--rule-2); }
+  .rl-play svg { width: 14px; height: 14px; }
+
+  @media (max-width: 760px) {
+    .rl-bc { --bc-l: 50px; --bc-r: 30px; --bc-g: 8px; padding: var(--sp-3) var(--sp-4) var(--sp-2); }
+    .rl-bc__hr.is-minor { display: none; }
+    .rl-bc__colhead { letter-spacing: 0; }
+  }
+
+  /* ---------- 篩選工具列 ---------- */
+  .rl-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px) 200px;
+    gap: var(--sp-4) var(--sp-5);
+    align-items: end;
+  }
+  .rl-search { position: relative; }
+  .rl-search .input { padding-right: 48px; }
+  .rl-search__clear { position: absolute; right: 7px; top: 50%; margin-top: -16px; }
+  .rl-suggest { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .rl-suggest button {
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1.5px solid var(--rule-2);
+    border-radius: var(--r-pill);
+    background: var(--white);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    color: var(--ink-2);
+    transition: border-color var(--t-1), color var(--t-1);
+  }
+  .rl-suggest button:hover { border-color: var(--ink); color: var(--ink); }
+  .rl-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2) var(--sp-4);
+    margin-top: var(--sp-5);
+    padding: var(--sp-3) 0;
+    border-top: 3px solid var(--ink);
+    border-bottom: var(--hair);
+    font-size: var(--fs-sm);
+  }
+  .rl-summary__count b { font: 800 var(--fs-lg)/1 var(--font-num); }
+  .rl-summary__count span { color: var(--ink-3); }
+  .rl-summary__clock { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); }
+  .rl-summary__clock b { color: var(--ink); }
+  .rl-summary__clock a { font-weight: 700; color: var(--ink); }
+  @media (max-width: 960px) {
+    .rl-tools { grid-template-columns: minmax(0, 1fr) 200px; }
+    .rl-tools__types { grid-column: 1 / -1; }
+  }
+  @media (max-width: 560px) {
+    .rl-tools { grid-template-columns: minmax(0, 1fr); }
+    .rl-summary__clock { margin-left: 0; }
+  }
+
+  /* ---------- 結果：分組與卡片 ---------- */
+  .rl-notes { display: grid; gap: var(--sp-3); margin-top: var(--sp-5); }
+  .rl-notes .notice { align-items: center; }
+  .rl-notes .pill-group { margin-left: 4px; }
+  .rl-results { margin-top: var(--sp-7); }
+  .rl-group + .rl-group { margin-top: var(--sp-8); }
+  .rl-group__head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px var(--sp-4);
+    margin-bottom: var(--sp-5);
+  }
+  .rl-group__line { grid-row: 1 / 3; display: block; width: 72px; border-radius: 4px; }
+  .rl-group__line--trunk, .rl-group__line--branch {
+    background: linear-gradient(90deg, var(--red) 0 16.66%, var(--blue) 0 33.33%, var(--green) 0 50%, var(--orange) 0 66.66%, var(--purple) 0 83.33%, var(--yellow) 0);
+  }
+  .rl-group__line--trunk { height: var(--lw-trunk); }
+  .rl-group__line--branch { height: 5px; border-radius: 3px; }
+  .rl-group__line--feeder { height: 0; border-top: var(--lw-feeder) dashed var(--green); border-radius: 0; }
+  .rl-group__line--night { height: 0; border-top: 4px dotted var(--ink); border-radius: 0; }
+  .rl-group__title { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-2xl); font-weight: 900; }
+  .rl-group__en { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .16em; color: var(--ink-3); }
+  .rl-group__note { grid-column: 2; font-size: var(--fs-sm); color: var(--ink-2); }
+  .rl-group__facts { margin-left: var(--sp-3); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .rl-group__count { grid-column: 3; grid-row: 1 / 3; font: 900 var(--fs-3xl)/1 var(--font-num); letter-spacing: -.03em; white-space: nowrap; }
+  .rl-group__count small { margin-left: 3px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: 0; color: var(--ink-2); }
+  .rl-flat__head { margin-bottom: var(--sp-5); font-size: var(--fs-lg); font-weight: 800; }
+  @media (max-width: 560px) {
+    .rl-group__head { grid-template-columns: minmax(0, 1fr) auto; }
+    .rl-group__line { grid-row: auto; grid-column: 1 / -1; width: 56px; margin-bottom: 6px; }
+    .rl-group__note { grid-column: 1 / -1; }
+    .rl-group__facts { display: block; margin: 2px 0 0; }
+    .rl-group__count { grid-column: 2; grid-row: 2; }
+  }
+
+  .rl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); margin: 0; padding: 0; list-style: none; }
+  @media (max-width: 1100px) { .rl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 700px) { .rl-grid { grid-template-columns: minmax(0, 1fr); } }
+  .rl-item { display: flex; min-width: 0; }
+  .rl-item.rl-in { animation: rl-in .5s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+  @keyframes rl-in { from { opacity: 0; transform: translateY(14px); } }
+
+  .rl-card { flex: 1; display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .rl-card .route-card__head { align-items: center; }
+  .rl-card .pill--lg { flex: none; }
+  .rl-card__name { min-width: 0; }
+  .rl-card__desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 3.4em;
+    font-size: var(--fs-sm);
+    line-height: 1.7;
+    color: var(--ink-2);
+  }
+  .rl-card__live { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--sp-2); margin-bottom: 4px; }
+  .rl-card__live .tag { gap: 7px; font-variant-numeric: tabular-nums; }
+  .rl-card__dir { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+  .rl-strip { width: 100%; height: auto; }
+  .rl-match {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: calc(var(--sp-2) * -1);
+    padding: 7px 10px;
+    border-radius: var(--r-1);
+    background: var(--fill);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .rl-match::before { content: ""; flex: none; width: 12px; height: 12px; border: 2px solid var(--ink); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--white), inset 0 0 0 6px var(--ink); }
+  .rl-facts { grid-template-columns: repeat(3, minmax(0, .8fr)) minmax(0, 1.6fr); gap: var(--sp-2); }
+  .rl-facts .rl-span3 { grid-column: span 3; }
+  .rl-facts dd span { padding-bottom: 1px; }
+  /* 此刻適用的班距欄：站點小圓點＋路線色底線 */
+  .rl-facts .is-now dt { color: var(--ink); }
+  .rl-facts .is-now dt::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 4px;
+    border-radius: 50%;
+    background: var(--c);
+    vertical-align: 1px;
+  }
+  .rl-facts .is-now dd span { background: linear-gradient(var(--c), var(--c)) 0 100% / 100% 4px no-repeat; }
+  .rl-card .route-card__foot { margin-top: auto; padding-top: var(--sp-3); border-top: var(--hair); }
+  .rl-card .route-card__old { min-width: 0; }
+  .rl-oldbtn {
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: none;
+    line-height: 0;
+  }
+  .rl-oldbtn .pill { transition: background-color var(--t-1), color var(--t-1); }
+  .rl-oldbtn:hover .pill { background: var(--rule-2); border-color: var(--rule-2); color: var(--ink); }
+  .rl-oldbtn.is-hit .pill, .rl-oldbtn.is-hit .pill::before { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
+
+  /* ---------- 舊線對照：一條灰色虛線分岔成幾條新路線 ---------- */
+  .rl-oldstats { margin-bottom: var(--sp-7); }
+  .rl-oldstats .stat__value { font-size: clamp(1.9rem, 1.3rem + 1.5vw, 2.75rem); white-space: nowrap; }
+  .rl-was { color: var(--ink-3); }
+  .rl-arrow { margin: 0 .18em; font-weight: 500; color: var(--ink-3); }
+  @media (max-width: 640px) { .rl-oldstats .stat__value { font-size: 1.375rem; } }
+
+  .rl-forks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4) var(--sp-5); margin: 0; padding: 0; list-style: none; }
+  .rl-fork {
+    display: grid;
+    grid-template-columns: 148px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--sp-4);
+    height: 100%;
+    padding: var(--sp-5);
+    border: var(--hair);
+    border-radius: var(--r-2);
+    background: var(--paper);
+  }
+  .rl-fork__old { display: grid; justify-items: start; gap: 2px; }
+  .rl-fork__name { margin-top: var(--sp-2); font-size: var(--fs-md); font-weight: 800; line-height: 1.4; }
+  .rl-fork__meta { font-size: var(--fs-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .rl-fork__btn { margin-top: var(--sp-3); }
+  .rl-fork__map { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; }
+  .rl-fork__svg { width: 84px; }
+  .rl-fork__new { margin: 0; padding: 0; list-style: none; }
+  .rl-fork__new li { display: flex; align-items: center; gap: 10px; height: 36px; min-width: 0; }
+  .rl-fork__to { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 700; }
+  .rl-fork__hw { font: 600 var(--fs-xs)/1 var(--font-num); color: var(--ink-3); white-space: nowrap; }
+  .rl-fork__hw b { font-size: var(--fs-sm); font-weight: 800; color: var(--ink); }
+  @media (max-width: 960px) { .rl-forks { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 560px) {
+    .rl-fork { grid-template-columns: minmax(0, 1fr); padding: var(--sp-4); }
+    .rl-fork__old { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+    .rl-fork__name { margin: 0; }
+    .rl-fork__meta { flex-basis: 100%; order: 3; }
+    .rl-fork__btn { margin: 0 0 0 auto; }
+    .rl-fork__to { font-size: var(--fs-xs); }
+    /* 窄螢幕把「尖峰」字樣留給螢幕報讀器，讓出寬度給路線名稱；舊路線的說明已寫明是尖峰班距 */
+    .rl-fork__hwl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  }
+</style>
+</head>
+<body data-rail="blue">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="util-bar" data-pause-offscreen>
+  <div class="container util-bar__inner">
+    <a class="back-link" href="../../index.html">← 返回目錄</a>
+    <p class="util-bar__note"><span class="live-dot" aria-hidden="true"></span><span class="util-bar__long">新路網第一階段</span> <strong>2027.01.01</strong> 上路・倒數 <strong data-countdown="2027-01-01">70</strong> 天</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+        <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+        <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+        <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+      </svg>
+      <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="開啟選單"><span></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ol class="site-nav__line">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路網總覽</span></a></li>
+        <li><a class="site-nav__link is-active" href="routes.html" aria-current="page"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">全部路線</span></a></li>
+        <li><a class="site-nav__link" href="route.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路線詳情</span></a></li>
+        <li><a class="site-nav__link" href="compare.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">新舊比較</span></a></li>
+      </ol>
+    </nav>
+    <a class="btn btn--ink btn--sm site-header__cta" href="compare.html#feedback">提供意見</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- 起站：全日發車條碼 -->
+  <section class="page-hero" id="top" data-stop="全日班次" aria-labelledby="hero-title">
+    <div class="container container--wide page-hero__grid">
+      <div class="page-hero__copy">
+        <p class="kicker c-blue">全部路線・2027 新路網</p>
+        <h1 class="display page-hero__title" id="hero-title">
+          <span>十九條線，</span>
+          <span>四種<em class="c-blue">節奏</em>。</span>
+        </h1>
+        <p class="lede page-hero__lede">幹線全天高頻、支線短而直、接駁深入山區，夜間路線接手到清晨。發車條碼上的每一條細線都是一班從起站發出的車：<b>線越密，等車越短。</b></p>
+        <div class="cluster">
+          <a class="btn btn--primary btn--lg c-blue" href="#list">找我的路線</a>
+          <a class="btn btn--line btn--lg" href="#oldmap">舊路線對照</a>
+        </div>
+      </div>
+
+      <figure class="map-panel page-hero__panel" id="bc-panel" data-pause-offscreen>
+        <div class="map-panel__bar">
+          <p class="map-panel__title"><span class="live-dot" aria-hidden="true"></span>全日發車條碼 <span class="map-panel__hint">拖動時間軸，或點條碼跳到該時刻</span></p>
+          <div class="map-panel__tools rl-panel-tools">
+            <div class="segmented segmented--sm" role="group" aria-label="平日或假日班表">
+              <button type="button" aria-pressed="true" data-day="weekday">平日</button>
+              <button type="button" aria-pressed="false" data-day="holiday">假日</button>
+            </div>
+            <button class="icon-btn icon-btn--sm icon-btn--line rl-play" type="button" id="bc-play" aria-pressed="false" aria-label="播放模擬">
+              <svg viewBox="0 0 16 16" aria-hidden="true" data-icon="play"><path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="currentColor"/></svg>
+              <svg viewBox="0 0 16 16" aria-hidden="true" data-icon="pause" hidden><path d="M4.5 3.5 H7 V12.5 H4.5 Z M9 3.5 H11.5 V12.5 H9 Z" fill="currentColor"/></svg>
+            </button>
+            <button class="btn btn--sm btn--line" type="button" id="bc-now">回到現在</button>
+          </div>
+        </div>
+        <div class="rl-bc is-pre" id="bc" role="group" aria-label="全日發車條碼：19 條路線的去程發車時刻">
+          <div class="rl-bc__plot">
+            <div class="rl-bc__axis" aria-hidden="true">
+              <span class="rl-bc__colhead">路線</span>
+              <span class="rl-bc__hours" id="bc-hours"></span>
+              <span class="rl-bc__colhead">此刻</span>
+            </div>
+            <div class="rl-bc__under" aria-hidden="true">
+              <span class="rl-bc__band" data-peak style="left: 8.333%; width: 8.333%"></span>
+              <span class="rl-bc__band" data-peak style="left: 50%; width: 10.417%"></span>
+            </div>
+            <div class="rl-bc__rows" id="bc-rows"></div>
+            <div class="rl-bc__over" aria-hidden="true">
+              <span class="rl-bc__cursor"><span class="rl-bc__flag" id="bc-flag">08:15</span></span>
+            </div>
+          </div>
+          <div class="rl-bc__scrub">
+            <label class="rl-bc__scrub-label" for="bc-range">時間軸</label>
+            <input class="range rl-range" id="bc-range" type="range" min="0" max="1439" step="1" value="195">
+          </div>
+        </div>
+        <figcaption class="map-panel__foot">
+          <span class="legend">
+            <span class="legend__item"><svg width="22" height="12" viewBox="0 0 22 12" aria-hidden="true"><path d="M2 0 V12 M7 0 V12 M12 0 V12 M17 0 V12" fill="none" stroke="#1C1C1C" stroke-width="1.5"/></svg>一班車從起站發出</span>
+            <span class="legend__item"><span class="rl-key" aria-hidden="true"></span>平日尖峰時段</span>
+          </span>
+          <span>模擬速度：1 秒＝2 分鐘・05:00 起算一個營運日</span>
+        </figcaption>
+      </figure>
+
+      <section class="rl-now page-hero__foot" aria-labelledby="now-title">
+        <div class="rl-now__head">
+          <h2 class="eyebrow" id="now-title">模擬時刻・全市</h2>
+          <span class="tag tag--live" id="now-day">平日</span>
+        </div>
+        <p class="rl-now__clock"><span class="rl-now__time" id="now-time">08:15</span><span class="rl-now__period" id="now-period">上午尖峰</span></p>
+        <dl class="rl-now__stats">
+          <div><dt>營運中路線</dt><dd><span id="now-running">17</span><small>/ 19 條</small></dd></div>
+          <div><dt>路上車輛</dt><dd><span id="now-buses">186</span><small>輛</small></dd></div>
+          <div><dt>一小時內發車</dt><dd><span id="now-trips">312</span><small>班</small></dd></div>
+        </dl>
+      </section>
+    </div>
+  </section>
+
+  <!-- 第 1 站：路線一覽 -->
+  <section class="section" id="list" data-stop="路線一覽" aria-labelledby="list-title">
+    <div class="container">
+      <header class="sec-head c-blue">
+        <p class="sec-head__stop"><span class="sec-head__no">01</span>路線一覽</p>
+        <h2 class="sec-head__title" id="list-title">找到你要搭的那一條</h2>
+        <p class="sec-head__lede">依類型篩選，或輸入路線編號、站名、行政區、舊路線編號搜尋。卡片上的小車依上方時間軸，即時模擬去程車輛的位置。</p>
+      </header>
+
+      <form class="rl-tools" id="list-tools" role="search" aria-label="篩選與搜尋路線" novalidate>
+        <div class="field rl-tools__types">
+          <p class="field__label" id="type-label">路線類型</p>
+          <div class="chips" data-chips="single" id="rl-type" role="group" aria-labelledby="type-label">
+            <button class="chip" type="button" aria-pressed="true" data-value="all">全部 <span class="chip__count" data-tcount="all">19</span></button>
+            <button class="chip" type="button" aria-pressed="false" data-value="trunk"><span class="route-swatch c-red" aria-hidden="true"></span>幹線 <span class="chip__count" data-tcount="trunk">6</span></button>
+            <button class="chip" type="button" aria-pressed="false" data-value="branch"><span class="route-swatch route-swatch--branch c-blue" aria-hidden="true"></span>支線 <span class="chip__count" data-tcount="branch">8</span></button>
+            <button class="chip" type="button" aria-pressed="false" data-value="feeder"><span class="route-swatch route-swatch--feeder c-green" aria-hidden="true"></span>接駁 <span class="chip__count" data-tcount="feeder">3</span></button>
+            <button class="chip" type="button" aria-pressed="false" data-value="night"><span class="route-swatch route-swatch--night" aria-hidden="true"></span>夜間 <span class="chip__count" data-tcount="night">2</span></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="rl-q">搜尋</label>
+          <div class="search rl-search">
+            <svg class="search__icon" viewBox="0 0 22 22" aria-hidden="true"><circle cx="9.5" cy="9.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M14.5 14.5 L20 20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            <input class="input" id="rl-q" type="text" enterkeyhint="search" autocomplete="off" placeholder="路線編號、站名或舊路線，如 207" aria-describedby="rl-q-hint">
+            <button class="icon-btn icon-btn--sm rl-search__clear" type="button" id="rl-q-clear" aria-label="清除搜尋" hidden>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="rl-sort">排序</label>
+          <select class="select" id="rl-sort">
+            <option value="code">依路線類型與編號</option>
+            <option value="peak">尖峰班距：由密到疏</option>
+            <option value="length">路線全長：由長到短</option>
+            <option value="stops">停靠站數：由多到少</option>
+            <option value="first">首班車：由早到晚</option>
+          </select>
+        </div>
+        <p class="rl-suggest" id="rl-q-hint"><span>試試：</span>
+          <button type="button" data-q="澄港車站">澄港車站</button>
+          <button type="button" data-q="207">舊 207 路</button>
+          <button type="button" data-q="夜市">夜市</button>
+          <button type="button" data-q="雲嶺">雲嶺</button>
+          <button type="button" data-q="快線">快線</button>
+        </p>
+      </form>
+
+      <div class="rl-summary">
+        <p class="rl-summary__count" id="rl-count" aria-live="polite">顯示 <b>19</b> 條路線</p>
+        <button class="btn btn--ghost btn--sm" type="button" id="rl-clear" hidden>清除條件</button>
+        <p class="rl-summary__clock"><span class="bus-icon" aria-hidden="true"></span>小車位置：模擬 <b class="num" id="rl-clock">08:15・平日</b><a href="#bc-panel">調整時刻</a></p>
+      </div>
+
+      <div class="rl-notes" id="rl-notes" hidden></div>
+
+      <div class="rl-results">
+        <div id="rl-groups"></div>
+        <div id="rl-flat" hidden>
+          <h3 class="rl-flat__head" id="rl-flat-head">依尖峰班距排序</h3>
+          <ul class="rl-grid" id="rl-flat-list"></ul>
+        </div>
+        <div class="empty" id="rl-empty" hidden>
+          <p class="empty__title">沒有符合的路線</p>
+          <p class="empty__text" id="rl-empty-text">試試站名中的一兩個字、行政區，或舊路線編號。</p>
+          <button class="btn btn--line" type="button" id="rl-empty-btn">清除搜尋與篩選</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 2 站：舊線對照 -->
+  <section class="section section--white" id="oldmap" data-stop="舊線對照" aria-labelledby="oldmap-title">
+    <div class="container">
+      <header class="sec-head c-purple">
+        <p class="sec-head__stop"><span class="sec-head__no">02</span>舊線對照</p>
+        <h2 class="sec-head__title" id="oldmap-title">原本搭的舊路線，現在搭哪條？</h2>
+        <p class="sec-head__lede">舊路網一條線常要兼顧好幾個社區，繞得又長又慢。新路網把它拆成幾段：主幹交給高頻幹線，末端交給支線或接駁。左邊是你熟悉的舊路線，右邊是接手它的新路線。</p>
+      </header>
+      <div class="stat-row rl-oldstats" id="old-stats" data-reveal></div>
+      <ul class="rl-forks" id="forks"></ul>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer" data-stop="終點站">
+  <div class="container">
+    <div class="site-footer__terminal" aria-hidden="true"><span class="site-footer__stop">終點站 <small>TERMINUS</small></span></div>
+    <div class="site-footer__grid">
+      <div class="site-footer__col">
+        <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+          <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+            <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+            <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+            <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+            <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+          </svg>
+          <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+        </a>
+        <p>澄港市政府交通局・公車路網改版辦公室。新路網自 2027 年 1 月 1 日起分三階段上路。</p>
+        <form class="subscribe" data-subscribe novalidate>
+          <div class="field">
+            <label class="sr-only" for="sub-email">電子郵件</label>
+            <input class="input" id="sub-email" name="email" type="email" placeholder="訂閱路線異動通知" autocomplete="email">
+          </div>
+          <button class="btn btn--ink" type="submit">訂閱</button>
+        </form>
+      </div>
+      <nav class="site-footer__col" aria-label="頁尾導覽">
+        <p class="site-footer__title">路網資訊</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html">路網總覽</a></li>
+          <li><a href="routes.html">全部路線</a></li>
+          <li><a href="route.html">路線詳情</a></li>
+          <li><a href="compare.html">新舊比較</a></li>
+          <li><a href="index.html#timeline">改版時程</a></li>
+        </ul>
+      </nav>
+      <div class="site-footer__col">
+        <p class="site-footer__title">乘車服務</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html#finder">查我的路線</a></li>
+          <li><a href="index.html#faq">票價與轉乘優惠</a></li>
+          <li><a href="compare.html#feedback">意見回饋</a></li>
+          <li><button type="button" data-toast="路網圖 PDF 將於 11 月 30 日站牌更換完成後提供下載。">下載路網圖 PDF</button></li>
+        </ul>
+      </div>
+      <div class="site-footer__col">
+        <p class="site-footer__title">聯絡我們</p>
+        <p>公車客服 <b class="num">0800-012-027</b><br>週一至週六 07:00–21:00<br>澄港市舊城區府前路 1 號 交通局 3 樓</p>
+      </div>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 澄港市政府交通局・本站為作品集虛構示範，路線與數據皆為模擬</span>
+      <span>資料更新：2026.10.23</span>
+      <a class="back-link" href="../../index.html">← 返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$ } = App;
+  const TYPES = App.data.types;
+  const ORDER = App.data.typeOrder;
+  const ROUTES = App.routesOf();              // 固定順序：幹→支→接→夜
+  const INK = '#1C1C1C';
+  const DAY0 = 300;                           // 營運日從 05:00 起算，跨過午夜到隔日 05:00
+  const DAY_LEN = 1440;
+  const SIM_SPEED = 2;                        // 真實 1 秒＝模擬 2 分鐘：一條幹線約 20 秒跑完，看得出流動又不躁
+  const SW = 336, SH = 64;                    // 卡片線形圖 viewBox
+  // 車走在線旁的「車道」（行進方向左側；環線順時針時就是外圈），不疊在轉乘膠囊上被看成另一個站
+  const BUS_LANE = 9.5;
+  const DAY_LABEL = { weekday: '平日', holiday: '假日' };
+  const dom = m => (m < DAY0 ? m + DAY_LEN : m);   // 00:00–04:59 屬於前一個營運日的尾端
+  const hm = t => App.fmt.hm(t);
+  const peakOf = r => (r.type === 'night' ? r.headway.off : r.headway.peak);
+
+  const GROUP_NOTE = {
+    trunk: '沿大路直線走，全天固定班距。',
+    branch: '短而直，把社區接上幹線；編號第一碼就是所接的幹線。',
+    feeder: '大車開不進的山區與社區，中型巴士接駁到幹線站。',
+    night: '幹線收班後接手，沿主要走廊行駛到清晨。',
+  };
+  const SORT_LABEL = {
+    peak: '依尖峰班距排序：由密到疏',
+    length: '依路線全長排序：由長到短',
+    stops: '依停靠站數排序：由多到少',
+    first: '依首班車時間排序：由早到晚',
+  };
+  const SORTERS = {
+    code: () => 0,
+    peak: (a, b) => peakOf(a) - peakOf(b),
+    length: (a, b) => b.km - a.km,
+    stops: (a, b) => b.stops.length - a.stops.length,
+    first: (a, b) => info[a.id].first - info[b.id].first,
+  };
+
+  /* ==========================================================================
+     幾何與時間：每條路線的站間分鐘、卡片線形圖上的站點位置
+     ========================================================================== */
+
+  // 線形圖：一般路線是一條直線；舊城環線畫成 45° 切角的八角環（與路網圖上的形狀一致）。
+  // 站點沿線等距排列，巴士則依實際站間分鐘在兩站之間內插，到站時刻才會對得上班表。
+  function stripGeom(r) {
+    const n = r.stops.length;
+    let pts;
+    if (r.loop) {
+      // 上下左右各留出車道的空間，外圈的車才不會被 viewBox 切掉
+      const L = 14, R = SW - 14, T = 16, B = 49, c = 14;
+      pts = [[SW / 2, T], [R - c, T], [R, T + c], [R, B - c], [R - c, B], [L + c, B], [L, B - c], [L, T + c], [L + c, T], [SW / 2, T]];
+    } else {
+      pts = [[14, 30], [SW - 14, 30]];
+    }
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const len = cum[cum.length - 1];
+    const stopS = r.stops.map((_, k) => len * k / (r.loop ? n : n - 1));
+    if (r.loop) stopS.push(len);
+    const at = s => {
+      const v = r.loop ? ((s % len) + len) % len : Math.max(0, Math.min(len, s));
+      let i = 0;
+      while (i < pts.length - 2 && cum[i + 1] < v) i++;
+      const k = (v - cum[i]) / (cum[i + 1] - cum[i]);
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      return { x: x0 + (x1 - x0) * k, y: y0 + (y1 - y0) * k, a: Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI };
+    };
+    return { pts, stopS, at };
+  }
+
+  const info = {};
+  ROUTES.forEach(r => {
+    const offs = [0];
+    r.segMin.forEach((m, i) => offs.push(offs[i] + m));   // 環線多一段回到起站
+    info[r.id] = {
+      offs,
+      total: offs[offs.length - 1],
+      first: dom(App.toMin(r.first)),
+      last: dom(App.toMin(r.last)),
+      geom: stripGeom(r),
+      sched: {},
+    };
+  });
+
+  // 去程、返程發車時刻（換成營運日分鐘、排序），依日別快取
+  const schedOf = (id, day) => {
+    const s = info[id].sched;
+    if (!s[day]) s[day] = [0, 1].map(dir => App.schedule(id, day, dir).map(dom).sort((a, b) => a - b));
+    return s[day];
+  };
+
+  // 在路上的班次：回傳各班已行駛分鐘。凌晨收尾的夜間班次在 05:00 換日後仍在路上，所以也檢查前一天
+  const activeTrips = (deps, t, total) => {
+    const out = [];
+    deps.forEach(d => {
+      if (d <= t && t < d + total) out.push(t - d);
+      else if (d - DAY_LEN <= t && t < d - DAY_LEN + total) out.push(t - d + DAY_LEN);
+    });
+    return out;
+  };
+
+  const posAt = (id, e) => {
+    const { offs, geom } = info[id];
+    let k = 0;
+    while (k < offs.length - 2 && offs[k + 1] <= e) k++;
+    const f = Math.min(1, (e - offs[k]) / (offs[k + 1] - offs[k]));
+    return geom.at(geom.stopS[k] + (geom.stopS[k + 1] - geom.stopS[k]) * f);
+  };
+
+  function periodOf(t, day) {
+    if (t >= DAY_LEN) return '深夜：只有夜間路線';
+    const h = t / 60;
+    if (h < 7) return '清晨';
+    if (day === 'holiday') return h >= 21 ? '晚間' : '假日班距';
+    if (h < 9) return '上午尖峰';
+    if (h >= 17 && h < 19.5) return '下午尖峰';
+    if (h >= 21) return '晚間疏運';
+    return '離峰';
+  }
+
+  function statusOf(r, t, day) {
+    const f = info[r.id];
+    const [d0, d1] = schedOf(r.id, day);
+    const onRoad = activeTrips(d0, t, f.total).length + activeTrips(d1, t, f.total).length;
+    if (t >= f.first && t <= f.last) {
+      const hw = App.headwayAt(r, t % DAY_LEN, day);
+      if (onRoad) return { state: 'run', hw, text: `每 ${hw} 分一班・雙向 ${onRoad} 輛` };
+      // 班距長、全程短的路線（支線、接駁）常有兩班之間沒車在路上的空檔：「0 輛」看起來像停駛，改報下一班
+      const next = Math.min(...[d0, d1].map(list => list.find(d => d >= t) ?? Infinity));
+      if (next < Infinity) return { state: 'wait', hw, text: `每 ${hw} 分一班・下一班 ${hm(next)}` };
+    }
+    if (onRoad) return { state: 'ending', text: `末班車行駛中・${onRoad} 輛` };
+    if (t < f.first) return { state: 'before', text: `${r.first} ${r.type === 'night' ? '開始發車' : '首班車'}` };
+    return { state: 'after', text: `今日已收班・${r.first} 首班` };
+  }
+  const STATUS_CLS = { run: 'tag tag--live', wait: 'tag tag--live', ending: 'tag tag--warn', before: 'tag', after: 'tag tag--old' };
+  // 營運時段內（不論此刻路上有沒有車）
+  const inService = st => st.state === 'run' || st.state === 'wait';
+
+  // 卡片上此刻適用的班距欄
+  function activeCol(r, t, day, st) {
+    if (!inService(st)) return null;
+    if (r.type === 'night') return 'night';
+    if (day === 'holiday') return 'holiday';
+    const h = (t % DAY_LEN) / 60;
+    return (h >= 7 && h < 9) || (h >= 17 && h < 19.5) ? 'peak' : 'off';
+  }
+
+  function cityStats(t, day) {
+    let running = 0, buses = 0, trips = 0;
+    ROUTES.forEach(r => {
+      const f = info[r.id];
+      if (t >= f.first && t <= f.last) running++;
+      schedOf(r.id, day).forEach(list => {
+        buses += activeTrips(list, t, f.total).length;
+        list.forEach(d => { if (d >= t && d < t + 60) trips++; });
+      });
+    });
+    return { running, buses, trips };
+  }
+
+  /* ==========================================================================
+     全日發車條碼
+     ========================================================================== */
+  const bc = $('#bc');
+  const bcRows = $('#bc-rows');
+  const over = $('.rl-bc__over', bc);
+  const range = $('#bc-range');
+  const flag = $('#bc-flag');
+
+  $('#bc-hours').innerHTML = Array.from({ length: 24 }, (_, h) => {
+    const hour = (5 + h) % 24;
+    return `<span class="rl-bc__hr${h % 3 ? ' is-minor' : ''}${hour === 0 ? ' is-mid' : ''}" style="left:${(h / 24 * 100).toFixed(3)}%">${String(hour).padStart(2, '0')}</span>`;
+  }).join('');
+
+  bcRows.innerHTML = ROUTES.map((r, i) => `
+    <div class="rl-bc__row${i > 0 && ROUTES[i - 1].type !== r.type ? ' is-gap' : ''}" data-route="${r.id}">
+      ${App.pillHTML(r.id, { link: true, size: 'sm' })}
+      <span class="rl-bc__lane-wrap" style="--ld:${i * 45}ms"><svg class="rl-bc__lane" viewBox="0 0 ${DAY_LEN} 14" preserveAspectRatio="none" aria-hidden="true"></svg></span>
+      <span class="rl-bc__hw num"></span>
+      <span class="sr-only" data-sr></span>
+    </div>`).join('');
+  const lanes = {};
+  $$('.rl-bc__row', bcRows).forEach(row => {
+    lanes[row.dataset.route] = { row, svg: $('.rl-bc__lane', row), hw: $('.rl-bc__hw', row), sr: $('[data-sr]', row), hwKey: '' };
+  });
+
+  function fillLanes() {
+    ROUTES.forEach(r => {
+      const f = info[r.id];
+      const [d0] = schedOf(r.id, state.day);
+      // 黃線在白底對比低，條碼改用深一階的黃；夜間路線用墨色
+      const tick = r.type === 'night' ? INK : r.color === 'yellow' ? '#D9B300' : r.colorHex;
+      const x = m => (m - DAY0).toFixed(1);
+      const end = Math.min(DAY0 + DAY_LEN, f.last + f.total);
+      lanes[r.id].svg.innerHTML =
+        `<rect x="${x(f.first)}" y="0" width="${(end - f.first).toFixed(1)}" height="14" fill="${tick}" fill-opacity="${r.color === 'yellow' ? 0.2 : 0.12}"/>`
+        + `<path d="${d0.map(d => `M${x(d)} 0V14`).join('')}" fill="none" stroke="${tick}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+      lanes[r.id].sr.textContent = `${DAY_LABEL[state.day]}去程發車 ${d0.length} 班，首班 ${r.first}、末班 ${r.last}。`;
+    });
+  }
+
+  // 滑過車道：其他路線淡出（與首頁路網圖相同的語彙），並提示最近一班的發車時刻
+  function setHover(id) {
+    bc.classList.toggle('has-hover', !!id);
+    Object.entries(lanes).forEach(([rid, l]) => l.row.classList.toggle('is-hover', rid === id));
+  }
+  bcRows.addEventListener('pointerover', e => {
+    const row = e.target.closest('.rl-bc__row');
+    setHover(row ? row.dataset.route : null);
+  });
+  bcRows.addEventListener('pointerleave', () => { setHover(null); App.tip.hide(); });
+  bcRows.addEventListener('focusin', e => { const row = e.target.closest('.rl-bc__row'); if (row) setHover(row.dataset.route); });
+  bcRows.addEventListener('focusout', e => { if (!bcRows.contains(e.relatedTarget)) setHover(null); });
+
+  let holding = false;
+  const seek = clientX => {
+    const box = over.getBoundingClientRect();
+    const p = Math.min(1, Math.max(0, (clientX - box.left) / box.width));
+    setTime(DAY0 + p * (DAY_LEN - 1));
+  };
+  bcRows.addEventListener('pointerdown', e => {
+    // 觸控交給頁面捲動，點一下即可跳時刻；滑鼠與觸控筆可以直接在條碼上拖動
+    if (e.pointerType === 'touch' || !e.target.closest('.rl-bc__lane')) return;
+    holding = true;
+    bcRows.setPointerCapture(e.pointerId);
+    App.tip.hide();
+    seek(e.clientX);
+  });
+  bcRows.addEventListener('pointermove', e => {
+    if (holding) { seek(e.clientX); return; }
+    const lane = e.target.closest('.rl-bc__lane');
+    if (!lane || e.pointerType !== 'mouse') { App.tip.hide(); return; }
+    const id = lane.closest('[data-route]').dataset.route;
+    const r = App.route(id);
+    const box = lane.getBoundingClientRect();
+    const m = DAY0 + (e.clientX - box.left) / box.width * DAY_LEN;
+    const [d0] = schedOf(id, state.day);
+    const near = d0.reduce((a, d) => (Math.abs(d - m) < Math.abs(a - m) ? d : a));
+    const dest = r.loop ? `繞一圈回到${App.station(r.from).name}` : App.station(r.to).name;
+    App.tip.show(`${App.pillHTML(id, { title: false })}<strong>${hm(near)} 起站發車</strong><span>${App.esc(App.station(r.from).name)} → ${App.esc(dest)}・此時段每 ${App.headwayAt(r, near % DAY_LEN, state.day)} 分一班</span>`, e.clientX, e.clientY);
+  });
+  bcRows.addEventListener('click', e => { if (e.target.closest('.rl-bc__lane')) seek(e.clientX); });
+  range.addEventListener('pointerdown', () => { holding = true; });
+  window.addEventListener('pointerup', () => { holding = false; });
+  window.addEventListener('pointercancel', () => { holding = false; });
+  range.addEventListener('input', () => setTime(DAY0 + Number(range.value)));
+
+  /* ==========================================================================
+     路線卡片
+     ========================================================================== */
+  function stripSVG(r) {
+    const g = info[r.id].geom;
+    const n = r.stops.length;
+    const lw = { trunk: 6, branch: 5, feeder: 3.5, night: 3 }[r.type];
+    const color = r.type === 'night' ? INK : r.colorHex;
+    const dash = r.type === 'feeder' ? ' stroke-dasharray="7 5"' : r.type === 'night' ? ' stroke-dasharray="0.1 6"' : '';
+    const d = 'M' + g.pts.map(p => p.join(' ')).join(' L') + (r.loop ? ' Z' : '');
+    const from = App.station(r.from).name, to = App.station(r.to).name;
+    const label = `${r.code} 共 ${n} 站：${from}${r.loop ? ' 環狀一圈' : ' 至 ' + to}`;
+    let s = `<svg class="rl-strip" viewBox="0 0 ${SW} ${SH}" width="${SW}" height="${SH}" role="img" aria-label="${App.esc(label)}">`;
+    if (r.color === 'yellow') s += `<path d="${d}" fill="none" stroke="#D9B300" stroke-width="${lw + 2.5}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
+    s += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
+    s += '<g class="rl-strip__hits"></g>';
+    r.stops.forEach((sid, k) => {
+      const st = App.station(sid);
+      const p = g.at(g.stopS[k]);
+      const end = !r.loop && (k === 0 || k === n - 1);
+      s += st.transfer
+        ? `<rect x="${(p.x - 7).toFixed(1)}" y="${(p.y - 5).toFixed(1)}" width="14" height="10" rx="5" fill="#FFFFFF" stroke="${INK}" stroke-width="2"/>`
+        : `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${end ? 4.5 : 3.2}" fill="#FFFFFF" stroke="${color}" stroke-width="${end ? 3 : 2}"/>`;
+    });
+    s += '<g class="rl-strip__buses"></g><g class="rl-strip__label"></g>';
+    if (r.loop) {
+      // 環內只有約 23px 高（上下兩排站點之間），兩行字會頂到頂端的轉乘膠囊，收成一行置中
+      s += `<text x="${SW / 2}" y="36.5" text-anchor="middle" font-size="11" fill="#6B6B66"><tspan font-weight="800" fill="${INK}">${App.esc(from)}起訖</tspan>・順時針一圈 ${n} 站</text>`;
+    } else {
+      s += `<text x="8" y="56" font-size="11.5" font-weight="700" fill="#3D3D3A">${App.esc(from)}</text>`;
+      s += `<text x="${SW - 8}" y="56" text-anchor="end" font-size="11.5" font-weight="700" fill="#3D3D3A">${App.esc(to)}</text>`;
+    }
+    return s + '</svg>';
+  }
+
+  function cardHTML(r) {
+    const to = App.station(r.to).name;
+    const meta = [r.alias, `${r.stops.length} 站`, `${r.km} km`, `全程約 ${r.minutes} 分`].filter(Boolean).join('・');
+    const facts = r.type === 'night'
+      ? `<div class="rl-span3" data-col="night"><dt>班距・每日深夜</dt><dd><span>${r.headway.off}</span> 分</dd></div>`
+      : `<div data-col="peak"><dt>尖峰</dt><dd><span>${r.headway.peak}</span> 分</dd></div>
+         <div data-col="off"><dt>離峰</dt><dd><span>${r.headway.off}</span> 分</dd></div>
+         <div data-col="holiday"><dt>假日</dt><dd><span>${r.headway.holiday}</span> 分</dd></div>`;
+    const old = r.replaces.length
+      ? `<span>取代</span>${r.replaces.map(o => `<button class="rl-oldbtn" type="button" data-old="${o}" aria-label="篩選取代舊 ${o} 路的新路線">${App.oldPillHTML(o, { size: 'sm' })}</button>`).join('')}`
+      : '<span class="tag tag--new">新增夜間路線</span>';
+    return `<article class="route-card rl-card c-${r.color}" data-type="${r.type}">
+      <div class="route-card__head">
+        ${App.pillHTML(r.id, { size: 'lg' })}
+        <div class="rl-card__name">
+          <h4 class="route-card__title"><a href="${App.routeURL(r.id)}">${App.esc(r.name)}</a></h4>
+          <p class="route-card__meta">${App.esc(meta)}</p>
+        </div>
+      </div>
+      <p class="rl-card__desc">${App.esc(r.desc)}</p>
+      <div class="route-card__strip">
+        <div class="rl-card__live"><span class="tag" data-status></span><span class="rl-card__dir">${r.loop ? '圖示順時針・雙向行駛' : `往 ${App.esc(to)} →`}</span></div>
+        ${stripSVG(r)}
+      </div>
+      <p class="rl-match" data-match hidden></p>
+      <dl class="route-card__facts rl-facts">${facts}<div data-col="hours"><dt>首末班</dt><dd class="num">${r.first}–${r.last}</dd></div></dl>
+      <div class="route-card__foot">
+        <div class="route-card__old">${old}</div>
+        <a class="link-arrow c-${r.color}" href="${App.routeURL(r.id)}" aria-label="${r.code} 時刻表與站序">詳情</a>
+      </div>
+    </article>`;
+  }
+
+  function groupHTML(type) {
+    const list = App.routesOf(type);
+    const peaks = list.map(peakOf);
+    const lo = Math.min(...peaks), hi = Math.max(...peaks);
+    const hours = `${hm(Math.min(...list.map(r => info[r.id].first)))}–${hm(Math.max(...list.map(r => info[r.id].last)))}`;
+    return `<section class="rl-group" data-group="${type}" aria-labelledby="g-${type}">
+      <header class="rl-group__head">
+        <span class="rl-group__line rl-group__line--${type}" aria-hidden="true"></span>
+        <h3 class="rl-group__title" id="g-${type}">${TYPES[type].label}<span class="rl-group__en">${TYPES[type].en.toUpperCase()}</span></h3>
+        <p class="rl-group__note">${GROUP_NOTE[type]}<span class="rl-group__facts">${type === 'night' ? '班距' : '尖峰'} ${lo === hi ? lo : lo + '–' + hi} 分・${hours}</span></p>
+        <p class="rl-group__count num" data-gcount></p>
+      </header>
+      <ul class="rl-grid" data-glist></ul>
+    </section>`;
+  }
+
+  $('#rl-groups').innerHTML = ORDER.map(groupHTML).join('');
+  const groups = {};
+  ORDER.forEach(type => {
+    const el = $(`.rl-group[data-group="${type}"]`);
+    groups[type] = { el, list: $('[data-glist]', el), count: $('[data-gcount]', el) };
+  });
+
+  const cards = {};
+  const visibleCards = new Set();
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const cardIO = new IntersectionObserver(entries => entries.forEach(en => {
+    const id = en.target.dataset.id;
+    if (en.isIntersecting) { visibleCards.add(id); renderBuses(id); } else visibleCards.delete(id);
+  }), { rootMargin: '120px 0px' });
+
+  ROUTES.forEach(r => {
+    const li = document.createElement('li');
+    li.className = 'rl-item';
+    li.dataset.id = r.id;
+    li.setAttribute('data-reveal', '');
+    li.style.setProperty('--rd', `${(App.routesOf(r.type).indexOf(r) % 3) * 80}ms`);
+    li.innerHTML = cardHTML(r);
+    groups[r.type].list.appendChild(li);
+    cards[r.id] = {
+      li,
+      status: $('[data-status]', li),
+      match: $('[data-match]', li),
+      hits: $('.rl-strip__hits', li),
+      label: $('.rl-strip__label', li),
+      busLayer: $('.rl-strip__buses', li),
+      buses: [],
+      cols: $$('[data-col]', li),
+      olds: $$('.rl-oldbtn', li),
+      statusKey: '',
+    };
+    cardIO.observe(li);
+  });
+  App.scan($('#list'));
+
+  // 卡片上的去程車輛：依班表找出此刻在路上的班次，放到線形圖上對應的位置
+  function renderBuses(id) {
+    const c = cards[id];
+    const [d0] = schedOf(id, state.day);
+    const trips = activeTrips(d0, state.t, info[id].total);
+    while (c.buses.length < trips.length) {
+      const g = document.createElementNS(SVGNS, 'g');
+      g.innerHTML = `<rect x="-8" y="-4.5" width="16" height="9" rx="4.5" fill="${INK}" stroke="#FFFFFF" stroke-width="1.8"/><circle cx="4" cy="0" r="1.5" fill="#FFFFFF"/>`;
+      c.busLayer.appendChild(g);
+      c.buses.push(g);
+    }
+    while (c.buses.length > trips.length) c.buses.pop().remove();
+    trips.forEach((e, i) => {
+      const p = posAt(id, e);
+      const rad = p.a * Math.PI / 180;
+      const x = p.x + Math.sin(rad) * BUS_LANE, y = p.y - Math.cos(rad) * BUS_LANE;
+      c.buses[i].setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.a.toFixed(0)})`);
+    });
+  }
+
+  /* ==========================================================================
+     狀態：時間（模擬時鐘）與篩選；所有衍生顯示都從這兩組狀態重繪
+     ========================================================================== */
+  const state = { type: 'all', q: '', sort: 'code', day: 'weekday', t: DAY0, playing: false };
+  let lastMinute = -1;
+
+  function setTime(t, force) {
+    state.t = DAY0 + (((t - DAY0) % DAY_LEN) + DAY_LEN) % DAY_LEN;
+    bc.style.setProperty('--p', ((state.t - DAY0) / DAY_LEN).toFixed(5));
+    const minute = Math.floor(state.t);
+    if (minute !== lastMinute || force) { lastMinute = minute; minuteTick(); }
+    visibleCards.forEach(renderBuses);
+  }
+
+  // 以分鐘為單位才需要更新的文字：時鐘、讀數、卡片狀態、此刻班距
+  function minuteTick() {
+    const { t, day } = state;
+    const time = hm(t);
+    const period = periodOf(t, day);
+    flag.textContent = time;
+    $('#now-time').textContent = time;
+    $('#now-period').textContent = period;
+    $('#rl-clock').textContent = `${time}・${DAY_LABEL[day]}`;
+    range.setAttribute('aria-valuetext', `${DAY_LABEL[day]} ${time}，${period}`);
+    // 使用者正抓著滑桿時不要改它的值，以免跟手勢搶
+    if (!holding) range.value = Math.floor(t) - DAY0;
+    const s = cityStats(t, day);
+    $('#now-running').textContent = s.running;
+    $('#now-buses').textContent = s.buses;
+    $('#now-trips').textContent = s.trips;
+    ROUTES.forEach(r => {
+      const st = statusOf(r, t, day);
+      const c = cards[r.id];
+      const key = st.state + st.text;
+      if (c.statusKey !== key) {
+        c.statusKey = key;
+        c.status.className = STATUS_CLS[st.state];
+        c.status.innerHTML = (st.state === 'run' || st.state === 'ending' ? '<span class="bus-icon" aria-hidden="true"></span>' : '') + App.esc(st.text);
+      }
+      const col = activeCol(r, t, day, st);
+      c.cols.forEach(el => el.classList.toggle('is-now', el.dataset.col === col));
+      const l = lanes[r.id];
+      const hwKey = inService(st) ? String(st.hw) : '';
+      if (l.hwKey !== hwKey || !l.hw.innerHTML) {
+        l.hwKey = hwKey;
+        l.hw.classList.toggle('is-off', !hwKey);
+        l.hw.innerHTML = hwKey ? `${hwKey}<small>分</small>` : '—';
+      }
+    });
+  }
+
+  function setDay(day) {
+    state.day = day;
+    $$('[data-day]').forEach(b => b.setAttribute('aria-pressed', b.dataset.day === day));
+    $$('[data-peak]', bc).forEach(b => { b.hidden = day !== 'weekday'; });
+    $('#now-day').textContent = DAY_LABEL[day];
+    fillLanes();
+    setTime(state.t, true);
+  }
+
+  let stopLoop = null;
+  const playBtn = $('#bc-play');
+  function setPlaying(on) {
+    state.playing = on;
+    if (stopLoop) { stopLoop(); stopLoop = null; }
+    // App.animate 只在主內容可見、分頁可見時推進，離開分頁就停
+    if (on) stopLoop = App.animate($('#main'), (_, dt) => { if (!holding) setTime(state.t + dt * SIM_SPEED); });
+    playBtn.setAttribute('aria-pressed', on);
+    playBtn.setAttribute('aria-label', on ? '暫停模擬' : '播放模擬');
+    $('[data-icon="play"]', playBtn).toggleAttribute('hidden', on);
+    $('[data-icon="pause"]', playBtn).toggleAttribute('hidden', !on);
+  }
+  playBtn.addEventListener('click', () => setPlaying(!state.playing));
+  // 減少動態時不自動播放、也不提供播放（時間軸仍可拖動）
+  playBtn.hidden = App.reducedMotion;
+
+  $$('[data-day]').forEach(b => b.addEventListener('click', () => setDay(b.dataset.day)));
+
+  const nowMinutes = () => { const n = App.now(); return dom(n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60); };
+  const nowDay = () => { const d = App.now().getDay(); return d === 0 || d === 6 ? 'holiday' : 'weekday'; };
+  $('#bc-now').addEventListener('click', () => {
+    state.t = nowMinutes();
+    setDay(nowDay());
+    const n = App.now();
+    App.toast(`${App.fmt.date(App.TODAY)}（${App.fmt.wd(App.TODAY)}）${hm(n.getHours() * 60 + n.getMinutes())}，${periodOf(state.t, state.day)}。`, { title: '時間軸回到現在' });
+  });
+
+  /* ---------- 篩選與搜尋 ---------- */
+  const qInput = $('#rl-q');
+  const qClear = $('#rl-q-clear');
+  const typeChips = $('#rl-type');
+  let prevOrder = null;
+
+  const norm = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+  function parseQuery(raw) {
+    const q = norm(raw);
+    if (!q) return null;
+    // 「207」「舊207」「207路」都視為舊路線編號；用 find 比對，避免 constructor 這類鍵名誤中物件原型
+    const oldId = q.replace(/^舊/, '').replace(/路$/, '');
+    const old = App.data.oldRoutes.find(o => o.id === oldId) || null;
+    return { q, old };
+  }
+
+  function matchOf(r, Q) {
+    if (!Q) return {};
+    const { q } = Q;
+    const stations = r.stops.filter(id => App.station(id).name.toLowerCase().includes(q));
+    const direct = r.code.toLowerCase().includes(q) || r.id.toLowerCase() === q || r.name.includes(q)
+      || (r.alias || '').includes(q) || (q.length >= 2 && TYPES[r.type].label.includes(q));
+    const old = Q.old && r.replaces.includes(Q.old.id) ? Q.old : null;
+    const inDistrict = q.length >= 2 ? r.stops.filter(id => App.station(id).district.includes(q)) : [];
+    const district = inDistrict.length ? { name: App.station(inDistrict[0]).district, n: inDistrict.length } : null;
+    return direct || stations.length || old || district ? { stations, old, district } : null;
+  }
+
+  // 搜尋命中的站點：在線形圖上圈起來，並在卡片上說明第幾站、距起站幾分鐘
+  function decorate(r, m) {
+    const c = cards[r.id];
+    const g = info[r.id].geom;
+    const hits = (m && m.stations) || [];
+    c.hits.innerHTML = hits.map(sid => {
+      const p = g.at(g.stopS[r.stops.indexOf(sid)]);
+      return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="10.5" fill="#FFFFFF" stroke="${INK}" stroke-width="2.2"/>`;
+    }).join('');
+    let label = '';
+    const last = r.stops.length - 1;
+    const mid = hits.find(sid => { const k = r.stops.indexOf(sid); return k > 0 && k < last; });
+    if (mid && !r.loop) {
+      const p = g.at(g.stopS[r.stops.indexOf(mid)]);
+      const anchor = p.x < 60 ? 'start' : p.x > SW - 60 ? 'end' : 'middle';
+      const x = anchor === 'start' ? p.x - 8 : anchor === 'end' ? p.x + 8 : p.x;
+      label = `<text x="${x.toFixed(1)}" y="12" text-anchor="${anchor}" font-size="11.5" font-weight="800" fill="${INK}" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${App.esc(App.station(mid).name)}</text>`;
+    }
+    c.label.innerHTML = label;
+    let text = '';
+    if (hits.length) {
+      const k = r.stops.indexOf(hits[0]);
+      const where = k === 0 ? '起站' : !r.loop && k === last ? `終點站・距起站約 ${Math.round(info[r.id].offs[k])} 分` : `距起站約 ${Math.round(info[r.id].offs[k])} 分`;
+      text = `「${App.station(hits[0]).name}」第 ${k + 1}/${r.stops.length} 站・${where}` + (hits.length > 1 ? `・另 ${hits.length - 1} 站符合` : '');
+    } else if (m && m.old) {
+      text = `接手舊 ${m.old.id} 路「${m.old.name}」的部分路段`;
+    } else if (m && m.district) {
+      text = `行經${m.district.name} ${m.district.n} 站`;
+    }
+    c.match.hidden = !text;
+    c.match.textContent = text;
+    c.olds.forEach(b => b.classList.toggle('is-hit', !!(m && m.old) && b.dataset.old === m.old.id));
+  }
+
+  function animateIn(li, i) {
+    li.classList.add('is-in');          // 由篩選帶進畫面的卡片不再等捲動進場
+    li.classList.remove('rl-in');
+    li.style.setProperty('--i', Math.min(i, 9));
+    void li.offsetWidth;                // 重新觸發同一個 keyframes
+    li.classList.add('rl-in');
+  }
+
+  function update() {
+    const Q = parseQuery(state.q);
+    const matches = new Map();
+    ROUTES.forEach(r => { const m = matchOf(r, Q); if (m) matches.set(r.id, m); });
+
+    // 類型 chip 的數字：套用搜尋、不套用類型，才看得出換類型後會有幾條
+    const count = { all: matches.size };
+    ORDER.forEach(t => { count[t] = ROUTES.filter(r => r.type === t && matches.has(r.id)).length; });
+    $$('[data-tcount]').forEach(el => { el.textContent = count[el.dataset.tcount]; });
+
+    const shown = ROUTES.filter(r => matches.has(r.id) && (state.type === 'all' || r.type === state.type));
+    const shownSet = new Set(shown.map(r => r.id));
+    const grouped = state.sort === 'code';
+    const sorted = grouped ? shown : [...shown].sort((a, b) => SORTERS[state.sort](a, b) || ROUTES.indexOf(a) - ROUTES.indexOf(b));
+
+    $('#rl-groups').hidden = !grouped;
+    $('#rl-flat').hidden = grouped;
+    if (grouped) {
+      ORDER.forEach(type => {
+        const all = App.routesOf(type);
+        all.forEach(r => groups[type].list.appendChild(cards[r.id].li));
+        const n = all.filter(r => shownSet.has(r.id)).length;
+        groups[type].el.hidden = n === 0;
+        groups[type].count.innerHTML = n === all.length ? `${n}<small>條</small>` : `${n}<small>/ ${all.length} 條</small>`;
+      });
+    } else {
+      const flat = $('#rl-flat-list');
+      [...sorted, ...ROUTES.filter(r => !shownSet.has(r.id))].forEach(r => flat.appendChild(cards[r.id].li));
+      $('#rl-flat-head').textContent = SORT_LABEL[state.sort];
+    }
+
+    // 新出現或換了位置的卡片才播進場動畫；第一次載入交給捲動進場
+    const order = sorted.map(r => r.id);
+    if (prevOrder) order.forEach((id, i) => { if (prevOrder[i] !== id || cards[id].li.hidden) animateIn(cards[id].li, i); });
+    prevOrder = order;
+    ROUTES.forEach(r => {
+      cards[r.id].li.hidden = !shownSet.has(r.id);
+      decorate(r, matches.get(r.id));
+    });
+
+    const filtering = !!Q || state.type !== 'all';
+    Object.entries(lanes).forEach(([id, l]) => l.row.classList.toggle('is-dim', filtering && !shownSet.has(id)));
+
+    const parts = [];
+    if (state.type !== 'all') parts.push(TYPES[state.type].label);
+    if (Q) parts.push(`符合「${state.q.trim()}」`);
+    $('#rl-count').innerHTML = `顯示 <b>${shown.length}</b> 條路線${parts.length ? `<span>・${App.esc(parts.join('・'))}</span>` : ''}`;
+    $('#rl-clear').hidden = !filtering;
+
+    // 搜尋到舊路線編號或完整站名時，在結果上方補一段說明
+    const notes = [];
+    if (Q && Q.old) {
+      const o = Q.old;
+      notes.push(`<div class="notice c-old"><div><strong>舊 ${o.id} 路「${App.esc(o.name)}」</strong>${o.stops.length} 站・尖峰 ${o.headway.peak} 分一班，2027 年起由 ${o.to.length} 條新路線分段接手：<span class="pill-group">${o.to.map(id => App.pillHTML(id, { link: true, size: 'sm' })).join('')}</span></div></div>`);
+    }
+    const st = Q && App.data.stations.find(s => s.name.toLowerCase() === Q.q);
+    if (st) {
+      notes.push(`<div class="notice c-ink"><div><strong>${App.esc(st.name)}</strong>${st.district}${st.transfer ? '・同站轉乘站' : ''}・${st.routes.length} 條新路線停靠：<span class="pill-group">${App.routesOf().filter(r => st.routes.includes(r.id)).map(r => App.pillHTML(r.id, { link: true, size: 'sm' })).join('')}</span></div></div>`);
+    }
+    $('#rl-notes').innerHTML = notes.join('');
+    $('#rl-notes').hidden = !notes.length;
+
+    const empty = $('#rl-empty');
+    empty.hidden = shown.length > 0;
+    if (!shown.length) {
+      const elsewhere = state.type !== 'all' && count.all > 0;
+      $('#rl-empty-text').textContent = elsewhere
+        ? `「${TYPES[state.type].label}」類型中沒有符合「${state.q.trim()}」的路線，其他類型有 ${count.all} 條。`
+        : `找不到符合「${state.q.trim()}」的路線。試試站名中的一兩個字、行政區，或舊路線編號（例如 207）。`;
+      const btn = $('#rl-empty-btn');
+      btn.textContent = elsewhere ? '改看全部類型' : '清除搜尋與篩選';
+      btn.dataset.action = elsewhere ? 'type' : 'all';
+    }
+  }
+
+  function setFilter(next) {
+    Object.assign(state, next);
+    qInput.value = state.q;
+    qClear.hidden = !state.q;
+    $$('button[data-value]', typeChips).forEach(b => b.setAttribute('aria-pressed', b.dataset.value === state.type));
+    update();
+  }
+
+  typeChips.addEventListener('chipchange', e => { state.type = e.detail.value || 'all'; update(); });
+  qInput.addEventListener('input', () => { state.q = qInput.value; qClear.hidden = !state.q; update(); });
+  qClear.addEventListener('click', () => { setFilter({ q: '' }); qInput.focus(); });
+  $('#rl-sort').addEventListener('change', e => { state.sort = e.target.value; update(); });
+  $('#list-tools').addEventListener('submit', e => { e.preventDefault(); App.scrollTo($('.rl-summary')); });
+  $$('.rl-suggest [data-q]').forEach(b => b.addEventListener('click', () => setFilter({ q: b.dataset.q, type: 'all' })));
+  $('#rl-clear').addEventListener('click', () => setFilter({ q: '', type: 'all' }));
+  $('#rl-empty-btn').addEventListener('click', e => {
+    if (e.currentTarget.dataset.action === 'type') setFilter({ type: 'all' });
+    else { setFilter({ q: '', type: 'all' }); qInput.focus(); }
+  });
+  // 卡片頁尾與舊線對照的舊路線按鈕：篩出接手它的新路線
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button[data-old]');
+    if (!b) return;
+    setFilter({ q: b.dataset.old, type: 'all' });
+    App.scrollTo($('#list-tools'));
+  });
+
+  /* ==========================================================================
+     舊線對照
+     ========================================================================== */
+  const ROW_H = 36;
+  function forkSVG(o) {
+    const n = o.to.length;
+    const H = n * ROW_H, W = 84, cy = H / 2, jx = 16;
+    let s = `<svg class="rl-fork__svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">`;
+    s += `<path d="M0 ${cy} H${jx}" fill="none" stroke="#A3A39C" stroke-width="4" stroke-dasharray="6 5" stroke-linecap="round"/>`;
+    o.to.forEach((id, i) => {
+      const r = App.route(id);
+      const y = ROW_H * i + ROW_H / 2;
+      const dy = Math.abs(y - cy);
+      const d = App.roundedPath([[jx, cy], [jx + dy, y], [W, y]], false, 6);
+      const lw = { trunk: 6, branch: 4.5, feeder: 3.5, night: 3 }[r.type];
+      const dash = r.type === 'feeder' ? ' stroke-dasharray="6 4"' : '';
+      if (r.color === 'yellow') s += `<path d="${d}" fill="none" stroke="#D9B300" stroke-width="${lw + 2}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
+      s += `<path d="${d}" fill="none" stroke="${r.colorHex}" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
+    });
+    // 分岔點畫成轉乘站膠囊：舊路線在這裡「換乘」成新路線
+    const ch = n > 1 ? 20 : 14;
+    s += `<rect x="${jx - 6}" y="${cy - ch / 2}" width="12" height="${ch}" rx="6" fill="#FFFFFF" stroke="${INK}" stroke-width="3"/>`;
+    return s + '</svg>';
+  }
+
+  const oldList = [...App.data.oldRoutes].sort((a, b) => Number(a.id) - Number(b.id));
+  $('#forks').innerHTML = oldList.map((o, i) => `
+    <li data-reveal style="--rd:${(i % 2) * 90}ms">
+      <article class="rl-fork">
+        <div class="rl-fork__old">
+          ${App.oldPillHTML(o.id, { size: 'lg' })}
+          <h3 class="rl-fork__name">${App.esc(o.name)}</h3>
+          <p class="rl-fork__meta">${o.stops.length} 站・尖峰 ${o.headway.peak} 分一班</p>
+          <button class="btn btn--sm btn--line rl-fork__btn" type="button" data-old="${o.id}" aria-label="只看接手舊 ${o.id} 路的 ${o.to.length} 條新路線">只看這 ${o.to.length} 條</button>
+        </div>
+        <div class="rl-fork__map">
+          ${forkSVG(o)}
+          <ul class="rl-fork__new">${o.to.map(id => {
+            const r = App.route(id);
+            return `<li>${App.pillHTML(id, { link: true, size: 'sm' })}<span class="rl-fork__to">${App.esc(r.name)}</span><span class="rl-fork__hw"><span class="rl-fork__hwl">尖峰 </span><b>${r.headway.peak}</b> 分</span></li>`;
+          }).join('')}</ul>
+        </div>
+      </article>
+    </li>`).join('');
+
+  // 對照統計：全部由資料計算
+  const avg = list => list.reduce((a, b) => a + b, 0) / list.length;
+  const dayRoutes = ROUTES.filter(r => r.type !== 'night');
+  const oldPeaks = oldList.map(o => o.headway.peak);
+  const fastestOld = oldList.reduce((a, o) => (o.headway.peak < a.headway.peak ? o : a));
+  const fastestNew = dayRoutes.reduce((a, r) => (r.headway.peak < a.headway.peak ? r : a));
+  const mostSplit = oldList.reduce((a, o) => (o.to.length > a.to.length ? o : a));
+  const nightCount = ROUTES.length - dayRoutes.length;
+  const stat = (was, now, unit, label, note) => `<div class="stat">
+      <p class="stat__value num">${was === null ? '' : `<span class="rl-was">${was}</span><span class="rl-arrow">→</span>`}${now}<span class="stat__unit">${unit}</span></p>
+      <p class="stat__label">${label}</p><p class="stat__note">${note}</p></div>`;
+  $('#old-stats').innerHTML = [
+    stat(oldList.length, ROUTES.length, '條', '路線數', `舊路線全數由新路線接手，另新增 ${nightCount} 條夜間路線`),
+    stat(avg(oldPeaks).toFixed(1), avg(dayRoutes.map(r => r.headway.peak)).toFixed(1), '分', '平均尖峰班距', '日間路線簡單平均，不含夜間路線'),
+    stat(fastestOld.headway.peak, fastestNew.headway.peak, '分', '最密尖峰班距', `舊 ${fastestOld.id} 路 → ${fastestNew.code}`),
+    stat(null, mostSplit.to.length, '條', '拆分最多', `舊 ${mostSplit.id} 路改由 ${mostSplit.to.map(id => App.route(id).code).join('、')} 接手`),
+  ].join('');
+  App.scan($('#oldmap'));
+
+  /* ==========================================================================
+     啟動
+     ========================================================================== */
+  const typeParam = App.param('type');
+  const qParam = App.param('q') || App.param('old');
+  state.t = nowMinutes();
+  setDay(nowDay());
+  setFilter({ type: ORDER.includes(typeParam) ? typeParam : 'all', q: qParam || '' });
+  setPlaying(!App.reducedMotion);
+
+  // 條碼進場：先蓋住，下一格起由左而右揭開；分頁在背景時 rAF 不跑，用計時器保底一定揭開
+  const reveal = () => bc.classList.remove('is-pre');
+  requestAnimationFrame(() => requestAnimationFrame(reveal));
+  setTimeout(reveal, 1200);
+});
+</script>
+</body>
+</html>

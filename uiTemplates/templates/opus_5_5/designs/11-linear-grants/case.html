@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件詳情 — 澄港市青創補助審核台</title>
+<meta name="description" content="澄港市青年創業補助審核台：單一案件的申請摘要、委員評分、附件檢核、活動時間軸與狀態流轉。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+  .cs-head__main { flex: 1 1 560px; min-width: 0; }
+  .cs-key {
+    display: inline-flex; align-items: center; gap: 2px;
+    height: 22px; padding: 0 2px 0 8px;
+    border: 1px solid var(--border-2); border-radius: var(--r-sm);
+    background: var(--panel); box-shadow: var(--hi-edge);
+    font: 500 12px/1 var(--font-mono); letter-spacing: -.02em; color: var(--text);
+  }
+  .cs-key .icon-btn { width: 20px; height: 20px; border-radius: 4px; }
+  .cs-key .i { width: 12px; height: 12px; }
+  .cs-title { font-size: 26px; letter-spacing: -.015em; }
+  .cs-head .page-desc { max-width: 70ch; }
+  .cs-head .page-head__aside { align-self: flex-end; }
+  .cs-pager { display: inline-flex; align-items: center; gap: 4px; }
+  .cs-pager__pos { padding: 0 4px; font-size: var(--fs-12); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- 招牌：案件旅程（SVG 軌跡 + HTML 節點） ---------- */
+  .cs-journey .panel__head { padding-bottom: 0; }
+  /* 上方 44px 留給補件迴圈；padding 放在 .cj，因為 style.css 的 ol[class] 重設會蓋掉 ol 自己的 padding */
+  .cj { position: relative; padding: 44px 12px 18px; }
+  .cj__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .cj__nodes { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .cj__node { display: grid; justify-items: center; align-content: start; gap: 1px; min-width: 0; text-align: center; }
+  .cj__dot {
+    position: relative; z-index: 1;
+    width: 32px; height: 32px; margin-bottom: 8px;
+    display: grid; place-items: center;
+    border: 1px solid var(--border-2); border-radius: 50%;
+    background: var(--panel);
+    color: var(--text-3); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    transition: border-color var(--dur-3), background var(--dur-3), box-shadow var(--dur-3);
+  }
+  .cj__node.is-future .cj__dot { border-style: dashed; border-color: var(--border-3); }
+  .cj__node.is-done .cj__dot {
+    color: var(--seg-c);
+    border-color: color-mix(in srgb, var(--seg-c) 48%, var(--border-2));
+    background: color-mix(in srgb, var(--seg-c) 9%, var(--panel));
+  }
+  .cj__node.is-done .cj__dot .i { width: 14px; height: 14px; stroke-width: 2; }
+  .cj__node.is-current .cj__dot, .cj__node.is-dropped .cj__dot {
+    border-color: var(--seg-c);
+    background: var(--panel-2);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--seg-c) 14%, transparent);
+  }
+  /* 目前節點外圍一圈慢速擴散的細環：只是「在這裡」的提示，不做光暈 */
+  .cj__node.is-current .cj__dot::before {
+    content: ""; position: absolute; inset: -6px;
+    border: 1px solid var(--seg-c); border-radius: 50%;
+    opacity: 0;
+    animation: cj-ping 2.8s var(--ease-out) infinite;
+  }
+  @keyframes cj-ping { 0% { opacity: .55; transform: scale(.8); } 75%, 100% { opacity: 0; transform: scale(1.32); } }
+  /* style.css 的離開視窗暫停只作用在 .anim-loop 元素本身，偽元素的循環動畫要另外暫停 */
+  .cj.is-offscreen .cj__dot::before { animation-play-state: paused; }
+  .cj__label { font-size: 12.5px; font-weight: 500; color: var(--text-2); white-space: nowrap; }
+  .cj__node.is-current .cj__label, .cj__node.is-dropped .cj__label { color: var(--text); }
+  .cj__node.is-future .cj__label { color: var(--text-3); }
+  .cj__date { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cj__meta { font-size: 11px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cj__node.is-current .cj__meta { color: var(--text-2); }
+  .cj__node.is-dropped .cj__meta { color: var(--danger-text); }
+  .cj__base { fill: none; stroke: var(--border-3); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 2 5; }
+  .cj__prog { fill: none; stroke-width: 2; stroke-linecap: round; transition: stroke-dasharray 1100ms var(--ease-out); }
+  .cj__comet {
+    fill: none; stroke: rgba(240, 238, 255, .85); stroke-width: 2; stroke-linecap: round;
+    stroke-dasharray: .05 2;
+    animation: cj-comet 3s var(--ease-in-out) infinite;
+  }
+  @keyframes cj-comet { from { stroke-dashoffset: .05; } to { stroke-dashoffset: -1; } }
+  .cj__loop { fill: none; stroke: var(--st-supplement); stroke-width: 1.5; stroke-linecap: round; opacity: .6; }
+  .cj__loop.is-active { opacity: 1; stroke-dasharray: 3 3; animation: cj-loop 1s linear infinite; }
+  @keyframes cj-loop { to { stroke-dashoffset: -6; } }
+  .cj__loop-label { fill: var(--serious-text); font: 500 11px var(--font-sans); }
+  @media (prefers-reduced-motion: reduce) {
+    .cj__comet { display: none; }
+  }
+
+  /* ---------- 申請摘要 ---------- */
+  .cs-applicant { display: flex; align-items: center; gap: 12px; padding: 2px 0 14px; }
+  .cs-applicant__name { font-size: var(--fs-16); font-weight: 600; color: var(--text); line-height: 1.3; }
+  .cs-applicant__sub { font-size: var(--fs-12); color: var(--text-3); }
+  .cs-facts {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--bg-sunken);
+  }
+  .cs-fact { display: grid; gap: 2px; padding: 10px 14px; min-width: 0; }
+  .cs-fact + .cs-fact { border-left: 1px solid var(--border); }
+  .cs-fact__label { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+  .cs-fact__value { font-size: var(--fs-16); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-fact__value small { font-size: var(--fs-12); font-weight: 500; color: var(--text-3); margin-left: 4px; }
+  .cs-kv { margin-top: 14px; grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); gap: 8px 16px; }
+
+  /* ---------- 評分 rubric ---------- */
+  .cs-legend { gap: 12px; }
+  .cs-legend .legend__swatch { border-radius: 50%; width: 8px; height: 8px; }
+  .cs-rubric-top { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: center; padding: 0 16px 6px; }
+  .cs-radar { display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto; overflow: visible; }
+  .cs-radar__ring { fill: none; stroke: var(--border); stroke-width: 1; }
+  .cs-radar__ring--outer { stroke: var(--border-2); }
+  .cs-radar__axis { stroke: var(--border); stroke-width: 1; transition: stroke var(--dur-2); }
+  .cs-radar__axis.is-hot { stroke: var(--text-3); }
+  .cs-radar__label { fill: var(--text-2); font: 500 11.5px var(--font-sans); transition: fill var(--dur-2); }
+  .cs-radar__label.is-hot { fill: var(--text); }
+  .cs-radar__vals { font: 500 11px var(--font-sans); font-variant-numeric: tabular-nums; fill: var(--text-3); }
+  .cs-radar__poly {
+    stroke-width: 1.5; stroke-linejoin: round;
+    transform-box: view-box; transform-origin: 150px 116px;
+    animation: cs-radar-in 900ms var(--ease-spring) both;
+  }
+  .cs-radar__poly--a { fill: rgba(124, 108, 255, .16); stroke: var(--rev-a); }
+  .cs-radar__poly--b { fill: rgba(94, 194, 232, .1); stroke: var(--rev-b); animation-delay: 140ms; }
+  .cs-radar__poly--me { fill: rgba(124, 108, 255, .2); stroke: var(--accent-text); animation: none; }
+  .cs-radar__pt { stroke: var(--panel); stroke-width: 1.5; }
+  .js-reveal [data-reveal]:not(.is-in) .cs-radar__poly { animation: none; transform: scale(.2); opacity: 0; }
+  @keyframes cs-radar-in { from { transform: scale(.2); opacity: 0; } }
+
+  .cs-score { display: grid; gap: 12px; min-width: 0; }
+  .cs-score__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .cs-score__label { font-size: var(--fs-12); color: var(--text-3); margin-bottom: 4px; }
+  .cs-score__avg { font-size: 40px; font-weight: 600; letter-spacing: -.035em; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cs-score__avg small { margin-left: 6px; font-size: var(--fs-14); font-weight: 500; letter-spacing: 0; color: var(--text-3); }
+  .cs-score__badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* 0–100 分數尺：兩位委員的落點、差距區間、門檻線 */
+  .cs-scale { position: relative; height: 58px; margin: 0 12px; }
+  .cs-scale__track { position: absolute; left: 0; right: 0; top: 30px; height: 4px; border-radius: var(--r-pill); background: var(--panel-3); }
+  .cs-scale__span {
+    position: absolute; top: 30px; height: 4px; border-radius: var(--r-pill);
+    background: var(--text-3);
+    transform-origin: 50% 50%;
+    animation: meter-grow 900ms var(--ease-out) .25s both;
+  }
+  .cs-scale__span.is-warn { background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, rgba(229, 192, 75, .45) 3px 6px); }
+  .cs-scale__pass { position: absolute; top: 24px; width: 1px; height: 16px; background: var(--text-2); }
+  .cs-scale__tick { position: absolute; top: 40px; transform: translateX(-50%); font-size: 10.5px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cs-scale__tick--pass { color: var(--text-2); }
+  .cs-scale__pin {
+    position: absolute; top: 4px; left: var(--x);
+    display: grid; justify-items: center; gap: 5px;
+    transform: translateX(-50%);
+    font-size: var(--fs-12); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; line-height: 16px;
+  }
+  .cs-scale__pin::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--panel); }
+  .cs-scale__pin.is-lo b { transform: translateX(-9px); }
+  .cs-scale__pin.is-hi b { transform: translateX(9px); }
+  .cs-scale__avg { position: absolute; top: 28px; width: 8px; height: 8px; margin-left: -4px; background: var(--text); transform: rotate(45deg); box-shadow: 0 0 0 2px var(--panel); border-radius: 1px; }
+  .js-reveal [data-reveal]:not(.is-in) .cs-scale__span { animation: none; transform: scaleX(0); }
+
+  .cs-rrows { display: grid; gap: 2px; padding: 8px 8px 4px; }
+  .cs-rrow {
+    display: grid; grid-template-columns: 116px minmax(0, 1fr) 104px; gap: 14px; align-items: center;
+    padding: 7px 8px; border-radius: var(--r-md);
+    font-size: var(--fs-13);
+    transition: background var(--dur-1);
+  }
+  .cs-rrow:hover { background: var(--panel-hi); }
+  .cs-rrow__label { color: var(--text-2); line-height: 1.35; }
+  .cs-rrow__label small { display: block; font-size: var(--fs-11); color: var(--text-3); }
+  .cs-rrow .score-bar__fill { transform-origin: left center; animation: meter-grow 1s var(--ease-out) both; animation-delay: calc(var(--k, 0) * 70ms + 200ms); }
+  .js-reveal [data-reveal]:not(.is-in) .cs-rrow .score-bar__fill { animation: none; transform: scaleX(0); }
+  .cs-rrow__vals { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-variant-numeric: tabular-nums; }
+  .cs-va { color: var(--accent-text); font-weight: 600; }
+  .cs-vb { color: var(--rev-b); font-weight: 600; }
+  .cs-delta { min-width: 30px; height: 18px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: var(--r-xs); background: var(--panel-3); font-size: 11px; color: var(--text-3); }
+  .cs-rrow.is-gap .cs-delta { background: rgba(229, 192, 75, .14); color: var(--warn-text); }
+  .cs-gap-note { margin: 4px 16px 0; }
+  .cs-notes { padding: 12px 16px 16px; }
+  .cs-note { display: grid; gap: 8px; align-content: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--panel-2); position: relative; overflow: hidden; }
+  .cs-note::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--c); }
+  .cs-note__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cs-note__who { display: grid; min-width: 0; line-height: 1.3; }
+  .cs-note__who b { font-size: var(--fs-13); font-weight: 500; color: var(--text); }
+  .cs-note__who small { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-note__total { margin-left: auto; font-size: 20px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .cs-note__total small { font-size: 11px; color: var(--text-3); font-weight: 500; margin-left: 2px; }
+  .cs-note p { font-size: var(--fs-13); color: var(--text-2); line-height: 1.7; }
+  .cs-note__foot { font-size: 11.5px; color: var(--text-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* 委員評分表（審查委員角色、尚未提交時） */
+  .cs-scoreform { display: grid; gap: 10px; padding: 6px 16px 16px; }
+  .cs-slider { display: grid; grid-template-columns: 116px minmax(0, 1fr) 64px; gap: 14px; align-items: center; }
+  .cs-slider__label { font-size: var(--fs-13); color: var(--text-2); line-height: 1.35; }
+  .cs-slider__label small { display: block; font-size: var(--fs-11); color: var(--text-3); }
+  .cs-slider__out { text-align: right; font-size: var(--fs-13); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .cs-slider__out b { color: var(--text); font-weight: 600; }
+  .cs-range {
+    --p: 50%;
+    appearance: none; width: 100%; height: 18px; margin: 0;
+    background: transparent; cursor: pointer;
+  }
+  .cs-range::-webkit-slider-runnable-track { height: 4px; border-radius: var(--r-pill); background: linear-gradient(var(--accent), var(--accent)) 0 / var(--p) 100% no-repeat, var(--panel-3); }
+  .cs-range::-moz-range-track { height: 4px; border-radius: var(--r-pill); background: linear-gradient(var(--accent), var(--accent)) 0 / var(--p) 100% no-repeat, var(--panel-3); }
+  .cs-range::-webkit-slider-thumb {
+    appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 4px var(--accent-soft), 0 1px 3px rgba(0, 0, 0, .5);
+    transition: transform var(--dur-2) var(--ease-spring);
+  }
+  .cs-range:active::-webkit-slider-thumb { transform: scale(1.18); }
+  .cs-range::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px var(--accent-soft); }
+  .cs-blind { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--text-3); }
+
+  /* ---------- 附件與檢核 ---------- */
+  .cs-docs-meter { width: 96px; }
+  .cs-doc { --row-cols: 30px minmax(0, 1fr) auto auto; min-height: 54px; cursor: pointer; }
+  .cs-doc__icon {
+    width: 30px; height: 34px; position: relative;
+    display: grid; place-items: end center; padding-bottom: 5px;
+    border: 1px solid var(--border-2); border-radius: 4px 9px 4px 4px;
+    background: var(--panel-2);
+    font: 600 8.5px/1 var(--font-mono); letter-spacing: .02em; color: var(--text-3);
+  }
+  .cs-doc__icon::before { content: ""; position: absolute; left: 6px; right: 9px; top: 7px; height: 2px; border-radius: 1px; background: var(--border-3); box-shadow: 0 4px 0 var(--border-3), 0 8px 0 var(--border-2); }
+  .cs-doc[data-ext="XLSX"] .cs-doc__icon { color: var(--ok-text); }
+  .cs-doc[data-state="missing"] .cs-doc__icon { border-style: dashed; background: transparent; }
+  .cs-doc[data-state="missing"] .cs-doc__icon::before { display: none; }
+  .cs-doc .row__title { display: flex; align-items: center; gap: 6px; }
+  .cs-doc .row__title .tag { height: 18px; font-size: 10.5px; padding: 0 5px; color: var(--text-3); }
+  .cs-doc__name { color: var(--text-2); }
+  .cs-doc__note { color: var(--serious-text); }
+  .cs-doc__tools { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .cs-doc__tools .check { margin-right: 6px; font-size: var(--fs-12); }
+  .cs-doc.is-flash { animation: cs-flash 900ms var(--ease-out); }
+  @keyframes cs-flash { from { background: rgba(76, 195, 138, .12); } }
+  .cs-docs-foot { padding: 0 16px 16px; }
+  .cs-docs-foot .callout { align-items: center; }
+  .cs-docs-foot .callout .btn { margin-left: auto; }
+
+  /* ---------- 活動時間軸 ---------- */
+  .cs-tl { padding: 6px 16px 18px; }
+  .cs-tl .tl-item__dot { color: var(--tc, var(--text-3)); border-color: color-mix(in srgb, var(--tc, var(--border-2)) 40%, var(--border-2)); }
+  .cs-tl .tl-item.is-new { animation: cs-tl-new 760ms var(--ease-out) both; }
+  @keyframes cs-tl-new { from { opacity: 0; transform: translateY(8px); } }
+  .cs-tl .tl-item.is-new .tl-item__dot { box-shadow: 0 0 0 4px var(--accent-soft); }
+  .cs-tl .tl-item__head .tag { margin: 0 4px; height: 18px; font-size: 10.5px; }
+  .cs-tl-score { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cs-day { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px 36px; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .cs-day::after { content: ""; flex: 1; height: 1px; background: var(--border-faint); }
+  .cs-composer { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding: 14px 16px 16px; border-top: 1px solid var(--border); }
+  .cs-composer .avatar { width: 28px; height: 28px; font-size: 12px; }
+  .cs-composer__box {
+    border: 1px solid var(--border-2); border-radius: var(--r-md);
+    background: var(--panel-2);
+    transition: border-color var(--dur-1), box-shadow var(--dur-2);
+  }
+  .cs-composer__box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .cs-composer.is-invalid .cs-composer__box { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(235, 87, 87, .14); }
+  .cs-composer textarea {
+    display: block; width: 100%; min-height: 66px; padding: 10px 12px;
+    border: 0; background: transparent; resize: vertical;
+    color: var(--text); font-size: 13.5px; line-height: 1.6;
+  }
+  /* 外框 focus 由 .cs-composer__box:focus-within 呈現，避免雙層外框 */
+  .cs-composer textarea:focus { outline: none; }
+  .cs-composer textarea::placeholder { color: #6E6F79; }
+  .cs-composer__foot { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-3); }
+  .cs-composer__foot .btn { margin-left: auto; }
+  .cs-composer__err { display: none; margin-top: 6px; font-size: var(--fs-12); color: var(--danger-text); align-items: center; gap: 5px; }
+  .cs-composer.is-invalid .cs-composer__err { display: flex; }
+
+  /* ---------- 右欄 ---------- */
+  .cs-sla { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 18px; align-items: center; padding: 4px 16px 16px; }
+  .cs-ring { position: relative; width: 116px; height: 116px; }
+  .cs-ring .sla { position: absolute; inset: 0; }
+  .cs-ring .sla__ring { width: 116px; height: 116px; }
+  .cs-ring .sla__track, .cs-ring .sla__bar { stroke-width: 1.1; }
+  .cs-ring .sla__pulse { stroke-width: .5; }
+  .cs-ring__ticks { position: absolute; inset: 0; width: 116px; height: 116px; }
+  .cs-ring__ticks line { stroke: var(--border-2); stroke-width: 1; stroke-linecap: round; }
+  .cs-ring__ticks line.is-major { stroke: var(--text-4); }
+  .cs-ring__center { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; line-height: 1.1; }
+  .cs-ring__big { font-size: 30px; font-weight: 600; letter-spacing: -.03em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cs-ring__unit { margin-top: 3px; font-size: 11.5px; color: var(--text-3); }
+  .cs-ring[data-state="over"] .cs-ring__big { color: var(--danger-text); }
+  .cs-ring[data-state="soon"] .cs-ring__big, .cs-ring[data-state="crit"] .cs-ring__big { color: var(--warn-text); }
+  .cs-sla__info { display: grid; gap: 4px; min-width: 0; }
+  .cs-sla__kind { font-size: var(--fs-12); color: var(--text-3); }
+  .cs-sla__due { font-size: var(--fs-14); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cs-sla__count { font-size: 13px; color: var(--text-2); }
+  .cs-sla__from { font-size: 11.5px; color: var(--text-3); }
+  .cs-sla__info .badge { justify-self: start; margin-top: 4px; }
+  .cs-closed { display: flex; gap: 12px; align-items: flex-start; padding: 2px 16px 16px; font-size: var(--fs-13); color: var(--text-2); }
+  .cs-closed .sd { margin-top: 2px; }
+
+  .cs-people__group { padding: 10px 16px 4px; font-size: 11px; font-weight: 500; letter-spacing: .03em; color: var(--text-3); }
+  .cs-person { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 16px; }
+  .cs-person .avatar { width: 28px; height: 28px; font-size: 12px; }
+  .cs-person__text { display: grid; min-width: 0; line-height: 1.35; }
+  .cs-person__text b { font-size: var(--fs-13); font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .cs-person__text small { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-person__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; }
+  .cs-person__score { font-size: var(--fs-14); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+  .cs-people .panel__foot { margin-top: 8px; }
+
+  .cs-meet { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center; padding: 0 16px 12px; }
+  .cs-meet__title { font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+  .cs-meet__sub { font-size: var(--fs-12); color: var(--text-3); }
+  ol.cs-agenda { padding: 0 8px 10px; counter-reset: agenda; }
+  .cs-agenda li { counter-increment: agenda; }
+  .cs-agenda a {
+    position: relative;
+    display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+    padding: 6px 8px; border-radius: var(--r-sm);
+    font-size: var(--fs-12); color: var(--text-2);
+    transition: background var(--dur-1), color var(--dur-1);
+  }
+  .cs-agenda a::before { content: counter(agenda); font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; text-align: center; }
+  .cs-agenda a:hover { background: var(--panel-hi); color: var(--text); }
+  .cs-agenda a[aria-current="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+  .cs-agenda__score { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+  .cs-agenda__score .i { width: 12px; height: 12px; color: var(--warn); }
+
+  .cs-money { display: grid; gap: 14px; padding: 0 16px 16px; }
+  .cs-money__row { display: grid; gap: 6px; }
+  .cs-money__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: var(--fs-12); color: var(--text-3); }
+  .cs-money__top b { font-size: var(--fs-13); color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cs-gauge { position: relative; height: 6px; border-radius: var(--r-pill); background: var(--panel-3); }
+  .cs-gauge__fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v); border-radius: inherit; background: var(--accent); transform-origin: left center; animation: meter-grow 1s var(--ease-out) .2s both; }
+  .cs-gauge__fill--ok { background: var(--ok); }
+  .cs-gauge__fill--danger { background: var(--danger); }
+  .cs-gauge__cap { position: absolute; top: -4px; bottom: -4px; left: var(--cap); width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text-2); }
+  .js-reveal [data-reveal]:not(.is-in) .cs-gauge__fill { animation: none; transform: scaleX(0); }
+  .cs-money__foot { display: flex; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); font-size: var(--fs-12); color: var(--text-3); }
+  .cs-money__foot b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .cs-elig li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 16px; border-top: 1px solid var(--border-faint); }
+  .cs-elig li:first-child { border-top: 0; }
+  .cs-elig .i { margin-top: 2px; }
+  .cs-elig__text { display: grid; min-width: 0; line-height: 1.4; }
+  .cs-elig__text b { font-size: var(--fs-13); font-weight: 500; color: var(--text); }
+  .cs-elig__text small { font-size: 11.5px; color: var(--text-3); }
+  .cs-elig__val { font-size: var(--fs-12); color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cs-elig [data-r="ok"] .i { color: var(--ok); }
+  .cs-elig [data-r="warn"] .i { color: var(--warn); }
+  .cs-elig [data-r="fail"] .i { color: var(--danger); }
+  .cs-elig [data-r="fail"] .cs-elig__val { color: var(--danger-text); }
+
+  /* ---------- 動作列 ---------- */
+  .cs-actionbar { margin-top: 16px; }
+  .cs-actionbar__state { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 260px; font-size: var(--fs-13); color: var(--text-2); }
+  .cs-actionbar__next { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-actionbar__next b { color: var(--text); font-weight: 500; }
+  .cs-actionbar__btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .cs-actionbar__sep { width: 1px; height: 20px; background: var(--border-2); margin: 0 2px; }
+  .cs-tipwrap { display: inline-flex; }
+
+  /* ---------- Modal 內容 ---------- */
+  .cs-form { display: grid; gap: 14px; }
+  .cs-checklist { display: grid; gap: 6px; }
+  .cs-checklist .check { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--panel-2); transition: border-color var(--dur-1), background var(--dur-1); }
+  .cs-checklist .check:has(input:checked) { border-color: var(--accent-line); background: rgba(124, 108, 255, .06); }
+  .cs-checklist .check small { margin-left: auto; font-size: 11px; color: var(--text-3); }
+  .cs-modal-kv { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-sunken); }
+  .cs-paper {
+    position: relative; overflow: hidden;
+    max-width: 520px; margin: 4px auto 0; padding: 30px 32px 34px;
+    border-radius: 6px; background: #F2F2F4; color: #26272C;
+    box-shadow: 0 16px 40px -16px rgba(0, 0, 0, .8);
+    font-size: 12px; line-height: 1.75;
+  }
+  .cs-paper__org { font-size: 10.5px; letter-spacing: .08em; color: #6A6B73; }
+  .cs-paper h3 { margin: 2px 0 2px; font-size: 17px; font-weight: 700; color: #16171A; }
+  .cs-paper__meta { font-size: 11px; color: #5A5B63; font-family: var(--font-mono); letter-spacing: -.02em; }
+  .cs-paper h4 { margin: 16px 0 4px; font-size: 12.5px; font-weight: 700; color: #16171A; }
+  .cs-paper p { color: #3A3B42; }
+  .cs-paper__line { height: 7px; margin: 9px 0; border-radius: 3px; background: #D8D9DF; }
+  .cs-paper table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 11.5px; }
+  .cs-paper td, .cs-paper th { padding: 5px 6px; border-bottom: 1px solid #D8D9DF; text-align: left; }
+  .cs-paper th { font-weight: 600; color: #4A4B52; }
+  .cs-paper .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .cs-paper tfoot td { font-weight: 700; border-bottom: 0; }
+  .cs-paper__stamp {
+    position: absolute; right: 26px; top: 24px;
+    width: 78px; height: 78px; border-radius: 50%;
+    display: grid; place-content: center; text-align: center;
+    border: 2px solid rgba(200, 52, 52, .7); color: rgba(200, 52, 52, .85);
+    font-size: 10px; font-weight: 700; line-height: 1.35;
+    transform: rotate(-12deg);
+  }
+  .cs-paper__stamp b { font-size: 13px; font-family: var(--font-mono); }
+
+  @media (max-width: 1180px) {
+    .cs-rubric-top { grid-template-columns: 260px minmax(0, 1fr); gap: 16px; }
+    .cs-kv { grid-template-columns: max-content minmax(0, 1fr); }
+  }
+  @media (max-width: 960px) {
+    .cs-head .page-head__aside { align-self: auto; }
+  }
+  @media (max-width: 640px) {
+    .cs-title { font-size: 21px; }
+    .cs-head .page-head__aside { justify-content: space-between; }
+    .cj { padding: 44px 2px 14px; }
+    .cj__dot { width: 28px; height: 28px; }
+    .cj__label { font-size: 11px; }
+    .cj__date { font-size: 10.5px; }
+    .cj__meta { display: none; }
+    .cs-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cs-fact:nth-child(3) { border-left: 0; }
+    .cs-fact:nth-child(n+3) { border-top: 1px solid var(--border); }
+    .cs-rubric-top { grid-template-columns: minmax(0, 1fr); padding: 0 14px 6px; }
+    .cs-radar { max-width: 280px; }
+    .cs-rrow { grid-template-columns: 74px minmax(0, 1fr) 84px; gap: 10px; padding: 7px 6px; }
+    .cs-rrows { padding: 8px 8px 4px; }
+    .cs-slider { grid-template-columns: 80px minmax(0, 1fr) 54px; gap: 10px; }
+    .cs-notes { padding: 12px 14px 14px; }
+    .cs-doc { --row-cols: 30px minmax(0, 1fr) auto; }
+    .cs-doc__tools { grid-column: 2 / -1; justify-content: flex-start; margin-top: -2px; }
+    .cs-doc__tools:not(.has-ctl) { display: none; }
+    .cs-actionbar__next .muted { display: none; }
+    .cs-doc__tools .check { margin-right: auto; }
+    .cs-tl { padding: 6px 14px 16px; }
+    .cs-composer { padding: 12px 14px 14px; grid-template-columns: minmax(0, 1fr); }
+    .cs-composer > .avatar { display: none; }
+    .cs-sla { grid-template-columns: 104px minmax(0, 1fr); gap: 14px; padding: 4px 14px 14px; }
+    .cs-ring, .cs-ring .sla__ring, .cs-ring__ticks { width: 104px; height: 104px; }
+    .cs-actionbar { bottom: 10px; padding: 8px; }
+    .cs-actionbar__state { flex-basis: 100%; }
+    .cs-actionbar__btns { width: 100%; margin-left: 0; }
+    .cs-actionbar__btns > * { flex: 1 1 auto; }
+    .cs-tipwrap .btn { width: 100%; }
+    .cs-actionbar__btns .kbd, .cs-actionbar__sep { display: none; }
+    .cs-paper { padding: 22px 18px 24px; }
+    .cs-paper__stamp { width: 62px; height: 62px; right: 14px; top: 16px; font-size: 9px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+<div class="shell">
+  <aside class="sidebar" id="sidebar" aria-label="側欄">
+    <a class="brand" href="index.html" aria-label="青創補助審核台 總覽">
+      <svg class="brand__mark" viewBox="0 0 26 26" aria-hidden="true">
+        <defs><linearGradient id="brandMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9487FF"/><stop offset="1" stop-color="#5A49E8"/></linearGradient></defs>
+        <rect width="26" height="26" rx="7" fill="url(#brandMarkGrad)"/>
+        <rect x=".5" y=".5" width="25" height="25" rx="6.5" fill="none" stroke="rgba(255,255,255,.22)"/>
+        <path d="M7.5 18.5v-3M13 18.5v-6.5M18.5 18.5V8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">青創補助審核台</span><span class="brand__sub">澄港市政府青年事務局</span></span>
+    </a>
+    <button class="sidebar__search" type="button" data-cmdk>
+      <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+      <span>搜尋或執行指令…</span>
+      <span class="kbd-combo"><kbd class="kbd" data-mod>Ctrl</kbd><kbd class="kbd">K</kbd></span>
+    </button>
+    <nav class="sidenav" aria-label="主要導覽">
+      <ul>
+        <li><a class="sidenav__link" href="index.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 2.75h4v4h-4zM9.25 2.75h4v4h-4zM2.75 9.25h4v4h-4zM9.25 9.25h4v4h-4z"/></svg>總覽<span class="sidenav__count" data-count="tasks" aria-label="待辦件數">10</span></a></li>
+        <li><a class="sidenav__link" href="queue.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.75 4h7.75M5.75 8h7.75M5.75 12h7.75M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></svg>案件佇列<span class="sidenav__count" data-count="active" aria-label="在途案件數">33</span></a></li>
+        <li><a class="sidenav__link" href="case.html" aria-current="page"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 1.75H4.25a1 1 0 0 0-1 1v10.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V4.75zM9.5 1.75v3h3M5.75 8.25h4.5M5.75 11h3"/></svg>案件詳情</a></li>
+        <li><a class="sidenav__link" href="apply.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 1.75H4.25a1 1 0 0 0-1 1v10.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V4.75zM9.5 1.75v3h3M8 7.5v4M6 9.5h4"/></svg>申請表單</a></li>
+      </ul>
+    </nav>
+    <div class="sidebar__label">檢視</div>
+    <ul class="sidebar__views">
+      <li><a class="viewlink" href="queue.html#view=mine"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 8 8zM2.75 14a5.25 5.25 0 0 1 10.5 0"/></svg>我負責的<span class="sidenav__count" data-count="mine">11</span></a></li>
+      <li><a class="viewlink" href="queue.html#view=sla"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM8 4.5V8l2.5 1.5"/></svg>SLA 警示<span class="sidenav__count" data-count="sla">11</span></a></li>
+      <li><a class="viewlink" href="queue.html#view=committee"><svg class="sd" data-s="committee" viewBox="0 0 16 16" aria-hidden="true"><circle class="sd__ring" cx="8" cy="8" r="6" pathLength="100"/><circle class="sd__pie" cx="8" cy="8" r="2.25" pathLength="100" transform="rotate(-90 8 8)"/><path class="sd__check" d="M5.4 8.2l1.75 1.75 3.5-3.8" pathLength="1"/><path class="sd__cross" d="M6 6l4 4M10 6l-4 4"/></svg>第 4 次審議會<span class="sidenav__count" data-count="committee">5</span></a></li>
+    </ul>
+    <div class="sidebar__label">本期</div>
+    <div class="sidebar__program">
+      <div class="sidebar__program-row"><b>115 年度第 2 期</b><span>收件中</span></div>
+      <div class="meter" role="img" aria-label="收件期間已進行 89%"><span class="meter__seg" style="width:89%"></span></div>
+      <div class="sidebar__program-row"><span>08/01 – 10/31</span><span>剩 9 天</span></div>
+    </div>
+    <div class="sidebar__foot">
+      <button class="user-switch" type="button" data-role-switch aria-haspopup="menu" aria-expanded="false" aria-label="切換檢視角色">
+        <span data-role-avatar><span class="avatar" style="--h:262" aria-hidden="true">語</span></span>
+        <span class="user-switch__text"><b data-role-name>林語彤</b><small data-role-label>承辦人</small></span>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"/></svg>
+      </button>
+      <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false" aria-label="開啟導覽選單">
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+      </button>
+      <nav class="crumbs" aria-label="麵包屑">
+        <a href="index.html">青創補助</a>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        <a href="queue.html" class="hide-sm">案件佇列</a>
+        <svg class="i hide-sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        <span aria-current="page" class="mono" id="crumbId">YSG-115-0351</span>
+      </nav>
+      <div class="topbar__actions">
+        <button class="icon-btn only-sm" type="button" data-cmdk aria-label="搜尋案件或指令">
+          <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        </button>
+        <button class="btn btn--ghost btn--sm hide-sm" type="button" data-shortcuts><kbd class="kbd">?</kbd>快捷鍵</button>
+        <button class="icon-btn" type="button" data-notify aria-label="通知" aria-haspopup="menu" aria-expanded="false">
+          <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5a4 4 0 0 1 8 0c0 3.5 1.5 4.75 1.5 4.75h-11S4 10 4 6.5zM6.5 13.75a1.6 1.6 0 0 0 3 0"/></svg>
+          <span class="icon-btn__dot"></span>
+        </button>
+        <a class="btn btn--primary btn--sm" href="apply.html">
+          <svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="hide-sm">新增申請</span><span class="only-sm">申請</span>
+        </a>
+      </div>
+    </header>
+
+
+    <main id="main" class="page" tabindex="-1">
+      <header class="page-head cs-head" data-reveal>
+        <div class="cs-head__main">
+          <div class="page-eyebrow" id="csEyebrow"><span class="cs-key">YSG-115-0351</span><span class="tag">種子型</span><span class="tag">社會創新</span><span class="tag">鹽田區</span></div>
+          <h1 class="page-title cs-title" id="csTitle">新住民媽媽南洋便當</h1>
+          <p class="page-desc" id="csDesc">聘用鹽田區新住民媽媽製作東南亞風味便當，供應企業團膳並開設料理課程。</p>
+        </div>
+        <div class="page-head__aside" id="csAside"></div>
+      </header>
+
+      <section class="panel cs-journey" data-reveal style="--i:1" aria-labelledby="journey-title">
+        <header class="panel__head">
+          <h2 class="panel__title" id="journey-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11.5l4-4 2.5 2.5L14 4.5M10 4.5h4v4"/></svg>案件旅程</h2>
+          <span class="panel__sub" id="journeySub"></span>
+          <div class="panel__actions" id="journeyActs"></div>
+        </header>
+        <div class="cj" id="journey" data-anim>
+          <svg class="cj__svg" id="journeySvg" aria-hidden="true"></svg>
+          <ol class="cj__nodes" id="journeyNodes" aria-label="審查流程階段"></ol>
+        </div>
+      </section>
+
+      <div class="grid-main section">
+        <div class="stack">
+          <section class="panel" data-reveal style="--i:2" aria-labelledby="sum-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="sum-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5h11a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5zM5.75 5V3.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V5M2 8.5h12"/></svg>申請摘要</h2>
+              <span class="panel__sub" id="sumSub"></span>
+            </header>
+            <div class="panel__body" id="summary"></div>
+          </section>
+
+          <section class="panel" id="rubric" data-reveal aria-labelledby="rubric-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="rubric-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 11.5a5.5 5.5 0 1 1 11 0M8 11.5l2.5-3.5"/></svg>委員評分</h2>
+              <span class="panel__sub" id="rubricSub"></span>
+              <div class="panel__actions legend cs-legend" id="rubricLegend"></div>
+            </header>
+            <div id="rubricBody"></div>
+          </section>
+
+          <section class="panel" data-reveal aria-labelledby="docs-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="docs-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 7.5l-5.3 5.3a3.2 3.2 0 0 1-4.5-4.5L8.6 2.9a2.1 2.1 0 0 1 3 3L6.2 11.3a1.05 1.05 0 0 1-1.5-1.5L9.5 5"/></svg>附件與檢核</h2>
+              <span class="panel__sub" id="docsSub"></span>
+              <div class="panel__actions">
+                <span class="kbd-hints hide-sm" aria-hidden="true">
+                  <span><kbd class="kbd">J</kbd> <kbd class="kbd">K</kbd> 移動</span><span><kbd class="kbd">↵</kbd> 預覽</span><span><kbd class="kbd">X</kbd> 檢核</span>
+                </span>
+              </div>
+            </header>
+            <ul class="list" id="docList" data-band></ul>
+            <div class="cs-docs-foot" id="docsFoot"></div>
+          </section>
+
+          <section class="panel" data-reveal aria-labelledby="tl-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="tl-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM8 4.5V8l2.5 1.5"/></svg>活動時間軸</h2>
+              <div class="panel__actions">
+                <div class="seg" role="group" aria-label="活動類型篩選" id="tlFilter">
+                  <button type="button" aria-pressed="true" data-filter="all">全部</button>
+                  <button type="button" aria-pressed="false" data-filter="flow">流程</button>
+                  <button type="button" aria-pressed="false" data-filter="score">評分</button>
+                  <button type="button" aria-pressed="false" data-filter="comment">留言</button>
+                  <button type="button" aria-pressed="false" data-filter="supplement">補件</button>
+                </div>
+              </div>
+            </header>
+            <div class="cs-tl" id="timeline" aria-live="polite"></div>
+            <form class="cs-composer" id="composer" novalidate>
+              <span id="composerAvatar"></span>
+              <div>
+                <div class="cs-composer__box">
+                  <label class="sr-only" for="commentInput">新增留言</label>
+                  <textarea id="commentInput" rows="2" maxlength="500" placeholder="留言給承辦與審查委員，例如補件說明或會議提醒…"></textarea>
+                  <div class="cs-composer__foot">
+                    <span class="hide-sm">僅內部可見</span>
+                    <span class="kbd-combo hide-sm"><kbd class="kbd" data-mod>Ctrl</kbd><kbd class="kbd">↵</kbd></span><span class="hide-sm">送出</span>
+                    <button class="btn btn--primary btn--sm" type="submit"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2L7 9M14 2l-4.5 12-2.5-5-5-2.5z"/></svg>送出留言</button>
+                  </div>
+                </div>
+                <p class="cs-composer__err" id="commentErr"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.25L14.5 13.5h-13zM8 6.5v3M8 11.6v.01"/></svg><span>請輸入留言內容</span></p>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <aside class="stack" aria-label="案件資訊">
+          <section class="panel" data-reveal style="--i:2" aria-labelledby="sla-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="sla-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM8 4.5V8l2.5 1.5"/></svg>處理時效</h2>
+            </header>
+            <div id="slaBody" data-anim></div>
+          </section>
+
+          <section class="panel cs-people" data-reveal style="--i:3" aria-labelledby="people-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="people-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 13.5a4.5 4.5 0 0 1 9 0M10.5 2.6a2.5 2.5 0 0 1 0 4.8M12 9.4a4.5 4.5 0 0 1 2.5 4.1"/></svg>承辦與審查</h2>
+            </header>
+            <div id="people"></div>
+          </section>
+
+          <section class="panel" data-reveal style="--i:4" aria-labelledby="meet-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="meet-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v11M4.5 13.5h7M3 4.5h10M3 4.5L1.5 8.5a1.6 1.6 0 0 0 3 0zM13 4.5l-1.5 4a1.6 1.6 0 0 0 3 0z"/></svg>審議委員會</h2>
+            </header>
+            <div id="meeting"></div>
+          </section>
+
+          <section class="panel" data-reveal style="--i:5" aria-labelledby="money-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="money-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM10 6.2c-.4-.6-1.1-.95-2-.95-1.1 0-1.9.55-1.9 1.35 0 1.9 4 1 4 2.9 0 .8-.85 1.35-2.1 1.35-.9 0-1.65-.35-2.05-.95M8 4.25v7.5"/></svg>補助試算</h2>
+              <span class="panel__sub" id="moneySub"></span>
+            </header>
+            <div class="cs-money" id="money"></div>
+          </section>
+
+          <section class="panel" data-reveal style="--i:6" aria-labelledby="elig-title">
+            <header class="panel__head">
+              <h2 class="panel__title" id="elig-title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM5.5 8.2l1.7 1.7 3.3-3.6"/></svg>資格檢核</h2>
+              <span class="panel__sub" id="eligSub"></span>
+            </header>
+            <ul class="cs-elig" id="elig"></ul>
+            <footer class="panel__foot"><span>送件時由系統比對戶政與補助核定資料</span></footer>
+          </section>
+        </aside>
+      </div>
+
+      <section class="actionbar cs-actionbar" id="actionbar" aria-label="案件動作">
+        <div class="cs-actionbar__state" id="actionState"></div>
+        <div class="cs-actionbar__btns" id="actionBtns"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <div class="site-footer__brand">
+          <svg viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="#7C6CFF"/><path d="M7.5 18.5v-3M13 18.5v-6.5M18.5 18.5V8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+          澄港市政府青年事務局 · 創業發展科
+        </div>
+        <nav class="site-footer__links" aria-label="頁尾導覽">
+          <a href="index.html">總覽</a>
+          <a href="queue.html">案件佇列</a>
+          <a href="case.html">案件詳情</a>
+          <a href="apply.html">申請表單</a>
+          <a href="../../index.html">← 返回目錄</a>
+        </nav>
+        <div class="site-footer__meta"><span class="live-dot"></span>系統運作正常 · 審核台 v3.8.2 · 承辦專線 分機 3317</div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, STATUS, STAGES, CATEGORIES, fmt, esc, icon } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const DAY = 864e5, TZ = 8 * 3600e3;
+  const T = App.time;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  /* ---------------- 目前案件 ---------------- */
+  // 沒有 id 時預設 0351：委員會階段、兩位委員差 19 分，最能呈現差異提醒
+  const DEFAULT_ID = 'YSG-115-0351';
+  const askedId = App.param('id');
+  const c = App.getCase(askedId || DEFAULT_ID) || App.getCase(DEFAULT_ID);
+  const serial = Number(c.id.slice(-4));
+  const nameOf = (id) => App.person(id).name;
+  // 不經 App.transition 的異動（改派、換委員、補件檢核）也要發 app:case：側欄計數由 app.js 重算，本頁由監聽器重繪
+  const changed = () => document.dispatchEvent(new CustomEvent('app:case', { detail: { case: c } }));
+  const COPY_ICON = '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5V3.25a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-.75.75H10.5M3.25 5.5h6.5a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-.75.75h-6.5a.75.75 0 0 1-.75-.75v-6.5a.75.75 0 0 1 .75-.75z"/></svg>';
+
+  /* ---------------- 時間小工具（一律以 UTC+8 計算） ---------------- */
+  const atClock = (ms, h, m = 0) => { const d = new Date(ms + TZ); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m) - TZ; };
+  const weekdayOf = (ms) => new Date(ms + TZ).getUTCDay();
+  // 承辦與主管的動作都落在上班日，週末順延到週一
+  const toWorkday = (ms) => ms + (weekdayOf(ms) === 6 ? 2 : weekdayOf(ms) === 0 ? 1 : 0) * DAY;
+  const nextWorkday = (ms, n = 1) => atClock(App.addWorkdays(ms, n), 9, 0);
+  // countdown 的 data 屬性要可被 App.time 解析，所以轉回「YYYY-MM-DDTHH:MM」
+  const isoLocal = (ms) => new Date(T(ms) + TZ).toISOString().slice(0, 16);
+  const seedOf = (s) => [...s].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 997, 7);
+  // 評分只記到日期時，依委員與案號給一個固定的下午時刻，時間軸排序才穩定
+  const stampOf = (at, seed) => typeof at === 'number' ? at : at.length === 10 ? atClock(T(at), 14 + seed % 4, (seed * 13) % 60) : T(at);
+  const durShort = (ms) => ms >= DAY ? `${Math.round(ms / DAY)} 天` : `${Math.max(1, Math.round(ms / 3600e3))} 小時`;
+  const dayKey = (ms) => fmt.date(ms, true);
+  const docLabel = (key) => DATA.docs.find((d) => d.key === key).label;
+
+  /* ---------------- 案件歷程：由案件欄位推導出里程碑，再併入 DATA.activity ---------------- */
+  const SUPP_HISTORY = [
+    { doc: 'pledge', note: '切結書未經申請人親簽' },
+    { doc: 'tax', note: '無欠稅證明開立日期逾 3 個月' },
+    { doc: 'residency', note: '戶籍謄本未載明遷入日期' },
+    { doc: 'budget', note: '經費預算表未區分補助款與自籌款' },
+  ];
+  // 本頁補充的討論紀錄（全站活動只保留最近兩天，較早的留言在這裡）
+  const NOTES = {
+    'YSG-115-0351': [
+      { at: '2026-10-13T17:05', who: 'r-tsai', type: 'comment', text: '團膳每份報價 85 元，但食材加人事成本已估到 92 元，第二年起擴大供應反而擴大虧損，建議請申請人提出調價或分眾方案。' },
+      { at: '2026-10-14T15:52', who: 'u-huang', type: 'comment', text: '兩位委員分數差 19 分，已依規定於提案單註記，並請申請人於會前補充團膳成本試算。' },
+      { at: '2026-10-20T11:02', who: 'applicant', type: 'supplement', text: '上傳補充資料「團膳成本試算表（修訂版）」' },
+      { at: '2026-10-21T09:30', who: 'u-wang', type: 'comment', text: '本案列入第 4 次審議會討論，請承辦準備兩位委員的評分意見對照表，會中請蔡委員說明財務疑慮。' },
+    ],
+    'YSG-115-0379': [
+      { at: '2026-10-15T10:20', who: 'u-huang', type: 'comment', text: '申請人已補充 3 家品牌的代工意向書，已上傳至附件，請兩位委員參考。' },
+    ],
+    'YSG-115-0398': [
+      { at: '2026-10-15T14:40', who: 'applicant', type: 'comment', text: '登記地址變更已送件，新的登記事項卡預計 10/24 核發，屆時立即上傳。' },
+    ],
+  };
+
+  function synthHistory() {
+    const ev = [];
+    const add = (e) => ev.push({ case: c.id, synth: true, ...e });
+    const owner = c.owner || 'u-lin';
+    const reached = c.status === 'rejected' ? c.droppedAt : App.stageOf(c);
+    const submitted = T(c.submitted);
+    add({ at: submitted, who: 'system', type: 'received', text: '收到線上申請，系統自動產生申請書' });
+    if (c.status === 'received') return ev;
+
+    const formalAt = c.status === 'formal' ? T(c.sla.start) : nextWorkday(submitted) + (serial % 5) * 7 * 60e3;
+    add({ at: formalAt, who: owner, type: 'status', from: 'received', to: 'formal', text: `收件並分派承辦 ${nameOf(owner)}` });
+
+    const scored = c.reviewers.filter((r) => c.scores[r]).map((r) => ({ rid: r, at: stampOf(c.scores[r].at, seedOf(r + c.id)) }));
+    let subAt = null;
+    if (reached >= 2) {
+      if (c.status === 'substantive') subAt = T(c.sla.start);
+      else if (scored.length) subAt = toWorkday(atClock(Math.min(...scored.map((s) => s.at)) - 9 * DAY, 10, 0));
+      else subAt = atClock(App.addWorkdays(formalAt, 7), 10, 0);
+    }
+    // 部分已通過形式審查的案件曾補件一次：畫出旅程上的補件迴圈
+    if (reached >= 2 && serial % 3 === 0) {
+      const s = SUPP_HISTORY[serial % 4];
+      const req = atClock(App.addWorkdays(formalAt, 3), 16, 20);
+      const up = atClock(req + 5 * DAY, 20, 40);
+      const back = atClock(App.addWorkdays(up, 1), 10, 10);
+      if (back < subAt - DAY) {
+        add({ at: req, who: owner, type: 'status', from: 'formal', to: 'supplement', text: `要求補件：${docLabel(s.doc)}`, body: s.note });
+        add({ at: up, who: 'applicant', type: 'supplement', text: `上傳補件「${docLabel(s.doc)}」` });
+        add({ at: back, who: owner, type: 'status', from: 'supplement', to: 'formal', text: '補件檢核通過，回到形式審查' });
+      }
+    }
+    if (c.status === 'supplement') {
+      add({ at: T(c.sla.start), who: owner, type: 'status', from: 'formal', to: 'supplement', text: `要求補件：${c.missing.map((m) => docLabel(m.doc)).join('、')}`, body: c.missing.map((m) => m.note).join('；') });
+    }
+    if (reached >= 2) {
+      add({ at: subAt, who: owner, type: 'status', from: 'formal', to: 'substantive', text: '通過形式審查，進入實質審查' });
+      if (c.reviewers.length) add({ at: subAt + 25 * 60e3, who: owner, type: 'assign', text: `指派審查委員 ${c.reviewers.map(nameOf).join('、')}` });
+      scored.forEach((s) => add({ at: s.at, who: s.rid, type: 'score', text: `提交評分 ${App.score(c, s.rid).total} 分` }));
+    }
+    if (reached >= 3) {
+      const comAt = c.status === 'committee' ? T(c.sla.start) : toWorkday(atClock(Math.max(...scored.map((s) => s.at)) + DAY, 15, 0));
+      const no = comAt < T(DATA.committee.previous.at) ? DATA.committee.previous.no : DATA.committee.no;
+      add({ at: comAt, who: 'u-wang', type: 'status', from: 'substantive', to: 'committee', text: `排入第 ${no} 次審議委員會` });
+    }
+    if (c.approvedAt) {
+      const apAt = c.status === 'approved' ? T(c.sla.start) : atClock(T(c.approvedAt), 15, 0);
+      add({ at: apAt, who: 'u-wang', type: 'status', from: 'committee', to: 'approved', text: `核定補助 ${fmt.money(c.granted)}` });
+    }
+    if (c.status === 'disbursed') add({ at: T(c.disbursedAt), who: owner, type: 'status', from: 'approved', to: 'disbursed', text: `撥款完成 ${fmt.money(c.granted)}` });
+    if (c.status === 'rejected') {
+      add({ at: T(c.closedAt), who: c.droppedAt >= 3 ? 'u-wang' : owner, type: 'status', from: STAGES[c.droppedAt].status, to: 'rejected', text: '退件結案', body: c.closeReason });
+    }
+    return ev;
+  }
+  // 歷程只在載入時推導一次；之後的流轉都寫進 DATA.activity，避免案件欄位改變時歷史跟著跳動
+  const baseEvents = [...synthHistory(), ...(NOTES[c.id] || []).map((n) => ({ case: c.id, ...n, at: T(n.at) }))];
+
+  function events() {
+    const real = DATA.activity.filter((a) => a.case === c.id).map((a) => ({ ...a, at: T(a.at) }));
+    // 全站活動已有同一件事時，以真實紀錄為準
+    const dup = (s) => real.some((r) => r.type === s.type && Math.abs(r.at - s.at) < 3 * 3600e3
+      && (s.type !== 'status' || r.to === s.to) && (s.type !== 'score' || r.who === s.who));
+    return [...baseEvents.filter((s) => !s.synth || !dup(s)), ...real].sort((a, b) => a.at - b.at);
+  }
+
+  function journeyModel() {
+    const enter = Array(6).fill(null);
+    let cur = 0, loops = 0, dropAt = null;
+    events().forEach((e) => {
+      if (e.type === 'received') enter[0] = e.at;
+      if (e.type !== 'status') return;
+      if (e.to === 'supplement') loops += 1;
+      if (e.to === 'rejected') { dropAt = e.at; return; }
+      const st = STATUS[e.to].stage;
+      // 退回前面的階段時，後面階段的進入時間作廢，重新走一次
+      if (st < cur) for (let k = st + 1; k < 6; k++) enter[k] = null;
+      if (enter[st] === null) enter[st] = e.at;
+      cur = st;
+    });
+    return { enter, loops, dropAt, stage: App.stageOf(c) };
+  }
+
+  /* ---------------- 招牌：案件旅程 ---------------- */
+  const jWrap = $('#journey'), jNodes = $('#journeyNodes'), jSvg = $('#journeySvg');
+  let progPct = 0; // 上一次畫到的進度（%），流轉時從這裡接著延伸
+  let jWidth = 0;  // 上一次繪製時的寬度，ResizeObserver 只在寬度真的改變時重畫
+
+  function renderJourney(morphFrom) {
+    const m = journeyModel();
+    const now = App.now();
+    const rejected = c.status === 'rejected';
+    const st = m.stage;
+    jNodes.innerHTML = STAGES.map((s, i) => {
+      let state = i < st ? 'done' : i > st ? 'future' : rejected ? 'dropped' : c.status === 'disbursed' ? 'done' : 'current';
+      let segC = `var(--st-${s.status})`;
+      let inner, date = '—', meta = '';
+      if (state === 'done') {
+        inner = icon('check');
+        date = fmt.date(m.enter[i]);
+        meta = i < 5 ? `停留 ${durShort((m.enter[i + 1] ?? now) - m.enter[i])}` : '已結案';
+      } else if (state === 'current') {
+        if (c.status === 'supplement') segC = 'var(--st-supplement)';
+        inner = `<span data-live-status>${App.statusIcon(morphFrom || c.status, 'sd--lg')}</span>`;
+        date = fmt.date(m.enter[i]);
+        meta = c.status === 'supplement' ? `補件中 · ${fmt.date(c.sla.due)} 截止` : `第 ${Math.floor((now - m.enter[i]) / DAY) + 1} 天`;
+      } else if (state === 'dropped') {
+        segC = 'var(--st-rejected)';
+        inner = App.statusIcon('rejected', 'sd--lg');
+        date = fmt.date(m.dropAt);
+        meta = '於此階段退件';
+      } else {
+        inner = String(i + 1);
+        if (i === st + 1 && c.status === 'committee') meta = `預計 ${fmt.date(DATA.committee.at)} 決議`;
+        else if (i === st + 1 && c.status === 'approved' && c.sla) meta = `${fmt.date(c.sla.due)} 前撥款`;
+      }
+      const label = state === 'current' && c.status === 'supplement' ? '形式審查 · 補件' : s.label;
+      return `<li class="cj__node is-${state}" style="--seg-c:${segC}"${state === 'current' || state === 'dropped' ? ' aria-current="step"' : ''}>
+        <span class="cj__dot">${inner}</span>
+        <span class="cj__label">${label}</span>
+        <span class="cj__date">${date}</span>
+        ${meta ? `<span class="cj__meta">${meta}</span>` : ''}
+      </li>`;
+    }).join('');
+    drawJourney(m, true);
+
+    const days = Math.floor((now - T(c.submitted)) / DAY);
+    $('#journeySub').textContent = `送件後第 ${days + 1} 天` + (m.loops ? ` · 補件 ${m.loops} 次` : '') + (c.owner ? ` · 承辦 ${nameOf(c.owner)}` : ' · 尚未分派');
+    $('#journeyActs').innerHTML = `<span data-live-status>${App.statusChip(morphFrom || c.status, { pill: true })}</span>${c.sla ? App.slaBadge(c) : ''}`;
+  }
+
+  // SVG 依節點實際位置畫線，版面寬度改變時重畫（不重播動畫）
+  function drawJourney(m, animate) {
+    const box = jWrap.getBoundingClientRect();
+    if (!box.width) return;
+    jWidth = jWrap.clientWidth;
+    const pts = $$('.cj__dot', jNodes).map((d) => {
+      const r = d.getBoundingClientRect();
+      return { x: r.left - box.left + r.width / 2, y: r.top - box.top + r.height / 2 };
+    });
+    const y = pts[0].y, x0 = pts[0].x, x5 = pts[5].x;
+    const reachIdx = m.stage;
+    const pct = (pts[reachIdx].x - x0) / (x5 - x0) * 100;
+    const rejected = c.status === 'rejected';
+    const stops = STAGES.map((s, i) => {
+      const col = rejected && i === reachIdx ? 'rejected' : c.status === 'supplement' && i === 1 ? 'supplement' : s.status;
+      return `<stop offset="${((pts[i].x - x0) / (x5 - x0)).toFixed(4)}" style="stop-color:var(--st-${col})"/>`;
+    }).join('');
+    let loop = '';
+    if (m.loops || c.status === 'supplement') {
+      const x1 = pts[1].x;
+      const active = c.status === 'supplement';
+      loop = `<path class="cj__loop${active ? ' is-active anim-loop' : ''}" marker-end="url(#cjArrow)" d="M${(x1 + 9).toFixed(1)} ${y - 13}C${(x1 + 34).toFixed(1)} ${y - 50} ${(x1 - 34).toFixed(1)} ${y - 50} ${(x1 - 9).toFixed(1)} ${y - 13}"/>`
+        + `<text class="cj__loop-label" x="${(x1 + 21).toFixed(1)}" y="${y - 31}">${active ? '補件中' : `補件 ×${m.loops}`}</text>`;
+    }
+    const moving = reachIdx > 0 && !rejected && c.status !== 'disbursed';
+    const comet = moving ? `<path class="cj__comet anim-loop" pathLength="1" d="M${x0} ${y}H${(pts[reachIdx].x - 17).toFixed(1)}"/>` : '';
+    const from = animate ? progPct : pct;
+    jSvg.setAttribute('viewBox', `0 0 ${box.width.toFixed(1)} ${box.height.toFixed(1)}`);
+    jSvg.innerHTML = `<defs><linearGradient id="cjGrad" gradientUnits="userSpaceOnUse" x1="${x0}" y1="0" x2="${x5}" y2="0">${stops}</linearGradient>
+        <marker id="cjArrow" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1.5 1.5L6 4L1.5 6.5" style="fill:none;stroke:var(--st-supplement);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round"/></marker></defs>
+      <path class="cj__base" d="M${x0} ${y}H${x5}"/>
+      <path class="cj__prog" id="cjProg" pathLength="100" stroke="url(#cjGrad)" style="stroke-dasharray:${from.toFixed(2)} 100" d="M${x0} ${y}H${x5}"/>
+      ${comet}${loop}`;
+    progPct = pct;
+    if (animate && Math.abs(from - pct) > .01) {
+      const prog = $('#cjProg');
+      // 先讓瀏覽器套用起點，下一幀再改終點，transition 才會把線延伸過去
+      void prog.getBoundingClientRect();
+      requestAnimationFrame(() => { prog.style.strokeDasharray = `${pct.toFixed(2)} 100`; });
+    }
+  }
+  new ResizeObserver(() => {
+    const w = jWrap.clientWidth;
+    if (w && Math.abs(w - jWidth) > 1) drawJourney(journeyModel(), false);
+  }).observe(jWrap);
+
+  /* ---------------- 頁首 ---------------- */
+  function renderHead() {
+    const tier = DATA.program.tiers[c.tier];
+    $('#csEyebrow').innerHTML = `<span class="cs-key">${c.id}<button class="icon-btn" type="button" data-act="copy-id" aria-label="複製案號 ${c.id}" data-tip="複製案號" data-tip-pos="bottom">${COPY_ICON}</button></span>`
+      + `<span class="tag">${tier.label}</span><span class="tag">${CATEGORIES[c.cat]}</span><span class="tag">${icon('pin', 'i--sm')}${c.district}</span>`;
+    $('#csTitle').textContent = c.title;
+    $('#csDesc').textContent = c.summary;
+    $('#crumbId').textContent = c.id;
+    const list = DATA.cases, i = list.indexOf(c);
+    const prev = list[(i - 1 + list.length) % list.length], next = list[(i + 1) % list.length];
+    $('#csAside').innerHTML = `<nav class="cs-pager" aria-label="切換案件">
+        <a class="icon-btn icon-btn--bordered" href="${App.caseUrl(prev.id)}" aria-label="上一件：${prev.id}" data-tip="上一件 [" data-tip-pos="bottom">${icon('chevron-left')}</a>
+        <span class="cs-pager__pos">${i + 1} / ${list.length}</span>
+        <a class="icon-btn icon-btn--bordered" href="${App.caseUrl(next.id)}" aria-label="下一件：${next.id}" data-tip="下一件 ]" data-tip-pos="bottom">${icon('chevron-right')}</a>
+      </nav>
+      <button class="btn btn--sm" type="button" data-act="more" aria-haspopup="menu" aria-expanded="false">${icon('more')}更多動作</button>`;
+  }
+
+  /* ---------------- 申請摘要 ---------------- */
+  function renderSummary() {
+    const tier = DATA.program.tiers[c.tier];
+    const ratio = c.request / c.total;
+    const prep = c.org.includes('籌備中');
+    $('#sumSub').textContent = `送件 ${fmt.dateTime(c.submitted)} · 線上申請`;
+    $('#summary').innerHTML = `
+      <div class="cs-applicant">${App.avatar(App.applicantPerson(c), 'lg')}
+        <div><div class="cs-applicant__name">${esc(c.applicant)} <span class="muted" style="font-size:13px;font-weight:400">${c.age} 歲</span></div>
+        <div class="cs-applicant__sub">${esc(c.org)} · ${c.district}</div></div></div>
+      <div class="cs-facts">
+        <div class="cs-fact"><span class="cs-fact__label">申請方案</span><span class="cs-fact__value">${tier.label}</span></div>
+        <div class="cs-fact"><span class="cs-fact__label">計畫總經費</span><span class="cs-fact__value">${fmt.wan(c.total)}</span></div>
+        <div class="cs-fact"><span class="cs-fact__label">申請補助</span><span class="cs-fact__value">${fmt.wan(c.request)}<small>${(ratio * 100).toFixed(0)}%</small></span></div>
+        <div class="cs-fact"><span class="cs-fact__label">預計新增就業</span><span class="cs-fact__value">${c.jobs}<small>人</small></span></div>
+      </div>
+      <dl class="kv cs-kv">
+        <dt>事業名稱</dt><dd>${esc(c.org)}</dd>
+        <dt>產業類別</dt><dd>${CATEGORIES[c.cat]}</dd>
+        <dt>營運地點</dt><dd>澄港市${c.district}</dd>
+        <dt>設立狀態</dt><dd>${prep ? '籌備中（個人申請）' : c.tier === 'seed' ? '設立未滿 2 年' : '設立滿 2 年、未滿 5 年'}</dd>
+        <dt>計畫總經費</dt><dd class="num">${fmt.money(c.total)}</dd>
+        <dt>自籌款</dt><dd class="num">${fmt.money(c.total - c.request)}</dd>
+      </dl>`;
+  }
+
+  /* ---------------- 處理時效（大型 SLA 倒數環） ---------------- */
+  const RING_TICKS = `<svg class="cs-ring__ticks" viewBox="0 0 116 116" aria-hidden="true">${Array.from({ length: 48 }, (_, i) => {
+    const a = i / 48 * Math.PI * 2, major = i % 12 === 0, r1 = major ? 51 : 53.5, r2 = 56.5;
+    return `<line${major ? ' class="is-major"' : ''} x1="${(58 + Math.sin(a) * r1).toFixed(2)}" y1="${(58 - Math.cos(a) * r1).toFixed(2)}" x2="${(58 + Math.sin(a) * r2).toFixed(2)}" y2="${(58 - Math.cos(a) * r2).toFixed(2)}"/>`;
+  }).join('')}</svg>`;
+  function renderSla() {
+    const host = $('#slaBody');
+    const info = App.sla(c);
+    if (!info) {
+      const days = Math.round((T(c.status === 'disbursed' ? c.disbursedAt : c.closedAt) - T(c.submitted)) / DAY);
+      host.innerHTML = c.status === 'disbursed'
+        ? `<div class="cs-closed">${App.statusIcon('disbursed', 'sd--xl')}<div><b class="strong">已撥款結案</b><br>${fmt.dateLong(c.disbursedAt)} 撥付 ${fmt.money(c.granted)}，自送件起共 ${days} 天。</div></div>`
+        : `<div class="cs-closed">${App.statusIcon('rejected', 'sd--xl')}<div><b class="strong">${fmt.date(c.closedAt)} 退件結案</b><br>${esc(c.closeReason)}</div></div>`;
+      return;
+    }
+    const abs = Math.abs(info.remain);
+    const big = abs >= DAY ? Math.floor(abs / DAY) : Math.floor(abs / 3600e3);
+    const unit = (abs >= DAY ? '天' : '小時') + (info.state === 'over' ? ' · 已逾期' : '後到期');
+    const [tone, text] = { ok: ['ok', '進度正常'], soon: ['warn', '48 小時內到期'], crit: ['serious', '8 小時內到期'], over: ['danger', '已逾期'] }[info.state];
+    const kind = info.kind.endsWith('期限') ? info.kind : `${info.kind}期限`;
+    host.innerHTML = `<div class="cs-sla">
+        <div class="cs-ring" data-state="${info.state}">${RING_TICKS}${App.slaBadge(c, { text: false, size: 116 })}
+          <div class="cs-ring__center"><span class="cs-ring__big">${info.state === 'over' ? '+' : ''}${big}</span><span class="cs-ring__unit">${unit}</span></div></div>
+        <div class="cs-sla__info">
+          <span class="cs-sla__kind">${kind}</span>
+          <b class="cs-sla__due">${fmt.date(info.due)}（${fmt.weekday(info.due).slice(1)}）${fmt.time(info.due)}</b>
+          <span class="mono cs-sla__count" data-countdown-to="${isoLocal(info.due)}">${fmt.countdown(info.remain)}</span>
+          <span class="cs-sla__from">自 ${fmt.dateTime(info.start)} 起算</span>
+          <span class="badge badge--${tone}">${text}</span>
+        </div></div>`;
+  }
+
+  /* ---------------- 承辦與審查 ---------------- */
+  const revColor = (k) => k === 0 ? 'var(--rev-a)' : 'var(--rev-b)';
+  // 審查委員自己還沒評分時看不到別人的分數，避免互相影響
+  const isBlind = () => App.role === 'reviewer' && c.reviewers.includes(App.persona().id) && !App.score(c, App.persona().id);
+  function personRow(id, sub, right = '', dot = '') {
+    return `<div class="cs-person">${App.avatar(id)}<span class="cs-person__text"><b>${dot ? `<span class="cs-person__dot" style="--c:${dot}"></span>` : ''}${nameOf(id)}</b><small>${esc(sub)}</small></span>${right}</div>`;
+  }
+  function renderPeople() {
+    const blind = isBlind();
+    const canAssign = App.role !== 'reviewer';
+    let html = '<div class="cs-people__group">承辦人</div>';
+    html += c.owner
+      ? personRow(c.owner, App.person(c.owner).title, canAssign ? '<button class="btn btn--ghost btn--sm" type="button" data-act="reassign">改派</button>' : '')
+      : `<div class="cs-person">${App.avatar(null)}<span class="cs-person__text"><b>尚未分派</b><small>收件後由值班承辦分派</small></span>${canAssign ? '<button class="btn btn--sm" type="button" data-act="reassign">指派</button>' : ''}</div>`;
+    html += '<div class="cs-people__group">審查委員</div>';
+    if (c.reviewers.length) {
+      html += c.reviewers.map((r, k) => {
+        const s = App.score(c, r);
+        const mine = r === App.persona().id;
+        let right;
+        if (s) right = blind && !mine ? '<span class="badge badge--ok">已評分</span>' : `<span class="cs-person__score">${s.total}</span>`;
+        else right = canAssign && c.status === 'substantive'
+          ? `<button class="btn btn--ghost btn--sm" type="button" data-act="swap" data-rid="${r}">更換</button>`
+          : '<span class="badge badge--warn">評分中</span>';
+        return personRow(r, App.person(r).title, right, revColor(k));
+      }).join('');
+    } else {
+      html += `<div class="cs-person"><span class="avatar avatar--empty">${icon('users')}</span><span class="cs-person__text"><b>尚未指派</b><small>通過形式審查後指派 2 位委員</small></span></div>`;
+    }
+    html += '<div class="cs-people__group">核定主管</div>' + personRow('u-wang', App.person('u-wang').title);
+    const waiting = c.status === 'substantive' ? c.reviewers.filter((r) => !App.score(c, r)) : [];
+    html += waiting.length && canAssign
+      ? `<footer class="panel__foot"><span>${waiting.length} 位委員尚未評分</span><button class="btn btn--sm" type="button" data-act="nudge" style="margin-left:auto">${icon('bell', 'i--sm')}提醒評分</button></footer>`
+      : '<div style="height:8px"></div>';
+    $('#people').innerHTML = html;
+  }
+
+  /* ---------------- 審議委員會 ---------------- */
+  function calBox(at) {
+    const d = new Date(at + TZ);
+    return `<div class="cal" aria-hidden="true"><span class="cal__m">${d.getUTCMonth() + 1} 月</span><span class="cal__d">${d.getUTCDate()}</span><span class="cal__w">${fmt.weekday(at)}</span></div>`;
+  }
+  function renderMeeting() {
+    const m = DATA.committee;
+    const at = T(m.at);
+    const host = $('#meeting');
+    if (c.status === 'committee') {
+      const agenda = DATA.cases.filter((x) => x.status === 'committee').sort((a, b) => App.avgScore(b) - App.avgScore(a));
+      host.innerHTML = `<div class="cs-meet">${calBox(at)}<div>
+          <div class="cs-meet__title">${m.title}</div>
+          <div class="cs-meet__sub">${fmt.time(at)} · ${m.place}</div>
+          <div class="cs-meet__sub">本案為議程第 <b class="strong">${agenda.indexOf(c) + 1}</b> 案 · 倒數 <span class="mono" data-countdown-to="${m.at}">${fmt.countdown(at - App.now())}</span></div></div></div>
+        <ol class="cs-agenda" aria-label="議程">${agenda.map((x) => {
+          const flag = App.scoreGap(x) > DATA.program.gapAlert;
+          return `<li><a href="${App.caseUrl(x.id)}"${x === c ? ' aria-current="true"' : ''}><span class="truncate">${esc(x.title)}</span>
+            <span class="cs-agenda__score">${flag ? `<span data-tip="委員評分差 ${App.scoreGap(x)} 分" data-tip-pos="left">${icon('alert')}</span>` : ''}${App.avgScore(x).toFixed(1)}</span></a></li>`;
+        }).join('')}</ol>`;
+      return;
+    }
+    const reachedCommittee = c.status === 'rejected' ? c.droppedAt >= 3 : App.stageOf(c) > 3;
+    if (reachedCommittee) {
+      const ev = events().filter((e) => e.type === 'status' && e.to === 'committee').pop();
+      const decision = c.status === 'rejected' ? esc(c.closeReason) : `決議核定補助 <b class="strong num">${fmt.money(c.granted)}</b>。`;
+      host.innerHTML = `<div class="cs-closed">${App.statusIcon('committee', 'sd--xl')}<div><b class="strong">${esc(ev.text)}</b><br>${decision}</div></div>`;
+    } else if (c.status === 'rejected') {
+      host.innerHTML = `<div class="cs-closed">${App.statusIcon('rejected', 'sd--xl')}<div>本案於${STAGES[c.droppedAt].label}階段退件，未提送審議委員會。</div></div>`;
+    } else {
+      const need = c.status === 'substantive' ? '兩位委員完成評分、平均達 70 分後，可排入議程。' : '需先通過形式審查與實質審查，才能排入議程。';
+      host.innerHTML = `<div class="cs-meet">${calBox(at)}<div><div class="cs-meet__title">下一場：${m.title}</div>
+        <div class="cs-meet__sub">${fmt.dateLong(at)} ${fmt.time(at)}</div><div class="cs-meet__sub">${need}</div></div></div>`;
+    }
+  }
+
+  /* ---------------- 補助試算 ---------------- */
+  function gauge(v, { cap = null, tone = '' } = {}) {
+    return `<div class="cs-gauge"><span class="cs-gauge__fill${tone ? ' cs-gauge__fill--' + tone : ''}" style="--v:${(Math.min(1, v) * 100).toFixed(1)}%"></span>${cap !== null ? `<span class="cs-gauge__cap" style="--cap:${(cap * 100).toFixed(1)}%"></span>` : ''}</div>`;
+  }
+  function renderMoney() {
+    const tier = DATA.program.tiers[c.tier];
+    const ratio = c.request / c.total;
+    const ratioOk = ratio <= tier.ratio + 1e-9;
+    $('#moneySub').textContent = `${tier.label} · 上限 ${fmt.wan(tier.max)} / ${Math.round(tier.ratio * 100)}%`;
+    $('#money').innerHTML = `
+      <div class="cs-money__row"><div class="cs-money__top"><span>申請補助 / 方案上限</span><b>${fmt.money(c.request)}</b></div>${gauge(c.request / tier.max, { tone: c.request > tier.max ? 'danger' : '' })}</div>
+      <div class="cs-money__row"><div class="cs-money__top"><span>補助比例（上限 ${Math.round(tier.ratio * 100)}%）</span><b class="${ratioOk ? '' : 'text-danger'}">${(ratio * 100).toFixed(1)}%</b></div>${gauge(ratio, { cap: tier.ratio, tone: ratioOk ? 'ok' : 'danger' })}</div>
+      ${c.granted ? `<div class="cs-money__row"><div class="cs-money__top"><span>核定金額</span><b>${fmt.money(c.granted)}</b></div>${gauge(c.granted / c.request, { tone: 'ok' })}</div>` : ''}
+      <div class="cs-money__foot"><span>每新增 1 個就業</span><b>${fmt.money(Math.round((c.granted || c.request) / c.jobs))}</b></div>`;
+  }
+
+  /* ---------------- 資格檢核 ---------------- */
+  function renderElig() {
+    const E = DATA.program.eligibility;
+    const prep = c.org.includes('籌備中');
+    const excluded = /排除業別/.test(c.closeReason || '');
+    const residencyPending = c.status === 'supplement' && c.missing.some((m) => m.doc === 'residency');
+    const rows = [
+      { t: '申請人年齡', s: `限 ${E.ageMin}–${E.ageMax} 歲`, v: `${c.age} 歲`, r: c.age >= E.ageMin && c.age <= E.ageMax ? 'ok' : 'fail' },
+      { t: `設籍澄港市滿 ${E.residencyMonths} 個月`, s: '依戶籍謄本遷入日期', v: residencyPending ? '待補件' : '符合', r: residencyPending ? 'warn' : 'ok' },
+      { t: `事業設立未滿 ${E.companyMaxYears} 年`, s: prep ? '籌備中，免附登記事項卡' : '依公司 / 商業登記資料', v: prep ? '籌備中' : '符合', r: 'ok' },
+      { t: `${E.grantCooldownYears} 年內未曾受本計畫補助`, s: '比對 113–115 年度核定名單', v: '無紀錄', r: 'ok' },
+      { t: '非排除業別', s: `排除：${DATA.program.excluded.join('、')}`, v: excluded ? '屬排除業別' : CATEGORIES[c.cat], r: excluded ? 'fail' : 'ok' },
+    ];
+    const pass = rows.filter((x) => x.r === 'ok').length;
+    $('#eligSub').textContent = `${pass} / ${rows.length} 項符合`;
+    const ICON = { ok: 'check-circle', warn: 'alert', fail: 'x' };
+    $('#elig').innerHTML = rows.map((x) => `<li data-r="${x.r}">${icon(ICON[x.r])}<span class="cs-elig__text"><b>${x.t}</b><small>${esc(x.s)}</small></span><span class="cs-elig__val">${esc(x.v)}</span></li>`).join('');
+  }
+
+  /* ---------------- 委員評分 ---------------- */
+  const R = DATA.rubric;
+  const RC = { cx: 150, cy: 116, r: 72 };
+  const radarPt = (i, f) => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / R.length;
+    return [RC.cx + Math.cos(a) * RC.r * f, RC.cy + Math.sin(a) * RC.r * f];
+  };
+  const polyPoints = (items) => items.map((v, i) => radarPt(i, v / R[i].max).map((n) => n.toFixed(1)).join(',')).join(' ');
+  // series：[{items, cls, color}]；第二行標出各委員在該項的分數
+  function radarSvg(series, label) {
+    const rings = [.25, .5, .75, 1].map((f) => `<polygon class="cs-radar__ring${f === 1 ? ' cs-radar__ring--outer' : ''}" points="${R.map((_, i) => radarPt(i, f).map((n) => n.toFixed(1)).join(',')).join(' ')}"/>`).join('');
+    const axes = R.map((_, i) => { const [x, y] = radarPt(i, 1); return `<line class="cs-radar__axis" data-axis="${i}" x1="${RC.cx}" y1="${RC.cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('');
+    const labels = R.map((it, i) => {
+      const [x, y] = radarPt(i, 1.17);
+      const anchor = Math.abs(x - RC.cx) < 4 ? 'middle' : x > RC.cx ? 'start' : 'end';
+      const dy = i === 0 ? -18 : (i === 2 || i === 3) ? 8 : -6;
+      const vals = series.map((s) => `<tspan style="fill:${s.color}">${s.items[i]}</tspan>`).join('<tspan> · </tspan>');
+      return `<text class="cs-radar__label" data-axis="${i}" x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}">${it.label}</text>`
+        + `<text class="cs-radar__vals" x="${x.toFixed(1)}" y="${(y + dy + 15).toFixed(1)}" text-anchor="${anchor}">${vals}<tspan> / ${it.max}</tspan></text>`;
+    }).join('');
+    const polys = series.map((s) => `<g><polygon class="cs-radar__poly cs-radar__poly--${s.cls}" points="${polyPoints(s.items)}"/>${s.items.map((v, i) => { const [x, y] = radarPt(i, v / R[i].max); return `<circle class="cs-radar__pt" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" style="fill:${s.color}"/>`; }).join('')}</g>`).join('');
+    return `<svg class="cs-radar" viewBox="0 0 300 222" role="img" aria-label="${esc(label)}">${rings}${axes}${polys}${labels}</svg>`;
+  }
+
+  function scaleHtml(list) {
+    const pass = DATA.program.passScore;
+    const gap = list.length === 2 ? Math.abs(list[0].total - list[1].total) : null;
+    const close = gap !== null && gap < 8;
+    const lo = list.length === 2 ? Math.min(list[0].total, list[1].total) : null;
+    const pins = list.map((s) => {
+      const side = close ? (s.total === lo && list[0].total !== list[1].total ? ' is-lo' : ' is-hi') : '';
+      return `<span class="cs-scale__pin${side}" style="--x:${s.total}%;--c:${s.color}"><b>${s.total}</b></span>`;
+    }).join('');
+    const avg = list.reduce((a, s) => a + s.total, 0) / list.length;
+    return `<div class="cs-scale" role="img" aria-label="分數尺：${list.map((s) => `${s.name} ${s.total} 分`).join('、')}，門檻 ${pass} 分">
+      <span class="cs-scale__track"></span>
+      ${gap !== null ? `<span class="cs-scale__span${gap > DATA.program.gapAlert ? ' is-warn' : ''}" style="left:${lo}%;width:${gap}%"></span>` : ''}
+      <span class="cs-scale__pass" style="left:${pass}%"></span>
+      ${list.length === 2 ? `<span class="cs-scale__avg" style="left:${avg}%" title="平均 ${avg.toFixed(1)}"></span>` : ''}
+      ${pins}
+      <span class="cs-scale__tick" style="left:0%">0</span>
+      <span class="cs-scale__tick cs-scale__tick--pass" style="left:${pass}%">門檻 ${pass}</span>
+      <span class="cs-scale__tick" style="left:100%">100</span>
+    </div>`;
+  }
+
+  function renderRubric() {
+    const host = $('#rubricBody');
+    const me = App.persona();
+    const revs = c.reviewers;
+    $('#rubricLegend').innerHTML = isBlind() ? '' : revs.map((r, k) => `<span class="legend__item"><span class="legend__swatch" style="--sw:${revColor(k)}"></span>${nameOf(r)}</span>`).join('');
+    if (!revs.length) {
+      $('#rubricSub').textContent = '實質審查';
+      host.innerHTML = App.emptyState({ art: 'search', title: '尚未進入實質審查', text: c.status === 'rejected' ? '本案於形式審查階段退件，未指派審查委員。' : '通過形式審查後，承辦會指派 2 位審查委員依 5 項指標評分。' });
+      return;
+    }
+    if (App.role === 'reviewer' && revs.includes(me.id) && !App.score(c, me.id) && c.status === 'substantive') {
+      renderScoreForm(host);
+      return;
+    }
+    const list = revs.map((r, k) => {
+      const s = App.score(c, r);
+      return s && { ...s, rid: r, name: nameOf(r), color: revColor(k), cls: k === 0 ? 'a' : 'b', k };
+    }).filter(Boolean);
+    const avg = App.avgScore(c), gap = App.scoreGap(c);
+    const pass = DATA.program.passScore, alert = DATA.program.gapAlert;
+    $('#rubricSub').textContent = `${list.length} / ${revs.length} 位委員已評分 · 滿分 100`;
+
+    const top = list.length ? `<div class="cs-rubric-top">
+        ${radarSvg(list.map((s) => ({ items: s.items, cls: s.cls, color: s.color })), `五項評分雷達圖：${list.map((s) => `${s.name} ${s.items.join('、')}`).join('；')}`)}
+        <div class="cs-score">
+          <div class="cs-score__head">
+            <div><div class="cs-score__label">${list.length === 2 ? '兩位委員平均' : '目前分數（尚缺 1 位）'}</div><div class="cs-score__avg">${avg.toFixed(1)}<small>/ 100</small></div></div>
+            <div class="cs-score__badges">
+              ${avg >= pass ? `<span class="badge badge--ok">${icon('check')}達 ${pass} 分門檻</span>` : `<span class="badge badge--danger">${icon('alert')}未達 ${pass} 分門檻</span>`}
+              ${gap !== null ? `<span class="badge ${gap > alert ? 'badge--warn' : ''}">差異 ${gap} 分</span>` : ''}
+            </div>
+          </div>
+          ${scaleHtml(list)}
+          ${gap !== null && gap > alert ? `<div class="callout callout--warn">${icon('alert')}<div>兩位委員總分差 <b>${gap} 分</b>，超過 ${alert} 分門檻。差異集中在<b>${R.map((it, i) => ({ it, d: Math.abs(list[0].items[i] - list[1].items[i]) / it.max })).sort((a, b) => b.d - a.d).slice(0, 2).map((x) => x.it.label).join('、')}</b>，建議於委員會中討論，或加派第三位委員複評。</div></div>` : ''}
+        </div>
+      </div>` : `<div style="padding:0 16px">${App.emptyState({ art: 'inbox', title: '委員評分中', text: `已指派 ${revs.map(nameOf).join('、')}，實質審查期限 ${c.sla ? fmt.date(c.sla.due) : '—'}。` })}</div>`;
+
+    const rows = list.length ? `<div class="cs-rrows">${R.map((it, i) => {
+      const vals = revs.map((r) => (App.score(c, r) || { items: [] }).items[i]);
+      const diff = list.length === 2 ? Math.abs(list[0].items[i] - list[1].items[i]) : null;
+      return `<div class="cs-rrow${diff !== null && diff / it.max >= .2 ? ' is-gap' : ''}" data-axis="${i}">
+        <div class="cs-rrow__label">${it.label}<small>滿分 ${it.max}</small></div>
+        <div class="score-bars">${vals.map((v, k) => `<div class="score-bar">${v === undefined ? '' : `<span class="score-bar__fill${k ? ' score-bar__fill--b' : ''}" style="--v:${(v / it.max).toFixed(3)};--k:${i}"></span>`}</div>`).join('')}</div>
+        <div class="cs-rrow__vals">${vals.map((v, k) => `<b class="${k ? 'cs-vb' : 'cs-va'}">${v === undefined ? '—' : v}</b>`).join('<span class="muted">·</span>')}${diff !== null ? `<span class="cs-delta" title="兩位委員差 ${diff} 分">Δ${diff}</span>` : ''}</div>
+      </div>`;
+    }).join('')}</div>` : '';
+
+    const notes = `<div class="grid-2 cs-notes">${revs.map((r, k) => {
+      const s = App.score(c, r);
+      const p = App.person(r);
+      return `<article class="cs-note" style="--c:${revColor(k)}">
+        <header class="cs-note__head">${App.avatar(r)}<span class="cs-note__who"><b>${p.name}</b><small>${esc(p.title)}</small></span>
+          ${s ? `<span class="cs-note__total">${s.total}<small>分</small></span>` : '<span class="badge badge--warn" style="margin-left:auto">評分中</span>'}</header>
+        <p>${s ? esc(s.note) : '尚未提交評分表。評分提交後，意見會顯示在這裡並同步通知承辦。'}</p>
+        <footer class="cs-note__foot">${s ? `${fmt.dateTime(stampOf(s.at, seedOf(r + c.id)))} 提交` : `指派於 ${fmt.date(events().find((e) => e.type === 'assign')?.at ?? T(c.updated))}`}<span class="dot-sep">委員 ${k === 0 ? 'A' : 'B'}</span></footer>
+      </article>`;
+    }).join('')}</div>`;
+    host.innerHTML = top + rows + notes;
+  }
+
+  // 審查委員填寫評分：拖動滑桿時雷達圖即時變形
+  function renderScoreForm(host) {
+    const me = App.persona();
+    const vals = R.map((it) => Math.round(it.max * .7));
+    $('#rubricSub').textContent = '請依 5 項指標評分 · 滿分 100';
+    $('#rubricLegend').innerHTML = `<span class="cs-blind">${icon('eye', 'i--sm')}提交前看不到其他委員的分數</span>`;
+    host.innerHTML = `<div class="cs-rubric-top">
+        <div id="formRadar"></div>
+        <div class="cs-score">
+          <div><div class="cs-score__label">${me.name} 的評分</div><div class="cs-score__avg"><span id="formTotal">0</span><small>/ 100</small></div></div>
+          <div id="formVerdict"></div>
+          <p class="hint">依計畫書與預算表評分；提交後即鎖定，需更正請聯繫承辦 ${c.owner ? nameOf(c.owner) : '林語彤'}。</p>
+        </div>
+      </div>
+      <form class="cs-scoreform" id="scoreForm" novalidate>
+        ${R.map((it, i) => `<div class="cs-slider">
+          <label class="cs-slider__label" for="sc${i}">${it.label}<small>滿分 ${it.max}</small></label>
+          <input class="cs-range" id="sc${i}" type="range" min="0" max="${it.max}" step="1" value="${vals[i]}" data-i="${i}">
+          <output class="cs-slider__out" for="sc${i}" id="scOut${i}"><b>${vals[i]}</b> / ${it.max}</output></div>`).join('')}
+        <div class="field" id="noteField">
+          <label class="label" for="scNote">評分意見 <span class="req">*</span></label>
+          <textarea class="textarea" id="scNote" rows="3" maxlength="400" placeholder="請具體說明評分理由與建議，至少 15 字"></textarea>
+          <span class="field__error">${icon('alert', 'i--sm')}評分意見至少需要 15 字</span>
+        </div>
+        <div class="cluster"><button class="btn btn--primary" type="submit">${icon('send', 'i--sm')}提交評分</button><span class="hint">提交後案件會通知承辦，兩位委員都完成後即可送委員會</span></div>
+      </form>`;
+    const form = $('#scoreForm', host);
+    const paint = () => {
+      const total = vals.reduce((a, b) => a + b, 0);
+      $('#formTotal').textContent = total;
+      $('#formVerdict').innerHTML = total >= DATA.program.passScore
+        ? `<span class="badge badge--ok">${icon('check')}達 ${DATA.program.passScore} 分門檻</span>`
+        : `<span class="badge badge--danger">${icon('alert')}未達 ${DATA.program.passScore} 分門檻</span>`;
+      $('#formRadar').innerHTML = radarSvg([{ items: vals, cls: 'me', color: 'var(--accent-text)' }], `你的評分雷達圖：${vals.join('、')}`);
+      R.forEach((it, i) => {
+        $(`#sc${i}`).style.setProperty('--p', (vals[i] / it.max * 100).toFixed(1) + '%');
+        $(`#scOut${i}`).innerHTML = `<b>${vals[i]}</b> / ${it.max}`;
+      });
+    };
+    form.addEventListener('input', (e) => {
+      if (e.target.matches('.cs-range')) { vals[Number(e.target.dataset.i)] = Number(e.target.value); paint(); }
+      if (e.target.id === 'scNote' && e.target.value.trim().length >= 15) $('#noteField').classList.remove('is-invalid');
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const note = $('#scNote').value.trim();
+      if (note.length < 15) { $('#noteField').classList.add('is-invalid'); $('#scNote').focus(); return; }
+      const total = vals.reduce((a, b) => a + b, 0);
+      const ok = await App.confirm({
+        title: `提交 ${c.id} 的評分？`,
+        message: `<p>總分 <b class="num">${total}</b> 分（${R.map((it, i) => `${it.label} ${vals[i]}`).join('、')}）。</p><p>提交後無法自行修改。</p>`,
+        confirmLabel: '確認提交', tone: 'primary',
+      });
+      if (!ok) return;
+      const at = Math.round(App.now());
+      c.scores[me.id] = { items: [...vals], at, note };
+      const entry = { at, who: me.id, case: c.id, type: 'score', text: `提交評分 ${total} 分` };
+      DATA.activity.unshift(entry);
+      document.dispatchEvent(new CustomEvent('app:case', { detail: { case: c } }));
+      App.toast(`已提交 ${c.id} 評分 ${total} 分`, {
+        desc: App.scoreGap(c) > DATA.program.gapAlert ? `與另一位委員差 ${App.scoreGap(c)} 分，承辦會於委員會提請討論` : '已通知承辦，評分結果已解鎖',
+        tone: 'success',
+        action: { label: '復原', onClick: () => { delete c.scores[me.id]; DATA.activity.splice(DATA.activity.indexOf(entry), 1); document.dispatchEvent(new CustomEvent('app:case', { detail: { case: c } })); } },
+      });
+    });
+    paint();
+  }
+  // 滑過評分列時，雷達圖上對應的軸一起亮起
+  $('#rubricBody').addEventListener('pointerover', (e) => {
+    const row = e.target.closest('.cs-rrow');
+    $$('#rubricBody [data-axis]').forEach((el) => { if (!el.matches('.cs-rrow')) el.classList.toggle('is-hot', !!row && el.dataset.axis === row.dataset.axis); });
+  });
+  $('#rubricBody').addEventListener('pointerleave', () => $$('#rubricBody .is-hot').forEach((el) => el.classList.remove('is-hot')));
+
+  /* ---------------- 附件與檢核 ---------------- */
+  const PREP = c.org.includes('籌備中');
+  const FILES = {
+    form: `申請書_${c.id}.pdf`, plan: `創業計畫書_${c.org.replace(/（.*）/, '')}.pdf`, budget: '經費預算表.xlsx', id: '身分證明文件.pdf',
+    residency: '戶籍謄本.pdf', registration: '商業登記事項卡.pdf', tax: '無欠稅證明.pdf', pledge: '切結書（親簽）.pdf',
+  };
+  const fileSize = (key, i) => {
+    const kb = key === 'plan' ? 1800 + (serial * 37) % 3200 : key === 'form' ? 96 + serial % 40 : 140 + (serial * (i + 7) * 13) % 860;
+    return kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB';
+  };
+  // 形式審查中：承辦逐項勾選檢核；初始已勾的數量依案號固定，模擬「審到一半」
+  const checks = new Set(c.status === 'formal' ? DATA.docs.slice(1, 2 + serial % 4).map((d) => d.key) : []);
+  function docState(key) {
+    if (key === 'registration' && PREP) return 'exempt';
+    if (c.status === 'supplement') {
+      const miss = c.missing.find((m) => m.doc === key);
+      if (miss) return c.uploaded.includes(key) ? 'review' : 'missing';
+    }
+    if (c.status === 'received') return key === 'form' ? 'ok' : 'pending';
+    if (c.status === 'formal') return key === 'form' || checks.has(key) ? 'ok' : 'pending';
+    return 'ok';
+  }
+  const docsReady = () => DATA.docs.every((d) => ['ok', 'exempt'].includes(docState(d.key)));
+  const STATE_BADGE = {
+    ok: '<span class="badge badge--ok">齊備</span>',
+    pending: '<span class="badge">待檢核</span>',
+    review: '<span class="badge badge--info">補件待檢核</span>',
+    missing: '<span class="badge badge--serious">待補件</span>',
+    exempt: '<span class="tag">免附</span>',
+  };
+  function renderDocs(flash) {
+    const officer = App.role !== 'reviewer';
+    const required = DATA.docs.filter((d) => docState(d.key) !== 'exempt');
+    const done = required.filter((d) => docState(d.key) === 'ok').length;
+    $('#docsSub').innerHTML = `應備 ${required.length} 項 · 齊備 <b class="strong num">${done}</b>`;
+    $('#docList').innerHTML = DATA.docs.map((d, i) => {
+      const st = docState(d.key);
+      const miss = (c.missing || []).find((m) => m.doc === d.key);
+      const ext = FILES[d.key].endsWith('.xlsx') ? 'XLSX' : 'PDF';
+      let sub;
+      if (st === 'missing') sub = `<span class="cs-doc__note">${esc(miss.note)}</span>`;
+      else if (st === 'exempt') sub = `<span>${d.note}</span>`;
+      else if (st === 'review') sub = `<span class="cs-doc__name truncate">${FILES[d.key]}</span><span class="dot-sep">補件上傳 · ${esc(miss.note)}</span>`;
+      else sub = `<span class="cs-doc__name truncate">${FILES[d.key]}</span><span class="dot-sep">${fileSize(d.key, i)}</span><span class="dot-sep hide-sm">${fmt.date(c.submitted)} 上傳</span>`;
+      let tools = '';
+      if (c.status === 'formal' && st !== 'exempt' && d.key !== 'form') {
+        tools += `<label class="check"><input type="checkbox" data-act="check" data-doc="${d.key}"${checks.has(d.key) ? ' checked' : ''}${officer ? '' : ' disabled'}>已檢核</label>`;
+      }
+      if (st === 'review' && officer) tools += `<button class="btn btn--ok btn--sm" type="button" data-act="accept" data-doc="${d.key}">通過</button><button class="btn btn--sm" type="button" data-act="return" data-doc="${d.key}">退回</button>`;
+      if (st === 'missing' && officer) tools += `<button class="btn btn--sm" type="button" data-act="nudge-doc" data-doc="${d.key}">${icon('bell', 'i--sm')}催補</button>`;
+      // 有檢核控制項時，手機版才需要獨立一行；只有預覽 / 下載時改由點整列開啟預覽
+      const hasCtl = !!tools;
+      if (st !== 'missing' && st !== 'exempt') {
+        tools += `<button class="icon-btn icon-btn--sm" type="button" data-act="preview" data-doc="${d.key}" aria-label="預覽 ${d.label}" data-tip="預覽 ↵" data-tip-pos="left">${icon('eye')}</button>`
+          + `<button class="icon-btn icon-btn--sm hide-sm" type="button" data-act="download" data-doc="${d.key}" aria-label="下載 ${d.label}" data-tip="下載" data-tip-pos="left">${icon('download')}</button>`;
+      }
+      return `<li class="row cs-doc${flash === d.key ? ' is-flash' : ''}" data-nav-item data-doc="${d.key}" data-state="${st}" data-ext="${ext}">
+        <span class="cs-doc__icon" aria-hidden="true">${st === 'missing' ? '' : ext}</span>
+        <div class="row__main"><span class="row__title">${d.label}${d.required ? '' : '<span class="tag">選附</span>'}</span><span class="row__sub">${sub}</span></div>
+        <span class="cs-doc__state">${STATE_BADGE[st]}</span>
+        <span class="cs-doc__tools${hasCtl ? ' has-ctl' : ''}">${tools}</span>
+      </li>`;
+    }).join('');
+    if (docNav.index >= 0) docNav.setIndex(docNav.index, { scroll: false, silent: true });
+
+    let foot = '';
+    if (c.status === 'formal') {
+      foot = docsReady()
+        ? `<div class="callout callout--ok">${icon('check-circle')}<div><b>應備文件已全數檢核</b>，可通過形式審查並指派審查委員。</div><button class="btn btn--sm btn--primary" type="button" data-run="pass">通過形式審查</button></div>`
+        : `<div class="callout">${icon('info')}<div>尚有 <b>${required.length - done}</b> 項文件待檢核；全部勾選後即可通過形式審查。</div></div>`;
+    } else if (c.status === 'supplement') {
+      const left = c.missing.length;
+      foot = left
+        ? `<div class="callout callout--warn">${icon('clock')}<div>補件期限 <b>${fmt.dateTime(c.sla.due)}</b>，尚有 <b>${left}</b> 項待補或待檢核。逾期未補正將依規定退件。</div></div>`
+        : `<div class="callout callout--ok">${icon('check-circle')}<div><b>補件已全數通過檢核</b>，可回到形式審查。</div><button class="btn btn--sm btn--primary" type="button" data-run="suppDone">補件完成</button></div>`;
+    }
+    $('#docsFoot').innerHTML = foot;
+    $('#docsFoot').hidden = !foot;
+  }
+  function toggleCheck(key, on) {
+    if (c.status !== 'formal') { App.toast('目前階段不需逐項檢核', { tone: 'info', desc: `案件狀態：${STATUS[c.status].label}` }); return; }
+    if (App.role === 'reviewer') { App.toast('審查委員沒有文件檢核權限', { tone: 'warn' }); return; }
+    if (key === 'form' || docState(key) === 'exempt') return;
+    const next = on ?? !checks.has(key);
+    if (next) checks.add(key); else checks.delete(key);
+    renderDocs(next ? key : null);
+    renderActions();
+    if (next && docsReady()) App.toast('應備文件已全數檢核', { desc: '可通過形式審查，進入實質審查', tone: 'success' });
+  }
+  function reviewDoc(key, accept) {
+    const before = { missing: c.missing.map((m) => ({ ...m })), uploaded: [...c.uploaded] };
+    const me = App.persona().id;
+    const entry = { at: Math.round(App.now()), who: me, case: c.id, type: 'supplement', text: `${accept ? '補件檢核通過' : '退回補件'}「${docLabel(key)}」` };
+    if (accept) c.missing = c.missing.filter((m) => m.doc !== key);
+    else {
+      c.uploaded = c.uploaded.filter((k) => k !== key);
+      c.missing.find((m) => m.doc === key).note = '補件內容不符，已退回請申請人重新上傳';
+    }
+    DATA.activity.unshift(entry);
+    changed();
+    App.toast(accept ? `已通過「${docLabel(key)}」` : `已退回「${docLabel(key)}」`, {
+      desc: accept ? (c.missing.length ? `尚有 ${c.missing.length} 項補件` : '補件已全數齊備，可按「補件完成」') : `已通知 ${c.applicant} 重新上傳`,
+      tone: accept ? 'success' : 'info',
+      action: { label: '復原', onClick: () => { Object.assign(c, before); DATA.activity.splice(DATA.activity.indexOf(entry), 1); changed(); } },
+    });
+  }
+  function previewDoc(key) {
+    const d = DATA.docs.find((x) => x.key === key);
+    const st = docState(key);
+    if (st === 'missing' || st === 'exempt') {
+      App.toast(st === 'missing' ? `「${d.label}」尚未上傳` : `「${d.label}」免附`, { tone: 'info', desc: st === 'missing' ? `補件期限 ${fmt.date(c.sla.due)}` : d.note });
+      return;
+    }
+    App.modal({
+      title: d.label, icon: 'file', size: 'lg', note: `${FILES[key]} · ${fileSize(key, DATA.docs.indexOf(d))}`,
+      body: paperHtml(d),
+      actions: [
+        { label: '下載', variant: 'ghost', onClick: (close) => { close(); downloadDoc(key); } },
+        { label: '關閉', variant: 'primary', autofocus: true },
+      ],
+    });
+  }
+  function downloadDoc(key) {
+    App.toast('已加入下載', { desc: FILES[key], tone: 'info' });
+  }
+  // 預覽用的文件頁面：內容取自案件資料，讓預覽像真的文件
+  function paperHtml(d) {
+    const head = `<div class="cs-paper__org">澄港市青年創業補助計畫 · ${DATA.program.period}</div><h3>${d.label}</h3>
+      <div class="cs-paper__meta">${c.id} · 申請人 ${esc(c.applicant)} · ${esc(c.org)}</div>
+      <div class="cs-paper__stamp"><span>青年事務局</span><b>${fmt.date(c.submitted)}</b><span>收件</span></div>`;
+    const lines = (n) => Array.from({ length: n }, (_, i) => `<div class="cs-paper__line" style="width:${[96, 88, 92, 74, 85, 60][i % 6]}%"></div>`).join('');
+    let body;
+    if (d.key === 'budget') {
+      const split = [['人事費', .38], ['設備費', .24], ['原物料', .16], ['行銷推廣', .12], ['租金', .1]];
+      let used = 0;
+      const rows = split.map(([k, f], i) => {
+        const v = i === split.length - 1 ? c.total - used : Math.round(c.total * f / 1000) * 1000;
+        used += v;
+        return `<tr><td>${k}</td><td class="num">${fmt.num(v)}</td></tr>`;
+      }).join('');
+      body = `<h4>一、經費編列（新臺幣元）</h4><table><thead><tr><th>科目</th><th class="num">金額</th></tr></thead><tbody>${rows}</tbody>
+        <tfoot><tr><td>合計</td><td class="num">${fmt.num(c.total)}</td></tr><tr><td>申請補助款</td><td class="num">${fmt.num(c.request)}</td></tr><tr><td>自籌款</td><td class="num">${fmt.num(c.total - c.request)}</td></tr></tfoot></table>`;
+    } else if (d.key === 'plan' || d.key === 'form') {
+      body = `<h4>一、計畫摘要</h4><p>${esc(c.summary)}</p><h4>二、市場分析與營運模式</h4>${lines(4)}<h4>三、預期效益</h4><p>預計新增 ${c.jobs} 個就業機會，營運地點位於澄港市${c.district}。</p>${lines(3)}`;
+    } else {
+      body = `<h4>文件內容</h4>${lines(6)}<h4>備註</h4>${lines(2)}`;
+    }
+    return `<div class="cs-paper">${head}${body}</div>`;
+  }
+
+  /* ---------------- 活動時間軸 ---------------- */
+  let tlFilter = 'all';
+  const seenKeys = new Set();
+  const evKey = (e) => `${e.type}|${e.at}|${e.who}`;
+  const TL_ICON = { comment: 'comment', status: 'swap', supplement: 'paperclip', received: 'inbox', assign: 'users', score: 'gauge' };
+  const TL_FILTER = { flow: ['status', 'received', 'assign'], score: ['score'], comment: ['comment'], supplement: ['supplement'] };
+  function whoHtml(e) {
+    if (e.who === 'system') return '<b>系統</b>';
+    if (e.who === 'applicant') return `<b>${esc(c.applicant)}</b><span class="tag">申請人</span>`;
+    return `<b>${nameOf(e.who)}</b>`;
+  }
+  function tlTime(at) {
+    return App.now() - at < 7 * DAY ? fmt.rel(at) : fmt.dateTime(at);
+  }
+  function renderTimeline() {
+    const all = events();
+    const shown = all.filter((e) => tlFilter === 'all' || TL_FILTER[tlFilter].includes(e.type));
+    // 「新進」以全部事件判斷，切換篩選時不會把舊紀錄誤當成新的
+    const first = !seenKeys.size;
+    const fresh = new Set(all.map(evKey).filter((k) => !seenKeys.has(k)));
+    fresh.forEach((k) => seenKeys.add(k));
+    let lastDay = '';
+    const html = shown.map((e) => {
+      const isNew = !first && fresh.has(evKey(e));
+      const tc = e.type === 'status' ? `var(--st-${e.to})` : e.type === 'score' ? 'var(--accent-text)' : e.type === 'supplement' ? 'var(--st-supplement)' : '';
+      let head, body = '';
+      if (e.type === 'comment') { head = `${whoHtml(e)} 留言`; body = `<div class="comment">${esc(e.text)}</div>`; }
+      else if (e.type === 'status') {
+        head = `${whoHtml(e)} ${esc(e.text)}`;
+        body = `<div class="status-change">${App.statusChip(e.from, { pill: true })}${icon('arrow-right')}${App.statusChip(e.to, { pill: true })}</div>${e.body ? `<div class="comment">${esc(e.body)}</div>` : ''}`;
+      } else if (e.type === 'score') {
+        const s = App.score(c, e.who);
+        head = `${whoHtml(e)} 提交評分 <span class="cs-tl-score">${s && !(isBlind() && e.who !== App.persona().id) ? s.total + ' 分' : ''}</span>`;
+        if (s && !(isBlind() && e.who !== App.persona().id)) body = `<div class="comment">${esc(s.note)}</div>`;
+      } else head = `${whoHtml(e)} ${esc(e.text)}`;
+      const day = dayKey(e.at);
+      const sep = day !== lastDay ? `<div class="cs-day">${fmt.dateLong(e.at)}</div>` : '';
+      lastDay = day;
+      return `${sep}<div class="tl-item${isNew ? ' is-new' : ''}">
+        <span class="tl-item__dot" style="${tc ? `--tc:${tc}` : ''}">${icon(TL_ICON[e.type])}</span>
+        <div class="tl-item__body"><div class="tl-item__head">${head}<span class="tl-item__time" title="${fmt.dateLong(e.at)} ${fmt.time(e.at)}">${tlTime(e.at)}</span></div>${body}</div>
+      </div>`;
+    }).join('');
+    $('#timeline').innerHTML = html || App.emptyState({ art: 'search', title: '這個分類沒有紀錄', text: '切換到「全部」查看完整歷程。' });
+    $$('#tlFilter button').forEach((b) => {
+      const k = b.dataset.filter;
+      const n = k === 'all' ? all.length : all.filter((e) => TL_FILTER[k].includes(e.type)).length;
+      b.setAttribute('aria-label', `${b.textContent.replace(/\s\d+$/, '')}（${n} 筆）`);
+    });
+  }
+  $('#tlFilter').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-filter]');
+    if (!b) return;
+    tlFilter = b.dataset.filter;
+    $$('#tlFilter button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    renderTimeline();
+  });
+
+  /* 留言 */
+  const composer = $('#composer'), commentInput = $('#commentInput');
+  function sendComment() {
+    const text = commentInput.value.trim();
+    if (!text) { composer.classList.add('is-invalid'); commentInput.focus(); return; }
+    composer.classList.remove('is-invalid');
+    const me = App.persona();
+    const entry = { at: Math.round(App.now()), who: me.id, case: c.id, type: 'comment', text };
+    DATA.activity.unshift(entry);
+    commentInput.value = '';
+    renderTimeline();
+    const notify = [c.owner, ...c.reviewers].filter((id) => id && id !== me.id).map(nameOf);
+    App.toast('已送出留言', {
+      desc: notify.length ? `已通知 ${notify.join('、')}` : '已加入案件時間軸', tone: 'success',
+      action: { label: '復原', onClick: () => { DATA.activity.splice(DATA.activity.indexOf(entry), 1); commentInput.value = text; renderTimeline(); } },
+    });
+  }
+  composer.addEventListener('submit', (e) => { e.preventDefault(); sendComment(); });
+  commentInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendComment(); }
+  });
+  commentInput.addEventListener('input', () => { if (commentInput.value.trim()) composer.classList.remove('is-invalid'); });
+
+  /* ---------------- 狀態流轉動作 ---------------- */
+  const isOfficer = () => App.role !== 'reviewer';
+  const isChief = () => App.role === 'chief';
+  const NO_ROLE = '審查委員只能評分與留言，無法變更案件狀態';
+  // 每個動作：能不能做（ok/why）與誰能做（role/roleWhy）分開判斷，按鈕不適用時保留位置並說明原因
+  function actionDefs() {
+    const s = c.status;
+    const both = c.reviewers.length === 2 && c.reviewers.every((r) => App.score(c, r));
+    const defs = {
+      receive: { label: '收件並開始審查', icon: 'inbox', to: 'formal', show: s === 'received', ok: true, role: isOfficer(), roleWhy: NO_ROLE },
+      pass: { label: '通過形式審查', icon: 'check', to: 'substantive', show: s === 'formal', ok: docsReady(), why: '尚有應備文件未檢核', role: isOfficer(), roleWhy: NO_ROLE },
+      suppDone: { label: '補件完成', icon: 'check', to: 'formal', show: s === 'supplement', ok: s === 'supplement' && !c.missing.length, why: '補件尚未全數通過檢核', role: isOfficer(), roleWhy: NO_ROLE },
+      disburse: { label: '撥款完成', icon: 'coin', to: 'disbursed', show: s === 'approved', ok: true, role: isOfficer(), roleWhy: NO_ROLE },
+      supplement: { label: '退件補正', icon: 'undo', key: 'R', fixed: true, ok: ['formal', 'substantive', 'committee'].includes(s),
+        why: s === 'supplement' ? '本案已在補件中' : s === 'received' ? '請先收件再要求補正' : '本案已結束審查', role: isOfficer(), roleWhy: NO_ROLE },
+      committee: { label: '送委員會', icon: 'scale', key: 'M', fixed: true, ok: s === 'substantive' && both,
+        why: s === 'substantive' ? '兩位委員都提交評分後才能送委員會' : s === 'committee' ? `已排入第 ${DATA.committee.no} 次審議委員會` : ['approved', 'disbursed'].includes(s) ? '本案已完成審議' : '需先完成實質審查',
+        role: isOfficer(), roleWhy: NO_ROLE },
+      approve: { label: '核定', icon: 'check-circle', key: 'A', fixed: true, ok: s === 'committee',
+        why: ['approved', 'disbursed'].includes(s) ? '本案已核定' : s === 'rejected' ? '本案已退件結案' : '需經審議委員會決議後才能核定', role: isChief(), roleWhy: '僅主管可核定補助，請切換為主管角色' },
+      reject: { label: s === 'committee' ? '不予補助' : '退件結案', icon: 'x', ok: ['received', 'formal', 'supplement', 'substantive', 'committee'].includes(s),
+        why: '本案已結案', role: s === 'committee' ? isChief() : isOfficer(), roleWhy: s === 'committee' ? '委員會決議不予補助需由主管執行' : NO_ROLE },
+    };
+    return defs;
+  }
+  const NEXT_STEP = {
+    received: '收件並分派承辦', formal: '逐項檢核應備文件', supplement: '等待申請人補件並檢核',
+    substantive: '等待兩位委員評分', committee: `第 ${DATA.committee.no} 次審議委員會決議`, approved: '辦理撥款', disbursed: '已結案', rejected: '已結案',
+  };
+  function renderActions(morphFrom) {
+    const d = actionDefs();
+    const primaryId = Object.keys(d).find((k) => d[k].show);
+    const hint = c.status === 'substantive' && d.committee.ok ? '送委員會' : NEXT_STEP[c.status];
+    $('#actionState').innerHTML = `<span data-live-status>${App.statusChip(morphFrom || c.status, { pill: true })}</span>
+      <span class="cs-actionbar__next">下一步：<b>${hint}</b><span class="muted"> · 目前角色 ${App.ROLES[App.role].label}</span></span>`;
+    // 不可用的按鈕包一層承載 tooltip：按鈕本身半透明，tooltip 放在外層才不會跟著變淡
+    const btn = (id, variant) => {
+      const a = d[id];
+      const off = !a.ok || !a.role;
+      const b = `<button class="btn ${variant ? 'btn--' + variant : ''}" type="button" data-run="${id}"${off ? ' aria-disabled="true"' : ''}>${icon(a.icon, 'i--sm')}${a.label}${a.key ? ` <kbd class="kbd">${a.key}</kbd>` : ''}</button>`;
+      return off ? `<span class="cs-tipwrap" data-tip="${esc(!a.role ? a.roleWhy : a.why)}" data-tip-pos="left">${b}</span>` : b;
+    };
+    const fixedVariant = { supplement: '', committee: c.status === 'substantive' ? 'primary' : '', approve: c.status === 'committee' ? 'ok' : '' };
+    $('#actionBtns').innerHTML = (primaryId ? btn(primaryId, 'primary') + '<span class="cs-actionbar__sep"></span>' : '')
+      + ['supplement', 'committee', 'approve'].map((id) => btn(id, fixedVariant[id])).join('');
+  }
+
+  async function runAction(id) {
+    const a = actionDefs()[id];
+    if (!a.role) { App.toast(`無法${a.label}`, { tone: 'warn', desc: a.roleWhy }); return; }
+    if (!a.ok) { App.toast(`無法${a.label}`, { tone: 'warn', desc: a.why }); return; }
+    FLOWS[id](a);
+  }
+  // 流轉後補寫的欄位（核定金額、補件項目）在 transition 之後設定，undo 會隨 snapshot 一併還原
+  function commit(to, note, { after, title, desc } = {}) {
+    const tr = App.transition(c, to, { note });
+    if (after) after();
+    App.toast(title || `${c.id} 已移至「${STATUS[to].label}」`, {
+      desc: desc || c.title, tone: 'success',
+      action: { label: '復原', onClick: () => { tr.undo(); App.toast(`已復原 ${c.id}`, { tone: 'info', desc: `回到「${STATUS[c.status].label}」` }); } },
+    });
+  }
+  const FLOWS = {
+    receive: async () => {
+      const ok = await App.confirm({ title: `收件 ${c.id}？`, message: `<p>將由 <b>${App.role === 'officer' ? App.persona().name : '林語彤'}</b> 承辦，開始 7 個工作天的形式審查。</p>`, confirmLabel: '收件' });
+      if (ok) commit('formal', `收件並分派承辦 ${App.role === 'officer' ? App.persona().name : '林語彤'}`);
+    },
+    pass: async () => {
+      const ok = await App.confirm({ title: '通過形式審查？', message: '<p>應備文件已全數檢核完成，案件將進入實質審查，期限 14 天。</p><p>接下來請指派 2 位審查委員。</p>', confirmLabel: '通過' });
+      if (ok) commit('substantive', '通過形式審查，進入實質審查', { desc: '請在「承辦與審查」指派 2 位審查委員' });
+    },
+    suppDone: async () => {
+      const ok = await App.confirm({ title: '補件完成，回到形式審查？', message: '<p>補件已全數通過檢核，案件會回到形式審查並重新計算 7 個工作天。</p>', confirmLabel: '補件完成' });
+      if (ok) commit('formal', '補件檢核通過，回到形式審查', { after: () => { DATA.docs.forEach((d) => checks.add(d.key)); } });
+    },
+    disburse: async () => {
+      const ok = await App.confirm({ title: `確認 ${c.id} 已撥款？`, message: `<p>撥付核定金額 <b class="num">${fmt.money(c.granted)}</b> 至申請人帳戶，案件將結案。</p>`, confirmLabel: '撥款完成', tone: 'ok' });
+      if (ok) commit('disbursed', `撥款完成 ${fmt.money(c.granted)}`, { desc: `已通知 ${c.applicant}` });
+    },
+    committee: async () => {
+      const gap = App.scoreGap(c), avg = App.avgScore(c);
+      const ok = await App.confirm({
+        title: `將 ${c.id} 送審議委員會？`,
+        message: `<p>排入 <b>${DATA.committee.title}</b>（${fmt.dateLong(DATA.committee.at)} ${fmt.time(DATA.committee.at)}）。</p>
+          <dl class="kv cs-modal-kv"><dt>平均分數</dt><dd>${avg.toFixed(1)} 分（門檻 ${DATA.program.passScore}）</dd><dt>委員評分</dt><dd>${c.reviewers.map((r) => `${nameOf(r)} ${App.score(c, r).total}`).join('、')}</dd></dl>`
+          + (avg < DATA.program.passScore ? `<div class="callout callout--danger">${icon('alert')}<div>平均未達 ${DATA.program.passScore} 分門檻，依規定應不予補助；確定仍要提送委員會？</div></div>` : '')
+          + (gap > DATA.program.gapAlert ? `<div class="callout callout--warn">${icon('alert')}<div>兩位委員評分差 <b>${gap} 分</b>，提案單會自動註記差異。</div></div>` : ''),
+        confirmLabel: '送委員會',
+      });
+      if (ok) commit('committee', `排入第 ${DATA.committee.no} 次審議委員會`);
+    },
+    supplement: () => {
+      const options = DATA.docs.filter((d) => d.key !== 'form' && !(d.key === 'registration' && PREP));
+      const body = document.createElement('form');
+      body.className = 'cs-form';
+      body.noValidate = true;
+      body.innerHTML = `<p>案件會轉為「補件中」，申請人有 14 天補正期限，屆滿未補正依規定退件。</p>
+        <div class="field" id="suppDocsField"><span class="label">需補正的文件 <span class="req">*</span></span>
+          <div class="cs-checklist">${options.map((d) => `<label class="check"><input type="checkbox" value="${d.key}">${d.label}<small>${d.required ? '必附' : '選附'}</small></label>`).join('')}</div>
+          <span class="field__error">${icon('alert', 'i--sm')}請至少勾選 1 項需補正的文件</span></div>
+        <div class="field" id="suppNoteField"><label class="label" for="suppNote">補正說明 <span class="req">*</span></label>
+          <textarea class="textarea" id="suppNote" rows="3" placeholder="例如：請補附團膳成本試算表，並說明第二年報價調整方式"></textarea>
+          <span class="field__error">${icon('alert', 'i--sm')}請填寫補正說明，至少 8 字</span></div>`;
+      App.modal({
+        title: `退件補正 · ${c.id}`, icon: 'undo', tone: 'warn', body, note: `補正期限 ${fmt.date(Math.round(App.now()) + 14 * DAY)} 23:59`,
+        actions: [
+          { label: '取消', variant: 'ghost' },
+          { label: '送出補正通知', variant: 'primary', onClick: (close) => {
+            const picked = $$('input:checked', body).map((i) => i.value);
+            const note = $('#suppNote', body).value.trim();
+            $('#suppDocsField', body).classList.toggle('is-invalid', !picked.length);
+            $('#suppNoteField', body).classList.toggle('is-invalid', note.length < 8);
+            if (!picked.length || note.length < 8) return;
+            close();
+            commit('supplement', `要求補件：${picked.map(docLabel).join('、')}`, {
+              after: () => { c.missing = picked.map((doc) => ({ doc, note })); c.uploaded = []; },
+              desc: `已通知 ${c.applicant}，期限 ${fmt.date(Math.round(App.now()) + 14 * DAY)}`,
+            });
+          } },
+        ],
+      });
+      body.addEventListener('change', (e) => { if (e.target.checked) $('#suppDocsField', body).classList.remove('is-invalid'); });
+    },
+    approve: () => {
+      const tier = DATA.program.tiers[c.tier];
+      const gap = App.scoreGap(c);
+      const cap = Math.min(c.request, tier.max);
+      const body = document.createElement('form');
+      body.className = 'cs-form';
+      body.noValidate = true;
+      body.innerHTML = `<p>記錄為${DATA.committee.title}決議<b>核定補助</b>，並通知承辦於 20 天內辦理撥款。</p>
+        <dl class="kv cs-modal-kv"><dt>申請人</dt><dd>${esc(c.applicant)} · ${esc(c.org)}</dd><dt>平均分數</dt><dd>${App.avgScore(c).toFixed(1)} 分</dd><dt>申請補助</dt><dd class="num">${fmt.money(c.request)}</dd></dl>
+        <div class="field" id="grantField"><label class="label" for="grantAmt">核定金額 <span class="req">*</span></label>
+          <div class="input-group"><span class="input-group__addon">NT$</span><input class="input input--num" id="grantAmt" type="text" inputmode="numeric" value="${fmt.num(cap)}" autocomplete="off"></div>
+          <span class="hint">可依委員會決議核減，上限 ${fmt.money(cap)}</span>
+          <span class="field__error">${icon('alert', 'i--sm')}<span id="grantErr">請輸入金額</span></span></div>
+        ${gap > DATA.program.gapAlert ? `<div class="field" id="gapField"><div class="callout callout--warn">${icon('alert')}<div>兩位委員評分差 <b>${gap} 分</b>（${c.reviewers.map((r) => `${nameOf(r)} ${App.score(c, r).total}`).join('、')}）。</div></div>
+          <label class="check"><input type="checkbox" id="gapAck">已於委員會中討論評分差異，並記錄於會議紀錄</label>
+          <span class="field__error">${icon('alert', 'i--sm')}評分差異過大的案件需確認已討論</span></div>` : ''}`;
+      App.modal({
+        title: `核定 ${c.id}`, icon: 'check-circle', tone: 'ok', body, note: '核定後將通知承辦辦理撥款',
+        actions: [
+          { label: '取消', variant: 'ghost' },
+          { label: '確認核定', variant: 'ok', onClick: (close) => {
+            const amt = Number($('#grantAmt', body).value.replace(/[^\d]/g, ''));
+            let err = '';
+            if (!amt) err = '請輸入核定金額';
+            else if (amt > cap) err = `不可超過 ${fmt.money(cap)}`;
+            else if (amt < 10000) err = '核定金額至少 NT$ 10,000';
+            $('#grantField', body).classList.toggle('is-invalid', !!err);
+            $('#grantErr', body).textContent = err;
+            const ack = $('#gapAck', body);
+            if (ack) $('#gapField', body).classList.toggle('is-invalid', !ack.checked);
+            if (err || (ack && !ack.checked)) return;
+            close();
+            commit('approved', `核定補助 ${fmt.money(amt)}（${DATA.committee.title}決議）`, {
+              after: () => { c.granted = amt; },
+              title: `${c.id} 已核定 ${fmt.money(amt)}`, desc: '已通知承辦於 20 天內辦理撥款',
+            });
+          } },
+        ],
+      });
+      $('#grantAmt', body).addEventListener('blur', (e) => { const n = Number(e.target.value.replace(/[^\d]/g, '')); if (n) e.target.value = fmt.num(n); });
+    },
+    reject: (a) => {
+      const reasons = c.status === 'committee'
+        ? ['審議委員會決議：市場區隔不足', '審議委員會決議：財務規劃不可行', '審議委員會決議：在地效益不足']
+        : ['資格不符：年齡、設籍或設立年限不符', '屬本計畫排除業別', '逾期未補正', '申請人撤案'];
+      const body = document.createElement('form');
+      body.className = 'cs-form';
+      body.noValidate = true;
+      body.innerHTML = `<p>退件後案件結案，申請人 3 年內仍可重新申請。此動作會發出正式通知函。</p>
+        <div class="field"><label class="label" for="rejReason">退件理由</label><select class="select" id="rejReason">${reasons.map((r) => `<option>${r}</option>`).join('')}</select></div>
+        <div class="field"><label class="label" for="rejNote">補充說明</label><textarea class="textarea" id="rejNote" rows="2" placeholder="會寫入通知函，可留空"></textarea></div>`;
+      App.modal({
+        title: `${a.label} · ${c.id}`, icon: 'alert', tone: 'danger', body,
+        actions: [
+          { label: '取消', variant: 'ghost' },
+          { label: `確認${a.label}`, variant: 'danger', onClick: (close) => {
+            const note = $('#rejNote', body).value.trim();
+            close();
+            commit('rejected', `${$('#rejReason', body).value}${note ? '：' + note : ''}`, { title: `${c.id} 已${a.label}`, desc: `已發送通知函給 ${c.applicant}` });
+          } },
+        ],
+      });
+    },
+  };
+
+  /* ---------------- 其他動作 ---------------- */
+  function copyId() {
+    if (!navigator.clipboard) { App.toast('瀏覽器不支援剪貼簿', { tone: 'warn', desc: `案號：${c.id}` }); return; }
+    navigator.clipboard.writeText(c.id).then(
+      () => App.toast(`已複製 ${c.id}`, { tone: 'success' }),
+      () => App.toast('無法存取剪貼簿', { tone: 'warn', desc: `請手動複製案號：${c.id}` }),
+    );
+  }
+  function reassign(anchor) {
+    if (App.role === 'reviewer') { App.toast('審查委員無法改派承辦', { tone: 'warn' }); return; }
+    App.pickPerson(anchor, {
+      role: 'officer', current: c.owner,
+      onPick: (p) => {
+        if (p.id === c.owner) return;
+        const prev = c.owner;
+        const entry = { at: Math.round(App.now()), who: App.persona().id, case: c.id, type: 'assign', text: `改派承辦 ${p.name}` };
+        c.owner = p.id;
+        DATA.activity.unshift(entry);
+        changed();
+        App.toast(`已改派給 ${p.name}`, { tone: 'success', desc: c.title, action: { label: '復原', onClick: () => { c.owner = prev; DATA.activity.splice(DATA.activity.indexOf(entry), 1); changed(); } } });
+      },
+    });
+  }
+  function swapReviewer(anchor, rid) {
+    App.pickPerson(anchor, {
+      role: 'reviewer', current: c.reviewers, title: `更換審查委員（取代 ${nameOf(rid)}）`,
+      onPick: (p) => {
+        if (c.reviewers.includes(p.id)) { App.toast(`${p.name} 已是本案委員`, { tone: 'info' }); return; }
+        const before = [...c.reviewers];
+        const entry = { at: Math.round(App.now()), who: App.persona().id, case: c.id, type: 'assign', text: `改派審查委員：${nameOf(rid)} → ${p.name}` };
+        c.reviewers = c.reviewers.map((r) => r === rid ? p.id : r);
+        DATA.activity.unshift(entry);
+        changed();
+        App.toast(`已改由 ${p.name} 審查`, { tone: 'success', desc: '系統已寄送評分邀請', action: { label: '復原', onClick: () => { c.reviewers = before; DATA.activity.splice(DATA.activity.indexOf(entry), 1); changed(); } } });
+      },
+    });
+  }
+  function moreMenu(anchor) {
+    const d = actionDefs();
+    App.menu(anchor, {
+      title: '案件動作', align: 'end',
+      items: [
+        { label: '複製案號', sub: c.id, icon: COPY_ICON, value: 'copy' },
+        { label: c.owner ? '改派承辦' : '指派承辦', sub: c.owner ? `目前：${nameOf(c.owner)}` : '尚未分派', icon: icon('users'), value: 'reassign' },
+        { label: '在佇列中檢視同狀態案件', sub: STATUS[c.status].label, icon: icon('queue'), value: 'queue' },
+        'sep',
+        { label: d.reject.label, sub: d.reject.ok ? (d.reject.role ? '結案並發送通知函' : d.reject.roleWhy) : d.reject.why, icon: icon('x'), danger: true, value: 'reject' },
+      ],
+      onSelect: (it) => {
+        if (it.value === 'copy') copyId();
+        else if (it.value === 'reassign') reassign(anchor);
+        else if (it.value === 'queue') location.href = `queue.html#status=${c.status}`;
+        else if (it.value === 'reject') runAction('reject');
+      },
+    });
+  }
+
+  // 頁面上所有 data-act / data-run 按鈕統一在這裡分派
+  document.addEventListener('click', (e) => {
+    const run = e.target.closest('[data-run]');
+    if (run && $('#main').contains(run)) { runAction(run.dataset.run); return; }
+    const el = e.target.closest('[data-act]');
+    if (!el || !$('#main').contains(el)) return;
+    const act = el.dataset.act;
+    if (act === 'copy-id') copyId();
+    else if (act === 'more') moreMenu(el);
+    else if (act === 'reassign') reassign(el);
+    else if (act === 'swap') swapReviewer(el, el.dataset.rid);
+    else if (act === 'nudge') App.toast('已提醒評分', { tone: 'success', desc: `已寄送提醒給 ${c.reviewers.filter((r) => !App.score(c, r)).map(nameOf).join('、')}，期限 ${fmt.date(c.sla.due)}` });
+    else if (act === 'preview') previewDoc(el.dataset.doc);
+    else if (act === 'download') downloadDoc(el.dataset.doc);
+    else if (act === 'accept') reviewDoc(el.dataset.doc, true);
+    else if (act === 'return') reviewDoc(el.dataset.doc, false);
+    else if (act === 'nudge-doc') App.toast('已傳送補件提醒', { tone: 'success', desc: `簡訊與 Email 已寄給 ${c.applicant}，期限 ${fmt.dateTime(c.sla.due)}` });
+  });
+  $('#docList').addEventListener('change', (e) => {
+    if (e.target.matches('[data-act="check"]')) toggleCheck(e.target.dataset.doc, e.target.checked);
+  });
+  // 點列上非控制項的區域也能預覽（與 Enter 一致）
+  $('#docList').addEventListener('click', (e) => {
+    const row = e.target.closest('.cs-doc');
+    if (!row || e.target.closest('button, a, label, input')) return;
+    docNav.setIndex(docNav.items().indexOf(row), { scroll: false, silent: true });
+    previewDoc(row.dataset.doc);
+  });
+  const docNav = App.listNav($('#docList'), {
+    item: '[data-nav-item]',
+    onOpen: (row) => previewDoc(row.dataset.doc),
+    onToggle: (row) => toggleCheck(row.dataset.doc),
+  });
+
+  /* ---------------- 全頁重繪與事件 ---------------- */
+  function renderAll(morphFrom) {
+    renderHead();
+    renderJourney(morphFrom);
+    renderSummary();
+    renderSla();
+    renderPeople();
+    renderMeeting();
+    renderMoney();
+    renderElig();
+    renderRubric();
+    renderDocs();
+    renderTimeline();
+    renderActions(morphFrom);
+    $('#composerAvatar').innerHTML = App.avatar(App.persona().id);
+    // 先用舊狀態畫出小點，再 morph 成新狀態
+    if (morphFrom) requestAnimationFrame(() => $$('[data-live-status]').forEach((el) => App.setStatus(el, c.status)));
+  }
+  document.addEventListener('app:case', (e) => {
+    if (e.detail.case !== c) return;
+    // transition 是同步發出事件；等呼叫端補寫完欄位（核定金額、補件項目）再重繪
+    queueMicrotask(() => renderAll(e.detail.from && e.detail.from !== c.status ? e.detail.from : undefined));
+  });
+  document.addEventListener('app:role', () => renderAll());
+  // SLA 大數字以「天 / 小時」為單位，每分鐘重算一次即可（秒數由 app.js 每秒更新）
+  setInterval(() => { if (!document.hidden) renderSla(); }, 60000);
+
+  /* ---------------- 快捷鍵與指令面板 ---------------- */
+  const list = DATA.cases, idx = list.indexOf(c);
+  const prevId = list[(idx - 1 + list.length) % list.length].id, nextId = list[(idx + 1) % list.length].id;
+  App.shortcut('r', () => runAction('supplement'), { desc: '退件補正', group: '案件動作' });
+  App.shortcut('m', () => runAction('committee'), { desc: '送委員會', group: '案件動作' });
+  App.shortcut('a', () => runAction('approve'), { desc: '核定', group: '案件動作' });
+  App.shortcut('c', () => { commentInput.focus(); commentInput.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); }, { desc: '新增留言', group: '案件動作' });
+  App.shortcut('[', () => { location.href = App.caseUrl(prevId); }, { desc: `上一件（${prevId}）`, group: '切換案件' });
+  App.shortcut(']', () => { location.href = App.caseUrl(nextId); }, { desc: `下一件（${nextId}）`, group: '切換案件' });
+  App.registerCommands([
+    { id: 'case-supp', label: '退件補正', sub: c.id, icon: icon('undo'), meta: App.kbd('R'), keywords: 'supplement return 補件 補正', run: () => runAction('supplement') },
+    { id: 'case-committee', label: '送審議委員會', sub: c.id, icon: icon('scale'), meta: App.kbd('M'), keywords: 'committee 委員會', run: () => runAction('committee') },
+    { id: 'case-approve', label: '核定補助', sub: c.id, icon: icon('check-circle'), meta: App.kbd('A'), keywords: 'approve 核定', run: () => runAction('approve') },
+    { id: 'case-comment', label: '新增留言', icon: icon('comment'), meta: App.kbd('C'), keywords: 'comment 留言', run: () => commentInput.focus() },
+    { id: 'case-rubric', label: '捲動到委員評分', icon: icon('gauge'), keywords: 'rubric score 評分', run: () => $('#rubric').scrollIntoView({ behavior: 'smooth' }) },
+    { id: 'case-copy', label: '複製案號', sub: c.id, icon: COPY_ICON, keywords: 'copy id 案號', run: copyId },
+    { id: 'case-prev', label: `上一件：${prevId}`, icon: icon('chevron-left'), meta: App.kbd('['), keywords: 'prev previous 上一件', run: () => { location.href = App.caseUrl(prevId); } },
+    { id: 'case-next', label: `下一件：${nextId}`, icon: icon('chevron-right'), meta: App.kbd(']'), keywords: 'next 下一件', run: () => { location.href = App.caseUrl(nextId); } },
+  ]);
+
+  /* ---------------- 初始化 ---------------- */
+  renderAll();
+  if (askedId && askedId !== c.id) App.toast(`找不到案件 ${askedId}`, { tone: 'warn', desc: `已改為顯示 ${c.id}` });
+  // 審查委員從待辦連到 #rubric：內容由 JS 產生，畫完再捲動一次並把焦點放到第一個評分滑桿
+  if (location.hash === '#rubric') {
+    requestAnimationFrame(() => {
+      $('#rubric').scrollIntoView({ block: 'start' });
+      $('#sc0')?.focus({ preventScroll: true });
+    });
+  }
+});
+</script>
+</body>
+</html>

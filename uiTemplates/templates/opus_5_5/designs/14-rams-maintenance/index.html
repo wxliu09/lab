@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>控制面板 — 澄港市路燈與公共設施維護工單系統</title>
+<meta name="description" content="澄港市路燈與公共設施維護工單系統控制面板：路燈在線率、故障通報、區域點陣地圖、工單狀態撥桿篩選、今日派工與平均修復時間錶頭。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 警報列 ---------- */
+  .alarm {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: var(--gap); padding: 12px 12px 12px 18px; border-radius: var(--r-lg);
+  }
+  .alarm__tag {
+    display: inline-flex; align-items: center; gap: 8px; flex: none;
+    font: 700 10.5px/1 var(--font-display); letter-spacing: .2em; color: #FF7A6F;
+  }
+  .alarm.is-clear .alarm__tag { color: var(--green); }
+  .alarm__msg { flex: 1; min-width: 0; font-size: var(--fs-14); color: var(--display-ink); }
+  .alarm__msg b { font-weight: 600; }
+  .alarm__msg .mono { color: #fff; }
+  .alarm__time { flex: none; font-size: var(--fs-12); color: var(--display-ink-2); font-variant-numeric: tabular-nums; }
+  .alarm .btn { position: relative; z-index: 3; }
+
+  /* ---------- A 列：儀表 ---------- */
+  .row-instruments > .module { display: flex; flex-direction: column; }
+  /* 三個儀表等高；A1 的顯示窗吃掉多出的高度，讓長條圖變高而不是留白 */
+  .online-display { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 14px; }
+  .online-display .bars { flex: 1; min-height: 46px; }
+  .online-display__top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .live-tag { display: inline-flex; align-items: center; gap: 7px; font: 600 10px/1 var(--font-display); letter-spacing: .18em; color: var(--display-ink-2); }
+  .online-display__main { display: flex; align-items: flex-end; gap: 10px; }
+  #seg-online { --seg-h: 86px; }
+  .online-display__unit { font: 600 30px/1 var(--font-display); color: var(--seg-on); margin-bottom: 6px; text-shadow: 0 0 10px rgba(255, 95, 0, .45); }
+  .online-display__delta { margin: 0 0 8px auto; text-align: right; font-size: var(--fs-12); color: var(--display-ink-2); line-height: 1.4; }
+  .online-display__delta b { display: block; font: 600 13px var(--font-display); color: var(--display-ink); font-variant-numeric: tabular-nums; }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 46px; padding-top: 4px; border-bottom: 1px solid var(--display-line); background: linear-gradient(var(--display-line) 1px, transparent 1px) 0 0 / 100% 25%; }
+  .bars i { flex: 1; height: var(--h); min-height: 2px; border-radius: 1px 1px 0 0; background: rgba(236, 234, 229, .26); transform-origin: 50% 100%; }
+  .bars i:last-child { background: var(--seg-on); box-shadow: 0 0 8px rgba(255, 95, 0, .55); }
+  .is-in .bars i { animation: bar-rise 700ms var(--ease-out) both; animation-delay: calc(var(--k) * 22ms + 200ms); }
+  .is-instant .bars i { animation: none; }
+  @keyframes bar-rise { from { transform: scaleY(0); } }
+  .bars-axis { display: flex; justify-content: space-between; margin-top: -4px; font: 600 9px/1 var(--font-display); letter-spacing: .12em; color: var(--display-ink-2); }
+  .online-readouts { --readout-pad: 16px; margin-top: 16px; }
+
+  .faults-display { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 16px 18px; }
+  .faults-display .display__label { display: block; margin-bottom: 10px; }
+  #seg-today { --seg-h: 68px; }
+  .faults-display__side { display: grid; gap: 6px; justify-items: end; margin-bottom: 4px; text-align: right; font-size: var(--fs-12); color: var(--display-ink-2); }
+  .faults-display__side b { font: 600 18px/1 var(--font-display); color: var(--display-ink); font-variant-numeric: tabular-nums; }
+  .src-list { margin-top: 12px; flex: 1; }
+  .src-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto 22px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-13); }
+  .src-list li:last-child { border-bottom: 0; }
+  .src-list .num { text-align: right; font-weight: 600; }
+  .src-list .meter i { width: 4px; height: 12px; }
+
+  .mttr-gauge .gauge { max-width: 420px; margin: 0 auto; }
+  .mttr-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; margin-top: 12px; }
+  .mttr-read { display: grid; gap: 8px; min-width: 0; }
+  .mttr-read__value { display: flex; align-items: flex-end; gap: 6px; }
+  .mttr-read .seg { --seg-h: 34px; }
+  .mttr-read__unit { font: 600 13px/1 var(--font-display); color: var(--ink-3); margin-bottom: 3px; }
+  .mttr-read p { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.5; }
+  .mttr-read p b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---------- B 列：地圖與撥桿 ---------- */
+  .row-map { align-items: stretch; }
+  .lg { width: 8px; height: 8px; border-radius: 50%; background: var(--lamp); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+  .lg--dark { background: #4C4A46; }
+  .lg--fault { background: #FF4B3E; }
+  .lg--pin { background: transparent; box-shadow: 0 0 0 1.5px #FF4B3E; width: 10px; height: 10px; }
+  .district-keys { margin-top: 14px; }
+  .district-keys .key { padding: 10px 4px 7px; }
+  .district-keys .key small { font-variant-numeric: tabular-nums; }
+  .map-readout { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+  .map-readout .readout + .readout { padding-left: 16px; border-left: 1px solid var(--line); }
+  .map-readout .readout__value { font-size: 20px; }
+  .map-readout__name small { display: block; margin-top: 4px; font: 600 9.5px/1 var(--font-display); letter-spacing: .16em; color: var(--ink-3); }
+
+  .bank { display: flex; flex-direction: column; }
+  .bank__rows { display: grid; }
+  .bank .lever-row { grid-template-columns: 10px minmax(0, 1fr) auto auto; }
+  .bank .lever-row .seg { --seg-h: 24px; }
+  .bank__types { margin-top: 14px; }
+  .bank__types .caps-label { margin-bottom: 8px; }
+  .bank__types .key { padding: 11px 8px 9px; }
+  .bank__types .key.is-prio { padding: 11px 4px 9px; }
+  .bank .module__foot { padding-top: 14px; }
+  /* 桌機是單欄，右欄群組不成立；961–1200 的兩欄排列才把它當成右欄 */
+  .bank__side { display: contents; }
+  .bank__spacer { flex: 1; min-height: 14px; }
+  .bank__match { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+  .bank__match .display__label { flex: 1; line-height: 1.6; }
+  .bank__match .seg { --seg-h: 42px; }
+  .bank__match-unit { font: 600 14px/1 var(--font-display); color: var(--display-ink-2); align-self: flex-end; margin-bottom: 4px; }
+  .bank__result { font-size: var(--fs-12); }
+
+  /* ---------- C 列：佇列與時限 ---------- */
+  .q-head { display: grid; grid-template-columns: 34px 132px minmax(0, 1fr) 100px 132px 70px; gap: 14px; padding: 16px 22px 8px; border-bottom: 1px solid var(--line-2); }
+  .q-head span { font: 600 10px/1.2 var(--font-display); letter-spacing: .14em; color: var(--ink-3); }
+  .q-head span:nth-child(5) { text-align: right; }
+  .q-row {
+    position: relative; display: grid; grid-template-columns: 34px 132px minmax(0, 1fr) 100px 132px 70px; gap: 14px; align-items: center;
+    padding: 12px 22px; border-bottom: 1px solid var(--line); transition: background var(--dur-1);
+  }
+  .q-row:hover { background: var(--panel-2); }
+  .q-row.is-p1 { box-shadow: inset 3px 0 0 var(--red-strong); }
+  .q-id { font-weight: 600; text-decoration: none; font-size: var(--fs-13); }
+  .q-id::after { content: ""; position: absolute; inset: 0; z-index: 0; }
+  .q-id:focus-visible { outline: none; }
+  .q-id:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 6px; }
+  .q-id small { display: block; font: 600 9.5px/1.4 var(--font-display); letter-spacing: .12em; color: var(--ink-3); }
+  .q-main { display: grid; min-width: 0; line-height: 1.4; }
+  .q-loc { font-size: var(--fs-14); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-loc em { font-style: normal; color: var(--ink-3); margin-right: 6px; }
+  .q-fault { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-12); color: var(--ink-3); }
+  .q-fault .typetag { font-size: var(--fs-12); }
+  .q-fault > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-when { display: grid; justify-items: end; text-align: right; line-height: 1.35; font-size: var(--fs-12); color: var(--ink-3); }
+  .q-when b { font-weight: 500; color: var(--ink-2); }
+  .q-act { position: relative; z-index: 1; justify-self: end; }
+  .q-more { display: flex; justify-content: center; padding: 14px; }
+  .q-chips { display: flex; gap: 8px; align-items: center; }
+
+  .watch { display: grid; }
+  .watch-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .watch-row:last-child { border-bottom: 0; }
+  .watch-row a { text-decoration: none; min-width: 0; }
+  .watch-row a:hover .watch-row__id { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+  .watch-row__id { display: block; font-size: var(--fs-13); font-weight: 600; }
+  .watch-row__loc { display: block; font-size: var(--fs-12); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .watch-row__clock { text-align: right; font: 600 15px/1.2 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .watch-row__clock small { display: block; font: 500 11px var(--font-sans); color: var(--ink-3); }
+  .watch-row[data-state="over"] .watch-row__clock { color: var(--red-ink); font-size: 13px; }
+  .watch-row[data-state="soon"] .watch-row__clock { color: var(--accent-ink); }
+  .watch-row__bar { grid-column: 2 / -1; height: 3px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+  .watch-row__bar i { display: block; height: 100%; width: 100%; background: var(--ink); transform-origin: 0 50%; transform: scaleX(var(--f)); transition: transform 600ms var(--ease-out); }
+  .watch-row[data-state="soon"] .watch-row__bar i { background: var(--accent); }
+  .watch-row[data-state="over"] .watch-row__bar i { background: var(--red); }
+
+  /* ---------- D 列：今日派工看板 ---------- */
+  .sw { width: 18px; height: 10px; border-radius: 3px; background: var(--ink); }
+  .sw--live { background: var(--accent); }
+  .sw--plan { background: var(--face); box-shadow: inset 0 0 0 1.5px var(--ink-2); }
+  .sw--off { background: repeating-linear-gradient(-45deg, var(--panel-2) 0 3px, var(--line-2) 3px 4px); }
+  .board-wrap { overflow-x: auto; margin-top: 4px; border-top: 1px solid var(--line-2); }
+  .board { --hours: 18; min-width: 1040px; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
+  .board__corner, .lane-label { position: sticky; left: 0; z-index: 3; background: var(--panel); }
+  .board__corner { display: flex; align-items: center; padding: 0 16px 0 22px; border-bottom: 1px solid var(--line-2); border-right: 1px solid var(--line); }
+  .board__scale { position: relative; height: 38px; border-bottom: 1px solid var(--line-2); }
+  .board__scale span { position: absolute; top: 14px; transform: translateX(-50%); font: 600 10px/1 var(--font-display); letter-spacing: .1em; color: var(--ink-3); }
+  .board__scale .now-tag {
+    top: 8px; padding: 4px 6px; border-radius: 4px; background: var(--accent); color: var(--ink);
+    font: 700 10.5px/1 var(--font-display); letter-spacing: .06em; z-index: 2; transition: left 600ms var(--ease-out);
+  }
+  .lane-label {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 3px 10px; align-items: center;
+    padding: 12px 16px 12px 22px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+  }
+  .lane-label b { font-size: var(--fs-14); font-weight: 600; white-space: nowrap; }
+  .lane-label small { grid-column: 2 / -1; font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lane-label .lane-state { font-size: var(--fs-12); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .lane-label[data-state="work"] .lane-state { color: var(--green-ink); }
+  .lane-label[data-state="transit"] .lane-state { color: var(--accent-ink); }
+  .lane-label[data-state="off"] .lane-state { color: var(--ink-3); font-weight: 500; }
+  .lane-track {
+    position: relative; min-height: 68px; border-bottom: 1px solid var(--line);
+    background: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(43, 43, 43, .06) 6px 7px), var(--panel-2);
+  }
+  .lane-track::after {
+    content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / calc(100% / var(--hours)) 100%;
+  }
+  .shift-band { position: absolute; top: 0; bottom: 0; z-index: 0; background: var(--panel); }
+  /* 現在線壓在工作區塊之下：線穿過區塊時會切開案號文字（0085 被看成 0(85），區塊本身已能表示進行中 */
+  .now-line { position: absolute; top: 0; bottom: 0; z-index: 1; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; transition: left 600ms var(--ease-out); }
+  .board__scale .now-line { top: auto; height: 8px; bottom: 0; }
+  /* container-type：區塊寬度隨工時而定，窄區塊只留案號，不顯示被截成一兩個字的故障名稱 */
+  .blk {
+    position: absolute; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+    padding: 0 8px; border-radius: 7px; overflow: hidden; text-decoration: none; min-width: 8px;
+    font-size: 11.5px; line-height: 1.3; white-space: nowrap; container-type: inline-size;
+    transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1);
+  }
+  .blk:hover { transform: translateY(-1px); box-shadow: 0 6px 12px -6px rgba(0, 0, 0, .45); z-index: 5; }
+  /* 文字疊在進行中斜紋之上，斜紋流過時字仍清楚 */
+  .blk b, .blk span { position: relative; z-index: 1; }
+  .blk b { font: 700 10.5px/1.2 var(--font-display); letter-spacing: .05em; overflow: hidden; text-overflow: clip; }
+  .blk span { overflow: hidden; text-overflow: ellipsis; }
+  /* 查詢的是內容寬（區塊寬 − 左右各 8px 留白）：放不下三個字就只留案號 */
+  @container (max-width: 46px) { .blk span { display: none; } }
+  /* 更窄時案號縮字並借用左右留白，四碼仍放得下 */
+  @container (max-width: 28px) { .blk b { margin: 0 -5px; font-size: 9.5px; letter-spacing: 0; } }
+  .blk--done { background: var(--ink); color: #ECEAE5; }
+  .blk--live { --stripe-a: .22; background: var(--accent); color: var(--ink); box-shadow: 0 0 0 2px rgba(255, 95, 0, .25); }
+  .blk--plan { background: var(--face); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink-2); }
+  .blk.is-p1::before { content: ""; position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .8); }
+  .blk--live.is-p1::before { background: #fff; box-shadow: 0 0 0 1.5px var(--red-strong); }
+  .board-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 22px 16px; font-size: var(--fs-12); color: var(--ink-3); border-top: 1px solid var(--line-2); }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1200px) {
+    .row-instruments .m-mttr { grid-column: 1 / -1; }
+    .m-mttr .mttr-wrap { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: center; }
+    .bank { grid-column: 1 / -1; }
+    /* 時限監看獨占一列：不然半寬卡片旁邊留下一大塊空白；改兩欄直排（先填滿左欄再換右欄，順序仍由急到緩） */
+    .m-watch { grid-column: 1 / -1; }
+    .m-watch .watch { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, auto); grid-auto-flow: column; column-gap: 32px; }
+    .m-watch .watch-row:nth-child(4n) { border-bottom: 0; }
+    .q-head, .q-row { grid-template-columns: 34px 124px minmax(0, 1fr) 96px 70px; }
+    .q-head span:nth-child(5), .q-when { display: none; }
+  }
+  @media (max-width: 960px) {
+    .map-readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .map-readout .readout + .readout { padding-left: 0; border-left: 0; }
+    .map-readout__name { grid-column: 1 / -1; }
+  }
+  /* 撥桿面板全寬時：左欄六支狀態撥桿、右欄類型 / 優先級鍵與符合數，避免一排撥桿橫跨整個畫面 */
+  @media (max-width: 1200px) and (min-width: 721px) {
+    .bank { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 36px; }
+    .bank > .module__head, .bank > .module__foot { grid-column: 1 / -1; }
+    /* 右欄三組控制上、中、下等距排開，與左欄撥桿同高 */
+    .bank__side { display: flex; flex-direction: column; justify-content: space-between; }
+    .bank__side > .bank__types:first-child { margin-top: 2px; }
+    .bank__side > .bank__spacer { display: none; }
+  }
+  @media (max-width: 720px) {
+    .m-watch .watch { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; }
+    .m-watch .watch-row:nth-child(4n) { border-bottom: 1px solid var(--line); }
+    .m-watch .watch-row:last-child { border-bottom: 0; }
+    .alarm { flex-wrap: wrap; gap: 10px 12px; padding: 14px; }
+    .alarm__msg { flex-basis: 100%; order: 3; font-size: var(--fs-13); }
+    .alarm__time { margin-left: auto; }
+    .alarm .btn { order: 4; width: 100%; }
+    #seg-online { --seg-h: 64px; }
+    .online-display__unit { font-size: 24px; }
+    .online-display__delta { display: none; }
+    .online-readouts { --readout-pad: 9px; }
+    .online-readouts .readout__value { font-size: 17px; }
+    .map-display .display__tag { display: none; }
+    /* 九顆行政區鍵在手機排成 3 × 3，不用橫向捲動也不會被裁切 */
+    .district-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .m-mttr .mttr-wrap { grid-template-columns: 1fr; }
+    .mttr-controls { grid-template-columns: 1fr; justify-items: center; }
+    .mttr-read { justify-items: center; text-align: center; }
+    .q-head { display: none; }
+    .q-row { grid-template-columns: 34px minmax(0, 1fr) auto; grid-template-areas: "p id st" "p main main" "p when act"; gap: 6px 12px; padding: 14px 16px; align-items: start; }
+    .q-row > .prio { grid-area: p; margin-top: 1px; }
+    .q-row > .q-id { grid-area: id; }
+    .q-row > .status { grid-area: st; justify-self: end; }
+    .q-row > .q-main { grid-area: main; }
+    .q-row > .q-when { grid-area: when; display: block; justify-self: start; text-align: left; align-self: center; }
+    .q-row > .q-act { grid-area: act; }
+    .q-when b::after { content: " · "; }
+    .q-loc { white-space: normal; }
+    .board-foot { padding: 12px 16px 14px; }
+    .board { grid-template-columns: 132px minmax(0, 1fr); min-width: 900px; }
+    .board__corner { padding: 0 10px 0 16px; }
+    .lane-label { grid-template-columns: 10px minmax(0, 1fr); align-content: center; padding: 10px 10px 10px 16px; }
+    .lane-label b { overflow: hidden; text-overflow: ellipsis; }
+    .lane-label .lane-state { grid-column: 2; }
+    .lane-label small { display: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要內容</a>
+
+<div class="rail">
+  <div class="rail__inner">
+    <a class="rail__back" href="../../index.html">← 返回目錄</a>
+    <span class="rail__org">澄港市政府 工務局 · 公共設施維護科</span>
+    <span class="rail__shift"><i class="led led--green led--breathe" aria-hidden="true"></i>夜班 17:00–01:00 · 值班派工 <b>張書瑋</b></span>
+  </div>
+</div>
+
+<header class="masthead" data-masthead>
+  <div class="masthead__inner">
+    <a class="nameplate" href="index.html" aria-label="澄港路燈維護 工單系統 控制面板">
+      <span class="nameplate__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#ECEAE5" stroke-width="1.5"/><line x1="12" y1="3.4" x2="12" y2="7" stroke="#ECEAE5" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="13" r="3.6" fill="#FF5F00"/></svg>
+      </span>
+      <span class="nameplate__text"><b>澄港路燈維護</b><small>ML-26 Maintenance Console</small></span>
+    </a>
+    <nav class="keys-nav" id="site-nav" aria-label="主要導覽" data-nav>
+      <a class="navkey" href="index.html" aria-current="page"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">01</span><span class="navkey__label">控制面板</span></a>
+      <a class="navkey" href="orders.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">02</span><span class="navkey__label">工單列表<span class="navkey__count" data-count="open" aria-label="未結工單數">30</span></span></a>
+      <a class="navkey" href="order.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">03</span><span class="navkey__label">工單詳情</span></a>
+      <a class="navkey" href="assets.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">04</span><span class="navkey__label">設備與巡檢</span></a>
+    </nav>
+    <div class="masthead__tools">
+      <div class="clockchip" title="系統時間（UTC+8）"><span data-clock></span><small data-date>OCT 23 · FRI</small></div>
+      <a class="btn btn--accent btn--sm" href="assets.html#new-order" aria-label="新增報修"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="hide-sm">新增報修</span></a>
+      <button class="navtoggle" type="button" data-nav-toggle aria-controls="site-nav" aria-expanded="false"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg>選單</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <section class="page-head" aria-labelledby="page-title">
+    <div>
+      <p class="page-head__eyebrow"><b>01</b>Control Panel</p>
+      <h1 class="page-head__title" id="page-title">控制面板</h1>
+      <p class="page-head__desc">2026 年 10 月 23 日（五）夜班。全市 12,834 盞路燈、486 處號誌路口與公園人行設施的即時狀態；撥桿篩選工單、點選行政區看細節。</p>
+    </div>
+    <div class="page-head__aside">
+      <button class="btn" type="button" id="btn-sync"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>重新同步</button>
+      <button class="btn" type="button" id="btn-report"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>匯出夜班日報</button>
+    </div>
+  </section>
+
+  <!-- 警報列：未派工的 P1 -->
+  <div class="alarm display" id="alarm" role="status" aria-live="polite" data-anim></div>
+
+  <!-- A 列：三個儀表 -->
+  <div class="grid row-instruments">
+    <section class="module c-5" aria-labelledby="h-online" data-reveal>
+      <div class="module__head">
+        <h2 class="module__title" id="h-online"><span class="module__index">A1</span>路燈在線率<span class="module__en">Lamp online</span></h2>
+        <span class="tag">遙測 6 秒</span>
+      </div>
+      <div class="display online-display" data-anim>
+        <div class="online-display__top">
+          <span class="display__label">Network · 8 districts · 12,834 lamps</span>
+          <span class="live-tag"><i class="led led--green led--breathe" aria-hidden="true"></i>LIVE</span>
+        </div>
+        <div class="online-display__main">
+          <span id="seg-online"></span><span class="online-display__unit" aria-hidden="true">%</span>
+          <p class="online-display__delta">較 24 小時前<b id="online-delta">−0.12 pt</b></p>
+        </div>
+        <div class="bars" id="online-bars" role="img" aria-label="近 24 小時路燈在線率長條圖"></div>
+        <div class="bars-axis" aria-hidden="true"><span>19:00</span><span>00:00</span><span>06:00</span><span>12:00</span><span>現在</span></div>
+      </div>
+      <dl class="readouts online-readouts">
+        <div class="readout"><dt class="readout__label">在線 Online</dt><dd class="readout__value" id="r-online">12,488</dd></div>
+        <div class="readout"><dt class="readout__label">總數 Total</dt><dd class="readout__value" id="r-total">12,834</dd></div>
+        <div class="readout"><dt class="readout__label">不亮 Dark</dt><dd class="readout__value is-red" id="r-dark">346</dd></div>
+      </dl>
+    </section>
+
+    <section class="module c-3" aria-labelledby="h-faults" data-reveal style="--i:1">
+      <div class="module__head">
+        <h2 class="module__title" id="h-faults"><span class="module__index">A2</span>故障通報<span class="module__en">Reports</span></h2>
+      </div>
+      <div class="display faults-display">
+        <div>
+          <span class="display__label">Today · 今日新通報</span>
+          <span id="seg-today"></span>
+        </div>
+        <div class="faults-display__side">
+          <span>待派工<br><b data-count="new">7</b></span>
+        </div>
+      </div>
+      <ul class="src-list" id="src-list" aria-label="今日通報來源"></ul>
+      <div class="module__foot">
+        <span><i class="led led--red led--blink" aria-hidden="true"></i> P1 未結 <b data-count="p1">4</b> 件</span>
+        <span>逾時 <b data-count="overdue">3</b> 件</span>
+      </div>
+    </section>
+
+    <section class="module c-4 m-mttr" aria-labelledby="h-mttr" data-reveal style="--i:2">
+      <div class="module__head">
+        <h2 class="module__title" id="h-mttr"><span class="module__index">A3</span>平均修復時間<span class="module__en">MTTR</span></h2>
+        <span class="tag">近 14 日</span>
+      </div>
+      <div class="mttr-wrap">
+        <div class="mttr-gauge"><div id="gauge-mttr"></div></div>
+        <div class="mttr-controls">
+          <div class="knob knob--sm" id="knob-range"></div>
+          <div class="mttr-read" aria-live="polite">
+            <span class="caps-label" id="mttr-label">全部優先級</span>
+            <div class="mttr-read__value"><span id="seg-mttr"></span><span class="mttr-read__unit">h</span></div>
+            <p id="mttr-note">樣本 <b>32</b> 件</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- B 列：地圖 + 撥桿 -->
+  <div class="grid section row-map">
+    <section class="module c-8" aria-labelledby="h-map" data-reveal>
+      <div class="module__head">
+        <h2 class="module__title" id="h-map"><span class="module__index">B1</span>區域路燈點陣圖<span class="module__en">District lamp map</span></h2>
+        <div class="legend" aria-label="圖例">
+          <span><i class="lg" aria-hidden="true"></i>點亮</span>
+          <span><i class="lg lg--dark" aria-hidden="true"></i>回路斷電</span>
+          <span><i class="lg lg--fault" aria-hidden="true"></i>故障</span>
+          <span><i class="lg lg--pin" aria-hidden="true"></i>P1 未結</span>
+        </div>
+      </div>
+      <div class="display map-display" data-anim>
+        <span class="display__tag" aria-hidden="true">日落 17:24 · 光控點燈中</span>
+        <svg id="dotmap" role="img" aria-label="澄港市八區路燈點陣地圖，每一點代表一段供電回路；可用下方行政區按鍵篩選工單佇列"></svg>
+      </div>
+      <div class="keyrow keyrow--fill district-keys" data-single id="district-keys" role="group" aria-label="選擇行政區"></div>
+      <div class="map-readout" id="map-readout" aria-live="polite"></div>
+    </section>
+
+    <section class="module c-4 bank" aria-labelledby="h-bank" data-reveal style="--i:1">
+      <div class="module__head">
+        <h2 class="module__title" id="h-bank"><span class="module__index">B2</span>工單狀態<span class="module__en">Status switches</span></h2>
+        <button class="btn btn--ghost btn--sm" type="button" id="bank-reset">重設</button>
+      </div>
+      <div class="bank__rows" id="bank-rows"></div>
+      <div class="bank__side">
+        <div class="bank__types">
+          <p class="caps-label" id="types-label">設備類型 Equipment</p>
+          <div class="keyrow keyrow--fill" id="type-keys" role="group" aria-labelledby="types-label"></div>
+        </div>
+        <div class="bank__types">
+          <p class="caps-label" id="prio-label">優先級 Priority</p>
+          <div class="keyrow keyrow--fill" id="prio-keys" role="group" aria-labelledby="prio-label"></div>
+        </div>
+        <div class="bank__spacer"></div>
+        <div class="display bank__match">
+          <span class="display__label">Matched<br>符合條件工單</span>
+          <span id="seg-match"></span>
+          <span class="bank__match-unit" aria-hidden="true">件</span>
+        </div>
+      </div>
+      <div class="module__foot">
+        <span class="bank__result" id="bank-desc">未結工單 · 全市</span>
+        <a class="link-arrow" href="orders.html">開啟工單列表<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+      </div>
+    </section>
+  </div>
+
+  <!-- C 列：工單佇列 + 時限監看 -->
+  <div class="grid section">
+    <section class="module module--flush c-8" aria-labelledby="h-queue" data-reveal>
+      <div class="module__head">
+        <h2 class="module__title" id="h-queue"><span class="module__index">C1</span>工單佇列<span class="module__en">Work queue</span></h2>
+        <div class="module__tools">
+          <div class="q-chips" id="q-chips"></div>
+          <div class="keyrow" data-single id="q-sort" role="group" aria-label="排序方式">
+            <button class="key" type="button" data-value="prio" aria-pressed="true">優先級</button>
+            <button class="key" type="button" data-value="sla" aria-pressed="false">時限</button>
+            <button class="key" type="button" data-value="time" aria-pressed="false">最新</button>
+          </div>
+        </div>
+      </div>
+      <div class="q-head" aria-hidden="true"><span>優先</span><span>工單</span><span>位置 · 故障</span><span>狀態</span><span>班別 · 時間</span><span></span></div>
+      <ul class="q-list" id="q-list" aria-label="工單佇列"></ul>
+      <div class="q-more" id="q-more"></div>
+    </section>
+
+    <section class="module c-4 m-watch" aria-labelledby="h-watch" data-reveal style="--i:1">
+      <div class="module__head">
+        <h2 class="module__title" id="h-watch"><span class="module__index">C2</span>時限監看<span class="module__en">SLA watch</span></h2>
+        <span class="tag">倒數</span>
+      </div>
+      <ul class="watch" id="watch" aria-label="修復時限倒數"></ul>
+      <div class="module__foot">
+        <span>P1 4 h · P2 24 h · P3 72 h · P4 7 日</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- D 列：今日派工看板 -->
+  <section class="module module--flush section" aria-labelledby="h-board" data-reveal>
+    <div class="module__head">
+      <h2 class="module__title" id="h-board"><span class="module__index">D1</span>今日派工與維修班<span class="module__en">Dispatch board · 10/23</span></h2>
+      <div class="legend" aria-label="圖例">
+        <span><i class="sw" aria-hidden="true"></i>已完成</span>
+        <span><i class="sw sw--live" aria-hidden="true"></i>進行中</span>
+        <span><i class="sw sw--plan" aria-hidden="true"></i>預定</span>
+        <span><i class="sw sw--off" aria-hidden="true"></i>非班表時段</span>
+      </div>
+    </div>
+    <div class="board-wrap" data-anim>
+      <div class="board" id="board"></div>
+    </div>
+    <div class="board-foot" id="board-foot"></div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="site-foot__inner">
+    <div class="site-foot__grille" aria-hidden="true"></div>
+    <div class="site-foot__plate">
+      <b>澄港市 路燈與公共設施 維護工單系統</b>
+      <span>Model ML-26 · 工務局 公共設施維護科 · 夜間報修 1999 轉 3</span>
+    </div>
+    <nav class="site-foot__nav" aria-label="頁尾導覽" data-nav>
+      <a href="index.html">控制面板</a>
+      <a href="orders.html">工單列表</a>
+      <a href="order.html">工單詳情</a>
+      <a href="assets.html">設備與巡檢</a>
+      <a href="../../index.html">← 返回目錄</a>
+    </nav>
+    <p class="site-foot__note"><span>© 2026 澄港市政府工務局 · 作品集虛構示範，所列人名、地址、案號皆為虛構</span><span>資料時間 <span data-date>OCT 23 · FRI</span> · 系統版本 4.2.0</span></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { fmt, esc } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const HOUR = 3600e3;
+  const ICON_ARROW = App.icon('arrow');
+
+  // 頁面篩選狀態（地圖區域、狀態撥桿、設備類型、排序、是否展開全部）
+  const state = {
+    district: null,
+    statuses: new Set(['new', 'dispatched', 'onsite', 'repair', 'review']),
+    types: new Set(['STL', 'SIG', 'PAV', 'PRK']),
+    prios: new Set([1, 2, 3, 4]),
+    sort: 'prio',
+    expanded: false,
+  };
+
+  /* ---------- 警報列 ---------- */
+  function renderAlarm() {
+    const el = $('#alarm');
+    const pending = App.DATA.orders.filter((o) => o.prio === 1 && o.status === 'new').sort((a, b) => a.t.reported - b.t.reported);
+    el.classList.toggle('is-clear', !pending.length);
+    if (!pending.length) {
+      const live = App.counts().p1;
+      el.innerHTML = `<span class="alarm__tag">${App.led('green')}CLEAR</span>
+        <p class="alarm__msg">所有 P1 緊急工單皆已派工，目前 <b>${live}</b> 件處理中。</p>`;
+      return;
+    }
+    const o = pending[0];
+    el.innerHTML = `<span class="alarm__tag">${App.led('red', { pulse: 'blink' })}ALARM · P1</span>
+      <p class="alarm__msg"><span class="mono">${o.id}</span>　<b>${esc(App.district(o.dist).name)} ${esc(o.loc)}</b> ${esc(o.fault)}${o.affects > 1 ? `（${o.affects} 盞）` : ''}，尚未派工${pending.length > 1 ? `；另有 ${pending.length - 1} 件 P1 待派` : ''}。</p>
+      <span class="alarm__time">報修 ${fmt.time(o.t.reported)} · ${fmt.rel(o.t.reported)}</span>
+      <button class="btn btn--accent btn--sm" type="button" data-dispatch="${o.id}">立即派工</button>`;
+  }
+  $('#alarm').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dispatch]');
+    if (b) App.openDispatch([b.dataset.dispatch]);
+  });
+
+  /* ---------- A1 路燈在線率 ---------- */
+  // 前一日 19:00 起每小時的在線率；18:31 溪洲整段回路熄滅使最後一小時下滑
+  const HOURLY = [97.42, 97.45, 97.44, 97.40, 97.41, 97.43, 97.46, 97.47, 97.47, 97.45, 97.44, 97.43, 97.44, 97.42, 97.41, 97.40, 97.38, 97.36, 97.35, 97.33, 97.32, 97.34, 97.37];
+  const segOnline = App.seg($('#seg-online'), { pattern: '8888', label: '路燈在線率', unit: '%', value: '' });
+  const bars = $('#online-bars');
+  bars.innerHTML = HOURLY.concat(0).map((v, k) => `<i style="--k:${k}"></i>`).join('');
+  function renderOnline(roll) {
+    const net = App.network();
+    segOnline.set(net.rate.toFixed(2), { roll });
+    $('#r-online').textContent = fmt.num(net.online);
+    $('#r-total').textContent = fmt.num(net.total);
+    $('#r-dark').textContent = fmt.num(net.dark);
+    const values = HOURLY.concat(net.rate);
+    const lo = 97.2, hi = 97.5;
+    [...bars.children].forEach((b, i) => b.style.setProperty('--h', Math.max(4, ((values[i] - lo) / (hi - lo)) * 100) + '%'));
+    const delta = net.rate - HOURLY[0];
+    $('#online-delta').textContent = (delta < 0 ? '−' : '+') + Math.abs(delta).toFixed(2) + ' pt';
+  }
+
+  /* ---------- A2 故障通報 ---------- */
+  const segToday = App.seg($('#seg-today'), { pattern: '888', label: '今日新通報', unit: ' 件', value: '' });
+  function renderFaults(roll) {
+    const today = App.dayStart(App.now());
+    const list = App.DATA.orders.filter((o) => o.t.reported >= today);
+    segToday.set(String(list.length), { roll });
+    const max = Math.max(1, ...Object.keys(App.DATA.sources).map((k) => list.filter((o) => o.src === k).length));
+    $('#src-list').innerHTML = Object.values(App.DATA.sources).map((s) => {
+      const n = list.filter((o) => o.src === s.key).length;
+      return `<li><span>${esc(s.name)}</span>${App.meter(n, max, { cells: 8, tone: s.key === 'police' ? 'red' : 'ink' })}<span class="num">${n}</span></li>`;
+    }).join('');
+  }
+
+  /* ---------- A3 MTTR 錶頭 + 量程旋鈕 ---------- */
+  const RANGES = {
+    0: { min: 0, max: 60, labels: [0, 15, 30, 45, 60], target: null, range: 'RANGE · ALL', name: '全部優先級' },
+    1: { min: 0, max: 8, labels: [0, 2, 4, 6, 8], target: 4, range: 'RANGE · P1', name: 'P1 緊急' },
+    2: { min: 0, max: 40, labels: [0, 10, 20, 30, 40], target: 24, range: 'RANGE · P2', name: 'P2 高' },
+    3: { min: 0, max: 100, labels: [0, 25, 50, 75, 100], target: 72, range: 'RANGE · P3', name: 'P3 一般' },
+    4: { min: 0, max: 200, labels: [0, 50, 100, 150, 200], target: 168, range: 'RANGE · P4', name: 'P4 排程' },
+  };
+  let range = 0;
+  const gauge = App.gauge($('#gauge-mttr'), Object.assign({ caption: 'MTTR · 報修→完修', unit: 'HOURS', value: App.mttr(0).hours }, RANGES[0]));
+  const segMttr = App.seg($('#seg-mttr'), { pattern: '8888', tone: 'ink', label: '平均修復時間', unit: ' 小時', value: App.mttr(0).hours.toFixed(1) });
+  function renderMttr(changedRange) {
+    const m = App.mttr(range);
+    const r = RANGES[range];
+    if (changedRange) gauge.setRange(r);
+    gauge.set(m.hours);
+    segMttr.set(m.hours.toFixed(1), { roll: changedRange });
+    $('#mttr-label').textContent = r.name;
+    $('#mttr-note').innerHTML = r.target
+      ? `目標 <b>≤ ${r.target} h</b> · 達標 <b>${Math.round(m.hitRate * 100)}%</b><br>樣本 ${m.n} 件已完修工單`
+      : `各級目標 4 / 24 / 72 / 168 h<br>達標 <b>${Math.round(m.hitRate * 100)}%</b> · 樣本 ${m.n} 件`;
+  }
+  App.knob($('#knob-range'), {
+    label: 'MTTR 量程（優先級）',
+    value: 0,
+    values: [
+      { value: 0, label: 'ALL', text: '全部優先級' },
+      { value: 1, label: 'P1', text: 'P1 緊急' },
+      { value: 2, label: 'P2', text: 'P2 高' },
+      { value: 3, label: 'P3', text: 'P3 一般' },
+      { value: 4, label: 'P4', text: 'P4 排程' },
+    ],
+    onChange: (v) => { range = v; renderMttr(true); },
+  });
+
+  /* ---------- B1 點陣地圖 ---------- */
+  // 游標所在的行政區：遙測每 6 秒重繪讀數時要沿用，不然滑鼠還停在地圖上讀數就跳回已選區
+  let hoverCode = null;
+  const map = App.dotMap($('#dotmap'), {
+    interactive: true,
+    onSelect: (code) => { state.district = code; state.expanded = false; renderDistrictKeys(); renderReadout(); renderQueue(); },
+    onHover: (code) => { hoverCode = code; renderReadout(); },
+  });
+  // 行政區按鍵：鍵盤可操作的選區方式，與地圖點選雙向同步。
+  // 按鍵只建一次，之後只更新按下狀態與在線率：整排重建會讓鍵盤焦點在選區或遙測更新時掉回頁首
+  $('#district-keys').innerHTML = [{ code: '', name: '全市' }].concat(App.DATA.districts.map((d) => ({ code: d.code, name: d.name.replace('區', '') })))
+    .map((k) => `<button class="key" type="button" data-value="${k.code}" aria-pressed="false"><span>${esc(k.name)}</span><small></small></button>`).join('');
+  function renderDistrictKeys() {
+    document.querySelectorAll('#district-keys .key').forEach((b) => {
+      const d = b.dataset.value && App.district(b.dataset.value);
+      b.setAttribute('aria-pressed', String((state.district || '') === b.dataset.value));
+      b.querySelector('small').textContent = (d ? ((d.lamps - d.dark) / d.lamps) * 100 : App.network().rate).toFixed(1) + '%';
+    });
+  }
+  $('#district-keys').addEventListener('change', (e) => map.select(e.detail.value || null));
+  function renderReadout() {
+    const hover = hoverCode;
+    const code = hover || state.district;
+    const open = App.DATA.orders.filter((o) => o.status !== 'closed' && (!code || o.dist === code));
+    let name, en, lamps, dark, crewText;
+    if (code) {
+      const d = App.district(code);
+      ({ name, en, lamps, dark } = d);
+      const crewIds = App.DATA.crews.filter((c) => c.areas.includes(code)).map((c) => c.short);
+      crewText = crewIds.join('、');
+    } else {
+      const net = App.network();
+      name = '全市'; en = 'CITYWIDE · 8 DISTRICTS'; lamps = net.total; dark = net.dark; crewText = '7 班';
+    }
+    const rate = ((lamps - dark) / lamps) * 100;
+    $('#map-readout').innerHTML = `
+      <div class="readout map-readout__name"><span class="readout__label">${code ? (hover && hover !== state.district ? '游標 Hover' : '已選 Selected') : '範圍 Scope'}</span><span class="readout__value">${esc(name)}</span><small>${esc(en)}</small></div>
+      <div class="readout"><span class="readout__label">在線率</span><span class="readout__value">${rate.toFixed(1)}<span class="readout__unit">%</span></span></div>
+      <div class="readout"><span class="readout__label">不亮</span><span class="readout__value">${fmt.num(dark)}<span class="readout__unit">/ ${fmt.num(lamps)}</span></span></div>
+      <div class="readout"><span class="readout__label">未結工單</span><span class="readout__value">${open.length}<span class="readout__unit">件</span></span></div>
+      <div class="readout"><span class="readout__label">責任班</span><span class="readout__value" style="font-size:16px">${esc(crewText)}</span></div>`;
+  }
+
+  /* ---------- B2 狀態撥桿 ---------- */
+  const STATUS_KEYS = App.STATUS_ORDER;
+  $('#bank-rows').innerHTML = STATUS_KEYS.map((k) => {
+    const s = App.DATA.status[k];
+    return `<div class="lever-row" data-status="${k}">
+      ${App.led(s.tone, { pulse: s.pulse })}
+      <span class="lever-row__label"><b>${s.name}</b><small>${s.en}</small></span>
+      <span class="seg-host" data-seg="${k}"></span>
+      ${App.lever({ label: '顯示' + s.name + '工單', on: state.statuses.has(k), attrs: `data-lever="${k}"` })}
+    </div>`;
+  }).join('');
+  const bankSegs = Object.fromEntries(STATUS_KEYS.map((k) => [k, App.seg($(`[data-seg="${k}"]`), { pattern: '88', tone: 'ink', label: App.DATA.status[k].name, unit: ' 件', value: '' })]));
+  $('#type-keys').innerHTML = Object.values(App.DATA.types).map((t) =>
+    `<button class="key key--row" type="button" data-toggle data-type="${t.code}" aria-pressed="true">${App.typeIcon(t.code)}<span>${t.name}</span></button>`).join('');
+  $('#prio-keys').innerHTML = Object.values(App.DATA.prio).map((p) =>
+    `<button class="key key--row is-prio" type="button" data-toggle data-prio="${p.p}" aria-pressed="true" aria-label="${p.code} ${p.name}"><span>${p.code}</span><small>${p.name}</small></button>`).join('');
+  const segMatch = App.seg($('#seg-match'), { pattern: '88', label: '符合條件工單', unit: ' 件', value: '' });
+
+  function syncBank(roll) {
+    const c = App.counts();
+    STATUS_KEYS.forEach((k) => {
+      bankSegs[k].set(String(c[k]), { roll });
+      $(`.lever-row[data-status="${k}"]`).classList.toggle('is-off', !state.statuses.has(k));
+    });
+  }
+  $('#bank-rows').addEventListener('change', (e) => {
+    const lever = e.target.closest('[data-lever]');
+    if (!lever) return;
+    const k = lever.dataset.lever;
+    if (lever.getAttribute('aria-checked') === 'true') state.statuses.add(k); else state.statuses.delete(k);
+    state.expanded = false;
+    syncBank(false);
+    renderQueue();
+  });
+  $('#type-keys').addEventListener('change', (e) => {
+    const key = e.target.closest('[data-type]');
+    if (key.getAttribute('aria-pressed') === 'true') state.types.add(key.dataset.type); else state.types.delete(key.dataset.type);
+    state.expanded = false;
+    renderQueue();
+  });
+  $('#prio-keys').addEventListener('change', (e) => {
+    const key = e.target.closest('[data-prio]');
+    const p = +key.dataset.prio;
+    if (key.getAttribute('aria-pressed') === 'true') state.prios.add(p); else state.prios.delete(p);
+    state.expanded = false;
+    renderQueue();
+  });
+  $('#bank-reset').addEventListener('click', () => {
+    state.statuses = new Set(['new', 'dispatched', 'onsite', 'repair', 'review']);
+    state.types = new Set(['STL', 'SIG', 'PAV', 'PRK']);
+    state.prios = new Set([1, 2, 3, 4]);
+    document.querySelectorAll('#bank-rows [data-lever]').forEach((l) => App.setLever(l, state.statuses.has(l.dataset.lever)));
+    document.querySelectorAll('#type-keys .key, #prio-keys .key').forEach((k) => k.setAttribute('aria-pressed', 'true'));
+    map.select(null);
+    syncBank(false);
+    App.toast('篩選已重設', { desc: '顯示全市未結工單（不含已結案）。', tone: 'info' });
+  });
+
+  /* ---------- C1 工單佇列 ---------- */
+  const SORTS = {
+    prio: (a, b) => a.prio - b.prio || App.STATUS_ORDER.indexOf(a.status) - App.STATUS_ORDER.indexOf(b.status) || b.t.reported - a.t.reported,
+    sla: (a, b) => App.sla(a).remain - App.sla(b).remain,
+    time: (a, b) => b.t.reported - a.t.reported,
+  };
+  function filtered() {
+    return App.DATA.orders
+      .filter((o) => state.statuses.has(o.status) && state.types.has(o.type) && state.prios.has(o.prio) && (!state.district || o.dist === state.district))
+      .sort(SORTS[state.sort]);
+  }
+  function whenText(o) {
+    if (o.status === 'new') return `<b>未派工</b>報修 ${fmt.rel(o.t.reported)}`;
+    const crew = App.crew(o.crew).short;
+    if (o.status === 'dispatched') return `<b>${esc(crew)}</b>預計 ${fmt.dt(o.t.planned)}`;
+    if (o.status === 'onsite' || o.status === 'repair') return `<b>${esc(crew)}</b>到場 ${fmt.dt(o.t.arrived)}`;
+    if (o.status === 'review') return `<b>${esc(crew)}</b>完修 ${fmt.dt(o.t.finished)}`;
+    return `<b>${esc(crew)}</b>結案 ${fmt.dt(o.t.closed)}`;
+  }
+  function renderQueue() {
+    const list = filtered();
+    segMatch.set(String(list.length), { roll: true });
+    const allOpen = state.statuses.size === 5 && !state.statuses.has('closed') && state.types.size === 4 && state.prios.size === 4;
+    $('#bank-desc').textContent = `${allOpen ? '未結工單' : '自訂篩選'} · ${state.district ? App.district(state.district).name : '全市'}`;
+    const shown = state.expanded ? list : list.slice(0, 8);
+    $('#q-list').innerHTML = shown.length ? shown.map((o) => `
+      <li class="q-row${o.prio === 1 && o.status !== 'closed' ? ' is-p1' : ''}">
+        ${App.prioBadge(o.prio)}
+        <a class="q-id mono" href="${App.orderUrl(o.id)}">${o.id}<small>${esc(o.asset)}</small></a>
+        <div class="q-main">
+          <span class="q-loc"><em>${esc(App.district(o.dist).name)}</em>${esc(o.loc)}</span>
+          <span class="q-fault">${App.typeTag(o.type)}<span>${esc(o.fault)}</span></span>
+        </div>
+        ${App.statusBadge(o.status)}
+        <span class="q-when">${whenText(o)}</span>
+        <span class="q-act">${o.status === 'new' ? `<button class="btn btn--sm${o.prio === 1 ? ' btn--accent' : ''}" type="button" data-dispatch="${o.id}">派工</button>` : ''}</span>
+      </li>`).join('')
+      : `<li>${App.emptyState({ title: '沒有符合的工單', text: '調整右側撥桿、設備類型，或點地圖空白處取消行政區篩選。' })}</li>`;
+    const rest = list.length - shown.length;
+    $('#q-more').innerHTML = list.length > 8
+      ? `<button class="btn btn--sm" type="button" id="q-toggle">${state.expanded ? '收合' : `顯示其餘 ${rest} 件`}</button>`
+      : '';
+    $('#q-chips').innerHTML = state.district
+      ? `<span class="chip">${esc(App.district(state.district).name)}<button type="button" aria-label="取消行政區篩選" id="chip-x">${App.icon('close')}</button></span>`
+      : '';
+  }
+  $('#q-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dispatch]');
+    if (b) App.openDispatch([b.dataset.dispatch]);
+  });
+  $('#q-more').addEventListener('click', (e) => {
+    if (!e.target.closest('#q-toggle')) return;
+    state.expanded = !state.expanded;
+    renderQueue();
+  });
+  $('#q-chips').addEventListener('click', (e) => { if (e.target.closest('#chip-x')) map.select(null); });
+  $('#q-sort').addEventListener('change', (e) => { state.sort = e.detail.value; renderQueue(); });
+
+  /* ---------- C2 時限監看 ---------- */
+  function clockText(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map((n) => String(n).padStart(2, '0')).join(':');
+  }
+  function renderWatch() {
+    const list = App.DATA.orders.filter((o) => !o.t.finished).map((o) => ({ o, s: App.sla(o) }))
+      .sort((a, b) => a.s.remain - b.s.remain).slice(0, 7);
+    $('#watch').innerHTML = list.map(({ o, s }) => {
+      const total = App.DATA.prio[o.prio].sla * HOUR;
+      const frac = Math.min(1, Math.max(0, 1 - s.remain / total));
+      const holdTag = o.hold ? `<span class="tag tag--sm">${o.hold.startsWith('待料') ? '待料' : '展延'}</span>` : '';
+      return `<li class="watch-row" data-state="${s.state}" data-id="${o.id}">
+        ${App.prioBadge(o.prio)}
+        <a href="${App.orderUrl(o.id)}"><span class="watch-row__id mono">${o.id}${holdTag}</span><span class="watch-row__loc">${esc(App.district(o.dist).name)} ${esc(o.loc)}</span></a>
+        <span class="watch-row__clock" data-clock-for="${o.id}">${s.state === 'over' ? esc(s.label) : clockText(s.remain)}<small>${s.state === 'over' ? '已逾修復時限' : '修復時限 ' + fmt.time(s.due)}</small></span>
+        <span class="watch-row__bar"><i style="--f:${frac.toFixed(3)}"></i></span>
+      </li>`;
+    }).join('');
+  }
+  function tickWatch() {
+    let crossed = false;
+    document.querySelectorAll('[data-clock-for]').forEach((el) => {
+      const s = App.sla(App.getOrder(el.dataset.clockFor));
+      // 跨過 25% 警示線或逾時：整列的配色與文案都要換，交給完整重繪
+      if (s.state !== el.closest('.watch-row').dataset.state) crossed = true;
+      else if (s.state !== 'over') el.firstChild.textContent = clockText(s.remain);
+    });
+    if (crossed) renderWatch();
+  }
+
+  /* ---------- D1 今日派工看板 ---------- */
+  const EST_MIN = { STL: 50, SIG: 80, PAV: 180, PRK: 70 };
+  function boardWindow() {
+    const start = App.dayStart(App.now()) + 7 * HOUR;
+    return { start, end: start + 18 * HOUR };
+  }
+  function blocksFor(crewId, win, now) {
+    const out = [];
+    const est = (o) => (EST_MIN[o.type] + (o.prio === 1 ? 60 : 0)) * 60e3;
+    App.DATA.orders.filter((o) => o.crew === crewId).forEach((o) => {
+      if (o.sessions) {
+        o.sessions.forEach(([a, b]) => {
+          if (b < win.start || a > win.end) return;
+          out.push({ o, from: a, to: b, kind: b < now ? 'done' : a <= now ? 'live' : 'plan' });
+        });
+      } else if (o.t.arrived && o.t.arrived >= win.start) {
+        out.push({ o, from: o.t.arrived, to: o.t.finished || Math.max(now + 20 * 60e3, o.t.arrived + est(o)), kind: o.t.finished ? 'done' : 'live' });
+      } else if (o.status === 'dispatched' && o.t.planned >= win.start && o.t.planned < win.end) {
+        out.push({ o, from: o.t.planned, to: o.t.planned + est(o), kind: 'plan' });
+      }
+    });
+    // 同一班若時段重疊（例如臨時插入 P1），分上下兩列顯示
+    out.sort((a, b) => a.from - b.from);
+    const rowsEnd = [];
+    out.forEach((b) => {
+      let r = rowsEnd.findIndex((end) => end <= b.from);
+      if (r === -1) { r = rowsEnd.length; rowsEnd.push(0); }
+      rowsEnd[r] = b.to;
+      b.row = r;
+    });
+    return { blocks: out, rows: Math.max(1, rowsEnd.length) };
+  }
+  function renderBoard() {
+    const now = App.now();
+    const win = boardWindow();
+    const pct = (t) => (((t - win.start) / (win.end - win.start)) * 100).toFixed(3) + '%';
+    const nowPct = pct(Math.min(win.end, Math.max(win.start, now)));
+    let scale = '';
+    for (let h = 8; h <= 24; h += 2) scale += `<span style="left:${(((h - 7) / 18) * 100).toFixed(3)}%">${String(h % 24).padStart(2, '0')}:00</span>`;
+    let html = `<div class="board__corner"><span class="caps-label">班別 · 狀態</span></div>
+      <div class="board__scale">${scale}<span class="now-tag" style="left:${nowPct}">${fmt.time(now)}</span><i class="now-line" style="left:${nowPct}"></i></div>`;
+    let live = 0, done = 0, plan = 0;
+    App.DATA.crews.forEach((c) => {
+      const st = App.crewState(c.id);
+      const { blocks, rows } = blocksFor(c.id, win, now);
+      const [s0, s1] = App.DATA.shifts[c.shift];
+      const band = `<i class="shift-band" style="left:${(((s0 - 7) / 18) * 100).toFixed(3)}%;width:${(((s1 - s0) / 18) * 100).toFixed(3)}%"></i>`;
+      const rowH = 100 / rows;
+      const blkHtml = blocks.map((b) => {
+        if (b.kind === 'live') live++; else if (b.kind === 'done') done++; else plan++;
+        const top = `calc(${(b.row * rowH).toFixed(2)}% + ${rows > 1 ? 6 : 12}px)`;
+        const height = `calc(${rowH.toFixed(2)}% - ${rows > 1 ? 9 : 24}px)`;
+        const label = `${b.o.id} ${App.district(b.o.dist).name}${b.o.loc} ${b.o.fault}（${fmt.time(b.from)}–${fmt.time(b.to)}，${b.kind === 'done' ? '已完成' : b.kind === 'live' ? '進行中' : '預定'}）`;
+        return `<a class="blk blk--${b.kind}${b.kind === 'live' ? ' stripes' : ''}${b.o.prio === 1 ? ' is-p1' : ''}" href="${App.orderUrl(b.o.id)}" title="${esc(label)}" aria-label="${esc(label)}"
+            style="left:${pct(b.from)};width:${pct(win.start + (b.to - b.from))};top:${top};height:${height}"><b>${b.o.id.slice(-4)}</b><span>${esc(b.o.fault)}</span></a>`;
+      }).join('');
+      html += `<div class="lane-label" data-state="${st.state}">
+          ${App.led(st.tone, { pulse: st.state === 'work' ? 'breathe' : null })}
+          <b>${esc(c.name)}</b><span class="lane-state">${esc(st.label)}</span>
+          <small>${esc(c.leader)} · ${esc(c.vehicle.split(' ')[0])} · 今日完修 ${st.done}</small>
+        </div>
+        <div class="lane-track" style="min-height:${rows > 1 ? 96 : 68}px">${band}${blkHtml}<i class="now-line" style="left:${nowPct}"></i></div>`;
+    });
+    $('#board').innerHTML = html;
+    const working = App.DATA.crews.filter((c) => App.crewState(c.id).state === 'work').length;
+    $('#board-foot').innerHTML = `<span>今日派工 ${live + done + plan} 件：已完成 ${done} · 進行中 ${live} · 預定 ${plan}</span><span>出勤中 ${working} 班 · 驗收工程司 ${esc(App.DATA.people.inspector.name)} · 點選區塊開啟工單</span>`;
+  }
+
+  /* ---------- 重繪與即時更新 ---------- */
+  function renderAll(roll) {
+    renderAlarm();
+    renderOnline(roll);
+    renderFaults(roll);
+    renderMttr(false);
+    renderDistrictKeys();
+    renderReadout();
+    syncBank(roll);
+    renderQueue();
+    renderWatch();
+    renderBoard();
+    map.refresh();
+  }
+  // 任何資料變更（派工、復原）都走同一套重繪，計數與徽章才會一致
+  App.on('orders', () => renderAll(true));
+  // 首次繪製也走滾動：七段顯示從空白「跳」到目前值（不在視窗內的會直接定格）
+  renderAll(true);
+  // 窄螢幕的看板需要橫向捲動：開頁時先捲到「現在」附近，之後不再干涉使用者的捲動位置
+  const boardWrap = $('.board-wrap');
+  if (boardWrap.scrollWidth > boardWrap.clientWidth) {
+    const line = $('#board .lane-track .now-line').getBoundingClientRect();
+    const box = boardWrap.getBoundingClientRect();
+    boardWrap.scrollLeft += line.left - box.left - box.width * 0.62;
+  }
+
+  // 遙測：每 6 秒有 1–2 區的不亮數小幅變動（以初值 ±3 為界）
+  const baseDark = Object.fromEntries(App.DATA.districts.map((d) => [d.code, d.dark]));
+  function telemetry(force) {
+    if (document.hidden && !force) return;
+    const d = App.DATA.districts[Math.floor(Math.random() * App.DATA.districts.length)];
+    const next = d.dark + (Math.random() < 0.5 ? -1 : 1);
+    if (Math.abs(next - baseDark[d.code]) <= 3) d.dark = next;
+    renderOnline(App.inView($('#seg-online')));
+    renderDistrictKeys();
+    renderReadout();
+    map.refresh();
+  }
+  setInterval(telemetry, 6000);
+  setInterval(tickWatch, 1000);
+  setInterval(() => { if (!document.hidden) { renderBoard(); renderAlarm(); } }, 30000);
+
+  $('#btn-sync').addEventListener('click', () => {
+    telemetry(true);
+    renderFaults(true);
+    syncBank(true);
+    App.toast('已同步遙測資料', { desc: `8 區 ${fmt.num(App.network().total)} 盞路燈節點回報完成（${fmt.time(App.now())}）。` });
+  });
+  $('#btn-report').addEventListener('click', () => {
+    const c = App.counts();
+    App.toast('夜班日報已排入產製', { desc: `今日通報 ${c.today} 件、未結 ${c.open} 件；PDF 將寄至 ${App.DATA.people.dispatcher.name} 的公務信箱。`, tone: 'info' });
+  });
+});
+</script>
+</body>
+</html>

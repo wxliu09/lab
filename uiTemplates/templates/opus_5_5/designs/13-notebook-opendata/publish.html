@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上架申請 — 澄港市 開放資料平台 · 資料集上架管理</title>
+<meta name="description" content="新資料集上架申請 notebook：貼上 CSV 即時解析與型別推斷、欄位 profiling、欄位對應與說明、授權與詮釋資料、送出前自動驗證預檢，以及承辦審核、資料長核定、發布的送審流程。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,500..700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 摘要 md cell 與步驟列 ---------- */
+  #c-intro .doc-head__meta .avatar { margin-right: 2px; }
+  .pub-lockbar { margin-top: 18px; }
+  .pub-steps { margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--line-2); }
+  .pub-step { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; max-width: 100%; border-radius: var(--r-sm); }
+  .pub-step__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; }
+  .pub-steps .stepper__meta { margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pub-step:hover .stepper__label { color: var(--accent-text); }
+  .stepper__item[data-state="error"] .stepper__label { color: var(--ink); }
+  .stepper__item[data-state="error"] .stepper__meta { color: var(--err-text); font-weight: 500; }
+  .stepper__meta.is-warn { color: var(--warn-text); }
+
+  /* ---------- [1] CSV 編輯器：行號 gutter + 問題標記 + 狀態列 ---------- */
+  .pub-editor { position: relative; margin-top: 12px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--paper); transition: border-color var(--dur-1), box-shadow var(--dur-1), opacity var(--dur-2); }
+  .pub-editor:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pub-editor__bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--white); border-bottom: 1px solid var(--line); border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0; min-width: 0; }
+  .pub-file { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px 0 8px; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); font-family: var(--font-mono); font-size: var(--fs-12); color: var(--ink); }
+  .pub-file .i { color: var(--accent); }
+  .pub-file__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pub-file__dirty { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--warn); }
+  .pub-editor__hint { font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pub-editor__body { display: grid; grid-template-columns: 52px minmax(0, 1fr); height: 252px; min-height: 140px; max-height: 70vh; resize: vertical; overflow: hidden; }
+  .pub-ln { position: relative; overflow: hidden; background: var(--gutter-bg); border-right: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-4); text-align: right; user-select: none; }
+  .pub-ln__inner { padding: 10px 10px 10px 0; }
+  .pub-ln__n { position: relative; display: block; height: 21px; line-height: 21px; font-variant-numeric: tabular-nums; }
+  .pub-ln__n.is-cur { color: var(--ink); font-weight: 600; }
+  .pub-ln__n[data-tone] { color: var(--ink-2); }
+  /* 問題標記：紅圓＝失敗、琥珀菱形＝警示，形狀也帶語意 */
+  .pub-ln__n[data-tone]::before { content: ""; position: absolute; left: 9px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
+  .pub-ln__n[data-tone="warn"]::before { background: var(--warn); border-radius: 1px; transform: rotate(45deg) scale(.88); }
+  .pub-ln__n.is-ping::after { content: ""; position: absolute; left: 5px; top: 3px; width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; animation: pub-ping 1.2s var(--ease-out) 2; }
+  .pub-editor__main { position: relative; min-width: 0; }
+  .pub-editor__hl { position: absolute; left: 0; right: 0; top: 0; height: 21px; background: var(--accent-soft); opacity: 0; pointer-events: none; transition: opacity .8s var(--ease-out); }
+  .pub-editor__hl.is-on { opacity: 1; transition-duration: .12s; }
+  .pub-editor .pub-editor__input { position: relative; display: block; width: 100%; height: 100%; min-height: 0; padding: 10px 14px; border: 0; border-radius: 0; background: transparent; box-shadow: none; resize: none; font-size: var(--fs-13); line-height: 21px; }
+  .pub-editor .pub-editor__input:focus { background: transparent; box-shadow: none; }
+  .pub-editor__status { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; padding: 5px 12px; border-top: 1px solid var(--line); background: var(--white); border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px); font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  .pub-editor__status b { color: var(--ink-2); font-weight: 500; }
+  .pub-editor__status .is-err { color: var(--err-text); }
+  .pub-locked { opacity: .62; }
+
+  /* 範例選單 */
+  .pub-menu { position: relative; flex: none; }
+  .pub-menu__list { position: absolute; right: 0; top: calc(100% + 6px); z-index: var(--z-pop); width: min(340px, calc(100vw - 66px)); padding: 6px; background: var(--white); border-radius: var(--r-md); box-shadow: var(--shadow-pop); }
+  .pub-menu__label { padding: 6px 10px 4px; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  .pub-menu__item { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 1px 10px; align-items: center; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; text-align: left; }
+  .pub-menu__item:hover, .pub-menu__item:focus-visible { background: var(--accent-tint); outline: none; }
+  .pub-menu__icon { grid-row: span 2; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--paper-2); border: 1px solid var(--line); color: var(--ink-2); }
+  .pub-menu__title { font-weight: 600; font-size: var(--fs-13); color: var(--ink); }
+  .pub-menu__sub { font-size: var(--fs-12); color: var(--ink-3); }
+
+  /* ---------- [1] 預覽表與型別推斷掃描 ---------- */
+  .pub-preview .table th { vertical-align: bottom; padding-top: 9px; padding-bottom: 9px; }
+  .pub-th { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .pub-th__name { font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; color: var(--ink); }
+  .pub-th .type { transform-origin: 0 50%; }
+  .pub-preview.is-sweep .pub-th .type { animation: pub-bump .52s var(--ease-spring) both; animation-delay: var(--d, 0ms); }
+  .pub-preview td.pub-td-warn { background: var(--warn-soft); color: var(--warn-text); }
+  .pub-preview td.is-flash { animation: pub-flash 1.8s var(--ease-out); }
+  /* 掃描帶放在與表格等寬的裁切層裡，位移時不會撐大捲動範圍 */
+  .pub-scanlayer { position: absolute; top: 0; bottom: 0; left: 0; width: var(--scan-w, 100%); overflow: hidden; pointer-events: none; z-index: 2; }
+  .pub-scan { position: absolute; top: 0; bottom: 0; left: -96px; width: 96px; background: linear-gradient(90deg, rgba(15, 157, 138, 0), rgba(15, 157, 138, .08) 55%, rgba(15, 157, 138, .26) 97%, rgba(15, 157, 138, 0)); box-shadow: inset -2px 0 0 rgba(15, 157, 138, .7); opacity: 0; }
+  .pub-scan.is-on { animation: pub-scan 1s linear forwards; }
+  .pub-more { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-legend { display: inline-flex; align-items: center; gap: 12px; }
+  .pub-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  /* ---------- [2] profiling ---------- */
+  .pub-ptype { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .pub-ptype small { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+  .pub-ptype small.is-manual { color: var(--cdo-text); }
+  .profile__row.pub-warnrow { background: linear-gradient(90deg, var(--warn-soft), transparent 75%); }
+  .pub-typesum { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .pub-uniq { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .pub-uniq__bar { height: 14px; border-radius: 3px; background: repeating-linear-gradient(90deg, var(--accent-soft) 0 5px, var(--white) 5px 6px); box-shadow: inset 0 0 0 1px var(--accent-line); }
+  .pub-uniq__txt { font-size: var(--fs-11); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- [3] 欄位對應 ---------- */
+  .pub-maptools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+  .pub-mapsum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--fs-13); color: var(--ink-2); }
+  .pub-mapsum b { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+  .pub-mapsum .is-warn b { color: var(--warn-text); }
+  .pub-mapsum .is-err b { color: var(--err-text); }
+  .pub-mapsum .meter { width: 120px; height: 6px; }
+  .pub-map .table { table-layout: fixed; }
+  .pub-map .table td { vertical-align: top; padding-top: 9px; padding-bottom: 9px; }
+  .pub-src { display: block; padding-top: 6px; font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .pub-src__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; font-size: var(--fs-11); color: var(--ink-3); }
+  .pub-in { height: 32px; min-height: 32px; padding: 4px 10px; font-size: var(--fs-13); }
+  .select.pub-in { padding-right: 28px; background-position: right 7px center; }
+  .pub-in--mono { font-family: var(--font-mono); font-size: var(--fs-12); }
+  .pub-in.is-invalid { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+  .pub-in.is-missing { border-style: dashed; border-color: var(--warn-line); background: #FFFDF7; }
+  .pub-err { display: block; margin-top: 4px; font-size: var(--fs-11); line-height: 1.45; color: var(--err-text); font-weight: 500; }
+  .pub-err:empty { display: none; }
+  .pub-map td.pub-pk { text-align: center; padding-top: 15px; }
+  .pub-map td.pub-pk .check { justify-content: center; }
+  .pub-dict { font-family: var(--font-mono); font-size: 10px; color: var(--info-text); background: var(--info-soft); border-radius: var(--r-xs); padding: 0 4px; }
+  .pub-maprow-empty td { text-align: center; color: var(--ink-3); padding: 18px; }
+
+  /* ---------- [4] 詮釋資料表單 ---------- */
+  .pub-form { display: flex; flex-direction: column; gap: 28px; }
+  .pub-sec { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .pub-sec__title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 12px; padding: 0; font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+  .pub-sec__no { font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 500; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-line); border-radius: var(--r-xs); padding: 0 5px; }
+  .pub-sec__hint { font-size: var(--fs-12); font-weight: 400; color: var(--ink-3); }
+  .pub-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+  .pub-span { grid-column: 1 / -1; }
+  .pub-hintrow { display: flex; align-items: baseline; gap: 12px; }
+  .pub-counter { margin-left: auto; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 400; color: var(--ink-3); }
+  .pub-counter.is-low { color: var(--warn-text); }
+  .pub-contact { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 38px; padding: 4px 6px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--white); cursor: text; transition: border-color var(--dur-1), box-shadow var(--dur-1); }
+  .pub-tags:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pub-tags .chip { height: 24px; }
+  .pub-tags__input { flex: 1 1 120px; min-width: 100px; height: 28px; border: 0; outline: none; padding: 0 6px; font-size: var(--fs-14); background: transparent; }
+  .pub-tags__input::placeholder { color: var(--ink-4); }
+  .pub-lic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pub-fmts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pub-fmt { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px 7px 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--white); font-size: var(--fs-13); cursor: pointer; transition: border-color var(--dur-1), background var(--dur-1); }
+  .pub-fmt .check__box { margin-top: 0; }
+  .pub-fmt:has(input:checked) { border-color: var(--accent-line); background: var(--accent-tint); }
+  .pub-fmt:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+  .pub-fmt__name { font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; }
+  .pub-fmt__sub { font-size: var(--fs-11); color: var(--ink-3); }
+  .pub-sched { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px 20px; align-items: start; }
+  .pub-next { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pub-next__run { font-family: var(--font-mono); font-size: var(--fs-12); padding: 2px 8px; border-radius: var(--r-xs); background: var(--paper-2); border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+  .pub-next__run:first-child { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-text); }
+  .pub-retry { display: flex; align-items: flex-start; margin-top: 10px; }
+  .pub-retry__step { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: none; min-width: 46px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+  .pub-retry__dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--warn); background: var(--white); }
+  .pub-retry__dot.is-fail { border-color: var(--err); background: var(--err); }
+  .pub-retry__dot.is-notify { border-color: var(--info); background: var(--info); }
+  .pub-retry__line { flex: 1 1 10px; height: 2px; margin-top: 4.5px; background: repeating-linear-gradient(90deg, var(--line-3) 0 4px, transparent 4px 7px); }
+  .pub-auto { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
+  .pub-auto dt { font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-auto dd { margin: 3px 0 0; font-size: var(--fs-13); color: var(--ink); line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+
+  /* ---------- [5] 預檢：品質圓環 + 規則 ---------- */
+  .pub-check { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .pub-score { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 18px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--gutter-bg); }
+  .pub-dims { width: 100%; display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .pub-dim__bar span { transform: scaleX(0); transition: transform .8s var(--ease-out), background-color .4s; }
+  .pub-score__note { font-size: var(--fs-12); line-height: 1.6; color: var(--ink-3); text-align: center; }
+  .pub-checkbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .pub-checkbar .spacer { min-width: 8px; }
+  .rule.is-resolved { animation: pub-rule-in .5s var(--ease-out); }
+  /* 動作鈕放在規則內容下方整列，避免擠壓運算式欄 */
+  #rules .rule { grid-template-columns: 22px minmax(0, 1fr) auto; }
+  #rules .rule__actions { grid-column: 2 / -1; flex-wrap: wrap; gap: 6px; margin-top: -2px; }
+  #rules .rule__expr { overflow-wrap: break-word; }
+  .pub-score { position: sticky; top: calc(var(--topbar-h) + 20px); }
+  .pub-ring .ring__arc { transition: stroke-dasharray .9s var(--ease-out), stroke .4s; }
+  .pub-ring.is-reset .ring__arc { transition: none; }
+
+  /* ---------- [6] 送出審核 ---------- */
+  .pub-pre__grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; }
+  .pub-sub { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: var(--fs-13); font-weight: 600; color: var(--ink-2); }
+  .pub-route { margin-bottom: 18px; }
+  .pub-route .stepper__meta { margin-top: 0; }
+  .pub-blockers { margin-top: 18px; }
+  .pub-blockers ul { margin: 4px 0 0; padding-left: 18px; }
+  .pub-blockers li + li { margin-top: 2px; }
+  .pub-blockers a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--err-line); text-underline-offset: 3px; }
+  .pub-blockers a:hover { color: var(--err-text); }
+  .pub-privacy { margin-top: 16px; font-size: var(--fs-13); color: var(--ink-2); }
+  .pub-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line-2); }
+  .pub-actions .hint { margin-right: auto; }
+  .pub-modal-kv { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); }
+  .pub-modal-kv + .callout { margin-top: 12px; }
+
+  .pub-track__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--gutter-bg); }
+  .pub-appno { font-family: var(--font-mono); font-size: var(--fs-17); font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+  .pub-track__meta { font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-track__flow { padding: 24px 6px 4px; }
+  .pub-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+  .pub-lane { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--white); transition: border-color var(--dur-3), background-color var(--dur-3), box-shadow var(--dur-3); }
+  .pub-lane__step { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  .pub-lane__title { font-family: var(--font-serif); font-size: var(--fs-17); font-weight: 600; color: var(--ink); line-height: 1.25; }
+  .pub-lane__meta { font-size: var(--fs-12); line-height: 1.55; color: var(--ink-3); }
+  .pub-lane__note { font-size: var(--fs-12); line-height: 1.55; color: var(--ink-2); padding: 6px 8px; border-radius: var(--r-sm); background: rgba(255, 255, 255, .7); border: 1px dashed var(--line-2); }
+  .pub-lane[data-state="active"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pub-lane[data-state="done"] { border-color: var(--accent-line); background: var(--accent-tint); }
+  .pub-lane[data-state="warn"] { border-color: var(--warn-line); background: var(--warn-soft); }
+  .pub-lane[data-state="todo"] { background: var(--gutter-bg); }
+  .pub-lane[data-state="todo"] .pub-lane__title { color: var(--ink-3); }
+  .pub-lane__live { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse-dot 1.2s var(--ease-in-out) infinite; }
+  .pub-track__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; margin-top: 22px; }
+  .pub-track .log { min-height: 150px; max-height: 300px; }
+  .pub-track__foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--line-2); }
+  .pub-actbox { display: flex; flex-direction: column; gap: 12px; }
+  .pub-actbox .cluster { gap: 8px; }
+
+  /* ---------- 右欄：送審就緒度 ---------- */
+  .pub-aside { gap: 16px; }
+  .pub-ready .card__head { padding: 12px 16px; justify-content: space-between; }
+  .pub-ready .card__title { font-family: var(--font-serif); font-size: var(--fs-17); }
+  .pub-ready__top { display: flex; align-items: center; gap: 16px; padding: 16px 16px 8px; }
+  .pub-ready .ring__sub { display: none; }
+  .pub-ready__k { font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-ready__grade { display: flex; align-items: center; gap: 8px; margin: 3px 0 4px; font-size: var(--fs-15); font-weight: 600; color: var(--ink); }
+  .pub-ready__hint { font-size: var(--fs-12); line-height: 1.5; color: var(--ink-3); }
+  .pub-ready__hint.is-block { color: var(--err-text); }
+  .pub-ready__hint.is-ok { color: var(--ok-text); }
+  .pub-list { display: flex; flex-direction: column; margin: 0; padding: 4px 8px 10px; list-style: none; }
+  .pub-list a { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: var(--r-sm); font-size: var(--fs-13); color: var(--ink-2); transition: background var(--dur-1), color var(--dur-1); }
+  .pub-list a:hover { background: var(--paper); color: var(--ink); }
+  .pub-list__meta { max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); color: var(--ink-3); }
+  .pub-list__meta.is-err { color: var(--err-text); }
+  .pub-list__meta.is-warn { color: var(--warn-text); }
+  .pub-list__icon { display: grid; place-items: center; width: 20px; height: 20px; }
+  .pub-num { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line-3); font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); transition: border-color var(--dur-2), box-shadow var(--dur-2); }
+  .pub-num.is-current { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pub-queue { display: flex; flex-direction: column; gap: 8px; }
+  .pub-queue__title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: var(--fs-13); font-weight: 600; color: var(--ink); }
+  .pub-queue__title b { font-family: var(--font-mono); font-size: var(--fs-20); }
+  .pub-queue .badge { height: 20px; font-size: var(--fs-11); }
+  .pub-aside .keys { padding: 0 6px; }
+
+  @keyframes pub-scan { 0% { opacity: 0; transform: translateX(0); } 8% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; transform: translateX(calc(var(--scan-w, 600px) + 96px)); } }
+  @keyframes pub-bump { 0% { transform: scale(1); } 40% { transform: scale(1.22); } 100% { transform: scale(1); } }
+  @keyframes pub-flash { 0%, 30% { box-shadow: inset 0 0 0 2px var(--accent); } 100% { box-shadow: inset 0 0 0 2px rgba(15, 157, 138, 0); } }
+  @keyframes pub-ping { 0% { opacity: .9; transform: scale(.5); } 100% { opacity: 0; transform: scale(1.6); } }
+  @keyframes pub-rule-in { 0% { opacity: .4; transform: translateX(-4px); } 100% { opacity: 1; transform: none; } }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1180px) {
+    .pub-check { grid-template-columns: minmax(0, 1fr); }
+    .pub-score { position: static; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 20px 28px; }
+    .pub-dims { width: auto; flex: 1 1 260px; max-width: 420px; }
+    .pub-score__note { flex: 1 1 100%; }
+    .pub-sched { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 980px) {
+    .pub-pre__grid, .pub-track__grid { grid-template-columns: minmax(0, 1fr); }
+    .pub-auto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .pub-step { flex-direction: row; align-items: center; gap: 12px; }
+    /* 直式步驟：連接線從圓點底一路接到下一個圓點 */
+    .pub-steps .stepper__item::before, .pub-route .stepper__item::before { top: 30px; height: calc(100% - 16px); }
+    .pub-editor__body { height: 232px; grid-template-columns: 40px minmax(0, 1fr); }
+    .pub-ln__inner { padding-right: 7px; }
+    .pub-ln__n[data-tone]::before { left: 4px; }
+    .pub-editor .pub-editor__input { padding: 10px; font-size: var(--fs-12); }
+    .pub-grid, .pub-lic, .pub-sched, .pub-auto { grid-template-columns: minmax(0, 1fr); }
+    .pub-lanes { grid-template-columns: minmax(0, 1fr); }
+    .pub-score { flex-direction: column; }
+    .pub-dims { width: 100%; max-width: none; flex: none; }
+    /* 欄位對應卡片：代碼／名稱、型別／主鍵兩兩並排，標籤放在輸入框上方，卡片高度約減四成 */
+    .pub-map .table { table-layout: auto; }
+    .pub-map.table-wrap--cards tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 12px; }
+    .pub-map.table-wrap--cards td { padding: 0; min-height: 0; }
+    .pub-map.table-wrap--cards td::before { position: static; display: block; width: auto; margin-bottom: 3px; font-size: var(--fs-11); }
+    .pub-map.table-wrap--cards td:first-child { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+    .pub-map.table-wrap--cards td:first-child::before { display: none; }
+    .pub-map.table-wrap--cards td:last-child, .pub-map.table-wrap--cards .pub-maprow-empty td { grid-column: 1 / -1; }
+    .pub-map td.pub-pk { text-align: left; padding-top: 0; }
+    .pub-map td.pub-pk .check { justify-content: flex-start; margin-top: 7px; }
+    .pub-src { padding-top: 0; }
+    .pub-src__meta { margin-top: 0; }
+    #rules .rule { grid-template-columns: 22px minmax(0, 1fr); }
+    .pub-actions .btn { flex: 1 1 auto; }
+    .pub-actions .hint { flex: 1 1 100%; }
+    .pub-track__flow { padding: 16px 0 0; }
+  }
+</style>
+</head>
+<body data-page="publish">
+<a class="skip-link" href="#main">跳至主要內容</a>
+
+<div class="utilbar">
+  <div class="utilbar__inner">
+    <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    <span class="utilbar__sep utilbar__sep--path" aria-hidden="true"></span>
+    <span class="utilbar__path"><span>澄港市政府</span><span>數位發展處</span><span>開放資料平台</span></span>
+    <div class="utilbar__right">
+      <span class="env-dot utilbar__env">正式環境 · v4.8.2</span>
+      <span data-clock aria-label="系統時間">2026-10-22（四）09:41:00</span>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="index.html" aria-label="澄港開放資料 資料集上架管理，回總覽">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">澄港開放資料</span><span class="brand__sub">資料集上架管理</span></span>
+    </a>
+    <nav class="mainnav" id="mainnav" aria-label="主要導覽">
+      <form class="gsearch only-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-m">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-m" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+      </form>
+      <a class="mainnav__link" href="index.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.75h7.75l1.25 1.25v11.25H3.5zM5.75 5h4.5M5.75 7.5h4.5M5.75 10h2.5M1.75 4h1.75M1.75 7h1.75M1.75 10h1.75"/></svg>總覽</a>
+      <a class="mainnav__link" href="datasets.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 3h11.5v10H2.25zM2.25 6.25h11.5M2.25 9.5h11.5M6.25 6.25V13"/></svg>資料集清單</a>
+      <a class="mainnav__link" href="dataset.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.5l3 3v9.5H4zM9.5 1.75v3h3M6 8h4.5M6 10.5h4.5"/></svg>資料集詳情</a>
+      <a class="mainnav__link is-active" href="publish.html" aria-current="page"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10.25V2.75M5 5.5l3-2.75 3 2.75M2.75 9.5v3.75h10.5V9.5"/></svg>上架申請</a>
+    </nav>
+    <div class="topbar__tools">
+      <form class="gsearch hide-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-d">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-d" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+        <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+      </form>
+      <span class="kernel" data-kernel role="status"><span class="kernel__dot" aria-hidden="true"></span><span class="kernel__label">核心 閒置</span></span>
+      <div class="whoami">
+        <span class="avatar" style="--h:170" aria-hidden="true">婷</span>
+        <span class="whoami__text"><span class="whoami__name">許雅婷</span><span class="whoami__role">資料治理科 承辦</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="mainnav" aria-label="開啟選單"><span class="menu-btn__bars" aria-hidden="true"><span></span><span></span><span></span></span></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="nb nb--right">
+    <div class="nb-main">
+      <div class="sheet">
+        <!-- 摘要（markdown cell）：說明、草稿狀態與五個步驟 -->
+        <section class="cell cell--md" id="c-intro" aria-labelledby="page-title">
+          <div class="cell__body">
+            <div class="doc-head">
+              <p class="doc-head__path"><span>notebooks</span><span class="sep">/</span><span>上架</span><span class="sep">/</span><span class="file" id="nb-file">ev-scooter-chargers.ipynb</span></p>
+              <h1 class="doc-head__title" id="page-title">新資料集上架申請</h1>
+              <p class="doc-head__lead">貼上機關提供的 CSV，平台會即時推斷欄位型別並逐欄 profiling；補齊欄位代碼與說明、授權與詮釋資料，預檢沒有失敗項目就能送出，依序由<b>承辦審核</b>、<b>資料長核定</b>後發布。</p>
+              <p class="doc-head__meta">
+                <span id="meta-status"></span>
+                <span id="meta-owner"></span>
+                <span id="meta-saved"></span>
+              </p>
+              <div class="doc-head__actions">
+                <button class="switch" type="button" role="switch" aria-checked="true" id="toggle-code"><span class="switch__track" aria-hidden="true"></span>顯示程式碼</button>
+                <button class="btn" type="button" id="save-draft"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.5l3 3v9.5H4zM9.5 1.75v3h3M6 8h4.5M6 10.5h4.5"/></svg>儲存草稿</button>
+                <a class="btn btn--primary" href="#c-submit" data-cta><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2L7 9M14 2l-4.5 12-2.5-5-5-2.5z"/></svg><span>前往送審</span></a>
+              </div>
+            </div>
+            <div class="callout pub-lockbar" id="lockbar" hidden></div>
+            <nav aria-label="申請步驟"><ol class="stepper pub-steps" id="steps"></ol></nav>
+          </div>
+        </section>
+
+        <!-- [1] 讀取 CSV -->
+        <section class="cell" data-cell id="c-source" aria-labelledby="t-source">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-source">讀取資料</h2><span class="cell__tag">read_csv</span></div>
+            <pre class="code"><code data-lang="py">df = opendata.read_csv(paste, sep="auto", encoding="utf-8")
+df.head(10)</code></pre>
+            <div class="pub-editor" id="editor">
+              <div class="pub-editor__bar">
+                <span class="pub-file"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.5l3 3v9.5H4zM9.5 1.75v3h3M6 8h4.5M6 10.5h4.5"/></svg><span class="pub-file__name" id="file-name">paste.csv</span><span class="pub-file__dirty" id="file-dirty" title="尚未儲存的變更" hidden></span></span>
+                <span class="pub-editor__hint hide-mobile">第一列為欄名 · 自動偵測逗號／Tab／分號</span>
+                <span class="spacer"></span>
+                <div class="pub-menu">
+                  <button class="btn btn--sm" type="button" id="ex-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="ex-menu"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 3h11.5v10H2.25zM2.25 6.25h11.5M2.25 9.5h11.5M6.25 6.25V13"/></svg>附範例<svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+                  <div class="pub-menu__list" id="ex-menu" role="menu" aria-label="載入範例草稿" hidden></div>
+                </div>
+                <button class="btn btn--sm btn--ghost" type="button" id="clear-csv"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>清除</button>
+              </div>
+              <div class="pub-editor__body">
+                <div class="pub-ln" aria-hidden="true"><div class="pub-ln__inner" id="ln"></div></div>
+                <div class="pub-editor__main">
+                  <span class="pub-editor__hl" id="editor-hl" aria-hidden="true"></span>
+                  <label class="sr-only" for="csv">CSV 內容（第一列為欄名）</label>
+                  <textarea id="csv" class="textarea textarea--code pub-editor__input" spellcheck="false" wrap="off" autocomplete="off" autocapitalize="off" placeholder="station_id,name,district,lat,lng&#10;EV-0101,港埕轉運站,港埕區,22.99412,120.26215" aria-describedby="editor-status"></textarea>
+                </div>
+              </div>
+              <div class="pub-editor__status" id="editor-status"></div>
+            </div>
+            <div class="cell__output" id="out-source"></div>
+          </div>
+        </section>
+
+        <!-- [2] 型別推斷與 profiling -->
+        <section class="cell" data-cell id="c-profile" aria-labelledby="t-profile">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-profile">型別推斷與欄位 profiling</h2><span class="cell__tag">Profile</span></div>
+            <pre class="code"><code data-lang="py">schema = df.infer_schema()  # str / int / float / date / geo / bool
+df.profile(schema, bins=12)</code></pre>
+            <div class="cell__output" id="out-profile"></div>
+          </div>
+        </section>
+
+        <!-- [3] 欄位對應與說明 -->
+        <section class="cell" data-cell id="c-mapping" aria-labelledby="t-mapping">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-mapping">欄位對應與說明</h2><span class="cell__tag">mapping</span></div>
+            <pre class="code"><code data-lang="py">mapping = schema.rename(CODEBOOK.suggest(df.columns))  # 平台欄位字典
+mapping.edit(code=True, label=True, dtype=True, pk=True, desc=True)</code></pre>
+            <div class="cell__output" id="out-mapping"></div>
+          </div>
+        </section>
+
+        <!-- [4] 授權與詮釋資料 -->
+        <section class="cell" data-cell id="c-meta" aria-labelledby="t-meta">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-meta">授權與詮釋資料</h2><span class="cell__tag">DatasetMeta</span></div>
+            <pre class="code"><code data-lang="py">meta = DatasetMeta()</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[ ]:</b><span>DatasetMeta · 表單即時寫回上方程式碼</span></p>
+              <form class="pub-form" id="metaform" novalidate>
+                <fieldset class="pub-sec" data-stream>
+                  <legend class="pub-sec__title"><span class="pub-sec__no">4.1</span>基本資料</legend>
+                  <div class="pub-grid">
+                    <div class="field" data-field="title">
+                      <label class="label req" for="m-title">資料集名稱</label>
+                      <input class="input" id="m-title" name="title" type="text" maxlength="60" autocomplete="off" aria-describedby="e-title">
+                      <p class="field__error" id="e-title"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                    </div>
+                    <div class="field" data-field="id">
+                      <label class="label req" for="m-id">識別碼 <span class="label__sub">網址與 API 路徑</span></label>
+                      <div class="input-group"><span class="input-group__addon">opendata/</span><input class="input mono" id="m-id" name="id" type="text" maxlength="48" autocomplete="off" spellcheck="false" aria-describedby="e-id"></div>
+                      <p class="field__error" id="e-id"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                    </div>
+                    <div class="field" data-field="agency">
+                      <label class="label req" for="m-agency">提供機關</label>
+                      <select class="select" id="m-agency" name="agency" aria-describedby="e-agency"></select>
+                      <p class="pub-contact" id="m-contact"></p>
+                      <p class="field__error" id="e-agency"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                    </div>
+                    <div class="field" data-field="theme">
+                      <label class="label req" for="m-theme">主題分類</label>
+                      <select class="select" id="m-theme" name="theme" aria-describedby="e-theme"></select>
+                      <p class="field__error" id="e-theme"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                    </div>
+                    <div class="field pub-span" data-field="desc">
+                      <label class="label req" for="m-desc">資料描述</label>
+                      <textarea class="textarea" id="m-desc" name="desc" rows="3" maxlength="400" aria-describedby="e-desc h-desc"></textarea>
+                      <div class="pub-hintrow"><p class="hint" id="h-desc">說明資料內容、涵蓋範圍與可能用途；至少 30 字，民眾在資料集頁面第一眼看到的就是這段。</p><span class="pub-counter" id="desc-count">0 字</span></div>
+                      <p class="field__error" id="e-desc"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                    </div>
+                    <div class="field pub-span" data-field="tags">
+                      <label class="label" for="m-tag">關鍵字 <span class="label__sub">Enter 或逗號新增，最多 8 個</span></label>
+                      <div class="pub-tags" id="tags-box"><span class="pub-tags__chips" id="tags-chips" style="display:contents"></span><input class="pub-tags__input" id="m-tag" type="text" maxlength="12" autocomplete="off" placeholder="例：充電站"></div>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <fieldset class="pub-sec" data-stream>
+                  <legend class="pub-sec__title"><span class="pub-sec__no">4.2</span>授權<span class="pub-sec__hint">決定民眾能否重製、改作與商業利用</span></legend>
+                  <div class="pub-lic" id="lic-list"></div>
+                  <div class="field" data-field="reason" id="reason-field" style="margin-top:12px" hidden>
+                    <label class="label req" for="m-reason">限定使用理由</label>
+                    <textarea class="textarea" id="m-reason" name="reason" rows="2" maxlength="200" aria-describedby="e-reason" placeholder="例：含個別場所營業資訊，依契約僅供本府業務合作單位使用。"></textarea>
+                    <p class="field__error" id="e-reason"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                  </div>
+                </fieldset>
+
+                <fieldset class="pub-sec" data-stream>
+                  <legend class="pub-sec__title"><span class="pub-sec__no">4.3</span>發布格式<span class="pub-sec__hint">CSV 為必備，其他格式由平台轉換產生</span></legend>
+                  <div class="pub-fmts" id="fmt-list"></div>
+                </fieldset>
+
+                <fieldset class="pub-sec" data-stream>
+                  <legend class="pub-sec__title"><span class="pub-sec__no">4.4</span>更新排程與失敗重試</legend>
+                  <div class="pub-sched">
+                    <div class="field">
+                      <label class="label" for="m-freq">更新頻率</label>
+                      <select class="select" id="m-freq" name="freq"></select>
+                      <p class="hint" id="freq-hint"></p>
+                    </div>
+                    <div class="field">
+                      <span class="label" id="src-label">資料來源</span>
+                      <div class="seg" role="group" aria-labelledby="src-label" id="m-source">
+                        <button type="button" data-source="upload" aria-pressed="true">手動上傳</button>
+                        <button type="button" data-source="url" aria-pressed="false">定期擷取網址</button>
+                        <button type="button" data-source="api" aria-pressed="false">機關 API</button>
+                      </div>
+                      <div class="field" data-field="url" id="url-field" hidden>
+                        <label class="sr-only" for="m-url">來源網址</label>
+                        <input class="input mono" id="m-url" name="url" type="url" autocomplete="off" spellcheck="false" placeholder="https://" aria-describedby="e-url">
+                        <p class="field__error" id="e-url"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.25 11.25H1.75zM8 6.5v3M8 11.6v.01"/></svg><span></span></p>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label class="label" for="m-retry">失敗重試</label>
+                      <select class="select" id="m-retry" name="retry">
+                        <option value="3">3 次（退避 5 → 15 → 45 分）</option>
+                        <option value="5">5 次（5 → 15 → 45 → 90 → 180 分）</option>
+                        <option value="0">不自動重試，失敗即通知</option>
+                      </select>
+                      <div class="pub-retry" id="retry-viz" aria-hidden="true"></div>
+                    </div>
+                    <div class="field pub-span">
+                      <span class="label">排程預覽</span>
+                      <div class="pub-next" id="next-runs"></div>
+                      <p class="hint" id="sched-hint"></p>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <section class="pub-sec" data-stream aria-labelledby="auto-title">
+                  <h3 class="pub-sec__title" id="auto-title"><span class="pub-sec__no">4.5</span>自動帶入<span class="pub-sec__hint">由資料內容推算，不需填寫</span></h3>
+                  <dl class="panel pub-auto" id="auto-kv"></dl>
+                </section>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- [5] 自動驗證預檢 -->
+        <section class="cell" data-cell id="c-check" aria-labelledby="t-check">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-check">自動驗證預檢</h2><span class="cell__tag">ValidationReport</span></div>
+            <pre class="code"><code data-lang="py">report = opendata.validate(df, mapping, meta, rules=RULES)  # 與正式上架相同的 10 條規則
+report.score(dimensions=QUALITY_DIMS)</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[ ]:</b><span id="check-label">ValidationReport</span></p>
+              <div class="pub-check">
+                <div class="pub-score" data-stream>
+                  <div id="check-ring"></div>
+                  <ul class="pub-dims" id="check-dims"></ul>
+                  <p class="pub-score__note">預估分數：送出後由平台以同一套規則重新計算，作為正式品質分數。</p>
+                </div>
+                <div data-stream>
+                  <div class="pub-checkbar">
+                    <span id="check-counts" class="cluster" style="gap:6px"></span>
+                    <span class="spacer"></span>
+                    <button class="btn btn--sm" type="button" id="recheck"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8a5.25 5.25 0 1 1-1.55-3.72M13.25 2.5v3.25H10"/></svg>重新執行預檢</button>
+                  </div>
+                  <div class="rules" id="rules"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [6] 送出審核 -->
+        <section class="cell" data-cell id="c-submit" aria-labelledby="t-submit">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-submit">送出審核</h2><span class="cell__tag">Application</span></div>
+            <pre class="code"><code data-lang="py">opendata.submit(df, mapping, meta, assignee="hsu")</code></pre>
+            <div class="cell__output">
+              <p class="out-label" data-stream><b data-out>Out[ ]:</b><span id="submit-label">Application · 草稿</span></p>
+              <div id="pre-submit">
+                <div class="pub-pre__grid" data-stream>
+                  <div>
+                    <h3 class="pub-sub">申請摘要</h3>
+                    <dl class="kv kv--cols" id="sum"></dl>
+                  </div>
+                  <div>
+                    <h3 class="pub-sub">審核路徑</h3>
+                    <ol class="stepper pub-route" id="route"></ol>
+                    <div class="pub-grid">
+                      <div class="field">
+                        <label class="label" for="assignee">指派承辦</label>
+                        <select class="select" id="assignee" aria-describedby="assignee-load"></select>
+                        <p class="hint" id="assignee-load"></p>
+                      </div>
+                      <div class="field">
+                        <span class="label">申請人</span>
+                        <p class="pub-contact" id="applicant" style="min-height:38px"></p>
+                      </div>
+                      <div class="field pub-span">
+                        <label class="label" for="note">給承辦的備註 <span class="label__sub">選填</span></label>
+                        <textarea class="textarea" id="note" rows="2" maxlength="200" placeholder="例：座標已由機關以 GPS 現地複測，請優先審核。"></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pub-blockers" id="blockers" data-stream></div>
+                <label class="check pub-privacy" data-stream><input type="checkbox" id="privacy"><span class="check__box" aria-hidden="true"></span><span>我已確認本資料不含可識別特定個人之資訊，或已依個人資料保護規定去識別化。</span></label>
+                <div class="pub-actions" data-stream>
+                  <p class="hint" id="submit-hint"></p>
+                  <button class="btn btn--primary btn--lg" type="button" id="submit-btn"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2L7 9M14 2l-4.5 12-2.5-5-5-2.5z"/></svg>送出審核</button>
+                </div>
+              </div>
+              <div class="pub-track" id="track" data-anim hidden>
+                <div class="pub-track__head" id="track-head"></div>
+                <div class="pub-track__flow" id="track-flow"></div>
+                <div class="pub-lanes" id="track-lanes"></div>
+                <div class="pub-track__grid">
+                  <div>
+                    <h3 class="pub-sub">自動驗證記錄</h3>
+                    <div class="log" id="track-log" aria-live="polite"></div>
+                  </div>
+                  <div class="pub-actbox" id="track-action"></div>
+                </div>
+                <div class="pub-track__foot" id="track-foot"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- 右欄：送審就緒度（桌機 sticky；窄螢幕隱藏，內容在主欄 cell 都有） -->
+    <aside class="nb-aside pub-aside" aria-label="送審就緒度">
+      <section class="card pub-ready" aria-labelledby="ready-title">
+        <div class="card__head"><h2 class="card__title" id="ready-title">送審就緒度</h2><span id="ready-status"></span></div>
+        <div class="pub-ready__top">
+          <div id="ready-ring"></div>
+          <div>
+            <p class="pub-ready__k">預估品質</p>
+            <p class="pub-ready__grade" id="ready-grade"></p>
+            <p class="pub-ready__hint" id="ready-hint"></p>
+          </div>
+        </div>
+        <ol class="pub-list" id="ready-list"></ol>
+        <div class="card__foot"><a class="btn btn--primary btn--block" href="#c-submit" data-cta><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2L7 9M14 2l-4.5 12-2.5-5-5-2.5z"/></svg><span>前往送審</span></a></div>
+      </section>
+      <section class="panel pub-queue" aria-labelledby="queue-title">
+        <p class="pub-queue__title" id="queue-title"><span>全平台待審上架</span><span><b id="q-total">0</b> 件</span></p>
+        <div class="cluster" id="q-chips" style="gap:4px"></div>
+        <p class="hint" id="q-mine"></p>
+        <a class="link" href="index.html#c-pending" style="font-size:var(--fs-12)">在總覽查看待審清單</a>
+      </section>
+      <div class="keys" aria-label="快捷鍵">
+        <div><span>執行目前 cell</span><span><kbd class="kbd">Shift</kbd> <kbd class="kbd">Enter</kbd></span></div>
+        <div><span>搜尋資料集</span><kbd class="kbd">/</kbd></div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <div>
+        <p class="site-footer__name">澄港市 開放資料平台</p>
+        <p class="site-footer__desc">由數位發展處資料治理科維運。資料集經自動驗證、承辦審核與資料長核定後發布，預設以「澄港開放授權 1.0」釋出。</p>
+      </div>
+    </div>
+    <nav aria-label="頁尾導覽">
+      <h2>管理功能</h2>
+      <ul>
+        <li><a href="index.html">營運總覽</a></li>
+        <li><a href="datasets.html">資料集清單</a></li>
+        <li><a href="dataset.html">資料集詳情</a></li>
+        <li><a href="publish.html">上架申請</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h2>平台維運</h2>
+      <ul>
+        <li>資料治理科 分機 6402</li>
+        <li>opendata@chenggang.gov.example</li>
+        <li>排程：每小時整點、每日 02:00</li>
+        <li>服務時間：週一至週五 08:30–17:30</li>
+      </ul>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 數位發展處</span>
+      <span>kernel opendata-kit 4.8.2 · Python 3.12</span>
+      <span>最後同步 <span data-clock="time">09:41:00</span></span>
+      <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const { fmt, esc, icon } = App;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
+  const filled = (v) => v != null && String(v).trim() !== '';
+  const LINE_H = 21; // 與 CSS 的行高一致，行號、定位高亮都靠它換算
+  const enc = new TextEncoder();
+
+  /* =================================================================
+   * 範例草稿：三份機關常見的資料型態，各自埋了不同的問題，讓預檢有東西可看
+   * ================================================================= */
+  const EXAMPLES = {
+    ev: {
+      label: '電動機車充電站', file: 'ev_chargers_202610.csv', sub: '環保局 · 24 列 × 10 欄 · 含 4 項待修正',
+      csv: `station_id,name,district,address,sockets,fast_charge,operator,lat,lng,opened_on
+EV-0101,港埕轉運站,港埕區,澄港市港埕區港埕大道18號,8,是,澄電綠能,22.99412,120.26215,2023-04-18
+EV-0102,港埕區公所,港埕區,澄港市港埕區中正路102號,4,否,澄電綠能,22.99876,120.25530,2023-05-02
+EV-0103,漁港路停車場,港埕區,澄港市港埕區漁港路7號,6,是,港灣充電網,22.98754,120.24871,2023-08-21
+EV-0104,北岸運動公園,北岸區,澄港市北岸區北岸一路220號,10,是,港灣充電網,23.07311,120.27940,2023-06-12
+EV-0105,北岸市場,北岸區,澄港市北岸區建國路56號,4,否,澄電綠能,23.06854,120.28412,2023-09-30
+EV-0106,舊城文昌街口,舊城區,澄港市舊城區文昌街33號,4,否,,23.01247,120.21983,2024-01-15
+EV-0107,舊城區圖書館,舊城區,澄港市舊城區復興路18號,6,否,澄電綠能,23.00968,120.22451,2024-02-05
+EV-0108,山腳社區活動中心,山腳區,澄港市山腳區山腳路141號,4,否,雲嶺能源,23.04532,120.31264,2024-03-11
+EV-0109,北岸國小,北岸,澄港市北岸區自由路90號,6,否,港灣充電網,23.07822,120.27155,2024-03-28
+EV-0110,新灣路轉運站,新灣區,澄港市新灣區新灣路300號,12,是,港灣充電網,22.96141,120.30216,2024-04-16
+EV-0111,新灣港區服務中心,新灣區,澄港市新灣區海濱大道2號,8,是,澄電綠能,22.95388,120.29473,2024-05-09
+EV-0112,鹽田濕地遊客中心,鹽田區,澄港市鹽田區鹽田路66號,4,否,雲嶺能源,22.93612,120.17844,2024-06-01
+EV-0113,鹽田區公所,鹽田區,澄港市鹽田區光復路25號,6,否,澄電綠能,22.94275,120.18562,2024/7/2
+EV-0114,溪洲橋停車場,溪洲區,澄港市溪洲區溪洲路188號,8,是,港灣充電網,23.02917,120.34128,2024-08-19
+EV-0115,溪洲市場,溪洲區,澄港市溪洲區成功路12號,4,否,,23.03354,120.33582,2024-09-03
+EV-0116,雲嶺山區服務站,雲嶺區,澄港市雲嶺區雲嶺路二段45號,4,否,雲嶺能源,23.11846,120.35217,2024-10-22
+EV-0117,雲嶺國中,雲嶺區,澄港市雲嶺區和平路77號,6,否,雲嶺能源,23.10953,121.34628,2024-11-14
+EV-0118,港埕大道立體停車場,港埕區,澄港市港埕區港埕大道260號,16,是,澄電綠能,22.99105,120.26792,2025-01-20
+EV-0119,中正路商圈,舊城區,澄港市舊城區中正路318號,6,是,港灣充電網,23.01582,120.23046,2025-03-07
+EV-0120,興港路加油站,新灣區,澄港市新灣區興港路41號,8,是,澄電綠能,22.96873,120.28905,2025-04-25
+EV-0121,北岸工業區服務中心,北岸區,澄港市北岸區北岸一路8號,10,是,港灣充電網,23.08426,120.26318,2025-06-18
+EV-0122,山腳運動中心,山腳區,澄港市山腳區民生路150號,8,是,雲嶺能源,23.05173,120.30441,2025-08-02
+EV-0123,溪洲出海口公園,溪洲區,澄港市溪洲區溪洲路3號,4,否,雲嶺能源,23.02108,120.35762,2025-10-14
+EV-0124,望海步道入口,鹽田區,澄港市鹽田區海濱大道520號,4,否,澄電綠能,22.92847,120.16928,2026-03-09`,
+      cols: {
+        station_id: { label: '站點代碼', desc: '機關內部唯一代碼（EV-####）', pk: true },
+        name: { label: '站點名稱', desc: '設置場域名稱' },
+        district: { label: '行政區', desc: '依本市行政區代碼表' },
+        address: { label: '地址', desc: '門牌地址' },
+        sockets: { label: '充電座數', desc: '可同時充電之插座數' },
+        fast_charge: { label: '快充', desc: '' },
+        operator: { label: '營運單位', desc: '' },
+        lat: { label: '緯度', desc: 'WGS84' },
+        lng: { label: '經度', desc: 'WGS84' },
+        opened_on: { label: '啟用日期', desc: '' },
+      },
+      meta: {
+        title: '電動機車充電站', id: 'ev-scooter-chargers', agency: 'env', theme: 'environment', freq: 'monthly', formats: ['CSV', 'GeoJSON'], license: 'cg-open-1',
+        desc: '本市公有場域及合作商家設置之電動機車充電站位置、充電座數、快充設備與營運單位，供民眾查詢充電地點與地圖應用。',
+        tags: ['充電站', '電動機車', '低碳交通'], source: 'url', url: 'https://env.chenggang.gov.example/ev/stations.csv', retry: '3',
+      },
+    },
+    pool: {
+      label: '市立游泳池入場人次', file: '游泳池入場人次_2026Q3.csv', sub: '教育局 · 18 列 × 6 欄 · 中文欄名待對應',
+      csv: `統計年月,行政區,場館名稱,入場人次,營業收入（千元）,開放天數
+2026-07,港埕區,港埕國民運動中心,28416,2471.6,31
+2026-07,北岸區,北岸游泳池,15208,1094.9,31
+2026-07,舊城區,舊城溫水游泳池,11873,926.1,31
+2026-07,新灣區,新灣國民運動中心,24961,2196.6,31
+2026-07,溪洲區,溪洲游泳池,9632,616.4,30
+2026-07,雲嶺區,雲嶺游泳池,6418,398.0,31
+2026-08,港埕區,港埕國民運動中心,31072,2702.3,31
+2026-08,北岸區,北岸游泳池,16985,1222.9,31
+2026-08,舊城區,舊城溫水游泳池,12406,967.7,31
+2026-08,新灣區,新灣國民運動中心,27534,2423.0,31
+2026-08,溪洲區,溪洲游泳池,10847,694.2,31
+2026-08,雲嶺區,雲嶺游泳池,7215,447.3,31
+2026-09,港埕區,港埕國民運動中心,19385,1686.5,28
+2026-09,北岸區,北岸游泳池,9104,655.5,28
+2026-09,舊城區,舊城溫水游泳池,10228,797.8,28
+2026-09,新灣區,新灣國民運動中心,16742,1473.3,28
+2026-09,溪洲區,溪洲游泳池,5361,343.1,28
+2026-09,雲嶺區,雲嶺游泳池,3907,242.2,28`,
+      cols: {},
+      meta: {
+        title: '市立游泳池入場人次', id: 'swimming-pool-visitors', agency: 'edu', theme: 'education', freq: 'monthly', formats: ['CSV'], license: 'cg-open-1',
+        desc: '各市立游泳池每月入場人次與營業收入。', tags: ['游泳池'], source: 'upload', url: '', retry: '3',
+      },
+    },
+    sandbag: {
+      label: '防汛沙包領取點', file: 'sandbag_points.csv', sub: '工務局 · 14 列 × 9 欄 · 主鍵重複',
+      csv: `point_id,name,district,address,bags_stock,open_hours,phone,lat,lng
+SB-201,港埕區公所,港埕區,澄港市港埕區中正路102號,1200,24 小時,(07) 521-3301,22.99876,120.25530
+SB-202,漁港里辦公處,港埕區,澄港市港埕區漁港路45號,400,08:00-20:00,(07) 521-7742,22.98591,120.24618
+SB-203,北岸區公所,北岸區,澄港市北岸區建國路2號,1000,24 小時,(07) 562-1180,23.07055,120.28126
+SB-204,北岸工務段,北岸區,澄港市北岸區北岸一路311號,1500,24 小時,(07) 562-9035,23.08127,120.26984
+SB-205,舊城區公所,舊城區,澄港市舊城區民生路60號,800,24 小時,(07) 531-2216,23.01364,120.22618
+SB-206,山腳區公所,山腳區,澄港市山腳區山腳路8號,600,08:00-22:00,(07) 645-1093,23.04711,120.30875
+SB-207,新灣區公所,新灣區,澄港市新灣區新灣路120號,1000,24 小時,(07) 586-4471,22.96382,120.29841
+SB-208,新灣抽水站,新灣區,澄港市新灣區海濱大道88號,2000,24 小時,(07) 586-0912,22.95716,120.30588
+SB-208,鹽田區公所,鹽田區,澄港市鹽田區光復路25號,800,24 小時,(07) 593-3307,22.94275,120.18562
+SB-210,鹽田濕地管理站,鹽田區,澄港市鹽田區鹽田路66號,300,08:00-17:00,(07) 593-8820,22.93612,120.17844
+SB-211,溪洲區公所,溪洲區,澄港市溪洲區溪洲路50號,900,24 小時,(07) 617-2245,23.03086,120.34027
+SB-212,溪洲堤防工務所,溪洲區,澄港市溪洲區成功路201號,1800,24 小時,(07) 617-5530,23.02473,120.35391
+SB-213,雲嶺區公所,雲嶺區,澄港市雲嶺區雲嶺路一段12號,500,08:00-20:00,(07) 662-1048,23.11582,120.35106
+SB-214,雲嶺消防分隊,雲嶺區,澄港市雲嶺區和平路30號,400,24 小時,(07) 662-7119,23.10846,120.34417`,
+      cols: {
+        point_id: { label: '領取點代碼', desc: 'SB-### 流水號', pk: true },
+        name: { label: '領取點名稱', desc: '' },
+        bags_stock: { label: '沙包庫存（包）', desc: '每日 17:00 盤點數量' },
+        open_hours: { label: '開放時段', desc: '' },
+        phone: { label: '聯絡電話', desc: '' },
+      },
+      meta: {
+        title: '防汛沙包領取點', id: 'sandbag-points', agency: 'pwb', theme: 'safety', freq: 'adhoc', formats: ['CSV', 'GeoJSON'], license: 'cg-open-1',
+        desc: '颱風及豪雨期間，各區公所、工務段與抽水站提供民眾領取防汛沙包之地點、庫存量與開放時段。',
+        tags: ['防汛', '沙包', '颱風'], source: 'upload', url: '', retry: '0',
+      },
+    },
+  };
+
+  /* =================================================================
+   * 平台欄位字典：常見欄名直接帶出代碼、中文名稱與說明
+   * ================================================================= */
+  const FIELD_DICT = {};
+  [
+    [['district', '行政區'], { code: 'district', label: '行政區', desc: '依本市行政區代碼表（8 區）' }],
+    [['name', '名稱'], { code: 'name', label: '名稱', desc: '' }],
+    [['address', '地址'], { code: 'address', label: '地址', desc: '門牌地址' }],
+    [['lat', 'latitude', '緯度'], { code: 'lat', label: '緯度', desc: 'WGS84' }],
+    [['lng', 'lon', 'longitude', '經度'], { code: 'lng', label: '經度', desc: 'WGS84' }],
+    [['phone', '電話'], { code: 'phone', label: '電話', desc: '' }],
+    [['period', '統計年月'], { code: 'period', label: '統計年月', desc: '西元年月（YYYY-MM）' }],
+    [['year', '年度'], { code: 'year', label: '年度', desc: '西元年' }],
+    [['場館名稱'], { code: 'venue', label: '場館名稱', desc: '' }],
+    [['入場人次'], { code: 'visitors', label: '入場人次', desc: '當月售票與免費入場合計' }],
+    [['營業收入（千元）'], { code: 'revenue_k', label: '營業收入（千元）', desc: '' }],
+  ].forEach(([keys, v]) => keys.forEach((k) => { FIELD_DICT[k] = v; }));
+  const dictFor = (h) => FIELD_DICT[h] || FIELD_DICT[h.toLowerCase()] || null;
+
+  /* =================================================================
+   * 狀態：所有輸出都由這裡推導；欄位編輯以原始欄名為 key 保存，重新貼上同欄名時沿用
+   * ================================================================= */
+  const blankMeta = () => ({ title: '', id: '', agency: '', theme: '', freq: 'monthly', formats: ['CSV'], license: 'cg-open-1', reason: '', desc: '', tags: [], source: 'upload', url: '', retry: '3' });
+  const state = {
+    text: '', fileName: 'paste.csv', dirty: false,
+    parsed: { headers: [], rows: [], delimiter: ',' }, rowLines: [], cols: [],
+    meta: blankMeta(),
+    assignee: App.ME.id, note: '', privacy: false,
+    showAllRows: false, onlyTodo: false, showErrors: false,
+    savedAt: App.time('2026-10-22T09:38'),
+    submittedId: null, reviewNote: '',
+    ev: null,
+  };
+  let edits = new Map();
+  const touched = new Set();
+  const ta = $('#csv');
+  const submittedDs = () => (state.submittedId ? App.dataset(state.submittedId) : null);
+  const isLocked = () => { const ds = submittedDs(); return !!ds && ds.status !== 'returned'; };
+  const guard = () => {
+    if (!isLocked()) return false;
+    App.toast('申請已送出，內容已鎖定', { tone: 'info', desc: '退回補正後才能修改資料與詮釋資料。' });
+    return true;
+  };
+  const hasData = () => state.parsed.rows.length > 0 && state.cols.length > 0;
+  const codeOf = (c) => c.e.code.trim() || c.src || `col_${c.idx + 1}`;
+  const outTag = (id) => `<b data-out>Out[${$('#' + id).dataset.exec || ' '}]:</b>`;
+  const delimName = (d) => ({ ',': '逗號', '\t': 'Tab', ';': '分號' }[d] || d);
+
+  const defaultEdit = (h) => {
+    const d = dictFor(h);
+    const isCode = /^[A-Za-z][A-Za-z0-9_]*$/.test(h);
+    return { code: d ? d.code : (isCode ? h.toLowerCase() : ''), label: d ? d.label : (isCode ? '' : h), desc: d ? d.desc : '', type: null, pk: false, dict: !!d };
+  };
+
+  /** 解析貼上文字 → 欄位（含推斷型別與 profiling）；並記下每列資料在編輯器中的行號 */
+  const parse = () => {
+    state.parsed = App.csv.parse(state.text);
+    const lines = state.text.split('\n');
+    // 與 App.csv.parse 略過空白列的規則對齊，讓「第 n 行」與編輯器行號一致
+    state.rowLines = [];
+    for (let i = 1; i < lines.length; i++) if (lines[i].replace(/[\s,;\t"]/g, '') !== '') state.rowLines.push(i + 1);
+    const seen = {};
+    state.cols = state.parsed.headers.map((h, i) => {
+      seen[h] = (seen[h] || 0) + 1;
+      const key = seen[h] > 1 ? `${h}~${seen[h]}` : h;
+      const values = state.parsed.rows.map((r) => r[i]);
+      if (!edits.has(key)) edits.set(key, defaultEdit(h));
+      const c = { key, src: h, idx: i, values, inferred: App.inferType(values, h), e: edits.get(key) };
+      c.type = c.e.type || c.inferred;
+      c.prof = App.profileValues(values, c.type);
+      return c;
+    });
+  };
+
+  /* =================================================================
+   * 預檢規則（與平台正式驗證同樣的 10 條；首次上架的「結構」改為比對宣告型別）
+   * ================================================================= */
+  const ISO_RE = /^\d{4}-\d{2}(-\d{2})?([ T]\d{2}:\d{2}(:\d{2})?)?$/;
+  const SLASH_RE = /^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/;
+  const ROC_RE = /^(\d{2,3})[/.](\d{1,2})[/.](\d{1,2})$/;
+  const CAST = {
+    str: () => true,
+    int: (v) => /^-?\d+$/.test(v),
+    float: (v) => /^-?(\d+\.?\d*|\.\d+)$/.test(v),
+    date: (v) => ISO_RE.test(v),
+    geo: (v) => (/^-?\d+(\.\d+)?$/.test(v) && Math.abs(Number(v)) <= 180) || /^(POINT|LINESTRING|POLYGON|MULTIPOLYGON)\s*\(/i.test(v),
+    bool: (v) => /^(true|false|是|否|y|n|yes|no)$/i.test(v),
+  };
+  const toIso = (v) => {
+    let m = SLASH_RE.exec(v);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    m = ROC_RE.exec(v);
+    if (m) return `${Number(m[1]) + 1911}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    return null;
+  };
+  const isLat = (c) => /^(lat|latitude|緯度|y)$/i.test(c.src) || /^lat/i.test(c.e.code.trim());
+  const isLng = (c) => /^(lng|lon|long|longitude|經度|x)$/i.test(c.src) || /^(lng|lon)/i.test(c.e.code.trim());
+  const isDistrict = (c) => /district|行政區/i.test(c.src) || c.e.code.trim() === 'district';
+  const RULE_NAME = Object.fromEntries(App.RULES.map((r) => [r.key, r.name]));
+  RULE_NAME.schema = '型別宣告相容';
+  const RULE_KEYS = ['schema', 'pk', 'required', 'range', 'geo', 'date', 'encoding', 'freshness', 'meta', 'consistency'];
+  const lineOf = (row) => state.rowLines[row] || row + 2;
+  const quoteList = (cs) => cs.map((c) => `"${codeOf(c)}"`).join(', ');
+
+  const runRules = () => {
+    const cols = state.cols, rows = state.parsed.rows, n = rows.length, m = state.meta;
+    const out = [];
+    const add = (key, expr, st, result, detail = '', extra = {}) => out.push({ key, name: RULE_NAME[key], expr, state: st, result, detail, cells: [], fix: null, ...extra });
+    if (!hasData()) {
+      RULE_KEYS.forEach((k) => add(k, '# 等待資料', 'idle', '未執行', '貼上資料後自動執行'));
+      return out;
+    }
+
+    // 1. 型別宣告相容：手動改了型別、但值轉不過去的列
+    {
+      const bad = [];
+      cols.forEach((c) => { if (c.type !== 'str') c.values.forEach((v, r) => { if (filled(v) && !CAST[c.type](v)) bad.push({ row: r, idx: c.idx, tone: 'err', c }); }); });
+      const badCols = [...new Set(bad.map((b) => b.c))];
+      add('schema', 'assert df.astype(SCHEMA).errors == 0  # 首次上架：比對宣告型別',
+        bad.length ? 'fail' : 'pass',
+        bad.length ? `${bad.length} 列無法轉換` : `${cols.length} / ${cols.length} 欄相容`,
+        badCols.map((c) => { const first = bad.find((b) => b.c === c); return `${codeOf(c)} 宣告為 ${c.type}，${bad.filter((b) => b.c === c).length} 列無法轉換（例：第 ${lineOf(first.row)} 行「${c.values[first.row]}」）`; }).join('；'),
+        { cells: bad });
+    }
+
+    // 2. 主鍵唯一：重複時依同前綴流水號的缺號建議修正值
+    {
+      const pk = cols.filter((c) => c.e.pk);
+      const expr = `assert df[[${pk.length ? quoteList(pk) : '"_row"'}]].is_unique`;
+      if (!pk.length) add('pk', expr, 'warn', '未指定主鍵', '未指定主鍵，平台將以列序號識別，後續更新無法比對異動列；請在「欄位對應」勾選主鍵。');
+      else {
+        const seen = new Map(), dup = [], nul = [];
+        rows.forEach((r, i) => {
+          const parts = pk.map((c) => r[c.idx]);
+          if (parts.some((p) => !filled(p))) { nul.push(i); return; }
+          const k = parts.join('\u0001');
+          if (seen.has(k)) dup.push([seen.get(k), i]); else seen.set(k, i);
+        });
+        if (!dup.length && !nul.length) add('pk', expr, 'pass', `${n} / ${n} 唯一`, `主鍵：${pk.map(codeOf).join(' + ')}`);
+        else {
+          const cells = [];
+          dup.forEach(([a, b]) => pk.forEach((c) => { cells.push({ row: a, idx: c.idx, tone: 'err' }, { row: b, idx: c.idx, tone: 'err' }); }));
+          nul.forEach((r) => pk.forEach((c) => cells.push({ row: r, idx: c.idx, tone: 'err' })));
+          const details = dup.slice(0, 3).map(([a, b]) => `「${pk.map((c) => rows[b][c.idx]).join(' · ')}」重複出現於第 ${lineOf(a)}、${lineOf(b)} 行`);
+          if (nul.length) details.push(`第 ${nul.slice(0, 3).map(lineOf).join('、')} 行主鍵為空值`);
+          let fix = null;
+          if (pk.length === 1 && dup.length) {
+            const c = pk[0];
+            const re = /^(.*?)(\d+)$/;
+            const [, prefix, digits] = re.exec(rows[dup[0][1]][c.idx]) || [];
+            if (prefix != null) {
+              const used = new Set(c.values.map((v) => { const mm = re.exec(v || ''); return mm && mm[1] === prefix ? Number(mm[2]) : null; }).filter((x) => x != null));
+              const lo = Math.min(...used), hi = Math.max(...used);
+              let k = lo;
+              while (used.has(k) && k <= hi) k += 1;
+              const cand = prefix + String(k).padStart(digits.length, '0');
+              fix = { label: `改為「${cand}」`, desc: `第 ${lineOf(dup[0][1])} 行 ${codeOf(c)} → ${cand}（流水號缺號）`, changes: [{ row: dup[0][1], idx: c.idx, value: cand }] };
+            }
+          }
+          add('pk', expr, 'fail', dup.length ? `${dup.length} 筆重複` : `${nul.length} 列空值`, details.join('；'), { cells, fix });
+        }
+      }
+    }
+
+    // 3. 必填欄位：主鍵與座標不能空；其他欄空值超過 20% 給警示
+    {
+      const req = cols.filter((c) => c.e.pk || c.type === 'geo');
+      const miss = [];
+      req.forEach((c) => c.values.forEach((v, r) => { if (!filled(v)) miss.push({ row: r, idx: c.idx, tone: 'err', c }); }));
+      const sparse = cols.filter((c) => c.prof.nullRate > 0.2);
+      const someNull = cols.filter((c) => c.prof.nullRate > 0 && c.prof.nullRate <= 0.2);
+      const expr = `assert df[[${req.length ? quoteList(req) : '*REQUIRED'}]].notna().all()`;
+      if (miss.length) add('required', expr, 'fail', `${miss.length} 列空值`, [...new Set(miss.map((x) => x.c))].map((c) => `${codeOf(c)} 第 ${miss.filter((x) => x.c === c).slice(0, 3).map((x) => lineOf(x.row)).join('、')} 行為空值`).join('；'), { cells: miss });
+      else if (sparse.length) {
+        const cells = [];
+        sparse.forEach((c) => c.values.forEach((v, r) => { if (!filled(v)) cells.push({ row: r, idx: c.idx, tone: 'warn' }); }));
+        add('required', expr, 'warn', `${sparse.length} 欄空值偏高`, sparse.map((c) => `${codeOf(c)} 空值 ${fmt.pct(c.prof.nullRate)}（超過 20%）`).join('；'), { cells });
+      } else add('required', expr, 'pass', '通過', `主鍵與座標欄位無空值${someNull.length ? `；${someNull.map(codeOf).join('、')} 含少量空值（≤ 20%）` : ''}`);
+    }
+
+    // 4. 數值範圍：計數與量值不應為負
+    {
+      const num = cols.filter((c) => c.type === 'int' || c.type === 'float');
+      if (!num.length) add('range', 'assert df.select_dtypes("number").ge(0).all()', 'skip', '略過', '無數值欄位');
+      else {
+        const neg = [];
+        num.forEach((c) => c.values.forEach((v, r) => { if (filled(v) && Number(v) < 0) neg.push({ row: r, idx: c.idx, tone: 'err', c, v }); }));
+        add('range', `assert df[[${quoteList(num)}]].ge(0).all()`, neg.length ? 'fail' : 'pass',
+          neg.length ? `${neg.length} 列為負值` : `${num.length} 個數值欄位`,
+          neg.length ? neg.slice(0, 3).map((x) => `${codeOf(x.c)} 第 ${lineOf(x.row)} 行為 ${x.v}`).join('；') : `${num.map(codeOf).join('、')} 皆 ≥ 0`, { cells: neg });
+      }
+    }
+
+    // 5. 座標範圍：經度首碼誤植（121 → 120）是機關手動建檔最常見的錯
+    {
+      const geo = cols.filter((c) => c.type === 'geo');
+      const expr = `assert geo.within(df, CITY_BBOX)  # ${App.BBOX.lat.join('–')}°N, ${App.BBOX.lng.join('–')}°E`;
+      if (!geo.length) add('geo', expr, 'skip', '略過', '無地理欄位');
+      else {
+        const bad = [];
+        geo.forEach((c) => {
+          const lng = isLng(c), range = isLat(c) ? App.BBOX.lat : lng ? App.BBOX.lng : null;
+          if (!range) return;
+          c.values.forEach((v, r) => { if (filled(v) && /^-?\d+(\.\d+)?$/.test(v)) { const x = Number(v); if (x < range[0] || x > range[1]) bad.push({ row: r, idx: c.idx, tone: 'err', c, v, lng, range }); } });
+        });
+        let fix = null;
+        const fixable = bad.filter((b) => b.lng && /^121\./.test(b.v)).map((b) => ({ ...b, to: b.v.replace(/^121\./, '120.') })).filter((b) => Number(b.to) >= App.BBOX.lng[0] && Number(b.to) <= App.BBOX.lng[1]);
+        if (fixable.length) fix = { label: fixable.length === 1 ? `改為 ${fixable[0].to}` : `修正 ${fixable.length} 列經度首碼`, desc: fixable.map((b) => `第 ${lineOf(b.row)} 行 ${codeOf(b.c)} ${b.v} → ${b.to}`).join('；'), changes: fixable.map((b) => ({ row: b.row, idx: b.idx, value: b.to })) };
+        add('geo', expr, bad.length ? 'fail' : 'pass', bad.length ? `${bad.length} 列超出範圍` : `${n} / ${n} 列`,
+          bad.length ? bad.slice(0, 3).map((b) => `第 ${lineOf(b.row)} 行 ${codeOf(b.c)} = ${b.v}，超出 ${b.range.join('–')}°${b.lng ? 'E' : 'N'}${fixable.some((f) => f.row === b.row && f.idx === b.idx) ? '（疑似首碼誤植）' : ''}`).join('；') : `${geo.map(codeOf).join('、')} 皆在澄港市範圍內`,
+          { cells: bad, fix });
+      }
+    }
+
+    // 6. 日期格式：混入一列 2024/7/2 就會讓整欄被推斷成字串
+    {
+      const dateCols = cols.filter((c) => c.type === 'date');
+      const suspect = cols.filter((c) => c.type === 'str' && c.values.some((v) => filled(v) && (SLASH_RE.test(v) || ROC_RE.test(v))) && c.values.every((v) => !filled(v) || ISO_RE.test(v) || SLASH_RE.test(v) || ROC_RE.test(v)));
+      const all = [...dateCols, ...suspect];
+      const expr = `assert df[[${all.length ? quoteList(all) : '*DATES'}]].str.match(ISO8601).all()`;
+      if (!all.length) add('date', expr, 'skip', '略過', '無日期欄位');
+      else if (suspect.length) {
+        const cells = [];
+        suspect.forEach((c) => c.values.forEach((v, r) => { if (filled(v) && !ISO_RE.test(v)) cells.push({ row: r, idx: c.idx, tone: 'warn', c, v, to: toIso(v) }); }));
+        add('date', expr, 'warn', `${cells.length} 列非 ISO 8601`,
+          cells.slice(0, 3).map((x) => `${codeOf(x.c)} 第 ${lineOf(x.row)} 行「${x.v}」非 ISO 8601，該欄因此被推斷為 str`).join('；'),
+          { cells, fix: { label: '轉為 ISO 8601', desc: cells.map((x) => `第 ${lineOf(x.row)} 行 ${x.v} → ${x.to}`).join('；'), changes: cells.map((x) => ({ row: x.row, idx: x.idx, value: x.to })) } });
+      } else add('date', expr, 'pass', '通過', `${dateCols.map(codeOf).join('、')} 符合 ISO 8601`);
+    }
+
+    // 7. 編碼：貼上的文字已是 Unicode，只需抓出亂碼殘跡（Big5 被當 UTF-8 讀的結果）
+    {
+      const MOJI = /�|[ÃÂå-é][\u0080-¿]/;
+      const cells = [];
+      rows.forEach((r, i) => r.forEach((v, j) => { if (MOJI.test(v)) cells.push({ row: i, idx: j, tone: 'err' }); }));
+      add('encoding', 'assert source.encoding == "utf-8"', cells.length ? 'fail' : 'pass', cells.length ? `${cells.length} 格亂碼` : 'UTF-8',
+        cells.length ? `第 ${[...new Set(cells.map((c) => lineOf(c.row)))].slice(0, 4).join('、')} 行含無法解碼的字元，請機關以 UTF-8 重新匯出` : '貼上文字以 UTF-8 處理，未發現亂碼字元', { cells });
+    }
+
+    // 8. 時效：首次上架沒有歷史可比，發布後才依排程檢核
+    add('freshness', `assert now() - df.updated <= ${m.freq === 'adhoc' ? 'None' : `freq("${m.freq}") * 1.5`}`, 'skip', '略過',
+      m.freq === 'adhoc' ? '不定期更新，不檢核時效' : `首次上架，發布後依「${App.FREQS[m.freq].label}」排程檢核`);
+
+    // 9. 詮釋資料
+    {
+      const noDesc = cols.filter((c) => !c.e.desc.trim());
+      const items = [];
+      if (noDesc.length) items.push(`${noDesc.length} 欄缺少說明（${noDesc.slice(0, 3).map(codeOf).join('、')}${noDesc.length > 3 ? '…' : ''}）`);
+      if (m.desc.trim().length < 30) items.push('資料描述不足 30 字');
+      if (!m.tags.length) items.push('未設定關鍵字');
+      if (!m.agency) items.push('未指定提供機關與聯絡窗口');
+      add('meta', 'assert not meta.missing(["description", "license", "contact", "columns.*.desc"])', items.length ? 'warn' : 'pass',
+        items.length ? (items.length === 1 && noDesc.length ? `${noDesc.length} 欄缺漏` : `${items.length} 項缺漏`) : '完整', items.length ? items.join('；') : '描述、授權、聯絡窗口與欄位說明皆已填寫');
+    }
+
+    // 10. 代碼一致：行政區要能對上代碼表（少一個「區」字最常見）
+    {
+      const dc = cols.filter(isDistrict);
+      if (!dc.length) add('consistency', 'assert units.consistent(df, CODEBOOK)', 'skip', '略過', '無代碼欄位');
+      else {
+        const bad = [];
+        dc.forEach((c) => c.values.forEach((v, r) => { if (filled(v) && !App.DISTRICTS.includes(v)) bad.push({ row: r, idx: c.idx, tone: 'err', c, v, to: App.DISTRICTS.includes(v + '區') ? v + '區' : null }); }));
+        const fx = bad.filter((b) => b.to);
+        const distinct = new Set(dc.flatMap((c) => c.values.filter(filled))).size;
+        add('consistency', `assert df[[${quoteList(dc)}]].isin(CODEBOOK.districts).all()`, bad.length ? 'fail' : 'pass',
+          bad.length ? `${bad.length} 列不在代碼表` : `${distinct} 區皆符合`,
+          bad.length ? bad.slice(0, 3).map((b) => `第 ${lineOf(b.row)} 行「${b.v}」不在行政區代碼表${b.to ? `（應為「${b.to}」）` : ''}`).join('；') : `${dc.map(codeOf).join('、')} 對照行政區代碼表`,
+          { cells: bad, fix: fx.length ? { label: fx.length === 1 ? `改為「${fx[0].to}」` : `補上「區」字（${fx.length} 列）`, desc: fx.map((b) => `第 ${lineOf(b.row)} 行 ${b.v} → ${b.to}`).join('；'), changes: fx.map((b) => ({ row: b.row, idx: b.idx, value: b.to })) } : null });
+      }
+    }
+    return out;
+  };
+
+  /** 五個品質構面的預估：與平台正式評分同一組構面，權重刻意讓「失敗」明顯拉低分數 */
+  const computeDims = (rules) => {
+    if (!hasData()) return null;
+    const st = Object.fromEntries(rules.map((r) => [r.key, r.state]));
+    const pen = (keys, f, w) => keys.reduce((s, k) => s + (st[k] === 'fail' ? f : st[k] === 'warn' ? w : 0), 0);
+    const cols = state.cols, m = state.meta;
+    const complete = clamp(Math.round(100 - mean(cols.map((c) => c.prof.nullRate)) * 300) - pen(['required'], 12, 4), 40, 100);
+    const valid = clamp(100 - pen(['schema', 'range', 'geo', 'date', 'encoding'], 26, 6), 35, 100);
+    const timely = m.freq === 'adhoc' ? 90 : m.source === 'upload' ? (['realtime', 'hourly', 'daily'].includes(m.freq) ? 64 : 86) : 97;
+    const consistent = clamp(100 - pen(['consistency'], 28, 6) - pen(['pk'], 16, 7), 35, 100);
+    const ratio = (f) => cols.filter(f).length / cols.length;
+    const metaPts = [m.title.trim() ? 1 : 0, m.desc.trim().length >= 30 ? 1 : 0, m.license ? 1 : 0, m.agency ? 1 : 0, m.theme ? 1 : 0, m.tags.length ? 1 : 0, ratio((c) => c.e.label.trim()), ratio((c) => c.e.desc.trim()) * 2];
+    const meta = clamp(Math.round(metaPts.reduce((a, b) => a + b, 0) / 9 * 100), 30, 100);
+    return { complete, valid, timely, consistent, meta };
+  };
+
+  /* ---------- 表單驗證 ---------- */
+  const codeError = (c) => {
+    const v = c.e.code.trim();
+    if (!v) return '請填寫欄位代碼';
+    if (!/^[a-z][a-z0-9_]*$/.test(v)) return '限小寫英文、數字與底線，以英文字母開頭';
+    if (v.length > 40) return '代碼請在 40 字元以內';
+    if (state.cols.some((o) => o !== c && o.e.code.trim() === v)) return '與其他欄位代碼重複';
+    return '';
+  };
+  const labelError = (c) => (c.e.label.trim() ? '' : '請填寫中文名稱');
+  const metaErrors = () => {
+    const m = state.meta, e = {};
+    if (!m.title.trim()) e.title = '請填寫資料集名稱';
+    if (!m.id) e.id = '請填寫識別碼';
+    else if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(m.id)) e.id = '限小寫英文、數字與連字號，例：ev-chargers';
+    else {
+      const dup = App.dataset(m.id);
+      if (dup && dup.id !== state.submittedId) e.id = `已被「${dup.title}」（${dup.code}）使用，請換一個識別碼`;
+    }
+    if (!m.agency) e.agency = '請選擇提供機關';
+    if (!m.theme) e.theme = '請選擇主題分類';
+    const dl = m.desc.trim().length;
+    if (dl < 30) e.desc = dl ? `資料描述至少 30 字（目前 ${dl} 字）` : '請填寫資料描述（至少 30 字）';
+    if (m.license === 'restricted' && m.reason.trim().length < 10) e.reason = '限定使用須說明理由（至少 10 字）';
+    if (m.source !== 'upload' && !/^https:\/\/\S+\.\S+/.test(m.url.trim())) e.url = '請填寫 https:// 開頭的來源網址';
+    return e;
+  };
+  const META_LABEL = { title: '資料集名稱', id: '識別碼', agency: '提供機關', theme: '主題分類', desc: '資料描述', reason: '限定使用理由', url: '來源網址' };
+
+  /** 送出前必須處理的項目（警示不擋，失敗擋） */
+  const blockersOf = (ev) => {
+    const b = [];
+    if (!hasData()) b.push({ text: '尚未貼上資料', href: '#c-source' });
+    if (ev.codeErr) b.push({ text: `${ev.codeErr} 個欄位代碼待修正`, href: '#c-mapping' });
+    if (ev.labelErr) b.push({ text: `${ev.labelErr} 個欄位缺少中文名稱`, href: '#c-mapping' });
+    Object.entries(ev.mErr).forEach(([k, msg]) => b.push({ text: `${META_LABEL[k]}：${msg}`, href: '#c-meta', field: k }));
+    ev.rules.filter((r) => r.state === 'fail').forEach((r) => b.push({ text: `預檢失敗：${r.name}（${r.result}）`, href: '#c-check' }));
+    if (!state.privacy) b.push({ text: '尚未確認個人資料檢核', href: '#privacy' });
+    return b;
+  };
+
+  /* =================================================================
+   * evaluate：重算規則、構面、阻擋項，並更新所有衍生顯示
+   * ================================================================= */
+  const evaluate = ({ data = false } = {}) => {
+    const rules = runRules();
+    const dims = computeDims(rules);
+    const ev = {
+      rules, dims,
+      score: dims ? Math.round(mean(Object.values(dims))) : null,
+      fails: rules.filter((r) => r.state === 'fail').length,
+      warns: rules.filter((r) => r.state === 'warn').length,
+      passes: rules.filter((r) => r.state === 'pass').length,
+      skips: rules.filter((r) => r.state === 'skip').length,
+      codeErr: state.cols.filter(codeError).length,
+      labelErr: state.cols.filter(labelError).length,
+      descMissing: state.cols.filter((c) => !c.e.desc.trim()).length,
+      mErr: metaErrors(),
+    };
+    ev.blockers = blockersOf(ev);
+    state.ev = ev;
+    if (data) { renderPreview(); renderProfile(); }
+    renderCheck();
+    renderMapSummary();
+    renderMetaDerived();
+    renderMetaErrors();
+    renderEditorMarkers();
+    renderPre();
+    renderSteps();
+    renderReadiness();
+    renderIntroMeta();
+    setCellStates();
+  };
+  let evalTimer = 0;
+  const scheduleEvaluate = (opts) => { clearTimeout(evalTimer); evalTimer = setTimeout(() => evaluate(opts), 120); };
+
+  const setCellStates = () => {
+    const ev = state.ev;
+    const flagged = ev.rules.some((r) => r.state === 'fail' && r.cells.length);
+    App.cell.setState($('#c-source'), hasData() ? 'done' : 'warn');
+    App.cell.setState($('#c-profile'), !hasData() ? 'warn' : flagged ? 'warn' : 'done');
+    App.cell.setState($('#c-mapping'), !hasData() ? 'warn' : ev.codeErr || ev.labelErr ? 'error' : ev.descMissing ? 'warn' : 'done');
+    App.cell.setState($('#c-meta'), Object.keys(ev.mErr).length ? 'warn' : 'done');
+    App.cell.setState($('#c-check'), !hasData() ? 'warn' : ev.fails ? 'error' : ev.warns ? 'warn' : 'done');
+  };
+
+  /* =================================================================
+   * [1] 編輯器：行號、問題標記、游標位置
+   * ================================================================= */
+  const lnInner = $('#ln');
+  let lnCount = 0;
+  const renderLn = () => {
+    const n = ta.value.split('\n').length;
+    if (n !== lnCount) {
+      lnInner.innerHTML = Array.from({ length: n }, (_, i) => `<span class="pub-ln__n">${i + 1}</span>`).join('');
+      lnCount = n;
+      renderEditorMarkers();
+    }
+    syncScroll();
+  };
+  const syncScroll = () => {
+    lnInner.style.transform = `translateY(${-ta.scrollTop}px)`;
+    $('#editor-hl').style.transform = `translateY(${(hlLine - 1) * LINE_H + 10 - ta.scrollTop}px)`;
+  };
+  const renderEditorMarkers = () => {
+    if (!state.ev) return;
+    const tone = new Map();
+    state.ev.rules.forEach((r) => r.cells.forEach((c) => { const l = lineOf(c.row); if (tone.get(l) !== 'err') tone.set(l, c.tone); }));
+    $$('.pub-ln__n', lnInner).forEach((el, i) => { const t = tone.get(i + 1); if (t) el.dataset.tone = t; else delete el.dataset.tone; });
+    renderStatus();
+  };
+  let curLine = 1, curCol = 1;
+  const updateCaret = () => {
+    const pos = ta.selectionStart;
+    const before = ta.value.slice(0, pos);
+    curLine = before.split('\n').length;
+    curCol = pos - before.lastIndexOf('\n');
+    $$('.pub-ln__n.is-cur', lnInner).forEach((el) => el.classList.remove('is-cur'));
+    const el = lnInner.children[curLine - 1];
+    if (el && document.activeElement === ta) el.classList.add('is-cur');
+    renderStatus();
+  };
+  const renderStatus = () => {
+    const P = state.parsed;
+    const issues = state.ev ? new Set(state.ev.rules.flatMap((r) => r.cells.map((c) => lineOf(c.row)))).size : 0;
+    $('#editor-status').innerHTML =
+      `<span>第 <b>${curLine}</b> 行，第 <b>${curCol}</b> 字</span>` +
+      `<span>${fmt.num(P.rows.length)} 列 × ${state.cols.length} 欄</span>` +
+      `<span class="hide-mobile">分隔字元：${delimName(P.delimiter)}</span>` +
+      `<span class="hide-mobile">UTF-8 · ${fmt.bytes(enc.encode(ta.value).length)}</span>` +
+      (issues ? `<span class="is-err">${issues} 行有標記</span>` : '');
+    $('#file-name').textContent = state.fileName;
+    $('#file-dirty').hidden = !state.dirty;
+  };
+  // 定位用的整行高亮：短暫亮起後淡出
+  let hlLine = 1, hlTimer = 0;
+  const flashLine = (line) => {
+    hlLine = line;
+    const hl = $('#editor-hl');
+    syncScroll();
+    hl.classList.add('is-on');
+    clearTimeout(hlTimer);
+    hlTimer = setTimeout(() => hl.classList.remove('is-on'), 1400);
+    const el = lnInner.children[line - 1];
+    if (el && !reduce) { el.classList.remove('is-ping'); void el.offsetWidth; el.classList.add('is-ping'); setTimeout(() => el.classList.remove('is-ping'), 2600); }
+  };
+  const selectLine = (line) => {
+    const lines = ta.value.split('\n');
+    const start = lines.slice(0, line - 1).reduce((s, l) => s + l.length + 1, 0);
+    ta.focus({ preventScroll: true });
+    ta.setSelectionRange(start, start + (lines[line - 1] || '').length);
+    ta.scrollTop = Math.max(0, (line - 1) * LINE_H - ta.clientHeight / 2 + LINE_H);
+    ta.scrollLeft = 0;
+    updateCaret();
+    flashLine(line);
+  };
+
+  /* 文字變動 → 重新解析 → 下游 cell 依序重跑（像 notebook 的相依重算） */
+  let parseTimer = 0;
+  let rerunPending = false, rerunBusy = false;
+  const rerunData = async () => {
+    rerunPending = true;
+    if (rerunBusy) return;
+    rerunBusy = true;
+    // 執行中又有新變動時，跑完這輪再以最新狀態補跑一次
+    while (rerunPending) {
+      rerunPending = false;
+      await Promise.all([App.cell.run('c-source', { duration: 260 }), App.cell.run('c-profile', { duration: 300 })]);
+    }
+    rerunBusy = false;
+  };
+  const applyText = ({ rerun = true } = {}) => {
+    clearTimeout(parseTimer);
+    state.text = ta.value;
+    parse();
+    renderMapping();
+    evaluate({ data: true });
+    renderLn();
+    if (rerun) rerunData();
+  };
+  ta.addEventListener('input', () => {
+    state.dirty = true;
+    renderLn();
+    updateCaret();
+    clearTimeout(parseTimer);
+    parseTimer = setTimeout(applyText, 450);
+  });
+  ta.addEventListener('scroll', syncScroll);
+  ['keyup', 'click', 'focus'].forEach((t) => ta.addEventListener(t, updateCaret));
+  ta.addEventListener('blur', () => $$('.pub-ln__n.is-cur', lnInner).forEach((el) => el.classList.remove('is-cur')));
+
+  /* ---------- 快照與復原（載入範例、清除、套用修正都可復原） ---------- */
+  const snapshot = () => ({ text: state.text, fileName: state.fileName, dirty: state.dirty, meta: JSON.parse(JSON.stringify(state.meta)), edits: new Map([...edits].map(([k, v]) => [k, { ...v }])) });
+  const restore = (s) => {
+    if (guard()) return;
+    state.fileName = s.fileName; state.dirty = s.dirty; state.meta = s.meta; edits = s.edits;
+    ta.value = s.text;
+    syncMetaForm();
+    applyText();
+  };
+
+  const loadExample = (key, { quiet = false } = {}) => {
+    const ex = EXAMPLES[key];
+    const prev = quiet ? null : snapshot();
+    edits = new Map();
+    Object.entries(ex.cols).forEach(([h, c]) => { const d = defaultEdit(h); edits.set(h, { ...d, label: c.label ?? d.label, desc: c.desc ?? d.desc, pk: !!c.pk }); });
+    state.meta = { ...blankMeta(), ...JSON.parse(JSON.stringify(ex.meta)) };
+    state.fileName = ex.file;
+    state.dirty = false;
+    state.showAllRows = false;
+    touched.clear();
+    ta.value = ex.csv;
+    ta.setSelectionRange(0, 0);
+    ta.scrollTop = 0;
+    syncMetaForm();
+    applyText({ rerun: !quiet });
+    if (!quiet) {
+      App.cell.run('c-mapping', { duration: 240 });
+      App.toast(`已載入範例：${ex.label}`, { tone: 'info', desc: ex.sub, action: { label: '復原', onClick: () => restore(prev) } });
+    }
+  };
+
+  /* ---------- 範例選單 ---------- */
+  const exBtn = $('#ex-btn'), exMenu = $('#ex-menu');
+  const EX_ICON = { ev: 'pin', pool: 'chart', sandbag: 'shield' };
+  exMenu.innerHTML = `<p class="pub-menu__label" aria-hidden="true">載入機關草稿範例</p>` + Object.entries(EXAMPLES).map(([k, ex]) =>
+    `<button type="button" class="pub-menu__item" role="menuitem" data-ex="${k}" tabindex="-1"><span class="pub-menu__icon">${icon(EX_ICON[k])}</span><span class="pub-menu__title">${esc(ex.label)}</span><span class="pub-menu__sub">${esc(ex.sub)}</span></button>`).join('');
+  const setMenu = (open) => {
+    exMenu.hidden = !open;
+    exBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) $('[role="menuitem"]', exMenu).focus();
+  };
+  exBtn.addEventListener('click', () => setMenu(exMenu.hidden));
+  exMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ex]');
+    if (!b) return;
+    setMenu(false);
+    if (guard()) return;
+    loadExample(b.dataset.ex);
+  });
+  exMenu.addEventListener('keydown', (e) => {
+    const items = $$('[role="menuitem"]', exMenu);
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
+    if (e.key === 'Tab') setMenu(false);
+  });
+  document.addEventListener('click', (e) => { if (!exMenu.hidden && !e.target.closest('.pub-menu')) setMenu(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !exMenu.hidden) { setMenu(false); exBtn.focus(); } });
+
+  $('#clear-csv').addEventListener('click', () => {
+    if (guard()) return;
+    if (!ta.value) { App.toast('編輯器已經是空的', { tone: 'info' }); return; }
+    const prev = snapshot();
+    ta.value = '';
+    state.fileName = 'paste.csv';
+    state.dirty = true;
+    applyText();
+    App.toast('已清除貼上的資料', { tone: 'info', desc: '欄位說明與詮釋資料保留，重新貼上同樣欄名會自動沿用。', action: { label: '復原', onClick: () => restore(prev) } });
+  });
+
+  /* =================================================================
+   * [1] 預覽表
+   * ================================================================= */
+  const issueMap = () => {
+    const m = new Map();
+    state.ev.rules.forEach((r) => r.cells.forEach((c) => { const k = c.row + ':' + c.idx; if (m.get(k) !== 'err') m.set(k, c.tone); }));
+    return m;
+  };
+  const renderPreview = () => {
+    const out = $('#out-source');
+    const P = state.parsed, cols = state.cols, n = P.rows.length;
+    if (!hasData()) {
+      out.innerHTML = `<p class="out-label" data-stream>${outTag('c-source')}<span>DataFrame 0 rows × ${cols.length} columns</span></p>` +
+        `<div data-stream>${App.emptyState({ title: '尚未貼上資料', text: '在上方編輯器貼上 CSV（第一列為欄名），或從「附範例」載入一份機關草稿。' })}</div>`;
+      return;
+    }
+    const im = issueMap();
+    const limit = state.showAllRows ? Math.min(n, 200) : Math.min(n, 10);
+    const errN = [...im.values()].filter((t) => t === 'err').length, warnN = im.size - errN;
+    const head = `<tr><th scope="col" class="rowidx">#</th>${cols.map((c, i) => `<th scope="col" data-col="${i}"${c.type === 'int' || c.type === 'float' ? ' class="num"' : ''}><span class="pub-th"><span class="pub-th__name">${esc(c.src || `（第 ${i + 1} 欄）`)}</span>${App.typeBadge(c.type)}</span></th>`).join('')}</tr>`;
+    const body = P.rows.slice(0, limit).map((r, ri) => `<tr data-stream><td class="rowidx">${ri}</td>${cols.map((c) => {
+      const v = r[c.idx], t = im.get(ri + ':' + c.idx);
+      const cls = [filled(v) ? '' : 'is-null', t === 'err' ? 'is-bad' : t === 'warn' ? 'pub-td-warn' : '', c.type === 'int' || c.type === 'float' ? 'num' : ''].filter(Boolean).join(' ');
+      return `<td${cls ? ` class="${cls}"` : ''} data-rc="${ri}:${c.idx}">${filled(v) ? esc(v) : 'null'}</td>`;
+    }).join('')}</tr>`).join('');
+    out.innerHTML =
+      `<p class="out-label" data-stream>${outTag('c-source')}<span>DataFrame ${fmt.num(n)} rows × ${cols.length} columns · sep="${P.delimiter === '\t' ? '\\t' : P.delimiter}" · ${fmt.bytes(enc.encode(state.text).length)}</span></p>` +
+      `<div class="table-wrap pub-preview" id="preview-wrap"><div class="pub-scanlayer" aria-hidden="true"><span class="pub-scan"></span></div>` +
+      `<table class="table table--compact table--mono"><caption class="sr-only">資料預覽，前 ${limit} 列</caption><thead>${head}</thead><tbody>${body}</tbody></table></div>` +
+      `<div class="pub-more" data-stream>` +
+      (n > 10 ? `<button class="btn btn--sm btn--ghost" type="button" id="toggle-rows" aria-expanded="${state.showAllRows}">${state.showAllRows ? `只顯示前 10 列` : `顯示全部 ${fmt.num(Math.min(n, 200))} 列`}</button>` : `<span>共 ${n} 列</span>`) +
+      `<span class="spacer"></span>` +
+      (im.size ? `<span class="pub-legend">${errN ? `<span><i style="background:var(--err-soft);box-shadow:inset 0 0 0 1px var(--err-line)"></i>失敗 ${errN} 格</span>` : ''}${warnN ? `<span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1px var(--warn-line)"></i>警示 ${warnN} 格</span>` : ''}</span>` : `<span class="ok-text">預檢未標記任何儲存格</span>`) +
+      `</div>`;
+  };
+  $('#out-source').addEventListener('click', (e) => {
+    if (!e.target.closest('#toggle-rows')) return;
+    state.showAllRows = !state.showAllRows;
+    renderPreview();
+    $('#toggle-rows').focus();
+  });
+  // 型別推斷掃描：輸出流入後，一道光帶由左掃過表頭，經過的型別徽章依序彈一下
+  const sweep = () => {
+    const wrap = $('#preview-wrap');
+    if (reduce || !wrap) return;
+    const table = $('table', wrap), band = $('.pub-scan', wrap);
+    const w = table.scrollWidth;
+    wrap.style.setProperty('--scan-w', w + 'px');
+    $$('thead th[data-col]', table).forEach((th) => th.style.setProperty('--d', Math.round((th.offsetLeft + 30) / (w + 96) * 1000) + 'ms'));
+    wrap.classList.remove('is-sweep');
+    band.classList.remove('is-on');
+    void wrap.offsetWidth;
+    wrap.classList.add('is-sweep');
+    band.classList.add('is-on');
+  };
+
+  /* =================================================================
+   * [2] profiling
+   * ================================================================= */
+  const nf = (x) => (!Number.isFinite(x) ? '—' : Math.abs(x) >= 1000 ? fmt.num(x, Number.isInteger(x) ? 0 : 1) : String(Number(x.toFixed(4))));
+  const histFlag = (c) => {
+    const p = c.prof;
+    if (!p.hist.length || c.type === 'date') return null;
+    if (c.type === 'geo' && (isLat(c) || isLng(c))) {
+      const [lo, hi] = isLat(c) ? App.BBOX.lat : App.BBOX.lng;
+      const span = (p.max - p.min) || 1;
+      const flags = p.hist.map((_, i) => { const a = p.min + span * i / 12, b = p.min + span * (i + 1) / 12; return b < lo || a > hi; });
+      return flags.some(Boolean) ? flags : null;
+    }
+    return p.negBins || null;
+  };
+  const renderProfile = () => {
+    const out = $('#out-profile');
+    if (!hasData()) {
+      out.innerHTML = `<p class="out-label" data-stream>${outTag('c-profile')}<span>Profile · 等待資料</span></p><div data-stream>${App.emptyState({ title: '還沒有欄位可以分析', text: '貼上資料後會逐欄推斷型別，並畫出分布、空值比例與唯一值。' })}</div>`;
+      return;
+    }
+    const tone = new Map();
+    state.ev.rules.forEach((r) => r.cells.forEach((c) => { if (tone.get(c.idx) !== 'err') tone.set(c.idx, c.tone); }));
+    const typeCount = {};
+    state.cols.forEach((c) => { typeCount[c.type] = (typeCount[c.type] || 0) + 1; });
+    const rows = state.cols.map((c) => {
+      const p = c.prof, t = tone.get(c.idx);
+      const num = p.hist.length && c.type !== 'date';
+      // 每列唯一的字串（代碼、名稱、地址）畫前幾名沒有意義，改顯示基數與範例
+      const uniqStr = !p.hist.length && c.type === 'str' && p.distinct === p.n - Math.round(p.nullRate * p.n) && p.n > 4;
+      const dist = uniqStr
+        ? `<div class="pub-uniq"><span class="pub-uniq__bar" aria-hidden="true"></span><span class="pub-uniq__txt">每列唯一 · 例 <span class="mono">${esc(c.values.filter(filled).slice(0, 2).join('、'))}</span></span></div>`
+        : p.hist.length
+        ? App.hist(p.hist, { w: 132, h: 30, flag: histFlag(c), label: `${codeOf(c)} 分布` }) + `<span class="hist__cap"><span>${esc(num ? nf(p.min) : p.min || '')}</span><span>${esc(num ? nf(p.max) : p.max || '')}</span></span>`
+        : App.topk(p.top.slice(0, 3));
+      const range = c.type === 'bool' ? '—' : num ? `${nf(p.min)} – ${nf(p.max)}${c.type !== 'geo' ? `<br>平均 ${fmt.num(p.mean, c.type === 'int' ? 1 : 2)}` : ''}`
+        : c.type === 'date' ? `${esc(p.min || '—')}<br>~ ${esc(p.max || '—')}`
+          : p.min != null ? `長度 ${p.min}–${p.max}` : '—';
+      return `<div class="profile__row${t === 'err' ? ' is-flagged' : t === 'warn' ? ' pub-warnrow' : ''}" data-stream>
+        <div><p class="profile__name">${esc(c.src || codeOf(c))}</p><p class="profile__desc">${esc(c.e.label || '（尚未命名）')}${c.e.code && c.e.code !== c.src ? ` · <span class="mono">${esc(c.e.code)}</span>` : ''}</p></div>
+        <div class="pub-ptype">${App.typeBadge(c.type)}<small class="${c.e.type ? 'is-manual' : ''}">${c.e.type ? `手動（推斷 ${c.inferred}）` : '自動推斷'}</small></div>
+        <div>${dist}</div>
+        <div>${App.nullBar(p.nullRate)}</div>
+        <div class="profile__stat">${fmt.num(p.distinct)}${p.distinct === p.n && p.n > 1 ? '<br><span class="muted">全部唯一</span>' : ''}</div>
+        <div class="profile__range">${range}</div>
+      </div>`;
+    }).join('');
+    out.innerHTML =
+      `<p class="out-label" data-stream>${outTag('c-profile')}<span>Profile · ${state.cols.length} 欄 · 全部 ${fmt.num(state.parsed.rows.length)} 列</span><span class="pub-typesum">${Object.entries(typeCount).map(([t, k]) => `${App.typeBadge(t)}<span class="mono" style="margin-right:6px">×${k}</span>`).join('')}</span></p>` +
+      `<div class="profile"><div class="profile__head"><span>欄位</span><span>型別</span><span>分布</span><span>空值</span><span>唯一值</span><span>範圍</span></div>${rows}</div>`;
+  };
+
+  /* =================================================================
+   * [3] 欄位對應
+   * ================================================================= */
+  const TYPE_KEYS = Object.keys(App.TYPES);
+  const renderMapping = () => {
+    const out = $('#out-mapping');
+    if (!hasData()) {
+      out.innerHTML = `<p class="out-label" data-stream>${outTag('c-mapping')}<span>Mapping · 等待資料</span></p><div id="map-region" data-stream>${App.emptyState({ title: '沒有欄位可以對應', text: '貼上資料後，這裡會列出每個原始欄名，讓你設定欄位代碼、中文名稱、型別與說明。' })}</div>`;
+      applyLock();
+      return;
+    }
+    const row = (c) => `<tr data-key="${esc(c.key)}">
+      <td data-label="原始欄名"><span class="pub-src">${esc(c.src || `（第 ${c.idx + 1} 欄）`)}</span><span class="pub-src__meta">${App.typeBadge(c.inferred)}${c.e.dict ? '<span class="pub-dict" title="由平台欄位字典帶入">字典</span>' : ''}</span></td>
+      <td data-label="欄位代碼"><input class="input pub-in pub-in--mono" data-f="code" value="${esc(c.e.code)}" spellcheck="false" autocomplete="off" aria-label="${esc(c.src)} 的欄位代碼"><span class="pub-err" data-err="code"></span></td>
+      <td data-label="中文名稱"><input class="input pub-in" data-f="label" value="${esc(c.e.label)}" autocomplete="off" aria-label="${esc(c.src)} 的中文名稱"><span class="pub-err" data-err="label"></span></td>
+      <td data-label="型別"><select class="select pub-in" data-f="type" aria-label="${esc(c.src)} 的型別">${TYPE_KEYS.map((t) => `<option value="${t}"${t === c.type ? ' selected' : ''}>${t} ${App.TYPES[t].label}${t === c.inferred ? ' ＊' : ''}</option>`).join('')}</select></td>
+      <td data-label="主鍵" class="pub-pk"><label class="check"><input type="checkbox" data-f="pk"${c.e.pk ? ' checked' : ''}><span class="check__box" aria-hidden="true"></span><span class="sr-only">將 ${esc(c.src)} 設為主鍵</span></label></td>
+      <td data-label="說明"><input class="input pub-in" data-f="desc" value="${esc(c.e.desc)}" autocomplete="off" placeholder="欄位意義、單位或代碼表" aria-label="${esc(c.src)} 的說明"></td>
+    </tr>`;
+    out.innerHTML =
+      `<p class="out-label" data-stream>${outTag('c-mapping')}<span>Mapping · ${state.cols.length} 欄 · 代碼限小寫英文、數字與底線 · 型別選單中 ＊ 為自動推斷</span></p>` +
+      `<div id="map-region">` +
+      `<div class="pub-maptools" data-stream><div class="pub-mapsum" id="map-sum"></div><span class="spacer"></span>` +
+      `<button class="switch" type="button" role="switch" aria-checked="${state.onlyTodo}" id="only-todo"><span class="switch__track" aria-hidden="true"></span>只看未完成</button>` +
+      `<button class="btn btn--sm" type="button" id="apply-dict">${icon('layers', 'i--sm')}套用欄位字典</button></div>` +
+      `<div class="table-wrap table-wrap--cards pub-map" data-stream><table class="table table--compact">` +
+      `<caption class="sr-only">欄位對應：原始欄名、欄位代碼、中文名稱、型別、主鍵與說明</caption>` +
+      `<colgroup><col style="width:15%"><col style="width:16%"><col style="width:14%"><col style="width:18%"><col style="width:7%"><col></colgroup>` +
+      `<thead><tr><th scope="col">原始欄名</th><th scope="col">欄位代碼</th><th scope="col">中文名稱</th><th scope="col">型別</th><th scope="col" style="text-align:center">主鍵</th><th scope="col">說明</th></tr></thead>` +
+      `<tbody id="map-body">${state.cols.map(row).join('')}<tr class="pub-maprow-empty" id="map-done" hidden><td colspan="6">全部欄位都已填妥代碼、中文名稱與說明。</td></tr></tbody></table></div></div>`;
+    state.cols.forEach(updateMapRow);
+    renderMapSummary();
+    applyTodoFilter();
+    applyLock();
+  };
+  const isTodo = (c) => !!(codeError(c) || labelError(c) || !c.e.desc.trim());
+  const updateMapRow = (c) => {
+    const tr = $(`#map-body tr[data-key="${CSS.escape(c.key)}"]`);
+    if (!tr) return;
+    const ce = codeError(c), le = labelError(c);
+    const code = $('[data-f="code"]', tr), label = $('[data-f="label"]', tr), desc = $('[data-f="desc"]', tr);
+    code.classList.toggle('is-invalid', !!ce); code.setAttribute('aria-invalid', ce ? 'true' : 'false');
+    label.classList.toggle('is-invalid', !!le); label.setAttribute('aria-invalid', le ? 'true' : 'false');
+    desc.classList.toggle('is-missing', !c.e.desc.trim());
+    $('[data-err="code"]', tr).textContent = ce;
+    $('[data-err="label"]', tr).textContent = le;
+  };
+  const renderMapSummary = () => {
+    const el = $('#map-sum');
+    if (!el || !state.ev) return;
+    const k = state.cols.length, ev = state.ev;
+    const ok = k - ev.codeErr, okL = k - ev.labelErr, okD = k - ev.descMissing;
+    el.innerHTML =
+      `<span class="${ev.codeErr ? 'is-err' : ''}">代碼 <b>${ok}/${k}</b></span>` +
+      `<span class="${ev.labelErr ? 'is-err' : ''}">中文名稱 <b>${okL}/${k}</b></span>` +
+      `<span class="${ev.descMissing ? 'is-warn' : ''}">說明 <b>${okD}/${k}</b></span>` +
+      `<span class="meter" role="img" aria-label="欄位完成度 ${Math.round((ok + okL + okD) / (3 * k) * 100)}%"><span class="meter__seg" style="flex:${ok + okL + okD}"></span>${3 * k - ok - okL - okD ? `<span class="meter__seg" style="flex:${3 * k - ok - okL - okD};--c:var(--warn-line)"></span>` : ''}</span>`;
+  };
+  const applyTodoFilter = () => {
+    let shown = 0;
+    state.cols.forEach((c) => {
+      const tr = $(`#map-body tr[data-key="${CSS.escape(c.key)}"]`);
+      if (!tr) return;
+      tr.hidden = state.onlyTodo && !isTodo(c);
+      if (!tr.hidden) shown += 1;
+    });
+    const done = $('#map-done');
+    if (done) done.hidden = !(state.onlyTodo && !shown);
+  };
+  const colByRow = (el) => { const tr = el.closest('tr[data-key]'); return tr && state.cols.find((c) => c.key === tr.dataset.key); };
+  $('#out-mapping').addEventListener('input', (e) => {
+    const f = e.target.dataset.f;
+    if (f !== 'code' && f !== 'label' && f !== 'desc') return;
+    const c = colByRow(e.target);
+    if (!c) return;
+    c.e[f] = e.target.value;
+    if (f === 'code') c.e.dict = false;
+    state.cols.forEach(updateMapRow); // 代碼唯一性會影響其他列
+    scheduleEvaluate({ data: true });
+  });
+  $('#out-mapping').addEventListener('change', (e) => {
+    const f = e.target.dataset.f;
+    const c = colByRow(e.target);
+    if (!c) return;
+    if (f === 'type') {
+      c.e.type = e.target.value === c.inferred ? null : e.target.value;
+      c.type = c.e.type || c.inferred;
+      c.prof = App.profileValues(c.values, c.type);
+      evaluate({ data: true });
+      App.cell.run('c-profile', { duration: 280 });
+    } else if (f === 'pk') {
+      c.e.pk = e.target.checked;
+      evaluate({ data: true });
+    }
+  });
+  $('#out-mapping').addEventListener('focusout', () => { if (state.onlyTodo) applyTodoFilter(); });
+  $('#out-mapping').addEventListener('click', (e) => {
+    if (e.target.closest('#only-todo')) {
+      state.onlyTodo = !state.onlyTodo;
+      $('#only-todo').setAttribute('aria-checked', state.onlyTodo ? 'true' : 'false');
+      applyTodoFilter();
+    }
+    if (e.target.closest('#apply-dict')) {
+      if (guard()) return;
+      const prev = snapshot();
+      let n = 0;
+      state.cols.forEach((c) => {
+        const d = dictFor(c.src);
+        if (!d) return;
+        if (!c.e.code.trim() && d.code) { c.e.code = d.code; c.e.dict = true; n += 1; }
+        if (!c.e.label.trim() && d.label) { c.e.label = d.label; n += 1; }
+        if (!c.e.desc.trim() && d.desc) { c.e.desc = d.desc; n += 1; }
+      });
+      if (!n) { App.toast('欄位字典沒有可補的項目', { tone: 'info', desc: '其餘欄位不在平台字典中，請手動填寫。' }); return; }
+      renderMapping();
+      evaluate({ data: true });
+      App.toast(`已由欄位字典補上 ${n} 項`, { desc: '只填入空白欄位，不覆寫已填內容。', action: { label: '復原', onClick: () => restore(prev) } });
+    }
+  });
+
+  /* =================================================================
+   * [4] 詮釋資料表單
+   * ================================================================= */
+  const form = $('#metaform');
+  $('#m-agency').innerHTML = '<option value="">請選擇提供機關</option>' + Object.values(App.AGENCIES).map((a) => `<option value="${a.key}">${esc(a.full.replace('澄港市政府', ''))}（${a.code}）</option>`).join('');
+  $('#m-theme').innerHTML = '<option value="">請選擇主題</option>' + Object.entries(App.THEMES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  $('#m-freq').innerHTML = Object.entries(App.FREQS).map(([k, f]) => `<option value="${k}">${esc(f.label)}（${esc(f.sub)}）</option>`).join('');
+  $('#lic-list').innerHTML = Object.entries(App.LICENSES).map(([k, l]) =>
+    `<label class="option-card"><input type="radio" name="license" value="${k}"><span class="option-card__mark" aria-hidden="true"></span><span><span class="option-card__title">${esc(l.label)}</span><span class="option-card__desc" style="display:block">${esc(l.desc)}</span></span></label>`).join('');
+  const FMT_SUB = { CSV: '必備', JSON: '平台轉換', GeoJSON: '需經緯度欄位', XML: '平台轉換', API: '需定期擷取或機關 API' };
+  $('#fmt-list').innerHTML = ['CSV', 'JSON', 'GeoJSON', 'XML', 'API'].map((f) =>
+    `<label class="pub-fmt check"><input type="checkbox" name="fmt" value="${f}"${f === 'CSV' ? ' checked disabled' : ''}><span class="check__box" aria-hidden="true"></span><span><span class="pub-fmt__name">${f}</span> <span class="pub-fmt__sub">${FMT_SUB[f]}</span></span></label>`).join('');
+
+  /** 狀態 → 表單控制項（載入範例、復原、重設時） */
+  const syncMetaForm = () => {
+    const m = state.meta;
+    form.elements.title.value = m.title;
+    form.elements.id.value = m.id;
+    form.elements.agency.value = m.agency;
+    form.elements.theme.value = m.theme;
+    form.elements.freq.value = m.freq;
+    form.elements.desc.value = m.desc;
+    form.elements.reason.value = m.reason;
+    form.elements.url.value = m.url;
+    form.elements.retry.value = m.retry;
+    $$('input[name="license"]', form).forEach((r) => { r.checked = r.value === m.license; });
+    $$('input[name="fmt"]', form).forEach((c) => { c.checked = c.value === 'CSV' || m.formats.includes(c.value); });
+    $$('#m-source button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.source === m.source ? 'true' : 'false'));
+    renderTags();
+  };
+  const renderTags = () => {
+    $('#tags-chips').innerHTML = state.meta.tags.map((t, i) => `<span class="chip">${esc(t)}<button type="button" class="chip__x" data-tag="${i}" aria-label="移除關鍵字 ${esc(t)}">${icon('x', 'i--sm')}</button></span>`).join('');
+  };
+  const addTag = (raw) => {
+    const t = raw.replace(/[,，#\s]+/g, ' ').trim();
+    if (!t) return true;
+    // 滿 8 個時保留輸入框文字，使用者可以先移除舊的關鍵字再按 Enter
+    if (state.meta.tags.length >= 8) { App.toast('關鍵字最多 8 個', { tone: 'warn', desc: '先移除一個關鍵字再新增。' }); return false; }
+    if (state.meta.tags.includes(t)) { App.toast(`「${t}」已經在關鍵字裡`, { tone: 'info' }); return true; }
+    state.meta.tags.push(t);
+    renderTags();
+    scheduleEvaluate();
+    return true;
+  };
+  $('#m-tag').addEventListener('keydown', (e) => {
+    // 注音／倉頡選字時按 Enter 是確認組字，不是新增關鍵字
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' || e.key === ',' || e.key === '，') { e.preventDefault(); if (addTag(e.target.value)) e.target.value = ''; }
+    else if (e.key === 'Backspace' && !e.target.value && state.meta.tags.length) { state.meta.tags.pop(); renderTags(); scheduleEvaluate(); }
+  });
+  $('#m-tag').addEventListener('blur', (e) => { if (e.target.value.trim() && addTag(e.target.value)) e.target.value = ''; });
+  $('#tags-box').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-tag]');
+    if (x) { state.meta.tags.splice(Number(x.dataset.tag), 1); renderTags(); scheduleEvaluate(); $('#m-tag').focus(); return; }
+    if (e.target === e.currentTarget) $('#m-tag').focus();
+  });
+  form.addEventListener('submit', (e) => e.preventDefault());
+  form.addEventListener('input', (e) => {
+    const t = e.target, m = state.meta;
+    if (t.name === 'title') m.title = t.value;
+    else if (t.name === 'id') m.id = t.value.trim();
+    else if (t.name === 'desc') m.desc = t.value;
+    else if (t.name === 'reason') m.reason = t.value;
+    else if (t.name === 'url') m.url = t.value;
+    else return;
+    scheduleEvaluate();
+  });
+  form.addEventListener('change', (e) => {
+    const t = e.target, m = state.meta;
+    if (t.name === 'agency') m.agency = t.value;
+    else if (t.name === 'theme') m.theme = t.value;
+    else if (t.name === 'freq') m.freq = t.value;
+    else if (t.name === 'retry') m.retry = t.value;
+    else if (t.name === 'license') m.license = t.value;
+    else if (t.name === 'fmt') m.formats = $$('input[name="fmt"]:checked', form).map((c) => c.value);
+    else return;
+    touched.add(t.name);
+    evaluate();
+  });
+  form.addEventListener('focusout', (e) => { if (e.target.name) { touched.add(e.target.name); renderMetaErrors(); } });
+  $('#m-source').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-source]');
+    if (!b) return;
+    state.meta.source = b.dataset.source;
+    $$('#m-source button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    evaluate();
+  });
+
+  /** 下次排程時間（一律以 UTC+8 推算） */
+  const tw = (ms) => new Date(ms + 8 * 36e5);
+  const nextRuns = (freq, k = 3) => {
+    const t = App.now(), out = [];
+    const d = tw(t), y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1;
+    const at = (yy, mm, dd, hh) => App.time(`${yy + Math.floor((mm - 1) / 12)}-${String(((mm - 1) % 12) + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}T${String(hh).padStart(2, '0')}:00`);
+    if (freq === 'realtime') { const b = Math.ceil(t / 3e5) * 3e5; for (let i = 0; i < k; i++) out.push(b + i * 3e5); }
+    else if (freq === 'hourly') { const b = Math.ceil(t / 36e5) * 36e5; for (let i = 0; i < k; i++) out.push(b + i * 36e5); }
+    else if (freq === 'daily') { let b = App.time(fmt.date(t)) + 2 * 36e5; if (b <= t) b += 864e5; for (let i = 0; i < k; i++) out.push(b + i * 864e5); }
+    else if (freq === 'weekly') { let b = App.time(fmt.date(t)) + 3 * 36e5; while (tw(b).getUTCDay() !== 1 || b <= t) b += 864e5; for (let i = 0; i < k; i++) out.push(b + i * 7 * 864e5); }
+    else if (freq === 'monthly') { for (let i = 0, mm = mo; out.length < k; i++, mm++) { const x = at(y, mm, 5, 2); if (x > t) out.push(x); } }
+    else if (freq === 'quarterly') { for (let mm = mo; out.length < k; mm++) { if ((mm - 1) % 3 === 0) { const x = at(y, mm, 15, 2); if (x > t) out.push(x); } } }
+    else if (freq === 'half') { for (let mm = mo; out.length < k; mm++) { if ((mm - 1) % 6 === 0) { const x = at(y, mm, 15, 2); if (x > t) out.push(x); } } }
+    else if (freq === 'yearly') { for (let yy = y; out.length < k; yy++) { const x = at(yy, 3, 31, 2); if (x > t) out.push(x); } }
+    return out;
+  };
+  const RETRY_STEPS = { 3: ['5 分', '15 分', '45 分'], 5: ['5 分', '15 分', '45 分', '90 分', '180 分'], 0: [] };
+
+  /** 表單衍生顯示：聯絡窗口、可用格式、排程預覽、自動帶入、即時程式碼 */
+  const renderMetaDerived = () => {
+    const m = state.meta, ag = App.AGENCIES[m.agency];
+    const contact = ag ? App.person(ag.contact) : null;
+    $('#m-contact').innerHTML = contact ? `聯絡窗口 ${App.personChip(ag.contact)}` : '';
+    $('#reason-field').hidden = m.license !== 'restricted';
+    $('#url-field').hidden = m.source === 'upload';
+    const dl = m.desc.trim().length;
+    const cnt = $('#desc-count');
+    cnt.textContent = `${dl} 字`;
+    cnt.classList.toggle('is-low', dl < 30);
+    // 格式可用性：沒有座標就不能轉 GeoJSON；手動上傳沒有即時來源，不能開 API
+    const hasGeo = state.cols.some((c) => c.type === 'geo');
+    const avail = { GeoJSON: hasGeo, API: m.source !== 'upload' };
+    $$('input[name="fmt"]', form).forEach((c) => {
+      if (c.value === 'CSV') return;
+      const ok = avail[c.value] !== false;
+      c.disabled = !ok;
+      if (!ok && c.checked) c.checked = false;
+    });
+    m.formats = ['CSV', ...$$('input[name="fmt"]:checked', form).map((c) => c.value).filter((f) => f !== 'CSV')];
+    // 排程
+    const f = App.FREQS[m.freq];
+    $('#freq-hint').textContent = f.window ? `逾 ${fmt.days(f.window * 1.5)} 未更新即標示逾期` : '機關資料異動時更新，不檢核時效';
+    const runs = nextRuns(m.freq);
+    const fmtRun = (x) => (['realtime', 'hourly'].includes(m.freq) ? fmt.time(x) : ['yearly', 'half', 'quarterly'].includes(m.freq) ? `${fmt.date(x)} ${fmt.time(x)}` : `${fmt.md(x)}（${fmt.weekday(x)}）${fmt.time(x)}`);
+    $('#next-runs').innerHTML = runs.length ? runs.map((x) => `<span class="pub-next__run">${fmtRun(x)}</span>`).join('') : '<span class="pub-next__run">不定期</span>';
+    $('#sched-hint').textContent = m.source === 'upload'
+      ? (runs.length ? `手動上傳：平台會在每次預定時間前 3 天寄送更新提醒給${contact ? ` ${contact.name}` : '機關聯絡窗口'}。` : '手動上傳：機關資料異動時重新上傳即可，平台不排程擷取。')
+      : (runs.length ? `排程器依上述時間擷取來源；失敗依重試策略退避，仍失敗則通知承辦與${contact ? ` ${contact.name}` : '聯絡窗口'}。` : '不定期：機關異動時由 API 推送或手動觸發擷取。');
+    const steps = RETRY_STEPS[m.retry];
+    $('#retry-viz').innerHTML = `<span class="pub-retry__step"><span class="pub-retry__dot is-fail"></span>失敗</span>` +
+      steps.map((s) => `<span class="pub-retry__line"></span><span class="pub-retry__step"><span class="pub-retry__dot"></span>+${s}</span>`).join('') +
+      `<span class="pub-retry__line"></span><span class="pub-retry__step"><span class="pub-retry__dot is-notify"></span>通知</span>`;
+    // 自動帶入
+    const dateCol = state.cols.find((c) => c.type === 'date');
+    const dateWarn = state.ev.rules.find((r) => r.key === 'date' && r.state === 'warn' && r.cells.length);
+    const distCol = state.cols.find(isDistrict);
+    const dists = distCol ? [...new Set(distCol.values.filter((v) => App.DISTRICTS.includes(v)))] : [];
+    $('#auto-kv').innerHTML =
+      `<div><dt>時間範圍</dt><dd>${dateCol ? `${esc(dateCol.prof.min || '—')} ~ ${esc(dateCol.prof.max || '—')}<br><span class="muted">${esc(codeOf(dateCol))}</span>` : dateWarn ? `<span class="warn-text">${esc(codeOf(state.cols[dateWarn.cells[0].idx]))} 含非 ISO 日期，修正後自動帶入</span>` : '<span class="muted">無日期欄位</span>'}</dd></div>` +
+      `<div><dt>空間範圍</dt><dd>${distCol ? `${dists.length} / ${App.DISTRICTS.length} 區${dists.length < App.DISTRICTS.length && dists.length ? `<br><span class="muted">缺 ${App.DISTRICTS.filter((d) => !dists.includes(d)).join('、')}</span>` : ''}` : hasGeo ? '以經緯度表示' : '<span class="muted">—</span>'}</dd></div>` +
+      `<div><dt>資料量</dt><dd>${fmt.num(state.parsed.rows.length)} 列 × ${state.cols.length} 欄<br><span class="muted">${fmt.bytes(enc.encode(state.text).length)}</span></dd></div>` +
+      `<div><dt>維護單位</dt><dd>${ag ? esc(ag.full) : '<span class="muted">尚未指定</span>'}</dd></div>`;
+    setMetaCode();
+  };
+  const setCode = (cellId, text) => {
+    const code = $(`#${cellId} pre.code > code`);
+    if (code.textContent === text && code.dataset.hl) return;
+    code.textContent = text;
+    delete code.dataset.hl;
+    App.highlight($('#' + cellId));
+  };
+  let lastMetaCode = '';
+  const setMetaCode = () => {
+    const m = state.meta, ag = App.AGENCIES[m.agency];
+    const text = `meta = DatasetMeta(
+    title=${JSON.stringify(m.title)}, id=${JSON.stringify(m.id)},
+    agency=${ag ? `"${ag.code}"` : 'None'}, theme=${m.theme ? `"${m.theme}"` : 'None'}, freq="${m.freq}",
+    formats=[${m.formats.map((f) => `"${f}"`).join(', ')}], license="${m.license}",
+    schedule=Schedule(source="${m.source}", retry=${m.retry}),
+)`;
+    if (text === lastMetaCode) return;
+    lastMetaCode = text;
+    setCode('c-meta', text);
+  };
+  const renderMetaErrors = () => {
+    const errs = state.ev.mErr, m = state.meta;
+    const val = { title: m.title, id: m.id, agency: m.agency, theme: m.theme, desc: m.desc, reason: m.reason, url: m.url };
+    Object.keys(META_LABEL).forEach((k) => {
+      const field = $(`.field[data-field="${k}"]`, form);
+      if (!field) return;
+      // 空白必填只在碰過或嘗試送出後才標紅；已有內容但不合格的即時提示
+      const show = !!errs[k] && (touched.has(k) || state.showErrors || !!String(val[k] || '').trim());
+      field.classList.toggle('is-invalid', show);
+      $('.field__error span', field).textContent = errs[k] || '';
+      const input = $('.input, .select, .textarea', field);
+      if (input) input.setAttribute('aria-invalid', show ? 'true' : 'false');
+    });
+  };
+
+  /* =================================================================
+   * 品質圓環（五段；每段長度 = 該構面分數），右欄與 [5] 共用
+   * ================================================================= */
+  const DIM_KEYS = App.QUALITY_DIMS.map((d) => d.key);
+  const ringMarkup = (size, stroke) => {
+    const r = 50 - stroke / 2 - 1, C = 2 * Math.PI * r, seg = C / DIM_KEYS.length, gap = 3.2, len = seg - gap;
+    const arcs = DIM_KEYS.map((k, i) => {
+      const off = -(i * seg + gap / 2);
+      return `<circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--paper-3)" stroke-width="${stroke}" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"/>` +
+        `<circle class="ring__arc" data-k="${k}" data-len="${len.toFixed(2)}" data-c="${C.toFixed(2)}" cx="50" cy="50" r="${r}" fill="none" stroke="var(--line-3)" stroke-width="${stroke}" stroke-dashoffset="${off.toFixed(2)}" style="stroke-dasharray:0 ${C.toFixed(2)}"/>`;
+    }).join('');
+    return `<div class="ring pub-ring" style="--size:${size}px" role="img" aria-label="預估品質分數"><svg viewBox="0 0 100 100" aria-hidden="true">${arcs}</svg><div class="ring__label" aria-hidden="true"><span class="ring__value">–</span><span class="ring__sub">尚無資料</span></div></div>`;
+  };
+  const setRing = (host, dims, score, { replay = false } = {}) => {
+    const ring = $('.pub-ring', host);
+    const arcs = $$('.ring__arc', ring);
+    const apply = () => arcs.forEach((a) => {
+      const v = dims ? dims[a.dataset.k] : 0;
+      a.style.strokeDasharray = `${(a.dataset.len * v / 100).toFixed(2)} ${a.dataset.c}`;
+      a.style.stroke = dims ? `var(--g-${App.grade(v).toLowerCase()})` : 'var(--line-3)';
+    });
+    const val = $('.ring__value', ring);
+    if (replay && !reduce) {
+      ring.classList.add('is-reset');
+      arcs.forEach((a) => { a.style.strokeDasharray = `0 ${a.dataset.c}`; });
+      void ring.offsetWidth;
+      ring.classList.remove('is-reset');
+      val.textContent = '0';
+    }
+    apply();
+    if (score == null) {
+      // 讓進行中的數字滾動失效（App.countUp 以 __countToken 判斷是否被取代）
+      val.__countToken = (val.__countToken || 0) + 1;
+      val.textContent = '–';
+    } else App.countUp(val, score);
+    $('.ring__sub', ring).textContent = score == null ? '尚無資料' : `預估 ${App.grade(score)} 級`;
+    ring.setAttribute('aria-label', score == null ? '預估品質分數：尚無資料' : `預估品質分數 ${score}，${App.grade(score)} 級；` + App.QUALITY_DIMS.map((d) => `${d.label} ${dims[d.key]}`).join('、'));
+  };
+  $('#ready-ring').innerHTML = ringMarkup(92, 10);
+  $('#check-ring').innerHTML = ringMarkup(156, 9);
+  $('#check-dims').innerHTML = App.QUALITY_DIMS.map((d) => `<li class="pub-dim dimbar" data-k="${d.key}" title="${esc(d.desc)}"><span>${esc(d.label)}</span><span class="pub-dim__bar dimbar__track"><span></span></span><b>–</b></li>`).join('');
+
+  /* =================================================================
+   * [5] 預檢報告
+   * ================================================================= */
+  let checkToken = 0;
+  const ruleHTML = (r) => {
+    const locate = r.cells.length && (r.state === 'fail' || r.state === 'warn');
+    return `<div class="rule" data-state="${r.state}" data-key="${r.key}">
+      <span class="rule__icon">${App.stateIcon(r.state)}</span>
+      <div class="rule__main"><p class="rule__name">${esc(r.name)}</p><code class="rule__expr">${esc(r.expr)}</code>${r.detail ? `<p class="rule__detail">${esc(r.detail)}</p>` : ''}</div>
+      <span class="rule__result">${esc(r.result)}</span>
+      ${locate || r.fix || (r.key === 'meta' && r.state === 'warn') ? `<div class="rule__actions">${locate ? `<button type="button" class="btn btn--sm btn--ghost" data-locate="${r.key}">${icon('search', 'i--sm')}定位</button>` : ''}${r.fix ? `<button type="button" class="btn btn--sm" data-fix="${r.key}">${icon('check', 'i--sm')}${esc(r.fix.label)}</button>` : ''}${r.key === 'meta' && r.state === 'warn' ? `<a class="btn btn--sm btn--ghost" href="${state.ev.descMissing ? '#c-mapping' : '#c-meta'}">${icon('arrow-right', 'i--sm')}前往補齊</a>` : ''}</div>` : ''}
+    </div>`;
+  };
+  const renderCheck = () => {
+    const ev = state.ev;
+    checkToken += 1; // 中止進行中的逐條動畫
+    $('#check-label').textContent = hasData()
+      ? `ValidationReport · 10 條規則 · 預估 ${ev.score} 分（${App.grade(ev.score)} 級）`
+      : 'ValidationReport · 等待資料';
+    $('#check-counts').innerHTML = hasData()
+      ? `<span class="badge badge--ok">${icon('check', 'i--sm')}通過 ${ev.passes}</span>` +
+        (ev.warns ? `<span class="badge badge--warn">${icon('alert', 'i--sm')}警示 ${ev.warns}</span>` : '') +
+        (ev.fails ? `<span class="badge badge--err">${icon('x', 'i--sm')}失敗 ${ev.fails}</span>` : '') +
+        (ev.skips ? `<span class="badge badge--muted">略過 ${ev.skips}</span>` : '')
+      : '<span class="badge badge--muted">未執行</span>';
+    $('#rules').innerHTML = ev.rules.map(ruleHTML).join('');
+    setRing($('#check-ring'), ev.dims, ev.score);
+    setRing($('#ready-ring'), ev.dims, ev.score);
+    $$('#check-dims .pub-dim').forEach((li) => {
+      const v = ev.dims ? ev.dims[li.dataset.k] : 0;
+      const bar = $('.pub-dim__bar span', li);
+      bar.style.transform = `scaleX(${v / 100})`;
+      bar.style.backgroundColor = ev.dims ? `var(--g-${App.grade(v).toLowerCase()})` : 'var(--line-3)';
+      $('b', li).textContent = ev.dims ? v : '–';
+    });
+  };
+  // 重新執行預檢：規則逐條轉成 running 再出結果，圓環從 0 重畫
+  const animateRules = async () => {
+    if (reduce) return;
+    const token = ++checkToken;
+    setRing($('#check-ring'), state.ev.dims, state.ev.score, { replay: true });
+    const items = $$('#rules .rule').map((el) => ({ el, st: el.dataset.state, icon: $('.rule__icon', el).innerHTML, result: $('.rule__result', el).textContent }));
+    items.forEach(({ el }) => { el.dataset.state = 'running'; $('.rule__icon', el).innerHTML = App.stateIcon('running'); $('.rule__result', el).textContent = '執行中…'; });
+    for (const it of items) {
+      await sleep(it.st === 'fail' ? 220 : 110);
+      if (token !== checkToken || !it.el.isConnected) return;
+      it.el.dataset.state = it.st;
+      $('.rule__icon', it.el).innerHTML = it.icon;
+      $('.rule__result', it.el).textContent = it.result;
+      it.el.classList.add('is-resolved');
+    }
+  };
+  $('#recheck').addEventListener('click', () => App.cell.run('c-check', { duration: 420 }));
+  $('#rules').addEventListener('click', (e) => {
+    const lb = e.target.closest('[data-locate]'), fb = e.target.closest('[data-fix]');
+    const key = (lb || fb || {}).dataset;
+    if (!key) return;
+    const rule = state.ev.rules.find((r) => r.key === (lb ? lb.dataset.locate : fb.dataset.fix));
+    if (!rule) return;
+    if (lb) locate(rule); else applyFix(rule);
+  });
+  const locate = (rule) => {
+    const c = rule.cells[0];
+    if (!c) return;
+    $('#c-source').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    selectLine(lineOf(c.row));
+    const td = $(`#preview-wrap td[data-rc="${c.row}:${c.idx}"]`);
+    if (td) { td.classList.remove('is-flash'); void td.offsetWidth; td.classList.add('is-flash'); }
+  };
+  const csvField = (v, d) => (v.includes(d) || /["\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const applyFix = (rule) => {
+    if (guard() || !rule.fix) return;
+    const prev = snapshot();
+    const lines = ta.value.split('\n');
+    const d = state.parsed.delimiter;
+    const byRow = new Map();
+    rule.fix.changes.forEach((ch) => { if (!byRow.has(ch.row)) byRow.set(ch.row, [...state.parsed.rows[ch.row]]); byRow.get(ch.row)[ch.idx] = ch.value; });
+    byRow.forEach((vals, row) => { lines[lineOf(row) - 1] = vals.map((v) => csvField(v, d)).join(d); });
+    ta.value = lines.join('\n');
+    state.dirty = true;
+    const firstLine = lineOf(rule.fix.changes[0].row);
+    applyText();
+    flashLine(firstLine);
+    App.toast(`已套用修正：${rule.name}`, { desc: rule.fix.desc, action: { label: '復原', onClick: () => restore(prev) } });
+  };
+
+  /* =================================================================
+   * 步驟列（摘要）與右欄就緒度清單：同一份 steps() 推導
+   * ================================================================= */
+  const steps = () => {
+    const ev = state.ev, has = hasData(), ds = submittedDs(), k = state.cols.length;
+    const mErrN = Object.keys(ev.mErr).length;
+    const list = [
+      { cell: 'c-source', label: '讀取資料', done: has, error: false, meta: has ? `${fmt.num(state.parsed.rows.length)} 列 × ${k} 欄` : '尚未貼上資料' },
+      { cell: 'c-mapping', label: '欄位對應', done: has && !ev.codeErr && !ev.labelErr, error: has && !!(ev.codeErr || ev.labelErr),
+        meta: !has ? '—' : ev.codeErr ? `${ev.codeErr} 欄代碼待修正` : ev.labelErr ? `${ev.labelErr} 欄缺中文名稱` : ev.descMissing ? `說明 ${k - ev.descMissing}/${k}` : `${k} 欄已對應`, warn: has && !ev.codeErr && !ev.labelErr && ev.descMissing > 0 },
+      { cell: 'c-meta', label: '授權與詮釋資料', done: !mErrN, error: mErrN > 0 && (state.showErrors || Object.keys(ev.mErr).some((x) => touched.has(x) || String(state.meta[x] || '').trim())), meta: mErrN ? `缺 ${mErrN} 項` : App.LICENSES[state.meta.license].label },
+      { cell: 'c-check', label: '自動驗證預檢', done: has && !ev.fails, error: has && ev.fails > 0, meta: !has ? '—' : ev.fails ? `${ev.fails} 項失敗` : ev.warns ? `通過 · ${ev.warns} 項警示` : '全部通過', warn: has && !ev.fails && ev.warns > 0 },
+      { cell: 'c-submit', label: '送出審核', done: !!ds, error: false, meta: ds ? `${ds.app.no} · ${App.STATUS[ds.status].short}` : ev.blockers.length ? `尚有 ${ev.blockers.length} 項待處理` : '可以送出' },
+    ];
+    let current = false;
+    list.forEach((s) => {
+      s.state = s.done ? 'done' : s.error ? 'error' : current ? 'todo' : 'current';
+      if (!s.done) current = true;
+    });
+    return list;
+  };
+  const STEP_ICON = {
+    done: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    error: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v5M8 11.6v.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  };
+  $('#steps').innerHTML = Array.from({ length: 5 }, (_, i) => `<li class="stepper__item"><a class="pub-step"><span class="stepper__dot"></span><span class="pub-step__text"><span class="stepper__label"></span><span class="stepper__meta"></span></span></a></li>`).join('');
+  $('#ready-list').innerHTML = Array.from({ length: 5 }, () => `<li><a><span class="pub-list__icon"></span><span class="pub-list__label"></span><span class="pub-list__meta"></span></a></li>`).join('');
+  // 就地更新（不重建），讓圓點的顏色轉場看得到
+  const renderSteps = () => {
+    const list = steps();
+    $$('#steps .stepper__item').forEach((li, i) => {
+      const s = list[i], a = $('a', li);
+      li.dataset.state = s.state;
+      a.href = '#' + s.cell;
+      if (s.state === 'current') a.setAttribute('aria-current', 'step'); else a.removeAttribute('aria-current');
+      $('.stepper__dot', li).innerHTML = STEP_ICON[s.state] || String(i + 1);
+      $('.stepper__label', li).textContent = s.label;
+      const meta = $('.stepper__meta', li);
+      meta.textContent = s.meta;
+      meta.classList.toggle('is-warn', !!s.warn);
+    });
+    $$('#ready-list li').forEach((li, i) => {
+      const s = list[i], a = $('a', li);
+      a.href = '#' + s.cell;
+      $('.pub-list__icon', li).innerHTML = s.state === 'done' ? App.stateIcon(s.warn ? 'warn' : 'pass') : s.state === 'error' ? App.stateIcon('fail') : `<span class="pub-num${s.state === 'current' ? ' is-current' : ''}">${i + 1}</span>`;
+      $('.pub-list__label', li).textContent = s.label;
+      const meta = $('.pub-list__meta', li);
+      meta.textContent = s.meta;
+      meta.className = 'pub-list__meta' + (s.state === 'error' ? ' is-err' : s.warn ? ' is-warn' : '');
+    });
+  };
+  const renderReadiness = () => {
+    const ev = state.ev, ds = submittedDs();
+    const score = ds && ds.quality != null ? ds.quality : ev.score;
+    $('#ready-grade').innerHTML = score == null ? '<span class="muted">尚無資料</span>' : `${App.gradeBadge(score)}<span>${App.grade(score)} 級 · ${score} 分</span>`;
+    const hint = $('#ready-hint');
+    hint.className = 'pub-ready__hint';
+    if (ds) { hint.textContent = `已送出 ${ds.app.no}，目前「${App.STATUS[ds.status].label}」。`; hint.classList.add('is-ok'); }
+    else if (ev.blockers.length) { hint.textContent = `尚有 ${ev.blockers.length} 項需處理才能送出`; hint.classList.add('is-block'); }
+    else { hint.textContent = ev.warns ? `可以送出；${ev.warns} 項警示會一併給承辦參考` : '預檢全部通過，可以送出'; hint.classList.add('is-ok'); }
+    $('#ready-status').innerHTML = App.statusBadge(ds ? ds.status : 'draft', { pill: true });
+  };
+  const renderQueue = () => {
+    const apps = App.pendingApps();
+    const by = (s) => apps.filter((d) => d.status === s).length;
+    const mine = apps.filter((d) => d.status === 'review' && d.app && d.app.assignee === App.ME.id).length;
+    $('#q-total').textContent = apps.length;
+    $('#q-chips').innerHTML = `<span class="badge">驗證中 ${by('validating')}</span><span class="badge badge--info">承辦 ${by('review')}</span><span class="badge badge--cdo">資料長 ${by('approval')}</span>`;
+    $('#q-mine').innerHTML = `其中指派給你審核的有 <b class="strong">${mine}</b> 件`;
+  };
+  const renderIntroMeta = () => {
+    const ds = submittedDs(), m = state.meta, ag = App.AGENCIES[m.agency];
+    $('#meta-status').innerHTML = App.statusBadge(ds ? ds.status : 'draft', { pill: true });
+    $('#meta-owner').innerHTML = ag ? `${App.avatar(ag.contact, 'sm')}<span>${esc(ag.name)} · ${esc(App.person(ag.contact).name)}</span>` : `${icon('user', 'i--sm')}<span>尚未指定提供機關</span>`;
+    $('#meta-saved').innerHTML = `${icon('clock', 'i--sm')}<span>${ds ? `已送出 ${fmt.dateTime(ds.app.submitted)}` : state.savedAt ? `上次儲存 ${fmt.time(state.savedAt)}` : '尚未儲存'}</span>`;
+    $('#nb-file').textContent = `${m.id || 'untitled'}.ipynb`;
+    $('#save-draft').hidden = !!ds;
+    $$('[data-cta] span').forEach((el) => { el.textContent = ds ? '查看送審進度' : '前往送審'; });
+  };
+
+  $('#toggle-code').addEventListener('click', (e) => {
+    const on = e.currentTarget.getAttribute('aria-checked') !== 'true';
+    e.currentTarget.setAttribute('aria-checked', on ? 'true' : 'false');
+    App.cell.foldAll(!on);
+  });
+  $('#save-draft').addEventListener('click', () => {
+    if (guard()) return;
+    if (!hasData() && !state.meta.title.trim()) { App.toast('目前沒有可儲存的內容', { tone: 'info', desc: '貼上資料或填寫資料集名稱後再儲存。' }); return; }
+    const prevAt = state.savedAt, prevDirty = state.dirty;
+    state.savedAt = App.now();
+    state.dirty = false;
+    const entry = App.log({ kind: 'draft', text: `儲存「${state.meta.title.trim() || '未命名資料集'}」上架草稿`, detail: `${state.parsed.rows.length} 列 × ${state.cols.length} 欄 · 預估 ${state.ev.score ?? '–'} 分` });
+    renderStatus();
+    App.toast('草稿已儲存', { desc: `${fmt.time(state.savedAt)} · 保存在本次工作階段`, action: { label: '復原', onClick: () => { state.savedAt = prevAt; state.dirty = prevDirty; App.unlog(entry); renderStatus(); } } });
+  });
+
+  /* =================================================================
+   * [6] 送出前：摘要、審核路徑、阻擋項
+   * ================================================================= */
+  // 草稿的 app.no 是「草稿」，只取正式案號計算下一號
+  const nextAppNo = () => `APP-2026-${String(Math.max(...App.DATA.datasets.filter((d) => d.app && /^APP-\d{4}-\d{4}$/.test(d.app.no)).map((d) => Number(d.app.no.slice(-4)))) + 1).padStart(4, '0')}`;
+  const REVIEWERS = ['hsu', 'chen', 'lin'];
+  const addWorkdays = (ms, n) => { let t = ms; while (n > 0) { t += 864e5; const wd = tw(t).getUTCDay(); if (wd !== 0 && wd !== 6) n -= 1; } return t; };
+  const dueText = (ms) => `${fmt.md(ms)}（${fmt.weekday(ms)}）`;
+  const renderPre = () => {
+    const ev = state.ev, m = state.meta, ag = App.AGENCIES[m.agency];
+    const apps = App.pendingApps();
+    const sel = $('#assignee');
+    sel.innerHTML = REVIEWERS.map((id) => {
+      const p = App.person(id);
+      return `<option value="${id}"${id === state.assignee ? ' selected' : ''}>${esc(p.name)}${id === App.ME.id ? '（我）' : ''}</option>`;
+    }).join('');
+    $('#assignee-load').textContent = `目前審核中 ${apps.filter((d) => d.status === 'review' && d.app && d.app.assignee === state.assignee).length} 件`;
+    $('#applicant').innerHTML = ag ? App.personChip(ag.contact) : '<span class="muted">選擇提供機關後帶入</span>';
+    const dash = '<span class="muted">—</span>';
+    const L = App.LICENSES[m.license];
+    $('#sum').innerHTML =
+      `<dt>資料集</dt><dd>${m.title.trim() ? `<b class="strong">${esc(m.title)}</b>` : dash}</dd>` +
+      `<dt>識別碼</dt><dd class="mono">${m.id ? esc(m.id) : dash}</dd>` +
+      `<dt>提供機關</dt><dd>${ag ? esc(ag.name) : dash}</dd>` +
+      `<dt>主題</dt><dd>${m.theme ? esc(App.THEMES[m.theme]) : dash}</dd>` +
+      `<dt>資料量</dt><dd class="num">${fmt.num(state.parsed.rows.length)} 列 × ${state.cols.length} 欄</dd>` +
+      `<dt>格式</dt><dd>${App.formatBadges(m.formats)}</dd>` +
+      `<dt>更新</dt><dd>${esc(App.FREQS[m.freq].label)} · ${esc({ upload: '手動上傳', url: '定期擷取', api: '機關 API' }[m.source])}</dd>` +
+      `<dt>授權</dt><dd>${esc(L.label)}</dd>` +
+      `<dt>預估品質</dt><dd>${ev.score == null ? dash : `<span class="cluster" style="gap:6px">${App.gradeBadge(ev.score)}<span class="num">${ev.score} 分</span></span>`}</dd>` +
+      `<dt>預檢</dt><dd>${hasData() ? `通過 ${ev.passes} · 警示 ${ev.warns} · <span class="${ev.fails ? 'err-text' : ''}">失敗 ${ev.fails}</span>` : dash}</dd>`;
+    const reviewer = App.person(state.assignee);
+    const now = App.now();
+    $('#route').innerHTML = [
+      { label: '承辦審核', meta: `${reviewer.name} · 期限 ${dueText(addWorkdays(now, 3))}` },
+      { label: '資料長核定', meta: '周敬言 · 2 個工作天內' },
+      { label: '發布', meta: '核定後下一個整點批次產生 v1.0' },
+    ].map((s, i) => `<li class="stepper__item" data-state="todo"><span class="stepper__dot">${i + 1}</span><span class="pub-step__text"><span class="stepper__label">${s.label}</span><span class="stepper__meta">${esc(s.meta)}</span></span></li>`).join('');
+    const b = ev.blockers;
+    $('#blockers').innerHTML = b.length
+      ? `<div class="callout" data-tone="err">${icon('alert')}<div><b>還有 ${b.length} 項需要處理才能送出</b><ul>${b.map((x) => `<li><a href="${x.href}" data-blocker="${x.field || ''}">${esc(x.text)}</a></li>`).join('')}</ul></div></div>`
+      : `<div class="callout" data-tone="ok">${icon('check')}<div><b>可以送出</b>　${ev.warns ? `預檢有 ${ev.warns} 項警示，會一併附在申請中給承辦參考。` : '預檢全部通過。'}</div></div>`;
+    $('#submit-hint').innerHTML = `送出後案號為 <b class="mono strong">${nextAppNo()}</b>，以 ${ag ? esc(App.person(ag.contact).name) : '機關聯絡窗口'} 名義提出；表單鎖定至審核完成或退回。`;
+    $('#submit-label').textContent = submittedDs() ? `Application · ${submittedDs().app.no}` : `Application · 草稿 · 預計案號 ${nextAppNo()}`;
+    setCode('c-submit', `opendata.submit(df, mapping, meta, assignee="${state.assignee}"${state.note.trim() ? ', note=NOTE' : ''})  # → ${submittedDs() ? submittedDs().app.no : nextAppNo()}`);
+  };
+  $('#assignee').addEventListener('change', (e) => { state.assignee = e.target.value; renderPre(); });
+  $('#note').addEventListener('input', (e) => { state.note = e.target.value; scheduleEvaluate(); });
+  $('#privacy').addEventListener('change', (e) => { state.privacy = e.target.checked; evaluate(); });
+  $('#blockers').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-blocker]');
+    if (!a || !a.dataset.blocker) return;
+    // 指向表單欄位的阻擋項：捲動後直接聚焦該欄位
+    e.preventDefault();
+    const field = $(`.field[data-field="${a.dataset.blocker}"]`, form);
+    if (!field) return;
+    touched.add(a.dataset.blocker);
+    renderMetaErrors();
+    field.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    const input = $('.input, .select, .textarea', field);
+    if (input) input.focus({ preventScroll: true });
+  });
+
+  /* ---------- 送出 ---------- */
+  let submitting = false;
+  const openSubmit = () => {
+    if (submitting || submittedDs()) return;
+    const ev = state.ev;
+    if (ev.blockers.length) {
+      state.showErrors = true;
+      evaluate();
+      App.toast(`還有 ${ev.blockers.length} 項需要處理`, { tone: 'warn', desc: ev.blockers.slice(0, 2).map((b) => b.text).join('；') });
+      $('#blockers').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+      return;
+    }
+    const m = state.meta, ag = App.AGENCIES[m.agency], contact = App.person(ag.contact);
+    App.modal({
+      title: `送出「${m.title.trim()}」上架申請`, eyebrow: `opendata.submit() → ${nextAppNo()}`, icon: 'send',
+      body: `<p>將以 <b class="strong">${esc(contact.name)}</b>（${esc(ag.name)} 資料窗口）名義提出申請，送出後由平台重新執行自動驗證，再交給 <b class="strong">${esc(App.person(state.assignee).name)}</b> 審核。</p>` +
+        `<dl class="kv pub-modal-kv"><dt>資料量</dt><dd>${fmt.num(state.parsed.rows.length)} 列 × ${state.cols.length} 欄</dd><dt>授權</dt><dd>${esc(App.LICENSES[m.license].label)}</dd><dt>格式</dt><dd>${App.formatBadges(m.formats)}</dd><dt>預估品質</dt><dd>${App.gradeBadge(ev.score)} ${ev.score} 分</dd></dl>` +
+        (ev.warns ? `<div class="callout" data-tone="warn">${icon('alert')}<div>${ev.warns} 項預檢警示會附在申請中：${esc(ev.rules.filter((r) => r.state === 'warn').map((r) => r.name).join('、'))}。</div></div>` : ''),
+      actions: [
+        { label: '返回修改', variant: 'ghost' },
+        { label: '確認送出', variant: 'primary', icon: 'send', autofocus: true, onClick: (close) => { close(); doSubmit(); } },
+      ],
+    });
+  };
+  $('#submit-btn').addEventListener('click', openSubmit);
+
+  const doSubmit = async () => {
+    if (submitting || submittedDs()) return;
+    submitting = true;
+    const m = state.meta, ev = state.ev;
+    const ds = App.addDataset({
+      id: m.id, title: m.title.trim(), agency: m.agency, theme: m.theme,
+      columns: state.cols.map((c) => ({ name: c.e.code.trim(), type: c.type, label: c.e.label.trim(), desc: c.e.desc.trim(), pk: c.e.pk })),
+      formats: [...m.formats], freq: m.freq, license: m.license, desc: m.desc.trim(), tags: [...m.tags],
+      rows: state.parsed.rows.length, status: 'validating', quality: ev.score, dims: { ...ev.dims }, assignee: state.assignee,
+    });
+    state.submittedId = ds.id;
+    state.dirty = false;
+    onData();
+    App.toast(`已送出 ${ds.app.no}`, { desc: '平台正在執行自動驗證，完成後指派承辦。' });
+    $('#c-submit').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    await App.cell.run('c-submit', { duration: 380 });
+    submitting = false;
+    runAutoValidation(ds);
+  };
+
+  /** 自動驗證：記錄逐行打出，完成後轉為承辦審核（App.transition 會寫活動紀錄並發出 data 事件） */
+  const runAutoValidation = async (ds) => {
+    const ev = state.ev, t0 = App.now();
+    const ts = (i) => fmt.clock(t0 + i * 380);
+    const lvl = { pass: 'ok', warn: 'warn', fail: 'err', skip: 'info', idle: 'info' };
+    const lines = [
+      { t: ts(0), level: 'info', msg: `收件 ${ds.app.no}：${ds.title}（${fmt.num(ds.rows)} 列 × ${ds.cols} 欄）` },
+      { t: ts(1), level: 'info', msg: `寫入暫存區 staging/${App.AGENCIES[ds.agency].code.toLowerCase()}/${ds.id}/v0.1` },
+      ...ev.rules.map((r, i) => ({ t: ts(2 + i), level: lvl[r.state], msg: `${r.key.padEnd(11)} ${r.state === 'skip' ? `略過（${r.detail}）` : r.result}` })),
+      { t: ts(13), level: 'info', msg: `品質分數 ${ds.quality}（${App.grade(ds.quality)} 級）· ` + App.QUALITY_DIMS.map((d) => `${d.label} ${ds.dims[d.key]}`).join(' · ') },
+      { t: ts(14), level: 'ok', msg: `自動驗證完成，指派承辦 ${App.person(ds.app.assignee).name}` },
+    ];
+    await App.streamLines($('#track-log'), lines, { interval: 150 });
+    if (ds.status !== 'validating') return;
+    App.transition(ds.id, 'review', { actor: 'system' });
+    App.toast('自動驗證通過，進入承辦審核', { desc: `${ds.app.no} · 品質 ${ds.quality} 分（${App.grade(ds.quality)} 級）` });
+  };
+
+  /* ---------- 送出後：送審追蹤 ---------- */
+  const FLOW_STAGES = ['上架申請', '自動驗證', '承辦審核', '資料長核定', '發布'];
+  const STAGE_IDX = { validating: 1, review: 2, returned: 2, approval: 3, published: 4 };
+  const renderTracking = () => {
+    const ds = submittedDs();
+    $('#pre-submit').hidden = !!ds;
+    $('#track').hidden = !ds;
+    if (!ds) return;
+    const idx = STAGE_IDX[ds.status] ?? 1;
+    // 送資料長後 assignee 會換成資料長，承辦改記在 reviewer
+    const reviewer = ds.app.reviewer || ds.app.assignee;
+    const metas = [fmt.dateTime(ds.app.submitted), idx > 1 ? `${ds.quality} 分` : '執行中', App.person(reviewer).name, '周敬言', ds.status === 'published' ? ds.version : '—'];
+    const flowSteps = FLOW_STAGES.map((label, i) => ({
+      label, meta: metas[i],
+      state: ds.status === 'published' || i < idx ? 'done' : i > idx ? 'todo' : ds.status === 'returned' ? 'warn' : 'active',
+      n: ds.status === 'returned' && i === idx ? '!' : undefined,
+    }));
+    $('#track-head').innerHTML = `<span class="pub-appno">${esc(ds.app.no)}</span>${App.statusBadge(ds.status, { pill: true })}` +
+      `<span class="pub-track__meta">${esc(ds.title)} · 送出 ${fmt.dateTime(ds.app.submitted)}</span><span class="spacer"></span>${App.personChip(ds.app.by)}`;
+    $('#track-flow').innerHTML = App.flowHTML(flowSteps);
+    // 三段人工關卡
+    const laneState = (i) => (ds.status === 'published' || i + 2 < idx ? 'done' : i + 2 > idx ? 'todo' : ds.status === 'returned' ? 'warn' : 'active');
+    const lanes = [
+      { step: 'STEP 1 · 承辦', title: '承辦審核', who: reviewer,
+        meta: { active: `期限 ${dueText(addWorkdays(ds.app.stageAt, 3))}，確認欄位說明、授權與抽查資料`, done: '審核通過，已送資料長', warn: '已退回機關補正', todo: '自動驗證完成後指派' } },
+      { step: 'STEP 2 · 資料長', title: '資料長核定', who: 'chou',
+        meta: { active: `期限 ${dueText(addWorkdays(ds.app.stageAt, 2))}，確認公開範圍與授權`, done: '已核定上架', warn: '', todo: '承辦審核通過後送達' } },
+      { step: 'STEP 3 · 平台', title: '發布', who: 'system',
+        meta: { active: '寫入平台並更新 API 與 CDN 快取', done: `已發布 ${ds.version}`, warn: '', todo: `核定後於下一個整點批次產生 v1.0` } },
+    ];
+    $('#track-lanes').innerHTML = lanes.map((l, i) => {
+      const st = laneState(i);
+      const note = i === 0 && ds.app.note && (st === 'done' || st === 'warn') ? `<p class="pub-lane__note">${esc(ds.app.note)}</p>` : '';
+      return `<div class="pub-lane" data-state="${st}"><p class="pub-lane__step"><span>${l.step}</span>${st === 'active' ? '<span class="pub-lane__live" aria-hidden="true"></span>' : st === 'done' ? App.stateIcon('pass') : st === 'warn' ? App.stateIcon('warn') : ''}</p>` +
+        `<p class="pub-lane__title">${l.title}</p>${App.personChip(l.who)}<p class="pub-lane__meta">${esc(l.meta[st])}</p>${note}</div>`;
+    }).join('');
+    // 依狀態給動作
+    const act = $('#track-action');
+    const me = App.ME.id;
+    if (ds.status === 'validating') {
+      act.innerHTML = `<h3 class="pub-sub">目前進度</h3><div class="callout">${'<span class="spinner" aria-hidden="true"></span>'}<div><b>自動驗證執行中</b><br>平台以正式規則重新驗證並計算品質分數，完成後指派給 ${esc(App.person(ds.app.assignee).name)}。</div></div>`;
+    } else if (ds.status === 'review' && ds.app.assignee === me) {
+      act.innerHTML = `<h3 class="pub-sub">承辦審核 · 本案指派給你</h3>
+        <div class="field" id="rv-field"><label class="label" for="rv-note">審核意見</label><textarea class="textarea" id="rv-note" rows="3" maxlength="200" placeholder="例：欄位說明完整，座標抽查 10 筆與現地一致。">${esc(state.reviewNote)}</textarea>
+        <p class="field__error">${icon('alert', 'i--sm')}<span>退回補正時請寫明需要修正的項目</span></p></div>
+        <div class="cluster"><button class="btn btn--warn" type="button" data-act="return">${icon('undo', 'i--sm')}退回補正</button><button class="btn btn--primary" type="button" data-act="approve">${icon('check', 'i--sm')}審核通過，送資料長</button></div>`;
+    } else if (ds.status === 'review') {
+      act.innerHTML = `<h3 class="pub-sub">目前進度</h3><div class="callout">${icon('user')}<div>本案已指派 <b>${esc(App.person(ds.app.assignee).name)}</b> 審核，期限 ${dueText(addWorkdays(ds.app.stageAt, 3))}。</div></div>
+        <div class="cluster"><button class="btn" type="button" data-act="remind" data-who="${ds.app.assignee}">${icon('bell', 'i--sm')}提醒承辦</button></div>`;
+    } else if (ds.status === 'approval') {
+      act.innerHTML = `<h3 class="pub-sub">目前進度</h3><div class="callout" style="--c-fg:var(--cdo-text);--c-bg:var(--cdo-soft);--c-bd:rgba(122,85,198,.28)">${icon('shield')}<div><b>等候資料長核定</b><br>${esc(App.person('chou').name)}（數位發展處 資料長）· 期限 ${dueText(addWorkdays(ds.app.stageAt, 2))}。核定後於下一個整點批次發布。</div></div>
+        <div class="cluster"><button class="btn" type="button" data-act="remind" data-who="chou">${icon('bell', 'i--sm')}催辦資料長</button></div>`;
+    } else if (ds.status === 'returned') {
+      act.innerHTML = `<h3 class="pub-sub">退回補正</h3><div class="callout" data-tone="warn">${icon('alert')}<div><b>${esc(App.person(ds.app.reviewer || me).name)} 退回：</b>${esc(ds.app.note || '請補正後重新送出。')}</div></div>
+        <p class="hint">資料、欄位對應與詮釋資料已解除鎖定；修正後重新送出會再跑一次自動驗證。</p>
+        <div class="cluster"><a class="btn" href="#c-source">${icon('code', 'i--sm')}修改申請內容</a><button class="btn btn--primary" type="button" data-act="resubmit">${icon('send', 'i--sm')}重新送出</button></div>`;
+    } else {
+      act.innerHTML = `<h3 class="pub-sub">已發布</h3><div class="callout" data-tone="ok">${icon('check')}<div>「${esc(ds.title)}」已發布 ${esc(ds.version)}。</div></div>`;
+    }
+    $('#track-foot').innerHTML = `<button class="btn" type="button" data-act="new"${ds.status === 'validating' ? ' disabled title="自動驗證完成後才能開新申請"' : ''}>${icon('plus', 'i--sm')}建立新的申請</button>` +
+      `<a class="btn btn--ghost" href="index.html#c-pending">${icon('inbox', 'i--sm')}查看全平台待審</a>`;
+  };
+  $('#track').addEventListener('input', (e) => { if (e.target.id === 'rv-note') { state.reviewNote = e.target.value; $('#rv-field').classList.remove('is-invalid'); } });
+  $('#track').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    const ds = submittedDs();
+    if (!b || !ds) return;
+    const act = b.dataset.act;
+    if (act === 'approve' && ds.status === 'review') {
+      const note = state.reviewNote.trim();
+      const t = App.transition(ds.id, 'approval', { note: note || '欄位說明、授權與詮釋資料完整，抽查資料無誤。' });
+      state.reviewNote = '';
+      App.toast('已送資料長核定', { desc: `${ds.app.no} · 資料長 周敬言`, action: { label: '復原', onClick: () => t.undo() } });
+    } else if (act === 'return' && ds.status === 'review') {
+      const note = state.reviewNote.trim();
+      if (!note) { $('#rv-field').classList.add('is-invalid'); $('#rv-note').focus(); return; }
+      const t = App.transition(ds.id, 'returned', { note });
+      state.reviewNote = '';
+      App.toast('已退回補正', { tone: 'warn', desc: `${ds.app.no} · 通知 ${App.person(ds.app.by).name}`, action: { label: '復原', onClick: () => t.undo() } });
+    } else if (act === 'remind') {
+      const who = App.person(b.dataset.who);
+      const entry = App.log({ kind: 'notify', ds: ds.id, text: `提醒 ${who.name} 處理「{ds}」`, detail: `${ds.app.no} · 公文系統待辦與 Email` });
+      App.toast(`已提醒 ${who.name}`, { tone: 'info', desc: '以公文系統待辦與 Email 通知。', action: { label: '復原', onClick: () => App.unlog(entry) } });
+    } else if (act === 'resubmit' && ds.status === 'returned') {
+      if (state.ev.blockers.length) {
+        state.showErrors = true;
+        evaluate();
+        App.toast(`還有 ${state.ev.blockers.length} 項需要處理`, { tone: 'warn', desc: state.ev.blockers[0].text });
+        return;
+      }
+      // 以修正後的內容覆寫申請，再走一次自動驗證
+      const m = state.meta, ev = state.ev;
+      Object.assign(ds, {
+        title: m.title.trim(), theme: m.theme, formats: [...m.formats], freq: m.freq, license: m.license, desc: m.desc.trim(), tags: [...m.tags],
+        rows: state.parsed.rows.length, cols: state.cols.length, quality: ev.score, dims: { ...ev.dims },
+        columns: state.cols.map((c) => ({ name: c.e.code.trim(), type: c.type, label: c.e.label.trim(), desc: c.e.desc.trim(), pk: c.e.pk })),
+      });
+      App.transition(ds.id, 'validating', { note: '依退回意見修正後重新送出' });
+      App.toast(`已重新送出 ${ds.app.no}`, { desc: '自動驗證重新執行中。' });
+      runAutoValidation(ds);
+    } else if (act === 'new') {
+      if (ds.status === 'validating') return;
+      resetAll();
+    }
+  });
+
+  const resetAll = () => {
+    state.submittedId = null;
+    state.reviewNote = '';
+    state.note = ''; $('#note').value = '';
+    state.privacy = false; $('#privacy').checked = false;
+    state.assignee = App.ME.id;
+    state.meta = blankMeta();
+    state.fileName = 'paste.csv';
+    state.dirty = false;
+    state.showErrors = false;
+    state.savedAt = null;
+    edits = new Map();
+    touched.clear();
+    $('#track-log').innerHTML = '';
+    ta.value = '';
+    syncMetaForm();
+    applyText();
+    onData();
+    $('#c-intro').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    App.toast('已開新的上架申請', { tone: 'info', desc: '貼上 CSV 或從「附範例」載入草稿開始。' });
+  };
+
+  /* ---------- 鎖定：送出後到退回前，資料與表單唯讀 ---------- */
+  const applyLock = () => {
+    const ds = submittedDs(), lock = isLocked();
+    ['#editor', '#map-region', '#metaform', '#pre-submit'].forEach((sel) => {
+      const el = $(sel);
+      if (!el) return;
+      el.inert = lock;
+      el.classList.toggle('pub-locked', lock && sel !== '#pre-submit');
+    });
+    const bar = $('#lockbar');
+    bar.hidden = !ds;
+    if (!ds) return;
+    if (lock) {
+      bar.removeAttribute('data-tone');
+      bar.innerHTML = `${icon('shield')}<div><b>${esc(ds.app.no)} 已送出（${esc(App.STATUS[ds.status].label)}）</b>　資料、欄位對應與詮釋資料已鎖定，可在<a class="link" href="#c-submit">送審追蹤</a>查看進度。</div>`;
+    } else {
+      bar.dataset.tone = 'warn';
+      bar.innerHTML = `${icon('alert')}<div><b>${esc(ds.app.no)} 已退回補正</b>　表單已解除鎖定，修正後在<a class="link" href="#c-submit">送出審核</a>重新送出。</div>`;
+    }
+  };
+
+  /** App 資料異動（送出、流轉、活動紀錄、復原）統一走這裡重繪 */
+  const onData = () => {
+    renderTracking();
+    renderQueue();
+    applyLock();
+    evaluate();
+  };
+
+  /* =================================================================
+   * cell 重新執行時的重算；開場自動執行只重播輸出
+   * ================================================================= */
+  App.cell.define('c-source', { run: () => { renderPreview(); return { state: hasData() ? 'done' : 'warn' }; } });
+  App.cell.define('c-profile', { run: () => { renderProfile(); return { state: !hasData() || state.ev.rules.some((r) => r.state === 'fail' && r.cells.length) ? 'warn' : 'done' }; } });
+  App.cell.define('c-mapping', { run: () => { renderMapping(); return { state: !hasData() ? 'warn' : state.ev.codeErr || state.ev.labelErr ? 'error' : state.ev.descMissing ? 'warn' : 'done' }; } });
+  App.cell.define('c-meta', { run: () => { renderMetaDerived(); renderMetaErrors(); return { state: Object.keys(state.ev.mErr).length ? 'warn' : 'done' }; } });
+  App.cell.define('c-check', { run: () => { evaluate(); return { state: !hasData() ? 'warn' : state.ev.fails ? 'error' : state.ev.warns ? 'warn' : 'done' }; } });
+  App.cell.define('c-submit', { run: () => { renderPre(); renderTracking(); return { state: 'done' }; } });
+  document.addEventListener('cell:done', (e) => {
+    const id = e.detail.cell.id;
+    if (id === 'c-source') sweep();
+    if (id === 'c-check') animateRules();
+  });
+
+  /* ---------- 開場：載入環保局送來的充電站草稿 ---------- */
+  loadExample('ev', { quiet: true });
+  state.savedAt = App.time('2026-10-22T09:38');
+  renderTracking();
+  renderQueue();
+  renderIntroMeta();
+  updateCaret();
+  App.on('data', onData);
+});
+</script>
+</body>
+</html>

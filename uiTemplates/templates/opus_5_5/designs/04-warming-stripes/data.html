@@ -1,0 +1,1903 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>氣候資料 — 澄港市 氣候調適行動網</title>
+<meta name="description" content="澄港市 1901–2025 年均溫距平、極端高溫日數、短延時強降雨與海平面等八組觀測數列。可切換條碼與折線、縮放年代、輸入出生年畫出個人條碼，並下載原始數列。">
+<script>document.documentElement.classList.add('js');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* 錨點要同時避開 sticky 頁首與本頁目錄列 */
+  html { scroll-padding-top: calc(var(--header-h) + 72px); }
+
+  /* ============ Hero：八組數列的條碼總覽 ============ */
+  .dp-hero__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 48px clamp(40px, 5vw, 96px);
+    align-items: end;
+  }
+  .dp-hero { padding-top: clamp(36px, 4.6vw, 72px); }
+  .dp-hero .page-hero__title { max-width: none; font-size: clamp(2.25rem, 1.1rem + 2.6vw, 3.4rem); }
+  .dp-hero .page-hero__title span { display: block; }
+  .dp-inv { min-width: 0; }
+  .dp-inv__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .dp-inv__note { font: 500 11.5px/1.5 var(--font-mono); color: var(--text-2); }
+  .dp-inv__row,
+  .dp-inv__axis {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr) 96px;
+    align-items: center;
+    gap: 18px;
+  }
+  .dp-inv__row {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+    color: inherit;
+    text-decoration: none;
+  }
+  .dp-inv__name { font: 500 14px/1.25 var(--font-sans); white-space: nowrap; transition: color var(--t-fast); }
+  .dp-inv__name small,
+  .dp-inv__val small { display: block; margin-top: 4px; font: 500 11px/1.2 var(--font-mono); color: var(--text-2); }
+  .dp-inv__band {
+    height: 28px;
+    cursor: crosshair;
+    animation: stripe-wipe 1.5s var(--ease-out) both;
+    animation-delay: calc(var(--k) * 90ms + 120ms);
+  }
+  .dp-inv__val { font: 500 14px/1.25 var(--font-mono); text-align: right; white-space: nowrap; }
+  .dp-inv__row:hover .dp-inv__name { color: #fff; }
+  .dp-inv__row:hover .dp-inv__val small { color: var(--text); }
+  .dp-inv__axis { margin-top: 10px; }
+  .dp-inv__axis .year-axis { grid-column: 2; }
+
+  /* ============ 本頁目錄（sticky） ============ */
+  .dp-toc {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 90;
+    background: rgba(11, 13, 18, .95);
+    border-bottom: 1px solid var(--line);
+  }
+  .dp-toc__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .dp-toc__list { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .dp-toc__list::-webkit-scrollbar { display: none; }
+  .dp-toc__link {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 16px 14px 15px;
+    color: var(--text-2);
+    font: 500 14px/1 var(--font-sans);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color var(--t-fast);
+  }
+  .dp-toc__list li:first-child .dp-toc__link { padding-left: 0; }
+  .dp-toc__list li:first-child .dp-toc__link::after { left: 0; }
+  .dp-toc__no { font: 500 10.5px/1 var(--font-mono); color: var(--text-3); transition: color var(--t-fast); }
+  .dp-toc__link::after {
+    content: "";
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--stripes);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .5s var(--ease-out);
+  }
+  .dp-toc__link:hover { color: var(--text); }
+  .dp-toc__link.is-active { color: var(--text); }
+  .dp-toc__link.is-active .dp-toc__no { color: var(--hot); }
+  .dp-toc__link.is-active::after { transform: none; }
+  .dp-toc__aside { font: 500 11.5px/1 var(--font-mono); color: var(--text-2); white-space: nowrap; }
+
+  /* ============ 01 年均溫：主圖＋讀數 ============ */
+  .dp-temp__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 268px;
+    gap: 32px;
+    align-items: stretch;
+  }
+  .dp-temp__chart { height: clamp(320px, 31vw, 440px); }
+  .dp-ro { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-left: 28px; border-left: 1px solid var(--line); }
+  /* 同一組 125 色依冷熱重新排序：標記顯示這一年落在哪裡 */
+  .dp-sorted { display: grid; gap: 8px; }
+  .dp-sorted__k { font: 500 11.5px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-sorted__bar { position: relative; height: 26px; }
+  .dp-sorted__mark {
+    position: absolute;
+    top: -5px;
+    bottom: -5px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--ice);
+    box-shadow: 0 0 0 1px var(--surface);
+    transition: left .35s var(--ease-out);
+  }
+  .dp-sorted__ends { display: flex; justify-content: space-between; gap: 12px; font: 500 11px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-ro__more { margin-top: auto; border-top: 1px solid var(--line); }
+  .dp-ro__more div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--line-2);
+    font: 500 12px/1.4 var(--font-mono);
+    color: var(--text-2);
+  }
+  .dp-ro__more div:last-child { border-bottom: 0; padding-bottom: 0; }
+  .dp-ro__more dd { margin: 0; color: var(--text); text-align: right; }
+  .dp-ro__more dd.is-none { color: var(--text-2); }
+
+  /* 年代範圍：雙把手滑桿（軌道就是條碼）＋十年色塊 */
+  .dp-span { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .dp-span__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin-bottom: 16px;
+  }
+  .dp-span__label { font: 500 12.5px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-span__label b { font-size: 16px; font-weight: 500; color: var(--text); }
+  .dp-span__presets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dp-range { position: relative; height: 28px; cursor: pointer; }
+  .dp-range__track { position: absolute; left: 0; right: 0; top: 10px; height: 8px; background: var(--stripes); }
+  .dp-range__mask { position: absolute; top: -1px; bottom: -1px; background: rgba(18, 21, 28, .8); }
+  .dp-range__mask--l { left: 0; }
+  .dp-range__mask--r { right: 0; }
+  .dp-range__input { position: absolute; inset: 0; pointer-events: none; }
+  .dp-range .range::-webkit-slider-runnable-track { background: transparent; }
+  .dp-range .range::-moz-range-track { background: transparent; }
+  .dp-range .range::-webkit-slider-thumb { pointer-events: auto; cursor: grab; }
+  .dp-range .range::-moz-range-thumb { pointer-events: auto; cursor: grab; }
+  .dp-decades { display: flex; margin-top: 12px; }
+  .dp-dec {
+    flex: var(--n) 1 0;
+    min-width: 0;
+    display: grid;
+    gap: 7px;
+    padding: 0 0 2px;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font: 500 11px/1.1 var(--font-mono);
+    text-align: left;
+    transition: color var(--t-fast);
+  }
+  .dp-dec__bar {
+    display: block;
+    height: 14px;
+    background: var(--c);
+    box-shadow: inset 2px 0 0 var(--surface);
+    opacity: .3;
+    transition: opacity var(--t-med), height var(--t-med) var(--ease-out);
+  }
+  .dp-dec:first-child .dp-dec__bar { box-shadow: none; }
+  .dp-dec span { padding-left: 4px; overflow: hidden; white-space: nowrap; }
+  .dp-dec:first-child span { padding-left: 0; }
+  .dp-dec__val { color: var(--text-2); font-size: 10.5px; }
+  .dp-dec__short { display: none; }
+  .dp-dec:hover { color: var(--text); }
+  .dp-dec:hover .dp-dec__bar { opacity: .75; }
+  .dp-dec.is-in { color: var(--text); }
+  .dp-dec.is-in .dp-dec__bar { opacity: 1; }
+  .dp-dec[aria-pressed="true"] .dp-dec__bar { height: 20px; }
+
+  .dp-stats { margin-top: 28px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .dp-stat__k { font: 500 12px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-stat__v { margin-top: 12px; font: 500 30px/1 var(--font-mono); letter-spacing: -.035em; white-space: nowrap; }
+  .dp-stat__v small { margin-left: 5px; font-size: 13px; letter-spacing: 0; color: var(--text-2); }
+  .dp-stat__n { margin-top: 10px; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+  .dp-temp__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; }
+  .dp-temp__legend .stripe-scale { width: 260px; }
+
+  /* ============ 圖表通用（SVG） ============ */
+  .dp-plot { position: relative; height: 340px; }
+  .dp-plot:focus-visible { outline-offset: 8px; }
+  .dp-plot svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .dp-mark { transition: opacity var(--t-fast); }
+  .dp-bar {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    transition: transform .95s var(--ease-melt), fill .95s var(--ease-in-out), opacity var(--t-fast);
+  }
+  .dp-plot.is-hover .dp-mark:not(.is-on) { opacity: .28; }
+  .dp-fade { transition: opacity .6s var(--ease-out); }
+  .dp-cross { transition: opacity var(--t-fast); }
+  .legend-swatch--hatch { background: repeating-linear-gradient(45deg, var(--hot) 0 2px, rgba(251, 106, 74, .18) 2px 5px); box-shadow: inset 0 0 0 1px var(--hot); }
+
+  /* ============ 02 極端高溫 ============ */
+  .dp-heat { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: stretch; }
+  /* 圖卡與右側重點數字等高：多出的高度都給圖 */
+  .dp-heat > .chart-card { display: flex; flex-direction: column; }
+  .dp-heat .dp-plot { flex: 1 1 auto; height: auto; min-height: 340px; }
+  .dp-heat__aside { display: grid; align-content: start; border-top: 1px solid var(--line); }
+  .dp-hs { padding: 22px 0 20px; border-bottom: 1px solid var(--line); }
+  .dp-hs__k { display: flex; align-items: center; gap: 10px; font: 500 12px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-hs__v { margin-top: 12px; font: 500 46px/1 var(--font-mono); letter-spacing: -.05em; white-space: nowrap; }
+  .dp-hs__v small { margin-left: 6px; font: 500 14px/1 var(--font-sans); letter-spacing: 0; color: var(--text-2); }
+  .dp-hs__n { margin-top: 10px; font-size: 13px; line-height: 1.65; color: var(--text-2); }
+  .dp-hs__n b { color: var(--text); font-weight: 600; }
+
+  /* ============ 03 降雨強度 ============ */
+  .dp-rain-kpi { margin-bottom: 28px; }
+  .dp-rain-kpi .stat__value { font-size: clamp(2rem, 1.3rem + 1.6vw, 3rem); }
+  .dp-mini { height: 6px; margin-top: 12px; }
+  .dp-rain { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .dp-plot--rain { height: 300px; }
+  .dp-callout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 40px;
+    margin-top: 24px;
+    padding: 24px 28px;
+  }
+  .dp-callout p { max-width: 52em; font-size: 15px; line-height: 1.75; color: var(--text-2); }
+  .dp-callout b { color: var(--text); font-weight: 600; }
+
+  /* ============ 04 你出生那年 ============ */
+  .dp-born { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: clamp(36px, 5vw, 88px); align-items: start; }
+  .dp-born__side { position: sticky; top: calc(var(--header-h) + 84px); }
+  .dp-born__row { display: flex; gap: 10px; }
+  .dp-born__row .input { flex: 1; min-width: 0; max-width: 200px; font-size: 18px; letter-spacing: .04em; }
+  .dp-born__slide { margin-top: 26px; }
+  .dp-born__slide label { display: block; margin-bottom: 6px; font: 500 12px/1.5 var(--font-mono); color: var(--text-2); }
+  .dp-born__slide .year-axis { margin-top: 4px; }
+  .dp-born__try { margin-top: 18px; }
+  .dp-born__story { display: grid; gap: 14px; margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.8; color: var(--text-2); }
+  .dp-born__story b { color: var(--text); font-weight: 600; }
+
+  .dp-born__label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font: 500 12px/1.5 var(--font-mono); color: var(--text-2); }
+  .dp-born__label b { color: var(--text); font-weight: 500; }
+  .dp-born__pins { position: relative; height: 30px; }
+  .dp-born__pin {
+    position: absolute;
+    bottom: 0;
+    padding-bottom: 10px;
+    font: 500 11.5px/1.2 var(--font-mono);
+    color: var(--text);
+    white-space: nowrap;
+    transform: translateX(-50%);
+    transition: left .75s var(--ease-in-out);
+  }
+  .dp-born__pin::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 1px; height: 7px; background: var(--text); }
+  .dp-born__pin.is-end { transform: translateX(-100%); }
+  .dp-born__pin.is-end::after { left: auto; right: 0; }
+  .dp-born__pin.is-start { transform: none; }
+  .dp-born__pin.is-start::after { left: 0; }
+  .dp-born__chart { height: clamp(150px, 15vw, 210px); }
+  .dp-age { position: relative; height: 34px; margin-top: 10px; font: 500 11px/1.35 var(--font-mono); color: var(--text-2); }
+  .dp-age span { position: absolute; top: 0; transform: translateX(-50%); text-align: center; white-space: nowrap; }
+  .dp-age span:first-child { transform: none; text-align: left; }
+  .dp-age span:last-child { transform: translateX(-100%); text-align: right; }
+  .dp-age span:only-child { transform: none; text-align: left; }
+  .dp-age b { display: block; color: var(--text); font-weight: 500; }
+  .dp-age.is-new { animation: dp-fade-in .6s var(--ease-out) .25s both; }
+  @keyframes dp-fade-in { from { opacity: 0; } }
+  .dp-born__hover { min-height: 1.5em; margin-top: 8px; font: 500 12px/1.5 var(--font-mono); color: var(--text-2); }
+
+  .dp-vs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: end;
+    margin-top: 28px;
+    padding-top: 26px;
+    border-top: 1px solid var(--line);
+  }
+  .dp-vs__head { display: flex; align-items: center; gap: 10px; font: 500 12px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-vs__chip { width: 12px; height: 12px; flex: none; background: var(--c); transition: background .6s; }
+  .dp-vs__v { margin-top: 14px; font: 500 clamp(30px, 1rem + 1.7vw, 44px)/1 var(--font-mono); letter-spacing: -.04em; white-space: nowrap; }
+  .dp-vs__n { margin-top: 10px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+  .dp-vs__card--now { text-align: right; }
+  .dp-vs__card--now .dp-vs__head { justify-content: flex-end; }
+  .dp-vs__mid { display: grid; gap: 14px; }
+  .dp-vs__delta { text-align: center; font: 500 12px/1.4 var(--font-mono); color: var(--text-2); }
+  .dp-vs__delta b { display: block; margin-top: 6px; font: 500 30px/1 var(--font-mono); letter-spacing: -.03em; color: var(--text); }
+  /* 色階上的兩根標記：出生那年在上、2025 在下，數值再接近也不會互相遮住 */
+  .dp-scale__row { position: relative; height: 24px; }
+  .dp-scale__pin {
+    position: absolute;
+    bottom: 0;
+    padding-bottom: 9px;
+    font: 500 12px/1 var(--font-mono);
+    color: var(--text);
+    white-space: nowrap;
+    transform: translateX(-50%);
+    transition: left .9s var(--ease-out);
+  }
+  .dp-scale__pin::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 2px; height: 7px; margin-left: -1px; background: var(--ice); }
+  .dp-scale__row--b .dp-scale__pin { top: 0; bottom: auto; padding: 9px 0 0; }
+  .dp-scale__row--b .dp-scale__pin::after { top: 0; bottom: auto; }
+  .dp-scale__pin.is-start { transform: none; }
+  .dp-scale__pin.is-start::after { left: 0; margin-left: 0; }
+  .dp-scale__pin.is-end { transform: translateX(-100%); }
+  .dp-scale__pin.is-end::after { left: auto; right: 0; margin-left: 0; }
+  .dp-scale__bar { position: relative; height: 12px; background: var(--diverge); }
+  .dp-scale__mask { position: absolute; top: 0; bottom: 0; background: rgba(14, 16, 22, .8); transition: width .9s var(--ease-out); }
+  .dp-scale__mask--l { left: 0; }
+  .dp-scale__mask--r { right: 0; }
+  .dp-scale__ends { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font: 500 11px/1.4 var(--font-mono); color: var(--text-2); }
+
+  .dp-ind { margin-top: 36px; }
+  .dp-ind__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; margin-bottom: 12px; }
+  .dp-ind__title { font: 600 var(--fs-lg)/1.4 var(--font-display); }
+  .dp-ind__list { border-top: 1px solid var(--line); }
+  .dp-ind__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) 150px 96px;
+    align-items: center;
+    gap: 8px 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .dp-ind__name { font: 600 14.5px/1.35 var(--font-sans); }
+  .dp-ind__name small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--text-2); }
+  /* 兩端內縮半顆圓點＋外圈，數值落在最小或最大值時圓點不會凸出欄位 */
+  .dp-ind__track { position: relative; height: 18px; margin-inline: 10px; }
+  .dp-ind__track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--line-2); }
+  .dp-ind__seg { position: absolute; top: calc(50% - 1px); height: 2px; background: var(--line-3); transition: left .8s var(--ease-out), width .8s var(--ease-out); }
+  .dp-ind__dot {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 0 2px var(--bg-1);
+    transition: left .8s var(--ease-out), background .8s;
+  }
+  .dp-ind__dot--now { box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 3.5px var(--text); }
+  .dp-ind__vals { font: 500 12.5px/1.6 var(--font-mono); color: var(--text-2); }
+  .dp-ind__vals b { color: var(--text); font-weight: 500; }
+  .dp-ind__vals span { display: flex; justify-content: space-between; gap: 12px; white-space: nowrap; }
+  .dp-chg { font: 500 14px/1.2 var(--font-mono); text-align: right; white-space: nowrap; }
+  .dp-chg.is-hot { color: var(--hot-text); }
+  .dp-chg.is-cool { color: var(--cool-text); }
+  .dp-ind__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; margin-top: 22px; }
+
+  /* ============ 05 原始數列 ============ */
+  .dp-raw__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px 40px; align-items: end; margin-bottom: 22px; }
+  .dp-raw__dl { grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); }
+  .dp-raw__actions { display: grid; justify-items: end; gap: 8px; }
+  .dp-matrix { min-width: 780px; font-size: 13px; table-layout: fixed; }
+  .dp-matrix thead th:first-child { width: 96px; }
+  .dp-matrix thead th.dp-avg { width: 104px; }
+  .dp-matrix th, .dp-matrix td { padding: 0; text-align: center; }
+  .dp-matrix thead th { padding: 12px 4px; text-align: center; }
+  .dp-matrix thead th:first-child, .dp-matrix tbody th { padding: 0 16px; text-align: left; }
+  .dp-matrix tbody th { font: 500 12px/1 var(--font-mono); color: var(--text-2); white-space: nowrap; }
+  .dp-matrix th { text-transform: none; }
+  .dp-matrix .dp-avg { border-left: 1px solid var(--line-2); }
+  .dp-cell { position: relative; display: block; padding: 12px 4px 15px; font: 500 12.5px/1 var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dp-cell::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 5px; height: 4px; background: var(--c); }
+  .dp-cell.is-empty { color: var(--text-3); }
+  .dp-cell.is-empty::after { display: none; }
+  .dp-matrix tbody tr:hover th { color: var(--text); }
+
+  /* ============ Responsive ============ */
+  @media (max-width: 1180px) {
+    .dp-inv__row, .dp-inv__axis { grid-template-columns: 120px minmax(0, 1fr) 84px; gap: 14px; }
+    .dp-ind__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 96px; }
+    .dp-ind__vals { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 0 20px; }
+    .dp-ind__vals span { display: inline-flex; }
+  }
+  @media (max-width: 960px) {
+    .dp-hero__grid { grid-template-columns: minmax(0, 1fr); }
+    .dp-toc__aside { display: none; }
+    .dp-temp__body { grid-template-columns: minmax(0, 1fr); }
+    .dp-ro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; padding: 22px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    .dp-ro > .readout__label { grid-column: 1 / -1; }
+    .dp-ro__more { margin-top: 0; border-top: 0; }
+    .dp-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dp-stats > :nth-child(4) { padding-left: 0; border-left: 0; }
+    .dp-stats > :nth-child(n + 4) { border-top: 1px solid var(--line); }
+    .dp-heat { grid-template-columns: minmax(0, 1fr); }
+    .dp-heat .dp-plot { flex: none; height: 320px; min-height: 0; }
+    .dp-sorted { grid-column: 1 / -1; }
+    .dp-heat__aside { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+    .dp-born { grid-template-columns: minmax(0, 1fr); }
+    .dp-born__side { position: static; }
+    .dp-rain { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 720px) {
+    .dp-inv__row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 10px 0 12px; }
+    .dp-inv__name small, .dp-inv__val small { display: inline; margin: 0 0 0 6px; }
+    .dp-inv__band { grid-column: 1 / -1; grid-row: 2; height: 20px; }
+    .dp-inv__axis { grid-template-columns: minmax(0, 1fr); }
+    .dp-inv__axis .year-axis { grid-column: 1; }
+    .dp-toc__link { padding: 14px 12px 13px; font-size: 13.5px; }
+    .dp-temp__chart { height: 280px; }
+    .dp-ro { grid-template-columns: minmax(0, 1fr); }
+    .dp-dec__long, .dp-dec__val { display: none; }
+    /* 手機上每格太窄，只標 1900、1950、2000，文字可以越過相鄰的空白格 */
+    .dp-dec .dp-dec__short { display: block; min-height: 1.1em; overflow: visible; }
+    .dp-dec span { padding-left: 2px; }
+    .dp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dp-stats > :nth-child(4) { padding-left: 16px; border-left: 1px solid var(--line); }
+    .dp-stats > :last-child { grid-column: 1 / -1; }
+    .dp-stat__v { font-size: 26px; }
+    .dp-plot, .dp-heat .dp-plot { height: 280px; }
+    .dp-plot--rain { height: 260px; }
+    .dp-heat__aside { grid-template-columns: minmax(0, 1fr); }
+    .dp-hs { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 16px; padding: 16px 0; }
+    .dp-hs__v { margin-top: 0; font-size: 34px; grid-column: 2; grid-row: 1; }
+    .dp-hs__n { grid-column: 1 / -1; margin-top: 0; }
+    .dp-callout { padding: 20px; }
+    .dp-born__row .input { max-width: none; }
+    .dp-vs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px 16px; }
+    .dp-vs__mid { grid-column: 1 / -1; grid-row: 2; }
+    .dp-ind__row { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; }
+    .dp-ind__track { grid-column: 1 / -1; grid-row: 2; }
+    .dp-ind__vals { grid-row: 3; }
+    .dp-raw__head { grid-template-columns: minmax(0, 1fr); }
+    .dp-raw__dl { grid-template-columns: max-content minmax(0, 1fr); }
+    .dp-raw__actions { justify-items: start; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="topband" aria-hidden="true"></div>
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港市 氣候調適行動網 首頁">
+      <svg class="brand__mark" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+        <rect x="0" width="3" height="30" fill="#08519c"/><rect x="3" width="3" height="30" fill="#2171b5"/>
+        <rect x="6" width="3" height="30" fill="#6baed6"/><rect x="9" width="3" height="30" fill="#c6dbef"/>
+        <rect x="12" width="3" height="30" fill="#f7fbff"/><rect x="15" width="3" height="30" fill="#fcbba1"/>
+        <rect x="18" width="3" height="30" fill="#fb6a4a"/><rect x="21" width="3" height="30" fill="#ef3b2c"/>
+        <rect x="24" width="3" height="30" fill="#cb181d"/><rect x="27" width="3" height="30" fill="#a50f15"/>
+      </svg>
+      <span>
+        <span class="brand__name">澄港市 氣候調適行動網</span>
+        <span class="brand__sub">CHENGGANG CLIMATE ADAPTATION</span>
+      </span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+      <span class="nav-toggle__bars" aria-hidden="true"></span>選單
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__no">01</span>首頁</a></li>
+        <li><a class="site-nav__link is-active" href="data.html" aria-current="page"><span class="site-nav__no">02</span>氣候資料</a></li>
+        <li><a class="site-nav__link" href="actions.html"><span class="site-nav__no">03</span>調適行動</a></li>
+        <li><a class="site-nav__link" href="action.html"><span class="site-nav__no">04</span>示範計畫</a></li>
+      </ul>
+      <div class="site-nav__extra">
+        <p class="header-readout" data-now-readout><span class="swatch" style="--c:#67000d" aria-hidden="true"></span>港埕站 10 月迄今 距平 <b>+1.6°C</b></p>
+        <a class="back-link" href="../../index.html">← 返回目錄</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ================= Hero ================= -->
+  <section class="page-hero dp-hero" aria-labelledby="page-title">
+    <div class="container dp-hero__grid">
+      <div>
+        <nav class="crumbs" aria-label="麵包屑">
+          <ol>
+            <li><a href="index.html">首頁</a></li>
+            <li><span aria-current="page">氣候資料</span></li>
+          </ol>
+        </nav>
+        <h1 class="page-hero__title" id="page-title"><span>125 年、8 組數列，</span><span>都指向同一個方向</span></h1>
+        <p class="page-hero__lede">港埕氣象站從 1901 年開始記錄氣溫，1961 年起加入降雨與高溫日數，潮位站也在同一年啟用。這一頁的每張圖都能滑過、切換與縮放，原始數列可以直接下載。</p>
+        <p class="page-hero__meta">
+          <span>資料期間 <b>1901–2025</b></span>
+          <span>基準 <b>1971–2000 年平均</b></span>
+          <span>年度更新 <b>2026.03.16</b></span>
+          <span>授權 <b>CC BY 4.0</b></span>
+        </p>
+      </div>
+
+      <figure class="dp-inv" aria-labelledby="inv-cap">
+        <figcaption class="dp-inv__head">
+          <span class="eyebrow eyebrow--tick" id="inv-cap">FIG. 00　八組觀測數列 1961–2025</span>
+          <span class="dp-inv__note">白＝接近 1961–1990 平均 · 愈紅風險愈高</span>
+        </figcaption>
+        <div id="inv-list"></div>
+        <div class="dp-inv__axis" aria-hidden="true">
+          <div class="year-axis"><span style="left:0">1961</span><span style="left:45.4%">1990</span><span style="left:100%">2025</span></div>
+        </div>
+      </figure>
+    </div>
+    <div class="page-hero__stripes" aria-hidden="true"></div>
+  </section>
+
+  <!-- ================= 本頁目錄 ================= -->
+  <nav class="dp-toc" aria-label="本頁目錄">
+    <div class="container dp-toc__inner">
+      <ul class="dp-toc__list">
+        <li><a class="dp-toc__link" href="#temp"><span class="dp-toc__no">01</span>年均溫</a></li>
+        <li><a class="dp-toc__link" href="#heat"><span class="dp-toc__no">02</span>極端高溫</a></li>
+        <li><a class="dp-toc__link" href="#rain"><span class="dp-toc__no">03</span>降雨強度</a></li>
+        <li><a class="dp-toc__link" href="#born"><span class="dp-toc__no">04</span>你出生那年</a></li>
+        <li><a class="dp-toc__link" href="#raw"><span class="dp-toc__no">05</span>原始數列</a></li>
+      </ul>
+      <p class="dp-toc__aside" id="toc-aside">2026 暫定值更新 2026.10.21</p>
+    </div>
+  </nav>
+
+  <!-- ================= 01 年均溫 ================= -->
+  <section class="section" id="temp" aria-labelledby="temp-title">
+    <div class="container">
+      <header class="sec-head">
+        <div>
+          <p class="sec-head__no">01 / 年均溫距平</p>
+          <h2 class="sec-head__title" id="temp-title">同一組數字的兩種讀法：條碼看節奏，折線看幅度</h2>
+        </div>
+        <p class="sec-head__aside">拖曳下方的年代範圍，放大任何一段歷史；右側讀數與下方統計會跟著重算。</p>
+      </header>
+
+      <div class="chart-card" data-reveal>
+        <div class="chart-card__head">
+          <div>
+            <h3 class="chart-card__title">澄港市年均溫距平</h3>
+            <p class="chart-card__sub">港埕氣象站年平均氣溫與 1971–2000 年平均的差，單位 °C</p>
+          </div>
+          <div class="chart-card__tools">
+            <div class="seg" data-seg role="group" aria-label="圖表表現方式" id="temp-mode">
+              <button class="seg__btn" type="button" data-value="stripes" aria-pressed="true">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h2.2v14H4zM8.2 5h1.4v14H8.2zM11.6 5h2.6v14h-2.6zM16.2 5h1.2v14h-1.2zM19.4 5h1.6v14h-1.6z" fill="currentColor"/></svg>條碼
+              </button>
+              <button class="seg__btn" type="button" data-value="line" aria-pressed="false">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 16.5 8 11l4 3 4.5-7L21 10"/><path d="M3 20.5h18"/></svg>融化成折線
+              </button>
+            </div>
+            <button class="icon-btn" type="button" id="temp-replay" aria-label="重新播放條碼生長">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4.2h4.2"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="dp-temp__body">
+          <div class="dp-temp__chart" id="temp-chart"></div>
+          <aside class="dp-ro" aria-label="年份讀數">
+            <p class="readout__label" id="ro-label">滑過條碼，查看每一年</p>
+            <div>
+              <div class="readout__main">
+                <span class="readout__chip" id="ro-chip" aria-hidden="true"></span>
+                <div class="readout__nums">
+                  <span class="readout__year" id="ro-year">2025</span>
+                  <span class="readout__val is-hot" id="ro-val">+1.31°C</span>
+                </div>
+              </div>
+              <p class="readout__rank" id="ro-rank">1901 年以來第 2 熱的一年</p>
+            </div>
+            <div class="dp-sorted" aria-hidden="true">
+              <p class="dp-sorted__k">125 年由冷到熱重新排列</p>
+              <div class="dp-sorted__bar" id="ro-sorted"><i class="dp-sorted__mark" id="ro-sorted-mark"></i></div>
+              <p class="dp-sorted__ends" id="ro-sorted-ends"></p>
+            </div>
+            <dl class="dp-ro__more">
+              <div><dt id="ro-dec-k">2020 年代平均</dt><dd id="ro-dec"></dd></div>
+              <div><dt>極端高溫日數</dt><dd id="ro-heat"></dd></div>
+              <div><dt>短延時強降雨</dt><dd id="ro-rain"></dd></div>
+              <div><dt>年均海平面</dt><dd id="ro-sea"></dd></div>
+            </dl>
+          </aside>
+        </div>
+
+        <div class="dp-span" role="group" aria-labelledby="span-label">
+          <div class="dp-span__top">
+            <p class="dp-span__label" id="span-label">年代範圍　<b id="span-from-out">1901</b> – <b id="span-to-out">2025</b>　<span id="span-n">共 125 年</span></p>
+            <div class="dp-span__presets" id="span-presets" role="group" aria-label="常用區間"></div>
+          </div>
+          <div class="dp-range" id="span-range">
+            <div class="dp-range__track" aria-hidden="true">
+              <i class="dp-range__mask dp-range__mask--l" id="span-mask-l"></i>
+              <i class="dp-range__mask dp-range__mask--r" id="span-mask-r"></i>
+            </div>
+            <input class="range dp-range__input" id="span-from" type="range" min="1901" max="2025" step="1" value="1901" aria-label="起始年">
+            <input class="range dp-range__input" id="span-to" type="range" min="1901" max="2025" step="1" value="2025" aria-label="結束年">
+          </div>
+          <div class="dp-decades" id="decades" role="group" aria-label="依年代放大"></div>
+        </div>
+
+        <div class="kpi-strip dp-stats" id="span-stats">
+          <div>
+            <p class="dp-stat__k">區間平均距平</p>
+            <p class="dp-stat__v"><span id="st-mean" data-decimals="2" data-sign></span><small>°C</small></p>
+            <p class="dp-stat__n">1971–2000 基準＝0</p>
+          </div>
+          <div>
+            <p class="dp-stat__k">線性趨勢</p>
+            <p class="dp-stat__v"><span id="st-trend" data-decimals="2" data-sign></span><small>°C／10 年</small></p>
+            <p class="dp-stat__n" id="st-trend-n"></p>
+          </div>
+          <div>
+            <p class="dp-stat__k">區間最熱</p>
+            <p class="dp-stat__v" id="st-hot"></p>
+            <p class="dp-stat__n" id="st-hot-n"></p>
+          </div>
+          <div>
+            <p class="dp-stat__k">區間最冷</p>
+            <p class="dp-stat__v" id="st-cold"></p>
+            <p class="dp-stat__n" id="st-cold-n"></p>
+          </div>
+          <div>
+            <p class="dp-stat__k">比基準熱的年份</p>
+            <p class="dp-stat__v"><span id="st-warm"></span><small id="st-warm-of"></small></p>
+            <p class="dp-stat__n" id="st-warm-n"></p>
+          </div>
+        </div>
+
+        <div class="chart-card__foot">
+          <div class="dp-temp__legend">
+            <div class="stripe-scale" aria-label="色階：距平 −0.65°C 到 +1.35°C">
+              <div class="stripe-scale__bar"></div>
+              <div class="stripe-scale__labels" aria-hidden="true">
+                <span style="left:0">−0.6°C</span>
+                <span style="left:32.5%">0</span>
+                <span style="left:57.5%">+0.5</span>
+                <span style="left:100%">+1.3°C</span>
+              </div>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch legend-swatch--line" style="--c:#F7FBFF"></span>11 年移動平均（折線模式）</span>
+            </div>
+          </div>
+          <span id="temp-foot"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 極端高溫 ================= -->
+  <section class="section section--alt" id="heat" aria-labelledby="heat-title">
+    <div class="container">
+      <header class="sec-head">
+        <div>
+          <p class="sec-head__no">02 / 極端高溫</p>
+          <h2 class="sec-head__title" id="heat-title">35°C 以上的日子，從一年不到一週，變成一個多月</h2>
+        </div>
+        <p class="sec-head__aside">柱子的顏色是這個指標自己的條碼：白色接近 1961–1990 年平均，愈紅代表高溫日愈多。切到「十年平均」，同一組柱子會融成年代階梯。</p>
+      </header>
+
+      <div class="dp-heat">
+        <div class="chart-card" data-reveal>
+          <div class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">極端高溫日數</h3>
+              <p class="chart-card__sub">日最高溫 ≥ 35°C 的日數 · 港埕氣象站 1961–2025 · 2026 為暫定值</p>
+            </div>
+            <div class="chart-card__tools">
+              <div class="seg" data-seg role="group" aria-label="高溫日數的呈現方式" id="heat-mode">
+                <button class="seg__btn" type="button" data-value="year" aria-pressed="true">逐年</button>
+                <button class="seg__btn" type="button" data-value="decade" aria-pressed="false">十年平均</button>
+              </div>
+            </div>
+          </div>
+          <div class="dp-plot" id="heat-plot"></div>
+          <div class="chart-card__foot">
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch legend-swatch--line" style="--c:#ECEDEF"></span><span id="heat-base-legend">1961–1990 平均</span></span>
+              <span class="legend-item"><span class="legend-swatch legend-swatch--hatch"></span><span id="heat-ytd-legend">2026 暫定值</span></span>
+            </div>
+            <span>來源：港埕氣象站</span>
+          </div>
+        </div>
+
+        <aside class="dp-heat__aside" aria-label="高溫重點數字" id="heat-aside"></aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 降雨強度 ================= -->
+  <section class="section" id="rain" aria-labelledby="rain-title">
+    <div class="container">
+      <header class="sec-head">
+        <div>
+          <p class="sec-head__no">03 / 降雨強度</p>
+          <h2 class="sec-head__title" id="rain-title">下雨的日子變少，每一場雨卻更兇</h2>
+        </div>
+        <p class="sec-head__aside">短延時強降雨：時雨量 ≥ 40 mm 的場次。年最大時雨量：全年單一小時的最大雨量。兩者都來自港埕氣象站的自記雨量計。</p>
+      </header>
+
+      <div class="kpi-strip dp-rain-kpi" id="rain-kpi"></div>
+
+      <div class="dp-rain">
+        <div class="chart-card" data-reveal>
+          <div class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">短延時強降雨場次</h3>
+              <p class="chart-card__sub">一格是一場 · 白線為各年代平均</p>
+            </div>
+          </div>
+          <div class="dp-plot dp-plot--rain" id="burst-plot"></div>
+          <div class="chart-card__foot">
+            <span>單位：場／年</span>
+            <span>來源：港埕氣象站</span>
+          </div>
+        </div>
+
+        <div class="chart-card" data-reveal style="--rd:120ms">
+          <div class="chart-card__head">
+            <div>
+              <h3 class="chart-card__title">年最大時雨量</h3>
+              <p class="chart-card__sub">一點是一年 · 兩條橫線是港埕的排水設計標準</p>
+            </div>
+          </div>
+          <div class="dp-plot dp-plot--rain" id="peak-plot"></div>
+          <div class="chart-card__foot">
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch legend-swatch--line" style="--c:#8A90A0"></span><span id="peak-trend-legend">線性趨勢</span></span>
+            </div>
+            <span>單位：mm／小時</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--edge dp-callout" data-reveal>
+        <p id="rain-callout"></p>
+        <a class="link-arrow" href="action.html">看海綿城市示範計畫 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 你出生那年 ================= -->
+  <section class="section section--alt" id="born" aria-labelledby="born-title">
+    <div class="container">
+      <header class="sec-head">
+        <div>
+          <p class="sec-head__no">04 / 你出生那年</p>
+          <h2 class="sec-head__title" id="born-title">從你出生那年開始，畫一條只屬於你的條碼</h2>
+        </div>
+        <p class="sec-head__aside">輸入出生年，或直接沿著條碼拖曳。條碼會從你出生那年一路長到 2025 年，再逐項比較當年與去年。</p>
+      </header>
+
+      <div class="dp-born">
+        <div class="dp-born__side">
+          <form id="born-form" novalidate>
+            <div class="field">
+              <label class="field__label" for="born-year">出生年（西元）<span class="field__req">1901–2025</span></label>
+              <div class="dp-born__row">
+                <input class="input num" id="born-year" name="year" inputmode="numeric" maxlength="4" placeholder="例如 1988" autocomplete="bday-year">
+                <button class="btn btn--hot" type="submit">畫出我的條碼</button>
+              </div>
+              <p class="field__error" id="born-year-err"></p>
+            </div>
+          </form>
+          <div class="dp-born__slide">
+            <label for="born-range">或沿著 125 年的條碼拖曳</label>
+            <input class="range" id="born-range" type="range" min="1901" max="2025" step="1" value="1990">
+            <div class="year-axis" aria-hidden="true"><span style="left:0">1901</span><span style="left:39.6%">1950</span><span style="left:79.6%">2000</span><span style="left:100%">2025</span></div>
+          </div>
+          <div class="try-row dp-born__try" role="group" aria-label="範例年份">
+            <span>試試看</span>
+            <button class="chip" type="button" data-year="1940">1940</button>
+            <button class="chip" type="button" data-year="1965">1965</button>
+            <button class="chip" type="button" data-year="1988">1988</button>
+            <button class="chip" type="button" data-year="2004">2004</button>
+            <button class="chip" type="button" data-year="2016">2016</button>
+          </div>
+          <div class="dp-born__story" id="born-story"></div>
+        </div>
+
+        <div class="dp-born__out">
+          <p class="dp-born__label"><span id="born-tag">範例 · 1990 年出生</span><span><b id="born-count">36</b> 條色帶，一條一年</span></p>
+          <div class="dp-born__pins" aria-hidden="true"><span class="dp-born__pin" id="born-pin"></span></div>
+          <div class="dp-born__chart" id="born-chart"></div>
+          <div class="dp-age" id="born-age" aria-hidden="true"></div>
+          <p class="dp-born__hover" id="born-hover">滑過條碼，看看你幾歲那年有多熱。</p>
+
+          <div class="dp-vs">
+            <div class="dp-vs__card">
+              <p class="dp-vs__head"><span class="dp-vs__chip" id="vs-a-chip"></span><span id="vs-a-k"></span></p>
+              <p class="dp-vs__v" id="vs-a-v"></p>
+              <p class="dp-vs__n" id="vs-a-n"></p>
+            </div>
+            <div class="dp-vs__mid">
+              <p class="dp-vs__delta">兩年相差<b id="vs-delta"></b></p>
+              <div class="dp-scale" aria-hidden="true">
+                <div class="dp-scale__row"><span class="dp-scale__pin" id="vs-pin-a"></span></div>
+                <div class="dp-scale__bar"><i class="dp-scale__mask dp-scale__mask--l" id="vs-mask-l"></i><i class="dp-scale__mask dp-scale__mask--r" id="vs-mask-r"></i></div>
+                <div class="dp-scale__row dp-scale__row--b"><span class="dp-scale__pin" id="vs-pin-b"></span></div>
+                <div class="dp-scale__ends"><span>−0.65°C 較冷</span><span>較熱 +1.35°C</span></div>
+              </div>
+            </div>
+            <div class="dp-vs__card dp-vs__card--now">
+              <p class="dp-vs__head"><span id="vs-b-k"></span><span class="dp-vs__chip" id="vs-b-chip"></span></p>
+              <p class="dp-vs__v" id="vs-b-v"></p>
+              <p class="dp-vs__n" id="vs-b-n"></p>
+            </div>
+          </div>
+
+          <div class="dp-ind">
+            <div class="dp-ind__head">
+              <h3 class="dp-ind__title" id="ind-title">逐項比一比：出生那年 vs 2025</h3>
+              <span class="caption">空心外圈＝2025 · 實心＝出生那年</span>
+            </div>
+            <ul class="dp-ind__list" id="ind-list" aria-labelledby="ind-title"></ul>
+            <div class="dp-ind__foot">
+              <p class="footnote" id="ind-note">各項以該指標 1961–2025 的最小值到最大值為刻度；降雨日數與寒害日數愈少，代表愈熱、愈乾。</p>
+              <button class="btn btn--ghost btn--sm" type="button" id="born-png">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4v11M7 10.5l5 5 5-5"/><path d="M4.5 19.5h15"/></svg>下載我的條碼（PNG）
+              </button>
+            </div>
+          </div>
+          <p class="sr-only" aria-live="polite" id="born-live"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 05 原始數列 ================= -->
+  <section class="section" id="raw" aria-labelledby="raw-title">
+    <div class="container">
+      <header class="sec-head">
+        <div>
+          <p class="sec-head__no">05 / 原始數列</p>
+          <h2 class="sec-head__title" id="raw-title">每一個數字都可以帶走</h2>
+        </div>
+        <p class="sec-head__aside">以年代為列、年份個位數為欄；每格下方的色塊就是那一年的條碼顏色。CSV 為 UTF-8 編碼，可直接以試算表開啟。</p>
+      </header>
+      <div class="tabs" role="tablist" aria-label="選擇數列" id="raw-tabs" data-tabs></div>
+      <div id="raw-panels"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-stripes" aria-hidden="true"></div>
+  <div class="year-axis footer-axis" aria-hidden="true">
+    <span style="left:0">1901</span><span style="left:39.6%">1950</span><span style="left:79.6%">2000</span><span style="left:100%">2025</span>
+  </div>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col footer-brand">
+        <a class="brand" href="index.html" aria-label="澄港市 氣候調適行動網 首頁">
+          <svg class="brand__mark" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+            <rect x="0" width="3" height="30" fill="#08519c"/><rect x="3" width="3" height="30" fill="#2171b5"/>
+            <rect x="6" width="3" height="30" fill="#6baed6"/><rect x="9" width="3" height="30" fill="#c6dbef"/>
+            <rect x="12" width="3" height="30" fill="#f7fbff"/><rect x="15" width="3" height="30" fill="#fcbba1"/>
+            <rect x="18" width="3" height="30" fill="#fb6a4a"/><rect x="21" width="3" height="30" fill="#ef3b2c"/>
+            <rect x="24" width="3" height="30" fill="#cb181d"/><rect x="27" width="3" height="30" fill="#a50f15"/>
+          </svg>
+          <span>
+            <span class="brand__name">澄港市 氣候調適行動網</span>
+            <span class="brand__sub">CHENGGANG CLIMATE ADAPTATION</span>
+          </span>
+        </a>
+        <p>澄港市政府氣候變遷調適辦公室<br>港埕區市府路 1 號 7 樓 · 週一至週五 08:30–17:30</p>
+        <p>服務專線 0800-021-325 · climate@chenggang.example</p>
+      </div>
+      <div class="footer-col">
+        <h2>導覽</h2>
+        <ul>
+          <li><a href="index.html">首頁</a></li>
+          <li><a href="data.html">氣候資料</a></li>
+          <li><a href="actions.html">調適行動</a></li>
+          <li><a href="action.html">示範計畫</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2>資料來源</h2>
+        <ul>
+          <li>港埕氣象站<small>氣溫 1901–，降雨 1961–</small></li>
+          <li>港埕潮位站<small>年均海平面 1961–</small></li>
+          <li>澄港市溫室氣體盤查<small>2005 基準年，每年 10 月公布</small></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2>極端天氣通知</h2>
+        <form class="footer-sub" data-subscribe novalidate>
+          <p>高溫、豪雨、暴潮預警與工程公告，事件前 24 小時寄出。</p>
+          <div class="field">
+            <label class="sr-only" for="sub-email">Email</label>
+            <div class="footer-sub__row">
+              <input class="input" id="sub-email" name="email" type="email" placeholder="name@example.com" autocomplete="email">
+              <button class="btn btn--primary" type="submit">訂閱</button>
+            </div>
+            <p class="field__error" id="sub-email-err"></p>
+          </div>
+          <fieldset class="field">
+            <legend class="sr-only">通知類型</legend>
+            <div class="cluster">
+              <label class="check"><input type="checkbox" name="topic" value="heat" checked>高溫</label>
+              <label class="check"><input type="checkbox" name="topic" value="rain" checked>豪雨</label>
+              <label class="check"><input type="checkbox" name="topic" value="surge">暴潮</label>
+              <label class="check"><input type="checkbox" name="topic" value="works">工程公告</label>
+            </div>
+            <p class="field__error" id="sub-topic-err"></p>
+          </fieldset>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="footer-base">
+    <div class="container footer-base__inner">
+      <span>© 2026 澄港市政府 氣候變遷調適辦公室 · 資料以 CC BY 4.0 釋出</span>
+      <nav aria-label="頁尾連結">
+        <a href="data.html#raw">資料下載</a>
+        <a href="actions.html">計畫總覽</a>
+        <a href="../../index.html">← 返回目錄</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const { fmt, esc } = App;
+  const climate = App.climate;
+  const now = App.data.now;
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const seriesOf = key => (key === 'climate' ? climate : App.series(key));
+  const valueText = (key, v) => (key === 'climate' ? fmt.temp(v) : seriesOf(key).format(v));
+  const decadeOf = year => Math.floor(year / 10) * 10;
+  const decadeSpan = (s, year) => [Math.max(decadeOf(year), s.start), Math.min(decadeOf(year) + 9, s.end)];
+  // SVG 文字的暗色描邊：壓在柱子或點上時仍然讀得到
+  const HALO = 'stroke="#12151C" stroke-width="4" stroke-linejoin="round" paint-order="stroke"';
+
+  /* ---------- 共用：寬度監聽、掃描互動、檔案下載 ---------- */
+  // 依容器實際尺寸重畫 SVG（1 單位＝1px，文字不會被拉伸）。
+  // 容器尺寸只由 CSS 決定（SVG 絕對定位、不撐高），重畫不會回頭觸發 RO
+  const onResize = (el, draw) => {
+    let lastW = 0, lastH = 0;
+    new ResizeObserver(entries => {
+      const w = Math.round(entries[0].contentRect.width);
+      const h = Math.round(entries[0].contentRect.height);
+      if (w > 0 && h > 0 && (w !== lastW || h !== lastH)) { lastW = w; lastH = h; draw(w, h); }
+    }).observe(el);
+  };
+
+  // 色階兩端最深的紅與藍畫成柱、點等標記時往同色系提亮（條碼本身不動），與 StripeChart 折線模式同一個函式
+  const lift = App.stripes.lift;
+
+  // 圖表的滑鼠／觸控／鍵盤共用互動：選到第 i 筆就呼叫 show(i)，離開或 Esc 呼叫 hide()
+  const scrub = (el, { label, count, indexAt, show, hide, speak }) => {
+    let cur = -1;
+    let touchTimer = 0;
+    const live = document.createElement('p');
+    live.className = 'sr-only';
+    live.setAttribute('aria-live', 'polite');
+    el.after(live);
+    el.tabIndex = 0;
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-roledescription', '互動圖表');
+    el.setAttribute('aria-label', `${label}。可用左右方向鍵逐筆查看，Shift 加方向鍵一次跳十筆。`);
+    const set = i => {
+      if (i === cur) return;
+      cur = i;
+      if (i < 0) hide(); else show(i);
+    };
+    const fromPointer = e => { clearTimeout(touchTimer); set(indexAt(e.clientX)); };
+    el.addEventListener('pointermove', fromPointer);
+    el.addEventListener('pointerdown', fromPointer);
+    // 觸控沒有 hover：手指離開後讓讀數多停留一下再收起
+    el.addEventListener('pointerleave', e => {
+      if (e.pointerType === 'touch') touchTimer = setTimeout(() => set(-1), 2200);
+      else set(-1);
+    });
+    el.addEventListener('blur', () => set(-1));
+    el.addEventListener('keydown', e => {
+      const n = count();
+      const step = e.shiftKey ? 10 : 1;
+      let next;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = cur < 0 ? n - 1 : cur + step;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = cur < 0 ? n - 1 : cur - step;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = n - 1;
+      else if (e.key === 'Escape') { set(-1); return; }
+      else return;
+      e.preventDefault();
+      next = clamp(next, 0, n - 1);
+      set(next);
+      live.textContent = speak(next);
+    });
+    return { reset() { cur = -1; } };
+  };
+
+  // 以 SVG 內座標顯示 tooltip（滑鼠與鍵盤都對準資料點，而不是游標）
+  const tipAt = (svgHost, x, y, html) => {
+    const r = svgHost.getBoundingClientRect();
+    App.tooltip.show(html, r.left + x, r.top + y);
+  };
+
+  const saveBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // 給瀏覽器時間開始下載後再釋放
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  const rankText = year => {
+    const v = climate.at(year);
+    const hot = climate.rank(year);
+    const cold = climate.values.filter(x => x < v).length + 1;
+    return hot <= cold ? `${climate.start} 年以來第 ${hot} 熱的一年` : `${climate.start} 年以來第 ${cold} 冷的一年`;
+  };
+
+
+  /* ---------- Hero：八組數列總覽 ---------- */
+  const INV = ['climate', 'heatDays', 'cdd', 'heavyRain', 'maxHourly', 'rainDays', 'coldDays', 'seaLevel'];
+  const INV_FROM = App.series('heatDays').start;
+  {
+    const list = $('#inv-list');
+    list.innerHTML = INV.map((key, k) => {
+      const s = seriesOf(key);
+      const bg = key === 'climate' ? App.stripes.climate(INV_FROM, s.end) : App.stripes.series(key);
+      return `<a class="dp-inv__row" href="#raw" data-tab="${key}">
+        <span class="dp-inv__name">${esc(s.label)}<small>${esc(s.unit)}${s.invert ? ' · 愈少愈紅' : ''}</small></span>
+        <span class="dp-inv__band" data-key="${key}" style="background-image:${bg};--k:${k}" aria-hidden="true"></span>
+        <span class="dp-inv__val">${valueText(key, s.at(s.end))}<small>${s.end}</small></span>
+      </a>`;
+    }).join('');
+    list.addEventListener('pointermove', e => {
+      const band = e.target.closest('.dp-inv__band');
+      if (!band) { App.tooltip.hide(); return; }
+      const key = band.dataset.key;
+      const s = seriesOf(key);
+      const r = band.getBoundingClientRect();
+      const n = s.end - INV_FROM + 1;
+      const year = INV_FROM + clamp(Math.floor((e.clientX - r.left) / r.width * n), 0, n - 1);
+      App.tooltip.show(`${esc(s.label)}　<b>${year}</b>　${valueText(key, s.at(year))}`, e.clientX, r.top);
+    });
+    list.addEventListener('pointerleave', () => App.tooltip.hide());
+    // 點列就切到「原始數列」的同一張表
+    list.addEventListener('click', e => {
+      const row = e.target.closest('[data-tab]');
+      if (row) document.getElementById('raw-tab-' + row.dataset.tab).click();
+    });
+  }
+
+
+  /* ---------- 本頁目錄：捲動時標示目前段落 ---------- */
+  {
+    const list = $('.dp-toc__list');
+    const links = $$('.dp-toc__link');
+    const setActive = id => {
+      // 捲回頁首總覽（沒有對應段落）時，手機上橫向捲動的目錄列也回到最左
+      if (!id) list.scrollLeft = 0;
+      links.forEach(a => {
+        const on = a.hash === '#' + id;
+        a.classList.toggle('is-active', on);
+        if (!on) { a.removeAttribute('aria-current'); return; }
+        a.setAttribute('aria-current', 'location');
+        // 手機上目錄列會橫向捲動，讓目前項目留在可見範圍
+        if (list.scrollWidth > list.clientWidth) {
+          const offset = a.getBoundingClientRect().left - list.getBoundingClientRect().left;
+          list.scrollLeft += offset - 12;
+        }
+      });
+    };
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(entry => { if (entry.isIntersecting) setActive(entry.target.id); });
+    }, { rootMargin: '-35% 0px -60% 0px' });
+    links.forEach(a => io.observe(document.getElementById(a.hash.slice(1))));
+    // 捲回頁首總覽時，目錄不標示任何段落
+    io.observe($('.dp-hero'));
+  }
+
+
+  /* ---------- 01 年均溫：條碼 ⇄ 折線、年代範圍 ---------- */
+  {
+    const ro = {
+      label: $('#ro-label'), chip: $('#ro-chip'), year: $('#ro-year'), val: $('#ro-val'), rank: $('#ro-rank'),
+      decK: $('#ro-dec-k'), dec: $('#ro-dec'), heat: $('#ro-heat'), rain: $('#ro-rain'), sea: $('#ro-sea'),
+    };
+    const span = { from: climate.start, to: climate.end };
+    let growing = true;
+    let hovering = false;
+
+    const sorted = climate.years.slice().sort((a, b) => climate.at(a) - climate.at(b) || a - b);
+    $('#ro-sorted').style.backgroundImage = App.stripes.gradient(sorted.map(y => climate.color(climate.at(y))));
+    $('#ro-sorted-ends').innerHTML = `<span>最冷 ${sorted[0]}</span><span>最熱 ${sorted[sorted.length - 1]}</span>`;
+    const sortedMark = $('#ro-sorted-mark');
+
+    const otherCell = (dd, key, year) => {
+      const s = App.series(key);
+      const v = s.at(year);
+      dd.classList.toggle('is-none', v == null);
+      dd.textContent = v == null ? `${s.start} 年起記錄` : s.format(v);
+    };
+    const showYear = year => {
+      const v = climate.at(year);
+      const [d0, d1] = decadeSpan(climate, year);
+      ro.chip.style.setProperty('--c', climate.color(v));
+      ro.year.textContent = year;
+      ro.val.textContent = fmt.temp(v);
+      ro.val.classList.toggle('is-hot', v > 0);
+      ro.val.classList.toggle('is-cool', v < 0);
+      ro.rank.textContent = rankText(year);
+      sortedMark.style.left = (sorted.indexOf(year) + .5) / sorted.length * 100 + '%';
+      ro.decK.textContent = `${decadeOf(year)} 年代平均`;
+      ro.dec.textContent = fmt.temp(climate.mean(d0, d1));
+      otherCell(ro.heat, 'heatDays', year);
+      otherCell(ro.rain, 'heavyRain', year);
+      otherCell(ro.sea, 'seaLevel', year);
+    };
+
+    // 區間統計：第一次進入視窗前直接寫字，之後改用 App.count 做數字滾動
+    const stats = {
+      mean: $('#st-mean'), trend: $('#st-trend'), trendN: $('#st-trend-n'),
+      hot: $('#st-hot'), hotN: $('#st-hot-n'), cold: $('#st-cold'), coldN: $('#st-cold-n'),
+      warm: $('#st-warm'), warmOf: $('#st-warm-of'), warmN: $('#st-warm-n'),
+    };
+    let statsLive = false;
+    const fullTrend = climate.slope(climate.start, climate.end) * 10;
+    const setNum = (el, v) => {
+      if (statsLive) App.count(el, v);
+      else el.textContent = el.hasAttribute('data-sign') ? fmt.signed(v, +el.dataset.decimals) : fmt.num(v, +(el.dataset.decimals || 0));
+    };
+    const updateStats = (a, b) => {
+      const years = climate.years.filter(y => y >= a && y <= b);
+      const vals = years.map(climate.at);
+      const hot = climate.top(1, a, b)[0];
+      const coldV = Math.min(...vals);
+      const coldY = years[vals.indexOf(coldV)];
+      const warmN = vals.filter(v => v > 0).length;
+      setNum(stats.mean, climate.mean(a, b));
+      setNum(stats.trend, climate.slope(a, b) * 10);
+      setNum(stats.warm, warmN);
+      stats.trendN.textContent = `全期 ${climate.start}–${climate.end} 為 ${fmt.signed(fullTrend, 2)}°C`;
+      stats.hot.innerHTML = `${hot.year}<small>${fmt.temp(hot.value)}</small>`;
+      stats.hotN.textContent = `${climate.start} 年以來第 ${climate.rank(hot.year)} 熱`;
+      stats.cold.innerHTML = `${coldY}<small>${fmt.temp(coldV)}</small>`;
+      stats.coldN.textContent = rankText(coldY).replace('的一年', '');
+      stats.warmOf.textContent = `／ ${years.length} 年`;
+      stats.warmN.textContent = `占區間 ${fmt.pct(warmN / years.length * 100)}`;
+    };
+    App.inView($('#span-stats'), () => { statsLive = true; updateStats(span.from, span.to); });
+
+    // 年代範圍：常用區間、十年色塊、雙把手滑桿
+    const PRESETS = [
+      { label: '全期', from: climate.start, to: climate.end },
+      { label: '1901–1930', from: 1901, to: 1930 },
+      { label: '基準期 1971–2000', from: 1971, to: 2000 },
+      { label: '1991–2020', from: 1991, to: 2020 },
+      { label: '近 30 年', from: climate.end - 29, to: climate.end },
+    ];
+    const presetBox = $('#span-presets');
+    presetBox.innerHTML = PRESETS.map((p, i) => `<button class="chip chip--sm" type="button" data-preset="${i}" aria-pressed="false">${p.label}</button>`).join('');
+
+    const DECADES = [];
+    for (let d = decadeOf(climate.start); d <= climate.end; d += 10) {
+      const from = Math.max(d, climate.start), to = Math.min(d + 9, climate.end);
+      DECADES.push({ d, from, to, mean: climate.mean(from, to) });
+    }
+    const decBox = $('#decades');
+    decBox.innerHTML = DECADES.map(x => `<button class="dp-dec" type="button" data-from="${x.from}" data-to="${x.to}" style="--n:${x.to - x.from + 1};--c:${climate.color(x.mean)}" aria-pressed="false" aria-label="放大 ${x.d} 年代（${x.from}–${x.to}），平均距平 ${fmt.temp(x.mean)}">
+      <i class="dp-dec__bar"></i><span class="dp-dec__long">${x.d}s</span><span class="dp-dec__short">${x.d % 50 === 0 ? x.d : ''}</span><span class="dp-dec__val">${fmt.signed(x.mean, 2)}</span>
+    </button>`).join('');
+
+    const fromIn = $('#span-from'), toIn = $('#span-to');
+    const maskL = $('#span-mask-l'), maskR = $('#span-mask-r');
+    const TOTAL = climate.end - climate.start + 1;
+    const MIN_SPAN = 6;   // 最短 6 年：剛好容納 2020–2025 這個不完整的年代，也讓兩個把手不會疊在一起
+
+    const syncSpan = () => {
+      const { from: a, to: b } = span;
+      fromIn.value = a;
+      toIn.value = b;
+      fromIn.setAttribute('aria-valuetext', `起始 ${a} 年`);
+      toIn.setAttribute('aria-valuetext', `結束 ${b} 年`);
+      maskL.style.width = (a - climate.start) / TOTAL * 100 + '%';
+      maskR.style.width = (climate.end - b) / TOTAL * 100 + '%';
+      $('#span-from-out').textContent = a;
+      $('#span-to-out').textContent = b;
+      $('#span-n').textContent = `共 ${b - a + 1} 年`;
+      $$('[data-preset]', presetBox).forEach(btn => {
+        const p = PRESETS[+btn.dataset.preset];
+        btn.setAttribute('aria-pressed', String(p.from === a && p.to === b));
+      });
+      $$('.dp-dec', decBox).forEach(btn => {
+        const f = +btn.dataset.from, t = +btn.dataset.to;
+        btn.classList.toggle('is-in', f >= a && t <= b);
+        btn.setAttribute('aria-pressed', String(f === a && t === b));
+      });
+      updateStats(a, b);
+    };
+
+    const chart = new App.StripeChart($('#temp-chart'), {
+      label: '澄港市 1901–2025 年均溫距平',
+      onGrow(year, done) {
+        growing = !done;
+        showYear(year);
+      },
+      onHover(info) {
+        hovering = !!info;
+        if (info) showYear(info.year);
+        else if (!growing) showYear(span.to);
+      },
+      onRange(a, b) {
+        span.from = a;
+        span.to = b;
+        syncSpan();
+        if (!hovering && !growing) showYear(b);
+      },
+    });
+
+    // moved：使用者正在拖的那一端；另一端固定，必要時被推開以維持最短區間
+    const setSpan = (a, b, moved) => {
+      a = clamp(Math.round(a), climate.start, climate.end);
+      b = clamp(Math.round(b), climate.start, climate.end);
+      if (b - a < MIN_SPAN - 1) {
+        if (moved === 'from') a = b - (MIN_SPAN - 1);
+        else b = a + (MIN_SPAN - 1);
+        if (a < climate.start) { a = climate.start; b = a + MIN_SPAN - 1; }
+        if (b > climate.end) { b = climate.end; a = b - (MIN_SPAN - 1); }
+      }
+      chart.setRange(a, b);
+    };
+    fromIn.addEventListener('input', () => setSpan(+fromIn.value, span.to, 'from'));
+    toIn.addEventListener('input', () => setSpan(span.from, +toIn.value, 'to'));
+    // 點在軌道上（不是把手）：把比較近的那一端移過去
+    $('#span-range').addEventListener('pointerdown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      const r = e.currentTarget.getBoundingClientRect();
+      const year = climate.start + (e.clientX - r.left) / r.width * TOTAL - .5;
+      if (Math.abs(year - span.from) <= Math.abs(year - span.to)) setSpan(year, span.to, 'from');
+      else setSpan(span.from, year, 'to');
+    });
+    presetBox.addEventListener('click', e => {
+      const btn = e.target.closest('[data-preset]');
+      if (!btn) return;
+      const p = PRESETS[+btn.dataset.preset];
+      setSpan(p.from, p.to);
+    });
+    decBox.addEventListener('click', e => {
+      const btn = e.target.closest('.dp-dec');
+      if (!btn) return;
+      const f = +btn.dataset.from, t = +btn.dataset.to;
+      // 再點一次已放大的年代就回到全期
+      if (f === span.from && t === span.to) setSpan(climate.start, climate.end);
+      else setSpan(f, t);
+    });
+
+    const modeLabels = { stripes: '滑過條碼，查看每一年', line: '細線是年值，白線是 11 年移動平均' };
+    const modeGroup = $('#temp-mode');
+    modeGroup.addEventListener('segchange', e => {
+      chart.setMode(e.detail.value);
+      ro.label.textContent = modeLabels[e.detail.value];
+    });
+    $('#temp-replay').addEventListener('click', () => {
+      // 折線模式下色帶已縮成點，重播前先瞬間回到條碼
+      App.seg.set(modeGroup, 'stripes', { silent: true });
+      chart.setMode('stripes', { instant: true });
+      ro.label.textContent = modeLabels.stripes;
+      chart.replay();
+    });
+
+    syncSpan();
+    showYear(climate.end);
+    $('#temp-foot').textContent = `2026 年 ${now.ytdLabel}暫定距平 ${fmt.temp(now.ytdAnomaly)}，高於 2024 年的 ${fmt.temp(climate.at(2024))}`;
+  }
+
+
+  /* ---------- 02 極端高溫：逐年柱 ⇄ 年代階梯 ---------- */
+  {
+    const s = App.series('heatDays');
+    const host = $('#heat-plot');
+    const n = s.values.length;
+    const SLOTS = n + 2;                  // 最後空一格再放 2026 暫定值
+    const YMAX = 50;
+    const base = s.mean(1961, 1990);
+    const maxV = Math.max(...s.values);
+    const maxYear = s.years[s.values.lastIndexOf(maxV)];
+    const ytd = now.heatDaysYtd;
+    const decMean = i => s.mean(...decadeSpan(s, s.years[i]));
+    let mode = 'year';
+    let shown = App.reducedMotion;      // 進入視窗前柱子先壓扁，進場時再長出來
+    let geo = null;
+
+    const barStyle = (i, delay) => {
+      const v = s.values[i];
+      const k = !shown ? 0 : mode === 'decade' ? decMean(i) / v : 1;
+      const c = mode === 'decade' ? lift(s.color(decMean(i))) : lift(s.color(v));
+      return { transform: `scaleY(${k.toFixed(4)})`, fill: c, transitionDelay: `${delay}ms` };
+    };
+
+    const draw = (w, h) => {
+      const pad = { l: 40, r: 8, t: 30, b: 30 };
+      const bw = (w - pad.l - pad.r) / SLOTS;
+      const ph = h - pad.t - pad.b;
+      const x = i => pad.l + i * bw;
+      const y = v => pad.t + (1 - v / YMAX) * ph;
+      geo = { x, y, bw };
+      const grid = [0, 10, 20, 30, 40, 50].map(t => `<path d="M${pad.l} ${y(t).toFixed(1)}H${w - pad.r}" stroke="#ECEDEF" stroke-opacity="${t === 0 ? .3 : .07}"/>
+        <text class="svg-label" x="${pad.l - 10}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${t}${t === YMAX ? ' 日' : ''}</text>`).join('');
+      const bars = s.values.map((v, i) => {
+        const st = barStyle(i, 0);
+        return `<rect class="dp-bar dp-mark" data-i="${i}" x="${(x(i) + 1).toFixed(2)}" y="${y(v).toFixed(2)}" width="${Math.max(1, bw - 2).toFixed(2)}" height="${(y(0) - y(v)).toFixed(2)}" fill="${st.fill}" style="transform:${st.transform};fill:${st.fill}"/>`;
+      }).join('');
+      // 年代平均的數字，只在「十年平均」模式浮現
+      const decLabels = [];
+      for (let d = decadeOf(s.start); d <= s.end; d += 10) {
+        const [d0, d1] = decadeSpan(s, d);
+        const cx = (x(d0 - s.start) + x(d1 - s.start + 1)) / 2;
+        const m = s.mean(d0, d1);
+        decLabels.push(`<text class="svg-label svg-label--strong dp-fade dp-declabel" x="${cx.toFixed(1)}" y="${(y(m) - 9).toFixed(1)}" text-anchor="middle" ${HALO} style="opacity:${mode === 'decade' ? 1 : 0}">${fmt.num(m, 1)}</text>`);
+      }
+      const yi = n + 1;
+      const ytdBar = `<rect class="dp-mark" data-i="${n}" x="${(x(yi) + 1).toFixed(2)}" y="${y(ytd).toFixed(2)}" width="${Math.max(1, bw - 2).toFixed(2)}" height="${(y(0) - y(ytd)).toFixed(2)}" fill="url(#heat-hatch)" stroke="#FB6A4A" stroke-width="1"/>
+        <text class="svg-label svg-label--strong" x="${(x(yi) + bw / 2).toFixed(1)}" y="${(y(ytd) - 8).toFixed(1)}" text-anchor="middle">${ytd}</text>`;
+      const baseLine = `<path d="M${pad.l} ${y(base).toFixed(1)}H${(x(n)).toFixed(1)}" stroke="#ECEDEF" stroke-opacity=".7"/>
+        <text class="svg-label svg-label--strong dp-fade dp-baselabel" x="${pad.l + 6}" y="${(y(base) - 22).toFixed(1)}" ${HALO} style="opacity:${mode === 'decade' ? 0 : 1}">1961–1990 平均 ${fmt.num(base, 1)} 日</text>`;
+      // x 軸：每 10 年一個刻度，太擠就省略，2026 一定保留
+      const ticks = [{ i: 0, t: String(s.start) }];
+      for (let yr = Math.ceil((s.start + 1) / 10) * 10; yr <= s.end; yr += 10) ticks.push({ i: yr - s.start, t: String(yr) });
+      ticks.push({ i: yi, t: '2026*' });
+      const kept = [];
+      for (let k = ticks.length - 1; k >= 0; k--) {
+        const cx = x(ticks[k].i) + bw / 2;
+        if (!kept.length || kept[0].cx - cx >= 40) kept.unshift({ ...ticks[k], cx });
+      }
+      const xLabels = kept.map(tk => `<text class="svg-label" x="${tk.cx.toFixed(1)}" y="${h - 8}" text-anchor="middle">${tk.t}</text>`).join('');
+      host.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+        <defs><pattern id="heat-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#FB6A4A" fill-opacity=".16"/><path d="M1 0V5" stroke="#FB6A4A" stroke-width="2"/></pattern></defs>
+        ${grid}${bars}${ytdBar}${baseLine}${decLabels.join('')}${xLabels}
+      </svg>`;
+      host.classList.remove('is-hover');
+      sc.reset();
+    };
+
+    const applyMode = step => {
+      $$('.dp-bar', host).forEach(bar => {
+        const st = barStyle(+bar.dataset.i, +bar.dataset.i * step);
+        bar.style.transitionDelay = st.transitionDelay;
+        bar.style.transform = st.transform;
+        bar.style.fill = st.fill;
+      });
+      $$('.dp-declabel', host).forEach(t => { t.style.opacity = mode === 'decade' ? 1 : 0; });
+      // 年代模式下各階梯已標數字，基準線的文字讓位給它們（線與圖例仍在）
+      $('.dp-baselabel', host).style.opacity = mode === 'decade' ? 0 : 1;
+    };
+
+    const yearOf = i => (i === n ? 2026 : s.years[i]);
+    const sc = scrub(host, {
+      label: `${s.start}–${s.end} 年極端高溫日數柱狀圖，2026 年迄今 ${ytd} 日`,
+      count: () => n + 1,
+      indexAt: clientX => {
+        const r = host.getBoundingClientRect();
+        const slot = Math.floor((clientX - r.left - 40) / geo.bw);
+        if (slot >= 0 && slot < n) return slot;
+        return slot === n + 1 ? n : -1;
+      },
+      show: i => {
+        host.classList.add('is-hover');
+        $$('.dp-mark', host).forEach(m => m.classList.toggle('is-on', +m.dataset.i === i));
+        const slot = i === n ? n + 1 : i;
+        const v = i === n ? ytd : s.values[i];
+        const html = i === n
+          ? `<b>2026</b> ${ytd} 日 <span class="muted">暫定，統計至 10 月 20 日</span>`
+          : `<b>${yearOf(i)}</b> ${s.format(v)} <span class="muted">· ${decadeOf(yearOf(i))} 年代平均 ${fmt.num(decMean(i), 1)} 日</span>`;
+        tipAt(host, geo.x(slot) + geo.bw / 2, geo.y(mode === 'decade' && i < n ? decMean(i) : v), html);
+      },
+      hide: () => {
+        host.classList.remove('is-hover');
+        $$('.dp-mark.is-on', host).forEach(m => m.classList.remove('is-on'));
+        App.tooltip.hide();
+      },
+      speak: i => (i === n ? `2026 年迄今 ${ytd} 日，暫定值` : `${yearOf(i)} 年 ${s.format(s.values[i])}`),
+    });
+
+    onResize(host, draw);
+    if (!shown) App.inView(host, () => { shown = true; applyMode(14); }, { threshold: .3, rootMargin: '0px' });
+    $('#heat-mode').addEventListener('segchange', e => {
+      mode = e.detail.value;
+      applyMode(9);
+    });
+
+    $('#heat-base-legend').textContent = `1961–1990 平均 ${fmt.num(base, 1)} 日`;
+    $('#heat-ytd-legend').textContent = `2026 暫定值（統計至 10 月 20 日）`;
+    const d2020 = s.mean(...decadeSpan(s, 2020));
+    const decMeans = [];
+    for (let d = decadeOf(s.start); d <= s.end; d += 10) decMeans.push(s.mean(...decadeSpan(s, d)));
+    const rising = decMeans.every((m, k) => k === 0 || m > decMeans[k - 1]);
+    $('#heat-aside').innerHTML = `
+      <div class="dp-hs">
+        <p class="dp-hs__k">2026 迄今 <span class="badge badge--hot">暫定</span></p>
+        <p class="dp-hs__v">${ytd}<small>日</small></p>
+        <p class="dp-hs__n">統計至 10 月 20 日，已超過 ${maxYear} 年全年 <b>${maxV} 日</b>的紀錄。</p>
+      </div>
+      <div class="dp-hs">
+        <p class="dp-hs__k">${s.end} 全年</p>
+        <p class="dp-hs__v">${s.at(s.end)}<small>日</small></p>
+        <p class="dp-hs__n">是 1961–1990 年平均的 <b>${fmt.num(s.at(s.end) / base, 1)} 倍</b>。</p>
+      </div>
+      <div class="dp-hs">
+        <p class="dp-hs__k">2020 年代平均</p>
+        <p class="dp-hs__v">${fmt.num(d2020, 1)}<small>日／年</small></p>
+        <p class="dp-hs__n">1960 年代是 ${fmt.num(decMeans[0], 1)} 日${rising ? '，<b>每個年代都比上一個多</b>' : ''}。</p>
+      </div>
+      <div class="dp-hs">
+        <p class="dp-hs__k">熱夜 · 2026 迄今</p>
+        <p class="dp-hs__v">${now.hotNightsYtd}<small>夜</small></p>
+        <p class="dp-hs__n">日最低溫 ≥ 28°C，夜裡也降不下來，長者與戶外工作者的熱壓力一路累積。</p>
+      </div>`;
+  }
+
+
+  /* ---------- 03 降雨強度 ---------- */
+  const burst = App.series('heavyRain');
+  const peak = App.series('maxHourly');
+  const rainDays = App.series('rainDays');
+  // 設計標準取自焦點計畫的描述，與 action.html 同一來源
+  const [OLD_STD, NEW_STD] = App.data.focus.designStorm.match(/\d+(?:\.\d+)?/g).map(Number);
+  {
+    const bBase = burst.mean(1961, 1990);
+    const bMax = Math.max(...burst.values);
+    const pPrevMax = Math.max(...peak.values.slice(0, -1));
+    const rBase = rainDays.mean(1961, 1990);
+    const over = peak.years.filter(y => peak.at(y) > OLD_STD);
+    const cell = (key, label, value, unit, note) => `<div class="stat">
+      <p class="stat__label">${label}</p>
+      <p class="stat__value">${value}<span class="stat__unit">${unit}</span></p>
+      <p class="stat__note">${note}</p>
+      <div class="dp-mini" data-stripes="${key}" aria-hidden="true"></div>
+    </div>`;
+    $('#rain-kpi').innerHTML =
+      cell('heavyRain', `${burst.end} 短延時強降雨`, burst.at(burst.end), '場',
+        `1961–1990 平均 ${fmt.num(bBase, 1)} 場的 ${fmt.num(burst.at(burst.end) / bBase, 1)} 倍${burst.at(burst.end) === bMax ? '，有紀錄以來最多' : ''}。`) +
+      cell('maxHourly', `${peak.end} 年最大時雨量`, fmt.num(peak.at(peak.end), 1), 'mm',
+        peak.at(peak.end) > pPrevMax ? `改寫 ${peak.years[peak.values.indexOf(pPrevMax)]} 年 ${fmt.num(pPrevMax, 1)} mm 的紀錄。` : `近年最高為 ${fmt.num(pPrevMax, 1)} mm。`) +
+      cell('rainDays', `${rainDays.end} 年降雨日數`, rainDays.at(rainDays.end), '日',
+        `比 1961–1990 平均 ${fmt.num(rBase, 0)} 日少了 ${fmt.num(rBase - rainDays.at(rainDays.end), 0)} 日。`) +
+      cell('maxHourly', `超過原設計標準 ${OLD_STD} mm`, over.length, '年',
+        `全部發生在 ${Math.min(...over)} 年以後。`);
+    App.scan($('#rain-kpi'));
+    $('#rain-callout').innerHTML = `港埕區海綿城市示範計畫把設計降雨從時雨量 <b>${OLD_STD} mm 提高到 ${NEW_STD} mm</b>；${peak.end} 年的 ${fmt.num(peak.at(peak.end), 1)} mm 已經超過新標準，雨水得先就地留下、再慢慢排走。`;
+  }
+
+  // A. 強降雨：一格一場，白線是年代平均
+  {
+    const s = burst;
+    const host = $('#burst-plot');
+    const n = s.values.length;
+    const UMAX = Math.max(...s.values);
+    let geo = null;
+    const draw = (w, h) => {
+      const pad = { l: 34, r: 6, t: 26, b: 30 };
+      const bw = (w - pad.l - pad.r) / n;
+      const ph = h - pad.t - pad.b;
+      const uh = ph / UMAX;
+      const x = i => pad.l + i * bw;
+      const y = v => pad.t + ph - v * uh;
+      geo = { x, y, bw };
+      const grid = [0, 4, 8, 12].map(t => `<path d="M${pad.l} ${y(t).toFixed(1)}H${w - pad.r}" stroke="#ECEDEF" stroke-opacity="${t === 0 ? .3 : .07}"/>
+        <text class="svg-label" x="${pad.l - 10}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${t}</text>`).join('');
+      const cols = s.values.map((v, i) => {
+        let units = '';
+        for (let k = 0; k < v; k++) units += `<rect x="${(x(i) + 1).toFixed(2)}" y="${(y(k + 1) + 1).toFixed(2)}" width="${Math.max(1, bw - 2).toFixed(2)}" height="${Math.max(1, uh - 2).toFixed(2)}"/>`;
+        return `<g class="dp-mark" data-i="${i}" fill="${lift(s.color(v))}">${units}</g>`;
+      }).join('');
+      let step = '';
+      let labels = '';
+      for (let d = decadeOf(s.start); d <= s.end; d += 10) {
+        const [d0, d1] = decadeSpan(s, d);
+        const m = s.mean(d0, d1);
+        const xa = x(d0 - s.start), xb = x(d1 - s.start + 1);
+        step += `<path d="M${xa.toFixed(1)} ${y(m).toFixed(1)}H${xb.toFixed(1)}" stroke="#F7FBFF" stroke-width="2"/>`;
+        labels += `<text class="svg-label svg-label--strong" x="${((xa + xb) / 2).toFixed(1)}" y="${(y(m) - 8).toFixed(1)}" text-anchor="middle" ${HALO}>${fmt.num(m, 1)}</text>`;
+      }
+      const ticks = [s.start, 1970, 1980, 1990, 2000, 2010, 2020].filter(yr => yr === s.start || (yr - s.start) * bw >= 40);
+      const xLabels = ticks.map(yr => `<text class="svg-label" x="${(x(yr - s.start) + bw / 2).toFixed(1)}" y="${h - 8}" text-anchor="middle">${yr}</text>`).join('');
+      host.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${grid}${cols}${step}${labels}${xLabels}</svg>`;
+      host.classList.remove('is-hover');
+      sc.reset();
+    };
+    const sc = scrub(host, {
+      label: `${s.start}–${s.end} 年短延時強降雨場次，${s.end} 年 ${s.at(s.end)} 場為最多`,
+      count: () => n,
+      indexAt: clientX => {
+        const i = Math.floor((clientX - host.getBoundingClientRect().left - 34) / geo.bw);
+        return i >= 0 && i < n ? i : -1;
+      },
+      show: i => {
+        host.classList.add('is-hover');
+        $$('.dp-mark', host).forEach(m => m.classList.toggle('is-on', +m.dataset.i === i));
+        const yr = s.years[i];
+        tipAt(host, geo.x(i) + geo.bw / 2, geo.y(s.values[i]), `<b>${yr}</b> ${s.format(s.values[i])} <span class="muted">· ${decadeOf(yr)} 年代平均 ${fmt.num(s.mean(...decadeSpan(s, yr)), 1)} 場</span>`);
+      },
+      hide: () => {
+        host.classList.remove('is-hover');
+        $$('.dp-mark.is-on', host).forEach(m => m.classList.remove('is-on'));
+        App.tooltip.hide();
+      },
+      speak: i => `${s.years[i]} 年 ${s.format(s.values[i])}`,
+    });
+    onResize(host, draw);
+  }
+
+  // B. 年最大時雨量：散點＋趨勢線＋新舊設計標準
+  {
+    const s = peak;
+    const host = $('#peak-plot');
+    const n = s.values.length;
+    const slope = s.slope(s.start, s.end);
+    const mid = (s.start + s.end) / 2;
+    const fit = yr => s.mean(s.start, s.end) + slope * (yr - mid);
+    const D0 = 30, D1 = 112;
+    let geo = null;
+    const draw = (w, h) => {
+      const pad = { l: 40, r: 10, t: 22, b: 30 };
+      const pw = w - pad.l - pad.r;
+      const ph = h - pad.t - pad.b;
+      const x = i => pad.l + (i + .5) / n * pw;
+      const y = v => pad.t + (1 - (v - D0) / (D1 - D0)) * ph;
+      geo = { x, y, step: pw / n };
+      const grid = [40, 60].map(t => `<path d="M${pad.l} ${y(t).toFixed(1)}H${w - pad.r}" stroke="#ECEDEF" stroke-opacity=".07"/>
+        <text class="svg-label" x="${pad.l - 10}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${t}</text>`).join('');
+      const refs = [[OLD_STD, '原設計標準'], [NEW_STD, '新設計標準']].map(([v, label]) => `<path d="M${pad.l} ${y(v).toFixed(1)}H${w - pad.r}" stroke="#8A90A0" stroke-opacity=".75"/>
+        <text class="svg-label svg-label--strong" x="${pad.l - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v}</text>
+        <text class="svg-label" x="${pad.l + 6}" y="${(y(v) - 7).toFixed(1)}" ${HALO}>${label} ${v} mm</text>`).join('');
+      const trend = `<path d="M${x(0).toFixed(1)} ${y(fit(s.start)).toFixed(1)}L${x(n - 1).toFixed(1)} ${y(fit(s.end)).toFixed(1)}" stroke="#8A90A0" stroke-width="1.5"/>`;
+      const dots = s.values.map((v, i) => {
+        const over = v > OLD_STD;
+        return `<g class="dp-mark" data-i="${i}">
+          ${over ? `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="8" fill="none" stroke="#ECEDEF" stroke-opacity=".55"/>` : ''}
+          <circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${over ? 4.5 : 3.5}" fill="${lift(s.color(v))}" stroke="#12151C" stroke-width="2"/>
+        </g>`;
+      }).join('');
+      const last = s.values[n - 1];
+      const lastLabel = `<text class="svg-label svg-label--strong" x="${(x(n - 1) - 14).toFixed(1)}" y="${(y(last) + 4).toFixed(1)}" text-anchor="end" ${HALO}>${s.end} · ${fmt.num(last, 1)} mm</text>`;
+      const ticks = [s.start, 1970, 1980, 1990, 2000, 2010, 2020].filter(yr => yr === s.start || (yr - s.start) * geo.step >= 40);
+      const xLabels = ticks.map(yr => `<text class="svg-label" x="${x(yr - s.start).toFixed(1)}" y="${h - 8}" text-anchor="middle">${yr}</text>`).join('');
+      host.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+        ${grid}${refs}${trend}
+        <path class="dp-cross" d="M0 ${pad.t}V${h - pad.b}" stroke="#ECEDEF" stroke-opacity=".3" style="opacity:0"/>
+        ${dots}${lastLabel}${xLabels}
+      </svg>`;
+      host.classList.remove('is-hover');
+      sc.reset();
+    };
+    const sc = scrub(host, {
+      label: `${s.start}–${s.end} 年最大時雨量散布圖，${s.end} 年 ${fmt.num(s.at(s.end), 1)} mm 為最高`,
+      count: () => n,
+      indexAt: clientX => {
+        const i = Math.floor((clientX - host.getBoundingClientRect().left - 40) / geo.step);
+        return i >= 0 && i < n ? i : -1;
+      },
+      show: i => {
+        host.classList.add('is-hover');
+        $$('.dp-mark', host).forEach(m => m.classList.toggle('is-on', +m.dataset.i === i));
+        const cross = $('.dp-cross', host);
+        cross.setAttribute('transform', `translate(${geo.x(i).toFixed(1)} 0)`);
+        cross.style.opacity = 1;
+        const v = s.values[i];
+        const over = v > OLD_STD ? `超過原設計標準 ${fmt.num(v - OLD_STD, 1)} mm` : `低於原設計標準`;
+        tipAt(host, geo.x(i), geo.y(v) - 6, `<b>${s.years[i]}</b> ${s.format(v)} <span class="muted">· ${over}</span>`);
+      },
+      hide: () => {
+        host.classList.remove('is-hover');
+        $$('.dp-mark.is-on', host).forEach(m => m.classList.remove('is-on'));
+        $('.dp-cross', host).style.opacity = 0;
+        App.tooltip.hide();
+      },
+      speak: i => `${s.years[i]} 年 ${s.format(s.values[i])}`,
+    });
+    onResize(host, draw);
+    $('#peak-trend-legend').textContent = `${s.start}–${s.end} 線性趨勢 ${fmt.signed(slope * 10, 1)} mm／10 年`;
+  }
+
+
+  /* ---------- 04 你出生那年 ---------- */
+  {
+    const form = $('#born-form');
+    const input = $('#born-year');
+    const slider = $('#born-range');
+    const LAST = climate.end;
+    const heat = App.series('heatDays');
+    const sea = App.series('seaLevel');
+    let birth = 1990;
+
+    const chart = new App.StripeChart($('#born-chart'), {
+      from: birth,
+      to: LAST,
+      axis: false,
+      growDuration: 1800,
+      label: '你的個人條碼：從出生年到 2025 年的年均溫距平',
+      onHover(info) {
+        $('#born-hover').innerHTML = info
+          ? `<b>${info.year}</b>　你 ${info.year - birth} 歲　距平 ${fmt.temp(info.value)}　${rankText(info.year)}`
+          : '滑過條碼，看看你幾歲那年有多熱。';
+      },
+    });
+
+    // 逐項比較：結構建一次，之後只更新位置與文字，圓點才會滑動而不是重建
+    const IND = ['heatDays', 'heavyRain', 'maxHourly', 'rainDays', 'coldDays', 'cdd', 'seaLevel'];
+    const indList = $('#ind-list');
+    indList.innerHTML = IND.map(key => {
+      const s = App.series(key);
+      return `<li class="dp-ind__row" data-key="${key}">
+        <p class="dp-ind__name">${esc(s.label)}<small>${esc(s.def)}</small></p>
+        <div class="dp-ind__track" aria-hidden="true"><span class="dp-ind__seg"></span><i class="dp-ind__dot"></i><i class="dp-ind__dot dp-ind__dot--now"></i></div>
+        <p class="dp-ind__vals"></p>
+        <p class="dp-chg"></p>
+      </li>`;
+    }).join('');
+
+    const pct = v => {
+      const [lo, hi] = climate.domain;
+      return v < 0 ? (1 - v / lo) * 32.5 : 32.5 + v / hi * 67.5;
+    };
+    const firstAbove = t => climate.years.find(y => climate.at(y) > t);
+
+    const update = (year, example) => {
+      birth = year;
+      const n = LAST - year + 1;
+      const v0 = climate.at(year), v1 = climate.at(LAST);
+      const age = LAST - year;
+      slider.value = year;
+      slider.setAttribute('aria-valuetext', `${year} 年`);
+      $('#born-tag').textContent = example ? `範例 · ${year} 年出生` : `你的條碼 · ${year} 年出生`;
+      $('#born-count').textContent = n;
+
+      // 條碼上方的標記：經歷過最熱的一年
+      const hot = climate.top(1, year, LAST)[0];
+      const pin = $('#born-pin');
+      const pinPos = (hot.year - year + .5) / n * 100;
+      pin.textContent = `你經歷過最熱的一年 · ${hot.year}`;
+      pin.style.left = pinPos + '%';
+      pin.classList.toggle('is-end', pinPos > 80);
+      pin.classList.toggle('is-start', pinPos < 20);
+
+      // 年齡刻度：依寬度挑間隔，最後一格固定是 2025
+      const ageBox = $('#born-age');
+      const width = ageBox.clientWidth || 600;
+      const step = [5, 10, 20, 25, 50].find(k => k / n * width >= 64) || 50;
+      const marks = [0];
+      for (let a = step; a < age; a += step) if ((age - a) / n * width >= 70) marks.push(a);
+      if (age > 0) marks.push(age);
+      ageBox.innerHTML = marks.map(a => `<span style="left:${a === 0 ? 0 : a === age ? 100 : ((a + .5) / n * 100).toFixed(2)}%"><b>${a === 0 ? '出生' : a + ' 歲'}</b>${year + a}</span>`).join('');
+      ageBox.classList.remove('is-new');
+      void ageBox.offsetWidth;
+      ageBox.classList.add('is-new');
+
+      // 出生那年 vs 2025
+      $('#vs-a-chip').style.setProperty('--c', climate.color(v0));
+      $('#vs-b-chip').style.setProperty('--c', climate.color(v1));
+      $('#vs-a-k').textContent = `你出生那年 · ${year}`;
+      $('#vs-b-k').textContent = `${LAST} · 你 ${age} 歲`;
+      $('#vs-a-v').textContent = fmt.temp(v0);
+      $('#vs-b-v').textContent = fmt.temp(v1);
+      $('#vs-a-n').textContent = rankText(year);
+      $('#vs-b-n').textContent = rankText(LAST);
+      $('#vs-delta').textContent = fmt.temp(v1 - v0);
+      const pa = pct(v0), pb = pct(v1);
+      [[$('#vs-pin-a'), pa, year], [$('#vs-pin-b'), pb, LAST]].forEach(([pinEl, p, label]) => {
+        pinEl.textContent = label;
+        pinEl.style.left = p + '%';
+        // 太靠近兩端時改成靠邊對齊，文字不會超出色階
+        pinEl.classList.toggle('is-start', p < 8);
+        pinEl.classList.toggle('is-end', p > 92);
+      });
+      // 兩年之間那一段保持全彩，其餘壓暗
+      $('#vs-mask-l').style.width = Math.min(pa, pb) + '%';
+      $('#vs-mask-r').style.width = (100 - Math.max(pa, pb)) + '%';
+
+      // 逐項比較
+      let early = false;
+      $$('.dp-ind__row', indList).forEach(row => {
+        const s = App.series(row.dataset.key);
+        const y0 = Math.max(year, s.start);
+        if (y0 > year) early = true;
+        const a = s.at(y0), b = s.at(s.end);
+        const lo = Math.min(...s.values), hi = Math.max(...s.values);
+        const p = v => (hi === lo ? 50 : (v - lo) / (hi - lo) * 100);
+        const [dotA, dotB] = $$('.dp-ind__dot', row);
+        dotA.style.left = p(a) + '%';
+        dotA.style.setProperty('--c', lift(s.color(a)));
+        dotB.style.left = p(b) + '%';
+        dotB.style.setProperty('--c', lift(s.color(b)));
+        const seg = $('.dp-ind__seg', row);
+        seg.style.left = Math.min(p(a), p(b)) + '%';
+        seg.style.width = Math.abs(p(b) - p(a)) + '%';
+        $('.dp-ind__vals', row).innerHTML = `<span>${y0}${y0 > year ? '*' : ''}<b>${s.format(a)}</b></span><span>${s.end}<b>${s.format(b)}</b></span>`;
+        const diff = b - a;
+        const worse = diff !== 0 && (diff > 0) !== s.invert;
+        const chg = $('.dp-chg', row);
+        chg.textContent = `${fmt.signed(diff, s.decimals)} ${s.unit}`;
+        chg.classList.toggle('is-hot', worse);
+        chg.classList.toggle('is-cool', diff !== 0 && !worse);
+      });
+      $('#ind-note').textContent = `各項以該指標 1961–2025 的最小值到最大值為刻度；降雨日數與寒害日數愈少，代表愈熱、愈乾。${early ? '＊1961 年以前沒有這些觀測，改以 1961 年比較。' : ''}`;
+
+      // 故事
+      const lines = [];
+      const top = climate.top(Math.min(10, n), year, LAST);
+      if (n >= 10) {
+        lines.push(`你經歷過的 ${n} 年裡，最熱的 10 年<b>全部發生在 ${Math.min(...top.map(t => t.year))} 年以後</b>。`);
+      } else {
+        const worst = Math.max(...climate.years.filter(y => y >= year).map(climate.rank));
+        lines.push(`你出生後的 ${n} 年，<b>每一年都排進 1901 年以來最熱的前 ${worst} 名</b>。`);
+      }
+      const y05 = firstAbove(.5), y10 = firstAbove(1);
+      if (year < y05) lines.push(`你 ${y05 - year} 歲那年（${y05}），澄港第一次比基準熱 0.5°C 以上；<b>${y10 - year} 歲那年（${y10}），第一次超過 1°C</b>。`);
+      else if (year < y10) lines.push(`你出生時，澄港已經跨過 +0.5°C；<b>你 ${y10 - year} 歲那年（${y10}），第一次超過 1°C</b>。`);
+      else if (year === y10) lines.push(`你出生的 ${y10} 年，<b>正是澄港第一次比基準熱 1°C 以上的一年</b>。`);
+      else lines.push(`你出生之前，澄港就已經跨過 +1°C；<b>你經歷的 ${n} 年裡，有 ${climate.years.filter(y => y >= year && climate.at(y) > 1).length} 年超過 1°C</b>。`);
+      if (year >= heat.start) {
+        const [d0, d1] = decadeSpan(heat, year);
+        lines.push(`你出生的 ${decadeOf(year)} 年代，澄港一年平均有 ${fmt.num(heat.mean(d0, d1), 1)} 個 35°C 以上的日子；${heat.end} 年是 <b>${heat.at(heat.end)} 個</b>。`);
+        // 出生太晚、期間太短時，「上升了幾公分」沒有意義，改說相對潮位站啟用時的高度
+        lines.push(sea.end - year >= 5
+          ? `從你出生到 ${sea.end} 年，港埕的年均海平面上升了 <b>${fmt.num(sea.at(sea.end) - sea.at(year), 1)} 公分</b>。`
+          : `你出生時，港埕的年均海平面已經比潮位站啟用的 ${sea.start} 年高了 <b>${fmt.num(sea.at(year) - sea.at(sea.start), 1)} 公分</b>。`);
+      } else {
+        lines.push(`35°C 以上的高溫日數從 ${heat.start} 年開始記錄：1960 年代一年平均 ${fmt.num(heat.mean(...decadeSpan(heat, heat.start)), 1)} 個，${heat.end} 年是 <b>${heat.at(heat.end)} 個</b>。`);
+        lines.push(`港埕潮位站 ${sea.start} 年啟用以來，年均海平面已上升 <b>${fmt.num(sea.at(sea.end) - sea.at(sea.start), 1)} 公分</b>。`);
+      }
+      $('#born-story').innerHTML = lines.map(l => `<p>${l}</p>`).join('');
+      $('#born-live').textContent = example ? '' : `${year} 年出生：當年距平 ${fmt.temp(v0)}，${LAST} 年 ${fmt.temp(v1)}，相差 ${fmt.temp(v1 - v0)}。`;
+    };
+
+    // grow：送出表單或點範例時讓條碼重新長出；拖曳滑桿時只做平滑縮放
+    const draw = (year, { grow }) => {
+      update(year, false);
+      chart.setRange(year, LAST);
+      if (grow) chart.replay();
+    };
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      App.field.clear(input);
+      const raw = input.value.trim();
+      if (!App.valid.required(raw)) { App.field.setError(input, '請輸入出生年，例如 1988'); input.focus(); return; }
+      if (!App.valid.int(raw, climate.start, LAST)) {
+        App.field.setError(input, `請輸入 ${climate.start} 到 ${LAST} 之間的四位數西元年`);
+        input.focus();
+        return;
+      }
+      draw(+raw, { grow: true });
+    });
+    input.addEventListener('input', () => App.field.clear(input));
+    slider.addEventListener('input', () => {
+      input.value = slider.value;
+      App.field.clear(input);
+      draw(+slider.value, { grow: false });
+    });
+    $$('[data-year]').forEach(btn => btn.addEventListener('click', () => {
+      input.value = btn.dataset.year;
+      App.field.clear(input);
+      draw(+btn.dataset.year, { grow: true });
+    }));
+    // 年齡刻度依寬度排版，視窗改變時重排
+    onResize($('#born-age'), () => update(birth, $('#born-tag').textContent.startsWith('範例')));
+
+    $('#born-png').addEventListener('click', () => {
+      const W = 1600, H = 900;
+      const n = LAST - birth + 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0B0D12';
+      ctx.fillRect(0, 0, W, H);
+      // 以整數像素切每一條，避免條與條之間出現縫
+      for (let k = 0; k < n; k++) {
+        const x0 = Math.round(k * W / n), x1 = Math.round((k + 1) * W / n);
+        ctx.fillStyle = climate.color(climate.at(birth + k));
+        ctx.fillRect(x0, 0, x1 - x0, 660);
+      }
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#ECEDEF';
+      ctx.font = '700 64px "Space Grotesk", "Noto Sans TC", sans-serif';
+      ctx.fillText(`澄港 ${birth}–${LAST}`, 64, 772);
+      ctx.fillStyle = '#8A90A0';
+      ctx.font = '500 26px "Noto Sans TC", sans-serif';
+      ctx.fillText(`年均溫距平 · 基準 1971–2000 · 港埕氣象站 · ${n} 條色帶`, 64, 824);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ECEDEF';
+      ctx.font = '500 40px "JetBrains Mono", monospace';
+      ctx.fillText(`${fmt.temp(climate.at(birth))} → ${fmt.temp(climate.at(LAST))}`, W - 64, 772);
+      ctx.fillStyle = '#8A90A0';
+      ctx.font = '500 26px "Noto Sans TC", sans-serif';
+      ctx.fillText('澄港市 氣候調適行動網', W - 64, 824);
+      canvas.toBlob(blob => {
+        if (!blob) throw new Error('canvas.toBlob returned null');
+        saveBlob(blob, `chenggang-stripes-${birth}-${LAST}.png`);
+        App.toast(`${birth}–${LAST} 共 ${n} 條色帶，1600 × 900 像素。`, { title: '已下載你的條碼', tone: 'cool' });
+      }, 'image/png');
+    });
+
+    update(birth, true);
+  }
+
+
+  /* ---------- 05 原始數列：年代 × 個位數矩陣、CSV 下載 ---------- */
+  {
+    const tabs = $('#raw-tabs');
+    const panels = $('#raw-panels');
+    const metaOf = key => {
+      const s = seriesOf(key);
+      const scale = key === 'climate'
+        ? `−0.65 ~ +1.35°C 不對稱色域，0 為白色`
+        : `以 1961–1990 平均（${fmt.num(s.baseline, s.decimals + 1)} ${s.unit}）為白色${s.invert ? '；數值愈少愈紅' : ''}`;
+      return { s, scale, decimals: key === 'climate' ? 2 : s.decimals };
+    };
+    const cellText = (key, v, d) => (key === 'climate' ? fmt.signed(v, d) : fmt.num(v, d));
+
+    tabs.innerHTML = INV.map((key, k) => `<button class="tab" type="button" role="tab" id="raw-tab-${key}" aria-controls="raw-panel-${key}" aria-selected="${k === 0}">${esc(seriesOf(key).label)}</button>`).join('');
+    panels.innerHTML = INV.map(key => {
+      const { s, scale, decimals } = metaOf(key);
+      const color = key === 'climate' ? climate.color : s.color;
+      const rows = [];
+      for (let d = decadeOf(s.start); d <= s.end; d += 10) {
+        const cells = [];
+        for (let k = 0; k < 10; k++) {
+          const v = s.at(d + k);
+          cells.push(v == null
+            ? `<td><span class="dp-cell is-empty">·</span></td>`
+            : `<td><span class="dp-cell" style="--c:${color(v)}" title="${d + k} 年">${cellText(key, v, decimals)}</span></td>`);
+        }
+        const [d0, d1] = decadeSpan(s, d);
+        const m = s.mean(d0, d1);
+        rows.push(`<tr><th scope="row">${d}s</th>${cells.join('')}<td class="dp-avg"><span class="dp-cell" style="--c:${color(m)}">${cellText(key, m, decimals + 1)}</span></td></tr>`);
+      }
+      return `<div class="tab-panel" role="tabpanel" id="raw-panel-${key}" aria-labelledby="raw-tab-${key}" tabindex="0" hidden>
+        <div class="dp-raw__head">
+          <dl class="dl dp-raw__dl">
+            <dt>定義</dt><dd>${esc(s.def)}</dd>
+            <dt>測站</dt><dd>${esc(s.station)}</dd>
+            <dt>期間</dt><dd>${s.start}–${s.end}，共 ${s.values.length} 筆</dd>
+            <dt>色階</dt><dd>${esc(scale)}</dd>
+          </dl>
+          <div class="dp-raw__actions">
+            <button class="btn btn--primary btn--sm" type="button" data-csv="${key}">${App.icon('download')}下載 CSV</button>
+            <span class="caption">chenggang_${key}_${s.start}-${s.end}.csv</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table dp-matrix">
+            <caption class="sr-only">${esc(s.label)}（${esc(s.unit)}），列為年代、欄為年份個位數，最後一欄為年代平均</caption>
+            <thead><tr><th scope="col">年代</th>${Array.from({ length: 10 }, (_, k) => `<th scope="col">${k}</th>`).join('')}<th scope="col" class="dp-avg">平均</th></tr></thead>
+            <tbody>${rows.join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+    // 分頁是動態插入的，插入後再掃一次讓 [data-tabs] 生效
+    App.scan($('#raw'));
+
+    panels.addEventListener('click', e => {
+      const btn = e.target.closest('[data-csv]');
+      if (!btn) return;
+      const key = btn.dataset.csv;
+      const { s, decimals } = metaOf(key);
+      const lines = [`年份,${s.label}（${s.unit}）`, ...s.years.map(y => `${y},${s.at(y).toFixed(decimals)}`)];
+      // 加 BOM 讓試算表正確辨識 UTF-8 中文欄名
+      saveBlob(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), `chenggang_${key}_${s.start}-${s.end}.csv`);
+      App.toast(`${s.label} ${s.start}–${s.end}，共 ${s.values.length} 筆。`, { title: '已下載 CSV', tone: 'cool' });
+    });
+  }
+});
+</script>
+</body>
+</html>

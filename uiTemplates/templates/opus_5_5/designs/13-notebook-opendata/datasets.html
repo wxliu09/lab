@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>資料集清單 — 澄港市 開放資料平台 · 資料集上架管理</title>
+<meta name="description" content="澄港市開放資料平台的資料集清單：以機關、格式、主題與品質分數 facet 篩選，查詢即時編譯成 notebook 程式碼並重新執行，可排序、搜尋、分頁與批次管理更新排程。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,500..700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 檔頭 ---------- */
+  .dsl-head { margin-bottom: var(--s-6); }
+  .dsl-head .doc-head__lead { max-width: 70ch; }
+  .dsl-head .doc-head__lead b { font-variant-numeric: tabular-nums; }
+
+  /* 窄螢幕：facets 收進可展開的面板 */
+  .dsl-facetbar { display: none; }
+
+  /* ---------- 左欄 facets ---------- */
+  /* sticky 的 top 由 JS 依側欄高度調整：比視窗高時先隨頁捲到底部露出再黏住，不做側欄內捲動 */
+  .dsl-facets { gap: 22px; padding-bottom: 8px; }
+  .dsl-facets__head { display: flex; align-items: center; gap: 8px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
+  .dsl-facets__title { font-size: var(--fs-13); font-weight: 600; color: var(--ink); letter-spacing: .04em; display: flex; align-items: center; gap: 7px; }
+  .dsl-facets__title .i { color: var(--ink-3); }
+  .dsl-facets__head .facet__clear { margin-left: auto; }
+  .dsl-facets__done { display: none; }
+  .dsl-facets .facet__title { padding-bottom: 6px; }
+  .dsl-facets .facet__bar span { transition: transform var(--dur-3) var(--ease-out); }
+  .dsl-facets .facet__opt[hidden] { display: none; }
+
+  /* 品質分數：直方圖 + 可拖曳範圍（facet 本身就是一份欄位 profiling） */
+  .dsl-qrange { margin-left: auto; margin-right: 8px; font-family: var(--font-mono); font-size: var(--fs-12); font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
+  .dsl-qrange.is-on { color: var(--accent-text); }
+  .dsl-qcard { background: var(--white); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 14px 10px; box-shadow: var(--shadow-1); }
+  .dsl-brush { position: relative; height: 64px; touch-action: pan-y; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+  .dsl-hist { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+  .dsl-hist__bar { transform-box: fill-box; transform-origin: 50% 100%; transition: transform .55s var(--ease-out); }
+  .dsl-brush__mask { position: absolute; top: -4px; bottom: -2px; background: rgba(255, 255, 255, .76); pointer-events: none; }
+  .dsl-brush__mask--l { left: -3px; }
+  .dsl-brush__mask--r { right: -3px; }
+  .dsl-brush__sel { position: absolute; bottom: -4px; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+  .dsl-brush__h { position: absolute; top: -6px; bottom: -6px; width: 18px; margin-left: -9px; cursor: ew-resize; border-radius: var(--r-xs); }
+  .dsl-brush__h::before { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: var(--accent); }
+  .dsl-brush__h::after {
+    content: ""; position: absolute; left: 4px; top: 50%; width: 10px; height: 22px; margin-top: -11px;
+    border-radius: 4px; border: 1.5px solid var(--accent);
+    background: linear-gradient(var(--accent-line), var(--accent-line)) 50% 40% / 4px 1px no-repeat, linear-gradient(var(--accent-line), var(--accent-line)) 50% 60% / 4px 1px no-repeat, var(--white);
+    box-shadow: 0 1px 3px rgba(27, 29, 32, .2);
+    transition: transform var(--dur-2) var(--ease-spring);
+  }
+  .dsl-brush__h:hover::after, .dsl-brush__h.is-active::after { transform: scale(1.14); }
+  .dsl-brush__h:focus-visible { outline: none; }
+  .dsl-brush__h:focus-visible::after { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4.5px var(--accent); }
+  .dsl-axis { position: relative; height: 14px; margin-top: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .dsl-axis span { position: absolute; top: 0; transform: translateX(-50%); }
+  .dsl-axis span:first-child { transform: none; }
+  .dsl-axis span:last-child { transform: translateX(-100%); }
+  .dsl-bands { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 6px; }
+  .dsl-band {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 30px; padding: 0 4px;
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+    background: var(--white); color: var(--ink-2);
+    font-family: var(--font-mono); font-size: var(--fs-12); font-variant-numeric: tabular-nums;
+    transition: border-color var(--dur-1), background var(--dur-1), box-shadow var(--dur-1);
+  }
+  .dsl-band:hover { border-color: var(--line-3); background: var(--paper); }
+  .dsl-band .grade { width: 18px; height: 18px; font-size: 11px; border-radius: 4px; }
+  .dsl-band[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+  .dsl-band.is-zero .grade { opacity: .45; }
+  .dsl-unrated { margin-top: 10px; display: flex; align-items: center; gap: 9px; padding: 4px 6px; font-size: var(--fs-13); color: var(--ink-2); border-radius: var(--r-sm); }
+  .dsl-unrated:hover { background: var(--paper-2); }
+  .dsl-unrated .check__box { margin-top: 0; }
+  .dsl-unrated .facet__count { margin-left: auto; }
+
+  /* 格式：等寬膠囊切換鈕，呼應表格內的 .fmt */
+  .dsl-fchips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 2px; }
+  .dsl-fchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 28px; padding: 0 8px 0 9px;
+    border: 1px solid var(--line-2); border-radius: var(--r-sm);
+    background: var(--white); color: var(--ink-2);
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+    transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1), opacity var(--dur-2);
+  }
+  .dsl-fchip:hover { border-color: var(--line-3); background: var(--paper); }
+  .dsl-fchip__n { font-weight: 400; font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .dsl-fchip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent); }
+  .dsl-fchip[aria-pressed="true"] .dsl-fchip__n { color: var(--accent-text); }
+  .dsl-fchip.is-zero { opacity: .45; }
+
+  /* ---------- 查詢 cell：控制列 ---------- */
+  .dsl-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .dsl-controls .toolbar .search { flex: 1 1 240px; max-width: 340px; }
+  .dsl-view button { display: inline-flex; align-items: center; gap: 6px; }
+  .dsl-view__n { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .dsl-view button[aria-pressed="true"] .dsl-view__n { color: var(--accent-text); }
+  .dsl-view__n.is-warn { color: var(--warn-text); font-weight: 600; }
+  .dsl-sortsel { display: none; }
+  .dsl-chips { min-height: 26px; }
+  .dsl-chips__none { font-size: var(--fs-12); color: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; }
+  .dsl-chips .btn { height: 26px; }
+  .dsl-chips .chip__key { margin-right: -2px; }
+
+  /* 篩選改動的程式碼行：短暫亮底 + 左緣標記（像編輯器的 dirty diff） */
+  #c-query pre.code { isolation: isolate; }
+  #c-query .code__line.is-changed { box-shadow: inset 2px 0 0 var(--accent); }
+  #c-query .code__line.is-changed::after {
+    content: ""; position: absolute; inset: 0 -14px 0 0; z-index: -1;
+    background: var(--accent-soft);
+    animation: dsl-flash 1.8s var(--ease-out) forwards;
+  }
+  @keyframes dsl-flash { 0%, 25% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* ---------- 輸出：df.describe() 摘要 ---------- */
+  .dsl-out-label { justify-content: space-between; }
+  .dsl-out-label .dsl-sortnote { color: var(--ink-3); }
+  .dsl-desc { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 18px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--white); overflow: hidden; }
+  .dsl-desc__item { min-width: 0; padding: 10px 14px 11px; display: flex; flex-direction: column; gap: 5px; }
+  .dsl-desc__item + .dsl-desc__item { border-left: 1px solid var(--line); }
+  .dsl-desc__k { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); white-space: nowrap; }
+  .dsl-desc__k span { font-family: var(--font-sans); color: var(--ink-2); font-weight: 500; }
+  .dsl-desc__row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; min-height: 30px; }
+  .dsl-desc__v { font-size: 25px; font-weight: 600; line-height: 1; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  .dsl-desc__v small { font-size: var(--fs-12); font-weight: 500; letter-spacing: 0; color: var(--ink-3); }
+  .dsl-desc__viz { flex: 0 1 auto; min-width: 0; display: flex; justify-content: flex-end; }
+  .dsl-desc__sub { font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dsl-desc__sub b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dsl-desc .meter { height: 6px; margin-top: 2px; }
+  .dsl-desc__legend { display: flex; flex-wrap: wrap; gap: 2px 9px; font-size: var(--fs-11); color: var(--ink-3); }
+  .dsl-desc__legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .dsl-desc__legend i { width: 7px; height: 7px; border-radius: 2px; background: var(--c); }
+
+  /* ---------- 表格 ---------- */
+  .dsl-tablewrap { margin: 0 -26px; border-left: 0; border-right: 0; border-radius: 0; }
+  .dsl-table th:first-child, .dsl-table td:first-child { padding-left: 26px; }
+  .dsl-table th:last-child, .dsl-table td:last-child { padding-right: 18px; }
+  .dsl-table td { padding-top: 11px; padding-bottom: 11px; }
+  .dsl-table .dsl-sel { width: 1%; padding-right: 4px; }
+  .dsl-table .check { vertical-align: middle; }
+  .dsl-name { min-width: 200px; }
+  .dsl-name .table__title { line-height: 1.45; }
+  .dsl-sub { display: flex; align-items: center; gap: 0 8px; margin-top: 3px; font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+  .dsl-sub .mono { color: var(--ink-2); }
+  .dsl-mark { background: rgba(217, 142, 4, .22); color: inherit; border-radius: 2px; padding: 0 1px; }
+  /* 欄位型別條碼：每欄一格，顏色同型別徽章 */
+  .dsl-code { display: inline-flex; gap: 1.5px; vertical-align: middle; }
+  .dsl-code i { width: 3px; height: 11px; border-radius: 1px; background: var(--c); }
+  .dsl-freq { white-space: nowrap; }
+  .dsl-when time { white-space: nowrap; }
+  .dsl-status .status { font-size: var(--fs-13); }
+  .dsl-status .dsl-sub { margin-top: 5px; }
+  .dsl-paused { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-12); font-weight: 500; color: var(--ink-2); }
+  .dsl-paused .i { width: 13px; height: 13px; color: var(--ink-3); }
+  .dsl-act { width: 1%; text-align: right; }
+  .dsl-peekbtn .i { transition: transform var(--dur-3) var(--ease-out); }
+  .dsl-peekbtn[aria-expanded="true"] .i { transform: rotate(180deg); }
+  .dsl-peekbtn[aria-expanded="true"] { background: var(--paper-2); color: var(--ink); }
+  .dsl-peekbtn__t { display: none; }
+  .dsl-table tbody tr.is-open { background: #FBFBF9; }
+  .dsl-table tbody tr.is-open td { border-bottom-color: transparent; }
+  .dsl-table tbody tr.is-selected { background: var(--accent-tint); }
+
+  /* 列展開：資料集速覽 */
+  .dsl-table tr.dsl-peek > td { padding: 0; background: var(--gutter-bg); border-bottom: 1px solid var(--line); box-shadow: inset 0 1px 0 var(--line); }
+  .dsl-table tbody tr.dsl-peek:hover { background: transparent; }
+  /* width:0 + min-width:100%：展開內容不參與表格欄寬計算，展開時欄位不會跳動 */
+  .dsl-peek__inner { width: 0; min-width: 100%; padding: 18px 26px 16px 66px; animation: dsl-peek-in var(--dur-3) var(--ease-out); }
+  .dsl-peek__grid { display: grid; grid-template-columns: minmax(0, 1.4fr) 240px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .dsl-peek__desc { font-size: var(--fs-14); color: var(--ink); line-height: 1.7; max-width: 60ch; }
+  .dsl-peek__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .dsl-peek__k { margin: 14px 0 7px; font-size: var(--fs-12); font-weight: 600; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
+  .dsl-peek__k span { font-weight: 400; color: var(--ink-3); }
+  .dsl-cols { display: flex; flex-wrap: wrap; gap: 5px; }
+  .dsl-cols li { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 3px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--white); font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+  .dsl-cols code { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--ink); font-weight: 600; }
+  .dsl-cols li.is-pk { border-color: var(--line-3); }
+  .dsl-cols li.is-pk code::after { content: " PK"; font-size: 9.5px; color: var(--ink-3); font-weight: 500; }
+  .dsl-peek__issues { display: grid; gap: 8px; margin-top: 14px; }
+  .dsl-peek__issues .callout { padding: 9px 12px; }
+  .dsl-peek__q { display: flex; flex-direction: column; gap: 12px; }
+  .dsl-peek__qtop { display: flex; align-items: center; gap: 14px; }
+  .dsl-peek__qtext { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.55; }
+  .dsl-peek__qtext b { display: block; font-size: var(--fs-14); color: var(--ink); font-weight: 600; }
+  .dsl-dims { display: grid; gap: 7px; }
+  .dsl-dims .dimbar__track > span { animation: dsl-grow .8s var(--ease-out) both; }
+  .dsl-peek__pending { padding: 14px; border: 1px dashed var(--line-3); border-radius: var(--r-md); font-size: var(--fs-13); color: var(--ink-3); line-height: 1.6; display: flex; gap: 10px; align-items: flex-start; }
+  .dsl-peek__pending .spinner { margin-top: 3px; flex: none; }
+  .dsl-peek__kv { font-size: var(--fs-13); gap: 9px 16px; }
+  .dsl-peek__kv dd .spark { vertical-align: middle; margin-left: 8px; }
+  .dsl-who { display: flex; align-items: center; gap: 8px; }
+  .dsl-who small { display: block; font-size: var(--fs-12); color: var(--ink-3); line-height: 1.4; }
+  .dsl-peek__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line-2); }
+  .dsl-peek__note { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--ink-3); }
+  @keyframes dsl-peek-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes dsl-grow { from { transform: scaleX(0); } }
+
+  /* ---------- 批次操作列：在表格範圍內貼著視窗底部 ---------- */
+  .dsl-bulk {
+    position: sticky; bottom: 18px; z-index: 6;
+    width: fit-content; max-width: 100%;
+    /* 靠左而非置中：右下角留給 toast，兩者不重疊 */
+    margin: 14px 0 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 8px 8px 16px;
+    border-radius: var(--r-lg);
+    background: var(--white);
+    box-shadow: var(--shadow-pop);
+    animation: dsl-bulk-in var(--dur-3) var(--ease-spring);
+  }
+  .dsl-bulk::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
+  .dsl-bulk__n { font-size: var(--fs-13); color: var(--ink-2); margin-right: 6px; white-space: nowrap; }
+  .dsl-bulk__n b { font-family: var(--font-mono); color: var(--ink); font-size: var(--fs-15); }
+  .dsl-bulk__sep { width: 1px; height: 20px; background: var(--line); }
+  @keyframes dsl-bulk-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+  /* ---------- 分頁 ---------- */
+  .dsl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 16px; }
+  .dsl-range { font-size: var(--fs-13); color: var(--ink-3); }
+  .dsl-range b { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .dsl-foot .pager { margin-left: auto; }
+  .dsl-size { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap; }
+  .dsl-size .select { width: auto; min-height: 32px; height: 32px; padding: 0 30px 0 10px; font-size: var(--fs-13); background-position: right 8px center; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1180px) {
+    .dsl-desc { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dsl-desc__item:nth-child(4) { border-left: 0; }
+    .dsl-desc__item:nth-child(n+4) { border-top: 1px solid var(--line); }
+    .dsl-peek__grid { grid-template-columns: minmax(0, 1fr) 236px; }
+    .dsl-peek__kv { grid-column: 1 / -1; }
+  }
+  @media (max-width: 980px) {
+    .dsl-facetbar { display: flex; align-items: center; gap: 12px; margin-bottom: var(--s-4); }
+    .dsl-facetbar__count { margin-left: auto; font-size: var(--fs-13); color: var(--ink-3); }
+    .dsl-facetbar__count b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .dsl-facets { display: none; margin: 0 0 var(--s-2); padding: 16px; background: var(--white); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sheet); }
+    .dsl-facets.is-open { display: flex; animation: dsl-peek-in var(--dur-3) var(--ease-out); }
+    .dsl-facets__done { display: flex; }
+  }
+  @media (max-width: 760px) {
+    .dsl-controls .toolbar .search { flex: 1 1 100%; max-width: none; }
+    .dsl-view { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .dsl-view::-webkit-scrollbar { display: none; }
+    .dsl-sortsel { display: block; flex: 1 1 100%; }
+    .dsl-out-label { justify-content: flex-start; }
+    .dsl-desc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dsl-desc__item:nth-child(n) { border-left: 0; border-top: 1px solid var(--line); }
+    .dsl-desc__item:nth-child(-n+2) { border-top: 0; }
+    .dsl-desc__item:nth-child(even) { border-left: 1px solid var(--line); }
+    .dsl-desc__item:last-child { grid-column: 1 / -1; }
+    .dsl-desc__v { font-size: 22px; }
+
+    /* 卡片模式：勾選框放右上角，展開鈕佔滿底部 */
+    .dsl-tablewrap { margin: 0; }
+    .dsl-table tbody tr { position: relative; }
+    /* 後面的儲存格也是 position:relative，會蓋住絕對定位的勾選格，需拉高層級；label 加內距放大觸控範圍 */
+    .dsl-table td.dsl-sel { position: absolute; top: 2px; right: 2px; z-index: 2; width: auto; min-height: 0; padding: 0; }
+    .dsl-table td.dsl-sel .check { padding: 10px; }
+    .dsl-table td.dsl-name { padding: 6px 34px 8px 0; }
+    .dsl-table td { padding-top: 5px; padding-bottom: 5px; }
+    .dsl-table th:first-child, .dsl-table td:first-child { padding-left: 0; }
+    .dsl-sub { flex-wrap: wrap; white-space: normal; }
+    /* 卡片裡的次要資訊接在主值後面，不另起一行，卡片矮一半 */
+    .dsl-table td:not(.dsl-name) > .dsl-sub { display: inline-flex; gap: 0 6px; margin: 0 0 0 6px; vertical-align: baseline; }
+    .dsl-table td:not(.dsl-name) > .dsl-sub::before { content: "·"; color: var(--ink-4); }
+    .dsl-table td.dsl-status > .dsl-sub:empty { display: none; }
+    .dsl-table td.dsl-status .status { vertical-align: middle; }
+    .dsl-table td.dsl-act { width: 100%; text-align: left; padding: 8px 0 2px; }
+    .dsl-peekbtn { width: 100%; justify-content: center; border: 1px solid var(--line) !important; }
+    .dsl-peekbtn.btn--icon { width: 100%; }
+    .dsl-peekbtn__t { display: inline; }
+    .dsl-table tbody tr.is-open { margin-bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; border-bottom-color: transparent; }
+    .dsl-table tr.dsl-peek { margin-top: 0; border-top: 0; border-radius: 0 0 var(--r-md) var(--r-md); padding: 0; background: var(--gutter-bg); }
+    .dsl-table tr.dsl-peek > td { padding: 0; box-shadow: none; border: 0; }
+    .dsl-peek__inner { padding: 14px 14px 12px; border-top: 1px dashed var(--line-2); }
+    .dsl-peek__grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .dsl-peek__note { margin-left: 0; flex-basis: 100%; }
+    .dsl-peek__actions .btn { flex: 1 1 auto; }
+    .dsl-cols li { white-space: normal; height: auto; min-height: 26px; padding-top: 2px; padding-bottom: 2px; }
+
+    .dsl-bulk { width: 100%; padding-left: 14px; }
+    .dsl-bulk__sep { display: none; }
+    .dsl-bulk__n { flex-basis: 100%; }
+    .dsl-bulk .btn { flex: 1 1 auto; }
+    .dsl-foot .pager { margin-left: 0; }
+    .dsl-range { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body data-page="datasets">
+<a class="skip-link" href="#main">跳至主要內容</a>
+
+<div class="utilbar">
+  <div class="utilbar__inner">
+    <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    <span class="utilbar__sep utilbar__sep--path" aria-hidden="true"></span>
+    <span class="utilbar__path"><span>澄港市政府</span><span>數位發展處</span><span>開放資料平台</span></span>
+    <div class="utilbar__right">
+      <span class="env-dot utilbar__env">正式環境 · v4.8.2</span>
+      <span data-clock aria-label="系統時間">2026-10-22（四）09:41:00</span>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="index.html" aria-label="澄港開放資料 資料集上架管理，回總覽">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">澄港開放資料</span><span class="brand__sub">資料集上架管理</span></span>
+    </a>
+    <nav class="mainnav" id="mainnav" aria-label="主要導覽">
+      <form class="gsearch only-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-m">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-m" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+      </form>
+      <a class="mainnav__link" href="index.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.75h7.75l1.25 1.25v11.25H3.5zM5.75 5h4.5M5.75 7.5h4.5M5.75 10h2.5M1.75 4h1.75M1.75 7h1.75M1.75 10h1.75"/></svg>總覽</a>
+      <a class="mainnav__link is-active" href="datasets.html" aria-current="page"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 3h11.5v10H2.25zM2.25 6.25h11.5M2.25 9.5h11.5M6.25 6.25V13"/></svg>資料集清單</a>
+      <a class="mainnav__link" href="dataset.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.5l3 3v9.5H4zM9.5 1.75v3h3M6 8h4.5M6 10.5h4.5"/></svg>資料集詳情</a>
+      <a class="mainnav__link" href="publish.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10.25V2.75M5 5.5l3-2.75 3 2.75M2.75 9.5v3.75h10.5V9.5"/></svg>上架申請</a>
+    </nav>
+    <div class="topbar__tools">
+      <form class="gsearch hide-mobile" data-gsearch role="search">
+        <label class="sr-only" for="gsearch-d">搜尋資料集</label>
+        <svg class="i gsearch__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+        <input id="gsearch-d" class="gsearch__input" type="search" placeholder="搜尋資料集、機關、代碼" autocomplete="off">
+        <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+      </form>
+      <span class="kernel" data-kernel role="status"><span class="kernel__dot" aria-hidden="true"></span><span class="kernel__label">核心 閒置</span></span>
+      <div class="whoami">
+        <span class="avatar" style="--h:170" aria-hidden="true">婷</span>
+        <span class="whoami__text"><span class="whoami__name">許雅婷</span><span class="whoami__role">資料治理科 承辦</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="mainnav" aria-label="開啟選單"><span class="menu-btn__bars" aria-hidden="true"><span></span><span></span><span></span></span></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <header class="doc-head dsl-head">
+    <p class="doc-head__path"><a href="index.html">notebooks</a><span class="sep">/</span><span>目錄</span><span class="sep">/</span><span class="file">資料集清單.ipynb</span></p>
+    <div>
+      <h1 class="doc-head__title">資料集清單</h1>
+      <p class="doc-head__lead" id="dsl-lead">平台目前登錄 60 個資料集，來自 14 個機關。</p>
+      <p class="doc-head__meta">
+        <span><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2c3 0 5.5.9 5.5 2s-2.5 2-5.5 2-5.5-.9-5.5-2S5 2 8 2zM2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg><span id="dsl-meta-count">60 個資料集 · 14 個機關 · 13 個主題</span></span>
+        <span><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12zM8 4.75V8l2.25 1.5"/></svg>目錄索引同步於 <span data-clock="time">09:41:00</span></span>
+        <span><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2.5 14c.8-2.6 2.9-4 5.5-4s4.7 1.4 5.5 4"/></svg>由 許雅婷 檢視</span>
+      </p>
+    </div>
+    <div class="doc-head__actions">
+      <button class="btn" type="button" id="dsl-export"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.75M5 7.25l3 3 3-3M2.75 12.75h10.5"/></svg>匯出目前清單</button>
+      <a class="btn btn--primary" href="publish.html"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>新增上架申請</a>
+    </div>
+  </header>
+
+  <div class="dsl-facetbar">
+    <button class="btn" type="button" id="dsl-facet-toggle" aria-expanded="false" aria-controls="dsl-facets"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11l-4.25 5v4l-2.5 1v-5z"/></svg>篩選條件<span class="count" id="dsl-facet-count" hidden>0</span></button>
+    <span class="dsl-facetbar__count">符合 <b id="dsl-facetbar-n">60</b> / <span id="dsl-facetbar-total">60</span></span>
+  </div>
+
+  <div class="layout-facets">
+    <aside class="facets dsl-facets" id="dsl-facets" aria-label="篩選條件">
+      <div class="dsl-facets__head">
+        <h2 class="dsl-facets__title"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11l-4.25 5v4l-2.5 1v-5z"/></svg>篩選條件<span class="count count--accent" id="dsl-active-n" hidden>0</span></h2>
+        <button class="facet__clear" type="button" id="dsl-clear-all" hidden>全部清除</button>
+      </div>
+
+      <section class="facet" aria-labelledby="f-q-t">
+        <h3 class="facet__title"><span id="f-q-t">品質分數</span><span class="dsl-qrange" id="dsl-qrange">全部</span><button class="facet__clear" type="button" id="dsl-q-clear" hidden>清除</button></h3>
+        <div class="dsl-qcard">
+          <div class="dsl-brush" id="dsl-brush">
+            <svg class="dsl-hist" id="dsl-hist" viewBox="0 0 160 60" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <span class="dsl-brush__mask dsl-brush__mask--l" id="dsl-mask-l"></span>
+            <span class="dsl-brush__mask dsl-brush__mask--r" id="dsl-mask-r"></span>
+            <span class="dsl-brush__sel" id="dsl-sel-bar"></span>
+            <span class="dsl-brush__h" data-h="lo" role="slider" tabindex="0" aria-label="品質分數下限" aria-valuemin="60" aria-valuemax="99" aria-valuenow="60" aria-describedby="dsl-hist-desc"></span>
+            <span class="dsl-brush__h" data-h="hi" role="slider" tabindex="0" aria-label="品質分數上限" aria-valuemin="61" aria-valuemax="100" aria-valuenow="100" aria-describedby="dsl-hist-desc"></span>
+          </div>
+          <p class="sr-only" id="dsl-hist-desc"></p>
+          <div class="dsl-axis" aria-hidden="true"><span style="left:0">60</span><span style="left:25%">70</span><span style="left:50%">80</span><span style="left:75%">90</span><span style="left:100%">100</span></div>
+          <div class="dsl-bands" role="group" aria-label="依品質等級快速選取" id="dsl-bands"></div>
+        </div>
+        <label class="dsl-unrated"><span class="check"><input type="checkbox" id="dsl-unrated" checked><span class="check__box" aria-hidden="true"></span></span><span>含未評分（驗證中、草稿）</span><span class="facet__count" id="dsl-unrated-n">3</span></label>
+      </section>
+
+      <section class="facet" aria-labelledby="f-agency-t" id="facet-agency">
+        <h3 class="facet__title"><span id="f-agency-t">提供機關</span><button class="facet__clear" type="button" data-clear="agency" hidden>清除</button></h3>
+        <div class="facet__opts" role="group" aria-labelledby="f-agency-t"></div>
+        <button class="facet__more" type="button" data-more="agency" aria-expanded="false">顯示全部</button>
+      </section>
+
+      <section class="facet" aria-labelledby="f-format-t" id="facet-format">
+        <h3 class="facet__title"><span id="f-format-t">資料格式</span><button class="facet__clear" type="button" data-clear="format" hidden>清除</button></h3>
+        <div class="dsl-fchips" role="group" aria-labelledby="f-format-t"></div>
+      </section>
+
+      <section class="facet" aria-labelledby="f-theme-t" id="facet-theme">
+        <h3 class="facet__title"><span id="f-theme-t">主題分類</span><button class="facet__clear" type="button" data-clear="theme" hidden>清除</button></h3>
+        <div class="facet__opts" role="group" aria-labelledby="f-theme-t"></div>
+        <button class="facet__more" type="button" data-more="theme" aria-expanded="false">顯示全部</button>
+      </section>
+
+      <button class="btn btn--primary btn--block dsl-facets__done" type="button" id="dsl-facets-done">查看 <span id="dsl-done-n">60</span> 筆結果</button>
+    </aside>
+
+    <div class="layout-facets__main">
+      <div class="sheet">
+        <section class="cell" data-cell id="c-query" aria-labelledby="t-query">
+          <div class="cell__body">
+            <div class="cell__head"><h2 class="cell__title" id="t-query">資料集</h2><span class="cell__tag">DataFrame</span></div>
+
+            <div class="dsl-controls">
+              <div class="toolbar">
+                <label class="search">
+                  <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+                  <span class="sr-only">搜尋資料集</span>
+                  <input class="input" type="search" id="dsl-q" placeholder="名稱、代碼、機關或標籤" autocomplete="off">
+                </label>
+                <div class="seg dsl-view" role="group" aria-label="狀態檢視" id="dsl-view">
+                  <button type="button" data-view="all" aria-pressed="true">全部<span class="dsl-view__n">60</span></button>
+                  <button type="button" data-view="published" aria-pressed="false">已發布<span class="dsl-view__n">50</span></button>
+                  <button type="button" data-view="flow" aria-pressed="false">上架流程中<span class="dsl-view__n">10</span></button>
+                  <button type="button" data-view="attention" aria-pressed="false">需處理<span class="dsl-view__n">0</span></button>
+                </div>
+                <label class="dsl-sortsel"><span class="sr-only">排序方式</span><select class="select" id="dsl-sort-m"></select></label>
+              </div>
+              <div class="chip-row dsl-chips" id="dsl-chips" aria-live="polite"></div>
+            </div>
+
+            <pre class="code"><code data-lang="py" id="dsl-code"># 由篩選條件即時產生，Shift+Enter 重新執行
+df = catalog.datasets()
+df.sort_values("updated", ascending=False).page(1, size=15)</code></pre>
+
+            <div class="cell__output">
+              <p class="out-label dsl-out-label" data-stream><span><b data-out>Out[1]:</b> <span id="dsl-shape">DataFrame 60 rows × 7 columns</span></span><span class="dsl-sortnote" id="dsl-sortnote">第 1 / 4 頁</span></p>
+              <div class="dsl-desc" id="dsl-desc" data-stream></div>
+
+              <div class="table-wrap table-wrap--cards dsl-tablewrap" data-anim>
+                <table class="table dsl-table" id="dsl-table">
+                  <caption class="sr-only">資料集清單，可排序；勾選後可批次管理更新排程</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="dsl-sel"><label class="check"><input type="checkbox" id="dsl-selall" aria-label="選取本頁全部資料集"><span class="check__box" aria-hidden="true"></span></label></th>
+                      <th scope="col" data-sort="title"><button class="sort" type="button">資料集<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col" data-sort="agency"><button class="sort" type="button">提供機關<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col">格式</th>
+                      <th scope="col" data-sort="freq"><button class="sort" type="button">更新頻率<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col" data-sort="quality"><button class="sort" type="button">品質分數<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col" data-sort="updated"><button class="sort" type="button">最後更新<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col" data-sort="status"><button class="sort" type="button">狀態<svg class="sort__icon" viewBox="0 0 10 12" aria-hidden="true"><path class="up" d="M2 4.5 5 1.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path class="down" d="M2 7.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></th>
+                      <th scope="col" class="dsl-act"><span class="sr-only">展開</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="dsl-body"></tbody>
+                </table>
+              </div>
+
+              <div class="dsl-bulk" id="dsl-bulk" role="region" aria-label="批次操作" hidden>
+                <span class="dsl-bulk__n"><b id="dsl-bulk-n">0</b> 個資料集已選取</span>
+                <span class="dsl-bulk__sep" aria-hidden="true"></span>
+                <button class="btn btn--sm" type="button" data-bulk="pause"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg>暫停更新排程</button>
+                <button class="btn btn--sm" type="button" data-bulk="resume"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.25v9.5L12.75 8z"/></svg>恢復排程</button>
+                <button class="btn btn--sm" type="button" data-bulk="export"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.75M5 7.25l3 3 3-3M2.75 12.75h10.5"/></svg>匯出 CSV</button>
+                <button class="btn btn--sm btn--ghost" type="button" data-bulk="clear">取消選取</button>
+              </div>
+
+              <div class="dsl-foot" data-stream>
+                <p class="dsl-range" id="dsl-range">第 1–15 筆，共 60 筆</p>
+                <label class="dsl-size">每頁<select class="select" id="dsl-size"><option value="15">15 筆</option><option value="30">30 筆</option><option value="60">60 筆</option></select></label>
+                <nav class="pager" id="dsl-pager" aria-label="資料集清單分頁"></nav>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="#0F9D8A"/>
+        <path d="M10.5 8.5H8v15h2.5M21.5 8.5H24v15h-2.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="11.6" y="16.2" width="2.3" height="4.8" rx="1" fill="#fff" fill-opacity=".72"/>
+        <rect x="14.85" y="11.8" width="2.3" height="9.2" rx="1" fill="#fff"/>
+        <rect x="18.1" y="14" width="2.3" height="7" rx="1" fill="#fff" fill-opacity=".72"/>
+      </svg>
+      <div>
+        <p class="site-footer__name">澄港市 開放資料平台</p>
+        <p class="site-footer__desc">由數位發展處資料治理科維運。資料集經自動驗證、承辦審核與資料長核定後發布，預設以「澄港開放授權 1.0」釋出。</p>
+      </div>
+    </div>
+    <nav aria-label="頁尾導覽">
+      <h2>管理功能</h2>
+      <ul>
+        <li><a href="index.html">營運總覽</a></li>
+        <li><a href="datasets.html">資料集清單</a></li>
+        <li><a href="dataset.html">資料集詳情</a></li>
+        <li><a href="publish.html">上架申請</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h2>平台維運</h2>
+      <ul>
+        <li>資料治理科 分機 6402</li>
+        <li>opendata@chenggang.gov.example</li>
+        <li>排程：每小時整點、每日 02:00</li>
+        <li>服務時間：週一至週五 08:30–17:30</li>
+      </ul>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 數位發展處</span>
+      <span>kernel opendata-kit 4.8.2 · Python 3.12</span>
+      <span>最後同步 <span data-clock="time">09:41:00</span></span>
+      <a class="backlink" href="../../index.html"><svg class="i i--sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const { DATA, fmt, esc, icon, AGENCIES, THEMES, FORMATS, FREQS, STATUS, LICENSES, QUALITY_DIMS } = App;
+  const ALL = DATA.datasets;
+  const cellEl = $('#c-query');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  /* ================= 篩選狀態 ================= */
+  // 品質軸 60–100；下限停在 60 代表不設下限，上限停在 100 代表含 100
+  const Q_MIN = 60, Q_MAX = 100;
+  const BANDS = [['D', 60, 70], ['C', 70, 80], ['B', 80, 90], ['A', 90, 100]];
+  const GRADE_COLOR = { A: 'var(--g-a)', B: 'var(--g-b)', C: 'var(--g-c)', D: 'var(--g-d)' };
+  const state = {
+    q: '',
+    view: 'all',
+    status: null,
+    sel: { agency: new Set(), format: new Set(), theme: new Set() },
+    qLo: Q_MIN, qHi: Q_MAX, unrated: true,
+    sort: { key: 'updated', dir: 'desc' },
+    page: 1, size: 15,
+  };
+  const selected = new Set();
+  const peekOpen = new Set();
+
+  const needsAction = (d) => d.status === 'returned' || ['failed', 'late'].includes(App.health(d));
+  const VIEWS = {
+    all: { label: '全部', test: () => true, code: '' },
+    published: { label: '已發布', test: (d) => d.status === 'published', code: 'status="published"' },
+    flow: { label: '上架流程中', test: (d) => d.status !== 'published' && d.status !== 'deprecated', code: 'stage="pipeline"' },
+    attention: { label: '需處理', test: needsAction, code: 'needs_action=True' },
+  };
+
+  const FACETS = {
+    agency: { col: 'agency', op: 'isin', of: (d) => [d.agency], name: (k) => AGENCIES[k].name, keys: Object.keys(AGENCIES), show: 6 },
+    format: { col: 'formats', op: 'overlaps', of: (d) => d.formats, name: (k) => k, keys: FORMATS },
+    theme: { col: 'theme', op: 'isin', of: (d) => [d.theme], name: (k) => THEMES[k], keys: Object.keys(THEMES), show: 6 },
+  };
+  // 選項依全平台資料集數排序（固定順序，勾選時不會跳位）
+  Object.values(FACETS).forEach((f) => {
+    const total = (k) => ALL.filter((d) => f.of(d).includes(k)).length;
+    f.order = [...f.keys].sort((a, b) => total(b) - total(a));
+  });
+
+  const SORTS = {
+    title: { label: '名稱', first: 'asc', val: (d) => d.title },
+    agency: { label: '提供機關', first: 'asc', val: (d) => AGENCIES[d.agency].name },
+    freq: { label: '更新頻率', first: 'asc', val: (d) => FREQS[d.freq].window ?? Infinity },
+    quality: { label: '品質分數', first: 'desc', val: (d) => d.quality },
+    updated: { label: '最後更新', first: 'desc', val: (d) => d.updated },
+    status: { label: '狀態', first: 'asc', val: (d) => ['draft', 'returned', 'validating', 'review', 'approval', 'published', 'deprecated'].indexOf(d.status) },
+  };
+
+  /* ================= 篩選邏輯 ================= */
+  const qNarrow = () => state.qLo > Q_MIN || state.qHi < Q_MAX;
+  const qualOk = (d) => {
+    if (d.quality == null) return state.unrated;
+    return (state.qLo <= Q_MIN || d.quality >= state.qLo) && (state.qHi >= Q_MAX || d.quality < state.qHi);
+  };
+  const terms = () => state.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = new Map(ALL.map((d) => [d, [d.title, d.code, d.id, AGENCIES[d.agency].name, AGENCIES[d.agency].full, THEMES[d.theme], d.desc, ...d.tags].join('\n').toLowerCase()]));
+  const searchOk = (d) => terms().every((t) => haystack.get(d).includes(t));
+
+  /** 是否符合所有條件；except 指定略過的條件（facet 計數要排除自己那一組） */
+  const matches = (d, except = null) => {
+    if (except !== 'view' && !VIEWS[state.view].test(d)) return false;
+    if (except !== 'view' && state.status && d.status !== state.status) return false;
+    for (const key of Object.keys(FACETS)) {
+      if (except !== key && state.sel[key].size && !FACETS[key].of(d).some((v) => state.sel[key].has(v))) return false;
+    }
+    if (except !== 'quality' && !qualOk(d)) return false;
+    if (except !== 'q' && !searchOk(d)) return false;
+    return true;
+  };
+  const filtered = () => ALL.filter((d) => matches(d));
+  const sorted = (list) => {
+    const { key, dir } = state.sort;
+    const val = SORTS[key].val;
+    const k = dir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      // 未評分永遠排最後，不論遞增或遞減
+      if (va == null || vb == null) return va == null && vb == null ? 0 : va == null ? 1 : -1;
+      const c = typeof va === 'string' ? va.localeCompare(vb, 'zh-Hant') : va - vb;
+      return c * k || a.title.localeCompare(b.title, 'zh-Hant');
+    });
+  };
+  const paged = (list) => {
+    const pages = Math.max(1, Math.ceil(list.length / state.size));
+    state.page = clamp(state.page, 1, pages);
+    const start = (state.page - 1) * state.size;
+    return { pages, start, rows: list.slice(start, start + state.size) };
+  };
+  const activeCount = () => Object.values(state.sel).reduce((n, s) => n + s.size, 0) +
+    (qNarrow() || !state.unrated ? 1 : 0) + (state.q.trim() ? 1 : 0) + (state.view !== 'all' ? 1 : 0) + (state.status ? 1 : 0);
+
+  const rangeLabel = () => {
+    if (!qNarrow()) return '全部';
+    if (state.qLo <= Q_MIN) return `< ${state.qHi}`;
+    if (state.qHi >= Q_MAX) return `≥ ${state.qLo}`;
+    return `${state.qLo}–${state.qHi - 1}`;
+  };
+
+  /* ================= 查詢程式碼：篩選條件即時編譯成 cell 內容 ================= */
+  const pyList = (arr) => `[${arr.map((s) => `"${s}"`).join(', ')}]`;
+  const codeLines = () => {
+    const L = ['# 由篩選條件即時產生，Shift+Enter 重新執行'];
+    L.push(`df = catalog.datasets(${state.status ? `status="${state.status}"` : VIEWS[state.view].code})`);
+    Object.entries(FACETS).forEach(([key, f]) => {
+      const s = state.sel[key];
+      if (s.size) L.push(`df = df[df.${f.col}.${f.op}(${pyList(f.order.filter((k) => s.has(k)).map(f.name))})]`);
+    });
+    const expr = !qNarrow() ? null
+      : state.qLo <= Q_MIN ? `df.quality < ${state.qHi}`
+        : state.qHi >= Q_MAX ? `df.quality >= ${state.qLo}`
+          : `df.quality.between(${state.qLo}, ${state.qHi - 1})`;
+    if (expr && state.unrated) L.push(`df = df[(${expr}) | df.quality.isna()]`);
+    else if (expr) L.push(`df = df[${expr}]`);
+    else if (!state.unrated) L.push('df = df[df.quality.notna()]');
+    if (state.q.trim()) L.push(`df = df.search("${state.q.trim().replace(/["\\]/g, '')}")`);
+    L.push(`df.sort_values("${state.sort.key}", ascending=${state.sort.dir === 'asc' ? 'True' : 'False'}).page(${state.page}, size=${state.size})`);
+    return L;
+  };
+  const codeEl = $('#dsl-code');
+  let codePrev = null;
+  const renderCode = () => {
+    const lines = codeLines();
+    const text = lines.join('\n');
+    if (codePrev && text === codePrev.join('\n')) return;
+    codeEl.textContent = text;
+    delete codeEl.dataset.hl;
+    App.highlight(cellEl);
+    // 和上一版不同的行標記出來，讓使用者看見自己剛剛改了查詢的哪一段
+    if (codePrev) $$('.code__line', codeEl).forEach((ln, i) => ln.classList.toggle('is-changed', !codePrev.includes(lines[i])));
+    codePrev = lines;
+  };
+
+  /* ================= facets ================= */
+  const facetOpt = (key, k) => `<label class="facet__opt" data-value="${k}"><span class="check"><input type="checkbox" data-facet="${key}" value="${k}"><span class="check__box" aria-hidden="true"></span></span><span class="facet__label">${esc(FACETS[key].name(k))}</span><span class="facet__count">0</span><span class="facet__bar" aria-hidden="true"><span style="transform:scaleX(0)"></span></span></label>`;
+  ['agency', 'theme'].forEach((key) => {
+    const box = $(`#facet-${key}`);
+    $('.facet__opts', box).innerHTML = FACETS[key].order.map((k) => facetOpt(key, k)).join('');
+    $('[data-more]', box).textContent = `顯示全部 ${FACETS[key].order.length} 個`;
+  });
+  $('#facet-format .dsl-fchips').innerHTML = FACETS.format.order.map((k) => `<button type="button" class="dsl-fchip" data-format="${k}" aria-pressed="false">${esc(k)}<span class="dsl-fchip__n">0</span></button>`).join('');
+  $('#dsl-bands').innerHTML = BANDS.map(([g, lo, hi]) => `<button type="button" class="dsl-band" data-band="${g}" aria-pressed="false" aria-label="${g} 級（${g === 'D' ? '低於 70' : g === 'A' ? '90 以上' : `${lo}–${hi - 1}`} 分）">${App.gradeBadge({ A: 95, B: 85, C: 75, D: 65 }[g])}<span class="dsl-band__n">0</span></button>`).join('');
+  $$('#dsl-bands .grade').forEach((g) => g.setAttribute('aria-hidden', 'true'));
+
+  // 直方圖：底層灰色為全平台分布，上層彩色為「符合其他條件」的分布
+  const binOf = (q) => clamp(Math.floor((q - Q_MIN) / 5), 0, 7);
+  const binGrade = (i) => (i < 2 ? 'D' : i < 4 ? 'C' : i < 6 ? 'B' : 'A');
+  const ghostBins = Array(8).fill(0);
+  ALL.forEach((d) => { if (d.quality != null) ghostBins[binOf(d.quality)] += 1; });
+  const binMax = Math.max(...ghostBins);
+  $('#dsl-hist').innerHTML = '<line x1="0" x2="160" y1="59.5" y2="59.5" stroke="var(--line-2)" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
+    ghostBins.map((n, i) => `<rect class="dsl-hist__bar" data-ghost="${i}" x="${i * 20 + 1.5}" y="2" width="17" height="57" fill="var(--paper-3)" style="transform:scaleY(${(n / binMax).toFixed(3)})"/>`).join('') +
+    ghostBins.map((n, i) => `<rect class="dsl-hist__bar" data-bin="${i}" x="${i * 20 + 1.5}" y="2" width="17" height="57" fill="${GRADE_COLOR[binGrade(i)]}" fill-opacity=".9" style="transform:scaleY(0)"/>`).join('');
+
+  const renderFacets = () => {
+    ['agency', 'theme'].forEach((key) => {
+      const f = FACETS[key];
+      const box = $(`#facet-${key}`);
+      const base = ALL.filter((d) => matches(d, key));
+      const counts = f.order.map((k) => base.filter((d) => f.of(d).includes(k)).length);
+      const max = Math.max(1, ...counts);
+      const expanded = $('[data-more]', box).getAttribute('aria-expanded') === 'true';
+      f.order.forEach((k, i) => {
+        const opt = $(`[data-value="${k}"]`, box);
+        const on = state.sel[key].has(k);
+        $('input', opt).checked = on;
+        $('.facet__count', opt).textContent = counts[i];
+        $('.facet__bar span', opt).style.transform = `scaleX(${(counts[i] / max).toFixed(3)})`;
+        opt.classList.toggle('is-zero', !counts[i] && !on);
+        // 收合時仍顯示已勾選的選項，避免條件藏在看不到的地方
+        opt.hidden = !expanded && i >= f.show && !on;
+      });
+      $('[data-clear]', box).hidden = !state.sel[key].size;
+    });
+
+    const fBase = ALL.filter((d) => matches(d, 'format'));
+    $$('#facet-format .dsl-fchip').forEach((b) => {
+      const k = b.dataset.format;
+      const n = fBase.filter((d) => d.formats.includes(k)).length;
+      const on = state.sel.format.has(k);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      $('.dsl-fchip__n', b).textContent = n;
+      b.classList.toggle('is-zero', !n && !on);
+    });
+    $('[data-clear="format"]').hidden = !state.sel.format.size;
+
+    // 品質：直方圖、等級帶、拖曳範圍
+    const qBase = ALL.filter((d) => matches(d, 'quality'));
+    const bins = Array(8).fill(0);
+    qBase.forEach((d) => { if (d.quality != null) bins[binOf(d.quality)] += 1; });
+    bins.forEach((n, i) => { $(`[data-bin="${i}"]`).style.transform = `scaleY(${(n / binMax).toFixed(3)})`; });
+    $('#dsl-hist-desc').textContent = `符合其他條件的資料集分數分布：${BANDS.map(([g], i) => `${g} 級 ${bins[i * 2] + bins[i * 2 + 1]} 個`).join('、')}。`;
+    BANDS.forEach(([g, lo, hi], i) => {
+      const b = $(`[data-band="${g}"]`);
+      const n = bins[i * 2] + bins[i * 2 + 1];
+      b.setAttribute('aria-pressed', state.qLo === lo && state.qHi === hi ? 'true' : 'false');
+      $('.dsl-band__n', b).textContent = n;
+      b.classList.toggle('is-zero', !n);
+    });
+    $('#dsl-unrated').checked = state.unrated;
+    $('#dsl-unrated-n').textContent = qBase.filter((d) => d.quality == null).length;
+    renderBrush();
+
+    const act = activeCount();
+    $('#dsl-active-n').hidden = !act;
+    $('#dsl-active-n').textContent = act;
+    $('#dsl-clear-all').hidden = !act;
+    $('#dsl-facet-count').hidden = !act;
+    $('#dsl-facet-count').textContent = act;
+  };
+
+  const pct = (v) => ((v - Q_MIN) / (Q_MAX - Q_MIN)) * 100;
+  const renderBrush = () => {
+    const lo = pct(state.qLo), hi = pct(state.qHi);
+    const [hLo, hHi] = $$('.dsl-brush__h');
+    hLo.style.left = `${lo}%`;
+    hHi.style.left = `${hi}%`;
+    hLo.setAttribute('aria-valuenow', state.qLo);
+    hLo.setAttribute('aria-valuetext', state.qLo <= Q_MIN ? '不設下限' : `${state.qLo} 分以上`);
+    hHi.setAttribute('aria-valuenow', state.qHi);
+    hHi.setAttribute('aria-valuetext', state.qHi >= Q_MAX ? '不設上限' : `低於 ${state.qHi} 分`);
+    $('#dsl-mask-l').style.width = `calc(${lo}% + 3px)`;
+    $('#dsl-mask-r').style.width = `calc(${100 - hi}% + 3px)`;
+    $('#dsl-sel-bar').style.left = `${lo}%`;
+    $('#dsl-sel-bar').style.width = `${hi - lo}%`;
+    $('#dsl-qrange').textContent = rangeLabel();
+    $('#dsl-qrange').classList.toggle('is-on', qNarrow());
+    $('#dsl-q-clear').hidden = !qNarrow() && state.unrated;
+  };
+
+  /* ================= 控制列：檢視、條件 chips ================= */
+  const renderViews = () => {
+    const base = ALL.filter((d) => matches(d, 'view'));
+    $$('#dsl-view button').forEach((b) => {
+      const v = b.dataset.view;
+      const n = base.filter(VIEWS[v].test).length;
+      b.setAttribute('aria-pressed', v === state.view && !state.status ? 'true' : 'false');
+      const tag = $('.dsl-view__n', b);
+      tag.textContent = n;
+      tag.classList.toggle('is-warn', v === 'attention' && n > 0);
+    });
+  };
+  const chips = () => {
+    const c = [];
+    if (state.status) c.push({ k: '狀態', v: STATUS[state.status].label, clear: () => { state.status = null; } });
+    if (state.view !== 'all') c.push({ k: '檢視', v: VIEWS[state.view].label, clear: () => { state.view = 'all'; } });
+    Object.entries(FACETS).forEach(([key, f]) => f.order.filter((k) => state.sel[key].has(k)).forEach((k) => {
+      c.push({ k: { agency: '機關', format: '格式', theme: '主題' }[key], v: f.name(k), clear: () => state.sel[key].delete(k) });
+    }));
+    if (qNarrow()) c.push({ k: '品質', v: rangeLabel() + (state.unrated ? ' · 含未評分' : ''), clear: resetQuality });
+    else if (!state.unrated) c.push({ k: '品質', v: '不含未評分', clear: () => { state.unrated = true; } });
+    if (state.q.trim()) c.push({ k: '搜尋', v: `「${state.q.trim()}」`, clear: () => { state.q = ''; $('#dsl-q').value = ''; } });
+    return c;
+  };
+  const renderChips = () => {
+    const c = chips();
+    $('#dsl-chips').innerHTML = c.length
+      ? c.map((x, i) => `<span class="chip"><span class="chip__key">${esc(x.k)}</span>${esc(x.v)}<button type="button" class="chip__x" data-chip="${i}" aria-label="移除條件：${esc(x.k)} ${esc(x.v)}">${icon('x', 'i--sm')}</button></span>`).join('') +
+        (c.length > 1 ? '<button type="button" class="btn btn--sm btn--ghost" data-act="clear-all">全部清除</button>' : '')
+      : `<span class="dsl-chips__none">${icon('filter', 'i--sm')}未套用篩選條件，顯示平台全部資料集</span>`;
+  };
+
+  /* ================= 輸出：describe 摘要、表格、分頁 ================= */
+  const TYPE_KEYS = ['str', 'int', 'float', 'date', 'geo', 'bool'];
+  const schemaCode = (d) => {
+    const n = {};
+    d.columns.forEach((c) => { n[c.type] = (n[c.type] || 0) + 1; });
+    const label = `${d.columns.length} 欄：` + TYPE_KEYS.filter((t) => n[t]).map((t) => `${t} ${n[t]}`).join('、');
+    return `<span class="dsl-code" role="img" aria-label="${label}" title="${label}">${d.columns.map((c) => `<i style="--c:var(--t-${c.type})"></i>`).join('')}</span>`;
+  };
+  const markTitle = (text) => {
+    const ts = terms();
+    if (!ts.length) return esc(text);
+    const re = new RegExp(`(${ts.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+    return text.split(re).map((part, i) => (i % 2 ? `<mark class="dsl-mark">${esc(part)}</mark>` : esc(part))).join('');
+  };
+  const statusSub = (d) => {
+    if (d.status === 'published') {
+      return d.paused ? `<span class="dsl-paused">${icon('pause')}排程已暫停</span>` : App.healthBadge(d);
+    }
+    if (!d.app) return '';
+    if (!d.app.submitted) return '尚未送出';
+    return `<span class="mono">${esc(d.app.no)}</span>`;
+  };
+  // 草稿還沒送驗，不能顯示成「驗證中」
+  const scoreHTML = (d) => (d.quality == null && d.status === 'draft' ? '<span class="score dim">尚未送驗</span>' : App.scoreCell(d.quality));
+  const rowHTML = (d) => {
+    const open = peekOpen.has(d.id), on = selected.has(d.id);
+    const contact = App.person(d.contact);
+    return `<tr data-id="${d.id}" class="${on ? 'is-selected' : ''}${open ? ' is-open' : ''}" data-stream>
+      <td class="dsl-sel" data-label=""><label class="check"><input type="checkbox" data-sel="${d.id}" ${on ? 'checked' : ''} aria-label="選取「${esc(d.title)}」"><span class="check__box" aria-hidden="true"></span></label></td>
+      <td class="dsl-name" data-label=""><a class="table__title" href="${App.datasetUrl(d.id)}">${markTitle(d.title)}</a><span class="dsl-sub"><span class="mono">${esc(d.code)}</span>${schemaCode(d)}<span>${fmt.num(d.rows)} 列</span></span></td>
+      <td data-label="提供機關"><span class="nowrap">${App.agencyLabel(d.agency)}</span><span class="dsl-sub">${esc(contact.name)}</span></td>
+      <td data-label="格式">${App.formatBadges(d.formats)}</td>
+      <td class="dsl-freq" data-label="更新頻率">${esc(FREQS[d.freq].label)}<span class="dsl-sub">${esc(FREQS[d.freq].sub)}</span></td>
+      <td data-label="品質分數">${scoreHTML(d)}</td>
+      <td class="dsl-when" data-label="最後更新"><time datetime="${new Date(d.updated).toISOString()}" title="${fmt.full(d.updated)}" data-rel>${fmt.rel(d.updated)}</time><span class="dsl-sub mono">${esc(d.version)}</span></td>
+      <td class="dsl-status" data-label="狀態">${App.statusBadge(d.status)}<span class="dsl-sub">${statusSub(d)}</span></td>
+      <td class="dsl-act" data-label=""><button type="button" class="btn btn--sm btn--ghost btn--icon dsl-peekbtn" data-peek="${d.id}" aria-expanded="${open}" aria-controls="peek-${d.id}" aria-label="展開「${esc(d.title)}」速覽">${icon('chevron-down', 'i--sm')}<span class="dsl-peekbtn__t" aria-hidden="true">展開速覽</span></button></td>
+    </tr>${open ? peekHTML(d) : ''}`;
+  };
+
+  const dimsHTML = (d) => `<div class="dsl-dims">${QUALITY_DIMS.map((q, i) => {
+    const v = d.dims[q.key];
+    return `<div class="dimbar" title="${esc(q.desc)}"><span>${esc(q.label)}</span><span class="dimbar__track"><span style="width:${v}%;background:${GRADE_COLOR[App.grade(v)]};animation-delay:${i * 60}ms"></span></span><b>${v}</b></div>`;
+  }).join('')}</div>`;
+  // 速覽的待處理事項：失敗的排程工作、逾期，加上驗證規則的失敗／警示
+  const peekIssues = (d) => {
+    const out = [];
+    const job = DATA.jobs.find((j) => j.ds === d.id);
+    if (job) {
+      const stage = App.PIPE_STAGES.find((s) => s.key === job.stage).label;
+      out.push({ tone: job.transient ? 'warn' : 'err', title: `${stage}失敗 · ${job.error}`, text: `${job.msg}（${job.id}，第 ${job.attempts}/${job.max} 次${job.state === 'retrying' ? `，${fmt.time(job.next)} 自動重試` : '，已停止自動重試'}）` });
+    }
+    if (d.status === 'published' && !d.paused && App.isLate(d)) {
+      out.push({ tone: 'warn', title: `已逾期 ${fmt.days(App.lateBy(d))}`, text: `最後成功更新為 ${fmt.full(d.updated)}，更新頻率${FREQS[d.freq].label}（${FREQS[d.freq].sub}），寬限 1.5 倍。` });
+    }
+    App.rules(d).filter((r) => (r.state === 'fail' || r.state === 'warn') && !(r.key === 'freshness' && out.some((x) => x.title.startsWith('已逾期'))))
+      .forEach((r) => out.push({ tone: r.state === 'fail' ? 'err' : 'warn', title: r.name, text: r.detail }));
+    return out;
+  };
+  const peekHTML = (d) => {
+    const issues = peekIssues(d);
+    const canPause = d.status === 'published' && FREQS[d.freq].window;
+    const weakest = d.quality != null ? QUALITY_DIMS.reduce((m, q) => (d.dims[q.key] < d.dims[m.key] ? q : m), QUALITY_DIMS[0]) : null;
+    const quality = d.quality != null
+      ? `<div class="dsl-peek__qtop">${App.ring(d.quality, { size: 84, stroke: 9, dims: d.dims })}<p class="dsl-peek__qtext"><b>品質 ${d.quality} 分 · ${App.grade(d.quality)} 級</b>最弱構面：${esc(weakest.label)} ${d.dims[weakest.key]}<br>${issues.length ? `${issues.length} 項待處理` : '驗證規則全數通過'}</p></div>${dimsHTML(d)}`
+      : `<p class="dsl-peek__pending"><span class="spinner" aria-hidden="true"></span><span>${d.status === 'draft' ? '草稿尚未送出，送出後才會執行自動驗證並產生品質分數。' : '自動驗證執行中，完成後產生品質分數與五個構面評分。'}</span></p>`;
+    const app = d.app && d.app.no !== '草稿'
+      ? `<dt>上架案號</dt><dd><span class="mono">${esc(d.app.no)}</span> · ${esc(STATUS[d.status].short)}</dd>` : '';
+    return `<tr class="dsl-peek" id="peek-${d.id}" data-stream><td colspan="9" data-label=""><div class="dsl-peek__inner">
+      <div class="dsl-peek__grid">
+        <div>
+          <p class="dsl-peek__desc">${esc(d.desc)}</p>
+          <p class="dsl-peek__tags">${d.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}<span class="tag">${esc(THEMES[d.theme])}</span></p>
+          <p class="dsl-peek__k">欄位結構<span>${d.cols} 欄 · ${fmt.num(d.rows)} 列</span></p>
+          <ul class="dsl-cols">${d.columns.map((c) => `<li class="${c.pk ? 'is-pk' : ''}">${App.typeBadge(c.type)}<code>${esc(c.name)}</code><span>${esc(c.label)}</span></li>`).join('')}</ul>
+          ${issues.length ? `<div class="dsl-peek__issues">${issues.map((r) => `<div class="callout" data-tone="${r.tone}">${icon('alert')}<div><b>${esc(r.title)}</b>　${esc(r.text)}</div></div>`).join('')}</div>` : ''}
+        </div>
+        <div class="dsl-peek__q">${quality}</div>
+        <dl class="kv dsl-peek__kv">
+          <dt>提供機關</dt><dd>${esc(AGENCIES[d.agency].full)}</dd>
+          <dt>資料窗口</dt><dd class="dsl-who">${App.avatar(d.contact, 'sm')}<span>${esc(App.person(d.contact).name)}<small>${esc(App.person(d.contact).role)}</small></span></dd>
+          <dt>授權</dt><dd>${esc(LICENSES[d.license].label)}</dd>
+          <dt>目前版本</dt><dd><span class="mono">${esc(d.version)}</span> · ${fmt.full(d.updated)}</dd>
+          ${app}
+          <dt>建立日期</dt><dd>${fmt.date(d.created)}</dd>
+          <dt>近 30 日下載</dt><dd><span class="mono strong">${fmt.num(d.downloads30)}</span>${d.downloads30 ? App.spark(d.weekly, { w: 72, h: 20, fill: false, label: `${d.title} 近 12 週下載` }) : ''}</dd>
+        </dl>
+      </div>
+      <div class="dsl-peek__actions">
+        <a class="btn btn--sm btn--primary" href="${App.datasetUrl(d.id)}">${icon('notebook', 'i--sm')}開啟資料集 notebook</a>
+        ${canPause ? `<button type="button" class="btn btn--sm" data-act="${d.paused ? 'resume' : 'pause'}" data-id="${d.id}">${icon(d.paused ? 'play' : 'pause', 'i--sm')}${d.paused ? '恢復更新排程' : '暫停更新排程'}</button>` : ''}
+        <button type="button" class="btn btn--sm btn--ghost" data-act="subscribe" data-id="${d.id}">${icon('bell', 'i--sm')}訂閱異動通知</button>
+        <span class="dsl-peek__note">${esc(FREQS[d.freq].label)} · ${esc(FREQS[d.freq].sub)}</span>
+      </div>
+    </div></td></tr>`;
+  };
+
+  const miniBins = (bins) => {
+    const max = Math.max(1, ...bins);
+    return `<svg width="72" height="28" viewBox="0 0 72 28" aria-hidden="true"><line x1="0" x2="72" y1="27.5" y2="27.5" stroke="var(--line-2)" stroke-width="1"/>${bins.map((n, i) => {
+      const h = n ? Math.max(2, (n / max) * 26) : 0;
+      return `<rect x="${i * 9 + 0.5}" y="${(27 - h).toFixed(1)}" width="8" height="${h.toFixed(1)}" rx="1" fill="${GRADE_COLOR[binGrade(i)]}"/>`;
+    }).join('')}</svg>`;
+  };
+  const meter = (parts, label) => {
+    const tot = parts.reduce((s, p) => s + p.n, 0);
+    return tot
+      ? `<div class="meter" role="img" aria-label="${label}：${parts.filter((p) => p.n).map((p) => `${p.label} ${p.n}`).join('、')}">${parts.filter((p) => p.n).map((p) => `<span class="meter__seg" style="--c:${p.c};flex:${p.n}"></span>`).join('')}</div>`
+      : '<div class="meter" aria-hidden="true"><span class="meter__seg" style="--c:var(--paper-3);flex:1"></span></div>';
+  };
+  const renderDescribe = (list) => {
+    const rated = list.filter((d) => d.quality != null);
+    const mean = rated.length ? rated.reduce((s, d) => s + d.quality, 0) / rated.length : null;
+    const bins = Array(8).fill(0);
+    rated.forEach((d) => { bins[binOf(d.quality)] += 1; });
+    const g = { A: 0, B: 0, C: 0, D: 0 };
+    rated.forEach((d) => { g[App.grade(d.quality)] += 1; });
+    const by = (st) => list.filter((d) => st.includes(d.status)).length;
+    const status = [
+      { label: '已發布', n: by(['published']), c: 'var(--accent)' },
+      { label: '審核中', n: by(['validating', 'review', 'approval']), c: 'var(--info)' },
+      { label: '退回', n: by(['returned']), c: 'var(--warn)' },
+      { label: '草稿', n: by(['draft']), c: 'var(--line-3)' },
+    ];
+    const pub = list.filter((d) => d.status === 'published');
+    const paused = pub.filter((d) => d.paused).length;
+    const hc = { ok: 0, late: 0, failed: 0 };
+    pub.filter((d) => !d.paused).forEach((d) => { hc[App.health(d)] += 1; });
+    const dl = list.reduce((s, d) => s + d.downloads30, 0);
+    const weekly = Array.from({ length: 12 }, (_, i) => list.reduce((s, d) => s + d.weekly[i], 0));
+    const top = [...list].sort((a, b) => b.downloads30 - a.downloads30)[0];
+    const agencies = new Set(list.map((d) => d.agency)).size;
+    const themes = new Set(list.map((d) => d.theme)).size;
+    const item = (k, zh, value, viz, sub) => `<div class="dsl-desc__item"><p class="dsl-desc__k">${k}<span>${zh}</span></p><div class="dsl-desc__row"><span class="dsl-desc__v">${value}</span>${viz ? `<span class="dsl-desc__viz">${viz}</span>` : ''}</div><div class="dsl-desc__sub">${sub}</div></div>`;
+    $('#dsl-desc').innerHTML =
+      item('count', '筆數', `${list.length}<small>/ ${ALL.length}</small>`, '', `<b>${agencies}</b> 個機關 · <b>${themes}</b> 個主題`) +
+      item('quality.mean', '平均品質', mean == null ? '—' : `${mean.toFixed(1)}${App.gradeBadge(Math.round(mean))}`, rated.length ? miniBins(bins) : '', rated.length ? ['A', 'B', 'C', 'D'].map((k) => `${k} <b>${g[k]}</b>`).join(' · ') : '沒有已評分的資料集') +
+      item('status', '狀態', `${status[0].n}<small>已發布</small>`, '', `${meter(status, '狀態分布')}<div class="dsl-desc__legend">${status.filter((s) => s.n).map((s) => `<span><i style="--c:${s.c}"></i>${s.label} ${s.n}</span>`).join('')}</div>`) +
+      item('health', '更新健康', pub.length ? `${hc.ok}<small>/ ${pub.length} 正常</small>` : '—', '', `${meter([{ label: '正常', n: hc.ok, c: 'var(--accent)' }, { label: '逾期', n: hc.late, c: 'var(--warn)' }, { label: '失敗', n: hc.failed, c: 'var(--err)' }, { label: '暫停', n: paused, c: 'var(--line-3)' }], '更新健康')}<div class="dsl-desc__legend"><span>逾期 ${hc.late}</span><span>失敗 ${hc.failed}</span>${paused ? `<span>暫停 ${paused}</span>` : ''}</div>`) +
+      item('downloads_30d', '近 30 日下載', dl >= 1e4 ? `${(dl / 1e4).toFixed(1)}<small>萬次</small>` : `${fmt.num(dl)}<small>次</small>`, App.spark(weekly, { w: 76, h: 28, label: '結果集近 12 週下載量' }), top && top.downloads30 ? `最多：${esc(top.title)}` : '尚無下載紀錄');
+  };
+
+  const renderPager = (total, pages, start, n) => {
+    $('#dsl-range').innerHTML = total ? `第 <b>${start + 1}–${start + n}</b> 筆，共 <b>${total}</b> 筆` : '沒有符合條件的資料集';
+    const p = state.page;
+    const nums = [];
+    for (let i = 1; i <= pages; i++) if (pages <= 7 || i === 1 || i === pages || Math.abs(i - p) <= 1) nums.push(i);
+    let html = `<button type="button" class="pager__btn" data-page="${p - 1}" ${p <= 1 ? 'disabled' : ''} aria-label="上一頁">${icon('chevron-left', 'i--sm')}</button>`;
+    nums.forEach((i, k) => {
+      if (k && i - nums[k - 1] > 1) html += '<span class="pager__gap" aria-hidden="true">…</span>';
+      html += `<button type="button" class="pager__btn" data-page="${i}" ${i === p ? 'aria-current="page"' : ''} aria-label="第 ${i} 頁">${i}</button>`;
+    });
+    html += `<button type="button" class="pager__btn" data-page="${p + 1}" ${p >= pages ? 'disabled' : ''} aria-label="下一頁">${icon('chevron-right', 'i--sm')}</button>`;
+    $('#dsl-pager').innerHTML = html;
+    $('#dsl-pager').hidden = pages <= 1;
+  };
+
+  const syncSelectAll = () => {
+    const ids = $$('#dsl-body [data-sel]').map((i) => i.dataset.sel);
+    const n = ids.filter((id) => selected.has(id)).length;
+    const all = $('#dsl-selall');
+    all.checked = ids.length > 0 && n === ids.length;
+    all.indeterminate = n > 0 && n < ids.length;
+    all.disabled = !ids.length;
+  };
+  const renderBulk = () => {
+    $('#dsl-bulk').hidden = !selected.size;
+    $('#dsl-bulk-n').textContent = selected.size;
+  };
+  const renderSortHeads = () => {
+    $$('#dsl-table th[data-sort]').forEach((th) => {
+      if (th.dataset.sort === state.sort.key) th.setAttribute('aria-sort', state.sort.dir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+    $('#dsl-sort-m').value = `${state.sort.key}:${state.sort.dir}`;
+  };
+
+  // 重繪時保留鍵盤焦點：記下焦點元素的識別屬性，重繪後找回同一個控制項
+  const keepFocus = (fn) => {
+    const a = document.activeElement;
+    const key = a && ['data-sel', 'data-peek', 'data-act', 'data-page'].find((k) => a.hasAttribute && a.hasAttribute(k));
+    const sig = key ? `[${key}="${a.getAttribute(key)}"]${a.dataset.id ? `[data-id="${a.dataset.id}"]` : ''}` : null;
+    fn();
+    if (sig && !a.isConnected) {
+      const again = $(`#c-query ${sig}`) || (key === 'data-act' && a.dataset.id && $(`#c-query [data-id="${a.dataset.id}"][data-act]`));
+      if (again) again.focus({ preventScroll: true });
+    }
+  };
+
+  let renderedSig = '';
+  const outSig = () => {
+    const list = sorted(filtered());
+    return [list.map((d) => d.id).join(), state.page, state.size].join('|');
+  };
+  /** 重算 cell 輸出（cell 執行時呼叫；資料異動時也直接呼叫） */
+  const renderOutput = () => keepFocus(() => {
+    const list = sorted(filtered());
+    const { pages, start, rows } = paged(list);
+    // 已不在結果中的展開列不再保留
+    [...peekOpen].forEach((id) => { if (!list.some((d) => d.id === id)) peekOpen.delete(id); });
+    $('#dsl-shape').textContent = `DataFrame ${list.length} rows × 7 columns`;
+    $('#dsl-sortnote').textContent = `依${SORTS[state.sort.key].label}${state.sort.dir === 'asc' ? '遞增' : '遞減'} · 第 ${state.page} / ${pages} 頁`;
+    renderDescribe(list);
+    $('#dsl-body').innerHTML = rows.length
+      ? rows.map(rowHTML).join('')
+      : `<tr data-stream><td colspan="9" data-label="">${App.emptyState({ title: '沒有符合條件的資料集', text: '試著放寬品質範圍、取消部分機關或格式，或改用其他關鍵字。', action: '<button type="button" class="btn btn--sm" data-act="clear-all">清除全部篩選</button>' })}</td></tr>`;
+    renderPager(list.length, pages, start, rows.length);
+    syncSelectAll();
+    // 重繪時圓環直接畫在最終位置；只有使用者剛展開的那一列才播放進場動畫（見 togglePeek）
+    $$('#dsl-body [data-ring]').forEach((r) => {
+      r.dataset.ringDone = '1';
+      $$('.ring__arc', r).forEach((a) => { a.style.strokeDasharray = `${a.dataset.len} ${a.dataset.c}`; });
+    });
+    $('#dsl-facetbar-n').textContent = list.length;
+    $('#dsl-done-n').textContent = list.length;
+    renderedSig = outSig();
+  });
+
+  /* ================= 執行排程：連續操作只跑最後一次，跑完若條件又變就再跑 ================= */
+  let runTimer = 0;
+  const requestRun = (delay) => {
+    clearTimeout(runTimer);
+    runTimer = setTimeout(() => {
+      App.cell.run(cellEl, { duration: 260 + Math.random() * 180 }).then(() => {
+        if (outSig() !== renderedSig) requestRun(0);
+      });
+    }, delay);
+  };
+  App.cell.define(cellEl, { run: renderOutput });
+
+  /** 任何篩選、排序、分頁變更的共同入口：控制項立即更新，輸出交給 cell 重新執行 */
+  const change = ({ resetPage = true, delay = 140 } = {}) => {
+    if (resetPage) state.page = 1;
+    const list = filtered();
+    paged(list);
+    // 選取只保留仍在結果中的項目，避免批次操作作用在看不到的列上
+    [...selected].forEach((id) => { if (!list.some((d) => d.id === id)) selected.delete(id); });
+    renderFacets();
+    renderViews();
+    renderChips();
+    renderSortHeads();
+    renderBulk();
+    renderCode();
+    $('#dsl-facetbar-n').textContent = list.length;
+    $('#dsl-done-n').textContent = list.length;
+    requestRun(delay);
+  };
+
+  const resetQuality = () => { state.qLo = Q_MIN; state.qHi = Q_MAX; state.unrated = true; };
+  const clearAll = () => {
+    Object.values(state.sel).forEach((s) => s.clear());
+    resetQuality();
+    state.q = '';
+    $('#dsl-q').value = '';
+    state.view = 'all';
+    state.status = null;
+    change();
+  };
+  // 範圍從「全部」縮小時自動排除未評分；拉回全部時再納入
+  const setRange = (lo, hi) => {
+    const was = qNarrow();
+    state.qLo = lo;
+    state.qHi = hi;
+    if (was !== qNarrow()) state.unrated = !qNarrow();
+    change({ delay: 320 });
+  };
+
+  /* ================= 事件：facets ================= */
+  $('#dsl-facets').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.facet) {
+      const s = state.sel[t.dataset.facet];
+      if (t.checked) s.add(t.value); else s.delete(t.value);
+      change();
+    }
+    if (t.id === 'dsl-unrated') { state.unrated = t.checked; change(); }
+  });
+  $('#dsl-facets').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-format]');
+    if (chip) {
+      const k = chip.dataset.format;
+      if (state.sel.format.has(k)) state.sel.format.delete(k); else state.sel.format.add(k);
+      change();
+      return;
+    }
+    const band = e.target.closest('[data-band]');
+    if (band) {
+      const [, lo, hi] = BANDS.find(([g]) => g === band.dataset.band);
+      if (state.qLo === lo && state.qHi === hi) setRange(Q_MIN, Q_MAX); else setRange(lo, hi);
+      return;
+    }
+    const clear = e.target.closest('[data-clear]');
+    if (clear) { state.sel[clear.dataset.clear].clear(); change(); return; }
+    const more = e.target.closest('[data-more]');
+    if (more) {
+      const open = more.getAttribute('aria-expanded') !== 'true';
+      more.setAttribute('aria-expanded', open ? 'true' : 'false');
+      more.textContent = open ? '收合' : `顯示全部 ${FACETS[more.dataset.more].order.length} 個`;
+      renderFacets();
+      return;
+    }
+    if (e.target.closest('#dsl-q-clear')) { resetQuality(); change(); return; }
+    if (e.target.closest('#dsl-clear-all')) { clearAll(); return; }
+    if (e.target.closest('#dsl-facets-done')) {
+      setFacetPanel(false);
+      cellEl.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    }
+  });
+
+  // 品質範圍拖曳：按下時挑距離較近的把手，之後跟著指標移動
+  const brush = $('#dsl-brush');
+  let dragging = null;
+  const valueAt = (x) => {
+    const r = brush.getBoundingClientRect();
+    return Math.round(Q_MIN + clamp((x - r.left) / r.width, 0, 1) * (Q_MAX - Q_MIN));
+  };
+  const moveHandle = (which, v) => {
+    if (which === 'lo') { const lo = clamp(v, Q_MIN, state.qHi - 1); if (lo !== state.qLo) setRange(lo, state.qHi); }
+    else { const hi = clamp(v, state.qLo + 1, Q_MAX); if (hi !== state.qHi) setRange(state.qLo, hi); }
+  };
+  brush.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const v = valueAt(e.clientX);
+    dragging = Math.abs(v - state.qLo) < Math.abs(v - state.qHi) || (v < state.qLo) ? 'lo' : 'hi';
+    const h = $(`.dsl-brush__h[data-h="${dragging}"]`);
+    h.classList.add('is-active');
+    h.focus({ preventScroll: true });
+    brush.setPointerCapture(e.pointerId);
+    moveHandle(dragging, v);
+  });
+  brush.addEventListener('pointermove', (e) => { if (dragging) moveHandle(dragging, valueAt(e.clientX)); });
+  const endDrag = () => {
+    if (!dragging) return;
+    $(`.dsl-brush__h[data-h="${dragging}"]`).classList.remove('is-active');
+    dragging = null;
+  };
+  brush.addEventListener('pointerup', endDrag);
+  brush.addEventListener('pointercancel', endDrag);
+  $$('.dsl-brush__h').forEach((h) => h.addEventListener('keydown', (e) => {
+    const which = h.dataset.h;
+    const cur = which === 'lo' ? state.qLo : state.qHi;
+    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -5, PageUp: 5 }[e.key];
+    let v;
+    if (step) v = cur + step;
+    else if (e.key === 'Home') v = Q_MIN;
+    else if (e.key === 'End') v = Q_MAX;
+    else return;
+    e.preventDefault();
+    moveHandle(which, v);
+  }));
+
+  /* ================= 事件：控制列 ================= */
+  $('#dsl-q').addEventListener('input', (e) => { state.q = e.target.value; change({ delay: 300 }); });
+  $('#dsl-view').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]');
+    if (!b) return;
+    state.view = b.dataset.view;
+    state.status = null;
+    change();
+  });
+  $('#dsl-chips').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="clear-all"]')) { clearAll(); $('#dsl-q').focus(); return; }
+    const x = e.target.closest('[data-chip]');
+    if (!x) return;
+    chips()[Number(x.dataset.chip)].clear();
+    change();
+    // 移除的 chip 已不存在，焦點移到下一個 chip，沒有就回搜尋框
+    const next = $(`#dsl-chips [data-chip="${x.dataset.chip}"]`) || $('#dsl-chips [data-chip]');
+    (next || $('#dsl-q')).focus();
+  });
+  $('#dsl-sort-m').innerHTML = Object.entries(SORTS).flatMap(([k, s]) => ['desc', 'asc'].map((dir) => `<option value="${k}:${dir}">排序：${s.label}（${dir === 'asc' ? '遞增' : '遞減'}）</option>`)).join('');
+  $('#dsl-sort-m').addEventListener('change', (e) => {
+    const [key, dir] = e.target.value.split(':');
+    state.sort = { key, dir };
+    change();
+  });
+  $$('#dsl-table th[data-sort] .sort').forEach((b) => b.addEventListener('click', () => {
+    const key = b.closest('th').dataset.sort;
+    state.sort = state.sort.key === key
+      ? { key, dir: state.sort.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: SORTS[key].first };
+    change();
+  }));
+  $('#dsl-size').addEventListener('change', (e) => { state.size = Number(e.target.value); change(); });
+  $('#dsl-pager').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-page]');
+    if (!b || b.disabled) return;
+    state.page = Number(b.dataset.page);
+    change({ resetPage: false, delay: 60 });
+    const top = $('.dsl-tablewrap').getBoundingClientRect().top;
+    if (top < 0) $('.dsl-tablewrap').scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+  });
+
+  /* ================= 事件：表格（選取、展開、列內動作） ================= */
+  const togglePeek = (id) => {
+    const tr = $(`#dsl-body tr[data-id="${id}"]`);
+    const open = !peekOpen.has(id);
+    if (open) {
+      peekOpen.add(id);
+      tr.insertAdjacentHTML('afterend', peekHTML(App.dataset(id)));
+      App.watchRings(tr.nextElementSibling);
+    } else {
+      peekOpen.delete(id);
+      $(`#peek-${id}`).remove();
+    }
+    tr.classList.toggle('is-open', open);
+    $('[data-peek]', tr).setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const pauseOne = (id, paused) => {
+    const d = App.dataset(id);
+    const t = App.setPaused(id, paused);
+    App.toast(paused ? `已暫停「${d.title}」的更新排程` : `已恢復「${d.title}」的更新排程`, {
+      tone: paused ? 'warn' : 'ok',
+      desc: `${FREQS[d.freq].label} · ${FREQS[d.freq].sub}${paused ? '，暫停期間不計入逾期' : ''}`,
+      action: { label: '復原', onClick: () => t.undo() },
+    });
+  };
+  $('#dsl-table').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'dsl-selall') {
+      $$('#dsl-body [data-sel]').forEach((i) => {
+        i.checked = t.checked;
+        if (t.checked) selected.add(i.dataset.sel); else selected.delete(i.dataset.sel);
+        i.closest('tr').classList.toggle('is-selected', t.checked);
+      });
+    } else if (t.dataset.sel) {
+      if (t.checked) selected.add(t.dataset.sel); else selected.delete(t.dataset.sel);
+      t.closest('tr').classList.toggle('is-selected', t.checked);
+    } else return;
+    syncSelectAll();
+    renderBulk();
+  });
+  $('#dsl-table').addEventListener('click', (e) => {
+    const peek = e.target.closest('[data-peek]');
+    if (peek) { togglePeek(peek.dataset.peek); return; }
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    const id = act.dataset.id;
+    if (act.dataset.act === 'clear-all') clearAll();
+    if (act.dataset.act === 'pause') pauseOne(id, true);
+    if (act.dataset.act === 'resume') pauseOne(id, false);
+    if (act.dataset.act === 'subscribe') {
+      const d = App.dataset(id);
+      App.toast(`已訂閱「${d.title}」異動通知`, { tone: 'info', desc: `版本更新、驗證失敗或欄位異動時寄信給 ${App.ME.name}` });
+    }
+  });
+
+  /* ================= 批次操作與匯出 ================= */
+  const exportCsv = (list, name) => {
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['id', 'code', 'title', 'agency', 'theme', 'formats', 'frequency', 'quality', 'status', 'version', 'updated', 'license', 'downloads_30d'];
+    const lines = list.map((d) => [d.id, d.code, d.title, AGENCIES[d.agency].name, THEMES[d.theme], d.formats.join('|'), FREQS[d.freq].label, d.quality, STATUS[d.status].label, d.version, fmt.full(d.updated), LICENSES[d.license].label, d.downloads30].map(cell).join(','));
+    // 加 BOM 讓試算表軟體以 UTF-8 開啟中文
+    const blob = new Blob(['\ufeff' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const stamp = () => `${fmt.date(App.now()).replace(/-/g, '')}_${fmt.time(App.now()).replace(':', '')}`;
+  $('#dsl-export').addEventListener('click', () => {
+    const list = sorted(filtered());
+    exportCsv(list, `datasets_${stamp()}.csv`);
+    App.toast(`已匯出 ${list.length} 筆資料集詮釋資料`, { tone: 'info', desc: `datasets_${stamp()}.csv · 依目前篩選與排序` });
+  });
+  $('#dsl-bulk').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bulk]');
+    if (!b) return;
+    const act = b.dataset.bulk;
+    if (act === 'clear') {
+      selected.clear();
+      $$('#dsl-body [data-sel]').forEach((i) => { i.checked = false; i.closest('tr').classList.remove('is-selected'); });
+      syncSelectAll();
+      renderBulk();
+      return;
+    }
+    const list = [...selected].map(App.dataset);
+    if (!list.length) { App.toast('尚未選取資料集', { tone: 'warn', desc: '先勾選表格左側的方塊再執行批次操作。' }); return; }
+    if (act === 'export') {
+      exportCsv(list, `datasets_selected_${stamp()}.csv`);
+      App.toast(`已匯出 ${list.length} 筆選取的詮釋資料`, { tone: 'info', desc: `datasets_selected_${stamp()}.csv` });
+      return;
+    }
+    const pause = act === 'pause';
+    // 只有已發布、有固定頻率且狀態不同的資料集需要變更
+    const target = list.filter((d) => d.status === 'published' && FREQS[d.freq].window && d.paused !== pause);
+    const skipped = list.length - target.length;
+    if (!target.length) {
+      App.toast(pause ? '選取的資料集都不需要暫停' : '選取的資料集都不需要恢復', { tone: 'warn', desc: pause ? '未發布、不定期更新或已暫停的資料集沒有可暫停的排程。' : '選取的資料集目前都沒有暫停。' });
+      return;
+    }
+    const undos = target.map((d) => App.setPaused(d.id, pause));
+    App.toast(pause ? `已暫停 ${target.length} 個資料集的更新排程` : `已恢復 ${target.length} 個資料集的更新排程`, {
+      tone: pause ? 'warn' : 'ok',
+      desc: skipped ? `略過 ${skipped} 個（未發布、不定期或狀態相同）` : '已寫入活動紀錄',
+      action: { label: '復原', onClick: () => [...undos].reverse().forEach((u) => u.undo()) },
+    });
+  });
+
+  /* ================= 窄螢幕的 facet 面板 ================= */
+  const setFacetPanel = (open) => {
+    $('#dsl-facets').classList.toggle('is-open', open);
+    $('#dsl-facet-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  $('#dsl-facet-toggle').addEventListener('click', () => setFacetPanel(!$('#dsl-facets').classList.contains('is-open')));
+
+  // 寬螢幕的 sticky 側欄：高於視窗時 top 取負值，捲到側欄底部露出後才黏住
+  const facetsEl = $('#dsl-facets');
+  const fitFacets = () => {
+    const head = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) + 20;
+    facetsEl.style.top = `${Math.min(head, innerHeight - facetsEl.offsetHeight - 20)}px`;
+  };
+  new ResizeObserver(fitFacets).observe(facetsEl);
+  addEventListener('resize', fitFacets);
+
+  /* ================= 檔頭摘要 ================= */
+  const renderLead = () => {
+    const pub = ALL.filter((d) => d.status === 'published');
+    // 與下方 describe 同一口徑：暫停排程的不算失敗或逾期；逾期只算沒有失敗工作的（總覽頁的「逾期」含失敗中的，所以寫「另」）
+    const hf = pub.filter((d) => !d.paused && App.health(d) === 'failed').length;
+    const hl = pub.filter((d) => !d.paused && App.health(d) === 'late').length;
+    const paused = pub.filter((d) => d.paused).length;
+    const flow = ALL.filter((d) => VIEWS.flow.test(d)).length;
+    const agencies = new Set(ALL.map((d) => d.agency)).size;
+    $('#dsl-lead').innerHTML = `平台目前登錄 <b>${ALL.length}</b> 個資料集，來自 <b>${agencies}</b> 個機關：已發布 <b>${pub.length}</b> 個（<b>${hf}</b> 個更新失敗、另 <b>${hl}</b> 個逾期${paused ? `、<b>${paused}</b> 個暫停排程` : ''}），上架流程中 <b>${flow}</b> 個。篩選條件會即時改寫成下方的查詢程式碼並重新執行。`;
+    $('#dsl-meta-count').textContent = `${ALL.length} 個資料集 · ${agencies} 個機關 · ${new Set(ALL.map((d) => d.theme)).size} 個主題`;
+    $('#dsl-facetbar-total').textContent = ALL.length;
+  };
+
+  /* ================= 網址參數（總覽頁的直方圖、全域搜尋會帶過來） ================= */
+  const pickKey = (raw, dict, name) => raw && (dict[raw] ? raw : Object.keys(dict).find((k) => name(k) === raw));
+  const pQ = App.param('q');
+  if (pQ) { state.q = pQ; $('#dsl-q').value = pQ; }
+  const pGrade = (App.param('quality') || '').toUpperCase();
+  const band = BANDS.find(([g]) => g === pGrade);
+  if (band) { state.qLo = band[1]; state.qHi = band[2]; state.unrated = false; }
+  const pAgency = pickKey(App.param('agency'), AGENCIES, (k) => AGENCIES[k].name);
+  if (pAgency) state.sel.agency.add(pAgency);
+  const pTheme = pickKey(App.param('theme'), THEMES, (k) => THEMES[k]);
+  if (pTheme) state.sel.theme.add(pTheme);
+  const pFormat = FORMATS.find((f) => f.toLowerCase() === (App.param('format') || '').toLowerCase());
+  if (pFormat) state.sel.format.add(pFormat);
+  const pStatus = App.param('status');
+  if (pStatus === 'published') state.view = 'published';
+  else if (VIEWS[pStatus]) state.view = pStatus;
+  else if (STATUS[pStatus]) state.status = pStatus;
+
+  /* ================= 初次繪製與資料同步 ================= */
+  const renderControls = () => { renderFacets(); renderViews(); renderChips(); renderSortHeads(); renderBulk(); };
+  // 資料異動（暫停排程、復原）直接重繪，不重跑 cell，避免整張表閃一次
+  App.on('data', () => { renderLead(); renderControls(); renderOutput(); });
+  // 相對時間會隨時間推移，定時更新文字
+  setInterval(() => $$('#dsl-body time[data-rel]').forEach((t) => { t.textContent = fmt.rel(Date.parse(t.getAttribute('datetime'))); }), 30000);
+
+  renderLead();
+  renderControls();
+  renderCode();
+  renderOutput();
+});
+</script>
+</body>
+</html>

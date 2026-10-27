@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件清單 — 澄港市建照圖說審查系統</title>
+<meta name="description" content="澄港市建築執照圖說線上審查系統案件清單：審查燈號總表、建照申請案件登記簿，可依階段、科別補正、回合、行政區篩選與排序。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     燈號總表：40 件 × 5 科的審查燈號，像圖紙上的門窗表（schedule）。
+     欄＝案件、列＝科別；頂端以尺寸線標出各審查階段的範圍。
+     ===================================================================== */
+  .pm-sched__body { position: relative; padding: 16px 20px 4px; }
+  .pm-sched__scroll { overflow-x: auto; scrollbar-width: thin; }
+  .pm-swipe { display: none; }
+  .pm-matrix {
+    --pm-dim-h: 48px;
+    --pm-row-h: 32px;
+    --pm-no-h: 42px;
+    --pm-note-h: 30px;
+    --pm-head-w: 156px;
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--pm-head-w) minmax(0, 1fr);
+    min-width: 980px;
+    padding-bottom: var(--pm-note-h);
+  }
+  /* 列底色帶：放在欄位按鈕後面，懸停或篩選時整列刷黃 */
+  .pm-bands { position: absolute; left: 0; right: 0; top: var(--pm-dim-h); z-index: 0; pointer-events: none; }
+  .pm-band { height: var(--pm-row-h); border-bottom: 1px dashed var(--line); transition: background var(--dur-2); }
+  .pm-band:first-child { border-top: 1px solid var(--line-2); }
+  .pm-band:last-child { border-bottom: 1px solid var(--line-2); }
+  .pm-band:nth-child(even) { background: rgba(45, 58, 74, .03); }
+  .pm-band.is-hover { background: rgba(255, 241, 118, .22); }
+  .pm-band.is-on { background: rgba(255, 241, 118, .38); }
+
+  /* 列標題（科別）：手機水平捲動時黏在左側 */
+  .pm-rows {
+    position: sticky; left: 0; z-index: 3;
+    display: flex; flex-direction: column;
+  }
+  .pm-corner {
+    height: var(--pm-dim-h);
+    display: flex; align-items: flex-end;
+    padding: 0 0 9px 10px;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; color: var(--ink-3);
+  }
+  .pm-rowbtn {
+    position: relative;
+    display: flex; align-items: center; gap: 8px;
+    height: var(--pm-row-h);
+    padding: 0 14px 0 10px;
+    border: 0; background: none;
+    color: var(--ink);
+    font-size: var(--fs-13); font-weight: 600;
+    text-align: left;
+  }
+  .pm-rowbtn__name { flex: 1; min-width: 0; padding: 0 3px; border-radius: 2px 6px 3px 5px; white-space: nowrap; transition: background var(--dur-2); }
+  .pm-rowbtn:hover .pm-rowbtn__name { text-decoration: underline; text-decoration-color: var(--red-line); text-underline-offset: 3px; }
+  .pm-rowbtn[aria-pressed="true"] .pm-rowbtn__name { background: var(--hl); }
+  .pm-rowbtn[aria-pressed="true"]::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; background: var(--red); }
+  .pm-rowbtn__n {
+    min-width: 24px; height: 19px; padding: 0 5px;
+    display: inline-grid; place-items: center;
+    font-family: var(--font-mono); font-size: var(--fs-11); font-weight: 600;
+    color: var(--red-ink);
+    border: 1px solid var(--red); border-radius: var(--r-pill);
+    background: #FFF8F8;
+  }
+  .pm-rowbtn__n.is-zero { color: var(--ink-3); border-color: var(--line-2); background: transparent; font-weight: 500; }
+  .pm-rows__foot {
+    height: var(--pm-no-h);
+    display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 4px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
+  }
+
+  .pm-groups { position: relative; z-index: 1; display: flex; gap: 16px; padding-right: 6px; }
+  .pm-group { position: relative; flex: var(--n) 1 0px; min-width: 104px; display: flex; flex-direction: column; }
+  /* 尺寸線的延伸線：從尺寸線往下接到欄位 */
+  .pm-group::before,
+  .pm-group::after {
+    content: "";
+    position: absolute; top: calc(var(--pm-dim-h) - 18px); height: 18px;
+    border-left: 1px solid var(--line-3);
+    pointer-events: none;
+  }
+  .pm-group::before { left: 0; }
+  .pm-group::after { right: 0; }
+  .pm-dim {
+    position: relative;
+    display: block; width: 100%;
+    height: var(--pm-dim-h);
+    padding: 0; border: 0; background: none;
+    color: var(--ink);
+    transition: opacity var(--dur-3);
+  }
+  .pm-dim__text {
+    position: absolute; left: 50%; bottom: 17px;
+    transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 1px 6px;
+    border-radius: 2px 6px 3px 5px;
+    white-space: nowrap;
+    transition: background var(--dur-2);
+  }
+  .pm-dim__text b { font-family: var(--font-mono); font-size: var(--fs-13); font-weight: 600; }
+  .pm-dim__line { position: absolute; left: 0; right: 0; bottom: 12px; border-top: 1px solid var(--ink-2); transform-origin: center; }
+  /* 尺寸線兩端的 45° 斜線記號 */
+  .pm-dim__line::before,
+  .pm-dim__line::after { content: ""; position: absolute; top: -6px; width: 1.5px; height: 11px; background: var(--ink); transform: rotate(45deg); }
+  .pm-dim__line::before { left: -1px; }
+  .pm-dim__line::after { right: -1px; }
+  .pm-dim:hover .pm-dim__text { background: rgba(255, 241, 118, .5); }
+  .pm-dim[aria-pressed="true"] .pm-dim__text { background: var(--hl); }
+  .pm-dim[aria-pressed="true"] .pm-dim__line { border-top: 2px solid var(--ink); }
+  .pm-group.is-out .pm-dim { opacity: .4; }
+
+  .pm-group__cols { display: flex; flex: 1; }
+  .pm-col {
+    position: relative;
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column;
+    padding: 0; border: 0; border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    transition: background var(--dur-1);
+  }
+  .pm-col + .pm-col { box-shadow: inset 1px 0 0 var(--line); }
+  .pm-col:hover,
+  .pm-col.is-hot { background: rgba(255, 241, 118, .55); }
+  .pm-cell { height: var(--pm-row-h); display: grid; place-items: center; transition: opacity var(--dur-3); }
+  .pm-col__no {
+    height: var(--pm-no-h);
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--ink-3);
+    transition: opacity var(--dur-3);
+  }
+  /* 欄寬不到 30px，案號直排（像圖紙門窗表的欄頭），相鄰案號才不會黏在一起 */
+  .pm-col__no > span { padding: 2px 0; border-radius: 3px 2px 3px 1px; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .02em; }
+  .pm-col.is-mine .pm-col__no > span { background: var(--hl); color: var(--ink); }
+  .pm-col:hover .pm-col__no,
+  .pm-col.is-hot .pm-col__no { color: var(--ink); font-weight: 600; }
+  .pm-col.is-out .pm-cell,
+  .pm-col.is-out .pm-col__no { opacity: .18; }
+  .pm-col.is-out:hover .pm-cell,
+  .pm-col.is-out:hover .pm-col__no { opacity: .55; }
+
+  /* 紅筆圖層：雲線與手寫註記，座標由 JS 依實際格位計算 */
+  .pm-overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; max-width: none; z-index: 2; pointer-events: none; }
+  .pm-clouds { color: var(--red); }
+  .pm-cloud,
+  .pm-note { transition: opacity var(--dur-3); }
+  .pm-cloud.is-out,
+  .pm-note.is-out { opacity: .2; }
+  .pm-note { color: var(--red-ink); font-family: var(--font-hand); }
+
+  /* 進場：尺寸線由中間拉開，燈號逐欄點亮 */
+  .pm-matrix.is-intro .pm-dim__line { animation: pm-dim-draw .7s var(--ease-pen) backwards; }
+  .pm-matrix.is-intro .pm-cell > .lamp { animation: pm-pop .42s var(--ease-spring) backwards; animation-delay: calc(var(--ci) * 16ms + var(--ri) * 45ms + 150ms); }
+  .pm-matrix.is-intro .pm-col__no { animation: pm-fade .4s var(--ease-out) backwards; animation-delay: calc(var(--ci) * 16ms + 300ms); }
+  .pm-col.is-new .pm-cell > .lamp { animation: pm-pop .5s var(--ease-spring) backwards; animation-delay: calc(var(--ri) * 70ms + 120ms); }
+  .pm-col.is-new { animation: pm-new 1.8s var(--ease-out); }
+  @keyframes pm-dim-draw { from { transform: scaleX(0); } }
+  @keyframes pm-pop { from { opacity: 0; transform: scale(.3); } }
+  @keyframes pm-fade { from { opacity: 0; } }
+  @keyframes pm-new { 0%, 35% { background: rgba(255, 241, 118, .8); } }
+
+  /* 欄位提示：懸停 / 聚焦時的案件引出說明 */
+  .pm-tip {
+    position: absolute; left: 0; top: 0; z-index: 6;
+    width: 300px; max-width: calc(100% - 8px);
+    padding: 11px 13px 12px;
+    background: var(--sheet-solid);
+    border: 1px solid var(--ink);
+    box-shadow: 4px 5px 0 -1px var(--sheet-under), 4px 5px 0 0 var(--line-2), var(--sh-2);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(5px);
+    transition: opacity var(--dur-1), transform var(--dur-2) var(--ease-out);
+  }
+  .pm-tip.is-show { opacity: 1; transform: none; }
+  .pm-tip::before {
+    content: "";
+    position: absolute; top: -7px; left: var(--ax, 50%);
+    width: 12px; height: 12px; margin-left: -6px;
+    background: var(--sheet-solid);
+    border-left: 1px solid var(--ink); border-top: 1px solid var(--ink);
+    transform: rotate(45deg);
+  }
+  .pm-tip__head { display: flex; align-items: center; gap: 8px; }
+  .pm-tip__head .mono { font-weight: 600; font-size: var(--fs-13); }
+  .pm-tip__head .due { margin-left: auto; }
+  .pm-tip__title { font-weight: 700; margin-top: 6px; line-height: 1.35; }
+  .pm-tip__sub { font-size: var(--fs-12); color: var(--ink-3); margin: 2px 0 8px; }
+  .pm-tip .lamps { padding-top: 8px; border-top: 1px dashed var(--line-2); }
+
+  .pm-sched-foot { flex-wrap: wrap; }
+  .pm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--fs-12); color: var(--ink-3); }
+  .pm-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+  .pm-legend__item svg { width: 26px; height: 18px; flex-shrink: 0; }
+  .pm-legend__mine { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink); background: var(--hl); padding: 0 2px; }
+
+  /* =====================================================================
+     篩選列與結果列
+     ===================================================================== */
+  .pm-filterbar { gap: 10px 12px; }
+  .pm-break { flex-basis: 100%; height: 0; }
+  .pm-chip .disc { width: 19px; height: 19px; font-size: 11px; margin-left: -5px; }
+  .pm-district { width: 150px; }
+  .pm-district .select { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: var(--fs-13); }
+  .pm-sep { width: 1px; align-self: stretch; background: var(--line-2); margin: 2px 2px; }
+  #clearBtn { margin-left: auto; }
+  .pm-more { display: none; }
+  .pm-more__n { font-family: var(--font-mono); font-size: var(--fs-11); background: var(--hl); padding: 0 5px; border-radius: 2px 5px 3px 4px; }
+  .pm-more__n:empty { display: none; }
+
+  .pm-resultbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line-2);
+    min-height: 48px;
+  }
+  .pm-resultbar__count { font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap; }
+  .pm-resultbar__count b { font-family: var(--font-mono); font-size: var(--fs-16); color: var(--ink); font-weight: 600; }
+  .pm-tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pm-token {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 6px 0 9px;
+    border: 1px dashed var(--ink);
+    border-radius: var(--r-1);
+    background: #FFFEFA;
+    color: var(--ink);
+    font-size: 12.5px; font-weight: 500;
+    white-space: nowrap;
+    transition: background var(--dur-1), border-color var(--dur-1);
+  }
+  .pm-token svg { width: 12px; height: 12px; color: var(--ink-3); }
+  .pm-token:hover { border-style: solid; background: rgba(255, 241, 118, .4); }
+  .pm-token:hover svg { color: var(--red-ink); }
+  .pm-sortsel { display: none; align-items: center; gap: 8px; margin-left: auto; font-size: var(--fs-12); color: var(--ink-3); }
+  .pm-sortsel .select { width: auto; min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: var(--fs-13); }
+
+  /* =====================================================================
+     案件登記簿（表格）
+     ===================================================================== */
+  .pm-table { min-width: 1180px; }
+  .pm-table th { padding: 9px 10px; }
+  .pm-table td { padding: 11px 10px; }
+  .pm-table thead tr + tr th { border-top: 0; }
+  .pm-th-sel,
+  .pm-td-sel { width: 40px; padding-left: 16px !important; padding-right: 0 !important; }
+  .pm-td-key { width: 156px; }
+  .pm-th-bldg { width: 176px; }
+  .pm-th-rev,
+  .pm-td-rev { width: 54px; text-align: center; }
+  .pm-th-lamp,
+  .pm-td-lamp { width: 40px; text-align: center; padding-left: 3px !important; padding-right: 3px !important; }
+  .pm-th-lamp .disc { margin: 0 auto; }
+  .pm-th-stage { width: 112px; }
+  .pm-th-officer { width: 104px; }
+  .pm-th-due { width: 118px; }
+  .pm-th-act,
+  .pm-td-act { width: 48px; padding-right: 14px !important; }
+  /* 燈號欄群組標頭：尺寸線樣式 */
+  .pm-th-group { text-align: center !important; border-bottom: 0 !important; padding-bottom: 2px !important; }
+  .pm-th-group > span { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; }
+  .pm-th-group > span::before,
+  .pm-th-group > span::after { content: ""; flex: 1; border-top: 1px solid var(--line-3); }
+  .pm-th-lamp { padding-top: 4px !important; }
+
+  .pm-table tbody tr.is-hot { background: rgba(255, 241, 118, .3); }
+  .pm-table tbody tr.is-flash { animation: pm-flash 1.9s var(--ease-out); }
+  @keyframes pm-flash { 0%, 30% { background-color: rgba(255, 241, 118, .9); } 100% { background-color: rgba(255, 241, 118, 0); } }
+  .pm-table .check input:indeterminate { background: var(--ink); }
+  .pm-table .check input:indeterminate::after { width: 8px; height: 0; border-left: 0; transform: none; }
+
+  .pm-td-key .table__sub { font-family: var(--font-mono); font-size: var(--fs-11); }
+  .pm-td-key .tag { margin-top: 5px; font-family: var(--font-mono); font-size: var(--fs-11); height: 20px; }
+  .pm-td-title .table__title { font-size: var(--fs-15); }
+  .pm-addr { display: block; }
+  .pm-td-title a { text-decoration: none; }
+  .pm-td-title a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .pm-bldg { display: flex; align-items: center; gap: 10px; }
+  .pm-glyph { width: 18px; height: 40px; flex-shrink: 0; color: var(--ink-2); }
+  .pm-bldg__txt { display: flex; flex-direction: column; min-width: 0; }
+  .pm-bldg__fl { font-family: var(--font-mono); font-size: var(--fs-13); color: var(--ink-2); white-space: nowrap; }
+  .pm-bldg__fl b { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+  .pm-bldg__txt .table__sub { white-space: nowrap; }
+
+  /* 表格燈號：篩選科別的「須補正」以紅筆雲線圈起 */
+  .pm-lc { position: relative; display: inline-grid; place-items: center; vertical-align: middle; }
+  .pm-lc__cloud { position: absolute; left: -12px; top: -9px; width: 40px; height: 34px; max-width: none; color: var(--red); pointer-events: none; }
+
+  .pm-td-stage .table__sub { margin-top: 3px; }
+  .pm-officer { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-13); white-space: nowrap; }
+  .pm-td-due .table__sub { margin-top: 3px; font-family: var(--font-mono); font-size: var(--fs-11); }
+  .pm-reminded { font-family: var(--font-hand); font-size: var(--fs-14); color: var(--ink-2); margin-top: 2px; white-space: nowrap; }
+  .pm-td-due .stamp { margin: 2px 0 2px 2px; }
+  .pm-empty td { padding: 0 !important; }
+  .pm-empty .empty { padding-bottom: 12px; }
+  .pm-empty__act { display: flex; justify-content: center; padding: 0 0 var(--s-7); }
+
+  /* =====================================================================
+     批次操作列（勾選後浮出）
+     ===================================================================== */
+  .pm-batch {
+    position: fixed; left: 50%; bottom: 20px; z-index: 45;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 8px 8px 16px;
+    background: var(--sheet-solid);
+    border: 1.5px solid var(--ink);
+    border-radius: var(--r-1);
+    box-shadow: 5px 6px 0 -1px var(--sheet-under), 5px 6px 0 0 var(--line-3), var(--sh-2);
+    transform: translate(-50%, 150%);
+    opacity: 0; visibility: hidden;
+    transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2), visibility 0s linear var(--dur-3);
+  }
+  .pm-batch.is-on {
+    transform: translate(-50%, 0);
+    opacity: 1; visibility: visible;
+    transition: transform var(--dur-3) var(--ease-spring), opacity var(--dur-2), visibility 0s;
+  }
+  .pm-batch__count { font-weight: 600; margin-right: 6px; white-space: nowrap; }
+  .pm-batch__count b { font-family: var(--font-mono); background: var(--hl); padding: 0 5px; border-radius: 2px 5px 3px 4px; }
+  .pm-batch__sep { width: 1px; align-self: stretch; background: var(--line-2); margin: 2px 2px; }
+  body.pm-batch-on .toasts { bottom: 92px; }
+
+  /* 表單（新增收件、改分承辦） */
+  .pm-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+  .pm-form__wide { grid-column: 1 / -1; }
+  .pm-form__meta {
+    display: flex; flex-wrap: wrap; gap: 4px 18px;
+    margin-bottom: 16px; padding: 9px 12px;
+    border: 1px dashed var(--line-3);
+    background: rgba(255, 241, 118, .18);
+    font-family: var(--font-mono); font-size: var(--fs-12); color: var(--ink-2);
+  }
+  .pm-form__meta b { color: var(--ink); font-weight: 600; }
+  .pm-form__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pm-modal-lead { margin-bottom: 12px; color: var(--ink-2); }
+  .pm-modal-lead b { color: var(--ink); }
+  .pm-assign { display: flex; flex-direction: column; gap: 8px; }
+  .pm-assign__opt {
+    display: flex; width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-1);
+    background: #FFFEFA;
+    transition: border-color var(--dur-1), background var(--dur-1);
+  }
+  .pm-assign__opt:hover { border-color: var(--ink); }
+  .pm-assign__opt:has(input:checked) { border-color: var(--ink); background: rgba(255, 241, 118, .35); }
+  .pm-assign__opt .person { flex: 1; }
+  .pm-assign__load { font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+
+  /* ---------- 平板 ---------- */
+  @media (max-width: 1100px) {
+    .pm-district { width: 140px; }
+  }
+
+  /* ---------- 手機 ---------- */
+  @media (max-width: 720px) {
+    .pm-sched__body { padding: 12px 0 2px; }
+    .pm-swipe {
+      display: block;
+      padding: 0 16px 8px;
+      font-family: var(--font-hand); font-size: var(--fs-15); color: var(--red-ink);
+    }
+    .pm-matrix {
+      --pm-dim-h: 46px;
+      --pm-row-h: 30px;
+      --pm-no-h: 38px;
+      --pm-head-w: 116px;
+      min-width: 900px;
+    }
+    /* 水平捲動時列標題黏在左側，需要實底蓋住底下捲過去的欄 */
+    .pm-rows { background: linear-gradient(90deg, var(--sheet-solid) 92%, rgba(251, 250, 246, 0)); }
+    .pm-rowbtn { padding: 0 8px 0 10px; gap: 6px; }
+    .pm-col .lamp > svg { width: 14px; height: 14px; }
+    .pm-col__no > span { font-size: 10px; }
+    .pm-group { min-width: 96px; }
+    .pm-groups { gap: 12px; padding-right: 16px; }
+    .pm-tip { width: 280px; }
+
+    .pm-filterbar .search { flex-basis: 100%; }
+    .pm-stageseg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    .pm-sep { display: none; }
+    .pm-district { width: 100%; }
+    #clearBtn { margin-left: 0; }
+    .pm-resultbar { padding: 10px 16px; }
+    .pm-sortsel { display: flex; width: 100%; margin-left: 0; }
+    .pm-sortsel .select { flex: 1; }
+
+    /* 表格改卡片：第一行勾選＋案號＋期限，接案名、樓層用途，最後一行五科燈號＋回合＋階段 */
+    .pm-table { min-width: 0; }
+    .pm-table thead { display: none; }
+    .pm-table,
+    .pm-table tbody { display: block; width: 100%; }
+    .pm-table tbody tr {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 8px 10px;
+      padding: 14px 16px 14px 12px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    .pm-table td { display: block; width: auto; padding: 0 !important; border: 0; }
+    .pm-td-sel { order: 1; }
+    .pm-td-key { order: 2; }
+    .pm-td-key .table__sub { display: none; }
+    .pm-td-key .tag { margin: 0 0 0 6px; }
+    .pm-td-stage { order: 3; flex: 1 1 0; min-width: 0; }
+    .pm-td-due { order: 4; text-align: right; }
+    .pm-td-due .table__sub,
+    .pm-td-due .stamp { display: none; }   /* 已核發：階段標籤已寫明，不重複蓋章 */
+    .pm-td-title { order: 5; flex: 1 1 100%; }
+    .pm-addr { display: inline; }
+    .pm-addr::before { content: "・"; }
+    .pm-td-bldg { order: 6; flex: 1 1 100%; }
+    .pm-glyph { display: none; }
+    .pm-bldg__txt { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+    /* 需壓過上面 .pm-table td 的 display: block */
+    .pm-table .pm-td-lamp { order: 7; display: inline-flex; align-items: center; gap: 4px; }
+    /* 手機雲線縮小一號，不蓋住左邊的科別字 */
+    .pm-lc__cloud { left: -7px; top: -4.75px; width: 30px; height: 25.5px; }
+    .pm-table .pm-td-lamp:has(.pm-lc__cloud) { gap: 10px; }
+    .pm-td-lamp::before { content: attr(data-short); font-size: var(--fs-11); color: var(--ink-3); }
+    .pm-td-rev { order: 8; margin-left: auto; }
+    .pm-td-stage .table__sub { display: none; }
+    .pm-td-officer,
+    .pm-td-act { display: none !important; }
+    .pm-table tbody tr.pm-empty { display: block; padding: 0; }
+
+    /* 手機：第一行選取數＋關閉，第二行三個動作等寬 */
+    .pm-batch {
+      left: 12px; right: 12px; bottom: 12px;
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px 10px 10px 14px;
+      transform: translateY(150%);
+    }
+    .pm-batch.is-on { transform: none; }
+    .pm-batch__count { grid-column: 1 / 3; align-self: center; }
+    .pm-batch [data-batch="clear"] { grid-column: 3; grid-row: 1; justify-self: end; }
+    .pm-batch .btn { padding: 0 6px; }
+    .pm-batch__sep { display: none; }
+    body.pm-batch-on .toasts { bottom: 112px; }
+
+    /* 次要篩選收合：只留搜尋與階段，其餘按「更多篩選」展開 */
+    .pm-more { display: inline-flex; width: 100%; border: 1px dashed var(--line-3); }
+    .pm-filterbar.is-collapsed > :is(.switch, .pm-break, .filterbar__label, #discChips, #roundSeg, .pm-district, #clearBtn) { display: none; }
+
+    .pm-form,
+    .pm-form__row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="edge">
+  <div class="wrap edge__inner">
+    <a class="backlink" href="../../index.html"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>返回目錄</a>
+    <span class="edge__org">澄港市政府都市發展局・建築管理處｜建築執照圖說線上審查系統</span>
+    <span class="edge__plot" data-clock>PLOT 2026-10-21 09:40</span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="3.5" y="7.5" width="26" height="29" fill="#ECE9DF" stroke="#2D3A4A" stroke-width="1.2" transform="rotate(-7 16.5 22)"/>
+        <rect x="8.5" y="4.5" width="27" height="30" fill="#FFFEFA" stroke="#2D3A4A" stroke-width="1.4"/>
+        <path d="M12.5 9.5h19M12.5 9.5v6M31.5 9.5v4M22 9.5v4" fill="none" stroke="#2D3A4A" stroke-width="1.2"/>
+        <path d="M14.0 15.0 A3.3 3.3 0 0 1 19.5 15.0 A3.1 3.1 0 0 1 25.0 15.0 A3.3 3.3 0 0 1 30.5 15.0 A2.2 2.2 0 0 1 33.0 18.0 A3.0 3.0 0 0 1 33.0 23.5 A2.8 2.8 0 0 1 33.0 29.0 A2.9 2.9 0 0 1 27.5 29.0 A3.4 3.4 0 0 1 22.0 29.0 A3.1 3.1 0 0 1 16.5 29.0 A2.0 2.0 0 0 1 14.0 26.0 A3.3 3.3 0 0 1 14.0 20.5 A3.1 3.1 0 0 1 14.0 15.0Z" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M23.5 18.2 28.6 26.4H18.4z" fill="#FFF176" stroke="#2D3A4A" stroke-width="1.1" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">建照圖說審查</span><span class="brand__sub">REDLINE · CHENGGANG</span></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="nav-tab" href="index.html"><span class="nav-tab__no">A-01</span><span class="nav-tab__label">審查總覽</span></a></li>
+        <li><a class="nav-tab" href="permits.html" aria-current="page"><span class="nav-tab__no">A-02</span><span class="nav-tab__label">案件清單</span><span class="nav-tab__count" data-count="active" title="審查中案件數">32</span></a></li>
+        <li><a class="nav-tab" href="review.html"><span class="nav-tab__no">A-03</span><span class="nav-tab__label">圖說審查</span><span class="nav-tab__count nav-tab__count--red" data-count="myQueue" title="待我審查">4</span></a></li>
+        <li><a class="nav-tab" href="permit.html"><span class="nav-tab__no">A-04</span><span class="nav-tab__label">案件詳情</span></a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <button class="icon-btn" type="button" data-search aria-label="搜尋案件（快捷鍵 /）" title="搜尋案件（/）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg></button>
+      <div class="user-chip"><span class="avatar" aria-hidden="true">許</span><span class="user-chip__text"><b>許若晴</b><small>建築科 審查員</small></span></div>
+      <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="siteNav" aria-label="開啟選單"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="wrap">
+
+    <header class="page-head" data-reveal>
+      <div class="page-head__main">
+        <div class="page-head__code"><span>A-02</span><span>案件清單 · REGISTER</span><span>建築科一股</span></div>
+        <h1 class="page-title">案件清單</h1>
+        <p class="page-desc">列管建照申請案 <b><span id="totalN">40</span> 件</b>｜審查中 <b><span data-count="active">32</span> 件</b>・補正中 <b><span data-count="fix">10</span> 件</b>・<b class="red-ink">已逾期 <span data-count="overdue">2</span> 件</b></p>
+      </div>
+      <div class="page-head__actions">
+        <span class="margin-note margin-note--arrow hide-sm" id="headNote">建築、無障礙各 5 件待補正</span>
+        <button class="btn" type="button" id="exportBtn"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>匯出清冊</button>
+        <button class="btn btn--primary" type="button" id="intakeBtn"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>新增掛號收件</button>
+      </div>
+    </header>
+
+    <!-- 審查燈號總表：欄＝案件、列＝科別，依階段分組 -->
+    <section aria-labelledby="schedTitle">
+      <article class="sheet sheet--marks pm-sched" id="schedSheet" data-reveal style="--i:1">
+        <div class="sheet__head">
+          <span class="sheet__code">L-01</span>
+          <div class="sheet__titles">
+            <h2 class="sheet__title" id="schedTitle">審查燈號總表</h2>
+            <p class="sheet__sub">每欄一件、每列一科，依審查階段排列。點科別讓紅筆圈出須補正項目，點欄位跳到該案件</p>
+          </div>
+          <div class="sheet__actions">
+            <button class="btn btn--sm btn--ghost" type="button" id="redrawBtn" title="重新描繪燈號與紅筆雲線"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5V5h-2.5"/></svg>重描紅筆</button>
+          </div>
+        </div>
+        <div class="sheet__body pm-sched__body" id="schedBody">
+          <p class="pm-swipe" aria-hidden="true">← 左右滑動看全部案件 →</p>
+          <div class="pm-sched__scroll">
+            <div class="pm-matrix" id="matrix">
+              <div class="pm-bands" id="matrixBands" aria-hidden="true"></div>
+              <div class="pm-rows" id="matrixRows" role="group" aria-label="依科別篩選須補正"></div>
+              <div class="pm-groups" id="matrixGroups"></div>
+              <svg class="pm-overlay" id="matrixOverlay" aria-hidden="true"><g class="pm-clouds" id="cloudLayer"></g><g class="pl-pen"></g></svg>
+            </div>
+          </div>
+          <div class="pm-tip" id="matrixTip" aria-hidden="true"></div>
+        </div>
+        <div class="sheet__foot pm-sched-foot">
+          <span class="pm-legend" id="schedLegend"></span>
+          <span class="mono" style="font-size:11px">更新 2026.10.21 09:40</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- 案件登記簿 -->
+    <section class="section" aria-labelledby="registerTitle">
+      <article class="sheet" id="registerSheet" data-reveal style="--i:2">
+        <div class="sheet__head">
+          <span class="sheet__code">L-02</span>
+          <div class="sheet__titles">
+            <h2 class="sheet__title" id="registerTitle">建照申請案件登記簿</h2>
+            <p class="sheet__sub" id="registerSub">依期限（近→遠）排序・點列開啟案件詳情</p>
+          </div>
+        </div>
+
+        <div class="filterbar pm-filterbar is-collapsed" id="filterbar" role="search" aria-label="篩選案件">
+          <label class="search"><span class="sr-only">搜尋案件</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg><input class="input" id="q" type="search" placeholder="搜尋案號、案名、起造人、地址或建築師" autocomplete="off"></label>
+          <div class="seg pm-stageseg" id="stageSeg" role="group" aria-label="審查階段">
+            <button type="button" data-value="all" aria-pressed="true">全部<span class="mono" data-sn="all"></span></button>
+            <button type="button" data-value="intake" aria-pressed="false">收件<span class="mono" data-sn="intake"></span></button>
+            <button type="button" data-value="admin" aria-pressed="false">行政<span class="mono" data-sn="admin"></span></button>
+            <button type="button" data-value="tech" aria-pressed="false">技術<span class="mono" data-sn="tech"></span></button>
+            <button type="button" data-value="fix" aria-pressed="false">補正<span class="mono" data-sn="fix"></span></button>
+            <button type="button" data-value="issued" aria-pressed="false">核發<span class="mono" data-sn="issued"></span></button>
+          </div>
+          <button class="btn btn--sm btn--ghost pm-more" type="button" id="moreBtn" aria-expanded="false" aria-controls="filterbar"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11L9.3 8.6v4.3l-2.6-1.2V8.6z"/></svg><span id="moreLabel">更多篩選：承辦、科別、回合、行政區</span><span class="pm-more__n" id="moreN"></span></button>
+          <label class="switch"><input type="checkbox" role="switch" id="mineSwitch"><span class="switch__track" aria-hidden="true"></span>只看我承辦</label>
+          <span class="pm-break" aria-hidden="true"></span>
+          <span class="filterbar__label" id="discLabel">須補正科別</span>
+          <div class="cluster" id="discChips" role="group" aria-labelledby="discLabel"></div>
+          <span class="pm-sep" aria-hidden="true"></span>
+          <span class="filterbar__label" id="roundLabel">回合</span>
+          <div class="seg" id="roundSeg" role="group" aria-labelledby="roundLabel">
+            <button type="button" data-value="all" aria-pressed="true">全部</button>
+            <button type="button" data-value="1" aria-pressed="false">R1</button>
+            <button type="button" data-value="2" aria-pressed="false">R2</button>
+            <button type="button" data-value="3" aria-pressed="false">R3</button>
+          </div>
+          <label class="pm-district"><span class="sr-only">行政區</span><select class="select" id="districtSel"></select></label>
+          <button class="btn btn--sm btn--ghost" type="button" id="clearBtn" disabled><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>清除篩選</button>
+        </div>
+
+        <div class="pm-resultbar">
+          <p class="pm-resultbar__count" id="resultCount" aria-live="polite"></p>
+          <div class="pm-tokens" id="tokens"></div>
+          <label class="pm-sortsel"><span>排序</span><select class="select" id="sortSel"></select></label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table pm-table" aria-labelledby="registerTitle">
+            <thead>
+              <tr>
+                <th class="pm-th-sel" rowspan="2" scope="col"><label class="check"><input type="checkbox" id="selAll" aria-label="全選目前顯示的案件"></label></th>
+                <th rowspan="2" scope="col" data-th="id"><button class="sort" type="button" data-sort="id">案號</button></th>
+                <th rowspan="2" scope="col">案名・起造人・地址</th>
+                <th class="pm-th-bldg" rowspan="2" scope="col" data-th="bldg"><button class="sort" type="button" data-sort="bldg">樓層・用途</button></th>
+                <th class="pm-th-rev" rowspan="2" scope="col" data-th="round"><button class="sort" type="button" data-sort="round">回合</button></th>
+                <th class="pm-th-group" colspan="5" scope="colgroup"><span>各科審查燈號</span></th>
+                <th class="pm-th-stage" rowspan="2" scope="col" data-th="stage"><button class="sort" type="button" data-sort="stage">階段</button></th>
+                <th class="pm-th-officer" rowspan="2" scope="col">承辦</th>
+                <th class="pm-th-due" rowspan="2" scope="col" data-th="due"><button class="sort" type="button" data-sort="due">期限</button></th>
+                <th class="pm-th-act" rowspan="2" scope="col"><span class="sr-only">圖說審查</span></th>
+              </tr>
+              <tr id="lampHead"></tr>
+            </thead>
+            <tbody id="permitBody"></tbody>
+          </table>
+        </div>
+
+        <div class="sheet__foot">
+          <span class="lamp-legend" id="lampLegend"></span>
+          <a class="link-arrow" href="review.html?id=115-0412">進入圖說審查工作區<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        </div>
+      </article>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div class="titleblock__cell titleblock__cell--org">
+        <span class="tb-label">機關 AGENCY</span>
+        <strong>澄港市政府都市發展局 建築管理處</strong>
+        <span>建築執照圖說線上審查系統・3.2 版</span>
+        <span class="muted">所有案件、人名與地址均為作品集虛構資料</span>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">圖說索引 SHEETS</span>
+        <ul class="tb-links">
+          <li><a href="index.html"><span class="mono">A-01</span><span>審查總覽</span></a></li>
+          <li><a href="permits.html"><span class="mono">A-02</span><span>案件清單</span></a></li>
+          <li><a href="review.html"><span class="mono">A-03</span><span>圖說審查</span></a></li>
+          <li><a href="permit.html"><span class="mono">A-04</span><span>案件詳情</span></a></li>
+        </ul>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">審查服務 SERVICE</span>
+        <span>週一至週五 08:30–17:30</span>
+        <span class="mono">(08) 2250-6600 #3180</span>
+        <span>澄港市港埕區市府路 1 號 7 樓</span>
+      </div>
+      <div class="titleblock__cell titleblock__cell--rev">
+        <span class="tb-label">修訂 REVISIONS</span>
+        <table class="rev-table">
+          <tbody>
+            <tr><td><span class="rev" data-round="3" role="img" aria-label="修訂 3"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>3</b></span></td><td>2026.10</td><td>回合疊圖比較上線</td></tr>
+            <tr><td><span class="rev" data-round="2" role="img" aria-label="修訂 2"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>2</b></span></td><td>2026.07</td><td>消防・無障礙套繪圖層</td></tr>
+            <tr><td><span class="rev" data-round="1" role="img" aria-label="修訂 1"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>1</b></span></td><td>2026.04</td><td>線上圖說審查啟用</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="titleblock__cell titleblock__cell--stamp">
+        <svg viewBox="0 0 120 120" role="img" aria-label="澄港市政府建築管理處 審查專用章">
+          <defs><path id="stampArc" d="M24 62a36 36 0 1 1 72 0"/></defs>
+          <g transform="rotate(-8 60 60)" opacity=".88">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#D7263D" stroke-width="3"/>
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#D7263D" stroke-width="1"/>
+            <text font-size="10.5" fill="#D7263D" letter-spacing="1.5"><textPath href="#stampArc" startOffset="50%" text-anchor="middle">澄港市政府建築管理處</textPath></text>
+            <path d="M28 70h64" stroke="#D7263D" stroke-width="1"/>
+            <text x="60" y="64" font-size="17" font-weight="700" fill="#D7263D" text-anchor="middle">審查專用</text>
+            <text x="60" y="86" font-size="10" fill="#D7263D" text-anchor="middle" font-family="IBM Plex Mono, monospace">115.10.21</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 建築管理處（虛構城市作品集展示）</span>
+      <span class="mono">SHEET A-02 / 04 · SCALE 1:100 · PLOTTED ON TRACE PAPER</span>
+    </div>
+  </div>
+</footer>
+
+<!-- 批次操作列：勾選案件後從底部浮出 -->
+<div class="pm-batch" id="batchBar" role="region" aria-label="批次操作" aria-hidden="true" inert>
+  <span class="pm-batch__count">已選 <b id="batchN">0</b> 件</span>
+  <button class="btn btn--sm" type="button" data-batch="remind"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V7.2a4 4 0 0 1 8 0V11l1 1.3H3zM6.6 13.8a1.5 1.5 0 0 0 2.8 0"/></svg>批次催辦</button>
+  <button class="btn btn--sm" type="button" data-batch="assign"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.8 13.8a5.2 5.2 0 0 1 10.4 0"/></svg>改分承辦</button>
+  <button class="btn btn--sm" type="button" data-batch="export"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>匯出所選</button>
+  <span class="pm-batch__sep" aria-hidden="true"></span>
+  <button class="icon-btn icon-btn--sm icon-btn--ghost" type="button" data-batch="clear" aria-label="取消選取"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = App.esc;
+  const P = App.permits;   // 直接操作共用陣列：新增收件後 App.counts() 也會算到
+  const DISC_KEYS = App.DISC.map((d) => d.key);
+  const STAGE_KEYS = App.STAGES.map((s) => s.key);
+  const STAGE_IDX = Object.fromEntries(STAGE_KEYS.map((k, i) => [k, i]));
+  const DISTRICTS = ['港埕區', '北岸區', '舊城區', '山腳區', '新灣區', '鹽田區', '溪洲區', '雲嶺區'];
+  const motion = () => !App.reduceMotion.matches;
+  const byId = App.getPermit;
+  const isOverdue = (p) => p.stage !== 'issued' && p.due && App.days(p.due) < 0;
+  const md = (s) => App.fmt.md(s);
+
+  /* ------------------------------------------------------------------
+   * 篩選狀態（全部在記憶體；?stage= 由總覽的流程列帶入）
+   * ------------------------------------------------------------------ */
+  const state = {
+    q: '',
+    stage: STAGE_KEYS.includes(App.param('stage')) ? App.param('stage') : 'all',
+    district: '',
+    round: 'all',
+    mine: false,
+    discs: new Set(),
+    sort: { key: 'due', dir: 1 },
+  };
+  const selected = new Set();
+  let visibleIds = [];
+
+  const haystack = (p) => {
+    const ar = App.ARCHITECTS[p.architect];
+    return [p.id, App.caseNo(p), p.name, p.applicant, App.address(p), p.permitNo || '', ar.name, ar.architect, App.PEOPLE[p.officer].name].join('\n').toLowerCase();
+  };
+  const qNorm = () => state.q.trim().toLowerCase();
+  // skip：計算某個篩選器自己的選項數字時，忽略該篩選器本身（faceted count）
+  function matches(p, skip = '') {
+    const q = qNorm();
+    return (skip === 'stage' || state.stage === 'all' || p.stage === state.stage)
+      && (skip === 'district' || !state.district || p.district === state.district)
+      && (skip === 'round' || state.round === 'all' || p.round === Number(state.round))
+      && (skip === 'mine' || !state.mine || p.officer === App.ME)
+      && (skip === 'disc' || !state.discs.size || [...state.discs].some((k) => p.lamps[k] === 'fix'))
+      && (skip === 'q' || !q || haystack(p).includes(q));
+  }
+  const anyFilter = () => state.q.trim() || state.stage !== 'all' || state.district || state.round !== 'all' || state.mine || state.discs.size;
+
+  /* 搜尋字串以螢光筆標出；先切字再逐段跳脫，避免把 HTML 實體切斷 */
+  function hi(text) {
+    const s = String(text ?? '');
+    const q = qNorm();
+    if (!q) return esc(s);
+    const lower = s.toLowerCase();
+    let out = '', i = 0, j;
+    while ((j = lower.indexOf(q, i)) !== -1) {
+      out += esc(s.slice(i, j)) + `<mark class="hl">${esc(s.slice(j, j + q.length))}</mark>`;
+      i = j + q.length;
+    }
+    return out + esc(s.slice(i));
+  }
+
+  /* ------------------------------------------------------------------
+   * 排序
+   * ------------------------------------------------------------------ */
+  const SORT_LABEL = { id: '案號', bldg: '樓層', round: '回合', stage: '階段', due: '期限' };
+  const SORT_DIR_WORD = { id: ['舊→新', '新→舊'], bldg: ['低→高', '高→低'], round: ['少→多', '多→少'], stage: ['收件→核發', '核發→收件'], due: ['近→遠', '遠→近'] };
+  const SORT_DEFAULT_DIR = { id: -1, bldg: -1, round: -1, stage: 1, due: 1 };
+  const dueN = (p) => (p.stage !== 'issued' && p.due ? App.days(p.due) : Infinity);
+  const CMP = {
+    id: (a, b) => a.id.localeCompare(b.id),
+    bldg: (a, b) => a.up - b.up || a.down - b.down || a.area - b.area,
+    round: (a, b) => a.round - b.round,
+    stage: (a, b) => STAGE_IDX[a.stage] - STAGE_IDX[b.stage],
+  };
+  function sorter(a, b) {
+    const { key, dir } = state.sort;
+    if (key === 'due') {
+      // 已核發沒有期限，不論升降冪都排最後
+      const da = dueN(a), db = dueN(b);
+      if (da !== db) return da === Infinity ? 1 : db === Infinity ? -1 : (da - db) * dir;
+      return a.id.localeCompare(b.id);
+    }
+    const d = CMP[key](a, b) * dir;
+    if (d) return d;
+    const da = dueN(a), db = dueN(b);
+    if (da !== db) return da === Infinity ? 1 : db === Infinity ? -1 : da - db;
+    return a.id.localeCompare(b.id);
+  }
+  const sortText = () => `${SORT_LABEL[state.sort.key]}（${SORT_DIR_WORD[state.sort.key][state.sort.dir === 1 ? 0 : 1]}）`;
+
+  /* ------------------------------------------------------------------
+   * 燈號總表
+   * ------------------------------------------------------------------ */
+  const matrixEl = $('#matrix');
+  const overlay = $('#matrixOverlay');
+  const cloudLayer = $('#cloudLayer');
+  const tip = $('#matrixTip');
+  let justAdded = null;
+  let hotId = null;
+
+  // 欄內燈號由自訂提示說明，拿掉 App.lamp 的原生 title，避免兩層 tooltip 疊在一起
+  const bareLamp = (s) => App.lamp(s).replace(/ title="[^"]*"/, '');
+  const colLabel = (p) => `${p.id} ${p.name}，${App.stageName(p.stage)}，第 ${p.round} 回合；` +
+    App.DISC.map((d) => `${d.name}${App.LAMPS[p.lamps[d.key]].label}`).join('、') + (isOverdue(p) ? `；已逾期 ${-App.days(p.due)} 日` : '');
+
+  function renderMatrix() {
+    hotId = null;
+    let ci = 0;
+    $('#matrixGroups').innerHTML = App.STAGES.map((s) => {
+      const list = P.filter((p) => p.stage === s.key).sort((a, b) => a.id.localeCompare(b.id));
+      const cols = list.map((p) => {
+        const i = ci++;
+        return `<button type="button" class="pm-col${p.officer === App.ME ? ' is-mine' : ''}${p.id === justAdded ? ' is-new' : ''}" data-id="${p.id}" style="--ci:${i}" aria-label="${esc(colLabel(p))}">
+          ${DISC_KEYS.map((k, r) => `<span class="pm-cell" style="--ri:${r}">${bareLamp(p.lamps[k])}</span>`).join('')}
+          <span class="pm-col__no"><span>${p.id.slice(4)}</span></span>
+        </button>`;
+      }).join('');
+      return `<div class="pm-group" data-stage="${s.key}" style="--n:${list.length}">
+        <button type="button" class="pm-dim" data-stage="${s.key}" aria-pressed="false" aria-label="只看${s.name}（${list.length} 件）">
+          <span class="pm-dim__text">${App.stageChip(s.key)}<b>${list.length}</b></span>
+          <span class="pm-dim__line" aria-hidden="true"></span>
+        </button>
+        <div class="pm-group__cols">${cols}</div>
+      </div>`;
+    }).join('');
+    justAdded = null;
+
+    $('#matrixRows').innerHTML = `<span class="pm-corner" aria-hidden="true">科別＼階段</span>` + App.DISC.map((d) => {
+      const n = P.filter((p) => p.lamps[d.key] === 'fix').length;
+      return `<button type="button" class="pm-rowbtn" data-disc="${d.key}" aria-pressed="false" aria-label="${d.name}科須補正 ${n} 件，點選篩選">
+        ${App.disc(d.key)}<span class="pm-rowbtn__name">${d.name}</span><span class="pm-rowbtn__n${n ? '' : ' is-zero'}" aria-hidden="true">${n}</span>
+      </button>`;
+    }).join('') + `<span class="pm-rows__foot" aria-hidden="true">115-</span>`;
+    $('#matrixBands').innerHTML = DISC_KEYS.map((k) => `<div class="pm-band" data-disc="${k}"></div>`).join('');
+  }
+
+  // 篩選只切換 class，不重建 DOM，讓淡出淡入走 CSS transition
+  function applyMatrixFilter() {
+    $$('.pm-col', matrixEl).forEach((c) => c.classList.toggle('is-out', !matches(byId(c.dataset.id))));
+    $$('.pm-group', matrixEl).forEach((g) => g.classList.toggle('is-out', !$('.pm-col:not(.is-out)', g)));
+    $$('.pm-dim', matrixEl).forEach((b) => b.setAttribute('aria-pressed', String(state.stage === b.dataset.stage)));
+    $$('.pm-rowbtn', matrixEl).forEach((b) => b.setAttribute('aria-pressed', String(state.discs.has(b.dataset.disc))));
+    $$('.pm-band', matrixEl).forEach((b) => b.classList.toggle('is-on', state.discs.has(b.dataset.disc)));
+  }
+
+  /* ---------- 紅筆雲線（逾期整欄、篩選科別的連續補正格） ---------- */
+  let cloudsReady = false;
+  let cloudKeys = new Set();
+  let traceToken = 0;
+
+  function cloudSpecs() {
+    const box = matrixEl.getBoundingClientRect();
+    const rowCy = $$('.pm-band', matrixEl).map((b) => { const r = b.getBoundingClientRect(); return r.top - box.top + r.height / 2; });
+    const geo = $$('.pm-col', matrixEl).map((c) => {
+      const r = c.getBoundingClientRect();
+      return { id: c.dataset.id, group: c.parentElement.parentElement.dataset.stage, cx: r.left - box.left + r.width / 2, out: c.classList.contains('is-out') };
+    });
+    const specs = [];
+    // 逾期：整欄圈起並在下方手寫逾期天數
+    geo.forEach((g) => {
+      const p = byId(g.id);
+      if (!isOverdue(p)) return;
+      const top = rowCy[0] - 14, bottom = rowCy[rowCy.length - 1] + 14;
+      specs.push({ key: `over:${g.id}`, x: g.cx - 11, y: top, w: 22, h: bottom - top, arc: 5, seed: Number(g.id.slice(4)), width: 2, out: g.out,
+        note: { x: g.cx, y: box.height - 8, text: `逾期 ${-App.days(p.due)} 日` } });
+    });
+    // 篩選科別：同一階段內相鄰的「須補正」格合成一朵雲，讀起來像審查員一筆圈起一串
+    DISC_KEYS.forEach((k, r) => {
+      if (!state.discs.has(k)) return;
+      let run = null;
+      const flush = () => {
+        if (!run) return;
+        specs.push({ key: `disc:${k}:${geo[run.a].id}:${geo[run.b].id}`, x: geo[run.a].cx - 12, y: rowCy[r] - 12, w: geo[run.b].cx - geo[run.a].cx + 24, h: 24, arc: 6, seed: r * 53 + run.a, width: 1.8, out: false });
+        run = null;
+      };
+      geo.forEach((g, i) => {
+        const hit = !g.out && byId(g.id).lamps[k] === 'fix';
+        if (hit && run && run.group === g.group && run.b === i - 1) run.b = i;
+        else { flush(); if (hit) run = { a: i, b: i, group: g.group }; }
+      });
+      flush();
+    });
+    return specs;
+  }
+
+  function renderClouds({ animate = false } = {}) {
+    if (!cloudsReady) return;
+    const token = ++traceToken;
+    const specs = cloudSpecs();
+    $('.pl-pen', overlay).innerHTML = '';
+    cloudLayer.innerHTML = specs.map((s) =>
+      `<path class="pm-cloud${s.out ? ' is-out' : ''}" data-key="${s.key}" d="${App.cloudPath(s.x, s.y, s.w, s.h, { arc: s.arc, seed: s.seed })}" fill="none" stroke="currentColor" stroke-width="${s.width}" stroke-linejoin="round" stroke-linecap="round"/>` +
+      (s.note ? `<text class="pm-note${s.out ? ' is-out' : ''}" data-key="${s.key}" x="${s.note.x.toFixed(1)}" y="${s.note.y.toFixed(1)}" font-size="15" text-anchor="middle" fill="currentColor" transform="rotate(-3 ${s.note.x.toFixed(1)} ${s.note.y.toFixed(1)})">${esc(s.note.text)}</text>` : '')
+    ).join('');
+    const fresh = animate ? specs.filter((s) => !cloudKeys.has(s.key)) : [];
+    cloudKeys = new Set(specs.map((s) => s.key));
+    if (!fresh.length || !motion()) return;
+    const items = fresh.map((s) => ({
+      path: $(`path[data-key="${s.key}"]`, cloudLayer),
+      note: s.note ? $(`text[data-key="${s.key}"]`, cloudLayer) : null,
+    }));
+    items.forEach(({ path, note }) => { path.style.opacity = '0'; if (note) note.style.opacity = '0'; });
+    // 一支筆依序描：上一朵描完才下一朵，畫面上永遠只有一個筆尖
+    (async () => {
+      for (const { path, note } of items) {
+        if (token !== traceToken) return;
+        path.style.opacity = '';
+        await App.penTrace(path, { duration: items.length > 6 ? 360 : 480, svg: overlay });
+        if (note && note.isConnected) {
+          note.style.opacity = '';
+          note.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+        }
+      }
+    })();
+  }
+
+  let introTimer = 0;
+  function playIntro() {
+    clearTimeout(introTimer);
+    cloudsReady = false;
+    cloudKeys = new Set();
+    traceToken++;
+    cloudLayer.innerHTML = '';
+    $('.pl-pen', overlay).innerHTML = '';
+    matrixEl.classList.remove('is-intro');
+    void matrixEl.offsetWidth;   // 強制重排，讓同一個 class 能重新觸發動畫
+    matrixEl.classList.add('is-intro');
+    // 燈號點亮後才下紅筆，視線先讀整張表再看紅圈
+    introTimer = setTimeout(() => {
+      cloudsReady = true;
+      renderClouds({ animate: true });
+      introTimer = setTimeout(() => matrixEl.classList.remove('is-intro'), 1400);
+    }, motion() ? 1000 : 0);
+  }
+  let introStarted = false;
+  $('#schedSheet').addEventListener('reveal', () => { if (!introStarted) { introStarted = true; playIntro(); } });
+  $('#redrawBtn').addEventListener('click', playIntro);
+
+  // 版面寬度改變（含手機轉向、字體載入）時，雲線依新格位重算；不重播動畫
+  let lastSize = '';
+  new ResizeObserver(() => {
+    const size = `${matrixEl.offsetWidth}x${matrixEl.offsetHeight}`;
+    if (size === lastSize) return;
+    lastSize = size;
+    renderClouds({ animate: false });
+  }).observe(matrixEl);
+
+  /* ---------- 欄位提示與雙向標亮 ---------- */
+  function showTip(col) {
+    const p = byId(col.dataset.id);
+    tip.innerHTML = `<div class="pm-tip__head"><span class="mono">${p.id}</span>${App.stageChip(p.stage)}${App.rev(p.round)}${p.stage === 'issued' ? '<span class="stamp stamp--ok stamp--sm" style="margin-left:auto">核發</span>' : App.dueChip(p)}</div>
+      <div class="pm-tip__title">${esc(p.name)}</div>
+      <div class="pm-tip__sub">${esc(p.applicant)}・${esc(p.district)}・承辦 ${esc(App.PEOPLE[p.officer].name)}</div>
+      ${App.lampRow(p, { labels: true })}`;
+    const host = $('#schedBody').getBoundingClientRect();
+    const r = col.getBoundingClientRect();
+    const cx = r.left + r.width / 2 - host.left;
+    const tw = tip.offsetWidth;
+    const left = Math.min(Math.max(4, cx - tw / 2), host.width - tw - 4);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${r.bottom - host.top + 10}px`;
+    tip.style.setProperty('--ax', `${Math.min(tw - 14, Math.max(14, cx - left))}px`);
+    tip.classList.add('is-show');
+  }
+  const hideTip = () => tip.classList.remove('is-show');
+
+  function setHot(id) {
+    if (hotId === id) return;
+    if (hotId) {
+      $(`.pm-col[data-id="${hotId}"]`, matrixEl)?.classList.remove('is-hot');
+      $(`#permitBody tr[data-id="${hotId}"]`)?.classList.remove('is-hot');
+    }
+    hotId = id;
+    if (id) {
+      $(`.pm-col[data-id="${id}"]`, matrixEl)?.classList.add('is-hot');
+      $(`#permitBody tr[data-id="${id}"]`)?.classList.add('is-hot');
+    }
+  }
+
+  function flashRow(id) {
+    const tr = $(`#permitBody tr[data-id="${id}"]`);
+    if (!tr) return false;
+    tr.scrollIntoView({ block: 'center', behavior: motion() ? 'smooth' : 'auto' });
+    tr.classList.remove('is-flash');
+    void tr.offsetWidth;
+    tr.classList.add('is-flash');
+    return true;
+  }
+  function locate(id) {
+    if (flashRow(id)) return;
+    const p = byId(id);
+    App.toast(`${p.id} 不在目前的篩選結果`, {
+      desc: `${p.name}・${App.stageName(p.stage)}`,
+      tone: 'info',
+      action: { label: '清除篩選並定位', onClick: () => { clearFilters(); flashRow(id); } },
+    });
+  }
+
+  matrixEl.addEventListener('click', (e) => {
+    const col = e.target.closest('.pm-col');
+    const row = e.target.closest('.pm-rowbtn');
+    const dim = e.target.closest('.pm-dim');
+    if (col) { hideTip(); locate(col.dataset.id); }
+    if (row) toggleDisc(row.dataset.disc);
+    if (dim) setStage(state.stage === dim.dataset.stage ? 'all' : dim.dataset.stage);
+  });
+  matrixEl.addEventListener('mouseover', (e) => {
+    const col = e.target.closest('.pm-col');
+    const row = e.target.closest('.pm-rowbtn');
+    if (col) { showTip(col); setHot(col.dataset.id); } else { hideTip(); setHot(null); }
+    $$('.pm-band', matrixEl).forEach((b) => b.classList.toggle('is-hover', !!row && b.dataset.disc === row.dataset.disc));
+  });
+  matrixEl.addEventListener('mouseleave', () => {
+    hideTip();
+    setHot(null);
+    $$('.pm-band.is-hover', matrixEl).forEach((b) => b.classList.remove('is-hover'));
+  });
+  matrixEl.addEventListener('focusin', (e) => { const col = e.target.closest('.pm-col'); if (col) showTip(col); });
+  matrixEl.addEventListener('focusout', hideTip);
+  // 水平捲動時提示框位置會失準，直接收起
+  $('.pm-sched__scroll').addEventListener('scroll', hideTip, { passive: true });
+
+  /* ------------------------------------------------------------------
+   * 篩選列
+   * ------------------------------------------------------------------ */
+  $('#districtSel').innerHTML = `<option value="">全部行政區</option>` + DISTRICTS.map((d) => `<option value="${d}">${d}</option>`).join('');
+  $('#discChips').innerHTML = App.DISC.map((d) => `<button class="chip pm-chip" type="button" data-disc="${d.key}" aria-pressed="false">${App.disc(d.key)}${d.name}<span class="chip__count" data-dn="${d.key}"></span></button>`).join('');
+  $('#lampHead').innerHTML = App.DISC.map((d) => `<th class="pm-th-lamp" scope="col">${App.disc(d.key)}</th>`).join('');
+  $('#lampLegend').innerHTML = Object.keys(App.LAMPS).map((k) => App.lamp(k, { label: true })).join('');
+  $('#sortSel').innerHTML = Object.keys(SORT_LABEL).flatMap((k) => [1, -1].map((dir) =>
+    `<option value="${k}:${dir}">${SORT_LABEL[k]}（${SORT_DIR_WORD[k][dir === 1 ? 0 : 1]}）</option>`)).join('');
+  // 圖例裡的雲線與正式雲線同一支產生器
+  const legendCloud = (w, h, seed) => `<svg viewBox="0 0 ${w + 8} ${h + 8}" aria-hidden="true"><path d="${App.cloudPath(4, 4, w, h, { arc: 4, seed })}" fill="none" stroke="#D7263D" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+  $('#schedLegend').innerHTML = Object.keys(App.LAMPS).map((k) => App.lamp(k, { label: true })).join('') +
+    `<span class="pm-legend__item">${legendCloud(18, 10, 2)}須補正（篩選中的科別）</span>` +
+    `<span class="pm-legend__item">${legendCloud(18, 10, 9)}逾期案件</span>` +
+    `<span class="pm-legend__item"><span class="pm-legend__mine">0412</span>我承辦</span>`;
+
+  const stageSeg = App.seg($('#stageSeg'), { onChange: (v) => setStage(v) });
+  const roundSeg = App.seg($('#roundSeg'), { onChange: (v) => { state.round = v; update(); } });
+  function setStage(v) {
+    state.stage = v;
+    stageSeg.set(v, false);
+    update();
+  }
+  function toggleDisc(k) {
+    if (state.discs.has(k)) state.discs.delete(k); else state.discs.add(k);
+    update();
+  }
+  $('#discChips').addEventListener('click', (e) => {
+    const c = e.target.closest('.chip');
+    if (c) toggleDisc(c.dataset.disc);
+  });
+  $('#q').addEventListener('input', (e) => {
+    state.q = e.target.value;
+    // 打字時不重描紅筆，避免每個字都重來一次
+    update({ animate: false });
+  });
+  $('#mineSwitch').addEventListener('change', (e) => { state.mine = e.target.checked; update(); });
+  $('#districtSel').addEventListener('change', (e) => { state.district = e.target.value; update(); });
+  $('#sortSel').addEventListener('change', (e) => {
+    const [key, dir] = e.target.value.split(':');
+    state.sort = { key, dir: Number(dir) };
+    update({ animate: false });
+  });
+  $$('.pm-table .sort').forEach((b) => b.addEventListener('click', () => {
+    const key = b.dataset.sort;
+    state.sort = state.sort.key === key ? { key, dir: -state.sort.dir } : { key, dir: SORT_DEFAULT_DIR[key] };
+    update({ animate: false });
+  }));
+  function clearFilters() {
+    Object.assign(state, { q: '', stage: 'all', district: '', round: 'all', mine: false });
+    state.discs.clear();
+    $('#q').value = '';
+    update();
+  }
+  $('#clearBtn').addEventListener('click', clearFilters);
+  // 只有手機版會收合（CSS 控制）；桌機上切換 class 沒有視覺影響
+  $('#moreBtn').addEventListener('click', () => {
+    const open = $('#filterbar').classList.toggle('is-collapsed') === false;
+    $('#moreBtn').setAttribute('aria-expanded', String(open));
+    $('#moreLabel').textContent = open ? '收合篩選' : '更多篩選：承辦、科別、回合、行政區';
+  });
+
+  // 篩選標籤：每個條件一顆可移除的按鈕
+  function tokenList() {
+    const t = [];
+    if (state.q.trim()) t.push(['q', `搜尋「${state.q.trim()}」`]);
+    if (state.stage !== 'all') t.push(['stage', `階段：${App.stageName(state.stage)}`]);
+    DISC_KEYS.filter((k) => state.discs.has(k)).forEach((k) => t.push([`disc:${k}`, `${App.DISC_MAP[k].name}須補正`]));
+    if (state.round !== 'all') t.push(['round', `回合 R${state.round}`]);
+    if (state.district) t.push(['district', state.district]);
+    if (state.mine) t.push(['mine', '我承辦']);
+    return t;
+  }
+  $('#tokens').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    const [k, v] = b.dataset.remove.split(':');
+    if (k === 'q') { state.q = ''; $('#q').value = ''; }
+    if (k === 'stage') state.stage = 'all';
+    if (k === 'disc') state.discs.delete(v);
+    if (k === 'round') state.round = 'all';
+    if (k === 'district') state.district = '';
+    if (k === 'mine') state.mine = false;
+    update();
+  });
+
+  function renderFacets(list) {
+    $$('[data-sn]').forEach((el) => {
+      const k = el.dataset.sn;
+      el.textContent = P.filter((p) => matches(p, 'stage') && (k === 'all' || p.stage === k)).length;
+    });
+    stageSeg.set(state.stage, false);
+    roundSeg.set(state.round, false);
+    $$('[data-dn]').forEach((el) => { el.textContent = P.filter((p) => matches(p, 'disc') && p.lamps[el.dataset.dn] === 'fix').length; });
+    $$('#discChips .chip').forEach((c) => c.setAttribute('aria-pressed', String(state.discs.has(c.dataset.disc))));
+    $('#districtSel').value = state.district;
+    $('#mineSwitch').checked = state.mine;
+    $('#sortSel').value = `${state.sort.key}:${state.sort.dir}`;
+    $('#clearBtn').disabled = !anyFilter();
+    // 收合區裡有幾個條件在作用，收起來時也看得到
+    const hiddenActive = (state.mine ? 1 : 0) + state.discs.size + (state.round !== 'all' ? 1 : 0) + (state.district ? 1 : 0);
+    $('#moreN').textContent = hiddenActive || '';
+
+    $('#resultCount').innerHTML = `符合 <b>${list.length}</b> / ${P.length} 件`;
+    $('#tokens').innerHTML = tokenList().map(([k, label]) => `<button type="button" class="pm-token" data-remove="${esc(k)}" aria-label="移除篩選：${esc(label)}">${esc(label)}${App.icon('x')}</button>`).join('');
+    $('#registerSub').textContent = `依${sortText()}排序・點列開啟案件詳情`;
+    $$('.pm-table .sort').forEach((b) => {
+      const on = b.dataset.sort === state.sort.key;
+      const v = state.sort.dir === 1 ? 'ascending' : 'descending';
+      if (on) { b.setAttribute('aria-sort', v); b.parentElement.setAttribute('aria-sort', v); }
+      else { b.removeAttribute('aria-sort'); b.parentElement.removeAttribute('aria-sort'); }
+    });
+  }
+
+  /* ------------------------------------------------------------------
+   * 案件登記簿
+   * ------------------------------------------------------------------ */
+  // 建物剖面小圖：地上每層 1.1px、地下每層 2px，一眼看出量體大小
+  function glyph(p) {
+    const fh = 1.1, g = 28, up = Math.min(p.up, 24), h = Math.max(3, up * fh);
+    let floors = '';
+    for (let f = 5; f < up; f += 5) floors += `<line x1="4" x2="14" y1="${(g - f * fh).toFixed(1)}" y2="${(g - f * fh).toFixed(1)}" stroke="currentColor" stroke-width=".7"/>`;
+    const base = p.down ? `<rect x="5" y="${g + 1}" width="8" height="${Math.min(p.down, 5) * 2 - 1}" fill="none" stroke="currentColor" stroke-width=".8" stroke-dasharray="2 1.4"/>` : '';
+    return `<svg class="pm-glyph" viewBox="0 0 18 40" aria-hidden="true"><rect x="4" y="${(g - h).toFixed(1)}" width="10" height="${h.toFixed(1)}" fill="#FFFEFA" stroke="currentColor" stroke-width="1.1"/>${floors}${base}<line x1="0" x2="18" y1="${g}" y2="${g}" stroke="currentColor" stroke-width="1.3"/></svg>`;
+  }
+  function stageNote(p) {
+    const done = DISC_KEYS.filter((k) => p.lamps[k] === 'pass' || p.lamps[k] === 'na').length;
+    const fix = DISC_KEYS.filter((k) => p.lamps[k] === 'fix').length;
+    return {
+      intake: `收件 ${md(p.received)}`,
+      admin: `行政 ${App.PEOPLE.adm2.name}`,
+      tech: `${done} / 5 科完成`,
+      fix: `<span class="red-ink">補正 ${fix} 科</span>`,
+      issued: `核發 ${p.issuedAt ? md(p.issuedAt) : ''}`,
+    }[p.stage];
+  }
+  function dueCell(p) {
+    if (p.stage === 'issued') return `<span class="stamp stamp--ok stamp--sm">核發</span><div class="table__sub">${App.fmt.date(p.issuedAt)}</div>`;
+    return `<span title="${esc(App.dueLabel(p))}">${App.dueChip(p)}</span><div class="table__sub">${App.fmt.date(p.due)}</div>` +
+      (p.reminded ? `<div class="pm-reminded">✓ 已催辦 ${md(p.reminded)}</div>` : '');
+  }
+  function lampCell(p, k, seed) {
+    const s = p.lamps[k];
+    const cloud = s === 'fix' && state.discs.has(k)
+      ? `<svg class="pm-lc__cloud" viewBox="0 0 40 34" data-key="${p.id}:${k}" aria-hidden="true"><path d="${App.cloudPath(7, 6, 26, 22, { arc: 5, seed })}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>`
+      : '';
+    return `<span class="pm-lc">${App.lamp(s, { disc: k })}${cloud}</span>`;
+  }
+  function rowMarkup(p) {
+    const officer = App.PEOPLE[p.officer];
+    const mine = p.officer === App.ME;
+    const seed = Number(p.id.slice(4));
+    return `<tr class="is-link${selected.has(p.id) ? ' is-selected' : ''}" data-id="${p.id}">
+      <td class="pm-td-sel"><label class="check"><input type="checkbox" data-sel="${p.id}"${selected.has(p.id) ? ' checked' : ''} aria-label="選取 ${p.id}"></label></td>
+      <td class="pm-td-key"><a class="table__key" href="${App.permitUrl(p.id)}">${hi(p.id)}</a><div class="table__sub">${hi(App.caseNo(p))}</div>${p.permitNo ? `<span class="tag tag--ok">${hi(p.permitNo)}</span>` : ''}</td>
+      <td class="pm-td-title"><div class="table__title"><a href="${App.permitUrl(p.id)}" tabindex="-1">${hi(p.name)}</a></div><div class="table__sub">${hi(p.applicant)}<span class="pm-addr">${hi(App.address(p))}</span></div></td>
+      <td class="pm-td-bldg"><div class="pm-bldg">${glyph(p)}<div class="pm-bldg__txt"><span class="pm-bldg__fl"><b>${p.up}F</b>${p.down ? ` / B${p.down}` : ''}</span><span class="table__sub">${esc(p.use)}・${esc(p.cls)}</span><span class="table__sub mono">${App.fmt.num(p.area)} m²</span></div></div></td>
+      <td class="pm-td-rev">${App.rev(p.round)}</td>
+      ${DISC_KEYS.map((k, i) => `<td class="pm-td-lamp" data-k="${k}" data-short="${App.DISC_MAP[k].short}">${lampCell(p, k, seed + i * 7)}</td>`).join('')}
+      <td class="pm-td-stage">${App.stageChip(p.stage)}<div class="table__sub">${stageNote(p)}</div></td>
+      <td class="pm-td-officer"><span class="pm-officer">${App.avatar(p.officer, 'sm')}${mine ? `<mark class="hl">${esc(officer.name)}</mark>` : esc(officer.name)}</span></td>
+      <td class="pm-td-due">${dueCell(p)}</td>
+      <td class="pm-td-act"><a class="icon-btn icon-btn--sm icon-btn--ghost" href="${App.reviewUrl(p.id)}" aria-label="開啟 ${p.id} 圖說審查" title="圖說審查">${App.icon('pen')}</a></td>
+    </tr>`;
+  }
+
+  let tableCloudKeys = new Set();
+  function renderTable(list, { animate }) {
+    visibleIds = list.map((p) => p.id);
+    const vis = new Set(visibleIds);
+    // 被篩掉的案件不再算在選取內，避免批次動作作用到看不見的列
+    [...selected].forEach((id) => { if (!vis.has(id)) selected.delete(id); });
+    hotId = null;
+    $('#permitBody').innerHTML = list.length ? list.map(rowMarkup).join('')
+      : `<tr class="pm-empty"><td colspan="14">${App.emptyState({ title: '沒有符合條件的案件', text: '放寬篩選條件，或改用案號末四碼搜尋，例如 0412。' })}<div class="pm-empty__act"><button class="btn btn--sm" type="button" data-clear>清除所有篩選</button></div></td></tr>`;
+    const clouds = $$('#permitBody .pm-lc__cloud');
+    const fresh = animate ? clouds.filter((c) => !tableCloudKeys.has(c.dataset.key)) : [];
+    tableCloudKeys = new Set(clouds.map((c) => c.dataset.key));
+    // 不在畫面上（手機隱藏欄）的路徑量不到長度，略過
+    fresh.filter((c) => c.getClientRects().length).forEach((c, i) => {
+      App.penTrace(c.firstElementChild, { duration: 460, delay: 160 + i * 80 });
+    });
+    syncSelection();
+  }
+
+  function update({ animate = true } = {}) {
+    const list = P.filter((p) => matches(p)).sort(sorter);
+    applyMatrixFilter();
+    renderFacets(list);
+    renderTable(list, { animate });
+    renderClouds({ animate });
+  }
+
+  /* ---------- 表格互動 ---------- */
+  const body = $('#permitBody');
+  body.addEventListener('click', (e) => {
+    if (e.target.closest('[data-clear]')) { clearFilters(); return; }
+    if (e.target.closest('a, button, input, label, select')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) location.href = App.permitUrl(tr.dataset.id);
+  });
+  body.addEventListener('change', (e) => {
+    const cb = e.target.closest('input[data-sel]');
+    if (!cb) return;
+    if (cb.checked) selected.add(cb.dataset.sel); else selected.delete(cb.dataset.sel);
+    syncSelection();
+  });
+  body.addEventListener('mouseover', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    setHot(tr ? tr.dataset.id : null);
+  });
+  body.addEventListener('mouseleave', () => setHot(null));
+  $('#selAll').addEventListener('change', (e) => {
+    visibleIds.forEach((id) => { if (e.target.checked) selected.add(id); else selected.delete(id); });
+    syncSelection();
+  });
+
+  /* ---------- 選取與批次操作 ---------- */
+  const bar = $('#batchBar');
+  function syncSelection() {
+    const nVis = visibleIds.filter((id) => selected.has(id)).length;
+    const all = $('#selAll');
+    all.checked = visibleIds.length > 0 && nVis === visibleIds.length;
+    all.indeterminate = nVis > 0 && nVis < visibleIds.length;
+    $$('#permitBody tr[data-id]').forEach((tr) => {
+      const on = selected.has(tr.dataset.id);
+      tr.classList.toggle('is-selected', on);
+      $('input[data-sel]', tr).checked = on;
+    });
+    const on = selected.size > 0;
+    bar.classList.toggle('is-on', on);
+    bar.inert = !on;
+    bar.setAttribute('aria-hidden', String(!on));
+    document.body.classList.toggle('pm-batch-on', on);
+    $('#batchN').textContent = selected.size;
+  }
+  const selectedPermits = () => [...selected].map(byId);
+  const idList = (list) => list.slice(0, 3).map((p) => p.id).join('、') + (list.length > 3 ? ` 等 ${list.length} 件` : '');
+  const needSelection = () => App.toast('請先勾選案件', { desc: '在登記簿左側勾選要批次處理的案件。', tone: 'info' });
+
+  function batchRemind() {
+    if (!selected.size) { needSelection(); return; }
+    const list = selectedPermits().filter((p) => p.stage !== 'issued' && !p.reminded);
+    if (!list.length) { App.toast('所選案件都已催辦或已核發', { tone: 'info' }); return; }
+    list.forEach((p) => { p.reminded = App.TODAY; });
+    selected.clear();
+    App.commit('remind');
+    App.toast(`已催辦 ${list.length} 件`, {
+      desc: `系統訊息已送達承辦與起造人：${idList(list)}。`,
+      tone: 'ok',
+      action: { label: '復原', onClick: () => { list.forEach((p) => { p.reminded = null; }); App.commit('unremind'); } },
+    });
+  }
+
+  function batchAssign() {
+    if (!selected.size) { needSelection(); return; }
+    const list = selectedPermits().filter((p) => p.stage !== 'issued');
+    if (!list.length) { App.toast('已核發案件不需改分承辦', { tone: 'info' }); return; }
+    const arc = Object.values(App.PEOPLE).filter((x) => x.disc === 'arc');
+    const load = (id) => P.filter((p) => p.officer === id && p.stage !== 'issued').length;
+    App.modal({
+      title: '改分建築科承辦',
+      code: 'ASSIGN',
+      size: 'sm',
+      body: `<p class="pm-modal-lead">將 <b>${list.length}</b> 件（${esc(idList(list))}）改分給：</p>
+        <div class="pm-assign" role="radiogroup" aria-label="建築科承辦">${arc.map((x, i) => `<label class="radio pm-assign__opt"><input type="radio" name="officer" value="${x.id}"${i === 0 ? ' checked' : ''}>${App.person(x.id)}<span class="pm-assign__load">在手 ${load(x.id)} 件</span></label>`).join('')}</div>`,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        {
+          label: '確認改分', variant: 'primary', icon: 'check',
+          onClick: (close, d) => {
+            const to = $('input[name="officer"]:checked', d).value;
+            const name = App.PEOPLE[to].name;
+            const changed = list.filter((p) => p.officer !== to);
+            close();
+            if (!changed.length) { App.toast(`所選案件原本就由 ${name} 承辦`, { tone: 'info' }); return; }
+            const prev = new Map(changed.map((p) => [p.id, p.officer]));
+            changed.forEach((p) => { p.officer = to; });
+            selected.clear();
+            App.commit('assign');
+            App.toast(`已改分 ${changed.length} 件給 ${name}`, {
+              desc: '原承辦與新承辦都會收到系統通知。',
+              tone: 'ok',
+              action: { label: '復原', onClick: () => { changed.forEach((p) => { p.officer = prev.get(p.id); }); App.commit('assign-undo'); } },
+            });
+          },
+        },
+      ],
+    });
+  }
+
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-batch]');
+    if (!b) return;
+    const act = b.dataset.batch;
+    if (act === 'remind') batchRemind();
+    if (act === 'assign') batchAssign();
+    if (act === 'export') {
+      if (!selected.size) { needSelection(); return; }
+      App.toast(`已匯出所選 ${selected.size} 件`, { desc: '案件清冊（含五科燈號與期限）已寄至建築科共用信箱。', tone: 'ok' });
+    }
+    if (act === 'clear') { selected.clear(); syncSelection(); }
+  });
+
+  $('#exportBtn').addEventListener('click', () => {
+    const tokens = tokenList().map(([, label]) => label).join('、');
+    App.toast(`已匯出案件清冊 ${visibleIds.length} 件`, { desc: `${tokens ? `篩選條件：${tokens}。` : '全部案件。'}檔案已寄至建築科共用信箱。`, tone: 'ok' });
+  });
+
+  /* ------------------------------------------------------------------
+   * 新增掛號收件（表單驗證 → 寫入記憶體 → 同一套重繪，可復原）
+   * ------------------------------------------------------------------ */
+  const USES = [['集合住宅', 'H-2'], ['店鋪住宅', 'H-2'], ['透天住宅', 'H-2'], ['辦公', 'G-2'], ['旅館', 'B-4'], ['商場', 'B-2'], ['廠房', 'C-1'], ['倉庫', 'C-2'], ['學校', 'D-3'], ['長照機構', 'H-1']];
+  const nextId = () => `115-${String(Math.max(...P.map((p) => Number(p.id.slice(4)))) + 1).padStart(4, '0')}`;
+  const field = (name, label, control, { req = false, hint = '', wide = false } = {}) =>
+    `<div class="field${wide ? ' pm-form__wide' : ''}" data-f="${name}"><label class="label" for="nf-${name}">${label}${req ? '<span class="req" aria-hidden="true">*</span>' : ''}</label>${control}${hint ? `<span class="hint">${hint}</span>` : ''}<span class="field__error" id="nf-${name}-err"></span></div>`;
+  const ctl = (name, attrs) => `<input class="input" id="nf-${name}" name="${name}" aria-describedby="nf-${name}-err" ${attrs}>`;
+
+  function intakeForm(id) {
+    const due = App.addDays(App.TODAY, 7);
+    return `<form class="pm-intake" novalidate>
+      <div class="pm-form__meta"><span>收件號 <b>${id}</b></span><span>收件日 <b>${App.fmt.date(App.TODAY)}</b></span><span>行政審查期限 <b>${App.fmt.date(due)}</b>（7 日）</span></div>
+      <div class="pm-form">
+        ${field('name', '案名', ctl('name', 'type="text" placeholder="例：港新路集合住宅新建工程" required'), { req: true, wide: true })}
+        ${field('applicant', '起造人', ctl('applicant', 'type="text" placeholder="自然人或法人全名" required'), { req: true })}
+        ${field('architect', '設計建築師', `<select class="select" id="nf-architect" name="architect">${Object.entries(App.ARCHITECTS).map(([k, a]) => `<option value="${k}">${esc(a.name)}</option>`).join('')}</select>`)}
+        ${field('district', '行政區', `<select class="select" id="nf-district" name="district" aria-describedby="nf-district-err" required><option value="">請選擇</option>${DISTRICTS.map((d) => `<option value="${d}">${d}</option>`).join('')}</select>`, { req: true })}
+        ${field('addr', '基地地址', ctl('addr', 'type="text" placeholder="路段與門牌，例：港新路 120 號" required'), { req: true, hint: '不含市名與行政區' })}
+        ${field('use', '用途・使用類組', `<select class="select" id="nf-use" name="use">${USES.map(([u, c]) => `<option value="${u}">${u}（${c}）</option>`).join('')}</select>`)}
+        ${field('struct', '構造', `<select class="select" id="nf-struct" name="struct"><option value="RC">RC 鋼筋混凝土</option><option value="SRC">SRC 鋼骨鋼筋混凝土</option><option value="SC">SC 鋼構造</option></select>`)}
+        <div class="pm-form__row">
+          ${field('up', '地上層數', ctl('up', 'type="number" inputmode="numeric" min="1" max="60" step="1" placeholder="1–60" required'), { req: true })}
+          ${field('down', '地下層數', ctl('down', 'type="number" inputmode="numeric" min="0" max="8" step="1" value="0"'))}
+        </div>
+        ${field('area', '總樓地板面積（m²）', ctl('area', 'type="number" inputmode="decimal" min="0" step="0.01" placeholder="例：12480.30" required'), { req: true })}
+        ${field('officer', '建築科承辦', `<select class="select" id="nf-officer" name="officer">${Object.values(App.PEOPLE).filter((x) => x.disc === 'arc').map((x) => `<option value="${x.id}">${esc(x.name)}${x.id === App.ME ? '（我）' : ''}・${esc(x.title)}</option>`).join('')}</select>`)}
+      </div>
+    </form>`;
+  }
+
+  function validateIntake(form) {
+    const v = Object.fromEntries(new FormData(form));
+    const errs = {};
+    const up = Number(v.up), down = v.down === '' ? 0 : Number(v.down), area = Number(v.area);
+    if (!v.name.trim()) errs.name = '請輸入案名';
+    if (!v.applicant.trim()) errs.applicant = '請輸入起造人';
+    if (!v.district) errs.district = '請選擇行政區';
+    if (!v.addr.trim()) errs.addr = '請輸入基地地址';
+    if (v.up === '' || !Number.isInteger(up) || up < 1 || up > 60) errs.up = '須為 1–60 的整數';
+    if (!Number.isInteger(down) || down < 0 || down > 8) errs.down = '須為 0–8 的整數';
+    if (v.area === '' || !(area > 0) || area > 200000) errs.area = '請輸入 0–200,000 之間的面積';
+    $$('.field[data-f]', form).forEach((f) => {
+      const msg = errs[f.dataset.f];
+      f.classList.toggle('is-invalid', !!msg);
+      $('.field__error', f).textContent = msg || '';
+      $('input, select', f).setAttribute('aria-invalid', String(!!msg));
+    });
+    return { v, errs, up, down, area };
+  }
+
+  function openIntake() {
+    const id = nextId();
+    let m = null;
+    const submit = () => {
+      const form = $('form', m.el);
+      const { v, errs, up, down, area } = validateIntake(form);
+      const first = Object.keys(errs)[0];
+      if (first) { $(`#nf-${first}`, form).focus(); return; }
+      const [use, cls] = USES.find(([u]) => u === v.use);
+      // 小型住宅免消防、無障礙審查；10 層以上或萬平方公尺以上才送都設
+      const small = cls === 'H-2' && up <= 4 && area < 1500;
+      const lamps = { arc: 'wait', fir: small ? 'na' : 'wait', str: 'wait', acc: small ? 'na' : 'wait', udr: up >= 10 || area >= 10000 ? 'wait' : 'na' };
+      const np = {
+        id, name: v.name.trim(), applicant: v.applicant.trim(), architect: v.architect, district: v.district, addr: v.addr.trim(),
+        use, cls, up, down, area: Math.round(area * 100) / 100, struct: v.struct, stage: 'intake', round: 1, lamps,
+        received: App.TODAY, updated: App.TODAY, due: App.addDays(App.TODAY, 7), officer: v.officer,
+        reviewers: { fir: lamps.fir === 'na' ? null : 'fir1', str: 'str1', acc: lamps.acc === 'na' ? null : 'acc1', udr: lamps.udr === 'na' ? null : 'udr1' },
+        issuedAt: null, permitNo: null,
+        height: Math.round((up * 3.3 + 1.2) * 10) / 10,
+        site: Math.round(area / up / 0.52 * 100) / 100,
+        units: null, reminded: null,
+      };
+      m.close();
+      P.push(np);
+      justAdded = np.id;
+      App.commit('intake');
+      const shown = flashRow(np.id);
+      App.toast(`已掛號收件 ${np.id}`, {
+        desc: `${np.name}・承辦 ${App.PEOPLE[np.officer].name}・行政審查期限 ${App.fmt.date(np.due)}${shown ? '' : '（目前篩選未顯示此案）'}`,
+        tone: 'ok',
+        action: { label: '復原', onClick: () => { P.splice(P.indexOf(np), 1); selected.delete(np.id); App.commit('intake-undo'); } },
+      });
+    };
+    m = App.modal({
+      title: '新增掛號收件',
+      code: 'INTAKE',
+      size: 'lg',
+      body: intakeForm(id),
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: '完成掛號', variant: 'primary', icon: 'check', onClick: submit },
+      ],
+    });
+    const form = $('form', m.el);
+    // 送出鈕在 modal 頁尾、不在 form 內，多欄位表單不會隱式送出，Enter 自己接
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); submit(); }
+    });
+    // 改正後立即移除該欄的錯誤標示
+    form.addEventListener('input', (e) => {
+      const f = e.target.closest('.field');
+      if (f && f.classList.contains('is-invalid')) { f.classList.remove('is-invalid'); e.target.setAttribute('aria-invalid', 'false'); }
+    });
+    $('#nf-name', form).focus();
+  }
+  $('#intakeBtn').addEventListener('click', openIntake);
+
+  /* ------------------------------------------------------------------
+   * 衍生顯示：所有改資料的動作（含復原）都走這一套
+   * ------------------------------------------------------------------ */
+  function renderHeadNote() {
+    const n = App.DISC.map((d) => ({ name: d.name, n: P.filter((p) => p.stage !== 'issued' && p.lamps[d.key] === 'fix').length }));
+    const max = Math.max(...n.map((x) => x.n));
+    const top = n.filter((x) => x.n === max).map((x) => x.name);
+    $('#headNote').textContent = max ? `${top.join('、')}${top.length > 1 ? '各' : ''} ${max} 件待補正` : '目前沒有待補正案件';
+    $('#totalN').textContent = P.length;
+  }
+  function renderAll() {
+    renderMatrix();
+    renderHeadNote();
+    update();
+  }
+  App.onChange(renderAll);
+
+  renderMatrix();
+  renderHeadNote();
+  update({ animate: false });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工單列表 — 澄港市路燈與公共設施維護工單系統</title>
+<meta name="description" content="澄港市路燈與公共設施維護工單列表：優先級旋鈕、狀態按鍵與區域負載電平表即時篩選，設備清單式表格可排序、展開預覽並批次派工。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     A1 篩選控制台：一塊橫向前面板，四個分區以細線隔開（旋鈕 / 電平表 / 狀態鍵 / 讀數窗）
+     ===================================================================== */
+  .ord-presets .key { gap: 8px; min-height: 34px; padding: 8px 12px 7px; }
+  .ord-presets__no {
+    display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 4px;
+    background: var(--ink); color: #fff; font: 700 10px/1 var(--font-display);
+    transition: background var(--dur-1), color var(--dur-1);
+  }
+  .ord-presets .key[aria-pressed="true"] .ord-presets__no { background: var(--accent); color: var(--ink); }
+  .ord-presets__cap { margin-right: 2px; }
+
+  .ord-deck__body {
+    display: grid;
+    grid-template-columns: 196px minmax(0, 1.3fr) minmax(0, 1fr) 256px;
+    grid-template-areas: "knob eq status match";
+  }
+  .ord-sec { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 2px 22px 0; border-left: 1px solid var(--line); }
+  .ord-sec--knob { grid-area: knob; padding-left: 0; border-left: 0; }
+  .ord-sec--eq { grid-area: eq; }
+  .ord-sec--status { grid-area: status; }
+  .ord-sec--match { grid-area: match; padding-right: 0; }
+  .ord-sec__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 18px; }
+  .ord-sec__hint { font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+
+  /* 旋鈕分區 */
+  .ord-knob { --size: 140px; margin: 2px auto 0; }
+  .ord-prio-desc { min-height: 20px; text-align: center; font-size: var(--fs-12); color: var(--ink-2); white-space: nowrap; }
+  .ord-pf {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin-top: auto; padding: 4px;
+    background: var(--panel-3); border-radius: 11px; box-shadow: var(--sh-well);
+  }
+  .ord-pf__btn {
+    appearance: none; border: 0; background: transparent; color: var(--ink);
+    display: grid; justify-items: center; gap: 5px; padding: 7px 0 6px; border-radius: 8px;
+    transition: background var(--dur-1), box-shadow var(--dur-1), transform 90ms var(--ease-out);
+  }
+  .ord-pf__btn:hover { background: rgba(255, 255, 255, .55); }
+  .ord-pf__btn[aria-pressed="true"] { background: linear-gradient(180deg, #FDFCFA, #EEECE7); box-shadow: var(--sh-key); }
+  .ord-pf__btn:active { transform: translateY(1px); }
+  .ord-pf__btn .prio { min-width: 26px; height: 18px; font-size: 10px; }
+  .ord-pf__btn b { font: 600 13px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+
+  /* 區域負載電平表：每格一張工單，P4 → P1 由下往上堆，最急的落在柱頂 */
+  .ord-legend { display: inline-flex; align-items: center; gap: 5px; font: 600 9.5px/1 var(--font-display); letter-spacing: .12em; color: var(--ink-3); white-space: nowrap; }
+  .ord-legend i { width: 9px; height: 6px; border-radius: 1.5px; background: var(--c); margin-left: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .18); }
+  .ord-legend i:first-child { margin-left: 0; }
+  .ord-legend [data-p="1"], .ord-eq__meter [data-p="1"], .ord-tape [data-p="1"] { --c: #FF4B3E; }
+  .ord-legend [data-p="2"], .ord-eq__meter [data-p="2"], .ord-tape [data-p="2"] { --c: var(--seg-on); }
+  .ord-legend [data-p="3"], .ord-eq__meter [data-p="3"], .ord-tape [data-p="3"] { --c: var(--lamp); }
+  .ord-legend [data-p="4"], .ord-eq__meter [data-p="4"], .ord-tape [data-p="4"] { --c: #8E8A82; }
+
+  .ord-eq {
+    /* 桌機上顯示窗被同列的旋鈕與狀態鍵撐高：段數格放大到填滿，而不是在底下留一塊空黑 */
+    --cell: 12px; --pitch: 16px; --eq-h: 156px;
+    flex: 1; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: start; align-content: center;
+    padding: 16px 12px 8px 8px;
+  }
+  .ord-eq__scale { position: relative; height: var(--eq-h); margin-top: 0; }
+  .ord-eq__scale span {
+    position: absolute; right: 0; bottom: calc(var(--v) * var(--pitch) - 2px); transform: translateY(50%);
+    font: 600 9px/1 var(--font-display); letter-spacing: .06em; color: var(--display-ink-2); font-variant-numeric: tabular-nums;
+  }
+  .ord-eq__cols { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+  .ord-eq__col {
+    appearance: none; border: 0; background: transparent; color: var(--display-ink-2);
+    position: relative; display: grid; gap: 6px; padding: 0 3px 7px; border-radius: 8px; min-width: 0;
+    transition: background var(--dur-1);
+  }
+  .ord-eq__col:hover { background: rgba(255, 255, 255, .045); }
+  .ord-eq__col:focus-visible { outline-offset: 2px; }
+  .ord-eq__col[aria-pressed="true"] { background: rgba(255, 95, 0, .13); }
+  .ord-eq__meter {
+    position: relative; display: flex; flex-direction: column-reverse; gap: calc(var(--pitch) - var(--cell));
+    height: var(--eq-h); padding: 0 2px; transition: opacity var(--dur-2);
+  }
+  .ord-eq.has-pick .ord-eq__col[aria-pressed="false"] .ord-eq__meter { opacity: .42; }
+  .ord-eq__meter i { position: relative; flex: none; height: var(--cell); border-radius: 2px; background: rgba(255, 255, 255, .055); }
+  /* 亮的那層只動 opacity；顏色跟著 data-p，熄滅時保留舊色讓淡出完整 */
+  .ord-eq__meter i::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0;
+    background: var(--c, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--c, transparent) 60%, transparent);
+    transition: opacity 130ms var(--ease-out); transition-delay: var(--d, 0ms);
+  }
+  .ord-eq__meter i.on::before { opacity: 1; }
+  /* 峰值保持：上升時跟著跳上去；下降時先停留，再落下 */
+  .ord-eq__peak {
+    position: absolute; left: 2px; right: 2px; bottom: -1px; height: 2px; border-radius: 1px;
+    background: #F4F1EA; box-shadow: 0 0 6px rgba(244, 241, 234, .5);
+    transform: translateY(calc(var(--pk, 0) * var(--pitch) * -1));
+    transition: transform 220ms var(--ease-out), opacity 200ms;
+  }
+  .ord-eq__col.is-fall .ord-eq__peak { transition: transform 560ms cubic-bezier(.55, 0, .85, .25) 680ms, opacity 200ms 1240ms; }
+  .ord-eq__peak.is-zero { opacity: 0; }
+  .ord-eq__n { font: 600 15px/1 var(--font-display); color: var(--display-ink); text-align: center; font-variant-numeric: tabular-nums; }
+  .ord-eq__name { font-size: var(--fs-12); line-height: 1; text-align: center; letter-spacing: .04em; white-space: nowrap; }
+  .ord-eq__col[aria-pressed="true"] .ord-eq__name { color: var(--accent-hi); font-weight: 600; }
+  .ord-eq__col::after {
+    content: ""; position: absolute; left: 50%; bottom: 0; width: 14px; height: 2px; margin-left: -7px; border-radius: 1px;
+    background: transparent; transition: background var(--dur-1), box-shadow var(--dur-1);
+  }
+  .ord-eq__col[aria-pressed="true"]::after { background: var(--accent); box-shadow: 0 0 6px rgba(255, 95, 0, .7); }
+
+  /* 狀態鍵：可複選，每顆鍵上有 LED 與 LCD 計數窗 */
+  .ord-status {
+    flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 6px; padding: 6px;
+    background: var(--panel-3); border-radius: 14px; box-shadow: var(--sh-well);
+  }
+  .ord-st { align-items: stretch; justify-content: space-between; gap: 8px; min-width: 0; padding: 12px 12px 10px; text-align: left; white-space: normal; }
+  .ord-st__top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .ord-st .seg { --seg-h: 21px; transition: opacity var(--dur-2); }
+  .ord-st__name { display: grid; gap: 4px; font-size: var(--fs-14); font-weight: 600; line-height: 1.1; transition: color var(--dur-1); }
+  .ord-st__name small { font: 600 9px/1 var(--font-display); letter-spacing: .16em; color: var(--ink-3); }
+  .ord-st[aria-pressed="false"] .seg { opacity: .38; }
+  .ord-st[aria-pressed="false"] .ord-st__name { color: var(--ink-3); }
+
+  /* 讀數窗 */
+  .ord-match { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px; }
+  .ord-match__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ord-live { display: inline-flex; align-items: center; gap: 6px; font: 600 9.5px/1 var(--font-display); letter-spacing: .18em; color: var(--display-ink-2); }
+  .ord-match__main { display: flex; align-items: flex-end; gap: 10px; }
+  #seg-match { --seg-h: 60px; }
+  .ord-match__of { margin-bottom: 4px; font: 600 15px/1 var(--font-display); color: var(--display-ink-2); font-variant-numeric: tabular-nums; }
+  .ord-match__of b { color: var(--display-ink); font-weight: 600; }
+  .ord-match__of small { display: block; margin-top: 6px; font: 500 11px/1 var(--font-sans); letter-spacing: .04em; }
+  /* 符合帶：每格一張工單，符合的依優先級由左往右點亮，像卡式座的磁帶計數窗 */
+  .ord-tape { display: flex; gap: 2px; height: 12px; margin-top: auto; }
+  .ord-tape i { position: relative; flex: 1; min-width: 0; border-radius: 1px; background: rgba(255, 255, 255, .055); }
+  .ord-tape i::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0;
+    background: var(--c, transparent); transition: opacity 140ms var(--ease-out); transition-delay: var(--d, 0ms);
+  }
+  .ord-tape i.on::before { opacity: 1; }
+  .ord-next {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 8px; align-items: baseline;
+    padding-top: 10px; border-top: 1px solid var(--display-line); font-size: var(--fs-12); color: var(--display-ink-2);
+  }
+  .ord-next__k { grid-column: 1 / -1; font: 600 9.5px/1.2 var(--font-display); letter-spacing: .16em; }
+  .ord-next__id { position: relative; z-index: 3; color: var(--display-ink); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .ord-next__id:hover { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+  .ord-next__v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ord-next__v.is-soon { color: var(--accent-hi); font-weight: 600; }
+  .ord-reads { --readout-pad: 10px; margin-top: 4px; }
+  .ord-reads .readout__value { font-size: 22px; }
+  .ord-reads .is-accent { color: var(--accent-ink); }
+
+  /* =====================================================================
+     B1 工單清單
+     ===================================================================== */
+  .ord-search { flex: none; width: 340px; }
+  .ord-search .input { height: 40px; }
+  .ord-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; padding: 0 22px 14px; }
+  .ord-bar:focus { outline: none; }
+  .ord-type .key, .ord-alertkey { padding: 10px 12px 8px; }
+  .ord-type .key small, .ord-alertkey small { font-variant-numeric: tabular-nums; }
+  .ord-alertkey { flex: none; }
+  .ord-sortsel { width: auto; height: 40px; }
+
+  /* 篩選籤與件數是同一行：寬螢幕接在按鍵後面（左側細線分隔），放不下時整行換到下一列 */
+  .ord-filterline { flex: 1 1 320px; display: flex; align-items: center; gap: 8px 16px; min-width: 0; min-height: 40px; padding-left: 16px; border-left: 1px solid var(--line-2); }
+  .ord-chips { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ord-chips__list { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .ord-chips__idle { font-size: var(--fs-13); color: var(--ink-3); }
+  .ord-chips__sum { margin-left: auto; font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap; }
+  .ord-chips__sum b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 固定欄寬合計 1124px，位置欄（唯一彈性欄）至少保留約 200px，窄於此就在 .table-wrap 內橫向捲動 */
+  .ord-table { --table-min: 1330px; table-layout: fixed; }
+  .ord-table th.c-chk { width: 54px; }
+  .ord-table th.c-prio { width: 60px; }
+  .ord-table th.c-id { width: 150px; }
+  .ord-table th.c-eqp { width: 178px; }
+  .ord-table th.c-flow { width: 104px; }
+  .ord-table th.c-st { width: 96px; }
+  .ord-table th.c-crew { width: 100px; }
+  .ord-table th.c-rep { width: 116px; }
+  .ord-table th.c-sla { width: 136px; }
+  .ord-table th.c-act { width: 130px; }
+  .ord-table td { padding-top: 11px; padding-bottom: 11px; }
+  .ord-table .check { vertical-align: middle; }
+  .ord-row.is-p1 td:first-child { box-shadow: inset 3px 0 0 var(--red-strong); }
+  .ord-row.is-open td { background: var(--panel-2); border-bottom-color: transparent; }
+  .ord-id { display: block; font-size: var(--fs-13); font-weight: 600; }
+  .ord-asset { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ink-3); }
+  .ord-fault, .ord-loc { display: block; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ord-eqp { display: flex; align-items: center; gap: 5px; margin-top: 2px; font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+  .ord-eqp .ic { width: 13px; height: 13px; color: var(--ink-2); }
+  .ord-eqp span { overflow: hidden; text-overflow: ellipsis; }
+  .ord-sub { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ord-crew { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ord-hl { background: rgba(255, 95, 0, .22); color: inherit; border-radius: 2px; box-shadow: 0 1px 0 var(--accent); }
+
+  /* 流程五格：報修 → 派工 → 到場 → 維修 → 驗收，像錄音座的段數燈 */
+  .ord-flow { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .ord-flow i { width: 11px; height: 6px; border-radius: 1.5px; background: var(--panel-3); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .13); }
+  .ord-flow i.on { background: var(--ink); box-shadow: none; }
+  .ord-flow i.cur { background: var(--accent); box-shadow: 0 0 6px rgba(255, 95, 0, .55); }
+  .ord-row[data-status="closed"] .ord-flow i.on { background: var(--ink-3); }
+
+  .ord-act { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  .ord-exp .ic { transition: transform var(--dur-2) var(--ease-out); }
+  .ord-exp[aria-expanded="true"] { background: var(--panel-3); color: var(--ink); }
+  .ord-exp[aria-expanded="true"] .ic { transform: rotate(180deg); }
+
+  /* 展開列：凹進去的托盤 */
+  .ord-table tbody tr.ord-detail:hover { background: transparent; }
+  .ord-detail > td { padding: 0; background: var(--panel-2); box-shadow: inset 0 -1px 0 var(--line), inset 0 8px 10px -10px rgba(43, 43, 43, .25); }
+  .ord-detail__inner {
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 32px;
+    padding: 16px 22px 22px 126px; animation: ord-drop 300ms var(--ease-out);
+  }
+  @keyframes ord-drop { from { opacity: 0; transform: translateY(-6px); } }
+  .ord-detail__col { display: grid; align-content: start; gap: 10px; min-width: 0; }
+  .ord-detail__desc { font-size: var(--fs-14); line-height: 1.7; color: var(--ink-2); }
+  .ord-detail__fix { font-size: var(--fs-13); color: var(--ink-2); }
+  .ord-detail__fix b { margin-right: 8px; padding: 2px 6px; border-radius: 4px; background: var(--ink); color: #fff; font-size: 11px; font-weight: 600; }
+  .ord-detail__kv { gap: 8px 16px; font-size: var(--fs-13); }
+  .ord-detail__kv dd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ord-detail__kv .meter i { width: 4px; height: 11px; }
+  .ord-detail__log > li { padding-bottom: 12px; }
+  .ord-detail__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line-2); font-size: var(--fs-12); color: var(--ink-3); }
+
+  .ord-empty td { padding: 8px 22px 24px; }
+  .ord-empty__act { display: flex; justify-content: center; }
+  .ord-foot { margin-top: 0; }
+  .ord-foot .pager__info { min-width: 128px; }
+  .pager .key .ic { width: 14px; height: 14px; }
+  .ord-sortnote { font-size: var(--fs-12); color: var(--ink-3); }
+  .ord-sortnote b { color: var(--ink-2); font-weight: 600; }
+
+  .ord-dock { position: sticky; bottom: 16px; z-index: 40; height: 0; transition: margin-top var(--dur-3) var(--ease-out); }
+  .ord-dock.is-open { margin-top: calc(var(--dock-h, 56px) + var(--sp-4)); }
+  .ord-dock .batchbar { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; }
+  .ord-batch .btn--accent .ic { width: 16px; height: 16px; }
+  .ord-batch__meta { font-size: var(--fs-12); color: var(--display-ink-2); }
+  .ord-batch .btn--accent:disabled { opacity: .4; }
+
+  /* =====================================================================
+     RWD
+     ===================================================================== */
+  @media (max-width: 1200px) {
+    .ord-deck__body {
+      grid-template-columns: 190px minmax(0, 1fr) 256px;
+      grid-template-areas: "knob status match" "eq eq eq";
+      row-gap: 20px;
+    }
+    .ord-sec--status { padding-right: 22px; }
+    .ord-sec--eq { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    .ord-eq { --eq-h: 105px; --cell: 8px; --pitch: 10.8px; }
+    .ord-eq__cols { gap: 10px; }
+    /* 工具列放不下時篩選籤整列換到下一行，左側分隔線也就不需要了 */
+    .ord-filterline { flex-basis: 100%; padding-left: 0; border-left: 0; }
+  }
+  @media (max-width: 960px) {
+    .ord-deck .module__head { flex-wrap: wrap; }
+    .ord-deck .module__title { white-space: nowrap; }
+    .ord-deck .module__tools { width: 100%; justify-content: space-between; }
+    .ord-presets__cap { display: none; }
+    .ord-deck__body { grid-template-columns: 180px minmax(0, 1fr); grid-template-areas: "knob status" "match match" "eq eq"; }
+    .ord-sec--status { padding-right: 0; }
+    .ord-sec--match { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    /* 讀數窗變成全寬橫條：七段數字在左、下一個時限在右、符合帶貼底 */
+    .ord-match { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "top top" "main next" "tape tape"; align-items: end; column-gap: 28px; }
+    .ord-match__top { grid-area: top; }
+    .ord-match__main { grid-area: main; }
+    .ord-tape { grid-area: tape; margin-top: 4px; }
+    .ord-next { grid-area: next; justify-self: end; min-width: 220px; margin-bottom: 4px; }
+  }
+  @media (max-width: 720px) {
+    /* 預選鍵改成 3 + 2 的鍵盤排列（6 欄格線，上排每鍵佔 2 欄、下排佔 3 欄），不再橫向捲動被裁切 */
+    .ord-deck .module__head { position: relative; }
+    .ord-deck .module__tools { display: block; width: 100%; }
+    #deck-reset { position: absolute; top: 0; right: 0; }
+    .ord-presets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); width: 100%; }
+    .ord-presets .key { grid-column: span 2; justify-content: center; padding: 8px 6px 7px; }
+    .ord-presets .key:nth-child(n+4) { grid-column: span 3; }
+
+    .ord-deck__body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "match" "knob" "status" "eq"; row-gap: 18px; }
+    .ord-sec { padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    .ord-sec--match { padding-top: 0; border-top: 0; }
+    .ord-sec--knob {
+      display: grid; grid-template-columns: 126px minmax(0, 1fr); column-gap: 14px; row-gap: 10px;
+      grid-template-areas: "head head" "knob desc" "knob pf";
+    }
+    .ord-sec--knob .ord-sec__head { grid-area: head; }
+    .ord-knob { --size: 126px; grid-area: knob; margin: 0; }
+    .ord-prio-desc { grid-area: desc; align-self: end; text-align: left; white-space: normal; }
+    .ord-pf { grid-area: pf; grid-template-columns: repeat(2, minmax(0, 1fr)); align-self: start; margin-top: 0; }
+    .ord-pf__btn { grid-template-columns: auto auto; justify-content: center; align-items: center; gap: 8px; padding: 8px 0; }
+    #seg-match { --seg-h: 48px; }
+    .ord-match { display: flex; align-items: stretch; padding: 12px 14px 14px; }
+    .ord-next { justify-self: auto; min-width: 0; margin-bottom: 0; }
+    .ord-st { padding: 10px 10px 8px; }
+    .ord-st__name { font-size: var(--fs-13); }
+    .ord-eq { --eq-h: 97px; --cell: 7px; --pitch: 10px; grid-template-columns: 14px minmax(0, 1fr); gap: 4px; padding: 14px 8px 6px 4px; }
+    .ord-eq__cols { gap: 2px; }
+    .ord-eq__col { padding: 0 2px 7px; }
+    .ord-eq__name { font-size: 11.5px; letter-spacing: 0; }
+    .ord-legend { gap: 3px; }
+
+    .ord-tools { width: 100%; }
+    .ord-search { width: 100%; }
+    .ord-bar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 16px 12px; }
+    .ord-type { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .ord-type .key { grid-column: span 2; justify-content: center; padding: 10px 4px 8px; }
+    .ord-type .key:nth-child(n+4) { grid-column: span 3; }
+    .ord-sortsel { width: 100%; min-width: 0; }
+    .ord-filterline { grid-column: 1 / -1; flex-wrap: wrap; padding: 4px 0 0; border-left: 0; }
+    .ord-chips { flex-basis: 100%; flex-wrap: wrap; }
+
+    /* 手機改卡片：每張工單一張卡，欄位以 grid 區域重排 */
+    .ord-table { display: block; min-width: 0; table-layout: auto; }
+    .ord-table thead { display: none; }
+    .ord-table tbody { display: block; border-top: 1px solid var(--line-2); }
+    .ord-table tr.ord-row {
+      display: grid; grid-template-columns: 22px 32px minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: center;
+      /* 第 4 欄只給狀態燈用；時限與動作鍵改為與同列左側內容疊在同一格、靠右對齊，避免把案號欄擠窄 */
+      grid-template-areas: "chk prio id st" ". . eqp eqp" ". . loc loc" ". . flow flow" ". . crew crew";
+      padding: 14px 16px; border-bottom: 1px solid var(--line);
+    }
+    .ord-table tr.ord-row > td { display: block; min-width: 0; padding: 0; border: 0; }
+    .ord-table tr.ord-row > td.c-rep { display: none; }
+    .ord-row > .c-chk { grid-area: chk; }
+    .ord-row > .c-prio { grid-area: prio; }
+    .ord-row > .c-id { grid-area: id; }
+    .ord-row > .c-st { grid-area: st; justify-self: end; }
+    .ord-row > .c-eqp { grid-area: eqp; }
+    .ord-row > .c-loc { grid-area: loc; }
+    .ord-row > .c-flow { grid-area: flow; }
+    .ord-row > .c-sla { grid-area: flow; justify-self: end; text-align: right; }
+    .ord-row > .c-crew { grid-area: crew; justify-self: start; }
+    .ord-row > .c-act { grid-area: crew; justify-self: end; }
+    .ord-asset { margin: 0; }
+    .ord-eqp { margin-top: 3px; }
+    /* 卡片壓成 6 行：地點與行政區同行、流程燈與現況同行、時限只留剩餘時間 */
+    .ord-table tr.ord-row > td.c-id, .ord-table tr.ord-row > td.c-loc, .ord-table tr.ord-row > td.c-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+    .ord-loc { white-space: normal; }
+    .c-loc .ord-sub, .c-flow .ord-sub { margin: 0; }
+    .c-sla .ord-sub { display: none; }
+    .ord-crew { display: inline; }
+    .c-crew small { display: inline; margin-left: 6px; }
+    .ord-table tbody tr.is-selected td:first-child, .ord-row.is-p1 td:first-child { box-shadow: none; }
+    .ord-row.is-p1 { box-shadow: inset 3px 0 0 var(--red-strong); }
+    .ord-table tbody tr.ord-row.is-selected { box-shadow: inset 3px 0 0 var(--accent); }
+    .ord-row.is-open td { background: transparent; }
+    .ord-row.is-open { background: var(--panel-2); border-bottom-color: transparent; }
+    .ord-table tr.ord-detail, .ord-table tr.ord-detail > td { display: block; }
+    .ord-detail__inner { grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 14px 16px 18px; }
+    .ord-table tr.ord-empty, .ord-table tr.ord-empty > td { display: block; }
+    .ord-foot { flex-direction: column; align-items: flex-start; }
+    .ord-dock { bottom: 12px; }
+    .ord-batch { padding: 10px 10px 10px 14px; }
+    .ord-batch__meta { flex-basis: 100%; order: 2; }
+    .ord-batch .batchbar__spacer { display: none; }
+    .ord-batch .btn { order: 3; }
+    .ord-batch .btn--accent { flex: 1; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要內容</a>
+
+<div class="rail">
+  <div class="rail__inner">
+    <a class="rail__back" href="../../index.html">← 返回目錄</a>
+    <span class="rail__org">澄港市政府 工務局 · 公共設施維護科</span>
+    <span class="rail__shift"><i class="led led--green led--breathe" aria-hidden="true"></i>夜班 17:00–01:00 · 值班派工 <b>張書瑋</b></span>
+  </div>
+</div>
+
+<header class="masthead" data-masthead>
+  <div class="masthead__inner">
+    <a class="nameplate" href="index.html" aria-label="澄港路燈維護 工單系統 控制面板">
+      <span class="nameplate__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#ECEAE5" stroke-width="1.5"/><line x1="12" y1="3.4" x2="12" y2="7" stroke="#ECEAE5" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="13" r="3.6" fill="#FF5F00"/></svg>
+      </span>
+      <span class="nameplate__text"><b>澄港路燈維護</b><small>ML-26 Maintenance Console</small></span>
+    </a>
+    <nav class="keys-nav" id="site-nav" aria-label="主要導覽" data-nav>
+      <a class="navkey" href="index.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">01</span><span class="navkey__label">控制面板</span></a>
+      <a class="navkey" href="orders.html" aria-current="page"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">02</span><span class="navkey__label">工單列表<span class="navkey__count" data-count="open" aria-label="未結工單數">30</span></span></a>
+      <a class="navkey" href="order.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">03</span><span class="navkey__label">工單詳情</span></a>
+      <a class="navkey" href="assets.html"><i class="navkey__led" aria-hidden="true"></i><span class="navkey__no">04</span><span class="navkey__label">設備與巡檢</span></a>
+    </nav>
+    <div class="masthead__tools">
+      <div class="clockchip" title="系統時間（UTC+8）"><span data-clock></span><small data-date>OCT 23 · FRI</small></div>
+      <a class="btn btn--accent btn--sm" href="assets.html#new-order" aria-label="新增報修"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span class="hide-sm">新增報修</span></a>
+      <button class="navtoggle" type="button" data-nav-toggle aria-controls="site-nav" aria-expanded="false"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg>選單</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <section class="page-head" aria-labelledby="page-title">
+    <div>
+      <p class="page-head__eyebrow"><b>02</b>Work Orders</p>
+      <h1 class="page-head__title" id="page-title">工單列表</h1>
+      <p class="page-head__desc">10 月共 <b id="total-n">53</b> 張工單，未結 <b data-count="open">30</b> 張。轉動優先級旋鈕、按下狀態鍵或區域負載柱即時篩選；勾選工單可批次派工，展開列可預覽設備與處理紀錄。</p>
+    </div>
+    <div class="page-head__aside">
+      <button class="btn" type="button" id="btn-refresh"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>重新整理</button>
+      <button class="btn" type="button" id="btn-export"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>匯出 CSV</button>
+    </div>
+  </section>
+
+  <!-- A1 篩選控制台 -->
+  <section class="module ord-deck" aria-labelledby="h-deck" data-reveal data-anim>
+    <div class="module__head">
+      <h2 class="module__title" id="h-deck"><span class="module__index">A1</span>篩選控制台<span class="module__en">Filter deck</span></h2>
+      <div class="module__tools">
+        <span class="caps-label ord-presets__cap" id="lbl-presets">Presets</span>
+        <div class="keyrow ord-presets" id="presets" role="group" aria-labelledby="lbl-presets"></div>
+        <button class="btn btn--ghost btn--sm" type="button" id="deck-reset">重設</button>
+      </div>
+    </div>
+    <div class="ord-deck__body">
+      <div class="ord-sec ord-sec--knob">
+        <div class="ord-sec__head"><span class="caps-label" id="lbl-prio">優先級 Priority</span></div>
+        <div class="ord-knob" id="prio-knob"></div>
+        <p class="ord-prio-desc" id="prio-desc" aria-live="polite"></p>
+        <div class="ord-pf" id="prio-facets" role="group" aria-labelledby="lbl-prio"></div>
+      </div>
+
+      <div class="ord-sec ord-sec--eq">
+        <div class="ord-sec__head">
+          <span class="caps-label" id="lbl-eq">區域負載 District load</span>
+          <span class="ord-legend" aria-hidden="true"><i data-p="1"></i>P1<i data-p="2"></i>P2<i data-p="3"></i>P3<i data-p="4"></i>P4</span>
+        </div>
+        <div class="display ord-eq" id="eq">
+          <div class="ord-eq__scale" aria-hidden="true"><span style="--v:0">0</span><span style="--v:5">5</span><span style="--v:10">10</span></div>
+          <div class="ord-eq__cols" id="eq-cols" role="group" aria-labelledby="lbl-eq"></div>
+        </div>
+      </div>
+
+      <div class="ord-sec ord-sec--status">
+        <div class="ord-sec__head"><span class="caps-label" id="lbl-status">狀態 Status</span><span class="ord-sec__hint">可複選</span></div>
+        <div class="ord-status" id="status-keys" role="group" aria-labelledby="lbl-status"></div>
+      </div>
+
+      <div class="ord-sec ord-sec--match">
+        <div class="ord-sec__head"><span class="caps-label">符合 Matched</span></div>
+        <div class="display ord-match">
+          <div class="ord-match__top"><span class="display__label">Orders · Oct 2026</span><span class="ord-live"><i class="led led--green led--breathe" aria-hidden="true"></i>LIVE</span></div>
+          <div class="ord-match__main" aria-live="polite"><span id="seg-match"></span><span class="ord-match__of">/ <b id="match-total">53</b><small>件工單</small></span></div>
+          <div class="ord-tape" id="tape" aria-hidden="true"></div>
+          <p class="ord-next" id="next-due"></p>
+        </div>
+        <dl class="readouts ord-reads">
+          <div class="readout"><dt class="readout__label">P1 未結</dt><dd class="readout__value is-red" id="rd-p1">0</dd></div>
+          <div class="readout"><dt class="readout__label">逾時</dt><dd class="readout__value" id="rd-over">0</dd></div>
+          <div class="readout"><dt class="readout__label">已選</dt><dd class="readout__value is-accent" id="rd-sel">0</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- B1 工單清單 -->
+  <section class="module module--flush section ord-list" id="list" aria-labelledby="h-list" data-reveal data-anim>
+    <div class="module__head">
+      <h2 class="module__title" id="h-list"><span class="module__index">B1</span>工單清單<span class="module__en">Order register</span></h2>
+      <div class="module__tools ord-tools">
+        <div class="search ord-search">
+          <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5"/></svg>
+          <input class="input" type="search" id="q" placeholder="搜尋案號、桿號、地點、故障、維修班" aria-label="搜尋工單" autocomplete="off">
+        </div>
+      </div>
+    </div>
+    <div class="ord-bar" id="chips" tabindex="-1">
+      <div class="keyrow ord-type" data-single id="type-keys" role="group" aria-label="設備類型"></div>
+      <button class="key key--row ord-alertkey" type="button" data-toggle id="alert-key" aria-pressed="false"><i class="led led--red led--blink" aria-hidden="true"></i><span>時限警示</span><small id="alert-n">0</small></button>
+      <select class="select only-sm ord-sortsel" id="sort-select" aria-label="排序方式">
+        <option value="prio">排序：優先級</option>
+        <option value="sla">排序：修復時限</option>
+        <option value="reported">排序：報修時間</option>
+        <option value="id">排序：案號</option>
+        <option value="dist">排序：行政區</option>
+        <option value="status">排序：狀態</option>
+      </select>
+      <div class="ord-filterline">
+        <div class="ord-chips">
+          <span class="caps-label">篩選</span>
+          <div class="ord-chips__list" id="chips-list"></div>
+        </div>
+        <label class="check only-sm"><input type="checkbox" id="chk-all-sm"><span>全選本頁</span></label>
+        <span class="ord-chips__sum" id="chips-sum" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="table ord-table">
+        <caption class="sr-only">工單清單（依目前篩選與排序）</caption>
+        <thead id="thead">
+          <tr>
+            <th class="c-chk" scope="col"><label class="check"><input type="checkbox" id="chk-all"><span class="sr-only">選取本頁全部工單</span></label></th>
+            <th class="c-prio" scope="col" data-sort="prio"><button class="sort" type="button">優先</button></th>
+            <th class="c-id" scope="col" data-sort="id"><button class="sort" type="button">工單 · 設備編號</button></th>
+            <th class="c-eqp" scope="col">故障 · 設備</th>
+            <th class="c-loc" scope="col" data-sort="dist"><button class="sort" type="button">位置</button></th>
+            <th class="c-flow" scope="col">流程</th>
+            <th class="c-st" scope="col" data-sort="status"><button class="sort" type="button">狀態</button></th>
+            <th class="c-crew" scope="col">維修班</th>
+            <th class="c-rep" scope="col" data-sort="reported"><button class="sort" type="button">報修</button></th>
+            <th class="c-sla" scope="col" data-sort="sla"><button class="sort" type="button">修復時限</button></th>
+            <th class="c-act" scope="col"><span class="sr-only">動作</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="module__foot ord-foot">
+      <nav class="pager" id="pager" aria-label="工單分頁"></nav>
+      <span class="ord-sortnote" id="sort-note"></span>
+    </div>
+  </section>
+
+  <!-- 批次列掛在零高度的 sticky 底座上：收起時不佔版面，展開時底座才撐出空間 -->
+  <div class="ord-dock" id="dock">
+    <div class="batchbar ord-batch" id="batchbar" role="region" aria-label="批次操作">
+      <span class="batchbar__count">已選 <b id="bb-n">0</b> 件</span>
+      <span class="ord-batch__meta" id="bb-meta"></span>
+      <span class="batchbar__spacer"></span>
+      <button class="btn btn--ghost btn--sm" type="button" id="bb-clear">清除選取</button>
+      <button class="btn btn--ghost btn--sm" type="button" id="bb-print">列印派工單</button>
+      <button class="btn btn--accent btn--sm" type="button" id="bb-dispatch"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4h8v7h-8zM9.5 6.5h2.8l2.2 2.4V11h-5M4.5 13a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6zM11.5 13a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z"/></svg>批次派工</button>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="site-foot__inner">
+    <div class="site-foot__grille" aria-hidden="true"></div>
+    <div class="site-foot__plate">
+      <b>澄港市 路燈與公共設施 維護工單系統</b>
+      <span>Model ML-26 · 工務局 公共設施維護科 · 夜間報修 1999 轉 3</span>
+    </div>
+    <nav class="site-foot__nav" aria-label="頁尾導覽" data-nav>
+      <a href="index.html">控制面板</a>
+      <a href="orders.html">工單列表</a>
+      <a href="order.html">工單詳情</a>
+      <a href="assets.html">設備與巡檢</a>
+      <a href="../../index.html">← 返回目錄</a>
+    </nav>
+    <p class="site-foot__note"><span>© 2026 澄港市政府工務局 · 作品集虛構示範，所列人名、地址、案號皆為虛構</span><span>資料時間 <span data-date>OCT 23 · FRI</span> · 系統版本 4.2.0</span></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { fmt, esc } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const ORDERS = App.DATA.orders;
+  const STATUS = App.DATA.status;
+  const PRIO = App.DATA.prio;
+  const OPEN = App.STATUS_ORDER.filter((s) => s !== 'closed');
+  const DIST_ORDER = App.DATA.districts.map((d) => d.code);
+  const PAGE_SIZE = 15;
+  const EQ_CELLS = 10;
+  // 欄位第一次點擊時的方向：報修時間預設新→舊，其餘由小到大（優先級即 P1 在前）
+  const SORT_DIR = { prio: 1, id: 1, dist: 1, status: 1, reported: -1, sla: 1 };
+  const SORT_NOTE = {
+    prio: ['優先級', 'P1 → P4', 'P4 → P1'],
+    id: ['案號', '小 → 大', '大 → 小'],
+    dist: ['行政區', '港埕 → 雲嶺', '雲嶺 → 港埕'],
+    status: ['狀態', '待派工 → 已結案', '已結案 → 待派工'],
+    reported: ['報修時間', '舊 → 新', '新 → 舊'],
+    sla: ['修復時限', '急 → 緩', '緩 → 急'],
+  };
+
+  // 篩選狀態只存在記憶體；所有控制元件都從這裡讀、也只改這裡
+  const state = {
+    prio: 0, statuses: new Set(OPEN), dist: '', type: '', alert: false, q: '', terms: [],
+    sort: 'prio', dir: 1, page: 1,
+    selected: new Set(), expanded: new Set(),
+  };
+  let pageIds = [];
+  let hlRe = null;
+
+  /* ---------- 篩選與排序 ---------- */
+  const isAlert = (o) => o.status !== 'closed' && (App.sla(o).state === 'over' || App.sla(o).state === 'soon');
+  function haystack(o) {
+    const crew = o.crew ? App.crew(o.crew) : null;
+    return [o.id, o.asset, o.loc, o.fault, o.item || '', App.district(o.dist).name, App.typeOf(o.type).name, crew ? crew.name + ' ' + crew.leader : '']
+      .join(' ').toLowerCase();
+  }
+  // skip：計算某個控制項自己的分面件數時，略過它本身的條件（「如果只改這一項會有幾件」）
+  function passes(o, skip) {
+    return (skip === 'prio' || !state.prio || o.prio === state.prio)
+      && (skip === 'status' || state.statuses.has(o.status))
+      && (skip === 'dist' || !state.dist || o.dist === state.dist)
+      && (skip === 'type' || !state.type || o.type === state.type)
+      && (skip === 'alert' || !state.alert || isAlert(o))
+      && (!state.terms.length || state.terms.every((t) => haystack(o).includes(t)));
+  }
+  const statusIdx = (o) => App.STATUS_ORDER.indexOf(o.status);
+  // 已完修的工單沒有「剩餘時限」，一律排在未完修之後
+  const slaKey = (o) => (o.t.finished ? 1e13 + o.t.finished : App.sla(o).remain);
+  const SORTS = {
+    prio: (a, b) => a.prio - b.prio || slaKey(a) - slaKey(b),
+    id: (a, b) => a.id.localeCompare(b.id),
+    dist: (a, b) => DIST_ORDER.indexOf(a.dist) - DIST_ORDER.indexOf(b.dist) || a.prio - b.prio,
+    status: (a, b) => statusIdx(a) - statusIdx(b) || a.prio - b.prio,
+    reported: (a, b) => a.t.reported - b.t.reported,
+    sla: (a, b) => slaKey(a) - slaKey(b),
+  };
+  const matched = () => ORDERS.filter((o) => passes(o)).sort((a, b) => state.dir * SORTS[state.sort](a, b));
+
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 先跳脫再包 <mark>：直接在原字串上找位置，避免在已跳脫的 &amp; 之類實體中間切開
+  function hl(text) {
+    const s = String(text);
+    if (!hlRe) return esc(s);
+    let out = '', last = 0;
+    s.replace(hlRe, (m, at) => { out += esc(s.slice(last, at)) + `<mark class="ord-hl">${esc(m)}</mark>`; last = at + m.length; return m; });
+    return out + esc(s.slice(last));
+  }
+
+  /* ---------- A1 控制台：建立實體控制（只建一次，之後只更新數值，鍵盤焦點才不會跑掉） ---------- */
+  const knob = App.knob($('#prio-knob'), {
+    label: '優先級篩選',
+    value: 0,
+    values: [{ value: 0, label: 'ALL', text: '全部優先級' }].concat(Object.values(PRIO).map((p) => ({ value: p.p, label: p.code, text: `${p.code} ${p.name}` }))),
+    onChange: (v) => setFilter({ prio: v }),
+  });
+  $('#prio-facets').innerHTML = Object.values(PRIO).map((p) =>
+    `<button type="button" class="ord-pf__btn" data-p="${p.p}" aria-pressed="false">${App.prioBadge(p.p)}<b>0</b></button>`).join('');
+  // 計數鍵是旋鈕的快捷：再按一次已選的級別回到 ALL
+  $('#prio-facets').addEventListener('click', (e) => {
+    const b = e.target.closest('.ord-pf__btn');
+    if (!b) return;
+    const p = +b.dataset.p;
+    knob.set(state.prio === p ? 0 : p);
+  });
+
+  $('#eq-cols').innerHTML = App.DATA.districts.map((d) =>
+    `<button type="button" class="ord-eq__col" data-dist="${d.code}" aria-pressed="false">
+      <span class="ord-eq__meter" aria-hidden="true">${'<i></i>'.repeat(EQ_CELLS)}<b class="ord-eq__peak is-zero"></b></span>
+      <span class="ord-eq__n" aria-hidden="true">0</span>
+      <span class="ord-eq__name" aria-hidden="true">${esc(d.name.replace('區', ''))}</span>
+    </button>`).join('');
+  $('#eq-cols').addEventListener('click', (e) => {
+    const col = e.target.closest('[data-dist]');
+    if (col) setFilter({ dist: state.dist === col.dataset.dist ? '' : col.dataset.dist });
+  });
+  const eqLevels = {};
+
+  $('#status-keys').innerHTML = App.STATUS_ORDER.map((k) => {
+    const s = STATUS[k];
+    return `<button type="button" class="key ord-st" data-toggle data-status="${k}" aria-pressed="${state.statuses.has(k)}">
+      <span class="ord-st__top">${App.led(s.tone, { pulse: s.pulse })}<span data-st-seg="${k}"></span></span>
+      <span class="ord-st__name">${s.name}<small>${s.en}</small></span>
+    </button>`;
+  }).join('');
+  const stSegs = Object.fromEntries(App.STATUS_ORDER.map((k) =>
+    [k, App.seg($(`[data-st-seg="${k}"]`), { pattern: '88', tone: 'ink', label: STATUS[k].name, unit: ' 件', value: '' })]));
+  $('#status-keys').addEventListener('change', (e) => {
+    const key = e.target.closest('[data-status]');
+    const next = new Set(state.statuses);
+    if (key.getAttribute('aria-pressed') === 'true') next.add(key.dataset.status); else next.delete(key.dataset.status);
+    setFilter({ statuses: next });
+  });
+
+  const segMatch = App.seg($('#seg-match'), { pattern: '88', label: '符合條件工單', unit: ' 件', value: '' });
+
+  /* ---------- 預設檔位：像收音機的電台預選鍵，按下後所有控制元件一起轉到定位 ---------- */
+  const DEFAULT_VIEW = { prio: 0, statuses: OPEN, alert: false };
+  const PRESETS = [
+    { label: 'P1 緊急', view: { prio: 1, statuses: OPEN, alert: false } },
+    { label: '待派工', view: { prio: 0, statuses: ['new'], alert: false } },
+    { label: '時限警示', view: { prio: 0, statuses: OPEN, alert: true } },
+    { label: '待驗收', view: { prio: 0, statuses: ['review'], alert: false } },
+    { label: '含已結案', view: { prio: 0, statuses: App.STATUS_ORDER, alert: false } },
+  ];
+  $('#presets').innerHTML = PRESETS.map((p, i) =>
+    `<button type="button" class="key key--row" data-preset="${i}" aria-pressed="false"><span class="ord-presets__no" aria-hidden="true">${i + 1}</span>${p.label}</button>`).join('');
+  const sameSet = (set, arr) => set.size === arr.length && arr.every((x) => set.has(x));
+  const isView = (v) => state.prio === v.prio && sameSet(state.statuses, v.statuses) && state.alert === v.alert && !state.dist && !state.type && !state.q;
+  $('#presets').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-preset]');
+    if (!b) return;
+    const view = PRESETS[+b.dataset.preset].view;
+    // 再按一次已在定位的預選鍵＝回到預設檢視
+    applyView(isView(view) ? DEFAULT_VIEW : view);
+  });
+  $('#deck-reset').addEventListener('click', () => {
+    applyView(DEFAULT_VIEW);
+    App.toast('篩選已重設', { desc: '顯示全市未結工單，依優先級排序。', tone: 'info' });
+  });
+
+  function applyView(v) {
+    Object.assign(state, { prio: v.prio, statuses: new Set(v.statuses), alert: v.alert, dist: '', type: '', q: '', terms: [], page: 1 });
+    syncControls();
+    update();
+  }
+  // 以程式改變狀態時，把實體控制元件撥回對應位置（不觸發它們自己的事件）
+  function syncControls() {
+    knob.set(state.prio, { silent: true });
+    $$('#status-keys [data-status]').forEach((k) => k.setAttribute('aria-pressed', String(state.statuses.has(k.dataset.status))));
+    $$('#type-keys .key').forEach((k) => k.setAttribute('aria-pressed', String(k.dataset.value === state.type)));
+    $('#alert-key').setAttribute('aria-pressed', String(state.alert));
+    $('#q').value = state.q;
+  }
+  function setFilter(patch) {
+    Object.assign(state, patch, { page: 1 });
+    update();
+  }
+
+  /* ---------- B1 工具列 ---------- */
+  $('#type-keys').innerHTML = [{ code: '', name: '全部' }].concat(Object.values(App.DATA.types)).map((t) =>
+    `<button type="button" class="key key--row" data-value="${t.code}" aria-pressed="${state.type === t.code}">${t.code ? App.typeIcon(t.code) : ''}<span>${t.name}</span><small data-type-n="${t.code}">0</small></button>`).join('');
+  $('#type-keys').addEventListener('change', (e) => setFilter({ type: e.detail.value }));
+  $('#alert-key').addEventListener('change', (e) => setFilter({ alert: e.target.getAttribute('aria-pressed') === 'true' }));
+  $('#q').addEventListener('input', (e) => {
+    const q = e.target.value.trim();
+    setFilter({ q, terms: q ? q.toLowerCase().split(/\s+/) : [] });
+  });
+
+  $$('#thead [data-sort]').forEach((th) => th.querySelector('.sort').addEventListener('click', () => setSort(th.dataset.sort, true)));
+  $('#sort-select').addEventListener('change', (e) => setSort(e.target.value, false));
+  function setSort(key, flip) {
+    if (flip && state.sort === key) state.dir *= -1;
+    else { state.sort = key; state.dir = SORT_DIR[key]; }
+    state.page = 1;
+    update({ roll: false });
+  }
+
+  /* ---------- 渲染：控制台 ---------- */
+  function renderFacets(roll) {
+    const byPrio = ORDERS.filter((o) => passes(o, 'prio'));
+    $$('#prio-facets .ord-pf__btn').forEach((b) => {
+      const p = PRIO[b.dataset.p];
+      const n = byPrio.filter((o) => o.prio === p.p).length;
+      b.querySelector('b').textContent = n;
+      b.setAttribute('aria-pressed', String(state.prio === p.p));
+      b.setAttribute('aria-label', `${p.code} ${p.name}：${n} 件`);
+    });
+    const sel = PRIO[state.prio];
+    $('#prio-desc').textContent = sel ? `${sel.code} ${sel.name} · ${sel.sla} 小時內修復` : `全部優先級 · ${byPrio.length} 件`;
+
+    const byStatus = ORDERS.filter((o) => passes(o, 'status'));
+    App.STATUS_ORDER.forEach((k) => {
+      const n = byStatus.filter((o) => o.status === k).length;
+      stSegs[k].set(String(n), { roll });
+      $(`#status-keys [data-status="${k}"]`).setAttribute('aria-label', `${STATUS[k].name}：${n} 件`);
+    });
+
+    const byType = ORDERS.filter((o) => passes(o, 'type'));
+    $$('[data-type-n]').forEach((el) => {
+      const code = el.dataset.typeN;
+      el.textContent = code ? byType.filter((o) => o.type === code).length : byType.length;
+    });
+    $('#alert-n').textContent = ORDERS.filter((o) => passes(o, 'alert') && isAlert(o)).length;
+  }
+
+  function renderEq() {
+    const pool = ORDERS.filter((o) => passes(o, 'dist'));
+    $('#eq').classList.toggle('has-pick', !!state.dist);
+    $$('#eq-cols [data-dist]').forEach((col) => {
+      const code = col.dataset.dist;
+      // 由下而上 P4 → P1：最急的工單落在柱頂，像電平表頂端的紅區
+      const prios = pool.filter((o) => o.dist === code).map((o) => o.prio).sort((a, b) => b - a);
+      const level = Math.min(EQ_CELLS, prios.length);
+      const prev = eqLevels[code] ?? 0;
+      $$('.ord-eq__meter i', col).forEach((cell, i) => {
+        const on = i < level;
+        if (on) cell.dataset.p = prios[i];
+        // 上升時新點亮的格子由下往上依序亮；下降時由上往下依序熄，像電平掃描
+        cell.style.setProperty('--d', (on ? Math.max(0, i - prev) * 26 : Math.max(0, prev - 1 - i) * 18) + 'ms');
+        cell.classList.toggle('on', on);
+      });
+      const peak = col.querySelector('.ord-eq__peak');
+      col.classList.toggle('is-fall', level < prev);
+      peak.style.setProperty('--pk', level);
+      peak.classList.toggle('is-zero', level === 0);
+      eqLevels[code] = level;
+      const pressed = state.dist === code;
+      col.setAttribute('aria-pressed', String(pressed));
+      col.querySelector('.ord-eq__n').textContent = prios.length;
+      col.setAttribute('aria-label', `${App.district(code).name}：${prios.length} 件${prios.length ? `（P1 ${prios.filter((p) => p === 1).length} 件）` : ''}`);
+    });
+  }
+
+  function renderReads(list) {
+    $('#rd-p1').textContent = list.filter((o) => o.prio === 1 && o.status !== 'closed').length;
+    $('#rd-over').textContent = list.filter((o) => o.status !== 'closed' && App.sla(o).state === 'over').length;
+    $('#rd-sel').textContent = state.selected.size;
+    // 下一個到期：已逾時的另有讀數，這裡只看還沒到期、也還沒完修的工單
+    const next = list.filter((o) => !o.t.finished && App.sla(o).remain > 0).sort((a, b) => App.sla(a).remain - App.sla(b).remain)[0];
+    if (next) {
+      const s = App.sla(next);
+      $('#next-due').innerHTML = `<span class="ord-next__k">下一個時限 Next due · ${fmt.time(s.due)}</span>`
+        + `<a class="ord-next__id mono" href="${App.orderUrl(next.id)}">${next.id}</a><span class="ord-next__v${s.state === 'soon' ? ' is-soon' : ''}">${esc(s.label)}</span>`;
+    } else {
+      $('#next-due').innerHTML = '<span class="ord-next__k">下一個時限 Next due</span><span class="ord-next__v">目前篩選中沒有計時中的工單</span>';
+    }
+  }
+
+  // 符合帶：格數跟著工單總數走（新增工單時會多一格），符合的依優先級排在左側
+  function renderTape(list) {
+    const tape = $('#tape');
+    if (tape.children.length !== ORDERS.length) tape.innerHTML = '<i></i>'.repeat(ORDERS.length);
+    const prios = list.map((o) => o.prio).sort((a, b) => a - b);
+    const prev = +(tape.dataset.n || 0);
+    Array.from(tape.children).forEach((cell, i) => {
+      const on = i < prios.length;
+      if (on) cell.dataset.p = prios[i];
+      // 增加時由左往右依序亮、減少時由右往左依序熄，跟區域負載柱同一套掃描節奏
+      cell.style.setProperty('--d', (on ? Math.max(0, i - prev) * 9 : Math.max(0, prev - 1 - i) * 7) + 'ms');
+      cell.classList.toggle('on', on);
+    });
+    tape.dataset.n = prios.length;
+  }
+
+  function syncPresets() {
+    $$('#presets [data-preset]').forEach((b) => b.setAttribute('aria-pressed', String(isView(PRESETS[+b.dataset.preset].view))));
+  }
+
+  /* ---------- 渲染：篩選籤 ---------- */
+  function renderChips(n) {
+    const chips = [];
+    if (state.prio) chips.push(['prio', `優先級 ${PRIO[state.prio].code}`]);
+    if (!sameSet(state.statuses, OPEN)) {
+      const names = App.STATUS_ORDER.filter((s) => state.statuses.has(s)).map((s) => STATUS[s].name);
+      chips.push(['status', names.length === App.STATUS_ORDER.length ? '狀態：全部（含已結案）' : names.length ? `狀態：${names.join('、')}` : '狀態：未選取']);
+    }
+    if (state.dist) chips.push(['dist', App.district(state.dist).name]);
+    if (state.type) chips.push(['type', App.typeOf(state.type).name]);
+    if (state.alert) chips.push(['alert', '時限警示']);
+    if (state.q) chips.push(['q', `搜尋「${state.q}」`]);
+    $('#chips-list').innerHTML = chips.length
+      ? chips.map(([k, label]) => `<span class="chip">${esc(label)}<button type="button" data-chip="${k}" aria-label="移除篩選：${esc(label)}">${App.icon('close')}</button></span>`).join('')
+        + (chips.length > 1 ? '<button type="button" class="btn btn--ghost btn--sm" data-chip="all">全部清除</button>' : '')
+      : '<span class="ord-chips__idle">預設檢視 · 全市未結工單</span>';
+    $('#chips-sum').innerHTML = `符合 <b>${n}</b> / ${ORDERS.length} 件`;
+  }
+  const CHIP_RESET = {
+    prio: { prio: 0 }, dist: { dist: '' }, type: { type: '' }, alert: { alert: false }, q: { q: '', terms: [] },
+  };
+  $('#chips-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-chip]');
+    if (!b) return;
+    const k = b.dataset.chip;
+    if (k === 'all') applyView(DEFAULT_VIEW);
+    else {
+      Object.assign(state, k === 'status' ? { statuses: new Set(OPEN) } : CHIP_RESET[k], { page: 1 });
+      syncControls();
+      update();
+    }
+    // 被按的籤已重繪消失，把焦點交給篩選列本身
+    $('#chips').focus({ preventScroll: true });
+  });
+
+  /* ---------- 渲染：表格 ---------- */
+  function stepText(o) {
+    const today = App.dayStart(App.now());
+    const at = (ms) => (ms >= today && ms < today + 864e5 ? fmt.time(ms) : fmt.date(ms));
+    if (o.status === 'new') return '尚未派工';
+    if (o.status === 'dispatched') return '預計 ' + at(o.t.planned);
+    if (o.status === 'onsite' || o.status === 'repair') return '到場 ' + at(o.t.arrived);
+    if (o.status === 'review') return '完修 ' + at(o.t.finished);
+    return '結案 ' + at(o.t.closed);
+  }
+  function flowHtml(o) {
+    const idx = App.flowIndex(o);
+    const closed = o.status === 'closed';
+    const cells = App.FLOW.map((f, i) => `<i class="${i < idx ? 'on' : !closed && i === idx ? 'cur' : ''}"></i>`).join('');
+    const label = closed ? '流程完成' : `流程 ${idx}/5，下一步：${App.FLOW[idx].label}`;
+    return `<span class="ord-flow" role="img" aria-label="${label}">${cells}</span><span class="ord-sub">${stepText(o)}</span>`;
+  }
+  function slaHtml(o) {
+    return `${App.slaTag(o)}<span class="ord-sub">${o.t.finished ? '完修 ' + fmt.dt(o.t.finished) : '時限 ' + fmt.dt(App.sla(o).due)}</span>`;
+  }
+  function crewHtml(o) {
+    if (!o.crew) return '<span class="ord-crew dim">—</span><small class="ord-sub">待指派</small>';
+    const c = App.crew(o.crew);
+    return `<span class="ord-crew">${hl(c.name.replace('（承攬）', ''))}</span><small class="ord-sub">${hl(c.leader)}${c.contractor ? ' · 承攬' : ''}</small>`;
+  }
+  function actHtml(o) {
+    if (o.status === 'new') return `<button type="button" class="btn btn--sm${o.prio === 1 ? ' btn--accent' : ''}" data-dispatch="${o.id}">派工</button>`;
+    if (o.status === 'dispatched') return `<button type="button" class="btn btn--sm btn--ghost" data-dispatch="${o.id}">改派</button>`;
+    return '';
+  }
+  function rowHtml(o) {
+    const sel = state.selected.has(o.id);
+    const open = state.expanded.has(o.id);
+    const type = App.typeOf(o.type);
+    const spec = o.item || App.asset(o.asset).model;
+    const src = App.DATA.sources[o.src];
+    return `<tr class="ord-row${o.prio === 1 && o.status !== 'closed' ? ' is-p1' : ''}${sel ? ' is-selected' : ''}${open ? ' is-open' : ''}" data-id="${o.id}" data-status="${o.status}">
+      <td class="c-chk"><label class="check"><input type="checkbox" data-pick="${o.id}"${sel ? ' checked' : ''} aria-label="選取 ${o.id}"></label></td>
+      <td class="c-prio">${App.prioBadge(o.prio)}</td>
+      <td class="c-id"><a class="ord-id mono" href="${App.orderUrl(o.id)}">${hl(o.id)}</a><span class="ord-asset mono">${hl(o.asset)}</span></td>
+      <td class="c-eqp"><span class="ord-fault" title="${esc(o.fault)}">${hl(o.fault)}</span><span class="ord-eqp">${App.typeIcon(o.type)}<span>${hl(type.name)} · ${hl(spec)}</span></span></td>
+      <td class="c-loc"><span class="ord-loc" title="${esc(o.loc)}">${hl(o.loc)}</span><span class="ord-sub">${hl(App.district(o.dist).name)}${o.affects > 1 ? ` · 影響 ${o.affects} ${type.unit}` : ''}</span></td>
+      <td class="c-flow">${flowHtml(o)}</td>
+      <td class="c-st">${App.statusBadge(o.status)}</td>
+      <td class="c-crew">${crewHtml(o)}</td>
+      <td class="c-rep"><span class="mono">${fmt.dt(o.t.reported)}</span><span class="ord-sub">${esc(src.short)} · ${fmt.rel(o.t.reported)}</span></td>
+      <td class="c-sla" data-sla-for="${o.id}">${slaHtml(o)}</td>
+      <td class="c-act"><span class="ord-act">${actHtml(o)}<button type="button" class="btn btn--ghost btn--icon btn--sm ord-exp" data-expand="${o.id}" aria-expanded="${open}"${open ? ` aria-controls="d-${o.id}"` : ''} aria-label="${open ? '收合' : '展開'} ${o.id} 摘要">${App.icon('chevron')}</button></span></td>
+    </tr>${open ? detailHtml(o) : ''}`;
+  }
+  function detailHtml(o) {
+    const a = App.asset(o.asset);
+    const cost = o.parts.reduce((s, [code, qty]) => s + App.part(code).price * qty, 0);
+    const log = App.history(o).slice(-4);
+    const lifeTone = a.lifeUsed >= 1 ? 'red' : a.lifeUsed >= 0.75 ? 'orange' : 'ink';
+    return `<tr class="ord-detail" id="d-${o.id}"><td colspan="11"><div class="ord-detail__inner">
+      <div class="ord-detail__col">
+        <h3 class="caps-label">故障描述 · ${esc(App.DATA.sources[o.src].name)}</h3>
+        <p class="ord-detail__desc">${esc(o.desc)}</p>
+        ${o.hold ? `<p class="callout callout--warn">${App.icon('clock')}<span>${esc(o.hold)}</span></p>` : ''}
+        ${o.fix ? `<p class="ord-detail__fix"><b>處置</b>${esc(o.fix)}</p>` : ''}
+      </div>
+      <div class="ord-detail__col">
+        <h3 class="caps-label">設備 · ${esc(o.asset)}</h3>
+        <dl class="kv ord-detail__kv">
+          <dt>型號</dt><dd>${esc(a.modelName)}</dd>
+          ${o.item ? `<dt>設施</dt><dd>${esc(o.item)}</dd>` : ''}
+          <dt>壽命</dt><dd>${App.meter(a.age, a.life, { cells: 12, tone: lifeTone })}<span class="dim">${a.installed} 年裝設 · ${a.age} / ${a.life} 年</span></dd>
+          <dt>保固</dt><dd>${a.inWarranty ? `保固中，至 ${a.warrantyUntil} 年` : `已過保（${a.warrantyUntil} 年到期）`}</dd>
+          ${a.circuit ? `<dt>回路</dt><dd><span class="mono">${a.circuit}</span>${a.height ? `<span class="dim">桿高 ${a.height} m</span>` : ''}</dd>` : ''}
+          <dt>上次巡檢</dt><dd>${fmt.dateFull(a.lastInspect)}</dd>
+        </dl>
+      </div>
+      <div class="ord-detail__col">
+        <h3 class="caps-label">處理紀錄 · 最近 ${log.length} 筆</h3>
+        <ol class="timeline-v ord-detail__log">${log.map((h) => `<li><time>${fmt.dt(h.at)}</time><div class="tl-body"><b>${esc(h.label)}</b>　${esc(h.text)}</div></li>`).join('')}</ol>
+        <div class="ord-detail__foot"><span>${o.parts.length ? `零件 ${o.parts.length} 項 · ${fmt.money(cost)}` : '尚無零件耗用'}</span><a class="link-arrow" href="${App.orderUrl(o.id)}">開啟工單詳情${App.icon('arrow')}</a></div>
+      </div>
+    </div></td></tr>`;
+  }
+  function renderTable(list) {
+    const rows = list.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
+    pageIds = rows.map((o) => o.id);
+    $('#tbody').innerHTML = rows.length
+      ? rows.map(rowHtml).join('')
+      : `<tr class="ord-empty"><td colspan="11">${App.emptyState({ title: '沒有符合的工單', text: '放寬優先級、打開更多狀態鍵，或清除區域與搜尋條件。' })}<div class="ord-empty__act"><button type="button" class="btn btn--sm" data-reset>回到預設檢視</button></div></td></tr>`;
+    syncPageCheck();
+  }
+
+  function renderPager(n) {
+    const pages = Math.max(1, Math.ceil(n / PAGE_SIZE));
+    const from = (state.page - 1) * PAGE_SIZE + 1;
+    const to = Math.min(n, state.page * PAGE_SIZE);
+    let h = `<span class="pager__info">${n ? `第 ${from}–${to} 筆，共 ${n} 筆` : '沒有符合的工單'}</span>`;
+    h += `<button type="button" class="key" data-page="${state.page - 1}" data-step="prev" aria-label="上一頁"${state.page === 1 ? ' disabled' : ''}>${App.icon('back')}</button>`;
+    for (let i = 1; i <= pages; i++) h += `<button type="button" class="key" data-page="${i}" aria-pressed="${i === state.page}" aria-label="第 ${i} 頁">${i}</button>`;
+    h += `<button type="button" class="key" data-page="${state.page + 1}" data-step="next" aria-label="下一頁"${state.page === pages ? ' disabled' : ''}>${App.icon('arrow')}</button>`;
+    $('#pager').innerHTML = h;
+  }
+  $('#pager').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-page]');
+    if (!b || b.disabled) return;
+    const step = b.dataset.step;
+    state.page = +b.dataset.page;
+    update({ roll: false });
+    // 分頁鍵整排重繪：焦點回到同一顆（上一頁 / 下一頁已到底時改回目前頁碼）
+    const again = (step && $(`#pager [data-step="${step}"]:not(:disabled)`)) || $(`#pager [data-page="${state.page}"]:not([data-step])`);
+    again.focus({ preventScroll: true });
+    const top = $('#list').getBoundingClientRect().top;
+    if (top < 0) $('#list').scrollIntoView({ block: 'start', behavior: App.reducedMotion() ? 'auto' : 'smooth' });
+  });
+
+  function syncSort() {
+    $$('#thead [data-sort]').forEach((th) => {
+      if (th.dataset.sort === state.sort) th.setAttribute('aria-sort', state.dir > 0 ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+    $('#sort-select').value = state.sort;
+    const [name, asc, desc] = SORT_NOTE[state.sort];
+    $('#sort-note').innerHTML = `排序 <b>${name}</b> · ${state.dir > 0 ? asc : desc} · 每頁 ${PAGE_SIZE} 筆`;
+  }
+
+  /* ---------- 選取與批次派工 ---------- */
+  const dispatchable = (o) => o.status === 'new' || o.status === 'dispatched';
+  function syncPageCheck() {
+    const n = pageIds.filter((id) => state.selected.has(id)).length;
+    ['#chk-all', '#chk-all-sm'].forEach((s) => {
+      const box = $(s);
+      box.checked = n > 0 && n === pageIds.length;
+      box.indeterminate = n > 0 && n < pageIds.length;
+      box.disabled = !pageIds.length;
+    });
+  }
+  function renderBatch() {
+    const sel = [...state.selected].map(App.getOrder);
+    const ready = sel.filter(dispatchable);
+    const p1 = ready.filter((o) => o.prio === 1).length;
+    $('#bb-n').textContent = sel.length;
+    $('#bb-meta').textContent = !sel.length ? ''
+      : ready.length === sel.length ? `皆可派工${p1 ? ` · 含 P1 ${p1} 件` : ''}`
+      : ready.length ? `可派工 ${ready.length} 件；另 ${sel.length - ready.length} 件已在現場或驗收階段，將略過`
+      : '所選工單皆已在現場或驗收階段，無需派工';
+    $('#bb-dispatch').disabled = !ready.length;
+    $('#rd-sel').textContent = sel.length;
+    // 底座要撐出的高度以批次列內容更新後的實際高度為準（手機上說明文字會換行）
+    $('#dock').style.setProperty('--dock-h', $('#batchbar').offsetHeight + 'px');
+    $('#dock').classList.toggle('is-open', sel.length > 0);
+    $('#batchbar').classList.toggle('is-open', sel.length > 0);
+  }
+  function setPicked(ids, on) {
+    ids.forEach((id) => {
+      if (on) state.selected.add(id); else state.selected.delete(id);
+      const tr = $(`#tbody tr[data-id="${id}"]`);
+      tr.classList.toggle('is-selected', on);
+      tr.querySelector('[data-pick]').checked = on;
+    });
+    syncPageCheck();
+    renderBatch();
+  }
+  $('#tbody').addEventListener('change', (e) => {
+    const box = e.target.closest('[data-pick]');
+    if (box) setPicked([box.dataset.pick], box.checked);
+  });
+  ['#chk-all', '#chk-all-sm'].forEach((s) => $(s).addEventListener('change', (e) => setPicked(pageIds, e.target.checked)));
+  $('#bb-clear').addEventListener('click', () => {
+    setPicked([...state.selected].filter((id) => pageIds.includes(id)), false);
+    state.selected.clear();
+    renderBatch();
+    $('#chips').focus({ preventScroll: true });
+  });
+  $('#bb-print').addEventListener('click', () => {
+    App.toast(`已送出 ${state.selected.size} 張派工單至列印佇列`, { desc: '維護科 2F 印表機 · A4 直式，附桿號條碼與現場位置圖。', tone: 'info' });
+  });
+  $('#bb-dispatch').addEventListener('click', () => {
+    const ids = [...state.selected].filter((id) => dispatchable(App.getOrder(id)));
+    openDispatch(ids, () => { state.selected.clear(); update({ roll: true }); });
+  });
+
+  function openDispatch(ids, onDone) {
+    const m = App.openDispatch(ids, { onDone });
+    // 派工成功後表格重繪、原按鈕已不在文件中：對話框關閉時把焦點交回該列（批次則交回篩選列）
+    m.el.addEventListener('close', () => {
+      if (document.activeElement !== document.body) return;
+      const target = ids.length === 1 ? $(`[data-expand="${ids[0]}"]`) : null;
+      (target || $('#chips')).focus({ preventScroll: true });
+    });
+  }
+
+  $('#tbody').addEventListener('click', (e) => {
+    const exp = e.target.closest('[data-expand]');
+    if (exp) { toggleExpand(exp); return; }
+    const dsp = e.target.closest('[data-dispatch]');
+    if (dsp) { openDispatch([dsp.dataset.dispatch]); return; }
+    if (e.target.closest('[data-reset]')) applyView(DEFAULT_VIEW);
+  });
+  // 展開 / 收合只動這一列，不重繪整張表，鍵盤焦點留在原按鍵上
+  function toggleExpand(btn) {
+    const id = btn.dataset.expand;
+    const open = !state.expanded.has(id);
+    const tr = btn.closest('tr');
+    if (open) {
+      state.expanded.add(id);
+      tr.insertAdjacentHTML('afterend', detailHtml(App.getOrder(id)));
+      btn.setAttribute('aria-controls', 'd-' + id);
+    } else {
+      state.expanded.delete(id);
+      document.getElementById('d-' + id).remove();
+      btn.removeAttribute('aria-controls');
+    }
+    tr.classList.toggle('is-open', open);
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', `${open ? '收合' : '展開'} ${id} 摘要`);
+  }
+
+  /* ---------- 總重繪：任何資料或篩選變動都走這裡，計數與表格才會一致 ---------- */
+  function update({ roll = true } = {}) {
+    const list = matched();
+    const visible = new Set(list.map((o) => o.id));
+    // 篩掉的工單同時取消選取，避免批次派工動到畫面上看不到的單
+    state.selected.forEach((id) => { if (!visible.has(id)) state.selected.delete(id); });
+    state.page = Math.min(state.page, Math.max(1, Math.ceil(list.length / PAGE_SIZE)));
+    hlRe = state.terms.length ? new RegExp(state.terms.map(reEsc).join('|'), 'gi') : null;
+    renderFacets(roll);
+    renderEq();
+    segMatch.set(String(list.length), { roll });
+    $('#total-n').textContent = ORDERS.length;
+    $('#match-total').textContent = ORDERS.length;
+    renderTape(list);
+    renderReads(list);
+    renderChips(list.length);
+    renderTable(list);
+    renderPager(list.length);
+    renderBatch();
+    syncPresets();
+    syncSort();
+  }
+  App.on('orders', () => update({ roll: true }));
+  update({ roll: true });
+
+  // 時間持續走動：每 30 秒只更新時限欄與計數，不重繪整張表（避免打斷正在操作的人）
+  setInterval(() => {
+    if (document.hidden) return;
+    $$('[data-sla-for]').forEach((td) => { td.innerHTML = slaHtml(App.getOrder(td.dataset.slaFor)); });
+    renderFacets(false);
+    renderReads(matched());
+  }, 30000);
+
+  /* ---------- 頁首動作 ---------- */
+  $('#btn-refresh').addEventListener('click', () => {
+    update({ roll: true });
+    App.toast(`已同步 ${ORDERS.length} 張工單`, { desc: `資料時間 ${fmt.dt(App.now())} · 修復時限已依現在時間重算。` });
+  });
+  $('#btn-export').addEventListener('click', () => {
+    const list = matched();
+    if (!list.length) {
+      App.toast('沒有可匯出的工單', { desc: '目前篩選條件下沒有符合的工單。', tone: 'warn' });
+      return;
+    }
+    const head = ['案號', '優先級', '設備類型', '設備編號', '行政區', '地點', '故障', '狀態', '維修班', '報修時間', '修復時限', '時限狀態'];
+    const cell = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [head.map(cell).join(',')].concat(list.map((o) => {
+      const s = App.sla(o);
+      return [o.id, PRIO[o.prio].code, App.typeOf(o.type).name, o.asset, App.district(o.dist).name, o.loc, o.fault, STATUS[o.status].name,
+        o.crew ? App.crew(o.crew).name : '', fmt.dt(o.t.reported), fmt.dt(s.due), s.label].map(cell).join(',');
+    }));
+    // 加 BOM：試算表軟體才會以 UTF-8 正確顯示中文
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const now = App.now();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders-${fmt.dateFull(now).slice(0, 10).replace(/\//g, '')}-${fmt.time(now).replace(':', '')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    App.toast(`已匯出 ${list.length} 筆工單`, { desc: `${a.download} · 依目前篩選與排序。` });
+  });
+});
+</script>
+</body>
+</html>

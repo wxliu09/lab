@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>攤位一覽 — 港埕夜市導覽</title>
+<meta name="description" content="港埕夜市 48 攤一次看：依小吃、飲品、甜點、遊戲、雜貨分類，按人氣、排隊時間或價格排序，搜尋攤名、菜名與編號。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Monoton&family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&family=Righteous&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ================= 頁首：標題＋招牌街 ================= */
+  .stl-head { padding: clamp(36px, 3.4vw, 48px) 0 clamp(28px, 2.8vw, 40px); }
+  .stl-head__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--sp-6) clamp(32px, 3.4vw, 56px);
+  }
+  .stl-head .page-head__sub { max-width: 30em; }
+
+  /* 分類計分板：攤數與平均排隊 */
+  .stl-score { margin-top: 26px; border-collapse: collapse; }
+  .stl-score th, .stl-score td { padding: 6px 0; text-align: center; white-space: nowrap; }
+  .stl-score thead th { width: 76px; padding-bottom: 10px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .1em; color: var(--text-2); }
+  .stl-score thead th::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--cat);
+    box-shadow: 0 0 6px var(--cat);
+    vertical-align: .16em;
+  }
+  .stl-score tbody th { padding-right: 18px; text-align: left; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .14em; color: var(--text-3); }
+  .stl-score tbody tr:first-child > * { padding-top: 12px; border-top: 1px solid var(--line); }
+  .stl-score tr > :not(:first-child) { border-left: 1px dashed var(--line); }
+  .stl-score__n {
+    font: 400 34px/1 var(--font-latin);
+    color: var(--cat);
+    text-shadow: 0 0 .05em var(--cat), 0 0 .4em color-mix(in srgb, var(--cat) 55%, transparent);
+  }
+  .stl-score__q { font-size: var(--fs-xs); color: var(--text-2); }
+  .stl-score__q b { margin-right: 2px; font: 400 16px/1 var(--font-latin); color: var(--text); }
+
+  /* 大家在找：一鍵帶入搜尋 */
+  .stl-trend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; }
+  .stl-trend__label { margin-right: 6px; }
+  .stl-trend button {
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px dashed var(--line-2);
+    border-radius: var(--r-pill);
+    background: transparent;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    letter-spacing: .04em;
+    transition: color var(--t-fast), border-color var(--t-fast), background-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .stl-trend button::before { content: "#"; margin-right: 3px; color: var(--pink); font-weight: 400; }
+  .stl-trend button:hover { color: var(--text); border-color: var(--pink); border-style: solid; }
+  .stl-trend button[aria-pressed="true"] {
+    color: var(--pink-hi);
+    border: 1px solid var(--pink);
+    background: rgba(255, 46, 136, .14);
+    box-shadow: 0 0 14px -4px rgba(255, 46, 136, .8);
+  }
+
+  /* 招牌街：48 面招牌照實際位置掛在兩層鋼樑上，招牌大小＝人氣 */
+  .stl-wall-wrap {
+    position: relative;
+    min-width: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255, 228, 238, .08), 0 30px 60px -30px #000;
+  }
+  /* 招牌的光打在磚牆上 */
+  .stl-wall-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(50% 42% at 30% 34%, rgba(255, 46, 136, .16), transparent 70%),
+      radial-gradient(40% 40% at 78% 70%, rgba(255, 201, 60, .1), transparent 70%),
+      linear-gradient(180deg, rgba(10, 4, 8, .1), rgba(10, 4, 8, .55));
+    pointer-events: none;
+  }
+  .stl-wall-scroll { position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: #4A3540 transparent; }
+  .stl-wall {
+    --k: 1;
+    position: relative;
+    width: calc(744px * var(--k));
+    margin-inline: auto;
+    padding: calc(16px * var(--k)) calc(14px * var(--k)) 6px;
+  }
+  .stl-wall__tier { position: relative; display: flex; justify-content: space-between; align-items: flex-start; padding-top: 6px; }
+  .stl-wall__tier + .stl-wall__tier { margin-top: calc(16px * var(--k)); }
+  /* 鋼樑＋燈泡串（App.bulbs 會把 SVG 寫進這個容器，所以樑用 .rail-beam 畫在偽元素上） */
+  .stl-wall .stl-wall__beam { position: absolute; left: -14px; right: -14px; top: 0; height: 22px; }
+  .stl-wall__group { display: flex; flex-direction: column; }
+  .stl-wall__signs { display: flex; align-items: flex-start; gap: calc(5px * var(--k)); height: calc(134px * var(--k)); }
+  /* 路牌：藍底白框 */
+  .stl-wall__plate {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #1B4F9C;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .85), 0 0 0 1px #0E2A55, 0 6px 10px -6px #000;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    white-space: nowrap;
+  }
+  .stl-wall__plate b { font: 400 11px/1.5 var(--font-latin); letter-spacing: .04em; color: #CFE0FF; }
+
+  .stl-wsign {
+    --hang: 10px;
+    position: relative;
+    display: block;
+    flex: none;
+    margin-top: calc(var(--hang) * var(--k));
+    text-decoration: none;
+    transform-origin: 50% calc(var(--hang) * var(--k) * -1 - 6px);
+    transition: transform .5s var(--ease-swing), opacity .35s, filter .35s;
+  }
+  /* 吊桿：從鋼樑垂到招牌頂 */
+  .stl-wsign::before {
+    content: "";
+    position: absolute;
+    left: 26%;
+    right: 26%;
+    bottom: 100%;
+    height: calc(var(--hang) * var(--k) + 6px);
+    border-inline: 1.5px solid #5A4950;
+    pointer-events: none;
+  }
+  .stl-wsign .signboard {
+    --sb-size: calc(var(--sz, 13px) * var(--k));
+    padding: calc(var(--sb-size) * .55) calc(var(--sb-size) * .3);
+    border-radius: 3px;
+    letter-spacing: .03em;
+    box-shadow: 0 0 0 2px #241A1E, 0 12px 16px -10px rgba(0, 0, 0, .85), 0 0 16px -3px var(--sb-glow), 0 0 36px -12px var(--sb-glow);
+  }
+  .stl-wsign .signboard::before { inset: 3px; border-width: 1px; border-radius: 1.5px; }
+  .stl-wsign .signboard.is-off { box-shadow: 0 0 0 2px #241A1E, 0 12px 16px -10px rgba(0, 0, 0, .85); }
+  /* 不符合篩選＝斷電，退到背景 */
+  .stl-wsign.is-out { opacity: .38; filter: saturate(.35) brightness(.85); }
+  /* 被摸到（或下方攤位卡被指到）：招牌晃一下、外框亮白 */
+  .stl-wsign:hover, .stl-wsign.is-hot { z-index: 2; transform: rotate(-5deg); }
+  .stl-wsign:hover .signboard, .stl-wsign.is-hot .signboard {
+    box-shadow: 0 0 0 2px #FFF4F8, 0 0 22px 0 var(--sb-glow), 0 0 50px -6px var(--sb-glow);
+  }
+  .stl-wall__caption {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 10px 18px 12px;
+    border-top: 1px solid rgba(255, 228, 238, .08);
+    background: rgba(10, 4, 8, .72);
+    font-size: var(--fs-xs);
+    letter-spacing: .06em;
+    color: var(--text-3);
+  }
+  .stl-wall__caption b { margin-inline: 3px; font: 400 16px/1 var(--font-latin); color: var(--bulb-hi); }
+  .stl-wall__hint { display: none; }
+
+  /* ================= 工具列 ================= */
+  .stl-toolbar .toolbar__inner { flex-direction: column; align-items: stretch; gap: 12px; padding-block: 22px 14px; }
+  .stl-toolbar__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .stl-search { flex: 1 1 280px; min-width: 0; max-width: 440px; }
+  .stl-search .search__clear .icon { width: 18px; height: 18px; }
+  .stl-sortbox { display: inline-flex; align-items: center; gap: 10px; }
+  .stl-toolbar__label { white-space: nowrap; }
+  .stl-view button { display: inline-flex; align-items: center; gap: 6px; padding-inline: 14px; }
+  .stl-view .icon { width: 16px; height: 16px; }
+  .stl-toolbar .result-count { margin-left: auto; }
+  .stl-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .stl-sep { width: 1px; height: 24px; background: var(--line-2); }
+  .stl-flag .icon { width: 15px; height: 15px; }
+  .chip.is-zero { opacity: .45; }
+
+  /* ================= 結果 ================= */
+  .stl-results { padding-top: var(--sp-6); }
+  .stl-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 30px;
+    margin-bottom: var(--sp-5);
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--line-2);
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  .stl-legend__group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+  .stl-legend__title { font-weight: 700; letter-spacing: .14em; color: var(--text-2); }
+  .stl-legend .queue { font-size: 12px; font-weight: 400; }
+  .stl-legend .queue--long .queue__text { color: var(--text-2); }
+  .stl-legend .price-band { font-size: 12px; }
+  .stl-legend .grade { width: 22px; height: 22px; font-size: 11px; }
+  .stl-legend__title small { margin-left: 6px; font-size: 11px; font-weight: 400; letter-spacing: .04em; color: var(--text-3); }
+  .stl-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+
+  .stl-grid { list-style: none; counter-reset: stl; }
+  .stl-item { counter-increment: stl; display: flex; min-width: 0; }
+  .stl-item > .stall-card { flex: 1; min-width: 0; }
+  .stl-row { display: none; }
+  /* 卡片補上人氣票數 */
+  .stl-heat { min-width: 0; max-width: 210px; }
+  .stl-heat__n { flex: none; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  /* 久候的紅燈慢慢閃，提醒要排比較久 */
+  .stl-grid .queue--long .queue__lamps i:nth-child(3) { animation: stl-lamp 1.8s steps(1, end) infinite; }
+  @keyframes stl-lamp { 0%, 62% { opacity: 1; } 63%, 100% { opacity: .3; } }
+  /* 搜尋命中的不是攤名時，說明命中了哪一項 */
+  .stl-hit {
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(255, 201, 60, .12);
+    color: var(--bulb-hi);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .stl-mark { background: none; color: inherit; box-shadow: inset 0 -.34em 0 rgba(255, 201, 60, .55); border-radius: 1px; }
+
+  /* 清單模式：整張變成燈箱價目板 */
+  .stl-grid.is-list { display: block; }
+  .stl-grid.is-list .stl-item { display: block; border-bottom: 1px dashed rgba(28, 19, 22, .2); }
+  .stl-grid.is-list .stl-item.is-last { border-bottom: 0; }
+  .stl-grid.is-list .stall-card { display: none; }
+  .stl-grid.is-list .stl-row { display: grid; }
+  .stl-row {
+    position: relative;
+    grid-template-columns: 34px minmax(0, 1.2fr) minmax(0, 1.2fr) 128px 140px 158px 26px 36px;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 14px 8px;
+    border-radius: var(--r-2);
+    transition: background-color var(--t-fast);
+  }
+  .stl-row:hover { background: rgba(28, 19, 22, .04); }
+  .stl-row__no::before { content: counter(stl, decimal-leading-zero); font: 400 22px/1 var(--font-latin); color: var(--ink-3); }
+  .stl-row__main { min-width: 0; }
+  .stl-row__name { font-size: inherit; line-height: 1; }
+  .stl-row__name a { display: inline-block; text-decoration: none; }
+  .stl-row__name a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  .stl-row__meta { margin-top: 7px; font-size: 12px; color: var(--ink-3); letter-spacing: .04em; }
+  .stl-row__code { margin-right: 8px; font: 400 13px/1 var(--font-latin); color: var(--ink-2); }
+  .stl-row__label { margin-right: 6px; padding: 1px 6px; border-radius: 3px; background: rgba(28, 19, 22, .08); color: var(--ink-3); font-size: 11px; letter-spacing: .1em; }
+  .stl-row__stats { display: contents; }
+  .stl-row .grade { width: 26px; height: 26px; font-size: 12px; }
+  .stl-row .fav-btn, .stl-row .stl-hit { position: relative; z-index: 1; }
+  .stl-row .fav-btn { width: 36px; min-height: 36px; padding: 0; justify-content: center; color: var(--ink-2); border-color: rgba(28, 19, 22, .25); }
+  .stl-row .fav-btn:hover { color: #B0124F; border-color: #E0186F; }
+  .stl-row .fav-btn[aria-pressed="true"] { color: #B0124F; border-color: #E0186F; background: rgba(224, 24, 111, .08); box-shadow: none; }
+  .stl-row .fav-btn__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .stl-row .stl-hit { grid-column: 2 / -1; justify-self: start; background: rgba(200, 38, 43, .08); color: var(--marker-red); }
+
+  .stl-pager { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: var(--sp-6); }
+  .stl-pager .btn { min-width: 220px; }
+  .stl-pager__note { font-size: var(--fs-xs); letter-spacing: .08em; color: var(--text-3); }
+  .stl-empty .btn { margin-top: 6px; }
+
+  /* ================= 收尾：焦點攤、地圖、資料說明 ================= */
+  .stl-more__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(24px, 2.6vw, 40px);
+    align-items: stretch;
+  }
+  /* 三欄等高時燈箱與白板比較高，招牌與文案在面板內垂直置中，不要全擠在上半部 */
+  .stl-feature { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: center; gap: 26px; padding: 30px 28px 26px; }
+  .stl-feature__sign { position: relative; align-self: start; margin-top: 18px; text-decoration: none; }
+  .stl-feature__sign .signboard { --sb-size: 34px; }
+  .stl-feature__steam { left: 50%; top: -92px; translate: -50% 0; width: 70px; height: 110px; }
+  .stl-feature__kicker { font: 400 var(--fs-xs)/1.2 var(--font-latin); letter-spacing: .28em; color: var(--pink); }
+  .stl-feature__name { margin-top: 8px; font: 900 var(--fs-2xl)/1.25 var(--font-sign); letter-spacing: .04em; }
+  .stl-feature__blurb { margin-top: 10px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.8; }
+  .stl-feature__stats { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 14px; }
+  .stl-feature__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+  .stl-mapcard { display: flex; flex-direction: column; }
+  .stl-mapcard .lightbox__title { margin: 6px 0 10px; }
+  .stl-zones { list-style: none; display: grid; gap: 8px; margin: 16px 0 20px; }
+  .stl-zones li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px dashed rgba(28, 19, 22, .18); font-size: var(--fs-sm); color: var(--ink-2); }
+  .stl-zones b { font-weight: 900; color: var(--ink); }
+  .stl-zones span { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+  .stl-mapcard .btn { margin-top: auto; align-self: flex-start; }
+  .stl-notes { --tilt: .5deg; margin: 0 10px 22px; }
+  .stl-notes__list { list-style: none; display: grid; gap: 12px; margin-top: 16px; font-size: 17px; line-height: 1.55; }
+  .stl-notes__list li { padding-left: 1.3em; text-indent: -1.3em; }
+  .stl-notes__list li::before { content: "✓"; display: inline-block; width: 1.3em; text-indent: 0; color: var(--marker-red); font-weight: 700; }
+  .stl-notes__list b { color: var(--marker-blue); }
+  .stl-notes .btn { margin-top: 18px; }
+
+  /* ================= RWD ================= */
+  @media (max-width: 1399px) and (min-width: 1201px) {
+    .stl-wall { --k: .87; }
+    .stl-score thead th { width: 68px; }
+  }
+  /* 筆電寬度：膠囊收緊，讓工具列維持兩行 */
+  @media (max-width: 1399px) {
+    .stl-flag .icon { display: none; }
+    .stl-chips .chip { padding-inline: 12px; }
+  }
+  @media (max-width: 1279px) {
+    /* 再窄工具列會換成三行以上，改成不黏住，留空間給攤位 */
+    .stl-toolbar { position: static; }
+  }
+  @media (max-width: 1200px) {
+    .stl-head__inner { grid-template-columns: minmax(0, 1fr); }
+    .stl-more__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .stl-feature { grid-column: 1 / -1; }
+  }
+  /* 平板橫放：招牌街換到下方，計分板移到標題右側，頁首不要拉太長 */
+  @media (max-width: 1200px) and (min-width: 960px) {
+    .stl-head__copy {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "crumbs score" "title score" "sub trend";
+      column-gap: 48px;
+      align-items: start;
+    }
+    .stl-head__copy > nav { grid-area: crumbs; }
+    .stl-head__copy .page-head__title-row { grid-area: title; }
+    .stl-head__copy .page-head__sub { grid-area: sub; }
+    .stl-head__copy > [data-score] { grid-area: score; align-self: end; }
+    .stl-trend { grid-area: trend; align-self: start; }
+  }
+  @media (max-width: 1100px) {
+    .stl-row { grid-template-columns: 30px minmax(0, 1fr) auto; grid-template-areas: "no main fav" "no dish dish" "no stats stats"; padding: 16px 4px; }
+    .stl-row__no { grid-area: no; align-self: start; padding-top: 4px; }
+    .stl-row__main { grid-area: main; }
+    .stl-row__dish { grid-area: dish; }
+    .stl-row__stats { grid-area: stats; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+    .stl-row .fav-btn { grid-area: fav; align-self: start; }
+  }
+  @media (max-width: 1024px) {
+    .stl-toolbar .toolbar__inner { padding-top: 18px; }
+  }
+  @media (max-width: 820px) {
+    .stl-wall__hint { display: block; order: -1; flex-basis: 100%; padding-bottom: 6px; text-align: center; letter-spacing: .1em; color: var(--text-2); }
+  }
+  @media (max-width: 720px) {
+    .stl-head .page-head__title-row { gap: 0 14px; }
+    .stl-score { width: 100%; margin-top: 22px; }
+    .stl-score thead th { width: auto; font-size: 13px; letter-spacing: .04em; }
+    .stl-score thead th::before { margin-right: 4px; }
+    .stl-score tbody th { padding-right: 10px; letter-spacing: .06em; }
+    .stl-score__n { font-size: 26px; }
+    .stl-wall-wrap { margin-inline: calc(var(--gutter) * -1); border-radius: 0; }
+    .stl-wall__caption { padding-inline: var(--gutter); }
+    .stl-search { flex-basis: 100%; max-width: none; }
+    .stl-sortbox { flex-wrap: wrap; }
+    .stl-toolbar .result-count { margin-left: 0; }
+    .stl-sep { display: none; }
+    .stl-legend { gap: 10px 20px; }
+    /* 手機卡片：排隊與價格排同一行，卡片矮一點 */
+    .stl-grid .stall-card__stats { flex-direction: row; flex-wrap: wrap; gap: 8px 16px; }
+    .stl-heat { flex-basis: 100%; max-width: none; }
+    .stl-more__grid { grid-template-columns: minmax(0, 1fr); }
+    .stl-feature { grid-template-columns: minmax(0, 1fr); padding: 26px 20px 22px; }
+    .stl-feature__sign { justify-self: center; margin-top: 70px; }
+    .stl-feature__sign .signboard { --sb-size: 28px; }
+    .stl-notes { margin-inline: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stl-grid .queue--long .queue__lamps i:nth-child(3) { animation: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="topline">
+  <div class="container topline__inner">
+    <a class="topline__back" href="../../index.html"><span aria-hidden="true">←</span> 返回目錄</a>
+    <p class="topline__addr">澄港市港埕區 · 港埕路 × 魚市巷 · 捷運港埕站 2 號出口</p>
+    <p class="topline__weather">今晚 22°C · 東北風 2 級 · 降雨機率 10%</p>
+    <p class="topline__now">現在 <b class="latin" data-clock>20:40</b></p>
+  </div>
+</div>
+
+<header class="site-header" data-header>
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="港埕夜市導覽 首頁">
+      <span class="brand__plate" aria-hidden="true">港埕</span>
+      <span class="brand__word"><span class="brand__name">港埕夜市</span><span class="brand__en">GANGCHENG NIGHT MARKET</span></span>
+    </a>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__no">01</span>夜市總覽</a></li>
+        <li><a class="site-nav__link is-active" href="stalls.html" aria-current="page"><span class="site-nav__no">02</span>攤位一覽</a></li>
+        <li><a class="site-nav__link" href="stall.html"><span class="site-nav__no">03</span>焦點攤位</a></li>
+        <li><a class="site-nav__link" href="map.html"><span class="site-nav__no">04</span>夜市地圖</a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <span class="open-pill" data-open-status><span class="lamp" aria-hidden="true"></span><b>營業中</b><span class="open-pill__time">至 00:30</span></span>
+      <button class="pocket-btn" type="button" data-modal-open="pocket-dialog">
+        <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 19.5s-7.5-4.5-7.5-10A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 7.5 2.5c0 5.5-7.5 10-7.5 10z"/></svg>
+        <span class="pocket-btn__label">口袋名單</span><span class="pocket-btn__count" data-fav-count>2</span>
+      </button>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="主選單">
+        <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <span class="nav-toggle__label">選單</span>
+      </button>
+    </div>
+  </div>
+  <div class="site-header__bulbs" data-bulbs data-bulbs-gap="44" data-bulbs-sag="7" data-bulbs-r="3" data-bulbs-colors="mix" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+
+  <!-- ============ 頁首：霓虹標題＋招牌街 ============ -->
+  <section class="page-head stl-head" aria-labelledby="page-title">
+    <div class="container stl-head__inner">
+      <div class="stl-head__copy">
+        <nav aria-label="麵包屑">
+          <ol class="crumbs">
+            <li><a href="index.html">夜市總覽</a></li>
+            <li aria-current="page">攤位一覽</li>
+          </ol>
+        </nav>
+        <div class="page-head__title-row">
+          <h1 class="page-head__title" id="page-title"><span data-neon="pink" data-neon-delay="200" data-neon-step="210" data-neon-buzz="2">攤位一覽</span></h1>
+          <p class="page-head__en tube-font neon-text neon--cyan" aria-hidden="true" data-head-en>48 STALLS</p>
+        </div>
+        <p class="page-head__sub" data-head-sub>港埕路南北兩側、魚市巷與福安宮廟埕，今晚 48 攤全數營業。用分類、排隊時間和價格挑一攤，點招牌看菜單與位置。</p>
+        <div data-score></div>
+        <div class="stl-trend" role="group" aria-label="大家在找" data-trend>
+          <span class="stl-trend__label stat__label" aria-hidden="true">大家在找</span>
+          <button type="button" data-q="蚵" aria-pressed="false">蚵</button>
+          <button type="button" data-q="炭烤" aria-pressed="false">炭烤</button>
+          <button type="button" data-q="珍珠" aria-pressed="false">珍珠</button>
+          <button type="button" data-q="湯" aria-pressed="false">湯</button>
+          <button type="button" data-q="冰" aria-pressed="false">冰</button>
+          <button type="button" data-q="親子" aria-pressed="false">親子</button>
+        </div>
+      </div>
+
+      <figure class="stl-wall-wrap bg-brick">
+        <div class="stl-wall-scroll" data-wall-scroll>
+          <div class="stl-wall" data-wall data-live aria-hidden="true"></div>
+        </div>
+        <figcaption class="stl-wall__caption">
+          <span>招牌越大，人氣越高。篩選就是電源開關：符合條件的招牌才會亮。</span>
+          <span>亮燈<b data-lit>48</b>／<span data-wall-total>48</span> 攤</span>
+          <span class="stl-wall__hint" aria-hidden="true">← 左右滑動看整條街 →</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <div data-led></div>
+
+  <!-- ============ 篩選工具列 ============ -->
+  <div class="toolbar stl-toolbar" data-toolbar>
+    <div class="container toolbar__inner">
+      <div class="stl-toolbar__row">
+        <div class="search stl-search" role="search">
+          <svg class="icon search__icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          <label class="sr-only" for="stl-q">搜尋攤名、菜名、編號或標籤</label>
+          <input class="input search__input" id="stl-q" type="search" placeholder="攤名、菜名或編號，如：蚵仔、A07" autocomplete="off" enterkeyhint="search">
+          <button class="search__clear" type="button" data-q-clear aria-label="清除搜尋" hidden>
+            <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="stl-sortbox">
+          <span class="stl-toolbar__label stat__label" id="sort-label">排序</span>
+          <div class="seg" data-segmented role="group" aria-labelledby="sort-label" id="stl-sort">
+            <button type="button" data-value="popular" aria-pressed="true">人氣最高</button>
+            <button type="button" data-value="queue" aria-pressed="false">排隊最短</button>
+            <button type="button" data-value="price" aria-pressed="false">價格最低</button>
+          </div>
+        </div>
+        <div class="seg stl-view" data-segmented role="group" aria-label="顯示方式" id="stl-view">
+          <button type="button" data-value="card" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>招牌卡</button>
+          <button type="button" data-value="list" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>價目清單</button>
+        </div>
+        <p class="result-count" aria-live="polite">符合<b data-result-n>48</b>攤 · 共 <span data-result-total>48</span> 攤</p>
+        <button class="btn btn--ghost btn--sm stl-clear" type="button" data-clear-filters hidden>清除條件</button>
+      </div>
+      <div class="stl-toolbar__row">
+        <div class="stl-chips" role="group" aria-label="分類" data-cat-chips></div>
+        <span class="stl-sep" aria-hidden="true"></span>
+        <div class="stl-chips" role="group" aria-label="其他條件" data-flag-chips></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 攤位列表 ============ -->
+  <section class="section stl-results" aria-labelledby="results-title">
+    <div class="container">
+      <h2 class="sr-only" id="results-title">攤位列表</h2>
+      <div class="stl-legend" data-results-top data-legend></div>
+      <ul class="stall-grid stl-grid" data-grid data-live></ul>
+      <div class="stl-pager" data-pager hidden>
+        <button class="btn btn--neon" type="button" data-pager-btn>再看 12 攤</button>
+        <p class="stl-pager__note" aria-live="polite" data-pager-note></p>
+      </div>
+      <div class="empty stl-empty" data-empty hidden>
+        <svg class="art-stool" viewBox="0 0 120 120" width="120" height="120" aria-hidden="true" focusable="false">
+          <ellipse cx="60" cy="112" rx="40" ry="5" fill="#000" opacity=".35"/>
+          <path d="M26 40 L18 108 h12 l8-56 h44 l8 56 h12 L94 40z" fill="#C42A23"/>
+          <path d="M38 52 h44 l3 22 H35z" fill="#E23A2E"/>
+          <path d="M44 58 h8 l-1 10 h-8z M56 58 h8 v10 h-8z M68 58 h8 l1 10 h-8z" fill="#8E1C17"/>
+          <ellipse cx="60" cy="40" rx="36" ry="10" fill="#E8463A"/>
+          <ellipse cx="60" cy="38" rx="30" ry="7" fill="#F2645A"/>
+          <circle cx="60" cy="38" r="3" fill="#C42A23"/>
+          <path d="M34 36 q10 -5 20 -4" stroke="#fff" stroke-opacity=".5" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <p class="empty__title">這條街上沒有符合的攤位</p>
+        <p class="empty__text" data-empty-text>換個關鍵字，或把幾個篩選條件關掉再找找看。</p>
+        <button class="btn btn--neon btn--sm" type="button" data-clear-filters>清除所有條件</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 收尾：焦點攤、地圖、資料說明 ============ -->
+  <section class="section section--brick stl-more" aria-labelledby="more-title">
+    <div class="container">
+      <h2 class="sr-only" id="more-title">逛攤小幫手</h2>
+      <div class="stl-more__grid" data-more></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="shutter" aria-hidden="true">
+    <p class="shutter__text">吃飽了嗎？明天 17:00 見</p>
+    <span class="shutter__bar"></span>
+  </div>
+  <div class="container site-footer__grid">
+    <div class="site-footer__brand">
+      <a class="brand" href="index.html" aria-label="港埕夜市導覽 首頁">
+        <span class="brand__plate" aria-hidden="true">港埕</span>
+        <span class="brand__word"><span class="brand__name">港埕夜市</span><span class="brand__en">GANGCHENG NIGHT MARKET</span></span>
+      </a>
+      <p>1968 年從魚市巷口的一攤冬瓜茶開始，現在是澄港市最熱鬧的夜晚。本站資訊由港埕夜市自治會維護，每日 16:00 更新。</p>
+    </div>
+    <div>
+      <h2 class="site-footer__title">逛夜市</h2>
+      <ul class="site-footer__links">
+        <li><a href="index.html">夜市總覽</a></li>
+        <li><a href="stalls.html">攤位一覽</a></li>
+        <li><a href="stall.html">焦點攤位：阿娥蚵仔煎</a></li>
+        <li><a href="map.html">夜市地圖</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2 class="site-footer__title">營業資訊</h2>
+      <dl class="dl">
+        <dt>營業</dt><dd>每日 17:00–00:30</dd>
+        <dt>公休</dt><dd>全年無休（各攤另計）</dd>
+        <dt>地址</dt><dd>港埕區港埕路 120 號一帶</dd>
+        <dt>服務台</dt><dd>東口廣場 · 2361-1968</dd>
+      </dl>
+    </div>
+    <div>
+      <h2 class="site-footer__title">管理單位</h2>
+      <p>港埕夜市自治會<br>輔導：澄港市政府經濟發展局 市場管理處<br>衛生評核：澄港市政府衛生局</p>
+    </div>
+  </div>
+  <div class="container site-footer__base">
+    <span>© 2026 港埕夜市自治會 · 澄港市港埕區</span>
+    <span>「澄港市」為虛構城市，本站為介面設計作品</span>
+    <a href="../../index.html">← 返回目錄</a>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt } = App;
+  const D = App.data;
+  const stalls = D.stalls;
+  const CATS = Object.values(D.categories);
+  const EATS = ['food', 'drink', 'dessert'];
+  const zoneName = id => D.zones.find(z => z.id === id).name;
+  const catLabel = k => D.categories[k].label;
+
+  /* =========================================================
+     篩選狀態：搜尋、分類、條件、排序、顯示方式都只存在這裡，
+     任何變動（含收藏與復原）都走 apply() 同一套重繪
+     ========================================================= */
+  const SORT_KEYS = ['popular', 'queue', 'price'];
+  const FLAGS = {
+    short: { label: '排隊 8 分內', icon: 'clock', color: 'var(--q-short)', test: s => App.queueLevel(s.queue).key === 'short' },
+    mobile: { label: '行動支付', icon: 'phone', color: 'var(--cyan)', test: s => s.pay.includes('行動支付') },
+    classic: { label: '老店', icon: 'calendar', color: 'var(--gold)', test: s => s.since < 1990 },
+    gradeA: { label: '衛生優等', icon: 'shield', color: '#3DDC97', test: s => s.grade === 'A' },
+    pocket: { label: '口袋名單', icon: 'heart', color: 'var(--pink)', test: s => App.favs.has(s.id) },
+  };
+  const state = { q: '', cats: new Set(), flags: new Set(), sort: 'popular', view: 'card' };
+
+  // 其他頁可用 stalls.html?cat=food,drink&q=蚵仔&sort=queue 帶入條件（只讀不寫，file:// 下改網址會被擋）
+  const params = new URLSearchParams(location.search);
+  (params.get('cat') || '').split(',').forEach(k => { if (D.categories[k]) state.cats.add(k); });
+  state.q = (params.get('q') || '').trim().slice(0, 30);
+  if (SORT_KEYS.includes(params.get('sort'))) state.sort = params.get('sort');
+  if (state.cats.size === CATS.length) state.cats.clear();
+
+  /* ---------------- 搜尋 ---------------- */
+  const norm = str => String(str).toLowerCase().replace(/\s+/g, '');
+  const terms = () => state.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // 預先整理每攤可搜尋的欄位；命中的若不是攤名，要能告訴使用者是哪一項
+  const searchIndex = new Map(stalls.map(s => [s.id, {
+    head: norm(s.id + s.name + catLabel(s.cat)),
+    menu: s.menu.map(([n, p]) => ({ n, p, key: norm(n) })),
+    tags: s.tags.map(t => ({ t, key: norm(t) })),
+    zone: zoneName(s.zone),
+    zoneKey: norm(zoneName(s.zone)),
+    ownerKey: norm(s.owner),
+  }]));
+  // 回傳 null＝沒命中；字串＝要顯示的命中提示（空字串表示攤名本身就命中，不用提示）
+  function searchHit(s, ts) {
+    const ix = searchIndex.get(s.id);
+    let hint = '';
+    for (const raw of ts) {
+      const t = norm(raw);
+      if (ix.head.includes(t)) continue;
+      const m = ix.menu.find(x => x.key.includes(t));
+      if (m) { if (!hint && m.n !== s.dish) hint = `菜單有「${m.n}」${fmt.price(m.p)}`; continue; }
+      const tag = ix.tags.find(x => x.key.includes(t));
+      if (tag) { if (!hint) hint = `標籤「${tag.t}」`; continue; }
+      if (ix.zoneKey.includes(t)) { if (!hint) hint = `位在${ix.zone}`; continue; }
+      if (ix.ownerKey.includes(t)) { if (!hint) hint = `老闆 ${s.owner}`; continue; }
+      return null;
+    }
+    return hint;
+  }
+  // 把命中的字包 <mark>；多個關鍵字重疊時合併區段
+  function markText(text, ts) {
+    const lower = text.toLowerCase();
+    const ranges = [];
+    ts.forEach(t => {
+      for (let i = lower.indexOf(t); i > -1; i = lower.indexOf(t, i + 1)) ranges.push([i, i + t.length]);
+    });
+    if (!ranges.length) return esc(text);
+    ranges.sort((a, b) => a[0] - b[0]);
+    const merged = [ranges[0].slice()];
+    ranges.slice(1).forEach(([a, b]) => {
+      const last = merged[merged.length - 1];
+      if (a <= last[1]) last[1] = Math.max(last[1], b); else merged.push([a, b]);
+    });
+    let out = '';
+    let at = 0;
+    merged.forEach(([a, b]) => {
+      out += esc(text.slice(at, a)) + `<mark class="stl-mark">${esc(text.slice(a, b))}</mark>`;
+      at = b;
+    });
+    return out + esc(text.slice(at));
+  }
+
+  // 不含分類（skipCats）或不含某個條件（skipFlag）的比對，用來算各膠囊「按下去會有幾攤」
+  function passes(s, ts, { skipCats = false, skipFlag = null } = {}) {
+    if (!skipCats && state.cats.size && !state.cats.has(s.cat)) return false;
+    for (const f of state.flags) if (f !== skipFlag && !FLAGS[f].test(s)) return false;
+    return searchHit(s, ts) !== null;
+  }
+
+  /* ---------------- 頁首：計分板 ---------------- */
+  const avgQueue = list => Math.round(list.reduce((a, s) => a + s.queue, 0) / list.length);
+  $('[data-score]').innerHTML = `
+    <table class="stl-score">
+      <caption class="sr-only">今晚各分類營業攤數與平均排隊時間</caption>
+      <thead><tr><td></td>${CATS.map(c => `<th scope="col" data-cat="${c.key}">${c.label}</th>`).join('')}</tr></thead>
+      <tbody>
+        <tr><th scope="row">攤數</th>${CATS.map(c => `<td data-cat="${c.key}"><span class="stl-score__n">${App.stallsBy(c.key).length}</span></td>`).join('')}</tr>
+        <tr><th scope="row">平均排隊</th>${CATS.map(c => {
+          const m = avgQueue(App.stallsBy(c.key));
+          return `<td class="stl-score__q">${m ? `<b>${m}</b>分` : '免排隊'}</td>`;
+        }).join('')}</tr>
+      </tbody>
+    </table>`;
+  $('[data-head-sub]').textContent = `港埕路南北兩側、魚市巷與福安宮廟埕，今晚 ${stalls.length} 攤全數營業。用分類、排隊時間和價格挑一攤，點招牌看菜單與位置。`;
+  $('[data-head-en]').textContent = `${stalls.length} STALLS`;
+
+  /* ---------------- 頁首：招牌街 ---------------- */
+  const wall = $('[data-wall]');
+  const GROUPS = [
+    { tier: 0, row: 'A', name: '港埕路北側' },
+    { tier: 0, row: 'B', name: '港埕路南側' },
+    { tier: 1, row: 'C', name: '魚市巷西側' },
+    { tier: 1, row: 'D', name: '魚市巷東側' },
+    { tier: 1, row: 'E', name: '福安宮廟埕' },
+  ];
+  const votes = stalls.map(s => s.votes);
+  const vMin = Math.min(...votes);
+  const vMax = Math.max(...votes);
+  const wallRand = App.rng(1983);
+  // 招牌字級 10–14.4px：開根號讓冷門攤不會小到看不清楚
+  const signSize = s => (10 + 4.4 * Math.sqrt((s.votes - vMin) / (vMax - vMin))).toFixed(1);
+  wall.innerHTML = [0, 1].map(tier => `
+    <div class="stl-wall__tier">
+      <div class="stl-wall__beam rail-beam" data-bulbs data-bulbs-gap="26" data-bulbs-sag="3" data-bulbs-r="2.6" data-bulbs-colors="${tier ? 'warm' : 'mix'}"></div>
+      ${GROUPS.filter(g => g.tier === tier).map(g => {
+        const list = stalls.filter(s => s.id[0] === g.row);
+        return `<div class="stl-wall__group">
+          <div class="stl-wall__signs">${list.map(s => {
+            // 約五分之一的招牌被風吹著輕晃，相位錯開才不會整排一起擺
+            const sway = wallRand() < 0.2;
+            const style = `--sz:${signSize(s)}px;--hang:${Math.round(4 + wallRand() * 14)}px${sway ? `;animation-delay:-${(wallRand() * 6).toFixed(1)}s` : ''}`;
+            return `<a class="stl-wsign${sway ? ' sway' : ''}" style="${style}" href="${s.url}" tabindex="-1" data-id="${s.id}">${App.signHTML(s.name, { variant: s.sign, off: true })}</a>`;
+          }).join('')}</div>
+          <p class="stl-wall__plate">${g.name}<b>${list[0].id}–${list[list.length - 1].id}</b></p>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+  App.scan(wall);
+  $('[data-wall-total]').textContent = stalls.length;
+  const wallSigns = $$('.stl-wsign', wall).map(a => ({ id: a.dataset.id, a, sign: $('.signboard', a), lit: false, timer: 0 }));
+  const wallById = new Map(wallSigns.map(w => [w.id, w]));
+
+  let wallPowered = false;
+  // 亮／滅都以「當下」的篩選結果為準；排程中的點燈若被新的篩選取消，計時器會先清掉
+  function paintWall(visible, { base = 0, step = 16 } = {}) {
+    let k = 0;
+    wallSigns.forEach(w => {
+      const want = visible.has(w.id);
+      w.a.classList.toggle('is-out', !want);
+      if (!wallPowered) return;
+      if (want && !w.lit) {
+        w.lit = true;
+        clearTimeout(w.timer);
+        w.timer = setTimeout(() => App.ignite(w.sign), App.reducedMotion ? 0 : base + k++ * step);
+      } else if (!want && w.lit) {
+        w.lit = false;
+        clearTimeout(w.timer);
+        w.sign.classList.remove('is-igniting');
+        w.sign.classList.add('is-off');
+      }
+    });
+  }
+
+  // 招牌街第一次進入畫面才開燈：從西到東一面一面通電
+  const wallIO = new IntersectionObserver(entries => {
+    if (!entries.some(e => e.isIntersecting)) return;
+    wallIO.disconnect();
+    wallPowered = true;
+    paintWall(new Set(matched), { base: 500, step: 34 });
+  });
+  wallIO.observe(wall);
+
+  // 偶發跳電：隨機挑一面亮著的招牌閃一下（App.animate 會在看不到時自動停）
+  let glitchIn = 3200;
+  App.animate(wall, (t, dt) => {
+    glitchIn -= dt;
+    if (glitchIn > 0) return;
+    glitchIn = 1800 + Math.random() * 4200;
+    const lit = wallSigns.filter(w => w.lit && !w.sign.classList.contains('is-off'));
+    if (lit.length) App.ignite(lit[Math.floor(Math.random() * lit.length)].sign);
+  });
+
+  const stallTip = s => `<b>${esc(s.name)}</b><span>${s.id} · ${catLabel(s.cat)} · 招牌 ${esc(s.dish)} ${fmt.price(s.dishPrice)}</span><span>${s.queue <= 0 ? '免排隊' : '排隊 ' + fmt.queue(s.queue)} · 人氣 ${fmt.num(s.votes)} 票</span>`;
+  wall.addEventListener('pointerover', e => {
+    const a = e.target.closest('.stl-wsign');
+    if (a) App.tooltip.show(stallTip(App.stall(a.dataset.id)), e.clientX, e.clientY);
+    else App.tooltip.hide();
+  });
+  wall.addEventListener('pointermove', e => App.tooltip.move(e.clientX, e.clientY));
+  wall.addEventListener('pointerleave', () => App.tooltip.hide());
+
+  /* ---------------- LED 跑馬燈（內容全部由資料算出） ---------------- */
+  const eats = stalls.filter(s => EATS.includes(s.cat));
+  const longest = eats.reduce((a, b) => (b.queue > a.queue ? b : a));
+  const quick = eats.slice().sort(App.sorters.queue).slice(0, 3);
+  // 收攤時間跨午夜（00:00、00:30）要算成隔天，不能直接比字串
+  const closeMin = s => {
+    const [h, m] = s.hours.split('–')[1].split(':').map(Number);
+    return (h < 12 ? h + 24 : h) * 60 + m;
+  };
+  const early = eats.filter(s => closeMin(s) <= 23 * 60).sort((a, b) => closeMin(a) - closeMin(b));
+  const focus = App.stall('A07');
+  const todayEvents = D.events.filter(ev => ev.date === App.TODAY);
+  const ledItems = [
+    ['yellow', `今晚 ${stalls.length} 攤全數營業 · ${D.market.hours.open}–${D.market.hours.close}`],
+    ['', `排隊最久：${longest.id} ${longest.name} ${fmt.queue(longest.queue)}${longest.detail ? `（建議時段 ${longest.detail.bestTime}）` : ''}`],
+    ['green', `幾乎不用等：${quick.map(s => `${s.id} ${s.name}`).join('、')}`],
+    ...focus.detail.soldOut.map(n => ['', `${focus.id} ${focus.name} ${n}今日售完`]),
+    ...todayEvents.map(ev => ['yellow', `${ev.start}–${ev.end} ${ev.title}：${ev.place}`]),
+    ['green', `提早收攤：${early.map(s => `${s.id} ${s.name} ${s.hours.split('–')[1]}`).join('、')}`],
+  ];
+  $('[data-led]').innerHTML = `<div class="led" data-marquee data-speed="66" role="marquee" aria-label="攤位即時公告"><div class="led__track">${ledItems.map(([tone, t]) => `<span class="led__item${tone ? ' led__item--' + tone : ''}">${esc(t)}</span>`).join('')}</div></div>`;
+  App.scan($('[data-led]'));
+
+  /* ---------------- 工具列：分類與條件膠囊 ---------------- */
+  const catChips = $('[data-cat-chips]');
+  const flagChips = $('[data-flag-chips]');
+  catChips.innerHTML = `<button class="chip" type="button" data-cat-chip="all" aria-pressed="true">全部<span class="chip__count" data-n></span></button>` +
+    CATS.map(c => `<button class="chip" type="button" data-cat="${c.key}" data-cat-chip="${c.key}" aria-pressed="false"><span class="chip__dot" aria-hidden="true"></span>${c.label}<span class="chip__count" data-n></span></button>`).join('');
+  flagChips.innerHTML = Object.entries(FLAGS).map(([k, f]) => `<button class="chip stl-flag" type="button" data-flag="${k}" aria-pressed="false" style="--cat:${f.color}">${App.icon(f.icon)}${f.label}<span class="chip__count" data-n></span></button>`).join('');
+
+  function syncChips() {
+    $$('[data-cat-chip]', catChips).forEach(b => {
+      const k = b.dataset.catChip;
+      b.setAttribute('aria-pressed', k === 'all' ? state.cats.size === 0 : state.cats.has(k));
+    });
+    $$('[data-flag]', flagChips).forEach(b => b.setAttribute('aria-pressed', state.flags.has(b.dataset.flag)));
+    $$('#stl-sort button').forEach(b => b.setAttribute('aria-pressed', b.dataset.value === state.sort));
+  }
+
+  // 各膠囊的數字＝在其他條件不變下，按下它會有幾攤
+  function renderCounts(ts) {
+    const base = stalls.filter(s => passes(s, ts, { skipCats: true }));
+    $('[data-cat-chip="all"] [data-n]', catChips).textContent = base.length;
+    CATS.forEach(c => {
+      const n = base.filter(s => s.cat === c.key).length;
+      const chip = $(`[data-cat-chip="${c.key}"]`, catChips);
+      $('[data-n]', chip).textContent = n;
+      chip.classList.toggle('is-zero', n === 0);
+    });
+    Object.entries(FLAGS).forEach(([k, f]) => {
+      const n = stalls.filter(s => f.test(s) && passes(s, ts, { skipFlag: k })).length;
+      const chip = $(`[data-flag="${k}"]`, flagChips);
+      $('[data-n]', chip).textContent = n;
+      chip.classList.toggle('is-zero', n === 0);
+    });
+  }
+
+  /* ---------------- 圖例 ---------------- */
+  const lamp = (key, text) => `<span class="queue queue--${key}"><span class="queue__lamps" aria-hidden="true"><i></i><i></i><i></i></span><span class="queue__text">${text}</span></span>`;
+  const band = (lv, text) => `<span class="price-band" data-level="${lv}"><span class="price-band__marks" aria-hidden="true"><i>$</i><i>$</i><i>$</i></span><span class="price-band__text">${text}</span></span>`;
+  $('[data-legend]').innerHTML = `
+    <div class="stl-legend__group"><span class="stl-legend__title">排隊燈號<small>20:30 回報</small></span>${lamp('short', '順暢 8 分內')}${lamp('mid', '稍候 9–19 分')}${lamp('long', '久候 20 分以上')}</div>
+    <div class="stl-legend__group"><span class="stl-legend__title">價格帶</span>${band(1, '均價 50 元內')}${band(2, '50–99 元')}${band(3, '100 元以上')}</div>
+    <div class="stl-legend__group"><span class="stl-legend__title">衛生評核</span>${['A', 'B', 'C'].map(k => `<span class="stl-legend__item">${App.gradeHTML(k, 'sm')}${D.grades[k].label}</span>`).join('')}<span class="stl-legend__item">${App.gradeHTML(null)}遊戲、雜貨</span></div>`;
+
+  /* ---------------- 攤位：同一個 <li> 裡放招牌卡與清單列，切換顯示方式不重建 ---------------- */
+  const grid = $('[data-grid]');
+  const heatHTML = s => `<span class="heat stl-heat">${App.icon('fire')}<span class="heat__bar" style="--v:${s.heat}" aria-hidden="true"></span><span class="stl-heat__n"><span class="sr-only">人氣 </span>${fmt.num(s.votes)} 票</span></span>`;
+  const rowHTML = s => `
+    <div class="stl-row" data-cat="${s.cat}">
+      <span class="stl-row__no" aria-hidden="true"></span>
+      <div class="stl-row__main">
+        <h3 class="stl-row__name"><a href="${s.url}">${App.signHTML(s.name, { variant: s.sign, size: 'chip' })}</a></h3>
+        <p class="stl-row__meta"><span class="stl-row__code">${s.id}</span>${catLabel(s.cat)} · ${esc(zoneName(s.zone))} · 創業 ${s.since}</p>
+      </div>
+      <p class="stl-row__dish dish-line"><span class="stl-row__label">招牌</span>${esc(s.dish)}<b>${fmt.price(s.dishPrice)}</b></p>
+      <div class="stl-row__stats">${App.queueHTML(s.queue)}${App.priceBandHTML(s)}${App.starsHTML(s.rating, s.reviews)}${App.gradeHTML(s.grade, 'sm')}</div>
+      ${App.favBtnHTML(s.id)}
+      <p class="stl-hit" hidden></p>
+    </div>`;
+  grid.innerHTML = stalls.map(s => `<li class="stl-item" data-id="${s.id}">${App.stallCardHTML(s)}${rowHTML(s)}</li>`).join('');
+  const items = new Map();
+  $$('.stl-item', grid).forEach(li => {
+    const s = App.stall(li.dataset.id);
+    const card = $('.stall-card', li);
+    $('.stall-card__stats', card).insertAdjacentHTML('beforeend', heatHTML(s));
+    $('.stall-card__foot', card).insertAdjacentHTML('beforebegin', '<p class="stl-hit" hidden></p>');
+    items.set(s.id, {
+      s,
+      li,
+      cardName: $('.stall-card__name a', card),
+      rowName: $('.stl-row .signboard__text', li),
+      cardSign: $('.stall-card__sign .signboard', card),
+      hits: $$('.stl-hit', li),
+      marked: '',
+    });
+  });
+  App.scan(grid);
+  // 口袋名單裡的攤，招牌常亮（其他攤 hover 才通電）
+  items.forEach(it => { if (App.favs.has(it.s.id)) it.cardSign.classList.remove('is-off'); });
+
+  /* ---------------- 套用篩選：顯示／隱藏、排序、FLIP 動畫、所有衍生數字 ---------------- */
+  const toolbar = $('[data-toolbar]');
+  const resultsTop = $('[data-results-top]');
+  const empty = $('[data-empty]');
+  const qInput = $('#stl-q');
+  const qClear = $('[data-q-clear]');
+  const trend = $('[data-trend]');
+  const pager = $('[data-pager]');
+  const pagerBtn = $('[data-pager-btn]');
+  let order = [];   // 目前列在頁面上的攤（依排序）
+  let matched = []; // 全部符合條件的攤；招牌街看這個
+  // 手機一欄排 48 張卡太長：先列 12 攤，按鈕再往下展開；招牌街與各種計數仍以「全部符合」為準
+  const PAGE = 12;
+  const narrow = matchMedia('(max-width: 720px)');
+  let shown = PAGE;
+
+  // 工具列黏在頁首下方時，條件一改就把列表捲回開頭，避免結果變少後停在頁尾
+  function keepResultsInView() {
+    const cs = getComputedStyle(toolbar);
+    if (cs.position !== 'sticky') return;
+    const target = Math.round(resultsTop.getBoundingClientRect().top + scrollY - parseFloat(cs.top) - toolbar.offsetHeight - 18);
+    if (scrollY > target + 2) scrollTo({ top: target, behavior: App.reducedMotion ? 'auto' : 'smooth' });
+  }
+
+  // keepPage：收藏、展開更多、換螢幕寬度時保留目前展開的數量；其他條件變動一律回到第一頁
+  function apply({ flip = true, follow = false, keepPage = false } = {}) {
+    const ts = terms();
+    const hits = new Map();
+    const result = stalls.filter(s => {
+      if (!passes(s, ts)) return false;
+      hits.set(s.id, searchHit(s, ts));
+      return true;
+    }).sort(App.sorters[state.sort]);
+    const ids = result.map(s => s.id);
+    matched = ids;
+    if (!keepPage) shown = PAGE;
+    const listed = narrow.matches ? ids.slice(0, shown) : ids;
+    const onPage = new Set(listed);
+
+    // FLIP：先量目前位置（含進行中的動畫），再取消舊動畫、改 DOM
+    const animate = flip && !App.reducedMotion && state.view === 'card';
+    const first = new Map();
+    if (animate) order.forEach(id => first.set(id, items.get(id).li.getBoundingClientRect()));
+    items.forEach(it => it.li.getAnimations().forEach(a => a.cancel()));
+
+    items.forEach((it, id) => {
+      it.li.hidden = !onPage.has(id);
+      it.li.classList.remove('is-last');
+    });
+    if (listed.join() !== order.join()) listed.forEach(id => grid.appendChild(items.get(id).li));
+    if (listed.length) items.get(listed[listed.length - 1]).li.classList.add('is-last');
+    order = listed;
+
+    const markKey = ts.join(' ');
+    listed.forEach(id => {
+      const it = items.get(id);
+      const h = hits.get(id);
+      it.hits.forEach(p => { p.hidden = !h; p.textContent = h; });
+      if (it.marked !== markKey) {
+        it.cardName.innerHTML = markText(it.s.name, ts);
+        it.rowName.innerHTML = markText(it.s.name, ts);
+        it.marked = markKey;
+      }
+    });
+
+    if (animate) {
+      const vh = innerHeight;
+      listed.forEach(id => {
+        const li = items.get(id).li;
+        const r = li.getBoundingClientRect();
+        const f = first.get(id);
+        if (f) {
+          const dx = f.left - r.left;
+          const dy = f.top - r.top;
+          if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+          if ((f.bottom < 0 && r.bottom < 0) || (f.top > vh && r.top > vh)) return;
+          li.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 480, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+        } else if (r.top < vh && r.bottom > 0) {
+          li.animate([{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 420, delay: 90, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'backwards' });
+        }
+      });
+    }
+
+    renderCounts(ts);
+    $('[data-result-n]').textContent = ids.length;
+    $('[data-result-total]').textContent = stalls.length;
+    $('[data-lit]').textContent = ids.length;
+    $$('[data-clear-filters]').forEach(b => { if (!b.closest('[data-empty]')) b.hidden = !(state.q.trim() || state.cats.size || state.flags.size); });
+    grid.hidden = !ids.length;
+    empty.hidden = ids.length > 0;
+    const rest = ids.length - listed.length;
+    pager.hidden = rest <= 0;
+    pagerBtn.textContent = `再看 ${Math.min(PAGE, rest)} 攤`;
+    $('[data-pager-note]').textContent = `已列出 ${listed.length}／${ids.length} 攤`;
+    if (!ids.length) $('[data-empty-text]').textContent = state.q.trim() ? `找不到符合「${state.q.trim()}」的攤位，換個關鍵字，或把幾個篩選條件關掉再找找看。` : '目前的條件組合沒有攤位，把幾個篩選條件關掉再找找看。';
+    $$('[data-q]', trend).forEach(b => b.setAttribute('aria-pressed', norm(b.dataset.q) === norm(state.q)));
+    paintWall(new Set(ids));
+    if (follow) keepResultsInView();
+  }
+
+  /* ---------------- 事件 ---------------- */
+  catChips.addEventListener('click', e => {
+    const b = e.target.closest('[data-cat-chip]');
+    if (!b) return;
+    const k = b.dataset.catChip;
+    if (k === 'all') state.cats.clear();
+    else if (state.cats.has(k)) state.cats.delete(k);
+    else state.cats.add(k);
+    // 五類全選等於沒選，回到「全部」
+    if (state.cats.size === CATS.length) state.cats.clear();
+    syncChips();
+    apply({ follow: true });
+  });
+  flagChips.addEventListener('click', e => {
+    const b = e.target.closest('[data-flag]');
+    if (!b) return;
+    const k = b.dataset.flag;
+    if (state.flags.has(k)) state.flags.delete(k); else state.flags.add(k);
+    syncChips();
+    apply({ follow: true });
+  });
+  $('#stl-sort').addEventListener('segchange', e => {
+    state.sort = e.detail.value;
+    apply({ follow: true });
+  });
+  $('#stl-view').addEventListener('segchange', e => {
+    state.view = e.detail.value;
+    const list = state.view === 'list';
+    grid.classList.toggle('is-list', list);
+    grid.classList.toggle('lightbox', list);
+    if (!App.reducedMotion) grid.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+    keepResultsInView();
+  });
+
+  // 中文輸入法組字中不篩選，選字完成才套用，避免注音字根造成「查無結果」閃爍
+  let composing = false;
+  const onQuery = () => {
+    state.q = qInput.value.slice(0, 30);
+    qClear.hidden = !qInput.value;
+    apply({ follow: true });
+  };
+  qInput.addEventListener('compositionstart', () => { composing = true; });
+  qInput.addEventListener('compositionend', () => { composing = false; onQuery(); });
+  qInput.addEventListener('input', () => { if (!composing) onQuery(); });
+  qClear.addEventListener('click', () => {
+    qInput.value = '';
+    onQuery();
+    qInput.focus();
+  });
+  trend.addEventListener('click', e => {
+    const b = e.target.closest('[data-q]');
+    if (!b) return;
+    qInput.value = norm(state.q) === norm(b.dataset.q) ? '' : b.dataset.q;
+    onQuery();
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('[data-clear-filters]')) return;
+    state.cats.clear();
+    state.flags.clear();
+    qInput.value = '';
+    state.q = '';
+    qClear.hidden = true;
+    syncChips();
+    apply({ follow: true });
+  });
+
+  // 收藏（含 toast 復原、口袋名單對話框移除）：招牌點燈／熄燈，數字與「口袋名單」條件一起重算
+  document.addEventListener('favchange', e => {
+    const it = items.get(e.detail.id);
+    if (e.detail.on) App.ignite(it.cardSign); else it.cardSign.classList.add('is-off');
+    apply({ keepPage: true });
+  });
+
+  pagerBtn.addEventListener('click', () => {
+    shown += PAGE;
+    apply({ keepPage: true });
+  });
+  narrow.addEventListener('change', () => apply({ flip: false, keepPage: true }));
+
+  // 指到下方攤位卡時，上面招牌街的同一面招牌會晃一下：看得出它在街上的哪裡
+  let hotId = null;
+  const setHot = id => {
+    if (id === hotId) return;
+    if (hotId) wallById.get(hotId).a.classList.remove('is-hot');
+    hotId = id;
+    if (id) wallById.get(id).a.classList.add('is-hot');
+  };
+  grid.addEventListener('pointerover', e => {
+    const li = e.target.closest('.stl-item');
+    setHot(li ? li.dataset.id : null);
+  });
+  grid.addEventListener('pointerleave', () => setHot(null));
+  grid.addEventListener('focusin', e => {
+    const li = e.target.closest('.stl-item');
+    setHot(li ? li.dataset.id : null);
+  });
+  grid.addEventListener('focusout', () => setHot(null));
+
+  /* ---------------- 收尾區 ---------------- */
+  const champ = App.rank('popular', 1)[0];
+  const H = D.hygiene;
+  $('[data-more]').innerHTML = `
+    <article class="panel panel--neon stl-feature" data-reveal>
+      <a class="stl-feature__sign" href="${champ.url}" tabindex="-1" aria-hidden="true">
+        <span class="steam stl-feature__steam" data-steam="3"></span>
+        ${App.signHTML(champ.name, { variant: champ.sign, sub: '創業' + fmt.cnYear(champ.since), seal: champ.since < 1990 ? '老店' : '' })}
+      </a>
+      <div>
+        <p class="stl-feature__kicker">NO.1 · ${fmt.num(champ.votes)} VOTES</p>
+        <h3 class="stl-feature__name">人氣第一：${esc(champ.name)}</h3>
+        <p class="stl-feature__blurb">${esc(champ.blurb)}</p>
+        <div class="stl-feature__stats">${App.queueHTML(champ.queue)}${App.starsHTML(champ.rating, champ.reviews)}${App.priceBandHTML(champ)}</div>
+        <div class="stl-feature__cta"><a class="btn btn--primary" href="${champ.url}">看菜單與位置</a>${App.favBtnHTML(champ.id)}</div>
+      </div>
+    </article>
+    <article class="lightbox stl-mapcard" data-reveal style="--rd:100ms">
+      <p class="lightbox__kicker">MARKET MAP</p>
+      <h3 class="lightbox__title">照位置逛一圈</h3>
+      <p>編號的字母就是哪一排：A、B 在港埕路北、南兩側，C、D 在魚市巷，E 在廟埕；號碼由西往東、由北往南排。</p>
+      <ul class="stl-zones">${GROUPS.map(g => {
+        const list = stalls.filter(s => s.id[0] === g.row);
+        return `<li><b>${g.row} 排 · ${g.name}</b><span>${list.length} 攤 · 排隊平均 ${avgQueue(list)} 分</span></li>`;
+      }).join('')}</ul>
+      <a class="btn btn--primary" href="map.html">打開夜市地圖</a>
+    </article>
+    <article class="whiteboard stl-notes" data-reveal style="--rd:200ms">
+      <span class="magnet" style="left:8%;top:-11px;--m:#1C4FB5" aria-hidden="true"></span>
+      <span class="magnet" style="right:10%;top:-11px;--m:#C8262B" aria-hidden="true"></span>
+      <h3 class="whiteboard__title">這些資料怎麼來</h3>
+      <ul class="stl-notes__list">
+        <li><b>排隊時間</b>：各攤每 15 分鐘回報服務台，尖峰時段以現場為準。</li>
+        <li><b>人氣票數</b>：2026 年 10 月夜市票選，全區共 ${fmt.num(stalls.reduce((a, s) => a + s.votes, 0))} 票。</li>
+        <li><b>衛生評核</b>：${esc(H.agency)}於 ${esc(H.season)}評核，${H.published} 公布。</li>
+        <li><b>價格</b>：以各攤今天的價目表為準，加料另計。</li>
+      </ul>
+      <button class="btn btn--ghost btn--sm" type="button" data-toast="攤商資料異動請到東口廣場服務台填寫異動單，或撥 ${esc(D.market.phone.replace('服務台 ', ''))}，隔天 16:00 前更新。">我是攤商，要更新資料</button>
+    </article>`;
+  App.scan($('[data-more]'));
+
+  /* ---------------- 初始化 ---------------- */
+  qInput.value = state.q;
+  qClear.hidden = !state.q;
+  syncChips();
+  apply({ flip: false });
+});
+</script>
+</body>
+</html>

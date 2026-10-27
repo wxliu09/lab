@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公文清單 — 澄港市政府 公文線上簽核 流程中樞</title>
+<meta name="description" content="澄港市政府全府公文清單：依關卡、速別、密等、承辦單位篩選與排序，關卡帶上每個 token 是一件公文，並可批次分文。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ── 公文清單專屬（前綴 dl-） ── */
+  .dl-head .page-lede { max-width: none; }
+  .dl-head__btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dl-head__count { background: rgba(255, 255, 255, .16); color: #fff; margin-left: 2px; }
+  .dl-head__count:empty { display: none; }
+
+  /* 關卡帶：一條線性 BPMN 流程，上方堆疊的每個 token 都是一件公文 */
+  .dl-rail__scope { font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap; }
+  .dl-rail__scope b { font: 600 var(--fs-14)/1 var(--font-mono); color: var(--ink); margin: 0 2px; }
+  .dl-rail__scroll { position: relative; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+  .dl-rail__stage { position: relative; min-width: 1040px; }
+  .dl-rail__svg { display: block; width: 100%; height: auto; overflow: visible; user-select: none; -webkit-user-select: none; }
+  .dl-rail__svg.is-pointing { cursor: pointer; }
+  .dl-rail__hits { position: absolute; inset: 0; pointer-events: none; }
+  .dl-hit { position: absolute; pointer-events: auto; padding: 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+  .dl-hit--sub { border-radius: 6px; }
+  .dl-hit:focus-visible { outline: 2px solid var(--token); outline-offset: 0; }
+  .dl-rail__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; }
+  .dl-rail__note { font-size: var(--fs-12); color: var(--ink-3); }
+  .dl-lg { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--token); }
+  .dl-lg--soon { background: var(--heat-1); }
+  .dl-lg--today { background: var(--heat-2); }
+  .dl-lg--over { background: var(--heat-3); }
+  .dl-lg--post { background: var(--ink-3); }
+  .dl-lg--ghost { background: var(--sheet); box-shadow: inset 0 0 0 1px var(--line-3); }
+  .dl-lg--picked { background: var(--token); box-shadow: 0 0 0 1.5px var(--sheet), 0 0 0 3px var(--ink); }
+
+  .dl-r-colbg { fill: transparent; stroke: none; transition: fill var(--dur-2); }
+  .dl-r-colbg.is-hover { fill: rgba(27, 42, 65, .04); }
+  .dl-r-colbg.is-on { fill: rgba(0, 163, 255, .08); stroke: var(--token-line); stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .dl-r-guide { fill: none; stroke: var(--line-3); stroke-width: 1; stroke-dasharray: 2 3; }
+  .dl-r-tray { fill: none; stroke: var(--ink-3); stroke-width: 1.2; }
+  .dl-r-subname { font: 500 11px var(--font-sans); fill: var(--ink-3); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--sheet-2); stroke-width: 4px; stroke-linejoin: round; }
+  .dl-r-subname.is-hover { fill: var(--ink); }
+  .dl-r-subname.is-on { fill: var(--token-ink); font-weight: 700; }
+  .dl-r-count { font: 600 12px var(--font-mono); fill: var(--ink); text-anchor: middle; transition: transform 700ms var(--ease-out); }
+  .dl-r-count .is-light, .dl-r-count.is-zero { fill: var(--ink-4); font-weight: 500; }
+  .dl-r-count.is-hot { fill: var(--danger-ink); }
+  .dl-r-big { font: 600 22px var(--font-mono); fill: var(--ink); text-anchor: middle; letter-spacing: -.02em; }
+  .dl-r-big.is-light { fill: var(--ink-4); }
+  .dl-r-cap { font: 500 11px var(--font-sans); fill: var(--ink-3); text-anchor: middle; }
+  .dl-r-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.4; }
+  .dl-r-arrow { fill: var(--ink-2); }
+  .dl-r-dash { fill: none; stroke: var(--token); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 1.5 12; opacity: .55; animation: dl-dash 1.1s linear infinite; }
+  @keyframes dl-dash { to { stroke-dashoffset: -13.5; } }
+  .dl-r-halo { opacity: 0; }
+  .dl-r-node.is-hot .dl-r-halo { animation: dl-halo var(--pulse, 2.4s) ease-in-out infinite; }
+  @keyframes dl-halo {
+    0%, 100% { opacity: calc(.26 + var(--heat, 0) * .28); }
+    50% { opacity: calc(.42 + var(--heat, 0) * .46); }
+  }
+  .dl-r-shape { fill: var(--sheet); stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; transition: stroke var(--dur-2), fill var(--dur-2); }
+  .dl-r-node--end .dl-r-shape { stroke-width: 4; }
+  .dl-r-node.is-hover .dl-r-shape { stroke: var(--token-ink); }
+  .dl-r-node.is-on .dl-r-shape { stroke: var(--token-ink); stroke-width: 2.4; fill: #F0F9FF; }
+  .dl-r-node--end.is-on .dl-r-shape { stroke-width: 4; }
+  .dl-r-mark { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; }
+  .dl-r-env { fill: none; stroke: var(--ink); stroke-width: 1.3; stroke-linejoin: round; }
+  .dl-r-ico { color: var(--ink-2); }
+  .dl-r-node.is-on .dl-r-ico { color: var(--token-ink); }
+  .dl-r-label { font: 600 13.5px var(--font-sans); fill: var(--ink); text-anchor: middle; }
+  .dl-r-node.is-on .dl-r-label { fill: var(--token-ink); }
+  .dl-r-meta { font: 500 11px var(--font-mono); fill: var(--ink-3); text-anchor: middle; }
+  .dl-r-meta .is-bad { fill: var(--danger-ink); font-weight: 600; }
+
+  /* token：位置用 transform，換關卡、重新排序時都會滑過去 */
+  .dl-tk { stroke: none; transition: transform 720ms var(--ease-out), opacity 320ms ease, fill 260ms ease, stroke 260ms ease, r 160ms ease; }
+  .dl-tk.tk--ok { fill: var(--token); }
+  .dl-tk.tk--soon { fill: var(--heat-1); }
+  .dl-tk.tk--today { fill: var(--heat-2); }
+  .dl-tk.tk--over { fill: var(--heat-3); }
+  .dl-tk.tk--post { fill: var(--ink-3); }
+  .dl-tk.is-ghost { fill: var(--sheet); stroke: var(--line-3); stroke-width: 1; }
+  .dl-tk.is-picked { stroke: var(--ink); stroke-width: 1.8; }
+  .dl-tk.is-enter, .dl-tk.is-leave { opacity: 0; }
+  .dl-tk.is-flash { stroke: var(--token-ink); stroke-width: 2.6; }
+  .dl-r-ring { fill: none; stroke: var(--ink); stroke-width: 2; pointer-events: none; }
+  .dl-r-ring--soft { stroke: var(--token-ink); }
+
+  .dl-tip {
+    position: absolute; z-index: 6; width: 300px; padding: 11px 13px 10px;
+    background: var(--sheet); border: 1.5px solid var(--ink); border-radius: 10px; box-shadow: var(--sh-3);
+    font-size: var(--fs-13); pointer-events: none; animation: dl-tip-in var(--dur-2) var(--ease-out);
+  }
+  @keyframes dl-tip-in { from { opacity: 0; transform: translateY(4px); } }
+  .dl-tip__top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .dl-tip__subj { margin-top: 6px; font-weight: 500; color: var(--ink); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .dl-tip__meta { margin-top: 7px; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; font-size: var(--fs-12); color: var(--ink-2); }
+  .dl-tip__hint { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line-2); font-size: var(--fs-11); color: var(--ink-3); }
+
+  /* 清單 */
+  .dl-list { margin-top: 24px; }
+  .dl-views { padding: 0 10px; }
+  .dl-views .tab__count { min-width: 3.6ch; text-align: center; }
+  .dl-views .tab[data-value="overdue"] .tab__count { background: var(--heat-3-soft); color: var(--danger-ink); }
+  .dl-views .tab[data-value="overdue"][aria-selected="true"] .tab__count { background: var(--danger); color: #fff; }
+  .dl-views .tab[data-value="mine"] .tab__count { background: var(--token-soft); color: var(--token-ink); }
+  .dl-views .tab[data-value="mine"][aria-selected="true"] .tab__count { background: var(--token-ink); color: #fff; }
+
+  .dl-filters { gap: 10px 16px; }
+  .dl-search { flex: 1 1 260px; max-width: 380px; }
+  .dl-search .input { height: 36px; min-height: 36px; padding-right: 38px; }
+  .dl-search__kbd { position: absolute; right: 9px; pointer-events: none; }
+  .dl-search .input:focus ~ .dl-search__kbd, .dl-search .input:not(:placeholder-shown) ~ .dl-search__kbd { display: none; }
+  .dl-fgroup { display: flex; align-items: center; gap: 8px; }
+  .dl-flabel { font-size: var(--fs-12); font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+  .dl-filters .select { width: auto; min-width: 148px; height: 34px; min-height: 34px; padding-top: 5px; padding-bottom: 5px; font-size: var(--fs-13); }
+  .dl-m-only { display: none; }
+
+  .dl-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 10px 18px; min-height: 50px; border-bottom: 1px solid var(--line); }
+  .dl-summary__count { font-size: var(--fs-13); color: var(--ink-3); white-space: nowrap; }
+  .dl-summary__count b { font: 600 var(--fs-15)/1 var(--font-mono); color: var(--ink); margin-right: 3px; }
+  .dl-pills { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .dl-pill {
+    display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px 0 10px;
+    border: 1px solid var(--token-line); border-radius: var(--r-pill); background: var(--token-soft);
+    color: var(--token-ink); font-size: var(--fs-12); font-weight: 600; white-space: nowrap;
+  }
+  .dl-pill .icon { width: 14px; height: 14px; }
+  .dl-pill:hover { background: rgba(0, 163, 255, .2); color: var(--ink); }
+  .dl-summary__sort { margin-left: auto; font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+  .dl-summary__sort b { color: var(--ink-2); font-weight: 600; }
+  .dl-note { margin: 14px 18px 2px; align-items: center; }
+  .dl-note .glyph { flex-shrink: 0; }
+  .dl-note__text { flex: 1; min-width: 0; }
+  .dl-note__text b { font-weight: 600; }
+
+  .dl-table { min-width: 1100px; }
+  .dl-table th.dl-c-no, .dl-table td.dl-c-no { width: 132px; }
+  .dl-table .dl-c-speed { width: 92px; }
+  .dl-table .dl-c-secret { width: 78px; }
+  .dl-table .dl-c-stage { width: 222px; }
+  .dl-table .dl-c-owner { width: 158px; }
+  .dl-table .dl-c-due { width: 148px; }
+  .dl-table .dl-c-act { width: 76px; text-align: right; padding-right: 16px; }
+  .dl-table td { vertical-align: top; }
+  .dl-table td.col-check, .dl-table td.dl-c-speed, .dl-table td.dl-c-secret, .dl-table td.dl-c-due, .dl-table td.dl-c-act { padding-top: 14px; }
+  .dl-table .doc-no { display: block; font-size: var(--fs-13); }
+  .dl-c-subj .subject { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .dl-stage { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .dl-stage__txt { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: var(--fs-12); color: var(--ink-2); line-height: 1.4; }
+  .dl-stage__txt .badge { height: 18px; padding: 0 6px; font-size: 11px; }
+  .dl-c-owner .person__name { font-size: var(--fs-13); }
+  .dl-c-due .due { padding-top: 1px; }
+  .dl-table tbody tr.is-linked td { background: #F2FAFF; }
+  .dl-mark { background: rgba(0, 163, 255, .16); color: inherit; box-shadow: inset 0 -1.5px 0 var(--token); border-radius: 2px; padding: 0 1px; }
+  .dl-empty-row td { padding: 0; }
+
+  .dl-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; }
+  .dl-foot__range b { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+  .dl-foot__per { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .dl-foot__per .select { width: auto; height: 32px; min-height: 32px; padding: 4px 30px 4px 10px; font-size: var(--fs-13); }
+  .pager__btn .icon { width: 16px; height: 16px; }
+
+  .dl-batch { margin-top: 16px; }
+  .dl-batch .batchbar__count span { color: #9FB0C3; margin-left: 8px; font-size: var(--fs-13); }
+  .dl-batch .btn:disabled { opacity: .4; }
+
+  /* 分文對話框 */
+  .modal.dl-assign { width: min(920px, calc(100vw - 32px)); }
+  .dl-assign form { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .dl-assign .modal__body { flex: 1 1 auto; min-height: 0; }
+  .dl-assign .modal__title .count { background: var(--ink); color: #fff; }
+  .dl-as-lede { font-size: var(--fs-14); }
+  .dl-as-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+  .dl-as-fig { position: sticky; top: 0; margin: 0; padding: 10px 8px 6px; border: 1px solid var(--line-2); border-radius: 10px; }
+  .dl-as-fig figcaption { padding: 6px 6px 2px; font-size: var(--fs-11); color: var(--ink-3); border-top: 1px dashed var(--line-2); margin-top: 4px; }
+  .dl-ad { display: block; width: 100%; height: auto; overflow: visible; }
+  .dl-ad-edge { fill: none; stroke: var(--line-3); stroke-width: 1.1; }
+  .dl-ad-edge.is-on { stroke: var(--token-ink); stroke-width: 2; }
+  .dl-ad-in { fill: none; stroke: var(--ink-3); stroke-width: 1.2; }
+  .dl-ad-arrow { fill: var(--line-3); }
+  .dl-ad-arrow--on { fill: var(--token-ink); }
+  .dl-ad-shape { fill: var(--sheet); stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; }
+  .dl-ad-mark { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; }
+  .dl-ad-gwlabel { font: 600 12px var(--font-sans); fill: var(--ink); text-anchor: middle; }
+  .dl-ad-box { fill: var(--sheet); stroke: var(--line-2); stroke-width: 1; }
+  .dl-ad-unit.is-on .dl-ad-box { stroke: var(--ink); stroke-width: 1.5; }
+  .dl-ad-unit.is-hit .dl-ad-box { animation: dl-ad-hit 700ms var(--ease-out); }
+  @keyframes dl-ad-hit { 0% { fill: rgba(0, 163, 255, .32); } 100% { fill: var(--sheet); } }
+  .dl-ad-name { font: 500 12px var(--font-sans); fill: var(--ink-3); dominant-baseline: central; }
+  .dl-ad-unit.is-on .dl-ad-name { fill: var(--ink); font-weight: 600; }
+  .dl-ad-n { fill: var(--token-ink); }
+  .dl-ad-ntext { font: 700 11px var(--font-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+  .dl-ad-dot { fill: var(--token); stroke: var(--sheet); stroke-width: 2; }
+  .dl-ad-glow { fill: var(--token); opacity: .2; }
+  .dl-ad-id { font: 500 10.5px var(--font-mono); fill: var(--ink-3); text-anchor: end; dominant-baseline: central; transition: opacity var(--dur-2); }
+  .dl-ad.is-flying .dl-ad-id { opacity: 0; }
+  .dl-ad-trace { fill: none; stroke: none; }
+
+  .dl-as-bulk { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .dl-as-bulk .select { width: auto; flex: 1; height: 34px; min-height: 34px; padding-top: 5px; padding-bottom: 5px; font-size: var(--fs-13); }
+  .dl-as-list { list-style: none; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+  .dl-as-item { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 0 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--sheet); }
+  .dl-as-item:last-child { border-bottom: 0; }
+  .dl-as-dot { width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--token); box-shadow: 0 0 0 3px var(--token-soft); }
+  .dl-as-doc { min-width: 0; }
+  .dl-as-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dl-as-wait { margin-left: auto; font-size: var(--fs-12); color: var(--ink-3); white-space: nowrap; }
+  .dl-as-subj { margin-top: 4px; font-size: var(--fs-14); font-weight: 500; line-height: 1.45; color: var(--ink); }
+  .dl-as-from { font-size: var(--fs-12); color: var(--ink-3); }
+  .dl-as-route { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 8px; margin-top: 9px; }
+  .dl-as-route .select { height: 34px; min-height: 34px; padding-top: 5px; padding-bottom: 5px; font-size: var(--fs-13); }
+  .dl-as-item.is-changed .dl-as-route [data-as="unit"] { border-color: var(--heat-1); background-color: #FFFBEA; }
+  .dl-as-changed { grid-column: 2; margin-top: 6px; font-size: var(--fs-12); color: var(--warn-ink); }
+  #as-note-field.is-invalid .field__hint { display: none; }
+
+  @media (max-width: 960px) {
+    .dl-as-grid { grid-template-columns: minmax(0, 1fr); }
+    .dl-as-fig { position: static; max-width: 420px; margin: 0 auto; width: 100%; }
+  }
+  @media (max-width: 720px) {
+    .dl-head .page-head__aside { width: 100%; }
+    .dl-rail__stage { min-width: 980px; }
+    .dl-rail__foot .legend { gap: 6px 14px; }
+
+    .dl-views { padding: 0 4px; }
+    .dl-filters { padding: 12px 14px; gap: 10px; }
+    .dl-search { flex: 1 1 100%; max-width: none; }
+    .dl-search__kbd { display: none; }
+    .dl-fgroup--speed { flex: 1 1 100%; }
+    .dl-fgroup--sel { flex: 1 1 calc(50% - 5px); min-width: 0; }
+    .dl-filters .select { width: 100%; min-width: 0; }
+    .dl-m-only { display: flex; }
+    .dl-summary { padding: 10px 14px; }
+    .dl-summary__sort { display: none; }
+    .dl-note { margin: 12px 14px 2px; flex-wrap: wrap; align-items: flex-start; }
+    .dl-note__text { flex: 1 1 calc(100% - 44px); }
+    .dl-note .btn { margin-left: 32px; }
+
+    /* 手機：表格改卡片 */
+    .dl-table { min-width: 0; }
+    .dl-table thead { display: none; }
+    .dl-table, .dl-table tbody { display: block; }
+    .dl-table tbody tr {
+      position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto;
+      grid-template-areas: "chk no secret speed" "chk subj subj subj" "chk stage stage stage" "chk owner due due" "chk act act act";
+      gap: 8px; padding: 14px 14px 14px 12px; border-bottom: 1px solid var(--line); background: var(--sheet);
+    }
+    .dl-table tbody tr:last-child { border-bottom: 0; }
+    .dl-table tbody tr td, .dl-table tbody tr:hover td, .dl-table tbody tr.is-selected td, .dl-table tbody tr.is-linked td { background: transparent; }
+    .dl-table.dl-table td { display: block; padding: 0; border: 0; width: auto; }
+    .dl-table tbody tr.is-selected { background: #EDF7FF; }
+    .dl-table tbody tr.is-overdue { box-shadow: inset 3px 0 0 var(--danger); }
+    .dl-table tr.is-overdue td:first-child { box-shadow: none; }
+    .dl-table td.col-check { grid-area: chk; padding-top: 1px; }
+    .dl-table td.dl-c-no { grid-area: no; align-self: center; }
+    .dl-table td.dl-c-no .sub { display: none; }
+    .dl-table td.dl-c-secret { grid-area: secret; align-self: center; }
+    .dl-table.dl-table td.dl-c-secret:has(.secret--none) { display: none; }
+    .dl-table td.dl-c-speed { grid-area: speed; align-self: center; }
+    .dl-table td.dl-c-subj { grid-area: subj; }
+    .dl-table td.dl-c-stage { grid-area: stage; }
+    .dl-table td.dl-c-owner { grid-area: owner; align-self: center; }
+    .dl-table td.dl-c-due { grid-area: due; align-self: center; justify-self: end; }
+    .dl-table td.dl-c-act { grid-area: act; text-align: left; }
+    .dl-table.dl-table td.dl-c-act:has(.dl-open) { display: none; }
+    .dl-table td.dl-c-act .btn { width: 100%; }
+    .dl-stage { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding-top: 0; }
+    .dl-table .dl-empty-row { display: block; padding: 0; }
+    .dl-foot { justify-content: center; }
+    .dl-foot__per { display: none; }
+  }
+  @media (max-width: 560px) {
+    .dl-as-route { grid-template-columns: minmax(0, 1fr); }
+    .dl-as-wait { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dl-r-dash { animation: none; }
+    .dl-r-node.is-hot .dl-r-halo { animation: none; opacity: calc(.32 + var(--heat, 0) * .42); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="sheet-bar" data-anim>
+  <div class="sheet-bar__inner">
+    <a class="sheet-bar__back" href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a>
+    <div class="sheet-bar__meta">
+      <span class="sheet-bar__item">圖號 <b>CG-BPMN-012</b></span>
+      <span class="sheet-bar__item">流程定義 <b>公文簽核 v3.2</b>（2026-09-30 生效）</span>
+      <span class="sheet-bar__item sheet-bar__item--keep live"><span class="live__dot"></span><time data-clock>10/27（二）14:20:00</time></span>
+    </div>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="index.html" aria-label="公文線上簽核 流程中樞 首頁">
+      <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+      <span class="brand__text"><span class="brand__org">澄港市政府</span><span class="brand__name">公文線上簽核<small>流程中樞</small></span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li class="nav__item"><a class="nav__link" href="index.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.6" cy="10" r="2"/><rect x="7.2" y="7" width="5.2" height="6" rx="1.3"/><path d="m16.5 7.2 2.8 2.8-2.8 2.8-2.8-2.8z"/><path d="M5.6 10h1.6M12.4 10h1.3"/></svg><span class="nav__label">流程總覽</span></a></li>
+        <li class="nav__item"><a class="nav__link is-active" href="docs.html" aria-current="page"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 5.5h9M7.5 10h9M7.5 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5"/></svg><span class="nav__label">公文清單</span><span class="nav__count" data-count="overdue" title="逾期公文件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="doc.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h6l3.5 3.5v11.5h-9.5z"/><path d="M11.5 2.5V6H15M8 10h5M8 13h5"/></svg><span class="nav__label">公文詳情</span><span class="nav__count nav__count--token" data-count="mine" title="待我核閱件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="designer.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="6" width="10" height="8" rx="1.8"/><path d="M2.5 3.5h2v2h-2zM15.5 3.5h2v2h-2zM2.5 14.5h2v2h-2zM15.5 14.5h2v2h-2z"/></svg><span class="nav__label">流程設計器</span></a></li>
+      </ul>
+    </nav>
+    <div class="header-tools">
+      <div class="user-chip" title="目前登入：王正宏（交通局 運輸規劃科 科長）">
+        <span class="avatar avatar--me" aria-hidden="true">王</span>
+        <span class="user-chip__text"><span class="user-chip__name">王正宏</span><span class="user-chip__role">交通局 運輸規劃科 科長</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="container">
+
+    <section class="page-head dl-head" aria-labelledby="page-title">
+      <div class="page-head__main">
+        <p class="eyebrow"><span class="sheet-no">SHEET 02 / 04</span><span>公文清單 · 全府</span></p>
+        <h1 class="page-title" id="page-title">公文清單</h1>
+        <p class="page-lede">全府 577 件公文的收發與簽核進度。<br class="hide-sm">關卡帶上每個 token 都是一件公文：點關卡篩選清單，勾選待分文公文即可批次分文。</p>
+      </div>
+      <div class="page-head__aside page-head__aside--stack">
+        <div class="dl-head__btns">
+          <button type="button" class="btn" id="export-btn"><span data-icon="download"></span>匯出 CSV</button>
+          <button type="button" class="btn btn--primary" id="assign-all-btn"><span data-glyph="xor"></span>批次分文<span class="count dl-head__count" data-count="assign"></span></button>
+        </div>
+        <p class="page-head__note">資料時間 10/27（二）14:20 · 限辦日依速別計算工作日</p>
+      </div>
+    </section>
+
+    <section class="panel corner-marks dl-rail" aria-labelledby="rail-title" data-reveal data-anim>
+      <header class="panel__head panel__head--tools">
+        <h2 class="panel__title" id="rail-title"><span data-glyph="token"></span>關卡分布<span class="panel__sub">token 依期限由下往上堆疊 · 點關卡篩選清單</span></h2>
+        <div class="panel__tools">
+          <span class="dl-rail__scope" id="rail-scope" aria-live="polite"></span>
+          <button type="button" class="btn btn--sm btn--ghost" id="rail-clear" hidden><span data-icon="x"></span>清除關卡</button>
+        </div>
+      </header>
+      <div class="dl-rail__scroll drafting">
+        <div class="dl-rail__stage" id="rail">
+          <svg class="dl-rail__svg" id="rail-svg" role="img" aria-label="公文關卡分布：每個圓點代表一件公文，依所在關卡堆疊"></svg>
+          <div class="dl-rail__hits" id="rail-hits"></div>
+        </div>
+      </div>
+      <div class="dl-tip" id="rail-tip" hidden></div>
+      <p class="flow-hint"><span data-glyph="flow"></span>左右滑動可看完整關卡；點一下 token 看摘要，再點一次開啟公文</p>
+      <footer class="panel__foot dl-rail__foot">
+        <div class="legend" aria-label="圖例">
+          <span class="legend__item"><i class="dl-lg"></i>一件在辦公文</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--soon"></i>明日到期</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--today"></i>今日到期</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--over"></i>逾期</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--post"></i>已決行・待發文歸檔</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--ghost"></i>不符目前篩選</span>
+          <span class="legend__item"><i class="dl-lg dl-lg--picked"></i>已勾選</span>
+        </div>
+        <p class="dl-rail__note">平行會辦時，一件公文在每個會辦分支各有一個 token。</p>
+      </footer>
+    </section>
+
+    <section class="panel dl-list" aria-labelledby="list-title" data-reveal style="--i:1">
+      <h2 class="sr-only" id="list-title">公文列表</h2>
+      <div class="tabs dl-views" id="views" data-tabs role="tablist" aria-label="清單檢視">
+        <button type="button" class="tab" role="tab" id="tab-open" data-value="open" aria-selected="true">在辦<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-mine" data-value="mine" aria-selected="false">待我核<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-assign" data-value="assign" aria-selected="false">待分文<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-overdue" data-value="overdue" aria-selected="false">逾期<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-post" data-value="post" aria-selected="false">待發文歸檔<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-closed" data-value="closed" aria-selected="false">已結案<span class="tab__count"></span></button>
+        <button type="button" class="tab" role="tab" id="tab-all" data-value="all" aria-selected="false">全部<span class="tab__count"></span></button>
+      </div>
+
+      <div id="list-panel" role="tabpanel" aria-labelledby="tab-open">
+        <div class="filter-bar dl-filters">
+          <label class="search dl-search"><span data-icon="search"></span><span class="sr-only">搜尋公文</span><input class="input" type="search" id="q" placeholder="搜尋文號、主旨、來文機關、承辦人" autocomplete="off"><kbd class="kbd dl-search__kbd" aria-hidden="true">/</kbd></label>
+          <div class="dl-fgroup dl-fgroup--speed">
+            <span class="dl-flabel" id="speed-label">速別</span>
+            <div class="chips" data-chips id="speed-chips" role="group" aria-labelledby="speed-label">
+              <button type="button" class="chip" data-value="urgent" aria-pressed="false">最速件<span class="chip__count"></span></button>
+              <button type="button" class="chip" data-value="fast" aria-pressed="false">速件<span class="chip__count"></span></button>
+              <button type="button" class="chip" data-value="normal" aria-pressed="false">普通件<span class="chip__count"></span></button>
+            </div>
+          </div>
+          <label class="dl-fgroup dl-fgroup--sel"><span class="sr-only">承辦單位</span>
+            <select class="select" id="unit-sel"><option value="all">全部承辦單位</option></select>
+          </label>
+          <label class="dl-fgroup dl-fgroup--sel"><span class="sr-only">密等</span>
+            <select class="select" id="secret-sel"><option value="all">全部密等</option><option value="none">普通</option><option value="restricted">密</option><option value="confidential">機密</option></select>
+          </label>
+          <label class="dl-fgroup dl-fgroup--sel dl-m-only"><span class="sr-only">目前關卡</span>
+            <select class="select" id="stage-sel">
+              <option value="">全部關卡</option>
+              <option value="register">收文登錄</option>
+              <option value="assign">分文</option>
+              <option value="draft">承辦擬辦</option>
+              <optgroup label="會辦">
+                <option value="cosign">會辦（全部分支）</option>
+                <option value="cs-legal">會辦 · 法制處</option>
+                <option value="cs-budget">會辦 · 主計處</option>
+                <option value="cs-agency">會辦 · 相關單位</option>
+              </optgroup>
+              <option value="review">核稿</option>
+              <optgroup label="決行">
+                <option value="approve">決行（全部層級）</option>
+                <option value="approve-dg">決行 · 局處首長</option>
+                <option value="approve-mayor">決行 · 市長</option>
+              </optgroup>
+              <option value="dispatch">發文</option>
+              <option value="archive">歸檔</option>
+              <option value="closed">結案</option>
+            </select>
+          </label>
+          <label class="dl-fgroup dl-fgroup--sel dl-m-only"><span class="sr-only">排序</span>
+            <select class="select" id="sort-sel"></select>
+          </label>
+          <button type="button" class="btn btn--sm btn--ghost" id="clear-btn" hidden>清除篩選</button>
+        </div>
+
+        <div class="dl-summary">
+          <p class="dl-summary__count" id="result-count" aria-live="polite"></p>
+          <ul class="dl-pills" id="pills" aria-label="目前篩選條件"></ul>
+          <p class="dl-summary__sort" id="sort-desc"></p>
+        </div>
+        <div id="view-note"></div>
+
+        <div class="table-wrap" data-anim>
+          <table class="table dl-table">
+            <caption class="sr-only">公文清單，可依欄位排序</caption>
+            <thead>
+              <tr>
+                <th class="col-check" scope="col"><label class="check"><input type="checkbox" id="check-all"><span class="sr-only">選取本頁全部公文</span></label></th>
+                <th class="dl-c-no" scope="col" data-sort="id"><button type="button" class="sort">文號</button></th>
+                <th class="dl-c-subj" scope="col">主旨</th>
+                <th class="dl-c-speed" scope="col" data-sort="speed"><button type="button" class="sort">速別</button></th>
+                <th class="dl-c-secret" scope="col" data-sort="secret"><button type="button" class="sort">密等</button></th>
+                <th class="dl-c-stage" scope="col" data-sort="stage"><button type="button" class="sort">目前關卡</button></th>
+                <th class="dl-c-owner" scope="col" data-sort="owner"><button type="button" class="sort">承辦</button></th>
+                <th class="dl-c-due" scope="col" data-sort="due"><button type="button" class="sort">限辦日</button></th>
+                <th class="dl-c-act" scope="col"><span class="sr-only">動作</span></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <footer class="panel__foot dl-foot">
+          <span class="dl-foot__range" id="range"></span>
+          <nav class="pager" id="pager" aria-label="分頁"></nav>
+          <label class="dl-foot__per">每頁
+            <select class="select" id="per-sel"><option value="20">20 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select>
+          </label>
+        </footer>
+      </div>
+    </section>
+
+    <div class="batchbar dl-batch" id="batchbar" role="region" aria-label="批次操作" inert>
+      <p class="batchbar__count" id="bb-count"></p>
+      <div class="batchbar__actions">
+        <button type="button" class="btn btn--sm btn--token" id="bb-assign" disabled><span data-glyph="xor"></span>批次分文</button>
+        <button type="button" class="btn btn--sm" id="bb-remind" disabled><span data-icon="clock"></span>催辦通知</button>
+        <button type="button" class="btn btn--sm" id="bb-export" disabled><span data-icon="download"></span>匯出選取</button>
+        <button type="button" class="btn btn--sm btn--ghost" id="bb-clear" disabled>取消選取</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<dialog class="modal dl-assign" id="assign-modal" aria-labelledby="assign-title">
+  <form id="assign-form" novalidate>
+    <div class="modal__head">
+      <h2 class="modal__title" id="assign-title"><span data-glyph="xor"></span>分文<span class="count" id="as-n">0</span></h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <p class="dl-as-lede">系統依主旨關鍵字建議承辦單位，承辦人預設為該科在辦件數最少者；可逐件調整，或一次改分至同一單位。</p>
+      <div class="dl-as-grid">
+        <figure class="dl-as-fig drafting">
+          <svg class="dl-ad" id="as-diagram" role="img" aria-label="分文閘道：公文 token 經互斥閘道分流至各承辦單位"></svg>
+          <figcaption>互斥閘道 · 每件公文只會走一條順序流</figcaption>
+        </figure>
+        <div>
+          <div class="dl-as-bulk">
+            <label class="field__label" for="as-bulk">全部改分至</label>
+            <select class="select" id="as-bulk"></select>
+          </div>
+          <ol class="dl-as-list" id="as-list"></ol>
+        </div>
+      </div>
+      <div class="callout callout--warn" id="as-skip" hidden></div>
+      <div class="field" id="as-note-field">
+        <label class="field__label" for="as-note">分文附註<span class="req" id="as-note-req" hidden></span></label>
+        <textarea class="textarea" id="as-note" rows="2" maxlength="200" placeholder="例：本案涉及跨局處經費，請承辦人先洽主計處。"></textarea>
+        <p class="field__hint" id="as-note-hint">選填，會寫入簽核軌跡。</p>
+        <p class="field__error" id="as-note-error">有公文改分至非建議單位，請填寫改分理由。</p>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button type="button" class="btn btn--ghost" data-modal-close>取消</button>
+      <button type="submit" class="btn btn--token" id="as-submit">確認分文</button>
+    </div>
+  </form>
+</dialog>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="title-block">
+      <div class="tb-cell tb-cell--brand">
+        <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+        <div><strong>公文線上簽核 流程中樞</strong><span>澄港市政府 秘書處 文書科 維護</span></div>
+      </div>
+      <div class="tb-cell"><span class="tb-k">圖號 DWG NO.</span><span class="tb-v mono">CG-BPMN-012</span></div>
+      <div class="tb-cell"><span class="tb-k">流程定義 PROCESS</span><span class="tb-v">公文簽核 v3.2</span></div>
+      <div class="tb-cell"><span class="tb-k">生效日期 EFFECTIVE</span><span class="tb-v mono">2026-09-30</span></div>
+      <div class="tb-cell"><span class="tb-k">系統服務 SUPPORT</span><span class="tb-v">分機 2120 · 平日 08:30–17:30</span></div>
+      <nav class="tb-cell tb-cell--nav" aria-label="頁尾導覽">
+        <span class="tb-k">圖紙索引</span>
+        <a href="index.html">01 流程總覽</a>
+        <a href="docs.html">02 公文清單</a>
+        <a href="doc.html">03 公文詳情</a>
+        <a href="designer.html">04 流程設計器</a>
+      </nav>
+      <div class="tb-cell tb-cell--back"><a href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a></div>
+      <div class="tb-cell tb-cell--note"><span>本系統為作品集虛構示範：澄港市、機關、人名、文號與統計資料均為虛構。</span><span class="mono">SHEET 02 / 04 · 比例 1:1 · 時間單位：工作小時</span></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt } = App;
+  const D = App.DATA;
+  const DOCS = D.docs;
+  const ME = D.me;
+  const NOW = App.NOW0;
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // 靜態 markup 裡的 BPMN 符號與線條圖示統一由 App 產生
+  $$('[data-glyph]').forEach(el => { el.outerHTML = App.glyph(el.dataset.glyph, el.className); });
+  $$('[data-icon]').forEach(el => { el.outerHTML = App.icon(el.dataset.icon, el.className); });
+
+  /* ── 檢視、關卡與篩選定義 ── */
+  const STAGE_IDX = Object.fromEntries(D.stages.map((s, i) => [s.key, i]));
+  const SPEED_RANK = { urgent: 0, fast: 1, normal: 2 };
+  const SECRET_RANK = { confidential: 0, restricted: 1, none: 2 };
+  const OPEN_KEYS = ['register', 'assign', 'draft', 'cosign', 'review', 'approve'];
+  // 會辦、決行在流程圖上是多個節點；清單可以只看其中一支
+  const SUB_NODES = {
+    'cs-legal': { stage: 'cosign', label: '法制處' },
+    'cs-budget': { stage: 'cosign', label: '主計處' },
+    'cs-agency': { stage: 'cosign', label: '相關單位' },
+    'approve-dg': { stage: 'approve', label: '局處首長' },
+    'approve-mayor': { stage: 'approve', label: '市長' },
+  };
+  // 流程總覽的節點統計卡會帶閘道或事件的 id 過來，對應到最接近的關卡
+  const NODE_ALIAS = { recv: 'register', split: 'cosign', join: 'cosign', 'gw-level': 'approve', end: 'closed' };
+  const VIEWS = {
+    open: { label: '在辦', test: App.isOpen, stages: OPEN_KEYS, sort: ['due', 'asc'] },
+    mine: { label: '待我核', test: d => App.actors(d).includes(ME), stages: ['cosign', 'review', 'approve'], sort: ['due', 'asc'] },
+    assign: { label: '待分文', test: d => d.stage === 'assign', stages: ['assign'], sort: ['due', 'asc'] },
+    overdue: { label: '逾期', test: App.isOverdue, stages: OPEN_KEYS, sort: ['due', 'asc'] },
+    post: { label: '待發文歸檔', test: d => d.stage === 'dispatch' || d.stage === 'archive', stages: ['dispatch', 'archive'], sort: ['stage', 'asc'] },
+    closed: { label: '已結案', test: d => d.stage === 'closed', stages: ['closed'], sort: ['id', 'desc'] },
+    all: { label: '全部', test: () => true, stages: D.stages.map(s => s.key), sort: ['id', 'desc'] },
+  };
+  const SORT_LABEL = { id: '文號', speed: '速別', secret: '密等', stage: '目前關卡', owner: '承辦', due: '限辦日' };
+  const SORT_DIR_LABEL = {
+    id: ['舊→新', '新→舊'], speed: ['急→緩', '緩→急'], secret: ['高→低', '低→高'],
+    stage: ['前→後', '後→前'], owner: ['單位順序', '單位反序'], due: ['近→遠', '遠→近'],
+  };
+  const stageOf = node => SUB_NODES[node] ? SUB_NODES[node].stage : node;
+  const nodeName = node => SUB_NODES[node] ? `${App.stage(SUB_NODES[node].stage).label} · ${SUB_NODES[node].label}` : App.stage(node).label;
+  const matchNode = (d, node) => SUB_NODES[node] ? App.nodesOf(d).includes(node) : d.stage === node;
+  const viewFor = stage => OPEN_KEYS.includes(stage) ? 'open' : stage === 'closed' ? 'closed' : 'post';
+  const parseNode = v => !v ? null : (SUB_NODES[v] || STAGE_IDX[v] != null) ? v : (NODE_ALIAS[v] || null);
+  const dwellOf = d => App.workHours(Math.min(d.stageAt, NOW), NOW);
+
+  /* ── 狀態（網址參數只在載入時讀取） ── */
+  const P = { view: App.param('view'), node: parseNode(App.param('node')), speed: App.param('speed'), unit: App.param('unit'), secret: App.param('secret'), q: App.param('q') };
+  const state = {
+    view: VIEWS[P.view] ? P.view : 'open',
+    node: P.node,
+    speeds: (P.speed || '').split(',').filter(s => SPEED_RANK[s] != null),
+    unit: D.units.some(u => u.code === P.unit) ? P.unit : 'all',
+    secret: SECRET_RANK[P.secret] != null ? P.secret : 'all',
+    q: (P.q || '').trim().slice(0, 60),
+    sort: null,
+    page: 1,
+    per: 20,
+    selected: new Set(),
+  };
+  if (state.node && !VIEWS[state.view].stages.includes(stageOf(state.node))) state.view = viewFor(stageOf(state.node));
+  state.sort = { key: VIEWS[state.view].sort[0], dir: VIEWS[state.view].sort[1] };
+  let qTerms = [];
+  const setQuery = q => { state.q = q; qTerms = q.toLowerCase().split(/\s+/).filter(Boolean); };
+  setQuery(state.q);
+  $('#q').value = state.q;
+
+  function haystack(d) {
+    const u = App.unit(d.unit);
+    return `${d.id} ${d.subject} ${d.from} ${d.ref || ''} ${d.outNo || ''} ${u.org}${u.name} ${d.owner ? App.person(d.owner).name : ''}`.toLowerCase();
+  }
+  // skip：計算某個篩選面向的件數時，忽略該面向本身
+  function matches(d, skip = '') {
+    if (!VIEWS[state.view].test(d)) return false;
+    if (skip !== 'node' && state.node && !matchNode(d, state.node)) return false;
+    if (skip !== 'speed' && state.speeds.length && !state.speeds.includes(d.speed)) return false;
+    if (state.unit !== 'all' && d.unit !== state.unit) return false;
+    if (state.secret !== 'all' && d.secret !== state.secret) return false;
+    if (qTerms.length) {
+      const h = haystack(d);
+      if (!qTerms.every(t => h.includes(t))) return false;
+    }
+    return true;
+  }
+
+  const unitIdx = Object.fromEntries(D.units.map((u, i) => [u.code, i]));
+  const SORT = {
+    id: d => d.id,
+    speed: d => SPEED_RANK[d.speed],
+    secret: d => SECRET_RANK[d.secret],
+    stage: d => STAGE_IDX[d.stage] * 1e13 + d.stageAt,
+    owner: d => `${String(unitIdx[d.unit] ?? 9).padStart(2, '0')}${d.owner ? App.person(d.owner).name : '￿'}`,
+    due: d => d.due,
+  };
+  function sortList(list) {
+    const f = SORT[state.sort.key], k = state.sort.dir === 'asc' ? 1 : -1;
+    return list.sort((a, b) => {
+      const va = f(a), vb = f(b);
+      const c = typeof va === 'string' ? va.localeCompare(vb, 'zh-Hant') : va - vb;
+      return c * k || a.due - b.due || a.id.localeCompare(b.id);
+    });
+  }
+
+  // 搜尋關鍵字標示：先切段再逐段 escape，避免標記插進 HTML entity 裡
+  function hl(text) {
+    const s = String(text);
+    if (!qTerms.length) return esc(s);
+    const re = new RegExp(qTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+    let out = '', last = 0;
+    s.replace(re, (m, i) => { out += esc(s.slice(last, i)) + `<mark class="dl-mark">${esc(m)}</mark>`; last = i + m.length; return m; });
+    return out + esc(s.slice(last));
+  }
+
+  /* ── 關卡帶 ───────────────────────────────────────────── */
+  const rail = (() => {
+    const svg = $('#rail-svg'), panel = $('.dl-rail'), hits = $('#rail-hits'), tip = $('#rail-tip');
+    const stageEl = $('#rail'), scroller = $('.dl-rail__scroll');
+    const PITCH = 11, R = 4, W = 1340, ML = 20, MR = 20, MIN_ROWS = 7;
+    const COLS = [
+      { key: 'register', label: '收文登錄', shape: 'start', slot: 84, subs: [{ node: 'register', cols: 4 }] },
+      { key: 'assign', label: '分文', shape: 'task', icon: 'branch', slot: 104, subs: [{ node: 'assign', cols: 6 }] },
+      { key: 'draft', label: '承辦擬辦', shape: 'task', icon: 'user', slot: 104, subs: [{ node: 'draft', cols: 6 }] },
+      { key: 'cosign', label: '平行會辦', shape: 'and', slot: 172, subs: [{ node: 'cs-legal', name: '法制', cols: 4 }, { node: 'cs-budget', name: '主計', cols: 4 }, { node: 'cs-agency', name: '相關', cols: 4 }] },
+      { key: 'review', label: '核稿', shape: 'task', icon: 'pen', slot: 104, subs: [{ node: 'review', cols: 6 }] },
+      { key: 'approve', label: '決行', shape: 'xor', slot: 120, subs: [{ node: 'approve-dg', name: '局處', cols: 4 }, { node: 'approve-mayor', name: '市長', cols: 4 }] },
+      { key: 'dispatch', label: '發文', shape: 'task', icon: 'send', slot: 104, subs: [{ node: 'dispatch', cols: 6 }] },
+      { key: 'archive', label: '歸檔', shape: 'task', icon: 'archive', slot: 104, subs: [{ node: 'archive', cols: 6 }] },
+      { key: 'closed', label: '結案', shape: 'end', slot: 88, subs: [] },
+    ];
+    const gap = (W - ML - MR - COLS.reduce((s, c) => s + c.slot, 0)) / (COLS.length - 1);
+    let x0 = ML;
+    COLS.forEach((c, ci) => {
+      c.x0 = x0; c.cx = x0 + c.slot / 2; c.ci = ci; x0 += c.slot + gap;
+      c.subs.forEach((sb, i) => {
+        sb.col = c;
+        sb.cx = c.cx + (i - (c.subs.length - 1) / 2) * (sb.cols * PITCH + 10);
+        sb.full = SUB_NODES[sb.node] ? SUB_NODES[sb.node].label : null;
+      });
+    });
+    const SUBS = COLS.flatMap(c => c.subs);
+    const SUB_BY_NODE = Object.fromEntries(SUBS.map(sb => [sb.node, sb]));
+    const END = COLS[COLS.length - 1];
+    const halfW = c => c.shape === 'task' ? 30 : c.shape === 'and' || c.shape === 'xor' ? 21 : 17;
+    const halfH = c => c.shape === 'task' ? 19 : halfW(c);
+
+    const gStatic = document.createElementNS(NS, 'g');
+    const gTokens = document.createElementNS(NS, 'g');
+    const gRings = document.createElementNS(NS, 'g');
+    svg.append(gStatic, gTokens, gRings);
+    let G = null;
+    const tokens = new Map();   // key（文號@節點）→ { el, d, node, x, y }
+    const lastPos = new Map();  // 文號 → 上一次的位置；換關卡時新 token 從這裡出發
+    let first = true, hoverTok = null, hlId = null, touchArmed = false, lastNode = null;
+    const opts = { onPick: null, onHoverDoc: null };
+
+    function geometry(rows) {
+      const yb = 30 + (rows - 1) * PITCH;
+      const tray = yb + 9;
+      const nodeY = tray + 46;
+      const label = nodeY + 37;
+      return { rows, yb, tray, subName: tray + 14, nodeY, label, meta: label + 17, H: label + 29 };
+    }
+
+    function nodeSVG(c) {
+      const x = c.cx, y = G.nodeY;
+      let halo, shape, inner = '';
+      if (c.shape === 'task') {
+        halo = `<rect class="dl-r-halo" x="${x - 38}" y="${y - 27}" width="76" height="54" rx="18" filter="url(#dl-blur)"/>`;
+        shape = `<rect class="dl-r-shape" x="${x - 30}" y="${y - 19}" width="60" height="38" rx="10"/>`;
+        // 巢狀 svg 在 SVG 內不吃 .icon 的 CSS 尺寸，要明確給 width / height，否則會撐滿整張圖
+        inner = `<g class="dl-r-ico" transform="translate(${x - 9} ${y - 9})">${App.icon(c.icon).replace('<svg ', '<svg width="18" height="18" ')}</g>`;
+      } else if (c.shape === 'start' || c.shape === 'end') {
+        halo = `<circle class="dl-r-halo" cx="${x}" cy="${y}" r="25" filter="url(#dl-blur)"/>`;
+        shape = `<circle class="dl-r-shape" cx="${x}" cy="${y}" r="17"/>`;
+        if (c.shape === 'start') inner = `<rect class="dl-r-env" x="${x - 8}" y="${y - 5.5}" width="16" height="11" rx="1"/><path class="dl-r-env" d="M${x - 7.5} ${y - 5}l7.5 5.5 7.5-5.5"/>`;
+      } else {
+        const h = 21, H2 = h + 8;
+        halo = `<path class="dl-r-halo" d="M${x} ${y - H2}L${x + H2} ${y}L${x} ${y + H2}L${x - H2} ${y}Z" filter="url(#dl-blur)"/>`;
+        shape = `<path class="dl-r-shape" d="M${x} ${y - h}L${x + h} ${y}L${x} ${y + h}L${x - h} ${y}Z"/>`;
+        inner = c.shape === 'and'
+          ? `<path class="dl-r-mark" d="M${x} ${y - 9}V${y + 9}M${x - 9} ${y}H${x + 9}"/>`
+          : `<path class="dl-r-mark" d="M${x - 6.5} ${y - 6.5}L${x + 6.5} ${y + 6.5}M${x + 6.5} ${y - 6.5}L${x - 6.5} ${y + 6.5}"/>`;
+      }
+      return `<g class="dl-r-node dl-r-node--${c.shape}" data-col="${c.key}">${halo}${shape}${inner}<text class="dl-r-label" x="${x}" y="${G.label}">${c.label}</text><text class="dl-r-meta" x="${x}" y="${G.meta}" data-meta="${c.key}"></text></g>`;
+    }
+
+    function drawStatic() {
+      const s = [`<defs><marker id="dl-arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="dl-r-arrow" d="M0 1L10 5L0 9Z"/></marker><filter id="dl-blur" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="7"/></filter></defs>`];
+      COLS.forEach(c => s.push(`<rect class="dl-r-colbg" data-col="${c.key}" x="${c.x0 - 6}" y="6" width="${c.slot + 12}" height="${G.H - 12}" rx="12"/>`));
+      COLS.forEach((c, i) => {
+        if (!i) return;
+        const a = COLS[i - 1], x1 = a.cx + halfW(a), x2 = c.cx - halfW(c) - 1;
+        s.push(`<path class="dl-r-edge" d="M${x1} ${G.nodeY}H${x2}" marker-end="url(#dl-arr)"/><path class="dl-r-dash" d="M${x1 + 2} ${G.nodeY}H${x2 - 8}"/>`);
+      });
+      COLS.forEach(c => {
+        if (!c.subs.length) {
+          s.push(`<text class="dl-r-big" data-big x="${c.cx}" y="${G.yb - 4}"></text><text class="dl-r-cap" x="${c.cx}" y="${G.yb + 13}">件已結案</text>`);
+          s.push(`<path class="dl-r-guide" d="M${c.cx} ${G.yb + 22}V${G.nodeY - halfH(c) - 5}"/>`);
+          return;
+        }
+        const multi = c.subs.length > 1;
+        const left = c.subs[0].cx - c.subs[0].cols * PITCH / 2 - 2, last = c.subs[c.subs.length - 1], right = last.cx + last.cols * PITCH / 2 + 2;
+        s.push(`<path class="dl-r-tray" d="M${left} ${G.tray}H${right}"/>`);
+        c.subs.slice(1).forEach(sb => s.push(`<path class="dl-r-tray" d="M${sb.cx - sb.cols * PITCH / 2 - 5} ${G.tray - 4}V${G.tray + 4}"/>`));
+        c.subs.forEach(sb => { if (sb.name) s.push(`<text class="dl-r-subname" data-sub="${sb.node}" x="${sb.cx}" y="${G.subName}">${sb.name}</text>`); });
+        s.push(`<path class="dl-r-guide" d="M${c.cx} ${G.tray + (multi ? 24 : 6)}V${G.nodeY - halfH(c) - 5}"/>`);
+      });
+      COLS.forEach(c => s.push(nodeSVG(c)));
+      SUBS.forEach(sb => s.push(`<text class="dl-r-count" data-count-sub="${sb.node}" x="${sb.cx}" y="0"></text>`));
+      gStatic.innerHTML = s.join('');
+      svg.setAttribute('viewBox', `0 0 ${W} ${G.H}`);
+    }
+
+    // 透明 HTML 按鈕疊在節點與標籤上：有原生焦點、鍵盤操作與 aria-pressed，token 區則留給滑鼠懸停
+    function placeHits() {
+      if (!hits.children.length) {
+        hits.innerHTML = COLS.map(c => `<button type="button" class="dl-hit" data-hit="${c.key}" aria-pressed="false"><span class="sr-only"></span></button>`).join('')
+          + SUBS.filter(sb => sb.name).map(sb => `<button type="button" class="dl-hit dl-hit--sub" data-hit="${sb.node}" aria-pressed="false"><span class="sr-only"></span></button>`).join('');
+      }
+      const pct = (v, total) => (v / total * 100).toFixed(3) + '%';
+      const put = (key, x, y, w, h) => Object.assign(hits.querySelector(`[data-hit="${key}"]`).style, { left: pct(x, W), top: pct(y, G.H), width: pct(w, W), height: pct(h, G.H) });
+      COLS.forEach(c => put(c.key, c.x0 - 4, G.nodeY - 30, c.slot + 8, G.H - 4 - (G.nodeY - 30)));
+      SUBS.filter(sb => sb.name).forEach(sb => put(sb.node, sb.cx - 24, G.tray + 3, 48, 19));
+    }
+
+    const toneOf = d => {
+      if (!App.isOpen(d)) return 'post';
+      const st = App.dueState(d).state;
+      return st === 'over' ? 'over' : st === 'today' ? 'today' : st === 'soon' ? 'soon' : 'ok';
+    };
+
+    function update() {
+      // 1) 目前每件未結案公文在哪些節點（平行會辦會有多個）
+      const groups = new Map(SUBS.map(sb => [sb.node, []]));
+      const docIds = new Set();
+      for (const d of DOCS) {
+        if (d.stage === 'closed') continue;
+        for (const node of App.nodesOf(d)) {
+          if (!groups.has(node)) continue;
+          groups.get(node).push({ key: `${d.id}@${node}`, d, node, match: matches(d) });
+          docIds.add(d.id);
+        }
+      }
+      // 2) 符合篩選的沉到底部，其餘依期限排序：逾期在最下面像沉積層
+      let rows = MIN_ROWS;
+      groups.forEach((arr, node) => {
+        const post = node === 'dispatch' || node === 'archive';
+        arr.sort((a, b) => (b.match - a.match) || (post ? a.d.stageAt - b.d.stageAt : a.d.due - b.d.due) || a.d.id.localeCompare(b.d.id));
+        rows = Math.max(rows, Math.ceil(arr.length / SUB_BY_NODE[node].cols));
+      });
+      if (!G || G.rows !== rows) {
+        G = geometry(rows);
+        drawStatic();
+        placeHits();
+      }
+
+      // 3) token 位置：新 token 從同一件公文的舊位置出發（換關卡時看起來就是移動過去）
+      const want = new Set();
+      groups.forEach((arr, node) => {
+        const sb = SUB_BY_NODE[node];
+        arr.forEach((w, i) => {
+          want.add(w.key);
+          let t = tokens.get(w.key);
+          if (!t) {
+            const el = document.createElementNS(NS, 'circle');
+            el.setAttribute('r', R);
+            el.dataset.id = w.d.id;
+            const from = lastPos.get(w.d.id);
+            const [fx, fy] = from || [sb.col.cx, G.nodeY];
+            el.style.transform = `translate(${fx}px, ${fy}px)`;
+            el.setAttribute('class', 'dl-tk' + (from ? '' : ' is-enter'));
+            if (first) el.style.transitionDelay = `${sb.col.ci * 55 + Math.floor(i / sb.cols) * 28 + (i % sb.cols) * 6}ms`;
+            gTokens.appendChild(el);
+            t = { el };
+            tokens.set(w.key, t);
+          }
+          Object.assign(t, { d: w.d, node, match: w.match, x: sb.cx + ((i % sb.cols) - (sb.cols - 1) / 2) * PITCH, y: G.yb - Math.floor(i / sb.cols) * PITCH });
+          const cl = t.el.classList;
+          ['ok', 'soon', 'today', 'over', 'post'].forEach(k => cl.toggle('tk--' + k, toneOf(w.d) === k));
+          cl.toggle('is-ghost', !w.match);
+          cl.toggle('is-picked', state.selected.has(w.d.id));
+        });
+        // 每疊上方的件數：符合 / 全部
+        const total = arr.length, m = arr.filter(w => w.match).length;
+        const el = gStatic.querySelector(`[data-count-sub="${node}"]`);
+        const top = G.yb - (Math.max(1, Math.ceil(total / sb.cols)) - 1) * PITCH - 11;
+        el.style.transform = `translateY(${top}px)`;
+        el.innerHTML = m === total ? String(total) : m ? `${m}<tspan class="is-light">/${total}</tspan>` : `<tspan class="is-light">${total}</tspan>`;
+        el.classList.toggle('is-zero', total === 0);
+      });
+      tokens.forEach((t, key) => {
+        if (want.has(key)) return;
+        tokens.delete(key);
+        if (docIds.has(t.d.id)) { t.el.remove(); return; }
+        // 這件公文已離開關卡帶（結案）：滑進結案事件後淡出
+        t.el.style.transform = `translate(${END.cx}px, ${G.nodeY}px)`;
+        t.el.classList.add('is-leave');
+        setTimeout(() => t.el.remove(), 760);
+      });
+      // 強制套用起點樣式，transition 才會從起點滑到目標位置
+      svg.getBoundingClientRect();
+      tokens.forEach(t => {
+        t.el.style.transform = `translate(${t.x}px, ${t.y}px)`;
+        t.el.classList.remove('is-enter');
+        lastPos.set(t.d.id, [t.x, t.y]);
+      });
+      if (first) {
+        first = false;
+        setTimeout(() => tokens.forEach(t => { t.el.style.transitionDelay = ''; }), 1400);
+      }
+
+      // 4) 結案數、節點停留時間與逾期、熱度光暈
+      const closedAll = DOCS.filter(d => d.stage === 'closed');
+      const closedMatch = closedAll.filter(d => matches(d)).length;
+      const big = gStatic.querySelector('[data-big]');
+      big.textContent = closedMatch && closedMatch !== closedAll.length ? `${closedMatch}/${closedAll.length}` : String(closedAll.length);
+      big.classList.toggle('is-light', !closedMatch);
+      const heat = App.stageStats();
+      const today = App.dayStart(NOW);
+      COLS.forEach(c => {
+        const meta = gStatic.querySelector(`[data-meta="${c.key}"]`);
+        const g = gStatic.querySelector(`.dl-r-node[data-col="${c.key}"]`);
+        if (c.key === 'closed') {
+          meta.textContent = `今日 ${closedAll.filter(d => d.closedAt >= today).length} 件`;
+        } else {
+          const docs = DOCS.filter(d => d.stage === c.key);
+          const avg = docs.length ? docs.reduce((s, d) => s + dwellOf(d), 0) / docs.length : 0;
+          const od = docs.filter(App.isOverdue).length;
+          meta.innerHTML = docs.length ? `均 ${fmt.dur(avg)}${od ? `<tspan class="is-bad"> · 逾 ${od}</tspan>` : ''}` : '無積壓';
+        }
+        const h = Math.max(0, ...c.subs.map(sb => heat[sb.node] ? heat[sb.node].heat : 0));
+        g.classList.toggle('is-hot', h > .04);
+        g.style.setProperty('--heat', h.toFixed(3));
+        g.style.setProperty('--pulse', (2.9 - h * 1.7).toFixed(2) + 's');
+        g.querySelector('.dl-r-halo').style.fill = App.heatColor(h);
+        c.subs.forEach(sb => gStatic.querySelector(`[data-count-sub="${sb.node}"]`).classList.toggle('is-hot', !!heat[sb.node] && heat[sb.node].heat > .5));
+      });
+
+      // 5) 選取中的關卡與按鈕的可及名稱
+      const on = state.node ? stageOf(state.node) : null;
+      $$('.dl-r-colbg', gStatic).forEach(r => r.classList.toggle('is-on', r.dataset.col === on));
+      $$('.dl-r-node', gStatic).forEach(g => g.classList.toggle('is-on', g.dataset.col === on));
+      $$('.dl-r-subname', gStatic).forEach(t => t.classList.toggle('is-on', t.dataset.sub === state.node));
+      COLS.forEach(c => {
+        const b = hits.querySelector(`[data-hit="${c.key}"]`);
+        const n = c.key === 'closed' ? closedAll.length : DOCS.filter(d => d.stage === c.key).length;
+        b.setAttribute('aria-pressed', String(state.node === c.key));
+        b.querySelector('.sr-only').textContent = `篩選「${c.label}」關卡（${n} 件）`;
+      });
+      SUBS.filter(sb => sb.name).forEach(sb => {
+        const b = hits.querySelector(`[data-hit="${sb.node}"]`);
+        b.setAttribute('aria-pressed', String(state.node === sb.node));
+        b.querySelector('.sr-only').textContent = `篩選「${nodeName(sb.node)}」（${groups.get(sb.node).length} 件）`;
+      });
+      drawRings();
+      if (hoverTok && !tokens.has(`${hoverTok.d.id}@${hoverTok.node}`)) setHover(null);
+      // 手機上關卡帶要橫向捲動：選了關卡就把那一欄捲到中間
+      if (state.node !== lastNode) {
+        lastNode = state.node;
+        if (on && scroller.scrollWidth > scroller.clientWidth + 4) {
+          const c = COLS.find(x => x.key === on);
+          scroller.scrollTo({ left: c.cx / W * stageEl.offsetWidth - scroller.clientWidth / 2, behavior: App.reducedMotion() ? 'auto' : 'smooth' });
+        }
+      }
+    }
+
+    // 懸停或連動的公文：在最上層畫一圈，不必搬動 token 的 DOM 順序
+    function drawRings() {
+      const ids = new Set([hlId, hoverTok && hoverTok.d.id].filter(Boolean));
+      let s = '';
+      tokens.forEach(t => { if (ids.has(t.d.id)) s += `<circle class="dl-r-ring${t.d.id === hlId && (!hoverTok || hoverTok.d.id !== t.d.id) ? ' dl-r-ring--soft' : ''}" cx="${t.x}" cy="${t.y}" r="7.5"/>`; });
+      gRings.innerHTML = s;
+    }
+
+    const toSvg = (cx, cy) => {
+      const p = svg.createSVGPoint();
+      p.x = cx; p.y = cy;
+      return p.matrixTransform(svg.getScreenCTM().inverse());
+    };
+    function nearest(e) {
+      const p = toSvg(e.clientX, e.clientY);
+      let best = null, bd = 7.5 * 7.5;
+      tokens.forEach(t => {
+        const dd = (t.x - p.x) ** 2 + (t.y - p.y) ** 2;
+        if (dd < bd) { bd = dd; best = t; }
+      });
+      return best;
+    }
+    function tipHTML(d, touch) {
+      const who = App.actors(d).map(id => App.person(id).name).join('、');
+      return `<p class="dl-tip__top">${App.docNo(d.id)}${App.speedBadge(d.speed)}${d.secret !== 'none' ? App.secretBadge(d.secret) : ''}</p>
+        <p class="dl-tip__subj">${esc(d.subject)}</p>
+        <p class="dl-tip__meta"><span>${esc(App.isOpen(d) ? App.stageLabel(d) : App.stage(d.stage).label)}${who ? ` · ${esc(who)}` : ''}</span>${App.dueTag(d)}</p>
+        <p class="dl-tip__hint">${touch ? '再點一次開啟公文詳情' : '點選開啟公文詳情'}</p>`;
+    }
+    function setHover(t, touch = false) {
+      if (t === hoverTok) return;
+      hoverTok = t;
+      svg.classList.toggle('is-pointing', !!t);
+      drawRings();
+      if (opts.onHoverDoc) opts.onHoverDoc(t ? t.d.id : null);
+      if (!t) { tip.hidden = true; return; }
+      tip.innerHTML = tipHTML(t.d, touch);
+      tip.hidden = false;
+      // 摘要卡掛在 panel 上（不在橫向捲動容器裡），才不會被裁切
+      const m = svg.getScreenCTM(), pr = panel.getBoundingClientRect();
+      const px = m.a * t.x + m.e - pr.left, py = m.d * t.y + m.f - pr.top;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = Math.max(8, Math.min(px - tw / 2, panel.clientWidth - tw - 8)) + 'px';
+      tip.style.top = (py - th - 14 >= -8 ? py - th - 14 : py + 14) + 'px';
+    }
+
+    svg.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') setHover(nearest(e)); });
+    svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') setHover(null); });
+    svg.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse') return;
+      // 觸控沒有懸停：第一下顯示摘要，第二下（同一個 token）才開啟
+      const t = nearest(e);
+      touchArmed = !!t && t === hoverTok;
+      setHover(t, true);
+    });
+    svg.addEventListener('click', e => {
+      if (!hoverTok) return;
+      if (e.pointerType && e.pointerType !== 'mouse' && !touchArmed) return;
+      location.href = App.docUrl(hoverTok.d.id);
+    });
+
+    const colHover = (key, on) => {
+      if (!key) return;
+      const stage = stageOf(key);
+      gStatic.querySelector(`.dl-r-colbg[data-col="${stage}"]`)?.classList.toggle('is-hover', on);
+      gStatic.querySelector(`.dl-r-node[data-col="${stage}"]`)?.classList.toggle('is-hover', on);
+      gStatic.querySelector(`.dl-r-subname[data-sub="${key}"]`)?.classList.toggle('is-hover', on);
+    };
+    hits.addEventListener('pointerover', e => colHover(e.target.closest('.dl-hit')?.dataset.hit, true));
+    hits.addEventListener('pointerout', e => colHover(e.target.closest('.dl-hit')?.dataset.hit, false));
+    hits.addEventListener('focusin', e => colHover(e.target.dataset.hit, true));
+    hits.addEventListener('focusout', e => colHover(e.target.dataset.hit, false));
+    hits.addEventListener('click', e => {
+      const b = e.target.closest('.dl-hit');
+      if (b && opts.onPick) opts.onPick(b.dataset.hit);
+    });
+
+    return {
+      update,
+      highlight(id) { if (id === hlId) return; hlId = id; drawRings(); },
+      // 資料變更後短暫描邊剛移動的 token，讓人看出公文去了哪裡
+      flash(ids) {
+        const set = new Set(ids);
+        tokens.forEach(t => { if (set.has(t.d.id)) t.el.classList.add('is-flash'); });
+        setTimeout(() => tokens.forEach(t => { if (set.has(t.d.id)) t.el.classList.remove('is-flash'); }), 2200);
+      },
+      on(name, fn) { opts[name] = fn; },
+    };
+  })();
+
+  /* ── 清單 ─────────────────────────────────────────────── */
+  const rowsEl = $('#rows');
+  let current = [];
+
+  function rowHTML(d) {
+    const u = App.unit(d.unit);
+    const mine = App.actors(d).includes(ME);
+    const sel = state.selected.has(d.id);
+    const stageTxt = d.stage === 'closed' ? `已結案 · ${fmt.date(d.closedAt)}` : App.isOpen(d) ? `${App.stageLabel(d)} · 停留 ${fmt.dur(dwellOf(d))}` : `待${App.stage(d.stage).label} · 已等 ${fmt.dur(dwellOf(d))}`;
+    let owner;
+    if (d.owner) owner = `${App.personTag(d.owner, { role: false })}<span class="sub">${esc(u.org)}${esc(u.name)}</span>`;
+    else if (d.stage === 'assign') owner = `<span class="badge badge--outline">未分文</span><span class="sub">建議：${hl(u.org)}</span>`;
+    else owner = `<span class="badge badge--outline">待登錄</span><span class="sub">秘書處收發室</span>`;
+    let act;
+    if (d.stage === 'assign') act = `<button type="button" class="btn btn--sm" data-assign="${d.id}">分文</button>`;
+    else if (mine) act = `<a class="btn btn--sm btn--token" href="${App.docUrl(d.id)}">核閱</a>`;
+    else act = `<a class="btn btn--sm btn--ghost btn--icon dl-open" href="${App.docUrl(d.id)}" aria-label="開啟 ${d.id}">${App.icon('chevron-right')}</a>`;
+    return `<tr data-id="${d.id}" class="${App.isOverdue(d) ? 'is-overdue' : ''}${sel ? ' is-selected' : ''}">
+      <td class="col-check"><label class="check"><input type="checkbox" data-pick="${d.id}"${sel ? ' checked' : ''} aria-label="選取 ${d.id}"></label></td>
+      <td class="dl-c-no"><span class="doc-no">${hl(d.id)}</span><span class="sub">${fmt.date(d.received)} ${fmt.time(d.received)} 收</span></td>
+      <td class="dl-c-subj"><a class="subject" href="${App.docUrl(d.id)}">${hl(d.subject)}</a><span class="sub">${hl(d.from)} · ${d.kind}${d.attachments ? ` · 附件 ${d.attachments}` : ''}</span></td>
+      <td class="dl-c-speed">${App.speedBadge(d.speed)}</td>
+      <td class="dl-c-secret">${App.secretBadge(d.secret)}</td>
+      <td class="dl-c-stage"><div class="dl-stage">${App.miniFlow(d)}<span class="dl-stage__txt">${esc(stageTxt)}${mine ? '<span class="badge badge--token">待我核</span>' : ''}</span></div></td>
+      <td class="dl-c-owner">${owner}</td>
+      <td class="dl-c-due">${App.dueTag(d)}</td>
+      <td class="dl-c-act">${act}</td>
+    </tr>`;
+  }
+
+  function renderTabs() {
+    $$('#views .tab').forEach(t => {
+      const n = DOCS.filter(VIEWS[t.dataset.value].test).length;
+      t.querySelector('.tab__count').textContent = n;
+    });
+    const views = $('#views'), sel = views.querySelector('.tab[aria-selected="true"]');
+    $('#list-panel').setAttribute('aria-labelledby', sel.id);
+    if (sel.offsetLeft < views.scrollLeft || sel.offsetLeft + sel.offsetWidth > views.scrollLeft + views.clientWidth) views.scrollLeft = Math.max(0, sel.offsetLeft - 16);
+  }
+
+  function renderFilters() {
+    const base = DOCS.filter(d => matches(d, 'speed'));
+    $$('#speed-chips .chip').forEach(c => {
+      c.querySelector('.chip__count').textContent = base.filter(d => d.speed === c.dataset.value).length;
+      c.setAttribute('aria-pressed', String(state.speeds.includes(c.dataset.value)));
+    });
+    $('#unit-sel').value = state.unit;
+    $('#secret-sel').value = state.secret;
+    $('#stage-sel').value = state.node || '';
+    $('#sort-sel').value = `${state.sort.key}:${state.sort.dir}`;
+    $$('.dl-table th[data-sort]').forEach(th => {
+      if (th.dataset.sort === state.sort.key) th.setAttribute('aria-sort', state.sort.dir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+  }
+
+  function renderSummary() {
+    $('#result-count').innerHTML = `<b>${current.length}</b>件符合`;
+    const pills = [];
+    if (state.node) pills.push(['node', `關卡：${nodeName(state.node)}`]);
+    state.speeds.forEach(s => pills.push(['speed:' + s, `速別：${D.speeds[s].label}`]));
+    if (state.unit !== 'all') pills.push(['unit', `單位：${App.unit(state.unit).org}`]);
+    if (state.secret !== 'all') pills.push(['secret', `密等：${D.secrets[state.secret].label}`]);
+    if (state.q) pills.push(['q', `關鍵字：${state.q}`]);
+    $('#pills').innerHTML = pills.map(([k, t]) => `<li><button type="button" class="dl-pill" data-unpill="${esc(k)}" aria-label="移除篩選 ${esc(t)}">${esc(t)}${App.icon('x')}</button></li>`).join('');
+    $('#clear-btn').hidden = !pills.length;
+    $('#sort-desc').innerHTML = `排序：<b>${SORT_LABEL[state.sort.key]} ${SORT_DIR_LABEL[state.sort.key][state.sort.dir === 'asc' ? 0 : 1]}</b>`;
+    const cols = new Set(current.filter(d => d.stage !== 'closed').map(d => d.stage)).size + (current.some(d => d.stage === 'closed') ? 1 : 0);
+    $('#rail-scope').innerHTML = `清單<b>${current.length}</b>件 · 分布於<b>${cols}</b>個關卡`;
+    $('#rail-clear').hidden = !state.node;
+  }
+
+  const countBy = (list, key) => list.reduce((m, d) => { const k = key(d); m[k] = (m[k] || 0) + 1; return m; }, {});
+  const SHORT = Object.fromEntries(D.stages.map(s => [s.key, s.short]));
+  function renderNote() {
+    const v = state.view;
+    let html = '';
+    if (v === 'assign') {
+      const all = DOCS.filter(d => d.stage === 'assign');
+      if (all.length) {
+        const oldest = all.reduce((a, b) => dwellOf(b) > dwellOf(a) ? b : a);
+        html = `<div class="callout callout--token dl-note">${App.glyph('xor')}<p class="dl-note__text"><b>${all.length} 件待分文</b>，最久已等候 ${fmt.dur(dwellOf(oldest))}（${oldest.id}）。系統已依主旨關鍵字建議承辦單位。</p><button type="button" class="btn btn--sm btn--token" data-assign-all>全選並分文</button></div>`;
+      }
+    } else if (v === 'mine') {
+      const all = DOCS.filter(VIEWS.mine.test);
+      if (all.length) {
+        const by = countBy(all, d => d.stage);
+        const parts = [by.review && `核稿 ${by.review} 件`, by.cosign && `會辦簽註 ${by.cosign} 件`, by.approve && `決行 ${by.approve} 件`].filter(Boolean);
+        const today = all.filter(d => ['today', 'over'].includes(App.dueState(d).state)).length;
+        html = `<div class="callout callout--token dl-note">${App.glyph('task-user')}<p class="dl-note__text"><b>${all.length} 件待您處理</b>：${parts.join('、')}${today ? `；其中 ${today} 件今日到期或已逾期` : ''}。點「核閱」進入公文詳情簽核。</p></div>`;
+      }
+    } else if (v === 'overdue') {
+      const all = DOCS.filter(App.isOverdue);
+      if (all.length) {
+        const sp = countBy(all, d => d.speed), st = countBy(all, d => d.stage);
+        const stages = Object.entries(st).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${SHORT[k]} ${n} 件`).join('、');
+        html = `<div class="callout callout--danger dl-note">${App.glyph('timer')}<p class="dl-note__text"><b>${all.length} 件逾期未決</b>：最速件 ${sp.urgent || 0}、速件 ${sp.fast || 0}、普通件 ${sp.normal || 0}；停在${stages}。</p><button type="button" class="btn btn--sm btn--danger" data-pick-all>全選以催辦</button></div>`;
+      }
+    } else if (v === 'post') {
+      const all = DOCS.filter(VIEWS.post.test), st = countBy(all, d => d.stage);
+      if (all.length) html = `<div class="callout dl-note">${App.glyph('end-msg')}<p class="dl-note__text"><b>${all.length} 件已決行</b>：待發文 ${st.dispatch || 0} 件、待歸檔 ${st.archive || 0} 件，由秘書處收發室依序處理。</p></div>`;
+    }
+    $('#view-note').innerHTML = html;
+  }
+
+  const pageNums = (cur, n) => {
+    if (n <= 7) return Array.from({ length: n }, (_, i) => i + 1);
+    const keep = new Set([1, n, cur - 1, cur, cur + 1]);
+    if (cur <= 3) [2, 3, 4].forEach(k => keep.add(k));
+    if (cur >= n - 2) [n - 3, n - 2, n - 1].forEach(k => keep.add(k));
+    const list = [...keep].filter(k => k >= 1 && k <= n).sort((a, b) => a - b);
+    return list.flatMap((k, i) => i && k - list[i - 1] > 1 ? ['…', k] : [k]);
+  };
+
+  function renderTable() {
+    const pages = Math.max(1, Math.ceil(current.length / state.per));
+    state.page = Math.min(state.page, pages);
+    const start = (state.page - 1) * state.per;
+    const page = current.slice(start, start + state.per);
+    rowsEl.innerHTML = page.length ? page.map(rowHTML).join('') : `<tr class="dl-empty-row"><td colspan="9">${App.emptyState({ title: '沒有符合條件的公文', text: '試著移除部分篩選條件，或改用其他關鍵字搜尋。', actions: '<button type="button" class="btn btn--sm" data-clear>清除篩選</button><button type="button" class="btn btn--sm btn--ghost" data-view-all>改看全部公文</button>' })}</td></tr>`;
+    $('#range').innerHTML = current.length ? `第 <b>${start + 1}–${start + page.length}</b> 筆，共 <b>${current.length}</b> 筆` : '共 <b>0</b> 筆';
+    $('#pager').innerHTML = `<button type="button" class="pager__btn" data-page="${state.page - 1}"${state.page <= 1 ? ' disabled' : ''} aria-label="上一頁">${App.icon('chevron-left')}</button>`
+      + pageNums(state.page, pages).map(n => n === '…' ? '<span class="pager__gap" aria-hidden="true">…</span>' : `<button type="button" class="pager__btn" data-page="${n}"${n === state.page ? ' aria-current="page"' : ''} aria-label="第 ${n} 頁">${n}</button>`).join('')
+      + `<button type="button" class="pager__btn" data-page="${state.page + 1}"${state.page >= pages ? ' disabled' : ''} aria-label="下一頁">${App.icon('chevron-right')}</button>`;
+    syncCheckAll();
+  }
+
+  function pageIds() { return $$('#rows tr[data-id]').map(tr => tr.dataset.id); }
+  function syncCheckAll() {
+    const ids = pageIds(), n = ids.filter(id => state.selected.has(id)).length;
+    const ca = $('#check-all');
+    ca.checked = !!ids.length && n === ids.length;
+    ca.indeterminate = n > 0 && n < ids.length;
+    ca.disabled = !ids.length;
+  }
+
+  function renderBatch() {
+    const ids = [...state.selected];
+    const assignable = ids.filter(id => App.doc(id).stage === 'assign').length;
+    const bb = $('#batchbar');
+    bb.classList.toggle('is-open', ids.length > 0);
+    bb.inert = !ids.length;
+    $('#bb-count').innerHTML = ids.length ? `已選 <b>${ids.length}</b> 件<span>${assignable ? `其中 ${assignable} 件待分文` : '選取中沒有待分文公文'}</span>` : '';
+    $('#bb-assign').disabled = !assignable;
+    ['#bb-remind', '#bb-export', '#bb-clear'].forEach(s => { $(s).disabled = !ids.length; });
+  }
+
+  function render() {
+    current = sortList(DOCS.filter(d => matches(d)));
+    renderTabs();
+    renderFilters();
+    renderSummary();
+    renderNote();
+    renderTable();
+    renderBatch();
+    rail.update();
+    rail.highlight(rowsEl.querySelector('tr[data-id]:hover')?.dataset.id || null);
+  }
+
+  /* ── 狀態變更 ── */
+  function setView(v) {
+    state.view = v;
+    if (state.node && !VIEWS[v].stages.includes(stageOf(state.node))) state.node = null;
+    state.sort = { key: VIEWS[v].sort[0], dir: VIEWS[v].sort[1] };
+    state.page = 1;
+    render();
+  }
+  function setNode(node) {
+    state.node = node;
+    state.page = 1;
+    if (node && !VIEWS[state.view].stages.includes(stageOf(node))) {
+      // 目前檢視不可能有這個關卡的公文：切到包含它的檢視，而不是給一張空清單
+      const v = viewFor(stageOf(node));
+      App.toast(`已切換到「${VIEWS[v].label}」，顯示${nodeName(node)}關卡的公文`, { tone: 'token', duration: 3200 });
+      $(`#views .tab[data-value="${v}"]`).click();
+      return;
+    }
+    render();
+  }
+  function clearFilters() {
+    state.node = null; state.speeds = []; state.unit = 'all'; state.secret = 'all'; state.page = 1;
+    setQuery('');
+    $('#q').value = '';
+    render();
+  }
+  function setSelected(ids, on) {
+    ids.forEach(id => { if (on) state.selected.add(id); else state.selected.delete(id); });
+    $$('#rows tr[data-id]').forEach(tr => {
+      const s = state.selected.has(tr.dataset.id);
+      tr.classList.toggle('is-selected', s);
+      tr.querySelector('[data-pick]').checked = s;
+    });
+    syncCheckAll();
+    renderBatch();
+    rail.update();
+  }
+
+  $('#views').addEventListener('tabchange', e => setView(e.detail.value));
+  rail.on('onPick', key => setNode(state.node === key ? null : key));
+  rail.on('onHoverDoc', id => $$('#rows tr[data-id]').forEach(tr => tr.classList.toggle('is-linked', tr.dataset.id === id)));
+  $('#rail-clear').addEventListener('click', () => setNode(null));
+
+  $('#q').addEventListener('input', e => { setQuery(e.target.value.trim().slice(0, 60)); state.page = 1; render(); });
+  $('#speed-chips').addEventListener('change', e => { state.speeds = e.detail.values; state.page = 1; render(); });
+  D.units.forEach(u => $('#unit-sel').insertAdjacentHTML('beforeend', `<option value="${u.code}">${u.org}</option>`));
+  $('#unit-sel').addEventListener('change', e => { state.unit = e.target.value; state.page = 1; render(); });
+  $('#secret-sel').addEventListener('change', e => { state.secret = e.target.value; state.page = 1; render(); });
+  $('#stage-sel').addEventListener('change', e => setNode(e.target.value || null));
+  $('#sort-sel').innerHTML = Object.keys(SORT_LABEL).flatMap(k => ['asc', 'desc'].map((dir, i) => `<option value="${k}:${dir}">${SORT_LABEL[k]} ${SORT_DIR_LABEL[k][i]}</option>`)).join('');
+  $('#sort-sel').addEventListener('change', e => { const [key, dir] = e.target.value.split(':'); state.sort = { key, dir }; state.page = 1; render(); });
+  $('#per-sel').addEventListener('change', e => { state.per = +e.target.value; state.page = 1; render(); });
+  $('#clear-btn').addEventListener('click', clearFilters);
+
+  $$('.dl-table th[data-sort] .sort').forEach(b => b.addEventListener('click', () => {
+    const key = b.closest('th').dataset.sort;
+    state.sort = state.sort.key === key ? { key, dir: state.sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'id' ? 'desc' : 'asc' };
+    state.page = 1;
+    render();
+  }));
+
+  $('#pills').addEventListener('click', e => {
+    const b = e.target.closest('[data-unpill]');
+    if (!b) return;
+    const k = b.dataset.unpill;
+    if (k === 'node') state.node = null;
+    else if (k.startsWith('speed:')) state.speeds = state.speeds.filter(s => s !== k.slice(6));
+    else if (k === 'unit') state.unit = 'all';
+    else if (k === 'secret') state.secret = 'all';
+    else if (k === 'q') { setQuery(''); $('#q').value = ''; }
+    state.page = 1;
+    render();
+  });
+
+  $('#pager').addEventListener('click', e => {
+    const b = e.target.closest('[data-page]');
+    if (!b || b.disabled) return;
+    state.page = +b.dataset.page;
+    render();
+    const top = $('.dl-list').getBoundingClientRect().top;
+    if (top < 0) $('.dl-list').scrollIntoView({ behavior: App.reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  });
+
+  $('.dl-list').addEventListener('click', e => {
+    if (e.target.closest('[data-clear]')) clearFilters();
+    else if (e.target.closest('[data-view-all]')) { clearFilters(); $('#views .tab[data-value="all"]').click(); }
+    else if (e.target.closest('[data-assign]')) openAssign([e.target.closest('[data-assign]').dataset.assign]);
+    else if (e.target.closest('[data-assign-all]')) openAssign(current.filter(d => d.stage === 'assign').map(d => d.id));
+    else if (e.target.closest('[data-pick-all]')) {
+      setSelected(current.map(d => d.id), true);
+      App.toast(`已選取 ${current.length} 件逾期公文，可從下方操作列發出催辦通知`, { tone: 'token' });
+    }
+  });
+
+  rowsEl.addEventListener('change', e => {
+    const cb = e.target.closest('[data-pick]');
+    if (cb) setSelected([cb.dataset.pick], cb.checked);
+  });
+  $('#check-all').addEventListener('change', e => setSelected(pageIds(), e.target.checked));
+  rowsEl.addEventListener('pointerover', e => rail.highlight(e.target.closest('tr[data-id]')?.dataset.id || null));
+  rowsEl.addEventListener('pointerleave', () => rail.highlight(null));
+  rowsEl.addEventListener('focusin', e => rail.highlight(e.target.closest('tr[data-id]')?.dataset.id || null));
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return;
+    e.preventDefault();
+    $('#q').focus();
+  });
+
+  /* ── 匯出與催辦 ── */
+  function exportCsv(docs, filename) {
+    const cols = [
+      ['收文號', d => d.id], ['收文時間', d => `${fmt.dateFull(d.received)} ${fmt.time(d.received)}`], ['主旨', d => d.subject],
+      ['來文機關', d => d.from], ['來文字號', d => d.ref || ''], ['類別', d => d.kind],
+      ['速別', d => D.speeds[d.speed].label], ['密等', d => D.secrets[d.secret].label],
+      ['目前關卡', d => d.stage === 'closed' ? '已結案' : App.isOpen(d) ? App.stageLabel(d) : App.stage(d.stage).label],
+      ['承辦單位', d => d.owner ? `${App.unit(d.unit).org}${App.unit(d.unit).name}` : ''], ['承辦人', d => d.owner ? App.person(d.owner).name : ''],
+      ['限辦日', d => fmt.dateFull(d.due)], ['期限狀態', d => App.dueState(d).label],
+    ];
+    const cell = v => /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    const lines = [cols.map(c => c[0]).join(','), ...docs.map(d => cols.map(c => cell(String(c[1](d)))).join(','))];
+    // 加 BOM，讓試算表軟體以 UTF-8 開啟中文
+    const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    App.toast(`已匯出 ${docs.length} 筆公文（${filename}）`, { tone: 'ok' });
+  }
+  const stamp = () => fmt.roc(App.now()).replace(/\./g, '');
+  $('#export-btn').addEventListener('click', () => {
+    if (!current.length) { App.toast('目前清單沒有公文可匯出', { tone: 'warn' }); return; }
+    exportCsv(current, `公文清單_${VIEWS[state.view].label}_${stamp()}.csv`);
+  });
+  $('#bb-export').addEventListener('click', () => exportCsv(DOCS.filter(d => state.selected.has(d.id)), `公文清單_選取_${stamp()}.csv`));
+  $('#bb-clear').addEventListener('click', () => setSelected([...state.selected], false));
+  $('#bb-remind').addEventListener('click', () => {
+    const open = [...state.selected].map(App.doc).filter(App.isOpen);
+    if (!open.length) { App.toast('選取的公文都已決行，不需要催辦', { tone: 'warn' }); return; }
+    const people = [...new Set(open.flatMap(App.actors))].map(id => App.person(id).name);
+    App.toast(`已對 ${open.length} 件公文發出催辦，通知 ${people.length} 位處理人（${people.slice(0, 3).join('、')}${people.length > 3 ? ' 等' : ''}）`, { tone: 'ok', duration: 5200 });
+  });
+  $('#bb-assign').addEventListener('click', () => openAssign([...state.selected]));
+  $('#assign-all-btn').addEventListener('click', () => openAssign(DOCS.filter(d => d.stage === 'assign').map(d => d.id)));
+
+  /* ── 分文對話框 ─────────────────────────────────────── */
+  const modal = $('#assign-modal');
+  const adSvg = $('#as-diagram');
+  let as = null; // { items: [{id, suggested, unit, owner}], skipped, base, busy }
+
+  const AD = { W: 320, top: 14, row: 32, TX: 62, MX: 102, GX: 144, GR: 19, BX: 182, UX: 198, UW: 114 };
+  const adGeo = n => {
+    const H = AD.top * 2 + AD.row * D.units.length, cy = H / 2;
+    const step = n > 1 ? Math.min(28, (H - 60) / (n - 1)) : 0;
+    return { H, cy, tokY: j => cy + (j - (n - 1) / 2) * step, unitY: i => AD.top + AD.row * i + AD.row / 2 };
+  };
+  // 正交折線去掉重複點與共線點，App.Flow.pathD 才不會遇到零長度線段
+  function cleanPts(pts) {
+    const out = [];
+    pts.forEach(p => { const l = out[out.length - 1]; if (!l || Math.abs(l[0] - p[0]) > .5 || Math.abs(l[1] - p[1]) > .5) out.push(p); });
+    for (let i = out.length - 2; i > 0; i--) {
+      const [a, b, c] = [out[i - 1], out[i], out[i + 1]];
+      if ((Math.abs(a[0] - b[0]) < .5 && Math.abs(b[0] - c[0]) < .5) || (Math.abs(a[1] - b[1]) < .5 && Math.abs(b[1] - c[1]) < .5)) out.splice(i, 1);
+    }
+    return out;
+  }
+  const inPts = (g, y) => [[AD.TX + 8, y], [AD.MX, y], [AD.MX, g.cy], [AD.GX - AD.GR, g.cy]];
+  const outPts = (g, y) => [[AD.GX + AD.GR, g.cy], [AD.BX, g.cy], [AD.BX, y], [AD.UX - 1, y]];
+
+  function renderDiagram() {
+    const g = adGeo(as.items.length);
+    const used = countBy(as.items, it => it.unit);
+    let s = `<defs><marker id="dl-ad-arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path class="dl-ad-arrow" d="M0 1L10 5L0 9Z"/></marker><marker id="dl-ad-arr-on" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="dl-ad-arrow dl-ad-arrow--on" d="M0 1L10 5L0 9Z"/></marker></defs>`;
+    // 未使用的順序流先畫，選中的疊在上面
+    const order = D.units.map((u, i) => [u, i]).sort((a, b) => (used[a[0].code] ? 1 : 0) - (used[b[0].code] ? 1 : 0));
+    order.forEach(([u, i]) => { const on = !!used[u.code]; s += `<path class="dl-ad-edge${on ? ' is-on' : ''}" d="${App.Flow.pathD(cleanPts(outPts(g, g.unitY(i))), 6)}" marker-end="url(#dl-ad-arr${on ? '-on' : ''})"/>`; });
+    as.items.forEach((it, j) => { s += `<path class="dl-ad-in" d="${App.Flow.pathD(cleanPts(inPts(g, g.tokY(j))), 6)}"/>`; });
+    s += `<text class="dl-ad-gwlabel" x="${AD.GX}" y="${g.cy - 28}">分文</text><path class="dl-ad-shape" d="M${AD.GX} ${g.cy - AD.GR}L${AD.GX + AD.GR} ${g.cy}L${AD.GX} ${g.cy + AD.GR}L${AD.GX - AD.GR} ${g.cy}Z"/><path class="dl-ad-mark" d="M${AD.GX - 6.5} ${g.cy - 6.5}L${AD.GX + 6.5} ${g.cy + 6.5}M${AD.GX + 6.5} ${g.cy - 6.5}L${AD.GX - 6.5} ${g.cy + 6.5}"/>`;
+    D.units.forEach((u, i) => {
+      const y = g.unitY(i), n = used[u.code] || 0;
+      s += `<g class="dl-ad-unit${n ? ' is-on' : ''}" data-unit="${u.code}"><rect class="dl-ad-box" x="${AD.UX}" y="${y - 12}" width="${AD.UW}" height="24" rx="7"/><text class="dl-ad-name" x="${AD.UX + 10}" y="${y}">${u.org}</text>${n ? `<circle class="dl-ad-n" cx="${AD.UX + AD.UW - 14}" cy="${y}" r="9"/><text class="dl-ad-ntext" x="${AD.UX + AD.UW - 14}" y="${y}">${n}</text>` : ''}</g>`;
+    });
+    as.items.forEach((it, j) => {
+      const y = g.tokY(j);
+      s += `<g data-tok="${it.id}"><circle class="dl-ad-glow" cx="${AD.TX}" cy="${y}" r="11"/><circle class="dl-ad-dot" cx="${AD.TX}" cy="${y}" r="6.5"/><text class="dl-ad-id" x="${AD.TX - 15}" y="${y}">${it.id.slice(-4)}</text></g>`;
+    });
+    adSvg.setAttribute('viewBox', `0 0 ${AD.W} ${g.H}`);
+    adSvg.classList.remove('is-flying');
+    adSvg.innerHTML = s;
+  }
+
+  // 負載平衡：該科在辦件數 + 本批已預定給他的件數，取最少者
+  function pickOwner(it) {
+    const staff = App.unit(it.unit).staff;
+    const load = pid => (as.base[pid] || 0) + as.items.filter(x => x !== it && x.owner === pid).length;
+    return staff.reduce((best, pid) => load(pid) < load(best) ? pid : best, staff[0]);
+  }
+  const noteRequired = () => as.items.some(it => it.unit !== it.suggested);
+
+  function renderAssignList() {
+    $('#as-list').innerHTML = as.items.map(it => {
+      const d = App.doc(it.id), sug = App.unit(it.suggested);
+      const unitOpts = D.units.map(u => `<option value="${u.code}"${u.code === it.unit ? ' selected' : ''}>${u.org} ${u.name}${u.code === it.suggested ? '（建議）' : ''}</option>`).join('');
+      const ownerOpts = App.unit(it.unit).staff.map(pid => {
+        const p = App.person(pid), n = (as.base[pid] || 0) + as.items.filter(x => x !== it && x.owner === pid).length;
+        return `<option value="${pid}"${pid === it.owner ? ' selected' : ''}>${p.name}（${p.title}）· 在辦 ${n} 件</option>`;
+      }).join('');
+      return `<li class="dl-as-item${it.unit !== it.suggested ? ' is-changed' : ''}" data-id="${it.id}">
+        <span class="dl-as-dot" aria-hidden="true"></span>
+        <div class="dl-as-doc">
+          <p class="dl-as-top"><span class="doc-no">${d.id}</span>${App.speedBadge(d.speed)}${d.secret !== 'none' ? App.secretBadge(d.secret) : ''}<span class="dl-as-wait">已等 ${fmt.dur(dwellOf(d))}</span></p>
+          <p class="dl-as-subj">${esc(d.subject)}</p>
+          <p class="dl-as-from">${esc(d.from)} · ${d.kind} · 限辦 ${fmt.date(d.due)}</p>
+        </div>
+        <div class="dl-as-route">
+          <select class="select" id="as-u-${d.id}" data-as="unit" aria-label="${d.id} 承辦單位">${unitOpts}</select>
+          <select class="select" id="as-o-${d.id}" data-as="owner" aria-label="${d.id} 承辦人">${ownerOpts}</select>
+        </div>
+        ${it.unit !== it.suggested ? `<p class="dl-as-changed">改分：系統建議 ${esc(sug.org)}${esc(sug.name)}</p>` : ''}
+      </li>`;
+    }).join('');
+  }
+
+  function renderAssign() {
+    const n = as.items.length;
+    $('#as-n').textContent = `${n} 件`;
+    $('#as-submit').textContent = `確認分文（${n} 件）`;
+    const allSug = as.items.every(it => it.unit === it.suggested);
+    const same = as.items.every(it => it.unit === as.items[0].unit);
+    $('#as-bulk').innerHTML = `<option value="suggest">依系統建議（逐件分流）</option><option value="mixed" disabled>逐件指定</option>` + D.units.map(u => `<option value="${u.code}">${u.org} ${u.name}</option>`).join('');
+    $('#as-bulk').value = allSug ? 'suggest' : same ? as.items[0].unit : 'mixed';
+    renderAssignList();
+    renderDiagram();
+    const need = noteRequired();
+    $('#as-note-req').hidden = !need;
+    $('#as-note-hint').textContent = need ? '有公文改分至非建議單位，請說明理由；附註會寫入簽核軌跡。' : '選填，會寫入簽核軌跡。';
+    if (!need) $('#as-note-field').classList.remove('is-invalid');
+    const skip = $('#as-skip');
+    skip.hidden = !as.skipped;
+    skip.innerHTML = as.skipped ? `${App.icon('alert')}<span>另有 ${as.skipped} 件選取的公文不在分文關卡（已分文或尚未收文登錄），本次將略過。</span>` : '';
+  }
+
+  function openAssign(ids) {
+    const docs = ids.map(App.doc).filter(d => d && d.stage === 'assign');
+    if (!docs.length) { App.toast('沒有位於分文關卡的公文可以分文', { tone: 'warn' }); return; }
+    const base = countBy(DOCS.filter(d => App.isOpen(d) && d.owner), d => d.owner);
+    as = { items: docs.map(d => ({ id: d.id, suggested: d.unit, unit: d.unit, owner: null })), skipped: ids.length - docs.length, base, busy: false };
+    as.items.forEach(it => { it.owner = pickOwner(it); });
+    $('#as-note').value = '';
+    $('#as-note-field').classList.remove('is-invalid');
+    $('#as-submit').disabled = false;
+    renderAssign();
+    App.modal.open(modal);
+  }
+
+  $('#as-list').addEventListener('change', e => {
+    const sel = e.target.closest('[data-as]');
+    if (!sel || !as || as.busy) return;
+    const it = as.items.find(x => x.id === sel.closest('[data-id]').dataset.id);
+    if (sel.dataset.as === 'unit') { it.unit = sel.value; it.owner = pickOwner(it); } else it.owner = sel.value;
+    const keep = sel.id;
+    renderAssign();
+    $('#' + keep).focus();
+  });
+  $('#as-bulk').addEventListener('change', e => {
+    if (!as || as.busy || e.target.value === 'mixed') return;
+    as.items.forEach(it => { it.unit = e.target.value === 'suggest' ? it.suggested : e.target.value; it.owner = null; });
+    as.items.forEach(it => { it.owner = pickOwner(it); });
+    renderAssign();
+  });
+  $('#as-note').addEventListener('input', () => { if ($('#as-note').value.trim()) $('#as-note-field').classList.remove('is-invalid'); });
+  modal.addEventListener('cancel', e => { if (as && as.busy) e.preventDefault(); });
+  modal.addEventListener('close', () => { if (as && !as.busy) as = null; });
+
+  // 確認後 token 沿著選定的順序流跑到承辦單位，再真正寫入資料
+  function flyTokens() {
+    const g = adGeo(as.items.length);
+    adSvg.classList.add('is-flying');
+    if (App.reducedMotion()) return Promise.resolve();
+    return Promise.all(as.items.map((it, j) => new Promise(resolve => {
+      const ui = D.units.findIndex(u => u.code === it.unit);
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('class', 'dl-ad-trace');
+      path.setAttribute('d', App.Flow.pathD(cleanPts([[AD.TX, g.tokY(j)], ...inPts(g, g.tokY(j)).slice(1), ...outPts(g, g.unitY(ui))]), 6));
+      adSvg.appendChild(path);
+      const len = path.getTotalLength();
+      const grp = adSvg.querySelector(`[data-tok="${it.id}"]`);
+      const dots = $$('circle', grp);
+      const t0 = performance.now() + j * 90, dur = 720;
+      const step = now => {
+        const k = Math.min(1, Math.max(0, (now - t0) / dur));
+        const e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+        const p = path.getPointAtLength(e * len);
+        dots.forEach(c => { c.setAttribute('cx', p.x.toFixed(1)); c.setAttribute('cy', p.y.toFixed(1)); });
+        if (k < 1) { requestAnimationFrame(step); return; }
+        adSvg.querySelector(`[data-unit="${it.unit}"]`)?.classList.add('is-hit');
+        resolve();
+      };
+      requestAnimationFrame(step);
+    })));
+  }
+
+  $('#assign-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!as || as.busy || !modal.open) return;
+    const note = $('#as-note').value.trim();
+    if (noteRequired() && !note) {
+      $('#as-note-field').classList.add('is-invalid');
+      $('#as-note').focus();
+      return;
+    }
+    as.busy = true;
+    $('#as-submit').disabled = true;
+    const job = as;
+    await flyTokens();
+    await new Promise(r => setTimeout(r, App.reducedMotion() ? 0 : 260));
+    job.busy = false;
+    as = null;
+    App.modal.close(modal);
+
+    const groups = new Map();
+    job.items.forEach(it => {
+      const k = `${it.unit}|${it.owner}`;
+      if (!groups.has(k)) groups.set(k, { unit: it.unit, owner: it.owner, ids: [] });
+      groups.get(k).ids.push(it.id);
+    });
+    // 先移出選取，資料事件觸發的重繪才不會留著已分走的勾選
+    job.items.forEach(it => state.selected.delete(it.id));
+    const undos = [];
+    let count = 0;
+    groups.forEach(gp => {
+      const u = App.unit(gp.unit), p = App.person(gp.owner);
+      const r = App.assign(gp.ids, gp.unit, gp.owner, note ? `分 ${u.org} ${u.name}，承辦人 ${p.name}；附註：${note}` : '');
+      undos.push(r);
+      count += r.count;
+    });
+    const moved = job.items.map(it => it.id);
+    rail.flash(moved);
+    const list = [...groups.values()];
+    const text = list.length === 1
+      ? `已將 ${count} 件分至${App.unit(list[0].unit).org}${App.unit(list[0].unit).name}（承辦人 ${App.person(list[0].owner).name}）`
+      : `已分文 ${count} 件，分流至 ${new Set(list.map(x => x.unit)).size} 個單位、${list.length} 位承辦人`;
+    App.toast(text, {
+      tone: 'ok', duration: 7000,
+      action: { label: '復原', onClick: () => { undos.reverse().forEach(r => r.undo()); rail.flash(moved); App.toast(`已復原，${count} 件公文回到分文關卡`, { tone: 'token' }); } },
+    });
+  });
+
+  /* ── 啟動 ── */
+  if (state.view !== 'open') $(`#views .tab[data-value="${state.view}"]`).click();
+  else render();
+  App.on('docs', render);
+});
+</script>
+</body>
+</html>

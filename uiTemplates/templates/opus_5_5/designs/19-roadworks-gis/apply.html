@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>線上申請 — 澄港市 道路挖掘 管線施工許可</title>
+<meta name="description" content="澄港市道路挖掘許可線上申請：在圖台框選挖掘範圍、即時計算面積與衝突比對、拖曳調整施工期間、上傳附件並送審。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Noto+Sans+TC:wght@400..700&family=Roboto+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 草稿列與步驟條 ---------- */
+  .ap-draft { align-items: center; margin-bottom: 14px; }
+  .ap-draft .callout__body { flex: 1; }
+  .ap-draft__act { display: flex; gap: 6px; flex: none; }
+  .ap-stepbar { padding: 14px 18px; margin-bottom: 16px; }
+  .ap-step-link { display: flex; align-items: center; gap: 10px; min-width: 0; border-radius: var(--r); }
+  .ap-step-link:hover .step__label { color: var(--ink); }
+  .step__sub { display: block; margin-top: 1px; font: 500 10.5px var(--font-mono); color: var(--ink-3); }
+  .step.ap-warn .step__num { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .step.ap-warn .step__sub { color: var(--danger-ink); }
+
+  /* ---------- 版面：地圖＋檢核側欄（sticky），表單接在地圖下方 ---------- */
+  .ap-layout {
+    display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 16px; align-items: start;
+    grid-template-areas: "map side" "form side";
+  }
+  .ap-mapcard { grid-area: map; overflow: hidden; }
+  .ap-side { grid-area: side; position: sticky; top: calc(var(--topbar-h) + 16px); }
+  .ap-form { grid-area: form; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .ap-map { --ap-u: var(--ink-3); height: 620px; }
+  .ap-seglabel { font: 500 11px var(--font-mono); color: var(--ink-3); letter-spacing: .06em; white-space: nowrap; }
+
+  /* ---------- 地圖上的自繪圖形（世界座標；線寬一律 non-scaling） ---------- */
+  .ap-poly { fill: var(--ap-u); fill-opacity: .34; transition: fill-opacity var(--dur-2); }
+  .ap-dots { fill: url(#apDots); pointer-events: none; }
+  /* 既有許可在本頁退後一層，讓本案範圍成為主角 */
+  .ap-map .work__fill { fill-opacity: .24; }
+  .ap-map .work__halo { stroke-opacity: .12; }
+  .ap-poly.is-open { fill-opacity: .14; }
+  .ap-poly.is-bad { fill: var(--danger); fill-opacity: .1; }
+  .ap-edge { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .ap-edge--bad { stroke: var(--danger); }
+  .ap-edge--ants { stroke: #FFFFFF; stroke-dasharray: 5 5; animation: ap-ants .7s linear infinite; }
+  .ap-rubber { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  .ap-rubber--close { stroke-opacity: .32; }
+  .ap-handle { fill: #FFFFFF; stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; transition: stroke var(--dur-1), fill var(--dur-1); }
+  .ap-handle.is-first { fill: var(--ink); }
+  .ap-handle.is-snap { fill: var(--accent); stroke: var(--accent); }
+  .ap-editing .ap-handle { pointer-events: all; cursor: move; }
+  .ap-editing .ap-handle:hover, .ap-handle.is-drag { stroke: var(--accent); }
+  .ap-dim { font-family: var(--font-mono); font-weight: 500; fill: var(--ink-2); stroke: #FFFFFF; paint-order: stroke; stroke-linejoin: round; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .ap-tag { font-family: var(--font-sans); font-weight: 700; fill: var(--ink); stroke: rgba(255, 255, 255, .95); paint-order: stroke; stroke-linejoin: round; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .ap-ghost { fill: var(--u); fill-opacity: .08; stroke: var(--u); stroke-width: 2; stroke-dasharray: 2 4; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; transition: fill-opacity var(--dur-2); }
+  .ap-ghost.is-hot { fill-opacity: .28; stroke-dasharray: none; stroke-width: 3; }
+  .ap-scan { pointer-events: none; }
+  .ap-hatchs .clash { pointer-events: none; }
+  .ap-rec { margin-left: 2px; height: 18px; font-size: 10.5px; }
+  /* 繪製中：既有範圍與衝突不攔截點擊，點擊一律落到地圖上成為頂點 */
+  .ap-map.is-drawing .work, .ap-map.is-drawing .clash, .ap-map.is-drawing .pin { pointer-events: none; }
+
+  .ap-hint {
+    position: absolute; z-index: 2; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: var(--r-pill);
+    background: rgba(24, 32, 29, .88); color: #FFFFFF; font-size: 12.5px; white-space: nowrap;
+    pointer-events: none; box-shadow: var(--sh-2); transition: opacity var(--dur-2);
+  }
+  .ap-hint .kbd { background: transparent; color: #FFFFFF; border-color: rgba(255, 255, 255, .45); }
+  .ap-hint i { width: 1px; height: 12px; background: rgba(255, 255, 255, .3); }
+  .ap-tip {
+    position: absolute; z-index: 3; left: 0; top: 0; pointer-events: none;
+    padding: 4px 8px; border-radius: var(--r-xs); background: var(--ink); color: #FFFFFF;
+    font: 500 11.5px var(--font-mono); white-space: nowrap; box-shadow: var(--sh-2);
+    opacity: 0; transition: opacity var(--dur-1);
+  }
+  .ap-tip.is-on { opacity: 1; }
+  .ap-tip small { margin-left: 6px; font: 400 11px var(--font-sans); color: rgba(255, 255, 255, .72); }
+
+  /* ---------- 量測讀值條（圖框標題欄語彙） ---------- */
+  .ap-measure { display: grid; grid-template-columns: 1.15fr .9fr .6fr .8fr 1.7fr; border-top: 1px solid var(--ink); background: var(--surface); }
+  .ap-measure > div { padding: 11px 16px 12px; border-left: 1px solid var(--line-2); min-width: 0; }
+  .ap-measure > div:first-child { border-left: 0; }
+  .ap-measure .readout__v { font-size: 24px; white-space: nowrap; }
+  .ap-measure__txt { margin-top: 4px; font-size: 14px; font-weight: 600; line-height: 1.35; }
+  .ap-measure__txt small { display: block; font: 500 11.5px var(--font-mono); color: var(--ink-3); }
+
+  /* ---------- 側欄：即時檢核 ---------- */
+  .ap-sidepanel { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100vh - var(--topbar-h) - 32px); }
+  .ap-sidepanel > :not(.ap-side__scroll) { flex: none; }
+  .ap-state { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 2px 12px; align-items: center; padding: 16px; border-bottom: 1px solid var(--line); }
+  .ap-state__icon { grid-row: span 2; position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-3); }
+  .ap-state__icon .icon { width: 22px; height: 22px; }
+  .ap-state__title { font-size: 18px; font-weight: 700; line-height: 1.3; }
+  .ap-state__desc { font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+  .ap-state--ok .ap-state__icon { background: var(--ok-soft); color: var(--ok-ink); box-shadow: inset 0 0 0 2px var(--ok); }
+  .ap-state--ok .ap-state__title { color: var(--ok-ink); }
+  .ap-state--warn .ap-state__icon { background: var(--warn-soft); color: var(--warn-ink); }
+  .ap-state--danger { background: linear-gradient(90deg, var(--danger-soft), var(--surface) 85%); }
+  .ap-state--danger .ap-state__icon { background: var(--danger); color: #FFFFFF; }
+  .ap-state--danger .ap-state__icon::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--danger); opacity: 0; animation: ring-out 1.6s var(--ease-out) infinite; }
+  .ap-state--danger .ap-state__title { color: var(--danger-ink); }
+  .ap-state.is-update { animation: ap-flash .6s var(--ease-out); }
+  .ap-cflist .clash-item:last-child { border-bottom: 0; }
+  .ap-cflist:not(:empty) { border-bottom: 1px solid var(--line); }
+  .ap-side__group { padding: 12px 16px 2px; }
+  .ap-req { display: flex; flex-direction: column; padding: 4px 8px 10px; }
+  .ap-req a { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 10px; align-items: center; padding: 7px 8px; border-radius: var(--r); }
+  .ap-req a:hover { background: var(--surface-2); }
+  .ap-req__mark { grid-row: span 2; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; border: 1.5px dashed var(--line-3); color: var(--ink-4); }
+  .ap-req__mark .icon { width: 12px; height: 12px; stroke-width: 3; }
+  .ap-req .is-ok .ap-req__mark { background: var(--ink); border: 0; color: #FFFFFF; }
+  .ap-req .is-warn .ap-req__mark { background: var(--danger); border: 0; color: #FFFFFF; }
+  .ap-req__t { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .ap-req__d { font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+  .ap-req .is-warn .ap-req__d { color: var(--danger-ink); }
+  .ap-side__foot { padding: 14px 16px 16px; border-top: 1px solid var(--line); background: var(--surface-2); }
+  .ap-side__note { margin-top: 8px; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+
+  /* ---------- 表單 ---------- */
+  .ap-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+  .ap-span2 { grid-column: 1 / -1; }
+  .ap-utilshow { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 12px; border: 1px dashed var(--line-2); border-radius: var(--r); background: var(--surface-2); font-size: 12.5px; color: var(--ink-3); min-width: 0; }
+  .ap-unit { position: relative; }
+  .ap-unit .input { padding-right: 34px; font-family: var(--font-mono); }
+  .ap-unit__u { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font: 500 12px var(--font-mono); color: var(--ink-3); pointer-events: none; }
+  .ap-radios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .ap-radio { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); transition: border-color var(--dur-1), box-shadow var(--dur-1); }
+  .ap-radio:hover { border-color: var(--line-3); }
+  .ap-radio:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .ap-radio__t { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; }
+  .ap-radio__d { display: block; font: 500 11.5px var(--font-mono); color: var(--ink-3); }
+  .field.is-invalid .ap-radio { border-color: var(--danger); }
+  .ap-seg .seg { width: 100%; }
+  .ap-seg .seg > button { flex: 1; justify-content: center; }
+
+  /* 施工期間：工期讀值＋可拖曳的佔用時間條 */
+  .ap-periodbar { display: flex; align-items: flex-end; gap: 14px 28px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ap-periodbar .daterange .input { width: 156px; }
+  .ap-periodbar .readout__v { font-size: 22px; }
+  .ap-periodbar .hint { margin-left: auto; align-self: center; max-width: 240px; line-height: 1.5; }
+  .ap-periodwrap { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+  .ap-period { --ap-lw: 200px; position: relative; min-width: 680px; user-select: none; -webkit-user-select: none; }
+  .ap-phead { display: grid; grid-template-columns: var(--ap-lw) minmax(0, 1fr); height: 32px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  .ap-phead__lbl { display: flex; align-items: center; padding: 0 12px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); border-right: 1px solid var(--line); }
+  .ap-scale { position: relative; overflow: hidden; }
+  .ap-prow { display: grid; grid-template-columns: var(--ap-lw) minmax(0, 1fr); min-height: 46px; border-bottom: 1px solid var(--line); }
+  .ap-prow:last-child { border-bottom: 0; }
+  .ap-prow--self { background: var(--surface-2); }
+  .ap-prow__lbl { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 6px 12px; border-right: 1px solid var(--line); min-width: 0; font-size: 12.5px; line-height: 1.35; }
+  .ap-prow__lbl > span:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+  .ap-prow__lbl small { font-size: 11px; color: var(--ink-3); }
+  .ap-prow__lbl .is-clash { color: var(--danger-ink); font-weight: 600; }
+  .ap-track { position: relative; }
+  /* 時間條沿用共用 .gantt__bar，只調整列內上下留白 */
+  .ap-pbar { top: 12px; bottom: 12px; }
+  .ap-pbar--self {
+    top: 8px; bottom: 8px; z-index: 2; padding: 0 14px; justify-content: center; overflow: visible;
+    background: var(--ink); font-weight: 600; cursor: grab; touch-action: none; box-shadow: var(--sh-2);
+    transition: box-shadow var(--dur-1);
+  }
+  .ap-pbar--self.is-clash { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--danger), var(--sh-2); }
+  .ap-pbar--self.is-drag { cursor: grabbing; }
+  .ap-pbar--self:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .ap-grip { position: absolute; top: 0; bottom: 0; width: 12px; display: grid; place-items: center; cursor: ew-resize; }
+  .ap-grip::before { content: ''; width: 4px; height: 12px; border-left: 1px solid rgba(255, 255, 255, .75); border-right: 1px solid rgba(255, 255, 255, .75); }
+  .ap-grip--s { left: 0; }
+  .ap-grip--e { right: 0; }
+  .ap-pclash { position: absolute; top: 6px; bottom: 6px; z-index: 1; }
+  .ap-guides { position: absolute; top: 0; bottom: 0; left: var(--ap-lw); right: 0; pointer-events: none; }
+  .ap-lock { position: absolute; top: 32px; bottom: 0; left: 0; background: repeating-linear-gradient(-45deg, transparent 0 5px, rgba(28, 46, 36, .07) 5px 6px); border-right: 1.5px dashed var(--accent); }
+  .ap-lock span { position: absolute; right: 4px; bottom: 4px; font: 600 10px var(--font-mono); color: var(--accent-ink); background: var(--surface); padding: 0 3px; white-space: nowrap; }
+  .ap-today { position: absolute; top: 0; bottom: 0; border-left: 1.5px solid var(--danger); }
+  .ap-today span { position: absolute; top: 9px; left: 3px; font: 600 10px var(--font-mono); color: var(--danger-ink); background: var(--surface-2); padding: 0 3px; }
+  .ap-pempty { padding: 14px 16px; font-size: 12.5px; color: var(--ink-3); }
+  .ap-plegend { gap: 6px 16px; margin-top: 8px; }
+  .ap-suggest { margin-top: 12px; align-items: center; }
+  .ap-suggest .callout__body { flex: 1; }
+  .ap-suggest .btn { flex: none; }
+  #noteField { margin-top: 14px; }
+
+  /* 附件 */
+  .ap-files { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 20px; align-items: start; }
+  .ap-sublabel { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .ap-docs { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .ap-doc { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .ap-doc:last-child { border-bottom: 0; }
+  .ap-doc__mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; border: 1.5px dashed var(--line-3); color: var(--ink-4); }
+  .ap-doc__mark .icon { width: 12px; height: 12px; stroke-width: 3; }
+  .ap-doc.is-ok .ap-doc__mark { background: var(--ok); border: 0; color: #FFFFFF; }
+  .ap-doc.is-miss { background: #FFF8F7; }
+  .ap-doc.is-miss .ap-doc__mark { border: 1.5px solid var(--danger); color: var(--danger); }
+  .ap-doc__t { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .ap-doc__d { font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+  .ap-doc.is-miss .ap-doc__d { color: var(--danger-ink); }
+  .ap-files .dropzone { width: 100%; }
+  .ap-files .file-list { margin-top: 10px; }
+  .ap-files .file-row .select { width: 150px; }
+  .field.is-invalid .dropzone { border-color: var(--danger); }
+
+  /* 確認送審 */
+  .ap-final { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; }
+  .ap-final .kv dd { overflow-wrap: anywhere; }
+  .ap-fee { width: 100%; font-size: 13px; }
+  .ap-fee td { padding: 8px 0; border-bottom: 1px dashed var(--line-2); vertical-align: top; }
+  .ap-fee td:last-child { text-align: right; font-family: var(--font-mono); white-space: nowrap; padding-left: 12px; }
+  .ap-fee__f { display: block; font: 500 11px var(--font-mono); color: var(--ink-3); }
+  .ap-fee tfoot td { border-bottom: 0; border-top: 1.5px solid var(--ink); font-weight: 700; font-size: 15px; padding-top: 10px; }
+  .ap-fee caption { caption-side: bottom; text-align: left; padding-top: 8px; font-size: 11.5px; color: var(--ink-3); }
+  .ap-submitbar { flex-wrap: wrap; gap: 12px; padding: 14px 16px; color: var(--ink); font-size: 13px; }
+  .ap-agree { flex: 1; min-width: 260px; }
+  .ap-agree .check { align-items: flex-start; line-height: 1.55; }
+  .ap-agree .check input { margin-top: 2px; }
+
+  /* 送審完成 */
+  .ap-done { text-align: center; }
+  .ap-done__mark { display: block; width: 64px; height: 64px; margin: 2px auto 10px; }
+  .ap-done__mark circle { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 2.5; }
+  .ap-done__mark path { fill: none; stroke: var(--ok-ink); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 40; stroke-dashoffset: 40; animation: ap-draw .5s .15s var(--ease-out) forwards; }
+  .ap-done__id { font: 600 26px var(--font-mono); letter-spacing: .01em; }
+  .ap-done__sub { color: var(--ink-3); font-size: 13px; margin-top: 2px; }
+  .ap-done .flow { margin: 20px 0 14px; text-align: left; }
+  .ap-done__auto { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line); font-size: 13px; text-align: left; }
+  .ap-done__auto.is-danger { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger-ink); }
+  .ap-done__auto.is-ok { background: var(--ok-soft); border-color: var(--ok-line); color: var(--ok-ink); }
+  .ap-spin { width: 16px; height: 16px; flex: none; border: 2px solid var(--line-2); border-top-color: var(--ink); border-radius: 50%; animation: ap-spin .8s linear infinite; }
+  .ap-done__note { margin-top: 10px; font-size: 11.5px; color: var(--ink-3); }
+  .ap-mfields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+
+  @keyframes ap-ants { to { stroke-dashoffset: -10; } }
+  @keyframes ap-flash { from { background-color: var(--accent-soft); } }
+  @keyframes ap-spin { to { transform: rotate(360deg); } }
+  @keyframes ap-draw { to { stroke-dashoffset: 0; } }
+
+  @media (max-width: 1200px) {
+    .ap-layout { grid-template-columns: minmax(0, 1fr) 330px; }
+    .ap-measure { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ap-measure > div:nth-child(n + 4) { border-top: 1px solid var(--line-2); }
+    .ap-measure > div:nth-child(4) { border-left: 0; }
+    .ap-measure > div:nth-child(5) { grid-column: span 2; }
+    .ap-radios { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1040px) {
+    .ap-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "side" "form"; }
+    .ap-side { position: static; }
+    .ap-map { height: 520px; }
+    .ap-sidepanel { max-height: none; }
+    .ap-side__scroll { overflow: visible; }
+  }
+  @media (max-width: 760px) {
+    .ap-map { height: 440px; }
+    .ap-lbl, .step__sub { display: none; }
+    /* 目前步驟依內容取寬，其餘步驟分剩下的空間，標籤才不會壓到下一步 */
+    .steps .step.is-current { flex: none; }
+    .ap-stepbar { padding: 12px 14px; }
+    .ap-measure { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ap-measure > div { border-left: 0; border-top: 1px solid var(--line-2); padding: 10px 12px; }
+    .ap-measure > div:nth-child(-n + 2) { border-top: 0; }
+    .ap-measure > div:nth-child(2n) { border-left: 1px solid var(--line-2); }
+    .ap-measure > div:nth-child(5) { grid-column: 1 / -1; border-left: 0; }
+    .ap-measure .readout__v { font-size: 21px; }
+    .ap-fields, .ap-files, .ap-final, .ap-mfields { grid-template-columns: minmax(0, 1fr); }
+    .ap-periodbar { gap: 12px 28px; }
+    .ap-periodbar .field { flex: 1 1 100%; }
+    .ap-periodbar .daterange .input { width: auto; flex: 1; min-width: 0; }
+    .ap-periodbar .hint { margin-left: 0; max-width: none; }
+    .ap-period { --ap-lw: 118px; min-width: 760px; }
+    .ap-prow__lbl .ap-lbl-u { display: none; }
+    .ap-draft { flex-wrap: wrap; }
+    .ap-draft__act { width: 100%; }
+    .ap-draft__act .btn { flex: 1; }
+    .ap-suggest { flex-wrap: wrap; }
+    .ap-suggest .btn { width: 100%; }
+    .ap-submitbar .btn { flex: 1; }
+    .ap-files .file-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+    .ap-files .file-row .select { grid-column: 2 / -1; grid-row: 2; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ap-edge--ants, .ap-spin { animation: none !important; opacity: 1; }
+    .ap-done__mark path { animation: none !important; stroke-dashoffset: 0; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要內容</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="brand" href="index.html" aria-label="道路挖掘許可 首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#18201D"/>
+        <path d="M4.5 12.5H12M24 12.5h7.5" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M12 12.5 13.6 29h8.8L24 12.5" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="16" cy="25" r="2.5" fill="#F5A623"/>
+        <circle cx="20.4" cy="25" r="2.5" fill="#2F80ED"/>
+        <circle cx="18.2" cy="20.8" r="2.3" fill="#27AE60"/>
+        <path d="M14.5 7h7" stroke="#F5C518" stroke-width="2" stroke-dasharray="2 1.5"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">道路挖掘許可</span><span class="brand__sub">CHENGGANG · ROADWORKS</span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <a class="nav__link" href="index.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>地圖總覽</a>
+      <a class="nav__link" href="permits.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>許可清單<span class="nav__count" data-count="pending" title="審查中件數">10</span></a>
+      <a class="nav__link" href="permit.html"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>許可詳情</a>
+      <a class="nav__link" href="apply.html" aria-current="page"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 8 6l7 9 5-7"/><circle cx="4" cy="19" r="1.6"/><circle cx="8" cy="6" r="1.6"/><circle cx="15" cy="15" r="1.6"/><circle cx="20" cy="8" r="1.6"/></svg>線上申請</a>
+      <a class="nav__link nav__back" href="../../index.html">← 返回目錄</a>
+    </nav>
+    <div class="topbar__tools">
+      <button class="search-btn" type="button" data-search aria-label="快速搜尋許可"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>搜尋案號、路段</span><span class="kbd">/</span></button>
+      <span class="today-chip" data-today>2026/10/22 週四 10:24</span>
+      <button class="icon-btn" type="button" data-notify aria-label="通知" aria-haspopup="true" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><span class="icon-btn__dot"></span></button>
+      <button class="user" type="button" data-user aria-label="使用者選單：林雅雯" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true">林</span><span class="user__name">林雅雯<small>道路管線科・承辦</small></span></button>
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <button class="menu-btn" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="page-head">
+    <div class="page-head__main">
+      <p class="eyebrow"><span class="ref">FORM-04</span>線上申請</p>
+      <h1 class="page-title">道路挖掘許可申請</h1>
+      <p class="page-desc">在圖台框選挖掘範圍，系統即時計算面積並比對 <b id="liveTotal">46</b> 件在案許可；送出後依序進行<b>自動衝突檢查 → 會辦（交通・管線協調・環保）→ 核准</b>。申請須於開工日 7 日前提出。</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button" id="btnGuide"><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></svg>申請須知</button>
+      <button class="btn" type="button" data-save><svg class="icon icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>儲存草稿</button>
+    </div>
+  </div>
+
+  <div class="callout callout--info ap-draft" id="draftBar">
+    <span class="callout__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>
+    <div class="callout__body"><p class="callout__title">已回復 10/21（三）16:05 自動儲存的草稿</p><p id="draftDesc">自來水處・DN200 配水管汰換（港埕路二段）</p></div>
+    <div class="ap-draft__act"><button class="btn btn--sm" type="button" id="btnDiscard">捨棄草稿，重新申請</button></div>
+  </div>
+
+  <nav class="panel ap-stepbar" aria-label="申請進度"><ol class="steps" id="steps"></ol></nav>
+
+  <div class="ap-layout">
+    <section class="panel ap-mapcard" id="secShape" aria-labelledby="mapTitle">
+      <header class="panel__head">
+        <h2 class="panel__title" id="mapTitle"><span class="ref">A1</span>施工範圍框選</h2>
+        <p class="panel__sub hide-sm">點擊放置頂點・點回起點閉合・閉合後可拖曳頂點微調</p>
+        <div class="panel__actions">
+          <span class="ap-seglabel hide-sm" id="mdLabel">圖面日期</span>
+          <div class="seg" role="group" aria-labelledby="mdLabel" id="mapDateSeg">
+            <button type="button" data-md="today" aria-pressed="false">今日 10/22</button>
+            <button type="button" data-md="start" aria-pressed="true">開工日 <span id="mdStart">11/02</span></button>
+          </div>
+        </div>
+      </header>
+      <div class="ap-map" id="map"></div>
+      <div class="ap-measure" aria-live="polite">
+        <div class="readout"><span class="readout__k">挖掘面積</span><span class="readout__v"><span id="mArea">0</span><span class="readout__u">m²</span></span></div>
+        <div class="readout"><span class="readout__k">周長</span><span class="readout__v"><span id="mPerim">0</span><span class="readout__u">m</span></span></div>
+        <div class="readout"><span class="readout__k">頂點</span><span class="readout__v" id="mVerts">0</span></div>
+        <div><span class="readout__k">行政區</span><p class="ap-measure__txt" id="mDistrict">—</p></div>
+        <div><span class="readout__k">路段・里程</span><p class="ap-measure__txt" id="mRoad">—</p></div>
+      </div>
+    </section>
+
+    <aside class="ap-side" id="secCheck" aria-label="即時檢核">
+      <section class="panel ap-sidepanel" data-anim aria-labelledby="sideTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="sideTitle"><span class="ref">A2</span>即時衝突檢核</h2>
+          <span class="badge" id="shapeBadge" style="margin-left:auto">繪製中</span>
+        </header>
+        <div class="ap-state" id="checkState" aria-live="polite"></div>
+        <div class="scroll-area ap-side__scroll">
+          <div class="ap-cflist" id="cfList"></div>
+          <p class="kicker ap-side__group">送審條件</p>
+          <ol class="ap-req" id="reqList"></ol>
+        </div>
+        <div class="ap-side__foot">
+          <button class="btn btn--primary btn--lg btn--block" type="button" data-submit>送出審查</button>
+          <p class="ap-side__note">送出後由系統自動比對衝突，無衝突者分送交通局、管線協調股、環保局會辦；有衝突者轉管線協調股協調。</p>
+        </div>
+      </section>
+    </aside>
+
+    <div class="ap-form">
+      <section class="panel" id="secInfo" data-reveal aria-labelledby="infoTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="infoTitle"><span class="ref">B1</span>工程資料</h2>
+          <p class="panel__sub">管線類別依申請單位帶入</p>
+        </header>
+        <div class="panel__body ap-fields">
+          <div class="field" data-f="unit"><label class="label req" for="fUnit">申請單位（管線機構）</label><select class="select" id="fUnit"></select><p class="field__error"></p></div>
+          <div class="field"><span class="label">管線類別・承辦窗口</span><div class="ap-utilshow" id="utilShow">選擇申請單位後帶入</div></div>
+          <div class="field" data-f="contact"><label class="label req" for="fContact">聯絡人</label><input class="input" id="fContact" autocomplete="name"><p class="field__error"></p></div>
+          <div class="field" data-f="phone"><label class="label req" for="fPhone">聯絡電話</label><input class="input mono" id="fPhone" inputmode="tel" autocomplete="tel" placeholder="(06) 721-5530 #214"><p class="field__error"></p></div>
+          <div class="field ap-span2" data-f="title"><label class="label req" for="fTitle">工程名稱</label><input class="input" id="fTitle" maxlength="40" placeholder="例：DN200 配水管汰換（港埕路二段）"><p class="field__error"></p></div>
+          <div class="field" data-f="contractor"><label class="label req" for="fContractor">施工廠商</label><select class="select" id="fContractor"></select><p class="field__error"></p></div>
+          <div class="field" data-f="depth"><label class="label req" for="fDepth">開挖深度</label><div class="ap-unit"><input class="input" id="fDepth" inputmode="decimal" placeholder="1.5"><span class="ap-unit__u">m</span></div><p class="field__error"></p></div>
+          <div class="field ap-seg ap-span2" data-f="method"><span class="label" id="methodLbl">工法</span>
+            <div class="seg" role="group" aria-labelledby="methodLbl" id="fMethod">
+              <button type="button" data-method="明挖" aria-pressed="true">明挖</button>
+              <button type="button" data-method="推進" aria-pressed="false">推進</button>
+              <button type="button" data-method="非開挖（CIPP 內襯）" aria-pressed="false">非開挖（CIPP）</button>
+            </div>
+          </div>
+          <fieldset class="field ap-span2" data-f="hours" style="border:0;padding:0;margin:0;min-width:0">
+            <legend class="label req" style="padding:0;margin-bottom:6px">施工時段</legend>
+            <div class="ap-radios" id="fHours">
+              <label class="radio ap-radio"><input type="radio" name="hours" value="night"><span><span class="ap-radio__t">夜間</span><span class="ap-radio__d">22:00–翌日 06:00</span></span></label>
+              <label class="radio ap-radio"><input type="radio" name="hours" value="day"><span><span class="ap-radio__t">日間</span><span class="ap-radio__d">09:00–16:00（避開尖峰）</span></span></label>
+              <label class="radio ap-radio"><input type="radio" name="hours" value="dayLong"><span><span class="ap-radio__t">日間全時</span><span class="ap-radio__d">08:30–17:00</span></span></label>
+            </div>
+            <p class="hint" id="hoursHint" style="margin-top:6px"></p>
+            <p class="field__error"></p>
+          </fieldset>
+          <div class="field ap-span2" data-f="desc"><label class="label" for="fDesc">工程說明（選填）</label><textarea class="textarea" id="fDesc" rows="3" placeholder="管線規格、施工順序、與既有管線的相對位置等"></textarea></div>
+        </div>
+      </section>
+
+      <section class="panel" id="secPeriod" data-reveal aria-labelledby="periodTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="periodTitle"><span class="ref">B2</span>施工期間</h2>
+          <p class="panel__sub hide-sm">拖曳「本案」時間條平移期間，拖曳兩端調整開工日／完工日</p>
+        </header>
+        <div class="panel__body">
+          <div class="ap-periodbar">
+            <div class="field" data-f="period"><span class="label req" id="periodLbl">開工日 — 完工日</span>
+              <div class="daterange" role="group" aria-labelledby="periodLbl"><input class="input" type="date" id="fStart" aria-label="開工日" min="2026-10-29" max="2027-06-30"><span class="daterange__sep">—</span><input class="input" type="date" id="fEnd" aria-label="完工日" min="2026-10-29" max="2027-06-30"></div>
+              <p class="field__error"></p>
+            </div>
+            <div class="readout"><span class="readout__k">工期</span><span class="readout__v"><span id="durV">—</span><span class="readout__u">天</span></span></div>
+            <div class="readout"><span class="readout__k">衝突天數</span><span class="readout__v"><span id="ovV">0</span><span class="readout__u">天</span></span></div>
+            <p class="hint">最早可開工 <b class="mono">2026/10/29</b>（申請日起 7 日）<br>單次許可最長 90 天</p>
+          </div>
+          <div class="gantt-wrap ap-periodwrap" data-anim><div class="ap-period" id="period"></div></div>
+          <div class="legend ap-plegend" aria-hidden="true"><span><i style="background:var(--ink)"></i>本案</span><span><i style="background:#2F80ED"></i>已核准／施工中</span><span><i style="border:1.5px dashed #5C6862;background:#fff"></i>審查中</span><span><i class="hatch-swatch" style="width:18px;height:10px"></i>期間衝突</span><span><i style="background:repeating-linear-gradient(-45deg,transparent 0 3px,rgba(28,46,36,.25) 3px 4px);border-right:1.5px dashed #0E7C76"></i>申請日起 7 日內不得開工</span></div>
+          <div id="suggest"></div>
+          <div class="field" data-f="note" id="noteField" hidden><label class="label req" for="fNote">衝突協調說明</label><textarea class="textarea" id="fNote" rows="3" placeholder="例：已與澄港天然氣協調，瓦斯管段完工後再進場；或同意錯開施工時段。"></textarea><p class="hint">與既有許可期間重疊時必填，送出後由管線協調股吳思妤安排協調會。</p><p class="field__error"></p></div>
+        </div>
+      </section>
+
+      <section class="panel" id="secFiles" data-reveal aria-labelledby="filesTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="filesTitle"><span class="ref">C1</span>附件</h2>
+          <p class="panel__sub" id="filesSub">應附文件 0/3</p>
+        </header>
+        <div class="panel__body ap-files">
+          <div><p class="ap-sublabel">應附文件</p><ul class="ap-docs" id="docList"></ul></div>
+          <div class="field" data-f="files">
+            <p class="ap-sublabel">上傳檔案</p>
+            <input type="file" id="fileInput" class="sr-only" multiple accept=".pdf,.dwg,.dxf,.jpg,.jpeg,.png,.zip" tabindex="-1" aria-label="選擇附件檔案">
+            <button type="button" class="dropzone" id="dropzone"><svg class="icon icon--lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><strong>拖放檔案到這裡，或點擊選擇</strong><span>PDF、DWG、DXF、JPG、PNG、ZIP・單檔 20 MB 以內</span></button>
+            <div class="file-list" id="fileList"></div>
+            <p class="field__error"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="secSubmit" data-reveal aria-labelledby="submitTitle">
+        <header class="panel__head">
+          <h2 class="panel__title" id="submitTitle"><span class="ref">C2</span>確認送審</h2>
+          <p class="panel__sub">規費於核准後繳納；刨鋪保證金於驗收合格後無息退還</p>
+        </header>
+        <div class="panel__body ap-final">
+          <dl class="kv" id="summary"></dl>
+          <table class="ap-fee" id="fees"></table>
+        </div>
+        <div class="panel__foot ap-submitbar">
+          <div class="field ap-agree" data-f="agree">
+            <label class="check"><input type="checkbox" id="fAgree"><span>本單位確認申請資料正確，並同意依核定之交通維持計畫施工、完工後 30 日內完成刨鋪復原，逾期由工務局代辦並自保證金扣抵。</span></label>
+            <p class="field__error"></p>
+          </div>
+          <button class="btn" type="button" data-save>儲存草稿</button>
+          <button class="btn btn--primary btn--lg" type="button" data-submit>送出審查</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__in">
+    <div class="titleblock">
+      <div class="titleblock__cell"><span class="titleblock__k">系統</span><span class="titleblock__v">道路挖掘管線施工許可</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">主管機關</span><span class="titleblock__v">澄港市政府工務局 道路管線科</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">圖資版本</span><span class="titleblock__v mono">CG-GIS 2026.10</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">座標系統</span><span class="titleblock__v mono">CG-TM 平面座標</span></div>
+      <div class="titleblock__cell"><span class="titleblock__k">版次</span><span class="titleblock__v mono">v3.8.2</span></div>
+    </div>
+    <p class="site-footer__note">本系統為作品集虛構示範：澄港市、機關、管線單位、施工廠商、人名與案件皆為虛構，地圖為自繪示意圖，不對應任何真實地點。</p>
+    <div class="site-footer__end">
+      <a class="backlink" href="../../index.html">← 返回目錄</a>
+      <span class="mono muted" style="font-size:11px">澄港市政府工務局（虛構）</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { UTIL, UTIL_ORDER, fmt, icon, esc, geo } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const day = App.day;
+  const TODAY = App.TODAY;
+  const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const small = matchMedia('(max-width: 760px)');
+
+  /* ---------- 申請規則與常數 ---------- */
+  // 開工日須在申請日 7 日後；單次許可最長 90 天；佔用面積過大需另附交通影響評估
+  const LEAD_DAYS = 7, MAX_DAYS = 90, AREA_WARN = 5000, MIN_AREA = 6;
+  const EARLIEST = App.addDays(TODAY, LEAD_DAYS);
+  // 佔用時間條的視窗：今日到明年 1 月底
+  const WIN0 = TODAY, WIN1 = '2027-01-31';
+  const WIN_N = day(WIN1) - day(WIN0) + 1;
+  const SEC = ['一', '二', '三', '四', '五'];
+  const HOURS = { night: '夜間 22:00–翌日 06:00', day: '日間 09:00–16:00', dayLong: '日間 08:30–17:00' };
+  const HOURS_BY_CLS = { A: 'night', B: 'day', C: 'dayLong' };
+  const CLS_NAME = { A: 'A 級幹道', B: 'B 級道路', C: 'C 級巷道' };
+  // 與 app.js 的資料一致：各管線單位的合約廠商排在前面
+  const CONTRACTORS = {
+    power: ['鼎岳營造有限公司', '明築工程有限公司'], water: ['宏霖土木包工業', '海寧工程有限公司'],
+    gas: ['承泰管線工程有限公司', '岳昇營造有限公司'], telecom: ['聚豐營造股份有限公司', '立崴土木包工業'],
+    sewer: ['海寧工程有限公司', '鼎岳營造有限公司'],
+  };
+  const ALL_CONTRACTORS = [...new Set(Object.values(CONTRACTORS).flat())];
+  const DOCS = [
+    { key: 'site', label: '施工範圍圖', note: '範圍閉合後由系統自動產生', auto: true },
+    { key: 'design', label: '管線設計圖說', note: '平面、縱斷面及埋設深度', req: true },
+    { key: 'traffic', label: '交通維持計畫書', note: '改道、標誌牌面與夜間照明配置', req: true },
+    { key: 'env', label: '環境保護措施說明', note: '夜間施工必附：低噪音機具、揚塵抑制', req: 'night' },
+    { key: 'license', label: '施工廠商登記證明', note: '未附者由承辦查詢登記資料' },
+  ];
+  const FIELD_LABEL = { unit: '申請單位', contact: '聯絡人', phone: '聯絡電話', title: '工程名稱', contractor: '施工廠商', depth: '開挖深度', hours: '施工時段' };
+  const FILE_RE = /\.(pdf|dwg|dxf|jpe?g|png|zip)$/i;
+  const MAX_FILE = 20 * 1024 * 1024;
+  const FEE = { review: 2000, use: 0.8, bond: 220 };
+
+  const R8 = App.DATA.roads.find(r => r.id === 'R8');
+  // 道路里程 s、橫向偏移 o（正值在行進方向右側）→ 平面座標；與 app.js 的 geo.strip 同一套法向量
+  function onRoad(road, s, o) {
+    const [x, y, dx, dy] = geo.at(road.line, road.cum, s);
+    return [x - dy * o, y + dx * o];
+  }
+
+  // 10/21 自動儲存的草稿：港埕路二段配水管汰換，範圍含一處接戶工作坑；
+  // 期間與兩件既有許可重疊，開頁即可看到即時衝突檢核的完整狀態
+  const DRAFT = {
+    verts: [[1600, -13], [1770, -13], [1770, 6], [1722, 6], [1722, 15], [1662, 15], [1662, 6], [1600, 6]].map(([s, o]) => onRoad(R8, s, o)),
+    closed: true,
+    unit: 'water', contact: '李品妤', phone: '(06) 721-5530 #214', title: 'DN200 配水管汰換（港埕路二段）',
+    contractor: '宏霖土木包工業', depth: '1.5', method: '明挖', hours: 'night',
+    desc: '汰換 1978 年埋設之 DN200 鑄鐵管 170 m，於 1K+700 設接戶工作坑一處；夜間分段開挖，每日收工前回填並鋪設鋼板。',
+    start: '2026-11-02', end: '2026-11-20', note: '', agree: false,
+    files: [{ name: 'DN200_港埕路二段_管線設計圖.pdf', size: 4404019, type: 'design', t: '10/21 15:58' }],
+  };
+  const BLANK = {
+    verts: [], closed: false, unit: '', contact: '', phone: '', title: '', contractor: '', depth: '', method: '明挖', hours: '', desc: '',
+    start: App.addDays(TODAY, 14), end: App.addDays(TODAY, 27), note: '', agree: false, files: [],
+  };
+
+  /* ---------- 狀態 ---------- */
+  const state = { verts: [], closed: false, drawing: true, files: [], shapeVer: 0 };
+  let history = [];
+  let attempted = false;          // 按過送出後，所有欄位錯誤都顯示
+  const touched = new Set();      // 使用者動過的欄位才即時顯示錯誤
+  let hoursTouched = false;
+  let fileSeq = 0;
+  let mapDateMode = 'start';      // 'start' | 'today' | 'custom'（點衝突項目時跳到重疊開始日）
+
+  const F = {
+    unit: $('#fUnit'), contact: $('#fContact'), phone: $('#fPhone'), title: $('#fTitle'), contractor: $('#fContractor'),
+    depth: $('#fDepth'), desc: $('#fDesc'), start: $('#fStart'), end: $('#fEnd'), note: $('#fNote'), agree: $('#fAgree'),
+  };
+  const utility = () => F.unit.value || null;
+  const hoursValue = () => { const r = $('input[name="hours"]:checked'); return r ? r.value : ''; };
+  const methodValue = () => $('#fMethod [aria-pressed="true"]').dataset.method;
+  const setMethod = m => $$('#fMethod [data-method]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.method === m)));
+  const docRequired = d => !!d.auto || d.req === true || (d.req === 'night' && hoursValue() === 'night');
+  const LIVE = () => App.DATA.permits.filter(p => p.status !== 'returned');
+
+  /* ---------- 幾何 ---------- */
+  function perimeter(v, closed) {
+    let L = 0;
+    for (let i = 1; i < v.length; i++) L += geo.dist(v[i - 1], v[i]);
+    if (closed && v.length > 2) L += geo.dist(v[v.length - 1], v[0]);
+    return L;
+  }
+  function selfIntersects(v) {
+    const n = v.length;
+    if (n < 4) return false;
+    for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (geo.segCross(v[i], v[(i + 1) % n], v[j], v[(j + 1) % n])) return true;
+    }
+    return false;
+  }
+  const segName = (road, s) => road.len < 1500 ? road.name : `${road.name}${SEC[Math.min(SEC.length - 1, Math.floor(s / 1000))]}段`;
+  // 位置描述：以形心找最近幹道，再把所有頂點投影到該路得到里程區間
+  function locate(v = state.verts) {
+    if (v.length < 3) return null;
+    const c = geo.centroid(v);
+    const near = App.nearestRoad(c);
+    const ss = v.map(p => geo.distToLine(p, near.road.line)[1]);
+    const s0 = Math.min(...ss), s1 = Math.max(...ss);
+    return { c, road: near.road, dist: near.dist, s0, s1, seg: segName(near.road, near.s), district: App.districtAt(c), station: `${fmt.station(s0)} – ${fmt.station(s1)}` };
+  }
+  // 兩多邊形交集面積：取樣估算即可（只用於提示「約 xx m²」）
+  function sampleOverlap(A, B) {
+    const a = geo.bbox([A]), b = geo.bbox([B]);
+    const x0 = Math.max(a[0], b[0]), y0 = Math.max(a[1], b[1]), x1 = Math.min(a[2], b[2]), y1 = Math.min(a[3], b[3]);
+    if (x1 <= x0 || y1 <= y0) return 0;
+    const n = 48, sx = (x1 - x0) / n, sy = (y1 - y0) / n;
+    let hit = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const p = [x0 + (i + .5) * sx, y0 + (j + .5) * sy];
+      if (geo.contains(A, p) && geo.contains(B, p)) hit++;
+    }
+    return hit * sx * sy;
+  }
+  const overlapCache = new Map();
+  function overlapArea(p) {
+    const key = state.shapeVer + '|' + p.id;
+    if (!overlapCache.has(key)) {
+      if (overlapCache.size > 200) overlapCache.clear();
+      overlapCache.set(key, sampleOverlap(state.verts, p.poly));
+    }
+    return overlapCache.get(key);
+  }
+
+  function shapeIssues() {
+    const v = state.verts, out = [];
+    if (v.length < 3) {
+      out.push({ level: 'error', text: v.length ? `已放置 ${v.length} 個頂點，至少需要 3 個` : '尚未框選施工範圍' });
+      return out;
+    }
+    if (!state.closed) out.push({ level: 'error', text: '範圍尚未閉合：點回起點或按「完成」' });
+    if (selfIntersects(v)) out.push({ level: 'error', text: '範圍邊界交叉，請拖曳頂點調整' });
+    const a = geo.area(v);
+    if (a < MIN_AREA) out.push({ level: 'error', text: `面積過小（${fmt.dec(a, 1)} m²）` });
+    if (a > AREA_WARN) out.push({ level: 'warn', text: `佔用面積超過 ${fmt.num(AREA_WARN)} m²，需另附交通影響評估` });
+    const loc = locate();
+    if (loc.dist > loc.road.w / 2 + 25) out.push({ level: 'warn', text: '範圍形心不在主要道路上，請確認路段' });
+    return out;
+  }
+
+  /* ---------- 期間與衝突 ---------- */
+  function periodRange() {
+    const s = F.start.value, e = F.end.value;
+    return s && e && e >= s ? { start: s, end: e } : null;
+  }
+  function periodIssue() {
+    const s = F.start.value, e = F.end.value;
+    if (!s || !e) return '請選擇開工日與完工日';
+    if (s < EARLIEST) return `開工日須於 ${fmt.date(EARLIEST)} 以後（申請日起 ${LEAD_DAYS} 日）`;
+    if (e < s) return '完工日不可早於開工日';
+    if (fmt.span(s, e) > MAX_DAYS) return `單次許可最長 ${MAX_DAYS} 天，目前 ${fmt.span(s, e)} 天`;
+    return '';
+  }
+  // 空間重疊（不論期間）：形狀不變時沿用；資料變更（送審、狀態異動）時由 'data' 事件作廢
+  let spatialCache = { ver: -1, list: [] };
+  function spatial() {
+    if (spatialCache.ver !== state.shapeVer) {
+      const v = state.verts;
+      spatialCache = { ver: state.shapeVer, list: v.length >= 3 ? LIVE().filter(p => geo.intersects(v, p.poly)) : [] };
+    }
+    return spatialCache.list;
+  }
+  function conflicts() {
+    const r = periodRange();
+    if (state.verts.length < 3 || !r) return [];
+    return App.checkConflicts({ poly: state.verts, start: r.start, end: r.end });
+  }
+  // 與原期間最接近、且與所有空間重疊許可都錯開的同工期期間（往後、往前交錯搜尋）
+  function suggestPeriod() {
+    const r = periodRange();
+    if (!r || state.verts.length < 3) return null;
+    const dur = fmt.span(r.start, r.end), d0 = day(r.start), min = day(EARLIEST);
+    const sp = spatial();
+    const free = s => sp.every(p => p.d1 < s || p.d0 > s + dur - 1);
+    for (let k = 0; k <= 180; k++) {
+      for (const s of k ? [d0 + k, d0 - k] : [d0]) {
+        if (s >= min && free(s)) return { start: App.iso(s), end: App.iso(s + dur - 1), shift: s - d0, dur };
+      }
+    }
+    return null;
+  }
+
+  /* ---------- 復原堆疊（頂點、閉合、拖曳、清除都可撤銷） ---------- */
+  const snap = () => ({ verts: state.verts.map(p => p.slice()), closed: state.closed, drawing: state.drawing });
+  function pushHistory() {
+    history.push(snap());
+    if (history.length > 80) history.shift();
+  }
+  function restore(s) {
+    state.verts = s.verts.map(p => p.slice());
+    state.closed = s.closed;
+    state.drawing = s.drawing;
+    shapeChanged();
+  }
+
+  /* =====================================================================
+     地圖：點擊放頂點、橡皮筋線、尺寸標註、拖曳頂點、衝突斜線
+     ===================================================================== */
+  const mapEl = $('#map');
+  const dc = geo.centroid(DRAFT.verts);
+  const fitHalf = small.matches ? [110, 150, 10] : [210, 150, 45];
+  const map = App.map.create(mapEl, {
+    frame: true, selectable: false, date: DRAFT.start, label: '施工範圍框選地圖',
+    // 既有許可之間的衝突與本申請無關，預設關閉；圖層面板可再打開
+    layers: { conflicts: false },
+    // 視框中心略往南：桌機首屏只露出地圖上半部，範圍要落在看得到的位置
+    fit: [dc[0] - fitHalf[0], dc[1] - fitHalf[1] + fitHalf[2], dc[0] + fitHalf[0], dc[1] + fitHalf[1] + fitHalf[2]],
+    onClick: onMapClick,
+    onPointer: onMapPointer,
+  });
+
+  const bar = document.createElement('div');
+  bar.className = 'drawbar';
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', '範圍繪製工具');
+  const tool = (act, ic, label, extra = '') =>
+    `<button class="drawbar__btn" type="button" data-act="${act}" aria-label="${label}" title="${label}"${extra}>${icon(ic, 'icon icon--sm')}<span class="ap-lbl">${label}</span></button>`;
+  bar.innerHTML = tool('draw', 'draw', '繪製範圍', ' aria-pressed="true"') + tool('finish', 'check', '完成') +
+    '<span class="drawbar__sep"></span>' + tool('undo', 'undo', '撤銷') + tool('clear', 'trash', '清除') +
+    '<span class="drawbar__sep"></span>' + tool('station', 'ruler', '里程輸入');
+  map.slot('tl').appendChild(bar);
+  App.map.layerPanel(map, { open: false });
+
+  const hint = document.createElement('div');
+  hint.className = 'ap-hint hide-sm';
+  hint.setAttribute('aria-hidden', 'true');
+  const tip = document.createElement('div');
+  tip.className = 'ap-tip';
+  tip.setAttribute('aria-hidden', 'true');
+  mapEl.append(hint, tip);
+
+  // 自繪圖層（世界座標）：由下而上 既有許可輪廓 → 本案範圍 → 衝突斜線 → 掃描 → 橡皮筋 → 標註 → 頂點
+  const G = {};
+  ['ghost', 'shape', 'hatch', 'scan', 'rubber', 'dim', 'handle'].forEach(n => { G[n] = App.svgEl('g', { class: `ap-${n}s` }); map.overlay.appendChild(G[n]); });
+  const rubber = App.svgEl('path', { class: 'ap-rubber' });
+  const rubberClose = App.svgEl('path', { class: 'ap-rubber ap-rubber--close' });
+  G.rubber.append(rubberClose, rubber);
+  map.svg.querySelector('defs').insertAdjacentHTML('beforeend', `
+    <pattern id="apDots" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1.75" cy="1.75" r="1" fill="#18201D" fill-opacity=".5"/><circle cx="5.25" cy="5.25" r="1" fill="#18201D" fill-opacity=".5"/></pattern>
+    <clipPath id="apScanClip"><path d=""/></clipPath>
+    <linearGradient id="apScanX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0E7C76" stop-opacity="0"/><stop offset=".86" stop-color="#0E7C76" stop-opacity=".32"/><stop offset="1" stop-color="#0E7C76" stop-opacity=".95"/></linearGradient>
+    <linearGradient id="apScanY" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E7C76" stop-opacity="0"/><stop offset=".86" stop-color="#0E7C76" stop-opacity=".32"/><stop offset="1" stop-color="#0E7C76" stop-opacity=".95"/></linearGradient>`);
+
+  const dotsPat = map.svg.querySelector('#apDots');
+  let shapeBad = false, viewK = 0, lastPointer = null;
+  function drawShape() {
+    const v = state.verts, n = v.length;
+    const k = map.view().k, inv = 1 / k;
+    viewK = k;
+    let html = '';
+    if (n >= 3) {
+      html += `<path class="ap-poly${state.closed ? '' : ' is-open'}${shapeBad ? ' is-bad' : ''}" d="${geo.pathD(v)}"/>`;
+      if (state.closed && !shapeBad) html += `<path class="ap-dots" d="${geo.pathD(v)}"/>`;
+    }
+    // 墨點以螢幕像素為準：縮放時反向補償 pattern
+    dotsPat.setAttribute('patternTransform', `scale(${inv.toFixed(4)})`);
+    if (n >= 2) {
+      const d = geo.pathD(v, state.closed);
+      html += `<path class="ap-edge${shapeBad ? ' ap-edge--bad' : ''}" d="${d}"/>`;
+      if (state.drawing) html += `<path class="ap-edge ap-edge--ants" d="${d}"/>`;
+    }
+    G.shape.innerHTML = html;
+
+    // 邊長標註：放在範圍外側、與邊平行；螢幕上太短的邊不標
+    let dims = '', longest = null;
+    const edges = state.closed ? n : n - 1;
+    const f2 = x => x.toFixed(2);
+    for (let i = 0; i < edges; i++) {
+      const a = v[i], b = v[(i + 1) % n], L = geo.dist(a, b);
+      let ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+      if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;
+      if (!longest || L > longest.L) longest = { L, ang };
+      if (L * k < 46) continue;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      let nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
+      if (n >= 3 && geo.contains(v, [mx + nx * 2 * inv, my + ny * 2 * inv])) { nx = -nx; ny = -ny; }
+      const x = mx + nx * 11 * inv, y = my + ny * 11 * inv;
+      dims += `<text class="ap-dim" x="${f2(x)}" y="${f2(y)}" transform="rotate(${ang.toFixed(1)} ${f2(x)} ${f2(y)})" font-size="${(10.5 * inv).toFixed(3)}" stroke-width="${(3 * inv).toFixed(3)}">${fmt.dec(L, 1)} m</text>`;
+    }
+    // 面積標籤沿最長邊方向，細長範圍也放得下
+    if (state.closed && n >= 3 && !shapeBad) {
+      const [cx, cy] = geo.centroid(v);
+      dims += `<text class="ap-tag" x="${f2(cx)}" y="${f2(cy)}" transform="rotate(${longest.ang.toFixed(1)} ${f2(cx)} ${f2(cy)})" font-size="${(12 * inv).toFixed(3)}" stroke-width="${(3.5 * inv).toFixed(3)}">本案 ${fmt.num(geo.area(v))} m²</text>`;
+    }
+    G.dim.innerHTML = dims;
+
+    // 頂點：數量不變時就地更新，拖曳中的元素才不會失去 pointer capture
+    if (G.handle.childElementCount !== n) {
+      G.handle.textContent = '';
+      for (let i = 0; i < n; i++) G.handle.appendChild(App.svgEl('circle', { class: 'ap-handle', 'data-i': i }));
+    }
+    Array.from(G.handle.children).forEach((c, i) => {
+      const first = i === 0 && state.drawing;
+      c.setAttribute('cx', f2(v[i][0]));
+      c.setAttribute('cy', f2(v[i][1]));
+      c.setAttribute('r', ((first ? 6 : 4.5) * inv).toFixed(3));
+      c.classList.toggle('is-first', first);
+    });
+    mapEl.classList.toggle('is-drawing', state.drawing);
+    mapEl.classList.toggle('ap-editing', state.closed);
+  }
+  map.on('view', ({ k }) => { if (k !== viewK) drawShape(); });
+
+  // 衝突斜線：衝突組合與形狀都沒變就不重建（拖曳時間條時避免每格重畫）
+  let hatchEls = [], hatchKey = '';
+  function renderHatches(cs) {
+    const sp = spatial();
+    const key = state.shapeVer + ':' + cs.map(c => c.permit.id).join(',') + ':' + sp.length;
+    if (key === hatchKey) return;
+    hatchKey = key;
+    hatchEls.forEach(g => {
+      const n = g.dataset.hatch;
+      map.svg.querySelectorAll(`clipPath[id$="hx${n}a"], clipPath[id$="hx${n}b"]`).forEach(c => c.remove());
+      g.remove();
+    });
+    hatchEls = cs.map(c => { const g = map.hatch(state.verts, c.permit.poly); G.hatch.appendChild(g); return g; });
+    G.ghost.innerHTML = sp.map(p => `<path class="ap-ghost" data-ghost="${p.id}" style="--u:${UTIL[p.utility].color}" d="${geo.pathD(p.poly)}"/>`).join('');
+  }
+  function hotGhost(id, on = true) {
+    const g = G.ghost.querySelector(`[data-ghost="${id}"]`);
+    if (g) g.classList.toggle('is-hot', on);
+  }
+
+  // 自動衝突檢查的掃描線：沿範圍長軸掃過一次，只是視覺回饋，結果已即時算好
+  function runScan() {
+    if (reduce() || state.verts.length < 3) return;
+    const b = geo.bbox([state.verts]);
+    const vert = (b[3] - b[1]) > (b[2] - b[0]);
+    $('#apScanClip path', map.svg).setAttribute('d', geo.pathD(state.verts));
+    const w = vert ? b[2] - b[0] : (b[2] - b[0]) * .4, h = vert ? (b[3] - b[1]) * .4 : b[3] - b[1];
+    G.scan.textContent = '';
+    const g = App.svgEl('g', { 'clip-path': 'url(#apScanClip)' });
+    const rect = App.svgEl('rect', { class: 'ap-scan', x: vert ? b[0] : b[0] - w, y: vert ? b[1] - h : b[1], width: w, height: h, fill: `url(#apScan${vert ? 'Y' : 'X'})` });
+    g.appendChild(rect);
+    G.scan.appendChild(g);
+    const dist = vert ? (b[3] - b[1]) + h : (b[2] - b[0]) + w;
+    const anim = rect.animate([{ transform: 'translate(0px, 0px)' }, { transform: vert ? `translate(0px, ${dist}px)` : `translate(${dist}px, 0px)` }], { duration: 900, easing: 'cubic-bezier(.65, 0, .35, 1)' });
+    anim.onfinish = () => g.remove();
+  }
+
+  function nearFirst(pt) {
+    const a = map.toScreen(state.verts[0]), b = map.toScreen(pt);
+    return Math.hypot(a[0] - b[0], a[1] - b[1]) < 12;
+  }
+  function onMapClick({ x, y }) {
+    if (!state.drawing) return;
+    const v = state.verts;
+    if (v.length >= 3 && nearFirst([x, y])) { finish(); return; }
+    if (x < 0 || y < 0 || x > App.WORLD.w || y > App.WORLD.h) {
+      App.toast('超出圖幅範圍', { desc: '頂點須落在澄港市圖幅內。', tone: 'warn' });
+      return;
+    }
+    const last = v[v.length - 1];
+    if (last && geo.dist(last, [x, y]) * map.view().k < 4) return;
+    pushHistory();
+    v.push([x, y]);
+    shapeChanged(v.length >= 3);
+  }
+  function onMapPointer(pt) {
+    lastPointer = pt;
+    updateRubber();
+  }
+  map.svg.addEventListener('pointerleave', () => { lastPointer = null; updateRubber(); });
+  function updateRubber() {
+    const v = state.verts, pt = lastPointer;
+    const first = G.handle.firstElementChild;
+    if (!state.drawing || !v.length || !pt) {
+      rubber.setAttribute('d', '');
+      rubberClose.setAttribute('d', '');
+      tip.classList.remove('is-on');
+      if (first) first.classList.remove('is-snap');
+      return;
+    }
+    const snapFirst = v.length >= 3 && nearFirst(pt);
+    const end = snapFirst ? v[0] : pt, last = v[v.length - 1];
+    rubber.setAttribute('d', `M${last[0]},${last[1]}L${end[0]},${end[1]}`);
+    rubberClose.setAttribute('d', v.length >= 2 && !snapFirst ? `M${pt[0]},${pt[1]}L${v[0][0]},${v[0][1]}` : '');
+    if (first) first.classList.toggle('is-snap', snapFirst);
+    // 游標旁讀值：這一段的長度，以及加入此點後的面積
+    const area = v.length >= 2 ? geo.area(snapFirst ? v : v.concat([pt])) : 0;
+    tip.innerHTML = `${fmt.dec(geo.dist(last, end), 1)} m${area ? `・${fmt.num(area)} m²` : ''}<small>${snapFirst ? '點擊閉合範圍' : `點擊加入第 ${v.length + 1} 點`}</small>`;
+    const [sx, sy] = map.toScreen(end);
+    const W = mapEl.clientWidth, H = mapEl.clientHeight;
+    const tx = sx + 14 + tip.offsetWidth > W - 8 ? sx - 14 - tip.offsetWidth : sx + 14;
+    const ty = sy + 14 + tip.offsetHeight > H - 8 ? sy - 14 - tip.offsetHeight : sy + 14;
+    tip.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px)`;
+    tip.classList.add('is-on');
+  }
+
+  function finish() {
+    if (state.verts.length < 3) { App.toast('至少需要 3 個頂點', { desc: '在地圖上再點幾下，框出挖掘範圍。', tone: 'warn' }); return; }
+    pushHistory();
+    state.closed = true;
+    state.drawing = false;
+    lastPointer = null;
+    shapeChanged(true);
+    const err = shapeIssues().find(i => i.level === 'error');
+    if (err) App.toast('範圍需要調整', { desc: err.text, tone: 'danger' });
+  }
+  function undo() {
+    if (!history.length) return;
+    restore(history.pop());
+  }
+  function clearShape() {
+    if (!state.verts.length) return;
+    const before = snap();
+    pushHistory();
+    state.verts = [];
+    state.closed = false;
+    state.drawing = true;
+    shapeChanged();
+    App.toast('已清除施工範圍', { desc: '可重新於地圖上框選。', action: { label: '復原', onClick: () => { pushHistory(); restore(before); } } });
+  }
+  function toggleDraw() {
+    if (state.closed) { clearShape(); return; }
+    state.drawing = !state.drawing;
+    lastPointer = null;
+    update();
+  }
+  function renderBar() {
+    const b = act => bar.querySelector(`[data-act="${act}"]`);
+    const draw = b('draw'), label = state.closed ? '重新繪製' : '繪製範圍';
+    draw.setAttribute('aria-pressed', String(state.drawing));
+    draw.setAttribute('aria-label', label);
+    draw.title = label;
+    draw.querySelector('.ap-lbl').textContent = label;
+    b('finish').disabled = !(state.drawing && state.verts.length >= 3);
+    b('undo').disabled = !history.length;
+    b('clear').disabled = !state.verts.length;
+  }
+  function renderHint() {
+    const n = state.verts.length;
+    hint.innerHTML = state.drawing
+      ? (n === 0 ? '點擊地圖放置第一個頂點<i></i>滾輪縮放・拖曳平移'
+        : n < 3 ? `繼續點擊放置頂點（已 ${n} 點）<i></i><span class="kbd">Backspace</span>撤銷`
+        : '點回起點閉合<i></i><span class="kbd">Enter</span>完成<i></i><span class="kbd">Backspace</span>撤銷')
+      : state.closed ? '拖曳頂點微調範圍<i></i><span class="kbd">Ctrl</span>+<span class="kbd">Z</span>復原'
+      : '按「繪製範圍」開始框選';
+  }
+  bar.addEventListener('click', e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn || btn.disabled) return;
+    ({ draw: toggleDraw, finish, undo, clear: clearShape, station: openStationing })[btn.dataset.act]();
+  });
+  map.svg.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && state.drawing) { e.preventDefault(); finish(); }
+    else if ((e.key === 'Backspace' || e.key === 'Delete') && history.length) { e.preventDefault(); undo(); }
+    else if (e.key === 'Escape' && state.drawing && !document.querySelector('dialog[open]')) { state.drawing = false; lastPointer = null; update(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key.toLowerCase() !== 'z' || !(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (typing || document.querySelector('dialog[open]') || !history.length) return;
+    e.preventDefault();
+    undo();
+  });
+
+  // 拖曳頂點：攔下 pointerdown，地圖就不會同時平移
+  let vdrag = null;
+  G.handle.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.ap-handle');
+    if (!h || state.drawing || e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    pushHistory();
+    vdrag = { i: +h.dataset.i, id: e.pointerId, el: h, moved: false };
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('is-drag');
+  });
+  G.handle.addEventListener('pointermove', e => {
+    if (!vdrag || e.pointerId !== vdrag.id) return;
+    vdrag.moved = true;
+    state.verts[vdrag.i] = map.toWorld(e.clientX, e.clientY);
+    state.shapeVer++;
+    update({ light: true });
+  });
+  const endVertexDrag = e => {
+    if (!vdrag || e.pointerId !== vdrag.id) return;
+    vdrag.el.classList.remove('is-drag');
+    const moved = vdrag.moved;
+    vdrag = null;
+    if (moved) shapeChanged(true); else { history.pop(); update(); }
+  };
+  G.handle.addEventListener('pointerup', endVertexDrag);
+  G.handle.addEventListener('pointercancel', endVertexDrag);
+
+  /* ---------- 以里程樁號產生範圍（鍵盤可完成的替代輸入） ---------- */
+  function openStationing() {
+    const loc = locate();
+    const r0 = loc ? loc.road : R8;
+    const body = `
+      <p class="muted" style="font-size:13px;margin-bottom:14px">依道路里程樁號與佔用車道產生範圍，適合已有設計圖里程或以鍵盤操作時使用。產生後仍可在地圖上拖曳頂點微調。</p>
+      <div class="ap-mfields">
+        <div class="field ap-span2"><label class="label req" for="mRoadSel">道路</label><select class="select" id="mRoadSel">${App.DATA.roads.map(r => `<option value="${r.id}"${r === r0 ? ' selected' : ''}>${esc(r.name)}（${CLS_NAME[r.cls]}・路寬 ${r.w} m・全長 ${fmt.station(r.len)}）</option>`).join('')}</select></div>
+        <div class="field" data-m="s0"><label class="label req" for="mS0">起點里程（m）</label><input class="input mono" id="mS0" inputmode="numeric" value="${loc ? Math.round(loc.s0) : 1600}"><p class="field__error"></p></div>
+        <div class="field" data-m="s1"><label class="label req" for="mS1">終點里程（m）</label><input class="input mono" id="mS1" inputmode="numeric" value="${loc ? Math.round(loc.s1) : 1770}"><p class="field__error"></p></div>
+        <div class="field"><label class="label" for="mSide">佔用位置</label><select class="select" id="mSide"><option value="left">行進方向左側車道</option><option value="center" selected>跨道路中線</option><option value="right">行進方向右側車道</option></select></div>
+        <div class="field" data-m="w"><label class="label req" for="mW">佔用寬度（m）</label><input class="input mono" id="mW" inputmode="decimal" value="12"><p class="field__error"></p></div>
+      </div>`;
+    const m = App.modal({
+      eyebrow: 'STATION INPUT', title: '以里程樁號產生範圍', body, size: 'md',
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: '產生範圍', variant: 'primary', onClick: close => { if (applyStationing(m.body)) close(); } },
+      ],
+    });
+  }
+  function applyStationing(root) {
+    const road = App.DATA.roads.find(r => r.id === $('#mRoadSel', root).value);
+    const s0 = parseFloat($('#mS0', root).value), s1 = parseFloat($('#mS1', root).value), w = parseFloat($('#mW', root).value);
+    const max = Math.floor(road.len);
+    const mark = (key, msg) => {
+      const f = $(`[data-m="${key}"]`, root);
+      f.classList.toggle('is-invalid', !!msg);
+      f.querySelector('.field__error').textContent = msg;
+      return !msg;
+    };
+    const okS0 = mark('s0', !Number.isFinite(s0) || s0 < 0 || s0 > max ? `請輸入 0–${max} 之間的里程` : '');
+    const okS1 = mark('s1', !Number.isFinite(s1) || s1 < 0 || s1 > max ? `請輸入 0–${max} 之間的里程`
+      : okS0 && s1 - s0 < 5 ? '終點須大於起點 5 m 以上' : okS0 && s1 - s0 > 1000 ? '單次範圍長度上限 1,000 m' : '');
+    const okW = mark('w', !Number.isFinite(w) || w < 2 || w > road.w - 2 ? `寬度須介於 2–${road.w - 2} m（路寬 ${road.w} m）` : '');
+    if (!(okS0 && okS1 && okW)) return false;
+    const half = road.w / 2 - 1, side = $('#mSide', root).value;
+    const [o0, o1] = side === 'left' ? [-half, -half + w] : side === 'right' ? [half - w, half] : [-w / 2, w / 2];
+    // 每 50 m 取一點，範圍才會順著彎道
+    const n = Math.max(2, Math.ceil((s1 - s0) / 50));
+    const ss = Array.from({ length: n + 1 }, (_, i) => s0 + (s1 - s0) * i / n);
+    pushHistory();
+    state.verts = ss.map(s => onRoad(road, s, o0)).concat(ss.slice().reverse().map(s => onRoad(road, s, o1)));
+    state.closed = true;
+    state.drawing = false;
+    shapeChanged(true);
+    const [x0, y0, x1, y1] = geo.bbox([state.verts]);
+    map.focusBox([x0 - 120, y0 - 120, x1 + 120, y1 + 120], { maxK: 2 });
+    App.toast('已依里程產生範圍', { desc: `${segName(road, s0)} ${fmt.station(s0)} – ${fmt.station(s1)}・${state.verts.length} 個頂點`, tone: 'ok' });
+    return true;
+  }
+
+  /* =====================================================================
+     檢核：所有衍生顯示（步驟條、側欄、讀值、費用）都從同一份 evaluate() 產生
+     ===================================================================== */
+  function fieldErrors() {
+    const ph = F.phone.value.trim(), dp = F.depth.value.trim(), dv = Number(dp);
+    return {
+      unit: F.unit.value ? '' : '請選擇申請單位',
+      contact: F.contact.value.trim() ? '' : '請填寫聯絡人',
+      phone: !ph ? '請填寫聯絡電話' : /^[\d()\-#\s+]+$/.test(ph) && ph.replace(/\D/g, '').length >= 8 ? '' : '電話格式不正確，例：(06) 721-5530 #214',
+      title: F.title.value.trim().length >= 4 ? '' : '工程名稱至少 4 個字',
+      contractor: F.contractor.value ? '' : '請選擇施工廠商',
+      depth: !dp ? '請填寫開挖深度' : Number.isFinite(dv) && dv >= .3 && dv <= 8 ? '' : '開挖深度需介於 0.3–8 m',
+      hours: hoursValue() ? '' : '請選擇施工時段',
+    };
+  }
+  function evaluate() {
+    const issues = shapeIssues();
+    const shapeErr = issues.filter(i => i.level === 'error');
+    const cs = conflicts();
+    const docOk = d => d.auto ? !shapeErr.length : state.files.some(f => f.type === d.key);
+    return {
+      issues, shapeErr, cs, loc: locate(), docOk,
+      fields: fieldErrors(),
+      period: periodIssue(),
+      note: cs.length && F.note.value.trim().length < 10 ? '期間與既有許可重疊時，須說明協調方式（至少 10 字）' : '',
+      missing: DOCS.filter(d => docRequired(d) && !docOk(d)),
+      agree: F.agree.checked ? '' : '請勾選聲明事項',
+    };
+  }
+  function paintField(key, msg) {
+    const f = $(`[data-f="${key}"]`);
+    const show = !!msg && (attempted || touched.has(key));
+    f.classList.toggle('is-invalid', show);
+    const err = f.querySelector(':scope > .field__error');
+    if (err) err.textContent = show ? msg : '';
+  }
+  function paintAll(ev) {
+    Object.entries(ev.fields).forEach(([k, msg]) => paintField(k, msg));
+    paintField('period', ev.period);
+    paintField('note', ev.note);
+    // 系統自動產生的範圍圖不算在附件欄位的錯誤裡（缺的是範圍本身）
+    const userMissing = ev.missing.filter(d => !d.auto);
+    paintField('files', userMissing.length ? `尚缺：${userMissing.map(d => d.label).join('、')}` : '');
+    paintField('agree', ev.agree);
+  }
+
+  function stepsOf(ev) {
+    const v = state.verts, r = periodRange();
+    const shapeOk = !ev.shapeErr.length;
+    const infoBad = Object.keys(ev.fields).filter(k => ev.fields[k]);
+    const checkOk = shapeOk && !!r;
+    return [
+      { label: '框選範圍', href: '#secShape', done: shapeOk, sub: shapeOk ? `${fmt.num(geo.area(v))} m²` : v.length ? `${v.length} 點` : '待框選' },
+      { label: '衝突檢查', href: '#secCheck', done: checkOk, warn: checkOk && ev.cs.length > 0, sub: !checkOk ? '待範圍與期間' : ev.cs.length ? `${ev.cs.length} 件衝突` : '無衝突' },
+      { label: '工程資料', href: '#secInfo', done: !infoBad.length, sub: `${7 - infoBad.length}/7 項` },
+      { label: '施工期間', href: '#secPeriod', done: !ev.period && !ev.note, sub: r ? `${fmt.range(r.start, r.end)}` : '待選擇' },
+      { label: '附件與送審', href: '#secFiles', done: !ev.missing.length && !ev.agree, sub: ev.missing.length ? `缺 ${ev.missing.length} 件` : ev.agree ? '待勾選聲明' : '可送出' },
+    ];
+  }
+  function renderSteps(steps) {
+    const cur = steps.findIndex(s => !s.done);
+    $('#steps').innerHTML = steps.map((s, i) => `
+      <li class="step${s.done ? ' is-done' : ''}${i === cur ? ' is-current' : ''}${s.warn ? ' ap-warn' : ''}">
+        <a class="ap-step-link" href="${s.href}"${i === cur ? ' aria-current="step"' : ''}>
+          <span class="step__num">${s.warn ? '!' : s.done ? icon('check', 'icon icon--sm') : i + 1}</span>
+          <span class="step__label">${s.label}<span class="step__sub">${esc(s.sub)}</span></span>
+        </a>
+      </li>`).join('');
+  }
+
+  let stateKey = '';
+  function renderSide(ev) {
+    const v = state.verts, cs = ev.cs, sp = spatial(), r = periodRange();
+    const live = LIVE().length;
+    let tone = '', ic = 'draw', title = '尚未框選範圍', desc = `於地圖點擊至少 3 個頂點，系統即時比對 ${live} 件在案許可。`;
+    if (v.length >= 3 && !r) { tone = 'warn'; ic = 'calendar'; title = '請選擇施工期間'; desc = '範圍已就緒，需有開工日與完工日才能比對期間重疊。'; }
+    else if (v.length >= 3 && cs.length) {
+      const from = cs.map(c => c.from).sort()[0], to = cs.map(c => c.to).sort().pop();
+      tone = 'danger'; ic = 'alert'; title = `${cs.length} 件期間衝突`; desc = `重疊 ${fmt.range(from, to)}・送出後轉管線協調股協調`;
+    } else if (v.length >= 3) {
+      tone = 'ok'; ic = 'check'; title = '無衝突'; desc = `已比對 ${live} 件在案許可${sp.length ? `・空間重疊 ${sp.length} 件但期間錯開` : ''}`;
+    }
+    const el = $('#checkState');
+    el.classList.remove('ap-state--ok', 'ap-state--warn', 'ap-state--danger');
+    if (tone) el.classList.add('ap-state--' + tone);
+    el.innerHTML = `<span class="ap-state__icon">${icon(ic)}</span><p class="ap-state__title">${title}</p><p class="ap-state__desc">${esc(desc)}</p>`;
+    const key = tone + title;
+    if (stateKey && key !== stateKey && !reduce()) { el.classList.remove('is-update'); void el.offsetWidth; el.classList.add('is-update'); }
+    stateKey = key;
+
+    const badge = $('#shapeBadge');
+    const [bt, bc] = state.drawing ? ['繪製中', 'badge--accent'] : state.closed ? (ev.shapeErr.length ? ['需調整', 'badge--danger'] : ['範圍已閉合', 'badge--ok']) : v.length ? ['已暫停繪製', 'badge--warn'] : ['待框選', ''];
+    badge.textContent = bt;
+    badge.className = 'badge' + (bc ? ' ' + bc : '');
+
+    const spOnly = sp.filter(p => !cs.some(c => c.permit === p));
+    $('#cfList').innerHTML = cs.map(c => {
+      const p = c.permit;
+      return `<button class="clash-item is-live" type="button" data-cf="${p.id}" data-from="${c.from}">
+        <span class="clash-item__top"><span class="clash-item__code">${p.id}</span><span class="clash-item__road truncate">${esc(p.segment)}</span></span>
+        <span class="badge badge--danger">重疊 ${c.days} 天</span>
+        <span class="clash-item__pair">${App.utilChip(p.utility)}<span class="truncate muted" style="font:400 12px var(--font-sans)">${esc(UTIL[p.utility].short)}・${esc(App.STATUS[p.status].label)}</span></span>
+        <span class="clash-item__meta">${fmt.range(c.from, c.to)}・約 ${fmt.num(overlapArea(p))} m²</span>
+      </button>`;
+    }).join('') + spOnly.map(p => `<button class="clash-item is-resolved" type="button" data-cf="${p.id}" data-from="${p.start}">
+        <span class="clash-item__top"><span class="clash-item__code">${p.id}</span><span class="clash-item__road truncate">${esc(p.segment)}</span></span>
+        <span class="badge badge--ok">期間錯開</span>
+        <span class="clash-item__pair">${App.utilChip(p.utility)}<span class="truncate muted" style="font:400 12px var(--font-sans)">${esc(UTIL[p.utility].short)}</span></span>
+        <span class="clash-item__meta">${fmt.range(p.start, p.end)}</span>
+      </button>`).join('');
+
+    const infoBad = Object.keys(ev.fields).filter(k => ev.fields[k]);
+    const area = v.length >= 3 ? geo.area(v) : 0;
+    const userMissing = ev.missing.filter(d => !d.auto);
+    const reqs = [
+      { t: '施工範圍', href: '#secShape', ok: !ev.shapeErr.length, d: ev.shapeErr.length ? ev.shapeErr[0].text : `${v.length} 頂點・${fmt.num(area)} m²${ev.issues.length ? '・' + ev.issues[0].text : ''}` },
+      { t: '衝突檢查', href: '#secPeriod', ok: v.length >= 3 && !!r && !cs.length, warn: cs.length > 0, d: cs.length ? `${cs.map(c => c.permit.id.slice(-4)).join('、')} 期間重疊・${ev.note ? '需填協調說明' : '已填協調說明'}` : v.length >= 3 && r ? '無衝突' : '框選範圍並選擇期間後自動比對' },
+      { t: '工程資料', href: '#secInfo', ok: !infoBad.length, d: infoBad.length ? `尚缺：${infoBad.map(k => FIELD_LABEL[k]).join('、')}` : `${UTIL[utility()].short}・${F.title.value.trim()}` },
+      { t: '施工期間', href: '#secPeriod', ok: !ev.period, d: ev.period || `${fmt.range(r.start, r.end)}・${fmt.span(r.start, r.end)} 天` },
+      { t: '應附文件', href: '#secFiles', ok: !userMissing.length, d: userMissing.length ? `缺：${userMissing.map(d => d.label).join('、')}` : `${state.files.length} 個檔案已上傳` },
+      { t: '聲明事項', href: '#secSubmit', ok: !ev.agree, d: ev.agree ? '送出前請勾選聲明' : '已確認' },
+    ];
+    $('#reqList').innerHTML = reqs.map(q => `<li><a class="${q.warn ? 'is-warn' : q.ok ? 'is-ok' : ''}" href="${q.href}"><span class="ap-req__mark">${q.warn ? '!' : q.ok ? icon('check') : ''}</span><span class="ap-req__t">${q.t}</span><span class="ap-req__d">${esc(q.d)}</span></a></li>`).join('');
+  }
+  $('#checkState').addEventListener('animationend', e => e.currentTarget.classList.remove('is-update'));
+  $('#cfList').addEventListener('click', e => {
+    const b = e.target.closest('[data-cf]');
+    if (!b) return;
+    const p = App.getPermit(b.dataset.cf);
+    // 跳到重疊開始日，地圖上才看得到該許可的施工範圍
+    mapDateMode = 'custom';
+    map.setDate(b.dataset.from);
+    syncMapDate();
+    const bb = geo.bbox([p.poly, state.verts]);
+    map.focusBox([bb[0] - 60, bb[1] - 60, bb[2] + 60, bb[3] + 60], { maxK: 3 });
+    hotGhost(p.id);
+    setTimeout(() => hotGhost(p.id, false), 1800);
+    map.flash(p.id);
+    const rr = mapEl.getBoundingClientRect();
+    if (rr.top < 60 || rr.bottom > innerHeight) mapEl.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' });
+  });
+  $('#cfList').addEventListener('pointerover', e => { const b = e.target.closest('[data-cf]'); if (b) hotGhost(b.dataset.cf); });
+  $('#cfList').addEventListener('pointerout', e => { const b = e.target.closest('[data-cf]'); if (b && !b.contains(e.relatedTarget)) hotGhost(b.dataset.cf, false); });
+
+  // 數字讀值：一般變更用滾動動畫；拖曳中直接寫值（同時更新目標，進行中的動畫會收斂到最新值）
+  function setNum(el, value, light) {
+    const fmtv = n => fmt.dec(n, 1);
+    const prev = parseFloat(el.dataset.countTo || '0');
+    if (light || reduce()) { el.dataset.countTo = value; el.textContent = fmtv(value); return; }
+    if (Math.abs(prev - value) > .05) App.countUp(el, value, { dur: 600, format: fmtv });
+    else { el.dataset.countTo = value; el.textContent = fmtv(value); }
+  }
+  function renderMeasure(ev, light) {
+    const v = state.verts;
+    setNum($('#mArea'), v.length >= 3 ? geo.area(v) : 0, light);
+    setNum($('#mPerim'), perimeter(v, state.closed || v.length >= 3), light);
+    $('#mVerts').textContent = v.length;
+    const loc = ev.loc;
+    $('#mDistrict').innerHTML = loc ? `${esc(loc.district.name)}<small>${CLS_NAME[loc.road.cls]}</small>` : '—';
+    $('#mRoad').innerHTML = loc ? `${esc(loc.seg)}<small>${loc.station}</small>` : '—';
+  }
+
+  /* ---------- 施工期間：可拖曳的佔用時間條 ---------- */
+  const periodEl = $('#period');
+  const pctOf = n => ((n - day(WIN0)) / WIN_N * 100).toFixed(3) + '%';
+  function spanStyle(a, b) {
+    const s = Math.max(a, day(WIN0)), e = Math.min(b, day(WIN1));
+    return e < s ? null : `left:${pctOf(s)};width:${((e - s + 1) / WIN_N * 100).toFixed(3)}%`;
+  }
+  {
+    let scale = '';
+    for (let n = day(WIN0); n <= day(WIN1); n++) {
+      const iso = App.iso(n);
+      if (iso.endsWith('-01') || n === day(WIN0)) scale += `<span class="gantt__month" style="left:${pctOf(n)}">${iso.slice(5, 7) === '01' ? `${iso.slice(0, 4)}・` : ''}${+iso.slice(5, 7)} 月</span>`;
+      else if (App.weekday(iso) === '一') scale += `<span class="gantt__week" style="left:${pctOf(n)}"></span>`;
+    }
+    periodEl.innerHTML = `
+      <div class="ap-phead"><span class="ap-phead__lbl">許可</span><div class="ap-scale" aria-hidden="true">${scale}</div></div>
+      <div class="ap-prow ap-prow--self">
+        <div class="ap-prow__lbl"><span>本案 <span class="badge badge--dark">申請中</span></span><small id="pSelfSub">拖曳時間條調整期間</small></div>
+        <div class="ap-track" id="pSelfTrack"><div id="pSelfClash"></div><div class="gantt__bar ap-pbar ap-pbar--self" id="pSelf" tabindex="0" role="slider" aria-label="本案施工期間（左右鍵平移，Shift＋左右鍵調整完工日）"><span class="ap-grip ap-grip--s" data-edge="start" aria-hidden="true"></span><span class="truncate" id="pSelfTxt"></span><span class="ap-grip ap-grip--e" data-edge="end" aria-hidden="true"></span></div></div>
+      </div>
+      <div id="pRows"></div>
+      <div class="ap-guides" aria-hidden="true"><div class="ap-lock" style="width:${pctOf(day(EARLIEST))}" title="申請日起 ${LEAD_DAYS} 日內不得開工"></div></div>`;
+  }
+  const selfBar = $('#pSelf'), selfTrack = $('#pSelfTrack');
+  function neighbors(cs) {
+    if (state.verts.length < 3) return [];
+    const b = geo.bbox([state.verts]), pad = 60, w0 = day(WIN0);
+    const sp = spatial();
+    const near = LIVE().filter(p => !sp.includes(p) && p.d1 >= w0 && p.bbox[0] <= b[2] + pad && p.bbox[2] >= b[0] - pad && p.bbox[1] <= b[3] + pad && p.bbox[3] >= b[1] - pad);
+    const rank = p => cs.some(c => c.permit === p) ? 0 : sp.includes(p) ? 1 : 2;
+    return sp.filter(p => p.d1 >= w0).concat(near).sort((a, c) => rank(a) - rank(c) || a.d0 - c.d0).slice(0, 6);
+  }
+  function renderPeriod(ev) {
+    const r = periodRange(), cs = ev.cs, sp = spatial();
+    if (r) {
+      const s = day(r.start), e = day(r.end), dur = e - s + 1;
+      selfBar.hidden = false;
+      selfBar.setAttribute('style', spanStyle(s, e) || 'display:none');
+      selfBar.classList.toggle('is-clash', cs.length > 0);
+      $('#pSelfTxt').textContent = fmt.range(r.start, r.end);
+      selfBar.setAttribute('aria-valuemin', '0');
+      selfBar.setAttribute('aria-valuemax', String(WIN_N - 1));
+      selfBar.setAttribute('aria-valuenow', String(s - day(WIN0)));
+      selfBar.setAttribute('aria-valuetext', `${fmt.long(r.start)} 至 ${fmt.long(r.end)}，共 ${dur} 天`);
+    } else selfBar.hidden = true;
+    $('#pSelfClash').innerHTML = cs.map(c => `<div class="ap-pclash clash-band" style="${spanStyle(day(c.from), day(c.to))}"></div>`).join('');
+    $('#pSelfSub').textContent = cs.length ? `與 ${cs.length} 件許可期間重疊` : '拖曳時間條調整期間';
+    $('#pSelfSub').classList.toggle('is-clash', cs.length > 0);
+
+    const list = neighbors(cs);
+    $('#pRows').innerHTML = list.length ? list.map(p => {
+      const c = cs.find(x => x.permit === p);
+      const st = spanStyle(p.d0, p.d1);
+      const u = UTIL[p.utility];
+      return `<div class="ap-prow">
+        <div class="ap-prow__lbl"><span><i class="swatch" style="--u:${u.color}"></i><span class="pid">${p.id}</span><span class="muted ap-lbl-u" style="font-weight:500">${u.name}</span></span><small class="${c ? 'is-clash' : ''}">${c ? `衝突 ${c.days} 天<span class="hide-sm">（${fmt.range(c.from, c.to)}）</span>` : sp.includes(p) ? '範圍重疊・期間錯開' : '鄰近<span class="hide-sm"> 60 m 內</span>・未重疊'}</small></div>
+        <div class="ap-track">${st ? `<div class="gantt__bar ap-pbar${App.isPending(p) ? ' gantt__bar--pending' : ''}" style="--u:${u.color};${st}" title="${p.id} ${fmt.range(p.start, p.end)}"><span class="truncate">${fmt.range(p.start, p.end)}</span></div>` : ''}${c ? `<div class="ap-pclash clash-band" style="${spanStyle(day(c.from), day(c.to))}"></div>` : ''}</div>
+      </div>`;
+    }).join('') : `<div class="ap-pempty">${state.verts.length >= 3 ? '範圍 60 m 內沒有其他在案許可。' : '框選範圍後，這裡會列出範圍內與鄰近的在案許可，並標出期間重疊。'}</div>`;
+
+    const dur = r ? fmt.span(r.start, r.end) : 0;
+    $('#durV').textContent = r ? dur : '—';
+    const days = new Set();
+    cs.forEach(c => { for (let n = day(c.from); n <= day(c.to); n++) days.add(n); });
+    $('#ovV').textContent = days.size;
+    $('#ovV').parentElement.style.color = days.size ? 'var(--danger-ink)' : '';
+    $('#noteField').hidden = !cs.length;
+  }
+  function renderSuggest(ev) {
+    const box = $('#suggest');
+    if (state.verts.length < 3 || !periodRange()) { box.innerHTML = ''; return; }
+    if (!ev.cs.length) {
+      const n = spatial().length;
+      box.innerHTML = `<div class="callout callout--ok ap-suggest"><span class="callout__icon">${icon('check')}</span><div class="callout__body"><p class="callout__title">此期間無衝突</p><p>${n ? `範圍內 ${n} 件許可皆與本案期間錯開。` : '範圍內沒有其他在案許可。'}</p></div></div>`;
+      return;
+    }
+    const sg = suggestPeriod();
+    box.innerHTML = `<div class="callout callout--warn ap-suggest"><span class="callout__icon">${icon('calendar')}</span><div class="callout__body">
+      <p class="callout__title">${sg ? `建議期間 ${fmt.range(sg.start, sg.end)}（${sg.shift > 0 ? '延後' : '提前'} ${Math.abs(sg.shift)} 天）可避開全部衝突` : '180 天內找不到同工期且無衝突的期間'}</p>
+      <p>${sg ? `工期維持 ${sg.dur} 天。若無法改期，請縮小範圍或於下方填寫協調說明，送出後由管線協調股安排。` : '請縮小範圍，或填寫協調說明後送管線協調股協調。'}</p></div>
+      ${sg ? `<button class="btn btn--sm" type="button" data-suggest="${sg.start}|${sg.end}">${icon('calendar', 'icon icon--sm')}套用建議期間</button>` : ''}</div>`;
+  }
+  $('#suggest').addEventListener('click', e => {
+    const b = e.target.closest('[data-suggest]');
+    if (!b) return;
+    const prev = [F.start.value, F.end.value];
+    const [s, en] = b.dataset.suggest.split('|');
+    setPeriod(s, en);
+    App.toast('已套用建議期間', { desc: `${fmt.date(s)} – ${fmt.date(en)}，期間衝突已排除。`, tone: 'ok', action: { label: '復原', onClick: () => setPeriod(prev[0], prev[1]) } });
+  });
+  function setPeriod(s, e, light = false) {
+    if (F.start.value === s && F.end.value === e) return;
+    F.start.value = s;
+    F.end.value = e;
+    touched.add('period');
+    update({ light });
+  }
+  // 拖曳時間條：本體平移、兩端改開工／完工日；以「天」為格
+  let pdrag = null;
+  selfBar.addEventListener('pointerdown', e => {
+    const r = periodRange();
+    if (!r || e.button !== 0) return;
+    e.preventDefault();
+    const edge = e.target.closest('[data-edge]');
+    pdrag = { id: e.pointerId, mode: edge ? edge.dataset.edge : 'move', x: e.clientX, s: day(r.start), e: day(r.end), dayW: selfTrack.getBoundingClientRect().width / WIN_N };
+    selfBar.setPointerCapture(e.pointerId);
+    selfBar.classList.add('is-drag');
+    selfBar.focus({ preventScroll: true });
+  });
+  selfBar.addEventListener('pointermove', e => {
+    if (!pdrag || e.pointerId !== pdrag.id) return;
+    const dd = Math.round((e.clientX - pdrag.x) / pdrag.dayW);
+    const min = day(EARLIEST), max = day(WIN1);
+    let s = pdrag.s, en = pdrag.e;
+    if (pdrag.mode === 'move') { const len = en - s; s = App.clamp(s + dd, min, max - len); en = s + len; }
+    else if (pdrag.mode === 'start') s = App.clamp(s + dd, Math.max(min, en - MAX_DAYS + 1), en);
+    else en = App.clamp(en + dd, s, Math.min(max, s + MAX_DAYS - 1));
+    setPeriod(App.iso(s), App.iso(en), true);
+  });
+  const endPeriodDrag = e => {
+    if (!pdrag || e.pointerId !== pdrag.id) return;
+    pdrag = null;
+    selfBar.classList.remove('is-drag');
+    update();
+  };
+  selfBar.addEventListener('pointerup', endPeriodDrag);
+  selfBar.addEventListener('pointercancel', endPeriodDrag);
+  selfBar.addEventListener('keydown', e => {
+    const r = periodRange();
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!r || !step) return;
+    e.preventDefault();
+    let s = day(r.start), en = day(r.end);
+    if (e.shiftKey) en = App.clamp(en + step, s, s + MAX_DAYS - 1);
+    else { s += step; en += step; }
+    if (s < day(EARLIEST)) return;
+    setPeriod(App.iso(s), App.iso(en));
+  });
+
+  /* ---------- 附件 ---------- */
+  const fmtSize = b => b >= 1048576 ? `${fmt.dec(b / 1048576, 1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+  function guessType(name) {
+    if (/交維|交通|traffic/i.test(name)) return 'traffic';
+    if (/環保|環境|噪音|env/i.test(name)) return 'env';
+    if (/登記|證明|license/i.test(name)) return 'license';
+    if (/設計|管線|圖說|\.(dwg|dxf)$/i.test(name)) return 'design';
+    const miss = DOCS.find(d => !d.auto && docRequired(d) && !state.files.some(f => f.type === d.key));
+    return miss ? miss.key : 'design';
+  }
+  function renderDocs(ev) {
+    $('#docList').innerHTML = DOCS.map(d => {
+      const req = docRequired(d), ok = ev.docOk(d), miss = req && !ok;
+      const f = d.auto ? null : state.files.find(x => x.type === d.key);
+      const desc = d.auto ? (ok ? `CG-RW-APPLY_範圍圖.pdf・送審時產生` : d.note) : f ? f.name : d.note;
+      return `<li class="ap-doc${ok ? ' is-ok' : miss ? ' is-miss' : ''}"><span class="ap-doc__mark">${ok ? icon('check') : miss ? '!' : ''}</span>
+        <div style="min-width:0"><p class="ap-doc__t">${d.label}</p><p class="ap-doc__d truncate">${esc(desc)}</p></div>
+        <span class="badge${ok ? ' badge--ok' : miss ? ' badge--danger' : ''}">${ok ? (d.auto ? '自動' : '已附') : req ? '必附' : '選附'}</span></li>`;
+    }).join('');
+    const need = DOCS.filter(docRequired);
+    $('#filesSub').textContent = `應附文件 ${need.filter(ev.docOk).length}/${need.length}`;
+  }
+  function renderFiles() {
+    $('#fileList').innerHTML = state.files.map(f => `
+      <div class="file-row" data-file="${f.id}">
+        <span class="file-row__icon" aria-hidden="true">${esc(f.name.split('.').pop().toUpperCase().slice(0, 4))}</span>
+        <div style="min-width:0"><p class="file-row__name truncate">${esc(f.name)}</p><p class="file-row__meta">${fmtSize(f.size)}・${f.t}</p></div>
+        <select class="select select--sm" data-ftype aria-label="${esc(f.name)} 的文件類別">${DOCS.filter(d => !d.auto).map(d => `<option value="${d.key}"${d.key === f.type ? ' selected' : ''}>${d.label}</option>`).join('')}</select>
+        <button class="icon-btn icon-btn--sm" type="button" data-remove aria-label="移除 ${esc(f.name)}">${icon('x', 'icon icon--sm')}</button>
+      </div>`).join('');
+  }
+  function addFiles(list) {
+    const bad = [];
+    let added = 0;
+    for (const file of list) {
+      if (!FILE_RE.test(file.name)) { bad.push(`${file.name}：格式不支援`); continue; }
+      if (file.size > MAX_FILE) { bad.push(`${file.name}：超過 20 MB`); continue; }
+      state.files.push({ id: ++fileSeq, name: file.name, size: file.size, type: guessType(file.name), t: `${fmt.md(TODAY)} ${App.NOW_TIME}` });
+      added++;
+    }
+    if (added) {
+      touched.add('files');
+      renderFiles();
+      update();
+      App.toast(`已加入 ${added} 個檔案`, { desc: '已依檔名判斷文件類別，請確認是否正確。', tone: 'ok' });
+    }
+    if (bad.length) App.toast('部分檔案未加入', { desc: bad.join('；'), tone: 'danger' });
+  }
+  const fileInput = $('#fileInput'), drop = $('#dropzone');
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+  ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('is-over'); }));
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('is-over'); addFiles(e.dataTransfer.files); });
+  $('#fileList').addEventListener('change', e => {
+    const sel = e.target.closest('[data-ftype]');
+    if (!sel) return;
+    state.files.find(f => f.id === +sel.closest('[data-file]').dataset.file).type = sel.value;
+    update();
+  });
+  $('#fileList').addEventListener('click', e => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    const id = +b.closest('[data-file]').dataset.file;
+    const i = state.files.findIndex(f => f.id === id), f = state.files[i];
+    state.files.splice(i, 1);
+    renderFiles();
+    update();
+    App.toast('已移除附件', { desc: f.name, action: { label: '復原', onClick: () => { state.files.splice(Math.min(i, state.files.length), 0, f); renderFiles(); update(); } } });
+  });
+
+  /* ---------- 工程資料連動 ---------- */
+  F.unit.innerHTML = '<option value="">請選擇申請單位</option>' + UTIL_ORDER.map(u => `<option value="${u}">${esc(UTIL[u].org)}（${UTIL[u].name}）</option>`).join('');
+  function fillContractors() {
+    const u = utility(), cur = F.contractor.value;
+    const pref = u ? CONTRACTORS[u] : [];
+    const rest = ALL_CONTRACTORS.filter(c => !pref.includes(c));
+    const opts = arr => arr.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    F.contractor.innerHTML = '<option value="">請選擇施工廠商</option>' +
+      (pref.length ? `<optgroup label="${esc(UTIL[u].short)}合約廠商">${opts(pref)}</optgroup><optgroup label="其他登記廠商">${opts(rest)}</optgroup>` : `<optgroup label="登記廠商">${opts(rest)}</optgroup>`);
+    F.contractor.value = cur;
+  }
+  function renderUnit() {
+    const u = utility();
+    $('#utilShow').innerHTML = u ? `${App.utilChip(u)}<span class="truncate">${esc(UTIL[u].unit)}・窗口 ${esc(UTIL[u].contact)}</span>` : '選擇申請單位後帶入';
+  }
+  let recKey = '';
+  function renderHours(ev) {
+    const loc = ev.loc, h = hoursValue();
+    const rec = loc ? HOURS_BY_CLS[loc.road.cls] : '';
+    // 使用者沒選過時段：依路段等級自動帶入建議時段
+    if (rec && !hoursTouched && !h) $(`input[name="hours"][value="${rec}"]`).checked = true;
+    if (rec !== recKey) {
+      recKey = rec;
+      $$('#fHours .ap-rec').forEach(b => b.remove());
+      if (rec) $(`input[name="hours"][value="${rec}"]`).closest('.ap-radio').querySelector('.ap-radio__t').insertAdjacentHTML('beforeend', '<span class="badge badge--accent ap-rec">建議</span>');
+    }
+    const cur = hoursValue();
+    $('#hoursHint').textContent = !loc ? '框選範圍後，依路段等級建議施工時段。'
+      : `${loc.road.name}為 ${CLS_NAME[loc.road.cls]}，依規定建議${HOURS[rec]} 施工${cur && cur !== rec ? '；採其他時段時，交通局會辦可能要求修正交通維持計畫。' : '。'}`;
+  }
+
+  /* ---------- 確認送審：摘要與規費 ---------- */
+  function renderSummary(ev) {
+    const v = state.verts, r = periodRange(), loc = ev.loc, u = utility(), h = hoursValue();
+    const area = v.length >= 3 ? geo.area(v) : 0, days = r ? fmt.span(r.start, r.end) : 0;
+    const cfText = ev.cs.length ? `<span style="color:var(--danger-ink);font-weight:600">${ev.cs.length} 件衝突</span>（${ev.cs.map(c => `<span class="nowrap">${c.permit.id}</span>`).join('、')}）`
+      : v.length >= 3 && r ? '<span style="color:var(--ok-ink);font-weight:600">無衝突</span>' : '—';
+    const rows = [
+      ['申請單位', esc(u ? UTIL[u].org : '—')],
+      ['工程名稱', esc(F.title.value.trim() || '—')],
+      ['施工位置', esc(loc ? `${loc.seg}（${loc.station}）・${loc.district.name}` : '—')],
+      ['挖掘範圍', v.length >= 3 ? `<span class="mono">${fmt.dec(area, 1)} m²</span>・${v.length} 頂點` : '—'],
+      ['施工期間', r ? `<span class="mono">${fmt.date(r.start)} – ${fmt.date(r.end)}</span>（${days} 天）` : '—'],
+      ['施工時段', esc(HOURS[h] || '—')],
+      ['工法・深度', esc(`${methodValue()}・${F.depth.value.trim() || '—'} m`)],
+      ['衝突檢核', cfText],
+    ];
+    $('#summary').innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('');
+    const use = Math.round(area * days * FEE.use), bond = Math.round(area * FEE.bond / 100) * 100;
+    $('#fees').innerHTML = `
+      <caption>示範費率：道路使用費每 m²・日 NT$ ${FEE.use}；刨鋪保證金每 m² NT$ ${FEE.bond}，驗收合格後退還。</caption>
+      <tbody>
+        <tr><td>審查規費<span class="ap-fee__f">每案定額</span></td><td>NT$ ${fmt.num(FEE.review)}</td></tr>
+        <tr><td>道路使用費<span class="ap-fee__f">${fmt.num(area)} m² × ${days} 日 × ${FEE.use}</span></td><td>NT$ ${fmt.num(use)}</td></tr>
+        <tr><td>刨鋪保證金<span class="ap-fee__f">${fmt.num(area)} m² × ${FEE.bond}</span></td><td>NT$ ${fmt.num(bond)}</td></tr>
+      </tbody>
+      <tfoot><tr><td>合計應繳</td><td>NT$ ${fmt.num(FEE.review + use + bond)}</td></tr></tfoot>`;
+  }
+
+  /* ---------- 圖面日期 ---------- */
+  function syncMapDate() {
+    $$('#mapDateSeg [data-md]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.md === mapDateMode)));
+    const r = periodRange();
+    $('#mdStart').textContent = r ? fmt.md(r.start) : '—';
+    if (mapDateMode === 'custom') return;
+    const d = mapDateMode === 'today' || !r ? TODAY : r.start;
+    if (map.date() !== d) map.setDate(d);
+  }
+  $('#mapDateSeg').addEventListener('click', e => {
+    const b = e.target.closest('[data-md]');
+    if (!b) return;
+    mapDateMode = b.dataset.md;
+    syncMapDate();
+  });
+
+  /* ---------- 單一重繪入口：任何資料變動（含復原、送審）都走這裡 ---------- */
+  function update({ light = false } = {}) {
+    const ev = evaluate();
+    shapeBad = state.closed && ev.shapeErr.length > 0;
+    const u = utility();
+    mapEl.style.setProperty('--ap-u', u ? UTIL[u].color : '#5C6862');
+    drawShape();
+    updateRubber();
+    renderHatches(ev.cs);
+    renderBar();
+    renderHint();
+    renderMeasure(ev, light);
+    renderHours(ev);
+    // renderHours 可能自動帶入時段，欄位錯誤需重算
+    ev.fields = fieldErrors();
+    ev.missing = DOCS.filter(d => docRequired(d) && !ev.docOk(d));
+    renderSide(ev);
+    renderSteps(stepsOf(ev));
+    renderPeriod(ev);
+    renderSuggest(ev);
+    renderDocs(ev);
+    renderSummary(ev);
+    paintAll(ev);
+    syncMapDate();
+    $('#liveTotal').textContent = LIVE().length;
+    return ev;
+  }
+  function shapeChanged(scan = false) {
+    state.shapeVer++;
+    update();
+    if (scan) runScan();
+  }
+
+  /* ---------- 草稿：載入、擷取、捨棄 ---------- */
+  function captureForm() {
+    return {
+      verts: state.verts.map(p => p.slice()), closed: state.closed, unit: F.unit.value, contact: F.contact.value, phone: F.phone.value,
+      title: F.title.value, contractor: F.contractor.value, depth: F.depth.value, method: methodValue(), hours: hoursValue(), desc: F.desc.value,
+      start: F.start.value, end: F.end.value, note: F.note.value, agree: F.agree.checked, files: state.files.map(f => ({ ...f })),
+    };
+  }
+  function loadForm(d) {
+    state.verts = d.verts.map(p => p.slice());
+    state.closed = d.closed && d.verts.length >= 3;
+    state.drawing = !state.closed;
+    history = [];
+    F.unit.value = d.unit;
+    fillContractors();
+    F.contractor.value = d.contractor;
+    F.contact.value = d.contact; F.phone.value = d.phone; F.title.value = d.title;
+    F.depth.value = d.depth; F.desc.value = d.desc; F.note.value = d.note; F.agree.checked = d.agree;
+    F.start.value = d.start; F.end.value = d.end;
+    setMethod(d.method);
+    $$('input[name="hours"]').forEach(x => { x.checked = x.value === d.hours; });
+    hoursTouched = !!d.hours;
+    state.files = d.files.map(f => ({ ...f, id: ++fileSeq }));
+    attempted = false;
+    touched.clear();
+    mapDateMode = 'start';
+    lastPointer = null;
+    renderUnit();
+    renderFiles();
+    shapeChanged();
+  }
+  const draftBar = $('#draftBar');
+  $('#btnDiscard').addEventListener('click', () => {
+    const prev = captureForm();
+    loadForm(BLANK);
+    draftBar.hidden = true;
+    App.toast('已捨棄草稿', { desc: '表單已清空，請在地圖上框選新的施工範圍。', action: { label: '復原', onClick: () => { loadForm(prev); draftBar.hidden = false; } } });
+  });
+  $$('[data-save]').forEach(b => b.addEventListener('click', () => {
+    App.toast('草稿已儲存', { desc: `${fmt.date(TODAY)} ${App.NOW_TIME}・示範環境僅保存在本頁記憶體`, tone: 'ok' });
+  }));
+
+  /* ---------- 送審 ---------- */
+  function collectErrors(ev) {
+    const out = [];
+    if (ev.shapeErr.length) out.push({ text: ev.shapeErr[0].text, el: $('#secShape') });
+    Object.entries(ev.fields).forEach(([k, msg]) => { if (msg) out.push({ text: msg, el: $(`[data-f="${k}"]`) }); });
+    if (ev.period) out.push({ text: ev.period, el: $('[data-f="period"]') });
+    if (ev.note) out.push({ text: '請填寫衝突協調說明', el: $('[data-f="note"]') });
+    const userMissing = ev.missing.filter(d => !d.auto);
+    if (userMissing.length) out.push({ text: `缺附件：${userMissing.map(d => d.label).join('、')}`, el: $('[data-f="files"]') });
+    if (ev.agree) out.push({ text: ev.agree, el: $('[data-f="agree"]') });
+    return out;
+  }
+  async function submit() {
+    attempted = true;
+    const ev = update();
+    const errs = collectErrors(ev);
+    if (errs.length) {
+      App.toast(`尚有 ${errs.length} 項需要補正`, { desc: errs.slice(0, 3).map(x => x.text).join('；') + (errs.length > 3 ? '…' : ''), tone: 'danger' });
+      const t = errs[0].el;
+      t.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' });
+      const f = t.querySelector('select, textarea, input:not([type="file"]), .dropzone');
+      if (f) f.focus({ preventScroll: true });
+      return;
+    }
+    if (ev.cs.length) {
+      const ok = await App.confirm({
+        title: '送出含衝突的申請？',
+        message: `本案與 ${ev.cs.map(c => c.permit.id).join('、')} 期間重疊。送出後狀態為「衝突協調」，由管線協調股吳思妤召開協調會，協調完成後才會分送會辦。`,
+        confirmLabel: '確認送出', tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    doSubmit(ev);
+  }
+  $$('[data-submit]').forEach(b => b.addEventListener('click', submit));
+
+  function successHtml(p, cfs) {
+    const done = !!cfs;
+    const other = c => (c.a === p ? c.b : c.a).id;
+    return `<div class="ap-done">
+      <svg class="ap-done__mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29"/><path d="M20 33l8 8 16-17"/></svg>
+      <p class="ap-done__id">${p.id}</p>
+      <p class="ap-done__sub">${esc(UTIL[p.utility].short)}・${esc(p.purpose)}・${esc(p.segment)}・${fmt.area(p.area)}</p>
+      ${App.flowTrack(p)}
+      <div class="ap-done__auto${done ? (cfs.length ? ' is-danger' : ' is-ok') : ''}" role="status">${done
+        ? `${icon(cfs.length ? 'alert' : 'check', 'icon icon--sm')}<span>${cfs.length
+          ? `自動衝突檢查發現 ${cfs.length} 件衝突（${cfs.map(c => `${c.id}：與 ${other(c)}`).join('、')}），已轉管線協調股吳思妤協調。`
+          : '自動衝突檢查無衝突，已分送交通局陳柏翰、管線協調股吳思妤、環保局黃志豪會辦。'}</span>`
+        : `<span class="ap-spin" aria-hidden="true"></span><span>自動衝突檢查中：比對 ${LIVE().length - 1} 件在案許可…</span>`}</div>
+      <p class="ap-done__note">示範環境：申請資料只保存在本頁記憶體，重新整理或換頁後即恢復原始資料。</p>
+    </div>`;
+  }
+  function doSubmit(ev) {
+    const r = periodRange(), loc = ev.loc;
+    const p = App.addPermit({
+      utility: utility(), poly: state.verts.map(q => q.slice()), start: r.start, end: r.end,
+      purpose: F.title.value.trim(), contact: F.contact.value.trim(), address: `${loc.seg} ${loc.station}`,
+      method: methodValue(), depth: Number(F.depth.value), hours: HOURS[hoursValue()], contractor: F.contractor.value,
+    });
+    // 先清空表單：否則剛送出的許可會和表單上同一個範圍互相「衝突」
+    loadForm(BLANK);
+    draftBar.hidden = true;
+    let after = null;
+    const m = App.modal({
+      eyebrow: 'APPLICATION SUBMITTED', title: '申請已送出', size: 'lg', body: successHtml(p, null),
+      actions: [
+        { label: '在地圖上檢視', variant: 'ghost', onClick: close => { after = 'locate'; close(); } },
+        { label: '再申請一件', variant: 'primary', autofocus: true },
+      ],
+      onClose: () => {
+        if (after === 'locate') {
+          mapDateMode = 'custom';
+          map.setDate(p.start);
+          syncMapDate();
+          map.focusPermit(p.id);
+          setTimeout(() => map.flash(p.id), 700);
+          mapEl.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' });
+        }
+      },
+    });
+    // 自動衝突檢查：送出後由系統比對，結果用 setStatus 寫回，計數、徽章與地圖同步；執行當下才讀許可的最新狀態
+    setTimeout(() => {
+      const cur = App.getPermit(p.id);
+      if (cur.status !== 'checking') return;
+      const cfs = App.conflictsOf(cur);
+      App.setStatus(cur, cfs.length ? 'coordinating' : 'review', {
+        by: 'sys', note: cfs.length ? `自動衝突檢查發現 ${cfs.length} 件衝突（${cfs.map(c => c.id).join('、')}）` : '自動衝突檢查無衝突，分送會辦',
+      });
+      if (m.el.isConnected) m.body.innerHTML = successHtml(cur, cfs);
+      else App.toast(`${cur.id} 自動衝突檢查完成`, { desc: cfs.length ? `發現 ${cfs.length} 件衝突，已轉管線協調。` : '無衝突，已分送會辦。', tone: cfs.length ? 'warn' : 'ok' });
+    }, reduce() ? 400 : 1600);
+  }
+
+  /* ---------- 申請須知 ---------- */
+  $('#btnGuide').addEventListener('click', () => {
+    App.modal({
+      eyebrow: 'GUIDE', title: '道路挖掘許可申請須知', size: 'md',
+      body: `<ol style="list-style:decimal;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13.5px">
+        <li>申請須於預定開工日 ${LEAD_DAYS} 日前提出；緊急搶修得先行施工，並於 24 小時內補辦申請。</li>
+        <li>單次許可期間最長 ${MAX_DAYS} 天，延期須於期滿 7 日前申請。</li>
+        <li>A 級幹道限夜間 22:00–翌日 06:00 施工；B 級道路避開 07–09、17–19 尖峰時段。</li>
+        <li>同路段施工期間重疊者，由工務局管線協調股召開協調會，必要時併案採共同管溝施工。</li>
+        <li>會辦單位：交通局交通工程科（陳柏翰）、工務局管線協調股（吳思妤）、環保局空氣噪音科（黃志豪）。</li>
+        <li>完工後 30 日內完成刨鋪，由養護工程隊許文傑驗收：${App.ACCEPTANCE.slice(0, 4).map(a => `${a.label}（${a.spec}）`).join('、')}。</li>
+      </ol>`,
+      actions: [{ label: '我知道了', variant: 'primary', autofocus: true }],
+    });
+  });
+
+  /* ---------- 欄位事件 ---------- */
+  const markTouched = key => () => { touched.add(key); update(); };
+  F.unit.addEventListener('change', () => {
+    const u = utility();
+    if (u && !F.contact.value.trim()) F.contact.value = UTIL[u].contact;
+    fillContractors();
+    renderUnit();
+    markTouched('unit')();
+  });
+  ['contact', 'phone', 'title', 'depth'].forEach(k => {
+    F[k].addEventListener('input', () => update());
+    F[k].addEventListener('blur', markTouched(k));
+  });
+  F.contractor.addEventListener('change', markTouched('contractor'));
+  F.note.addEventListener('input', () => update());
+  F.note.addEventListener('blur', markTouched('note'));
+  F.agree.addEventListener('change', markTouched('agree'));
+  [F.start, F.end].forEach(i => i.addEventListener('change', markTouched('period')));
+  $('#fHours').addEventListener('change', () => { hoursTouched = true; markTouched('hours')(); });
+  $('#fMethod').addEventListener('click', e => {
+    const b = e.target.closest('[data-method]');
+    if (!b) return;
+    setMethod(b.dataset.method);
+    update();
+  });
+
+  // 送審、狀態異動（含其他元件觸發的復原）後：空間比對作廢並整頁重繪
+  App.on('data', () => { spatialCache.ver = -1; hatchKey = ''; update(); });
+
+  loadForm(DRAFT);
+});
+</script>
+</body>
+</html>

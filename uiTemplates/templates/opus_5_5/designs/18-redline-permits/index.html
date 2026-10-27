@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>審查總覽 — 澄港市建照圖說審查系統</title>
+<meta name="description" content="澄港市建築執照圖說線上審查系統：各階段案件數、焦點圖說紅筆批註、平均審查天數趨勢、科別負載與本週到期案件。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 階段流程列（標題欄式 KPI） ---------- */
+  .flowstrip { position: relative; padding-top: 44px; }
+  .flowstrip__loop {
+    position: absolute; top: 4px; left: 50%; width: 20%; height: 40px;
+    pointer-events: none;
+  }
+  .flowstrip__loop svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .flowstrip__loop path { vector-effect: non-scaling-stroke; }
+  .flowstrip__loop svg.flowstrip__loop-head { inset: auto; left: -6px; bottom: -1px; width: 12px; height: 10px; }
+  .flowstrip__loop-label {
+    position: absolute; left: 50%; top: -6px;
+    transform: translateX(-50%) rotate(-2deg);
+    padding: 0 8px;
+    background: var(--paper);
+    font-family: var(--font-hand); font-size: 16px; color: var(--red-ink);
+    white-space: nowrap;
+  }
+  .flowstrip__list {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1.5px solid var(--ink);
+    background: var(--sheet);
+    box-shadow: var(--sh-under), var(--sh-1);
+  }
+  .flowstrip__list > li { position: relative; min-width: 0; }
+  .flowstrip__list > li + li { border-left: 1px solid var(--ink); }
+  /* 階段之間的流向箭頭，壓在格線上 */
+  .flowstrip__list > li + li::before {
+    content: "";
+    position: absolute; left: -12px; top: 50%;
+    width: 22px; height: 22px; margin-top: -11px;
+    border: 1px solid var(--ink); border-radius: 50%;
+    background: var(--sheet-solid) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 6h6M6.5 3.5 9 6 6.5 8.5' fill='none' stroke='%232D3A4A' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat;
+    z-index: 2;
+  }
+  .fstage {
+    position: relative;
+    display: flex; flex-direction: column;
+    height: 100%;
+    padding: 16px 24px 16px 26px;
+    color: inherit; text-decoration: none;
+    transition: background var(--dur-2);
+  }
+  .fstage:hover { background: rgba(255, 241, 118, .28); }
+  .fstage__code { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; color: var(--ink-3); }
+  .fstage__label { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .fstage__num {
+    position: relative; align-self: flex-start;
+    margin: 10px 0 12px;
+    font-size: 58px; font-weight: 600; line-height: .95; letter-spacing: -.02em;
+  }
+  .fstage__num small { font-size: 14px; font-weight: 500; color: var(--ink-3); margin-left: 4px; letter-spacing: 0; }
+  .fstage__foot { margin-top: auto; padding-top: 9px; border-top: 1px dashed var(--line-2); font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+  .fstage__foot b { color: var(--ink); font-weight: 600; }
+  .fstage__foot .red-ink { font-weight: 600; }
+  .fstage--fix .fstage__num { color: var(--red-ink); }
+  .fstage__cloud { position: absolute; left: -16px; top: -12px; max-width: none; pointer-events: none; color: var(--red); }
+  .fstage__stamp { position: absolute; right: 18px; top: 40px; }
+  .fstage__rounds { display: flex; gap: 10px; flex-wrap: wrap; }
+  .fstage__rounds > span { display: inline-flex; align-items: center; gap: 4px; }
+  .fstage__rounds .rev { width: 20px; height: 17px; }
+  .fstage__rounds .rev > b { font-size: 9px; margin-top: 4px; }
+
+  /* ---------- 焦點圖說 ---------- */
+  .hero { align-items: stretch; }
+  .hero-sheet { display: flex; flex-direction: column; height: 100%; }
+  .hero-sheet .canvas { border-left: 0; border-right: 0; border-bottom: 0; flex: 1; display: flex; flex-direction: column; }
+  .hero-sheet .canvas__viewport { flex: 1; }
+  .hero-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .hero-sub .mono { font-size: 12px; color: var(--ink-2); }
+  .hero-lamps { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line-2); background: #FFFEFA; }
+  .canvas__toolbar .hint { margin-left: auto; }
+
+  .anno-panel { display: flex; flex-direction: column; height: 100%; }
+  .anno-panel .anno-list { flex: 1; }
+  .anno-panel .chip-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+
+  /* ---------- 趨勢圖 ---------- */
+  .trend-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 28px; margin-bottom: 14px; }
+  .trend-figure { display: flex; align-items: flex-end; gap: 18px; }
+  .trend-figure .stat__value { font-size: 52px; }
+  .trend-delta { font-size: 13px; color: var(--ink-3); line-height: 1.45; padding-bottom: 6px; }
+  .trend-delta b { color: var(--ok); font-weight: 600; }
+  .chart { position: relative; }
+  .chart svg { width: 100%; height: auto; display: block; }
+  .chart__scroll { position: relative; }
+  .tr-admin { fill: var(--chart-1); }
+  .tr-tech { fill: var(--chart-2); }
+  .tr-fix { fill: var(--chart-3); }
+  .tr-grid { stroke: rgba(45, 58, 74, .12); }
+  .tr-base { stroke: var(--ink); }
+  .tr-tick { fill: var(--ink-3); font-family: var(--font-mono); font-size: 11px; }
+  .tr-year { fill: var(--ink); font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+  .tr-target { stroke: var(--red); stroke-dasharray: 7 5; }
+  .tr-target-label { fill: var(--red-ink); font-size: 12px; font-weight: 600; }
+  .tr-value { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .tr-note { fill: var(--red-ink); font-family: var(--font-hand); font-size: 16px; }
+  .tr-note-line { stroke: var(--red); fill: none; }
+  .tr-slot { fill: transparent; cursor: default; outline: none; }
+  .tr-slot:hover,
+  .tr-slot:focus-visible { fill: rgba(255, 241, 118, .4); }
+  .tr-slot:focus-visible { stroke: var(--red); stroke-width: 1.5; }
+  .trend-table { margin-top: 4px; }
+  .trend-table .table td,
+  .trend-table .table th { padding: 7px 10px; }
+
+  /* ---------- 科別負載 ---------- */
+  .load-list { display: flex; flex-direction: column; gap: 18px; }
+  .load-row { display: grid; grid-template-columns: 116px minmax(0, 1fr) 70px; gap: 6px 14px; align-items: center; }
+  .load-row__who { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .load-row__name { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .load-bar { position: relative; height: 20px; }
+  .load-bar__track {
+    position: absolute; inset: 0;
+    border-bottom: 1px solid var(--ink);
+    /* 每格 = 1 件，像尺規刻度 */
+    background: repeating-linear-gradient(90deg, rgba(45, 58, 74, .22) 0 1px, transparent 1px calc(100% / var(--scale))) 0 100% / 100% 6px no-repeat;
+  }
+  .load-bar__seg { position: absolute; top: 3px; bottom: 4px; transition: width var(--dur-4) var(--ease-out), left var(--dur-4) var(--ease-out); }
+  .load-bar__seg--review { background: var(--chart-2); border-radius: 0; }
+  .load-bar__seg--wait { background: var(--chart-1); border-radius: 0 3px 3px 0; }
+  .load-bar__seg--over { background: repeating-linear-gradient(135deg, var(--red) 0 3px, rgba(215, 38, 61, .25) 3px 6px); border-radius: 0 3px 3px 0; }
+  .load-bar__cap { position: absolute; top: -6px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
+  .load-bar__cap::after { content: "上限"; position: absolute; top: -13px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+  .load-row__num { text-align: right; font-family: var(--font-mono); font-size: 13px; line-height: 1.25; }
+  .load-row__num small { display: block; font-size: 11px; color: var(--ink-3); }
+  .load-row.is-over .load-row__num b { color: var(--red-ink); }
+  .load-row__note { grid-column: 2 / 4; font-family: var(--font-hand); color: var(--red-ink); font-size: 15px; margin-top: -2px; }
+  .load-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+
+  /* ---------- 近期案件 / 本週到期 ---------- */
+  .recent .table td { padding-top: 12px; padding-bottom: 12px; }
+  .recent .table__title a { text-decoration: none; }
+  .recent .table__title a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .due-list { display: flex; flex-direction: column; }
+  .due-item {
+    display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px dashed var(--line-2);
+    position: relative;
+  }
+  .due-item:last-child { border-bottom: 0; }
+  .due-date { text-align: center; border: 1px solid var(--ink); background: #FFFEFA; padding: 4px 0 3px; line-height: 1.15; }
+  .due-date b { display: block; font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
+  .due-date span { font-size: 11px; color: var(--ink-3); }
+  .due-date.is-over { border-color: var(--red); background: var(--red); color: #fff; }
+  .due-date.is-over span { color: #fff; }
+  .due-date.is-today { background: var(--hl); }
+  .due-item__main { min-width: 0; }
+  .due-item__title { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  .due-item__title .mono { white-space: nowrap; flex-shrink: 0; font-size: 12px; color: var(--ink-2); }
+  .due-more { display: flex; justify-content: center; padding: 10px 16px 14px; border-top: 1px dashed var(--line-2); }
+  .due-item__title a { text-decoration: none; font-weight: 600; }
+  .due-item__title a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .due-item__meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .due-item__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .due-item .stamp { position: absolute; right: 108px; top: 50%; margin-top: -14px; pointer-events: none; }
+  .due-item.is-reminded .due-item__title a { color: var(--ink-3); }
+  @media (max-width: 1100px) {
+    .due-item .stamp { right: 120px; }
+  }
+
+  /* ---------- 手機 ---------- */
+  @media (max-width: 1100px) {
+    .hero-sheet .canvas__viewport { flex: none; }
+  }
+  @media (max-width: 720px) {
+    .flowstrip { padding-top: 0; }
+    .flowstrip__loop { display: none; }
+    .flowstrip__list { grid-template-columns: 1fr; }
+    .flowstrip__list > li + li { border-left: 0; border-top: 1px solid var(--ink); }
+    .flowstrip__list > li + li::before { left: auto; right: 22px; top: -12px; margin-top: 0; transform: rotate(90deg); }
+    .fstage { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "code num" "label num" "foot foot"; gap: 0 12px; padding: 14px 16px; }
+    .fstage__code { grid-area: code; }
+    .fstage__label { grid-area: label; }
+    .fstage__num { grid-area: num; margin: 0 6px 0 0; font-size: 44px; align-self: center; }
+    .fstage__foot { grid-area: foot; margin-top: 10px; }
+    .fstage__stamp { right: auto; left: 128px; top: 18px; }
+    .hero-lamps { display: none; }
+    .canvas__toolbar .hint { display: none; }
+    .load-row { grid-template-columns: minmax(0, 1fr) 64px; }
+    .load-row__who { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
+    .load-row__note { grid-column: 1 / -1; }
+    .due-item { grid-template-columns: 48px minmax(0, 1fr); padding: 12px 16px; }
+    .due-item__side { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; }
+    .due-item .stamp { right: 16px; top: 18px; margin-top: 0; }
+    .trend-figure .stat__value { font-size: 42px; }
+    /* 近期案件：手機改三列卡片（案號＋日期 / 案名 / 階段・回合・燈號） */
+    .recent .table--stack tr { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "key key date" "title title title" "stage rev lamps"; gap: 6px 10px; align-items: center; }
+    .recent .table--stack td { display: block; padding: 0; text-align: left; }
+    .recent .table--stack td[data-label]::before { display: none; }
+    .recent .table--stack td:nth-child(1) { grid-area: key; }
+    .recent .table--stack td:nth-child(2) { grid-area: title; padding: 0; }
+    .recent .table--stack td:nth-child(3) { grid-area: stage; }
+    .recent .table--stack td:nth-child(4) { grid-area: rev; }
+    .recent .table--stack td:nth-child(5) { grid-area: lamps; text-align: right; }
+    .recent .table--stack td:nth-child(6) { grid-area: date; text-align: right; color: var(--ink-3); font-size: 12px; }
+    /* 趨勢圖：手機保留可讀字級，改為水平捲動 */
+    .chart__scroll { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+    .chart__scroll svg { min-width: 640px; }
+    .trend-figure { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .trend-delta { padding-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="edge">
+  <div class="wrap edge__inner">
+    <a class="backlink" href="../../index.html"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>返回目錄</a>
+    <span class="edge__org">澄港市政府都市發展局・建築管理處｜建築執照圖說線上審查系統</span>
+    <span class="edge__plot" data-clock>PLOT 2026-10-21 09:40</span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="3.5" y="7.5" width="26" height="29" fill="#ECE9DF" stroke="#2D3A4A" stroke-width="1.2" transform="rotate(-7 16.5 22)"/>
+        <rect x="8.5" y="4.5" width="27" height="30" fill="#FFFEFA" stroke="#2D3A4A" stroke-width="1.4"/>
+        <path d="M12.5 9.5h19M12.5 9.5v6M31.5 9.5v4M22 9.5v4" fill="none" stroke="#2D3A4A" stroke-width="1.2"/>
+        <path d="M14.0 15.0 A3.3 3.3 0 0 1 19.5 15.0 A3.1 3.1 0 0 1 25.0 15.0 A3.3 3.3 0 0 1 30.5 15.0 A2.2 2.2 0 0 1 33.0 18.0 A3.0 3.0 0 0 1 33.0 23.5 A2.8 2.8 0 0 1 33.0 29.0 A2.9 2.9 0 0 1 27.5 29.0 A3.4 3.4 0 0 1 22.0 29.0 A3.1 3.1 0 0 1 16.5 29.0 A2.0 2.0 0 0 1 14.0 26.0 A3.3 3.3 0 0 1 14.0 20.5 A3.1 3.1 0 0 1 14.0 15.0Z" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M23.5 18.2 28.6 26.4H18.4z" fill="#FFF176" stroke="#2D3A4A" stroke-width="1.1" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand__text"><span class="brand__name">建照圖說審查</span><span class="brand__sub">REDLINE · CHENGGANG</span></span>
+    </a>
+    <nav class="site-nav" id="siteNav" aria-label="主要導覽">
+      <ul class="site-nav__list">
+        <li><a class="nav-tab" href="index.html" aria-current="page"><span class="nav-tab__no">A-01</span><span class="nav-tab__label">審查總覽</span></a></li>
+        <li><a class="nav-tab" href="permits.html"><span class="nav-tab__no">A-02</span><span class="nav-tab__label">案件清單</span><span class="nav-tab__count" data-count="active" title="審查中案件數">32</span></a></li>
+        <li><a class="nav-tab" href="review.html"><span class="nav-tab__no">A-03</span><span class="nav-tab__label">圖說審查</span><span class="nav-tab__count nav-tab__count--red" data-count="myQueue" title="待我審查">4</span></a></li>
+        <li><a class="nav-tab" href="permit.html"><span class="nav-tab__no">A-04</span><span class="nav-tab__label">案件詳情</span></a></li>
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <button class="icon-btn" type="button" data-search aria-label="搜尋案件（快捷鍵 /）" title="搜尋案件（/）"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.4 3.4"/></svg></button>
+      <div class="user-chip"><span class="avatar" aria-hidden="true">許</span><span class="user-chip__text"><b>許若晴</b><small>建築科 審查員</small></span></div>
+      <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="siteNav" aria-label="開啟選單"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="wrap">
+
+    <header class="page-head" data-reveal>
+      <div class="page-head__main">
+        <div class="page-head__code"><span>A-01</span><span>審查總覽 · OVERVIEW</span><span>建築科一股</span></div>
+        <h1 class="page-title">審查總覽</h1>
+        <p class="page-desc">2026 年 10 月 21 日（三）・第 43 週｜審查中 <b><span data-count="active">32</span> 件</b>・<b class="red-ink">已逾期 <span data-count="overdue">2</span> 件</b>・本週到期 <b><span data-count="dueWeek">10</span> 件</b></p>
+      </div>
+      <div class="page-head__actions">
+        <span class="margin-note margin-note--arrow hide-sm" id="headNote">結構科本週超載，先協調外審</span>
+        <button class="btn" type="button" id="exportBtn"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2"/><rect x="4.5" y="9.5" width="7" height="4"/></svg>匯出週報</button>
+        <a class="btn btn--primary" href="review.html?id=115-0412"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 2.6 13.4 5.4 5.6 13.2 2.4 13.6l.4-3.2z"/><path d="m9.2 4 2.8 2.8"/></svg>進入審查工作區</a>
+      </div>
+    </header>
+
+    <!-- 各階段案件數：掛號 → 行政 → 技術 ⇄ 補正 → 核發 -->
+    <section class="flowstrip" aria-labelledby="flowTitle" data-reveal style="--i:1">
+      <h2 id="flowTitle" class="sr-only">各審查階段案件數</h2>
+      <div class="flowstrip__loop" aria-hidden="true">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none"><path id="loopPath" d="M100 40 C 100 4, 0 4, 0 38" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-dasharray="5 4"/></svg>
+        <svg class="flowstrip__loop-head" viewBox="0 0 12 10"><path d="M1 1 6 9 11 1" fill="none" stroke="#D7263D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="flowstrip__loop-label">補正後重新送審 R+1 ↩</span>
+      </div>
+      <ol class="flowstrip__list">
+        <li>
+          <a class="fstage" href="permits.html?stage=intake">
+            <span class="fstage__code"><span>01 · INTAKE</span></span>
+            <span class="fstage__label">掛號收件</span>
+            <span class="fstage__num"><span data-count="intake" data-count-to="4">4</span><small>件</small></span>
+            <span class="fstage__foot" id="footIntake"></span>
+          </a>
+        </li>
+        <li>
+          <a class="fstage" href="permits.html?stage=admin">
+            <span class="fstage__code"><span>02 · ADMIN</span></span>
+            <span class="fstage__label">行政審查</span>
+            <span class="fstage__num"><span data-count="admin" data-count-to="5">5</span><small>件</small></span>
+            <span class="fstage__foot" id="footAdmin"></span>
+          </a>
+        </li>
+        <li>
+          <a class="fstage" href="permits.html?stage=tech">
+            <span class="fstage__code"><span>03 · TECHNICAL</span></span>
+            <span class="fstage__label">技術審查中</span>
+            <span class="fstage__num"><span data-count="tech" data-count-to="13">13</span><small>件</small></span>
+            <span class="fstage__foot" id="footTech"></span>
+          </a>
+        </li>
+        <li>
+          <a class="fstage fstage--fix" href="permits.html?stage=fix">
+            <span class="fstage__code"><span>04 · REVISION</span></span>
+            <span class="fstage__label">補正中</span>
+            <span class="fstage__num" id="fixNum"><span data-count="fix" data-count-to="10">10</span><small>件</small></span>
+            <span class="fstage__foot" id="footFix"></span>
+          </a>
+        </li>
+        <li>
+          <a class="fstage" href="permits.html?stage=issued">
+            <span class="fstage__code"><span>05 · ISSUED</span></span>
+            <span class="fstage__label">核發（近 90 日）</span>
+            <span class="stamp stamp--ok stamp--sm fstage__stamp" aria-hidden="true">核發</span>
+            <span class="fstage__num"><span data-count="issued" data-count-to="8">8</span><small>件</small></span>
+            <span class="fstage__foot" id="footIssued"></span>
+          </a>
+        </li>
+      </ol>
+    </section>
+
+    <!-- 焦點圖說：描圖紙上的平面圖與紅筆批註 -->
+    <section class="section grid hero" aria-labelledby="heroTitle">
+      <div class="col-8">
+        <article class="sheet sheet--marks hero-sheet" data-reveal style="--i:2">
+          <div class="sheet__head">
+            <span class="sheet__code">A-201</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="heroTitle">今日焦點圖說・海濱路集合住宅新建工程</h2>
+              <p class="sheet__sub hero-sub"><span class="mono">115建審字第0412號</span><span>港埕置業股份有限公司</span><span id="heroRev"></span><span class="stage" data-stage="tech">技術審查</span></p>
+            </div>
+            <div class="sheet__actions">
+              <span class="hero-lamps" id="heroLamps"></span>
+              <button class="btn btn--sm btn--ghost" type="button" id="replayBtn" title="重新描繪平面圖與批註"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5V5h-2.5"/></svg>重播描繪</button>
+            </div>
+          </div>
+          <div class="canvas">
+            <div class="canvas__toolbar">
+              <div class="seg" id="viewSeg" role="group" aria-label="圖說回合">
+                <button type="button" data-value="r1" aria-pressed="false">R1<span class="mono">07/02</span></button>
+                <button type="button" data-value="r2" aria-pressed="true">R2<span class="mono">09/30</span></button>
+                <button type="button" data-value="diff" aria-pressed="false">疊圖比較</button>
+              </div>
+              <span class="canvas__toolbar-sep" aria-hidden="true"></span>
+              <div class="cluster" role="group" aria-label="套繪圖層">
+                <button class="layer-btn" type="button" data-layer="str" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>結構</button>
+                <button class="layer-btn" type="button" data-layer="fir" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>消防</button>
+                <button class="layer-btn" type="button" data-layer="acc" aria-pressed="false"><span class="layer-btn__swatch" aria-hidden="true"></span>無障礙</button>
+              </div>
+              <span class="hint">拖曳平移・Ctrl＋滾輪縮放</span>
+            </div>
+            <div class="canvas__viewport" id="heroViewport" aria-label="平面圖畫布：拖曳平移，Ctrl＋滾輪或右下按鈕縮放">
+              <div class="canvas__legend" id="diffLegend" hidden>
+                <span><i class="diff-legend__line diff-legend__line--dash" style="--sw: var(--diff-old)"></i>R1 刪除（虛線）</span>
+                <span><i class="diff-legend__line" style="--sw: var(--diff-new)"></i>R2 新增・修改</span>
+              </div>
+              <div class="canvas__hud" aria-hidden="true"><span>X <b id="hudX">—</b></span><span>Y <b id="hudY">—</b></span><span id="hudView">R2 · A-201</span></div>
+              <div class="canvas__zoom" role="group" aria-label="縮放">
+                <button type="button" id="zoomIn" aria-label="放大"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+                <button type="button" id="zoomOut" aria-label="縮小"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+                <button type="button" id="zoomFit" aria-label="全圖"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+                <span class="canvas__zoom-level" id="zoomLevel" aria-live="polite">100%</span>
+              </div>
+              <div class="canvas__hint" id="heroHint">按住 Ctrl＋滾輪縮放</div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="col-4" aria-labelledby="annoTitle">
+        <div class="sheet anno-panel" data-reveal style="--i:3">
+          <div class="sheet__head">
+            <span class="sheet__code">RL</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title" id="annoTitle">紅筆批註</h2>
+              <p class="sheet__sub">點選批註定位到圖面；R1 提出 6 項、R2 新增 2 項</p>
+            </div>
+          </div>
+          <div class="chip-row" role="group" aria-label="批註篩選" id="annoFilter">
+            <button class="chip" type="button" data-filter="all" aria-pressed="true">全部 <span class="chip__count" data-n="all"></span></button>
+            <button class="chip" type="button" data-filter="open" aria-pressed="false">待處理 <span class="chip__count" data-n="open"></span></button>
+            <button class="chip" type="button" data-filter="resolved" aria-pressed="false">已改善 <span class="chip__count" data-n="resolved"></span></button>
+          </div>
+          <ul class="anno-list" id="annoList"></ul>
+          <div class="sheet__foot">
+            <span>技術審查期限 <span class="mono">10/28</span> <span id="heroDue"></span></span>
+            <a class="link-arrow" href="review.html?id=115-0412">開啟審查工作區<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- 趨勢與負載 -->
+    <section class="section grid grid--stretch" aria-label="審查效率與科別負載">
+      <div class="col-7">
+        <article class="sheet" data-reveal id="trendSheet" style="height:100%">
+          <div class="sheet__head">
+            <span class="sheet__code">S-01</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title">平均審查天數趨勢</h2>
+              <p class="sheet__sub">全處建造執照收件至核發，依當月核發案件計；近 12 個月</p>
+            </div>
+            <div class="sheet__actions">
+              <div class="seg" id="trendSeg" role="group" aria-label="檢視方式">
+                <button type="button" data-value="chart" aria-pressed="true">圖表</button>
+                <button type="button" data-value="table" aria-pressed="false">表格</button>
+              </div>
+            </div>
+          </div>
+          <div class="sheet__body">
+            <div class="trend-top">
+              <div class="trend-figure">
+                <div class="stat">
+                  <span class="stat__label">10 月機關審查天數<span class="stat__code">AGENCY</span></span>
+                  <span class="stat__value"><span data-count-to="28">28</span><span class="stat__unit">日</span></span>
+                </div>
+                <p class="trend-delta">較去年同期 <b>−17 日</b><br>連續 4 個月低於目標 30 日</p>
+              </div>
+              <div class="legend" aria-label="圖例">
+                <span class="legend__item"><span class="legend__swatch" style="--sw: var(--chart-1)"></span>行政審查</span>
+                <span class="legend__item"><span class="legend__swatch" style="--sw: var(--chart-2)"></span>技術審查</span>
+                <span class="legend__item"><span class="legend__swatch" style="--sw: var(--chart-3)"></span>補正期間（申請人）</span>
+                <span class="legend__item"><span class="legend__swatch legend__swatch--line"></span>機關審查目標</span>
+              </div>
+            </div>
+            <div class="chart" id="trendChart"></div>
+            <div class="trend-table table-wrap" id="trendTable" hidden></div>
+          </div>
+        </article>
+      </div>
+      <div class="col-5">
+        <article class="sheet" data-reveal style="--i:1; height:100%" id="loadSheet">
+          <div class="sheet__head">
+            <span class="sheet__code">S-02</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title">各審查科別負載</h2>
+              <p class="sheet__sub">技術審查階段在手案件；每人同時上限 5 件</p>
+            </div>
+          </div>
+          <div class="sheet__body">
+            <div class="legend" style="margin-bottom:18px">
+              <span class="legend__item"><span class="legend__swatch" style="--sw: var(--chart-2)"></span>審查中</span>
+              <span class="legend__item"><span class="legend__swatch" style="--sw: var(--chart-1)"></span>待審（已分案未開始）</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--hatch" style="--sw: var(--red)"></span>超出上限</span>
+            </div>
+            <div class="load-list" id="loadList"></div>
+          </div>
+          <div class="sheet__foot load-foot">
+            <span id="loadSummary"></span>
+            <a class="link-arrow" href="permits.html?stage=tech">技術審查案件<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- 近期案件與本週到期 -->
+    <section class="section grid" aria-label="近期案件與本週到期">
+      <div class="col-8">
+        <article class="sheet recent" data-reveal>
+          <div class="sheet__head">
+            <span class="sheet__code">T-01</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title">近期案件</h2>
+              <p class="sheet__sub">依最後異動時間排序</p>
+            </div>
+            <div class="sheet__actions">
+              <div class="seg" id="recentSeg" role="group" aria-label="近期案件篩選">
+                <button type="button" data-value="all" aria-pressed="true">全部</button>
+                <button type="button" data-value="mine" aria-pressed="false">我承辦</button>
+                <button type="button" data-value="fix" aria-pressed="false">補正中</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--stack">
+              <thead>
+                <tr>
+                  <th scope="col">案號</th>
+                  <th scope="col">案名・起造人</th>
+                  <th scope="col">階段</th>
+                  <th scope="col">回合</th>
+                  <th scope="col">建 消 結 無 都</th>
+                  <th scope="col" class="num">異動</th>
+                </tr>
+              </thead>
+              <tbody id="recentBody"></tbody>
+            </table>
+          </div>
+          <div class="sheet__foot">
+            <span class="lamp-legend" id="lampLegend"></span>
+            <a class="link-arrow" href="permits.html">全部 40 件案件<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+          </div>
+        </article>
+      </div>
+      <div class="col-4">
+        <article class="sheet sheet--marks" data-reveal style="--i:1">
+          <div class="sheet__head">
+            <span class="sheet__code">T-02</span>
+            <div class="sheet__titles">
+              <h2 class="sheet__title">本週到期</h2>
+              <p class="sheet__sub" id="dueSub">10/19–10/25 與已逾期</p>
+            </div>
+          </div>
+          <div class="filterbar">
+            <div class="seg" id="dueSeg" role="group" aria-label="到期篩選">
+              <button type="button" data-value="all" aria-pressed="true">全部</button>
+              <button type="button" data-value="agency" aria-pressed="false">機關審查</button>
+              <button type="button" data-value="applicant" aria-pressed="false">申請人補正</button>
+            </div>
+          </div>
+          <ul class="due-list" id="dueList"></ul>
+          <div class="due-more" id="dueMore" hidden><button class="btn btn--sm btn--ghost" type="button" id="dueMoreBtn" aria-controls="dueList"></button></div>
+        </article>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div class="titleblock__cell titleblock__cell--org">
+        <span class="tb-label">機關 AGENCY</span>
+        <strong>澄港市政府都市發展局 建築管理處</strong>
+        <span>建築執照圖說線上審查系統・3.2 版</span>
+        <span class="muted">所有案件、人名與地址均為作品集虛構資料</span>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">圖說索引 SHEETS</span>
+        <ul class="tb-links">
+          <li><a href="index.html"><span class="mono">A-01</span><span>審查總覽</span></a></li>
+          <li><a href="permits.html"><span class="mono">A-02</span><span>案件清單</span></a></li>
+          <li><a href="review.html"><span class="mono">A-03</span><span>圖說審查</span></a></li>
+          <li><a href="permit.html"><span class="mono">A-04</span><span>案件詳情</span></a></li>
+        </ul>
+      </div>
+      <div class="titleblock__cell">
+        <span class="tb-label">審查服務 SERVICE</span>
+        <span>週一至週五 08:30–17:30</span>
+        <span class="mono">(08) 2250-6600 #3180</span>
+        <span>澄港市港埕區市府路 1 號 7 樓</span>
+      </div>
+      <div class="titleblock__cell titleblock__cell--rev">
+        <span class="tb-label">修訂 REVISIONS</span>
+        <table class="rev-table">
+          <tbody>
+            <tr><td><span class="rev" data-round="3" role="img" aria-label="修訂 3"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>3</b></span></td><td>2026.10</td><td>回合疊圖比較上線</td></tr>
+            <tr><td><span class="rev" data-round="2" role="img" aria-label="修訂 2"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>2</b></span></td><td>2026.07</td><td>消防・無障礙套繪圖層</td></tr>
+            <tr><td><span class="rev" data-round="1" role="img" aria-label="修訂 1"><svg viewBox="0 0 26 22" aria-hidden="true"><path d="M13 1.8 24.4 20.4H1.6z" fill="#FFFEFA" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><b>1</b></span></td><td>2026.04</td><td>線上圖說審查啟用</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="titleblock__cell titleblock__cell--stamp">
+        <svg viewBox="0 0 120 120" role="img" aria-label="澄港市政府建築管理處 審查專用章">
+          <defs><path id="stampArc" d="M24 62a36 36 0 1 1 72 0"/></defs>
+          <g transform="rotate(-8 60 60)" opacity=".88">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#D7263D" stroke-width="3"/>
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#D7263D" stroke-width="1"/>
+            <text font-size="10.5" fill="#D7263D" letter-spacing="1.5"><textPath href="#stampArc" startOffset="50%" text-anchor="middle">澄港市政府建築管理處</textPath></text>
+            <path d="M28 70h64" stroke="#D7263D" stroke-width="1"/>
+            <text x="60" y="64" font-size="17" font-weight="700" fill="#D7263D" text-anchor="middle">審查專用</text>
+            <text x="60" y="86" font-size="10" fill="#D7263D" text-anchor="middle" font-family="IBM Plex Mono, monospace">115.10.21</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="site-footer__base">
+      <span>© 2026 澄港市政府 建築管理處（虛構城市作品集展示）</span>
+      <span class="mono">SHEET A-01 / 04 · SCALE 1:100 · PLOTTED ON TRACE PAPER</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, esc } = { $: (s, r = document) => r.querySelector(s), esc: App.esc };
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const P = App.permits;
+  const F = App.FEATURED;
+  const featured = App.getPermit(F.id);
+
+  /* ---------- 階段流程列：各格說明文字（跟著資料重繪） ---------- */
+  function renderFlowFeet() {
+    const by = (st) => P.filter((p) => p.stage === st);
+    const today = by('intake').filter((p) => p.received === App.TODAY).length;
+    $('#footIntake').innerHTML = `今日新收 <b>${today}</b> 件・待掛號審核`;
+    const adminOver = by('admin').filter((p) => App.days(p.due) < 0).length;
+    $('#footAdmin').innerHTML = adminOver ? `<span class="red-ink">${adminOver} 件逾期</span>・期限 7 日` : '均在期限內・期限 7 日';
+    const rounds = [1, 2, 3].map((r) => by('tech').filter((p) => p.round === r).length);
+    $('#footTech').innerHTML = `<span class="fstage__rounds">${rounds.map((n, i) => `<span>${App.rev(i + 1)}<b>${n}</b></span>`).join('')}</span>`;
+    const fix = by('fix');
+    const fixOver = fix.filter((p) => App.days(p.due) < 0).length;
+    const fixWeek = fix.filter((p) => App.days(p.due) >= 0 && App.days(p.due) <= 4).length;
+    $('#footFix').innerHTML = `<span class="red-ink">逾補正期限 ${fixOver} 件</span>・本週到期 <b>${fixWeek}</b> 件`;
+    const issued = by('issued');
+    const month = issued.filter((p) => p.issuedAt.startsWith('2026-10')).length;
+    const avgRound = issued.length ? issued.reduce((n, p) => n + p.round, 0) / issued.length : 0;
+    $('#footIssued').innerHTML = `10 月核發 <b>${month}</b> 件・平均 ${avgRound.toFixed(1)} 回合`;
+  }
+
+  /* 補正中數字外圍的紅筆雲線：依數字實際尺寸產生，避免拉伸變形 */
+  const fixNum = $('#fixNum');
+  let fixCloud = null;
+  function placeFixCloud() {
+    const countEl = fixNum.firstElementChild, shown = countEl.textContent;
+    countEl.textContent = App.fmt.num(App.counts().fix);
+    const w = fixNum.offsetWidth + 34, h = fixNum.offsetHeight + 24;
+    countEl.textContent = shown;
+    const d = App.cloudPath(4, 4, w - 8, h - 8, { arc: 8, seed: 11 });
+    if (!fixCloud) {
+      fixNum.insertAdjacentHTML('beforeend', `<svg class="fstage__cloud" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`);
+      fixCloud = $('.fstage__cloud', fixNum);
+    }
+    // 尺寸沒變就不重設，避免數字滾動時每格重畫
+    if (fixCloud.firstElementChild.getAttribute('d') === d) return;
+    fixCloud.setAttribute('width', w);
+    fixCloud.setAttribute('height', h);
+    fixCloud.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    fixCloud.firstElementChild.setAttribute('d', d);
+  }
+
+  const flow = $('.flowstrip');
+  let flowDrawn = false;
+  function drawFlow() {
+    if (flowDrawn) return;
+    flowDrawn = true;
+    // 數字滾動完再描雲線，讓視線先讀數字
+    App.penTrace(fixCloud.firstElementChild, { duration: 900, delay: 650 });
+    App.draw([$('#loopPath')], { duration: 900, delay: 900 });
+  }
+  flow.addEventListener('reveal', drawFlow);
+
+  /* ---------- 焦點圖說畫布 ---------- */
+  const vp = $('#heroViewport');
+  vp.insertAdjacentHTML('afterbegin', App.plan.svg({ id: 'heroPlan', view: 'r2', layers: [] }));
+  const svg = $('#heroPlan');
+  $('#heroRev').innerHTML = App.rev(featured.round);
+  $('#heroLamps').innerHTML = App.lampRow(featured);
+  $('#heroDue').innerHTML = App.dueChip(featured);
+
+  const pz = App.panZoom(svg, {
+    host: vp,
+    wheel: 'ctrl',
+    hintEl: $('#heroHint'),
+    max: 6,
+    onChange: (s) => { $('#zoomLevel').textContent = `${Math.round(s * 100)}%`; },
+    onMove: (pt) => {
+      // 以 X1 / A 軸交點為原點，換算成公釐
+      $('#hudX').textContent = App.fmt.num((pt.x - 150) * App.plan.MM);
+      $('#hudY').textContent = App.fmt.num((pt.y - 170) * App.plan.MM);
+    },
+    onTap: (pt, e) => {
+      const mark = e.target.closest('.anno-mark');
+      if (mark) selectAnno(+mark.dataset.anno, { from: 'plan' });
+    },
+  });
+  $('#zoomIn').addEventListener('click', pz.zoomIn);
+  $('#zoomOut').addEventListener('click', pz.zoomOut);
+  $('#zoomFit').addEventListener('click', pz.fit);
+
+  const VIEW_LABEL = { r1: 'R1 · A-201', r2: 'R2 · A-201', diff: 'R1 ⇄ R2 疊圖' };
+  const viewSeg = App.seg($('#viewSeg'), {
+    onChange: (v) => {
+      App.plan.setView(svg, v);
+      $('#diffLegend').hidden = v !== 'diff';
+      $('#hudView').textContent = VIEW_LABEL[v];
+      renderAnnoList();
+    },
+  });
+
+  $$('.layer-btn').forEach((b) => b.addEventListener('click', () => {
+    const on = App.plan.toggleLayer(svg, b.dataset.layer);
+    b.setAttribute('aria-pressed', String(on));
+  }));
+
+  /* 批註清單：與畫布雙向聯動（hover 標亮、點選定位） */
+  let annoFilter = 'all';
+  let activeAnno = null;
+  const isOpen = (a) => a.status !== 'resolved';
+  function statusTag(a) {
+    if (a.status === 'resolved') return '<span class="tag tag--ok">已改善</span>';
+    if (a.carried) return '<span class="tag tag--red">R1 延續</span>';
+    return '<span class="tag tag--red">待補正</span>';
+  }
+  function renderAnnoList() {
+    const view = svg.getAttribute('data-view');
+    const list = F.annotations.filter((a) => annoFilter === 'all' || (annoFilter === 'open' ? isOpen(a) : !isOpen(a)));
+    $$('[data-n]', $('#annoFilter')).forEach((el) => {
+      const k = el.dataset.n;
+      el.textContent = F.annotations.filter((a) => k === 'all' || (k === 'open' ? isOpen(a) : !isOpen(a))).length;
+    });
+    $('#annoList').innerHTML = list.length ? list.map((a) => {
+      // R1 檢視時 R2 新增批註尚不存在，淡化顯示
+      const dim = view === 'r1' && a.round === 2;
+      const resolved = a.status === 'resolved' && view !== 'r1';
+      return `<li><button type="button" class="anno${resolved ? ' is-resolved' : ''}${dim ? ' is-dim' : ''}${activeAnno === a.no ? ' is-active' : ''}" data-anno="${a.no}" aria-pressed="${activeAnno === a.no}">
+        <span class="bubble">${a.no}</span>
+        <span class="anno__body">
+          <span class="anno__title">${esc(a.short)}</span>
+          <span class="anno__meta">${App.disc(a.disc)}${App.rev(a.round)}<span class="cite">${esc(a.cite)}</span>${statusTag(a)}</span>
+        </span></button></li>`;
+    }).join('') : `<li>${App.emptyState({ title: '沒有符合的批註', text: '換個篩選條件看看。' })}</li>`;
+    // 篩選同步到畫布
+    $$('.anno-mark', svg).forEach((g) => {
+      const a = F.annotations.find((x) => x.no === +g.dataset.anno);
+      g.classList.toggle('is-hidden', !list.includes(a));
+    });
+  }
+  function selectAnno(no, { from } = {}) {
+    const a = F.annotations.find((x) => x.no === no);
+    if (!a) return;
+    if (svg.getAttribute('data-view') === 'r1' && a.round === 2) viewSeg.set('r2');
+    if (svg.getAttribute('data-view') === 'diff') viewSeg.set('r2');
+    activeAnno = activeAnno === no ? null : no;
+    $$('.anno-mark', svg).forEach((g) => g.classList.toggle('is-active', +g.dataset.anno === activeAnno));
+    $$('#annoList .anno').forEach((b) => {
+      const on = +b.dataset.anno === activeAnno;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', String(on));
+      if (on && from === 'plan') b.scrollIntoView({ block: 'nearest', behavior: App.reduceMotion.matches ? 'auto' : 'smooth' });
+    });
+    if (activeAnno) {
+      pz.focus(a.box, { pad: 110, max: 2.6 });
+      App.toast(`批註 ${a.no}・${a.short}`, { desc: `${App.DISC_MAP[a.disc].name}科 ${App.PEOPLE[a.by].name}：${a.cite}`, tone: a.status === 'resolved' ? 'ok' : 'red', duration: 2600 });
+    } else {
+      pz.fit();
+    }
+  }
+  $('#annoList').addEventListener('click', (e) => {
+    const b = e.target.closest('.anno');
+    if (b) selectAnno(+b.dataset.anno);
+  });
+  $('#annoList').addEventListener('mouseover', (e) => {
+    const b = e.target.closest('.anno');
+    $$('.anno-mark', svg).forEach((g) => g.classList.toggle('is-active', (b && +g.dataset.anno === +b.dataset.anno) || +g.dataset.anno === activeAnno));
+  });
+  $('#annoList').addEventListener('mouseleave', () => {
+    $$('.anno-mark', svg).forEach((g) => g.classList.toggle('is-active', +g.dataset.anno === activeAnno));
+  });
+  svg.addEventListener('mouseover', (e) => {
+    const g = e.target.closest('.anno-mark');
+    $$('#annoList .anno').forEach((b) => b.classList.toggle('is-active', (g && +b.dataset.anno === +g.dataset.anno) || +b.dataset.anno === activeAnno));
+  });
+  $$('#annoFilter .chip').forEach((c) => c.addEventListener('click', () => {
+    annoFilter = c.dataset.filter;
+    $$('#annoFilter .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === c)));
+    if (activeAnno && !F.annotations.some((a) => a.no === activeAnno && (annoFilter === 'all' || (annoFilter === 'open') === isOpen(a)))) {
+      activeAnno = null;
+      pz.fit();
+    }
+    renderAnnoList();
+  }));
+  renderAnnoList();
+
+  $('#replayBtn').addEventListener('click', () => {
+    pz.fit();
+    App.plan.animate(svg);
+  });
+
+  // 畫布進入視窗才開始描繪（首屏通常立即開始）
+  const heroSheet = $('.hero-sheet');
+  let heroStarted = false;
+  const startHero = () => { if (!heroStarted) { heroStarted = true; App.plan.animate(svg); } };
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((en) => { if (en.some((x) => x.isIntersecting)) { startHero(); io.disconnect(); } }, { threshold: 0.15 });
+    io.observe(heroSheet);
+  } else {
+    startHero();
+  }
+
+  /* ---------- 趨勢圖（堆疊柱狀；行政 + 技術 = 機關天數，與目標線比較） ---------- */
+  const T = App.TREND;
+  function renderTrend() {
+    const W = 760, H = 300, L = 40, R = 104, TOP = 26, B = 40;
+    const max = 100, ih = H - TOP - B, slot = (W - L - R) / T.months.length, bw = 22;
+    const y = (v) => TOP + ih - (v / max) * ih;
+    let g = '';
+    [0, 20, 40, 60, 80, 100].forEach((v) => {
+      g += `<line class="${v ? 'tr-grid' : 'tr-base'}" x1="${L}" x2="${W - R + 8}" y1="${y(v)}" y2="${y(v)}" stroke-width="1"/>`;
+      g += `<text class="tr-tick" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    });
+    g += `<text class="tr-tick" x="${L - 8}" y="${TOP - 12}" text-anchor="end">日</text>`;
+    let bars = '', slots = '', ticks = '';
+    T.months.forEach((m, i) => {
+      const x = L + slot * i + (slot - bw) / 2;
+      const segs = [['tr-admin', 0, T.admin[i]], ['tr-tech', T.admin[i], T.admin[i] + T.tech[i]], ['tr-fix', T.admin[i] + T.tech[i], T.admin[i] + T.tech[i] + T.fix[i]]];
+      segs.forEach(([cls, a, b], k) => {
+        // 段與段之間留 2px 紙色縫；最上段頂端 4px 圓角，底部方角貼齊基線
+        const top = y(b) + (k < 2 ? 1 : 0), bot = y(a) - (k > 0 ? 1 : 0);
+        const h = Math.max(0, bot - top);
+        if (k === 2) {
+          const r = Math.min(4, h);
+          bars += `<path class="${cls}" d="M${x} ${bot}V${top + r}Q${x} ${top} ${x + r} ${top}H${x + bw - r}Q${x + bw} ${top} ${x + bw} ${top + r}V${bot}Z"/>`;
+        } else {
+          bars += `<rect class="${cls}" x="${x}" y="${top}" width="${bw}" height="${h}"/>`;
+        }
+      });
+      const [yy, mm] = m.split('-');
+      ticks += `<text class="tr-tick" x="${x + bw / 2}" y="${H - B + 16}" text-anchor="middle">${+mm}月</text>`;
+      if (mm === '11' || mm === '01') ticks += `<text class="tr-year" x="${x + bw / 2}" y="${H - B + 32}" text-anchor="middle">${yy}</text>`;
+      const total = T.admin[i] + T.tech[i] + T.fix[i];
+      slots += `<rect class="tr-slot" data-i="${i}" x="${L + slot * i}" y="${TOP}" width="${slot}" height="${ih}" tabindex="0" role="img" aria-label="${yy} 年 ${+mm} 月：行政 ${T.admin[i]} 日、技術 ${T.tech[i]} 日、補正 ${T.fix[i]} 日，合計 ${total} 日"/>`;
+    });
+    // 最後一個月的合計標在柱頂
+    const li = T.months.length - 1, lx = L + slot * li + slot / 2;
+    const lastTotal = T.admin[li] + T.tech[li] + T.fix[li];
+    const label = `<text class="tr-value" x="${lx}" y="${y(lastTotal) - 8}" text-anchor="middle">${lastTotal}</text>`;
+    // 目標線（機關審查 30 日）
+    const target = `<line class="tr-target" x1="${L}" x2="${W - R + 8}" y1="${y(T.target)}" y2="${y(T.target)}" stroke-width="1.6"/>
+      <text class="tr-target-label" x="${W - R + 14}" y="${y(T.target) - 2}">目標 30 日</text>
+      <text class="tr-tick" x="${W - R + 14}" y="${y(T.target) + 13}">機關審查</text>`;
+    // 線上審查上線的手寫註記
+    const ai = T.months.indexOf(T.launch), ax = L + slot * ai + slot / 2, atop = y(T.admin[ai] + T.tech[ai] + T.fix[ai]);
+    const note = `<path class="tr-note-line" d="M${ax + 46} ${atop - 46} C ${ax + 30} ${atop - 40}, ${ax + 8} ${atop - 30}, ${ax + 2} ${atop - 8} M${ax - 4} ${atop - 16} L${ax + 2} ${atop - 7} L${ax + 9} ${atop - 15}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="tr-note" x="${ax + 50}" y="${atop - 44}">4 月 線上審查上線</text>`;
+    $('#trendChart').innerHTML = `<div class="chart__scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="近 12 個月平均審查天數堆疊柱狀圖，10 月合計 ${lastTotal} 日，其中機關審查 28 日">
+      <g>${g}</g><g>${bars}</g>${target}${label}<g class="tr-note-g">${note}</g><g>${ticks}</g><g>${slots}</g></svg></div>
+      <div class="chart-tip" id="trendTip" role="tooltip"></div>`;
+
+    const tip = $('#trendTip');
+    const showTip = (el) => {
+      const i = +el.dataset.i, [yy, mm] = T.months[i].split('-');
+      const agency = T.admin[i] + T.tech[i];
+      tip.innerHTML = `<div class="chart-tip__title">${yy}.${mm}・全處核發 ${T.cases[i]} 件</div>
+        <div class="chart-tip__row"><i style="--sw: var(--chart-1)"></i><span>行政審查</span><b>${T.admin[i]} 日</b></div>
+        <div class="chart-tip__row"><i style="--sw: var(--chart-2)"></i><span>技術審查</span><b>${T.tech[i]} 日</b></div>
+        <div class="chart-tip__row"><i style="--sw: var(--chart-3)"></i><span>補正期間</span><b>${T.fix[i]} 日</b></div>
+        <div class="chart-tip__row" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.2);padding-top:4px"><span>機關合計</span><b>${agency} 日${agency <= T.target ? ' ✓' : ''}</b></div>`;
+      const box = $('#trendChart').getBoundingClientRect(), r = el.getBoundingClientRect();
+      const left = Math.min(box.width - 170, Math.max(0, r.left - box.left + r.width / 2 - 85));
+      tip.style.left = `${left}px`;
+      tip.style.top = `${Math.max(0, r.top - box.top + 6)}px`;
+      tip.classList.add('is-show');
+    };
+    $$('.tr-slot', $('#trendChart')).forEach((el) => {
+      el.addEventListener('mouseenter', () => showTip(el));
+      el.addEventListener('focus', () => showTip(el));
+      el.addEventListener('mouseleave', () => tip.classList.remove('is-show'));
+      el.addEventListener('blur', () => tip.classList.remove('is-show'));
+    });
+
+    $('#trendTable').innerHTML = `<table class="table"><thead><tr><th scope="col">月份</th><th class="num" scope="col">行政</th><th class="num" scope="col">技術</th><th class="num" scope="col">補正</th><th class="num" scope="col">合計</th><th class="num" scope="col">核發件數</th></tr></thead><tbody>
+      ${T.months.map((m, i) => `<tr><td class="mono">${m.replace('-', '.')}</td><td class="num">${T.admin[i]}</td><td class="num">${T.tech[i]}</td><td class="num">${T.fix[i]}</td><td class="num"><b>${T.admin[i] + T.tech[i] + T.fix[i]}</b></td><td class="num">${T.cases[i]}</td></tr>`).join('')}
+    </tbody></table>`;
+  }
+  renderTrend();
+  App.seg($('#trendSeg'), {
+    onChange: (v) => {
+      $('#trendChart').hidden = v !== 'chart';
+      $('#trendTable').hidden = v !== 'table';
+    },
+  });
+  // 進場時把手寫註記與目標線描出來
+  $('#trendSheet').addEventListener('reveal', () => {
+    App.draw($$('#trendChart .tr-note-line, #trendChart .tr-target'), { duration: 900, delay: 400 });
+  });
+
+  /* ---------- 科別負載（由案件燈號即時計算） ---------- */
+  function renderLoad() {
+    const rows = App.load();
+    const scale = Math.max(...rows.map((r) => Math.max(r.cap, r.review + r.wait))) + 1;
+    const pct = (n) => (n / scale) * 100;
+    $('#loadList').innerHTML = rows.map((r) => {
+      const total = r.review + r.wait;
+      const over = Math.max(0, total - r.cap);
+      const ratio = Math.round((total / r.cap) * 100);
+      const reviewW = Math.min(r.review, r.cap), waitW = Math.max(0, Math.min(total, r.cap) - reviewW);
+      return `<div class="load-row${over ? ' is-over' : ''}">
+        <div class="load-row__who">
+          <span class="load-row__name">${App.disc(r.disc.key)}${esc(r.disc.name)}</span>
+          <span class="avatar-stack">${r.people.map((p) => App.avatar(p.id, 'sm')).join('')}</span>
+        </div>
+        <div class="load-bar" style="--scale:${scale}" role="img" aria-label="${esc(r.disc.name)}：審查中 ${r.review} 件、待審 ${r.wait} 件，上限 ${r.cap} 件">
+          <span class="load-bar__track"></span>
+          <span class="load-bar__seg load-bar__seg--review" style="left:0;width:calc(${pct(reviewW)}% - 1px)"></span>
+          ${waitW ? `<span class="load-bar__seg load-bar__seg--wait" style="left:${pct(reviewW)}%;width:calc(${pct(waitW)}% - 1px)"></span>` : ''}
+          ${over ? `<span class="load-bar__seg load-bar__seg--over" style="left:${pct(r.cap) + .3}%;width:${pct(over)}%"></span>` : ''}
+          <span class="load-bar__cap" style="left:${pct(r.cap)}%"></span>
+        </div>
+        <div class="load-row__num"><b>${total}</b> / ${r.cap}<small>${ratio}%</small></div>
+        ${over ? `<div class="load-row__note">超出上限 ${over} 件，建議改分外審或延長期限</div>` : ''}
+      </div>`;
+    }).join('');
+    const busiest = rows.reduce((a, b) => ((b.review + b.wait) / b.cap > (a.review + a.wait) / a.cap ? b : a));
+    $('#loadSummary').innerHTML = `最滿：<b>${esc(busiest.disc.name)}科</b> ${Math.round(((busiest.review + busiest.wait) / busiest.cap) * 100)}%`;
+    $('#headNote').textContent = `${busiest.disc.name}科本週${busiest.review + busiest.wait > busiest.cap ? '超載' : '最滿'}，先協調外審`;
+  }
+  renderLoad();
+
+  /* ---------- 近期案件 ---------- */
+  let recentFilter = 'all';
+  $('#lampLegend').innerHTML = Object.keys(App.LAMPS).map((k) => App.lamp(k, { label: true })).join('');
+  function renderRecent() {
+    const list = P
+      .filter((p) => recentFilter === 'all' || (recentFilter === 'mine' ? p.officer === App.ME : p.stage === 'fix'))
+      .slice()
+      .sort((a, b) => b.updated.localeCompare(a.updated) || b.id.localeCompare(a.id))
+      .slice(0, 8);
+    $('#recentBody').innerHTML = list.length ? list.map((p) => `<tr>
+        <td data-label="案號"><a class="table__key" href="${App.permitUrl(p.id)}">${p.id}</a></td>
+        <td class="table__lead"><div class="table__title"><a href="${App.permitUrl(p.id)}">${esc(p.name)}</a></div><div class="table__sub">${esc(p.applicant)}・${esc(p.district)}</div></td>
+        <td data-label="階段">${App.stageChip(p.stage)}</td>
+        <td data-label="回合">${App.rev(p.round)}</td>
+        <td data-label="各科燈號">${App.lampRow(p)}</td>
+        <td data-label="異動" class="num mono">${App.fmt.md(p.updated)}</td>
+      </tr>`).join('') : `<tr><td colspan="6">${App.emptyState({ title: '沒有符合的案件' })}</td></tr>`;
+  }
+  App.seg($('#recentSeg'), { onChange: (v) => { recentFilter = v; renderRecent(); } });
+  renderRecent();
+
+  /* ---------- 本週到期（催辦會改變資料：同一套重繪＋可復原） ---------- */
+  let dueFilter = 'all';
+  let dueExpanded = false;
+  const DUE_PREVIEW = 6;
+  function renderDue() {
+    const all = App.dueThisWeek();
+    const list = all.filter((p) => dueFilter === 'all' || (dueFilter === 'applicant' ? p.stage === 'fix' : p.stage !== 'fix'));
+    const reminded = all.filter((p) => p.reminded).length;
+    $('#dueSub').textContent = `10/19–10/25 共 ${all.length} 件・已催辦 ${reminded} 件`;
+    const more = list.length - DUE_PREVIEW;
+    $('#dueMore').hidden = more <= 0;
+    $('#dueMoreBtn').textContent = dueExpanded ? '收合' : `再顯示 ${more} 件`;
+    $('#dueMoreBtn').setAttribute('aria-expanded', String(dueExpanded));
+    $('#dueList').innerHTML = list.length ? list.slice(0, dueExpanded ? list.length : DUE_PREVIEW).map((p) => {
+      const n = App.days(p.due);
+      const officer = App.PEOPLE[p.officer];
+      const isApplicant = p.stage === 'fix';
+      return `<li class="due-item${p.reminded ? ' is-reminded' : ''}">
+        <div class="due-date${n < 0 ? ' is-over' : n === 0 ? ' is-today' : ''}"><b>${App.fmt.md(p.due)}</b><span>週${App.fmt.wd(p.due)}</span></div>
+        <div class="due-item__main">
+          <div class="due-item__title"><span class="mono">${p.id}</span><a class="truncate" href="${App.permitUrl(p.id)}">${esc(p.name)}</a></div>
+          <div class="due-item__meta">${esc(App.dueLabel(p))}・${isApplicant ? esc(p.applicant) : `承辦 ${esc(officer.name)}`}</div>
+        </div>
+        <div class="due-item__side">
+          ${App.dueChip(p)}
+          ${p.reminded
+            ? `<button class="btn btn--sm btn--ghost" type="button" data-undo="${p.id}">撤回</button>`
+            : `<button class="btn btn--sm" type="button" data-remind="${p.id}">${isApplicant ? '通知起造人' : '催辦'}</button>`}
+        </div>
+        ${p.reminded ? `<span class="stamp stamp--sm" aria-hidden="true">已催辦</span>` : ''}
+      </li>`;
+    }).join('') : `<li>${App.emptyState({ title: '這個分類本週沒有到期案件' })}</li>`;
+  }
+  function setReminded(id, value) {
+    App.getPermit(id).reminded = value;
+    App.commit(value ? 'remind' : 'unremind');
+  }
+  $('#dueList').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-remind]'), u = e.target.closest('[data-undo]');
+    if (r) {
+      const p = App.getPermit(r.dataset.remind);
+      setReminded(p.id, App.TODAY);
+      const who = p.stage === 'fix' ? `起造人 ${p.applicant}` : `承辦 ${App.PEOPLE[p.officer].name}`;
+      App.toast(`已催辦 ${p.id}`, { desc: `系統訊息已送達${who}，期限 ${App.fmt.date(p.due)}。`, tone: 'ok', action: { label: '復原', onClick: () => setReminded(p.id, null) } });
+    }
+    if (u) {
+      setReminded(u.dataset.undo, null);
+      App.toast(`已撤回 ${u.dataset.undo} 的催辦`, { tone: 'info' });
+    }
+  });
+  App.seg($('#dueSeg'), { onChange: (v) => { dueFilter = v; renderDue(); } });
+  $('#dueMoreBtn').addEventListener('click', () => { dueExpanded = !dueExpanded; renderDue(); });
+  renderDue();
+
+  /* ---------- 匯出週報 ---------- */
+  $('#exportBtn').addEventListener('click', () => {
+    const c = App.counts();
+    App.toast('已產生 115 年第 43 週審查週報', { desc: `審查中 ${c.active} 件、本週到期 ${c.dueWeek} 件；PDF 已寄至建築科共用信箱。`, tone: 'ok' });
+  });
+
+  /* ---------- 資料異動：所有衍生顯示走同一套重繪 ---------- */
+  function renderAll() {
+    renderFlowFeet();
+    renderLoad();
+    renderRecent();
+    renderDue();
+  }
+  App.onChange(renderAll);
+  renderFlowFeet();
+  placeFixCloud();
+  // 字體載入替換或版面改變都會改變數字寬度，跟著重量雲線
+  new ResizeObserver(placeFixCloud).observe(fixNum);
+});
+</script>
+</body>
+</html>

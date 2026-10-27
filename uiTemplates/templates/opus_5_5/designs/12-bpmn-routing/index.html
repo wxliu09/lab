@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流程總覽 — 澄港市政府 公文線上簽核 流程中樞</title>
+<meta name="description" content="以 BPMN 泳道圖即時監看澄港市政府公文流轉：token 代表每件公文的位置，節點熱度顯示積壓與瓶頸。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ── 流程總覽專屬 ── */
+  .kpi__break { display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpi__break span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .kpi__break i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4); }
+  .kpi__break i.is-urgent { background: var(--heat-3); }
+  .kpi__break i.is-fast { background: var(--heat-1); }
+
+  .flow-panel { margin-top: 18px; }
+  .flow-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px 24px; flex-wrap: wrap; }
+  .flow-stats { display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--ink-3); }
+  .flow-stats b { font: 600 var(--fs-13)/1 var(--font-mono); color: var(--ink); margin-left: 5px; }
+  .flow-stats b.is-bad { color: var(--danger-ink); }
+  .legend__badge { display: inline-grid; place-items: center; height: 16px; min-width: 22px; padding: 0 5px; border-radius: 8px; background: var(--heat-2); font: 600 10.5px/1 var(--font-mono); color: var(--ink); }
+  .legend__node { width: 22px; height: 13px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--sheet); }
+
+  /* 節點統計卡內部 */
+  .node-card__title small { font-size: var(--fs-12); font-weight: 500; color: var(--ink-3); margin-left: 4px; }
+  .node-card__stat.is-bad b { color: var(--danger-ink); }
+  .nc-cap { font-size: var(--fs-11); color: var(--ink-3); margin-bottom: 8px; }
+  .nc-hist { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; align-items: end; }
+  .nc-hist__col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .nc-hist__bar { width: 100%; height: 36px; border-radius: 3px; background: var(--paper-2); position: relative; overflow: hidden; }
+  .nc-hist__bar::after { content: ""; position: absolute; inset: auto 0 0 0; height: 100%; background: var(--c); transform-origin: bottom; transform: scaleY(var(--v)); }
+  .nc-hist__col b { font: 600 var(--fs-12)/1 var(--font-mono); }
+  .nc-hist__col small { font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+  .nc-listhead { padding: 10px 16px 0; font-size: var(--fs-11); color: var(--ink-3); }
+  .node-card__list a { grid-template-columns: auto 1fr; }
+  .nc-dwell { justify-self: end; font: 500 var(--fs-12)/1.5 var(--font-mono); color: var(--warn-ink); }
+  .nc-subj { grid-column: 1 / -1; font-size: var(--fs-13); }
+  .nc-empty { padding: 12px 16px; color: var(--ink-3); }
+  .nc-branches { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+  .nc-branch { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: var(--fs-13); }
+  .nc-branch__bar { grid-column: 1 / -1; height: 8px; border-radius: 2px; background: var(--paper-2); overflow: hidden; }
+  .nc-branch__bar span { display: block; height: 100%; background: var(--ink-2); transform-origin: left; transform: scaleX(var(--v)); }
+  .nc-branch b { font: 600 var(--fs-13)/1.4 var(--font-mono); }
+  .nc-desc { padding: 12px 16px; font-size: var(--fs-13); color: var(--ink-2); border-bottom: 1px solid var(--line); }
+  .nc-conds { list-style: none; padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); color: var(--ink-3); }
+  .nc-conds b { color: var(--ink); font-weight: 600; margin-right: 6px; }
+
+  .ov-grid { margin-top: 24px; }
+  /* 底部三欄等高：內容靠上、摘要列貼底，避免三張面板高低不齊 */
+  .ov-row3 { align-items: stretch; }
+  .ov-row3 > .panel { display: flex; flex-direction: column; }
+  .ov-row3 .panel__foot { margin-top: auto; }
+  .ov-row3 .panel__foot b { font: 600 var(--fs-13)/1 var(--font-mono); color: var(--ink); }
+  .ov-row3 .panel__foot em { font-style: normal; font-weight: 600; color: var(--danger-ink); }
+  .rank__more { width: 100%; border: 0; border-top: 1px solid var(--line); background: none; padding: 10px; font-size: var(--fs-13); color: var(--token-ink); font-weight: 500; }
+  .rank__more:hover { background: var(--sheet-2); color: var(--ink); }
+  .rank__val em { font-style: normal; color: var(--danger-ink); font-weight: 600; }
+
+  .od-list { list-style: none; }
+  .od-item { display: grid; gap: 5px; padding: 12px 18px; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; transition: background var(--dur-1); }
+  .od-list li:last-child .od-item { border-bottom: 0; }
+  .od-item:hover { background: var(--sheet-2); color: inherit; }
+  .od-item__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .od-item__late { margin-left: auto; font-size: var(--fs-12); font-weight: 600; color: #fff; background: var(--danger); padding: 3px 7px; border-radius: 4px; white-space: nowrap; }
+  .od-item__subj { font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .od-item:hover .od-item__subj { color: var(--token-ink); text-decoration: underline; text-underline-offset: 3px; }
+  .od-item__meta { display: flex; align-items: center; gap: 10px; font-size: var(--fs-12); color: var(--ink-3); min-width: 0; }
+  .od-item__meta .stage-tag { font-size: var(--fs-12); }
+
+  .load-list { padding: 8px 18px 14px; display: flex; flex-direction: column; gap: 11px; }
+  .load-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 76px; align-items: center; gap: 10px; font-size: var(--fs-13); }
+  .load-row__name { font-weight: 500; white-space: nowrap; }
+  .load-bar { display: flex; height: 14px; background: var(--paper-2); border-radius: 2px; overflow: hidden; }
+  .load-bar span { height: 100%; box-shadow: inset -1px 0 0 var(--sheet); transform-origin: left; animation: grow-x 800ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+  @keyframes grow-x { from { transform: scaleX(0); } }
+  .load-row__val { text-align: right; font: 500 var(--fs-12)/1.2 var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+  .load-row__val b { font-size: var(--fs-14); color: var(--ink); }
+  .load-row__val em { font-style: normal; color: var(--danger-ink); font-weight: 600; margin-left: 4px; }
+
+  .hourly { flex: 1; display: grid; align-content: center; padding: 6px 14px 12px; }
+  .hourly svg { width: 100%; height: auto; }
+  .hourly text { font-family: var(--font-mono); font-size: 10.5px; fill: var(--ink-3); }
+  .hr-grid { stroke: var(--line); stroke-width: 1; }
+  .hr-base { stroke: var(--ink-2); stroke-width: 1.2; }
+  .hr-recv { fill: var(--token); }
+  .hr-sent { fill: var(--ink); }
+  .hr-future { fill: url(#hr-hatch); }
+  .hr-now { stroke: var(--danger); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .hourly text.hr-now-label { fill: var(--danger-ink); font-weight: 600; }
+  .hr-legend { display: flex; gap: 16px; padding: 12px 18px 0; font-size: var(--fs-12); color: var(--ink-3); }
+  .hr-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .hr-legend i { width: 10px; height: 10px; border-radius: 2px; }
+
+  .feed__sub { display: block; color: var(--ink-3); font-size: var(--fs-12); margin-top: 1px; }
+  .feed__item a.doc-no { color: var(--token-ink); text-decoration: none; margin-left: 4px; }
+  .feed__item a.doc-no:hover { text-decoration: underline; }
+
+  @media (max-width: 720px) {
+    .flow-panel .panel__tools { width: 100%; }
+    .od-item, .load-list { padding-left: 14px; padding-right: 14px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="sheet-bar" data-anim>
+  <div class="sheet-bar__inner">
+    <a class="sheet-bar__back" href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a>
+    <div class="sheet-bar__meta">
+      <span class="sheet-bar__item">圖號 <b>CG-BPMN-012</b></span>
+      <span class="sheet-bar__item">流程定義 <b>公文簽核 v3.2</b>（2026-09-30 生效）</span>
+      <span class="sheet-bar__item sheet-bar__item--keep live"><span class="live__dot"></span><time data-clock>10/27（二）14:20:00</time></span>
+    </div>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="index.html" aria-label="公文線上簽核 流程中樞 首頁">
+      <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+      <span class="brand__text"><span class="brand__org">澄港市政府</span><span class="brand__name">公文線上簽核<small>流程中樞</small></span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li class="nav__item"><a class="nav__link is-active" href="index.html" aria-current="page"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.6" cy="10" r="2"/><rect x="7.2" y="7" width="5.2" height="6" rx="1.3"/><path d="m16.5 7.2 2.8 2.8-2.8 2.8-2.8-2.8z"/><path d="M5.6 10h1.6M12.4 10h1.3"/></svg><span class="nav__label">流程總覽</span></a></li>
+        <li class="nav__item"><a class="nav__link" href="docs.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 5.5h9M7.5 10h9M7.5 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5"/></svg><span class="nav__label">公文清單</span><span class="nav__count" data-count="overdue" title="逾期公文件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="doc.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h6l3.5 3.5v11.5h-9.5z"/><path d="M11.5 2.5V6H15M8 10h5M8 13h5"/></svg><span class="nav__label">公文詳情</span><span class="nav__count nav__count--token" data-count="mine" title="待我核閱件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="designer.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="6" width="10" height="8" rx="1.8"/><path d="M2.5 3.5h2v2h-2zM15.5 3.5h2v2h-2zM2.5 14.5h2v2h-2zM15.5 14.5h2v2h-2z"/></svg><span class="nav__label">流程設計器</span></a></li>
+      </ul>
+    </nav>
+    <div class="header-tools">
+      <div class="user-chip" title="目前登入：王正宏（交通局 運輸規劃科 科長）">
+        <span class="avatar avatar--me" aria-hidden="true">王</span>
+        <span class="user-chip__text"><span class="user-chip__name">王正宏</span><span class="user-chip__role">交通局 運輸規劃科 科長</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="container">
+
+    <section class="page-head" aria-labelledby="page-title">
+      <div class="page-head__main">
+        <p class="eyebrow"><span class="sheet-no">SHEET 01 / 04</span><span>流程總覽 · 全府即時</span></p>
+        <h1 class="page-title" id="page-title">公文流程即時監看</h1>
+        <p class="page-lede">8 個承辦單位共用「公文簽核 v3.2」。藍色 token 是正在流轉的公文；節點光暈由黃轉紅，代表積壓逐漸超出負荷。</p>
+      </div>
+      <div class="page-head__aside page-head__aside--stack">
+        <div class="seg" data-seg id="range-seg" role="group" aria-label="統計期間">
+          <button type="button" aria-pressed="true" data-value="today">今日</button>
+          <button type="button" aria-pressed="false" data-value="7d">近 7 日</button>
+          <button type="button" aria-pressed="false" data-value="30d">近 30 日</button>
+        </div>
+        <p class="page-head__note">統計至 10/27（二）14:20 · 工作時間 08:30–17:30</p>
+      </div>
+    </section>
+
+    <section class="kpi-row" aria-label="關鍵指標">
+      <article class="kpi" data-reveal style="--i:0">
+        <span class="kpi__glyph" data-glyph="start-msg"></span>
+        <p class="kpi__label">收文 · <span data-range-label>今日</span></p>
+        <p class="kpi__value"><span id="kpi-recv">0</span><span class="kpi__unit">件</span></p>
+        <div class="kpi__spark" id="spark-recv"></div>
+        <div class="kpi__foot"><span id="cmp-recv">較前一工作日同時段</span><span class="kpi__delta" id="delta-recv">—</span></div>
+      </article>
+      <article class="kpi" data-reveal style="--i:1">
+        <span class="kpi__glyph" data-glyph="end-msg"></span>
+        <p class="kpi__label">發文 · <span data-range-label>今日</span></p>
+        <p class="kpi__value"><span id="kpi-sent">0</span><span class="kpi__unit">件</span></p>
+        <div class="kpi__spark" id="spark-sent"></div>
+        <div class="kpi__foot"><span id="cmp-sent">較前一工作日同時段</span><span class="kpi__delta" id="delta-sent">—</span></div>
+      </article>
+      <article class="kpi kpi--alert" data-reveal style="--i:2">
+        <span class="kpi__glyph" data-glyph="timer"></span>
+        <p class="kpi__label">逾期未決 · 即時</p>
+        <p class="kpi__value"><span id="kpi-overdue">0</span><span class="kpi__unit">件</span></p>
+        <div class="kpi__spark" id="spark-overdue"></div>
+        <div class="kpi__foot"><span class="kpi__break" id="od-break"></span><span class="muted nowrap">近 10 工作日</span></div>
+      </article>
+      <article class="kpi" data-reveal style="--i:3">
+        <span class="kpi__glyph" data-glyph="task-user"></span>
+        <p class="kpi__label">平均處理天數 · <span id="days-range">近 10 工作日</span></p>
+        <p class="kpi__value"><span id="kpi-days">0</span><span class="kpi__unit">天</span></p>
+        <div class="kpi__spark" id="spark-days"></div>
+        <div class="kpi__foot"><span class="bullet" id="days-bullet" aria-hidden="true"><span class="bullet__fill"></span><span class="bullet__target" style="--t:.6667"></span></span><span class="muted nowrap">目標 ≤ 4.0</span><span class="kpi__delta" id="delta-days">—</span></div>
+      </article>
+    </section>
+
+    <section class="panel flow-panel corner-marks" id="flow-panel" aria-labelledby="flow-title" data-reveal>
+      <header class="panel__head panel__head--tools">
+        <h2 class="panel__title" id="flow-title"><span data-glyph="lane"></span>即時流程圖<span class="panel__sub">公文簽核 v3.2 · 5 泳道 · 18 節點 · 點選節點看統計</span></h2>
+        <div class="panel__tools">
+          <div class="seg" data-seg id="speed-seg" role="group" aria-label="依速別篩選積壓">
+            <button type="button" aria-pressed="true" data-value="all">全部</button>
+            <button type="button" aria-pressed="false" data-value="urgent">最速件</button>
+            <button type="button" aria-pressed="false" data-value="fast">速件</button>
+            <button type="button" aria-pressed="false" data-value="normal">普通件</button>
+          </div>
+          <button type="button" class="switch" role="switch" aria-checked="true" id="heat-switch">熱度光暈</button>
+          <button type="button" class="btn btn--sm" id="play-btn" aria-pressed="true">暫停流動</button>
+        </div>
+      </header>
+      <div class="flow-stage">
+        <svg id="flow-main"></svg>
+      </div>
+      <p class="flow-hint"><span data-glyph="flow"></span>左右滑動可看完整流程；點節點開啟統計卡</p>
+      <footer class="panel__foot flow-foot">
+        <div class="legend" aria-label="圖例">
+          <span class="legend__item"><span class="legend__swatch legend__swatch--token"></span>token ＝ 一件流轉中的公文</span>
+          <span class="legend__item"><span class="legend__swatch legend__swatch--line"></span>順序流</span>
+          <span class="legend__item"><span class="legend__swatch legend__swatch--return"></span>退回</span>
+          <span class="legend__item"><span class="legend__badge">12</span>積壓件數</span>
+          <span class="legend__item">熱度 低<span class="legend__swatch legend__swatch--heat"></span>高</span>
+        </div>
+        <div class="flow-stats" id="flow-stats"></div>
+      </footer>
+    </section>
+
+    <div class="grid-main ov-grid">
+      <section class="panel" aria-labelledby="rank-title" data-reveal>
+        <header class="panel__head">
+          <h2 class="panel__title" id="rank-title"><span data-glyph="timer"></span>瓶頸排行</h2>
+          <div class="seg" data-seg id="rank-seg" role="group" aria-label="排序依據">
+            <button type="button" aria-pressed="true" data-value="load">綜合負荷</button>
+            <button type="button" aria-pressed="false" data-value="count">積壓件數</button>
+            <button type="button" aria-pressed="false" data-value="dwell">平均停留</button>
+          </div>
+        </header>
+        <div class="rank" id="rank-list"></div>
+        <button type="button" class="rank__more" id="rank-more" aria-expanded="false">顯示全部 11 個任務節點</button>
+        <footer class="panel__foot">綜合負荷 ＝ max（積壓 ÷ WIP 上限，平均停留 ÷ SLA）。點選列可在流程圖上定位節點。</footer>
+      </section>
+
+      <section class="panel" aria-labelledby="od-title" data-reveal style="--i:1">
+        <header class="panel__head">
+          <h2 class="panel__title" id="od-title"><span data-glyph="timer"></span>逾期公文<span class="count" data-count="overdue"></span></h2>
+          <a class="btn btn--sm btn--ghost" href="docs.html?view=overdue">查看全部<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h11.5M11 5.5 15.5 10 11 14.5"/></svg></a>
+        </header>
+        <ol class="od-list" id="od-list"></ol>
+      </section>
+    </div>
+
+    <div class="grid-3 ov-grid ov-row3">
+      <section class="panel" aria-labelledby="load-title" data-reveal>
+        <header class="panel__head">
+          <h2 class="panel__title" id="load-title"><span data-glyph="lane"></span>承辦單位負載</h2>
+          <span class="panel__sub">在辦件數（已分文）</span>
+        </header>
+        <div class="hr-legend" id="load-legend"></div>
+        <div class="load-list" id="load-list"></div>
+        <footer class="panel__foot" id="load-foot"></footer>
+      </section>
+
+      <section class="panel" aria-labelledby="hr-title" data-reveal style="--i:1">
+        <header class="panel__head">
+          <h2 class="panel__title" id="hr-title"><span data-glyph="flow"></span>今日時段流量</h2>
+          <span class="panel__sub">每小時件數</span>
+        </header>
+        <div class="hr-legend"><span><i style="background:var(--token)"></i>收文</span><span><i style="background:var(--ink)"></i>發文</span></div>
+        <div class="hourly" id="hourly"></div>
+        <footer class="panel__foot" id="hr-foot"></footer>
+      </section>
+
+      <section class="panel" aria-labelledby="feed-title" data-reveal data-anim style="--i:2">
+        <header class="panel__head">
+          <h2 class="panel__title" id="feed-title"><span data-glyph="token"></span>最新流轉</h2>
+          <span class="live"><span class="live__dot"></span>即時</span>
+        </header>
+        <ol class="feed" id="feed"></ol>
+      </section>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="title-block">
+      <div class="tb-cell tb-cell--brand">
+        <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+        <div><strong>公文線上簽核 流程中樞</strong><span>澄港市政府 秘書處 文書科 維護</span></div>
+      </div>
+      <div class="tb-cell"><span class="tb-k">圖號 DWG NO.</span><span class="tb-v mono">CG-BPMN-012</span></div>
+      <div class="tb-cell"><span class="tb-k">流程定義 PROCESS</span><span class="tb-v">公文簽核 v3.2</span></div>
+      <div class="tb-cell"><span class="tb-k">生效日期 EFFECTIVE</span><span class="tb-v mono">2026-09-30</span></div>
+      <div class="tb-cell"><span class="tb-k">系統服務 SUPPORT</span><span class="tb-v">分機 2120 · 平日 08:30–17:30</span></div>
+      <nav class="tb-cell tb-cell--nav" aria-label="頁尾導覽">
+        <span class="tb-k">圖紙索引</span>
+        <a href="index.html">01 流程總覽</a>
+        <a href="docs.html">02 公文清單</a>
+        <a href="doc.html">03 公文詳情</a>
+        <a href="designer.html">04 流程設計器</a>
+      </nav>
+      <div class="tb-cell tb-cell--back"><a href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a></div>
+      <div class="tb-cell tb-cell--note"><span>本系統為作品集虛構示範：澄港市、機關、人名、文號與統計資料均為虛構。</span><span class="mono">SHEET 01 / 04 · 比例 1:1 · 時間單位：工作小時</span></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt } = App;
+
+  // 靜態 markup 裡的 BPMN 符號統一由 App.glyph 產生
+  $$('[data-glyph]').forEach(el => { el.outerHTML = App.glyph(el.dataset.glyph, el.className); });
+
+  const LANE = Object.fromEntries(App.DATA.lanes.map(l => [l.id, l.label]));
+  const TYPE = { start: '開始事件', end: '結束事件', task: '使用者任務', xor: '互斥閘道', and: '平行閘道' };
+  const DESC = {
+    recv: '電子交換、紙本與 1999 轉辦的來文都從這裡進入流程。',
+    end: '歸檔完成即結案，軌跡封存供日後調閱。',
+    'gw-cosign': '承辦人擬辦後判斷是否需要其他單位表示意見。',
+    split: '需會辦時同時送出各會辦單位，彼此不必等待。',
+    join: '所有會辦分支都簽註完成，才能進入核稿。',
+    'gw-level': '依分層負責明細表決定由誰決行。',
+    'gw-send': '決行後需對外行文者發文，其餘存查歸檔。',
+  };
+  const state = { range: 'today', speed: 'all', rankBy: 'load', rankAll: false, card: null };
+  let stats = App.stageStats();
+
+  /* ── KPI ── */
+  const RANGE = {
+    today: { label: '今日', cmp: '較前一工作日同時段' },
+    '7d': { label: '近 7 日', cmp: '較前 7 日' },
+    '30d': { label: '近 30 日', cmp: '無前期資料（9/21 起）' },
+  };
+  function delta(el, value, prev, { good = 'up', decimals = 0 } = {}) {
+    if (prev == null || value == null) { el.className = 'kpi__delta'; el.textContent = '—'; return; }
+    const d = value - prev;
+    const flat = Math.abs(d) < (decimals ? .05 : .5);
+    el.className = 'kpi__delta' + (flat || good === 'none' ? '' : ((d > 0) === (good === 'up') ? ' kpi__delta--up' : ' kpi__delta--down'));
+    el.textContent = (flat ? '± ' : d > 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(decimals);
+  }
+  function renderKpis() {
+    const k = App.kpis(state.range), R = RANGE[state.range];
+    $$('[data-range-label]').forEach(el => { el.textContent = R.label; });
+    App.countTo($('#kpi-recv'), k.recv.value);
+    App.countTo($('#kpi-sent'), k.sent.value);
+    App.countTo($('#kpi-overdue'), k.overdue.value);
+    App.countTo($('#kpi-days'), k.avgDays.value, { decimals: 1 });
+    $('#spark-recv').innerHTML = App.spark(k.recv.series);
+    $('#spark-sent').innerHTML = App.spark(k.sent.series);
+    $('#spark-overdue').innerHTML = App.spark(k.overdue.series);
+    $('#spark-days').innerHTML = App.spark(k.avgDays.series);
+    $('#cmp-recv').textContent = R.cmp;
+    $('#cmp-sent').textContent = R.cmp;
+    delta($('#delta-recv'), k.recv.value, k.recv.prev, { good: 'none' });
+    delta($('#delta-sent'), k.sent.value, k.sent.prev, { good: 'up' });
+    delta($('#delta-days'), k.avgDays.value, k.avgDays.prev, { good: 'down', decimals: 1 });
+    $('#days-range').textContent = state.range === 'today' ? '近 10 工作日' : R.label;
+    const b = k.overdue.bySpeed;
+    $('#od-break').innerHTML = `<span><i class="is-urgent"></i>最速 ${b.urgent}</span><span><i class="is-fast"></i>速件 ${b.fast}</span><span><i></i>普通 ${b.normal}</span>`;
+    const fill = $('#days-bullet .bullet__fill');
+    fill.style.setProperty('--v', Math.min(1, (k.avgDays.value || 0) / 6).toFixed(3));
+    fill.classList.toggle('is-over', (k.avgDays.value || 0) > k.avgDays.target);
+  }
+  $('#range-seg').addEventListener('change', e => { state.range = e.detail.value; renderKpis(); });
+
+  /* ── 流程圖 ── */
+  const metaOf = st => Object.fromEntries(Object.values(st).map(s => [s.id, { count: s.count, dwell: s.avgDwell, heat: s.heat }]));
+  const flow = App.Flow($('#flow-main'), App.processModel(), {
+    live: true, prewarm: 34, rate: 2.3, speed: 128,
+    label: '公文簽核 v3.2 即時流程圖：5 條泳道、18 個節點',
+    meta: metaOf(stats),
+    onNodeClick: (node, el) => openCard(node.id, el),
+    onBackgroundClick: () => closeCard(),
+  });
+
+  function renderFlowStats() {
+    const c = App.counts();
+    const k = App.kpis('today');
+    const backlog = Object.values(stats).reduce((s, x) => s + x.count, 0);
+    $('#flow-stats').innerHTML = `<span>圖上積壓<b>${backlog}</b></span><span>在辦（未決行）<b>${c.open}</b></span><span>今日收文<b>${k.recv.value}</b></span><span>今日發文<b>${k.sent.value}</b></span><span>逾期<b class="is-bad">${c.overdue}</b></span>`;
+  }
+
+  $('#speed-seg').addEventListener('change', e => {
+    state.speed = e.detail.value;
+    stats = App.stageStats({ speed: state.speed });
+    flow.setMeta(metaOf(stats));
+    renderRank();
+    renderFlowStats();
+    if (state.card) refreshCard();
+  });
+  $('#heat-switch').addEventListener('change', e => flow.svg.classList.toggle('no-heat', !e.detail.checked));
+
+  const playBtn = $('#play-btn');
+  const syncPlay = () => {
+    const on = flow.playing;
+    playBtn.setAttribute('aria-pressed', String(on));
+    playBtn.innerHTML = App.icon(on ? 'pause' : 'play') + (on ? '暫停流動' : '恢復流動');
+  };
+  playBtn.addEventListener('click', () => {
+    if (flow.playing) flow.pause(); else flow.play();
+    syncPlay();
+    App.toast(flow.playing ? 'token 恢復流動' : '已暫停 token 流動，統計數字不受影響', { tone: 'token', duration: 2400 });
+  });
+  // 減少動態時 token 本來就是靜態快照，不提供無效的播放鈕
+  playBtn.hidden = App.reducedMotion();
+  syncPlay();
+
+  /* ── 節點統計卡 ── */
+  const panel = $('#flow-panel');
+  const card = document.createElement('div');
+  card.className = 'node-card';
+  card.hidden = true;
+  card.tabIndex = -1;
+  card.setAttribute('role', 'dialog');
+  panel.appendChild(card);
+  let returnFocus = null;
+
+  const glyphOf = n => n.type === 'start' ? 'start-msg' : n.type === 'end' ? 'end' : n.type === 'task' ? 'task-user' : n.type;
+  const statBox = (label, val, unit, bad) => `<div class="node-card__stat${bad ? ' is-bad' : ''}"><span>${label}</span><b>${val}<small>${unit}</small></b></div>`;
+  const durParts = h => h < 9 ? [h.toFixed(1), '小時'] : [(h / 9).toFixed(1), '天'];
+  const branchRows = rows => {
+    const total = rows.reduce((s, r) => s + r[1], 0) || 1;
+    return `<div class="nc-branches">${rows.map(([label, n]) => `<div class="nc-branch"><span>${esc(label)}</span><b>${n} 件 · ${Math.round(n / total * 100)}%</b><span class="nc-branch__bar"><span style="--v:${(n / total).toFixed(3)}"></span></span></div>`).join('')}</div>`;
+  };
+
+  function cardBody(node) {
+    if (node.type === 'task') {
+      const s = stats[node.id];
+      const scope = state.speed === 'all' ? '' : `（${App.DATA.speeds[state.speed].label}）`;
+      const [dv, du] = durParts(s.avgDwell);
+      const maxD = Math.max(1, ...s.dist);
+      const DL = ['< 半天', '半天–1天', '1–2 天', '2–4 天', '> 4 天'];
+      const DC = ['var(--ink-3)', 'var(--ink-3)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)'];
+      const list = s.docs.length
+        ? `<ul class="node-card__list">${s.docs.slice(0, 3).map(d => `<li><a href="${App.docUrl(d.id)}"><span class="doc-no">${d.id}</span><span class="nc-dwell">${fmt.dur(App.workHours(d.stageAt, App.NOW0))}</span><span class="truncate nc-subj">${esc(d.subject)}</span></a></li>`).join('')}</ul>`
+        : '<p class="nc-empty">目前沒有公文停在這個關卡。</p>';
+      return `<div class="node-card__stats">${statBox('積壓' + scope, s.count, '件')}${statBox('平均停留', dv, du)}${statBox('逾期', s.overdue, '件', s.overdue > 0)}${statBox('近 7 日完成', s.done7, '件')}</div>
+        <div class="node-card__dist"><p class="nc-cap">停留時間分布（工作時間）</p><div class="nc-hist">${s.dist.map((v, i) => `<div class="nc-hist__col"><span class="nc-hist__bar" style="--v:${(v / maxD).toFixed(3)};--c:${DC[i]}"></span><b>${v}</b><small>${DL[i]}</small></div>`).join('')}</div></div>
+        <p class="nc-listhead">停留最久</p>${list}
+        <footer class="node-card__foot"><span class="muted">SLA ${node.sla} 小時 · WIP ${node.wip} 件</span><a class="btn btn--sm" href="docs.html?node=${node.id}">此關卡公文${App.icon('arrow-right')}</a></footer>`;
+    }
+    const g = App.gatewayStats();
+    const docs = App.DATA.docs;
+    const conds = flow.outEdges(node.id).filter(e => e.label || e.cond).map(e => `<li><b>→ ${esc(flow.node(e.to).label)}</b>${esc(e.cond || e.label)}</li>`).join('');
+    let rows = null, extra = '';
+    if (node.id === 'gw-cosign') rows = [['需會辦', g['gw-cosign'].yes], ['免會辦', g['gw-cosign'].no]];
+    else if (node.id === 'gw-level') rows = [['第一層 · 市長決行', g['gw-level'][1]], ['第二層 · 局處首長決行', g['gw-level'][2]], ['第三層 · 科長決行', g['gw-level'][3]]];
+    else if (node.id === 'gw-send') rows = [['對外發文', g['gw-send'].send], ['存查歸檔', g['gw-send'].file]];
+    else if (node.id === 'split') rows = ['legal', 'budget', 'agency'].map(b => [App.DATA.branchLabel[b], docs.filter(d => d.cosign.some(c => c.branch === b)).length]);
+    else if (node.id === 'join') {
+      const waiting = docs.filter(d => d.stage === 'cosign');
+      rows = [1, 2, 3].map(k => [`尚缺 ${k} 個分支`, waiting.filter(d => d.cosign.filter(c => c.state === 'pending').length === k).length]);
+    } else if (node.id === 'recv') {
+      const k = App.kpis('today'), w = App.kpis('7d');
+      extra = `<div class="node-card__stats">${statBox('今日收文', k.recv.value, '件')}${statBox('近 7 日日均', (w.recv.value / 5).toFixed(1), '件')}${statBox('待登錄', stats.register.count, '件')}${statBox('待分文', stats.assign.count, '件')}</div>`;
+    } else if (node.id === 'end') {
+      const today = App.dayStart(App.NOW0);
+      const closed = docs.filter(d => d.closedAt != null);
+      extra = `<div class="node-card__stats">${statBox('今日結案', closed.filter(d => d.closedAt >= today).length, '件')}${statBox('近 7 日結案', closed.filter(d => d.closedAt >= today - 6 * 864e5).length, '件')}${statBox('累計結案', closed.length, '件')}${statBox('待歸檔', stats.archive.count, '件')}</div>`;
+    }
+    return `<p class="nc-desc">${DESC[node.id] || ''}</p>${rows ? branchRows(rows) : ''}${extra}${conds ? `<ul class="nc-conds">${conds}</ul>` : ''}`;
+  }
+  function cardHTML(node) {
+    return `<header class="node-card__head">${App.glyph(glyphOf(node))}<div><p class="node-card__title">${esc(node.label)}${node.sub ? `<small>${esc(node.sub)}</small>` : ''}</p><p class="node-card__meta">${LANE[node.lane]}泳道 · ${TYPE[node.type]}${node.role ? ' · ' + esc(node.role) : ''}</p></div><button type="button" class="node-card__close" aria-label="關閉統計卡">${App.icon('x')}</button></header>${cardBody(node)}`;
+  }
+  function placeCard(el) {
+    if (matchMedia('(max-width: 720px)').matches) { card.style.left = ''; card.style.top = ''; return; }
+    const pr = panel.getBoundingClientRect(), nr = el.getBoundingClientRect();
+    const cw = card.offsetWidth;
+    let left = nr.right - pr.left + 16;
+    if (left + cw > pr.width - 12) left = nr.left - pr.left - cw - 16;
+    left = Math.max(12, Math.min(left, pr.width - cw - 12));
+    card.style.left = left + 'px';
+    // 盡量讓卡片留在圖面內：先對齊節點，超出圖面底部就往上推
+    const limit = $('.flow-stage').getBoundingClientRect().bottom - pr.top - card.offsetHeight - 8;
+    card.style.top = Math.max(56, Math.min(nr.top - pr.top - 40, limit)) + 'px';
+  }
+  function openCard(id, el, { focus = true } = {}) {
+    const node = flow.node(id);
+    state.card = id;
+    card.innerHTML = cardHTML(node);
+    card.setAttribute('aria-label', `${node.label} 統計`);
+    card.hidden = false;
+    flow.spotlight(id);
+    placeCard(el);
+    markRank();
+    if (focus) { returnFocus = el; card.focus({ preventScroll: true }); }
+  }
+  function refreshCard() {
+    const keep = state.card;
+    card.innerHTML = cardHTML(flow.node(keep));
+  }
+  function closeCard() {
+    if (!state.card) return;
+    const hadFocus = card.contains(document.activeElement);
+    state.card = null;
+    card.hidden = true;
+    flow.spotlight(null);
+    markRank();
+    if (hadFocus && returnFocus && returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
+    returnFocus = null;
+  }
+  card.addEventListener('click', e => { if (e.target.closest('.node-card__close')) closeCard(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.card) closeCard(); });
+  document.addEventListener('click', e => {
+    if (state.card && !card.contains(e.target) && !e.target.closest('.flow__node') && !e.target.closest('.rank__row')) closeCard();
+  });
+  addEventListener('resize', () => { if (state.card) placeCard(flow.nodeEl(state.card)); });
+
+  /* ── 瓶頸排行 ── */
+  const RANK_BY = { load: s => s.load, count: s => s.count, dwell: s => s.avgDwell };
+  function renderRank() {
+    const key = RANK_BY[state.rankBy];
+    const list = Object.values(stats).sort((a, b) => key(b) - key(a) || b.count - a.count);
+    const max = Math.max(...list.map(key), 1e-6);
+    const shown = state.rankAll ? list : list.slice(0, 8);
+    $('#rank-list').innerHTML = shown.map((s, i) => {
+      const n = flow.node(s.id);
+      const color = s.heat > .04 ? App.heatColor(s.heat) : 'var(--ink-3)';
+      return `<button type="button" class="rank__row" data-node="${s.id}">
+        <span class="rank__no">${String(i + 1).padStart(2, '0')}</span>
+        <span class="rank__name">${App.glyph('task')}<span>${esc(n.label)}<small>${LANE[n.lane]} · ${esc(n.role)}</small></span></span>
+        <span class="rank__bar"><span class="rank__fill" style="--c:${color}" data-v="${(key(s) / max).toFixed(3)}"></span></span>
+        <span class="rank__val"><b>${s.count}</b> 件 · 均 ${fmt.dur(s.avgDwell)}${s.overdue ? ` · <em>逾 ${s.overdue}</em>` : ''}</span>
+      </button>`;
+    }).join('');
+    requestAnimationFrame(() => $$('#rank-list .rank__fill').forEach(f => f.style.setProperty('--v', f.dataset.v)));
+    markRank();
+  }
+  function markRank() { $$('#rank-list .rank__row').forEach(r => r.classList.toggle('is-active', r.dataset.node === state.card)); }
+  $('#rank-seg').addEventListener('change', e => { state.rankBy = e.detail.value; renderRank(); });
+  $('#rank-more').addEventListener('click', e => {
+    state.rankAll = !state.rankAll;
+    e.currentTarget.setAttribute('aria-expanded', String(state.rankAll));
+    e.currentTarget.textContent = state.rankAll ? '只顯示前 8 名' : '顯示全部 11 個任務節點';
+    renderRank();
+  });
+  $('#rank-list').addEventListener('click', e => {
+    const row = e.target.closest('.rank__row');
+    if (!row) return;
+    const el = flow.nodeEl(row.dataset.node);
+    panel.scrollIntoView({ behavior: App.reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    // 等捲動穩定再定位統計卡，卡片位置才會對準節點
+    setTimeout(() => { openCard(row.dataset.node, el, { focus: false }); returnFocus = row; }, App.reducedMotion() ? 0 : 420);
+  });
+
+  /* ── 逾期公文 ── */
+  function renderOverdue() {
+    const list = App.DATA.docs.filter(App.isOverdue).sort((a, b) => a.due - b.due || a.received - b.received).slice(0, 6);
+    $('#od-list').innerHTML = list.length ? list.map(d => {
+      const st = App.dueState(d);
+      return `<li><a class="od-item" href="${App.docUrl(d.id)}">
+        <span class="od-item__top">${App.docNo(d.id)}${App.speedBadge(d.speed)}${d.secret !== 'none' ? App.secretBadge(d.secret) : ''}<span class="od-item__late">${st.label}</span></span>
+        <span class="od-item__subj">${esc(d.subject)}</span>
+        <span class="od-item__meta"><span>${esc(App.unit(d.unit).org)}</span>${App.stageTag(d)}</span>
+      </a></li>`;
+    }).join('') : `<li>${App.emptyState({ title: '目前沒有逾期公文', text: '所有在辦公文都在限辦期限內。' })}</li>`;
+  }
+
+  /* ── 承辦單位負載 ── */
+  const LOAD_SEG = [['draft', '承辦', 'var(--ink-2)'], ['cosign', '會辦', '#6F8099'], ['review', '核稿', '#9DAABA'], ['approve', '決行', '#C9D2DC']];
+  function renderLoad() {
+    const rows = App.unitLoad().sort((a, b) => b.open - a.open);
+    const max = Math.max(...rows.map(r => r.open), 1);
+    $('#load-legend').innerHTML = LOAD_SEG.map(([, label, c]) => `<span><i style="background:${c}"></i>${label}</span>`).join('');
+    $('#load-list').innerHTML = rows.map((r, i) => `<div class="load-row">
+      <span class="load-row__name">${esc(r.org)}</span>
+      <span class="load-bar" role="img" aria-label="${esc(r.org)}：${LOAD_SEG.map(([k, l]) => `${l} ${r.byStage[k]} 件`).join('、')}">${LOAD_SEG.map(([k, l, c]) => r.byStage[k] ? `<span style="width:${(r.byStage[k] / max * 100).toFixed(2)}%;background:${c};--i:${i}" title="${l} ${r.byStage[k]} 件"></span>` : '').join('')}</span>
+      <span class="load-row__val"><b>${r.open}</b> 件${r.overdue ? `<em>逾 ${r.overdue}</em>` : ''}</span>
+    </div>`).join('');
+    const open = rows.reduce((s, r) => s + r.open, 0), overdue = rows.reduce((s, r) => s + r.overdue, 0);
+    $('#load-foot').innerHTML = `<span class="nowrap">合計在辦 <b>${open}</b> 件</span> · <span class="nowrap">平均每單位 <b>${(open / rows.length).toFixed(1)}</b> 件</span>${overdue ? ` · <em class="nowrap">逾期 ${overdue} 件</em>` : ''}`;
+  }
+
+  /* ── 今日時段流量 ── */
+  function renderHourly() {
+    const data = App.hourly();
+    const W = 380, H = 196, L = 26, R = 6, T = 14, B = 24;
+    const max = Math.max(4, Math.ceil(Math.max(...data.map(d => Math.max(d.recv, d.sent))) / 2) * 2);
+    const bw = (W - L - R) / data.length;
+    const y = v => H - B - v / max * (H - T - B);
+    const nowH = 14 + 20 / 60;
+    let g = `<defs><pattern id="hr-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#F7F9FB"/><path d="M0 0V6" stroke="#E2E8EE" stroke-width="2"/></pattern></defs>`;
+    [0, max / 2, max].forEach(v => { g += `<line class="hr-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`; });
+    data.forEach((d, i) => {
+      const x = L + i * bw;
+      if (d.h >= 15) g += `<rect class="hr-future" x="${x + 1}" y="${T}" width="${bw - 2}" height="${H - T - B}"/>`;
+      if (d.recv) g += `<rect class="hr-recv" x="${(x + bw * .17).toFixed(1)}" y="${y(d.recv).toFixed(1)}" width="${(bw * .3).toFixed(1)}" height="${(H - B - y(d.recv)).toFixed(1)}" rx="1.5"><title>${d.h}:00 收文 ${d.recv} 件</title></rect>`;
+      if (d.sent) g += `<rect class="hr-sent" x="${(x + bw * .53).toFixed(1)}" y="${y(d.sent).toFixed(1)}" width="${(bw * .3).toFixed(1)}" height="${(H - B - y(d.sent)).toFixed(1)}" rx="1.5"><title>${d.h}:00 發文 ${d.sent} 件</title></rect>`;
+      g += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${String(d.h).padStart(2, '0')}</text>`;
+    });
+    g += `<line class="hr-base" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>`;
+    const nx = L + (nowH - 8) * bw;
+    g += `<line class="hr-now" x1="${nx}" x2="${nx}" y1="${T - 4}" y2="${H - B}"/><text class="hr-now-label" x="${nx + 4}" y="${T + 6}">現在 14:20</text>`;
+    const total = data.reduce((s, d) => ({ recv: s.recv + d.recv, sent: s.sent + d.sent }), { recv: 0, sent: 0 });
+    $('#hourly').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="今日 08 到 17 時每小時收文與發文件數，至 14:20 共收文 ${total.recv} 件、發文 ${total.sent} 件">${g}</svg>`;
+    const peak = data.reduce((a, b) => b.recv > a.recv ? b : a);
+    $('#hr-foot').innerHTML = `<span class="nowrap">至 14:20 收文 <b>${total.recv}</b> 件</span> · <span class="nowrap">發文 <b>${total.sent}</b> 件</span> · <span class="nowrap">收文尖峰 ${String(peak.h).padStart(2, '0')}:00–${String(peak.h + 1).padStart(2, '0')}:00</span>`;
+  }
+
+  /* ── 最新流轉 ── */
+  const FEED_GLYPH = { register: 'start-msg', assign: 'task', draft: 'task-user', cosign: 'and', review: 'task-user', approve: 'xor', dispatch: 'end-msg', archive: 'end' };
+  function renderFeed() {
+    $('#feed').innerHTML = App.recent(6).map(({ at, doc, entry }) => {
+      const p = App.person(entry.who);
+      return `<li class="feed__item"><time class="feed__time" datetime="${new Date(at).toISOString()}">${fmt.time(at)}</time>${App.glyph(entry.ret ? 'return' : FEED_GLYPH[entry.key])}<span class="feed__text"><b>${esc(p.name)}</b> ${esc(entry.action)}<a class="doc-no" href="${App.docUrl(doc.id)}">${doc.id}</a><span class="feed__sub truncate">${esc(doc.subject)}</span></span></li>`;
+    }).join('');
+  }
+
+  renderKpis();
+  renderFlowStats();
+  renderRank();
+  renderOverdue();
+  renderLoad();
+  renderHourly();
+  renderFeed();
+  App.on('docs', () => {
+    stats = App.stageStats({ speed: state.speed });
+    flow.setMeta(metaOf(stats));
+    renderKpis(); renderFlowStats(); renderRank(); renderOverdue(); renderLoad(); renderFeed();
+  });
+});
+</script>
+</body>
+</html>

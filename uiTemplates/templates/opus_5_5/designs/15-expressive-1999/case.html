@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件詳情 — 澄港市 1999 陳情案件管理系統</title>
+<meta name="description" content="澄港市 1999 市民熱線陳情案件詳情：陳情內容與通話逐字稿、地點示意圖、派案路徑、處理進度、回覆民眾範本與滿意度回訪。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300..900&family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     案件詳情（case.html）專屬樣式，class 一律加 cs- 前綴
+     招牌：狀態 orb（六階段各自的形狀，流轉時 morph + 彈簧擠壓 + 形狀迸散）、
+           通話重播（波形可拖曳、逐字稿隨播放高亮）、派案路徑的波浪連線
+     ===================================================================== */
+
+  /* ---------- 版面 ---------- */
+  .cs-top { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: var(--gap); align-items: stretch; }
+  .cs-route { margin-top: var(--gap); }
+  .cs-cols { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--gap); align-items: start; margin-top: var(--gap); }
+  .cs-col { display: grid; gap: var(--gap); align-content: start; min-width: 0; }
+  .cs-bottom { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: var(--gap); align-items: stretch; margin-top: var(--gap); }
+  @media (max-width: 1199px) {
+    .cs-top, .cs-cols, .cs-bottom { grid-template-columns: minmax(0, 1fr); }
+  }
+  /* 標題區塊可收縮：長副標時仍與形狀標誌同列，不會被擠到下一行 */
+  [data-case] .panel__head > div:not(.panel__actions) { flex: 1 1 180px; min-width: 0; }
+  .cs-subhead { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px; font-size: var(--fs-label-l); font-weight: 800; }
+  .cs-subhead .badge { margin-left: 2px; }
+
+  /* ---------- 頁首 ---------- */
+  .cs-title { font-size: clamp(30px, 3.2vw, 46px); line-height: 1.16; max-width: 24em; text-wrap: balance; }
+  .cs-back {
+    display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 12px 0 8px;
+    border-radius: var(--r-full); background: var(--surface-container-high); color: var(--on-surface);
+    font-size: var(--fs-label-m); font-weight: 750; text-decoration: none;
+    transition: background-color .2s, border-radius var(--spring-fast-dur) var(--spring-fast);
+  }
+  .cs-back:hover { background: var(--surface-container-highest); border-radius: var(--r-sm); }
+  .cs-back .ico { width: 16px; height: 16px; }
+  .cs-id { font-size: 15px; font-weight: 800; color: var(--on-surface); letter-spacing: .04em; }
+  .cs-desc { display: inline-block; }
+  .cs-pager { display: inline-flex; align-items: center; gap: 2px; height: 40px; padding: 4px; border-radius: var(--r-full); background: var(--surface-container); }
+  .cs-pager__pos { padding: 0 8px; font: 700 12.5px/1 var(--font-num); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cs-pager .is-off { opacity: .32; pointer-events: none; }
+
+  /* ---------- Hero：目前階段 orb ---------- */
+  .cs-hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; gap: 22px; align-content: space-between;
+    padding: 28px 28px 22px;
+    border-radius: var(--r-3xl) var(--r-3xl) var(--r-3xl) var(--r-lg);
+    background: var(--s-container); color: var(--on-s-container);
+    transition: background-color .6s var(--ease-effects), color .6s var(--ease-effects);
+  }
+  .cs-hero__deco { position: absolute; z-index: -1; right: -80px; top: -96px; width: 320px; height: 320px; color: rgb(255 255 255 / .42); animation: spin 70s linear infinite; }
+  .cs-hero__deco2 { position: absolute; z-index: -1; right: 196px; top: 26px; width: 30px; height: 30px; color: rgb(255 255 255 / .7); animation: float 8s ease-in-out infinite; }
+  .cs-hero__main {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "orb head" "orb body"; column-gap: 30px; row-gap: 0; align-items: center;
+  }
+  .cs-orb { grid-area: orb; position: relative; display: grid; place-items: center; width: 188px; height: 188px; }
+  .cs-orb__spin { position: absolute; inset: 0; color: color-mix(in oklab, var(--s), #000 10%); transition: color .6s var(--ease-effects); animation: spin 48s linear infinite; }
+  .cs-orb__spin .shape { width: 100%; height: 100%; }
+  .cs-orb__inner { position: relative; display: grid; justify-items: center; color: #fff; }
+  .cs-orb__num { font-size: 96px; }
+  .cs-orb__of { margin-top: 4px; font: 700 13px/1 var(--font-num); letter-spacing: .08em; opacity: .9; }
+  .cs-orb__burst { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  .cs-burst { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px; color: var(--s); }
+  .cs-burst:nth-child(3n) { color: #fff; }
+  .cs-burst:nth-child(3n+1) { color: var(--tertiary-vivid); }
+  .cs-burst .shape { width: 100%; height: 100%; }
+  .cs-hero__head { grid-area: head; align-self: end; }
+  .cs-hero__body { grid-area: body; align-self: start; }
+  .cs-hero__eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-label-l); font-weight: 750; }
+  .cs-hero__eyebrow .num { font-weight: 800; }
+  .cs-hero__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--s); box-shadow: 0 0 0 3px rgb(255 255 255 / .6); }
+  .cs-hero__title { margin-top: 4px; font-size: clamp(38px, 3.8vw, 54px); font-weight: 850; line-height: 1.06; letter-spacing: -.012em; }
+  .cs-hero__note { margin-top: 12px; font-size: var(--fs-body-l); line-height: 1.6; max-width: 48ch; }
+  .cs-hero__meta { margin-top: 4px; font-size: var(--fs-body-s); font-weight: 600; opacity: .82; }
+  .cs-hero__facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .cs-hero__facts .tag { background: rgb(255 255 255 / .58); color: inherit; }
+  .cs-hero__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .cs-hero__actions .btn--outlined { --btn-fg: currentColor; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent); }
+  .cs-hero__steps { padding: 18px 10px 14px; border-radius: var(--r-xl); background: rgb(255 255 255 / .68); color: var(--on-surface); }
+  .cs-hero__steps .stepper__step.cs-pop .stepper__mark { animation: cs-pop var(--spring-bouncy-dur) var(--spring-bouncy); }
+  @keyframes cs-pop { from { transform: scale(.4) rotate(-60deg); } }
+
+  /* ---------- SLA 波浪環 ---------- */
+  .cs-sla {
+    display: flex; flex-direction: column;
+    border-radius: var(--r-3xl) var(--r-lg) var(--r-3xl) var(--r-3xl);
+    transition: background-color .5s var(--ease-effects), color .5s var(--ease-effects);
+  }
+  .cs-sla[data-state="soon"] { background: var(--warn-container); color: var(--on-warn-container); }
+  .cs-sla[data-state="over"] { background: var(--error-container); color: var(--on-error-container); }
+  .cs-sla .panel__head { margin-bottom: 8px; }
+  /* 卡片本身已染成警示色，標籤改實心才不會與底色融在一起 */
+  .cs-sla[data-state="soon"] [data-sla-tag] { background: var(--warn-vivid); color: var(--on-warn-container); }
+  .cs-sla[data-state="over"] [data-sla-tag] { background: var(--error); color: var(--on-error); }
+  .cs-sla .panel__glyph { color: var(--secondary-vivid); transition: color .4s; }
+  .cs-sla[data-state="soon"] .panel__glyph { color: var(--warn-vivid); }
+  .cs-sla[data-state="over"] .panel__glyph, .cs-sla[data-state="late"] .panel__glyph { color: var(--error); }
+  .cs-sla[data-state="done"] .panel__glyph { color: var(--success-vivid); }
+  .cs-sla__body { flex: 1; display: grid; align-content: space-between; gap: 18px; }
+  .cs-sla__ring { justify-self: center; color: var(--secondary-vivid); transition: color .4s; }
+  .cs-sla[data-state="soon"] .cs-sla__ring { color: var(--warn-vivid); }
+  .cs-sla[data-state="over"] .cs-sla__ring, .cs-sla[data-state="late"] .cs-sla__ring { color: var(--error); }
+  .cs-sla[data-state="done"] .cs-sla__ring { color: var(--success-vivid); }
+  .cs-sla__label { display: block; font-size: var(--fs-label-m); font-weight: 800; letter-spacing: .03em; color: var(--on-surface-variant); }
+  .cs-sla[data-state="soon"] .cs-sla__label, .cs-sla[data-state="over"] .cs-sla__label { color: inherit; }
+  .cs-sla__num { display: block; margin: 8px 0 6px; font-size: 62px; color: var(--on-surface); }
+  .cs-sla[data-state="over"] .cs-sla__num { color: var(--error); }
+  .cs-sla__unit { font-size: var(--fs-label-s); font-weight: 700; color: var(--on-surface-variant); }
+  .cs-sla__kv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+  .cs-sla__kv > div { padding: 10px 14px 11px; border-radius: 18px; background: rgb(255 255 255 / .62); }
+  .cs-sla__kv > div:first-child { border-radius: 18px 18px 18px 6px; }
+  .cs-sla__kv dt { font-size: 12px; font-weight: 700; color: var(--on-surface-variant); }
+  .cs-sla__kv dd { margin: 2px 0 0; font-weight: 800; font-variant-numeric: tabular-nums; font-family: var(--font-num); font-size: 15px; }
+  @media (min-width: 600px) and (max-width: 1199px) {
+    .cs-sla__body { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 28px; }
+  }
+
+  /* ---------- 派案路徑 ---------- */
+  .cs-route__list { display: flex; align-items: flex-start; }
+  .cs-rstep { flex: 1 1 0; display: flex; align-items: flex-start; min-width: 0; }
+  .cs-rstep:first-child { flex: 0 0 auto; }
+  .cs-rnode { width: 126px; flex-shrink: 0; display: grid; justify-items: center; gap: 2px; text-align: center; }
+  .cs-route__list[data-n="7"] .cs-rnode { width: 112px; }
+  .cs-rnode__mark { position: relative; display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 8px; color: var(--s, var(--surface-container-highest)); }
+  .cs-rnode__mark .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cs-rnode__mark .ico { position: relative; width: 24px; height: 24px; color: #fff; }
+  .cs-rnode.is-caller { --s: var(--inverse-surface); }
+  .cs-rnode.is-return { --s: var(--error); }
+  .cs-rnode.is-pending { --s: var(--surface-container-highest); }
+  .cs-rnode.is-pending .cs-rnode__mark .ico { color: var(--on-surface-variant); }
+  .cs-rnode.is-pending .cs-rnode__mark::before {
+    content: ""; position: absolute; inset: -5px; border-radius: 50%;
+    border: 2px dashed var(--outline-variant);
+  }
+  .cs-rnode.is-current .cs-rnode__mark .shape { animation: spin 16s linear infinite; }
+  .cs-rnode.is-current .cs-rnode__mark::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 3px solid var(--s); animation: ring-pulse 2.4s var(--ease-decel) infinite;
+  }
+  .cs-rnode__title { font-size: var(--fs-label-l); font-weight: 800; line-height: 1.3; text-wrap: balance; }
+  .cs-rnode__org { display: block; font-size: var(--fs-label-s); font-weight: 700; color: var(--on-surface-variant); }
+  .cs-rnode__sub { font-size: var(--fs-body-s); color: var(--on-surface-variant); line-height: 1.35; }
+  .cs-rnode__time { font: 600 12px/1.4 var(--font-num); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .cs-rnode.is-current .cs-rnode__time { color: var(--tertiary); font-weight: 800; }
+  .cs-rnode.is-current .cs-rnode__title { color: var(--on-surface); }
+  .cs-rnode.is-pending .cs-rnode__title { color: var(--on-surface-variant); }
+  .cs-rlink { position: relative; flex: 1; min-width: 34px; height: 64px; margin: 0 -8px; }
+  .cs-rlink__label {
+    position: absolute; left: 4px; right: 4px; top: 6px; text-align: center;
+    font: 700 12px/1.2 var(--font-sans); color: var(--on-surface-variant); font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cs-rlink__bar { position: absolute; left: 10px; right: 10px; top: 30px; height: 4px; border-radius: 2px; background: var(--primary); }
+  .cs-rlink.is-pending .cs-rlink__bar { background: repeating-linear-gradient(90deg, var(--outline-variant) 0 6px, transparent 6px 12px); }
+  .cs-rlink.is-return .cs-rlink__bar { background: repeating-linear-gradient(90deg, var(--error) 0 8px, transparent 8px 13px); }
+  .cs-rlink.is-return .cs-rlink__label { color: var(--error); }
+  .cs-rlink.is-active .cs-rlink__label { color: var(--tertiary); }
+  .cs-rlink.is-active .cs-rlink__bar { display: none; }
+  .cs-rlink__wave { position: absolute; left: 10px; right: 10px; top: 22px; height: 20px; color: var(--tertiary-vivid); }
+  .cs-route__legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-route__legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .cs-route__legend i { display: inline-block; width: 22px; height: 4px; border-radius: 2px; background: var(--primary); }
+  .cs-route__legend i.is-wave { height: 10px; background: none; }
+  .cs-route__legend i.is-dash { background: repeating-linear-gradient(90deg, var(--outline) 0 5px, transparent 5px 9px); }
+  .cs-route__legend svg { width: 22px; height: 10px; }
+  @media (max-width: 899px) {
+    .cs-route__list { flex-direction: column; align-items: stretch; }
+    .cs-rstep { flex-direction: column; align-items: stretch; }
+    .cs-rnode, .cs-route__list[data-n="7"] .cs-rnode {
+      width: auto; grid-template-columns: 56px minmax(0, 1fr); justify-items: start; text-align: left;
+      column-gap: 14px; row-gap: 0; align-items: center;
+    }
+    .cs-rnode__mark { grid-row: span 3; width: 56px; height: 56px; margin: 0; }
+    .cs-rnode__org { display: inline; margin-right: 4px; }
+    .cs-rlink { flex: none; height: auto; min-height: 30px; margin: 0; padding: 6px 0 6px 70px; display: flex; align-items: center; }
+    .cs-rlink__label { position: static; text-align: left; }
+    .cs-rlink__bar { left: 26px; right: auto; top: 0; bottom: 0; width: 4px; height: auto; }
+    .cs-rlink.is-pending .cs-rlink__bar { background: repeating-linear-gradient(180deg, var(--outline-variant) 0 5px, transparent 5px 10px); }
+    .cs-rlink.is-return .cs-rlink__bar { background: repeating-linear-gradient(180deg, var(--error) 0 6px, transparent 6px 10px); }
+    .cs-rlink.is-active .cs-rlink__bar { display: block; background: var(--tertiary-container); overflow: hidden; }
+    .cs-rlink.is-active .cs-rlink__bar::after {
+      content: ""; position: absolute; left: 0; right: 0; top: 0; height: 40%; border-radius: 2px;
+      background: var(--tertiary-vivid); animation: cs-flow 1.6s var(--ease-emphasized) infinite;
+    }
+    .cs-rlink__wave { display: none; }
+  }
+  @keyframes cs-flow { from { transform: translateY(-100%); } to { transform: translateY(260%); } }
+
+  /* ---------- 陳情內容 + 通話重播 ---------- */
+  .cs-caller {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+    padding: 12px 16px 12px 12px; border-radius: 26px 26px 26px 8px; background: var(--surface-container-lowest);
+  }
+  .cs-caller__name { font-size: var(--fs-title-m); font-weight: 800; }
+  .cs-caller__tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .cs-quote {
+    position: relative; margin: 14px 0 0; padding: 22px 24px 20px 62px;
+    border-radius: 8px 30px 30px 30px; background: var(--c-container);
+    font-size: 17px; line-height: 1.8; font-weight: 520; color: var(--on-surface);
+  }
+  .cs-quote__mark { position: absolute; left: 18px; top: 20px; width: 30px; height: 30px; color: var(--c); }
+  .cs-quote mark, .cs-transcript mark { background: rgb(255 255 255 / .7); color: var(--c-ink); border-radius: 5px; padding: 0 3px; font-weight: 750; box-shadow: inset 0 -2px 0 var(--c); }
+  .cs-ai { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 12px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-ai__label { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; color: var(--on-surface); }
+  .cs-ai__label .ico { width: 17px; height: 17px; color: var(--primary); }
+  .cs-ai__cat {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 7px;
+    border-radius: var(--r-full); background: var(--surface-container-lowest); color: var(--c-ink); font-weight: 750;
+  }
+  .cs-ai__cat .shape { width: 16px; height: 16px; color: var(--c); }
+  .cs-ai__cat b { font-family: var(--font-num); font-stretch: 80%; }
+  .cs-ai__cat.is-picked { background: var(--c-container); }
+
+  .cs-call { margin-top: 24px; }
+  .cs-player {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 16px; align-items: center;
+    padding: 14px 16px 14px 14px; border-radius: 30px 30px 30px 10px; background: var(--surface-container-high);
+  }
+  .cs-play {
+    display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 0;
+    border-radius: 50%; background: var(--primary); color: var(--on-primary); cursor: pointer;
+    transition: border-radius var(--spring-bouncy-dur) var(--spring-bouncy), transform var(--spring-bouncy-dur) var(--spring-bouncy), background-color .2s;
+  }
+  .cs-play:hover { background: var(--primary-strong); }
+  .cs-play:active { transform: scale(.92); transition-duration: 100ms; }
+  .cs-play[aria-pressed="true"] { border-radius: 18px; background: var(--tertiary); }
+  .cs-play svg { width: 26px; height: 26px; }
+  .cs-player__body { min-width: 0; }
+  .cs-player__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .cs-player__title { font-weight: 800; font-size: var(--fs-label-l); }
+  .cs-player__time { font: 700 13px/1 var(--font-num); font-variant-numeric: tabular-nums; color: var(--on-surface-variant); white-space: nowrap; }
+  .cs-player__time b { color: var(--on-surface); font-weight: 800; }
+  .cs-wave { position: relative; height: 46px; cursor: pointer; touch-action: none; border-radius: 10px; }
+  .cs-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cs-bar { transition: opacity .25s; }
+  .cs-bar--agent { fill: var(--primary); }
+  .cs-bar--caller { fill: var(--tertiary-vivid); }
+  .cs-wave.is-started .cs-bar { opacity: .3; }
+  .cs-wave.is-started .cs-bar.is-played { opacity: 1; }
+  .cs-wave__head {
+    position: absolute; left: -1px; top: -5px; bottom: -5px; width: 3px; border-radius: 2px;
+    background: var(--on-surface); pointer-events: none; opacity: 0; transition: opacity .2s;
+  }
+  .cs-wave__head::before { content: ""; position: absolute; left: -4.5px; top: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--on-surface); }
+  .cs-wave.is-started .cs-wave__head { opacity: 1; }
+  .cs-wave:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+  .cs-player__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-player__legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .cs-player__legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--primary); }
+  .cs-player__legend i.is-caller { background: var(--tertiary-vivid); border-radius: 50%; }
+  .cs-player .btn-group { align-self: start; }
+  .cs-transcript { margin-top: 16px; }
+  .cs-transcript .utt { transition: opacity .3s var(--ease-effects); }
+  .cs-transcript .utt__bubble { transition: box-shadow .25s var(--ease-effects), transform var(--spring-fast-dur) var(--spring-fast); }
+  .cs-transcript.is-live .utt.is-pending { opacity: .36; }
+  .cs-transcript .utt.is-speaking .utt__bubble { box-shadow: 0 0 0 2px var(--primary), var(--elev-2); transform: scale(1.012); }
+  .cs-transcript .utt--caller.is-speaking .utt__bubble { box-shadow: 0 0 0 2px var(--tertiary-vivid), var(--elev-2); }
+  .cs-seek {
+    margin-left: auto; padding: 3px 7px; border: 0; border-radius: 8px; background: none; color: var(--on-surface-variant);
+    font: 600 11.5px/1 var(--font-num); font-variant-numeric: tabular-nums; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .cs-seek:hover { background: rgb(0 0 0 / .07); color: var(--on-surface); }
+  .cs-seek svg { width: 10px; height: 10px; }
+  .cs-transcript .utt__who { align-items: center; }
+  .cs-eq { display: none; align-items: flex-end; gap: 2px; height: 11px; }
+  .cs-eq i { width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform-origin: 50% 100%; animation: cs-eq .9s ease-in-out infinite; }
+  .cs-eq i:nth-child(2) { animation-delay: -.3s; }
+  .cs-eq i:nth-child(3) { animation-delay: -.6s; }
+  .cs-call.is-playing .utt.is-speaking .cs-eq { display: inline-flex; }
+  @keyframes cs-eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+  .cs-nocall { display: grid; gap: 14px; }
+  .cs-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .cs-photo {
+    display: grid; gap: 6px; padding: 6px 6px 10px; border: 0; border-radius: 22px; background: var(--surface-container-lowest);
+    color: inherit; text-align: left; cursor: pointer;
+    transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), border-radius var(--spring-fast-dur) var(--spring-fast), box-shadow .2s;
+  }
+  .cs-photo:hover { box-shadow: var(--elev-2); border-radius: 28px; }
+  .cs-photo:active { transform: scale(.96); transition-duration: 100ms; }
+  .cs-photo svg { width: 100%; height: auto; border-radius: 16px; }
+  .cs-photo span { padding: 0 6px; font: 700 12px/1.3 var(--font-num); }
+  .cs-photo small { padding: 0 6px; font-size: 11.5px; color: var(--on-surface-variant); }
+  .cs-photo-big svg { width: 100%; height: auto; border-radius: 20px; }
+
+  /* ---------- 地點 ---------- */
+  .cs-map { position: relative; overflow: hidden; border-radius: var(--r-xl); background: #fff; box-shadow: inset 0 0 0 1px var(--outline-variant); }
+  .cs-map svg { display: block; width: 100%; height: auto; }
+  .cs-map__road { font-size: 12px; font-weight: 800; letter-spacing: .12em; fill: var(--on-surface-variant); paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+  .cs-map__lm { font-size: 11.5px; font-weight: 800; fill: var(--on-primary-container); }
+  .cs-map__park { font-size: 11px; font-weight: 700; fill: var(--cat-litter-ink); }
+  .cs-map__sea { font-size: 13px; font-weight: 800; letter-spacing: .3em; fill: #00696A; opacity: .75; }
+  .cs-map__small { font: 700 10px var(--font-num); fill: var(--on-surface-variant); }
+  .cs-map__dotnum { font: 800 11px var(--font-num); fill: var(--on-surface); }
+  .cs-map__pill { font-size: 12px; font-weight: 800; fill: #fff; }
+  .cs-map .pulse { transform-box: fill-box; transform-origin: center; }
+  .cs-map__halo { transform-box: fill-box; transform-origin: center; }
+  @media (max-width: 599px) {
+    .cs-map__road { font-size: 16px; }
+    .cs-map__lm, .cs-map__park { font-size: 15px; }
+    .cs-map__small, .cs-map__dotnum { font-size: 13px; }
+    .cs-map__pill { font-size: 15px; }
+  }
+  .cs-addr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 14px; align-items: center; margin-top: 14px; }
+  .cs-addr__icon { position: relative; display: grid; place-items: center; width: 44px; height: 44px; color: var(--c-container); }
+  .cs-addr__icon .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cs-addr__icon .ico { position: relative; width: 22px; height: 22px; color: var(--c-ink); }
+  .cs-addr__text b { display: block; font-weight: 800; line-height: 1.4; }
+  .cs-place__links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .cs-similar { display: grid; gap: 8px; }
+  .cs-sim {
+    display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 12px; align-items: start;
+    padding: 12px 14px 12px 12px; border-radius: 20px; background: var(--surface-container-lowest);
+  }
+  .cs-sim__n {
+    grid-row: span 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+    background: #fff; box-shadow: inset 0 0 0 3px var(--s); font: 800 13px/1 var(--font-num);
+  }
+  .cs-sim__top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .cs-sim__top a { font: 800 13.5px/1.3 var(--font-num); letter-spacing: .03em; }
+  .cs-sim__title { font-weight: 750; line-height: 1.45; }
+  .cs-sim__why { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .cs-sim__why .tag { height: 22px; font-size: 11.5px; padding: 0 8px; }
+  .cs-sim-empty { padding: 14px 16px; border-radius: 20px; background: var(--surface-container-lowest); color: var(--on-surface-variant); font-size: var(--fs-body-m); }
+
+  /* ---------- 處理紀錄 ---------- */
+  .cs-log .timeline__title { display: inline-flex; align-items: center; gap: 8px; }
+  .cs-log .timeline__actor { margin-top: 2px; font-size: var(--fs-body-s); color: var(--on-surface-variant); font-weight: 600; }
+  .cs-log .timeline__text { color: var(--on-surface); }
+  .cs-log .timeline__item.is-entering { animation: enter-up var(--spring-slow-dur) var(--spring-bouncy); }
+  .cs-log .tag { height: 22px; font-size: 11.5px; padding: 0 8px; }
+
+  /* ---------- 回覆民眾 ---------- */
+  .cs-reply { border-radius: var(--r-3xl) var(--r-3xl) var(--r-lg) var(--r-3xl); }
+  .cs-compose { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 24px; align-items: start; }
+  .cs-tpls { margin-bottom: 18px; }
+  .cs-reply textarea.tf__input { min-height: 196px; line-height: 1.7; }
+  .cs-vars { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+  .cs-vars__label { display: inline-flex; align-items: center; gap: 5px; margin-right: 4px; font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); }
+  .cs-vars__label .ico { width: 16px; height: 16px; }
+  .cs-var {
+    display: inline-flex; align-items: center; gap: 1px; height: 30px; padding: 0 10px;
+    border: 1px dashed var(--outline); border-radius: 8px; background: var(--surface-container-lowest);
+    color: var(--primary); font-size: var(--fs-label-m); font-weight: 750; cursor: pointer;
+    transition: border-radius var(--spring-bouncy-dur) var(--spring-bouncy), background-color .2s, border-color .2s, transform var(--spring-bouncy-dur) var(--spring-bouncy);
+  }
+  .cs-var:hover { border-radius: 15px; border-style: solid; border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); }
+  .cs-var:active { transform: scale(.94); transition-duration: 100ms; }
+  .cs-var i { font-style: normal; opacity: .55; }
+  .cs-checks { margin-top: 18px; padding: 14px 16px; border-radius: 22px 22px 22px 8px; background: var(--surface-container); }
+  .cs-checks__label { font-size: var(--fs-label-m); font-weight: 800; color: var(--on-surface-variant); letter-spacing: .03em; margin-bottom: 8px; }
+  .cs-checks ul { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 0; list-style: none; }
+  .cs-check { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-body-s); font-weight: 700; color: var(--on-surface-variant); transition: color .25s; }
+  .cs-check .shape { width: 18px; height: 18px; color: var(--outline-variant); transition: color .3s var(--ease-effects); }
+  .cs-check.is-ok { color: var(--on-surface); }
+  .cs-check.is-ok .shape { color: var(--success-vivid); }
+  .cs-reply__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--outline-variant); }
+  .cs-reply__note { display: flex; align-items: center; gap: 8px; max-width: 46ch; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-reply__note .ico { width: 18px; height: 18px; flex-shrink: 0; }
+  .cs-lock { margin-bottom: 16px; }
+
+  .cs-phone { margin: 0; padding: 9px; border-radius: 40px; background: var(--inverse-surface); box-shadow: var(--elev-2); }
+  .cs-phone__screen { min-height: 360px; padding: 10px 12px 16px; border-radius: 32px; background: var(--surface-container-lowest); display: flex; flex-direction: column; }
+  .cs-phone__bar { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font: 700 11px/1 var(--font-num); color: var(--on-surface); }
+  .cs-phone__notch { width: 74px; height: 20px; border-radius: 12px; background: var(--inverse-surface); }
+  .cs-phone__from { display: grid; justify-items: center; gap: 4px; margin: 14px 0 12px; text-align: center; font-size: 12.5px; font-weight: 800; line-height: 1.3; }
+  .cs-phone__from small { display: block; font-weight: 600; color: var(--on-surface-variant); font-size: 11px; }
+  .cs-phone__avatar { position: relative; display: grid; place-items: center; width: 42px; height: 42px; color: var(--primary); }
+  .cs-phone__avatar .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cs-phone__avatar b { position: relative; font: 800 11px/1 var(--font-num); font-stretch: 62%; color: #fff; }
+  .cs-phone__day { text-align: center; font-size: 11px; color: var(--on-surface-variant); margin-bottom: 8px; }
+  .cs-sms {
+    align-self: flex-start; max-width: 100%; padding: 10px 13px 11px; border-radius: 20px 20px 20px 6px;
+    background: var(--surface-container-high); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap;
+  }
+  .cs-sms mark { background: var(--primary-container); color: var(--on-primary-container); border-radius: 4px; padding: 0 2px; }
+  .cs-sms mark.is-bad { background: var(--error-container); color: var(--error); text-decoration: underline wavy; }
+  .cs-sms.is-empty { color: var(--on-surface-variant); font-style: italic; }
+  .cs-phone__meta { margin-top: auto; padding-top: 12px; text-align: center; font-size: 11.5px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .cs-phone__meta b { color: var(--on-surface); }
+  .cs-sent { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 24px; align-items: start; }
+  .cs-sent__hero { display: flex; align-items: center; gap: 16px; }
+  .cs-sent__hero .shape { width: 72px; height: 72px; color: var(--success-vivid); flex-shrink: 0; }
+  .cs-sent__title { font-size: var(--fs-headline-s); font-weight: 850; line-height: 1.25; }
+  .cs-sent .kv { margin-top: 18px; }
+  @media (max-width: 899px) {
+    .cs-compose, .cs-sent { grid-template-columns: minmax(0, 1fr); }
+    .cs-phone { width: 100%; max-width: 320px; justify-self: center; }
+    .cs-phone__screen { min-height: 0; }
+  }
+
+  /* ---------- 滿意度 ---------- */
+  .cs-sat {
+    position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column;
+    border-radius: var(--r-3xl) var(--r-3xl) var(--r-3xl) var(--r-lg);
+  }
+  .cs-sat__deco { position: absolute; z-index: -1; right: -60px; bottom: -70px; width: 220px; height: 220px; color: rgb(255 255 255 / .38); animation: spin 60s linear infinite; }
+  .cs-sat__body { display: flex; flex-direction: column; gap: 16px; flex: 1; }
+  .cs-sat__scale { display: grid; gap: 10px; }
+  .cs-sat__dots { display: flex; gap: 8px; }
+  .cs-sat__dot { position: relative; display: grid; place-items: center; width: 46px; height: 46px; color: rgb(255 255 255 / .75); }
+  .cs-sat__dot .shape { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cs-sat__dot b { position: relative; font: 800 17px/1 var(--font-num); color: var(--tertiary); }
+  .cs-sat__dot:last-child { color: var(--tertiary-vivid); }
+  .cs-sat__dot:last-child b { color: #fff; }
+  .cs-voices { display: grid; gap: 8px; }
+  .cs-voices__label { font-size: var(--fs-label-m); font-weight: 800; letter-spacing: .03em; }
+  .cs-voice { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 10px; padding: 12px 14px; border-radius: 20px 20px 20px 6px; background: rgb(255 255 255 / .55); color: var(--on-surface); }
+  .cs-voice .shape { width: 22px; height: 22px; color: var(--tertiary-vivid); grid-row: span 2; }
+  .cs-voice p { font-size: var(--fs-body-m); font-weight: 600; line-height: 1.55; }
+  .cs-voice small { font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-voice small a { color: var(--tertiary); font-weight: 700; }
+  .cs-sat__score { display: flex; align-items: flex-end; gap: 16px; }
+  .cs-sat__num { font-size: 104px; color: var(--tertiary); }
+  .cs-sat__num small { font-size: 26px; font-stretch: 80%; color: var(--on-tertiary-container); opacity: .65; }
+  .cs-sat__word { font-weight: 800; margin-top: 6px; }
+  .cs-sat__score .rating { margin-bottom: 4px; }
+  .cs-sat .rating__btn { color: rgb(255 255 255 / .8); }
+  .cs-sat .rating__btn.is-on { color: var(--tertiary-vivid); }
+  .cs-sat__quote { position: relative; margin: 0; padding: 18px 20px 16px; border-radius: 26px 26px 26px 8px; background: rgb(255 255 255 / .74); color: var(--on-surface); }
+  .cs-sat__quote p { font-weight: 650; line-height: 1.6; }
+  .cs-sat__quote footer { margin-top: 6px; font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-sat__wait { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 16px; align-items: center; padding: 16px 18px; border-radius: 26px; background: rgb(255 255 255 / .62); color: var(--on-surface); }
+  .cs-sat__wait .shape { grid-row: span 2; width: 52px; height: 52px; color: var(--tertiary-vivid); }
+  .cs-sat__wait b { font-size: var(--fs-title-m); font-weight: 850; }
+  .cs-sat__wait p { font-size: var(--fs-body-s); color: var(--on-surface-variant); }
+  .cs-sat__wait .btn { grid-column: 1 / -1; margin-top: 10px; justify-self: start; }
+  .cs-bench { margin-top: auto; padding: 16px 18px; border-radius: 24px; background: rgb(255 255 255 / .5); }
+  .cs-bench__title { font-size: var(--fs-label-m); font-weight: 800; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .cs-bench__title b { font-family: var(--font-num); font-size: 15px; }
+  .cs-bench__rows { display: grid; gap: 6px; margin-top: 10px; }
+  .cs-bench .meter { --meter-track: rgb(255 255 255 / .75); }
+  .cs-bench .dist-row.is-this { color: var(--tertiary); }
+  .cs-bench .dist-row.is-this .meter { box-shadow: 0 0 0 2px var(--tertiary); }
+
+  /* ---------- 找不到案件 ---------- */
+  .cs-missing { border-radius: var(--r-3xl); background: var(--surface-container-low); padding: 24px; }
+  .cs-missing .empty .shape { color: var(--tertiary-container); }
+  .cs-missing__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; padding-bottom: 20px; }
+
+  /* ---------- 中尺寸 / 手機 ---------- */
+  @media (max-width: 599px) {
+    .cs-title { font-size: 28px; }
+    .cs-pager { order: -1; }
+    .page-head__actions > .cs-pager { flex: 0 0 auto; }
+    .cs-hero { padding: 20px 16px 16px; gap: 18px; border-radius: 32px 32px 32px 12px; }
+    .cs-hero__deco { width: 200px; height: 200px; right: -70px; top: -70px; }
+    .cs-hero__deco2 { display: none; }
+    .cs-hero__main { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "orb head" "body body"; column-gap: 16px; }
+    .cs-orb { width: 112px; height: 112px; }
+    .cs-orb__num { font-size: 56px; }
+    .cs-orb__of { font-size: 11px; }
+    .cs-hero__title { font-size: 34px; }
+    .cs-hero__note { font-size: var(--fs-body-m); }
+    .cs-hero__body { margin-top: 12px; }
+    .cs-hero__actions .btn { flex: 1 1 auto; }
+    /* 手機：stepper 在 hero 內維持橫向六格（共用樣式在手機改直排，這裡會太長） */
+    .cs-hero__steps { padding: 14px 6px 12px; }
+    .cs-hero__steps .stepper { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .cs-hero__steps .stepper__step { grid-template-columns: none; justify-items: center; text-align: center; padding: 0 1px; row-gap: 6px; column-gap: 0; }
+    .cs-hero__steps .stepper__step::before { top: 15px; bottom: auto; left: calc(-50% + 21px); right: calc(50% + 21px); width: auto; height: 4px; }
+    .cs-hero__steps .stepper__mark { grid-row: auto; width: 34px; height: 34px; }
+    .cs-hero__steps .stepper__mark .ico { width: 16px; height: 16px; }
+    .cs-hero__steps .stepper__mark b { font-size: 13px; }
+    .cs-hero__steps .stepper__name { font-size: 11.5px; line-height: 1.25; word-break: keep-all; }
+    .cs-hero__steps .stepper__time { display: none; }
+    .cs-sla__num { font-size: 54px; }
+    .cs-caller { grid-template-columns: auto minmax(0, 1fr); }
+    .cs-caller__tags { grid-column: 1 / -1; justify-content: flex-start; }
+    .cs-quote { padding: 18px 18px 16px 50px; font-size: 16px; }
+    .cs-quote__mark { left: 14px; top: 18px; width: 24px; height: 24px; }
+    .cs-player { grid-template-columns: auto minmax(0, 1fr); padding: 12px; }
+    .cs-player .btn-group { grid-column: 1 / -1; justify-self: start; }
+    .cs-play { width: 52px; height: 52px; }
+    .cs-transcript .utt { max-width: 96%; }
+    .cs-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cs-sat__num { font-size: 84px; }
+    .cs-reply__foot .btn { width: 100%; }
+  }
+</style>
+</head>
+<body class="app">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="shell">
+  <!-- ===== 導覽軌（手機版自動變成底部導覽列）===== -->
+  <nav class="rail" aria-label="主要導覽">
+    <a class="rail__brand" href="index.html" aria-label="1999 陳情案件管理 總覽">
+      <svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie12"/></svg>
+      <span class="rail__brand-num" aria-hidden="true">1999</span>
+    </a>
+    <ul class="rail__list">
+      <li><a class="rail__item" href="index.html" data-nav="index"><span class="rail__ind"><svg data-icon="dashboard"></svg></span><span class="rail__label">總覽</span></a></li>
+      <li><a class="rail__item" href="cases.html" data-nav="cases"><span class="rail__ind"><svg data-icon="list"></svg><span class="rail__badge" data-count="received" aria-label="待派案件數"></span></span><span class="rail__label">案件列表</span></a></li>
+      <li><a class="rail__item active" href="case.html" data-nav="case" aria-current="page"><span class="rail__ind"><svg data-icon="detail"></svg></span><span class="rail__label">案件詳情</span></a></li>
+      <li><a class="rail__item" href="intake.html" data-nav="intake"><span class="rail__ind"><svg data-icon="callAdd"></svg></span><span class="rail__label">受理建案</span></a></li>
+    </ul>
+    <a class="rail__back" href="../../index.html"><svg class="ico ico--sm" data-icon="back"></svg>返回目錄</a>
+  </nav>
+
+  <div class="shell__main">
+    <!-- ===== 頂列 ===== -->
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" type="button" data-drawer-open aria-label="開啟選單"><svg data-icon="menu"></svg></button>
+      <div class="topbar__title">
+        <span class="topbar__org">澄港市 1999 市民熱線</span>
+        <span class="topbar__sys">陳情案件管理系統</span>
+      </div>
+      <form class="search" role="search" data-search action="cases.html">
+        <svg data-icon="search"></svg>
+        <input type="search" name="q" placeholder="搜尋案號、地址、行政區或電話末三碼" aria-label="搜尋案件">
+        <span class="kbd search__kbd" aria-hidden="true">/</span>
+      </form>
+      <div class="topbar__actions">
+        <button class="icon-btn search-toggle" type="button" data-search-toggle aria-label="搜尋案件"><svg data-icon="search"></svg></button>
+        <button class="duty" type="button" data-duty aria-pressed="true" aria-label="接聽狀態"><span class="duty__dot"></span><span data-duty-label>接聽中</span><small>D-02</small></button>
+        <button class="icon-btn" type="button" data-notify aria-label="通知"><svg data-icon="bell"></svg><span class="badge" data-count="notices"></span></button>
+        <button class="avatar-btn" type="button" data-profile aria-label="個人選單：周品妤"><svg class="shape" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie9"/></svg><span aria-hidden="true">品妤</span></button>
+      </div>
+    </header>
+
+    <main class="page" id="main">
+      <section class="page-head" aria-labelledby="page-title">
+        <div class="page-head__text">
+          <p class="page-head__eyebrow" data-eyebrow><a class="cs-back" href="cases.html"><svg data-icon="back"></svg>案件列表</a></p>
+          <h1 class="page-head__title cs-title" id="page-title" data-title>案件詳情</h1>
+          <p class="page-head__desc" data-desc></p>
+        </div>
+        <div class="page-head__actions" data-head-actions></div>
+      </section>
+
+      <section class="cs-missing" data-missing hidden aria-label="找不到案件"></section>
+
+      <div data-case>
+        <div class="cs-top">
+          <!-- 目前階段：狀態 orb + 六階段 stepper -->
+          <section class="panel cs-hero" data-hero data-status="received" aria-labelledby="hero-title">
+            <svg class="shape cs-hero__deco" viewBox="0 0 100 100" aria-hidden="true" data-hero-deco><path data-shape="cookie12"/></svg>
+            <svg class="shape cs-hero__deco2" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="sunny"/></svg>
+            <div class="cs-hero__main">
+              <div class="cs-orb" data-orb aria-hidden="true">
+                <div class="cs-orb__spin"><svg class="shape" viewBox="0 0 100 100"><path data-shape="circle"/></svg></div>
+                <span class="cs-orb__inner"><span class="num-display cs-orb__num" data-orb-num>01</span><span class="cs-orb__of">/ 06 階段</span></span>
+                <span class="cs-orb__burst" data-burst></span>
+              </div>
+              <div class="cs-hero__head">
+                <p class="cs-hero__eyebrow" data-hero-eyebrow></p>
+                <h2 class="cs-hero__title" id="hero-title" data-hero-title>—</h2>
+              </div>
+              <div class="cs-hero__body">
+                <p class="cs-hero__note" data-hero-note></p>
+                <p class="cs-hero__meta" data-hero-meta></p>
+                <div class="cs-hero__facts" data-hero-facts></div>
+                <div class="cs-hero__actions" data-hero-actions></div>
+              </div>
+            </div>
+            <div class="cs-hero__steps" data-stepper></div>
+          </section>
+
+          <!-- 處理時限 -->
+          <section class="panel cs-sla" data-sla-card data-state="ok" aria-labelledby="sla-title">
+            <header class="panel__head">
+              <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true" data-sla-glyph><path data-shape="cookie6"/></svg>
+              <div>
+                <h2 class="panel__title" id="sla-title">處理時限</h2>
+                <p class="panel__sub" data-sla-sub>—</p>
+              </div>
+              <div class="panel__actions"><span class="tag" data-sla-tag>—</span></div>
+            </header>
+            <div class="cs-sla__body">
+              <div class="cs-sla__ring" data-ring>
+                <span class="wavy-ring__label"><span class="cs-sla__label" data-sla-label>—</span><span class="num-display cs-sla__num" data-sla-num>0:00</span><span class="cs-sla__unit">小時 : 分</span></span>
+              </div>
+              <dl class="cs-sla__kv" data-sla-kv></dl>
+            </div>
+          </section>
+        </div>
+
+        <!-- 派案路徑 -->
+        <section class="panel cs-route" aria-labelledby="route-title">
+          <header class="panel__head">
+            <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="pentagon"/></svg>
+            <div>
+              <h2 class="panel__title" id="route-title">派案路徑</h2>
+              <p class="panel__sub">從民眾來電到回覆，每一手交接的單位、承辦人與耗時</p>
+            </div>
+            <div class="panel__actions cs-route__legend" aria-hidden="true">
+              <span><i></i>已交接</span>
+              <span><svg viewBox="0 0 22 10"><path d="M1 5q2.5-5 5 0t5 0 5 0 5 0" fill="none" stroke="var(--tertiary-vivid)" stroke-width="2.6" stroke-linecap="round"/></svg>處理中</span>
+              <span><i class="is-dash"></i>尚未到達</span>
+            </div>
+          </header>
+          <ol class="cs-route__list" data-route aria-label="派案路徑"></ol>
+        </section>
+
+        <div class="cs-cols">
+          <div class="cs-col">
+            <!-- 陳情內容 + 通話逐字稿 -->
+            <section class="panel cs-story" aria-labelledby="story-title">
+              <header class="panel__head">
+                <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="flower"/></svg>
+                <div>
+                  <h2 class="panel__title" id="story-title">陳情內容</h2>
+                  <p class="panel__sub" data-story-sub>—</p>
+                </div>
+              </header>
+              <div class="cs-caller" data-caller></div>
+              <blockquote class="cs-quote" data-quote></blockquote>
+              <div class="cs-ai" data-ai></div>
+              <div class="cs-call" data-call></div>
+            </section>
+          </div>
+
+          <div class="cs-col">
+            <!-- 地點 -->
+            <section class="panel cs-place" aria-labelledby="place-title">
+              <header class="panel__head">
+                <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie6"/></svg>
+                <div>
+                  <h2 class="panel__title" id="place-title">陳情地點</h2>
+                  <p class="panel__sub" data-place-sub>—</p>
+                </div>
+              </header>
+              <div class="cs-map" data-map></div>
+              <div class="cs-addr" data-addr></div>
+              <div class="cs-place__links" data-place-links></div>
+              <div data-repeat></div>
+              <h3 class="cs-subhead">相似 / 重複陳情<span class="badge badge--primary" data-sim-count></span></h3>
+              <ol class="cs-similar" data-similar></ol>
+            </section>
+
+            <!-- 處理紀錄 -->
+            <section class="panel cs-log" aria-labelledby="log-title">
+              <header class="panel__head">
+                <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="cookie9"/></svg>
+                <div>
+                  <h2 class="panel__title" id="log-title">處理紀錄</h2>
+                  <p class="panel__sub" data-log-sub>—</p>
+                </div>
+              </header>
+              <ol class="timeline" data-log></ol>
+            </section>
+          </div>
+        </div>
+
+        <div class="cs-bottom">
+          <!-- 回覆民眾 -->
+          <section class="panel cs-reply" id="reply" aria-labelledby="reply-title">
+            <header class="panel__head">
+              <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="clover8"/></svg>
+              <div>
+                <h2 class="panel__title" id="reply-title">回覆民眾</h2>
+                <p class="panel__sub" data-reply-sub>—</p>
+              </div>
+            </header>
+            <div data-compose>
+              <div class="callout callout--info cs-lock" data-lock hidden></div>
+              <div class="cs-compose">
+                <div>
+                  <div class="chip-set cs-tpls" role="radiogroup" aria-label="回覆範本" data-tpls></div>
+                  <div class="tf" data-reply-tf>
+                    <textarea class="tf__input" id="reply-text" placeholder=" " maxlength="320" aria-describedby="reply-support"></textarea>
+                    <label class="tf__label" for="reply-text">回覆內容（變數以大括號標示）</label>
+                    <p class="tf__support" id="reply-support"><span data-reply-msg>點選下方變數，會插入到游標位置</span><span class="tf__count" data-reply-count>0/320</span></p>
+                  </div>
+                  <div class="cs-vars" data-vars></div>
+                  <div class="cs-checks"><p class="cs-checks__label">送出前檢核</p><ul data-checks aria-label="回覆內容檢核"></ul></div>
+                </div>
+                <figure class="cs-phone" aria-label="簡訊預覽">
+                  <div class="cs-phone__screen">
+                    <div class="cs-phone__bar" aria-hidden="true"><span data-clock>14:20</span><span class="cs-phone__notch"></span><span>5G</span></div>
+                    <div class="cs-phone__from"><span class="cs-phone__avatar" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="cookie12"/></svg><b>1999</b></span>澄港市 1999<small data-phone-to>—</small></div>
+                    <p class="cs-phone__day">今天 <span data-clock>14:20</span></p>
+                    <div class="cs-sms" data-preview></div>
+                    <p class="cs-phone__meta" data-preview-meta>—</p>
+                  </div>
+                </figure>
+              </div>
+              <div class="cs-reply__foot">
+                <p class="cs-reply__note"><svg data-icon="info"></svg><span data-send-note>送出後案件改為「已回覆」，SLA 停止計時</span></p>
+                <button class="btn btn--lg" type="button" data-send><svg data-icon="send"></svg>送出回覆</button>
+              </div>
+            </div>
+            <div data-sent hidden></div>
+          </section>
+
+          <!-- 滿意度 -->
+          <section class="panel panel--coral cs-sat" aria-labelledby="sat-title">
+            <svg class="shape cs-sat__deco" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="clover8"/></svg>
+            <header class="panel__head">
+              <svg class="shape panel__glyph" viewBox="0 0 100 100" aria-hidden="true"><path data-shape="sunny"/></svg>
+              <div>
+                <h2 class="panel__title" id="sat-title">滿意度</h2>
+                <p class="panel__sub" data-sat-sub>—</p>
+              </div>
+            </header>
+            <div class="cs-sat__body" data-sat></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- ===== 頁尾 ===== -->
+    <footer class="footer">
+      <div class="footer__inner">
+        <div class="footer__brand">
+          <span class="footer__mark" aria-hidden="true"><svg class="shape" viewBox="0 0 100 100"><path data-shape="cookie12"/></svg><b>1999</b></span>
+          <div>
+            <p class="footer__name">澄港市 1999 市民熱線<br>陳情案件管理系統</p>
+            <p class="footer__desc">從話務受理、分類派案、局處承辦到回覆民眾與滿意度回訪，一條流程追到底。</p>
+          </div>
+        </div>
+        <nav class="footer__nav" aria-label="頁尾導覽">
+          <p class="footer__label">頁面</p>
+          <ul>
+            <li><a href="index.html" data-nav="index">總覽</a></li>
+            <li><a href="cases.html" data-nav="cases">案件列表</a></li>
+            <li><a href="case.html" data-nav="case" aria-current="page">案件詳情</a></li>
+            <li><a href="intake.html" data-nav="intake">受理建案</a></li>
+          </ul>
+        </nav>
+        <div class="footer__info">
+          <p class="footer__label">話務中心</p>
+          <p>市民熱線 <b>24 小時</b>服務，派案組 07:00–24:00 輪值</p>
+          <p>系統問題請洽資訊股 分機 <b>3305</b></p>
+          <p>本系統所有案件、人名與電話皆為虛構示範資料</p>
+        </div>
+        <div class="footer__meta">
+          <span>© 2026 澄港市政府 1999 話務中心</span>
+          <span>系統版本 4.12.0 · 資料同步於 <span data-clock>14:20</span></span>
+          <a class="footer__back" href="../../index.html">← 返回目錄</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<button class="fab" type="button" data-fab><svg data-icon="callAdd"></svg><span class="fab__label">受理來電</span></button>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, fmt, CATS, STATUS, FLOW, UNITS, DATA, esc } = App;
+  const HOUR = 3600e3, MIN = 60e3;
+  const pad = n => String(n).padStart(2, '0');
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  // 大數字倒數用「時:分」，比「1 天 6 時」更適合窄字寬的 num-display
+  const hm = ms => { const m = Math.floor(Math.abs(ms) / MIN); return `${Math.floor(m / 60)}:${pad(m % 60)}`; };
+  const mmss = s => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
+  const motion = () => !App.reduceMotion();
+
+  const askedId = App.param('id');
+  const c = App.getCase(askedId || DATA.defaultCaseId);
+
+  /* ---------- 找不到案件 ---------- */
+  if (!c) {
+    $('[data-case]').hidden = true;
+    $('[data-title]').textContent = '找不到這個案件';
+    $('[data-desc]').textContent = `案號「${askedId}」不在近 7 日的案件資料中，可能輸入錯誤或已移出明細。`;
+    document.title = '找不到案件 — 澄港市 1999 陳情案件管理系統';
+    const miss = $('[data-missing]');
+    miss.hidden = false;
+    miss.innerHTML = `${App.emptyState({ title: '查無此案號', text: '可回到案件列表搜尋案號、地址或電話末三碼。', shape: 'boom' })}
+      <div class="cs-missing__actions"><a class="btn" href="cases.html">${App.icon('list')}回到案件列表</a><a class="btn btn--tonal" href="case.html">${App.icon('detail')}查看示範案件</a></div>`;
+    return;
+  }
+
+  const lastOf = type => { for (let i = c.log.length - 1; i >= 0; i--) if (c.log[i].type === type) return c.log[i]; return null; };
+  const lastFlow = () => { for (let i = c.log.length - 1; i >= 0; i--) if (FLOW.includes(c.log[i].type)) return c.log[i]; return c.log[0]; };
+  const agent = App.person(c.agent);
+  const district = App.district(c.district);
+  // 尚未派案時，以規則推薦的承辦單位作為預覽（路徑、facts、回覆變數一致）
+  const suggestUnit = () => App.unitOf(c) || UNITS[App.route(c.cat, c.desc)[0].unit];
+  // 給 category token 用：hero / quote / 地點都帶 data-cat
+  $$('.cs-quote, .cs-addr, .cs-story').forEach(el => { el.dataset.cat = c.cat; });
+
+  /* ===================================================================
+     頁首
+     =================================================================== */
+  function paintHead() {
+    document.title = `案件詳情 ${c.id} — 澄港市 1999 陳情案件管理系統`;
+    $('[data-eyebrow]').innerHTML = `<a class="cs-back" href="cases.html">${App.icon('back')}案件列表</a>
+      <span class="cs-id mono">${c.id}</span>${App.catTag(c.cat)}
+      ${c.priority === 'urgent' ? '<span class="tag tag--error">緊急</span>' : ''}
+      ${c.repeat ? `<span class="tag tag--warn">重複陳情 · 第 ${c.repeat + 1} 次</span>` : ''}
+      ${c.returned ? '<span class="tag tag--coral">局處退件 · 待改派</span>' : ''}`;
+    $('[data-title]').textContent = c.title;
+    // 每段 inline-block：換行時整段一起換，不會把人名拆成兩行
+    $('[data-desc]').innerHTML = [`${c.district} ${esc(c.address)}`, `${c.channel}${c.channel === '電話' ? '來電' : '通報'} ${fmt.dateTime(c.created)}`, `話務員 ${agent.name}（${c.agent}）`]
+      .map(s => `<span class="cs-desc">${s}</span>`).join('<span aria-hidden="true"> · </span>');
+    // 上一件 / 下一件：依案件列表的預設順序（新到舊）
+    const list = DATA.cases;
+    const i = list.indexOf(c);
+    const newer = list[i - 1], older = list[i + 1];
+    const nav = (x, icon, label) => x
+      ? `<a class="icon-btn icon-btn--sm" href="case.html?id=${x.id}" aria-label="${label}：${x.id}" title="${label} ${x.id}">${App.icon(icon)}</a>`
+      : `<span class="icon-btn icon-btn--sm is-off" aria-hidden="true">${App.icon(icon)}</span>`;
+    $('[data-head-actions]').innerHTML = `
+      <nav class="cs-pager" aria-label="切換案件">${nav(newer, 'chevronLeft', '較新的案件')}<span class="cs-pager__pos">${i + 1} / ${list.length}</span>${nav(older, 'chevronRight', '較舊的案件')}</nav>
+      <button class="btn btn--outlined" type="button" data-print>${App.icon('print')}列印處理單</button>`;
+  }
+  $('[data-head-actions]').addEventListener('click', e => {
+    if (!e.target.closest('[data-print]')) return;
+    App.toast('已送出列印：陳情案件處理單', { sub: `${c.id} · 話務中心 D 區印表機`, tone: 'success', shape: 'cookie12' });
+  });
+
+  /* ===================================================================
+     Hero：狀態 orb（招牌）— 六階段各有形狀，流轉時 morph、擠壓、迸散
+     =================================================================== */
+  const hero = $('[data-hero]');
+  const orb = $('[data-orb]');
+  const orbSvg = $('.cs-orb__spin .shape', orb);
+  const heroDeco = $('[data-hero-deco]');
+  heroDeco.querySelector('path').setAttribute('d', App.shape.path(CATS[c.cat].shape));
+  let shownStatus = null;
+
+  function heroActions() {
+    const s = c.status;
+    const out = [];
+    if (s === 'received') out.push({ act: 'dispatch', label: c.returned ? '改派案件' : '分類派案', icon: 'dispatch', cls: '' });
+    if (s === 'dispatched') out.push({ act: 'toBureau', label: '登錄局處接案', icon: 'building', cls: '' });
+    if (s === 'bureau') out.push({ act: 'toField', label: '登錄區隊到場', icon: 'team', cls: '' });
+    if (s === 'field') out.push({ act: 'reply', label: '回覆民眾', icon: 'chat', cls: '' });
+    if (s === 'replied') out.push(c.caller.callback ? { act: 'callback', label: '回訪民眾', icon: 'phone', cls: '' } : { act: 'close', label: '確認結案', icon: 'check', cls: '' });
+    if (App.isActive(c)) {
+      out.push({ act: 'urge', label: c.urged ? `再次催辦（已 ${c.urged} 次）` : '催辦', icon: 'bolt', cls: 'btn--tonal' });
+      out.push({ act: 'reassign', label: '改派', icon: 'dispatch', cls: 'btn--outlined' });
+    }
+    if (s === 'closed') out.push({ act: 'report', label: '匯出結案報告', icon: 'download', cls: 'btn--outlined' });
+    return out;
+  }
+
+  function paintHero() {
+    const st = STATUS[c.status];
+    const prev = shownStatus;
+    shownStatus = c.status;
+    hero.dataset.status = c.status;
+    if (prev !== c.status) {
+      const fwd = !prev || st.index > STATUS[prev].index;
+      App.shape.morph(orbSvg, st.shape, { rotate: fwd ? 90 : -90 });
+      if (prev && motion()) {
+        orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12, .88)' }, { transform: 'scale(1)' }], { duration: 560, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+        if (fwd) burst();
+      }
+    }
+    App.odometer($('[data-orb-num]'), st.index + 1, { format: v => pad(v) });
+
+    const now = App.now();
+    const lf = lastFlow();
+    const last = c.log[c.log.length - 1];
+    const eyebrow = c.status === 'closed'
+      ? `<span class="cs-hero__dot"></span>已結案 · 全程 <span class="num">${fmt.durShort(c.closedAt - c.created)}</span>`
+      : `<span class="cs-hero__dot"></span>目前階段 · ${st.stage}<span>此階段已 <span class="num">${fmt.durShort(now - lf.at)}</span></span>`;
+    $('[data-hero-eyebrow]').innerHTML = eyebrow;
+    $('[data-hero-title]').textContent = c.returned ? '待改派' : st.name;
+    $('[data-hero-note]').textContent = c.returned ? c.returned.reason : last.note;
+    $('[data-hero-meta]').textContent = `${last.actor} · ${fmt.dateTime(last.at)} · ${fmt.rel(last.at)}`;
+
+    const u = suggestUnit();
+    const facts = [
+      c.unit ? `<span class="tag">${App.icon('building')}${u.full}</span>` : `<span class="tag">${App.icon('sparkle')}建議 ${u.full}</span>`,
+      c.officer ? `<span class="tag">${App.icon('user')}承辦 ${esc(c.officer)}</span>` : '',
+      c.team ? `<span class="tag">${App.icon('team')}${esc(c.team)}</span>` : '',
+      c.urged ? `<span class="tag">${App.icon('bolt')}已催辦 ${c.urged} 次</span>` : '',
+      c.rating ? `<span class="tag">${App.icon('star')}滿意度 ${c.rating} 分</span>` : '',
+    ];
+    $('[data-hero-facts]').innerHTML = facts.join('');
+
+    const box = $('[data-hero-actions]');
+    const hadFocus = box.contains(document.activeElement);
+    box.innerHTML = heroActions().map(a => `<button type="button" class="btn ${a.cls}" data-act="${a.act}">${App.icon(a.icon)}${esc(a.label)}</button>`).join('');
+    if (hadFocus) box.querySelector('button')?.focus({ preventScroll: true });
+
+    const steps = $('[data-stepper]');
+    steps.innerHTML = App.stepper(c);
+    // 往前推進時，剛完成的那一格彈一下
+    if (prev && prev !== c.status && STATUS[c.status].index > STATUS[prev].index) {
+      const target = c.status === 'closed' ? $$('.stepper__step', steps).at(-1) : $('.stepper__step.is-current', steps);
+      target?.classList.add('cs-pop');
+    }
+  }
+
+  // 形狀迸散：只在「往前」流轉時出現，強化完成感
+  function burst() {
+    const host = $('[data-burst]');
+    const shapes = ['sunny', 'cookie4', 'clover4', 'pentagon', 'cookie6', 'gem', 'heart', 'flower'];
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2 + Math.random() * .35;
+      const d = 112 + Math.random() * 60;
+      const el = document.createElement('span');
+      el.className = 'cs-burst';
+      el.innerHTML = App.shape.svg(shapes[i % shapes.length]);
+      host.append(el);
+      el.animate([
+        { transform: 'translate(0, 0) scale(.2) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${(Math.cos(a) * d).toFixed(1)}px, ${(Math.sin(a) * d).toFixed(1)}px) scale(${(.7 + Math.random() * .6).toFixed(2)}) rotate(${Math.round(160 + Math.random() * 200)}deg)`, opacity: 0 },
+      ], { duration: 900 + Math.random() * 400, easing: 'cubic-bezier(.12,.8,.3,1)' }).onfinish = () => el.remove();
+    }
+  }
+
+  const step = (status, note) => {
+    const undo = App.setStatus(c.id, status, { note });
+    App.toast(`${c.id} → ${STATUS[status].name}`, { sub: note, tone: 'success', shape: STATUS[status].shape, action: { label: '復原', onClick: () => { undo(); App.toast('已復原流轉', { sub: c.id }); } } });
+  };
+  const ACT = {
+    dispatch: () => { if (c.status === 'received') App.dispatchDialog([c.id]); },
+    reassign: () => { if (App.isActive(c)) App.dispatchDialog([c.id]); },
+    toBureau: () => { if (c.status === 'dispatched') step('bureau', `局處接案，交辦 ${c.team}（派案督導代為登錄）`); },
+    toField: () => { if (c.status === 'bureau') step('field', `${c.team} 到場處理（派案督導代為登錄）`); },
+    reply: () => {
+      $('#reply').scrollIntoView({ behavior: motion() ? 'smooth' : 'auto', block: 'start' });
+      setTimeout(() => $('#reply-text').focus({ preventScroll: true }), motion() ? 420 : 0);
+    },
+    callback: () => { if (c.status === 'replied') App.callbackDialog(c.id); },
+    close: () => { if (c.status === 'replied') step('closed', '民眾未要求回訪，派案督導確認結案'); },
+    urge: () => { if (App.isActive(c)) App.urgeCase(c.id); },
+    report: () => App.toast('結案報告已排入匯出', { sub: `${c.id} · PDF，完成後寄到公務信箱`, tone: 'success' }),
+  };
+  $('[data-hero-actions]').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (b) ACT[b.dataset.act]();
+  });
+
+  /* ===================================================================
+     處理時限：波浪環
+     =================================================================== */
+  const SLA_SHAPE = { ok: 'cookie6', soon: 'sunny', over: 'boom', done: 'cookie12', late: 'boom' };
+  const SLA_TAG = { ok: 'tag--teal', soon: 'tag--warn', over: 'tag--error', done: 'tag--success', late: 'tag--error' };
+  const ring = App.wavyRing($('[data-ring]'), { value: 0, size: 188, thickness: 12, waves: 12, amplitude: 3 });
+  const slaGlyph = $('[data-sla-glyph]');
+  let slaShown = 'ok';
+  function paintSla() {
+    const s = App.sla(c);
+    const card = $('[data-sla-card]');
+    card.dataset.state = s.state;
+    if (slaShown !== s.state) { App.shape.morph(slaGlyph, SLA_SHAPE[s.state], { rotate: 45 }); slaShown = s.state; }
+    const now = App.now();
+    const view = {
+      ok: ['距處理時限還有', hm(s.remain)],
+      soon: ['即將逾期 · 剩餘', hm(s.remain)],
+      over: ['已逾期', hm(-s.remain)],
+      done: ['準時完成 · 用時', c.repliedAt ? hm(c.repliedAt - c.created) : '0:00'],
+      late: ['逾時完成 · 超過', c.repliedAt ? hm(c.repliedAt - c.due) : '0:00'],
+    }[s.state];
+    $('[data-sla-label]').textContent = view[0];
+    $('[data-sla-num]').textContent = view[1];
+    // 環 = 剩餘時間；逾期與已完成改成滿環，讓顏色本身說話
+    ring.set(s.state === 'ok' || s.state === 'soon' ? Math.max(.02, s.frac) : 1);
+    $('[data-ring]').setAttribute('aria-label', `處理時限：${s.label}`);
+    $('[data-sla-sub]').textContent = `${CATS[c.cat].name} · 時限 ${fmt.slaHours(CATS[c.cat].sla)}`;
+    const tag = $('[data-sla-tag]');
+    tag.className = `tag ${SLA_TAG[s.state]}`;
+    tag.textContent = s.short;
+    const used = (c.repliedAt || now) - c.created;
+    $('[data-sla-kv]').innerHTML = `
+      <div><dt>受理時間</dt><dd>${fmt.dateTime(c.created)}</dd></div>
+      <div><dt>到期時間</dt><dd>${fmt.dateTime(c.due)}</dd></div>
+      <div><dt>${c.repliedAt ? '處理用時' : '已經過'}</dt><dd>${fmt.durShort(used)}</dd></div>
+      <div><dt>催辦紀錄</dt><dd>${c.urged ? `${c.urged} 次` : '尚未催辦'}</dd></div>`;
+  }
+
+  /* ===================================================================
+     派案路徑
+     =================================================================== */
+  const actorName = actor => actor.replace(/^(派案員|派案督導|話務員)\s*/, '');
+  // 連線上的耗時用緊湊寫法（2時05分），七個節點時也放得下
+  const dur = ms => { const m = Math.round(Math.abs(ms) / MIN), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60); return d ? `${d}天${h}時` : h ? `${h}時${pad(m % 60)}分` : `${m % 60}分`; };
+  function routeModel() {
+    const now = App.now();
+    const u = suggestUnit();
+    const first = c.log[0];
+    const talk = (/通話 (\d+ 分 \d+ 秒)/.exec(first.note) || [])[1];
+    const disp = c.returned ? c.log.find(e => e.type === 'dispatched') : lastOf('dispatched');
+    // 改派或退件後，舊的接案/到場紀錄不屬於這一輪派案，只採計最近一次派案之後的時間
+    const since = c.returned ? Infinity : disp ? disp.at : 0;
+    const atAfter = type => { const e = lastOf(type); return e && e.at >= since ? e.at : null; };
+    const nodes = [
+      { key: 'caller', cls: 'is-caller', shape: 'squircle', icon: 'user', title: c.caller.name, sub: c.channel === '電話' ? '撥打 1999' : `${c.channel} 通報`, at: c.created },
+      { key: 'intake', status: 'received', icon: 'headset', title: '1999 話務中心', sub: `${agent.name}（${c.agent}）`, at: c.created, link: talk ? `通話 ${talk.replace(/ /g, '')}` : '受理' },
+      { key: 'dispatch', status: 'dispatched', icon: 'dispatch', title: '派案組', sub: disp ? actorName(disp.actor) : '待分類派案', at: disp?.at },
+    ];
+    if (c.returned) {
+      const [org, ...rest] = c.returned.by.split(' ');
+      nodes.push({ key: 'return', cls: 'is-return', shape: 'boom', icon: 'undo', org, title: rest.join(' '), sub: `${c.returned.officer} 退件`, at: c.returned.at, linkCls: 'is-return', link: `退件 ${dur(c.returned.at - disp.at)}` });
+    }
+    nodes.push(
+      { key: 'bureau', status: 'bureau', icon: 'building', org: u.org, title: u.name, sub: c.returned ? '建議改派' : c.officer ? `承辦 ${c.officer}` : c.unit ? '等候接案' : '推薦承辦', at: atAfter('bureau') },
+      { key: 'team', status: 'field', icon: 'team', title: c.team || App.teamFor(u.key, c.district), sub: '到場處理', at: atAfter('field') },
+      { key: 'reply', status: 'replied', icon: 'chat', title: '回覆民眾', sub: c.status === 'closed' ? (c.rating ? `滿意度 ${c.rating} 分` : '已結案') : c.repliedAt ? (c.caller.callback ? '電話＋簡訊' : '簡訊') : `時限 ${fmt.dateTime(c.due)}`, at: c.repliedAt },
+    );
+    // 目前節點＝案件正在等誰：待派案→派案組、已派案/局處承辦→局處、區隊處理→區隊；已回覆後全部完成
+    const curKey = c.returned ? 'bureau' : { received: 'dispatch', dispatched: 'bureau', bureau: 'bureau', field: 'team' }[c.status];
+    const curIdx = curKey ? nodes.findIndex(n => n.key === curKey) : nodes.length;
+    nodes.forEach((n, i) => {
+      n.state = i < curIdx ? 'done' : i === curIdx ? 'current' : 'pending';
+      if (!i) return;
+      const p = nodes[i - 1];
+      n.linkState = n.state === 'done' ? 'done' : n.state === 'current' ? 'active' : 'pending';
+      if (n.linkState === 'done') n.label = n.link || (p.at && n.at ? dur(n.at - p.at) : '');
+      else if (n.linkState === 'active') n.label = n.at && n.at > p.at ? `已 ${dur(now - n.at)}` : p.at ? `等候 ${dur(now - p.at)}` : '';
+      else n.label = '';
+    });
+    return nodes;
+  }
+  let routeSig = '';
+  function paintRoute() {
+    const nodes = routeModel();
+    const list = $('[data-route]');
+    const sig = JSON.stringify(nodes.map(n => [n.key, n.state, n.title, n.sub, n.at]));
+    if (sig === routeSig) {
+      // 只有時間在走：更新連線上的耗時文字，不重建（避免波浪重新起跑）
+      nodes.forEach((n, i) => { const l = list.children[i]?.querySelector('.cs-rlink__label'); if (l) l.textContent = n.label; });
+      return;
+    }
+    routeSig = sig;
+    list.dataset.n = nodes.length;
+    list.innerHTML = nodes.map((n, i) => {
+      const shape = n.state === 'pending' ? 'circle' : n.state === 'current' ? 'sunny' : n.shape || STATUS[n.status].shape;
+      const time = n.state === 'pending' ? '尚未到達' : n.at ? fmt.dateTime(n.at) : '等候中';
+      const link = i ? `<span class="cs-rlink is-${n.linkState} ${n.linkCls || ''}" aria-hidden="true"><span class="cs-rlink__label">${esc(n.label)}</span><span class="cs-rlink__bar"></span>${n.linkState === 'active' ? '<span class="cs-rlink__wave" data-rwave></span>' : ''}</span>` : '';
+      const state = { done: '已完成', current: '進行中', pending: '尚未到達' }[n.state];
+      return `<li class="cs-rstep">${link}
+        <div class="cs-rnode is-${n.state} ${n.cls || ''}"${n.status && n.state !== 'pending' ? ` data-status="${n.status}"` : ''} aria-label="${esc(`${n.org || ''}${n.title}，${n.sub}，${state}${n.at && n.state !== 'pending' ? `，${fmt.dateTime(n.at)}` : ''}`)}">
+          <span class="cs-rnode__mark" aria-hidden="true">${App.shape.svg(shape)}${App.icon(n.icon)}</span>
+          <b class="cs-rnode__title">${n.org ? `<span class="cs-rnode__org">${esc(n.org)}</span>` : ''}${esc(n.title)}</b>
+          <span class="cs-rnode__sub">${esc(n.sub)}</span>
+          <span class="cs-rnode__time">${time}</span>
+        </div></li>`;
+    }).join('');
+    // 處理中的連線：波浪進度＝時限已用掉的比例，越接近到期越滿
+    const w = $('[data-rwave]', list);
+    if (w) {
+      const used = 1 - App.sla(c).frac;
+      App.wavy(w, { value: 0, amplitude: 3, wavelength: 16, thickness: 4, speed: 1.6 }).set(clamp(used, .12, .94));
+    }
+  }
+
+  /* ===================================================================
+     陳情內容 + 通話重播（招牌之二）
+     =================================================================== */
+  const callerTone = 'coral';
+  const kwList = CATS[c.cat].keywords.map(k => k[0]).sort((a, b) => b.length - a.length);
+  const kwRe = new RegExp(kwList.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+  const markKw = s => esc(s).replace(kwRe, m => `<mark>${m}</mark>`);
+
+  function buildStory() {
+    const lines = App.transcript(c);
+    const talk = (/通話 (\d+ 分 \d+ 秒)/.exec(c.log[0].note) || [])[1];
+    $('[data-story-sub]').textContent = `${c.channel}${c.channel === '電話' ? '來電' : '通報'} · ${fmt.dateTime(c.created)}${talk ? ` · 通話 ${talk}` : ''} · ${agent.name}（${c.agent}）受理`;
+    $('[data-caller]').innerHTML = `${App.avatar(c.caller.name, { size: 'lg', tone: callerTone })}
+      <div><p class="cs-caller__name">${esc(c.caller.name)}</p><p class="meta"><span class="mono">${esc(c.caller.phone)}</span><span>${c.district}</span></p></div>
+      <div class="cs-caller__tags">${c.caller.callback ? `<span class="tag tag--teal">${App.icon('phone')}要求回電說明</span>` : `<span class="tag">${App.icon('chat')}簡訊回覆即可</span>`}${c.repeat ? `<span class="tag tag--warn">30 日內第 ${c.repeat + 1} 次</span>` : ''}</div>`;
+    $('[data-quote]').innerHTML = `${App.shape.svg(CATS[c.cat].shape, { cls: 'cs-quote__mark' })}${markKw(c.desc)}`;
+
+    // 規則判讀：說明這件案子為何被歸到目前類別（與受理頁的推薦一致）
+    const callerText = lines ? lines.filter(l => l.who === 'caller').map(l => l.text).join(' ') : '';
+    const rank = App.classify(`${c.desc} ${callerText}`).slice(0, 3);
+    const hits = [...new Set(rank.find(r => r.cat === c.cat)?.hits || [])].slice(0, 6);
+    $('[data-ai]').innerHTML = `<span class="cs-ai__label">${App.icon('sparkle')}關鍵字判讀</span>
+      ${rank.map(r => `<span class="cs-ai__cat${r.cat === c.cat ? ' is-picked' : ''}" data-cat="${r.cat}">${App.shape.svg(CATS[r.cat].shape)}${CATS[r.cat].name}<b>${Math.round(r.score * 100)}%</b></span>`).join('')}
+      ${hits.length ? `<span>命中 ${hits.map(h => `「${esc(h)}」`).join('')}</span>` : `<span>未命中類別關鍵字，由話務員 ${agent.name} 人工分類為${CATS[c.cat].name}</span>`}
+      ${rank[0] && rank[0].cat !== c.cat ? `<span>· 派案類別經人工調整為${CATS[c.cat].name}</span>` : ''}`;
+
+    if (lines) buildPlayer(lines);
+    else buildAttachments();
+  }
+
+  function buildAttachments() {
+    const m = /附照片 (\d+) 張/.exec(`${c.desc} ${c.log[0].note}`);
+    const n = m ? +m[1] : 0;
+    const box = $('[data-call]');
+    const stamp = new Date(c.created + 8 * HOUR);
+    const files = Array.from({ length: n }, (_, i) => ({ name: `IMG_${pad(stamp.getUTCMonth() + 1)}${pad(stamp.getUTCDate())}_${pad(stamp.getUTCHours())}${pad(stamp.getUTCMinutes())}${pad(8 + i * 17)}.jpg`, size: (1.6 + ((c.id.charCodeAt(9) + i * 7) % 13) / 10).toFixed(1) }));
+    box.innerHTML = `<div class="cs-nocall">
+      <div class="callout callout--info">${App.icon('info')}<div class="callout__title">${c.channel} 通報，無通話錄音</div><div>${n ? `民眾上傳 ${n} 張現場照片，點選可放大檢視。` : '民眾未附照片，以上為通報原文。'}</div></div>
+      ${n ? `<div class="cs-photos">${files.map((f, i) => `<button type="button" class="cs-photo" data-photo="${i}" aria-label="檢視附件 ${f.name}">${photoSVG(i)}<span>${f.name}</span><small>${f.size} MB · 含定位</small></button>`).join('')}</div>` : ''}
+    </div>`;
+    box.addEventListener('click', e => {
+      const b = e.target.closest('[data-photo]');
+      if (!b) return;
+      const f = files[+b.dataset.photo];
+      App.modal({
+        title: f.name, sub: `${c.id} · ${c.channel} 上傳 · ${fmt.dateTime(c.created)}`, icon: 'image', shape: 'squircle', size: 'lg',
+        body: `<div class="cs-photo-big">${photoSVG(+b.dataset.photo, true)}</div><dl class="kv"><dt>拍攝地點</dt><dd>${esc(c.district + c.address)}</dd><dt>檔案大小</dt><dd>${f.size} MB</dd><dt>上傳管道</dt><dd>${c.channel}</dd></dl>`,
+        actions: [{ label: '關閉', variant: 'text' }, { label: '下載原檔', icon: 'download', onClick: () => { App.toast(`已下載 ${f.name}`, { sub: '存到「下載」資料夾', tone: 'success' }); } }],
+      });
+    });
+  }
+  // 示意照片：以類別色與形狀抽象繪製（不引用外部圖片）
+  function photoSVG(i, big = false) {
+    const sh = App.shape.path(CATS[c.cat].shape);
+    const r = [-12, 18, 6][i % 3];
+    return `<svg viewBox="0 0 160 120" role="img" aria-label="現場照片示意 ${i + 1}" data-cat="${c.cat}">
+      <rect width="160" height="120" style="fill:var(--c-container)"/>
+      <path d="M0 ${80 + i * 4} L160 ${70 - i * 3} L160 120 L0 120Z" fill="rgb(0 0 0 / .1)"/>
+      <path d="M0 ${96 + i * 2} L160 ${90 - i * 2}" stroke="#fff" stroke-width="3" stroke-dasharray="12 9" opacity=".8"/>
+      <circle cx="${126 - i * 20}" cy="${24 + i * 4}" r="11" fill="#fff" opacity=".75"/>
+      <g transform="translate(${46 + i * 10} ${30 + i * 3}) scale(.62) rotate(${r} 50 50)"><path d="${sh}" style="fill:var(--c)"/></g>
+      ${big ? `<text x="10" y="112" font-size="7" font-weight="700" fill="rgb(0 0 0 / .45)">${fmt.dateTime(c.created)} · ${esc(c.district)}</text>` : ''}
+    </svg>`;
+  }
+
+  // 自訂播放/暫停圖示（共用圖示庫沒有媒體控制）
+  const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z" fill="currentColor"/></svg>';
+  const PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.4" height="14" rx="1.6" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1.6" fill="currentColor"/></svg>';
+  const REPLAY_ICON = App.icon('refresh');
+
+  function buildPlayer(lines) {
+    const toSec = t => { const [m, s] = t.split(':').map(Number); return m * 60 + s; };
+    const segs = lines.map((u, i) => ({ ...u, start: toSec(u.t), end: i < lines.length - 1 ? toSec(lines[i + 1].t) : toSec(u.t) + Math.max(3, u.text.length * .22) }));
+    const total = segs[segs.length - 1].end;
+    const callerName = c.caller.name;
+    const box = $('[data-call]');
+    box.innerHTML = `
+      <div class="cs-player">
+        <button type="button" class="cs-play" data-play aria-pressed="false" aria-label="播放通話錄音">${PLAY_ICON}</button>
+        <div class="cs-player__body">
+          <div class="cs-player__top"><span class="cs-player__title">通話錄音 · 模擬重播</span><span class="cs-player__time"><b data-cur>00:00</b> / ${mmss(total)}</span></div>
+          <div class="cs-wave" data-wave role="slider" tabindex="0" aria-label="通話播放位置" aria-valuemin="0" aria-valuemax="${Math.round(total)}" aria-valuenow="0" aria-valuetext="00:00"><svg aria-hidden="true"></svg><span class="cs-wave__head"></span></div>
+          <p class="cs-player__legend"><span><i></i>話務員 ${agent.name}（${c.agent}）</span><span><i class="is-caller"></i>陳情人 ${esc(callerName)}</span></p>
+        </div>
+        <div class="btn-group btn-group--sm" role="group" aria-label="播放速度" data-speed>
+          <button type="button" data-value="1" aria-pressed="true">1×</button><button type="button" data-value="1.5" aria-pressed="false">1.5×</button><button type="button" data-value="2" aria-pressed="false">2×</button>
+        </div>
+      </div>
+      <ol class="transcript cs-transcript" data-transcript aria-label="通話逐字稿">${segs.map((u, i) => {
+        const who = u.who === 'agent' ? `話務員 ${agent.name}` : callerName;
+        const av = u.who === 'agent' ? App.avatar(agent.name, { size: 'sm', tone: 'primary' }) : App.avatar(callerName, { size: 'sm', tone: callerTone });
+        return `<li class="utt utt--${u.who}" data-i="${i}">${av}<div class="utt__bubble">
+          <p class="utt__who">${esc(who)}<span class="cs-eq" aria-hidden="true"><i></i><i></i><i></i></span><button type="button" class="cs-seek" data-seek="${u.start}" aria-label="從 ${u.t} 開始播放">${PLAY_ICON}${u.t}</button></p>
+          <p class="utt__text">${u.who === 'caller' ? markKw(u.text) : esc(u.text)}</p></div></li>`;
+      }).join('')}</ol>`;
+
+    const playBtn = $('[data-play]', box);
+    const wave = $('[data-wave]', box);
+    const svg = $('svg', wave);
+    const head = $('.cs-wave__head', wave);
+    const curEl = $('[data-cur]', box);
+    const ts = $('[data-transcript]', box);
+    const utts = $$('.utt', ts);
+    let barT = [], rects = [], playedN = -1;
+    let cur = 0, playing = false, started = false, speed = 1, raf = 0, lastT = 0;
+
+    // 波形：依逐字稿切段，句尾留白；以案號為種子，每件案子的波形固定
+    const seed = [...c.id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7);
+    const noise = k => { const x = Math.sin(k * 12.9898 + seed * 78.233) * 43758.5453; return x - Math.floor(x); };
+    function drawBars() {
+      const w = wave.clientWidth, h = wave.clientHeight;
+      if (!w) return;
+      const n = Math.max(30, Math.floor(w / 5));
+      const stepW = w / n;
+      let html = '';
+      barT = [];
+      for (let i = 0; i < n; i++) {
+        const tau = (i + .5) / n * total;
+        const s = segs.find(x => tau >= x.start && tau < x.end) || segs[segs.length - 1];
+        const local = (tau - s.start) / (s.end - s.start);
+        const env = local > .86 ? .05 : Math.pow(Math.sin(Math.PI * Math.min(1, local / .86)), .45);
+        const amp = Math.max(.07, env * (.32 + .68 * noise(Math.floor(tau * 4))));
+        const bh = Math.max(3, amp * (h - 4));
+        html += `<rect class="cs-bar cs-bar--${s.who}" x="${(i * stepW + stepW * .18).toFixed(1)}" y="${((h - bh) / 2).toFixed(1)}" width="${(stepW * .64).toFixed(1)}" height="${bh.toFixed(1)}" rx="${(stepW * .32).toFixed(1)}"/>`;
+        barT.push(tau);
+      }
+      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      svg.innerHTML = html;
+      rects = [...svg.children];
+      playedN = -1;
+      paint();
+    }
+    function paint() {
+      const w = wave.clientWidth;
+      head.style.transform = `translateX(${(cur / total * w).toFixed(1)}px)`;
+      curEl.textContent = mmss(cur);
+      wave.setAttribute('aria-valuenow', String(Math.round(cur)));
+      wave.setAttribute('aria-valuetext', mmss(cur));
+      wave.classList.toggle('is-started', started);
+      ts.classList.toggle('is-live', started);
+      let n = 0;
+      while (n < barT.length && barT[n] <= cur) n++;
+      if (n !== playedN) {
+        // 只更新變動的區段，播放時每格只動一兩根長條
+        const [a, b] = playedN < 0 ? [0, rects.length] : [Math.min(n, playedN), Math.max(n, playedN)];
+        for (let i = a; i < b; i++) rects[i].classList.toggle('is-played', i < n);
+        playedN = n;
+      }
+      const k = segs.findIndex(s => cur >= s.start && cur < s.end);
+      utts.forEach((u, i) => {
+        u.classList.toggle('is-speaking', started && i === k && cur < total);
+        u.classList.toggle('is-pending', started && segs[i].start > cur);
+      });
+    }
+    function frame(t) {
+      raf = 0;
+      if (!playing) return;
+      const dt = lastT ? Math.min(100, t - lastT) : 16;
+      lastT = t;
+      cur = Math.min(total, cur + dt / 1000 * speed);
+      paint();
+      if (cur >= total) { setPlaying(false); return; }
+      raf = requestAnimationFrame(frame);
+    }
+    function setPlaying(v) {
+      playing = v;
+      if (v) {
+        if (cur >= total) cur = 0;
+        started = true;
+        lastT = 0;
+        if (!raf) raf = requestAnimationFrame(frame);
+      } else if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      const ended = !v && cur >= total;
+      playBtn.setAttribute('aria-pressed', String(v));
+      playBtn.setAttribute('aria-label', v ? '暫停' : ended ? '重新播放' : '播放通話錄音');
+      playBtn.innerHTML = v ? PAUSE_ICON : ended ? REPLAY_ICON : PLAY_ICON;
+      box.classList.toggle('is-playing', v);
+      paint();
+    }
+    const seek = sec => { cur = clamp(sec, 0, total); started = true; paint(); };
+    playBtn.addEventListener('click', () => setPlaying(!playing));
+    ts.addEventListener('click', e => {
+      const b = e.target.closest('[data-seek]');
+      if (!b) return;
+      seek(+b.dataset.seek);
+      setPlaying(true);
+    });
+    let dragging = false;
+    const seekAt = e => { const r = wave.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * total); };
+    wave.addEventListener('pointerdown', e => { dragging = true; wave.setPointerCapture(e.pointerId); seekAt(e); });
+    wave.addEventListener('pointermove', e => { if (dragging) seekAt(e); });
+    wave.addEventListener('pointerup', () => { dragging = false; });
+    wave.addEventListener('pointercancel', () => { dragging = false; });
+    wave.addEventListener('keydown', e => {
+      const d = { ArrowRight: 5, ArrowUp: 5, ArrowLeft: -5, ArrowDown: -5 }[e.key];
+      if (d) { e.preventDefault(); seek(cur + d); }
+      else if (e.key === 'Home') { e.preventDefault(); seek(0); }
+      else if (e.key === 'End') { e.preventDefault(); seek(total); }
+      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setPlaying(!playing); }
+    });
+    App.segmented($('[data-speed]', box), { onChange: v => { speed = +v; } });
+    new ResizeObserver(drawBars).observe(wave);
+    // 離開視窗或切到別的分頁就暫停：rAF 不在背景空轉，回來時也不會錯過內容
+    new IntersectionObserver(([e]) => { if (!e.isIntersecting && playing) setPlaying(false); }).observe(box);
+    document.addEventListener('visibilitychange', () => { if (document.hidden && playing) setPlaying(false); });
+  }
+
+  /* ===================================================================
+     地點：自繪街廓示意圖
+     =================================================================== */
+  const sims = App.findSimilar({ cat: c.cat, district: c.district, address: c.address, text: c.desc, excludeId: c.id }, 3);
+  const mainStreet = district.streets.find(s => c.address.includes(s)) || district.streets[0];
+
+  function buildMap() {
+    const W = 480, H = 300;
+    const coastal = district.coastal;
+    const landR = coastal ? 384 : W;
+    const inAddr = district.streets.filter(s => c.address.includes(s));
+    const landmark = district.landmarks.find(l => c.address.includes(l));
+    const isCross = inAddr.length >= 2;
+    const cross = inAddr[1] || district.streets.find(s => s !== mainStreet);
+    const gx = clamp(c.geo.x, .18, .82), gy = clamp(c.geo.y, .2, .8);
+    const Y = Math.round(78 + gy * 150);
+    const pinX = Math.round(86 + gx * (landR - 172));
+    // 路口案件：釘在路口；門牌案件：釘在主要道路上，旁邊一條巷道作為參考
+    const X = isCross ? pinX : (pinX + 104 <= landR - 36 ? pinX + 104 : pinX - 104);
+    const hs = [{ p: Y, h: 14, name: mainStreet }, { p: Y - 98, h: 6 }, { p: Y + 94, h: 6 }].filter(r => r.p > 16 && r.p < H - 16).sort((a, b) => a.p - b.p);
+    const vs = [{ p: X, h: 12, name: cross }, { p: X - 168, h: 6 }, { p: X + 152, h: 6 }].filter(r => r.p > 16 && r.p < landR - 16).sort((a, b) => a.p - b.p);
+    const cx = [{ p: 0, h: 0 }, ...vs, { p: landR, h: 0 }];
+    const cy = [{ p: 0, h: 0 }, ...hs, { p: H, h: 0 }];
+    const seed = [...c.id].reduce((h, ch) => (h + ch.charCodeAt(0)) % 97, 0);
+    // 地標街廓：地址提到地標時放在釘點正上方；否則選離釘點最遠的街廓標示附近地標
+    const blocks = [];
+    for (let i = 0; i < cx.length - 1; i++) {
+      for (let j = 0; j < cy.length - 1; j++) {
+        const x0 = cx[i].p + cx[i].h + 6, x1 = cx[i + 1].p - cx[i + 1].h - 6;
+        const y0 = cy[j].p + cy[j].h + 6, y1 = cy[j + 1].p - cy[j + 1].h - 6;
+        if (x1 - x0 < 22 || y1 - y0 < 22) continue;
+        blocks.push({ x0, x1, y0, y1, i, j, d: Math.hypot((x0 + x1) / 2 - pinX, (y0 + y1) / 2 - Y) });
+      }
+    }
+    // 指北針、比例尺、行政區標籤固定在角落；地標與綠地避開這些位置，標字才不會被蓋住
+    const pillW = c.district.length * 13 + 16;
+    const overlays = [{ x0: 0, x1: 48, y0: 0, y1: 48 }, { x0: 0, x1: 100, y0: H - 34, y1: H }, { x0: landR - 14 - pillW, x1: landR, y0: 0, y1: 46 }];
+    const free = b => !overlays.some(o => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
+    const roomy = b => b.x1 - b.x0 >= 64 && b.y1 - b.y0 >= 48;
+    const above = blocks.filter(b => b.y1 < Y && b.x0 < pinX && b.x1 > pinX)[0];
+    const far = blocks.filter(b => free(b) && roomy(b) && b !== above).sort((a, b) => b.d - a.d)[0] || blocks.slice().sort((a, b) => b.d - a.d)[0];
+    const lmBlock = landmark && above && roomy(above) ? above : far;
+    const lmName = landmark || district.landmarks[seed % district.landmarks.length];
+    const parkBlock = blocks.filter(b => b !== lmBlock && b !== above && free(b)).sort((a, b) => ((a.i * 7 + a.j * 3 + seed) % 5) - ((b.i * 7 + b.j * 3 + seed) % 5))[0];
+    const parts = [];
+    for (const b of blocks) {
+      const w = b.x1 - b.x0, h = b.y1 - b.y0;
+      if (b === lmBlock) {
+        parts.push(`<rect x="${b.x0}" y="${b.y0}" width="${w}" height="${h}" rx="14" style="fill:var(--primary-container)"/>`);
+        const lx = (b.x0 + b.x1) / 2, ly = (b.y0 + b.y1) / 2;
+        parts.push(`<g transform="translate(${lx - 11} ${ly - 24}) scale(.22)"><path d="${App.shape.path('cookie12')}" style="fill:var(--primary)"/></g>`);
+        // 地標名稱過長時拆兩行，而不是截斷
+        const per = Math.max(3, Math.floor((w - 10) / 12));
+        const rows = lmName.length > per && h >= 64 ? [lmName.slice(0, Math.ceil(lmName.length / 2)), lmName.slice(Math.ceil(lmName.length / 2))] : [lmName];
+        parts.push(`<text class="cs-map__lm" x="${lx}" y="${ly + 14 - (rows.length - 1) * 7}" text-anchor="middle">${rows.map((r, k) => `<tspan x="${lx}" dy="${k ? 14 : 0}">${esc(r)}</tspan>`).join('')}</text>`);
+      } else if (b === parkBlock) {
+        parts.push(`<rect x="${b.x0}" y="${b.y0}" width="${w}" height="${h}" rx="18" style="fill:var(--cat-litter-container)"/>`);
+        const trees = Math.max(2, Math.min(6, Math.floor(w * h / 2600)));
+        for (let t = 0; t < trees; t++) {
+          const tx = b.x0 + 14 + ((t * 37 + seed) % Math.max(1, w - 28)), ty = b.y0 + 12 + ((t * 23 + seed * 3) % Math.max(1, h - 24));
+          parts.push(`<g transform="translate(${tx - 8} ${ty - 8}) scale(.16)"><path d="${App.shape.path('clover4')}" style="fill:var(--cat-litter)" opacity=".55"/></g>`);
+        }
+        if (w > 70 && h > 40) parts.push(`<text class="cs-map__park" x="${(b.x0 + b.x1) / 2}" y="${b.y1 - 8}" text-anchor="middle">綠地</text>`);
+      } else {
+        parts.push(`<rect x="${b.x0}" y="${b.y0}" width="${w}" height="${h}" rx="12" style="fill:var(--surface-container)"/>`);
+        // 街廓內切出建物，讓示意圖有城市肌理
+        const cols = Math.max(1, Math.floor(w / 46)), rows = Math.max(1, Math.floor(h / 40));
+        const lw = (w - 10 - (cols - 1) * 5) / cols, lh = (h - 10 - (rows - 1) * 5) / rows;
+        for (let a = 0; a < cols; a++) for (let r = 0; r < rows; r++) {
+          if ((a * 3 + r * 5 + b.i + seed) % 4 === 0) continue;
+          parts.push(`<rect x="${(b.x0 + 5 + a * (lw + 5)).toFixed(1)}" y="${(b.y0 + 5 + r * (lh + 5)).toFixed(1)}" width="${lw.toFixed(1)}" height="${lh.toFixed(1)}" rx="6" style="fill:var(--surface-container-highest)"/>`);
+        }
+      }
+    }
+    // 海岸：沿海行政區右側畫出澄港灣
+    let sea = '';
+    if (coastal) {
+      let d = `M${landR + 8} 0`;
+      for (let y = 0; y < H; y += 30) d += ` Q${landR - 6} ${y + 15} ${landR + 8} ${y + 30}`;
+      d += ` L${W} ${H} L${W} 0Z`;
+      sea = `<path d="${d}" fill="#D8F3F1"/>
+        <g fill="none" stroke="#7FD3CF" stroke-width="2" stroke-linecap="round" opacity=".8">
+          <path d="M${landR + 32} 52q8-6 16 0t16 0"/><path d="M${landR + 44} 132q8-6 16 0t16 0"/><path d="M${landR + 30} 214q8-6 16 0t16 0"/>
+        </g>
+        <text class="cs-map__sea" x="${(landR + W) / 2 + 10}" y="${H / 2 + 34}" text-anchor="middle" style="writing-mode:vertical-rl">澄港灣</text>`;
+    }
+    // 主要道路名放在離圖釘、相似案件點、交叉道路都最遠的位置
+    const dotX = [-66, 72, -134];
+    const taken = [pinX, X, ...sims.map((_, k) => clamp(pinX + dotX[k], 22, landR - 22))];
+    const roadLabelX = [pinX - 200, pinX + 200, pinX - 100, pinX + 110, 60, landR - 60, (pinX + landR) / 2, pinX / 2]
+      .filter(x => x >= 50 && x <= landR - 50)
+      .map(x => ({ x, d: Math.min(...taken.map(t => Math.abs(t - x))) }))
+      .sort((a, b) => b.d - a.d)[0].x;
+    // 交叉道路名放在主要道路下方一段，避開圖釘（圖釘往上長）
+    const crossLabelY = Y + 96 < H ? Y + 74 : Y - 104;
+    const dots = sims.map((s, k) => {
+      const x = clamp(pinX + dotX[k], 22, landR - 22);
+      return `<g data-status="${s.c.status}"><circle cx="${x}" cy="${Y}" r="11" fill="#fff" style="stroke:var(--s)" stroke-width="3"/><text class="cs-map__dotnum" x="${x}" y="${Y + 4}" text-anchor="middle">${k + 1}</text></g>`;
+    }).join('');
+    $('[data-map]').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${c.district}${c.address} 位置示意圖，主要道路${mainStreet}${isCross ? `與${cross}路口` : ''}`)}">
+      <rect width="${W}" height="${H}" fill="#fff"/>
+      ${parts.join('')}
+      ${sea}
+      <circle class="cs-map__halo" cx="${pinX}" cy="${Y}" r="46" style="fill:var(--c-container)" opacity=".7" data-cat="${c.cat}"/>
+      <circle cx="${pinX}" cy="${Y}" r="46" fill="none" style="stroke:var(--c)" stroke-width="1.5" stroke-dasharray="4 5" opacity=".7" data-cat="${c.cat}"/>
+      <line x1="0" y1="${Y}" x2="${landR}" y2="${Y}" stroke="#F3D58A" stroke-width="2" stroke-dasharray="10 9" opacity=".9"/>
+      <text class="cs-map__road" x="${roadLabelX}" y="${Y + 4}" text-anchor="middle">${esc(mainStreet)}</text>
+      <text class="cs-map__road" x="${X}" y="${crossLabelY}" text-anchor="middle" dominant-baseline="central" style="writing-mode:vertical-rl">${esc(cross)}</text>
+      ${dots}
+      <g class="cs-pin">
+        <circle class="pulse anim-pulse" cx="${pinX}" cy="${Y}" r="24" fill="none" stroke-width="3" style="stroke:var(--c)" data-cat="${c.cat}"/>
+        <ellipse cx="${pinX}" cy="${Y + 1}" rx="9" ry="3.5" fill="rgb(0 0 0 / .2)"/>
+        <g transform="translate(${pinX} ${Y})" data-cat="${c.cat}">
+          <path d="M0 0C-5-11-19-20-19-36A19 19 0 1 1 19-36C19-20 5-11 0 0Z" style="fill:var(--c)" stroke="#fff" stroke-width="2.5"/>
+          <circle cx="0" cy="-36" r="12.5" fill="#fff"/>
+          <g transform="translate(-9 -45) scale(.18)"><path d="${App.shape.path(CATS[c.cat].shape)}" style="fill:var(--c)"/></g>
+        </g>
+      </g>
+      <g transform="translate(26 26)">
+        <circle r="15" fill="#fff" style="stroke:var(--outline-variant)" stroke-width="1.5"/>
+        <path d="M0-10L5 3L0 0L-5 3Z" style="fill:var(--tertiary-vivid)"/><text class="cs-map__small" y="12" text-anchor="middle">N</text>
+      </g>
+      <g transform="translate(18 ${H - 18})">
+        <path d="M0-5V0H56V-5" fill="none" style="stroke:var(--on-surface-variant)" stroke-width="1.6"/>
+        <text class="cs-map__small" x="64" y="0">50 m</text>
+      </g>
+      <g transform="translate(${landR - 14} 16)">
+        <rect x="-${pillW}" y="0" width="${pillW}" height="26" rx="13" style="fill:var(--inverse-surface)"/>
+        <text class="cs-map__pill" x="-${pillW / 2}" y="17" text-anchor="middle">${c.district}</text>
+      </g>
+    </svg>`;
+    // 圖釘落下：預設就是落定的樣子（靜態畫面完整），第一次捲進視窗才用 WAAPI 播一次
+    if (motion()) {
+      const mapEl = $('[data-map]');
+      const io = new IntersectionObserver(([e]) => {
+        if (!e.isIntersecting) return;
+        io.disconnect();
+        $('.cs-pin', mapEl).animate([{ transform: 'translateY(-80px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 950, delay: 120, easing: App.spring.easing('bouncy'), fill: 'backwards' });
+        $('.cs-map__halo', mapEl).animate([{ transform: 'scale(.2)', opacity: 0 }, { transform: 'none', opacity: .7 }], { duration: 800, delay: 380, easing: App.spring.easing('slow'), fill: 'backwards' });
+      }, { threshold: .45 });
+      io.observe(mapEl);
+    }
+
+    $('[data-place-sub]').textContent = `${c.district} · ${district.police}轄區 · 人口 ${district.pop} 萬`;
+    $('[data-addr]').innerHTML = `<span class="cs-addr__icon" aria-hidden="true">${App.shape.svg('cookie9')}${App.icon('pin')}</span>
+      <div class="cs-addr__text"><b>${esc(c.address)}</b><p class="meta"><span>${c.district}</span>${c.pole ? `<span>燈桿 ${esc(c.pole)}</span>` : ''}<span class="mono">座標 ${c.geo.x.toFixed(2)}, ${c.geo.y.toFixed(2)}</span></p></div>
+      <button type="button" class="icon-btn icon-btn--outlined" data-copy aria-label="複製地址">${App.icon('copy')}</button>`;
+    $('[data-place-links]').innerHTML = `<a class="btn btn--tonal btn--sm" href="cases.html?q=${encodeURIComponent(mainStreet)}">${App.icon('search')}${esc(mainStreet)}的其他案件</a>
+      <a class="btn btn--text btn--sm" href="cases.html?district=${encodeURIComponent(c.district)}">${c.district}全部案件${App.icon('forward')}</a>`;
+    if (c.repeat) {
+      $('[data-repeat]').innerHTML = `<div class="callout callout--warn" style="margin-top:14px">${App.icon('history')}<div class="callout__title">同地點 30 日內第 ${c.repeat + 1} 次陳情</div><div>前 ${c.repeat} 件已結案但問題再次發生，已於派案時註記「重複陳情，請優先處理」，建議承辦單位評估根本改善。</div></div>`;
+    }
+  }
+  $('[data-addr]').addEventListener('click', e => {
+    if (!e.target.closest('[data-copy]')) return;
+    const text = `${c.district}${c.address}`;
+    // file:// 或未授權時剪貼簿可能被拒，明確告知而不是假裝成功
+    if (!navigator.clipboard) { App.toast('瀏覽器不允許存取剪貼簿', { sub: '請手動選取地址文字複製', tone: 'error' }); return; }
+    navigator.clipboard.writeText(text).then(
+      () => App.toast('已複製地址', { sub: text, tone: 'success' }),
+      () => App.toast('瀏覽器不允許存取剪貼簿', { sub: '請手動選取地址文字複製', tone: 'error' }),
+    );
+  });
+
+  function paintSimilar() {
+    $('[data-sim-count]').textContent = sims.length || '';
+    $('[data-sim-count]').toggleAttribute('data-zero', !sims.length);
+    $('[data-similar]').innerHTML = sims.length
+      ? sims.map((s, k) => `<li class="cs-sim" data-status="${s.c.status}">
+          <span class="cs-sim__n" aria-hidden="true">${k + 1}</span>
+          <div class="cs-sim__top"><a href="case.html?id=${s.c.id}">${s.c.id}</a>${App.statusBadge(s.c.status)}<span class="t-small muted">${fmt.rel(s.c.created)}</span></div>
+          <p class="cs-sim__title">${esc(s.c.title)}</p>
+          <div class="cs-sim__why">${s.reasons.map(r => `<span class="tag tag--outline">${r}</span>`).join('')}</div>
+        </li>`).join('')
+      : `<li class="cs-sim-empty">近 7 日沒有同路段的同類案件${c.repeat ? `；30 日內另有 ${c.repeat} 件同地點陳情已結案（已移出 7 日明細）。` : '，可排除重複陳情。'}</li>`;
+  }
+
+  /* ===================================================================
+     處理紀錄
+     =================================================================== */
+  const LOG = {
+    received: { name: () => (c.channel === '電話' ? '來電受理' : `${c.channel} 通報受理`), shape: 'circle', icon: 'headset' },
+    dispatched: { name: e => (/改派/.test(e.note) ? '改派' : '派案'), shape: 'pentagon', icon: 'dispatch' },
+    bureau: { name: () => '局處接案', shape: 'cookie6', icon: 'building' },
+    field: { name: () => '區隊處理', shape: 'cookie9', icon: 'team' },
+    replied: { name: () => '回覆民眾', shape: 'clover8', icon: 'chat' },
+    closed: { name: () => '結案', shape: 'cookie12', icon: 'check' },
+    return: { name: () => '局處退件', shape: 'boom', icon: 'undo', color: 'var(--error)' },
+    urge: { name: () => '催辦', shape: 'sunny', icon: 'bolt', color: 'var(--warn-vivid)' },
+  };
+  let logCount = 0;
+  function paintLog() {
+    const grew = logCount && c.log.length > logCount;
+    logCount = c.log.length;
+    const last = c.log[c.log.length - 1];
+    $('[data-log-sub]').textContent = `共 ${c.log.length} 筆 · 最後更新 ${fmt.rel(last.at)}`;
+    $('[data-log]').innerHTML = c.log.map((e, i) => {
+      const m = LOG[e.type];
+      const latest = i === c.log.length - 1;
+      return `<li class="timeline__item${latest && grew ? ' is-entering' : ''}"${FLOW.includes(e.type) ? ` data-status="${e.type}"` : ''}${m.color ? ` style="--s:${m.color}"` : ''}>
+        <span class="timeline__dot" aria-hidden="true">${App.shape.svg(m.shape)}${App.icon(m.icon)}</span>
+        <div class="timeline__body">
+          <p class="timeline__head"><span class="timeline__title">${m.name(e)}${latest ? '<span class="tag tag--primary">最新</span>' : ''}</span><span class="timeline__time">${fmt.dateTime(e.at)}</span></p>
+          <p class="timeline__text">${esc(e.note)}</p>
+          <p class="timeline__actor">${esc(e.actor)}</p>
+        </div></li>`;
+    }).join('');
+  }
+
+  /* ===================================================================
+     回覆民眾：範本 + 變數插入 + 簡訊預覽
+     =================================================================== */
+  const TEMPLATES = [
+    { key: 'done', name: '處理完成', text: '{陳情人}您好：您反映{地點}{類別}一案（案號 {案號}），已由{處理區隊}於 {完成時間} 處理完成：{處理結果}。感謝您的反映，如仍有問題歡迎再撥 1999。{承辦單位} 敬上' },
+    { key: 'scheduled', name: '已排定施作', text: '{陳情人}您好：您反映{地點}{類別}一案（案號 {案號}），{處理區隊}已到場勘查並完成安全措施，已排定施作，完成後將再以簡訊通知。謝謝您的耐心。{承辦單位} 敬上' },
+    { key: 'clear', name: '查無異狀', text: '{陳情人}您好：您反映{地點}{類別}一案（案號 {案號}），{處理區隊}已於 {完成時間} 到場查看，現場未發現異狀，將列入加強巡查。如再發生歡迎撥打 1999。{承辦單位} 敬上' },
+    { key: 'scope', name: '非權責轉介', text: '{陳情人}您好：您反映{地點}一案（案號 {案號}），經{承辦單位}查明非屬本單位權責，已轉請權責機關處理，後續將由該機關回覆您。澄港市 1999 市民熱線' },
+  ];
+  const VAR_KEYS = ['陳情人', '案號', '地點', '類別', '承辦單位', '處理區隊', '處理結果', '完成時間', '處理時限'];
+  const ta = $('#reply-text');
+  const tf = $('[data-reply-tf]');
+  let tpl = 'done';
+  let appliedText = '';
+  const vars = () => App.replyVars(c);
+  const fill = text => { const v = vars(); return text.replace(/\{([^{}]+)\}/g, (m, k) => v[k] ?? m); };
+  const unknownVars = text => { const v = vars(); return [...new Set([...text.matchAll(/\{([^{}]+)\}/g)].map(m => m[1]).filter(k => !(k in v)))]; };
+  const smsCount = len => (len <= 70 ? 1 : Math.ceil(len / 67));
+
+  $('[data-tpls]').innerHTML = TEMPLATES.map(t => `<button type="button" class="chip" role="radio" aria-checked="${t.key === tpl}" data-tpl="${t.key}"><span class="chip__check">${App.icon('check')}</span>${t.name}</button>`).join('');
+  $('[data-vars]').innerHTML = `<span class="cs-vars__label">${App.icon('plus')}插入變數</span>${VAR_KEYS.map(k => `<button type="button" class="cs-var" data-var="${k}" aria-label="插入變數 ${k}"><i>{</i>${k}<i>}</i></button>`).join('')}`;
+
+  // 送出前檢核：通過的項目形狀由圓 morph 成 cookie12，與系統「完成」的形狀語意一致
+  const CHECKS = [
+    { label: '稱呼陳情人', test: (raw, filled) => filled.includes(c.caller.name) },
+    { label: '載明案號', test: (raw, filled) => filled.includes(c.id) },
+    { label: '署名機關', test: (raw, filled) => /敬上|市民熱線/.test(filled) },
+    { label: '變數皆可辨識', test: raw => !!raw.trim() && !unknownVars(raw).length },
+    { label: '3 則簡訊以內', test: (raw, filled) => filled.length >= 20 && smsCount([...filled].length) <= 3 },
+  ];
+  $('[data-checks]').innerHTML = CHECKS.map((k, i) => `<li class="cs-check" data-check="${i}" aria-label="${k.label}：未通過">${App.shape.svg('circle')}<span>${k.label}</span></li>`).join('');
+  function paintChecks(raw, filled) {
+    CHECKS.forEach((k, i) => {
+      const li = $(`[data-check="${i}"]`);
+      const ok = k.test(raw, filled);
+      if (li.classList.contains('is-ok') === ok) return;
+      li.classList.toggle('is-ok', ok);
+      li.setAttribute('aria-label', `${k.label}：${ok ? '通過' : '未通過'}`);
+      App.shape.morph($('svg', li), ok ? 'cookie12' : 'circle', { rotate: ok ? 60 : -60 });
+    });
+  }
+
+  function applyTemplate(key) {
+    tpl = key;
+    ta.value = TEMPLATES.find(t => t.key === key).text;
+    appliedText = ta.value;
+    $$('[data-tpl]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.tpl === key)));
+    paintPreview();
+  }
+  function paintPreview() {
+    const v = vars();
+    const raw = ta.value;
+    const filled = fill(raw.trim());
+    const len = [...filled].length;
+    $('[data-reply-count]').textContent = `${raw.length}/320`;
+    const prev = $('[data-preview]');
+    prev.classList.toggle('is-empty', !raw.trim());
+    prev.innerHTML = raw.trim()
+      ? esc(raw.trim()).replace(/\{([^{}]+)\}/g, (m, k) => (v[k] != null ? `<mark>${esc(v[k])}</mark>` : `<mark class="is-bad">${m}</mark>`))
+      : '輸入回覆內容後，這裡會顯示民眾收到的簡訊。';
+    $('[data-preview-meta]').innerHTML = raw.trim() ? `共 <b>${len}</b> 字 · 簡訊 <b>${smsCount(len)}</b> 則` : '尚未輸入';
+    paintChecks(raw, filled);
+    // 使用者修正後即時清除錯誤
+    if (tf.classList.contains('is-error') && raw.trim().length >= 20 && !unknownVars(raw).length) setReplyError('');
+  }
+  function setReplyError(msg) {
+    tf.classList.toggle('is-error', !!msg);
+    $('[data-reply-msg]').textContent = msg || '點選下方變數，會插入到游標位置';
+  }
+  $('[data-tpls]').addEventListener('click', e => {
+    const b = e.target.closest('[data-tpl]');
+    if (!b || b.dataset.tpl === tpl && ta.value === appliedText) return;
+    const before = ta.value, beforeTpl = tpl;
+    const edited = before !== appliedText;
+    applyTemplate(b.dataset.tpl);
+    setReplyError('');
+    if (edited) {
+      App.toast(`已套用範本「${TEMPLATES.find(t => t.key === tpl).name}」`, { sub: '原本編輯的內容已被取代', action: { label: '復原', onClick: () => {
+        tpl = beforeTpl;
+        ta.value = before;
+        $$('[data-tpl]').forEach(x => x.setAttribute('aria-checked', String(x.dataset.tpl === beforeTpl)));
+        paintPreview();
+      } } });
+    }
+  });
+  $('[data-vars]').addEventListener('click', e => {
+    const b = e.target.closest('[data-var]');
+    if (!b) return;
+    const s = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? ta.value.length;
+    ta.setRangeText(`{${b.dataset.var}}`, s, en, 'end');
+    ta.focus({ preventScroll: true });
+    paintPreview();
+  });
+  ta.addEventListener('input', paintPreview);
+  $('[data-send]').addEventListener('click', () => {
+    if (c.status !== 'bureau' && c.status !== 'field') return;
+    const raw = ta.value.trim();
+    const bad = unknownVars(raw);
+    if (raw.length < 20) { setReplyError('回覆內容至少需要 20 個字'); ta.focus(); return; }
+    if (bad.length) { setReplyError(`無法辨識的變數：${bad.map(k => `{${k}}`).join('、')}`); ta.focus(); return; }
+    const text = fill(raw);
+    const n = smsCount([...text].length);
+    const undo = App.reply(c.id, text);
+    App.toast(`已回覆 ${c.caller.name}`, { sub: `${c.id} · ${c.caller.callback ? '電話說明＋' : ''}簡訊 ${n} 則`, tone: 'success', shape: 'clover8', action: { label: '復原', onClick: () => { undo(); App.toast('已撤回回覆', { sub: c.id }); } } });
+  });
+
+  function paintReply() {
+    const sent = !!c.repliedAt;
+    const canSend = c.status === 'bureau' || c.status === 'field';
+    $('[data-compose]').hidden = sent;
+    $('[data-sent]').hidden = !sent;
+    $('[data-reply-sub]').textContent = `${c.caller.name} · ${c.caller.phone} · ${c.caller.callback ? '民眾要求回電，另以簡訊留存' : '以簡訊回覆'}`;
+    $('[data-phone-to]').textContent = `傳送至 ${c.caller.phone}`;
+    const lock = $('[data-lock]');
+    lock.hidden = canSend || sent;
+    if (!canSend && !sent) {
+      lock.innerHTML = `${App.icon('info')}<div class="callout__title">${c.status === 'received' ? '案件尚未派案' : '等候局處接案'}</div><div>回覆民眾需在局處接案並處理後送出；目前可先準備回覆內容。</div>`;
+    }
+    $('[data-send]').disabled = !canSend;
+    $('[data-send-note]').textContent = canSend ? '送出後案件改為「已回覆」，SLA 停止計時' : '局處接案後才能送出回覆';
+    if (sent) {
+      const e = lastOf('replied');
+      const text = c.reply || fill(TEMPLATES[0].text);
+      const v = vars();
+      $('[data-sent]').innerHTML = `<div class="cs-sent">
+        <div>
+          <div class="cs-sent__hero">${App.shape.svg('clover8')}<div><p class="cs-sent__title">已於 ${fmt.dateTime(c.repliedAt)} 回覆民眾</p><p class="muted">${esc(e ? e.actor : v.承辦單位)} · ${fmt.rel(c.repliedAt)}</p></div></div>
+          <dl class="kv"><dt>回覆方式</dt><dd>${c.caller.callback ? '電話說明＋簡訊' : '簡訊'}</dd><dt>處理結果</dt><dd>${esc(v.處理結果)}</dd><dt>處理用時</dt><dd>${fmt.durShort(c.repliedAt - c.created)}（時限 ${v.處理時限}）</dd><dt>後續</dt><dd>${c.status === 'closed' ? '已結案' : c.caller.callback ? '待回訪滿意度' : `回覆後 72 小時自動結案（${fmt.dateTime(c.repliedAt + 72 * HOUR)}）`}</dd></dl>
+        </div>
+        <figure class="cs-phone" aria-label="已送出的簡訊"><div class="cs-phone__screen">
+          <div class="cs-phone__bar" aria-hidden="true"><span>${fmt.time(c.repliedAt)}</span><span class="cs-phone__notch"></span><span>5G</span></div>
+          <div class="cs-phone__from"><span class="cs-phone__avatar" aria-hidden="true">${App.shape.svg('cookie12')}<b>1999</b></span>澄港市 1999<small>傳送至 ${esc(c.caller.phone)}</small></div>
+          <p class="cs-phone__day">${fmt.date(c.repliedAt)} ${fmt.time(c.repliedAt)}</p>
+          <div class="cs-sms">${esc(text)}</div>
+          <p class="cs-phone__meta">已送達 · 簡訊 <b>${smsCount([...text].length)}</b> 則</p>
+        </div></figure></div>`;
+    }
+  }
+
+  /* ===================================================================
+     滿意度
+     =================================================================== */
+  const WORDS = ['', '非常不滿意', '不滿意', '普通', '滿意', '非常滿意'];
+  function paintSat() {
+    const cat = CATS[c.cat];
+    const rated = DATA.cases.filter(x => x.cat === c.cat && x.rating);
+    const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    rated.forEach(x => { dist[x.rating]++; });
+    const avg = rated.length ? rated.reduce((s, x) => s + x.rating, 0) / rated.length : 0;
+    const maxN = Math.max(1, ...Object.values(dist));
+    const bench = `<div class="cs-bench">
+      <p class="cs-bench__title"><span>${cat.name} · 近 7 日回訪 ${rated.length} 件</span><span>平均 <b>${avg.toFixed(2)}</b> 分</span></p>
+      <div class="cs-bench__rows">${[5, 4, 3, 2, 1].map(r => `<div class="dist-row${c.rating === r ? ' is-this' : ''}"><span>${r} 分</span><span class="meter"><i style="--f:${(dist[r] / maxN).toFixed(3)}"></i></span><span>${dist[r]}</span></div>`).join('')}</div>
+    </div>`;
+    const cbWho = c.callbackBy === 'A21' ? '話務員 蘇若涵（A21）' : `派案督導 ${App.ME.name}`;
+    let main = '', sub = '';
+    if (c.status === 'closed' && c.rating) {
+      const e = lastOf('closed');
+      sub = `回訪完成 · ${fmt.dateTime(c.closedAt)}`;
+      main = `<div class="cs-sat__score"><span class="num-display cs-sat__num">${c.rating}<small>/5</small></span><div><div data-sat-rating></div><p class="cs-sat__word">${WORDS[c.rating]}</p></div></div>
+        ${c.feedback ? `<blockquote class="cs-sat__quote"><p>「${esc(c.feedback)}」</p><footer>${esc(c.caller.name)} · 由 ${esc(e ? e.actor : cbWho)} 回訪記錄</footer></blockquote>` : ''}`;
+    } else if (c.status === 'closed') {
+      sub = `已結案 · ${fmt.dateTime(c.closedAt)}`;
+      main = `<div class="cs-sat__wait">${App.shape.svg('cookie12')}<b>民眾未要求回訪</b><p>${esc(lastOf('closed')?.note || '已結案')}，本案不列入滿意度統計。</p></div>`;
+    } else if (c.status === 'replied' && c.caller.callback) {
+      sub = `待回訪 · 回覆於 ${fmt.dateTime(c.repliedAt)}`;
+      main = `<div class="cs-sat__wait">${App.shape.svg('clover8', { cls: 'anim-spin' })}<b>等待回訪民眾</b><p>民眾要求回電說明處理結果，已排入 ${cbWho} 的回訪清單。</p>
+        <button type="button" class="btn btn--coral" data-sat-act="callback">${App.icon('phone')}${c.callbackBy === 'A21' ? '改由我回訪' : '開始回訪'}</button></div>`;
+    } else if (c.status === 'replied') {
+      sub = `已回覆 · ${fmt.dateTime(c.repliedAt)}`;
+      main = `<div class="cs-sat__wait">${App.shape.svg('cookie9')}<b>民眾未要求回訪</b><p>將於 ${fmt.dateTime(c.repliedAt + 72 * HOUR)} 自動結案，也可以現在確認結案。</p>
+        <button type="button" class="btn btn--coral" data-sat-act="close">${App.icon('check')}確認結案</button></div>`;
+    } else if (c.caller.callback) {
+      sub = '回覆後由派案組回訪評分';
+      main = `<div class="cs-sat__scale"><div class="cs-sat__dots" aria-hidden="true">${[1, 2, 3, 4, 5].map(n => `<span class="cs-sat__dot">${App.shape.svg(n === 5 ? 'sunny' : 'circle')}<b>${n}</b></span>`).join('')}</div><p class="cs-sat__word">尚未回訪 · 回訪時請民眾以 1–5 分評價</p></div>
+        <div class="cs-sat__wait">${App.shape.svg('clover8')}<b>回覆後進行電話回訪</b><p>${esc(c.caller.name)}要求回電說明處理結果，回覆後會排入回訪清單。</p></div>`;
+    } else {
+      sub = '民眾未要求回訪';
+      main = `<div class="cs-sat__wait">${App.shape.svg('cookie9')}<b>回覆後 72 小時自動結案</b><p>${esc(c.caller.name)}選擇以簡訊接收結果，本案不進行滿意度回訪，也不列入統計。</p></div>`;
+    }
+    // 同類案件的近期民眾回饋：讓承辦與督導知道這類案子民眾在意什麼
+    const voices = DATA.cases.filter(x => x.cat === c.cat && x.feedback && x.id !== c.id).sort((a, b) => b.closedAt - a.closedAt).slice(0, c.status === 'closed' && c.rating ? 1 : 2);
+    const voiceHTML = voices.length ? `<div class="cs-voices"><p class="cs-voices__label">${cat.name} · 近期民眾回饋</p>${voices.map(x => `<div class="cs-voice">${App.shape.svg(x.rating >= 4 ? 'sunny' : 'circle')}<p>「${esc(x.feedback)}」</p><small>${x.rating} 分 · ${x.district} ${esc(x.caller.name)} · <a href="case.html?id=${x.id}">${x.id}</a></small></div>`).join('')}</div>` : '';
+    $('[data-sat-sub]').textContent = sub;
+    $('[data-sat]').innerHTML = main + voiceHTML + bench;
+    const r = $('[data-sat-rating]');
+    if (r) App.rating(r, { value: c.rating || 0, readonly: true, label: '本案滿意度' });
+  }
+  $('[data-sat]').addEventListener('click', e => {
+    const b = e.target.closest('[data-sat-act]');
+    if (!b) return;
+    if (b.dataset.satAct === 'callback') ACT.callback();
+    else ACT.close();
+  });
+
+  /* ===================================================================
+     初始化與同步
+     =================================================================== */
+  function paintAll() {
+    paintHead();
+    paintHero();
+    paintSla();
+    paintRoute();
+    paintLog();
+    paintReply();
+    paintSat();
+    paintSimilar();
+  }
+  buildStory();
+  buildMap();
+  applyTemplate('done');
+  paintAll();
+  App.hydrate($('#main'));
+  App.watchAnim($('#main'));
+  // 首屏以下的區塊才做捲動進場（內容畫好後再標記，位置判斷才準）
+  $$('.cs-cols .panel, .cs-bottom .panel').forEach((p, i) => { p.setAttribute('data-reveal', ''); p.style.setProperty('--i', String(i % 2)); });
+  App.reveal($('#main'));
+
+  // 任何資料異動（含復原、其他頁面元件觸發的派案/回訪）都走同一套重繪
+  App.on('change', paintAll);
+  // 「現在」持續往前走：倒數、耗時文字每 30 秒更新
+  setInterval(() => {
+    if (document.hidden) return;
+    paintHero();
+    paintSla();
+    paintRoute();
+  }, 30000);
+});
+</script>
+</body>
+</html>

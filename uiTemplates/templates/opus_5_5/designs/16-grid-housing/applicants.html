@@ -1,0 +1,1718 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>申請人資料表 — 澄港社宅申請與抽籤管理</title>
+<meta name="description" content="審查二組工作清單：72 位申請人的 Grid / Kanban / Gallery 檢視，支援排序、篩選、群組、隱藏欄位、inline 編輯、多選批次與拖放變更資格狀態。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.add('js');</script>
+<script src="app.js" defer></script>
+<style>
+  /* 工具列高度；實際值由頁面程式依 .viewbar 高度即時更新（手機會折成兩列） */
+  :root { --sticky-top: 49px; }
+
+  /* ---------- 檢視頁首 ---------- */
+  .ag-top { display: grid; gap: 16px; padding: 22px var(--gutter) 18px; }
+  .ag-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 32px; flex-wrap: wrap; }
+  .ag-head__main { display: grid; gap: 6px; min-width: 0; }
+  .ag-title { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
+  .ag-title__icon { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 9px; background: var(--primary-600); color: #fff; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .12); }
+  .ag-title__icon .i { width: 18px; height: 18px; }
+  .ag-title__count { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); background: var(--bg-muted); color: var(--text-2); font-size: var(--fs-13); font-weight: 600; letter-spacing: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ag-title__count small { font-size: var(--fs-12); color: var(--text-3); font-weight: 500; }
+  .ag-desc { color: var(--text-2); max-width: 80ch; }
+  .ag-head__aside { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .ag-team { display: flex; align-items: center; gap: 10px; font-size: var(--fs-12); color: var(--text-3); }
+  .ag-team__stack { display: flex; }
+  .ag-team__stack .avatar { box-shadow: 0 0 0 2px var(--bg); }
+  .ag-team__stack .avatar + .avatar { margin-left: -7px; }
+  .ag-team b { display: block; color: var(--text); font-size: var(--fs-13); font-weight: 600; }
+
+  /* ---------- 72 格狀態帶（招牌：每格一位申請人，換狀態時格子滑到新色段） ---------- */
+  .ag-ribbon {
+    display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px;
+    padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-lg);
+    background: linear-gradient(180deg, var(--bg-subtle), var(--bg) 70%); box-shadow: var(--sh-xs);
+  }
+  .ag-ribbon__main { min-width: 0; }
+  .ag-ribbon__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: var(--fs-13); font-weight: 700; }
+  .ag-ribbon__head small { font-weight: 500; color: var(--text-3); font-size: var(--fs-12); }
+  .ag-cells { display: flex; gap: 2px; }
+  .ag-cell {
+    position: relative; flex: 1 1 0; min-width: 0; height: 34px; padding: 0;
+    border: 0; border-radius: 3px; background: var(--t2);
+    box-shadow: inset 0 -2px 0 rgba(16, 24, 40, .09);
+    transition: background-color 420ms var(--ease-out), opacity 360ms var(--ease-out) calc(var(--k, 0) * 4ms), transform var(--dur-2) var(--ease-out);
+  }
+  .ag-cell.is-break { margin-left: 8px; }
+  .ag-cell:hover, .ag-cell.is-peek { transform: translateY(-3px); }
+  .ag-cell:focus-visible { outline-offset: 2px; border-radius: 3px; }
+  .ag-cell.is-out { opacity: .18; }
+  .ag-cell.is-sel { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--primary); }
+  .ag-cell.is-flag::after { content: ""; position: absolute; top: 5px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--tink); opacity: .7; }
+  .ag-cell.is-ring { animation: ag-ring 1s var(--ease-out); }
+  @keyframes ag-ring { from { box-shadow: 0 0 0 0 var(--t3); } to { box-shadow: 0 0 0 9px rgba(255, 255, 255, 0); } }
+  .ag-cells.is-intro .ag-cell { animation: ag-cell-in 560ms var(--ease-spring) both; animation-delay: calc(var(--k) * 9ms); }
+  @keyframes ag-cell-in { from { opacity: 0; transform: translateY(10px) scaleY(.2); } }
+  .ag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .ag-peek { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px; margin-top: 10px; font-size: var(--fs-12); color: var(--text-3); }
+  .ag-peek .i { width: 14px; height: 14px; flex: none; }
+  .ag-peek__hint { flex: 1 1 200px; }
+  .ag-peek b { color: var(--text); font-weight: 600; font-size: var(--fs-13); }
+  .ag-sum { display: grid; gap: 10px; align-content: start; padding-left: 24px; border-left: 1px solid var(--line-soft); }
+  .ag-sum__label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); font-weight: 600; color: var(--text-2); }
+  .ag-sum__big { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ag-sum__big small { margin-left: 4px; font-size: var(--fs-14); font-weight: 500; letter-spacing: 0; color: var(--text-3); }
+  .ag-sum .meter { height: 8px; }
+  .ag-sum__note { font-size: var(--fs-12); color: var(--text-3); line-height: 1.55; }
+  .ag-sum__note b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ag-sum__note .is-warn { color: var(--c-orange-ink); }
+
+  /* ---------- 工具列 ---------- */
+  .ag-vsep { width: 1px; height: 20px; margin: 0 6px; background: var(--line); flex: none; }
+  .viewbar__search { position: relative; }
+  .viewbar__search .input { padding-right: 34px; }
+  .viewbar__search .kbd { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); height: 20px; min-width: 20px; pointer-events: none; }
+  .viewbar__search .input:focus ~ .kbd, .viewbar__search .input:not(:placeholder-shown) ~ .kbd { opacity: 0; }
+
+  /* ---------- 主體：左側檢視清單 + 資料區 ---------- */
+  .ag-body { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; }
+  .ag-side { padding: 16px 8px 24px var(--gutter); }
+  .ag-side__title { padding: 0 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--text-3); }
+  .viewlist__item .i { color: var(--text-3); }
+  .viewlist__item[aria-current="true"] .i { color: var(--primary); }
+  .viewlist__item .badge { transition: background var(--dur-2); }
+  .viewlist__item[aria-current="true"] .badge { background: var(--primary-100); color: var(--primary-700); }
+  .ag-side__card { display: grid; gap: 8px; margin: 18px 4px 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-subtle); font-size: var(--fs-12); color: var(--text-2); }
+  .ag-side__card h2 { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); font-weight: 700; color: var(--text); }
+  .ag-side__card h2 .i { width: 14px; height: 14px; color: var(--text-3); }
+  .ag-keys { display: grid; gap: 6px; }
+  .ag-keys div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ag-keys dt { display: flex; gap: 3px; }
+  .ag-keys .kbd { height: 20px; min-width: 20px; font-size: 10.5px; padding: 0 5px; }
+  .ag-src { display: grid; gap: 4px; color: var(--text-3); line-height: 1.5; }
+  .ag-main { min-width: 0; padding: 14px var(--gutter) 0 12px; }
+  .ag-result { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; margin-bottom: 10px; font-size: var(--fs-12); color: var(--text-3); }
+  .ag-result b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ag-result .pill { font-weight: 600; }
+  .ag-result .link { font-size: var(--fs-12); border: 0; background: none; padding: 0; }
+
+  /* ---------- Grid ---------- */
+  #ag-table { --frozen-1: 56px; }
+  .dg td:focus-visible { outline: none; }
+  .dg td.dg__rownum { cursor: pointer; }
+  .dg td.dg__rownum.is-active .cb { display: inline-grid; }
+  .dg td.dg__rownum.is-active .dg__num { display: none; }
+  .dg td.is-editing { position: relative; }
+  .dg__editor.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(214, 32, 75, .16); }
+  .ag-pri { display: grid; gap: 2px; min-width: 0; }
+  .ag-pri__sub, .ag-pri__note { display: none; font-size: var(--fs-12); color: var(--text-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+  .dg[data-row-height="medium"] .ag-pri__sub, .dg[data-row-height="tall"] .ag-pri__sub, .dg[data-row-height="tall"] .ag-pri__note { display: block; }
+  .ag-mono { font-family: var(--font-mono); font-size: 12.5px; }
+  mark.ag-hl { background: var(--c-yellow-1); color: inherit; border-radius: 2px; box-shadow: 0 0 0 1px var(--c-yellow-2); }
+  .ag-docs { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+  .ag-doc { display: inline-grid; place-items: center; width: 20px; height: 22px; border-radius: 4px; background: var(--t1); color: var(--tink); }
+  .ag-doc .i { width: 13px; height: 13px; }
+  .ag-docs__txt { margin-left: 4px; font-size: var(--fs-12); color: var(--text-2); }
+  .ag-score { display: inline-flex; align-items: center; gap: 6px; }
+  .ag-score i { display: inline-block; width: 26px; height: 4px; border-radius: 2px; background: var(--bg-muted); overflow: hidden; }
+  .ag-score i::after { content: ""; display: block; height: 100%; width: var(--w); border-radius: inherit; background: var(--c-green-3); }
+  .ag-gsum { display: flex; align-items: center; gap: 14px; font-size: var(--fs-12); color: var(--text-3); }
+  .ag-gsum b { color: var(--text-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dg tr.dg__group td.is-frozen { background: var(--bg-subtle); }
+  .ag-fmeter { width: 100%; height: 6px; }
+  .dg__summary.ag-sl { justify-content: flex-start; }
+  .dg__summary.ag-sc { justify-content: center; }
+  .dg tbody tr { transform-origin: 50% 0; }
+
+  /* ---------- Kanban ---------- */
+  .ag-board.kanban { padding: 0 0 14px; }
+  .ag-board .kanban__col { flex: 1 0 224px; }
+  .ag-board .kanban__head { flex-wrap: wrap; row-gap: 2px; }
+  .ag-board .kanban__desc { flex-basis: 100%; font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
+  .ag-board .kanban__col { border-top: 3px solid var(--t2); }
+  .ag-board .kcard { touch-action: auto; }
+  .ag-board .kcard:focus-visible { outline-offset: 1px; border-radius: var(--r-lg); }
+  .ag-kpills { display: flex; gap: 4px; flex-wrap: wrap; }
+  .ag-kfoot { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line-soft); }
+  .ag-kfoot .ag-docs__txt { margin-left: 0; color: var(--text-3); }
+  .ag-grip { margin: -4px -6px -4px auto; cursor: grab; touch-action: none; color: var(--text-3); }
+  .kanban__empty { display: grid; place-items: center; min-height: 72px; border: 1.5px dashed var(--line); border-radius: var(--r-lg); font-size: var(--fs-12); color: var(--text-3); }
+  .kanban__col.is-over .kanban__empty { display: none; }
+
+  /* ---------- Gallery ---------- */
+  .ag-gcard { padding: 0; text-align: left; color: inherit; cursor: pointer; }
+  /* 封面鋪一層方格紙：和資料格同一套格線語彙，平面圖縮到上下標籤之間不互相壓住 */
+  .ag-gcard .gcard__cover {
+    background-image: linear-gradient(to right, rgba(16, 24, 40, .05) 1px, transparent 1px), linear-gradient(to bottom, rgba(16, 24, 40, .05) 1px, transparent 1px);
+    background-size: 12px 12px; background-position: -1px -1px;
+  }
+  .ag-gcard .gcard__cover .floorplan { width: auto; height: 56%; margin-top: 2px; transition: transform var(--dur-3) var(--ease-out); }
+  .ag-gcard:hover .gcard__cover .floorplan { transform: scale(1.05); }
+  .ag-gcard__tag { position: absolute; top: 10px; left: 10px; }
+  .ag-gcard__unit { position: absolute; right: 10px; bottom: 8px; font-size: 11.5px; font-weight: 600; color: var(--tink); }
+  .ag-gcard .gcard__title { justify-content: space-between; }
+  .ag-gcard__id { display: block; margin-top: -6px; font-size: var(--fs-12); color: var(--text-3); }
+  .ag-gcard .kcard__field > b { font-size: var(--fs-12); }
+
+  body.ag-dragging, body.ag-dragging * { cursor: grabbing !important; }
+  .ag-empty { padding: 24px 0 8px; border: 1px dashed var(--line); border-radius: var(--r-lg); }
+
+  /* ---------- 篩選面板 ---------- */
+  .ag-pop {
+    position: fixed; z-index: 1000; display: grid; gap: 10px;
+    width: min(580px, calc(100vw - 16px)); padding: 12px;
+    border-radius: 10px; background: var(--bg); box-shadow: var(--sh-pop);
+    animation: menu-in 160ms var(--ease-out);
+  }
+  .ag-pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-12); font-weight: 700; color: var(--text-3); }
+  .ag-pop__list { display: grid; gap: 8px; }
+  .ag-pop .select, .ag-pop .input { height: 30px; font-size: var(--fs-12); }
+  .ag-pop__empty { padding: 4px 2px; font-size: var(--fs-13); color: var(--text-3); }
+  .ag-pop__foot { display: flex; align-items: center; gap: 8px; }
+
+  /* ---------- 批次操作列 ---------- */
+  .ag-selbar {
+    position: fixed; z-index: 900; left: 50%; bottom: 20px;
+    display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 32px);
+    padding: 6px 6px 6px 8px; border-radius: 12px; background: var(--bg);
+    box-shadow: var(--sh-pop);
+    opacity: 0; visibility: hidden; transform: translate(-50%, 18px);
+    transition: opacity var(--dur-2), transform var(--dur-3) var(--ease-spring), visibility 0s linear var(--dur-3);
+  }
+  .ag-selbar.is-open { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity var(--dur-2), transform var(--dur-3) var(--ease-spring), visibility 0s; }
+  .ag-selbar__count { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 4px; margin-right: 4px; border-right: 1px solid var(--line-soft); font-size: var(--fs-13); font-weight: 600; white-space: nowrap; }
+  .ag-selbar__count b { display: inline-grid; place-items: center; min-width: 24px; height: 24px; padding: 0 7px; border-radius: var(--r-pill); background: var(--primary-600); color: #fff; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+  .ag-selbar__more { font-size: 11px; font-weight: 500; color: var(--text-3); }
+  body.ag-has-sel .toasts { bottom: 86px; }
+
+  /* ---------- 展開紀錄 ---------- */
+  .ag-rec { display: grid; gap: 22px; }
+  .ag-rec__bar { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-subtle); font-size: var(--fs-13); }
+  .ag-rec__bar .dg__edit-btn { width: auto; height: 30px; margin: 0; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
+  .ag-rec__bar .dg__edit-btn > .i { opacity: 1; }
+  .ag-rec__meta { color: var(--text-3); font-size: var(--fs-12); }
+  .ag-rec__meta b { color: var(--text); font-weight: 600; }
+  .ag-rec__flag { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--fs-12); font-weight: 600; color: var(--text-2); }
+  .ag-rec .fields { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .ag-rec .doc-row { grid-template-columns: 34px minmax(0, 1fr) auto auto; }
+  .ag-rec__doc { min-width: 0; }
+  .ag-rec__note { padding: 10px 12px; border-left: 3px solid var(--c-yellow-3); border-radius: 0 var(--r-md) var(--r-md) 0; background: #FFFBEF; color: var(--text-2); font-size: var(--fs-13); }
+  .ag-rec__pos { font-variant-numeric: tabular-nums; }
+
+  /* ---------- 響應式 ---------- */
+  @media (max-width: 1180px) {
+    .ag-ribbon { grid-template-columns: 1fr; gap: 16px; }
+    .ag-sum { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--line-soft); grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 20px; }
+    .ag-sum .meter, .ag-sum__note { grid-column: 2; }
+    .ag-sum__label, .ag-sum__big { grid-column: 1; }
+    .ag-body { grid-template-columns: 200px minmax(0, 1fr); }
+  }
+  @media (max-width: 960px) {
+    /* 1fr 的最小值是內容寬，橫向捲動的檢視清單會把整欄撐破，所以要 minmax(0, 1fr) */
+    .ag-body { grid-template-columns: minmax(0, 1fr); }
+    .ag-side { position: static; padding: 12px var(--gutter) 0; }
+    .ag-side__title, .ag-side__card { display: none; }
+    .ag-side .viewlist { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+    .ag-side .viewlist::-webkit-scrollbar { display: none; }
+    .ag-side .viewlist__item { width: auto; flex: none; border: 1px solid var(--line); border-radius: var(--r-pill); height: 32px; }
+    .ag-side .viewlist__item .badge { margin-left: 2px; }
+    .ag-main { padding: 12px var(--gutter) 0; }
+  }
+  @media (max-width: 760px) {
+    .ag-top { padding: 18px var(--gutter) 14px; gap: 14px; }
+    .ag-title { font-size: 22px; gap: 10px; flex-wrap: wrap; }
+    .ag-title__icon { width: 30px; height: 30px; }
+    .ag-head__aside { width: 100%; justify-content: space-between; }
+    .ag-ribbon { padding: 14px; }
+    .ag-ribbon__head { flex-wrap: wrap; row-gap: 2px; }
+    .ag-ribbon__head small { flex-basis: 100%; }
+    .ag-cells { display: grid; grid-template-columns: repeat(18, minmax(0, 1fr)); gap: 3px; }
+    .ag-cell { height: 22px; }
+    .ag-cell.is-break { margin-left: 0; }
+    .ag-sum { grid-template-columns: 1fr; }
+    .ag-sum .meter, .ag-sum__note, .ag-sum__label, .ag-sum__big { grid-column: 1; }
+    .ag-tlabel { display: none; }
+    .ag-vsep { display: none; }
+    .view-switch > button { padding: 0 9px; }
+    .tool-btn { padding: 0 7px; }
+    #ag-table col.ag-col-name { width: 132px !important; }
+    .ag-board .kanban__col { flex: 0 0 264px; }
+    .ag-selbar { left: 16px; right: 16px; bottom: 12px; transform: translateY(18px); overflow-x: auto; scrollbar-width: none; }
+    .ag-selbar.is-open { transform: none; }
+    .ag-selbar { justify-content: space-between; }
+    .ag-selbar__count .ag-tlabel { display: inline; }
+    .ag-selbar__more { display: none; }
+    body.ag-has-sel .toasts { bottom: 76px; }
+    /* 手機圖庫改成橫式卡：一張卡一個螢幕高太浪費，平面圖縮成左側縮圖 */
+    .ag-gcard { display: grid; grid-template-columns: 108px minmax(0, 1fr); }
+    .ag-gcard .gcard__cover { aspect-ratio: auto; min-height: 100%; padding: 34px 6px 28px; }
+    .ag-gcard .gcard__cover .floorplan { width: 100%; height: auto; margin: 0; }
+    .ag-gcard__tag { top: 8px; left: 8px; }
+    .ag-gcard__unit { right: auto; left: 8px; bottom: 8px; }
+    .ag-gcard__fit { display: none; }
+    .ag-gcard .gcard__body { gap: 8px; padding: 10px 12px 12px; }
+    .ag-rec__flag { margin-left: 0; }
+    .ag-rec .doc-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+    .ag-rec .doc-row > .btn { grid-column: 2 / -1; justify-self: start; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳至主要內容</a>
+
+<header class="appbar">
+  <div class="appbar__bar">
+    <a class="appbar__back" href="../../index.html">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>
+      <span class="appbar__back-text">返回目錄</span>
+    </a>
+    <span class="appbar__divider" aria-hidden="true"></span>
+    <a class="base" href="index.html">
+      <span class="base__mark" aria-hidden="true">
+        <svg viewBox="0 0 28 28" width="28" height="28"><rect width="28" height="28" rx="7" fill="#fff"/><path d="M5.5 12.5L14 5.5l8.5 7" fill="none" stroke="#1B65D9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="7.5" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#FCB400"/><rect x="14.9" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#F82B60"/><rect x="7.5" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#18BFFF"/><rect x="14.9" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#20C933"/></svg>
+      </span>
+      <span class="base__text">
+        <span class="base__name">港埕青年社宅 · 2026 第 2 期招租</span>
+        <span class="base__org">澄港市住宅發展處｜社宅申請與抽籤管理系統</span>
+      </span>
+    </a>
+    <div class="appbar__actions">
+      <span class="appbar__sync">10/22（四）<span data-clock>10:30</span></span>
+      <button class="appbar__icon" type="button" data-action="help" aria-label="系統說明" data-tip="系統說明" data-tip-pos="bottom">
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM6.2 6.3a1.9 1.9 0 1 1 2.6 1.7c-.5.2-.8.6-.8 1.1v.4"/><circle cx="8" cy="11.6" r="1.1" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="appbar__icon" type="button" data-action="notify" aria-label="通知（4 則未讀）">
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V7a4 4 0 1 1 8 0v4l1 1.5H3zM6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+        <span class="appbar__dot"></span>
+      </button>
+      <span class="appbar__user"><span class="avatar avatar--sm" style="--h:214" aria-hidden="true">林</span><span class="appbar__user-name">林佩璇</span></span>
+      <button class="appbar__menu" type="button" data-nav-toggle aria-controls="site-nav" aria-expanded="false">
+        <span class="sr-only">切換資料表，目前：</span><span data-nav-current>申請人資料表</span>
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+    </div>
+  </div>
+  <nav class="tablebar" id="site-nav" aria-label="資料表">
+    <a class="tablebar__tab" href="index.html" data-label="總覽">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h4.5v4.5H2.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5H2.5zM9 9h4.5v4.5H9z"/></svg>總覽
+    </a>
+    <a class="tablebar__tab" href="applicants.html" data-label="申請人資料表" aria-current="page">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h11v11h-11zM2.5 6.2h11M2.5 9.8h11M6.2 2.5v11"/></svg>申請人資料表
+      <span class="tablebar__count" data-stat="pending">296</span><span class="sr-only">件待處理</span>
+    </a>
+    <a class="tablebar__tab" href="applicant.html" data-label="申請人詳情">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5h12v9H2zM4.4 10c.3-1 1-1.5 1.9-1.5s1.6.5 1.9 1.5M6.3 7.3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM9.8 6h2.7M9.8 8.5h2"/></svg>申請人詳情
+    </a>
+    <a class="tablebar__tab" href="lottery.html" data-label="公開抽籤">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5h12v2.2a1.5 1.5 0 0 0 0 2.6v2.2H2V9.3a1.5 1.5 0 0 0 0-2.6zM10 4.5v7"/></svg>公開抽籤
+      <span class="tablebar__chip">10/30</span>
+    </a>
+  </nav>
+</header>
+
+
+<main id="main" class="page page--full">
+  <section class="ag-top" aria-labelledby="ag-view-name">
+    <div class="ag-head">
+      <div class="ag-head__main">
+        <p class="eyebrow"><span data-icon="grid"></span>申請人資料表 · 審查二組 · 資格確認期 10/19–10/28</p>
+        <h1 class="ag-title">
+          <span class="ag-title__icon" id="ag-view-icon" aria-hidden="true"><span data-icon="grid"></span></span>
+          <span id="ag-view-name">二組工作清單</span>
+          <span class="ag-title__count"><span id="ag-total">72</span> 筆<small>（全期 <span data-stat="total">3,186</span>）</small></span>
+        </h1>
+        <p class="ag-desc" id="ag-view-desc">林佩璇組長與三位審查員負責的 72 件申請，依資格狀態群組；10/28 公告合格名冊前須清空待處理案件。</p>
+      </div>
+      <div class="ag-head__aside">
+        <div class="ag-team">
+          <span class="ag-team__stack" id="ag-team"></span>
+          <span><b>審查二組 · 4 人</b>共用此資料表</span>
+        </div>
+        <button class="btn" type="button" id="ag-export"><span data-icon="download"></span>匯出 CSV</button>
+      </div>
+    </div>
+
+    <div class="ag-ribbon" data-reveal>
+      <div class="ag-ribbon__main">
+        <h2 class="ag-ribbon__head"><span data-field-icon="select"></span>72 格狀態帶 <small>每一格是一位申請人，依資格狀態排列；點選格子展開紀錄</small></h2>
+        <div class="ag-cells" id="ag-cells" role="group" aria-label="72 位申請人，依資格狀態排列"></div>
+        <div class="ag-chips" id="ag-chips" role="group" aria-label="快速篩選資格狀態"></div>
+        <p class="ag-peek" id="ag-peek" aria-live="polite"></p>
+      </div>
+      <aside class="ag-sum" aria-label="審查進度">
+        <p class="ag-sum__label"><span data-field-icon="formula"></span>二組審查完成</p>
+        <p class="ag-sum__big"><span id="ag-done">45</span><small>/ 72 件</small></p>
+        <div class="meter" id="ag-done-meter" role="img" aria-label="審查完成比例"></div>
+        <p class="ag-sum__note" id="ag-sum-note"></p>
+      </aside>
+    </div>
+  </section>
+
+  <div class="viewbar" id="ag-viewbar">
+    <div class="view-switch" id="ag-vswitch" role="group" aria-label="檢視類型">
+      <button type="button" data-view="grid" aria-pressed="true"><span data-icon="grid"></span><span class="ag-tlabel">Grid</span><span class="sr-only">資料格</span></button>
+      <button type="button" data-view="kanban" aria-pressed="false"><span data-icon="kanban"></span><span class="ag-tlabel">Kanban</span><span class="sr-only">看板</span></button>
+      <button type="button" data-view="gallery" aria-pressed="false"><span data-icon="gallery"></span><span class="ag-tlabel">Gallery</span><span class="sr-only">圖庫</span></button>
+    </div>
+    <span class="ag-vsep" aria-hidden="true"></span>
+    <div class="viewbar__tools" id="ag-tools">
+      <button type="button" class="tool-btn tone-blue" id="tb-hide" aria-expanded="false"><span data-icon="eye-off"></span><span class="ag-tlabel">隱藏欄位</span><span class="tool-btn__count" hidden></span></button>
+      <button type="button" class="tool-btn tone-green" id="tb-filter" aria-expanded="false" aria-haspopup="dialog"><span data-icon="filter"></span><span class="ag-tlabel">篩選</span><span class="tool-btn__count" hidden></span></button>
+      <button type="button" class="tool-btn tone-purple" id="tb-group" aria-expanded="false"><span data-icon="group"></span><span class="ag-tlabel">群組</span></button>
+      <button type="button" class="tool-btn tone-orange" id="tb-sort" aria-expanded="false"><span data-icon="sort"></span><span class="ag-tlabel">排序</span></button>
+      <button type="button" class="tool-btn" id="tb-height" aria-expanded="false" aria-label="列高"><span data-icon="row-height"></span><span class="ag-tlabel">列高</span></button>
+    </div>
+    <span class="spacer"></span>
+    <label class="search viewbar__search">
+      <span class="search__icon"><span data-icon="search"></span></span>
+      <input class="input" id="ag-q" type="search" data-search placeholder="搜尋姓名、編號、承辦、備註" aria-label="搜尋申請人" autocomplete="off">
+      <kbd class="kbd" aria-hidden="true">/</kbd>
+    </label>
+  </div>
+
+  <div class="ag-body">
+    <aside class="ag-side sidepanel" aria-label="檢視清單">
+      <p class="ag-side__title">檢視</p>
+      <nav class="viewlist" id="ag-views" aria-label="已儲存的檢視"></nav>
+      <section class="ag-side__card" aria-labelledby="ag-keys-title">
+        <h2 id="ag-keys-title"><span data-icon="settings"></span>鍵盤操作</h2>
+        <dl class="ag-keys">
+          <div><dt><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><kbd class="kbd">←</kbd><kbd class="kbd">→</kbd></dt><dd>移動儲存格</dd></div>
+          <div><dt><kbd class="kbd">Enter</kbd></dt><dd>編輯儲存格</dd></div>
+          <div><dt><kbd class="kbd">Space</kbd></dt><dd>展開紀錄</dd></div>
+          <div><dt><kbd class="kbd">/</kbd></dt><dd>搜尋</dd></div>
+          <div><dt><kbd class="kbd">Esc</kbd></dt><dd>取消／清除選取</dd></div>
+        </dl>
+      </section>
+      <section class="ag-side__card" aria-labelledby="ag-src-title">
+        <h2 id="ag-src-title"><span data-icon="refresh"></span>資料介接</h2>
+        <div class="ag-src" id="ag-src"></div>
+      </section>
+    </aside>
+
+    <section class="ag-main" aria-label="申請人資料">
+      <div class="ag-result" id="ag-result" aria-live="polite"></div>
+
+      <div class="dg-wrap" id="ag-gridwrap">
+        <table class="dg" id="ag-table" data-row-height="short">
+          <caption class="sr-only">審查二組申請人資料表</caption>
+          <colgroup id="ag-cols"></colgroup>
+          <thead><tr id="ag-headrow"></tr></thead>
+          <tbody id="ag-tbody"></tbody>
+          <tfoot><tr id="ag-footrow"></tr></tfoot>
+        </table>
+      </div>
+      <div class="kanban ag-board" id="ag-board" hidden></div>
+      <div class="gallery" id="ag-gallery" hidden></div>
+      <div class="ag-empty" id="ag-empty" hidden></div>
+    </section>
+  </div>
+
+  <div class="ag-selbar" id="ag-selbar" role="region" aria-label="批次操作">
+    <span class="ag-selbar__count"><b id="ag-selcount">0</b><span class="ag-tlabel">筆已選取</span><span class="ag-selbar__more" id="ag-selmore"></span></span>
+    <button type="button" class="btn btn--ghost btn--sm" data-batch="status" aria-label="批次變更資格狀態"><span data-icon="check-circle"></span><span class="ag-tlabel">變更狀態</span></button>
+    <button type="button" class="btn btn--ghost btn--sm" data-batch="reviewer" aria-label="批次指派承辦"><span data-icon="user"></span><span class="ag-tlabel">指派承辦</span></button>
+    <button type="button" class="btn btn--ghost btn--sm" data-batch="flag" aria-label="批次設定主管複核"><span data-icon="flag"></span><span class="ag-tlabel">主管複核</span></button>
+    <button type="button" class="btn btn--ghost btn--sm" data-batch="export" aria-label="匯出所選 CSV"><span data-icon="download"></span><span class="ag-tlabel">匯出所選</span></button>
+    <button type="button" class="icon-btn" data-batch="clear" aria-label="取消選取"><span data-icon="x"></span></button>
+  </div>
+</main>
+
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <svg viewBox="0 0 28 28" width="24" height="24" aria-hidden="true"><rect width="28" height="28" rx="7" fill="#1B65D9"/><path d="M5.5 12.5L14 5.5l8.5 7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="7.5" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#FCB400"/><rect x="14.9" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#F82B60"/><rect x="7.5" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#18BFFF"/><rect x="14.9" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#20C933"/></svg>
+      <div><strong>澄港市住宅發展處 社會住宅科</strong><span>社宅申請與抽籤管理系統 v3.8.2</span></div>
+    </div>
+    <nav class="site-footer__nav" aria-label="頁尾導覽">
+      <a href="index.html">總覽</a>
+      <a href="applicants.html">申請人資料表</a>
+      <a href="applicant.html">申請人詳情</a>
+      <a href="lottery.html">公開抽籤</a>
+    </nav>
+    <p class="site-footer__meta">資料快照 2026/10/22 10:30 · 個資依《澄港市社會住宅申請個人資料保護作業要點》處理<br><a href="../../index.html">← 返回作品目錄</a></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, STATUS, STATUS_ORDER, GROUPS, GROUP_ORDER, UNITS, UNIT_ORDER, SUBTYPES, CHECKS, CHECK_ORDER, CHECK_RESULT, DOCS, DOC_STATE, BUILDING_PREF, DISTRICTS, DISTRICT_COLOR, FIELD_TYPE_LABEL, fmt, esc, icon, fieldIcon } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const STAFF = DATA.staff;
+  const ROWS = DATA.applicants;
+  const TOTAL = ROWS.length;
+  const TEAM = ['lin', 'hsu', 'chen', 'wang'];
+  const FIELD = Object.fromEntries(App.FIELDS.map((f) => [f.key, f]));
+  // 本檢視的欄位順序：資格狀態與自動比對是審查員最常看的兩欄，緊接在主欄位之後，不必水平捲動就看得到
+  const COLS = ['name', 'id', 'status', 'checks', 'group', 'sub', 'unit', 'hh', 'building', 'district', 'docs', 'score', 'reviewer', 'submittedAt', 'flagged', 'phone'];
+  // 招租簡章的入住人數：改戶型或家戶人數時用來擋下不合理的組合
+  const UNIT_FIT = { studio: [1, 1], one: [1, 2], two: [2, 4], three: [4, 8] };
+  const BUILDINGS = ['A', 'B', 'any'];
+  const SUB_KEYS = Object.keys(SUBTYPES);
+  const flagIcon = `<span class="flag-ic" title="需主管複核">${icon('flag')}</span>`;
+
+  /* ================= 衍生值、排序、篩選、群組 ================= */
+  const checkState = (a) => (CHECK_ORDER.some((k) => a.checks[k] === 'fail') ? 'fail' : CHECK_ORDER.some((k) => a.checks[k] === 'review') ? 'review' : 'pass');
+  const checkRank = (a) => CHECK_ORDER.reduce((n, k) => n + (a.checks[k] === 'fail' ? 10 : a.checks[k] === 'review' ? 1 : 0), 0);
+  const docCount = (a, st) => a.docs.filter((d) => d.state === st).length;
+  const score = (a) => App.scoreOf(a).total;
+  const labelOf = (a, key) => ({
+    status: () => STATUS[a.status].label, unit: () => UNITS[a.unit].label, building: () => BUILDING_PREF[a.building].label,
+    district: () => a.district, reviewer: () => STAFF[a.reviewer].name, hh: () => `${a.hh} 人`,
+  }[key] || (() => String(a[key])))();
+
+  function sortValue(a, key) {
+    switch (key) {
+      case 'status': return STATUS_ORDER.indexOf(a.status);
+      case 'group': return GROUP_ORDER.indexOf(a.group);
+      case 'unit': return UNIT_ORDER.indexOf(a.unit);
+      case 'sub': return a.sub ? SUB_KEYS.indexOf(a.sub) : 99;
+      case 'district': return DISTRICTS.indexOf(a.district);
+      case 'building': return BUILDINGS.indexOf(a.building);
+      case 'checks': return checkRank(a);
+      case 'docs': return docCount(a, 'missing') * 10 + docCount(a, 'uploaded');
+      case 'score': return score(a);
+      case 'reviewer': return STAFF[a.reviewer].name;
+      case 'flagged': return a.flagged ? 0 : 1;
+      default: return a[key];
+    }
+  }
+  // 中文姓名依筆畫排序，和公文、名冊的慣例一致
+  const collator = new Intl.Collator('zh-Hant-TW-u-co-stroke');
+  const compare = (x, y) => (typeof x === 'number' && typeof y === 'number' ? x - y : collator.compare(String(x), String(y)));
+  const SORT_HINT = { text: '筆畫少 → 多', autonumber: '編號小 → 大', number: '小 → 大', formula: '小 → 大', date: '舊 → 新', select: '依選項順序', user: '筆畫少 → 多', checkbox: '已勾選優先', attachment: '待補優先在後', phone: '號碼順序' };
+
+  const opts = (keys, label) => keys.map((k) => ({ value: k, label: label(k) }));
+  const FILTERS = {
+    status: { label: '資格狀態', options: opts(STATUS_ORDER, (k) => STATUS[k].label), get: (a) => a.status },
+    checks: { label: '自動比對', options: [{ value: 'pass', label: '三項皆符合' }, { value: 'review', label: '有待確認項目' }, { value: 'fail', label: '有不符項目' }], get: checkState },
+    group: { label: '申請組別', options: opts(GROUP_ORDER, (k) => GROUPS[k].label), get: (a) => a.group },
+    unit: { label: '申請戶型', options: opts(UNIT_ORDER, (k) => UNITS[k].label), get: (a) => a.unit },
+    district: { label: '設籍區', options: opts(DISTRICTS, (k) => k), get: (a) => a.district },
+    building: { label: '棟別意願', options: opts(BUILDINGS, (k) => BUILDING_PREF[k].label), get: (a) => a.building },
+    docs: { label: '補件', options: [{ value: 'missing', label: '有待補文件' }, { value: 'uploaded', label: '有待審文件' }, { value: 'none', label: '無須補件' }], test: (a, v) => (v === 'none' ? !a.docs.length : docCount(a, v) > 0) },
+    reviewer: { label: '承辦', options: opts(TEAM, (k) => STAFF[k].name), get: (a) => a.reviewer },
+    flagged: { label: '主管複核', options: [{ value: 'yes', label: '已勾選' }, { value: 'no', label: '未勾選' }], get: (a) => (a.flagged ? 'yes' : 'no') },
+  };
+  function matchCond(a, c) {
+    const f = FILTERS[c.field];
+    const hit = f.test ? f.test(a, c.value) : f.get(a) === c.value;
+    return c.op === 'not' ? !hit : hit;
+  }
+
+  const GROUPERS = {
+    status: { label: '資格狀態', order: STATUS_ORDER, key: (a) => a.status, text: (v) => STATUS[v].label, head: (v) => App.statusPill(v, { dot: true }) },
+    group: { label: '申請組別', order: GROUP_ORDER, key: (a) => a.group, text: (v) => GROUPS[v].label, head: (v) => App.groupPill(v) },
+    unit: { label: '申請戶型', order: UNIT_ORDER, key: (a) => a.unit, text: (v) => UNITS[v].label, head: (v) => App.unitPill(v) },
+    reviewer: { label: '承辦', order: TEAM, key: (a) => a.reviewer, text: (v) => STAFF[v].name, head: (v) => App.person(v) },
+    district: { label: '設籍區', order: DISTRICTS, key: (a) => a.district, text: (v) => v, head: (v) => App.districtPill(v) },
+  };
+
+  /* ================= 已儲存的檢視 ================= */
+  const PRESETS = [
+    { id: 'all', name: '二組工作清單', icon: 'grid', view: 'grid', group: 'status', sort: null, conds: [],
+      desc: '林佩璇組長與三位審查員負責的 72 件申請，依資格狀態群組；10/28 公告合格名冊前須清空待處理案件。' },
+    { id: 'mine', name: '我承辦的', icon: 'user', view: 'grid', group: 'status', sort: { key: 'submittedAt', dir: 1 }, conds: [{ field: 'reviewer', op: 'is', value: App.ME }],
+      desc: '林佩璇承辦的案件，依送件日期由舊到新排列。' },
+    { id: 'review', name: '待人工複核', icon: 'search', view: 'grid', group: 'status', sort: { key: 'submittedAt', dir: 1 }, conds: [{ field: 'checks', op: 'is', value: 'review' }],
+      desc: '自動比對有「待確認」項目的案件：需人工核對財稅、地政或戶政資料後才能判定資格。' },
+    { id: 'supplement', name: '待補件追蹤', icon: 'inbox', view: 'grid', group: 'reviewer', sort: { key: 'submittedAt', dir: 1 }, conds: [{ field: 'docs', op: 'is', value: 'missing' }],
+      desc: '仍有待補文件的案件，依承辦群組；補件期限 10/16 已屆，經組長同意展延者須於 10/26 前補齊。' },
+    { id: 'flagged', name: '主管複核', icon: 'flag', view: 'grid', group: '', sort: { key: 'submittedAt', dir: 1 }, conds: [{ field: 'flagged', op: 'is', value: 'yes' }],
+      desc: '承辦勾選「主管複核」的案件，由林佩璇組長於每日 16:00 前核定。' },
+    { id: 'board', name: '資格狀態看板', icon: 'kanban', view: 'kanban', group: '', sort: { key: 'submittedAt', dir: 1 }, conds: [],
+      desc: '依資格狀態分欄，拖曳卡片即可變更狀態；改為「不符資格」或略過待確認項目前會再次確認。' },
+    { id: 'gallery', name: '戶型圖庫', icon: 'gallery', view: 'gallery', group: '', sort: { key: 'unit', dir: 1 }, conds: [],
+      desc: '以申請戶型平面圖為封面，快速核對家戶人數、棟別意願與戶型是否相符。' },
+  ];
+
+  const state = {
+    preset: 'all', view: 'grid', group: 'status', sort: null, conds: [],
+    hidden: new Set(['phone']), rowHeight: 'short', q: '',
+    selected: new Set(), anchor: null, collapsed: new Set(), active: null,
+  };
+  // 目前檢視中（篩選、搜尋、排序後）的資料；顯示順序另由 displayOrder() 依群組／看板欄位排列
+  let list = [];
+  // 批次異動時每一筆都會發出 app:data，先擋下逐筆重繪，最後統一重繪一次
+  let batching = false;
+  let stickyApi = null;
+  let rec = null;
+
+  const presetOf = () => PRESETS.find((p) => p.id === state.preset);
+  const isDirty = () => {
+    const p = presetOf();
+    return p.view !== state.view || p.group !== state.group || JSON.stringify(p.sort) !== JSON.stringify(state.sort) || JSON.stringify(p.conds) !== JSON.stringify(state.conds);
+  };
+  const visibleCols = () => COLS.filter((k) => k === 'name' || !state.hidden.has(k));
+  const haystack = (a) => `${a.name} ${a.id} ${a.district} ${STAFF[a.reviewer].name} ${STATUS[a.status].label} ${a.note}`.toLowerCase();
+
+  function computeList() {
+    const q = state.q.trim().toLowerCase();
+    const out = ROWS.filter((a) => state.conds.every((c) => matchCond(a, c)) && (!q || haystack(a).includes(q)));
+    if (!state.sort) return out;
+    const { key, dir } = state.sort;
+    return out.sort((x, y) => dir * compare(sortValue(x, key), sortValue(y, key)) || x.no - y.no);
+  }
+  function sections() {
+    if (!state.group) return [{ key: null, rows: list }];
+    const g = GROUPERS[state.group];
+    return g.order.map((v) => ({ key: v, rows: list.filter((a) => g.key(a) === v) })).filter((s) => s.rows.length);
+  }
+  // 畫面上實際看到的順序（grid 依群組、看板依欄位）；上一筆／下一筆、Shift 範圍選取、匯出都照這個順序，才和使用者看到的一致
+  function displayOrder() {
+    if (state.view === 'grid') return sections().flatMap((s) => s.rows);
+    if (state.view === 'kanban') return STATUS_ORDER.flatMap((s) => list.filter((a) => a.status === s));
+    return list;
+  }
+  function hl(text) {
+    const s = String(text);
+    const q = state.q.trim();
+    const i = q ? s.toLowerCase().indexOf(q.toLowerCase()) : -1;
+    return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<mark class="ag-hl">${esc(s.slice(i, i + q.length))}</mark>${esc(s.slice(i + q.length))}`;
+  }
+
+  /* ================= 72 格狀態帶 ================= */
+  // 穩定排序：同狀態內維持資料表原順序，和「依資格狀態群組」的 grid 一格對一列
+  const ribbonOrder = () => ROWS.slice().sort((x, y) => STATUS_ORDER.indexOf(x.status) - STATUS_ORDER.indexOf(y.status));
+  const cellsBox = $('#ag-cells');
+  const cellEls = new Map(ROWS.map((a) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.id = a.id;
+    b.tabIndex = -1;
+    return [a.id, b];
+  }));
+  function renderRibbon(changed) {
+    const shown = new Set(list.map((a) => a.id));
+    const order = ribbonOrder();
+    const mutate = () => {
+      const frag = document.createDocumentFragment();
+      order.forEach((a, i) => {
+        const c = cellEls.get(a.id);
+        c.className = `ag-cell tone-${STATUS[a.status].color}${i && order[i - 1].status !== a.status ? ' is-break' : ''}${shown.has(a.id) ? '' : ' is-out'}${a.flagged ? ' is-flag' : ''}${state.selected.has(a.id) ? ' is-sel' : ''}`;
+        c.style.setProperty('--k', i);
+        c.setAttribute('aria-label', `${a.name}，${a.id}，${STATUS[a.status].label}${a.flagged ? '，需主管複核' : ''}`);
+        frag.append(c);
+      });
+      cellsBox.append(frag);
+    };
+    // 狀態變更時格子滑到新的色段（FLIP），篩選變化只調整透明度
+    if (changed && changed.length && cellsBox.children.length) App.flip(cellEls.values(), mutate, { duration: 560 });
+    else mutate();
+    if (![...cellEls.values()].some((c) => c.tabIndex === 0)) cellsBox.firstElementChild.tabIndex = 0;
+    (changed || []).forEach((id) => {
+      const c = cellEls.get(id);
+      if (!c) return;
+      c.classList.remove('is-ring');
+      void c.offsetWidth;
+      c.classList.add('is-ring');
+    });
+  }
+
+  const chipsBox = $('#ag-chips');
+  chipsBox.innerHTML = STATUS_ORDER.map((s) => `<button type="button" class="chip tone-${STATUS[s].color}" data-status="${s}" aria-pressed="false"><span class="chip__sw"></span>${STATUS[s].label}<b data-n></b><small data-p></small></button>`).join('');
+  function renderChips() {
+    const pressed = state.conds.find((c) => c.field === 'status' && c.op === 'is')?.value;
+    STATUS_ORDER.forEach((s) => {
+      const n = ROWS.filter((a) => a.status === s).length;
+      const chip = chipsBox.querySelector(`[data-status="${s}"]`);
+      chip.setAttribute('aria-pressed', String(pressed === s));
+      chip.querySelector('[data-n]').textContent = n;
+      chip.querySelector('[data-p]').textContent = Math.round((n / TOTAL) * 100) + '%';
+    });
+  }
+
+  function renderSummary() {
+    const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0]));
+    ROWS.forEach((a) => { by[a.status]++; });
+    const done = by.qualified + by.ineligible;
+    const left = fmt.daysLeft(DATA.lottery.rosterAt);
+    $('#ag-done').textContent = done;
+    const meter = $('#ag-done-meter');
+    meter.innerHTML = ['qualified', 'ineligible'].filter((s) => by[s]).map((s) => `<span class="meter__seg tone-${STATUS[s].color}" style="--w:${(by[s] / TOTAL) * 100}%"></span>`).join('');
+    meter.setAttribute('aria-label', `資格符合 ${by.qualified} 件、不符資格 ${by.ineligible} 件，共完成 ${done} / ${TOTAL} 件`);
+    $('#ag-sum-note').innerHTML = `資格符合 <b>${by.qualified}</b>、不符資格 <b>${by.ineligible}</b>。距 10/28 10:00 公告合格名冊剩 <b>${left}</b> 天，尚有 <b class="is-warn">${TOTAL - done}</b> 件待處理（初審中 ${by.screening}、待補件 ${by.supplement}、補件審查 ${by.resubmitted}）。`;
+  }
+
+  const peek = $('#ag-peek');
+  const PEEK_DEFAULT = `${icon('info')}<span class="ag-peek__hint">滑過格子查看申請人；格子上的小圓點代表已送主管複核，藍框代表目前選取。</span>`;
+  function showPeek(a) {
+    peek.innerHTML = a
+      ? `<b>${esc(a.name)}</b><span class="ag-mono">${a.id}</span>${App.statusPill(a.status, { dot: true })}${App.groupPill(a.group)}${App.unitPill(a.unit)}<span>承辦 ${esc(STAFF[a.reviewer].name)}</span>`
+      : PEEK_DEFAULT;
+  }
+
+  /* ================= 檢視清單、標題、工具列 ================= */
+  const viewsBox = $('#ag-views');
+  viewsBox.innerHTML = PRESETS.map((p) => `<button type="button" class="viewlist__item" data-preset="${p.id}">${icon(p.icon)}<span class="truncate">${esc(p.name)}</span><span class="badge" data-count></span></button>`).join('');
+  function renderViews() {
+    PRESETS.forEach((p) => {
+      const el = viewsBox.querySelector(`[data-preset="${p.id}"]`);
+      el.setAttribute('aria-current', String(p.id === state.preset));
+      el.querySelector('[data-count]').textContent = ROWS.filter((a) => p.conds.every((c) => matchCond(a, c))).length;
+    });
+  }
+  function renderHead() {
+    const p = presetOf();
+    $('#ag-view-name').textContent = p.name;
+    $('#ag-view-icon').innerHTML = icon(p.icon);
+    $('#ag-view-desc').textContent = p.desc;
+  }
+  function renderResult() {
+    const parts = [`<span>顯示 <b>${list.length}</b> / ${TOTAL} 筆</span>`];
+    if (state.q.trim()) parts.push(`<span>搜尋「${esc(state.q.trim())}」</span>`);
+    if (state.view === 'grid' && state.group) parts.push(`<span>依${GROUPERS[state.group].label}群組</span>`);
+    if (state.sort) parts.push(`<span>依${FIELD[state.sort.key].label}${state.sort.dir > 0 ? '升冪' : '降冪'}</span>`);
+    if (state.view === 'kanban') parts.push('<span>拖曳卡片即可變更資格狀態</span>');
+    $('#ag-result').innerHTML = parts.join('<span class="dot-sep" aria-hidden="true"></span>')
+      + (isDirty() ? `<span class="pill tone-yellow"><span class="pill__dot"></span>檢視已調整</span><button type="button" class="link" id="ag-reset">還原「${esc(presetOf().name)}」</button>` : '');
+  }
+  function setTool(btn, on, label, count) {
+    btn.classList.toggle('is-on', on);
+    btn.querySelector('.ag-tlabel').textContent = label;
+    const c = btn.querySelector('.tool-btn__count');
+    if (c) { c.hidden = !count; c.textContent = count || ''; }
+  }
+  function renderTools() {
+    const grid = state.view === 'grid';
+    ['#tb-hide', '#tb-group', '#tb-height'].forEach((s) => { $(s).hidden = !grid; });
+    setTool($('#tb-hide'), state.hidden.size > 0, state.hidden.size ? '已隱藏欄位' : '隱藏欄位', state.hidden.size);
+    setTool($('#tb-filter'), state.conds.length > 0, state.conds.length === 1 ? `篩選：${FILTERS[state.conds[0].field].label}` : '篩選', state.conds.length);
+    setTool($('#tb-group'), !!state.group, state.group ? `群組：${GROUPERS[state.group].label}` : '群組');
+    setTool($('#tb-sort'), !!state.sort, state.sort ? `排序：${FIELD[state.sort.key].label}` : '排序');
+    $$('#ag-vswitch [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+  }
+
+  /* ================= Grid ================= */
+  const table = $('#ag-table');
+  const tbody = $('#ag-tbody');
+  const wrap = $('#ag-gridwrap');
+  const rowEls = new Map();
+  // 表頭也用 roving tabindex：16 個欄位選單若都在 Tab 順序裡，鍵盤使用者要按十幾次才進得了資料格
+  let headKey = 'sel';
+  const LOCKED = {
+    id: '申請編號於送件時由系統自動編號，不可修改。',
+    checks: '公式欄位：每晚由財稅、地政、戶政介接資料自動比對。',
+    group: '申請組別涉及配額與名冊，須由申請人申請變更並經組長核定。',
+    sub: '弱勢身分以社會局資料為準，請於詳情頁上傳證明後由系統更新。',
+    score: '公式欄位：依弱勢身分、家戶人數等加分項自動計算。',
+    submittedAt: '送件時間由系統記錄，不可修改。',
+    phone: '聯絡電話已遮罩，完整資料須於詳情頁申請調閱。',
+  };
+
+  // 每個儲存格都可聚焦，但只有游標所在的那一格在 Tab 順序裡（roving tabindex）
+  function tdAttr(id, key, cls = '') {
+    const on = state.active && state.active.id === id && state.active.key === key;
+    return `class="${[cls, on ? 'is-active' : ''].filter(Boolean).join(' ')}" data-key="${key}" tabindex="${on ? 0 : -1}"`;
+  }
+  const editBtn = (a, key, inner) => `<button type="button" class="dg__edit-btn" data-edit tabindex="-1" aria-label="${esc(FIELD[key].label)}：${esc(labelOf(a, key))}，按下變更">${inner}${icon('chevron-down')}</button>`;
+  function docsHTML(a) {
+    if (!a.docs.length) return '';
+    const miss = docCount(a, 'missing');
+    const up = docCount(a, 'uploaded');
+    return `<span class="ag-docs">${a.docs.map((d) => `<span class="ag-doc tone-${DOC_STATE[d.state].color}" title="${esc(DOCS[d.key])}：${DOC_STATE[d.state].label}">${icon('file')}</span>`).join('')}<span class="ag-docs__txt">${miss ? `待補 ${miss}` : up ? `待審 ${up}` : '已核可'}</span></span>`;
+  }
+  function cellHTML(a, key) {
+    const id = a.id;
+    switch (key) {
+      case 'name': return `<td ${tdAttr(id, key, 'is-frozen is-frozen-2')}><div class="ag-pri"><div class="dg__primary"><span class="dg__primary-text">${hl(a.name)}</span>${a.flagged ? flagIcon : ''}<button type="button" class="dg__expand" data-expand tabindex="-1" aria-label="展開 ${esc(a.name)} 的紀錄">${icon('expand')}</button></div><span class="ag-pri__sub">${a.sex === 'F' ? '女' : '男'} · ${a.age} 歲 · ${esc(a.district)}</span><span class="ag-pri__note">${esc(a.note || '尚無承辦備註')}</span></div></td>`;
+      case 'id': return `<td ${tdAttr(id, key, 'cell-muted ag-mono')}>${hl(a.id)}</td>`;
+      case 'status': return `<td ${tdAttr(id, key)}>${editBtn(a, key, App.statusPill(a.status, { dot: true }))}</td>`;
+      case 'checks': return `<td ${tdAttr(id, key)}><span class="cell-checks">${CHECK_ORDER.map((k) => App.checkIcon(a.checks[k], CHECKS[k].label)).join('')}</span></td>`;
+      case 'group': return `<td ${tdAttr(id, key)}>${App.groupPill(a.group)}</td>`;
+      case 'sub': return `<td ${tdAttr(id, key)}>${App.subPill(a.sub)}</td>`;
+      case 'unit': return `<td ${tdAttr(id, key)}>${editBtn(a, key, App.unitPill(a.unit))}</td>`;
+      case 'hh': return `<td ${tdAttr(id, key, 'cell-num')} title="雙擊或按 Enter 編輯">${a.hh}</td>`;
+      case 'building': return `<td ${tdAttr(id, key)}>${editBtn(a, key, App.buildingPill(a.building))}</td>`;
+      case 'district': return `<td ${tdAttr(id, key)}>${editBtn(a, key, App.districtPill(a.district))}</td>`;
+      case 'docs': return `<td ${tdAttr(id, key)}>${docsHTML(a)}</td>`;
+      case 'score': { const s = score(a); return `<td ${tdAttr(id, key, 'cell-num cell-formula')}><span class="ag-score"><i style="--w:${(s / 8) * 100}%"></i>${s}</span></td>`; }
+      case 'reviewer': return `<td ${tdAttr(id, key)}>${editBtn(a, key, App.person(a.reviewer))}</td>`;
+      case 'submittedAt': return `<td ${tdAttr(id, key, 'cell-date')}>${fmt.dateFull(a.submittedAt)}</td>`;
+      case 'flagged': return `<td ${tdAttr(id, key, 'cell-check')}><input type="checkbox" class="cb" data-flag tabindex="-1" aria-label="${esc(a.name)} 需主管複核"${a.flagged ? ' checked' : ''}></td>`;
+      case 'phone': return `<td ${tdAttr(id, key, 'cell-muted ag-mono')}>${esc(a.phone)}</td>`;
+      default: throw new Error(`Unknown column: ${key}`);
+    }
+  }
+  function rowEl(a) {
+    let tr = rowEls.get(a.id);
+    if (!tr) { tr = document.createElement('tr'); tr.dataset.id = a.id; rowEls.set(a.id, tr); }
+    return tr;
+  }
+  function paintRow(tr, a, n, cols) {
+    const sel = state.selected.has(a.id);
+    tr.classList.toggle('is-selected', sel);
+    tr.innerHTML = `<td ${tdAttr(a.id, 'sel', 'dg__rownum is-frozen')}><div class="dg__rownum-inner"><span class="dg__num">${n}</span><input type="checkbox" class="cb" data-sel tabindex="-1" aria-label="選取 ${esc(a.name)}"${sel ? ' checked' : ''}></div></td>`
+      + cols.map((k) => cellHTML(a, k)).join('');
+  }
+  function renderHeadRow(cols) {
+    $('#ag-cols').innerHTML = '<col style="width:56px">' + cols.map((k) => `<col class="ag-col-${k}" style="width:${FIELD[k].width}px">`).join('');
+    if (headKey !== 'sel' && !cols.includes(headKey)) headKey = 'sel';
+    const ti = (k) => `tabindex="${k === headKey ? 0 : -1}"`;
+    $('#ag-headrow').innerHTML = `<th scope="col" class="dg__rownum is-frozen"><div class="dg__rownum-inner"><input type="checkbox" class="cb" id="ag-all" ${ti('sel')} aria-label="全選目前顯示的列"></div></th>`
+      + cols.map((k) => {
+        const f = FIELD[k];
+        const sorted = state.sort && state.sort.key === k;
+        return `<th scope="col"${k === 'name' ? ' class="is-frozen is-frozen-2"' : ''}${sorted ? ` aria-sort="${state.sort.dir > 0 ? 'ascending' : 'descending'}"` : ''}><button type="button" class="dg__th-btn" data-col="${k}" ${ti(k)} aria-label="${esc(f.label)}（${FIELD_TYPE_LABEL[f.type]}）欄位選單">${fieldIcon(f.type)}<span>${esc(f.label)}</span><span class="dg__th-menu">${icon(sorted ? 'chevron-up' : 'chevron-down')}</span></button></th>`;
+      }).join('');
+  }
+  function renderFoot(cols) {
+    const n = list.length;
+    const avg = (fn) => (n ? list.reduce((s, a) => s + fn(a), 0) / n : 0).toFixed(1);
+    const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, list.filter((a) => a.status === s).length]));
+    const sums = {
+      name: `<span class="dg__summary ag-sl"><b>${n}</b> 筆</span>`,
+      status: `<div class="meter ag-fmeter" role="img" aria-label="${STATUS_ORDER.map((s) => `${STATUS[s].label} ${by[s]}`).join('、')}">${STATUS_ORDER.filter((s) => by[s]).map((s) => `<span class="meter__seg tone-${STATUS[s].color}" style="--w:${(by[s] / n) * 100}%"></span>`).join('')}</div>`,
+      checks: `<span class="dg__summary ag-sl">待確認 <b>${list.filter((a) => checkState(a) === 'review').length}</b></span>`,
+      hh: `<span class="dg__summary">平均 <b>${avg((a) => a.hh)}</b></span>`,
+      docs: `<span class="dg__summary ag-sl">待補 <b>${list.reduce((s, a) => s + docCount(a, 'missing'), 0)}</b> 件</span>`,
+      score: `<span class="dg__summary">平均 <b>${avg(score)}</b></span>`,
+      flagged: `<span class="dg__summary ag-sc"><b>${list.filter((a) => a.flagged).length}</b> 勾選</span>`,
+    };
+    $('#ag-footrow').innerHTML = '<td class="dg__rownum is-frozen"></td>' + cols.map((k) => `<td${k === 'name' ? ' class="is-frozen is-frozen-2"' : ''}>${sums[k] || ''}</td>`).join('');
+  }
+  function groupRow(sec, cols, collapsed) {
+    const g = GROUPERS[state.group];
+    const rows = sec.rows;
+    const tr = document.createElement('tr');
+    tr.className = 'dg__group';
+    tr.dataset.group = sec.key;
+    const summary = `<span>比對待確認 <b>${rows.filter((a) => checkState(a) === 'review').length}</b></span><span>待補文件 <b>${rows.reduce((s, a) => s + docCount(a, 'missing'), 0)}</b></span><span>主管複核 <b>${rows.filter((a) => a.flagged).length}</b></span><span>平均評點 <b>${(rows.reduce((s, a) => s + score(a), 0) / rows.length).toFixed(1)}</b></span>`;
+    tr.innerHTML = `<td class="dg__rownum is-frozen"><button type="button" class="dg__group-toggle" aria-expanded="${!collapsed}" aria-label="${collapsed ? '展開' : '收合'}${esc(g.label)}「${esc(g.text(sec.key))}」群組">${icon('chevron-down')}</button></td>`
+      + `<td class="is-frozen is-frozen-2"><div class="dg__group-head">${g.head(sec.key)}<span class="badge">${rows.length}</span></div></td>`
+      + (cols.length > 1 ? `<td colspan="${cols.length - 1}"><div class="ag-gsum">${summary}</div></td>` : '');
+    return tr;
+  }
+  function flashRow(id) {
+    const tr = rowEls.get(id);
+    if (!tr || !tr.isConnected) return;
+    tr.classList.remove('is-flash');
+    void tr.offsetWidth;
+    tr.classList.add('is-flash');
+    clearTimeout(tr._flash);
+    tr._flash = setTimeout(() => tr.classList.remove('is-flash'), 1300);
+  }
+  function renderGrid(opts = {}) {
+    const cols = visibleCols();
+    const focused = document.activeElement;
+    const focusId = focused && table.contains(focused) ? focused.id || (focused.dataset.col ? `[data-col="${focused.dataset.col}"]` : '') : null;
+    table.dataset.rowHeight = state.rowHeight;
+    const ids = new Set(list.map((a) => a.id));
+    // 儲存格游標要等使用者點過或 Tab 進來才出現；游標所在列被篩掉或欄位被隱藏時就收起來
+    if (state.active && (!ids.has(state.active.id) || !['sel', ...cols].includes(state.active.key))) state.active = null;
+    const layout = () => {
+      const frag = document.createDocumentFragment();
+      let n = 0;
+      for (const sec of sections()) {
+        const collapsed = sec.key != null && state.collapsed.has(state.group + ':' + sec.key);
+        if (sec.key != null) frag.append(groupRow(sec, cols, collapsed));
+        for (const a of sec.rows) {
+          const tr = rowEl(a);
+          paintRow(tr, a, ++n, cols);
+          tr.dataset.sec = sec.key ?? '';
+          tr.hidden = collapsed;
+          frag.append(tr);
+        }
+      }
+      tbody.replaceChildren(frag);
+    };
+    // 排序、群組或資料異動時，列從舊位置滑到新位置；剛從其他檢視切回來時沒有舊位置可用，直接排版
+    if (wrap.dataset.live === '1' && (opts.flip || opts.changed)) App.flip([...tbody.rows].filter((r) => r.dataset.id && !r.hidden), layout, { duration: 380 });
+    else layout();
+    wrap.dataset.live = '1';
+    // 還沒有游標時，第一列的主欄位當作 Tab 進入資料格的入口（roving tabindex 至少要有一格可聚焦）
+    if (!state.active) { const entry = navRows()[0]?.querySelector('td[data-key="name"]'); if (entry) entry.tabIndex = 0; }
+    renderHeadRow(cols);
+    renderFoot(cols);
+    syncSelectAll();
+    (opts.changed || []).forEach(flashRow);
+    if (opts.intro && App.motionOK()) {
+      [...tbody.rows].filter((r) => !r.hidden).slice(0, 18).forEach((r, i) => r.animate(
+        [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 360, delay: i * 22, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+    }
+    if (focusId) {
+      const back = focusId.startsWith('[') ? $(`#ag-headrow ${focusId}`) : document.getElementById(focusId);
+      if (back) back.focus({ preventScroll: true }); else focusActive();
+    } else if (focusId === '') focusActive();
+    stickyApi?.update();
+  }
+
+  /* ---------- 儲存格游標與鍵盤 ---------- */
+  const navRows = () => [...tbody.rows].filter((r) => r.dataset.id && !r.hidden);
+  const navCols = () => ['sel', ...visibleCols()];
+  const cellOf = (id, key) => rowEls.get(id)?.querySelector(`td[data-key="${key}"]`);
+  function setActive(id, key, { focus = false, reveal = false } = {}) {
+    tbody.querySelectorAll('td.is-active').forEach((td) => { td.classList.remove('is-active'); td.tabIndex = -1; });
+    state.active = { id, key };
+    const td = cellOf(id, key);
+    if (!td) return;
+    td.classList.add('is-active');
+    td.tabIndex = 0;
+    if (focus) { td.focus({ preventScroll: true }); if (reveal) revealCell(td, key); }
+  }
+  function focusActive() {
+    if (state.active) { setActive(state.active.id, state.active.key, { focus: true }); return; }
+    tbody.querySelector('td[data-key][tabindex="0"]')?.focus({ preventScroll: true });
+  }
+  // 凍結欄會蓋住捲到左邊的儲存格，所以水平方向要扣掉凍結欄寬度；垂直方向要扣掉黏住的工具列與表頭
+  function revealCell(td, key, vertical = true) {
+    const wr = wrap.getBoundingClientRect();
+    const r = td.getBoundingClientRect();
+    const frozen = key === 'sel' || key === 'name' ? 0 : 56 + ($('#ag-headrow th.is-frozen-2')?.offsetWidth || 0);
+    if (r.left < wr.left + frozen) wrap.scrollLeft -= wr.left + frozen - r.left + 8;
+    else if (r.right > wr.right) wrap.scrollLeft += r.right - wr.right + 8;
+    if (!vertical) return;
+    const top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sticky-top')) || 0) + 36;
+    const bottom = innerHeight - (state.selected.size ? 84 : 12);
+    if (r.top < top) window.scrollBy(0, r.top - top - 8);
+    else if (r.bottom > bottom) window.scrollBy(0, r.bottom - bottom + 8);
+  }
+  function move(dr, dc, to) {
+    const rows = navRows();
+    const cols = navCols();
+    if (!rows.length) return;
+    const ri = clamp(Math.max(0, rows.findIndex((r) => r.dataset.id === state.active?.id)) + dr, 0, rows.length - 1);
+    const cur = cols.indexOf(state.active?.key);
+    const ci = to != null ? to(cols) : clamp((cur < 0 ? 1 : cur) + dc, 0, cols.length - 1);
+    setActive(rows[ri].dataset.id, cols[ci], { focus: true, reveal: true });
+  }
+  function activate(a, key, tr) {
+    if (key === 'sel') return toggleSelect(a.id);
+    if (key === 'name' || key === 'docs') return openRecord(a.id, tr);
+    if (key === 'hh') return editHH(a);
+    if (key === 'flagged') return toggleFlag(a);
+    const btn = cellOf(a.id, key)?.querySelector('[data-edit]');
+    if (btn) return editMenu(btn, a, key);
+    App.toast(`「${FIELD[key].label}」不可直接編輯`, { desc: LOCKED[key] });
+  }
+
+  tbody.addEventListener('keydown', (e) => {
+    if (e.target.closest('.dg__editor')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const arrows = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    if (e.key === 'ArrowUp' && navRows()[0] === tr) { e.preventDefault(); focusHead(state.active?.key || 'sel'); return; }
+    if (arrows[e.key]) { e.preventDefault(); move(...arrows[e.key]); return; }
+    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); move(0, 0, (c) => (e.key === 'Home' ? 0 : c.length - 1)); return; }
+    const a = App.getApplicant(tr.dataset.id);
+    const key = state.active?.key;
+    if (e.key === 'Enter') { e.preventDefault(); activate(a, key, tr); }
+    else if (e.key === ' ') { e.preventDefault(); if (key === 'sel') toggleSelect(a.id, e.shiftKey); else openRecord(a.id, tr); }
+    else if (e.key === 'Escape' && state.selected.size) { e.preventDefault(); clearSelection(); }
+    else if (key === 'hh' && /^[1-9]$/.test(e.key)) { e.preventDefault(); editHH(a, e.key); }
+  });
+  // Tab 進入資料格（或點到儲存格內的控制項）時，游標跟著焦點所在的格子
+  tbody.addEventListener('focusin', (e) => {
+    const td = e.target.closest('td[data-key]');
+    const tr = e.target.closest('tr[data-id]');
+    if (td && tr && !td.classList.contains('is-active')) setActive(tr.dataset.id, td.dataset.key);
+  });
+  tbody.addEventListener('click', (e) => {
+    const toggle = e.target.closest('.dg__group-toggle');
+    if (toggle) { toggleGroup(toggle.closest('tr').dataset.group); return; }
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const a = App.getApplicant(tr.dataset.id);
+    const td = e.target.closest('td[data-key]');
+    const key = td?.dataset.key;
+    if (key === 'sel') { toggleSelect(a.id, e.shiftKey); setActive(a.id, 'sel'); return; }
+    if (e.target.closest('[data-expand]')) { openRecord(a.id, tr); return; }
+    if (e.target.closest('[data-flag]')) { setActive(a.id, 'flagged'); toggleFlag(a); return; }
+    const eb = e.target.closest('[data-edit]');
+    if (eb) { setActive(a.id, key); editMenu(eb, a, key); return; }
+    if (key) setActive(a.id, key);
+  });
+  tbody.addEventListener('dblclick', (e) => {
+    const td = e.target.closest('td[data-key]');
+    const tr = e.target.closest('tr[data-id]');
+    if (!td || !tr) return;
+    if (td.dataset.key === 'hh') editHH(App.getApplicant(tr.dataset.id));
+    else if (td.dataset.key === 'name' && !e.target.closest('button')) openRecord(tr.dataset.id, tr);
+  });
+  $('#ag-headrow').addEventListener('click', (e) => {
+    if (e.target.id === 'ag-all') {
+      const ids = list.map((a) => a.id);
+      const all = ids.length && ids.every((id) => state.selected.has(id));
+      ids.forEach((id) => (all ? state.selected.delete(id) : state.selected.add(id)));
+      syncSelection();
+      return;
+    }
+    const b = e.target.closest('[data-col]');
+    if (b) colMenu(b, b.dataset.col);
+  });
+  const headItems = () => [...$('#ag-headrow').querySelectorAll('#ag-all, [data-col]')];
+  const headKeyOf = (el) => (el.id === 'ag-all' ? 'sel' : el.dataset.col);
+  function focusHead(key) {
+    const items = headItems();
+    const t = items.find((el) => headKeyOf(el) === key) || items[0];
+    items.forEach((el) => { el.tabIndex = el === t ? 0 : -1; });
+    headKey = headKeyOf(t);
+    t.focus({ preventScroll: true });
+    // 表頭是用 transform 黏在工具列下方的，只需要處理水平捲動
+    revealCell(t.closest('th'), headKey, false);
+  }
+  $('#ag-headrow').addEventListener('focusin', (e) => {
+    const items = headItems();
+    if (!items.includes(e.target)) return;
+    items.forEach((el) => { el.tabIndex = el === e.target ? 0 : -1; });
+    headKey = headKeyOf(e.target);
+  });
+  $('#ag-headrow').addEventListener('keydown', (e) => {
+    const items = headItems();
+    const i = items.indexOf(e.target);
+    if (i < 0) return;
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: items.length - 1 }[e.key];
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const first = navRows()[0];
+      if (first) setActive(first.dataset.id, headKeyOf(e.target), { focus: true, reveal: true });
+    } else if (to !== undefined) {
+      e.preventDefault();
+      focusHead(headKeyOf(items[clamp(to, 0, items.length - 1)]));
+    }
+  });
+
+  function toggleGroup(key) {
+    const id = state.group + ':' + key;
+    const open = state.collapsed.has(id);
+    if (open) state.collapsed.delete(id); else state.collapsed.add(id);
+    const head = [...tbody.rows].find((r) => r.classList.contains('dg__group') && r.dataset.group === key);
+    const btn = head.querySelector('.dg__group-toggle');
+    const g = GROUPERS[state.group];
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', `${open ? '收合' : '展開'}${g.label}「${g.text(key)}」群組`);
+    const rows = [...tbody.rows].filter((r) => r.dataset.id && r.dataset.sec === key);
+    if (!App.motionOK()) { rows.forEach((r) => { r.hidden = !open; }); return; }
+    rows.forEach((r) => r.getAnimations().forEach((x) => x.cancel()));
+    if (open) {
+      rows.forEach((r, i) => {
+        r.hidden = false;
+        r.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: Math.min(i, 14) * 16, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+      });
+      return;
+    }
+    const anims = rows.map((r, i) => r.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-4px)' }], { duration: 150, delay: Math.min(rows.length - 1 - i, 10) * 10, easing: 'ease-in', fill: 'forwards' }));
+    Promise.all(anims.map((x) => x.finished)).then(() => {
+      if (!state.collapsed.has(id)) return;
+      rows.forEach((r) => { r.hidden = true; r.getAnimations().forEach((x) => x.cancel()); });
+    }, () => {
+      // 收合動畫還沒播完就又被展開（動畫被 cancel）：維持展開狀態即可，不是錯誤
+    });
+  }
+
+  /* ---------- inline 編輯 ---------- */
+  function editMenu(btn, a, key) {
+    const items = {
+      status: () => STATUS_ORDER.map((s) => ({ label: STATUS[s].label, value: s, color: STATUS[s].color, desc: STATUS[s].desc, checked: a.status === s })),
+      unit: () => UNIT_ORDER.map((u) => {
+        const fit = a.hh >= UNIT_FIT[u][0] && a.hh <= UNIT_FIT[u][1];
+        return { label: UNITS[u].label, value: u, color: UNITS[u].color, desc: `${UNITS[u].fit} · ${UNITS[u].size[0]}–${UNITS[u].size[1]} 坪${fit ? '' : ` · 不適用 ${a.hh} 人家戶`}`, checked: a.unit === u, disabled: !fit };
+      }),
+      building: () => BUILDINGS.map((b) => ({ label: BUILDING_PREF[b].label, value: b, color: BUILDING_PREF[b].color, checked: a.building === b })),
+      district: () => DISTRICTS.map((d) => ({ label: d, value: d, color: DISTRICT_COLOR[d], checked: a.district === d })),
+      reviewer: () => TEAM.map((s) => ({ label: STAFF[s].name, value: s, desc: STAFF[s].title, sub: `${ROWS.filter((x) => x.reviewer === s).length} 件`, checked: a.reviewer === s })),
+    }[key]();
+    App.menu(btn, { title: FIELD[key].label, items, search: key === 'district', placeholder: '搜尋行政區', onSelect: (v) => commitField(a, key, v) });
+  }
+  function commitField(a, key, v) {
+    if (key === 'status') { changeStatus(a, v); return; }
+    if (a[key] === v) return;
+    const before = labelOf(a, key);
+    const res = App.setField(a.id, key, v);
+    App.toast(`${a.name}：${FIELD[key].label}已更新`, { tone: 'success', desc: `${before} → ${labelOf(a, key)}`, action: { label: '復原', onClick: res.undo } });
+  }
+  function toggleFlag(a) {
+    const res = App.setField(a.id, 'flagged', !a.flagged);
+    App.toast(a.flagged ? `已將 ${a.name} 送主管複核` : `已取消 ${a.name} 的主管複核`, { action: { label: '復原', onClick: res.undo } });
+  }
+  function editHH(a, initial) {
+    const td = cellOf(a.id, 'hh');
+    if (!td || td.classList.contains('is-editing')) return;
+    setActive(a.id, 'hh');
+    td.classList.add('is-editing');
+    const input = document.createElement('input');
+    input.className = 'dg__editor';
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.value = initial ?? String(a.hh);
+    input.setAttribute('aria-label', `${a.name} 的家戶人數（1–8 人）`);
+    td.append(input);
+    input.focus();
+    if (initial == null) input.select();
+    let done = false;
+    const close = () => { done = true; if (input.isConnected) { input.remove(); td.classList.remove('is-editing'); } };
+    const commit = () => {
+      const raw = input.value.trim();
+      const v = Number(raw);
+      const fit = UNIT_FIT[a.unit];
+      const err = !/^\d+$/.test(raw) || v < 1 || v > 8 ? '家戶人數須為 1–8 的整數'
+        : v < fit[0] || v > fit[1] ? `${UNITS[a.unit].label}適用 ${UNITS[a.unit].fit}，請先調整申請戶型` : '';
+      if (err) { input.classList.add('is-invalid'); App.toast('無法儲存家戶人數', { tone: 'warn', desc: err }); return false; }
+      done = true;
+      if (v !== a.hh) {
+        const before = a.hh;
+        // 焦點還在編輯框時異動，重繪後才會把焦點還給同一格
+        const res = App.setField(a.id, 'hh', v);
+        App.toast(`${a.name}：家戶人數已更新`, { tone: 'success', desc: `${before} 人 → ${v} 人`, action: { label: '復原', onClick: res.undo } });
+      }
+      close();
+      focusActive();
+      return true;
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(); focusActive(); }
+      else if (e.key === 'Tab') { e.preventDefault(); if (commit()) move(0, e.shiftKey ? -1 : 1); }
+    });
+    input.addEventListener('input', () => input.classList.remove('is-invalid'));
+    input.addEventListener('blur', () => { if (!done && !commit()) close(); });
+  }
+
+  /* ---------- 多選 ---------- */
+  function toggleSelect(id, range = false) {
+    const ids = displayOrder().map((a) => a.id);
+    if (range && state.anchor && ids.includes(state.anchor)) {
+      const [i, j] = [ids.indexOf(state.anchor), ids.indexOf(id)].sort((x, y) => x - y);
+      ids.slice(i, j + 1).forEach((x) => state.selected.add(x));
+    } else if (state.selected.has(id)) state.selected.delete(id);
+    else state.selected.add(id);
+    state.anchor = id;
+    syncSelection();
+  }
+  function clearSelection() { state.selected.clear(); state.anchor = null; syncSelection(); }
+  function syncSelectAll() {
+    const all = $('#ag-all');
+    if (!all) return;
+    const n = list.filter((a) => state.selected.has(a.id)).length;
+    all.checked = n > 0 && n === list.length;
+    all.indeterminate = n > 0 && n < list.length;
+  }
+  function syncSelection() {
+    rowEls.forEach((tr, id) => {
+      tr.classList.toggle('is-selected', state.selected.has(id));
+      const cb = tr.querySelector('[data-sel]');
+      if (cb) cb.checked = state.selected.has(id);
+    });
+    cellEls.forEach((c, id) => c.classList.toggle('is-sel', state.selected.has(id)));
+    syncSelectAll();
+    renderSelbar();
+  }
+  const selbar = $('#ag-selbar');
+  function renderSelbar() {
+    const n = state.selected.size;
+    selbar.classList.toggle('is-open', n > 0);
+    selbar.inert = n === 0;
+    document.body.classList.toggle('ag-has-sel', n > 0);
+    $('#ag-selcount').textContent = n;
+    const out = [...state.selected].filter((id) => !list.some((a) => a.id === id)).length;
+    $('#ag-selmore').textContent = out ? `（${out} 筆不在目前檢視）` : '';
+  }
+
+  /* ================= 資格狀態變更（grid、看板、紀錄、批次共用） ================= */
+  async function guardStatus(targets, to) {
+    const who = targets.length === 1 ? targets[0].name : `${targets.length} 位申請人`;
+    if (to === 'ineligible') {
+      return App.confirm({ title: `判定 ${who} 不符資格？`, message: '系統將寄發不合格通知，申請人可於 10/30 前申覆。此動作會寫入審核歷程。', confirmLabel: '判定不符資格', tone: 'danger' });
+    }
+    const open = to === 'qualified' ? targets.filter((a) => checkState(a) !== 'pass') : [];
+    if (!open.length) return true;
+    const what = open.length === 1
+      ? `${open[0].name} 的自動比對「${CHECK_ORDER.filter((k) => open[0].checks[k] !== 'pass').map((k) => CHECKS[k].label).join('、')}」尚未確認符合`
+      : `其中 ${open.length} 筆的自動比對仍有待確認或不符項目`;
+    return App.confirm({ title: '確認已人工核實？', message: `${what}。判定資格符合後將列入 10/28 公告的合格名冊。`, confirmLabel: '確認資格符合' });
+  }
+  async function changeStatus(a, to) {
+    if (a.status === to) return false;
+    if (!(await guardStatus([a], to))) return false;
+    const from = a.status;
+    const res = App.setStatus(a.id, to);
+    App.toast(`${a.name}：${STATUS[from].label} → ${STATUS[to].label}`, {
+      tone: to === 'qualified' ? 'success' : to === 'ineligible' ? 'warn' : 'info',
+      desc: '已寫入審核歷程，計數已同步更新',
+      action: { label: '復原', onClick: res.undo },
+    });
+    return true;
+  }
+
+  /* ================= Kanban（依資格狀態分欄，拖放變更） ================= */
+  const board = $('#ag-board');
+  const cardEls = new Map();
+  board.innerHTML = STATUS_ORDER.map((s) => `<section class="kanban__col tone-${STATUS[s].color}" data-status="${s}" aria-label="${STATUS[s].label}">
+      <header class="kanban__head">${App.statusPill(s, { dot: true })}<span class="kanban__count" data-count></span><p class="kanban__desc">${esc(STATUS[s].desc)}</p></header>
+      <div class="kanban__list" data-list></div>
+    </section>`).join('');
+  function cardEl(a) {
+    let c = cardEls.get(a.id);
+    if (!c) {
+      c = document.createElement('article');
+      c.className = 'kcard ag-kcard';
+      c.dataset.id = a.id;
+      c.tabIndex = 0;
+      cardEls.set(a.id, c);
+    }
+    return c;
+  }
+  function paintCard(c, a) {
+    const miss = docCount(a, 'missing');
+    const up = docCount(a, 'uploaded');
+    c.setAttribute('aria-label', `${a.name}，${a.id}，${STATUS[a.status].label}；按 Enter 展開紀錄`);
+    c.innerHTML = `<div class="kcard__title"><span class="truncate">${hl(a.name)}</span>${a.flagged ? flagIcon : ''}<button type="button" class="icon-btn icon-btn--sm ag-grip" data-move aria-label="移動 ${esc(a.name)} 到其他資格狀態">${icon('grip')}</button></div>
+      <p class="kcard__meta"><span class="ag-mono">${hl(a.id)}</span> · ${esc(a.district)} · ${a.hh} 人</p>
+      <div class="ag-kpills">${App.groupPill(a.group)}${App.unitPill(a.unit)}${a.sub ? App.subPill(a.sub) : ''}</div>
+      <div class="ag-kfoot"><span class="cell-checks">${CHECK_ORDER.map((k) => App.checkIcon(a.checks[k], CHECKS[k].label)).join('')}</span>${a.docs.length ? `<span class="ag-docs__txt">${miss ? `待補 ${miss}` : up ? `待審 ${up}` : '補件已核可'}</span>` : ''}<span class="spacer"></span>${App.avatar(a.reviewer, 'sm')}</div>`;
+  }
+  function renderBoard(opts = {}) {
+    const focusedId = document.activeElement?.closest?.('.ag-kcard')?.dataset.id;
+    const mutate = () => STATUS_ORDER.forEach((s) => {
+      const col = board.querySelector(`[data-status="${s}"]`);
+      const items = list.filter((a) => a.status === s);
+      col.querySelector('[data-count]').textContent = items.length;
+      const frag = document.createDocumentFragment();
+      items.forEach((a) => { const c = cardEl(a); paintCard(c, a); frag.append(c); });
+      if (!items.length) frag.append(Object.assign(document.createElement('p'), { className: 'kanban__empty', textContent: '拖曳卡片到這裡' }));
+      col.querySelector('[data-list]').replaceChildren(frag);
+    });
+    if (board.dataset.live === '1' && opts.changed) App.flip([...cardEls.values()].filter((c) => c.isConnected), mutate, { duration: 420 });
+    else mutate();
+    board.dataset.live = '1';
+    if (focusedId) cardEls.get(focusedId)?.focus({ preventScroll: true });
+    if (opts.intro && App.motionOK()) {
+      $$('.kanban__col', board).forEach((col, i) => col.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+    }
+  }
+
+  // 拖放：滑鼠可拖整張卡片；觸控只有握把能拖，卡片本身保留捲動
+  let drag = null;
+  let suppressClick = false;
+  const slot = document.createElement('div');
+  slot.className = 'kanban__slot';
+  board.addEventListener('pointerdown', (e) => {
+    const card = e.target.closest('.ag-kcard');
+    if (!card || e.button !== 0) return;
+    if (e.pointerType !== 'mouse' && !e.target.closest('.ag-grip')) return;
+    const r = card.getBoundingClientRect();
+    drag = { card, id: card.dataset.id, from: App.getApplicant(card.dataset.id).status, to: null, pid: e.pointerId, started: false,
+      x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, w: r.width, h: r.height };
+    card.setPointerCapture(e.pointerId);
+  });
+  board.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.pid) return;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    if (!drag.started) {
+      if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) < 6) return;
+      startDrag();
+    }
+    placeGhost();
+    hitTest();
+  });
+  board.addEventListener('pointerup', (e) => { if (drag && e.pointerId === drag.pid) endDrag(true); });
+  board.addEventListener('pointercancel', (e) => { if (drag && e.pointerId === drag.pid) endDrag(false); });
+  function startDrag() {
+    drag.started = true;
+    const g = drag.card.cloneNode(true);
+    g.classList.add('kcard--ghost');
+    g.removeAttribute('data-id');
+    g.removeAttribute('tabindex');
+    g.setAttribute('aria-hidden', 'true');
+    g.style.cssText = `width:${drag.w}px;left:0;top:0;margin:0`;
+    document.body.append(g);
+    drag.ghost = g;
+    drag.card.classList.add('is-dragging');
+    slot.style.height = drag.h + 'px';
+    document.body.classList.add('ag-dragging');
+    requestAnimationFrame(edgeScroll);
+  }
+  function placeGhost() {
+    drag.ghost.style.transform = `translate3d(${drag.x - drag.ox}px, ${drag.y - drag.oy}px, 0) rotate(2.5deg) scale(1.02)`;
+  }
+  function hitTest() {
+    const el = document.elementFromPoint(drag.x, drag.y);
+    const col = el && el.closest('.ag-board .kanban__col');
+    drag.to = col ? col.dataset.status : null;
+    $$('.kanban__col', board).forEach((c) => c.classList.toggle('is-over', c === col && drag.to !== drag.from));
+    if (!col || drag.to === drag.from) { slot.remove(); return; }
+    const listEl = col.querySelector('[data-list]');
+    const before = [...listEl.querySelectorAll('.ag-kcard')].find((c) => { const r = c.getBoundingClientRect(); return drag.y < r.top + r.height / 2; }) || null;
+    if (slot.parentNode !== listEl || slot.nextElementSibling !== before) listEl.insertBefore(slot, before);
+  }
+  // 拖到看板左右邊緣或視窗上下緣時自動捲動
+  function edgeScroll() {
+    if (!drag || !drag.started) return;
+    const br = board.getBoundingClientRect();
+    const dx = drag.x < br.left + 56 ? -14 : drag.x > br.right - 56 ? 14 : 0;
+    const dy = drag.y < 72 ? -14 : drag.y > innerHeight - 48 ? 14 : 0;
+    if (dx) board.scrollLeft += dx;
+    if (dy) window.scrollBy(0, dy);
+    if (dx || dy) hitTest();
+    requestAnimationFrame(edgeScroll);
+  }
+  async function endDrag(commit) {
+    const d = drag;
+    drag = null;
+    if (!d.started) return;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    document.body.classList.remove('ag-dragging');
+    $$('.kanban__col', board).forEach((c) => c.classList.remove('is-over'));
+    d.card.classList.remove('is-dragging');
+    const g = d.ghost;
+    if (commit && d.to && d.to !== d.from && slot.parentNode) {
+      // 卡片先落在放開的位置，再由重繪的 FLIP 滑到依排序應在的位置
+      const from = g.getBoundingClientRect();
+      slot.replaceWith(d.card);
+      g.remove();
+      const to = d.card.getBoundingClientRect();
+      if (App.motionOK()) d.card.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) rotate(2.5deg)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      if (!(await changeStatus(App.getApplicant(d.id), d.to))) render({ changed: [d.id] });
+      return;
+    }
+    slot.remove();
+    if (!App.motionOK()) { g.remove(); return; }
+    const r = d.card.getBoundingClientRect();
+    g.animate([{ transform: g.style.transform }, { transform: `translate3d(${r.left}px, ${r.top}px, 0)` }], { duration: 200, easing: 'ease-out' }).onfinish = () => g.remove();
+  }
+  board.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    const card = e.target.closest('.ag-kcard');
+    if (!card) return;
+    const a = App.getApplicant(card.dataset.id);
+    const mv = e.target.closest('[data-move]');
+    if (mv) {
+      App.menu(mv, { title: '移動到', items: STATUS_ORDER.map((s) => ({ label: STATUS[s].label, value: s, color: STATUS[s].color, desc: STATUS[s].desc, checked: a.status === s, disabled: a.status === s })), onSelect: (v) => changeStatus(a, v) });
+      return;
+    }
+    openRecord(a.id, card);
+  });
+  board.addEventListener('keydown', (e) => {
+    const card = e.target.closest('.ag-kcard');
+    if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openRecord(card.dataset.id, card); }
+  });
+
+  /* ================= Gallery ================= */
+  const gallery = $('#ag-gallery');
+  function renderGallery(opts = {}) {
+    gallery.innerHTML = list.map((a) => {
+      const fields = [['select', '申請組別', App.groupPill(a.group)], ['number', '家戶人數', `${a.hh} 人`], ['select', '棟別意願', App.buildingPill(a.building)], ['user', '承辦', App.person(a.reviewer)]];
+      return `<button type="button" class="gcard ag-gcard" data-id="${a.id}" aria-label="${esc(a.name)}，${UNITS[a.unit].label}，${STATUS[a.status].label}，展開紀錄">
+        <span class="gcard__cover tone-${UNITS[a.unit].color}">${App.floorplan(a.unit)}<span class="ag-gcard__tag">${App.statusPill(a.status, { dot: true })}</span><span class="ag-gcard__unit">${UNITS[a.unit].label}<span class="ag-gcard__fit"> · ${UNITS[a.unit].fit}</span></span></span>
+        <span class="gcard__body">
+          <span class="gcard__title"><span class="truncate">${hl(a.name)}</span>${a.flagged ? flagIcon : ''}</span>
+          <span class="ag-gcard__id"><span class="ag-mono">${hl(a.id)}</span> · ${esc(a.district)}</span>
+          <span class="gcard__fields">${fields.map(([t, l, v]) => `<span class="kcard__field"><span>${fieldIcon(t)}${l}</span><b>${v}</b></span>`).join('')}</span>
+        </span>
+      </button>`;
+    }).join('');
+    if (opts.intro && App.motionOK()) {
+      [...gallery.children].slice(0, 12).forEach((c, i) => c.animate([{ opacity: 0, transform: 'translateY(12px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 420, delay: i * 35, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+    }
+  }
+  gallery.addEventListener('click', (e) => {
+    const c = e.target.closest('.ag-gcard');
+    if (c) openRecord(c.dataset.id, c);
+  });
+
+  /* ================= 展開紀錄（從列／卡片／格子放大成 modal） ================= */
+  const who = (by) => STAFF[by]?.name || (by === 'system' ? '系統' : '申請人');
+  // 從狀態帶點開的申請人可能已被篩掉，這時改在全部 72 筆（依狀態帶順序）之間切換
+  const recOrder = () => (list.some((a) => a.id === rec.id) ? displayOrder() : ribbonOrder());
+  const recTitle = (a) => `${esc(a.name)}${a.flagged ? ' ' + flagIcon : ''}`;
+  function recEyebrow(a) {
+    const order = recOrder();
+    return `${icon('id-card')}<span class="ag-mono">${a.id}</span> · ${GROUPS[a.group].label} · <span class="ag-rec__pos">第 ${order.findIndex((x) => x.id === a.id) + 1} / ${order.length} 筆</span>`;
+  }
+  function recBody(a) {
+    const sc = App.scoreOf(a);
+    const fields = [
+      ['select', '申請組別', App.groupPill(a.group)],
+      ['select', '弱勢身分', a.sub ? App.subPill(a.sub) : '<span class="muted">—</span>'],
+      ['select', '設籍區', App.districtPill(a.district)],
+      ['number', '家戶人數', `${a.hh} 人`],
+      ['select', '申請戶型', App.unitPill(a.unit)],
+      ['select', '棟別意願', App.buildingPill(a.building)],
+      ['user', '承辦', App.person(a.reviewer)],
+      ['date', '送件日期', `${fmt.dateFull(a.submittedAt)} · ${a.channel === 'online' ? '線上' : '臨櫃'}`],
+      ['phone', '聯絡電話', `<span class="ag-mono">${esc(a.phone)}</span>`],
+    ];
+    const checks = App.checksOf(a).map((c) => `<div class="checkrow">
+        <span class="checkrow__icon tone-${CHECK_RESULT[c.result].color}">${icon(CHECK_RESULT[c.result].icon)}</span>
+        <div class="checkrow__body"><p class="checkrow__title">${esc(c.label)}</p><p class="checkrow__src">${esc(c.source)} · ${fmt.dateTime(c.syncedAt)} 介接</p>
+          ${c.ratio != null ? `<div class="compare tone-${CHECK_RESULT[c.result].color}"><div class="compare__bar"><div class="compare__fill" style="--w:${Math.min(100, (c.ratio / 1.4) * 100)}%"></div><span class="compare__limit" style="--x:${100 / 1.4}%"></span></div><div class="compare__legend"><span>${esc(c.valueText)}</span><span>上限 ${esc(c.limitText.replace('≤ ', ''))}</span></div></div>` : ''}
+          <p class="checkrow__src">${esc(c.detail)}</p></div>
+        ${App.checkPill(c.result)}</div>`).join('');
+    const docs = a.docs.length ? a.docs.map((d) => `<div class="doc-row">
+        <span class="doc-row__icon tone-${DOC_STATE[d.state].color}">${icon('file')}</span>
+        <div class="ag-rec__doc"><p class="doc-row__name">${esc(DOCS[d.key])}</p><p class="doc-row__meta">${{ missing: '尚未上傳 · 補件期限 10/16 已屆', uploaded: '申請人已上傳，待承辦審核', accepted: '承辦已核可' }[d.state]}</p></div>
+        ${App.pill(DOC_STATE[d.state].label, DOC_STATE[d.state].color, { dot: true })}
+        ${d.state === 'uploaded' ? `<button type="button" class="btn btn--sm btn--soft" data-doc="${d.key}">${icon('check')}核可</button>` : d.state === 'missing' ? `<button type="button" class="btn btn--sm" data-remind="${d.key}">${icon('bell')}催補</button>` : '<span></span>'}
+      </div>`).join('') : '<p class="muted">本案無須補件。</p>';
+    const recent = [...a.history].reverse().slice(0, 4);
+    return `<div class="ag-rec">
+      <div class="ag-rec__bar">
+        <button type="button" class="dg__edit-btn" data-rec-status aria-label="資格狀態：${STATUS[a.status].label}，按下變更">${App.statusPill(a.status, { dot: true })}${icon('chevron-down')}</button>
+        <span class="ag-rec__meta">評點 <b>${sc.total}</b> 分 · 籤號 <b>${a.lot || '名冊公告後編號'}</b> · 最後更新 ${fmt.rel(a.updatedAt)}</span>
+        <span class="ag-rec__flag">主管複核<button type="button" class="switch" role="switch" data-rec-flag aria-checked="${a.flagged}" aria-label="主管複核"></button></span>
+      </div>
+      <div class="fields">${fields.map(([t, l, v]) => `<div class="fld"><span class="fld__label">${fieldIcon(t)}${l}</span><div class="fld__value">${v}</div></div>`).join('')}</div>
+      <section><h3 class="section-title">${fieldIcon('formula')}自動比對結果</h3>${checks}</section>
+      <section><h3 class="section-title">${fieldIcon('attachment')}補件文件 <span class="badge">${a.docs.length}</span></h3>${docs}</section>
+      ${a.note ? `<section><h3 class="section-title">${fieldIcon('longtext')}承辦備註</h3><p class="ag-rec__note">${esc(a.note)}</p></section>` : ''}
+      <section><h3 class="section-title">${fieldIcon('longtext')}最近歷程</h3><ol class="feed">${recent.map((h) => `<li class="feed__item">${App.avatar(h.by, 'sm')}<div class="feed__body"><p class="feed__head"><b>${esc(who(h.by))}</b><span class="feed__time">${h.live ? '剛剛' : fmt.dateTime(h.at)}</span></p><p class="feed__text">${esc(h.text)}</p></div></li>`).join('')}</ol></section>
+    </div>`;
+  }
+  function openRecord(id, from) {
+    App.closeMenu();
+    closePop();
+    const a = App.getApplicant(id);
+    rec = { id };
+    const m = App.modal({
+      title: recTitle(a), eyebrow: recEyebrow(a), body: recBody(a), size: 'lg', from,
+      actions: [
+        { label: '上一筆', icon: 'chevron-left', variant: 'ghost', onClick: () => stepRecord(-1) },
+        { label: '下一筆', icon: 'chevron-right', variant: 'ghost', onClick: () => stepRecord(1) },
+        { label: '開啟完整紀錄', icon: 'external', variant: 'primary', href: App.applicantUrl(id) },
+      ],
+      onClose: () => { rec = null; },
+    });
+    rec.m = m;
+    m.body.addEventListener('click', onRecClick);
+  }
+  function refreshRecord() {
+    if (!rec || !rec.m) return;
+    const a = App.getApplicant(rec.id);
+    const { body, el } = rec.m;
+    const f = document.activeElement;
+    const focusSel = f && body.contains(f) ? ['data-rec-status', 'data-rec-flag'].find((k) => f.hasAttribute(k)) : null;
+    const top = body.scrollTop;
+    body.innerHTML = recBody(a);
+    body.scrollTop = top;
+    el.querySelector('.modal__title').innerHTML = recTitle(a);
+    el.querySelector('.modal__eyebrow').innerHTML = recEyebrow(a);
+    el.querySelector('.modal__foot a').href = App.applicantUrl(a.id);
+    if (focusSel) body.querySelector(`[${focusSel}]`).focus({ preventScroll: true });
+  }
+  function stepRecord(dir) {
+    const order = recOrder();
+    const i = order.findIndex((x) => x.id === rec.id);
+    const next = order[(i + dir + order.length) % order.length];
+    rec.id = next.id;
+    refreshRecord();
+    rec.m.body.scrollTop = 0;
+    if (App.motionOK()) rec.m.body.animate([{ opacity: 0, transform: `translateX(${dir * 18}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    // 背景資料格的游標跟著移動，關閉後焦點回到同一列
+    if (state.view === 'grid' && rowEls.get(next.id)?.isConnected) setActive(next.id, 'name');
+  }
+  function onRecClick(e) {
+    if (!rec) return;
+    const a = App.getApplicant(rec.id);
+    const sb = e.target.closest('[data-rec-status]');
+    if (sb) {
+      App.menu(sb, { title: '資格狀態', items: STATUS_ORDER.map((s) => ({ label: STATUS[s].label, value: s, color: STATUS[s].color, desc: STATUS[s].desc, checked: a.status === s })), onSelect: (v) => changeStatus(a, v) });
+      return;
+    }
+    if (e.target.closest('[data-rec-flag]')) { toggleFlag(a); return; }
+    const d = e.target.closest('[data-doc]');
+    if (d) {
+      const res = App.setDoc(a.id, d.dataset.doc, 'accepted');
+      App.toast(`已核可：${DOCS[d.dataset.doc]}`, { tone: 'success', desc: `${a.name} · ${a.id}`, action: { label: '復原', onClick: res.undo } });
+      return;
+    }
+    const r = e.target.closest('[data-remind]');
+    if (r) App.toast('已排入今日 17:00 催補簡訊', { desc: `${a.name} · ${DOCS[r.dataset.remind]}` });
+  }
+
+  /* ================= 篩選面板 ================= */
+  let pop = null;
+  function closePop() {
+    if (!pop) return;
+    pop.cleanup();
+    pop.el.remove();
+    $('#tb-filter').setAttribute('aria-expanded', 'false');
+    pop = null;
+  }
+  function condRow(c, i) {
+    const f = FILTERS[c.field];
+    return `<div class="cond-row" data-i="${i}"><span class="cond-row__lead">${i ? '且' : '條件'}</span>
+      <select class="select" data-part="field" aria-label="篩選欄位">${Object.entries(FILTERS).map(([k, x]) => `<option value="${k}"${k === c.field ? ' selected' : ''}>${x.label}</option>`).join('')}</select>
+      <select class="select" data-part="op" aria-label="比對方式"><option value="is"${c.op === 'is' ? ' selected' : ''}>是</option><option value="not"${c.op === 'not' ? ' selected' : ''}>不是</option></select>
+      <select class="select" data-part="value" aria-label="篩選值">${f.options.map((o) => `<option value="${o.value}"${o.value === c.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+      <button type="button" class="icon-btn icon-btn--sm" data-part="remove" aria-label="移除這個條件">${icon('x')}</button></div>`;
+  }
+  function openPop(anchor) {
+    if (pop) { closePop(); return; }
+    App.closeMenu();
+    const el = document.createElement('div');
+    el.className = 'ag-pop';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', '篩選條件');
+    document.body.append(el);
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      el.style.left = clamp(r.left, 8, innerWidth - el.offsetWidth - 8) + 'px';
+      el.style.top = r.bottom + 6 + 'px';
+    };
+    // 每次條件異動都重畫面板；記住焦點所在的條件列與欄位，重畫後放回去
+    const paint = (focus) => {
+      el.innerHTML = `<div class="ag-pop__head"><span>篩選條件 · 須符合全部條件</span><span>${list.length} / ${TOTAL} 筆</span></div>
+        <div class="ag-pop__list">${state.conds.length ? state.conds.map(condRow).join('') : `<p class="ag-pop__empty">尚未設定條件，顯示全部 ${TOTAL} 筆。</p>`}</div>
+        <div class="ag-pop__foot"><button type="button" class="btn btn--sm btn--ghost" data-add>${icon('plus')}新增條件</button><span class="spacer"></span>${state.conds.length ? '<button type="button" class="btn btn--sm btn--ghost" data-clear-conds>清除全部</button>' : ''}</div>`;
+      place();
+      (focus ? el.querySelector(focus) : null)?.focus({ preventScroll: true });
+    };
+    const apply = (focus) => { render(); paint(focus); };
+    el.addEventListener('change', (e) => {
+      const row = e.target.closest('[data-i]');
+      if (!row) return;
+      const c = state.conds[+row.dataset.i];
+      const part = e.target.dataset.part;
+      if (part === 'field') { c.field = e.target.value; c.value = FILTERS[c.field].options[0].value; }
+      else c[part] = e.target.value;
+      apply(`[data-i="${row.dataset.i}"] [data-part="${part}"]`);
+    });
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('[data-add]')) {
+        const used = new Set(state.conds.map((c) => c.field));
+        const field = Object.keys(FILTERS).find((k) => !used.has(k)) || 'status';
+        state.conds.push({ field, op: 'is', value: FILTERS[field].options[0].value });
+        apply(`[data-i="${state.conds.length - 1}"] [data-part="field"]`);
+        return;
+      }
+      const rm = e.target.closest('[data-part="remove"]');
+      if (rm) { state.conds.splice(+rm.closest('[data-i]').dataset.i, 1); apply('[data-add]'); return; }
+      if (e.target.closest('[data-clear-conds]')) { state.conds = []; apply('[data-add]'); }
+    });
+    const outside = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePop(); };
+    const onKey = (e) => { if (e.key === 'Escape') { closePop(); anchor.focus({ preventScroll: true }); } };
+    setTimeout(() => { if (pop && pop.el === el) document.addEventListener('pointerdown', outside, true); });
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', place, { passive: true });
+    window.addEventListener('resize', place);
+    pop = {
+      el,
+      cleanup() {
+        document.removeEventListener('pointerdown', outside, true);
+        document.removeEventListener('keydown', onKey);
+        window.removeEventListener('scroll', place);
+        window.removeEventListener('resize', place);
+      },
+    };
+    anchor.setAttribute('aria-expanded', 'true');
+    paint(state.conds.length ? '[data-part="value"]' : '[data-add]');
+  }
+
+  /* ================= 工具列選單 ================= */
+  function setSort(s) { state.sort = s; render({ flip: true }); }
+  function setGroup(g) { state.group = g; state.collapsed.clear(); render({ flip: true }); }
+  $('#tb-filter').addEventListener('click', (e) => openPop(e.currentTarget));
+  $('#tb-hide').addEventListener('click', (e) => App.menu(e.currentTarget, {
+    title: '顯示欄位（主欄位固定顯示）', keepOpen: true,
+    items: COLS.filter((k) => k !== 'name').map((k) => ({ label: FIELD[k].label, value: k, checked: !state.hidden.has(k), sub: FIELD_TYPE_LABEL[FIELD[k].type] })),
+    onSelect: (k, it) => { if (it.checked) state.hidden.delete(k); else state.hidden.add(k); render(); },
+  }));
+  $('#tb-group').addEventListener('click', (e) => App.menu(e.currentTarget, {
+    title: '群組依據',
+    items: [{ label: '不分組', value: '', checked: !state.group }, 'sep', ...Object.entries(GROUPERS).map(([k, g]) => ({ label: g.label, value: k, checked: state.group === k }))],
+    onSelect: setGroup,
+  }));
+  $('#tb-sort').addEventListener('click', (e) => App.menu(e.currentTarget, {
+    title: '排序依據（再選一次同欄位會反轉方向）',
+    items: [
+      ...COLS.map((k) => ({ label: FIELD[k].label, value: k, checked: state.sort?.key === k, sub: state.sort?.key === k ? (state.sort.dir > 0 ? '升冪 ↑' : '降冪 ↓') : '' })),
+      'sep',
+      { label: '清除排序', value: '__clear', icon: 'x', disabled: !state.sort },
+    ],
+    onSelect: (v) => setSort(v === '__clear' ? null : { key: v, dir: state.sort?.key === v ? -state.sort.dir : 1 }),
+  }));
+  const HEIGHTS = [['short', '矮', '只顯示主要值'], ['medium', '中', '主欄位加上性別、年齡與設籍區'], ['tall', '高', '再加上承辦備註摘要']];
+  $('#tb-height').addEventListener('click', (e) => App.menu(e.currentTarget, {
+    title: '列高',
+    items: HEIGHTS.map(([v, l, d]) => ({ label: l, value: v, desc: d, checked: state.rowHeight === v })),
+    onSelect: (v) => { state.rowHeight = v; render(); },
+  }));
+  function colMenu(btn, k) {
+    const f = FIELD[k];
+    App.menu(btn, {
+      title: `${f.label} · ${FIELD_TYPE_LABEL[f.type]}欄位`,
+      items: [
+        { label: '升冪排序', value: 'asc', icon: 'chevron-up', sub: SORT_HINT[f.type] || '' },
+        { label: '降冪排序', value: 'desc', icon: 'chevron-down' },
+        'sep',
+        { label: GROUPERS[k] ? `依「${f.label}」群組` : '此欄位不支援群組', value: 'group', icon: 'group', disabled: !GROUPERS[k] },
+        { label: FILTERS[k] ? `篩選「${f.label}」` : '此欄位不支援篩選', value: 'filter', icon: 'filter', disabled: !FILTERS[k] },
+        { label: '隱藏欄位', value: 'hide', icon: 'eye-off', disabled: k === 'name' },
+      ],
+      onSelect: (v) => {
+        if (v === 'asc' || v === 'desc') setSort({ key: k, dir: v === 'asc' ? 1 : -1 });
+        else if (v === 'group') setGroup(k);
+        else if (v === 'filter') { state.conds.push({ field: k, op: 'is', value: FILTERS[k].options[0].value }); render(); openPop($('#tb-filter')); }
+        else if (v === 'hide') {
+          state.hidden.add(k);
+          render();
+          App.toast(`已隱藏「${f.label}」欄位`, { action: { label: '復原', onClick: () => { state.hidden.delete(k); render(); } } });
+        }
+      },
+    });
+  }
+
+  /* ================= 批次操作 ================= */
+  async function batchApply(ids, key, v) {
+    const targets = ids.map(App.getApplicant).filter((a) => a[key] !== v);
+    if (!targets.length) { App.toast('所選案件都已是這個值', { desc: '沒有需要變更的資料' }); return; }
+    if (key === 'status' && !(await guardStatus(targets, v))) return;
+    batching = true;
+    const undos = targets.map((a) => (key === 'status' ? App.setStatus(a.id, v) : App.setField(a.id, key, v)));
+    batching = false;
+    const changed = targets.map((a) => a.id);
+    render({ changed });
+    const n = targets.length;
+    const msg = key === 'status' ? `已將 ${n} 筆改為「${STATUS[v].label}」` : key === 'reviewer' ? `已將 ${n} 筆指派給 ${STAFF[v].name}` : v ? `已將 ${n} 筆送主管複核` : `已取消 ${n} 筆的主管複核`;
+    App.toast(msg, {
+      tone: 'success', desc: '每一筆都已寫入審核歷程',
+      action: { label: '復原', onClick: () => { batching = true; undos.forEach((u) => u.undo()); batching = false; render({ changed }); } },
+    });
+  }
+  selbar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-batch]');
+    const ids = [...state.selected];
+    if (!b || !ids.length) return;
+    const kind = b.dataset.batch;
+    if (kind === 'clear') clearSelection();
+    else if (kind === 'export') exportCsv(ids.map(App.getApplicant), '所選案件');
+    else if (kind === 'status') App.menu(b, { title: `將 ${ids.length} 筆改為`, items: STATUS_ORDER.map((s) => ({ label: STATUS[s].label, value: s, color: STATUS[s].color, desc: STATUS[s].desc })), onSelect: (v) => batchApply(ids, 'status', v) });
+    else if (kind === 'reviewer') App.menu(b, { title: `將 ${ids.length} 筆指派給`, items: TEAM.map((s) => ({ label: STAFF[s].name, value: s, desc: STAFF[s].title })), onSelect: (v) => batchApply(ids, 'reviewer', v) });
+    else if (kind === 'flag') App.menu(b, { title: '主管複核', items: [{ label: '勾選主管複核', value: true, icon: 'flag' }, { label: '取消勾選', value: false, icon: 'x' }], onSelect: (v) => batchApply(ids, 'flagged', v) });
+  });
+
+  /* ================= 匯出 CSV ================= */
+  function exportCsv(rows, tag) {
+    const cols = visibleCols();
+    const text = (a, k) => ({
+      name: () => a.name, id: () => a.id, status: () => STATUS[a.status].label,
+      checks: () => CHECK_ORDER.map((c) => `${CHECKS[c].label}${CHECK_RESULT[a.checks[c]].label}`).join('／'),
+      group: () => GROUPS[a.group].label, sub: () => (a.sub ? SUBTYPES[a.sub].label : ''), unit: () => UNITS[a.unit].label, hh: () => a.hh,
+      building: () => BUILDING_PREF[a.building].label, district: () => a.district,
+      docs: () => a.docs.map((d) => `${DOCS[d.key]}：${DOC_STATE[d.state].label}`).join('；'), score: () => score(a),
+      reviewer: () => STAFF[a.reviewer].name, submittedAt: () => `${fmt.dateFull(a.submittedAt)} ${fmt.time(a.submittedAt)}`,
+      flagged: () => (a.flagged ? '是' : '否'), phone: () => a.phone,
+    }[k])();
+    const name = `審查二組_${tag}_${fmt.dateFull(App.now()).replace(/\//g, '')}.csv`;
+    App.csv(name, [cols.map((k) => FIELD[k].label), ...rows.map((a) => cols.map((k) => text(a, k)))]);
+    App.toast(`已匯出 ${rows.length} 筆`, { tone: 'success', desc: name });
+  }
+  $('#ag-export').addEventListener('click', () => exportCsv(displayOrder(), presetOf().name));
+
+  /* ================= 重繪：任何資料異動、檢視設定變更都走這裡 ================= */
+  function render(opts = {}) {
+    list = computeList();
+    const empty = !list.length;
+    renderRibbon(opts.changed);
+    renderChips();
+    renderSummary();
+    renderViews();
+    renderTools();
+    renderResult();
+    wrap.hidden = state.view !== 'grid' || empty;
+    board.hidden = state.view !== 'kanban' || empty;
+    gallery.hidden = state.view !== 'gallery' || empty;
+    $('#ag-empty').hidden = !empty;
+    if (wrap.hidden) wrap.dataset.live = '';
+    if (board.hidden) board.dataset.live = '';
+    if (empty) {
+      $('#ag-empty').innerHTML = App.emptyState({
+        title: '沒有符合條件的申請人',
+        text: state.q.trim() ? `找不到「${state.q.trim()}」，試著改用申請編號搜尋，或放寬篩選條件。` : '目前的篩選條件沒有符合的案件。',
+        action: '<button type="button" class="btn btn--soft" data-clear>清除搜尋與篩選</button>',
+      });
+    } else if (state.view === 'grid') renderGrid(opts);
+    else if (state.view === 'kanban') renderBoard(opts);
+    else renderGallery(opts);
+    renderSelbar();
+    refreshRecord();
+  }
+  function applyPreset(id) {
+    const p = PRESETS.find((x) => x.id === id);
+    Object.assign(state, { preset: id, view: p.view, group: p.group, sort: p.sort && { ...p.sort }, conds: p.conds.map((c) => ({ ...c })) });
+    state.collapsed.clear();
+    closePop();
+    renderHead();
+    render({ intro: true });
+  }
+
+  /* ================= 事件繫結與初始化 ================= */
+  viewsBox.addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) applyPreset(b.dataset.preset); });
+  $('#ag-vswitch').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]');
+    if (!b || b.dataset.view === state.view) return;
+    state.view = b.dataset.view;
+    closePop();
+    render({ intro: true });
+  });
+  chipsBox.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-status]');
+    if (!b) return;
+    const was = b.getAttribute('aria-pressed') === 'true';
+    state.conds = state.conds.filter((c) => c.field !== 'status');
+    if (!was) state.conds.push({ field: 'status', op: 'is', value: b.dataset.status });
+    render();
+  });
+  cellsBox.addEventListener('pointerover', (e) => { const c = e.target.closest('.ag-cell'); if (c) showPeek(App.getApplicant(c.dataset.id)); });
+  cellsBox.addEventListener('pointerleave', () => { if (!cellsBox.contains(document.activeElement)) showPeek(null); });
+  cellsBox.addEventListener('focusin', (e) => { const c = e.target.closest('.ag-cell'); if (c) { c.classList.add('is-peek'); showPeek(App.getApplicant(c.dataset.id)); } });
+  cellsBox.addEventListener('focusout', (e) => { e.target.classList.remove('is-peek'); if (!cellsBox.contains(e.relatedTarget)) showPeek(null); });
+  cellsBox.addEventListener('click', (e) => { const c = e.target.closest('.ag-cell'); if (c) openRecord(c.dataset.id, c); });
+  cellsBox.addEventListener('keydown', (e) => {
+    const c = e.target.closest('.ag-cell');
+    if (!c) return;
+    const cells = [...cellsBox.children];
+    const i = cells.indexOf(c);
+    const step = { ArrowRight: 1, ArrowLeft: -1, Home: -i, End: cells.length - 1 - i }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    const n = cells[clamp(i + step, 0, cells.length - 1)];
+    c.tabIndex = -1;
+    n.tabIndex = 0;
+    n.focus();
+  });
+  const search = $('#ag-q');
+  search.addEventListener('input', () => { state.q = search.value; render(); });
+  search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.stopPropagation(); search.value = ''; state.q = ''; render(); } });
+  $('#ag-result').addEventListener('click', (e) => { if (e.target.closest('#ag-reset')) applyPreset(state.preset); });
+  $('#ag-empty').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-clear]')) return;
+    state.q = '';
+    search.value = '';
+    state.conds = [];
+    render();
+  });
+
+  $('#ag-team').innerHTML = TEAM.map((s) => App.avatar(s)).join('');
+  $('#ag-src').innerHTML = CHECK_ORDER.map((k) => `<span>${esc(CHECKS[k].long)} · ${fmt.dateTime(CHECKS[k].syncedAt)}</span>`).join('');
+  showPeek(null);
+
+  // 工具列在手機上會折成兩列，表頭黏住的位置要跟著實際高度走
+  const viewbar = $('#ag-viewbar');
+  const syncStickyTop = () => { document.documentElement.style.setProperty('--sticky-top', viewbar.offsetHeight + 'px'); stickyApi?.update(); };
+  new ResizeObserver(syncStickyTop).observe(viewbar);
+
+  applyPreset('all');
+  stickyApi = App.stickyHead(wrap);
+  syncStickyTop();
+  if (App.motionOK()) {
+    cellsBox.classList.add('is-intro');
+    setTimeout(() => cellsBox.classList.remove('is-intro'), 1400);
+  }
+  App.on((d) => { if (!batching) render({ changed: [d.id] }); });
+});
+</script>
+</body>
+</html>

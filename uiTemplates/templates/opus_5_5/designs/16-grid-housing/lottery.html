@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公開抽籤 — 澄港社宅申請與抽籤管理</title>
+<meta name="description" content="港埕青年社宅 2026 第 2 期公開抽籤控制台：依組別與戶型分 12 場抽籤、亂數種子公開與驗證、中籤與備取名單即時生成並可匯出 CSV。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.add('js');</script>
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+  .lt-head { margin-bottom: 18px; }
+  .lt-desc { font-size: var(--fs-14); color: var(--text-2); }
+  .lt-desc b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lt-crew { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 4px; }
+  .lt-crew li {
+    display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 4px;
+    border: 1px solid var(--line-soft); border-radius: var(--r-pill); background: var(--bg-subtle);
+    font-size: var(--fs-12); color: var(--text-3); white-space: nowrap;
+  }
+  .lt-crew li b { color: var(--text); font-weight: 600; }
+  .lt-crew__ic { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-muted); color: var(--text-2); }
+  .lt-crew__ic .i { width: 13px; height: 13px; }
+
+  .lt-next {
+    display: grid; gap: 10px; min-width: 360px; padding: 14px 16px 14px;
+    border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs);
+    background: radial-gradient(130% 120% at 100% 0%, #FFF1F4 0%, transparent 48%), var(--bg);
+  }
+  .lt-next__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-13); }
+  .lt-next__top b { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .lt-next .cd { --cd-fs: 24px; }
+  .lt-next__actions { display: flex; gap: 8px; }
+  .lt-next__actions .btn { flex: 1; }
+
+  /* ---------- 抽籤舞台 ---------- */
+  .lt-top { align-items: stretch; }
+  .lt-stage { display: flex; flex-direction: column; }
+  .lt-stage__bar {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+    padding: 4px 12px 0 6px; border-bottom: 1px solid var(--line);
+    background: var(--bg-subtle); border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .lt-groups { border-bottom: 0; }
+  .lt-groups .tab { height: 42px; padding: 0 14px; font-size: var(--fs-14); }
+  .lt-gdot { width: 8px; height: 8px; border-radius: 50%; background: var(--t3); flex: none; }
+  .lt-units { margin-bottom: 8px; }
+  .lt-units > button { height: 30px; }
+  .lt-units small { font-size: 11px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .lt-units .i { color: var(--success); }
+
+  .lt-stage__body {
+    position: relative; flex: 1; isolation: isolate;
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 14px 22px 16px;
+  }
+  /* 試算表方格紙底紋：用遮罩讓格線往四周淡出，中央號碼區最乾淨 */
+  .lt-stage__body::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      linear-gradient(var(--line-soft) 1px, transparent 1px) 0 0 / 100% 28px,
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px) 0 0 / 28px 100%;
+    -webkit-mask-image: radial-gradient(75% 60% at 50% 34%, transparent 0 28%, #000 78%);
+    mask-image: radial-gradient(75% 60% at 50% 34%, transparent 0 28%, #000 78%);
+    opacity: .9;
+  }
+  .lt-stage__body::after {
+    content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none;
+    background: radial-gradient(52% 46% at 50% 33%, var(--primary-50), transparent 72%);
+  }
+  .lt-onair { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lt-onair__title { font-size: var(--fs-16); font-weight: 700; letter-spacing: .005em; }
+  .lt-onair__meta { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .lt-chip {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+    border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--bg);
+    font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .lt-chip b { color: var(--text); font-weight: 700; }
+  .lt-chip .i { width: 13px; height: 13px; }
+
+  /* 舞台高度由右欄決定時，多出的空間平均分到號碼上下，號碼永遠在視覺中心 */
+  .lt-draw { flex: 1; display: grid; justify-items: center; align-content: center; gap: 12px; padding: 6px 0 0; }
+  .lt-number { display: inline-flex; align-items: center; font-size: clamp(56px, 6.2vw, 88px); font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .lt-number .reel--xl { font-size: inherit; }
+  .lt-prefix {
+    display: inline-block; height: 1.36em; line-height: 1.36em; min-width: 1em; margin-right: .14em; padding: 0 .14em;
+    border-radius: .16em; text-align: center;
+    background: var(--t1); color: var(--tink); box-shadow: inset 0 0 0 1px rgba(16, 24, 40, .06), 0 1px 0 rgba(16, 24, 40, .05);
+  }
+  .lt-number.is-idle .reel__strip { color: var(--c-gray-2); }
+  /* 本支結果：方格描邊染成正取綠／備取黃，換場或重設時回到中性 */
+  .lt-number.is-win { --hit: var(--c-green-3); --hit-soft: var(--c-green-1); }
+  .lt-number.is-wait { --hit: var(--c-yellow-3); --hit-soft: var(--c-yellow-1); }
+  .lt-number.is-win .reel__d, .lt-number.is-wait .reel__d { box-shadow: inset 0 0 0 1.5px var(--hit), 0 1px 0 rgba(16, 24, 40, .05); }
+  .lt-number.is-hit .reel__d { animation: lt-hit 820ms var(--ease-out) both; animation-delay: calc(var(--k, 0) * 50ms); }
+  .lt-number.is-hit .reel__d:nth-child(2) { --k: 1; }
+  .lt-number.is-hit .reel__d:nth-child(3) { --k: 2; }
+  .lt-number.is-hit .reel__d:nth-child(4) { --k: 3; }
+  @keyframes lt-hit {
+    0% { transform: none; }
+    28% { transform: translateY(-7px); box-shadow: inset 0 0 0 2px var(--hit), 0 0 0 7px var(--hit-soft), 0 10px 18px -8px rgba(16, 24, 40, .3); }
+    100% { transform: none; }
+  }
+
+  .lt-who { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; min-height: 34px; transition: opacity var(--dur-2); }
+  .lt-who__name { font-size: var(--fs-20); font-weight: 700; letter-spacing: .02em; }
+  .lt-who__sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  .lt-who__idle { display: inline-flex; align-items: center; gap: 8px; color: var(--text-3); font-size: var(--fs-14); }
+  .lt-who__idle .i { color: var(--primary); }
+  .lt-stage.is-drawing .lt-who { opacity: .28; }
+
+  .lt-pool { display: grid; gap: 8px; }
+  .lt-pool__head { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-2); font-weight: 600; }
+  .lt-pool__head .fi { color: var(--text-3); }
+  .lt-pool__head small { color: var(--text-3); font-weight: 500; }
+  .lt-pool__head .legend { margin-left: auto; font-weight: 500; }
+  .lt-sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c-gray-1); box-shadow: inset 0 0 0 1px rgba(16, 24, 40, .1); }
+  .lt-sw--win { background: var(--c-green-2); }
+  .lt-sw--wait { background: var(--c-yellow-2); }
+  .lt-sw--last { background: var(--bg); box-shadow: 0 0 0 1.5px var(--primary); }
+  .lt-mosaic { --cell: 12px; display: grid; grid-template-columns: repeat(auto-fit, var(--cell)); gap: 3px; justify-content: center; align-content: center; min-height: calc(var(--mh, 104px) + 20px); padding: 10px; border-radius: var(--r-md); background: rgba(255, 255, 255, .86); box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .lt-mosaic i { width: var(--cell); height: var(--cell); border-radius: 2px; background: var(--c-gray-1); box-shadow: inset 0 0 0 1px rgba(16, 24, 40, .07); }
+  .lt-mosaic i.is-win { background: var(--c-green-2); box-shadow: none; }
+  .lt-mosaic i.is-wait { background: var(--c-yellow-2); box-shadow: none; }
+  .lt-mosaic i.is-last { position: relative; z-index: 1; box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px var(--primary); }
+
+  .lt-fx { position: absolute; inset: 0; z-index: 4; width: 100%; height: 100%; pointer-events: none; }
+
+  /* 聽打字幕列：直播畫面下方的字幕，同時是螢幕報讀的 live region */
+  .lt-cc { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 6px 12px 6px 6px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); box-shadow: var(--sh-xs); font-size: var(--fs-13); }
+  .lt-cc__tag { flex: none; display: inline-grid; place-items: center; height: 24px; padding: 0 8px; border-radius: 5px; background: var(--text); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+  .lt-cc__text { min-width: 0; color: var(--text); font-weight: 500; }
+  .lt-cc__text.is-new { animation: lt-cc-in 420ms var(--ease-out); }
+  @keyframes lt-cc-in { from { opacity: 0; transform: translateY(4px); } }
+
+  .lt-stage__foot {
+    display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
+    padding: 12px 16px; border-top: 1px solid var(--line-soft);
+    background: var(--bg-subtle); border-radius: 0 0 var(--r-lg) var(--r-lg);
+  }
+  .lt-ctrl { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lt-ctrl .btn--primary { min-width: 168px; }
+  .lt-prog { flex: 1; display: grid; gap: 6px; min-width: 220px; max-width: 360px; margin-left: auto; }
+  .lt-prog__row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 56px; gap: 8px; align-items: center; font-size: var(--fs-12); color: var(--text-2); font-weight: 600; }
+  .lt-prog__row b { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  .lt-prog__row b small { color: var(--text-3); font-weight: 500; }
+  .lt-prog__bar { height: 8px; border-radius: 4px; background: var(--bg-muted); overflow: hidden; }
+  .lt-prog__bar i { display: block; height: 100%; background: var(--t2); border-radius: inherit; transform: scaleX(var(--p, 0)); transform-origin: left center; transition: transform var(--dur-3) var(--ease-out); }
+
+  /* ---------- 右欄：全場進度 ---------- */
+  /* 右欄：進度矩陣固定高、直播紀錄吃掉剩餘高度，與左側舞台等高 */
+  .lt-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .lt-side > .lt-log { flex: 1; }
+  .lt-mx { display: grid; grid-template-columns: 76px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; }
+  .lt-mx__col { display: flex; justify-content: center; }
+  .lt-mx__col .pill, .lt-mx__row .pill { height: 20px; font-size: 11.5px; padding: 0 7px; }
+  .lt-cell {
+    display: grid; gap: 3px; min-width: 0; padding: 6px 8px 7px;
+    border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg);
+    text-align: left; font-variant-numeric: tabular-nums;
+    transition: border-color var(--dur-1), box-shadow var(--dur-1), background var(--dur-1);
+  }
+  .lt-cell:hover { border-color: var(--line-strong); background: var(--bg-hover); }
+  .lt-cell__top { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--text-3); white-space: nowrap; }
+  .lt-cell__st { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; }
+  .lt-cell__st .i { width: 10px; height: 10px; }
+  .lt-cell.is-live .lt-cell__st { background: var(--primary-100); }
+  .lt-cell.is-live .lt-cell__st::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .lt-cell.is-done .lt-cell__st { background: var(--c-green-1); color: var(--c-green-ink); }
+  .lt-cell__v { font-size: var(--fs-13); line-height: 1.2; white-space: nowrap; }
+  .lt-cell__v b { font-weight: 700; }
+  .lt-cell__v small { color: var(--text-3); font-size: 11px; }
+  .lt-cell__bar { display: flex; height: 4px; border-radius: 2px; background: var(--bg-muted); overflow: hidden; }
+  .lt-cell__bar i { height: 100%; width: var(--w, 0%); }
+  .lt-cell__bar i:first-child { background: var(--c-green-3); }
+  .lt-cell__bar i:last-child { background: var(--c-yellow-3); }
+  .lt-cell[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-50); box-shadow: 0 0 0 2px var(--primary-200); }
+  .lt-cell.is-done[aria-pressed="false"] { background: #F7FCF5; }
+  .lt-mx-foot { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+
+  /* ---------- 右欄：亂數種子 ---------- */
+  .lt-seed .card__body { display: grid; gap: 16px; }
+  .lt-step { display: grid; gap: 8px; }
+  .lt-step__title { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); font-weight: 700; }
+  .lt-step__title small { color: var(--text-3); font-weight: 500; font-size: var(--fs-12); }
+  .lt-step__title .btn { margin-left: auto; }
+  .lt-step__no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--primary-100); color: var(--primary-700); font-size: 11px; font-weight: 700; flex: none; }
+  .lt-hashes { display: grid; gap: 4px; }
+  .lt-hashes li { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .lt-hashes .hash { min-width: 0; }
+  .lt-hashes small { width: 50px; text-align: right; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .lt-dice { display: grid; gap: 6px; }
+  .lt-dice li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--fs-12); color: var(--text-2); }
+  .lt-dice li > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lt-dice .reel { font-size: 16px; font-weight: 700; color: var(--text); }
+  .lt-seedhex {
+    display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 2px 10px;
+    padding: 10px 12px; border: 1px solid var(--primary-200); border-radius: var(--r-md);
+    background: var(--primary-50); font-family: var(--font-mono); font-size: 13px; color: var(--primary-700); font-weight: 600; letter-spacing: .02em;
+  }
+  .lt-seed__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-12); color: var(--text-3); }
+  .lt-seed__row .btn { margin-left: auto; }
+  .lt-formula { font-size: var(--fs-12); color: var(--text-3); line-height: 1.6; }
+  .lt-step--session { padding-top: 14px; border-top: 1px dashed var(--line); }
+  .lt-step--session .hash { justify-content: space-between; }
+  .lt-formula code { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); background: var(--bg-muted); border-radius: 3px; padding: 0 4px; }
+
+  /* ---------- 名單與紀錄 ---------- */
+  .lt-mid { margin-top: 16px; align-items: stretch; }
+  .lt-res, .lt-log { display: flex; flex-direction: column; }
+  .lt-res__tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg-subtle); }
+  .lt-res__tools .badge { margin-left: 2px; }
+  .lt-res__search { width: 230px; margin-left: auto; }
+  .lt-res__search .input { height: 30px; }
+  .lt-note {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 16px;
+    border-bottom: 1px solid var(--line-soft); background: var(--primary-50); font-size: var(--fs-13); color: var(--text-2);
+  }
+  .lt-note .i { color: var(--primary-700); }
+  .lt-note .btn { margin-left: auto; }
+  /* contain: size 讓名單的列數不撐高卡片：卡片高度跟右側種子卡對齊，名單在框內捲動 */
+  .lt-res__wrap { flex: 1 1 0; min-height: 400px; contain: size; overflow: auto; border: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .lt-res__wrap .dg { --frozen-1: 60px; }
+  .lt-res__wrap .dg thead th { position: sticky; top: 0; z-index: 3; }
+  .lt-res__wrap .dg thead th.is-frozen { z-index: 5; }
+  .lt-res__wrap .dg tbody .is-frozen { z-index: 2; }
+  .lt-res__wrap .lt-seq { padding: 0 8px 0 12px; color: var(--text-3); font-size: var(--fs-12); }
+  .lt-lot { display: inline-block; padding: 1px 7px; border-radius: 4px; background: var(--t1); color: var(--tink); font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; letter-spacing: .02em; }
+  .lt-rank { font-weight: 700; }
+  .lt-res tr.is-new { animation: lt-row-in 520ms var(--ease-out); }
+  .lt-res tr.is-new td { animation: dg-flash 1400ms var(--ease-out); }
+  @keyframes lt-row-in { from { opacity: 0; transform: translateY(-10px); } }
+  /* 名單還沒有列時，空狀態置中在卡片剩餘的高度裡，不會只貼在表頭下方留下一大片空白 */
+  .lt-res__wrap { display: flex; flex-direction: column; }
+  .lt-res__wrap > .dg { flex: none; }
+  .lt-res__empty:not(:empty) { flex: 1 0 auto; display: grid; place-items: center; }
+  /* 名單還沒有資料時，空白處畫出資料格的淡列線（與表格列高相同），像一張等待填入的表；空狀態浮在中間 */
+  .lt-res__empty:not(:empty) { background: repeating-linear-gradient(180deg, transparent 0 calc(var(--row-h, 34px) - 1px), var(--line-soft) calc(var(--row-h, 34px) - 1px) var(--row-h, 34px)); }
+  .lt-res__empty .empty { margin: 24px 16px; padding: 24px 32px 28px; border-radius: var(--r-xl); background: var(--bg); box-shadow: 0 0 0 1px var(--line-soft), var(--sh-sm); }
+
+  /* 底部淡出提示紀錄可往下捲 */
+  .lt-log__scroll {
+    flex: 1 1 0; min-height: 120px; overflow: auto; overscroll-behavior: contain; contain: size; padding: 4px 16px 20px;
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
+  }
+  .lt-log .feed__text .pill { vertical-align: 1px; height: 18px; line-height: 18px; font-size: 11.5px; }
+  .lt-log .feed__text .mono { font-weight: 700; color: var(--text); }
+
+  /* ---------- 種子公開與驗證 ---------- */
+  .lt-verify { margin-top: 16px; }
+  .lt-flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px; margin: 16px 0 20px; counter-reset: flow; }
+  .lt-flow__node {
+    position: relative; display: grid; gap: 5px; align-content: start; min-width: 0;
+    padding: 12px 12px 12px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg);
+    box-shadow: var(--sh-xs);
+  }
+  .lt-flow__node::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; border-radius: var(--r-lg) var(--r-lg) 0 0; background: var(--t2); }
+  .lt-flow__node:not(:last-child)::after {
+    content: ""; position: absolute; top: 50%; right: -16px; width: 9px; height: 9px;
+    border-top: 2px solid var(--line-strong); border-right: 2px solid var(--line-strong);
+    transform: translateY(-50%) rotate(45deg);
+  }
+  .lt-flow__title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-13); font-weight: 700; }
+  .lt-flow__title .lt-step__no { background: var(--t1); color: var(--tink); }
+  .lt-flow__val { font-family: var(--font-mono); font-size: 12px; color: var(--text); font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+  .lt-flow__cap { font-size: var(--fs-12); color: var(--text-3); line-height: 1.5; }
+  .lt-vgrid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 24px; align-items: start; }
+  .lt-vsteps h3, .lt-vtool h3 { display: flex; align-items: center; gap: 8px; font-size: var(--fs-14); font-weight: 700; margin-bottom: 10px; }
+  .lt-vsteps ol { display: grid; gap: 10px; counter-reset: vs; }
+  .lt-vsteps li { position: relative; padding-left: 30px; font-size: var(--fs-13); color: var(--text-2); line-height: 1.65; counter-increment: vs; }
+  .lt-vsteps li::before { content: counter(vs); position: absolute; left: 0; top: 1px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--bg-muted); color: var(--text-2); font-size: 11px; font-weight: 700; }
+  .lt-vsteps code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-muted); border-radius: 3px; padding: 0 4px; color: var(--text); overflow-wrap: anywhere; }
+  .lt-vtool { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-subtle); }
+  .lt-vtool__row { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 12px; align-items: start; }
+  .lt-vtool .input--mono { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .01em; }
+  .lt-vtool__act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lt-vtool__switch { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--fs-12); color: var(--text-2); font-weight: 500; }
+  .lt-vsum { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--t1, var(--bg-muted)); color: var(--tink, var(--text-2)); font-size: var(--fs-13); font-weight: 500; }
+  .lt-vsum .chk { margin-top: 1px; background: var(--bg); }
+  .lt-vlots { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+  .lt-vlot { display: grid; justify-items: center; gap: 2px; padding: 6px 2px 5px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); font-variant-numeric: tabular-nums; }
+  .lt-vlot small { font-size: 10.5px; color: var(--text-3); }
+  .lt-vlot b { font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+  .lt-vlot.is-match { border-color: var(--c-green-2); background: #F6FDF3; }
+  .lt-vlot.is-match small { color: var(--c-green-ink); }
+  .lt-vlot.is-miss { border-color: var(--c-red-2); background: #FFF6F8; }
+  .lt-vlot.is-miss small { color: var(--c-red-ink); }
+  .lt-vlot.is-hidden b { color: var(--text-4); letter-spacing: .1em; }
+  .lt-dice-form { display: grid; gap: 14px; }
+  .lt-dice-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .lt-dice-row .input { font-family: var(--font-mono); font-size: 18px; letter-spacing: .32em; height: 40px; }
+  .lt-dice-row .btn { height: 40px; }
+  .lt-rec { display: grid; gap: 18px; }
+
+  /* ---------- 響應式 ---------- */
+  @media (max-width: 1180px) {
+    .lt-top > .span-8, .lt-top > .lt-side, .lt-mid > .span-8, .lt-mid > .span-4 { grid-column: 1 / -1; }
+    .lt-side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .lt-seed .card__body { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; }
+    .lt-flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .lt-flow__node:nth-child(3)::after { display: none; }
+    .lt-vgrid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .lt-next { min-width: 0; }
+    .lt-crew li { height: 28px; }
+    .lt-stage__bar { flex-direction: column; align-items: stretch; gap: 0; padding: 2px 8px 0; }
+    .lt-groups { width: 100%; }
+    .lt-groups .tab { flex: 1 1 0; justify-content: center; gap: 5px; height: 42px; padding: 0 4px; font-size: var(--fs-13); }
+    .lt-groups .tab__count { min-width: 0; padding: 0 5px; }
+    .lt-gdot { display: none; }
+    .lt-units { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px 0 8px; }
+    .lt-units > button { justify-content: center; padding: 0 4px; }
+    .lt-stage__body { padding: 14px 14px 16px; gap: 12px; }
+    .lt-onair__meta { margin-left: 0; width: 100%; }
+    .lt-number { font-size: 56px; }
+    .lt-who__name { font-size: var(--fs-18); }
+    .lt-who__sep { display: none; }
+    .lt-pool__head .legend { margin-left: 0; }
+    .lt-cc { align-items: flex-start; }
+    .lt-stage__foot { padding: 12px 14px; }
+    .lt-ctrl { width: 100%; }
+    .lt-ctrl .btn { flex: 1 1 auto; }
+    .lt-ctrl .btn--primary { flex-basis: 100%; }
+    .lt-prog { max-width: none; margin-left: 0; }
+    .lt-side { grid-template-columns: 1fr; }
+    .lt-log__scroll { contain: none; flex: none; min-height: 0; max-height: 360px; }
+    .lt-res__wrap { contain: none; flex: none; min-height: 0; max-height: 420px; --lt-name-w: 96px; }
+    .lt-mx { grid-template-columns: 58px repeat(4, minmax(0, 1fr)); gap: 4px; }
+    .lt-mx__col .pill, .lt-mx__row .pill { padding: 0 5px; font-size: 11px; }
+    .lt-cell { padding: 6px 5px 7px; }
+    .lt-cell__top > span:first-child { display: none; }
+    .lt-cell__top { justify-content: flex-end; }
+    .lt-hashes li { grid-template-columns: 64px minmax(0, 1fr) auto; }
+    .lt-hashes small { display: none; }
+    .lt-seedhex { grid-template-columns: repeat(2, auto); justify-content: start; gap: 2px 16px; }
+    .lt-seed .card__body { grid-template-columns: 1fr; }
+    .lt-res__search { width: 100%; margin-left: 0; order: 10; }
+    .lt-flow { grid-template-columns: 1fr; gap: 18px; }
+    /* 與桌機規則同權重（:not(:last-child)）才蓋得過；直排時箭頭改到卡片下方朝下 */
+    .lt-flow__node:not(:last-child)::after { display: block; top: auto; bottom: -14px; right: auto; left: 24px; transform: rotate(135deg); }
+    .lt-vtool { padding: 12px; }
+    .lt-vtool__row { grid-template-columns: 1fr; }
+    .lt-vtool__switch { margin-left: 0; }
+    .lt-vlots { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳至主要內容</a>
+
+<header class="appbar">
+  <div class="appbar__bar">
+    <a class="appbar__back" href="../../index.html">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4"/></svg>
+      <span class="appbar__back-text">返回目錄</span>
+    </a>
+    <span class="appbar__divider" aria-hidden="true"></span>
+    <a class="base" href="index.html">
+      <span class="base__mark" aria-hidden="true">
+        <svg viewBox="0 0 28 28" width="28" height="28"><rect width="28" height="28" rx="7" fill="#fff"/><path d="M5.5 12.5L14 5.5l8.5 7" fill="none" stroke="#1B65D9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="7.5" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#FCB400"/><rect x="14.9" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#F82B60"/><rect x="7.5" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#18BFFF"/><rect x="14.9" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#20C933"/></svg>
+      </span>
+      <span class="base__text">
+        <span class="base__name">港埕青年社宅 · 2026 第 2 期招租</span>
+        <span class="base__org">澄港市住宅發展處｜社宅申請與抽籤管理系統</span>
+      </span>
+    </a>
+    <div class="appbar__actions">
+      <span class="appbar__sync">10/22（四）<span data-clock>10:30</span></span>
+      <button class="appbar__icon" type="button" data-action="help" aria-label="系統說明" data-tip="系統說明" data-tip-pos="bottom">
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM6.2 6.3a1.9 1.9 0 1 1 2.6 1.7c-.5.2-.8.6-.8 1.1v.4"/><circle cx="8" cy="11.6" r="1.1" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="appbar__icon" type="button" data-action="notify" aria-label="通知（4 則未讀）">
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V7a4 4 0 1 1 8 0v4l1 1.5H3zM6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+        <span class="appbar__dot"></span>
+      </button>
+      <span class="appbar__user"><span class="avatar avatar--sm" style="--h:214" aria-hidden="true">林</span><span class="appbar__user-name">林佩璇</span></span>
+      <button class="appbar__menu" type="button" data-nav-toggle aria-controls="site-nav" aria-expanded="false">
+        <span class="sr-only">切換資料表，目前：</span><span data-nav-current>公開抽籤</span>
+        <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+    </div>
+  </div>
+  <nav class="tablebar" id="site-nav" aria-label="資料表">
+    <a class="tablebar__tab" href="index.html" data-label="總覽">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h4.5v4.5H2.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5H2.5zM9 9h4.5v4.5H9z"/></svg>總覽
+    </a>
+    <a class="tablebar__tab" href="applicants.html" data-label="申請人資料表">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h11v11h-11zM2.5 6.2h11M2.5 9.8h11M6.2 2.5v11"/></svg>申請人資料表
+      <span class="tablebar__count" data-stat="pending">296</span><span class="sr-only">件待處理</span>
+    </a>
+    <a class="tablebar__tab" href="applicant.html" data-label="申請人詳情">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5h12v9H2zM4.4 10c.3-1 1-1.5 1.9-1.5s1.6.5 1.9 1.5M6.3 7.3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM9.8 6h2.7M9.8 8.5h2"/></svg>申請人詳情
+    </a>
+    <a class="tablebar__tab" href="lottery.html" data-label="公開抽籤" aria-current="page">
+      <svg class="i" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5h12v2.2a1.5 1.5 0 0 0 0 2.6v2.2H2V9.3a1.5 1.5 0 0 0 0-2.6zM10 4.5v7"/></svg>公開抽籤
+      <span class="tablebar__chip">10/30</span>
+    </a>
+  </nav>
+</header>
+
+<main id="main" class="page">
+  <section class="hero lt-head" aria-labelledby="lt-title">
+    <div class="hero__main">
+      <p class="eyebrow"><span data-icon="ticket"></span>公開抽籤 · GCY-2026-2 · 模擬演練</p>
+      <h1 class="hero__title" id="lt-title">公開抽籤控制台</h1>
+      <span class="hero__ticks" aria-hidden="true"><i class="tone-blue"></i><i class="tone-pink"></i><i class="tone-teal"></i><i class="tone-green"></i><i class="tone-yellow"></i><i class="tone-cyan"></i><i class="tone-purple"></i><i class="tone-orange"></i></span>
+      <p class="lt-desc" id="lt-desc"><b>模擬演練</b>：使用 10/22 10:30 名冊快照與演練骰值，結果不具效力。正式名冊 10/28 公告，10/30（五）14:00 正式開抽並同步直播。</p>
+      <ul class="lt-crew" id="lt-crew" aria-label="抽籤現場人員與資訊"></ul>
+    </div>
+    <aside class="lt-next" aria-labelledby="lt-next-title">
+      <p class="lt-next__top"><span class="pill tone-red"><span class="pill__dot"></span><span class="pill__text">正式場次</span></span><b id="lt-next-title">10/30（五）14:00</b><span class="muted">彩排 10/27（二）10:00</span></p>
+      <div class="cd" role="timer" aria-label="距離 10 月 30 日 14:00 正式抽籤">
+        <div class="cd__unit"><span class="reel reel--box" data-countdown-to="2026-10-30T14:00" data-countdown-part="d"></span><small>天</small></div>
+        <span class="cd__sep" aria-hidden="true">:</span>
+        <div class="cd__unit"><span class="reel reel--box" data-countdown-to="2026-10-30T14:00" data-countdown-part="h"></span><small>時</small></div>
+        <span class="cd__sep" aria-hidden="true">:</span>
+        <div class="cd__unit"><span class="reel reel--box" data-countdown-to="2026-10-30T14:00" data-countdown-part="m"></span><small>分</small></div>
+        <span class="cd__sep" aria-hidden="true">:</span>
+        <div class="cd__unit"><span class="reel reel--box" data-countdown-to="2026-10-30T14:00" data-countdown-part="s"></span><small>秒</small></div>
+      </div>
+      <div class="lt-next__actions">
+        <button class="btn" type="button" id="copy-verify"><span data-icon="copy"></span>複製驗證資訊</button>
+        <button class="btn btn--soft" type="button" id="export-all"><span data-icon="download"></span>匯出全部結果</button>
+      </div>
+    </aside>
+  </section>
+
+  <section class="layout lt-top" aria-label="抽籤直播控制">
+    <article class="card lt-stage span-8" id="lt-stage" aria-labelledby="stage-title">
+      <div class="lt-stage__bar">
+        <div class="tabs lt-groups" id="lt-groups" role="tablist" aria-label="抽籤組別">
+          <button class="tab tone-blue" type="button" role="tab" id="tab-general" aria-selected="true"><span class="lt-gdot"></span>一般戶<span class="tab__count" data-group-count="general">0/210</span></button>
+          <button class="tab tone-pink" type="button" role="tab" id="tab-vulnerable" aria-selected="false"><span class="lt-gdot"></span>弱勢戶<span class="tab__count" data-group-count="vulnerable">0/126</span></button>
+          <button class="tab tone-teal" type="button" role="tab" id="tab-local" aria-selected="false"><span class="lt-gdot"></span>在地青年<span class="tab__count" data-group-count="local">0/84</span></button>
+        </div>
+        <div class="seg lt-units" id="lt-units" role="group" aria-label="申請戶型">
+          <button type="button" data-value="studio" aria-pressed="true">套房</button>
+          <button type="button" data-value="one" aria-pressed="false">一房型</button>
+          <button type="button" data-value="two" aria-pressed="false">二房型</button>
+          <button type="button" data-value="three" aria-pressed="false">三房型</button>
+        </div>
+      </div>
+
+      <div class="lt-stage__body" id="stage-body" role="tabpanel" aria-labelledby="tab-general">
+        <div class="lt-onair">
+          <span data-loop><span class="live-badge">LIVE · 演練</span></span>
+          <h2 class="lt-onair__title" id="stage-title">第 1 場 · 一般戶 · 套房</h2>
+          <div class="lt-onair__meta" id="stage-meta"></div>
+        </div>
+
+        <div class="lt-draw">
+          <div class="lt-number is-idle" id="lt-number" aria-hidden="true">
+            <span class="lt-prefix tone-blue" id="lt-prefix">G</span><span class="reel reel--box reel--xl" id="lt-reel"></span>
+          </div>
+          <div class="lt-who" id="lt-who"></div>
+        </div>
+
+        <div class="lt-pool">
+          <div class="lt-pool__head">
+            <span data-field-icon="lookup"></span><span id="pool-title">名冊格</span><small id="pool-sub"></small>
+            <ul class="legend">
+              <li class="legend__item"><span class="lt-sw"></span>未抽出</li>
+              <li class="legend__item"><span class="lt-sw lt-sw--win"></span>正取</li>
+              <li class="legend__item"><span class="lt-sw lt-sw--wait"></span>備取</li>
+              <li class="legend__item"><span class="lt-sw lt-sw--last"></span>本支</li>
+            </ul>
+          </div>
+          <div class="lt-mosaic" id="lt-mosaic" role="img" aria-label="本場名冊"></div>
+        </div>
+
+        <p class="lt-cc"><span class="lt-cc__tag">字幕</span><span class="lt-cc__text" id="lt-cc" aria-live="polite"></span></p>
+        <canvas class="lt-fx" id="lt-fx" aria-hidden="true"></canvas>
+      </div>
+
+      <div class="lt-stage__foot">
+        <div class="lt-ctrl">
+          <button class="btn btn--primary btn--lg" type="button" id="btn-draw"><span data-icon="ticket"></span><span data-label>抽出下一支</span></button>
+          <button class="btn btn--lg" type="button" id="btn-batch"><span data-icon="play"></span><span data-label>連抽 10 支</span></button>
+          <button class="btn btn--lg btn--ghost" type="button" id="btn-all"><span data-icon="zap"></span><span data-label>本場抽完</span></button>
+        </div>
+        <div class="lt-prog" id="lt-prog">
+          <div class="lt-prog__row tone-green"><span>正取</span><span class="lt-prog__bar"><i data-bar="win"></i></span><b data-text="win">0</b></div>
+          <div class="lt-prog__row tone-yellow"><span>備取</span><span class="lt-prog__bar"><i data-bar="wait"></i></span><b data-text="wait">0</b></div>
+        </div>
+        <button class="btn btn--sm btn--ghost" type="button" id="btn-reset"><span data-icon="undo"></span>重設演練</button>
+      </div>
+    </article>
+
+    <div class="lt-side span-4">
+      <article class="card" aria-labelledby="mx-title">
+        <header class="card__head">
+          <div class="card__headings">
+            <h2 class="card__title" id="mx-title"><span data-field-icon="select"></span>全場進度</h2>
+            <p class="card__sub">12 場 · 組別 × 戶型分別抽籤，點選切換場次</p>
+          </div>
+          <div class="card__actions"><span class="badge" id="mx-total">0 / 0</span></div>
+        </header>
+        <div class="card__body">
+          <div class="lt-mx" id="lt-mx"></div>
+          <div class="lt-mx-foot" id="mx-foot"></div>
+        </div>
+      </article>
+
+      <article class="card lt-log" aria-labelledby="log-title">
+        <header class="card__head card__head--rule">
+          <div class="card__headings">
+            <h2 class="card__title" id="log-title"><span data-field-icon="longtext"></span>直播紀錄</h2>
+            <p class="card__sub">種子、場次與每一支籤的時間戳記</p>
+          </div>
+          <div class="card__actions"><span class="badge" id="log-count">0</span></div>
+        </header>
+        <div class="lt-log__scroll"><ol class="feed" id="lt-log"></ol></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="layout lt-mid" aria-label="抽籤結果與種子公開">
+    <article class="card span-8 lt-res" aria-labelledby="res-title">
+      <header class="card__head card__head--rule">
+        <div class="card__headings">
+          <h2 class="card__title" id="res-title"><span data-field-icon="checkbox"></span>中籤與備取名單</h2>
+          <p class="card__sub" id="res-sub">即時生成</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--sm" type="button" id="export-session"><span data-icon="download"></span>匯出本場 CSV</button>
+        </div>
+      </header>
+      <div class="lt-res__tools">
+        <div class="seg" id="res-filter" role="group" aria-label="篩選結果">
+          <button type="button" data-value="all" aria-pressed="true">全部<span class="badge" data-n="all">0</span></button>
+          <button type="button" data-value="win" aria-pressed="false">正取<span class="badge" data-n="win">0</span></button>
+          <button type="button" data-value="wait" aria-pressed="false">備取<span class="badge" data-n="wait">0</span></button>
+        </div>
+        <div class="seg" id="res-sort" role="group" aria-label="排序">
+          <button type="button" data-value="draw" aria-pressed="true"><span data-icon="clock"></span>最新在上</button>
+          <button type="button" data-value="pick" aria-pressed="false"><span data-icon="sort"></span>選屋順序</button>
+        </div>
+        <label class="search lt-res__search"><span class="search__icon" data-icon="search"></span><input class="input" type="search" id="res-q" data-search placeholder="查詢籤號、姓名或設籍區（按 / 聚焦）" aria-label="查詢籤號、姓名或設籍區" autocomplete="off"></label>
+      </div>
+      <div class="lt-note" id="res-note" hidden></div>
+      <div class="dg-wrap lt-res__wrap" id="res-wrap">
+        <table class="dg" id="res-table">
+          <caption class="sr-only">本場中籤與備取名單</caption>
+          <colgroup>
+            <col style="width:60px"><col style="width:96px"><col style="width:var(--lt-name-w, 148px)"><col style="width:118px"><col style="width:88px">
+            <col style="width:72px"><col style="width:100px"><col style="width:84px"><col style="width:104px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" class="is-frozen lt-seq"><span class="dg__th"><span data-field-icon="autonumber"></span><span>序</span></span></th>
+              <th scope="col" class="is-frozen is-frozen-2"><span class="dg__th"><span data-field-icon="text"></span><span>籤號</span></span></th>
+              <th scope="col"><span class="dg__th"><span data-field-icon="text"></span><span>申請人</span></span></th>
+              <th scope="col"><span class="dg__th"><span data-field-icon="select"></span><span>結果</span></span></th>
+              <th scope="col" class="cell-num"><span class="dg__th" title="依評點高低、同分依籤序；本場抽完後確定"><span data-field-icon="formula"></span><span>選屋序</span></span></th>
+              <th scope="col" class="cell-num"><span class="dg__th"><span data-field-icon="rating"></span><span>評點</span></span></th>
+              <th scope="col"><span class="dg__th"><span data-field-icon="select"></span><span>設籍區</span></span></th>
+              <th scope="col" class="cell-num"><span class="dg__th"><span data-field-icon="number"></span><span>家戶</span></span></th>
+              <th scope="col"><span class="dg__th"><span data-field-icon="duration"></span><span>抽出時間</span></span></th>
+            </tr>
+          </thead>
+          <tbody id="res-body"></tbody>
+        </table>
+        <div class="lt-res__empty" id="res-empty"></div>
+      </div>
+    </article>
+
+    <article class="card span-4 lt-seed" aria-labelledby="seed-title">
+      <header class="card__head">
+        <div class="card__headings">
+          <h2 class="card__title" id="seed-title"><span data-field-icon="formula"></span>亂數種子公開</h2>
+          <p class="card__sub">抽籤前公開，任何人可用同一組種子重算名單</p>
+        </div>
+        <div class="card__actions"><span class="pill tone-green" id="seed-state"><span class="pill__dot"></span><span class="pill__text">已鎖定</span></span></div>
+      </header>
+      <div class="card__body">
+        <section class="lt-step" aria-labelledby="st1">
+          <h3 class="lt-step__title" id="st1"><span class="lt-step__no">1</span>名冊雜湊 SHA-256<small>10/22 10:30 快照</small></h3>
+          <ul class="lt-hashes" id="lt-hashes"></ul>
+        </section>
+        <section class="lt-step" aria-labelledby="st2">
+          <h3 class="lt-step__title" id="st2"><span class="lt-step__no">2</span>見證人骰值<small>十面骰 × 6</small>
+            <button class="btn btn--sm btn--ghost" type="button" id="btn-dice"><span data-icon="dice"></span>重新擲骰</button></h3>
+          <ul class="lt-dice" id="lt-dice"></ul>
+        </section>
+        <section class="lt-step" aria-labelledby="st3">
+          <h3 class="lt-step__title" id="st3"><span class="lt-step__no">3</span>種子 = SHA-256（1 ｜ 2）</h3>
+          <div class="lt-seedhex" id="lt-seedhex" aria-label="種子"></div>
+          <div class="lt-seed__row"><span id="seed-at">10:30:00 產生</span><button class="btn btn--sm" type="button" data-copy="seed"><span data-icon="copy"></span>複製種子</button></div>
+        </section>
+        <section class="lt-step lt-step--session" aria-labelledby="st4">
+          <h3 class="lt-step__title" id="st4"><span class="lt-step__no">4</span>本場場次種子<small id="sess-seed-label">第 1 場</small></h3>
+          <p class="lt-formula" id="sess-seed-formula"></p>
+          <div class="hash"><span class="hash__text" id="sess-seed"></span><button type="button" class="icon-btn icon-btn--sm" data-copy="session" aria-label="複製本場場次種子"><span data-icon="copy"></span></button></div>
+        </section>
+      </div>
+    </article>
+  </section>
+
+  <section class="card lt-verify" data-reveal aria-labelledby="verify-title">
+    <header class="card__head card__head--rule">
+      <div class="card__headings">
+        <h2 class="card__title" id="verify-title"><span data-field-icon="lookup"></span>種子公開與驗證</h2>
+        <p class="card__sub">名單完全由公開資料決定：取得名冊與種子，任何人都能在自己的電腦上重算出同一份正取與備取名單</p>
+      </div>
+    </header>
+    <div class="card__body">
+      <ol class="lt-flow" id="lt-flow"></ol>
+      <div class="lt-vgrid">
+        <div class="lt-vsteps">
+          <h3><span data-icon="list"></span>自行驗證三步驟</h3>
+          <ol id="v-steps"></ol>
+        </div>
+        <form class="lt-vtool" id="v-form" novalidate>
+          <h3><span data-icon="refresh"></span>線上重算並逐支比對</h3>
+          <div class="lt-vtool__row">
+            <div class="field" id="v-seed-field">
+              <label class="label label--req" for="v-seed">種子（64 位十六進位）</label>
+              <input class="input input--mono" id="v-seed" type="text" spellcheck="false" autocomplete="off" aria-describedby="v-seed-err">
+              <p class="field__error" id="v-seed-err"><span data-icon="alert"></span>種子須為 64 位 0–9、a–f 的十六進位字串</p>
+            </div>
+            <div class="field">
+              <label class="label" for="v-session">場次</label>
+              <select class="select" id="v-session"></select>
+            </div>
+          </div>
+          <div class="lt-vtool__act">
+            <button class="btn btn--primary" type="submit"><span data-icon="refresh"></span>重算並比對</button>
+            <button class="btn btn--ghost" type="button" id="v-mutate"><span data-icon="edit"></span>改動 1 個字元</button>
+            <button class="btn btn--ghost" type="button" id="v-restore"><span data-icon="undo"></span>還原現場種子</button>
+            <span class="lt-vtool__switch"><button class="switch" type="button" role="switch" aria-checked="false" id="v-reveal" aria-labelledby="v-reveal-label"></button><span id="v-reveal-label">顯示尚未抽出的重算結果</span></span>
+          </div>
+          <div id="v-out" aria-live="polite"></div>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div class="site-footer__brand">
+      <svg viewBox="0 0 28 28" width="24" height="24" aria-hidden="true"><rect width="28" height="28" rx="7" fill="#1B65D9"/><path d="M5.5 12.5L14 5.5l8.5 7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="7.5" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#FCB400"/><rect x="14.9" y="13.5" width="5.6" height="4.4" rx="1.2" fill="#F82B60"/><rect x="7.5" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#18BFFF"/><rect x="14.9" y="19.4" width="5.6" height="4.4" rx="1.2" fill="#20C933"/></svg>
+      <div><strong>澄港市住宅發展處 社會住宅科</strong><span>社宅申請與抽籤管理系統 v3.8.2</span></div>
+    </div>
+    <nav class="site-footer__nav" aria-label="頁尾導覽">
+      <a href="index.html">總覽</a>
+      <a href="applicants.html">申請人資料表</a>
+      <a href="applicant.html">申請人詳情</a>
+      <a href="lottery.html">公開抽籤</a>
+    </nav>
+    <p class="site-footer__meta">資料快照 2026/10/22 10:30 · 個資依《澄港市社會住宅申請個人資料保護作業要點》處理<br><a href="../../index.html">← 返回作品目錄</a></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { DATA, GROUPS, GROUP_ORDER, UNITS, UNIT_ORDER, fmt, esc, icon, lottery } = App;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+  const LOT = DATA.lottery;
+  const STAFF = DATA.staff;
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // App.fmt 只到分；抽籤紀錄需要秒，固定以 UTC+8 換算，與 App.now() 一致
+  const hms = (ms) => { const d = new Date(ms + 8 * 3600e3); return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map(pad2).join(':'); };
+  const sameDay = (a, b) => fmt.dateFull(a) === fmt.dateFull(b);
+  const stamp = (ms) => (sameDay(ms, App.now()) ? hms(ms) : `${fmt.date(ms)} ${fmt.time(ms)}`);
+  const shortHash = (h, a = 8, b = 6) => `${h.slice(0, a)}…${h.slice(-b)}`;
+  const dateTag = () => fmt.dateFull(App.now()).replace(/\//g, '');
+
+  /* ================= 場次：組別 × 戶型共 12 場 ================= */
+  const SESSIONS = GROUP_ORDER.flatMap((g) => UNIT_ORDER.map((u) => {
+    const pool = lottery.pool(g, u);
+    // 名冊人數少於名額時，正取與備取都以實際人數為上限
+    const quota = Math.min(lottery.quota(g, u), pool.length);
+    const wait = Math.min(lottery.waitlist(g, u), pool.length - quota);
+    return { key: `${g}|${u}`, g, u, pool, quota, wait, total: quota + wait, cellOf: new Map(pool.map((p, k) => [p.lot, k])), order: [], posOf: new Map(), drawn: 0, times: [], startedAt: 0, doneAt: 0 };
+  }));
+  SESSIONS.forEach((s, i) => { s.no = i + 1; });
+  const byKey = new Map(SESSIONS.map((s) => [s.key, s]));
+  const TOTAL = { win: sum(SESSIONS.map((s) => s.quota)), wait: sum(SESSIONS.map((s) => s.wait)) };
+  TOTAL.all = TOTAL.win + TOTAL.wait;
+  const label = (s) => `第 ${s.no} 場 · ${GROUPS[s.g].label} · ${UNITS[s.u].label}`;
+  const resultOf = (s, i) => (i < s.quota
+    ? { kind: 'win', n: i + 1, short: `正取 ${i + 1}`, long: `正取 第 ${i + 1} 號`, color: 'green' }
+    : { kind: 'wait', n: i - s.quota + 1, short: `備取 ${i - s.quota + 1}`, long: `備取 第 ${i - s.quota + 1} 號`, color: 'yellow' });
+  const resultPill = (r, o = {}) => App.pill(o.long ? r.long : r.short, r.color, { dot: true, cls: o.cls || '' });
+  const winsOf = (s) => Math.min(s.drawn, s.quota);
+  const waitsOf = (s) => Math.max(0, s.drawn - s.quota);
+
+  /* ================= 見證人與種子 ================= */
+  const WITNESS = [
+    { label: LOT.witnesses[0], who: { name: '申請人代表', hue: 40 } },
+    { label: LOT.witnesses[1], who: { name: '議會觀察員', hue: 268 } },
+    { label: LOT.witnesses[2], who: 'cheng' },
+  ];
+  // 演練預設骰值；正式場次由三位見證人現場擲骰後輸入
+  const DRILL_DICE = ['482915', '073618', '950274'];
+  const HASHES = GROUP_ORDER.map((g) => lottery.rosterHash(g));
+  const state = { dice: DRILL_DICE.slice(), seed: '', seedInput: '', seededAt: 0, current: SESSIONS[0].key, filter: 'all', sort: 'draw', query: '', gen: 0 };
+  const cur = () => byKey.get(state.current);
+  const rowCache = new Map();
+
+  function reseed() {
+    // gen 遞增：進行中的抽籤動畫結束後會發現世代已變，不再寫入舊種子的結果
+    state.gen++;
+    state.seedInput = [...HASHES, ...state.dice].join('|');
+    state.seed = App.sha256(state.seedInput);
+    state.seededAt = App.now();
+    SESSIONS.forEach((s) => {
+      s.order = lottery.draw(s.g, s.u, state.seed).order;
+      s.posOf = new Map(s.order.map((p, i) => [p.lot, i]));
+      s.drawn = 0; s.times = []; s.startedAt = 0; s.doneAt = 0;
+    });
+    rowCache.clear();
+  }
+
+  /* ================= 評點與選屋順序 ================= */
+  const scoreCache = new Map();
+  const scoreOf = (id) => {
+    if (!scoreCache.has(id)) scoreCache.set(id, App.scoreOf(App.getApplicant(id)).total);
+    return scoreCache.get(id);
+  };
+  // 評點只決定選屋順序：正取者依評點高低排序，同分依籤序
+  function pickRanks(s) {
+    const wins = Array.from({ length: winsOf(s) }, (_, i) => i);
+    wins.sort((a, b) => scoreOf(s.order[b].id) - scoreOf(s.order[a].id) || a - b);
+    return new Map(wins.map((i, r) => [i, r + 1]));
+  }
+
+  /* ================= 直播紀錄 ================= */
+  const logs = [];
+  const nameOf = (by) => (STAFF[by] ? STAFF[by].name : by === 'system' ? '系統' : '申請人');
+  function addLog(html, by = 'system') { logs.unshift({ at: App.now(), by, html, fresh: true }); }
+
+  /* ================= 元素 ================= */
+  const stage = $('#lt-stage');
+  const body = $('#stage-body');
+  const numberEl = $('#lt-number');
+  const prefixEl = $('#lt-prefix');
+  const reelEl = $('#lt-reel');
+  const reel = App.reel(reelEl, { value: '0000' });
+  const mosaic = $('#lt-mosaic');
+  const ccEl = $('#lt-cc');
+  const btnDraw = $('#btn-draw');
+  const btnBatch = $('#btn-batch');
+  const btnAll = $('#btn-all');
+  const resBody = $('#res-body');
+  const SLOW = { duration: 1500, stagger: 160, loops: 3 };
+  const FAST = { duration: 520, stagger: 60, loops: 1 };
+
+  let stageInView = true;
+  new IntersectionObserver(([e]) => { stageInView = e.isIntersecting; }).observe(body);
+
+  /* ================= 粒子：名冊格的彩色方塊飛向號碼並聚合成數字 ================= */
+  const fx = (() => {
+    const cv = $('#lt-fx');
+    const ctx = cv.getContext('2d');
+    const oc = document.createElement('canvas');
+    const octx = oc.getContext('2d', { willReadFrequently: true });
+    const PALETTE = ['blue', 'cyan', 'teal', 'green', 'yellow', 'orange', 'red', 'purple', 'pink'].map((c) => cssVar(`--c-${c}-3`));
+    let parts = [];
+    let raf = 0;
+    let W = 0, H = 0;
+
+    function fit() {
+      const r = body.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      W = r.width; H = r.height;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return r;
+    }
+    // 把最終號碼逐格畫在離屏 canvas 上，取樣筆畫內的點作為粒子終點；
+    // 基線用字型 ascent/descent 置中，才會和 DOM 滾輪上的數字重疊
+    function glyphTargets(origin, boxes, step) {
+      const out = [];
+      boxes.forEach(({ el, ch, k }) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const fs = parseFloat(cs.fontSize);
+        const w = Math.max(1, Math.ceil(r.width));
+        const h = Math.max(1, Math.ceil(r.height));
+        oc.width = w; oc.height = h;
+        octx.font = `${cs.fontWeight} ${fs}px ${cs.fontFamily}`;
+        octx.textAlign = 'center';
+        octx.textBaseline = 'alphabetic';
+        const m = octx.measureText(ch);
+        octx.fillStyle = '#000';
+        octx.fillText(ch, w / 2, (h - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 + m.fontBoundingBoxAscent);
+        const data = octx.getImageData(0, 0, w, h).data;
+        for (let y = step / 2; y < h; y += step) {
+          for (let x = step / 2; x < w; x += step) {
+            if (data[(Math.floor(y) * w + Math.floor(x)) * 4 + 3] > 140) out.push({ x: r.left - origin.left + x, y: r.top - origin.top + y, k });
+          }
+        }
+      });
+      return out;
+    }
+    function launch({ sources, boxes, arrive, fast, color }) {
+      stop();
+      const origin = fit();
+      const fs = parseFloat(getComputedStyle(numberEl).fontSize);
+      const targets = glyphTargets(origin, boxes, Math.max(3, Math.round(fs / (fast ? 12 : 20))));
+      const t = performance.now();
+      const hold = fast ? 60 : 160;
+      const fade = fast ? 180 : 360;
+      parts = targets.map((tg, n) => {
+        const src = sources[n % sources.length];
+        const arr = arrive(tg.k) - Math.random() * (fast ? 40 : 110);
+        const dur = arr * (fast ? 0.62 + Math.random() * 0.3 : 0.5 + Math.random() * 0.34);
+        const sx = src.x + (Math.random() - 0.5) * src.s;
+        const sy = src.y + (Math.random() - 0.5) * src.s;
+        const dx = tg.x - sx, dy = tg.y - sy;
+        const len = Math.hypot(dx, dy) || 1;
+        // 二次貝茲曲線的控制點往側邊與上方偏移，粒子會以弧線「湧」向號碼而非直線
+        const bend = (Math.random() - 0.5) * len * 0.7;
+        return {
+          sx, sy, tx: tg.x, ty: tg.y,
+          cx: (sx + tg.x) / 2 - (dy / len) * bend, cy: (sy + tg.y) / 2 + (dx / len) * bend - len * 0.18,
+          t0: t + arr - dur, t1: t + arr, hold, fade, src,
+          color: Math.random() < 0.42 ? color : PALETTE[n % PALETTE.length],
+          size: fast ? 2.6 : 2.4 + Math.random() * 1.9,
+        };
+      });
+      raf = requestAnimationFrame(frame);
+    }
+    function frame(t) {
+      ctx.clearRect(0, 0, W, H);
+      let alive = 0;
+      for (const p of parts) {
+        if (t < p.t0) { alive++; continue; }
+        if (!p.src.fired) {
+          p.src.fired = true;
+          p.src.el.animate([{ transform: 'scale(1.7)', backgroundColor: p.color }, { transform: 'none' }], { duration: 520, easing: 'ease-out' });
+        }
+        const u = Math.min(1, (t - p.t0) / (p.t1 - p.t0));
+        const e = 1 - Math.pow(1 - u, 3);
+        const after = t - p.t1;
+        let a = Math.min(1, u * 4);
+        if (after > p.hold) a *= Math.max(0, 1 - (after - p.hold) / p.fade);
+        if (a <= 0) continue;
+        alive++;
+        const k = 1 - e;
+        const x = k * k * p.sx + 2 * k * e * p.cx + e * e * p.tx;
+        const y = k * k * p.sy + 2 * k * e * p.cy + e * e * p.ty;
+        const sz = p.size * (0.6 + 0.4 * e);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+      }
+      ctx.globalAlpha = 1;
+      raf = alive ? requestAnimationFrame(frame) : 0;
+    }
+    function stop() {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      parts = [];
+      ctx.clearRect(0, 0, W, H);
+    }
+    return { launch, stop };
+  })();
+
+  /* ================= 名冊格 ================= */
+  let cells = [];
+  let mosaicKey = '';
+  function buildMosaic(s) {
+    mosaicKey = s.key;
+    mosaic.innerHTML = s.pool.map((p) => `<i title="${p.lot} ${esc(p.name)}"></i>`).join('');
+    cells = Array.from(mosaic.children);
+    sizeMosaic();
+  }
+  // 依名冊人數算格子大小：人多時縮小，人少時放大，名冊格高度大致固定
+  function sizeMosaic() {
+    const n = cells.length;
+    const W = mosaic.clientWidth - 20;
+    const H = window.matchMedia('(max-width: 760px)').matches ? 150 : 130;
+    const gap = 3;
+    let c = Math.max(5, Math.min(34, Math.floor(Math.sqrt((W * H) / n)) - gap));
+    while (c > 5 && Math.ceil(n / Math.floor((W + gap) / (c + gap))) * (c + gap) - gap > H) c--;
+    mosaic.style.setProperty('--cell', c + 'px');
+    // 名冊格容器固定高度：換到人數少的場次時舞台不會忽高忽低
+    mosaic.style.setProperty('--mh', H + 'px');
+  }
+  function paintCells(s) {
+    const marks = new Array(cells.length).fill('');
+    for (let i = 0; i < s.drawn; i++) marks[s.cellOf.get(s.order[i].lot)] = i < s.quota ? 'is-win' : 'is-wait';
+    const last = s.drawn ? s.cellOf.get(s.order[s.drawn - 1].lot) : -1;
+    cells.forEach((c, k) => {
+      const cls = (marks[k] + (k === last ? ' is-last' : '')).trim();
+      if (c.className !== cls) c.className = cls;
+    });
+  }
+  let resizeRaf = 0;
+  window.addEventListener('resize', () => {
+    cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(sizeMosaic);
+  });
+
+  /* ================= 舞台 ================= */
+  let busy = false;
+  let animKey = '';
+  function setCaption(text) {
+    if (ccEl.textContent === text) return;
+    ccEl.textContent = text;
+    ccEl.classList.remove('is-new');
+    void ccEl.offsetWidth;
+    ccEl.classList.add('is-new');
+  }
+  const captionIdle = (s) => `${label(s).replace(/ · /g, ' ')} 準備開始：名冊 ${fmt.num(s.pool.length)} 位，正取 ${s.quota} 戶、備取 ${s.wait} 名。`;
+  const captionDraw = (s, i) => { const p = s.order[i]; return `${label(s).replace(/ · /g, ' ')}，第 ${i + 1} 支籤：${p.lot}，${p.name}，${resultOf(s, i).long}。`; };
+  const captionDone = (s) => `${label(s).replace(/ · /g, ' ')} 抽籤完成：正取 ${s.quota} 名、備取 ${s.wait} 名，名單已同步公告。`;
+
+  function renderStage(s) {
+    $('#stage-title').textContent = label(s);
+    body.setAttribute('aria-labelledby', 'tab-' + s.g);
+    const odds = s.pool.length / s.quota;
+    $('#stage-meta').innerHTML = `<span class="lt-chip">${icon('users')}名冊 <b>${fmt.num(s.pool.length)}</b></span><span class="lt-chip">正取 <b>${s.quota}</b></span><span class="lt-chip">備取 <b>${s.wait}</b></span><span class="lt-chip">${icon('target')}中籤率 <b>${fmt.pct(1 / odds)}</b></span><span class="pill tone-yellow"><span class="pill__text">演練 · 不具效力</span></span>`;
+    prefixEl.className = `lt-prefix tone-${GROUPS[s.g].color}`;
+    prefixEl.textContent = GROUPS[s.g].prefix;
+    if (mosaicKey !== s.key) buildMosaic(s);
+    paintCells(s);
+    $('#pool-title').textContent = `名冊格 · ${fmt.num(s.pool.length)} 位`;
+    $('#pool-sub').textContent = '每格一位合格申請人，依籤號排列';
+    mosaic.setAttribute('aria-label', `本場名冊 ${s.pool.length} 位，已抽出正取 ${winsOf(s)} 位、備取 ${waitsOf(s)} 位`);
+
+    // 這一場的動畫還在跑時，號碼與申請人由動畫收尾，避免先洩漏結果
+    if (animKey === s.key) return;
+    const last = s.drawn - 1;
+    numberEl.classList.toggle('is-idle', last < 0);
+    numberEl.classList.toggle('is-win', last >= 0 && last < s.quota);
+    numberEl.classList.toggle('is-wait', last >= s.quota);
+    const digits = last >= 0 ? s.order[last].lot.slice(1) : '0000';
+    if (reel.value !== digits) reel.set(digits);
+    const who = $('#lt-who');
+    if (last < 0) {
+      who.innerHTML = `<span class="lt-who__idle">${icon('ticket')}按「抽出第 1 支」開始${esc(label(s).split(' · ')[0])}，籤號從下方名冊中揭曉</span>`;
+    } else {
+      const p = s.order[last];
+      who.innerHTML = `<span class="lt-who__name">${esc(p.name)}</span>${App.districtPill(p.district)}${App.pill(p.hh + ' 人', 'gray')}${App.unitPill(p.unit)}<span class="lt-who__sep" aria-hidden="true"></span>${resultPill(resultOf(s, last), { long: true, cls: 'pill--lg' })}`;
+    }
+  }
+
+  function nextOpen(after) {
+    const start = SESSIONS.indexOf(after);
+    for (let k = 1; k <= SESSIONS.length; k++) {
+      const s = SESSIONS[(start + k) % SESSIONS.length];
+      if (s.drawn < s.total) return s;
+    }
+    return null;
+  }
+  let batchToken = 0;
+  let batchLeft = 0;
+  function setBtn(btn, iconName, text) {
+    btn.querySelector('.i').outerHTML = icon(iconName);
+    btn.querySelector('[data-label]').textContent = text;
+  }
+  function renderControls() {
+    const s = cur();
+    const left = s.total - s.drawn;
+    const done = left === 0;
+    const running = batchLeft > 0;
+    if (done) {
+      const nx = nextOpen(s);
+      setBtn(btnDraw, nx ? 'arrow-right' : 'download', nx ? `前往第 ${nx.no} 場` : '匯出全部結果');
+    } else {
+      setBtn(btnDraw, 'ticket', s.drawn ? `抽出第 ${s.drawn + 1} 支` : '抽出第 1 支');
+    }
+    btnDraw.disabled = busy || running;
+    if (running) setBtn(btnBatch, 'pause', `暫停連抽（剩 ${batchLeft}）`);
+    else setBtn(btnBatch, 'play', `連抽 ${Math.min(10, left) || 10} 支`);
+    btnBatch.disabled = running ? false : busy || done;
+    setBtn(btnAll, 'zap', done ? '本場已完成' : `本場抽完（剩 ${left}）`);
+    btnAll.disabled = busy || running || done;
+    stage.setAttribute('aria-busy', String(busy));
+  }
+
+  function renderProgress(s) {
+    const prog = $('#lt-prog');
+    $('[data-bar="win"]', prog).style.setProperty('--p', winsOf(s) / s.quota);
+    $('[data-bar="wait"]', prog).style.setProperty('--p', s.wait ? waitsOf(s) / s.wait : 0);
+    $('[data-text="win"]', prog).innerHTML = `${winsOf(s)}<small> / ${s.quota}</small>`;
+    $('[data-text="wait"]', prog).innerHTML = `${waitsOf(s)}<small> / ${s.wait}</small>`;
+  }
+
+  /* ================= 分組與戶型切換 ================= */
+  const groupTabs = App.tabs($('#lt-groups'), { onChange: (i) => selectSession(`${GROUP_ORDER[i]}|${cur().u}`) });
+  const unitSeg = App.seg($('#lt-units'), { onChange: (u) => selectSession(`${cur().g}|${u}`) });
+  function renderTabs() {
+    GROUP_ORDER.forEach((g) => {
+      const list = SESSIONS.filter((s) => s.g === g);
+      $(`[data-group-count="${g}"]`).textContent = `${sum(list.map(winsOf))}/${sum(list.map((s) => s.quota))}`;
+    });
+    const s = cur();
+    $$('#lt-units button').forEach((b) => {
+      const x = byKey.get(`${s.g}|${b.dataset.value}`);
+      const done = x.drawn === x.total;
+      b.innerHTML = `${done ? icon('check-circle') : ''}${UNITS[x.u].label}<small>${x.quota}</small>`;
+      b.setAttribute('aria-label', `${UNITS[x.u].label}，正取 ${x.quota} 戶${done ? '，已完成' : ''}`);
+    });
+    // 按鈕內容改變會影響寬度，重新對齊分段控制的滑塊
+    unitSeg.select(s.u, { silent: true });
+  }
+  function stopBatch() {
+    if (!batchLeft) return;
+    batchToken++;
+    batchLeft = 0;
+  }
+  function selectSession(key) {
+    if (key === state.current) return;
+    stopBatch();
+    fx.stop();
+    // 換場會打斷本場的滾輪動畫；結果已在抽出當下決定，稍後照樣寫入原場次
+    animKey = '';
+    stage.classList.remove('is-drawing');
+    state.current = key;
+    const s = cur();
+    groupTabs.select(GROUP_ORDER.indexOf(s.g), { silent: true });
+    unitSeg.select(s.u, { silent: true });
+    state.query = '';
+    $('#res-q').value = '';
+    setCaption(s.drawn === s.total ? captionDone(s) : s.drawn ? captionDraw(s, s.drawn - 1) : captionIdle(s));
+    renderAll();
+  }
+
+  /* ================= 抽籤 ================= */
+  function animateDraw(s, pick, opts, fast) {
+    const digits = pick.lot.slice(1);
+    if (App.motionOK() && stageInView && !document.hidden) {
+      const free = cells.filter((c, k) => !c.className && k !== s.cellOf.get(pick.lot));
+      const chosen = (free.length >= 6 ? free : cells).slice().sort(() => Math.random() - 0.5).slice(0, fast ? 18 : 46);
+      const origin = body.getBoundingClientRect();
+      const sources = chosen.map((el) => { const r = el.getBoundingClientRect(); return { el, x: r.left - origin.left + r.width / 2, y: r.top - origin.top + r.height / 2, s: r.width }; });
+      const boxes = [{ el: prefixEl, ch: GROUPS[s.g].prefix, k: -1 }, ...$$('.reel__d', reelEl).map((el, k) => ({ el, ch: digits[k], k }))];
+      fx.launch({
+        sources, boxes, fast, color: cssVar(`--c-${GROUPS[s.g].color}-3`),
+        // 每一位數的粒子剛好在該位滾輪停下時到位，數字像是由粒子「凝結」出來
+        arrive: (k) => (k < 0 ? opts.duration * 0.62 : opts.duration + k * opts.stagger - 30),
+      });
+    }
+    return reel.spin(digits, opts);
+  }
+
+  async function drawOne(fast) {
+    const s = cur();
+    if (busy || s.drawn >= s.total) return false;
+    busy = true;
+    animKey = s.key;
+    const gen = state.gen;
+    const i = s.drawn;
+    const pick = s.order[i];
+    if (!s.startedAt) {
+      s.startedAt = App.now();
+      addLog(`${esc(label(s))} 開始抽籤（名冊 ${fmt.num(s.pool.length)} 位）`, App.ME);
+      renderLog();
+    }
+    renderControls();
+    stage.classList.add('is-drawing');
+    numberEl.classList.remove('is-idle', 'is-win', 'is-wait', 'is-hit');
+    if (!fast) setCaption(`${label(s).replace(/ · /g, ' ')}，第 ${i + 1} 支籤抽籤中……`);
+    const ok = await animateDraw(s, pick, fast ? FAST : SLOW, fast);
+    busy = false;
+    if (animKey === s.key) { animKey = ''; stage.classList.remove('is-drawing'); }
+    // 抽籤途中重設或換種子：這一支作廢，不寫入
+    if (gen !== state.gen) { renderControls(); return false; }
+    commit(s, i, { animate: ok && s.key === state.current, fast });
+    return ok;
+  }
+
+  let freshKey = '';
+  function commit(s, i, { animate, fast }) {
+    s.drawn = i + 1;
+    s.times[i] = App.now();
+    const p = s.order[i];
+    const r = resultOf(s, i);
+    addLog(`第 ${s.no} 場抽出 <span class="mono">${p.lot}</span> ${esc(p.name)} ${resultPill(r)}`, App.ME);
+    const finished = s.drawn === s.total;
+    if (finished) {
+      s.doneAt = App.now();
+      addLog(`${esc(label(s))} 完成：正取 ${s.quota} 名、備取 ${s.wait} 名，結果已鎖定`);
+    }
+    freshKey = `${s.key}:${i}`;
+    renderAll();
+    if (s.key !== state.current) return;
+    setCaption(finished ? captionDone(s) : captionDraw(s, i));
+    if (animate) {
+      numberEl.classList.remove('is-hit');
+      void numberEl.offsetWidth;
+      numberEl.classList.add('is-hit');
+      const cell = cells[s.cellOf.get(p.lot)];
+      if (App.motionOK() && cell) cell.animate([{ transform: 'scale(2.4)' }, { transform: 'scale(.8)', offset: 0.6 }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      if (!fast && r.kind === 'win') App.confetti({ from: numberEl, count: 70, spread: 58, power: 0.72 });
+    }
+    if (finished) celebrate(s);
+  }
+
+  function celebrate(s) {
+    App.confetti({ mode: 'cannons', count: 180 });
+    const nx = nextOpen(s);
+    App.toast(`${label(s)} 抽籤完成`, {
+      tone: 'success', desc: `正取 ${s.quota} 名、備取 ${s.wait} 名已列入名單，可匯出 CSV`,
+      action: nx ? { label: `前往第 ${nx.no} 場`, onClick: () => selectSession(nx.key) } : null,
+    });
+  }
+
+  async function runBatch(n) {
+    const my = ++batchToken;
+    batchLeft = n;
+    renderControls();
+    while (batchLeft > 0 && my === batchToken) {
+      // 分頁隱藏時暫停連抽，回到畫面再繼續，避免觀眾錯過揭曉
+      while (document.hidden && my === batchToken) await sleep(300);
+      if (my !== batchToken) break;
+      const ok = await drawOne(true);
+      if (my !== batchToken) break;
+      batchLeft--;
+      if (!ok || cur().drawn >= cur().total) break;
+      renderControls();
+      await sleep(App.motionOK() ? 170 : 40);
+    }
+    if (my === batchToken) batchLeft = 0;
+    renderControls();
+  }
+
+  function drawAll() {
+    const s = cur();
+    if (busy || batchLeft || s.drawn >= s.total) return;
+    const from = s.drawn;
+    const t = App.now();
+    if (!s.startedAt) { s.startedAt = t; addLog(`${esc(label(s))} 開始抽籤（名冊 ${fmt.num(s.pool.length)} 位）`, App.ME); }
+    for (let i = from; i < s.total; i++) s.times[i] = t;
+    s.drawn = s.total;
+    s.doneAt = t;
+    const wins = Math.max(0, s.quota - from);
+    addLog(`第 ${s.no} 場一次揭曉第 ${from + 1}–${s.total} 支（正取 ${wins}、備取 ${s.total - from - wins}）`, App.ME);
+    addLog(`${esc(label(s))} 完成：正取 ${s.quota} 名、備取 ${s.wait} 名，結果已鎖定`);
+    freshKey = '';
+    renderAll();
+    setCaption(captionDone(s));
+    if (App.motionOK()) {
+      // 新揭曉的格子依抽出順序由左上往右下波浪式填色
+      for (let i = from; i < s.total; i++) {
+        const cell = cells[s.cellOf.get(s.order[i].lot)];
+        cell.animate([{ transform: 'scale(.2)', opacity: 0.2 }, { transform: 'scale(1.35)', offset: 0.6 }, { transform: 'none', opacity: 1 }], { duration: 460, delay: Math.min(1400, (i - from) * 14), easing: 'ease-out', fill: 'backwards' });
+      }
+      reel.spin(s.order[s.total - 1].lot.slice(1), { duration: 900, stagger: 90, loops: 2 });
+    }
+    celebrate(s);
+  }
+
+  btnDraw.addEventListener('click', () => {
+    const s = cur();
+    if (s.drawn < s.total) { drawOne(false); return; }
+    const nx = nextOpen(s);
+    if (nx) selectSession(nx.key);
+    else exportAll();
+  });
+  btnBatch.addEventListener('click', () => {
+    if (batchLeft) { stopBatch(); renderControls(); App.toast('已暫停連抽', { desc: '目前這一支揭曉後停止' }); return; }
+    runBatch(Math.min(10, cur().total - cur().drawn));
+  });
+  btnAll.addEventListener('click', async () => {
+    const s = cur();
+    const left = s.total - s.drawn;
+    const ok = await App.confirm({
+      title: `一次揭曉第 ${s.no} 場剩餘 ${left} 支？`,
+      message: `將依已鎖定的種子直接揭曉${label(s)}剩餘的籤序（正取 ${Math.max(0, s.quota - s.drawn)}、備取 ${Math.min(s.wait, left)}）。抽籤結果無法撤回，只能重設整場演練。`,
+      confirmLabel: '全部揭曉',
+    });
+    if (ok) drawAll();
+  });
+
+  function resetDraws() {
+    stopBatch();
+    fx.stop();
+    animKey = '';
+    stage.classList.remove('is-drawing');
+    reseed();
+  }
+  $('#btn-reset').addEventListener('click', async () => {
+    const drawn = sum(SESSIONS.map((s) => s.drawn));
+    const ok = await App.confirm({
+      title: '重設整場演練？',
+      message: drawn ? `將清除 12 場已抽出的 ${drawn} 支籤，種子與骰值維持不變；直播紀錄會保留重設紀錄。` : '目前尚未抽出任何籤；重設後各場次回到待抽狀態。',
+      confirmLabel: '重設演練', tone: 'danger',
+    });
+    if (!ok) return;
+    resetDraws();
+    addLog(`重設演練：清除已抽出的 ${drawn} 支籤，沿用種子 <span class="mono">${state.seed.slice(0, 8)}</span>`, App.ME);
+    setCaption(captionIdle(cur()));
+    renderSeed(false);
+    renderAll();
+    App.toast('已重設演練', { tone: 'success', desc: '同一顆種子重抽，會得到與剛才完全相同的籤序' });
+  });
+
+  /* ================= 全場進度矩陣 ================= */
+  const mx = $('#lt-mx');
+  mx.innerHTML = `<span></span>${UNIT_ORDER.map((u) => `<span class="lt-mx__col">${App.unitPill(u)}</span>`).join('')}`
+    + GROUP_ORDER.map((g) => `<span class="lt-mx__row">${App.groupPill(g)}</span>${UNIT_ORDER.map((u) => {
+      const s = byKey.get(`${g}|${u}`);
+      return `<button type="button" class="lt-cell" data-key="${s.key}" aria-pressed="false"><span class="lt-cell__top"><span>第 ${s.no} 場</span><span class="lt-cell__st"></span></span><span class="lt-cell__v"><b data-n>0</b><small>/${s.total}</small></span><span class="lt-cell__bar"><i></i><i></i></span></button>`;
+    }).join('')}`).join('');
+  mx.addEventListener('click', (e) => {
+    const b = e.target.closest('.lt-cell');
+    if (b) selectSession(b.dataset.key);
+  });
+  function renderMatrix() {
+    $$('.lt-cell', mx).forEach((b) => {
+      const s = byKey.get(b.dataset.key);
+      const done = s.drawn === s.total;
+      b.setAttribute('aria-pressed', String(s.key === state.current));
+      b.classList.toggle('is-done', done);
+      b.classList.toggle('is-live', s.drawn > 0 && !done);
+      $('[data-n]', b).textContent = s.drawn;
+      $('.lt-cell__st', b).innerHTML = done ? icon('check') : '';
+      const [w, q] = $$('.lt-cell__bar i', b);
+      w.style.setProperty('--w', (winsOf(s) / s.total) * 100 + '%');
+      q.style.setProperty('--w', (waitsOf(s) / s.total) * 100 + '%');
+      b.setAttribute('aria-label', `${label(s)}：已抽 ${s.drawn}／${s.total} 支${done ? '，已完成' : s.drawn ? '，進行中' : '，待抽'}`);
+    });
+    const drawn = sum(SESSIONS.map((s) => s.drawn));
+    const wins = sum(SESSIONS.map(winsOf));
+    const waits = sum(SESSIONS.map(waitsOf));
+    $('#mx-total').textContent = `${drawn} / ${TOTAL.all} 支`;
+    $('#mx-foot').innerHTML = `<div class="lt-prog__row tone-green"><span>正取</span><span class="lt-prog__bar"><i style="--p:${wins / TOTAL.win}"></i></span><b>${wins}<small> / ${TOTAL.win}</small></b></div>
+      <div class="lt-prog__row tone-yellow"><span>備取</span><span class="lt-prog__bar"><i style="--p:${waits / TOTAL.wait}"></i></span><b>${waits}<small> / ${TOTAL.wait}</small></b></div>`;
+  }
+
+  /* ================= 亂數種子 ================= */
+  const crew = [
+    [App.avatar('tsai', 'sm'), '主持', `${STAFF[LOT.host].name} 科長`],
+    [App.avatar({ name: LOT.notary, hue: 18 }, 'sm'), '公證', `${LOT.notary}（${LOT.notaryTitle}）`],
+    [App.avatar(LOT.supervisor, 'sm'), '監察', `${STAFF[LOT.supervisor].name}（政風室）`],
+    [`<span class="lt-crew__ic">${icon('map-pin')}</span>`, '地點', LOT.venue.replace('澄港市政府 ', '市府 ')],
+    [`<span class="lt-crew__ic">${icon('broadcast')}</span>`, '直播', '同步聽打字幕'],
+  ];
+  $('#lt-crew').innerHTML = crew.map(([av, k, v]) => `<li>${av}<span>${k}</span><b>${esc(v)}</b></li>`).join('');
+
+  $('#lt-hashes').innerHTML = GROUP_ORDER.map((g, k) => `<li>${App.groupPill(g)}<span class="hash" title="${HASHES[k]}"><span class="hash__text">${shortHash(HASHES[k], 12, 8)}</span><button type="button" class="icon-btn icon-btn--sm" data-copy="hash-${g}" aria-label="複製${GROUPS[g].label}名冊雜湊">${icon('copy')}</button></span><small>${fmt.num(lottery.pool(g).length)} 筆</small></li>`).join('');
+  $('#lt-dice').innerHTML = WITNESS.map((w, k) => `<li>${App.avatar(w.who, 'sm')}<span title="${esc(w.label)}">${esc(w.label)}</span><span class="reel reel--box" data-dice="${k}"></span></li>`).join('');
+  const diceReels = $$('[data-dice]').map((el, k) => App.reel(el, { value: state.dice[k] }));
+
+  // 種子產生時的「解碼」效果：每組十六進位字元先亂跳，再由左至右逐組定格
+  let scrambleTimer = 0;
+  function renderSeedHex(animate) {
+    const box = $('#lt-seedhex');
+    const groups = state.seed.match(/.{8}/g);
+    box.setAttribute('aria-label', '種子 ' + state.seed);
+    clearInterval(scrambleTimer);
+    if (!animate || !App.motionOK()) { box.innerHTML = groups.map((g) => `<span>${g}</span>`).join(''); return; }
+    box.innerHTML = groups.map(() => '<span></span>').join('');
+    const spans = Array.from(box.children);
+    const t0 = performance.now();
+    scrambleTimer = setInterval(() => {
+      const t = performance.now() - t0;
+      spans.forEach((sp, k) => {
+        sp.textContent = t > 260 + k * 90 ? groups[k] : Array.from({ length: 8 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+      });
+      if (t > 260 + groups.length * 90) clearInterval(scrambleTimer);
+    }, 45);
+  }
+  function renderSeed(animate) {
+    renderSeedHex(animate);
+    $('#seed-at').textContent = `${hms(state.seededAt)} 產生 · 骰值 ${state.dice.join('｜')}`;
+    $('#seed-state .pill__text').textContent = `已鎖定 ${hms(state.seededAt)}`;
+    $('#v-seed').value = state.seed;
+    renderFlow();
+  }
+
+  function openDiceModal(from) {
+    const form = document.createElement('form');
+    form.className = 'lt-dice-form';
+    form.noValidate = true;
+    form.innerHTML = WITNESS.map((w, k) => `<div class="field" data-k="${k}">
+        <label class="label label--req" for="dice-${k}">${esc(w.label)}</label>
+        <div class="lt-dice-row">
+          <input class="input" id="dice-${k}" type="text" inputmode="numeric" maxlength="6" autocomplete="off" value="${state.dice[k]}" aria-describedby="dice-${k}-err">
+          <button type="button" class="btn" data-roll="${k}">${icon('dice')}模擬擲骰</button>
+        </div>
+        <p class="field__error" id="dice-${k}-err">${icon('alert')}請輸入 6 位數字，每位 0–9（十面骰點數）</p>
+      </div>`).join('') + `<p class="hint">正式場次由見證人於台上各擲十面骰 6 次，公證人唸出點數後由操作人員輸入；演練可按「模擬擲骰」。確認後會重新產生種子並清除已抽結果。</p>`;
+    const inputs = $$('input', form);
+    inputs.forEach((inp) => inp.addEventListener('input', () => {
+      inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
+      inp.closest('.field').classList.remove('is-invalid');
+    }));
+    form.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-roll]');
+      if (!b) return;
+      const inp = inputs[+b.dataset.roll];
+      inp.value = Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join('');
+      inp.closest('.field').classList.remove('is-invalid');
+    });
+    const submit = () => {
+      let firstBad = null;
+      inputs.forEach((inp) => {
+        const bad = !/^\d{6}$/.test(inp.value);
+        inp.closest('.field').classList.toggle('is-invalid', bad);
+        if (bad && !firstBad) firstBad = inp;
+      });
+      if (firstBad) { firstBad.focus(); App.toast('骰值格式不正確', { tone: 'warn', desc: '每位見證人需輸入 6 位數字' }); return false; }
+      applyDice(inputs.map((i) => i.value));
+      return true;
+    };
+    const m = App.modal({
+      title: '見證人擲骰', eyebrow: `${icon('dice')}模擬演練 · 產生新種子`, size: 'md', body: form, from,
+      actions: [
+        { label: '取消', variant: 'ghost' },
+        { label: '確認並重新產生種子', variant: 'primary', icon: 'lock', onClick: (close) => { if (submit()) close(); } },
+      ],
+    });
+    form.addEventListener('submit', (e) => { e.preventDefault(); if (submit()) m.close(); });
+  }
+  function applyDice(values) {
+    const drawn = sum(SESSIONS.map((s) => s.drawn));
+    state.dice = values;
+    resetDraws();
+    diceReels.forEach((r, k) => { r.spin(values[k], { duration: 900, stagger: 70, loops: 2 }); });
+    addLog(`見證人骰值 ${values.join('｜')}，產生新種子 <span class="mono">${state.seed.slice(0, 8)}</span>${drawn ? `（清除已抽 ${drawn} 支）` : ''}`, App.ME);
+    setCaption(captionIdle(cur()));
+    renderSeed(true);
+    renderAll();
+    if (App.motionOK()) $$('.lt-flow__node', $('#lt-flow')).slice(2).forEach((n, k) => n.animate([{ transform: 'translateY(-4px)', boxShadow: '0 0 0 3px rgba(45, 127, 249, .28)' }, { transform: 'none' }], { duration: 700, delay: k * 120, easing: 'ease-out' }));
+    App.toast('已重新產生種子', { tone: 'success', desc: `SHA-256 → ${state.seed.slice(0, 16)}…` });
+  }
+  $('#btn-dice').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const drawn = sum(SESSIONS.map((s) => s.drawn));
+    if (drawn) {
+      const ok = await App.confirm({ title: '重新擲骰？', message: `新骰值會產生新種子，目前已抽出的 ${drawn} 支籤將全部清除。正式場次種子一經公開即不得變更。`, confirmLabel: '清除並重新擲骰', tone: 'danger' });
+      if (!ok) return;
+    }
+    openDiceModal(btn);
+  });
+
+  /* ================= 複製 ================= */
+  function copy(text, what) {
+    // 剪貼簿可能因權限或非安全環境被拒；明確告知使用者改用手動選取，而不是默默失敗
+    App.copy(text).then(
+      () => App.toast(`已複製${what}`, { tone: 'success', desc: text.length > 48 ? text.slice(0, 48) + '…' : text }),
+      () => App.toast('瀏覽器未允許存取剪貼簿', { tone: 'warn', desc: `請手動選取${what}複製` }),
+    );
+  }
+  const verifyText = () => [
+    `${DATA.project.name} ${DATA.project.period} 公開抽籤（模擬演練）`,
+    `名冊快照：${fmt.dateFull(LOT.snapshot)} ${fmt.time(LOT.snapshot)}`,
+    ...GROUP_ORDER.map((g, k) => `名冊雜湊 ${GROUPS[g].label}（${fmt.num(lottery.pool(g).length)} 筆）：${HASHES[k]}`),
+    `見證人骰值：${state.dice.join('｜')}`,
+    `種子 = SHA-256（${state.seedInput}）`,
+    `種子：${state.seed}`,
+    `場次種子 = SHA-256（種子|組別|戶型），例：${state.seed.slice(0, 8)}…|general|studio`,
+    `演算法：${LOT.algorithm}`,
+  ].join('\n');
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const k = b.dataset.copy;
+    if (k === 'seed') copy(state.seed, '種子');
+    else if (k === 'session') copy(sessionSeed(cur()), '本場場次種子');
+    else { const g = k.slice(5); copy(HASHES[GROUP_ORDER.indexOf(g)], `${GROUPS[g].label}名冊雜湊`); }
+  });
+  $('#copy-verify').addEventListener('click', () => copy(verifyText(), '驗證資訊'));
+
+  /* ================= 名單 ================= */
+  App.seg($('#res-filter'), { onChange: (v) => { state.filter = v; renderResults(cur()); } });
+  App.seg($('#res-sort'), { onChange: (v) => { state.sort = v; renderResults(cur()); } });
+  $('#res-q').addEventListener('input', (e) => { state.query = e.target.value; renderResults(cur()); });
+
+  function makeRow(s, i) {
+    const p = s.order[i];
+    const tr = document.createElement('tr');
+    tr.dataset.i = i;
+    tr.innerHTML = `<td class="is-frozen lt-seq">${i + 1}</td>
+      <td class="is-frozen is-frozen-2"><span class="lt-lot tone-${GROUPS[s.g].color}">${p.lot}</span></td>
+      <td><div class="dg__primary"><span class="dg__primary-text">${esc(p.name)}</span><button type="button" class="dg__expand" data-expand="${i}" aria-label="展開 ${p.lot} ${esc(p.name)} 的紀錄">${icon('expand')}</button></div></td>
+      <td>${resultPill(resultOf(s, i))}</td>
+      <td class="cell-num lt-rank" data-rank></td>
+      <td class="cell-num">${scoreOf(p.id)}</td>
+      <td>${App.districtPill(p.district)}</td>
+      <td class="cell-num">${p.hh} 人</td>
+      <td class="cell-date">${hms(s.times[i])}</td>`;
+    // 以較長的閃色動畫結束為準移除 is-new；之後列被移動位置也不會重播進場動畫
+    tr.addEventListener('animationend', (e) => { if (e.animationName === 'dg-flash') tr.classList.remove('is-new'); });
+    return tr;
+  }
+  let resKey = '';
+  function renderResults(s) {
+    const key = `${s.key}#${state.gen}`;
+    const same = key === resKey;
+    resKey = key;
+    const ranks = pickRanks(s);
+    let idx = Array.from({ length: s.drawn }, (_, i) => i);
+    const counts = { all: idx.length, win: winsOf(s), wait: waitsOf(s) };
+    Object.entries(counts).forEach(([k, v]) => { $(`#res-filter [data-n="${k}"]`).textContent = v; });
+    if (state.filter !== 'all') idx = idx.filter((i) => resultOf(s, i).kind === state.filter);
+    const q = state.query.trim().toLowerCase();
+    if (q) idx = idx.filter((i) => { const p = s.order[i]; return [p.lot, p.name, p.district].some((v) => v.toLowerCase().includes(q)); });
+    // 選屋順序：正取依評點排序在前，備取維持遞補順序接在後面
+    if (state.sort === 'draw') idx.reverse();
+    else idx.sort((a, b) => (ranks.get(a) ?? 1e6 + a) - (ranks.get(b) ?? 1e6 + b));
+
+    const apply = () => {
+      const rows = idx.map((i) => {
+        const ck = `${key}:${i}`;
+        let tr = rowCache.get(ck);
+        if (!tr) {
+          tr = makeRow(s, i);
+          rowCache.set(ck, tr);
+          if (same && `${s.key}:${i}` === freshKey) tr.classList.add('is-new');
+        }
+        tr.querySelector('[data-rank]').textContent = ranks.has(i) ? ranks.get(i) : '—';
+        return tr;
+      });
+      // 只移動位置有變的列：重新插入會讓列上的進場動畫重播
+      rows.forEach((tr, k) => { if (resBody.children[k] !== tr) resBody.insertBefore(tr, resBody.children[k] || null); });
+      while (resBody.children.length > rows.length) resBody.lastElementChild.remove();
+    };
+    if (same) App.flip(Array.from(resBody.rows), apply); else apply();
+
+    const empty = $('#res-empty');
+    if (!s.drawn) empty.innerHTML = App.emptyState({ title: '本場尚未抽出籤號', text: '按上方「抽出第 1 支」開始；每揭曉一支，名單即時加入並可匯出 CSV。' });
+    else if (!idx.length) empty.innerHTML = App.emptyState({ title: '沒有符合的籤號', text: '試著清除查詢字串，或切換「全部」檢視。' });
+    else empty.innerHTML = '';
+    $('#res-sub').textContent = `${label(s)} · 已揭曉 ${s.drawn} / ${s.total} 支${s.drawn === s.total ? ' · 已完成' : ''}`;
+    renderLookup(s, q);
+  }
+
+  // 輸入完整籤號時，即使不在本場也告訴使用者它在哪一場、是否已抽出
+  function renderLookup(s, q) {
+    const note = $('#res-note');
+    const lot = q.toUpperCase();
+    if (!/^[GVL]\d{4}$/.test(lot)) { note.hidden = true; return; }
+    const home = SESSIONS.find((x) => x.cellOf.has(lot));
+    let html;
+    if (!home) html = `${icon('info')}<span>查無籤號 <b class="mono">${lot}</b>：不在 10/22 10:30 名冊快照中（可能尚在審查或不符資格）。</span>`;
+    else {
+      const pos = home.posOf.get(lot);
+      const status = pos < home.drawn ? `已抽出，${resultPill(resultOf(home, pos), { long: true })}`
+        : home.drawn === home.total ? '本場已抽完，未列入正取或備取' : `尚未抽出（本場已揭曉 ${home.drawn} / ${home.total} 支）`;
+      html = `${icon('search')}<span>籤號 <b class="mono">${lot}</b> ${esc(home.pool[home.cellOf.get(lot)].name)} 屬於${esc(label(home))}，${status}</span>${home !== s ? `<button type="button" class="btn btn--sm" id="lookup-go">${icon('arrow-right')}前往第 ${home.no} 場</button>` : ''}`;
+    }
+    note.innerHTML = html;
+    note.hidden = false;
+  }
+  $('#res-note').addEventListener('click', (e) => {
+    if (!e.target.closest('#lookup-go')) return;
+    const lot = state.query.trim().toUpperCase();
+    const home = SESSIONS.find((x) => x.cellOf.has(lot));
+    selectSession(home.key);
+    state.query = lot;
+    $('#res-q').value = lot;
+    renderResults(cur());
+  });
+
+  resBody.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-expand]');
+    if (b) openRecord(cur(), +b.dataset.expand, b.closest('tr'));
+  });
+  function openRecord(s, i, row) {
+    const p = s.order[i];
+    const a = App.getApplicant(p.id);
+    const sc = App.scoreOf(a);
+    const r = resultOf(s, i);
+    const rank = pickRanks(s).get(i);
+    const fields = [
+      ['text', '籤號', `<span class="lt-lot tone-${GROUPS[s.g].color}">${p.lot}</span>`],
+      ['autonumber', '申請編號', esc(p.id)],
+      ['select', '抽籤結果', resultPill(r, { long: true })],
+      ['formula', '選屋序', rank ? `第 ${rank} 位${s.drawn < s.total ? '（暫定）' : ''}` : '<span class="muted">備取不排選屋序</span>'],
+      ['select', '組別 · 戶型', `${App.groupPill(s.g)}${App.unitPill(s.u)}`],
+      ['select', '設籍區', App.districtPill(p.district)],
+      ['number', '家戶人數', `${p.hh} 人`],
+      ['duration', '抽出時間', `${fmt.dateFull(s.times[i])} ${hms(s.times[i])} · 第 ${i + 1} 支`],
+    ];
+    App.modal({
+      title: `${esc(p.name)} ${resultPill(r)}`, eyebrow: `${icon('ticket')}${esc(label(s))}`, size: 'lg', from: row,
+      body: `<div class="lt-rec">
+        <div class="fields">${fields.map(([t, l, v]) => `<div class="fld"><span class="fld__label">${App.fieldIcon(t)}${l}</span><div class="fld__value">${v}</div></div>`).join('')}</div>
+        <div><h3 class="section-title">${App.fieldIcon('rating')}評點（只決定選屋順序，不影響中籤）<span class="badge">${sc.total} / ${sc.max}</span></h3>
+          <div class="score">${sc.items.length ? sc.items.map((it) => `<div class="score__row">${esc(it.label)}<span class="score__pts">+${it.pts}</span></div>`).join('') : '<p class="muted">無加分項目</p>'}</div></div>
+        <p class="hint">直播畫面僅顯示遮罩姓名；完整個資請至申請人詳情查閱，查閱行為將寫入稽核紀錄。</p>
+      </div>`,
+      actions: [
+        { label: '關閉', variant: 'ghost' },
+        { label: '開啟申請人詳情', variant: 'primary', href: App.applicantUrl(p.id), icon: 'external' },
+      ],
+    });
+  }
+
+  /* ================= 匯出 ================= */
+  const CSV_HEAD = ['場次', '組別', '戶型', '抽出序', '籤號', '申請編號', '申請人（遮罩）', '設籍區', '家戶人數', '結果', '正取／備取序', '評點', '選屋序', '抽出時間', '種子'];
+  const csvRows = (s) => {
+    const ranks = pickRanks(s);
+    return Array.from({ length: s.drawn }, (_, i) => {
+      const p = s.order[i];
+      const r = resultOf(s, i);
+      return [s.no, GROUPS[s.g].label, UNITS[s.u].label, i + 1, p.lot, p.id, p.name, p.district, p.hh, r.kind === 'win' ? '正取' : '備取', r.n, scoreOf(p.id), ranks.get(i) || '', `${fmt.dateFull(s.times[i])} ${hms(s.times[i])}`, state.seed];
+    });
+  };
+  function exportSession() {
+    const s = cur();
+    if (!s.drawn) { App.toast('本場尚未抽出籤號', { tone: 'warn', desc: '至少揭曉 1 支後才能匯出名單' }); return; }
+    const name = `港埕青年社宅_抽籤演練_第${s.no}場_${GROUPS[s.g].label}_${UNITS[s.u].label}_${dateTag()}.csv`;
+    App.csv(name, [CSV_HEAD, ...csvRows(s)]);
+    App.toast(`已匯出 ${s.drawn} 筆名單`, { tone: 'success', desc: name });
+  }
+  function exportAll() {
+    const drawn = SESSIONS.filter((s) => s.drawn);
+    if (!drawn.length) { App.toast('尚未抽出任何籤號', { tone: 'warn', desc: '抽出後即可匯出全部場次結果' }); return; }
+    const name = `港埕青年社宅_抽籤演練_全部場次_${dateTag()}.csv`;
+    const rows = drawn.flatMap(csvRows);
+    App.csv(name, [CSV_HEAD, ...rows]);
+    App.toast(`已匯出 ${drawn.length} 場、${rows.length} 筆名單`, { tone: 'success', desc: name });
+  }
+  $('#export-session').addEventListener('click', exportSession);
+  $('#export-all').addEventListener('click', exportAll);
+
+  /* ================= 直播紀錄 ================= */
+  function renderLog() {
+    const list = logs.slice(0, 60);
+    $('#lt-log').innerHTML = list.map((e) => `<li class="feed__item${e.fresh ? ' is-new' : ''}">${App.avatar(e.by, 'sm')}<div class="feed__body"><p class="feed__head"><b>${esc(nameOf(e.by))}</b><span class="feed__time">${stamp(e.at)}</span></p><p class="feed__text">${e.html}</p></div></li>`).join('');
+    logs.forEach((e) => { e.fresh = false; });
+    $('#log-count').textContent = `${logs.length} 筆`;
+  }
+
+  /* ================= 驗證 ================= */
+  $('#v-steps').innerHTML = [
+    `取得合格名冊（正式名冊 10/28 10:00 公告；演練使用 10/22 10:30 快照），每行以 <code>籤號,申請編號,遮罩姓名</code> 換行串接後計算 SHA-256，應與「名冊雜湊」三組數值相同。`,
+    `把三組名冊雜湊與三位見證人的骰值依序以 <code>|</code> 串接後計算 SHA-256，即為本次種子；每一場再以 <code>種子|組別|戶型</code>（例：<code>…|general|studio</code>）計算 SHA-256 作為場次種子。`,
+    `${esc(LOT.algorithm.replace('以種子', '以場次種子'))} sfc32 初始化後先丟棄 12 個輸出，讓狀態充分混合。`,
+  ].map((t) => `<li>${t}</li>`).join('');
+  $('#v-session').innerHTML = SESSIONS.map((s) => `<option value="${s.key}">${esc(label(s))}</option>`).join('');
+
+  function renderFlow() {
+    const nodes = [
+      ['blue', 'users', '合格名冊', GROUP_ORDER.map((g) => fmt.num(lottery.pool(g).length)).join(' · ') + ' 筆', '10/22 10:30 快照，依籤號排序'],
+      ['cyan', 'hash', '名冊雜湊', HASHES.map((h) => h.slice(0, 8) + '…').join('<br>'), 'SHA-256，抽籤前公告'],
+      ['yellow', 'dice', '見證人骰值', state.dice.join(' · '), '三位見證人各擲十面骰 6 次'],
+      ['purple', 'lock', '種子', `${state.seed.slice(0, 16)}<br>${state.seed.slice(16, 32)}…`, 'SHA-256（雜湊 ×3｜骰值 ×3）'],
+      ['teal', 'shuffle', '場次洗牌', 'sfc32 × Fisher–Yates', 'SHA-256（種子｜組別｜戶型）初始化'],
+      ['green', 'list', '籤序', `正取 ${TOTAL.win} · 備取 ${TOTAL.wait}`, '前 N 名正取，其後依序備取'],
+    ];
+    $('#lt-flow').innerHTML = nodes.map(([c, ic, t, v, cap], k) => `<li class="lt-flow__node tone-${c}"><p class="lt-flow__title"><span class="lt-step__no">${k + 1}</span>${icon(ic)}${t}</p><p class="lt-flow__val">${v}</p><p class="lt-flow__cap">${cap}</p></li>`).join('');
+  }
+
+  const vForm = $('#v-form');
+  const vSeed = $('#v-seed');
+  const vSel = $('#v-session');
+  const vReveal = $('#v-reveal');
+  let verify = null;
+  function runVerify() {
+    const seed = vSeed.value.trim().toLowerCase();
+    const ok = /^[0-9a-f]{64}$/.test(seed);
+    $('#v-seed-field').classList.toggle('is-invalid', !ok);
+    if (!ok) { vSeed.focus(); return false; }
+    vSeed.value = seed;
+    verify = { seed, key: vSel.value };
+    renderVerify();
+    return true;
+  }
+  function renderVerify() {
+    if (!verify) return;
+    const s = byKey.get(verify.key);
+    const order = lottery.draw(s.g, s.u, verify.seed).order;
+    const shown = vReveal.getAttribute('aria-checked') === 'true';
+    let match = 0;
+    let firstMiss = -1;
+    for (let i = 0; i < s.drawn; i++) {
+      if (order[i].lot === s.order[i].lot) match++;
+      else if (firstMiss < 0) firstMiss = i;
+    }
+    const isLive = verify.seed === state.seed;
+    let tone, chk, text;
+    if (!s.drawn) {
+      tone = 'gray'; chk = 'review';
+      text = `${esc(label(s))}尚未開抽。重算出的籤序在種子公開的那一刻就已確定，直播只是依序揭曉；開抽後會逐支比對。`;
+    } else if (match === s.drawn) {
+      tone = 'green'; chk = 'pass';
+      text = `已揭曉的 <b>${s.drawn}</b> 支與重算結果<b>逐支一致</b>（${esc(label(s))}，共重算 ${s.total} 支）。`;
+    } else {
+      tone = 'red'; chk = 'fail';
+      text = `重算結果與現場不一致：第 ${firstMiss + 1} 支現場為 <b class="mono">${s.order[firstMiss].lot}</b>，重算為 <b class="mono">${order[firstMiss].lot}</b>，${s.drawn} 支中僅 ${match} 支相同。${isLive ? '' : '種子只差一個字元，SHA-256 的雪崩效應就讓整份籤序完全不同——因此無人能在種子公開前預測或操控結果。'}`;
+    }
+    const n = Math.min(20, s.total);
+    const lots = order.slice(0, n).map((p, i) => {
+      const drawnYet = i < s.drawn;
+      const cls = drawnYet ? (p.lot === s.order[i].lot ? 'is-match' : 'is-miss') : shown ? '' : 'is-hidden';
+      const r = resultOf(s, i);
+      return `<li class="lt-vlot ${cls}" title="第 ${i + 1} 支 · ${r.short}"><small>${i < s.quota ? '正' : '備'} ${r.n}</small><b>${drawnYet || shown ? p.lot : '••••'}</b></li>`;
+    }).join('');
+    $('#v-out').innerHTML = `<div class="lt-vsum tone-${tone}">${App.checkIcon(chk)}<span>${text}</span></div>
+      <ol class="lt-vlots" aria-label="重算籤序前 ${n} 支">${lots}</ol>`;
+  }
+  vForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (runVerify()) App.toast('已重算籤序', { tone: 'info', desc: `${label(byKey.get(verify.key))} · 種子 ${verify.seed.slice(0, 8)}…` });
+  });
+  $('#v-mutate').addEventListener('click', () => {
+    const v = vSeed.value.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(v)) { runVerify(); return; }
+    const last = ((parseInt(v.slice(-1), 16) + 1) % 16).toString(16);
+    vSeed.value = v.slice(0, -1) + last;
+    runVerify();
+    App.toast('已改動種子最後 1 個字元', { tone: 'warn', desc: `…${v.slice(-1)} → …${last}，觀察籤序如何改變` });
+  });
+  $('#v-restore').addEventListener('click', () => { vSeed.value = state.seed; vSel.value = state.current; runVerify(); });
+  vSeed.addEventListener('input', () => $('#v-seed-field').classList.remove('is-invalid'));
+  vSel.addEventListener('change', runVerify);
+  vReveal.addEventListener('click', () => {
+    vReveal.setAttribute('aria-checked', String(vReveal.getAttribute('aria-checked') !== 'true'));
+    renderVerify();
+  });
+
+  // 與 App.lottery.draw 相同的推導：SHA-256（種子|組別|戶型）
+  const sessionSeed = (s) => App.sha256(`${state.seed}|${s.g}|${s.u}`);
+  function renderSessionSeed(s) {
+    const h = sessionSeed(s);
+    $('#sess-seed-label').textContent = label(s);
+    $('#sess-seed-formula').innerHTML = `SHA-256（<code>${state.seed.slice(0, 8)}…|${s.g}|${s.u}</code>）前 128 位元初始化 sfc32，洗牌 ${fmt.num(s.pool.length)} 位名冊`;
+    $('#sess-seed').textContent = shortHash(h, 22, 10);
+    $('#sess-seed').title = h;
+  }
+
+  /* ================= 同步：任何狀態變動都走同一套重繪 ================= */
+  function renderAll() {
+    const s = cur();
+    renderSessionSeed(s);
+    renderTabs();
+    renderStage(s);
+    renderControls();
+    renderProgress(s);
+    renderMatrix();
+    renderResults(s);
+    renderLog();
+    renderVerify();
+  }
+
+  reseed();
+  const T0 = App.now();
+  logs.push(
+    { at: T0, by: 'system', html: `演練種子產生 <span class="mono">${state.seed.slice(0, 8)}</span>，三組名冊雜湊與見證人骰值已公告` },
+    { at: T0, by: App.ME, html: '開啟模擬演練：見證人骰值採演練預設值，結果不具效力' },
+    { at: App.time(LOT.snapshot), by: 'system', html: `名冊快照：${GROUP_ORDER.map((g) => `${GROUPS[g].label} ${fmt.num(lottery.pool(g).length)}`).join('、')}，共 ${fmt.num(sum(GROUP_ORDER.map((g) => lottery.pool(g).length)))} 筆` },
+    { at: App.time('2026-10-20T11:30'), by: LOT.host, html: '排定公開抽籤彩排：10/27（二）10:00 市府 1F 市民廣場' },
+  );
+  logs.forEach((e) => { e.fresh = false; });
+  renderSeed(false);
+  setCaption(captionIdle(cur()));
+  verify = { seed: state.seed, key: state.current };
+  renderAll();
+});
+</script>
+</body>
+</html>

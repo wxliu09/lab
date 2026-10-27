@@ -1,0 +1,1975 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流程設計器 — 澄港市政府 公文線上簽核 流程中樞</title>
+<meta name="description" content="編輯公文簽核 BPMN 流程：拖曳節點、設定期限與分流條件，並以實際公文情境模擬 token 走過的路徑與到發文所需工作日。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ── 流程設計器專屬（前綴 dz-） ── */
+  .dz-head .page-lede { max-width: 70ch; }
+  .dz-ver { display: flex; align-items: center; gap: 4px; }
+  .dz-ver__tag { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 1px solid var(--ink); border-radius: 2px; background: var(--sheet); font: 600 var(--fs-12)/1 var(--font-mono); color: var(--ink); white-space: nowrap; }
+  .dz-ver__tag small { font: 500 var(--fs-11)/1 var(--font-sans); color: var(--ink-3); }
+  .dz-ver__tag--draft { border-style: dashed; background: var(--sheet-2); }
+  .dz-ver__tag--draft.is-review { border-style: solid; border-color: var(--token-ink); }
+  .dz-ver__tag--draft.is-review small { color: var(--token-ink); font-weight: 600; }
+  .dz-ver > .glyph { width: 26px; height: 18px; color: var(--ink-3); }
+  .dz-save { font-size: var(--fs-12); color: var(--ink-3); text-align: right; }
+  .dz-save b { color: var(--warn-ink); font-weight: 600; }
+  .dz-save strong { color: var(--ok-ink); font-weight: 600; }
+  .dz-head__btns { display: flex; gap: 8px; }
+
+  /* 版面：元件直欄 + 圖面 + 檢視器 */
+  .designer.dz { grid-template-columns: 80px minmax(0, 1fr) 300px; min-height: 0; }
+  .dz-rail { padding: 10px 8px 12px; gap: 6px; user-select: none; -webkit-user-select: none; }
+  .dz-rail__cap { font: 600 10px/1 var(--font-mono); letter-spacing: .16em; color: var(--ink-3); text-align: center; margin: 4px 0 1px; }
+  .dz-rail .palette-item { flex-direction: column; justify-content: center; gap: 5px; padding: 9px 2px 8px; font-size: 11.5px; line-height: 1.2; text-align: center; }
+  .dz-rail .palette-item .glyph, .dz-rail .palette-item .icon { width: 24px; height: 24px; }
+  .dz-rail .palette-item[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; box-shadow: none; transform: none; }
+  .dz-rail__sep { flex: none; height: 1px; margin: 4px 2px; background: var(--line-2); }
+  .dz-rail__hint { margin-top: auto; padding-top: 8px; font-size: 10.5px; line-height: 1.45; color: var(--ink-3); text-align: center; }
+  .dz-shape { cursor: grab; }
+  body.dz-dragging, body.dz-dragging * { cursor: grabbing !important; user-select: none !important; }
+  .dz-drag-ghost {
+    position: fixed; left: 0; top: 0; z-index: 95; pointer-events: none;
+    display: flex; align-items: center; gap: 7px; padding: 7px 11px;
+    border: 1.5px solid var(--ink); border-radius: 8px; background: var(--sheet); box-shadow: var(--sh-3);
+    font-size: var(--fs-13); font-weight: 600; white-space: nowrap; opacity: .94;
+  }
+  .dz-drag-ghost.is-over { border-color: var(--token); }
+  .dz-drag-ghost .glyph { width: 20px; height: 20px; }
+
+  .dz-main { position: relative; }
+  .dz-tb { gap: 8px; min-height: 52px; }
+  .dz-tb__sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 2px; }
+  .dz-tb__grow { flex: 1; }
+  .dz-tb .switch { font-size: var(--fs-12); white-space: nowrap; }
+  /* 工具列在圖面頂端，提示改往下開才不會被外框裁掉 */
+  .dz-tb [data-tip]::after { bottom: auto; top: calc(100% + 8px); }
+  .zoom-ctl button[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); }
+  .zoom-ctl button:disabled { opacity: .35; cursor: not-allowed; }
+  .zoom-ctl .icon { width: 17px; height: 17px; }
+  .dz-runbtn { min-width: 112px; }
+
+  .dz-canvas { padding: 10px; overflow-x: auto; overflow-y: hidden; }
+  .dz-sheet { position: relative; }
+  .dz-sheet .flow { width: 100%; min-width: 0; }
+  /* 設計器預設縮到整張流程可見，文字略放大以維持可讀 */
+  #dz-flow .flow__label { font-size: 16px; }
+  #dz-flow .flow__lane-label { font-size: 15px; }
+  #dz-flow .flow__edge-label, #dz-flow .flow__ext { font-size: 13px; }
+  .dz-canvas.is-connecting .flow__node { cursor: crosshair; }
+  .dz-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .dz-lanehl { fill: var(--token-soft); }
+  .dz-lanehl-txt { font: 600 13px var(--font-sans); fill: var(--token-ink); }
+  .dz-guide { stroke: var(--token); stroke-width: 1.2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .dz-tag rect { fill: var(--ink); }
+  .dz-tag text { font: 500 12px var(--font-mono); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+  .dz-rubber { fill: none; stroke: var(--token); stroke-width: 2.2; stroke-dasharray: 7 5; }
+  .dz-rubber-arrow { fill: var(--token); }
+  .dz-ghost { fill: rgba(255, 255, 255, .86); stroke: var(--token); stroke-width: 1.8; stroke-dasharray: 6 4; }
+  .dz-lint circle { stroke: var(--sheet); stroke-width: 2; }
+  .dz-lint--err circle { fill: var(--danger); }
+  .dz-lint--warn circle { fill: var(--heat-1); }
+  .dz-lint text { font: 700 13px var(--font-sans); text-anchor: middle; dominant-baseline: central; }
+  .dz-lint--err text { fill: #fff; }
+  .dz-lint--warn text { fill: var(--ink); }
+  .dz-hintchip {
+    position: absolute; left: 50%; top: 64px; z-index: 6; transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 24px);
+    padding: 6px 12px; border-radius: var(--r-pill); background: var(--ink); color: #fff;
+    font-size: var(--fs-12); box-shadow: var(--sh-2); pointer-events: none;
+  }
+  .dz-hintchip .glyph { width: 16px; height: 16px; color: #7FD0FF; }
+  .dz-hintchip kbd { font: 600 11px/1 var(--font-mono); padding: 2px 5px; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+
+  .dz-status { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-height: 38px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: var(--fs-12); color: var(--ink-3); }
+  .dz-status__sel { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+  .dz-status__sel .glyph { width: 16px; height: 16px; color: var(--ink-2); }
+  .dz-status__sel b { color: var(--ink); font-weight: 600; }
+  .dz-status__sel .mono { font-size: 11.5px; color: var(--ink-2); }
+  .dz-status__grow { flex: 1; }
+  .dz-status__cnt { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+  /* 窄版檢視器排在圖面下方，選取後給一個直接跳過去的入口；寬版檢視器就在旁邊，不需要 */
+  .dz-status__jump { display: none; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--ink); border-radius: 6px; background: var(--ink); color: #fff; font-size: var(--fs-12); font-weight: 600; white-space: nowrap; }
+  .dz-status__jump .icon { width: 13px; height: 13px; transform: rotate(90deg); }
+  .dz-lintbtn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--sheet); font-size: var(--fs-12); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .dz-lintbtn .icon { width: 14px; height: 14px; }
+  .dz-lintbtn.is-ok { color: var(--ok-ink); border-color: #A9DCC4; background: var(--ok-soft); }
+  .dz-lintbtn.is-warn { color: var(--warn-ink); border-color: #F0D27A; background: var(--heat-1-soft); }
+  .dz-lintbtn.is-err { color: var(--danger-ink); border-color: #F2B5B7; background: var(--heat-3-soft); }
+
+  /* 情境路徑工時：甘特 + 工程比例尺 */
+  .dz-gantt { display: grid; grid-template-columns: 184px minmax(0, 1fr); border-top: 1.5px solid var(--ink); }
+  .dz-gantt__sum { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px 12px 16px; border-right: 1px solid var(--line); background: var(--sheet-2); }
+  .dz-gantt__title { font: 600 var(--fs-11)/1.3 var(--font-mono); letter-spacing: .12em; color: var(--ink-3); }
+  .dz-gantt__scn { font-size: var(--fs-12); line-height: 1.45; color: var(--ink-2); }
+  .dz-gantt__val { display: flex; align-items: baseline; gap: 4px; margin-top: 2px; }
+  .dz-gantt__val b { font: 600 32px/1 var(--font-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .dz-gantt__val span { font-size: var(--fs-14); color: var(--ink-3); }
+  .dz-gantt__val small { margin-left: 6px; font: 500 var(--fs-12)/1 var(--font-mono); color: var(--ink-3); }
+  .dz-verdict { display: inline-flex; align-items: center; gap: 5px; width: fit-content; padding: 4px 8px; border-radius: 4px; font-size: var(--fs-12); font-weight: 600; line-height: 1.3; }
+  .dz-verdict .icon { width: 14px; height: 14px; flex: none; }
+  .dz-verdict.is-ok { background: var(--ok-soft); color: var(--ok-ink); }
+  .dz-verdict.is-bad { background: var(--danger); color: #fff; }
+  .dz-verdict.is-warn { background: var(--heat-1-soft); color: var(--warn-ink); }
+  .dz-verdict.is-run { background: var(--token-soft); color: var(--token-ink); }
+  .dz-gantt__note { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.45; }
+  .dz-gantt__note b { color: var(--ink); font-weight: 600; }
+  .dz-gantt__chart { min-width: 0; padding: 10px 14px 10px 12px; }
+  .dz-gantt__scroll { overflow-x: auto; }
+  .dz-gantt__scroll svg { display: block; }
+  .dz-gantt__empty { padding: 26px 0; font-size: var(--fs-13); color: var(--ink-3); }
+  .dz-gantt__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; font-size: var(--fs-11); color: var(--ink-3); }
+  .dz-gantt__legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dz-gantt__legend i { width: 16px; height: 9px; border-radius: 2px; border: 1px solid var(--ink-3); background: var(--sheet); }
+  .dz-gantt__legend i.is-crit { background: var(--ink-2); border-color: var(--ink); }
+  .dz-gantt__legend i.is-over { background: var(--heat-3); border-color: var(--heat-3); }
+  .dz-gantt__legend i.is-after { background: repeating-linear-gradient(45deg, #F7F9FB 0 2px, #C3CDD8 2px 3.4px); border-style: dashed; border-color: var(--line-3); }
+  .dz-gantt__legend i.is-token { width: 9px; border-radius: 50%; border: 0; background: var(--token); box-shadow: 0 0 0 3px var(--token-soft); }
+  .dz-g-grid { stroke: var(--line); stroke-width: 1; }
+  .dz-g-flag { stroke: var(--ink-4); stroke-width: 1; stroke-dasharray: 3 3; }
+  .dz-g-flag.is-on { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: none; }
+  .dz-g-flagtxt { font: 500 10.5px var(--font-sans); fill: var(--ink-3); }
+  .dz-g-flagbox rect { fill: var(--ink); }
+  .dz-g-flagbox text { font: 600 10.5px var(--font-sans); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+  .dz-gb__bar { fill: var(--sheet); stroke: var(--ink-3); stroke-width: 1; transition: fill .25s, stroke .25s; }
+  .dz-gb.is-crit .dz-gb__bar { fill: var(--ink-2); stroke: var(--ink); }
+  .dz-gb.is-after .dz-gb__bar { fill: url(#dz-g-hatch); stroke: var(--line-3); stroke-dasharray: 3 2; }
+  .dz-gb__over { fill: var(--heat-3); }
+  .dz-gb__sla { stroke: var(--ink); stroke-width: 1.5; }
+  .dz-gb__txt { font: 600 10.5px var(--font-sans); fill: var(--ink-2); dominant-baseline: central; pointer-events: none; }
+  .dz-gb.is-crit .dz-gb__txt { fill: #fff; }
+  .dz-gb.is-after .dz-gb__txt { fill: var(--ink-3); }
+  /* 條太短放不下名稱時改標在條的右側，顏色不跟著條的狀態反白 */
+  .dz-gb .dz-gb__txt.is-out { fill: var(--ink-3); font-weight: 500; paint-order: stroke; stroke: var(--sheet); stroke-width: 4px; stroke-linejoin: round; }
+  .dz-gb { transition: opacity .3s; }
+  .dz-gb.is-dim { opacity: .16; }
+  .dz-gb.is-live .dz-gb__bar { fill: var(--token); stroke: #0090E3; }
+  .dz-gb.is-live .dz-gb__txt { fill: #fff; }
+  .dz-gb.is-pop .dz-gb__bar, .dz-gb.is-pop .dz-gb__over { transform-box: fill-box; transform-origin: left center; animation: dz-grow .5s var(--ease-out) both; }
+  @keyframes dz-grow { from { transform: scaleX(0); } }
+  .dz-g-scale { fill: var(--ink); stroke: var(--ink); stroke-width: 1; }
+  .dz-g-scale.is-alt { fill: var(--sheet); }
+  .dz-g-tick { font: 500 10.5px var(--font-mono); fill: var(--ink-3); }
+  .dz-g-mark { transition: transform .55s var(--ease-out); }
+  .dz-g-mark line { stroke: var(--token); stroke-width: 1.2; stroke-dasharray: 2 3; }
+  .dz-g-mark__halo { fill: var(--token); opacity: .22; }
+  .dz-g-mark__core { fill: var(--token); stroke: var(--sheet); stroke-width: 1.5; }
+  .dz-g-mark.is-live .dz-g-mark__halo { transform-box: fill-box; transform-origin: center; animation: dz-halo 1.2s var(--ease-out) infinite; }
+  @keyframes dz-halo { 0% { transform: scale(.6); opacity: .45; } 100% { transform: scale(1.8); opacity: 0; } }
+
+  /* 檢視器 */
+  .dz-insp { position: relative; padding: 0; gap: 0; overflow: hidden; }
+  .dz-insp__inner { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .dz-tabs { flex: none; padding: 0 8px; background: var(--sheet-2); }
+  .dz-tabs .tab { height: 46px; padding: 0 12px; font-size: var(--fs-13); }
+  .dz-insp__scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+  .dz-pane { display: flex; flex-direction: column; gap: 14px; }
+  .dz-pane[hidden] { display: none; }
+  .dz-ih { display: flex; align-items: flex-start; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .dz-ih > .glyph { width: 30px; height: 30px; color: var(--ink); flex: none; }
+  .dz-ih__title { font-size: var(--fs-17); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+  .dz-ih__meta { margin-top: 3px; font-size: var(--fs-12); color: var(--ink-3); }
+  .dz-ih__meta .mono { font-size: 11.5px; }
+  .dz-new { color: var(--ok-ink); font-weight: 600; }
+  .dz-sec .inspector__title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; }
+  .dz-sec .inspector__title small { font: 500 var(--fs-11)/1 var(--font-mono); letter-spacing: 0; color: var(--ink-3); }
+  .dz-seg-full { display: flex; width: 100%; }
+  .dz-seg-full > button { flex: 1; padding: 0 6px; }
+  .dz-range { width: 100%; height: 20px; margin: 2px 0 0; accent-color: var(--ink); cursor: pointer; }
+  .dz-note { font-size: var(--fs-12); color: var(--ink-3); line-height: 1.55; }
+  .dz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dz-links { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .dz-link { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--sheet); text-align: left; font-size: var(--fs-13); color: var(--ink); }
+  .dz-link:hover { border-color: var(--ink-3); background: var(--sheet-2); }
+  .dz-link .glyph { width: 18px; height: 18px; color: var(--ink-2); margin-top: 1px; }
+  .dz-link b { font-weight: 600; }
+  .dz-link small { display: block; font-size: var(--fs-12); color: var(--ink-3); }
+  .dz-ends { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-13); font-weight: 600; }
+  .dz-ends > span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 5px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--sheet-2); }
+  .dz-ends .glyph { width: 16px; height: 16px; color: var(--ink-2); }
+  .dz-ends > .glyph { width: 22px; color: var(--ink-3); }
+  .dz-phrases { margin-top: 6px; }
+  .dz-phrases .phrase { height: 26px; padding: 0 8px; font-size: var(--fs-12); }
+  .dz-split { display: flex; flex-direction: column; gap: 9px; }
+  .dz-split__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; font-size: var(--fs-12); color: var(--ink-2); }
+  .dz-split__row b { font: 600 var(--fs-12)/1.4 var(--font-mono); color: var(--ink); }
+  .dz-split__bar { grid-column: 1 / -1; height: 6px; border-radius: 2px; background: var(--paper-2); overflow: hidden; }
+  .dz-split__bar span { display: block; height: 100%; background: var(--ink-2); transform-origin: left; transform: scaleX(var(--v)); }
+
+  .dz-impact svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .dz-im-axis { stroke: var(--ink-2); stroke-width: 1; }
+  .dz-im-over { fill: var(--heat-3-soft); }
+  .dz-im-sla { stroke: var(--ink); stroke-width: 1.5; }
+  .dz-im-slatxt { font: 600 10.5px var(--font-mono); fill: var(--ink); }
+  .dz-im-tick { font: 500 10px var(--font-mono); fill: var(--ink-3); }
+  .dz-im-dot { fill: var(--ink-3); stroke: var(--sheet); stroke-width: 1; transition: fill .2s; }
+  .dz-im-dot.is-over { fill: var(--heat-3); }
+  .dz-im-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; }
+  .dz-im-stats > div { padding: 7px 8px; border-right: 1px solid var(--line); min-width: 0; }
+  .dz-im-stats > div:last-child { border-right: 0; }
+  .dz-im-stats b { display: block; font: 600 var(--fs-17)/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+  .dz-im-stats b.is-bad { color: var(--danger-ink); }
+  .dz-im-stats span { display: block; font-size: 11px; line-height: 1.3; color: var(--ink-3); }
+  .dz-im-cmp { margin-top: 8px; font-size: var(--fs-12); line-height: 1.5; color: var(--ink-3); }
+  .dz-im-cmp b { color: var(--ink); font-weight: 600; }
+
+  .dz-hot { display: flex; flex-direction: column; gap: 6px; }
+  .dz-hot__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 8px; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sheet); text-align: left; font-size: var(--fs-13); color: var(--ink); }
+  .dz-hot__row:hover { border-color: var(--ink-3); background: var(--sheet-2); }
+  .dz-hot__name { font-weight: 600; min-width: 0; }
+  .dz-hot__name small { display: block; font-weight: 400; font-size: var(--fs-11); color: var(--ink-3); }
+  .dz-hot__val { font: 500 var(--fs-11)/1.4 var(--font-mono); color: var(--ink-2); text-align: right; }
+  .dz-hot__val b { display: block; font-size: var(--fs-13); color: var(--ink); }
+  .dz-hot__bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--paper-2); overflow: hidden; }
+  .dz-hot__bar span { display: block; height: 100%; background: var(--c); transform-origin: left; transform: scaleX(var(--v)); }
+  .dz-lanes { list-style: none; display: flex; flex-direction: column; font-size: var(--fs-13); }
+  .dz-lanes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .dz-lanes li:last-child { border-bottom: 0; }
+  .dz-lanes small { display: block; font-size: var(--fs-11); color: var(--ink-3); }
+  .dz-lanes b { font: 600 var(--fs-13)/1.4 var(--font-mono); align-self: center; }
+  .dz-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: var(--fs-12); color: var(--ink-2); }
+  .dz-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dz-legend .glyph { width: 18px; height: 18px; color: var(--ink); }
+  .dz-keys { grid-template-columns: max-content 1fr; gap: 7px 12px; font-size: var(--fs-12); }
+  .dz-keys dt { white-space: nowrap; }
+
+  .dz-lsum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line-2); border-radius: 8px; }
+  .dz-lsum > div { padding: 8px 10px; border-right: 1px solid var(--line); }
+  .dz-lsum > div:last-child { border-right: 0; }
+  .dz-lsum b { display: block; font: 600 var(--fs-20)/1.2 var(--font-sans); }
+  .dz-lsum span { font-size: var(--fs-11); color: var(--ink-3); }
+  .dz-lsum .is-err b { color: var(--danger-ink); }
+  .dz-lsum .is-warn b { color: var(--warn-ink); }
+  .dz-lsum .is-ok b { color: var(--ok-ink); }
+  .dz-issues { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .dz-issue { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 8px; width: 100%; padding: 8px 10px; border: 1px solid var(--line-2); border-left-width: 3px; border-radius: 6px; background: var(--sheet); text-align: left; font-size: var(--fs-13); line-height: 1.45; color: var(--ink); }
+  .dz-issue:hover { background: var(--sheet-2); }
+  .dz-issue .icon { width: 16px; height: 16px; margin-top: 2px; }
+  .dz-issue small { grid-column: 2; font-size: var(--fs-11); color: var(--token-ink); font-weight: 600; }
+  .dz-issue--err { border-left-color: var(--danger); }
+  .dz-issue--err .icon { color: var(--danger); }
+  .dz-issue--warn { border-left-color: var(--heat-1); }
+  .dz-issue--warn .icon { color: var(--warn-ink); }
+  .dz-passed { list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: var(--fs-12); color: var(--ink-2); }
+  .dz-passed li { display: flex; align-items: center; gap: 7px; }
+  .dz-passed .icon { width: 14px; height: 14px; color: var(--ok); }
+
+  .dz-log .sim-log__item { grid-template-columns: 50px 18px minmax(0, 1fr); align-items: start; padding: 7px 8px; transition: background var(--dur-2), opacity var(--dur-2); }
+  .dz-log__time { font: 500 var(--fs-11)/1.35 var(--font-mono); color: var(--ink-3); }
+  .dz-log__time b { display: block; font-weight: 600; color: var(--ink-2); }
+  .dz-log .glyph { margin-top: 2px; color: var(--ink-2); }
+  .dz-log__t { min-width: 0; font-weight: 600; color: var(--ink); line-height: 1.35; }
+  .dz-log__t small { display: block; margin-top: 1px; font-weight: 400; font-size: var(--fs-12); color: var(--ink-3); }
+  .dz-log__item.is-crit .glyph { color: var(--ink); }
+  .dz-log.is-running .dz-log__item:not(.is-done):not(.is-active) { opacity: .4; }
+  .dz-log__item.is-active .glyph { color: var(--token-ink); }
+  .dz-log__stop { margin-left: 6px; padding: 2px 5px; border-radius: 3px; background: var(--ink); color: #fff; font: 600 10.5px/1 var(--font-sans); font-style: normal; vertical-align: 1px; }
+  .dz-log__over { color: var(--danger-ink); font-weight: 600; }
+  .dz-log__empty { padding: 10px 8px; font-size: var(--fs-13); color: var(--ink-3); }
+  .dz-log__empty.is-bad { color: var(--danger-ink); }
+  .dz-scn-hint { font-size: var(--fs-12); line-height: 1.5; color: var(--ink-3); }
+  .dz-scn-hint a { font-weight: 600; }
+
+  /* 下方：變更紀錄與版本沿革；兩欄等高，空的變更紀錄不會在右欄旁留下一塊空白 */
+  .dz-lower { margin-top: 24px; align-items: stretch; }
+  .dz-lower > .panel { display: flex; flex-direction: column; }
+  .dz-chg { list-style: none; flex: 1; }
+  .dz-chg.is-empty { display: flex; flex-direction: column; justify-content: center; }
+  .dz-chg__item { display: grid; grid-template-columns: 48px 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: var(--fs-14); }
+  .dz-chg__item:last-child { border-bottom: 0; }
+  .dz-chg__item .badge { justify-content: center; }
+  .dz-chg__item .glyph { width: 20px; height: 20px; color: var(--ink-2); }
+  .dz-chg__text { min-width: 0; font-weight: 500; }
+  .dz-chg__text small { display: block; font-weight: 400; font-size: var(--fs-12); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dz-vers { list-style: none; padding: 16px 18px 6px; }
+  .dz-vi { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 12px; padding-bottom: 16px; }
+  .dz-vi::before { content: ""; position: absolute; left: 10.5px; top: 22px; bottom: 0; width: 1px; background: var(--ink-3); }
+  .dz-vi:last-child::before { display: none; }
+  .dz-vi__mark { position: relative; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink); background: var(--sheet); }
+  .dz-vi--draft .dz-vi__mark { border-style: dashed; border-color: var(--ink-3); }
+  .dz-vi--current .dz-vi__mark { border-width: 3px; }
+  .dz-vi--current .dz-vi__mark::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--token); }
+  .dz-vi__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-13); color: var(--ink-3); min-height: 22px; }
+  .dz-vi__head b { font: 600 var(--fs-14)/1 var(--font-mono); color: var(--ink); }
+  .dz-vi__note { margin-top: 4px; font-size: var(--fs-13); color: var(--ink-2); line-height: 1.55; }
+  .dz-vi__by { margin-top: 3px; font-size: var(--fs-12); color: var(--ink-3); }
+
+  .dz-pub__sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line-2); border-radius: 8px; background: var(--sheet-2); }
+  .dz-pub__sum > div { padding: 10px 12px; border-right: 1px solid var(--line); }
+  .dz-pub__sum > div:last-child { border-right: 0; }
+  .dz-pub__sum b { display: block; font: 600 var(--fs-20)/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+  .dz-pub__sum span { font-size: var(--fs-12); color: var(--ink-3); }
+  .dz-pub__radios { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+  .dz-pub__radios legend { padding: 0; margin-bottom: 8px; }
+  .dz-pub__route { font-size: var(--fs-13); color: var(--ink-3); }
+
+  @media (max-width: 1100px) {
+    .designer.dz { grid-template-columns: minmax(0, 1fr); }
+    .dz-rail { flex-direction: row; align-items: stretch; overflow-x: auto; padding: 8px 10px; }
+    .dz-rail__cap, .dz-rail__hint { display: none; }
+    .dz-rail__sep { width: 1px; height: auto; margin: 2px 2px; }
+    .dz-rail .palette-item { width: 76px; flex: none; }
+    .designer__canvas.dz-canvas { min-height: 0; }
+    .dz-insp { overflow: visible; }
+    .dz-insp__inner { position: static; }
+    .dz-insp__scroll { overflow: visible; }
+    .dz-status__jump { display: inline-flex; }
+  }
+  @media (max-width: 720px) {
+    .dz-save { text-align: left; }
+    .dz-tb { gap: 8px 6px; }
+    .dz-tb__grow { display: none; }
+    .dz-runbtn { flex: 1; }
+    .dz-hintchip { top: auto; bottom: 12px; position: fixed; }
+    .dz-gantt { grid-template-columns: minmax(0, 1fr); }
+    .dz-gantt__sum { border-right: 0; border-bottom: 1px solid var(--line); }
+    .dz-chg__item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 10px 14px; }
+    .dz-chg__item > .glyph { display: none; }
+    .dz-vers { padding: 14px 14px 4px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="sheet-bar" data-anim>
+  <div class="sheet-bar__inner">
+    <a class="sheet-bar__back" href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a>
+    <div class="sheet-bar__meta">
+      <span class="sheet-bar__item">圖號 <b>CG-BPMN-012</b></span>
+      <span class="sheet-bar__item">流程定義 <b>公文簽核 v3.2</b>（2026-09-30 生效）</span>
+      <span class="sheet-bar__item sheet-bar__item--keep live"><span class="live__dot"></span><time data-clock>10/27（二）14:20:00</time></span>
+    </div>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="index.html" aria-label="公文線上簽核 流程中樞 首頁">
+      <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+      <span class="brand__text"><span class="brand__org">澄港市政府</span><span class="brand__name">公文線上簽核<small>流程中樞</small></span></span>
+    </a>
+    <nav class="nav" id="site-nav" aria-label="主要導覽">
+      <ul class="nav__list">
+        <li class="nav__item"><a class="nav__link" href="index.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.6" cy="10" r="2"/><rect x="7.2" y="7" width="5.2" height="6" rx="1.3"/><path d="m16.5 7.2 2.8 2.8-2.8 2.8-2.8-2.8z"/><path d="M5.6 10h1.6M12.4 10h1.3"/></svg><span class="nav__label">流程總覽</span></a></li>
+        <li class="nav__item"><a class="nav__link" href="docs.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 5.5h9M7.5 10h9M7.5 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5"/></svg><span class="nav__label">公文清單</span><span class="nav__count" data-count="overdue" title="逾期公文件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link" href="doc.html"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2.5h6l3.5 3.5v11.5h-9.5z"/><path d="M11.5 2.5V6H15M8 10h5M8 13h5"/></svg><span class="nav__label">公文詳情</span><span class="nav__count nav__count--token" data-count="mine" title="待我核閱件數"></span></a></li>
+        <li class="nav__item"><a class="nav__link is-active" href="designer.html" aria-current="page"><svg class="nav__glyph" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="6" width="10" height="8" rx="1.8"/><path d="M2.5 3.5h2v2h-2zM15.5 3.5h2v2h-2zM2.5 14.5h2v2h-2zM15.5 14.5h2v2h-2z"/></svg><span class="nav__label">流程設計器</span></a></li>
+      </ul>
+    </nav>
+    <div class="header-tools">
+      <div class="user-chip" title="目前登入：王正宏（交通局 運輸規劃科 科長）">
+        <span class="avatar avatar--me" aria-hidden="true">王</span>
+        <span class="user-chip__text"><span class="user-chip__name">王正宏</span><span class="user-chip__role">交通局 運輸規劃科 科長</span></span>
+      </div>
+      <button class="menu-btn" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="開啟選單"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="page">
+  <div class="container">
+
+    <section class="page-head dz-head" aria-labelledby="page-title">
+      <div class="page-head__main">
+        <p class="eyebrow"><span class="sheet-no">SHEET 04 / 04</span><span>流程設計器 · 草稿編輯</span></p>
+        <h1 class="page-title" id="page-title">公文簽核流程設計</h1>
+        <p class="page-lede">拖曳節點調整流程，在右側設定期限、角色與分流條件。選一件實際公文當情境按「模擬執行」：token 會沿路徑跑一遍，下方工時尺規即時算出到發文要幾個工作日。</p>
+      </div>
+      <div class="page-head__aside page-head__aside--stack">
+        <div class="dz-ver">
+          <span class="dz-ver__tag">v3.2<small>生效中</small></span>
+          <span data-glyph="flow"></span>
+          <span class="dz-ver__tag dz-ver__tag--draft" id="ver-draft">v3.3<small id="ver-state">草稿</small></span>
+        </div>
+        <p class="dz-save" id="save-state" aria-live="polite">尚未修改 · 與 v3.2 相同</p>
+        <div class="dz-head__btns">
+          <button type="button" class="btn btn--sm" id="save-btn"><span data-icon="save"></span>儲存草稿</button>
+          <button type="button" class="btn btn--sm btn--primary" id="publish-btn"><span data-icon="send"></span>送審發布</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="designer dz" aria-label="流程設計器" data-anim>
+      <aside class="designer__palette dz-rail" id="dz-rail" aria-label="工具與元件">
+        <p class="dz-rail__cap">工具</p>
+        <button type="button" class="palette-item dz-tool" data-tool="select" aria-pressed="true"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.5 15.5 10l-4.8 1 2.7 5-1.9 1-2.7-5L5 15z"/></svg>選取</button>
+        <button type="button" class="palette-item dz-tool" data-tool="connect" aria-pressed="false"><span data-glyph="flow"></span>連線</button>
+        <span class="dz-rail__sep" aria-hidden="true"></span>
+        <p class="dz-rail__cap">元件</p>
+        <button type="button" class="palette-item dz-shape" data-type="start" data-event="message" aria-label="加入開始事件（可拖曳到圖面）"><span data-glyph="start-msg"></span>開始事件</button>
+        <button type="button" class="palette-item dz-shape" data-type="task" aria-label="加入使用者任務（可拖曳到圖面）"><span data-glyph="task-user"></span>使用者任務</button>
+        <button type="button" class="palette-item dz-shape" data-type="xor" aria-label="加入互斥閘道（可拖曳到圖面）"><span data-glyph="xor"></span>互斥閘道</button>
+        <button type="button" class="palette-item dz-shape" data-type="and" aria-label="加入平行閘道（可拖曳到圖面）"><span data-glyph="and"></span>平行閘道</button>
+        <button type="button" class="palette-item dz-shape" data-type="or" aria-label="加入包容閘道（可拖曳到圖面）"><span data-glyph="or"></span>包容閘道</button>
+        <button type="button" class="palette-item dz-shape" data-type="end" aria-label="加入結束事件（可拖曳到圖面）"><span data-glyph="end"></span>結束事件</button>
+        <p class="dz-rail__hint">拖到圖面放置，或點一下加入空位</p>
+      </aside>
+
+      <div class="designer__main dz-main">
+        <div class="designer__toolbar dz-tb" role="toolbar" aria-label="編輯工具列">
+          <div class="btn-group">
+            <button type="button" class="btn btn--sm btn--icon" id="undo-btn" aria-label="復原" data-tip="復原 Ctrl+Z"><span data-icon="undo"></span></button>
+            <button type="button" class="btn btn--sm btn--icon" id="redo-btn" aria-label="重做" data-tip="重做 Ctrl+Y"><span data-icon="redo"></span></button>
+          </div>
+          <button type="button" class="btn btn--sm btn--icon" id="dup-btn" aria-label="複製節點" data-tip="複製節點 Ctrl+D"><span data-icon="copy"></span></button>
+          <button type="button" class="btn btn--sm btn--icon" id="del-btn" aria-label="刪除選取" data-tip="刪除 Delete"><span data-icon="trash"></span></button>
+          <span class="dz-tb__sep" aria-hidden="true"></span>
+          <button type="button" class="switch" role="switch" aria-checked="true" id="guide-switch">對齊輔助</button>
+          <button type="button" class="switch" role="switch" aria-checked="true" id="heat-switch">即時積壓</button>
+          <span class="dz-tb__grow"></span>
+          <div class="zoom-ctl" role="group" aria-label="縮放">
+            <button type="button" id="zoom-out" aria-label="縮小"><span data-icon="zoom-out"></span></button>
+            <output id="zoom-val" aria-live="polite">100%</output>
+            <button type="button" id="zoom-in" aria-label="放大"><span data-icon="zoom-in"></span></button>
+            <button type="button" id="zoom-fit" aria-label="符合寬度" aria-pressed="true"><span data-icon="fit"></span></button>
+          </div>
+          <button type="button" class="btn btn--sm btn--token dz-runbtn" id="sim-btn"><span data-icon="sim"></span>模擬執行</button>
+        </div>
+        <p class="dz-hintchip" id="connect-hint" hidden></p>
+        <div class="designer__canvas dz-canvas" id="dz-canvas">
+          <div class="dz-sheet" id="dz-sheet">
+            <svg id="dz-flow"></svg>
+            <svg class="dz-overlay" id="dz-overlay" aria-hidden="true" focusable="false"></svg>
+          </div>
+        </div>
+        <p class="flow-hint"><span data-glyph="flow"></span>左右滑動檢視整張流程；按住節點可拖曳</p>
+        <div class="dz-status" id="dz-status">
+          <span class="dz-status__sel" id="st-sel"></span>
+          <span class="dz-status__grow"></span>
+          <span class="dz-status__cnt" id="st-cnt"></span>
+          <button type="button" class="dz-lintbtn" id="st-lint"></button>
+        </div>
+        <section class="dz-gantt" aria-labelledby="gantt-title">
+          <div class="dz-gantt__sum">
+            <h2 class="dz-gantt__title" id="gantt-title">情境路徑工時</h2>
+            <p class="dz-gantt__scn" id="g-scn"></p>
+            <p class="dz-gantt__val"><b id="g-total">0</b><span>日</span><small id="g-hours"></small></p>
+            <p class="dz-verdict" id="g-verdict"></p>
+            <p class="dz-gantt__note" id="g-note"></p>
+          </div>
+          <div class="dz-gantt__chart">
+            <div class="dz-gantt__scroll"><div id="g-chart"></div></div>
+            <div class="dz-gantt__legend" aria-hidden="true">
+              <span><i class="is-crit"></i>關鍵路徑</span>
+              <span><i></i>平行分支（非關鍵）</span>
+              <span><i class="is-over"></i>超過該關期限</span>
+              <span><i class="is-after"></i>歸檔，不計入限辦</span>
+              <span><i class="is-token"></i>token 位置</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="designer__inspector dz-insp" aria-label="檢視器">
+        <div class="dz-insp__inner">
+          <div class="tabs dz-tabs" data-tabs role="tablist" aria-label="檢視器分頁">
+            <button type="button" class="tab" role="tab" id="tab-props" aria-controls="pane-props" aria-selected="true">屬性</button>
+            <button type="button" class="tab" role="tab" id="tab-sim" aria-controls="pane-sim" aria-selected="false">模擬</button>
+            <button type="button" class="tab" role="tab" id="tab-lint" aria-controls="pane-lint" aria-selected="false">檢核<span class="tab__count" id="lint-count">0</span></button>
+          </div>
+          <div class="dz-insp__scroll" id="insp-scroll">
+            <div class="tab-panel dz-pane" role="tabpanel" id="pane-props" aria-labelledby="tab-props"></div>
+
+            <div class="tab-panel dz-pane" role="tabpanel" id="pane-sim" aria-labelledby="tab-sim" hidden>
+              <section class="inspector__section dz-sec" aria-labelledby="scn-title">
+                <h3 class="inspector__title" id="scn-title">模擬情境</h3>
+                <div class="field">
+                  <label class="field__label" for="scn-doc">以公文為情境</label>
+                  <select class="select" id="scn-doc"></select>
+                  <p class="dz-scn-hint" id="scn-hint"></p>
+                </div>
+                <div class="field">
+                  <span class="field__label" id="lbl-speed">速別</span>
+                  <div class="seg dz-seg-full" data-seg id="scn-speed" role="group" aria-labelledby="lbl-speed">
+                    <button type="button" aria-pressed="false" data-value="urgent">最速件</button>
+                    <button type="button" aria-pressed="false" data-value="fast">速件</button>
+                    <button type="button" aria-pressed="false" data-value="normal">普通件</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="field__label" id="lbl-cosign">會辦單位</span>
+                  <div class="chips" data-chips id="scn-cosign" role="group" aria-labelledby="lbl-cosign">
+                    <button type="button" class="chip" aria-pressed="false" data-value="legal">法制處</button>
+                    <button type="button" class="chip" aria-pressed="false" data-value="budget">主計處</button>
+                    <button type="button" class="chip" aria-pressed="false" data-value="agency">相關單位</button>
+                  </div>
+                  <span class="field__hint">都不選＝免會辦，直接送核稿</span>
+                </div>
+                <div class="field">
+                  <span class="field__label" id="lbl-level">決行層級</span>
+                  <div class="seg dz-seg-full" data-seg id="scn-level" role="group" aria-labelledby="lbl-level">
+                    <button type="button" aria-pressed="false" data-value="1">市長</button>
+                    <button type="button" aria-pressed="false" data-value="2">局處首長</button>
+                    <button type="button" aria-pressed="false" data-value="3">科長</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="field__label" id="lbl-send">決行後</span>
+                  <div class="seg dz-seg-full" data-seg id="scn-send" role="group" aria-labelledby="lbl-send">
+                    <button type="button" aria-pressed="false" data-value="send">對外發文</button>
+                    <button type="button" aria-pressed="false" data-value="file">存查歸檔</button>
+                  </div>
+                </div>
+                <button type="button" class="switch" role="switch" aria-checked="false" id="scn-return">核稿時退回補正一次</button>
+              </section>
+              <section class="inspector__section dz-sec" aria-labelledby="log-title">
+                <h3 class="inspector__title" id="log-title">路徑行程<small id="log-count"></small></h3>
+                <div class="cluster">
+                  <div class="seg" data-seg id="scn-pace" role="group" aria-label="播放速度">
+                    <button type="button" aria-pressed="true" data-value="1">標準</button>
+                    <button type="button" aria-pressed="false" data-value="2">快轉</button>
+                  </div>
+                  <button type="button" class="btn btn--sm btn--token dz-runbtn" id="sim-run"><span data-icon="sim"></span>模擬執行</button>
+                </div>
+                <ol class="sim-log dz-log" id="sim-log" aria-live="off"></ol>
+              </section>
+            </div>
+
+            <div class="tab-panel dz-pane" role="tabpanel" id="pane-lint" aria-labelledby="tab-lint" hidden></div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <div class="grid-main dz-lower">
+      <section class="panel" aria-labelledby="chg-title" data-reveal>
+        <header class="panel__head">
+          <h2 class="panel__title" id="chg-title"><span data-glyph="task"></span>變更紀錄<span class="panel__sub">v3.2 → 草稿 v3.3</span><span class="count" id="chg-count">0</span></h2>
+          <button type="button" class="btn btn--sm btn--ghost" id="reset-btn"><span data-icon="undo"></span>全部還原為 v3.2</button>
+        </header>
+        <ol class="dz-chg" id="chg-list"></ol>
+        <footer class="panel__foot">位置調整合併為一筆；名稱、期限、角色、條件逐項列出。按「定位」可在圖面上選取該元素。</footer>
+      </section>
+      <section class="panel" aria-labelledby="ver-title" data-reveal style="--i:1">
+        <header class="panel__head">
+          <h2 class="panel__title" id="ver-title"><span data-glyph="timer"></span>版本沿革</h2>
+          <span class="panel__sub">公文簽核 · doc-routing</span>
+        </header>
+        <ol class="dz-vers" id="ver-list"></ol>
+      </section>
+    </div>
+
+  </div>
+</main>
+
+<dialog class="modal" id="publish-dlg" aria-labelledby="pub-title">
+  <form id="pub-form" novalidate>
+    <div class="modal__head">
+      <h2 class="modal__title" id="pub-title"><span data-glyph="end-msg"></span>送審發布 v3.3</h2>
+      <button type="button" class="modal__close" data-modal-close aria-label="關閉"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="dz-pub__sum" id="pub-sum"></div>
+      <div class="field" id="pub-date-field">
+        <label class="field__label req" for="pub-date">生效日期</label>
+        <input class="input mono" type="date" id="pub-date" min="2026-10-28" value="2026-11-02" required>
+        <span class="field__hint">須為明天以後的工作日；生效前仍依 v3.2 辦理</span>
+        <span class="field__error" id="pub-date-err">請選擇生效日期</span>
+      </div>
+      <div class="field" id="pub-note-field">
+        <label class="field__label req" for="pub-note">變更說明</label>
+        <textarea class="textarea" id="pub-note" rows="4" maxlength="300"></textarea>
+        <span class="field__hint">至少 10 個字，會附在送審簽中</span>
+        <span class="field__error">請填寫至少 10 個字的變更說明</span>
+      </div>
+      <fieldset class="dz-pub__radios">
+        <legend class="field__label">在辦公文</legend>
+        <label class="radio"><input type="radio" name="pub-mode" value="keep" checked><span>在辦 <b data-count="open"></b> 件依原版本辦理至結案</span></label>
+        <label class="radio"><input type="radio" name="pub-mode" value="switch"><span>生效日起在辦公文一併改用新版本</span></label>
+      </fieldset>
+      <p class="dz-pub__route" id="pub-route"></p>
+    </div>
+    <div class="modal__foot">
+      <button type="button" class="btn btn--ghost" data-modal-close>取消</button>
+      <button type="submit" class="btn btn--primary"><span data-icon="send"></span>送出審核</button>
+    </div>
+  </form>
+</dialog>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="title-block">
+      <div class="tb-cell tb-cell--brand">
+        <svg class="brand__mark" viewBox="0 0 52 24" aria-hidden="true"><circle cx="4.5" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 12h3.7M25 12h4.5M41 12h2.6" stroke="currentColor" stroke-width="1.3"/><rect x="12.5" y="6.5" width="12" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M35 6.5 40.5 12 35 17.5 29.5 12Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="47.6" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12.5" cy="12" r="2.3" fill="#00A3FF"/></svg>
+        <div><strong>公文線上簽核 流程中樞</strong><span>澄港市政府 秘書處 文書科 維護</span></div>
+      </div>
+      <div class="tb-cell"><span class="tb-k">圖號 DWG NO.</span><span class="tb-v mono">CG-BPMN-012</span></div>
+      <div class="tb-cell"><span class="tb-k">流程定義 PROCESS</span><span class="tb-v">公文簽核 v3.2</span></div>
+      <div class="tb-cell"><span class="tb-k">生效日期 EFFECTIVE</span><span class="tb-v mono">2026-09-30</span></div>
+      <div class="tb-cell"><span class="tb-k">系統服務 SUPPORT</span><span class="tb-v">分機 2120 · 平日 08:30–17:30</span></div>
+      <nav class="tb-cell tb-cell--nav" aria-label="頁尾導覽">
+        <span class="tb-k">圖紙索引</span>
+        <a href="index.html">01 流程總覽</a>
+        <a href="docs.html">02 公文清單</a>
+        <a href="doc.html">03 公文詳情</a>
+        <a href="designer.html">04 流程設計器</a>
+      </nav>
+      <div class="tb-cell tb-cell--back"><a href="../../index.html"><svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4.5M9 5.5 4.5 10 9 14.5"/></svg>返回目錄</a></div>
+      <div class="tb-cell tb-cell--note"><span>本系統為作品集虛構示範：澄港市、機關、人名、文號與統計資料均為虛構。</span><span class="mono">SHEET 04 / 04 · 比例 1:1 · 時間單位：工作小時</span></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc } = App;
+
+  // 靜態 markup 裡的 BPMN 符號與圖示統一由 App 產生
+  $$('[data-glyph]').forEach(el => { el.outerHTML = App.glyph(el.dataset.glyph, el.className); });
+  $$('[data-icon]').forEach(el => { el.outerHTML = App.icon(el.dataset.icon); });
+
+  /* ── 常數與既有資料 ─────────────────────────────────── */
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const reduced = () => App.reducedMotion();
+  const TYPE_LABEL = { start: '開始事件', end: '結束事件', task: '使用者任務', xor: '互斥閘道', and: '平行閘道', or: '包容閘道' };
+  const NEW_LABEL = { start: '開始', task: '新任務', xor: '條件判斷？', and: '平行分流', or: '包容分流', end: '結束' };
+  const GW_HINT = { xor: '只走條件成立的一條出口', and: '所有出口同時進行，會合時等齊', or: '條件成立的出口都會進行' };
+  const ROLES = ['收發人員', '分文人員', '承辦人', '科長', '局處首長', '市長／副市長', '法制處審議科', '主計處公務預算科', '權責局處／政風／人事', '發文人員', '檔案管理員'];
+  const COND_PHRASES = ['預設', '需會辦', '免會辦', '決行層級 = 1', '決行層級 = 2', '決行層級 = 3', '需對外發文', '核稿退回'];
+  const SPEEDS = App.DATA.speeds;
+  const DAY_H = 9;
+  const limitH = speed => SPEEDS[speed].days * DAY_H;
+  const LEVEL_WHO = { 1: '市長', 2: '局處首長', 3: '科長' };
+  const BRANCH_OF = { 'cs-legal': 'legal', 'cs-budget': 'budget', 'cs-agency': 'agency' };
+  const BRANCH_TXT = App.DATA.branchLabel;
+  const STATS = App.stageStats();
+  const isTask = n => n.type === 'task';
+  const isGateway = n => n.type === 'xor' || n.type === 'and' || n.type === 'or';
+  const glyphOf = n => n.type === 'start' ? (n.event === 'message' ? 'start-msg' : 'start')
+    : n.type === 'end' ? (n.event === 'message' ? 'end-msg' : 'end') : n.type === 'task' ? 'task-user' : n.type;
+  const fmtH = h => h >= 100 ? String(Math.round(h)) : h.toFixed(1);
+  const fmtD = h => (h / DAY_H).toFixed(1);
+  const textW = (str, cjk = 10.5, lat = 6.2) => [...String(str)].reduce((s, c) => s + (c.charCodeAt(0) < 256 ? lat : cjk), 0);
+  // 工作小時 → 「第 n 日 hh:mm」：每天 08:30 起算 9 個工作小時
+  const dayClock = h => {
+    const day = h <= 0 ? 1 : Math.ceil(h / DAY_H - 1e-9);
+    const min = Math.round((h - (day - 1) * DAY_H) * 60) + 8 * 60 + 30;
+    return { day: `第${day}日`, time: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` };
+  };
+
+  // 各關卡的實績停留時間：由已完成的軌跡推算；會辦分支從送出會辦的時點起算，平行分支才不會互相墊高
+  const HIST = (() => {
+    const acc = {};
+    const add = (k, h) => { const a = acc[k] || (acc[k] = { sum: 0, n: 0 }); a.sum += h; a.n++; };
+    for (const d of App.DATA.docs) {
+      let prev = d.received, sentOut = d.received;
+      for (const e of d.trail) {
+        if (e.at > App.NOW0) break;
+        const h = App.workHours(e.key === 'cosign' ? sentOut : prev, e.at);
+        add(`${d.speed}|${e.node}`, h);
+        add(`all|${e.node}`, h);
+        prev = e.at;
+        if (e.key !== 'cosign') sentOut = e.at;
+      }
+    }
+    return acc;
+  })();
+  function durOf(n, speed) {
+    const own = HIST[`${speed}|${n.id}`], all = HIST[`all|${n.id}`];
+    if (own && own.n >= 3) return { h: own.sum / own.n, src: 'speed', n: own.n };
+    if (all && all.n >= 3) return { h: all.sum / all.n, src: 'all', n: all.n };
+    // 新增的任務沒有歷史資料，只能用期限當估計值
+    return { h: n.sla || 8, src: 'sla', n: 0 };
+  }
+
+  /* ── 流程圖（可編輯） ───────────────────────────────── */
+  const svg = $('#dz-flow'), overlay = $('#dz-overlay'), sheet = $('#dz-sheet'), canvas = $('#dz-canvas');
+  const flow = App.Flow(svg, App.processModel(), {
+    editable: true, snap: 10,
+    label: '公文簽核流程設計圖（可編輯）：拖曳或以方向鍵移動節點，Shift 加方向鍵一次移動 40',
+    onSelect: sel => onCanvasSelect(sel),
+    onChange: (kind, p) => { if (kind === 'move') onMoved(p); },
+  });
+  const M = () => flow.model;
+  const W = M().width, H = M().lanes.reduce((s, l) => s + l.h, 0);
+  const HX = (M().poolHead ?? 28) + (M().laneHead ?? 42);
+  overlay.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const BASE = flow.toJSON();
+  const baseNode = id => BASE.nodes.find(n => n.id === id) || null;
+  const laneById = id => M().lanes.find(l => l.id === id);
+  const laneTop = id => {
+    let y = 0;
+    for (const l of M().lanes) { if (l.id === id) return y; y += l.h; }
+    throw new Error('designer: unknown lane ' + id);
+  };
+  const laneMid = id => laneTop(id) + laneById(id).h / 2;
+  const nodeName = id => (flow.node(id) || baseNode(id) || { label: id }).label;
+
+  const featured = ['bikeway', 'winter', 'zoning', 'pothole', 'audit'].map(slug => App.featured(slug));
+  const scnOfDoc = d => ({ doc: d.id, speed: d.speed, cosign: ['legal', 'budget', 'agency'].filter(b => d.cosign.some(c => c.branch === b)), level: d.level, send: d.send, ret: d.trail.some(e => e.ret) });
+
+  const state = {
+    sel: null, tool: 'select', connectFrom: null, connectPt: null,
+    zoom: 'fit', guides: true, heat: true, pace: 1,
+    scn: scnOfDoc(featured[0]),
+    ev: null, evSig: '', sim: null, marked: false, markSig: '', ganttX: null,
+    drag: null, pal: null, lint: { issues: [], passed: [], rules: 0 }, changes: [],
+    savedSig: '', savedAt: null, review: null,
+  };
+  const selNode = () => state.sel && state.sel.type === 'node' ? flow.node(state.sel.id) : null;
+  const selEdge = () => state.sel && state.sel.type === 'edge' ? flow.edge(state.sel.id) : null;
+
+  /* ── 編輯歷程（復原 / 重做） ─────────────────────────── */
+  const modelSig = m => JSON.stringify([
+    m.nodes.map(n => [n.id, n.type, n.label, n.role || '', n.sla ?? '', n.wip ?? '', n.x, n.y, n.event || '']),
+    m.edges.map(e => [e.id, e.from, e.to, e.label || '', e.cond || '', e.kind || '']),
+  ]);
+  const BASE_SIG = modelSig(BASE);
+  state.savedSig = BASE_SIG;
+  const hist = { stack: [{ model: flow.toJSON(), sig: BASE_SIG, label: '載入 v3.2' }], i: 0, lastKey: '', lastAt: 0 };
+
+  function commit(label, key = '') {
+    const sig = modelSig(M());
+    if (sig === hist.stack[hist.i].sig) { refresh(); return; }
+    const now = Date.now();
+    const entry = { model: flow.toJSON(), sig, label };
+    // 連續微調同一個東西（方向鍵、拖曳期限滑桿）合併成一筆，避免復原要按很多次
+    if (key && key === hist.lastKey && now - hist.lastAt < 1500 && hist.i === hist.stack.length - 1 && hist.i > 0) hist.stack[hist.i] = entry;
+    else {
+      hist.stack = hist.stack.slice(0, hist.i + 1);
+      hist.stack.push(entry);
+      if (hist.stack.length > 120) hist.stack.shift();
+      hist.i = hist.stack.length - 1;
+    }
+    hist.lastKey = key; hist.lastAt = now;
+    refresh();
+  }
+  function restoreModel(model) {
+    if (state.sim) stopSim(false);
+    const keep = state.sel;
+    flow.load(JSON.parse(JSON.stringify(model)));
+    state.marked = false;
+    const alive = keep && (keep.type === 'node' ? flow.node(keep.id) : flow.edge(keep.id));
+    flow.select(alive ? keep : null);
+    state.sel = flow.selected;
+    refresh({ inspector: true });
+  }
+  function undo() {
+    if (hist.i <= 0) return;
+    const label = hist.stack[hist.i].label;
+    hist.i--; hist.lastKey = '';
+    restoreModel(hist.stack[hist.i].model);
+    App.toast(`已復原：${label}`, { duration: 2400 });
+  }
+  function redo() {
+    if (hist.i >= hist.stack.length - 1) return;
+    hist.i++; hist.lastKey = '';
+    restoreModel(hist.stack[hist.i].model);
+    App.toast(`已重做：${hist.stack[hist.i].label}`, { duration: 2400 });
+  }
+  // toast 上的「復原」只撤銷它對應的那一步；之後若還有別的變更就不動，避免誤撤
+  function undoToast(text) {
+    const at = hist.i;
+    App.toast(text, { action: { label: '復原', onClick: () => {
+      if (hist.i === at) undo();
+      else App.toast('之後已有其他變更，請改用工具列的復原', { tone: 'warn' });
+    } } });
+  }
+
+  /* ── 衍生顯示：每次變更都走同一套重繪 ──────────────── */
+  function refresh({ inspector = false } = {}) {
+    applyMeta();
+    evaluateScenario();
+    runLint();
+    renderOverlay();
+    renderChanges();
+    renderVersions();
+    renderStatus();
+    renderSaveState();
+    syncButtons();
+    if (inspector) renderInspector();
+  }
+
+  // 節點徽章與熱度：沿用總覽的公式，但改用草稿裡的期限與 WIP，改期限時光暈會即時變色
+  const loadOf = (n, s) => Math.max(s.count / (n.wip || 1), s.avgDwell / (n.sla || 1));
+  const heatOf = (n, s) => clamp((loadOf(n, s) - .55) / .9, 0, 1);
+  function metaFor(n) {
+    const s = STATS[n.id];
+    if (!state.heat || !s) return { text: n.sla ? `期限 ${n.sla} 小時` : '未設期限' };
+    return { count: s.count, dwell: s.avgDwell, heat: heatOf(n, s), text: `均 ${fmtH(s.avgDwell)}／限 ${n.sla ?? '—'}h` };
+  }
+  function applyMeta() {
+    const map = {};
+    M().nodes.forEach(n => { if (isTask(n)) map[n.id] = metaFor(n); });
+    flow.setMeta(map);
+  }
+
+  /* ── 情境試算：與 token 動畫共用同一套分流決策 ─────── */
+  function decide(n, outs, ctx, s) {
+    if (outs.length < 2) return outs;
+    const by = id => outs.find(e => e.id === id);
+    let r = null;
+    if (n.id === 'gw-cosign') r = by(s.cosign.length && !ctx.returned ? 'e-cs-yes' : 'e-cs-no');
+    else if (n.id === 'split' && n.type !== 'xor') {
+      const picked = outs.filter(e => s.cosign.includes(BRANCH_OF[e.to]));
+      if (picked.length) return picked;
+    } else if (n.id === 'review') {
+      if (s.ret && !ctx.returned && by('e-return')) { ctx.returned = true; r = by('e-return'); } else r = by('e-review');
+    } else if (n.id === 'gw-level') r = by({ 1: 'e-l1', 2: 'e-l2', 3: 'e-l3' }[s.level]);
+    else if (n.id === 'gw-send') r = by(s.send ? 'e-send' : 'e-file');
+    if (r) return [r];
+    // 使用者新增或改動的節點：平行／包容閘道走全部分支，其餘走「預設」或第一條非退回的出口
+    if (n.type === 'and' || n.type === 'or') return outs;
+    return [outs.find(e => /預設/.test(e.cond || '')) || outs.find(e => e.kind !== 'return') || outs[0]];
+  }
+
+  // 以工作小時為時間軸的離散事件試算：平行分支各自累計，會合取最晚到達者
+  function evaluate(s) {
+    const m = M();
+    const byId = new Map(m.nodes.map(n => [n.id, n]));
+    const outsOf = id => m.edges.filter(e => e.from === id);
+    const inCount = id => m.edges.filter(e => e.to === id).length;
+    const ev = { recs: [], byNode: new Map(), deadEnds: [], loop: false, stop: null, error: '', blocks: [], rows: 1, total: 0, top: null };
+    const start = m.nodes.find(n => n.type === 'start');
+    if (!start) { ev.error = 'no-start'; return ev; }
+    const ctx = {}, joins = new Map(), queue = [];
+    let seq = 0, gid = 0, steps = 0;
+    const add = rec => {
+      rec.i = ev.recs.length;
+      ev.recs.push(rec);
+      if (!ev.byNode.has(rec.node.id)) ev.byNode.set(rec.node.id, []);
+      ev.byNode.get(rec.node.id).push(rec);
+      return rec;
+    };
+    const depart = (n, rec, group) => {
+      const outs = outsOf(n.id);
+      if (!outs.length) { ev.deadEnds.push(n.id); return; }
+      const chosen = decide(n, outs, ctx, s);
+      rec.chosen = chosen;
+      const g = chosen.length > 1 ? group.concat({ id: ++gid, n: chosen.length }) : group;
+      chosen.forEach(e => queue.push({ e, t: rec.finish, from: rec, group: g, seq: ++seq }));
+    };
+    depart(start, add({ node: start, arrival: 0, dur: 0, finish: 0, pred: null }), []);
+    while (queue.length) {
+      if (++steps > 240) { ev.loop = true; break; }
+      queue.sort((a, b) => a.t - b.t || a.seq - b.seq);
+      const tk = queue.shift();
+      const n = byId.get(tk.e.to);
+      let rec, group = tk.group;
+      if ((n.type === 'and' || n.type === 'or') && inCount(n.id) > 1 && group.length) {
+        const g = group[group.length - 1], key = n.id + '|' + g.id;
+        let j = joins.get(key);
+        if (!j) { j = { got: 0, rec: add({ node: n, arrival: tk.t, dur: 0, pred: tk.from, join: true, need: g.n }) }; joins.set(key, j); }
+        else if (tk.t >= j.rec.arrival) { j.rec.arrival = tk.t; j.rec.pred = tk.from; }
+        if (++j.got < g.n) continue;
+        joins.delete(key);
+        rec = j.rec;
+        rec.finish = rec.arrival;
+        group = group.slice(0, -1);
+      } else {
+        const d = isTask(n) ? durOf(n, s.speed) : { h: 0, src: '', n: 0 };
+        rec = add({ node: n, arrival: tk.t, dur: d.h, src: d.src, hn: d.n, finish: tk.t + d.h, pred: tk.from });
+      }
+      // 限辦計至發文；存查案計至決行。兩者都在抵達「歸檔」時停表
+      if (!ev.stop && (n.id === 'archive' || n.type === 'end')) ev.stop = rec;
+      if (n.type !== 'end') depart(n, rec, group);
+    }
+    const last = ev.stop || ev.recs.reduce((a, r) => (r.finish ?? r.arrival) > (a.finish ?? a.arrival) ? r : a, ev.recs[0]);
+    for (let r = last; r; r = r.pred) r.crit = true;
+    ev.total = ev.stop ? ev.stop.arrival : (last.finish ?? last.arrival);
+    // 甘特排列：同時開始的平行分支，把關鍵分支排在第一列，主線才連得起來
+    const blocks = ev.recs.filter(r => isTask(r.node)).sort((a, b) => a.arrival - b.arrival || (b.crit ? 1 : 0) - (a.crit ? 1 : 0) || a.i - b.i);
+    const rowEnd = [];
+    blocks.forEach(b => {
+      let row = rowEnd.findIndex(end => end <= b.arrival + 1e-6);
+      if (row < 0) { row = rowEnd.length; rowEnd.push(0); }
+      rowEnd[row] = b.finish;
+      b.row = row;
+      b.after = !!ev.stop && b.arrival >= ev.stop.arrival - 1e-6;
+      b.over = !!b.node.sla && b.dur > b.node.sla + 1e-6;
+    });
+    ev.blocks = blocks;
+    ev.rows = Math.max(1, rowEnd.length);
+    ev.top = blocks.filter(b => b.crit && !b.after).sort((a, b) => b.dur - a.dur)[0] || null;
+    return ev;
+  }
+  const evSigOf = ev => ev.error || `${ev.loop ? 'loop|' : ''}${ev.recs.map(r => `${r.node.id}@${r.arrival.toFixed(3)}`).join(',')}`;
+  const srcText = r => r.src === 'speed' ? `${SPEEDS[state.scn.speed].label}實績 ${r.hn} 件均值` : r.src === 'all' ? `全體實績 ${r.hn} 件均值` : '無實績，以期限估算';
+  const scnText = s => [
+    SPEEDS[s.speed].label,
+    s.cosign.length ? s.cosign.map(b => BRANCH_TXT[b]).join('、') + '會辦' : '免會辦',
+    `${LEVEL_WHO[s.level]}決行`,
+    s.send ? '對外發文' : '存查',
+    s.ret ? '退回補正一次' : '',
+  ].filter(Boolean).join(' · ');
+
+  function evaluateScenario() {
+    const ev = evaluate(state.scn);
+    const sig = evSigOf(ev) + '|' + state.scn.speed;
+    // 模擬途中流程或情境被改動：試算結果已不同，停止動畫以免路徑與圖面不一致
+    if (state.sim && sig !== state.sim.sig) stopSim();
+    if (state.marked && sig !== state.markSig) { flow.clearPath(); state.marked = false; }
+    state.ev = ev;
+    state.evSig = sig;
+    renderGantt();
+    renderGanttSummary();
+    renderItinerary();
+  }
+
+  /* ── 甘特尺規 ─────────────────────────────────────── */
+  function renderGantt() {
+    const ev = state.ev, s = state.scn, box = $('#g-chart');
+    if (ev.error) { state.ganttX = null; box.innerHTML = '<p class="dz-gantt__empty">流程缺少開始事件，無法試算路徑工時。</p>'; return; }
+    // 寬度跟著容器走：全域 svg 有 max-width:100%，比容器寬會被等比縮小，手機上字會小到看不見
+    const Wd = Math.max(300, Math.floor(box.clientWidth));
+    const narrow = Wd < 480;
+    const rows = Math.max(3, ev.rows);
+    const T = 26, RH = 19, BH = 14, L = 4, R = 16;
+    const axisY = T + rows * RH + 2;
+    const Hd = axisY + 24;
+    const lim = limitH(s.speed);
+    const maxH = Math.max(81, Math.ceil((ev.total + 4) / DAY_H) * DAY_H);
+    const X = h => +(L + clamp(h, 0, maxH) / maxH * (Wd - L - R)).toFixed(1);
+    state.ganttX = X;
+    let g = '<defs>'
+      + '<pattern id="dz-g-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#F7F9FB"/><path d="M0 0V5" stroke="#C3CDD8" stroke-width="1.4"/></pattern>'
+      + '<pattern id="dz-g-overrun" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#FDECEC"/><path d="M0 0V6" stroke="#F2B5B7" stroke-width="1.6"/></pattern>'
+      + '</defs>';
+    for (let d = 1; d * DAY_H <= maxH; d++) g += `<line class="dz-g-grid" x1="${X(d * DAY_H)}" x2="${X(d * DAY_H)}" y1="${T - 6}" y2="${axisY}"/>`;
+    if (ev.stop && ev.total > lim) g += `<rect x="${X(lim)}" y="${T - 6}" width="${(X(ev.total) - X(lim)).toFixed(1)}" height="${axisY - T + 6}" fill="url(#dz-g-overrun)"><title>超出${SPEEDS[s.speed].label}限辦的部分</title></rect>`;
+    ['urgent', 'fast', 'normal'].forEach(k => {
+      const on = k === s.speed, x = X(limitH(k));
+      // 窄版只有目前速別的旗標寫出天數，其餘只留名稱，相鄰旗標才不會疊字
+      const txt = narrow && !on ? SPEEDS[k].label : `${SPEEDS[k].label} ${SPEEDS[k].days}日`;
+      g += `<line class="dz-g-flag${on ? ' is-on' : ''}" x1="${x}" x2="${x}" y1="${on ? 15 : 13}" y2="${axisY}"/>`;
+      if (on) {
+        const tw = textW(txt) + 12;
+        g += `<g class="dz-g-flagbox" transform="translate(${x} 0)"><rect x="${-tw / 2}" y="1" width="${tw}" height="15" rx="2"/><text y="8.5">${txt}</text></g>`;
+      } else g += `<text class="dz-g-flagtxt" x="${x}" y="9" text-anchor="middle">${txt}</text>`;
+    });
+    ev.blocks.forEach(b => {
+      const x0 = X(b.arrival), x1 = X(b.finish), w = Math.max(2.5, x1 - x0), y = T + b.row * RH;
+      const sla = b.node.sla;
+      const showOver = b.over && !b.after;
+      const cls = ['dz-gb', b.crit && !b.after ? 'is-crit' : '', b.after ? 'is-after' : ''].filter(Boolean).join(' ');
+      const label = (b.src === 'sla' ? '≈' : '') + b.node.label;
+      const tip = `${b.node.label}：${fmtH(b.dur)} 小時（${srcText(b)}）${sla ? `，期限 ${sla} 小時` : ''}${b.after ? '，不計入限辦' : ''}`;
+      let inner = `<rect class="dz-gb__bar" x="${x0}" y="${y}" width="${w.toFixed(1)}" height="${BH}" rx="2"/>`;
+      if (showOver) {
+        const xs = X(b.arrival + sla);
+        inner += `<rect class="dz-gb__over" x="${xs}" y="${y}" width="${Math.max(1.5, x1 - xs).toFixed(1)}" height="${BH}"/><line class="dz-gb__sla" x1="${xs}" x2="${xs}" y1="${y - 2}" y2="${y + BH + 2}"/>`;
+      }
+      if (textW(label) + 10 <= w) inner += `<text class="dz-gb__txt" x="${(x0 + 5).toFixed(1)}" y="${y + BH / 2 + .5}">${esc(label)}</text>`;
+      else {
+        // 同一列下一段之前（或圖尾）還有空間，就把名稱標在條外
+        const room = Math.min(Wd - R, ...ev.blocks.filter(o => o.row === b.row && o.arrival >= b.finish - 1e-6 && o !== b).map(o => X(o.arrival)));
+        if (x0 + w + 6 + textW(label) <= room - 4) inner += `<text class="dz-gb__txt is-out" x="${(x0 + w + 5).toFixed(1)}" y="${y + BH / 2 + .5}">${esc(label)}</text>`;
+      }
+      g += `<g class="${cls}" data-rec="${b.i}"><title>${esc(tip)}</title>${inner}</g>`;
+    });
+    // 工程比例尺：一格一個工作天，黑白相間
+    for (let d = 0; d * DAY_H < maxH; d++) g += `<rect class="dz-g-scale${d % 2 ? ' is-alt' : ''}" x="${X(d * DAY_H)}" y="${axisY}" width="${(X((d + 1) * DAY_H) - X(d * DAY_H)).toFixed(1)}" height="5"/>`;
+    if (X(DAY_H) - X(0) >= 40) g += `<text class="dz-g-tick" x="${X(0)}" y="${axisY + 19}">收文</text>`;
+    // 每日寬度不足 28px 時隔日標示，避免「10日」「11日」互相擠壓
+    const tickStep = X(DAY_H) - X(0) < 28 ? 2 : 1, lastDay = maxH / DAY_H;
+    for (let d = 1; d <= lastDay; d++) if ((lastDay - d) % tickStep === 0) g +=`<text class="dz-g-tick" x="${X(d * DAY_H)}" y="${axisY + 19}" text-anchor="${d * DAY_H >= maxH ? 'end' : 'middle'}">${d}日</text>`;
+    const mh = state.sim ? state.sim.markH : ev.total;
+    g += `<g class="dz-g-mark${state.sim ? ' is-live' : ''}" id="g-mark" style="transform:translateX(${X(mh)}px)"><line x1="0" x2="0" y1="${T - 8}" y2="${axisY}"/><circle class="dz-g-mark__halo" cy="${axisY + 2.5}" r="9"/><circle class="dz-g-mark__core" cy="${axisY + 2.5}" r="5"/></g>`;
+    const aria = `情境路徑工時甘特圖：預估 ${fmtD(ev.total)} 個工作天，${SPEEDS[s.speed].label}限辦 ${SPEEDS[s.speed].days} 日`;
+    box.innerHTML = `<svg width="${Wd}" height="${Hd}" viewBox="0 0 ${Wd} ${Hd}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
+    paintSim();
+  }
+
+  function renderGanttSummary() {
+    const ev = state.ev, s = state.scn, lim = limitH(s.speed), sp = SPEEDS[s.speed];
+    const verdict = $('#g-verdict');
+    $('#g-scn').textContent = scnText(s);
+    $('#g-total').textContent = ev.error ? '—' : fmtD(ev.total);
+    $('#g-hours').textContent = ev.error ? '' : `${fmtH(ev.total)} 小時`;
+    let cls = 'is-ok', html = '';
+    if (state.sim) { cls = 'is-run'; html = `${App.icon('sim')}模擬中…`; }
+    else if (ev.error) { cls = 'is-warn'; html = `${App.icon('alert')}缺少開始事件`; }
+    else if (ev.loop) { cls = 'is-bad'; html = `${App.icon('alert')}流程形成循環，無法結案`; }
+    else if (!ev.stop) { cls = 'is-warn'; html = `${App.icon('alert')}路徑在「${esc(nodeName(ev.deadEnds[0]))}」中斷`; }
+    else if (ev.total <= lim) html = `${App.icon('check')}${sp.label}限辦 ${sp.days} 日內 · 餘 ${fmtD(lim - ev.total)} 日`;
+    else { cls = 'is-bad'; html = `${App.icon('alert')}超過${sp.label}限辦 ${fmtD(ev.total - lim)} 日`; }
+    verdict.className = 'dz-verdict ' + cls;
+    verdict.innerHTML = html;
+    $('#g-note').innerHTML = ev.top ? `最耗時：<b>${esc(ev.top.node.label)}</b> ${fmtH(ev.top.dur)} 小時，佔 ${Math.round(ev.top.dur / Math.max(ev.total, .1) * 100)}%` : '';
+  }
+
+  /* ── 路徑行程（模擬紀錄） ─────────────────────────── */
+  function renderItinerary() {
+    const ev = state.ev, list = $('#sim-log');
+    if (ev.error) { list.innerHTML = '<li class="dz-log__empty">流程缺少開始事件，無法排出路徑。</li>'; $('#log-count').textContent = ''; return; }
+    const recs = [...ev.recs].sort((a, b) => a.arrival - b.arrival || a.i - b.i);
+    list.innerHTML = recs.map(r => {
+      const n = r.node, c = dayClock(r.arrival);
+      let detail;
+      if (n.type === 'start') detail = '來文送達，開始計算限辦';
+      else if (isTask(n)) detail = `${esc(n.role || '未指定角色')} · ${fmtH(r.dur)} 小時 · ${srcText(r)}${r.dur > (n.sla || Infinity) ? ` · <span class="dz-log__over">超出 ${n.sla} 小時期限 ${fmtH(r.dur - n.sla)} 小時</span>` : ''}`;
+      else if (r.join) detail = `${r.need} 支分支到齊後放行`;
+      else if (n.type === 'end') detail = '流程結束';
+      else if (r.chosen) detail = '→ ' + r.chosen.map(e => esc(e.label || nodeName(e.to))).join('、');
+      else detail = '';
+      const stop = r === ev.stop ? '<em class="dz-log__stop">限辦截止</em>' : '';
+      return `<li class="sim-log__item dz-log__item${r.crit ? ' is-crit' : ''}" data-rec="${r.i}"><span class="dz-log__time"><b>${c.day}</b>${c.time}</span>${App.glyph(glyphOf(n))}<span class="dz-log__t">${esc(n.label)}${stop}<small>${detail}</small></span></li>`;
+    }).join('') + (ev.loop ? '<li class="dz-log__empty is-bad">試算 240 步仍未結案：流程有無法離開的循環。</li>' : '');
+    $('#log-count').textContent = `${recs.length} 站`;
+    paintSim();
+  }
+
+  /* ── 模擬執行：token 跑一遍，甘特與行程同步點亮 ─────── */
+  function paintSim() {
+    const sim = state.sim;
+    $('#sim-log').classList.toggle('is-running', !!sim);
+    let activeLi = null;
+    $$('#sim-log .dz-log__item').forEach(li => {
+      const i = +li.dataset.rec;
+      const active = !!sim && sim.active === i;
+      li.classList.toggle('is-active', active);
+      li.classList.toggle('is-done', !!sim && !active && sim.revealed.has(i));
+      if (active) activeLi = li;
+    });
+    $$('#g-chart .dz-gb').forEach(g => {
+      const i = +g.dataset.rec, on = !sim || sim.revealed.has(i);
+      g.classList.toggle('is-dim', !on);
+      g.classList.toggle('is-live', !!sim && sim.active === i);
+      if (sim && on) g.classList.add('is-pop');
+    });
+    const mark = $('#g-mark');
+    if (mark && state.ganttX) {
+      mark.style.transform = `translateX(${state.ganttX(sim ? sim.markH : state.ev.total)}px)`;
+      mark.classList.toggle('is-live', !!sim);
+    }
+    // 只捲動檢視器自己的捲軸，不帶動整頁
+    const sc = $('#insp-scroll');
+    if (activeLi && !$('#pane-sim').hidden && sc.scrollHeight > sc.clientHeight + 4) {
+      const top = activeLi.offsetTop, bottom = top + activeLi.offsetHeight;
+      if (top < sc.scrollTop + 8 || bottom > sc.scrollTop + sc.clientHeight - 8) sc.scrollTo({ top: Math.max(0, top - sc.clientHeight / 2), behavior: reduced() ? 'auto' : 'smooth' });
+    }
+  }
+
+  let simSeq = 0;
+  async function runSim() {
+    if (state.sim) { stopSim(); App.toast('已停止模擬', { duration: 2000 }); return; }
+    const ev = state.ev;
+    if (ev.error) { App.toast('流程缺少開始事件，無法模擬', { tone: 'danger' }); openTab('lint'); return; }
+    if (ev.loop) { App.toast('流程形成無法結束的循環，請先修正', { tone: 'danger' }); openTab('lint'); return; }
+    flow.clearPath();
+    state.marked = false;
+    const sim = { id: ++simSeq, sig: state.evSig, revealed: new Set(), ptr: new Map(), joinGot: new Map(), active: null, markH: 0 };
+    state.sim = sim;
+    openTab('sim');
+    syncButtons();
+    renderGantt();
+    renderGanttSummary();
+    paintSim();
+    const ctx = {};
+    const fast = state.pace === 2;
+    const res = await flow.simulate({
+      speed: fast ? 560 : 270, dwell: fast ? .2 : .42,
+      pick: (n, outs) => decide(n, outs, ctx, state.scn),
+      onVisit: n => { if (state.sim === sim) revealVisit(sim, n); },
+    });
+    if (state.sim !== sim) return;
+    state.sim = null;
+    state.marked = true;
+    state.markSig = state.evSig;
+    syncButtons();
+    renderGanttSummary();
+    paintSim();
+    const e2 = state.ev, lim = limitH(state.scn.speed), sp = SPEEDS[state.scn.speed];
+    if (!res.ok) App.toast(`模擬中斷：token 停在「${nodeName(res.deadEnds[0] || res.order[res.order.length - 1])}」`, { tone: 'warn' });
+    else if (e2.total <= lim) App.toast(`模擬完成：預估 ${fmtD(e2.total)} 日，可在${sp.label}限辦內完成`, { tone: 'ok' });
+    else App.toast(`模擬完成：預估 ${fmtD(e2.total)} 日，超過${sp.label}限辦 ${fmtD(e2.total - lim)} 日${e2.top ? `（最耗時：${e2.top.node.label}）` : ''}`, { tone: 'danger', duration: 6000 });
+  }
+  // 引擎每次 token 抵達節點都會回呼；會合閘道要等齊同一組分支才算抵達
+  function revealVisit(sim, n) {
+    const recs = state.ev.byNode.get(n.id);
+    if (!recs) return;
+    const k = sim.ptr.get(n.id) || 0;
+    const rec = recs[k];
+    if (!rec) return;
+    if (rec.join) {
+      const got = (sim.joinGot.get(rec.i) || 0) + 1;
+      sim.joinGot.set(rec.i, got);
+      if (got >= rec.need) sim.ptr.set(n.id, k + 1);
+    } else sim.ptr.set(n.id, k + 1);
+    sim.revealed.add(rec.i);
+    sim.active = rec.i;
+    sim.markH = Math.max(sim.markH, rec.arrival);
+    paintSim();
+  }
+  // 引擎沒有「中止模擬」API：重新載入同一份模型即可清掉模擬 token
+  function stopSim(reload = true) {
+    if (!state.sim) return;
+    state.sim = null;
+    if (reload) {
+      const keep = state.sel;
+      flow.load(flow.toJSON());
+      flow.select(keep);
+      state.sel = flow.selected;
+      applyMeta();
+    }
+    state.marked = false;
+    syncButtons();
+    renderGanttSummary();
+    paintSim();
+  }
+
+  /* ── 流程檢核 ─────────────────────────────────────── */
+  function reachable(starts, next) {
+    const seen = new Set(starts), q = [...starts];
+    while (q.length) next(q.shift()).forEach(id => { if (!seen.has(id)) { seen.add(id); q.push(id); } });
+    return seen;
+  }
+  function runLint() {
+    const { nodes, edges } = M();
+    const outs = id => edges.filter(e => e.from === id), ins = id => edges.filter(e => e.to === id);
+    const nm = n => `「${n.label}」`;
+    const issues = [], passed = [];
+    let rules = 0;
+    const check = (title, found) => { rules++; if (found.length) issues.push(...found); else passed.push(title); };
+    const starts = nodes.filter(n => n.type === 'start'), ends = nodes.filter(n => n.type === 'end');
+    check('有開始事件', starts.length ? [] : [{ sev: 'err', msg: '流程缺少開始事件，公文無處進入' }]);
+    check('有結束事件', ends.length ? [] : [{ sev: 'err', msg: '流程缺少結束事件，公文無法結案' }]);
+    const fwd = reachable(starts.map(n => n.id), id => outs(id).map(e => e.to));
+    check('所有節點都能從開始事件抵達', nodes.filter(n => !fwd.has(n.id)).map(n => ({ sev: 'err', msg: `${nm(n)}無法從開始事件抵達`, node: n.id })));
+    check('非結束節點都有出口', nodes.filter(n => n.type !== 'end' && !outs(n.id).length).map(n => ({ sev: 'err', msg: `${nm(n)}沒有出口順序流，公文會停在這裡`, node: n.id })));
+    const back = reachable(ends.map(n => n.id), id => ins(id).map(e => e.from));
+    check('每條路徑都能結案', nodes.filter(n => fwd.has(n.id) && outs(n.id).length && !back.has(n.id)).map(n => ({ sev: 'warn', msg: `${nm(n)}之後的路徑到不了結束事件`, node: n.id })));
+    check('閘道確實有分流或會合', nodes.filter(n => isGateway(n) && outs(n.id).length < 2 && ins(n.id).length < 2).map(n => ({ sev: 'warn', msg: `${TYPE_LABEL[n.type]}${nm(n)}只有單一路徑，可以移除`, node: n.id })));
+    const cond = [];
+    nodes.filter(n => n.type === 'xor' && outs(n.id).length > 1).forEach(n => outs(n.id).filter(e => !(e.cond || e.label)).forEach(e => cond.push({ sev: 'warn', msg: `${nm(n)}→${nm(flow.node(e.to))}未設定分流條件`, edge: e.id })));
+    check('互斥閘道的出口都有條件', cond);
+    const tasks = nodes.filter(isTask);
+    check('任務都有期限', tasks.filter(n => !n.sla).map(n => ({ sev: 'warn', msg: `${nm(n)}未設定期限`, node: n.id })));
+    check('任務都有執行角色', tasks.filter(n => !n.role).map(n => ({ sev: 'warn', msg: `${nm(n)}未指定執行角色`, node: n.id })));
+    const dup = edges.filter((e, i) => edges.findIndex(x => x.from === e.from && x.to === e.to) !== i);
+    check('沒有重複的順序流', dup.map(e => ({ sev: 'warn', msg: `${nm(flow.node(e.from))}→${nm(flow.node(e.to))}有重複的順序流`, edge: e.id })));
+    check('目前情境可以結案', state.ev.loop ? [{ sev: 'err', msg: '依目前情境，流程形成無法離開的循環' }] : []);
+    issues.sort((a, b) => (a.sev === 'err' ? 0 : 1) - (b.sev === 'err' ? 0 : 1));
+    state.lint = { issues, passed, rules };
+    renderLintPane();
+  }
+  function renderLintPane() {
+    const { issues, passed } = state.lint;
+    const err = issues.filter(i => i.sev === 'err').length, warn = issues.length - err;
+    $('#lint-count').textContent = String(issues.length);
+    const list = issues.map((it, k) => {
+      const target = it.node || it.edge;
+      return `<li><button type="button" class="dz-issue dz-issue--${it.sev}" data-issue="${k}"${target ? '' : ' disabled'}>${App.icon(it.sev === 'err' ? 'alert' : 'info')}<span>${esc(it.msg)}</span>${target ? '<small>在圖面上定位 →</small>' : ''}</button></li>`;
+    }).join('');
+    $('#pane-lint').innerHTML = `
+      <div class="dz-lsum"><div class="${err ? 'is-err' : ''}"><b>${err}</b><span>錯誤</span></div><div class="${warn ? 'is-warn' : ''}"><b>${warn}</b><span>提醒</span></div><div class="is-ok"><b>${passed.length}</b><span>項通過</span></div></div>
+      ${issues.length ? `<section class="dz-sec"><h3 class="inspector__title">待處理</h3><ul class="dz-issues">${list}</ul></section>` : '<p class="callout callout--token">全部檢核通過。草稿可以送審。</p>'}
+      ${passed.length ? `<section class="dz-sec"><h3 class="inspector__title">已通過</h3><ul class="dz-passed">${passed.map(p => `<li>${App.icon('check')}${esc(p)}</li>`).join('')}</ul></section>` : ''}
+      <p class="dz-note">錯誤會擋下送審；提醒不影響送審，但建議處理。</p>`;
+  }
+  $('#pane-lint').addEventListener('click', e => {
+    const b = e.target.closest('[data-issue]');
+    if (!b) return;
+    const it = state.lint.issues[+b.dataset.issue];
+    if (it && it.node && flow.node(it.node)) setSelection({ type: 'node', id: it.node }, { reveal: true, tab: false });
+    else if (it && it.edge && flow.edge(it.edge)) setSelection({ type: 'edge', id: it.edge }, { reveal: true, tab: false });
+  });
+
+  /* ── 圖面疊圖：對齊線、泳道提示、連線預覽、檢核標記 ── */
+  function shapeAt(type, x, y, cls) {
+    const { w, h } = App.Flow.size({ type });
+    if (type === 'task') return `<rect class="${cls}" x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="10"/>`;
+    if (type === 'start' || type === 'end') return `<circle class="${cls}" cx="${x}" cy="${y}" r="18"/>`;
+    return `<path class="${cls}" d="M${x} ${y - h / 2}L${x + w / 2} ${y}L${x} ${y + h / 2}L${x - w / 2} ${y}Z"/>`;
+  }
+  function laneHighlight(y, lane0) {
+    const lane = M().lanes.find(l => y >= laneTop(l.id) && y < laneTop(l.id) + l.h) || M().lanes[M().lanes.length - 1];
+    const top = laneTop(lane.id);
+    let s = `<rect class="dz-lanehl" x="${HX}" y="${top}" width="${W - HX}" height="${lane.h}"/>`;
+    if (lane.id !== lane0) s += `<text class="dz-lanehl-txt" x="${HX + 12}" y="${top + 18}">放入「${esc(lane.label)}」泳道 · ${esc(lane.sub)}</text>`;
+    return s;
+  }
+  function renderOverlay() {
+    let s = '';
+    const d = state.drag;
+    if (d) {
+      const n = flow.node(d.id);
+      if (n) {
+        s += laneHighlight(n.y, d.lane0);
+        d.lines.forEach(l => { s += `<line class="dz-guide" x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}"/>`; });
+        const { h } = App.Flow.size(n), txt = `x ${n.x} · y ${n.y}`, tw = textW(txt, 7.2, 7.2) + 14;
+        s += `<g class="dz-tag" transform="translate(${n.x - tw / 2} ${Math.max(2, n.y - h / 2 - 30)})"><rect width="${tw}" height="20" rx="4"/><text x="${tw / 2}" y="10">${txt}</text></g>`;
+      }
+    }
+    if (state.pal && state.pal.pt) {
+      const p = state.pal.pt;
+      s += laneHighlight(p.y, null) + shapeAt(state.pal.type, p.x, p.y, 'dz-ghost');
+    }
+    const marks = new Map();
+    state.lint.issues.forEach(it => { if (it.node && (!marks.has(it.node) || it.sev === 'err')) marks.set(it.node, it.sev); });
+    marks.forEach((sev, id) => {
+      const n = flow.node(id);
+      if (!n) return;
+      const { w, h } = App.Flow.size(n);
+      s += `<g class="dz-lint dz-lint--${sev}" transform="translate(${n.x - w / 2 + 2} ${n.y - h / 2 + 2})"><circle r="9"/><text y=".5">!</text></g>`;
+    });
+    if (state.tool === 'connect' && state.connectFrom && state.connectPt) {
+      const a = flow.node(state.connectFrom);
+      if (a) {
+        const p = state.connectPt;
+        const pts = App.Flow.route(a, { type: 'task', x: p.x, y: p.y, w: 2, h: 2 }, {});
+        s += `<path class="dz-rubber" d="${App.Flow.pathD(pts)}" marker-end="url(#dz-arrow)"/>`;
+      }
+    }
+    overlay.innerHTML = `<defs><marker id="dz-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path class="dz-rubber-arrow" d="M0 1L10 5L0 9Z"/></marker></defs>${s}`;
+  }
+
+  // 拖曳中：吸附到其他節點中心或泳道中線，並畫出對齊線
+  function snapGuides(n) {
+    const TH = 7;
+    const others = M().nodes.filter(m => m.id !== n.id);
+    let bx = null, dx = TH + 1, by = null, dy = TH + 1;
+    others.forEach(m => {
+      if (Math.abs(m.x - n.x) < dx) { dx = Math.abs(m.x - n.x); bx = m.x; }
+      if (Math.abs(m.y - n.y) < dy) { dy = Math.abs(m.y - n.y); by = m.y; }
+    });
+    M().lanes.forEach(l => { const c = laneMid(l.id); if (Math.abs(c - n.y) < dy) { dy = Math.abs(c - n.y); by = c; } });
+    return { x: dx <= TH ? bx : null, y: dy <= TH ? by : null };
+  }
+  function guideLines(n) {
+    const lines = [];
+    const vx = M().nodes.filter(m => m.id !== n.id && m.x === n.x);
+    if (vx.length) {
+      const ys = vx.map(m => m.y).concat(n.y);
+      lines.push([n.x, Math.max(0, Math.min(...ys) - 44), n.x, Math.min(H, Math.max(...ys) + 44)]);
+    }
+    const hy = M().nodes.filter(m => m.id !== n.id && m.y === n.y);
+    if (hy.length) {
+      const xs = hy.map(m => m.x).concat(n.x);
+      lines.push([Math.max(HX, Math.min(...xs) - 70), n.y, Math.min(W, Math.max(...xs) + 70), n.y]);
+    } else if (M().lanes.some(l => laneMid(l.id) === n.y)) lines.push([HX + 4, n.y, W - 4, n.y]);
+    return lines;
+  }
+  // 引擎的 pointermove 先註冊，所以這裡讀到的是它剛移動後的位置
+  svg.addEventListener('pointermove', e => {
+    if (state.tool === 'connect' && state.connectFrom) { state.connectPt = flow.clientToSvg(e.clientX, e.clientY); renderOverlay(); }
+    const el = svg.querySelector('.flow__node.is-dragging');
+    if (!el) return;
+    const n = flow.node(el.dataset.id);
+    if (!state.drag || state.drag.id !== n.id) state.drag = { id: n.id, lane0: n.lane, lines: [] };
+    if (state.guides) {
+      const g = snapGuides(n);
+      if (g.x != null || g.y != null) flow.moveNode(n.id, g.x ?? n.x, g.y ?? n.y);
+      state.drag.lines = guideLines(n);
+    } else state.drag.lines = [];
+    renderOverlay();
+    renderStatus();
+  });
+  svg.addEventListener('pointerleave', () => { if (state.connectPt && !state.drag) { state.connectPt = null; renderOverlay(); } });
+
+  /* ── 選取、連線、新增、刪除 ─────────────────────────── */
+  function onCanvasSelect(sel) {
+    if (state.tool === 'connect') {
+      if (sel && sel.type === 'node') {
+        if (!state.connectFrom) { state.connectFrom = sel.id; state.connectPt = null; updateConnectHint(); renderOverlay(); }
+        else if (sel.id !== state.connectFrom) { connect(state.connectFrom, sel.id); return; }
+      } else if (!sel && state.connectFrom) { state.connectFrom = null; updateConnectHint(); renderOverlay(); }
+    }
+    setSelection(sel);
+  }
+  function setSelection(sel, { reveal = false, tab = true } = {}) {
+    flow.select(sel || null);
+    state.sel = flow.selected;
+    if (state.sel && tab && !$('#tab-props').matches('[aria-selected="true"]')) openTab('props');
+    renderInspector();
+    renderStatus();
+    syncButtons();
+    if (reveal && state.sel) revealSel(state.sel);
+  }
+  function revealSel(sel) {
+    const n = sel.type === 'node' ? flow.node(sel.id) : flow.node(flow.edge(sel.id).from);
+    const z = sheet.offsetWidth / W, x = n.x * z + 10;
+    if (x < canvas.scrollLeft + 40 || x > canvas.scrollLeft + canvas.clientWidth - 40) canvas.scrollTo({ left: x - canvas.clientWidth / 2, behavior: reduced() ? 'auto' : 'smooth' });
+    const r = canvas.getBoundingClientRect();
+    if (r.bottom < 90 || r.top > innerHeight - 90) $('.designer.dz').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+  }
+  function onMoved(p) {
+    const n = flow.node(p.id);
+    state.drag = null;
+    flow.select({ type: 'node', id: p.id });
+    state.sel = flow.selected;
+    renderInspector();
+    commit(`移動「${n.label}」`, 'move:' + p.id);
+  }
+  function setTool(t) {
+    state.tool = t;
+    state.connectFrom = null;
+    state.connectPt = null;
+    $$('.dz-tool').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+    canvas.classList.toggle('is-connecting', t === 'connect');
+    updateConnectHint();
+    renderOverlay();
+  }
+  function updateConnectHint() {
+    const chip = $('#connect-hint');
+    chip.hidden = state.tool !== 'connect';
+    if (chip.hidden) return;
+    chip.innerHTML = state.connectFrom
+      ? `${App.glyph('flow')}從「${esc(nodeName(state.connectFrom))}」連到…點選目標節點<kbd>Esc</kbd>取消`
+      : `${App.glyph('flow')}連線模式：先點起點節點，再點目標節點<kbd>Esc</kbd>結束`;
+  }
+  function connect(from, to) {
+    const a = flow.node(from), b = flow.node(to);
+    let msg = '';
+    if (b.type === 'start') msg = '開始事件不能有進入的順序流';
+    else if (a.type === 'end') msg = '結束事件之後不能再連出順序流';
+    else if (flow.outEdges(from).some(e => e.to === to)) msg = `「${a.label}」→「${b.label}」已經有順序流`;
+    if (msg) {
+      App.toast(msg, { tone: 'warn' });
+      state.connectFrom = null;
+      updateConnectHint();
+      setSelection({ type: 'node', id: to });
+      renderOverlay();
+      return;
+    }
+    const e = flow.addEdge({ from, to, label: '', cond: '' });
+    setTool('select');
+    setSelection({ type: 'edge', id: e.id });
+    commit(`新增順序流「${a.label}」→「${b.label}」`);
+    undoToast(`已連接「${a.label}」→「${b.label}」${a.type === 'xor' ? '，記得設定分流條件' : ''}`);
+  }
+
+  function uniqueLabel(base) {
+    const used = new Set(M().nodes.map(n => n.label));
+    if (!used.has(base)) return base;
+    for (let k = 2; ; k++) if (!used.has(`${base} ${k}`)) return `${base} ${k}`;
+  }
+  function fits(type, x, y, skip) {
+    const { w, h } = App.Flow.size({ type });
+    if (x - w / 2 < HX + 10 || x + w / 2 > W - 10 || y - h / 2 < 8 || y + h / 2 > H - 8) return false;
+    const lane = M().lanes.find(l => y >= laneTop(l.id) && y < laneTop(l.id) + l.h);
+    if (!lane || y - h / 2 < laneTop(lane.id) + 6 || y + h / 2 > laneTop(lane.id) + lane.h - 6) return false;
+    return M().nodes.every(m => {
+      if (m.id === skip) return true;
+      const s = App.Flow.size(m);
+      return Math.abs(m.x - x) >= (w + s.w) / 2 + 18 || Math.abs(m.y - y) >= (h + s.h) / 2 + 14;
+    });
+  }
+  // 找離指定點最近、且不壓到其他節點與泳道邊界的位置
+  function freeSpot(type, near) {
+    const z = sheet.offsetWidth / W;
+    const c = near || { x: (canvas.scrollLeft + canvas.clientWidth / 2 - 10) / z, y: laneMid('unit') };
+    let best = null, bd = Infinity;
+    for (let x = HX + 30; x < W; x += 10) {
+      for (let y = 20; y < H; y += 10) {
+        const d = (x - c.x) ** 2 + ((y - c.y) * 1.6) ** 2;
+        if (d < bd && fits(type, x, y)) { bd = d; best = { x, y }; }
+      }
+    }
+    return best || { x: Math.round(c.x / 10) * 10, y: Math.round(c.y / 10) * 10 };
+  }
+  function addShape(type, at, { event } = {}) {
+    const n0 = { type, label: uniqueLabel(NEW_LABEL[type]) };
+    if (type === 'task') Object.assign(n0, { role: '承辦人', sla: 8, wip: 10 });
+    if (type === 'start' && event) n0.event = 'message';
+    const pos = at || freeSpot(type);
+    const n = flow.addNode(Object.assign(n0, pos));
+    flow.moveNode(n.id, pos.x, pos.y); // 夾回圖框內並重算泳道
+    setSelection({ type: 'node', id: n.id });
+    commit(`新增${TYPE_LABEL[type]}「${n.label}」`);
+    // 桌機直接把焦點放到名稱欄，新增後就能打字改名
+    if (matchMedia('(min-width: 1101px)').matches) {
+      const input = $('#f-label');
+      if (input) { input.focus({ preventScroll: true }); input.select(); }
+    }
+  }
+  function duplicate() {
+    const n = selNode();
+    if (!n) return;
+    const copy = JSON.parse(JSON.stringify(n));
+    delete copy.id;
+    copy.label = uniqueLabel(`${n.label}（複本）`.slice(0, 12));
+    const pos = freeSpot(n.type, { x: n.x + 60, y: n.y });
+    const c = flow.addNode(Object.assign(copy, pos));
+    flow.moveNode(c.id, pos.x, pos.y);
+    setSelection({ type: 'node', id: c.id });
+    commit(`複製「${n.label}」`);
+    undoToast(`已複製為「${c.label}」，順序流不會一起複製`);
+  }
+  function deleteSelection() {
+    const s = state.sel;
+    if (!s) return;
+    if (s.type === 'node') {
+      const n = flow.node(s.id);
+      const k = flow.outEdges(n.id).length + flow.inEdges(n.id).length;
+      flow.removeNode(n.id);
+      setSelection(null);
+      commit(`刪除${TYPE_LABEL[n.type]}「${n.label}」`);
+      undoToast(`已刪除「${n.label}」${k ? `與 ${k} 條順序流` : ''}`);
+    } else {
+      const e = flow.edge(s.id), txt = `「${nodeName(e.from)}」→「${nodeName(e.to)}」`;
+      flow.removeEdge(e.id);
+      setSelection(null);
+      commit(`刪除順序流${txt}`);
+      undoToast(`已刪除順序流${txt}`);
+    }
+  }
+
+  /* ── 元件列：點一下加入，或拖到圖面上放置 ───────────── */
+  const rail = $('#dz-rail');
+  let pal = null, palSuppress = false;
+  rail.addEventListener('pointerdown', e => {
+    const item = e.target.closest('.dz-shape');
+    // 觸控時元件列要能橫向捲動，只用點按加入
+    if (!item || e.button !== 0 || e.pointerType === 'touch') return;
+    pal = { type: item.dataset.type, event: item.dataset.event, label: item.textContent.trim(), sx: e.clientX, sy: e.clientY, pid: e.pointerId, moved: false, ghost: null, pt: null };
+  });
+  document.addEventListener('pointermove', e => {
+    if (!pal || e.pointerId !== pal.pid) return;
+    if (!pal.moved) {
+      if (Math.hypot(e.clientX - pal.sx, e.clientY - pal.sy) < 6) return;
+      pal.moved = true;
+      pal.ghost = document.createElement('div');
+      pal.ghost.className = 'dz-drag-ghost';
+      pal.ghost.innerHTML = App.glyph(glyphOf({ type: pal.type, event: pal.event })) + esc(pal.label);
+      document.body.appendChild(pal.ghost);
+      document.body.classList.add('dz-dragging');
+    }
+    pal.ghost.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 12}px)`;
+    const r = canvas.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
+    const inside = e.clientX >= Math.max(r.left, sr.left) && e.clientX <= Math.min(r.right, sr.right) && e.clientY >= sr.top && e.clientY <= sr.bottom;
+    if (inside) {
+      const p = flow.clientToSvg(e.clientX, e.clientY), { w, h } = App.Flow.size({ type: pal.type });
+      pal.pt = { x: clamp(Math.round(p.x / 10) * 10, HX + w / 2 + 4, W - w / 2 - 4), y: clamp(Math.round(p.y / 10) * 10, h / 2 + 4, H - h / 2 - 4) };
+    } else pal.pt = null;
+    pal.ghost.classList.toggle('is-over', !!pal.pt);
+    state.pal = pal;
+    renderOverlay();
+  });
+  function endPal(drop) {
+    const p = pal;
+    pal = null;
+    state.pal = null;
+    if (!p || !p.moved) return;
+    palSuppress = true;
+    setTimeout(() => { palSuppress = false; }, 0);
+    p.ghost.remove();
+    document.body.classList.remove('dz-dragging');
+    if (drop && p.pt) addShape(p.type, p.pt, { event: p.event });
+    else renderOverlay();
+  }
+  document.addEventListener('pointerup', e => { if (pal && e.pointerId === pal.pid) endPal(true); });
+  document.addEventListener('pointercancel', e => { if (pal && e.pointerId === pal.pid) endPal(false); });
+  rail.addEventListener('click', e => {
+    const tool = e.target.closest('.dz-tool');
+    if (tool) { setTool(tool.dataset.tool); return; }
+    const item = e.target.closest('.dz-shape');
+    if (!item || palSuppress) return;
+    addShape(item.dataset.type, null, { event: item.dataset.event });
+  });
+
+  /* ── 縮放 ─────────────────────────────────────────── */
+  const ZOOMS = [.5, .6, .7, .8, .9, 1, 1.15, 1.3, 1.5];
+  const curZoom = () => sheet.offsetWidth / W;
+  const fitZoom = () => clamp((canvas.clientWidth - 20) / W, matchMedia('(max-width: 1100px)').matches ? .5 : .45, 1.5);
+  function applyZoom() {
+    const z = state.zoom === 'fit' ? fitZoom() : state.zoom;
+    sheet.style.width = `${Math.round(W * z)}px`;
+    $('#zoom-val').textContent = `${Math.round(z * 100)}%`;
+    $('#zoom-fit').setAttribute('aria-pressed', String(state.zoom === 'fit'));
+    $('#zoom-out').disabled = z <= ZOOMS[0] + .005;
+    $('#zoom-in').disabled = z >= ZOOMS[ZOOMS.length - 1] - .005;
+  }
+  $('#zoom-in').addEventListener('click', () => { const z = curZoom(); state.zoom = ZOOMS.find(v => v > z + .01) ?? ZOOMS[ZOOMS.length - 1]; applyZoom(); });
+  $('#zoom-out').addEventListener('click', () => { const z = curZoom(); state.zoom = [...ZOOMS].reverse().find(v => v < z - .01) ?? ZOOMS[0]; applyZoom(); });
+  $('#zoom-fit').addEventListener('click', () => { state.zoom = 'fit'; applyZoom(); });
+  // 只在寬度真的變了才重排；放到下一幀做，避免在 ResizeObserver 回呼裡改版面造成循環
+  let lastCanvasW = 0, lastChartW = 0;
+  new ResizeObserver(() => requestAnimationFrame(() => {
+    const cw = canvas.clientWidth, gw = $('#g-chart').clientWidth;
+    if (Math.abs(cw - lastCanvasW) >= 1) { lastCanvasW = cw; if (state.zoom === 'fit') applyZoom(); }
+    if (Math.abs(gw - lastChartW) >= 1) { lastChartW = gw; renderGantt(); }
+  })).observe($('.designer.dz'));
+
+  /* ── 檢視器：屬性 ─────────────────────────────────── */
+  const pane = $('#pane-props');
+  const fieldOf = el => el.closest('.field');
+  const intIn = (v, lo, hi) => /^\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi;
+  const openTab = id => { const t = $('#tab-' + id); if (t.getAttribute('aria-selected') !== 'true') t.click(); };
+
+  function ihInner(x, kind) {
+    if (kind === 'edge') return `${App.glyph(x.kind === 'return' ? 'return' : 'flow')}<div><p class="dz-ih__title">${esc(x.label || '順序流')}</p><p class="dz-ih__meta">${x.kind === 'return' ? '退回順序流' : '順序流'} · <span class="mono">${esc(x.id)}</span>${BASE.edges.some(e => e.id === x.id) ? '' : ' · <span class="dz-new">新增</span>'}</p></div>`;
+    return `${App.glyph(glyphOf(x))}<div><p class="dz-ih__title">${esc(x.label)}</p><p class="dz-ih__meta">${TYPE_LABEL[x.type]} · ${esc(laneById(x.lane).label)}泳道 · <span class="mono">${esc(x.id)}</span>${baseNode(x.id) ? '' : ' · <span class="dz-new">新增</span>'}</p></div>`;
+  }
+  const refreshHead = () => {
+    const ih = $('#ih');
+    if (!ih) return;
+    if (selNode()) ih.innerHTML = ihInner(selNode());
+    else if (selEdge()) ih.innerHTML = ihInner(selEdge(), 'edge');
+  };
+  const slaHint = n => {
+    const b = baseNode(n.id);
+    return n.sla ? `＝ ${fmtD(n.sla)} 個工作天${b && b.sla && b.sla !== n.sla ? ` · v3.2 為 ${b.sla} 小時` : ''}` : '尚未設定';
+  };
+
+  function splitHTML(n) {
+    const outs = flow.outEdges(n.id).filter(e => e.weight != null);
+    if (!outs.length) return '';
+    // 平行分支的 weight 是「出現在多少比例的會辦案」，其餘是件數
+    const share = n.type === 'and';
+    const total = outs.reduce((s, e) => s + e.weight, 0) || 1;
+    const rows = outs.map(e => {
+      const v = share ? e.weight : e.weight / total;
+      const val = share ? `${Math.round(e.weight * 100)}%` : `${e.weight} 件 · ${Math.round(v * 100)}%`;
+      return `<div class="dz-split__row"><span>${esc(e.label || nodeName(e.to))}</span><b>${val}</b><span class="dz-split__bar"><span style="--v:${v.toFixed(3)}"></span></span></div>`;
+    }).join('');
+    return `<section class="inspector__section dz-sec"><h3 class="inspector__title">實績分流<small>9/21 起</small></h3><div class="dz-split">${rows}</div>${share ? '<p class="dz-note">比例為該分支出現在需會辦公文中的比率，可同時多支。</p>' : ''}</section>`;
+  }
+  function linksHTML(n) {
+    const outs = flow.outEdges(n.id), ins = flow.inEdges(n.id);
+    const rows = outs.map(e => `<li><button type="button" class="dz-link" data-edge="${esc(e.id)}">${App.glyph(e.kind === 'return' ? 'return' : 'flow')}<span><b>${esc(nodeName(e.to))}</b>${e.cond || e.label ? `<small>${esc(e.cond || e.label)}</small>` : ''}</span></button></li>`).join('');
+    return `<section class="inspector__section dz-sec"><h3 class="inspector__title">出口順序流<small>出 ${outs.length} · 入 ${ins.length}</small></h3>${outs.length ? `<ul class="dz-links">${rows}</ul>` : `<p class="dz-note">${n.type === 'end' ? '結束事件不需要出口。' : '沒有出口：公文會停在這裡。用左側「連線」工具接到下一個節點。'}</p>`}</section>`;
+  }
+  function nodeHTML(n) {
+    let h = `<header class="dz-ih" id="ih">${ihInner(n)}</header>`;
+    h += `<section class="inspector__section dz-sec">
+      <div class="field"><label class="field__label req" for="f-label">名稱</label><input class="input" id="f-label" maxlength="12" autocomplete="off" value="${esc(n.label)}"><span class="field__error">名稱不可空白</span></div>
+      <div class="field"><label class="field__label" for="f-lane">泳道</label><select class="select" id="f-lane">${M().lanes.map(l => `<option value="${l.id}"${l.id === n.lane ? ' selected' : ''}>${esc(l.label)}（${esc(l.sub)}）</option>`).join('')}</select></div>`;
+    if (isGateway(n)) h += `<div class="field"><span class="field__label" id="lbl-gwtype">閘道類型</span><div class="seg dz-seg-full" data-seg id="f-gwtype" role="group" aria-labelledby="lbl-gwtype">${['xor', 'and', 'or'].map(t => `<button type="button" aria-pressed="${t === n.type}" data-value="${t}">${{ xor: '互斥', and: '平行', or: '包容' }[t]}</button>`).join('')}</div><span class="field__hint" id="gw-hint">${GW_HINT[n.type]}</span></div>`;
+    if (n.type === 'start' || n.type === 'end') h += `<button type="button" class="switch" role="switch" aria-checked="${n.event === 'message'}" id="f-msg">訊息事件（${n.type === 'start' ? '收到來文' : '送出發文'}）</button>`;
+    h += '</section>';
+    if (isTask(n)) {
+      const roles = ROLES.includes(n.role) || !n.role ? ROLES : [n.role, ...ROLES];
+      h += `<section class="inspector__section dz-sec"><h3 class="inspector__title">執行與期限</h3>
+        <div class="field"><label class="field__label" for="f-role">執行角色</label><select class="select" id="f-role">${n.role ? '' : '<option value="" selected>（未指定）</option>'}${roles.map(r => `<option${r === n.role ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
+        <div class="field" id="fld-sla"><label class="field__label" for="f-sla">期限（SLA）</label>
+          <div class="input-group"><input class="input mono" type="number" id="f-sla" min="1" max="72" step="1" inputmode="numeric" value="${n.sla ?? ''}"><span class="input-group__addon">工作小時</span></div>
+          <input class="dz-range" type="range" id="f-sla-range" min="1" max="72" step="1" value="${n.sla ?? 8}" aria-label="拖曳調整期限（工作小時）">
+          <span class="field__hint" id="sla-hint">${slaHint(n)}</span><span class="field__error">請輸入 1–72 的整數</span></div>
+        <div class="field" id="fld-wip"><label class="field__label" for="f-wip">WIP 上限</label><div class="input-group"><input class="input mono" type="number" id="f-wip" min="1" max="200" step="1" inputmode="numeric" value="${n.wip ?? ''}"><span class="input-group__addon">件</span></div><span class="field__hint">同時停在此關的件數超過上限即開始發熱</span><span class="field__error">請輸入 1–200 的整數</span></div>
+      </section>
+      <section class="inspector__section dz-sec"><h3 class="inspector__title">即時影響<small>以 10/27 14:20 在辦公文計</small></h3><div class="dz-impact" id="f-impact"></div></section>`;
+    }
+    h += splitHTML(n) + linksHTML(n);
+    h += `<section class="inspector__section dz-sec"><div class="dz-actions"><button type="button" class="btn btn--sm" data-act="dup">${App.icon('copy')}複製</button><button type="button" class="btn btn--sm btn--danger" data-act="del">${App.icon('trash')}刪除節點</button></div></section>`;
+    return h;
+  }
+  function edgeHTML(e) {
+    const a = flow.node(e.from), b = flow.node(e.to);
+    const fromGw = isGateway(a);
+    let h = `<header class="dz-ih" id="ih">${ihInner(e, 'edge')}</header>`;
+    h += `<section class="inspector__section dz-sec">
+      <div class="dz-ends"><span>${App.glyph(glyphOf(a))}${esc(a.label)}</span>${App.glyph('flow')}<span>${App.glyph(glyphOf(b))}${esc(b.label)}</span></div>
+      <div class="field"><label class="field__label" for="f-elabel">圖上標籤</label><input class="input" id="f-elabel" maxlength="12" autocomplete="off" value="${esc(e.label || '')}" placeholder="例：需會辦"></div>
+      <div class="field"><label class="field__label" for="f-cond">分流條件</label><input class="input" id="f-cond" maxlength="24" autocomplete="off" value="${esc(e.cond || '')}" placeholder="${fromGw ? '例：決行層級 = 2' : '一般順序流可留白'}">
+        <span class="field__hint">${fromGw ? `${TYPE_LABEL[a.type]}依此判斷要不要走這條；「預設」＝其他條件都不成立時` : '起點不是閘道，條件僅供註記'}</span>
+        <div class="composer__phrases dz-phrases">${COND_PHRASES.map(p => `<button type="button" class="phrase" data-phrase="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
+      <div class="field"><span class="field__label" id="lbl-ekind">類型</span><div class="seg dz-seg-full" data-seg id="f-ekind" role="group" aria-labelledby="lbl-ekind"><button type="button" aria-pressed="${e.kind !== 'return'}" data-value="normal">一般順序流</button><button type="button" aria-pressed="${e.kind === 'return'}" data-value="return">退回</button></div></div>
+    </section>`;
+    if (e.weight != null) {
+      const sib = flow.outEdges(e.from).filter(x => x.weight != null);
+      const share = a.type === 'and';
+      const v = share ? e.weight : e.weight / (sib.reduce((s, x) => s + x.weight, 0) || 1);
+      h += `<section class="inspector__section dz-sec"><h3 class="inspector__title">實績流量<small>9/21 起</small></h3><div class="dz-split"><div class="dz-split__row"><span>${share ? '出現於需會辦公文' : `走這條的公文（共 ${sib.reduce((s, x) => s + x.weight, 0)} 件分流）`}</span><b>${share ? `${Math.round(v * 100)}%` : `${e.weight} 件 · ${Math.round(v * 100)}%`}</b><span class="dz-split__bar"><span style="--v:${v.toFixed(3)}"></span></span></div></div></section>`;
+    }
+    h += `<section class="inspector__section dz-sec"><div class="dz-actions"><button type="button" class="btn btn--sm" data-node="${esc(a.id)}">${App.icon('arrow-left')}選取起點</button><button type="button" class="btn btn--sm btn--danger" data-act="del">${App.icon('trash')}刪除順序流</button></div></section>`;
+    return h;
+  }
+  function overviewHTML() {
+    const m = M();
+    const hot = Object.values(STATS).map(s => ({ s, n: flow.node(s.id) })).filter(x => x.n && isTask(x.n))
+      .map(x => Object.assign(x, { load: loadOf(x.n, x.s), heat: heatOf(x.n, x.s) })).sort((a, b) => b.load - a.load).slice(0, 3);
+    const maxLoad = Math.max(1, ...hot.map(x => x.load));
+    return `<header class="dz-ih">${App.glyph('lane')}<div><p class="dz-ih__title">公文簽核 · 草稿 v3.3</p><p class="dz-ih__meta">以 v3.2（2026-09-30 生效）為底稿 · <span class="mono">${esc(m.id)}</span></p></div></header>
+      <section class="inspector__section dz-sec"><h3 class="inspector__title">建議優先調整<small>負荷＝件數÷WIP、停留÷期限取大者</small></h3>
+        <div class="dz-hot">${hot.map(x => `<button type="button" class="dz-hot__row" data-node="${x.n.id}"><span class="dz-hot__name">${esc(x.n.label)}<small>${esc(laneById(x.n.lane).label)}泳道 · ${esc(x.n.role || '')}</small></span><span class="dz-hot__val"><b>${x.s.count} 件</b>均 ${fmtH(x.s.avgDwell)}／限 ${x.n.sla ?? '—'}h</span><span class="dz-hot__bar"><span style="--v:${(x.load / maxLoad).toFixed(3)};--c:${x.heat > .04 ? App.heatColor(x.heat) : 'var(--ink-3)'}"></span></span></button>`).join('')}</div>
+      </section>
+      <section class="inspector__section dz-sec"><h3 class="inspector__title">泳道<small>${m.nodes.length} 節點 · ${m.edges.length} 順序流</small></h3>
+        <ul class="dz-lanes">${m.lanes.map(l => `<li><span>${esc(l.label)}<small>${esc(l.sub)}</small></span><b>${m.nodes.filter(n => n.lane === l.id).length}</b></li>`).join('')}</ul>
+      </section>
+      <section class="inspector__section dz-sec"><h3 class="inspector__title">圖例</h3>
+        <div class="dz-legend"><span>${App.glyph('start-msg')}開始事件</span><span>${App.glyph('end')}結束事件</span><span>${App.glyph('task-user')}使用者任務</span><span>${App.glyph('xor')}互斥閘道</span><span>${App.glyph('and')}平行閘道</span><span>${App.glyph('return')}退回</span></div>
+        <p class="dz-note">任務右上徽章是目前停在該關的件數；名稱下方是平均停留／期限（工作小時），光暈由黃轉紅代表負荷超出。</p>
+      </section>
+      <section class="inspector__section dz-sec"><h3 class="inspector__title">操作</h3>
+        <dl class="kv dz-keys"><dt><span class="kbd">拖曳</span></dt><dd>移動節點，連線自動重新繞線</dd><dt><span class="kbd">↑↓←→</span></dt><dd>微調 10，加 Shift 一次 40</dd><dt><span class="kbd">Delete</span></dt><dd>刪除選取的節點或順序流</dd><dt><span class="kbd">Ctrl</span> <span class="kbd">Z</span></dt><dd>復原；Ctrl+Y 重做</dd><dt><span class="kbd">Esc</span></dt><dd>取消選取或結束連線</dd></dl>
+      </section>`;
+  }
+  function impactHTML(n) {
+    const s = STATS[n.id];
+    if (!s) return '<p class="dz-note">新增的關卡還沒有公文經過，生效後才會累積資料。</p>';
+    if (!s.count) return '<p class="dz-note">目前沒有公文停在這個關卡。</p>';
+    const sla = n.sla || 0, b = baseNode(n.id), baseSla = b ? b.sla : null;
+    const dw = s.docs.map(d => ({ d, h: App.workHours(Math.min(d.stageAt, App.NOW0), App.NOW0) })).sort((a, c) => a.h - c.h);
+    const over = dw.filter(x => sla && x.h > sla).length;
+    const overBase = dw.filter(x => baseSla && x.h > baseSla).length;
+    const VW = 260, AX = 52, L = 4, R = 10;
+    const max = Math.max(4, sla * 1.2, ...dw.map(x => x.h)) * 1.06;
+    const X = h => L + h / max * (VW - L - R);
+    const placed = [];
+    let dots = '';
+    dw.forEach(x => {
+      const cx = X(x.h);
+      let row = 0;
+      while (placed.some(p => p.row === row && Math.abs(p.cx - cx) < 7.2)) row++;
+      placed.push({ cx, row });
+      const cy = AX - 6 - (row % 6) * 7.2;
+      dots += `<circle class="dz-im-dot${sla && x.h > sla ? ' is-over' : ''}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.4"><title>${x.d.id}：已停留 ${fmtH(x.h)} 小時</title></circle>`;
+    });
+    const xs = X(sla);
+    const anchor = xs > VW - 60 ? 'end' : 'start';
+    const svgPlot = `<svg viewBox="0 0 ${VW} ${AX + 16}" role="img" aria-label="${s.count} 件公文的已停留時間分布，期限 ${sla} 小時，超過 ${over} 件">
+      ${sla ? `<rect class="dz-im-over" x="${xs.toFixed(1)}" y="2" width="${Math.max(0, VW - R - xs).toFixed(1)}" height="${AX - 2}"/>` : ''}
+      <line class="dz-im-axis" x1="${L}" x2="${VW - R}" y1="${AX}" y2="${AX}"/>
+      ${dots}
+      ${sla ? `<line class="dz-im-sla" x1="${xs.toFixed(1)}" x2="${xs.toFixed(1)}" y1="2" y2="${AX + 4}"/><text class="dz-im-slatxt" x="${(xs + (anchor === 'end' ? -5 : 5)).toFixed(1)}" y="11" text-anchor="${anchor}">期限 ${sla}h</text>` : ''}
+      <text class="dz-im-tick" x="${L}" y="${AX + 14}">0</text><text class="dz-im-tick" x="${VW - R}" y="${AX + 14}" text-anchor="end">${Math.round(max)} 小時</text>
+    </svg>`;
+    const cmp = baseSla && sla !== baseSla ? `v3.2 期限 ${baseSla} 小時時超過 <b>${overBase}</b> 件；` : '';
+    return `${svgPlot}
+      <div class="dz-im-stats"><div><b class="${over ? 'is-bad' : ''}">${over}</b><span>件超過期限</span></div><div><b>${s.count}</b><span>件停在此關</span></div><div><b>${fmtH(s.avgDwell)}</b><span>平均停留（時）</span></div></div>
+      <p class="dz-im-cmp">${cmp}熱度 <b>${Math.round(heatOf(n, s) * 100)}%</b>（WIP ${n.wip ?? '—'} 件）。拖曳期限滑桿，超過的公文會即時轉紅。</p>`;
+  }
+  function renderImpact() {
+    const n = selNode(), box = $('#f-impact');
+    if (n && box) box.innerHTML = impactHTML(n);
+  }
+  function renderInspector() {
+    const n = selNode(), e = selEdge();
+    pane.innerHTML = n ? nodeHTML(n) : e ? edgeHTML(e) : overviewHTML();
+    if (n && isTask(n)) renderImpact();
+  }
+  // 打字或拖滑桿時即時套用，只重繪衍生區塊，不動到檢視器本身（避免輸入框失焦）
+  function liveUpdate() {
+    refresh();
+    refreshHead();
+  }
+  pane.addEventListener('input', e => {
+    const t = e.target, n = selNode(), ed = selEdge();
+    if (t.id === 'f-label' && n) {
+      const v = t.value.trim();
+      fieldOf(t).classList.toggle('is-invalid', !v);
+      if (v) { flow.updateNode(n.id, { label: v }); liveUpdate(); }
+    } else if ((t.id === 'f-sla' || t.id === 'f-sla-range') && n) {
+      const ok = intIn(t.value, 1, 72);
+      $('#fld-sla').classList.toggle('is-invalid', !ok);
+      if (!ok) return;
+      (t.id === 'f-sla' ? $('#f-sla-range') : $('#f-sla')).value = t.value;
+      flow.updateNode(n.id, { sla: +t.value });
+      $('#sla-hint').textContent = slaHint(n);
+      renderImpact();
+      liveUpdate();
+    } else if (t.id === 'f-wip' && n) {
+      const ok = intIn(t.value, 1, 200);
+      $('#fld-wip').classList.toggle('is-invalid', !ok);
+      if (!ok) return;
+      flow.updateNode(n.id, { wip: +t.value });
+      renderImpact();
+      liveUpdate();
+    } else if (t.id === 'f-elabel' && ed) { flow.updateEdge(ed.id, { label: t.value.trim() }); liveUpdate(); }
+    else if (t.id === 'f-cond' && ed) { flow.updateEdge(ed.id, { cond: t.value.trim() }); liveUpdate(); }
+  });
+  pane.addEventListener('change', e => {
+    const t = e.target, n = selNode(), ed = selEdge();
+    if (n) {
+      if (t.id === 'f-label') {
+        // 空白不套用：還原成目前名稱
+        if (!t.value.trim()) { t.value = n.label; fieldOf(t).classList.remove('is-invalid'); }
+        commit(`重新命名為「${n.label}」`, 'label:' + n.id);
+      } else if (t.id === 'f-sla' || t.id === 'f-sla-range') {
+        if (!intIn(t.value, 1, 72)) { t.value = n.sla ?? ''; $('#fld-sla').classList.remove('is-invalid'); }
+        commit(`「${n.label}」期限改為 ${n.sla} 小時`, 'sla:' + n.id);
+      } else if (t.id === 'f-wip') {
+        if (!intIn(t.value, 1, 200)) { t.value = n.wip ?? ''; $('#fld-wip').classList.remove('is-invalid'); }
+        commit(`「${n.label}」WIP 上限改為 ${n.wip} 件`, 'wip:' + n.id);
+      } else if (t.id === 'f-lane') {
+        flow.moveNode(n.id, n.x, laneMid(t.value));
+        refreshHead();
+        commit(`「${n.label}」移到${laneById(t.value).label}泳道`);
+      } else if (t.id === 'f-role') {
+        flow.updateNode(n.id, { role: t.value || undefined });
+        commit(`「${n.label}」執行角色改為${t.value || '未指定'}`);
+      } else if (t.id === 'f-gwtype' && e.detail) {
+        flow.updateNode(n.id, { type: e.detail.value });
+        $('#gw-hint').textContent = GW_HINT[e.detail.value];
+        refreshHead();
+        commit(`「${n.label}」改為${TYPE_LABEL[e.detail.value]}`);
+      } else if (t.id === 'f-msg' && e.detail) {
+        flow.updateNode(n.id, { event: e.detail.checked ? 'message' : undefined });
+        refreshHead();
+        commit(`「${n.label}」${e.detail.checked ? '設為' : '取消'}訊息事件`);
+      }
+    } else if (ed) {
+      if (t.id === 'f-elabel') commit(`順序流標籤改為「${ed.label || '（無）'}」`, 'elabel:' + ed.id);
+      else if (t.id === 'f-cond') commit(`順序流條件改為「${ed.cond || '（無）'}」`, 'cond:' + ed.id);
+      else if (t.id === 'f-ekind' && e.detail) {
+        flow.updateEdge(ed.id, { kind: e.detail.value === 'return' ? 'return' : undefined });
+        refreshHead();
+        commit(`順序流改為${e.detail.value === 'return' ? '退回' : '一般'}`);
+      }
+    }
+  });
+  pane.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'del') deleteSelection();
+    else if (b.dataset.act === 'dup') duplicate();
+    else if (b.dataset.edge && flow.edge(b.dataset.edge)) setSelection({ type: 'edge', id: b.dataset.edge }, { reveal: true });
+    else if (b.dataset.node && flow.node(b.dataset.node)) setSelection({ type: 'node', id: b.dataset.node }, { reveal: true });
+    else if (b.dataset.phrase && selEdge()) {
+      const ed = selEdge(), p = b.dataset.phrase;
+      flow.updateEdge(ed.id, { cond: p });
+      $('#f-cond').value = p;
+      commit(`順序流條件改為「${p}」`, 'cond:' + ed.id);
+    }
+  });
+
+  /* ── 狀態列、按鈕、儲存狀態 ───────────────────────── */
+  function renderStatus() {
+    const n = selNode(), e = selEdge();
+    let html = '<span>未選取 · 點選節點或順序流以編輯屬性</span>';
+    if (n) html = `${App.glyph(glyphOf(n))}<b>${esc(n.label)}</b><span>${TYPE_LABEL[n.type]} · ${esc(laneById(n.lane).label)}泳道</span><span class="mono">x ${n.x} · y ${n.y}</span>`;
+    else if (e) html = `${App.glyph(e.kind === 'return' ? 'return' : 'flow')}<b>${esc(nodeName(e.from))} → ${esc(nodeName(e.to))}</b>${e.cond ? `<span>條件：${esc(e.cond)}</span>` : ''}`;
+    if (n || e) html += `<button type="button" class="dz-status__jump" data-jump>編輯屬性${App.icon('arrow-right')}</button>`;
+    $('#st-sel').innerHTML = html;
+    $('#st-cnt').textContent = `${M().nodes.length} 節點 · ${M().edges.length} 順序流`;
+    const { issues } = state.lint, err = issues.filter(i => i.sev === 'err').length, warn = issues.length - err;
+    const btn = $('#st-lint');
+    btn.className = 'dz-lintbtn ' + (err ? 'is-err' : warn ? 'is-warn' : 'is-ok');
+    btn.innerHTML = err || warn ? `${App.icon('alert')}檢核：${err ? `${err} 錯誤` : ''}${err && warn ? ' · ' : ''}${warn ? `${warn} 提醒` : ''}` : `${App.icon('check')}檢核通過`;
+  }
+  function syncButtons() {
+    const s = state.sel, running = !!state.sim;
+    $('#undo-btn').disabled = hist.i <= 0;
+    $('#redo-btn').disabled = hist.i >= hist.stack.length - 1;
+    $('#del-btn').disabled = !s;
+    $('#dup-btn').disabled = !(s && s.type === 'node');
+    [$('#sim-btn'), $('#sim-run')].forEach(b => {
+      b.classList.toggle('btn--token', !running);
+      b.innerHTML = running ? `${App.icon('stop')}停止模擬` : `${App.icon('sim')}模擬執行`;
+    });
+  }
+  function renderSaveState() {
+    const sig = modelSig(M()), n = state.changes.length;
+    const tag = $('#ver-draft'), st = $('#ver-state'), el = $('#save-state');
+    const inReview = state.review && state.review.sig === sig;
+    tag.classList.toggle('is-review', !!inReview);
+    st.textContent = inReview ? '送審中' : '草稿';
+    if (inReview) el.innerHTML = `<strong>已送審</strong> · 預定 ${state.review.date} 生效 · ${n} 項變更`;
+    else if (sig === BASE_SIG) el.textContent = state.review ? '送審後已還原為 v3.2，需重新送審' : '尚未修改 · 與 v3.2 相同';
+    else if (sig === state.savedSig) el.innerHTML = `已儲存 ${App.fmt.time(state.savedAt)} · ${n} 項變更`;
+    else el.innerHTML = `<b>有未儲存的變更</b> · ${n} 項${state.review ? ' · 送審後又修改，需重新送審' : ''}`;
+  }
+
+  /* ── 變更紀錄與版本沿革 ───────────────────────────── */
+  function computeChanges() {
+    const a = BASE, b = M(), out = [];
+    const an = new Map(a.nodes.map(n => [n.id, n])), bn = new Map(b.nodes.map(n => [n.id, n]));
+    const ae = new Map(a.edges.map(e => [e.id, e])), be = new Map(b.edges.map(e => [e.id, e]));
+    const laneLabel = id => M().lanes.find(l => l.id === id).label;
+    b.nodes.forEach(n => {
+      if (!an.has(n.id)) out.push({ kind: 'add', glyph: glyphOf(n), text: `新增${TYPE_LABEL[n.type]}「${n.label}」`, sub: `${laneLabel(n.lane)}泳道${isTask(n) ? ` · 期限 ${n.sla ?? '—'} 小時 · ${n.role || '未指定角色'}` : ''}`, target: { type: 'node', id: n.id } });
+    });
+    a.nodes.forEach(n => { if (!bn.has(n.id)) out.push({ kind: 'del', glyph: glyphOf(n), text: `刪除${TYPE_LABEL[n.type]}「${n.label}」`, sub: `原在${laneLabel(n.lane)}泳道` }); });
+    const moved = [];
+    b.nodes.forEach(n => {
+      const o = an.get(n.id);
+      if (!o) return;
+      const t = { type: 'node', id: n.id }, g = glyphOf(n);
+      const ch = (what, from, to) => out.push({ kind: 'edit', glyph: g, text: `「${n.label}」${what}`, sub: `${from} → ${to}`, target: t });
+      if (o.label !== n.label) ch('名稱', o.label, n.label);
+      if (o.type !== n.type) ch('類型', TYPE_LABEL[o.type], TYPE_LABEL[n.type]);
+      if ((o.role || '') !== (n.role || '')) ch('執行角色', o.role || '未指定', n.role || '未指定');
+      if ((o.sla ?? null) !== (n.sla ?? null)) ch('期限', `${o.sla ?? '—'} 小時`, `${n.sla ?? '—'} 小時`);
+      if ((o.wip ?? null) !== (n.wip ?? null)) ch('WIP 上限', `${o.wip ?? '—'} 件`, `${n.wip ?? '—'} 件`);
+      if ((o.event || '') !== (n.event || '')) ch('事件類型', o.event ? '訊息事件' : '一般事件', n.event ? '訊息事件' : '一般事件');
+      if (o.lane !== n.lane) ch('泳道', laneLabel(o.lane), laneLabel(n.lane));
+      else if (o.x !== n.x || o.y !== n.y) moved.push(n);
+    });
+    if (moved.length) out.push({ kind: 'move', glyph: 'lane', text: `調整 ${moved.length} 個節點的位置`, sub: moved.map(n => n.label).join('、'), target: moved.length === 1 ? { type: 'node', id: moved[0].id } : null });
+    const edgeName = e => `「${nodeName(e.from)}」→「${nodeName(e.to)}」`;
+    b.edges.forEach(e => {
+      const o = ae.get(e.id);
+      if (!o) { out.push({ kind: 'add', glyph: 'flow', text: `新增順序流 ${edgeName(e)}`, sub: e.cond ? `條件：${e.cond}` : '未設定條件', target: { type: 'edge', id: e.id } }); return; }
+      const t = { type: 'edge', id: e.id };
+      if ((o.label || '') !== (e.label || '')) out.push({ kind: 'edit', glyph: 'flow', text: `${edgeName(e)} 標籤`, sub: `${o.label || '（無）'} → ${e.label || '（無）'}`, target: t });
+      if ((o.cond || '') !== (e.cond || '')) out.push({ kind: 'edit', glyph: 'flow', text: `${edgeName(e)} 分流條件`, sub: `${o.cond || '（無）'} → ${e.cond || '（無）'}`, target: t });
+      if ((o.kind || '') !== (e.kind || '')) out.push({ kind: 'edit', glyph: 'return', text: `${edgeName(e)} 類型`, sub: `${o.kind === 'return' ? '退回' : '一般'} → ${e.kind === 'return' ? '退回' : '一般'}`, target: t });
+    });
+    a.edges.forEach(e => { if (!be.has(e.id)) out.push({ kind: 'del', glyph: 'flow', text: `刪除順序流 ${edgeName(e)}`, sub: e.cond ? `條件：${e.cond}` : '一般順序流' }); });
+    return out;
+  }
+  const KIND = { add: ['新增', 'badge--ok'], del: ['刪除', 'badge--danger'], edit: ['修改', ''], move: ['版面', 'badge--outline'] };
+  function renderChanges() {
+    const list = state.changes = computeChanges();
+    $('#chg-count').textContent = String(list.length);
+    $('#reset-btn').disabled = !list.length;
+    $('#chg-list').classList.toggle('is-empty', !list.length);
+    $('#chg-list').innerHTML =list.length ? list.map((c, k) => `<li class="dz-chg__item"><span class="badge ${KIND[c.kind][1]}">${KIND[c.kind][0]}</span>${App.glyph(c.glyph)}<span class="dz-chg__text">${esc(c.text)}<small>${esc(c.sub)}</small></span>${c.target ? `<button type="button" class="btn btn--sm btn--ghost" data-chg="${k}">定位</button>` : '<span></span>'}</li>`).join('')
+      : `<li>${App.emptyState({ title: '尚未變更', text: '草稿目前與 v3.2 相同。拖曳節點、或在檢視器修改期限與條件，變更會逐項列在這裡。', glyph: 'task' })}</li>`;
+  }
+  $('#chg-list').addEventListener('click', e => {
+    const b = e.target.closest('[data-chg]');
+    if (!b) return;
+    const c = state.changes[+b.dataset.chg];
+    if (c && c.target) setSelection(c.target, { reveal: true });
+  });
+  const VERSIONS = [
+    { v: 'v3.2', date: '2026-09-30', note: '「相關單位會辦」獨立為第三條平行分支；第三層案件改於核稿時由科長逕行決行。', by: 'tang-zy', current: true },
+    { v: 'v3.1', date: '2026-04-01', note: '會辦由依序傳閱改為平行閘道，會辦平均天數由 2.9 日降為 1.4 日。', by: 'tang-zy' },
+    { v: 'v3.0', date: '2025-10-01', note: '全面改採線上簽核；收發室分文加入主旨關鍵字建議承辦單位。', by: 'shen-sy' },
+    { v: 'v2.4', date: '2025-03-03', note: '1999 陳情案件併入公文流程，比照普通件 6 日列管。', by: 'tang-zy' },
+  ];
+  function renderVersions() {
+    const me = App.person(App.DATA.me), n = state.changes.length;
+    const inReview = state.review && state.review.sig === modelSig(M());
+    const draft = `<li class="dz-vi dz-vi--draft"><span class="dz-vi__mark" aria-hidden="true"></span><div><p class="dz-vi__head"><b>v3.3</b><span class="badge${inReview ? ' badge--token' : ''}">${inReview ? '送審中' : '草稿'}</span><span>${inReview ? `預定 ${state.review.date} 生效` : '編輯中'}</span></p><p class="dz-vi__note">${n ? `目前 ${n} 項變更，${state.lint.issues.some(i => i.sev === 'err') ? '尚有檢核錯誤待修正' : '檢核無錯誤'}。` : '尚未變更。'}</p><p class="dz-vi__by">提案：${esc(me.name)}（${esc(App.unit(me.unit).org)}${esc(me.title)}）</p></div></li>`;
+    $('#ver-list').innerHTML = draft + VERSIONS.map(v => {
+      const p = App.person(v.by);
+      return `<li class="dz-vi${v.current ? ' dz-vi--current' : ''}"><span class="dz-vi__mark" aria-hidden="true"></span><div><p class="dz-vi__head"><b>${v.v}</b>${v.current ? '<span class="badge badge--ink">生效中</span>' : ''}<span class="mono">${v.date}</span></p><p class="dz-vi__note">${esc(v.note)}</p><p class="dz-vi__by">核定：${esc(p.name)} ${esc(p.title)}</p></div></li>`;
+    }).join('');
+  }
+
+  /* ── 工具列與頁首按鈕 ─────────────────────────────── */
+  $('#undo-btn').addEventListener('click', undo);
+  $('#redo-btn').addEventListener('click', redo);
+  $('#del-btn').addEventListener('click', deleteSelection);
+  $('#dup-btn').addEventListener('click', duplicate);
+  $('#sim-btn').addEventListener('click', runSim);
+  $('#sim-run').addEventListener('click', runSim);
+  $('#st-lint').addEventListener('click', () => openTab('lint'));
+  $('#st-sel').addEventListener('click', e => {
+    if (!e.target.closest('[data-jump]')) return;
+    openTab('props');
+    $('.dz-insp').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+  });
+  $('#guide-switch').addEventListener('change', e => { state.guides = e.detail.checked; });
+  $('#heat-switch').addEventListener('change', e => {
+    state.heat = e.detail.checked;
+    applyMeta();
+    if (!state.sel) renderInspector();
+  });
+  $('#reset-btn').addEventListener('click', async () => {
+    const ok = await App.confirm({ title: '全部還原為 v3.2？', text: `草稿上的 ${state.changes.length} 項變更都會捨棄；還原後仍可用「復原」找回。`, ok: '還原', cancel: '取消', tone: 'danger' });
+    if (!ok) return;
+    if (state.sim) stopSim(false);
+    flow.load(JSON.parse(JSON.stringify(BASE)));
+    state.marked = false;
+    state.sel = null;
+    commit('全部還原為 v3.2');
+    renderInspector();
+    App.toast('草稿已還原為 v3.2', { tone: 'ok' });
+  });
+  $('#save-btn').addEventListener('click', () => {
+    const sig = modelSig(M());
+    if (sig === state.savedSig) { App.toast(sig === BASE_SIG ? '草稿與 v3.2 相同，不需要儲存' : '沒有新的變更需要儲存', { duration: 2400 }); return; }
+    state.savedSig = sig;
+    state.savedAt = App.now();
+    renderSaveState();
+    App.toast(`草稿 v3.3 已儲存（${App.fmt.time(state.savedAt)}，${state.changes.length} 項變更）`, { tone: 'ok' });
+  });
+
+  /* ── 送審發布 ─────────────────────────────────────── */
+  const dlg = $('#publish-dlg'), form = $('#pub-form');
+  $('#publish-btn').addEventListener('click', () => {
+    const n = state.changes.length;
+    if (!n) { App.toast('草稿與 v3.2 相同，沒有可送審的變更', { tone: 'warn' }); return; }
+    const err = state.lint.issues.filter(i => i.sev === 'err').length;
+    if (err) { App.toast(`尚有 ${err} 項檢核錯誤，修正後才能送審`, { tone: 'danger' }); openTab('lint'); return; }
+    const ev = state.ev;
+    $('#pub-sum').innerHTML = `<div><b>${n}</b><span>項變更</span></div><div><b>${state.lint.passed.length}/${state.lint.rules}</b><span>項檢核通過</span></div><div><b>${ev.error ? '—' : fmtD(ev.total)}</b><span>日 · 目前情境路徑</span></div>`;
+    const note = $('#pub-note');
+    if (!note.value.trim()) note.value = state.changes.slice(0, 3).map(c => `${c.text}（${c.sub}）`).join('；') + (n > 3 ? `；另有 ${n - 3} 項調整。` : '。');
+    const me = App.person(App.DATA.me);
+    $('#pub-route').textContent = `送審路徑：${me.name}（提案）→ 秘書處文書科 審查 → ${App.person('tang-zy').name} ${App.person('tang-zy').title} 核定`;
+    ['#pub-date-field', '#pub-note-field'].forEach(s => $(s).classList.remove('is-invalid'));
+    App.modal.open(dlg);
+  });
+  ['#pub-date', '#pub-note'].forEach(s => $(s).addEventListener('input', e => fieldOf(e.target).classList.remove('is-invalid')));
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!dlg.open) return;
+    const date = $('#pub-date').value, note = $('#pub-note').value.trim();
+    let dateErr = '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) dateErr = '請選擇生效日期';
+    else {
+      const ms = App.time(date);
+      if (ms <= App.dayStart(App.NOW0)) dateErr = '生效日期須晚於今天（10/27）';
+      else if (!App.isWorkday(ms)) dateErr = '生效日期須為工作日（週一至週五）';
+    }
+    $('#pub-date-err').textContent = dateErr;
+    $('#pub-date-field').classList.toggle('is-invalid', !!dateErr);
+    $('#pub-note-field').classList.toggle('is-invalid', note.length < 10);
+    const bad = form.querySelector('.is-invalid .input, .is-invalid .textarea');
+    if (bad) { bad.focus(); return; }
+    const sig = modelSig(M());
+    state.review = { sig, date };
+    state.savedSig = sig;
+    state.savedAt = App.now();
+    App.modal.close(dlg);
+    renderSaveState();
+    renderVersions();
+    App.toast(`v3.3 已送審，預定 ${date} 生效`, { tone: 'ok', action: { label: '撤回', onClick: () => { state.review = null; renderSaveState(); renderVersions(); App.toast('已撤回送審，回到草稿'); } } });
+  });
+
+  /* ── 模擬情境 ─────────────────────────────────────── */
+  const scnDoc = $('#scn-doc');
+  const shortSubj = s => { const t = s.replace(/^(有關|擬)/, ''); return t.length > 15 ? t.slice(0, 15) + '…' : t; };
+  scnDoc.innerHTML = '<option value="">自訂情境</option>' + featured.map(d => `<option value="${d.id}">${d.id}｜${esc(shortSubj(d.subject))}</option>`).join('');
+  const setSeg = (sel, v) => $$(`${sel} > button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === v)));
+  function syncScnControls() {
+    const s = state.scn;
+    scnDoc.value = s.doc || '';
+    setSeg('#scn-speed', s.speed);
+    setSeg('#scn-level', String(s.level));
+    setSeg('#scn-send', s.send ? 'send' : 'file');
+    $$('#scn-cosign .chip').forEach(c => c.setAttribute('aria-pressed', String(s.cosign.includes(c.dataset.value))));
+    $('#scn-return').setAttribute('aria-checked', String(s.ret));
+    const d = s.doc && App.doc(s.doc);
+    $('#scn-hint').innerHTML = d
+      ? `套用 <a href="${App.docUrl(d.id)}">${esc(d.id)}</a> 的實際條件。這件目前在「${esc(App.stageLabel(d))}」，${esc(App.dueState(d).label)}。`
+      : '自訂條件；也可以選一件公文，直接套用它實際的速別、會辦與決行層級。';
+  }
+  const custom = patch => { Object.assign(state.scn, patch, { doc: '' }); syncScnControls(); evaluateScenario(); };
+  scnDoc.addEventListener('change', () => {
+    const d = scnDoc.value ? App.doc(scnDoc.value) : null;
+    state.scn = d ? scnOfDoc(d) : Object.assign({}, state.scn, { doc: '' });
+    syncScnControls();
+    evaluateScenario();
+  });
+  $('#scn-speed').addEventListener('change', e => custom({ speed: e.detail.value }));
+  $('#scn-cosign').addEventListener('change', e => custom({ cosign: e.detail.values }));
+  $('#scn-level').addEventListener('change', e => custom({ level: +e.detail.value }));
+  $('#scn-send').addEventListener('change', e => custom({ send: e.detail.value === 'send' }));
+  $('#scn-return').addEventListener('change', e => custom({ ret: e.detail.checked }));
+  $('#scn-pace').addEventListener('change', e => { state.pace = +e.detail.value; });
+
+  /* ── 鍵盤 ─────────────────────────────────────────── */
+  document.addEventListener('keydown', e => {
+    const typing = e.target.closest && e.target.closest('input, textarea, select');
+    const modalOpen = !!document.querySelector('dialog[open]');
+    if (e.key === 'Escape') {
+      if (modalOpen) return;
+      if (pal) { endPal(false); return; }
+      if (typing) { e.target.blur(); return; }
+      if (state.tool === 'connect') { setTool('select'); return; }
+      if (state.sel) setSelection(null);
+      return;
+    }
+    if (typing || modalOpen) return;
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+    else if (mod && k === 'y') { e.preventDefault(); redo(); }
+    else if (mod && k === 'd' && selNode()) { e.preventDefault(); duplicate(); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && state.sel) { e.preventDefault(); deleteSelection(); }
+  });
+
+  /* ── 初始化 ───────────────────────────────────────── */
+  applyZoom();
+  lastCanvasW = canvas.clientWidth;
+  syncScnControls();
+  refresh({ inspector: true });
+  lastChartW = $('#g-chart').clientWidth;
+});
+</script>
+</body>
+</html>

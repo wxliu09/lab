@@ -1,0 +1,1962 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新舊比較 — 澄港市 2027 新公車路網</title>
+<meta name="description" content="選擇起點與終點，比較澄港市 2026 舊路網與 2027 新路網的乘車時間、轉乘次數與步行距離；看全市 4,422 組起訖的變化、各行政區高頻公車覆蓋率，並留下你的意見。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- Hero：左側起訖表單（本身就是一段路線），右側新舊雙軌賽跑（版面見 style.css .page-hero） ---------- */
+  /* 左欄要放得下「新舊各搭一次。」七個字，字級上限 3.2rem */
+  .cp-hero__title { font-size: clamp(2.4rem, 1rem + 2.5vw, 3.2rem); }
+  .cp-hero__title .is-new { background: linear-gradient(var(--purple), var(--purple)) 0 94% / 100% .13em no-repeat; }
+  .cp-hero__title .is-old { background: repeating-linear-gradient(90deg, var(--old) 0 .2em, transparent .2em .32em) 0 94% / 100% .1em no-repeat; }
+  .cp-hero__side { display: grid; gap: var(--sp-4); }
+
+  /* 起訖表單：起、訖兩個站點以一條墨線相連，交換鈕就是中間的轉乘膠囊 */
+  .cp-trip { margin-top: var(--sp-2); }
+  .cp-trip__field { position: relative; padding-left: 52px; }
+  .cp-trip__field .field__label { line-height: 20px; }
+  .cp-trip__field::before, .cp-trip__swaprow::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    width: 6px;
+    background: var(--ink);
+  }
+  /* 線段拆在三個區塊：欄位下方出現錯誤訊息而變高時，線仍連續 */
+  .cp-trip__field--from::before { top: 49px; bottom: 0; }
+  .cp-trip__field--to::before { top: 0; height: 49px; }
+  .cp-trip__swaprow { position: relative; display: flex; align-items: center; min-height: 52px; padding-left: 52px; }
+  .cp-trip__swaprow::before { top: 0; bottom: 0; }
+  .cp-trip__node {
+    position: absolute;
+    left: 3px;
+    top: 34px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--r-pill);
+    background: var(--ink);
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .cp-trip__swap {
+    position: absolute;
+    left: -1px;
+    top: 50%;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 26px;
+    margin-top: -13px;
+    padding: 0;
+    border: 3px solid var(--ink);
+    border-radius: var(--r-pill);
+    background: var(--white);
+    color: var(--ink);
+    transition: background-color var(--t-1);
+  }
+  .cp-trip__swap:hover { background: var(--fill); }
+  .cp-trip__swap svg { width: 16px; height: 16px; transition: transform var(--t-3) var(--ease-out); }
+  .cp-trip__swap.is-spun svg { transform: rotate(180deg); }
+  .cp-trip__swaptext { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .cp-trip__opts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-5); padding-left: 52px; }
+  .cp-trip__optlabel { font-size: var(--fs-sm); font-weight: 700; }
+  .cp-trip__peak { flex-basis: 100%; font-size: var(--fs-xs); color: var(--ink-3); }
+  .cp-trip__submit { width: calc(100% - 52px); margin: var(--sp-4) 0 0 52px; }
+  .cp-trip__note { margin: var(--sp-3) 0 0 52px; font-size: var(--fs-xs); color: var(--ink-3); }
+
+  /* ---------- 招牌：新舊雙軌賽跑 ---------- */
+  .cp-race__verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-3) var(--sp-6);
+    padding: var(--sp-5) var(--sp-5) var(--sp-2);
+  }
+  .cp-verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+  .cp-verdict__lead { flex-basis: 100%; margin-bottom: 4px; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
+  .cp-verdict__who, .cp-verdict__what { font-size: var(--fs-lg); font-weight: 800; }
+  .cp-verdict__num { font: 900 clamp(3rem, 2rem + 2.4vw, 4.25rem)/.95 var(--font-num); letter-spacing: -.05em; }
+  .cp-verdict__unit { font-size: var(--fs-xl); font-weight: 900; }
+  .cp-verdict.is-even .cp-verdict__num, .cp-verdict.is-even .cp-verdict__unit { display: none; }
+  .cp-race__facts { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin: 0; }
+  .cp-race__facts div { display: grid; gap: 2px; }
+  .cp-race__facts dt { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+  .cp-race__facts dd { margin: 0; font: 700 var(--fs-sm)/1.3 var(--font-num); white-space: nowrap; }
+  .cp-race__facts dd s { color: var(--ink-3); text-decoration: none; font-weight: 600; }
+  .cp-race__plot { padding: var(--sp-3) var(--sp-5) var(--sp-2); }
+  .cp-race__svg { width: 100%; height: auto; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+  .cp-rpill { opacity: .3; transition: opacity var(--t-3) var(--ease-out); }
+  .cp-rpill.is-on { opacity: 1; }
+  .cp-rcursor { transition: opacity var(--t-2); }
+  .cp-rcursor.is-off { opacity: 0; }
+  .cp-rbracket { opacity: 0; transition: opacity var(--t-3) var(--ease-out); }
+  .cp-rbracket.is-on { opacity: 1; }
+  .cp-race__ctrl {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-5);
+    border-top: var(--hair);
+  }
+  .cp-race__now { min-width: 5.5em; font: 800 var(--fs-sm)/1 var(--font-num); text-align: right; font-variant-numeric: tabular-nums; }
+  .cp-race__status { display: grid; gap: 6px; margin: 0; padding: 0 var(--sp-5) var(--sp-4); font-size: var(--fs-sm); }
+  .cp-race__status div { display: grid; grid-template-columns: 5.2em minmax(0, 1fr); gap: var(--sp-3); align-items: baseline; }
+  .cp-race__status dt { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .04em; color: var(--ink-3); }
+  .cp-race__status dd { margin: 0; color: var(--ink-2); }
+  .cp-race__status div + div dt { color: var(--ink); }
+
+  .cp-presets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+  .cp-presets__label { font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
+  .cp-presets .chip { min-height: 34px; padding: 0 12px; font-size: var(--fs-xs); }
+  .cp-flag { padding: 0 7px; border-radius: var(--r-pill); background: #FCE4E3; color: var(--red-text); font-size: 10px; font-weight: 800; line-height: 18px; }
+  .chip[aria-pressed="true"] .cp-flag { background: rgba(255, 255, 255, .2); color: #FFFFFF; }
+
+  @media (max-width: 1100px) {
+    .cp-trip { max-width: 520px; }
+  }
+  @media (max-width: 560px) {
+    .cp-race__verdict, .cp-race__plot, .cp-race__status { padding-inline: var(--sp-4); }
+    .cp-race__ctrl { padding-inline: var(--sp-4); gap: var(--sp-3); }
+    .cp-race__now { min-width: 4.6em; }
+    .cp-race__facts { gap: var(--sp-2) var(--sp-4); }
+  }
+
+  /* 標題只在詞組之間折行，避免「步／行」「高／頻」被拆開 */
+  .cp-keep { display: inline-block; }
+
+  /* ---------- 01 比較結果（指標見 style.css .metric） ---------- */
+  .cp-result { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-7); align-items: start; }
+
+  /* 時間組成：一條長條拆成步行、候車、車上三段 */
+  .cp-mix {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: var(--sp-4) var(--sp-7);
+    align-items: end;
+    margin-top: var(--sp-6);
+    padding-top: var(--sp-5);
+    border-top: 3px solid var(--ink);
+  }
+  .cp-mix__title { font-size: var(--fs-lg); font-weight: 800; }
+  .cp-mix__title small { display: block; font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3); }
+  .cp-mix__rows { display: grid; gap: var(--sp-3); margin-top: var(--sp-4); }
+  .cp-mix__row { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 3.6em; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); }
+  .cp-mix__label { font-weight: 700; color: var(--ink-2); }
+  .cp-mix__track { min-width: 0; }
+  .cp-mix__bar { display: flex; gap: 2px; width: calc(var(--v, 1) * 100%); height: 18px; transition: width .9s var(--ease-out); }
+  .cp-mix__seg { display: block; min-width: 0; border-radius: 3px; transition: flex-grow .7s var(--ease-out); }
+  .cp-mix__seg--walk { background: radial-gradient(circle, var(--ink-3) 1.6px, transparent 2px) 0 50% / 7px 7px repeat-x, var(--fill); }
+  .cp-mix__seg--wait { background: repeating-linear-gradient(135deg, var(--rule-2) 0 3px, var(--fill) 3px 7px); }
+  .cp-mix__seg--ride { background: var(--c); }
+  .cp-mix__row.is-old .cp-mix__seg--ride { background: repeating-linear-gradient(90deg, var(--old) 0 12px, var(--fill-2) 12px 17px); }
+  .cp-mix__total { font: 800 var(--fs-sm)/1 var(--font-num); text-align: right; }
+  .cp-mix__legend { margin-top: var(--sp-4); font-size: var(--fs-xs); }
+  .cp-mix__key { display: inline-block; width: 22px; height: 12px; border-radius: 3px; vertical-align: middle; }
+  .cp-mix__insight { padding: var(--sp-4) var(--sp-5); border-left: 6px solid var(--c); border-radius: 0 var(--r-2) var(--r-2) 0; background: var(--paper); font-size: var(--fs-md); color: var(--ink-2); line-height: 1.8; }
+  .cp-mix__insight b { color: var(--ink); }
+
+  .cp-map__tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+  .cp-map__tools .segmented button { min-height: 30px; padding: 0 12px; font-size: var(--fs-xs); }
+  .cp-map__picklabel { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .cp-mk {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--r-pill);
+    background: var(--ink);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 800;
+    vertical-align: middle;
+  }
+
+  .cp-itins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); margin-top: var(--sp-7); }
+  .cp-itin { padding: var(--sp-5) var(--sp-5) var(--sp-3); border: var(--hair); border-radius: var(--r-2); background: var(--paper); }
+  .cp-itin--new { background: var(--white); border: 2px solid var(--ink); }
+  .cp-itin__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px var(--sp-3); padding-bottom: var(--sp-4); margin-bottom: var(--sp-4); border-bottom: var(--hair); }
+  .cp-itin__sum { font-size: var(--fs-sm); color: var(--ink-2); }
+  .cp-itin__sum b { font: 900 var(--fs-2xl)/1 var(--font-num); color: var(--ink); }
+  .cp-journey .cp-walk {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: var(--sp-3);
+    align-items: center;
+    padding-bottom: var(--sp-4);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+  }
+  .cp-journey .cp-walk::before { content: ""; justify-self: center; align-self: stretch; min-height: 22px; border-left: 4px dotted var(--ink-4); }
+  .cp-journey .cp-walk b { color: var(--ink-2); }
+  .cp-leg__route { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
+  .cp-leg__stops { font-size: var(--fs-md); line-height: 1.5; }
+  .cp-leg__info { font-size: var(--fs-xs); color: var(--ink-3); }
+
+  @media (max-width: 960px) {
+    .cp-result, .cp-mix { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
+    .cp-mix { gap: var(--sp-4); }
+    .cp-itins { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 760px) {
+    #cp-map { min-width: 600px; }
+  }
+
+  /* ---------- 02 全市分布 ---------- */
+  .cp-city { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: var(--sp-7); align-items: end; }
+  .cp-city__share { display: flex; align-items: baseline; gap: 6px; margin: var(--sp-3) 0 var(--sp-2); }
+  .cp-city__share .num { font-size: clamp(4rem, 2.4rem + 4.4vw, 6.25rem); font-weight: 900; line-height: .9; letter-spacing: -.06em; }
+  .cp-city__share small { font-size: var(--fs-2xl); font-weight: 800; }
+  .cp-city__split { display: grid; gap: 4px; margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--ink-2); }
+  .cp-city__split b { font-family: var(--font-num); color: var(--ink); }
+  .cp-city__you { margin-top: var(--sp-5); padding: var(--sp-4) var(--sp-5); border-left: 6px solid var(--ink); border-radius: 0 var(--r-2) var(--r-2) 0; background: var(--white); font-size: var(--fs-sm); line-height: 1.75; }
+  .cp-city__worst { margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.75; }
+  .cp-city__worst .btn { margin-top: var(--sp-3); }
+
+  .cp-dist { margin: 0; }
+  .cp-dist__plot { position: relative; height: 270px; }
+  .cp-dist__bars { position: absolute; left: 0; right: 0; top: 60px; bottom: 0; display: flex; gap: 2px; border-bottom: 2px solid var(--ink); }
+  .cp-dist__bin { position: relative; flex: 1 1 0; min-width: 0; }
+  .cp-dist__bin::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 3px 3px 0 0;
+    background: var(--c);
+    transform-origin: bottom;
+    transform: scaleY(var(--h, 0));
+    transition: transform .8s var(--ease-out) var(--rd, 0ms), background-color var(--t-2);
+  }
+  .cp-dist__bin.is-slow::before { background: var(--old); }
+  .cp-dist__bin.is-even::before { background: var(--ink-3); }
+  .cp-dist__bin.is-you::before { background: var(--ink); }
+  html.js .cp-dist[data-reveal]:not(.is-in) .cp-dist__bin::before { transform: scaleY(0); }
+  .cp-dist__zero { position: absolute; top: 34px; bottom: 0; left: calc(var(--x) * 1%); border-left: 2px dashed var(--ink-4); pointer-events: none; }
+  .cp-dist__zero span { position: absolute; top: -4px; left: 6px; font-size: var(--fs-2xs); font-weight: 800; color: var(--ink-3); white-space: nowrap; }
+  .cp-dist__you { position: absolute; top: 0; bottom: 0; left: calc(var(--x) * 1%); width: 0; pointer-events: none; transition: left .6s var(--ease-out); }
+  .cp-dist__you::before { content: ""; position: absolute; top: 24px; bottom: 0; left: -1px; border-left: 2px solid var(--ink); }
+  .cp-dist__you span {
+    position: absolute;
+    top: 0;
+    left: 0;
+    padding: 2px 10px;
+    border-radius: var(--r-pill);
+    background: var(--ink);
+    color: #FFFFFF;
+    font-size: var(--fs-xs);
+    font-weight: 800;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .cp-dist__you.is-left span { transform: translateX(-12px); }
+  .cp-dist__you.is-right span { transform: translateX(calc(-100% + 12px)); }
+  .cp-dist__axis { position: relative; height: 22px; margin-top: 6px; }
+  .cp-dist__tick { position: absolute; top: 0; left: calc(var(--x) * 1%); transform: translateX(-50%); font: 600 var(--fs-2xs)/1.6 var(--font-num); color: var(--ink-3); white-space: nowrap; }
+  .cp-dist__tick.is-first { transform: none; }
+  .cp-dist__tick.is-last { transform: translateX(-100%); }
+  .cp-dist__legend { margin-top: var(--sp-3); font-size: var(--fs-xs); }
+  .cp-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--c); vertical-align: middle; }
+  .cp-city__stats { margin-top: var(--sp-8); }
+  .cp-city__stats .stat__note b { color: var(--ink-2); }
+  @media (max-width: 960px) {
+    .cp-city { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
+  }
+  @media (max-width: 560px) {
+    .cp-dist__plot { height: 220px; }
+    .cp-dist__tick.is-minor { display: none; }
+  }
+
+  /* ---------- 03 行政區覆蓋率 ---------- */
+  .cp-cov__totals { margin-bottom: var(--sp-7); }
+  .cp-cov__totals .stat__value { font-size: clamp(2.25rem, 1.6rem + 1.8vw, 3rem); }
+  .cp-cov__plus { margin-right: 2px; }
+  .cp-cov__grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--sp-6); align-items: start; }
+  .cp-cov__map .nm-lines { opacity: .24; }
+  .cp-cov__map .nm-stations { opacity: .35; }
+  .cp-cov__legend { font-size: var(--fs-xs); }
+  .cp-ring { display: inline-block; width: 26px; height: 0; border-top: 6px solid var(--orange); border-radius: 3px; vertical-align: middle; }
+  .cp-ring--old { border-top: 3px solid var(--old); }
+  .cp-bub { cursor: pointer; }
+  .cp-bub__sel { opacity: 0; transition: opacity var(--t-2); }
+  .cp-bub.is-sel .cp-bub__sel { opacity: 1; }
+  /* 圓弧以 pathLength=100 計：dashoffset = 100 − 覆蓋率；進場時舊弧先長出，新弧再從舊值長到新值 */
+  .cp-arc { stroke-dasharray: 100 100; stroke-dashoffset: var(--to); transition: stroke-dashoffset 1.3s var(--ease-out) var(--rd, 0ms); }
+  html.js .cp-cov[data-reveal]:not(.is-in) .cp-arc--new { stroke-dashoffset: var(--from); }
+  html.js .cp-cov[data-reveal]:not(.is-in) .cp-arc--old { stroke-dashoffset: 100; }
+  .cp-cov__side { min-width: 0; padding-top: var(--sp-2); }
+  .cp-cov__sorthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-4); }
+  .cp-cov__sorthead .chip { min-height: 32px; padding: 0 12px; font-size: var(--fs-xs); }
+  .cp-cov__hint { margin-top: var(--sp-4); font-size: var(--fs-xs); color: var(--ink-3); }
+  /* 軸線與 .dumbbell__row 同字級，欄寬（em）才會對齊 */
+  .cp-db-axis {
+    display: grid;
+    grid-template-columns: 5em minmax(0, 1fr) 7.5em;
+    gap: var(--sp-4);
+    padding: 0 8px 6px;
+    font-size: var(--fs-sm);
+  }
+  .cp-db-axis__track { position: relative; height: 14px; }
+  .cp-db-axis__track span { position: absolute; left: calc(var(--x) * 1%); transform: translateX(-50%); font: 600 var(--fs-2xs)/1 var(--font-num); color: var(--ink-3); }
+  .cp-db-axis__track span:first-child { transform: none; }
+  .cp-db-axis__track span:last-child { transform: translateX(-100%); }
+  .cp-db-row {
+    width: 100%;
+    margin: 0;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--r-2);
+    background: transparent;
+    color: inherit;
+    /* 只繼承字族；字級沿用 .dumbbell__row 的 14px，欄寬（em）才會與上方刻度對齊 */
+    font-family: inherit;
+    text-align: left;
+    transition: background-color var(--t-1);
+  }
+  .cp-db-row:hover { background: var(--fill); }
+  .cp-db-row[aria-pressed="true"] { background: var(--fill-2); box-shadow: inset 4px 0 0 var(--ink); }
+  .dumbbell .cp-db-row { min-height: 50px; }
+  /* 選取行政區的細節：圈圖下方一條資訊帶，像站名牌 */
+  .cp-district { display: grid; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5) var(--sp-5); border-top: 3px solid var(--ink); }
+  .cp-district__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+  .cp-district__head::before { content: ""; width: 30px; height: 18px; border: 4px solid var(--ink); border-radius: var(--r-pill); background: var(--white); }
+  .cp-district__name { font-size: var(--fs-2xl); font-weight: 900; }
+  .cp-district__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-4); margin: 0; }
+  .cp-district__grid dt { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+  .cp-district__grid dd { margin: 2px 0 0; font: 600 var(--fs-md)/1.35 var(--font-num); color: var(--ink-2); }
+  .cp-district__grid dd b { color: var(--ink); font-weight: 900; }
+  .cp-district__lines { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-5); }
+  .cp-district__line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .cp-district__label { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); }
+  @media (max-width: 960px) {
+    .cp-cov__grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 760px) {
+    #cp-cov-map { min-width: 640px; }
+    .cp-district__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    .cp-db-axis { grid-template-columns: 4em minmax(0, 1fr); }
+    .cp-db-axis > span:last-child { display: none; }
+    .cp-district { padding-inline: var(--sp-4); }
+  }
+
+  /* ---------- 04 意見回饋 ---------- */
+  .cp-fb { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: var(--sp-7); align-items: start; }
+  .cp-form { display: grid; gap: var(--sp-5); }
+  .cp-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .cp-fieldset legend { padding: 0; margin-bottom: 6px; }
+  .cp-types { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .cp-type {
+    align-items: center;
+    padding: 8px 14px 8px 10px;
+    border: 2px solid var(--rule-2);
+    border-radius: var(--r-pill);
+    background: var(--white);
+    font-weight: 700;
+    transition: border-color var(--t-1), background-color var(--t-1);
+  }
+  .cp-type input { margin: 0; }
+  .cp-type:hover { border-color: var(--ink-4); }
+  .cp-type:has(input:checked) { border-color: var(--ink); background: var(--fill); }
+  .field.is-invalid .cp-type { border-color: #F2B8B6; }
+  .cp-route-chips .chip { min-height: 32px; padding: 0 10px 0 8px; gap: 6px; font-size: var(--fs-xs); }
+  .cp-route-chips .route-swatch { width: 14px; }
+  .cp-linkbtn { justify-self: start; padding: 0; border: 0; background: none; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); text-decoration: underline; text-underline-offset: .2em; }
+  .cp-linkbtn:hover { color: var(--ink); }
+  .cp-form__under { display: flex; justify-content: space-between; gap: var(--sp-3); }
+  .cp-form__under .counter-text { flex: none; white-space: nowrap; }
+  .cp-form__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-3); padding-top: var(--sp-5); border-top: var(--hair); }
+  .cp-form__req { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cp-receipt:focus { outline: none; }
+  .cp-receipt__top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-3) var(--sp-5); }
+  .cp-receipt__no { margin-top: 6px; font: 900 var(--fs-3xl)/1 var(--font-num); letter-spacing: -.02em; }
+  .cp-receipt .dl { margin: var(--sp-5) 0; }
+  .cp-receipt__msg { margin-bottom: var(--sp-5); padding: var(--sp-4); border-radius: var(--r-2); background: var(--fill); font-size: var(--fs-sm); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* 收件後的處理進度：與側欄同一條路線，第一站已填滿 */
+  .cp-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 var(--sp-5); padding: 0; list-style: none; }
+  .cp-track li { position: relative; padding-top: 30px; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cp-track li::before { content: ""; position: absolute; top: 9px; left: 0; right: 0; height: 0; border-top: 4px dashed var(--old); }
+  .cp-track li:first-child::before { left: 10px; border-top: 6px solid var(--c); top: 8px; }
+  .cp-track li:last-child::before { right: calc(100% - 10px); }
+  .cp-track li::after { content: ""; position: absolute; top: 1px; left: 0; width: 20px; height: 20px; border: 4px solid var(--ink-4); border-radius: var(--r-pill); background: var(--white); }
+  .cp-track li:first-child { color: var(--ink); }
+  .cp-track li:first-child::after { border-color: var(--c); background: var(--c); }
+
+  .cp-fb__side { display: grid; gap: var(--sp-6); }
+  .cp-steps { margin: var(--sp-4) 0 0; padding: 0; list-style: none; }
+  .cp-steps li { position: relative; padding: 0 0 var(--sp-5) 40px; }
+  .cp-steps li::before { content: ""; position: absolute; left: 9px; top: 8px; bottom: -8px; width: 6px; background: var(--c); }
+  .cp-steps li:last-child { padding-bottom: 0; }
+  .cp-steps li:last-child::before { display: none; }
+  .cp-steps li::after { content: ""; position: absolute; left: 0; top: 2px; width: 24px; height: 24px; border: 5px solid var(--c); border-radius: var(--r-pill); background: var(--white); }
+  .cp-steps b { display: block; font-weight: 800; }
+  .cp-steps span { display: block; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.7; }
+  .cp-tally__list { margin: var(--sp-4) 0 0; padding: 0; list-style: none; border-top: 2px solid var(--ink); }
+  .cp-tally__row { display: grid; grid-template-columns: 6.2em minmax(0, 1fr) 4.2em; align-items: center; gap: var(--sp-3); padding: 9px 0; border-bottom: var(--hair); font-size: var(--fs-sm); }
+  .cp-tally__name { font-weight: 700; }
+  .cp-tally__n { font: 700 var(--fs-sm)/1 var(--font-num); text-align: right; font-variant-numeric: tabular-nums; }
+  .cp-tally__mine { display: block; margin-top: 3px; font-size: 10px; font-weight: 800; color: var(--red-text); }
+  .cp-tally__note { margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--ink-3); }
+  @media (max-width: 960px) {
+    .cp-fb { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
+  }
+  @media (max-width: 560px) {
+    .cp-form.panel, .cp-receipt.panel { padding: var(--sp-5) var(--sp-4); }
+    .cp-form__foot .btn { flex: 1 1 auto; }
+  }
+
+  /* 計算方式 modal */
+  .cp-method { display: grid; gap: var(--sp-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.75; }
+  .cp-method b { display: block; color: var(--ink); }
+</style>
+</head>
+<body data-rail="purple">
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="util-bar" data-pause-offscreen>
+  <div class="container util-bar__inner">
+    <a class="back-link" href="../../index.html">← 返回目錄</a>
+    <p class="util-bar__note"><span class="live-dot" aria-hidden="true"></span><span class="util-bar__long">新路網第一階段</span> <strong>2027.01.01</strong> 上路・倒數 <strong data-countdown="2027-01-01">70</strong> 天</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+      <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+        <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+        <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+        <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+        <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+      </svg>
+      <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="開啟選單"><span></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="主要導覽">
+      <ol class="site-nav__line">
+        <li><a class="site-nav__link" href="index.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路網總覽</span></a></li>
+        <li><a class="site-nav__link" href="routes.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">全部路線</span></a></li>
+        <li><a class="site-nav__link" href="route.html"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">路線詳情</span></a></li>
+        <li><a class="site-nav__link is-active" href="compare.html" aria-current="page"><span class="site-nav__dot" aria-hidden="true"></span><span class="site-nav__label">新舊比較</span></a></li>
+      </ol>
+    </nav>
+    <a class="btn btn--ink btn--sm site-header__cta" href="compare.html#feedback">提供意見</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- 起站：起訖查詢與雙軌賽跑 -->
+  <section class="page-hero" id="top" data-stop="起訖查詢" aria-labelledby="cp-title">
+    <div class="container container--wide page-hero__grid">
+      <div class="page-hero__copy">
+        <p class="kicker c-purple">新舊比較・模擬試算</p>
+        <h1 class="display page-hero__title cp-hero__title" id="cp-title">
+          <span>同一趟路，</span>
+          <span><em class="is-new">新</em><em class="is-old">舊</em>各搭一次。</span>
+        </h1>
+        <p class="lede page-hero__lede">選好起點與終點，用同一套模擬分別在 2026 舊路網與 2027 新路網上規劃。全市尖峰平均從 <b><span data-fill="oldAvg">75</span> 分</b>縮短為 <b><span data-fill="newAvg">48</span> 分</b>，你常搭的那一趟呢？</p>
+
+        <form class="cp-trip" id="cp-trip" novalidate aria-label="起訖查詢">
+          <div class="field cp-trip__field cp-trip__field--from">
+            <label class="field__label" for="cp-from">起點站</label>
+            <span class="cp-trip__node" aria-hidden="true">起</span>
+            <div class="combo">
+              <input class="input" id="cp-from" type="text" data-station-input enterkeyhint="next" placeholder="輸入站名，例如：北岸市場" value="北岸市場" aria-describedby="cp-trip-note">
+            </div>
+          </div>
+          <div class="cp-trip__swaprow">
+            <button class="cp-trip__swap" type="button" id="cp-swap" aria-label="交換起點與終點" title="交換起點與終點">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2v11M2 10l3 3 3-3M11 14V3M8 6l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="cp-trip__swaptext" aria-hidden="true">交換起訖</span>
+          </div>
+          <div class="field cp-trip__field cp-trip__field--to">
+            <label class="field__label" for="cp-to">終點站</label>
+            <span class="cp-trip__node" aria-hidden="true">訖</span>
+            <div class="combo">
+              <input class="input" id="cp-to" type="text" data-station-input enterkeyhint="search" placeholder="例如：溪洲夜市、新灣" value="溪洲夜市" aria-describedby="cp-trip-note">
+            </div>
+          </div>
+          <div class="cp-trip__opts">
+            <span class="cp-trip__optlabel" id="cp-period-label">出發時段</span>
+            <div class="segmented" role="group" aria-labelledby="cp-period-label">
+              <button type="button" aria-pressed="true" data-period="peak">尖峰</button>
+              <button type="button" aria-pressed="false" data-period="off">離峰</button>
+            </div>
+            <span class="cp-trip__peak">尖峰：平日 07:00–09:00、17:00–19:30</span>
+          </div>
+          <button class="btn btn--primary btn--lg c-purple cp-trip__submit" type="submit">比較這一趟</button>
+          <p class="cp-trip__note" id="cp-trip-note">可用 ↑ ↓ 選站、Enter 確認；也可以點下方路網圖上的站點。</p>
+        </form>
+      </div>
+
+      <div class="page-hero__panel cp-hero__side">
+        <figure class="map-panel cp-race" aria-labelledby="cp-race-title">
+          <div class="map-panel__bar">
+            <p class="map-panel__title" id="cp-race-title"><span class="capsule" aria-hidden="true"></span>同時出發，誰先到？</p>
+            <div class="map-panel__tools">
+              <button class="btn btn--ghost btn--sm" type="button" data-modal-open="cp-method">計算方式</button>
+            </div>
+          </div>
+          <div class="cp-race__verdict">
+            <p class="cp-verdict" id="cp-verdict">
+              <span class="cp-verdict__lead" id="cp-verdict-lead">北岸市場 → 溪洲夜市・尖峰出發</span>
+              <span class="cp-verdict__who" id="cp-verdict-who">新路網</span>
+              <span class="cp-verdict__num num" id="cp-verdict-num">35</span>
+              <span class="cp-verdict__unit">分鐘</span>
+              <span class="cp-verdict__what" id="cp-verdict-what">提早抵達</span>
+            </p>
+            <dl class="cp-race__facts">
+              <div><dt>整趟時間</dt><dd id="cp-fact-min"><s>80</s> → 45 分</dd></div>
+              <div><dt>轉乘</dt><dd id="cp-fact-xfer"><s>2</s> → 1 次</dd></div>
+              <div><dt>步行</dt><dd id="cp-fact-walk"><s>1,125</s> → 607 m</dd></div>
+            </dl>
+          </div>
+          <div class="cp-race__plot" id="cp-race-plot">
+            <svg class="cp-race__svg" id="cp-race-svg" role="img" aria-label="新舊路網行程時間軸"></svg>
+          </div>
+          <div class="cp-race__ctrl">
+            <button class="icon-btn icon-btn--line" type="button" id="cp-race-play" aria-label="暫停"></button>
+            <input class="range" id="cp-race-range" type="range" min="0" max="80" step="1" value="0" aria-label="拖曳時間軸，查看出發後第幾分鐘兩邊各在哪裡">
+            <span class="cp-race__now" id="cp-race-now" aria-hidden="true">第 0 分</span>
+          </div>
+          <dl class="cp-race__status">
+            <div><dt>舊路網</dt><dd id="cp-status-old">步行前往北岸市場站</dd></div>
+            <div><dt>新路網</dt><dd id="cp-status-new">步行前往北岸市場站</dd></div>
+          </dl>
+        </figure>
+        <div class="cp-presets">
+          <span class="cp-presets__label" id="cp-presets-label">試試這些起訖</span>
+          <div class="chips" data-chips="single" id="cp-presets" role="group" aria-labelledby="cp-presets-label"></div>
+        </div>
+      </div>
+    </div>
+    <p class="sr-only" id="cp-live" aria-live="polite"></p>
+  </section>
+
+  <!-- 第 1 站：比較結果 -->
+  <section class="section section--white" id="result" data-stop="比較結果" aria-labelledby="result-title">
+    <div class="container">
+      <header class="sec-head c-blue">
+        <p class="sec-head__stop"><span class="sec-head__no">01</span>比較結果</p>
+        <h2 class="sec-head__title" id="result-title"><span class="cp-keep">時間、轉乘、</span><span class="cp-keep">步行，逐項對照</span></h2>
+        <p class="sec-head__lede" id="cp-result-lede">北岸市場（北岸區）到溪洲夜市（溪洲區），尖峰出發。</p>
+        <div class="sec-head__aside"><a class="link-arrow c-red" href="#feedback" id="cp-to-feedback">對這一趟有意見</a></div>
+      </header>
+
+      <div class="cp-result c-blue">
+        <div class="cp-metrics">
+          <div class="metric" data-metric="minutes">
+            <div class="metric__head"><p class="metric__name">整趟時間<small>從家門口到目的地，含步行、候車與轉乘</small></p><span class="delta">持平</span></div>
+            <div class="vs">
+              <div class="vs__row vs__row--old"><span class="vs__label">舊路網</span><span class="vs__bar vs__bar--old"></span><span class="vs__val"><span class="num" data-v="old">0</span> 分</span></div>
+              <div class="vs__row"><span class="vs__label">新路網</span><span class="vs__bar vs__bar--new" style="--rd:120ms"></span><span class="vs__val"><span class="num" data-v="new">0</span> 分</span></div>
+            </div>
+          </div>
+          <div class="metric" data-metric="transfers">
+            <div class="metric__head"><p class="metric__name">轉乘次數<small>新路網轉乘站多為同站換車</small></p><span class="delta">持平</span></div>
+            <div class="vs">
+              <div class="vs__row vs__row--old"><span class="vs__label">舊路網</span><span class="vs__bar vs__bar--old"></span><span class="vs__val"><span class="num" data-v="old">0</span> 次</span></div>
+              <div class="vs__row"><span class="vs__label">新路網</span><span class="vs__bar vs__bar--new" style="--rd:120ms"></span><span class="vs__val"><span class="num" data-v="new">0</span> 次</span></div>
+            </div>
+          </div>
+          <div class="metric" data-metric="walk">
+            <div class="metric__head"><p class="metric__name">步行距離<small>走到站牌、轉乘換站、走到目的地</small></p><span class="delta">持平</span></div>
+            <div class="vs">
+              <div class="vs__row vs__row--old"><span class="vs__label">舊路網</span><span class="vs__bar vs__bar--old"></span><span class="vs__val"><span class="num" data-v="old">0</span> m</span></div>
+              <div class="vs__row"><span class="vs__label">新路網</span><span class="vs__bar vs__bar--new" style="--rd:120ms"></span><span class="vs__val"><span class="num" data-v="new">0</span> m</span></div>
+            </div>
+          </div>
+        </div>
+
+        <figure class="map-panel cp-map">
+          <div class="map-panel__bar">
+            <div class="cp-map__tools">
+              <div class="segmented" id="cp-map-net" role="group" aria-label="地圖顯示哪個路網的行程">
+                <button type="button" aria-pressed="true" data-net="new">2027 新路網</button>
+                <button type="button" aria-pressed="false" data-net="old">2026 舊路網</button>
+              </div>
+            </div>
+            <div class="cp-map__tools">
+              <span class="cp-map__picklabel" id="cp-pick-label">點站點設為</span>
+              <div class="segmented" id="cp-pick" role="group" aria-labelledby="cp-pick-label">
+                <button type="button" aria-pressed="false" data-pick="from">起點</button>
+                <button type="button" aria-pressed="true" data-pick="to">終點</button>
+              </div>
+            </div>
+          </div>
+          <div class="map-panel__scroll" id="cp-map-scroll">
+            <svg class="map-panel__canvas" id="cp-map" aria-label="行程路網圖"></svg>
+          </div>
+          <p class="swipe-hint" aria-hidden="true">← 左右滑動看全圖 →</p>
+          <figcaption class="map-panel__foot">
+            <span class="legend">
+              <span class="legend__item"><span class="cp-mk" aria-hidden="true">起</span>上車</span>
+              <span class="legend__item"><span class="cp-mk" aria-hidden="true">轉</span>轉乘</span>
+              <span class="legend__item"><span class="cp-mk" aria-hidden="true">訖</span>下車</span>
+              <span class="legend__item"><span class="route-swatch route-swatch--old" aria-hidden="true"></span>舊路線</span>
+            </span>
+            <span id="cp-map-note">示意圖・非實際比例</span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="cp-mix c-blue">
+        <div>
+          <p class="cp-mix__title">時間花在哪裡<small>同一把尺：長條長度就是整趟分鐘數</small></p>
+          <div class="cp-mix__rows">
+            <div class="cp-mix__row is-old" data-net="old"><span class="cp-mix__label">舊路網</span><span class="cp-mix__track"><span class="cp-mix__bar"><i class="cp-mix__seg cp-mix__seg--walk"></i><i class="cp-mix__seg cp-mix__seg--wait"></i><i class="cp-mix__seg cp-mix__seg--ride"></i></span></span><span class="cp-mix__total">0 分</span></div>
+            <div class="cp-mix__row" data-net="new"><span class="cp-mix__label">新路網</span><span class="cp-mix__track"><span class="cp-mix__bar"><i class="cp-mix__seg cp-mix__seg--walk"></i><i class="cp-mix__seg cp-mix__seg--wait"></i><i class="cp-mix__seg cp-mix__seg--ride"></i></span></span><span class="cp-mix__total">0 分</span></div>
+          </div>
+          <p class="legend cp-mix__legend">
+            <span class="legend__item"><span class="cp-mix__key cp-mix__seg--walk" aria-hidden="true"></span>步行</span>
+            <span class="legend__item"><span class="cp-mix__key cp-mix__seg--wait" aria-hidden="true"></span>候車</span>
+            <span class="legend__item"><span class="cp-mix__key cp-mix__seg--ride" aria-hidden="true"></span>車上</span>
+          </p>
+        </div>
+        <p class="cp-mix__insight" id="cp-insight">省下的時間主要來自候車。</p>
+      </div>
+
+      <div class="cp-itins">
+        <article class="cp-itin" aria-labelledby="itin-old-title">
+          <header class="cp-itin__head">
+            <h3 class="h4" id="itin-old-title">2026 舊路網怎麼走</h3>
+            <p class="cp-itin__sum" id="cp-itin-old-sum"></p>
+          </header>
+          <ol class="journey cp-journey" id="cp-itin-old"></ol>
+        </article>
+        <article class="cp-itin cp-itin--new" aria-labelledby="itin-new-title">
+          <header class="cp-itin__head">
+            <h3 class="h4" id="itin-new-title">2027 新路網怎麼走</h3>
+            <p class="cp-itin__sum" id="cp-itin-new-sum"></p>
+          </header>
+          <ol class="journey cp-journey" id="cp-itin-new"></ol>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 2 站：全市分布 -->
+  <section class="section" id="citywide" data-stop="全市分布" aria-labelledby="city-title">
+    <div class="container">
+      <header class="sec-head c-green">
+        <p class="sec-head__stop"><span class="sec-head__no">02</span>全市分布</p>
+        <h2 class="sec-head__title" id="city-title">不是每一趟都變快</h2>
+        <p class="sec-head__lede">全市 <span data-fill="stations">67</span> 站兩兩配對，<span data-fill="pairs">4,422</span> 組起訖逐一模擬。多數旅程省下時間，但原本有舊路線直達的少數短程，改版後要轉乘而變慢——我們把它們也列出來。</p>
+        <div class="sec-head__aside">
+          <div class="segmented" role="group" aria-label="全市分布的出發時段">
+            <button type="button" aria-pressed="true" data-period="peak">尖峰</button>
+            <button type="button" aria-pressed="false" data-period="off">離峰</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="cp-city">
+        <div class="cp-city__summary">
+          <p class="eyebrow" id="cp-city-kicker">尖峰・新路網比舊路網快 3 分鐘以上</p>
+          <p class="cp-city__share"><span class="num" id="cp-city-share" data-decimals="1">0</span><small>%</small></p>
+          <p class="cp-city__split" id="cp-city-split"></p>
+          <p class="cp-city__you" id="cp-city-you"></p>
+          <div class="cp-city__worst" id="cp-city-worst"></div>
+        </div>
+
+        <figure class="cp-dist c-green" data-reveal>
+          <div class="cp-dist__plot" id="cp-dist-plot" role="img" aria-label="全市起訖旅行時間變化分布">
+            <div class="cp-dist__bars" id="cp-bins"></div>
+            <div class="cp-dist__zero" id="cp-zero"><span>持平</span></div>
+            <div class="cp-dist__you" id="cp-you"><span>你這趟</span></div>
+          </div>
+          <div class="cp-dist__axis" id="cp-axis" aria-hidden="true"></div>
+          <figcaption class="legend cp-dist__legend">
+            <span class="legend__item"><span class="cp-key" aria-hidden="true"></span>新路網較快</span>
+            <span class="legend__item"><span class="cp-key" style="background: var(--ink-3)" aria-hidden="true"></span>相差 2 分鐘內</span>
+            <span class="legend__item"><span class="cp-key" style="background: var(--old)" aria-hidden="true"></span>新路網較慢</span>
+            <span class="legend__item"><span class="cp-key" style="background: var(--ink)" aria-hidden="true"></span>你查詢的這一趟</span>
+            <span class="legend__item">橫軸：舊路網分鐘數 − 新路網分鐘數，每 5 分鐘一格</span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="stat-row cp-city__stats" id="cp-city-stats">
+        <div class="stat"><p class="stat__value"><span data-stat="avgMinutes" data-decimals="0">0</span><span class="stat__unit">分</span></p><p class="stat__label">全市平均旅行時間</p><p class="stat__note">舊路網 <b data-old="avgMinutes">75</b> 分</p></div>
+        <div class="stat"><p class="stat__value"><span data-stat="avgWait" data-decimals="0">0</span><span class="stat__unit">分</span></p><p class="stat__label">平均候車</p><p class="stat__note">舊路網 <b data-old="avgWait">23</b> 分・含轉乘候車</p></div>
+        <div class="stat"><p class="stat__value"><span data-stat="avgWalk" data-decimals="0">0</span><span class="stat__unit">m</span></p><p class="stat__label">平均步行</p><p class="stat__note">舊路網 <b data-old="avgWalk">977</b> m</p></div>
+        <div class="stat"><p class="stat__value"><span data-stat="directShare" data-decimals="1">0</span><span class="stat__unit">%</span></p><p class="stat__label">不用轉車就到</p><p class="stat__note">舊路網 <b data-old="directShare">18.9</b>%・直達變少，換來班次變密</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 3 站：行政區覆蓋率 -->
+  <section class="section section--white" id="coverage" data-stop="行政區覆蓋" aria-labelledby="cov-title">
+    <div class="container">
+      <header class="sec-head c-orange">
+        <p class="sec-head__stop"><span class="sec-head__no">03</span>行政區覆蓋率</p>
+        <h2 class="sec-head__title" id="cov-title"><span class="cp-keep">八個行政區，</span><span class="cp-keep">高頻公車都更近了</span></h2>
+        <p class="sec-head__lede">「高頻覆蓋」指住家 300 公尺內，有尖峰 10 分鐘內就來一班的公車。圈的大小代表人口，外圈灰線是舊路網、內圈橘線是新路網。</p>
+      </header>
+
+      <div class="cp-cov" data-reveal>
+        <div class="stat-row cp-cov__totals">
+          <div class="stat"><p class="stat__value"><span data-count="0" data-decimals="1" data-fill-count="covNew">79.4</span><span class="stat__unit">%</span></p><p class="stat__label">全市人口加權覆蓋率</p><p class="stat__note">舊路網 <span data-fill="covOld">53.5</span>%</p></div>
+          <div class="stat"><p class="stat__value"><span data-count="0" data-decimals="1" data-fill-count="popNew">63.8</span><span class="stat__unit">萬人</span></p><p class="stat__label">住在高頻公車旁</p><p class="stat__note">舊路網 <span data-fill="popOld">43.0</span> 萬人</p></div>
+          <div class="stat"><p class="stat__value"><span class="cp-cov__plus">+</span><span data-count="0" data-decimals="1" data-fill-count="popGain">20.8</span><span class="stat__unit">萬人</span></p><p class="stat__label">多照顧到的市民</p><p class="stat__note" data-fill="gainNote">8 個行政區全數提升</p></div>
+          <div class="stat"><p class="stat__value"><span data-count="0" data-fill-count="lowNew">37</span><span class="stat__unit">%</span></p><p class="stat__label">覆蓋率最低：<span data-fill="lowName">雲嶺區</span></p><p class="stat__note">舊路網 <span data-fill="lowOld">12</span>%・山區以接駁小巴補足</p></div>
+        </div>
+
+        <div class="cp-cov__grid">
+          <figure class="map-panel cp-cov__map" id="cp-cov-figure">
+            <div class="map-panel__bar">
+              <p class="map-panel__title">各區高頻公車覆蓋率</p>
+              <span class="legend cp-cov__legend">
+                <span class="legend__item"><span class="cp-ring cp-ring--old" aria-hidden="true"></span>2026 舊路網</span>
+                <span class="legend__item"><span class="cp-ring" aria-hidden="true"></span>2027 新路網</span>
+              </span>
+            </div>
+            <div class="map-panel__scroll" id="cp-cov-scroll">
+              <svg class="map-panel__canvas" id="cp-cov-map" aria-label="澄港市八個行政區的高頻公車覆蓋率圈圖，圓圈大小代表人口。"></svg>
+            </div>
+            <p class="swipe-hint" aria-hidden="true">← 左右滑動看全圖 →</p>
+            <div class="cp-district" id="cp-district" aria-live="polite"></div>
+          </figure>
+
+          <div class="cp-cov__side">
+            <div class="cp-cov__sorthead">
+              <p class="h4" id="cp-sort-label">排序</p>
+              <div class="chips" data-chips="single" id="cp-cov-sort" role="group" aria-labelledby="cp-sort-label">
+                <button class="chip" type="button" aria-pressed="true" data-value="geo">由西到東</button>
+                <button class="chip" type="button" aria-pressed="false" data-value="gain">增幅</button>
+                <button class="chip" type="button" aria-pressed="false" data-value="new">新覆蓋率</button>
+                <button class="chip" type="button" aria-pressed="false" data-value="pop">人口</button>
+              </div>
+            </div>
+            <div class="cp-db-axis" aria-hidden="true">
+              <span></span>
+              <span class="cp-db-axis__track"><span style="--x:0">0</span><span style="--x:25">25</span><span style="--x:50">50</span><span style="--x:75">75</span><span style="--x:100">100%</span></span>
+              <span></span>
+            </div>
+            <div class="dumbbell c-orange" id="cp-dumbbell" role="group" aria-label="各行政區覆蓋率，舊 → 新，點選看細節"></div>
+            <p class="cp-cov__hint">點列表或圈圖上的圓圈，看該區的人口、站點與停靠路線。圓圈大小代表人口（萬人）。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 第 4 站：意見回饋 -->
+  <section class="section" id="feedback" data-stop="意見回饋" aria-labelledby="fb-title">
+    <div class="container">
+      <header class="sec-head c-red">
+        <p class="sec-head__stop"><span class="sec-head__no">04</span>意見回饋</p>
+        <h2 class="sec-head__title" id="fb-title">這張路網，還可以更好</h2>
+        <p class="sec-head__lede">路網定案後，仍會依市民意見微調站位、班距與首末班。每則意見都會分派給負責該路線的規劃小組，14 天內回覆。</p>
+      </header>
+
+      <div class="cp-fb">
+        <div class="cp-fb__main">
+          <form class="panel cp-form" id="cp-form" novalidate aria-labelledby="fb-form-title">
+            <h3 class="h3" id="fb-form-title">留下意見</h3>
+
+            <fieldset class="field cp-fieldset">
+              <legend class="field__label">意見類型<span class="field__req" aria-hidden="true">*</span></legend>
+              <div class="cp-types" id="fb-types"></div>
+            </fieldset>
+
+            <div class="field">
+              <span class="field__label">相關起訖</span>
+              <label class="check"><input type="checkbox" id="fb-trip" checked><span>附上我剛剛比較的這一趟：<b id="fb-trip-text">北岸市場 → 溪洲夜市（尖峰）</b></span></label>
+            </div>
+
+            <div class="field">
+              <span class="field__label" id="fb-routes-label">相關路線 <span class="muted small">（選填，可複選）</span></span>
+              <div class="chips cp-route-chips" data-chips="multi" id="fb-routes" role="group" aria-labelledby="fb-routes-label"></div>
+              <button class="cp-linkbtn" type="button" id="fb-routes-fill">帶入這一趟搭乘的新路線</button>
+            </div>
+
+            <div class="form-grid form-grid--2">
+              <div class="field">
+                <label class="field__label" for="fb-district">居住或常用行政區<span class="field__req" aria-hidden="true">*</span></label>
+                <select class="select" id="fb-district" name="district">
+                  <option value="">請選擇</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="fb-name">稱呼 <span class="muted small">（選填）</span></label>
+                <input class="input" id="fb-name" name="name" type="text" autocomplete="name" maxlength="20" placeholder="例如：林小姐">
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="fb-msg">意見內容<span class="field__req" aria-hidden="true">*</span></label>
+              <textarea class="textarea" id="fb-msg" name="message" rows="5" maxlength="500" placeholder="例如：支42 在國中上下學時段很擠，希望 07:00–08:00 加開班次。" aria-describedby="fb-msg-hint fb-msg-count"></textarea>
+              <div class="cp-form__under">
+                <p class="field__hint" id="fb-msg-hint">至少 15 個字；寫出站名、時段與遇到的狀況，最能幫上忙。</p>
+                <p class="counter-text" id="fb-msg-count">0 / 500</p>
+              </div>
+            </div>
+
+            <div class="form-grid form-grid--2">
+              <div class="field">
+                <label class="switch"><input type="checkbox" role="switch" id="fb-reply"><span>希望收到回覆</span></label>
+                <p class="field__hint">開啟後請留下電子郵件，規劃小組會在 14 天內回信。</p>
+              </div>
+              <div class="field" id="fb-email-field" hidden>
+                <label class="field__label" for="fb-email">電子郵件<span class="field__req" aria-hidden="true">*</span></label>
+                <input class="input" id="fb-email" name="email" type="email" autocomplete="email" placeholder="name@example.com">
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="check"><input type="checkbox" id="fb-consent"><span>我同意交通局將這則意見用於路網規劃，並以去識別化方式公開統計。<span class="field__req" aria-hidden="true">*</span></span></label>
+            </div>
+
+            <div class="cp-form__foot">
+              <span class="cp-form__req">標示 <span class="field__req">*</span> 為必填</span>
+              <div class="cluster">
+                <button class="btn btn--ghost" type="button" id="fb-clear">清除</button>
+                <button class="btn btn--primary c-red" type="submit">送出意見</button>
+              </div>
+            </div>
+          </form>
+
+          <!-- 回條內容在送出時才產生，收起時清空：撤回、再寫一則只會作用在畫面上這一則 -->
+          <div class="panel cp-receipt c-red" id="cp-receipt" tabindex="-1" aria-labelledby="fb-receipt-title" hidden></div>
+        </div>
+
+        <aside class="cp-fb__side" aria-label="意見處理方式與目前統計">
+          <div class="c-red">
+            <p class="h4">意見怎麼被處理</p>
+            <ol class="cp-steps">
+              <li><b>收件</b><span>送出後立即取得意見編號，可憑編號查詢進度。</span></li>
+              <li><b>分類</b><span>3 個工作天內，分派給負責該路線的規劃小組。</span></li>
+              <li><b>回覆</b><span>14 天內回信（有留電子郵件者）。</span></li>
+              <li><b>公告</b><span>每月 5 日公告依意見調整的站位與班距。</span></li>
+            </ol>
+          </div>
+
+          <div class="c-red" data-reveal>
+            <p class="h4">大家在說什麼</p>
+            <p class="small muted" style="margin-top: 4px">7 月 15 日路網定案公告後的線上意見，共 <b class="num" id="fb-total">1,940</b> 則</p>
+            <ul class="cp-tally__list" id="fb-tally"></ul>
+            <p class="cp-tally__note">統計每天更新；你送出的意見會即時計入。</p>
+          </div>
+
+          <div class="notice c-red">
+            <div><strong>不方便上網留言？</strong>撥打公車客服 <b class="num">0800-012-027</b>（週一至週六 07:00–21:00），或到各區公所服務台填寫紙本意見表。</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog class="modal c-purple" id="cp-method" aria-labelledby="cp-method-title">
+  <div class="modal__head">
+    <h2 class="modal__title" id="cp-method-title">這些數字怎麼算的</h2>
+    <button class="icon-btn" type="button" data-modal-close aria-label="關閉">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="modal__body">
+    <ul class="cp-method" id="cp-method-list">
+      <li><b>車上時間</b>依路網幾何推算：幹線平均時速 <span data-fill="spdTrunk">21</span> 公里、支線 <span data-fill="spdBranch">18</span> 公里、接駁 <span data-fill="spdFeeder">16</span> 公里；舊路線平均時速 <span data-fill="spdOld">19</span> 公里，並因繞駛多計 <span data-fill="detourPct">10</span>% 距離。每站停靠約 <span data-fill="dwellSec">20</span> 秒。</li>
+      <li><b>候車時間</b>以該路線當時班距的一半計，尖峰、離峰分開算；每次轉乘都要再等一次。</li>
+      <li><b>步行距離</b>從家門口到站牌依各區站點密度推估，步行速度每分鐘 <span data-fill="walkSpeed">75</span> 公尺。新路網轉乘站為同站換車（約 <span data-fill="xferNew">40</span> 公尺），舊路網平均要走 <span data-fill="xferOld">180</span> 公尺到另一個站牌。</li>
+      <li><b>路徑選擇</b>取「整趟時間＋每轉乘一次折算 <span data-fill="xferPenalty">5</span> 分鐘」最短的走法，不計夜間路線；實際搭乘可能因個人習慣而不同。</li>
+    </ul>
+  </div>
+  <div class="modal__foot">
+    <button class="btn btn--ink" type="button" data-modal-close>知道了</button>
+  </div>
+</dialog>
+
+<footer class="site-footer" data-stop="終點站">
+  <div class="container">
+    <div class="site-footer__terminal" aria-hidden="true"><span class="site-footer__stop">終點站 <small>TERMINUS</small></span></div>
+    <div class="site-footer__grid">
+      <div class="site-footer__col">
+        <a class="brand" href="index.html" aria-label="澄港公車 2027 新路網，回首頁">
+          <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+            <path d="M3 18 H18" fill="none" stroke="#E53935" stroke-width="5" stroke-linecap="round"/>
+            <path d="M18 3 V18" fill="none" stroke="#1E88E5" stroke-width="5" stroke-linecap="round"/>
+            <path d="M32 32 L18 18" fill="none" stroke="#43A047" stroke-width="5" stroke-linecap="round"/>
+            <rect x="9" y="12.5" width="18" height="11" rx="5.5" fill="#FFFFFF" stroke="#1C1C1C" stroke-width="3"/>
+          </svg>
+          <span class="brand__text"><strong>澄港公車</strong><span>2027 NEW NETWORK</span></span>
+        </a>
+        <p>澄港市政府交通局・公車路網改版辦公室。新路網自 2027 年 1 月 1 日起分三階段上路。</p>
+        <form class="subscribe" data-subscribe novalidate>
+          <div class="field">
+            <label class="sr-only" for="sub-email">電子郵件</label>
+            <input class="input" id="sub-email" name="email" type="email" placeholder="訂閱路線異動通知" autocomplete="email">
+          </div>
+          <button class="btn btn--ink" type="submit">訂閱</button>
+        </form>
+      </div>
+      <nav class="site-footer__col" aria-label="頁尾導覽">
+        <p class="site-footer__title">路網資訊</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html">路網總覽</a></li>
+          <li><a href="routes.html">全部路線</a></li>
+          <li><a href="route.html">路線詳情</a></li>
+          <li><a href="compare.html">新舊比較</a></li>
+          <li><a href="index.html#timeline">改版時程</a></li>
+        </ul>
+      </nav>
+      <div class="site-footer__col">
+        <p class="site-footer__title">乘車服務</p>
+        <ul class="site-footer__links">
+          <li><a href="index.html#finder">查我的路線</a></li>
+          <li><a href="index.html#faq">票價與轉乘優惠</a></li>
+          <li><a href="compare.html#feedback">意見回饋</a></li>
+          <li><button type="button" data-toast="路網圖 PDF 將於 11 月 30 日站牌更換完成後提供下載。">下載路網圖 PDF</button></li>
+        </ul>
+      </div>
+      <div class="site-footer__col">
+        <p class="site-footer__title">聯絡我們</p>
+        <p>公車客服 <b class="num">0800-012-027</b><br>週一至週六 07:00–21:00<br>澄港市舊城區府前路 1 號 交通局 3 樓</p>
+      </div>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 澄港市政府交通局・本站為作品集虛構示範，路線與數據皆為模擬</span>
+      <span>資料更新：2026.10.23</span>
+      <a class="back-link" href="../../index.html">← 返回目錄</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$ } = App;
+  const S = App.station;
+  const C = App.colors;
+  const INK = C.ink.hex, INK3 = C.old.text, OLDC = C.old.hex, PAPER = '#FFFFFF', RULE = '#E4E4DE';
+  const YELLOW_EDGE = '#D9B300';            // 與路網圖引擎相同：黃線在白底上加深黃外框
+  const PERIOD = { peak: '尖峰', off: '離峰' };
+  const NET = { old: '2026 舊路網', new: '2027 新路網' };
+  const num = (n, d = 0) => App.fmt.num(n, d);
+  const f = n => Math.round(n * 10) / 10;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const avg = list => list.reduce((a, b) => a + b, 0) / list.length;
+
+  /* ---------- 狀態：所有畫面都由這裡重繪 ---------- */
+  const PRESETS = [['nbMkt', 'xzNight'], ['nbTerm', 'xwHub'], ['gcPier', 'ytDike'], ['xwCivic', 'science'], ['ylLake', 'central'], ['sjOld', 'hospital']];
+  const state = { from: 'nbMkt', to: 'xzNight', period: 'peak', mapNet: 'new', pick: 'to', district: '新灣區' };
+  // 其他頁可用 compare.html?from=xx&to=yy&period=off 帶入起訖
+  const qFrom = App.param('from'), qTo = App.param('to');
+  if (S(qFrom) && S(qTo) && qFrom !== qTo) { state.from = qFrom; state.to = qTo; }
+  if (App.param('period') === 'off') state.period = 'off';
+  let plans = null;
+
+  /* ---------- 由資料推得的固定數字 ---------- */
+  const statsOf = period => ({ old: App.networkStats('old', period), new: App.networkStats('new', period) });
+  const peakStats = statsOf('peak');
+  const D = App.data.districts;
+  const totalPop = D.reduce((a, d) => a + d.pop, 0);
+  const covOld = App.coverageTotal('old'), covNew = App.coverageTotal('new');
+  const round1 = v => Math.round(v * 10) / 10;
+  const popOld = round1(totalPop * covOld / 100), popNew = round1(totalPop * covNew / 100);
+  const lowest = D.reduce((a, d) => (d.new < a.new ? d : a));
+  const improved = D.filter(d => d.new > d.old).length;
+  const FILL = {
+    oldAvg: Math.round(peakStats.old.avgMinutes), newAvg: Math.round(peakStats.new.avgMinutes),
+    stations: App.data.stations.length, pairs: num(peakStats.new.pairs),
+    covOld: num(covOld, 1), covNew: round1(covNew),
+    // 用顯示出來的兩個數字相減，畫面上的加減才對得起來
+    popOld: num(popOld, 1), popNew, popGain: round1(popNew - popOld),
+    gainNote: improved === D.length ? `${D.length} 個行政區全數提升` : `${improved} 個行政區提升`,
+    lowName: lowest.name, lowNew: lowest.new, lowOld: lowest.old,
+    spdTrunk: App.data.types.trunk.speed, spdBranch: App.data.types.branch.speed, spdFeeder: App.data.types.feeder.speed,
+    spdOld: App.data.sim.oldSpeed, detourPct: App.data.sim.oldDetourPct,
+    // 停靠以 5 秒為單位取整：0.35 分＝21 秒，說明文字寫「約 20 秒」
+    dwellSec: Math.round(App.data.sim.dwellMin * 60 / 5) * 5,
+    walkSpeed: App.data.sim.walkSpeed, xferNew: App.data.sim.xferWalk.new, xferOld: App.data.sim.xferWalk.old,
+    xferPenalty: App.data.sim.xferPenalty,
+  };
+  const fill = key => {
+    if (!(key in FILL)) throw new Error('Unknown data-fill key: ' + key);
+    return FILL[key];
+  };
+  $$('[data-fill]').forEach(el => { el.textContent = fill(el.dataset.fill); });
+  $$('[data-fill-count]').forEach(el => { el.dataset.count = fill(el.dataset.fillCount); });
+
+  /* ---------- 路線查詢小工具（新舊路網共用） ---------- */
+  const routeObj = (net, id) => (net === 'old' ? App.oldRoute(id) : App.route(id));
+  const codeOf = (net, id) => (net === 'old' ? `${id} 路` : App.route(id).code);
+  const pillOf = (net, id) => (net === 'old' ? App.oldPillHTML(id, { size: 'sm' }) : App.pillHTML(id, { size: 'sm', link: true }));
+  const hwOf = (net, id, period) => routeObj(net, id).headway[period === 'peak' ? 'peak' : 'off'];
+  // 相鄰兩站的車程：與 app.js 規劃器相同的取法（環線跨越起點也成立）
+  const segMinBetween = (r, a, b) => {
+    const m = r.stops.length, ka = r.stops.indexOf(a), kb = r.stops.indexOf(b);
+    return r.segMin[(ka + 1) % m === kb ? ka : kb];
+  };
+  const dirOf = (net, leg) => {
+    const r = routeObj(net, leg.route);
+    if (r.loop) return net === 'old' ? '循環線' : '環狀線';
+    const a = r.stops.indexOf(leg.stops[0]), b = r.stops.indexOf(leg.stops[leg.stops.length - 1]);
+    return '往' + S(b > a ? r.stops[r.stops.length - 1] : r.stops[0]).name;
+  };
+
+  /* ---------- 行程拆成時間軸：步行 → 候車 → 搭乘 →（轉乘步行 → 候車 → 搭乘）… → 步行 ---------- */
+  function timeline(p) {
+    const net = p.network;
+    const accessFrom = App.accessWalk(p.from, net), accessTo = App.accessWalk(p.to, net);
+    const xfer = p.transfers ? (p.walk - accessFrom - accessTo) / p.transfers : 0;
+    // 規劃器回傳的步行只有總分鐘數，依公尺數比例分給各段步行
+    const perMeter = Math.max(0, p.minutes - p.ride - p.wait) / p.walk;
+    const waits = p.legs.map(l => hwOf(net, l.route, p.period) / 2);
+    const waitK = p.wait / waits.reduce((a, b) => a + b, 0);
+    const rideK = p.ride / p.legs.reduce((a, l) => a + l.minutes, 0);
+    const segs = [];
+    let t = 0;
+    const push = seg => { seg.start = t; t += seg.dur; seg.end = t; segs.push(seg); };
+    push({ type: 'walk', kind: 'access', dur: accessFrom * perMeter, meters: accessFrom, at: p.from });
+    p.legs.forEach((l, k) => {
+      push({ type: 'wait', dur: waits[k] * waitK, route: l.route, at: l.stops[0], transfer: k > 0 });
+      const r = routeObj(net, l.route);
+      const gaps = l.stops.slice(1).map((s, j) => segMinBetween(r, l.stops[j], s));
+      const gsum = gaps.reduce((a, b) => a + b, 0);
+      const dur = l.minutes * rideK;
+      const stopAt = [0];
+      gaps.forEach(g => stopAt.push(stopAt[stopAt.length - 1] + g / gsum * dur));
+      push({ type: 'ride', dur, route: l.route, leg: l, stopAt });
+      if (k < p.legs.length - 1) push({ type: 'walk', kind: 'transfer', dur: xfer * perMeter, meters: xfer, at: l.stops[l.stops.length - 1] });
+    });
+    push({ type: 'walk', kind: 'egress', dur: accessTo * perMeter, meters: accessTo, at: p.to });
+    // 各分項分別四捨五入，加總可能與總分鐘差 1：整條等比縮放，終點對齊行程總時間
+    const k = p.minutes / t;
+    segs.forEach(s => { s.start *= k; s.end *= k; s.dur *= k; if (s.stopAt) s.stopAt = s.stopAt.map(v => v * k); });
+    segs[segs.length - 1].end = p.minutes;
+    return { plan: p, segs, total: p.minutes };
+  }
+
+  function laneStatus(tl, t) {
+    const net = tl.plan.network;
+    const name = id => S(id).name;
+    if (t >= tl.total) return `抵達目的地・共 ${tl.total} 分鐘，轉乘 ${tl.plan.transfers} 次`;
+    const s = tl.segs.find(x => t < x.end);
+    if (s.type === 'walk') {
+      if (s.kind === 'access') return `步行 ${Math.round(s.meters)} 公尺，前往${name(s.at)}站`;
+      if (s.kind === 'egress') return `在${name(s.at)}下車，步行到目的地`;
+      return net === 'new' ? `在${name(s.at)}下車，同站轉乘` : `在${name(s.at)}下車，步行 ${Math.round(s.meters)} 公尺換站牌`;
+    }
+    if (s.type === 'wait') return `在${name(s.at)}等 ${codeOf(net, s.route)}（${PERIOD[tl.plan.period]}每 ${hwOf(net, s.route, tl.plan.period)} 分一班）`;
+    let j = 0;
+    while (j + 1 < s.stopAt.length && s.start + s.stopAt[j + 1] <= t) j++;
+    return j === 0 ? `搭 ${codeOf(net, s.route)}，從${name(s.leg.stops[0])}出發` : `搭 ${codeOf(net, s.route)}，剛過${name(s.leg.stops[j])}`;
+  }
+
+  /* ==========================================================================
+     招牌動態：新舊雙軌賽跑
+     兩條時間軸用同一把尺（1 分鐘＝同樣寬度），同時出發；路線段依序畫出、
+     小巴士沿軸前進，先到的那一軸停錶，最後標出提早幾分鐘。
+     ========================================================================== */
+  const racePlot = $('#cp-race-plot');
+  const raceSvg = $('#cp-race-svg');
+  const raceRange = $('#cp-race-range');
+  const racePlay = $('#cp-race-play');
+  const raceNow = $('#cp-race-now');
+  const raceStatus = { old: $('#cp-status-old'), new: $('#cp-status-new') };
+  const LANE_LW = { trunk: 8, branch: 6, feeder: 5 };
+  const ICONS = {
+    pause: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4.5v11M13 4.5v11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    play: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 4.2v11.6L16 10z" fill="currentColor"/></svg>',
+    replay: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10a6 6 0 1 0 2-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 3v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+  let race = null;
+  let raceW = 0;
+
+  function newRace() {
+    if (race && race.stop) race.stop();
+    const lanes = [timeline(plans.old), timeline(plans.new)];
+    race = { lanes, max: Math.max(lanes[0].total, lanes[1].total), t: 0, stop: null, el: null };
+    raceRange.max = race.max;
+    raceSvg.setAttribute('aria-label', `新舊路網行程時間軸：舊路網 ${plans.old.minutes} 分鐘、轉乘 ${plans.old.transfers} 次；新路網 ${plans.new.minutes} 分鐘、轉乘 ${plans.new.transfers} 次。`);
+    drawRace();
+    play(true);
+  }
+
+  function pillSVG(net, id, x, y, on) {
+    if (net === 'old') {
+      return `<g class="cp-rpill" data-on="${on}" data-x="${f(x)}" data-y="${y}" transform="translate(${f(x)} ${y})"><rect x="-3" y="-11" width="40" height="22" rx="11" fill="#EAEAE4"/><text x="8" y="4.5" font-size="12.5" font-weight="700" fill="${INK3}"><tspan font-size="10">舊 </tspan>${App.esc(id)}</text></g>`;
+    }
+    const r = App.route(id), c = C[r.color];
+    const trunk = r.type === 'trunk';
+    const stroke = r.color === 'yellow' ? YELLOW_EDGE : c.hex;
+    const dash = r.type === 'feeder' ? ' stroke-dasharray="4 3"' : '';
+    return `<g class="cp-rpill" data-on="${on}" data-x="${f(x)}" data-y="${y}" transform="translate(${f(x)} ${y})"><rect x="-3" y="-11" width="40" height="22" rx="11" fill="${trunk ? c.hex : PAPER}" stroke="${stroke}" stroke-width="2.5"${dash}/><text x="8" y="4.5" font-size="12.5" font-weight="800" fill="${trunk ? c.on : INK}">${r.code}</text></g>`;
+  }
+
+  // 區段說明文字：先放完整版，量過寬度放不下就換短版或拿掉（fitLabels）
+  const capSVG = (a, b, y, long, short) => (b - a < 16 ? '' :
+    `<text data-cap data-room="${f(b - a)}" data-short="${short}" x="${f((a + b) / 2)}" y="${y}" text-anchor="middle" font-size="11" font-weight="600" fill="${INK3}">${long}</text>`);
+
+  function laneSVG(tl, i, g) {
+    const net = tl.plan.network, old = net === 'old';
+    const ty = g.top + i * g.laneH, LY = ty + 62, PY = ty + 34, CY = ty + 92;
+    const X = g.X;
+    let lines = '', boxes = '', stops = '', caps = '', pills = '';
+    tl.segs.forEach((sg, k) => {
+      const a = X(sg.start), b = X(sg.end);
+      const mins = Math.round(sg.dur);
+      if (sg.type === 'walk') {
+        if (b - a > 1) lines += `<line x1="${f(a)}" y1="${LY}" x2="${f(b)}" y2="${LY}" stroke="${INK3}" stroke-width="3" stroke-linecap="round" stroke-dasharray="0.1 6"/>`;
+        if (sg.kind !== 'transfer' || old) caps += capSVG(a, b, CY, `步行 ${mins} 分`, `${mins}分`);
+      } else if (sg.type === 'wait') {
+        const r = routeObj(net, sg.route);
+        const col = old ? OLDC : r.colorHex;
+        // 候車＝站在站牌前：畫成拉長的站點；新路網轉乘是同站換車，膠囊從下車點一路延伸
+        const left = !old && sg.transfer ? X(tl.segs[k - 2].end) : a;
+        const edge = old ? '#8C8C85' : sg.transfer ? INK : (r.color === 'yellow' ? YELLOW_EDGE : col);
+        boxes += `<rect x="${f(left - 7)}" y="${LY - 8}" width="${f(b - left + 14)}" height="16" rx="8" fill="${PAPER}" stroke="${edge}" stroke-width="3"/>`;
+        if (b - left > 5) boxes += `<line x1="${f(left + 1)}" y1="${LY}" x2="${f(b - 1)}" y2="${LY}" stroke="${col}" stroke-opacity="${old ? 0.5 : 0.32}" stroke-width="6" stroke-linecap="round"/>`;
+        caps += capSVG(left, b, CY, `候車 ${mins} 分`, `${mins}分`);
+      } else {
+        const r = routeObj(net, sg.route);
+        const col = old ? OLDC : r.colorHex;
+        const lw = old ? 6 : LANE_LW[r.type];
+        const dash = old ? ' stroke-dasharray="11 7"' : r.type === 'feeder' ? ' stroke-dasharray="9 6"' : '';
+        if (!old && r.color === 'yellow') lines += `<line x1="${f(a)}" y1="${LY}" x2="${f(b)}" y2="${LY}" stroke="${YELLOW_EDGE}" stroke-width="${lw + 2.5}" stroke-linecap="round"/>`;
+        lines += `<line x1="${f(a)}" y1="${LY}" x2="${f(b)}" y2="${LY}" stroke="${col}" stroke-width="${lw}" stroke-linecap="round"${dash}/>`;
+        const sc = old ? '#8C8C85' : r.color === 'yellow' ? YELLOW_EDGE : col;
+        sg.stopAt.slice(1, -1).forEach(rel => {
+          stops += `<circle cx="${f(X(sg.start + rel))}" cy="${LY}" r="3.2" fill="${PAPER}" stroke="${sc}" stroke-width="2"/>`;
+        });
+        // 下車後若是步行（目的地或舊路網換站牌）畫白心站點；新路網轉乘站由下一段的膠囊蓋過
+        if (old || tl.segs[k + 1].kind === 'egress') stops += `<circle cx="${f(b)}" cy="${LY}" r="5.5" fill="${PAPER}" stroke="${sc}" stroke-width="3"/>`;
+        caps += capSVG(a, b, CY, `車上 ${mins} 分`, `${mins}分`);
+        pills += pillSVG(net, sg.route, a, PY, f(sg.start));
+      }
+    });
+    const p = tl.plan;
+    const head = `<text x="0" y="${ty + 13}" font-size="12" letter-spacing="0.6"><tspan font-weight="800" fill="${old ? INK3 : INK}">${NET[net]}</tspan><tspan dx="10" font-weight="500" fill="${INK3}">轉乘 ${p.transfers} 次・步行 ${num(p.walk)} 公尺</tspan></text>`;
+    const ghost = `<line x1="${X(0)}" y1="${LY}" x2="${f(X(tl.total))}" y2="${LY}" stroke="${RULE}" stroke-width="8" stroke-linecap="round"/>`;
+    const clock = `<text data-clock x="${g.W}" y="${LY + 9}" text-anchor="end" font-size="${g.narrow ? 22 : 28}" font-weight="800" fill="${INK3}">0</text>`
+      + `<text data-clocksub x="${g.W}" y="${LY + 27}" text-anchor="end" font-size="11" font-weight="700" fill="${INK3}">分鐘</text>`;
+    const start = `<g transform="translate(${X(0)} ${LY})"><circle r="11" fill="${INK}"/><text y="4" text-anchor="middle" font-size="11" font-weight="800" fill="${PAPER}">起</text></g>`;
+    const end = `<g class="cp-rend" transform="translate(${f(X(tl.total))} ${LY})"><circle r="11" fill="${PAPER}" stroke="${OLDC}" stroke-width="3"/><text y="4" text-anchor="middle" font-size="11" font-weight="800" fill="${OLDC}">訖</text></g>`;
+    const mark = `<g class="cp-rmark" transform="translate(${X(0)} ${LY})"><rect x="-12" y="-7" width="24" height="14" rx="7" fill="${INK}" stroke="${PAPER}" stroke-width="2.5" opacity="0"/><circle r="6.5" fill="${INK}" stroke="${PAPER}" stroke-width="2.5"/></g>`;
+    // 底下先鋪一層淡色的完整行程：還沒開跑（尚未捲到、或離開視窗暫停）時畫面也看得出整趟怎麼走
+    const preview = `<g opacity="0.22" aria-hidden="true">${lines}${boxes}${stops}</g>`;
+    return `<g class="cp-lane" data-net="${net}">${head}${ghost}${clock}${preview}<g clip-path="url(#cp-clip-${i})">${lines}${boxes}${stops}${caps}</g>${pills}${start}${end}${mark}</g>`;
+  }
+
+  function axisSVG(g) {
+    const sc = g.X(1) - g.X(0);
+    const step = [5, 10, 15, 20, 30, 60].find(s => s * sc >= (g.narrow ? 38 : 56)) || 60;
+    let s = '';
+    for (let m = 0; m <= race.max; m += step) {
+      const x = f(g.X(m));
+      s += `<line x1="${x}" y1="${g.top + 22}" x2="${x}" y2="${g.axisY}" stroke="#EFEFEA" stroke-width="1"/>`
+        + `<line x1="${x}" y1="${g.axisY}" x2="${x}" y2="${g.axisY + 5}" stroke="#D3D3CC" stroke-width="1.5"/>`
+        + `<text data-tick="${x}" x="${x}" y="${g.axisY + 19}" text-anchor="middle" font-size="11" font-weight="600" fill="${INK3}">${m}</text>`;
+    }
+    s += `<line x1="${g.X(0)}" y1="${g.axisY}" x2="${f(g.X(race.max))}" y2="${g.axisY}" stroke="#D3D3CC" stroke-width="1.5"/>`;
+    s += `<text data-tick="${f(g.X(race.max) + 16)}" x="${f(g.X(race.max) + 10)}" y="${g.axisY + 19}" font-size="11" font-weight="600" fill="${INK3}">分</text>`;
+    return `<g aria-hidden="true">${s}</g>`;
+  }
+
+  function bracketSVG(g) {
+    const [o, n] = race.lanes;
+    if (o.total === n.total) return '';
+    const fast = o.total < n.total ? 0 : 1;
+    const fl = race.lanes[fast], sl = race.lanes[1 - fast];
+    const LY = g.top + fast * g.laneH + 62;
+    const a = g.X(fl.total) + 14, b = g.X(sl.total);
+    return `<g class="cp-rbracket">`
+      + `<line x1="${f(a)}" y1="${LY}" x2="${f(b)}" y2="${LY}" stroke="${OLDC}" stroke-width="2.5" stroke-dasharray="3 5" stroke-linecap="round"/>`
+      + `<line x1="${f(b)}" y1="${LY - 9}" x2="${f(b)}" y2="${LY + 9}" stroke="${OLDC}" stroke-width="2.5" stroke-linecap="round"/>`
+      + `<g data-blabel data-room="${f(b - a)}" transform="translate(${f((a + b) / 2)} ${LY})"><rect x="-40" y="-11" width="80" height="22" rx="11" fill="${INK}"/><text y="4.5" text-anchor="middle" font-size="12" font-weight="800" fill="${PAPER}">提早 ${sl.total - fl.total} 分</text></g>`
+      + `</g>`;
+  }
+
+  const cursorSVG = g => `<g class="cp-rcursor" transform="translate(${g.X(0)} 0)">`
+    + `<line x1="0" y1="${g.top + 20}" x2="0" y2="${g.axisY}" stroke="${INK}" stroke-width="1.5" stroke-dasharray="2 3"/>`
+    + `<g data-clabel transform="translate(0 ${g.axisY + 15})"><rect x="-25" y="-10" width="50" height="20" rx="10" fill="${INK}"/><text y="4" text-anchor="middle" font-size="11" font-weight="800" fill="${PAPER}">0 分</text></g></g>`;
+
+  function fitLabels(g) {
+    // pill 寬度依實際字寬；同一軌相鄰 pill 重疊時往右推，但不超過時鐘欄
+    $$('.cp-lane', raceSvg).forEach(lane => {
+      let right = -Infinity;
+      $$('.cp-rpill', lane).forEach(pill => {
+        const w = Math.ceil($('text', pill).getComputedTextLength()) + 22;
+        $('rect', pill).setAttribute('width', w);
+        let x = Number(pill.dataset.x);
+        if (x - 3 < right + 4) x = right + 7;
+        x = Math.min(x, g.W - g.clockW - w);
+        pill.setAttribute('transform', `translate(${f(x)} ${pill.dataset.y})`);
+        right = x - 3 + w;
+      });
+    });
+    $$('[data-cap]', raceSvg).forEach(t => {
+      const room = Number(t.dataset.room);
+      if (t.getComputedTextLength() + 8 <= room) return;
+      t.textContent = t.dataset.short;
+      if (t.getComputedTextLength() + 6 > room) t.remove();
+    });
+    const label = $('[data-blabel]', raceSvg);
+    if (label) {
+      const w = Math.ceil($('text', label).getComputedTextLength()) + 22;
+      if (w + 16 > Number(label.dataset.room)) label.remove();
+      else { const rect = $('rect', label); rect.setAttribute('x', -w / 2); rect.setAttribute('width', w); }
+    }
+  }
+
+  // 最窄的手機（320px）時軸寬約 250px；比這更窄只會是版面重排的過渡狀態（例如整頁截圖時），
+  // 此時比例尺會變成負值，先不畫，等 ResizeObserver 在寬度恢復時重畫
+  const RACE_MIN_W = 200;
+
+  function drawRace() {
+    const cs = getComputedStyle(racePlot);
+    const W = Math.round(racePlot.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+    if (W < RACE_MIN_W) return;
+    raceW = racePlot.clientWidth;
+    const narrow = W < 560;
+    const x0 = 14, clockW = narrow ? 52 : 80;
+    const sc = (W - clockW - 12 - x0) / race.max;
+    const g = { W, narrow, clockW, top: 2, laneH: 114, X: m => x0 + m * sc };
+    g.axisY = g.top + g.laneH * 2 - 6;
+    const H = g.axisY + 32;
+    race.g = g;
+    const defs = race.lanes.map((_, i) => `<clipPath id="cp-clip-${i}"><rect data-clip x="0" y="${g.top + i * g.laneH}" width="0" height="${g.laneH}"/></clipPath>`).join('');
+    raceSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    raceSvg.setAttribute('width', W);
+    raceSvg.setAttribute('height', H);
+    raceSvg.innerHTML = `<defs>${defs}</defs>${axisSVG(g)}${race.lanes.map((tl, i) => laneSVG(tl, i, g)).join('')}${bracketSVG(g)}${cursorSVG(g)}`;
+    fitLabels(g);
+    const lanes = $$('.cp-lane', raceSvg);
+    race.el = {
+      clips: $$('[data-clip]', raceSvg),
+      marks: lanes.map(l => $('.cp-rmark', l)),
+      clocks: lanes.map(l => $('[data-clock]', l)),
+      subs: lanes.map(l => $('[data-clocksub]', l)),
+      ends: lanes.map(l => $('.cp-rend', l)),
+      pills: lanes.map(l => $$('.cp-rpill', l)),
+      cursor: $('.cp-rcursor', raceSvg),
+      clabel: $('[data-clabel]', raceSvg),
+      bracket: $('.cp-rbracket', raceSvg),
+      ticks: $$('[data-tick]', raceSvg).map(el => ({ el, x: Number(el.dataset.tick), on: true })),
+    };
+    setRaceTime(race.t);
+  }
+
+  // 每格只改屬性；狀態沒變的元素不碰
+  function setRaceTime(t) {
+    const r = race, g = r.g, el = r.el;
+    r.t = t;
+    // 這一場還沒畫出來（見 RACE_MIN_W）：只記下時間，重畫時 drawRace 會套用
+    if (!el) return;
+    r.lanes.forEach((tl, i) => {
+      const tt = Math.min(t, tl.total), x = g.X(tt), LY = g.top + i * g.laneH + 62;
+      const done = t >= tl.total;
+      el.clips[i].setAttribute('width', f(x));
+      const mk = el.marks[i];
+      mk.setAttribute('transform', `translate(${f(x)} ${LY})`);
+      // 尚未出發時不放標記，免得蓋住「起」站
+      const kind = done || t <= 0 ? 'idle' : tl.segs.find(s => tt < s.end).type === 'ride' ? 'ride' : 'foot';
+      if (mk.dataset.kind !== kind) {
+        mk.dataset.kind = kind;
+        mk.children[0].setAttribute('opacity', kind === 'ride' ? 1 : 0);
+        mk.children[1].setAttribute('opacity', kind === 'foot' ? 1 : 0);
+      }
+      const shown = String(done ? tl.total : Math.floor(tt));
+      if (el.clocks[i].textContent !== shown) el.clocks[i].textContent = shown;
+      const endEl = el.ends[i];
+      if (endEl.dataset.done !== String(done)) {
+        endEl.dataset.done = String(done);
+        const [ring, label] = endEl.children;
+        ring.setAttribute('fill', done ? INK : PAPER);
+        ring.setAttribute('stroke', done ? INK : OLDC);
+        label.setAttribute('fill', done ? PAPER : OLDC);
+        el.clocks[i].setAttribute('fill', done ? INK : INK3);
+        el.subs[i].textContent = done ? '抵達' : '分鐘';
+        el.subs[i].setAttribute('fill', done ? INK : INK3);
+      }
+      el.pills[i].forEach(pill => pill.classList.toggle('is-on', t >= Number(pill.dataset.on)));
+      const st = laneStatus(tl, t);
+      const box = raceStatus[tl.plan.network];
+      if (box.textContent !== st) box.textContent = st;
+    });
+    const fin = t >= r.max;
+    const cx = g.X(t);
+    el.cursor.setAttribute('transform', `translate(${f(cx)} 0)`);
+    el.cursor.classList.toggle('is-off', fin);
+    const lx = clamp(cx, 26, g.W - 26);
+    el.clabel.setAttribute('transform', `translate(${f(lx - cx)} ${g.axisY + 15})`);
+    // 游標標籤經過的刻度字先藏起來，免得被蓋成半個字（標籤半寬 25＋刻度字半寬）
+    el.ticks.forEach(tk => {
+      const on = fin || Math.abs(tk.x - lx) > 36;
+      if (tk.on !== on) { tk.on = on; tk.el.setAttribute('opacity', on ? 1 : 0); }
+    });
+    const ct = `${Math.floor(t)} 分`;
+    if (el.clabel.lastChild.textContent !== ct) el.clabel.lastChild.textContent = ct;
+    if (el.bracket) el.bracket.classList.toggle('is-on', fin);
+    raceRange.value = t;
+    raceRange.style.setProperty('--p', (t / r.max).toFixed(4));
+    raceNow.textContent = fin ? `全程 ${r.max} 分` : `第 ${Math.floor(t)} 分`;
+    syncPlay();
+  }
+
+  function syncPlay() {
+    const mode = race.stop ? 'pause' : race.t >= race.max ? 'replay' : 'play';
+    if (racePlay.dataset.mode === mode) return;
+    racePlay.dataset.mode = mode;
+    racePlay.innerHTML = ICONS[mode];
+    racePlay.setAttribute('aria-label', { pause: '暫停', play: '繼續播放', replay: '重新播放' }[mode]);
+  }
+
+  function play(fromStart) {
+    const r = race;
+    if (r.stop) r.stop();
+    r.stop = null;
+    if (fromStart) r.t = 0;
+    if (App.reducedMotion) { setRaceTime(r.max); return; }
+    // 整趟約 3–5.5 秒跑完；App.animate 在離開視窗、分頁隱藏時自動暫停
+    const dur = clamp(r.max * 0.04, 2.8, 5.5);
+    r.stop = App.animate(racePlot, (_, dt) => {
+      if (race !== r) { r.stop(); return; }
+      setRaceTime(Math.min(r.max, r.t + dt * r.max / dur));
+      if (r.t >= r.max) pause();
+    });
+    setRaceTime(r.t);
+  }
+
+  function pause() {
+    if (race.stop) race.stop();
+    race.stop = null;
+    syncPlay();
+  }
+
+  racePlay.addEventListener('click', () => (race.stop ? pause() : play(race.t >= race.max)));
+  raceRange.addEventListener('input', () => { pause(); setRaceTime(clamp(Number(raceRange.value), 0, race.max)); });
+  new ResizeObserver(() => { if (racePlot.clientWidth !== raceW || !race.el) drawRace(); }).observe(racePlot);
+  // 網頁字型載入後字寬會變，重新量一次 pill 與說明文字
+  document.fonts.ready.then(drawRace);
+
+  /* ---------- 判定與摘要 ---------- */
+  function renderVerdict() {
+    const o = plans.old, n = plans.new, d = o.minutes - n.minutes;
+    $('#cp-verdict-lead').textContent = `${S(state.from).name} → ${S(state.to).name}・${PERIOD[state.period]}出發`;
+    $('#cp-verdict').classList.toggle('is-even', d === 0);
+    $('#cp-verdict-who').textContent = d === 0 ? '新舊路網' : '新路網';
+    $('#cp-verdict-what').textContent = d > 0 ? '提早抵達' : d < 0 ? '較晚抵達' : '同時抵達';
+    App.count($('#cp-verdict-num'), Math.abs(d));
+    $('#cp-fact-min').innerHTML = `<s>${o.minutes}</s> → ${n.minutes} 分`;
+    $('#cp-fact-xfer').innerHTML = `<s>${o.transfers}</s> → ${n.transfers} 次`;
+    $('#cp-fact-walk').innerHTML = `<s>${num(o.walk)}</s> → ${num(n.walk)} m`;
+    $('#cp-live').textContent = `${S(state.from).name}到${S(state.to).name}，${PERIOD[state.period]}出發：舊路網 ${o.minutes} 分鐘、轉乘 ${o.transfers} 次；新路網 ${n.minutes} 分鐘、轉乘 ${n.transfers} 次。`;
+    const sf = S(state.from), stt = S(state.to);
+    $('#cp-result-lede').textContent = `${sf.name}（${sf.district}）到${stt.name}（${stt.district}），${PERIOD[state.period]}出發。舊路網要轉乘 ${o.transfers} 次，新路網${n.transfers ? `轉乘 ${n.transfers} 次` : '一車直達'}。`;
+  }
+
+  function setDelta(el, o, n, mode) {
+    const diff = n - o;
+    let text, cls = 'delta';
+    if (mode === 'count') text = diff === 0 ? '持平' : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} 次`;
+    else {
+      const pct = o ? diff / o * 100 : 0;
+      text = Math.abs(pct) < 1 ? '持平' : `${pct > 0 ? '+' : '−'}${Math.abs(pct).toFixed(0)}%`;
+      if (text === '持平') { el.className = cls; el.textContent = text; return; }
+    }
+    if (diff !== 0) cls += diff < 0 ? ' delta--good' : ' delta--bad';
+    el.className = cls;
+    el.textContent = text;
+  }
+
+  function renderMetrics() {
+    [['minutes', 'pct'], ['transfers', 'count'], ['walk', 'pct']].forEach(([key, mode]) => {
+      const box = $(`[data-metric="${key}"]`);
+      const o = plans.old[key], n = plans.new[key], max = Math.max(o, n);
+      $('.vs__bar--old', box).style.setProperty('--v', max ? (o / max).toFixed(3) : 0);
+      $('.vs__bar--new', box).style.setProperty('--v', max ? (n / max).toFixed(3) : 0);
+      App.count($('[data-v="old"]', box), o);
+      App.count($('[data-v="new"]', box), n);
+      setDelta($('.delta', box), o, n, mode);
+    });
+  }
+
+  function renderMix() {
+    const parts = p => ({ walk: Math.max(0, p.minutes - p.ride - p.wait), wait: p.wait, ride: p.ride });
+    const po = parts(plans.old), pn = parts(plans.new);
+    const max = Math.max(plans.old.minutes, plans.new.minutes);
+    [['old', po], ['new', pn]].forEach(([net, pt]) => {
+      const row = $(`.cp-mix__row[data-net="${net}"]`);
+      const p = plans[net];
+      $('.cp-mix__bar', row).style.setProperty('--v', (p.minutes / max).toFixed(3));
+      ['walk', 'wait', 'ride'].forEach(k => { $(`.cp-mix__seg--${k}`, row).style.flexGrow = pt[k]; });
+      $('.cp-mix__total', row).textContent = `${p.minutes} 分`;
+      row.title = `步行 ${pt.walk} 分・候車 ${pt.wait} 分・車上 ${pt.ride} 分`;
+    });
+    const NAME = { wait: '候車', ride: '車上', walk: '步行' };
+    const total = plans.old.minutes - plans.new.minutes;
+    const diffs = ['wait', 'ride', 'walk'].map(k => ({ k, d: po[k] - pn[k] }));
+    const say = x => (x.d > 0 ? `${NAME[x.k]}少 <b>${x.d}</b> 分` : x.d < 0 ? `${NAME[x.k]}多 <b>${-x.d}</b> 分` : `${NAME[x.k]}持平`);
+    let html;
+    if (total > 0) html = `省下的 <b>${total}</b> 分鐘裡：${diffs.sort((a, b) => b.d - a.d).map(say).join('、')}。`;
+    else if (total < 0) {
+      html = `這趟新路網多花 <b>${-total}</b> 分鐘：${diffs.sort((a, b) => a.d - b.d).map(say).join('、')}。`;
+      if (plans.old.transfers < plans.new.transfers) {
+        const olds = plans.old.legs.map(l => `${l.route} 路`).join('、');
+        html += `舊路網搭 ${olds}${plans.old.transfers === 0 ? '一車直達' : `只要轉乘 ${plans.old.transfers} 次`}，新路網要轉乘 ${plans.new.transfers} 次。`;
+      }
+    } else html = '這一趟新舊路網整趟時間相同。';
+    $('#cp-insight').innerHTML = html;
+  }
+
+  function journeyHTML(p) {
+    const net = p.network;
+    const accessFrom = App.accessWalk(p.from, net), accessTo = App.accessWalk(p.to, net);
+    const xfer = p.transfers ? Math.round((p.walk - accessFrom - accessTo) / p.transfers) : 0;
+    let html = `<li class="cp-walk"><span>步行約 ${accessFrom} 公尺到 <b>${S(p.from).name}</b> 站</span></li>`;
+    p.legs.forEach((l, k) => {
+      const r = routeObj(net, l.route);
+      const cls = net === 'old' ? ' is-old' : ` c-${r.color}`;
+      const walk = k < p.legs.length - 1
+        ? `<p class="journey__walk">${net === 'new' ? `同站轉乘・步行約 ${xfer} 公尺` : `下車後步行約 ${xfer} 公尺到另一個站牌`}</p>` : '';
+      html += `<li class="journey__leg${cls}"><span class="journey__line" aria-hidden="true"></span><div class="journey__meta">
+          <p class="cp-leg__route">${pillOf(net, l.route)}<span>${dirOf(net, l)}</span></p>
+          <p class="cp-leg__stops"><b>${S(l.stops[0]).name}</b> → <b>${S(l.stops[l.stops.length - 1]).name}</b></p>
+          <p class="cp-leg__info">${l.stops.length - 1} 站・車上 ${l.minutes} 分・${PERIOD[p.period]}每 ${hwOf(net, l.route, p.period)} 分一班</p>
+        </div>${walk}</li>`;
+    });
+    return html + `<li class="cp-walk"><span>下車後步行約 ${accessTo} 公尺到目的地</span></li>`;
+  }
+
+  function renderJourneys() {
+    ['old', 'new'].forEach(net => {
+      const p = plans[net];
+      $(`#cp-itin-${net}`).innerHTML = journeyHTML(p);
+      $(`#cp-itin-${net}-sum`).innerHTML = `<b>${p.minutes}</b> 分・轉乘 ${p.transfers} 次・步行 ${num(p.walk)} 公尺`;
+    });
+  }
+
+  /* ---------- 行程地圖 ---------- */
+  const mapSvg = $('#cp-map');
+  const map = App.map.create(mapSvg, { labels: 'major', animate: false, buses: false, link: true, onStation: id => pickStation(id) });
+  const mapScroll = $('#cp-map-scroll');
+  if (mapScroll.scrollWidth > mapScroll.clientWidth) mapScroll.scrollLeft = (mapScroll.scrollWidth - mapScroll.clientWidth) / 2;
+
+  function renderMap() {
+    const net = state.mapNet, p = plans[net];
+    map.showOld(net === 'old' ? [...new Set(p.legs.map(l => l.route))] : null);
+    map.showJourney(p);
+    // 新舊兩條行程的站點一起框進來：切換路網時畫面不跳
+    const ids = new Set([state.from, state.to]);
+    [plans.old, plans.new].forEach(pl => pl.legs.forEach(l => l.stops.forEach(s => ids.add(s))));
+    map.fit([...ids], 70, 520);
+    mapSvg.setAttribute('aria-label', `${NET[net]}行程圖：${S(state.from).name}到${S(state.to).name}，${p.minutes} 分鐘、轉乘 ${p.transfers} 次。`);
+    $('#cp-map-note').textContent = `${NET[net]}・${p.legs.map(l => codeOf(net, l.route)).join(' → ')}`;
+  }
+
+  const syncSeg = (sel, key, value) => $$(`${sel} [data-${key}]`).forEach(b => b.setAttribute('aria-pressed', b.dataset[key] === value));
+  $$('#cp-map-net [data-net]').forEach(b => b.addEventListener('click', () => {
+    state.mapNet = b.dataset.net;
+    syncSeg('#cp-map-net', 'net', state.mapNet);
+    renderMap();
+  }));
+  $$('#cp-pick [data-pick]').forEach(b => b.addEventListener('click', () => {
+    state.pick = b.dataset.pick;
+    syncSeg('#cp-pick', 'pick', state.pick);
+  }));
+
+  function pickStation(id) {
+    const isFrom = state.pick === 'from';
+    const other = isFrom ? state.to : state.from;
+    if (id === other) {
+      App.toast(`${S(id).name}已經是${isFrom ? '終點' : '起點'}，請點另一站。`, { tone: 'warn' });
+      return;
+    }
+    setTrip(isFrom ? id : state.from, isFrom ? state.to : id);
+    App.toast(`已將${isFrom ? '起點' : '終點'}改為${S(id).name}。`, { tone: 'ok' });
+  }
+
+  /* ==========================================================================
+     全市分布：4,422 組起訖「舊 − 新」分鐘數的直方圖，每 5 分鐘一格、以 0 為中心
+     ========================================================================== */
+  const BIN = 5;
+  const city = {};
+  ['peak', 'off'].forEach(period => {
+    const st = App.data.stations, diffs = [];
+    let worst = null;
+    st.forEach(a => st.forEach(b => {
+      if (a === b) return;
+      const o = App.plan(a.id, b.id, { network: 'old', period }), n = App.plan(a.id, b.id, { network: 'new', period });
+      const d = o.minutes - n.minutes;
+      diffs.push(d);
+      if (!worst || d < worst.d) worst = { from: a.id, to: b.id, d, o, n };
+    }));
+    city[period] = { diffs, worst };
+  });
+  const binOf = d => Math.round(d / BIN);
+  const allDiffs = [...city.peak.diffs, ...city.off.diffs];
+  const binLo = binOf(Math.min(...allDiffs)), binHi = binOf(Math.max(...allDiffs));
+  const nBins = binHi - binLo + 1;
+  Object.values(city).forEach(c => {
+    c.counts = new Array(nBins).fill(0);
+    c.diffs.forEach(d => { c.counts[binOf(d) - binLo]++; });
+    c.faster = c.diffs.filter(d => d >= 3).length;
+    c.even = c.diffs.filter(d => Math.abs(d) <= 2).length;
+    c.slower = c.diffs.filter(d => d <= -3).length;
+  });
+  // 兩個時段共用縱軸，切換時段時高低才能直接比較
+  const maxCount = Math.max(...city.peak.counts, ...city.off.counts);
+  const binX = i => (i + 0.5) / nBins * 100;
+  const binLabel = i => {
+    const c = (binLo + i) * BIN;
+    return c === 0 ? '新舊相差 2 分鐘內' : c > 0 ? `新路網快 ${c - 2}–${c + 2} 分` : `新路網慢 ${-c - 2}–${-c + 2} 分`;
+  };
+
+  $('#cp-bins').innerHTML = Array.from({ length: nBins }, (_, i) => {
+    const c = (binLo + i) * BIN;
+    return `<span class="cp-dist__bin${c < 0 ? ' is-slow' : c === 0 ? ' is-even' : ''}" data-i="${i}" style="--rd:${i * 14}ms"></span>`;
+  }).join('');
+  $('#cp-zero').style.setProperty('--x', binX(-binLo));
+  $('#cp-axis').innerHTML = Array.from({ length: nBins }, (_, i) => i).filter(i => ((binLo + i) * BIN) % 20 === 0).map((i, k, arr) => {
+    const c = (binLo + i) * BIN;
+    const edge = k === 0 && binX(i) < 6 ? ' is-first' : k === arr.length - 1 && binX(i) > 94 ? ' is-last' : '';
+    return `<span class="cp-dist__tick${edge}${c % 40 ? ' is-minor' : ''}" style="--x:${binX(i)}">${c === 0 ? '0' : c > 0 ? `快 ${c}` : `慢 ${-c}`}</span>`;
+  }).join('');
+
+  const bins = $$('.cp-dist__bin');
+  const binsBox = $('#cp-bins');
+  binsBox.addEventListener('pointermove', e => {
+    const bin = e.target.closest('.cp-dist__bin');
+    if (!bin) { App.tip.hide(); return; }
+    const c = city[state.period], i = Number(bin.dataset.i);
+    App.tip.show(`<strong>${binLabel(i)}</strong><span>${num(c.counts[i])} 組・占 ${num(c.counts[i] / c.diffs.length * 100, 1)}%</span>`, e.clientX, e.clientY);
+  });
+  binsBox.addEventListener('pointerleave', () => App.tip.hide());
+
+  function renderCity() {
+    const c = city[state.period], n = c.diffs.length;
+    bins.forEach((b, i) => b.style.setProperty('--h', (c.counts[i] / maxCount).toFixed(3)));
+    $('#cp-city-kicker').textContent = `${PERIOD[state.period]}・新路網快 3 分鐘以上的起訖`;
+    App.count($('#cp-city-share'), Math.round(c.faster / n * 1000) / 10);
+    $('#cp-city-split').innerHTML = `<span>變快 <b>${num(c.faster)}</b> 組・相差 2 分鐘內 <b>${num(c.even)}</b> 組・變慢 <b>${num(c.slower)}</b> 組</span><span>共 ${num(n)} 組站到站起訖</span>`;
+    const w = c.worst;
+    $('#cp-city-worst').innerHTML = `變慢最多的是 <b>${S(w.from).name} → ${S(w.to).name}</b>：舊路網 ${w.o.minutes} 分、新路網 ${w.n.minutes} 分。`
+      + (w.o.transfers < w.n.transfers ? `舊 ${w.o.legs.map(l => l.route).join('、')} 路${w.o.transfers === 0 ? '原本直達' : `只要轉乘 ${w.o.transfers} 次`}，新路網要轉乘 ${w.n.transfers} 次。` : '')
+      + `<br><button class="btn btn--line btn--sm" type="button" id="cp-worst-load">把這一趟放進上方比較</button>`;
+    $('#cp-dist-plot').setAttribute('aria-label', `${PERIOD[state.period]}時段全市 ${num(n)} 組起訖：新路網快 3 分鐘以上 ${num(c.faster)} 組，相差 2 分鐘內 ${num(c.even)} 組，慢 3 分鐘以上 ${num(c.slower)} 組。`);
+    const st = statsOf(state.period);
+    $$('[data-stat]').forEach(el => App.count(el, st.new[el.dataset.stat]));
+    $$('[data-old]').forEach(el => { const k = el.dataset.old; el.textContent = num(st.old[k], k === 'directShare' ? 1 : 0); });
+    renderCityYou();
+  }
+
+  function renderCityYou() {
+    const c = city[state.period];
+    const d = plans.old.minutes - plans.new.minutes;
+    const idx = binOf(d) - binLo;
+    bins.forEach((b, i) => b.classList.toggle('is-you', i === idx));
+    const you = $('#cp-you');
+    const x = binX(idx);
+    you.style.setProperty('--x', x);
+    you.classList.toggle('is-left', x < 12);
+    you.classList.toggle('is-right', x > 88);
+    $('span', you).textContent = d > 0 ? `你這趟 快 ${d} 分` : d < 0 ? `你這趟 慢 ${-d} 分` : '你這趟 持平';
+    const trip = `${S(state.from).name} → ${S(state.to).name}`;
+    let text;
+    if (d >= 3) {
+      const below = c.diffs.filter(x2 => x2 < d).length;
+      text = `<b>${trip}</b> 提早 ${d} 分鐘，省下的時間比全市 <b>${num(below / c.diffs.length * 100, 0)}%</b> 的起訖還多。`;
+    } else if (d > -3) text = `<b>${trip}</b> 新舊相差不到 3 分鐘，是全市 ${num(c.even)} 組「差不多」的起訖之一。`;
+    else text = `<b>${trip}</b> 多花 ${-d} 分鐘，是全市 ${num(c.slower)} 組變慢的起訖之一。若這趟對你很重要，歡迎在下方<a href="#feedback">留下意見</a>。`;
+    $('#cp-city-you').innerHTML = text;
+  }
+
+  $('#cp-city-worst').addEventListener('click', e => {
+    if (!e.target.closest('#cp-worst-load')) return;
+    const w = city[state.period].worst;
+    setTrip(w.from, w.to);
+    App.scrollTo($('#top'));
+  });
+
+  /* ---------- 時段：兩組切換鈕同步 ---------- */
+  function setPeriod(p) {
+    if (state.period === p) return;
+    state.period = p;
+    syncSeg('body', 'period', p);
+    compare();
+    renderCity();
+  }
+  $$('[data-period]').forEach(b => b.addEventListener('click', () => setPeriod(b.dataset.period)));
+
+  /* ---------- 起訖輸入 ---------- */
+  const tripForm = $('#cp-trip');
+  const fromIn = $('#cp-from'), toIn = $('#cp-to');
+  const presetBox = $('#cp-presets');
+  presetBox.innerHTML = PRESETS.map(([a, b]) => `<button class="chip" type="button" aria-pressed="false" data-value="${a}|${b}">${S(a).name} → ${S(b).name}<span class="cp-flag" hidden>新路網較慢</span></button>`).join('');
+
+  function syncInputs() {
+    fromIn.value = S(state.from).name;
+    fromIn.dataset.station = state.from;
+    toIn.value = S(state.to).name;
+    toIn.dataset.station = state.to;
+    const key = state.from + '|' + state.to;
+    $$('.chip', presetBox).forEach(b => {
+      b.setAttribute('aria-pressed', b.dataset.value === key);
+      // 標出在目前時段新路網反而較慢的範例
+      const [a, z] = b.dataset.value.split('|');
+      const slower = App.plan(a, z, { network: 'new', period: state.period }).minutes > App.plan(a, z, { network: 'old', period: state.period }).minutes;
+      $('.cp-flag', b).hidden = !slower;
+    });
+  }
+
+  function setTrip(from, to, changed) {
+    App.field.clear(tripForm);
+    if (from === to) {
+      const input = changed === 'from' ? fromIn : toIn;
+      App.field.setError(input, '起點與終點是同一站，請換一站');
+      input.focus();
+      return;
+    }
+    state.from = from;
+    state.to = to;
+    compare();
+  }
+
+  fromIn.addEventListener('stationselect', e => setTrip(e.detail.station.id, state.to, 'from'));
+  toIn.addEventListener('stationselect', e => setTrip(state.from, e.detail.station.id, 'to'));
+  tripForm.addEventListener('submit', e => {
+    e.preventDefault();
+    App.field.clear(tripForm);
+    const resolve = input => {
+      if (input.dataset.station) return input.dataset.station;
+      const hit = App.findStations(input.value)[0];
+      if (hit) return hit.id;
+      App.field.setError(input, input.value.trim() ? `找不到「${input.value.trim()}」，試試站名中的一兩個字或行政區` : '請輸入站名');
+      return null;
+    };
+    const a = resolve(fromIn), b = resolve(toIn);
+    if (!a || !b) { (a ? toIn : fromIn).focus(); return; }
+    setTrip(a, b, 'to');
+  });
+  $('#cp-swap').addEventListener('click', e => {
+    e.currentTarget.classList.toggle('is-spun');
+    setTrip(state.to, state.from);
+  });
+  presetBox.addEventListener('chipchange', e => {
+    const [a, b] = e.detail.value.split('|');
+    setTrip(a, b);
+  });
+
+  /* ---------- 全部重繪：任何改變起訖或時段的動作都走這裡 ---------- */
+  function compare() {
+    plans = {
+      old: App.plan(state.from, state.to, { network: 'old', period: state.period }),
+      new: App.plan(state.from, state.to, { network: 'new', period: state.period }),
+    };
+    syncInputs();
+    renderVerdict();
+    renderMetrics();
+    renderMix();
+    renderJourneys();
+    renderMap();
+    renderCityYou();
+    syncFeedbackTrip();
+    newRace();
+  }
+
+  /* ==========================================================================
+     行政區覆蓋率：圈圖（人口＝圓面積、覆蓋率＝圓弧）＋啞鈴圖
+     ========================================================================== */
+  const covSvg = $('#cp-cov-map');
+  // 底部多留 60 單位：新灣區人口最多、圓最大，外圈與選取框才不會被裁掉
+  App.map.create(covSvg, { labels: 'none', animate: false, buses: false, interactive: false, link: false, viewBox: [40, 40, 1170, 750] });
+  const bubbles = D.map((d, i) => {
+    const sts = App.data.stations.filter(s => s.district === d.name);
+    return { d, i, x: avg(sts.map(s => s.x)), y: avg(sts.map(s => s.y)), r: 20 * Math.sqrt(d.pop) };
+  });
+  const bubbleSVG = ({ d, i, x, y, r }) => {
+    const R = r + 7, R2 = r + 16;
+    const inside = r >= 40;
+    const ny = inside ? 0 : R2 + 28, vy = inside ? 27 : R2 + 52;
+    const halo = 'stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round" paint-order="stroke"';
+    return `<g class="cp-bub" data-district="${d.name}" transform="translate(${f(x)} ${f(y)})">
+      <circle r="${R2 + 5}" fill="#FFFFFF" fill-opacity="0.86"/>
+      <circle r="${R}" fill="none" stroke="#EAEAE4" stroke-width="8"/>
+      <circle class="cp-arc cp-arc--old" r="${R2}" fill="none" stroke="${OLDC}" stroke-width="3" pathLength="100" transform="rotate(-90)" style="--to:${100 - d.old};--rd:${i * 60}ms"/>
+      <circle class="cp-arc cp-arc--new" r="${R}" fill="none" stroke="${C.orange.hex}" stroke-width="8" pathLength="100" transform="rotate(-90)" style="--from:${100 - d.old};--to:${100 - d.new};--rd:${600 + i * 70}ms"/>
+      <circle r="${r}" fill="#FFFFFF" stroke="${INK}" stroke-opacity="0.14" stroke-width="1.5"/>
+      <circle class="cp-bub__sel" r="${R2 + 6}" fill="none" stroke="${INK}" stroke-width="3"/>
+      <text y="${ny}" text-anchor="middle" font-size="26" font-weight="900" fill="${INK}" ${halo}>${d.name}</text>
+      <text y="${vy}" text-anchor="middle" font-size="21" font-weight="700" fill="${INK}" ${halo}><tspan fill="${INK3}">${d.old}→</tspan>${d.new}%</text>
+    </g>`;
+  };
+  covSvg.insertAdjacentHTML('beforeend', `<g class="cp-bubs">${bubbles.map(bubbleSVG).join('')}</g>`);
+  covSvg.addEventListener('click', e => { const b = e.target.closest('.cp-bub'); if (b) selectDistrict(b.dataset.district); });
+  const covScroll = $('#cp-cov-scroll');
+  if (covScroll.scrollWidth > covScroll.clientWidth) covScroll.scrollLeft = (covScroll.scrollWidth - covScroll.clientWidth) / 2;
+
+  const db = $('#cp-dumbbell');
+  db.innerHTML = D.map((d, i) => `<button class="dumbbell__row cp-db-row" type="button" aria-pressed="false" data-district="${d.name}" style="--a:${d.old};--b:${d.new};--rd:${i * 70}ms" aria-label="${d.name}：舊路網 ${d.old}%，新路網 ${d.new}%">
+      <span class="dumbbell__name">${d.name}</span>
+      <span class="dumbbell__track" aria-hidden="true"><span class="dumbbell__line"></span><span class="dumbbell__old"></span><span class="dumbbell__new"></span></span>
+      <span class="dumbbell__val" aria-hidden="true">${d.old}% → <b>${d.new}%</b></span>
+    </button>`).join('');
+  db.addEventListener('click', e => { const b = e.target.closest('.cp-db-row'); if (b) selectDistrict(b.dataset.district); });
+
+  // 排序：FLIP（先記位置 → 重排 → 從舊位置補間回新位置）
+  const SORTS = {
+    geo: (a, b) => bubbles[D.indexOf(a)].x - bubbles[D.indexOf(b)].x,
+    gain: (a, b) => (b.new - b.old) - (a.new - a.old) || D.indexOf(a) - D.indexOf(b),
+    new: (a, b) => b.new - a.new,
+    pop: (a, b) => b.pop - a.pop,
+  };
+  function sortRows(kind) {
+    const rows = $$('.cp-db-row', db);
+    const first = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
+    [...D].sort(SORTS[kind]).forEach(d => db.appendChild(rows.find(r => r.dataset.district === d.name)));
+    if (App.reducedMotion) return;
+    rows.forEach(r => {
+      const dy = first.get(r) - r.getBoundingClientRect().top;
+      r.style.transition = 'none';
+      r.style.transform = dy ? `translateY(${dy}px)` : '';
+    });
+    requestAnimationFrame(() => rows.forEach(r => {
+      r.style.transition = 'transform .5s var(--ease-out), background-color var(--t-1)';
+      r.style.transform = '';
+    }));
+  }
+  sortRows('geo');
+  $('#cp-cov-sort').addEventListener('chipchange', e => sortRows(e.detail.value || 'geo'));
+
+  function selectDistrict(name) {
+    state.district = name;
+    $$('.cp-db-row', db).forEach(r => r.setAttribute('aria-pressed', r.dataset.district === name));
+    $$('.cp-bub', covSvg).forEach(b => b.classList.toggle('is-sel', b.dataset.district === name));
+    const d = D.find(x => x.name === name);
+    const sts = App.data.stations.filter(s => s.district === name);
+    const rs = App.routesOf().filter(r => sts.some(s => s.routes.includes(r.id)));
+    const os = App.data.oldRoutes.filter(o => o.stops.some(id => S(id).district === name));
+    const covO = d.pop * d.old / 100, covN = d.pop * d.new / 100;
+    $('#cp-district').innerHTML = `
+      <div class="cp-district__head"><h3 class="cp-district__name">${name}</h3><span class="tag">人口 ${num(d.pop, 1)} 萬</span></div>
+      <dl class="cp-district__grid">
+        <div><dt>高頻覆蓋率</dt><dd>${d.old}% → <b>${d.new}%</b></dd></div>
+        <div><dt>住在高頻公車旁</dt><dd>${num(covO, 1)} → <b>${num(covN, 1)}</b> 萬人</dd></div>
+        <div><dt>多照顧到</dt><dd><b>+${num(covN - covO, 1)}</b> 萬人</dd></div>
+        <div><dt>站點</dt><dd>${sts.length} 座・轉乘 ${sts.filter(s => s.transfer).length} 座</dd></div>
+      </dl>
+      <div class="cp-district__lines">
+        <p class="cp-district__line"><span class="cp-district__label">停靠新路線</span><span class="pill-group">${rs.map(r => App.pillHTML(r.id, { size: 'sm', link: true })).join('')}</span></p>
+        <p class="cp-district__line"><span class="cp-district__label">原有舊路線</span><span class="pill-group">${os.map(o => App.oldPillHTML(o.id, { size: 'sm' })).join('')}</span></p>
+      </div>`;
+  }
+  selectDistrict(state.district);
+
+  /* ==========================================================================
+     意見回饋：表單驗證、收件回條、撤回；分類統計與記憶體內的送出紀錄同步
+     ========================================================================== */
+  const FB_CATS = [
+    { id: 'route', label: '路線走向', base: 512 },
+    { id: 'headway', label: '班距與時刻', base: 438 },
+    { id: 'stop', label: '站點位置', base: 397 },
+    { id: 'transfer', label: '轉乘', base: 356 },
+    { id: 'access', label: '無障礙', base: 141 },
+    { id: 'other', label: '其他', base: 96 },
+  ];
+  const FB_BASE = FB_CATS.reduce((a, c) => a + c.base, 0);
+  const mine = [];
+  let fbSeq = 0;
+
+  const form = $('#cp-form');
+  const receipt = $('#cp-receipt');
+  const districtSel = $('#fb-district');
+  const msgEl = $('#fb-msg');
+  const replyEl = $('#fb-reply');
+  const emailField = $('#fb-email-field');
+  const emailEl = $('#fb-email');
+  const consentEl = $('#fb-consent');
+  const tripEl = $('#fb-trip');
+  const routeChips = $('#fb-routes');
+
+  $('#fb-types').innerHTML = FB_CATS.map(c => `<label class="radio cp-type"><input type="radio" name="type" value="${c.id}"><span>${c.label}</span></label>`).join('');
+  districtSel.insertAdjacentHTML('beforeend', D.map(d => `<option value="${d.name}">${d.name}</option>`).join('') + '<option value="外縣市">外縣市・觀光</option>');
+  const SWATCH = { trunk: '', branch: ' route-swatch--branch', feeder: ' route-swatch--feeder', night: ' route-swatch--night' };
+  routeChips.innerHTML = App.routesOf().map(r => `<button class="chip" type="button" aria-pressed="false" data-value="${r.id}"><span class="route-swatch${SWATCH[r.type]} c-${r.color}" aria-hidden="true"></span>${r.code}</button>`).join('');
+
+  const tallyBox = $('#fb-tally');
+  tallyBox.innerHTML = FB_CATS.map(c => `<li class="cp-tally__row" data-cat="${c.id}"><span class="cp-tally__name">${c.label}</span><span class="bar"><span class="bar__fill"></span></span><span class="cp-tally__n"><span data-n>0</span><span class="cp-tally__mine" hidden></span></span></li>`).join('');
+
+  function renderTally() {
+    const rows = FB_CATS.map(c => ({ c, n: c.base, m: mine.filter(s => s.type === c.id).length }));
+    const max = Math.max(...rows.map(r => r.n + r.m));
+    rows.forEach(({ c, n, m }) => {
+      const li = $(`[data-cat="${c.id}"]`, tallyBox);
+      $('.bar__fill', li).style.setProperty('--v', ((n + m) / max).toFixed(3));
+      $('[data-n]', li).textContent = num(n + m);
+      const tag = $('.cp-tally__mine', li);
+      tag.hidden = !m;
+      tag.textContent = `含你的 ${m} 則`;
+    });
+    $('#fb-total').textContent = num(FB_BASE + mine.length);
+  }
+  renderTally();
+
+  function syncFeedbackTrip() {
+    $('#fb-trip-text').textContent = `${S(state.from).name} → ${S(state.to).name}（${PERIOD[state.period]}）`;
+  }
+
+  const pressedRoutes = () => $$('.chip[aria-pressed="true"]', routeChips).map(b => b.dataset.value);
+  const setRoutes = ids => $$('.chip', routeChips).forEach(b => b.setAttribute('aria-pressed', ids.includes(b.dataset.value)));
+  $('#fb-routes-fill').addEventListener('click', () => {
+    const ids = [...new Set(plans.new.legs.map(l => l.route))];
+    setRoutes([...new Set([...pressedRoutes(), ...ids])]);
+    App.toast(`已帶入 ${ids.map(id => App.route(id).code).join('、')}。`, { tone: 'ok' });
+  });
+
+  const syncReply = () => {
+    emailField.hidden = !replyEl.checked;
+    if (!replyEl.checked) App.field.clear(emailField);
+  };
+  replyEl.addEventListener('change', () => { syncReply(); if (form.dataset.tried) validate(); });
+  const syncCount = () => { $('#fb-msg-count').textContent = `${msgEl.value.length} / 500`; };
+  msgEl.addEventListener('input', syncCount);
+  // 第一次送出失敗後，邊改邊重新檢查，錯誤訊息會隨修正消失
+  form.addEventListener('input', () => { if (form.dataset.tried) validate(); });
+  form.addEventListener('change', () => { if (form.dataset.tried) validate(); });
+
+  function validate() {
+    App.field.clear(form);
+    const errs = [];
+    const type = form.querySelector('input[name="type"]:checked');
+    if (!type) errs.push([form.querySelector('input[name="type"]'), '請選擇意見類型']);
+    if (!districtSel.value) errs.push([districtSel, '請選擇居住或常用的行政區']);
+    const msg = msgEl.value.trim();
+    if (!msg) errs.push([msgEl, '請填寫意見內容']);
+    else if (msg.length < 15) errs.push([msgEl, `再多寫 ${15 - msg.length} 個字：哪一站、哪個時段、遇到什麼狀況`]);
+    if (replyEl.checked) {
+      const v = emailEl.value.trim();
+      if (!v) errs.push([emailEl, '開啟回覆時請留下電子郵件']);
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) errs.push([emailEl, '電子郵件格式不正確，例如 name@example.com']);
+    }
+    if (!consentEl.checked) errs.push([consentEl, '請勾選同意後再送出']);
+    errs.forEach(([el, m]) => App.field.setError(el, m));
+    return errs;
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    form.dataset.tried = '1';
+    const errs = validate();
+    if (errs.length) {
+      errs[0][0].focus();
+      App.toast(`還有 ${errs.length} 個欄位需要修正。`, { tone: 'error', title: '尚未送出' });
+      return;
+    }
+    const type = form.querySelector('input[name="type"]:checked').value;
+    const sub = {
+      no: `CG-FB-2610-${String(FB_BASE + ++fbSeq).padStart(5, '0')}`,
+      type, district: districtSel.value, message: msgEl.value.trim(), name: $('#fb-name').value.trim(),
+      reply: replyEl.checked, email: emailEl.value.trim(), routes: pressedRoutes(),
+      trip: tripEl.checked ? { from: state.from, to: state.to, period: state.period } : null,
+      at: App.now(),
+    };
+    mine.push(sub);
+    renderTally();
+    showReceipt(sub);
+    App.toast(`意見編號 ${sub.no}，${sub.reply ? '規劃小組會在 14 天內回信。' : '可憑編號查詢處理進度。'}`, { tone: 'ok', title: '已收到你的意見' });
+  });
+
+  function showReceipt(sub) {
+    const cat = FB_CATS.find(c => c.id === sub.type);
+    const pad = n => String(n).padStart(2, '0');
+    const at = sub.at;
+    receipt.innerHTML = `
+      <div class="cp-receipt__top">
+        <div>
+          <p class="kicker c-red">已收件</p>
+          <h3 class="h3" id="fb-receipt-title" style="margin-top: 8px">謝謝你，意見已送出</h3>
+        </div>
+        <div><p class="small muted">意見編號</p><p class="cp-receipt__no">${sub.no}</p></div>
+      </div>
+      <dl class="dl">
+        <dt>送出時間</dt><dd class="num">${at.getFullYear()}.${pad(at.getMonth() + 1)}.${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}</dd>
+        <dt>類型</dt><dd>${cat.label}</dd>
+        <dt>行政區</dt><dd>${App.esc(sub.district)}</dd>
+        <dt>相關起訖</dt><dd>${sub.trip ? `${S(sub.trip.from).name} → ${S(sub.trip.to).name}（${PERIOD[sub.trip.period]}）` : '未附'}</dd>
+        <dt>相關路線</dt><dd>${sub.routes.length ? `<span class="pill-group">${sub.routes.map(id => App.pillHTML(id, { size: 'sm' })).join('')}</span>` : '未指定'}</dd>
+        <dt>回覆方式</dt><dd>${sub.reply ? App.esc(sub.email) : '不需回覆'}</dd>
+      </dl>
+      <p class="cp-receipt__msg">${App.esc((sub.name ? `${sub.name}：` : '') + sub.message)}</p>
+      <ol class="cp-track" aria-label="處理進度：已收件"><li>收件</li><li>分類</li><li>回覆</li><li>公告</li></ol>
+      <div class="cluster">
+        <button class="btn btn--line" type="button" data-act="undo">撤回這則意見</button>
+        <button class="btn btn--ink" type="button" data-act="again">再寫一則</button>
+      </div>`;
+    form.hidden = true;
+    receipt.hidden = false;
+    receipt.focus();
+  }
+
+  function hideReceipt() {
+    receipt.hidden = true;
+    receipt.innerHTML = '';
+    form.hidden = false;
+  }
+
+  function resetForm() {
+    form.reset();
+    delete form.dataset.tried;
+    App.field.clear(form);
+    setRoutes([]);
+    syncReply();
+    syncCount();
+  }
+
+  $('#fb-clear').addEventListener('click', () => { resetForm(); App.toast('已清除表單內容。'); });
+  receipt.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'again') {
+      resetForm();
+      hideReceipt();
+      form.querySelector('input[name="type"]').focus();
+      return;
+    }
+    // 撤回：回條顯示的一定是最新一則；從送出紀錄移除、統計同步扣回，原內容放回表單方便修改後重送
+    const sub = mine.pop();
+    renderTally();
+    resetForm();
+    form.querySelector(`input[name="type"][value="${sub.type}"]`).checked = true;
+    districtSel.value = sub.district;
+    msgEl.value = sub.message;
+    $('#fb-name').value = sub.name;
+    replyEl.checked = sub.reply;
+    emailEl.value = sub.email;
+    tripEl.checked = !!sub.trip;
+    consentEl.checked = true;
+    setRoutes(sub.routes);
+    syncReply();
+    syncCount();
+    hideReceipt();
+    msgEl.focus();
+    App.toast(`意見 ${sub.no} 已撤回，內容已放回表單。`, { tone: 'warn', title: '已撤回' });
+  });
+
+  // 從結果區「對這一趟有意見」跳過來時，預先勾選附上起訖
+  $('#cp-to-feedback').addEventListener('click', () => { tripEl.checked = true; });
+
+  /* ---------- 啟動 ---------- */
+  syncSeg('body', 'period', state.period);
+  compare();
+  renderCity();
+});
+</script>
+</body>
+</html>
