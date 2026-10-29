@@ -1,0 +1,1813 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案件詳情與媒合 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="單一申請案件：申請內容與附件、初審、條件式媒合與條件漏斗、推薦名單、順位邀請 48 小時倒數、鐘點費預估與處理紀錄。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     application.html：案件詳情與媒合（頁面專屬，class 前綴 ap-）
+     ===================================================================== */
+
+  /* ---------- 頁首 ---------- */
+  .ap-head .page-head__main { max-width: 640px; }
+  .ap-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .ap-id {
+    font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; letter-spacing: .03em; white-space: nowrap;
+    padding: 2px 10px; border-radius: var(--r-xs); color: var(--forest); background: var(--forest-50); box-shadow: inset 0 0 0 1px var(--forest-100);
+  }
+  .ap-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+  .ap-facts > span { display: inline-flex; align-items: center; gap: 6px; }
+  .ap-facts .i { width: 17px; height: 17px; color: var(--forest); }
+  .ap-switch { display: inline-flex; align-items: center; gap: 6px; }
+  .ap-switch__info { padding: 0 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+  .ap-switch__info b { font-family: var(--font-en); color: var(--ink); }
+
+  /* ---------- 案件進度帶（深綠，與總覽管線同一語彙） ---------- */
+  .ap-band {
+    position: relative; isolation: isolate; overflow: hidden;
+    padding: 18px 22px 16px; border-radius: var(--r-lg);
+    background: radial-gradient(120% 170% at 92% -40%, #2B6D58 0%, var(--forest) 45%, var(--forest-800) 100%);
+    color: var(--on-forest); box-shadow: var(--sh-2);
+  }
+  .ap-band::before {
+    /* 細水紋：只是質感，高齡模式關閉 */
+    content: ""; position: absolute; inset: 0; z-index: -1; opacity: .45; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40' fill='none' stroke='%23A8D672' stroke-opacity='.12' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M4 20c8-6 16-6 24 0s16 6 24 0'/%3E%3Cpath d='M64 34c6-4 12-4 18 0'/%3E%3C/svg%3E") 0 0 / 120px 40px;
+  }
+  html.is-senior .ap-band { background: var(--forest-800); }
+  html.is-senior .ap-band::before { display: none; }
+  .ap-band__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 20px; }
+  .ap-band__title { display: flex; align-items: center; gap: 10px; font-family: var(--font-tc); font-size: var(--fs-md); font-weight: 900; color: var(--paper); }
+  .ap-band__title .i { width: 22px; height: 22px; color: var(--sprout); }
+  .ap-band__sub { margin-top: 3px; font-size: var(--fs-sm); color: var(--on-forest-2); max-width: 46em; }
+  .ap-band__sub b { color: var(--paper); }
+  .ap-band__meta { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+  .ap-dchip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 2px 11px; border-radius: var(--r-pill);
+    background: rgba(246, 243, 234, .08); box-shadow: inset 0 0 0 1px rgba(246, 243, 234, .18);
+    font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); white-space: nowrap; line-height: 1.7;
+  }
+  .ap-dchip b { font-family: var(--font-en); font-weight: 800; color: var(--paper); }
+  .ap-dchip--hot { background: var(--clay-glow); color: #3A1A06; box-shadow: none; }
+  .ap-dchip--hot b { color: #3A1A06; }
+  .ap-rail-wrap { margin: 16px -8px 0; padding: 6px 8px 4px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(246, 243, 234, .3) transparent; }
+  .ap-rail { display: grid; grid-template-columns: repeat(9, minmax(92px, 1fr)); }
+  html.is-senior .ap-rail { grid-template-columns: repeat(9, minmax(108px, 1fr)); }
+  .ap-step { position: relative; display: grid; justify-items: center; align-content: start; gap: 3px; padding: 0 4px; text-align: center; min-width: 0; }
+  .ap-step + .ap-step::before {
+    content: ""; position: absolute; top: 18px; left: calc(-50% + 25px); right: calc(50% + 25px);
+    height: 3px; border-radius: 2px; background: rgba(246, 243, 234, .2);
+  }
+  .ap-step.is-done::before, .ap-step.is-current::before { background: var(--sprout); }
+  .ap-step.is-exit::before { background: #F4B5AA; }
+  .ap-step__dot {
+    position: relative; width: 39px; height: 39px; margin-bottom: 5px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--forest-900); color: var(--on-forest-3); box-shadow: inset 0 0 0 2px rgba(246, 243, 234, .28);
+  }
+  .ap-step__dot .i { width: 19px; height: 19px; }
+  .ap-step.is-done .ap-step__dot { background: var(--sprout); color: var(--forest-900); box-shadow: none; }
+  .ap-step.is-current .ap-step__dot { background: var(--paper); color: var(--forest); box-shadow: 0 0 0 4px rgba(168, 214, 114, .32), 0 0 24px 2px rgba(168, 214, 114, .45); }
+  .ap-step.is-current.is-hot .ap-step__dot { color: #7A3B12; box-shadow: 0 0 0 4px rgba(242, 178, 122, .35), 0 0 24px 2px rgba(242, 178, 122, .55); }
+  .ap-step.is-current .ap-step__dot::after {
+    content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--sprout);
+    animation: ap-pulse 2.4s var(--ease-out) infinite; pointer-events: none;
+  }
+  .ap-step.is-current.is-hot .ap-step__dot::after { border-color: var(--clay-glow); }
+  .ap-band.is-paused .ap-step__dot::after { animation-play-state: paused; }
+  @keyframes ap-pulse { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
+  .ap-step.is-exit .ap-step__dot { background: #F4B5AA; color: #5C150D; box-shadow: none; }
+  .ap-step__label { font-size: var(--fs-sm); font-weight: 800; line-height: 1.3; color: var(--on-forest-3); }
+  .ap-step.is-done .ap-step__label { color: var(--on-forest); }
+  .ap-step.is-current .ap-step__label, .ap-step.is-exit .ap-step__label { color: var(--paper); }
+  .ap-step__date { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 600; color: var(--on-forest-3); line-height: 1.5; }
+  .ap-step__now { display: inline-flex; padding: 0 9px; border-radius: var(--r-pill); background: var(--sprout); color: var(--forest-900); font-size: var(--fs-xs); font-weight: 900; line-height: 1.65; white-space: nowrap; }
+  .ap-step__sla { font-size: var(--fs-xs); font-weight: 800; color: var(--on-forest-2); line-height: 1.5; }
+  .ap-step__sla.is-hot { color: var(--clay-glow); }
+
+  /* ---------- 版面 ---------- */
+  .ap-alert { margin-top: clamp(16px, 1.6vw, 22px); }
+  .ap-alert:empty { display: none; }
+  .ap-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: clamp(16px, 1.6vw, 22px); align-items: start; margin-top: clamp(16px, 1.6vw, 22px); }
+  html.is-senior .ap-layout { grid-template-columns: minmax(0, 1fr) 400px; }
+  .ap-layout.is-exit, html.is-senior .ap-layout.is-exit { grid-template-columns: minmax(0, 1fr); }
+  .ap-layout.is-exit > .ap-col:first-child { display: none; }
+  .ap-layout.is-exit > .ap-col:last-child { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .ap-col { display: grid; gap: clamp(16px, 1.6vw, 22px); align-content: start; min-width: 0; }
+  .ap-cap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-bottom: 10px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); }
+  .ap-cap b { font-family: var(--font-en); color: var(--ink); letter-spacing: 0; }
+  .card[hidden] { display: none; }
+
+  /* ---------- 初審 ---------- */
+  .ap-decide { justify-content: flex-end; }
+  .ap-decide__note { margin-right: auto; }
+  .ap-need { margin-bottom: 14px; }
+
+  /* ---------- 媒合：鎖定預覽 ---------- */
+  .ap-locked { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 18px; align-items: start; }
+  .ap-locked__icon { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--paper-2); color: var(--ink-3); }
+  .ap-locked__icon .i { width: 22px; height: 22px; }
+  .ap-locked__title { font-weight: 800; }
+  .ap-locked__text { margin-top: 2px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .ap-locked__text b { font-family: var(--font-en); color: var(--forest); font-size: var(--fs-md); }
+  .ap-mini-funnel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+  .ap-mini-funnel li { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: var(--r-pill); background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); }
+  .ap-mini-funnel li b { font-family: var(--font-en); font-size: var(--fs-sm); color: var(--ink); }
+  .ap-mini-funnel li:last-child { background: var(--sprout-200); box-shadow: inset 0 0 0 1.5px var(--forest); color: var(--forest-900); }
+  .ap-mini-funnel .i { width: 14px; height: 14px; color: var(--ink-4); }
+
+  /* ---------- 媒合：條件面板 ---------- */
+  .ap-crit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  html.is-senior .ap-crit { grid-template-columns: minmax(0, 1fr); }
+  .ap-crit__row {
+    display: grid; gap: 8px; align-content: start; min-width: 0;
+    padding: 10px 14px 12px; border-radius: var(--r-sm); background: var(--paper); border: 1px solid var(--line-soft);
+    transition: background var(--dur-2), border-color var(--dur-2);
+  }
+  .ap-crit__row.is-off { background: var(--card); border: 1px dashed var(--line-2); }
+  .ap-crit__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ap-crit__top .switch { font-size: var(--fs-sm); }
+  .ap-crit__drop { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--clay-ink); white-space: nowrap; }
+  .ap-crit__drop small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; margin-left: 2px; }
+  .ap-crit__drop.is-zero { color: var(--ok); }
+  .ap-crit__drop.is-off { color: var(--ink-3); font-family: var(--font-sans); font-size: var(--fs-xs); }
+  .ap-crit__param { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 30px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .ap-crit__param .seg { flex-wrap: wrap; }
+  .ap-crit__range { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; }
+  .ap-crit__range output { min-width: 5.2em; text-align: right; font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--ink); white-space: nowrap; }
+  .ap-date { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 6px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--fs-xs); font-weight: 700; line-height: 1.75; white-space: nowrap; }
+  .ap-crit-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 12px; font-size: var(--fs-sm); color: var(--ink-3); }
+  .ap-crit-foot b { font-family: var(--font-en); color: var(--forest); }
+
+  /* 漏斗外框 */
+  #ap-funnel { min-height: 120px; }
+  .ap-funnel { margin-top: 16px; padding: 14px 16px 16px; border-radius: var(--r-md); background: linear-gradient(180deg, var(--sprout-50), var(--card) 80%); border: 1px solid var(--line-soft); }
+
+  /* ---------- 推薦名單 ---------- */
+  .ap-rank-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px 10px; border-top: 1px solid var(--line-soft); }
+  .ap-rank-title { display: flex; align-items: center; gap: 10px; font-size: var(--fs-base); font-weight: 800; }
+  .ap-rank-title .i { width: 20px; height: 20px; color: var(--forest); }
+  .ap-rank-title b { font-family: var(--font-en); color: var(--forest); }
+  .ap-formula { font-size: var(--fs-sm); color: var(--ink-2); }
+  .ap-formula summary { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; cursor: pointer; font-weight: 700; color: var(--forest); list-style: none; }
+  .ap-formula summary::-webkit-details-marker { display: none; }
+  .ap-formula summary .i { width: 16px; height: 16px; }
+  html.is-senior .ap-formula summary { min-height: 48px; }
+  .ap-formula p { margin-top: 6px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--paper); line-height: 1.7; }
+  .ap-cands { display: grid; }
+  .ap-cand { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 14px; padding: 16px 20px; border-top: 1px solid var(--line-soft); }
+  .ap-cand.is-queued { background: linear-gradient(90deg, var(--sprout-50), rgba(243, 249, 234, 0) 70%); }
+  .ap-cand.is-invited { background: linear-gradient(90deg, var(--clay-50), rgba(251, 242, 234, 0) 70%); }
+  .ap-cand.is-out { background: var(--paper); }
+  .ap-cand__rank { padding-top: 4px; text-align: center; font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1; color: var(--ink-3); }
+  .ap-cand:nth-child(-n+3) .ap-cand__rank { color: var(--forest); }
+  .ap-cand__body { display: grid; gap: 10px; min-width: 0; }
+  .ap-cand__top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+  .ap-cand__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .ap-cand__name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: var(--fs-base); font-weight: 800; line-height: 1.35; }
+  .ap-cand__name a { color: var(--ink); text-decoration: none; }
+  .ap-cand__name a:hover { color: var(--forest); text-decoration: underline; }
+  html.is-senior .ap-cand__name a { display: inline-flex; align-items: center; min-height: 48px; }
+  .ap-cand__sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .ap-score { display: grid; grid-template-columns: auto auto; align-items: center; gap: 2px 10px; }
+  .ap-score__label { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .ap-score__n { grid-row: span 2; font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1; color: var(--ink); }
+  .ap-score .meter { width: 84px; }
+  .ap-why, .ap-warn { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ap-why li, .ap-warn li { display: inline-flex; align-items: center; gap: 5px; padding: 1px 10px 1px 7px; border-radius: 7px; font-size: var(--fs-xs); font-weight: 700; line-height: 1.7; }
+  .ap-why li { background: var(--forest-50); color: var(--forest-900); }
+  .ap-why .i { width: 14px; height: 14px; color: var(--ok); }
+  .ap-warn li { background: var(--clay-50); color: var(--clay-ink); box-shadow: inset 0 0 0 1px var(--clay-200); }
+  .ap-warn .i { width: 14px; height: 14px; color: var(--clay-ink); }
+  .ap-warn li.is-none { background: none; box-shadow: none; color: var(--ok); padding-left: 0; }
+  .ap-warn li.is-none .i { color: var(--ok); }
+  .ap-cand__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+  .ap-cand__meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .ap-cand__meta b { font-family: var(--font-en); color: var(--ink-2); }
+  .ap-cand__act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ap-cands.is-enter .ap-cand { animation: ap-rise .55s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 80ms); }
+  @keyframes ap-rise { from { opacity: 0; transform: translateY(12px); } }
+  .ap-more { padding: 12px 20px 16px; border-top: 1px solid var(--line-soft); }
+  .ap-empty-act { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0 20px 22px; }
+
+  /* ---------- 順位邀請：主角卡（48 小時倒數環） ---------- */
+  .ap-hero {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 22px; align-items: center; align-content: center;
+    padding: 18px 20px; border-radius: var(--r-md); background: var(--paper); border: 1px solid var(--line-soft);
+  }
+  .ap-hero[data-state="pending"] { background: linear-gradient(115deg, var(--clay-50), var(--card) 72%); border-color: var(--clay-200); }
+  .ap-hero[data-state="overdue"] { background: linear-gradient(115deg, var(--err-bg), var(--card) 72%); border-color: var(--err-line); }
+  .ap-hero[data-state="designated"] { background: linear-gradient(115deg, var(--sky-50), var(--card) 72%); border-color: var(--sky-200); }
+  .ap-hero[data-state="accepted"] { background: linear-gradient(115deg, var(--sprout-50), var(--card) 72%); border-color: var(--forest-100); }
+  .ap-ring { position: relative; width: 116px; height: 116px; display: grid; place-items: center; flex: none; }
+  html.is-senior .ap-ring { width: 128px; height: 128px; }
+  .ap-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ap-ring__track { stroke: var(--paper-3); }
+  .ap-ring__arc { stroke: var(--clay); transition: stroke-dasharray .9s var(--ease-out); }
+  .ap-ring__tick { stroke: var(--line-2); }
+  .ap-ring__head { fill: var(--clay-ink); }
+  .ap-hero[data-state="designated"] .ap-ring__arc { stroke: var(--sky); }
+  .ap-hero[data-state="accepted"] .ap-ring__arc { stroke: var(--forest); }
+  .ap-hero[data-state="overdue"] .ap-ring__track { stroke: var(--err-line); }
+  .ap-hero[data-state="idle"] .ap-ring__track { stroke: var(--line-2); }
+  .ap-ring .avatar { width: 62px; height: 62px; font-size: 25px; }
+  .ap-ring__empty { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); color: var(--ink-3); }
+  .ap-ring__empty .i { width: 26px; height: 26px; }
+  .ap-hero__main { display: contents; }
+  .ap-ring { grid-column: 1; grid-row: 1 / span 4; }
+  .ap-hero__main > * { grid-column: 2; min-width: 0; }
+  .ap-hero__eyebrow .i { width: 1.15em; height: 1.15em; margin-right: 6px; vertical-align: -.2em; }
+  .ap-hero__eyebrow { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .05em; color: var(--clay-ink); }
+  .ap-hero[data-state="designated"] .ap-hero__eyebrow { color: var(--sky-ink); }
+  .ap-hero[data-state="overdue"] .ap-hero__eyebrow { color: var(--err); }
+  .ap-hero[data-state="accepted"] .ap-hero__eyebrow, .ap-hero[data-state="idle"] .ap-hero__eyebrow { color: var(--forest); }
+  .ap-hero__name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: var(--fs-lg); font-weight: 900; line-height: 1.3; }
+  .ap-hero__name a { color: var(--ink); text-decoration: none; }
+  .ap-hero__name a:hover { color: var(--forest); text-decoration: underline; }
+  html.is-senior .ap-hero__name a { display: inline-flex; align-items: center; min-height: 48px; }
+  .ap-hero__name span { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-3); }
+  .ap-clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 2px; margin-top: 2px; font-family: var(--font-en); font-size: var(--fs-2xl); font-weight: 800; line-height: 1.15; color: var(--ink); }
+  .ap-clock small { margin: 0 8px 0 3px; font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); }
+  .ap-clock__cap { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 800; color: var(--ink-2); margin-left: 4px; }
+  .ap-hero[data-state="overdue"] .ap-clock b { color: var(--err); }
+  .ap-hero__note { font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.6; }
+  .ap-hero__note b { color: var(--ink); }
+  .ap-hero__acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding-top: 14px; border-top: 1px dashed var(--line-2); }
+  .ap-hero__done { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 800; color: var(--ok); }
+  .ap-hero__done .i { width: 16px; height: 16px; }
+
+  /* ---------- 順位邀請：接力軌（橫向；手機與高齡改直向） ---------- */
+  .ap-relay-cap { margin-top: 20px; }
+  .ap-relay { --dot: 42px; position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .ap-node { position: relative; display: grid; justify-items: center; align-content: start; gap: 2px; min-width: 0; padding: 0 4px; text-align: center; }
+  .ap-node__dot {
+    position: relative; z-index: 1; width: var(--dot); height: var(--dot); margin-bottom: 6px; border-radius: 50%;
+    display: grid; place-items: center; background: var(--card); border: 2px solid var(--line-2); color: var(--ink-2);
+    font-family: var(--font-tc); font-size: var(--fs-sm); font-weight: 800;
+  }
+  .ap-node__dot .i { width: 18px; height: 18px; }
+  .ap-node__mark { position: absolute; right: -5px; bottom: -5px; width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--card); }
+  .ap-node__mark .i { width: 12px; height: 12px; }
+  .ap-node__head, .ap-node__st { display: grid; justify-items: center; gap: 2px; min-width: 0; }
+  .ap-node__st { gap: 3px; }
+  .ap-node__rank { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .04em; color: var(--ink-3); }
+  .ap-node__name { font-size: var(--fs-sm); font-weight: 800; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; line-height: 1.4; }
+  a.ap-node__name:hover { color: var(--forest); text-decoration: underline; }
+  html.is-senior a.ap-node__name { display: inline-flex; align-items: center; min-height: 48px; }
+  .ap-node__time { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .ap-node__ctl { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; margin-top: 4px; }
+  .ap-node__ctl .icon-btn { min-width: var(--ctl-h-sm); min-height: var(--ctl-h-sm); }
+  .ap-node__ctl .icon-btn .i { width: 18px; height: 18px; }
+  .ap-node[data-state="pending"] .ap-node__dot { background: var(--av); border-color: var(--clay); color: var(--paper); box-shadow: 0 0 0 4px var(--clay-100); }
+  .ap-node[data-state="expired"] .ap-node__dot, .ap-node[data-state="declined"] .ap-node__dot { background: var(--paper-2); color: var(--ink-3); }
+  .ap-node[data-state="expired"] .ap-node__mark, .ap-node[data-state="declined"] .ap-node__mark { background: var(--clay-100); color: var(--clay-ink); }
+  .ap-node[data-state="plan"] .ap-node__dot { border-style: dashed; }
+  .ap-node[data-state="accepted"] .ap-node__dot { background: var(--forest); border-color: var(--forest); color: var(--paper); }
+  .ap-node[data-state="accepted"] .ap-node__mark { background: var(--sprout); color: var(--forest-900); }
+  .ap-node[data-state="leave"] .ap-node__dot { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+  .ap-node[data-state="leave"] .ap-node__mark { background: var(--err); color: #fff; }
+  .ap-node[data-state="goal"] .ap-node__dot { background: var(--sprout-100); border-color: var(--forest); color: var(--forest); }
+  .ap-node[data-state="goal"].is-reached .ap-node__dot { background: var(--forest); color: var(--paper); }
+  /* 橫向連線：屬於「進入此節點」的線段 */
+  .ap-node + .ap-node::before {
+    content: ""; position: absolute; top: calc(var(--dot) / 2 - 1.5px); left: calc(-50% + var(--dot) / 2 + 4px); right: calc(50% + var(--dot) / 2 + 4px);
+    height: 3px; border-radius: 2px; background: var(--line);
+  }
+  .ap-node[data-link="done"]::before { background: var(--clay-200); }
+  .ap-node[data-link="ok"]::before { background: var(--forest); }
+  .ap-node[data-link="over"]::before { background: var(--clay); }
+  .ap-node[data-link="live"]::before { background: linear-gradient(90deg, var(--clay) calc(var(--p, 0) * 100%), var(--line) 0); }
+  .ap-node[data-link="plan"]::before { background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 11px); }
+  /* 接力棒：一片陶土色葉子，位置＝已經過的 48 小時比例 */
+  .ap-baton {
+    position: absolute; z-index: 2; width: 16px; height: 11px; border-radius: 11px 2px 11px 2px;
+    background: var(--clay); box-shadow: 0 3px 8px -2px rgba(154, 82, 35, .55);
+    animation: ap-bob 1.5s ease-in-out infinite alternate;
+  }
+  .ap-baton--h { top: calc(var(--dot) / 2 - 5.5px); left: calc(-50% + var(--dot) / 2 + 4px + (100% - var(--dot) - 8px) * var(--p, 0)); margin-left: -8px; }
+  .ap-baton--v { display: none; }
+  @keyframes ap-bob { from { transform: translateY(-2.5px) rotate(-10deg); } to { transform: translateY(2.5px) rotate(10deg); } }
+  #invite.is-paused .ap-baton { animation-play-state: paused; }
+  /* 直向：連線改由「離開此節點」的線段畫出 */
+  .ap-relay.is-vertical { grid-auto-flow: row; grid-auto-columns: auto; }
+  .is-vertical .ap-node { grid-template-columns: var(--dot) minmax(0, 1fr); justify-items: start; align-items: center; column-gap: 14px; row-gap: 2px; padding: 0 0 18px; text-align: left; }
+  .is-vertical .ap-node:last-child { padding-bottom: 0; }
+  .is-vertical .ap-node > * { grid-column: 2; }
+  .is-vertical .ap-node > .ap-node__dot { grid-column: 1; grid-row: 1 / span 3; align-self: start; margin: 0; }
+  .is-vertical .ap-node__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; min-height: var(--dot); }
+  .is-vertical .ap-node__name { order: -1; font-size: var(--fs-base); }
+  .is-vertical .ap-node__st { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .is-vertical .ap-node__ctl { justify-content: flex-start; gap: 6px; }
+  .is-vertical .ap-node + .ap-node::before { display: none; }
+  .is-vertical .ap-node:not(:last-child)::after {
+    content: ""; position: absolute; left: calc(var(--dot) / 2 - 1.5px); top: calc(var(--dot) + 4px); bottom: 4px;
+    width: 3px; border-radius: 2px; background: var(--line);
+  }
+  .is-vertical .ap-node[data-out="done"]::after { background: var(--clay-200); }
+  .is-vertical .ap-node[data-out="ok"]::after { background: var(--forest); }
+  .is-vertical .ap-node[data-out="over"]::after { background: var(--clay); }
+  .is-vertical .ap-node[data-out="live"]::after { background: linear-gradient(180deg, var(--clay) calc(var(--p, 0) * 100%), var(--line) 0); }
+  .is-vertical .ap-node[data-out="plan"]::after { background: repeating-linear-gradient(180deg, var(--line-2) 0 6px, transparent 6px 11px); }
+  .is-vertical .ap-baton--h { display: none; }
+  .is-vertical .ap-baton--v { display: block; grid-column: 1; left: calc(var(--dot) / 2 - 5.5px); top: calc(var(--dot) + 4px + (100% - var(--dot) - 8px - 18px) * var(--p, 0)); width: 11px; height: 16px; border-radius: 11px 2px 11px 2px; }
+  .ap-rule { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 16px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .ap-rule span { display: inline-flex; align-items: center; gap: 6px; }
+  .ap-rule .i { width: 14px; height: 14px; color: var(--forest); }
+
+  /* ---------- 授課講師／成果 ---------- */
+  .ap-lect { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 16px; align-items: start; }
+  .ap-lect__name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-lg); font-weight: 900; line-height: 1.3; }
+  .ap-lect__name a { color: var(--ink); text-decoration: none; }
+  .ap-lect__name a:hover { color: var(--forest); text-decoration: underline; }
+  html.is-senior .ap-lect__name a { display: inline-flex; align-items: center; min-height: 48px; }
+  .ap-lect__sub { font-size: var(--fs-sm); color: var(--ink-3); }
+  .ap-lect .ap-why { margin-top: 10px; }
+  .ap-lect__kv { grid-column: 1 / -1; padding-top: 14px; border-top: 1px dashed var(--line-2); }
+  .ap-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  html.is-senior .ap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ap-stat { display: grid; gap: 2px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--paper); border: 1px solid var(--line-soft); min-width: 0; }
+  .ap-stat__k { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-3); }
+  .ap-stat__v { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.2; }
+  .ap-stat__v small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); margin-left: 3px; }
+  .ap-stat__d { font-size: var(--fs-xs); color: var(--ink-3); }
+
+  /* ---------- 申請內容 ---------- */
+  .ap-detail .kv { grid-template-columns: 5.5em minmax(0, 1fr); gap: 9px 14px; }
+  html.is-senior .ap-detail .kv { grid-template-columns: minmax(0, 1fr); }
+  .ap-detail .kv dd .tag { vertical-align: middle; }
+  .ap-detail dd a { font-weight: 700; }
+  html.is-senior .ap-detail dd a { display: inline-flex; align-items: center; min-height: 48px; }
+  .ap-dates { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ap-dd-sub { display: block; margin-top: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .ap-purpose { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--paper); font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.75; }
+  .ap-purpose b { display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--ink-3); letter-spacing: .06em; }
+  .ap-files { margin-top: 14px; }
+  .ap-owner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .ap-owner .select { width: auto; min-width: 9.5em; }
+
+  /* ---------- 鐘點費預估 ---------- */
+  .ap-fee-ctl { display: grid; gap: 12px; }
+  .ap-fee { margin-top: 16px; display: grid; gap: 10px; }
+  .ap-fee__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 12px; align-items: baseline; }
+  .ap-fee__k { font-size: var(--fs-sm); font-weight: 800; display: inline-flex; align-items: center; gap: 8px; }
+  .ap-fee__k i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .ap-fee__v { grid-column: 2; grid-row: 1; font-family: var(--font-en); font-weight: 800; white-space: nowrap; }
+  .ap-fee__d { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .ap-fee__bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--paper-2); }
+  html.is-senior .ap-fee__bar { height: 14px; border-radius: 7px; }
+  .ap-fee__bar span { display: block; height: 100%; transition: width var(--dur-4) var(--ease-out); }
+  .ap-fee__total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+  .ap-fee__total span { font-weight: 800; }
+  .ap-fee__total b { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; color: var(--clay-ink); }
+  .ap-fee__total small { font-family: var(--font-sans); font-size: var(--fs-sm); margin-left: 3px; }
+  .ap-fee__cmp { margin-top: 2px; }
+  .ap-tiers { display: grid; gap: 4px; }
+  .ap-tier { display: grid; grid-template-columns: 7.6em minmax(0, 1fr) 4.4em; align-items: center; gap: 10px; padding: 3px 8px; border-radius: 7px; font-size: var(--fs-xs); color: var(--ink-2); }
+  .ap-tier__bar { height: 6px; border-radius: 3px; background: var(--paper-2); overflow: hidden; }
+  .ap-tier__bar span { display: block; height: 100%; border-radius: inherit; background: var(--line-2); }
+  .ap-tier__v { text-align: right; font-family: var(--font-en); font-weight: 700; }
+  .ap-tier.is-on { background: var(--clay-50); box-shadow: inset 0 0 0 1px var(--clay-200); color: var(--clay-ink); font-weight: 800; }
+  .ap-tier.is-on .ap-tier__bar span { background: var(--clay); }
+  html.is-senior .ap-tier { grid-template-columns: minmax(0, 1fr) auto; }
+  html.is-senior .ap-tier__bar { grid-column: 1 / -1; grid-row: 2; height: 8px; }
+
+  /* ---------- 處理紀錄 ---------- */
+  .ap-note { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-bottom: 18px; }
+  .ap-note .field { gap: 4px; }
+  html.is-senior .ap-note { grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- 對話框內容 ---------- */
+  .ap-form { display: grid; gap: 16px; }
+  .ap-mwho { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--paper); }
+  .ap-radios { display: grid; gap: 8px; }
+  .ap-radio { width: 100%; padding: 10px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--card); }
+  .ap-radio:has(input:checked) { border-color: var(--forest); background: var(--forest-50); }
+  .ap-radio.is-off { background: var(--paper); cursor: not-allowed; }
+  .ap-radio__note { display: block; font-size: var(--fs-xs); font-weight: 700; color: var(--ok); }
+  .ap-radio.is-off .ap-radio__note { color: var(--err); }
+  .ap-radio b { font-family: var(--font-en); }
+  .ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ---------- 找不到案件 ---------- */
+  .ap-missing { grid-column: 1 / -1; width: 100%; max-width: 640px; margin: 24px auto; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1180px) {
+    .ap-layout, html.is-senior .ap-layout { grid-template-columns: minmax(0, 1fr); }
+    .ap-layout.is-exit > .ap-col:last-child { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .ap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .ap-band { padding: 16px 16px 12px; border-radius: var(--r-md); }
+    .ap-rail-wrap { margin-inline: -16px; padding-inline: 8px; }
+    .ap-rail { grid-template-columns: repeat(9, 88px); }
+    html.is-senior .ap-rail { grid-template-columns: repeat(9, 104px); }
+    .ap-crit { grid-template-columns: minmax(0, 1fr); }
+    .ap-switch { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
+    .ap-switch__info { grid-column: 1 / -1; grid-row: 1; text-align: center; }
+    .ap-switch .btn { min-width: 0; }
+    .page-head__actions > .btn { flex: 1 1 100%; }
+    .ap-rank-head, .ap-more { padding-inline: 16px; }
+    .ap-cand { grid-template-columns: 28px minmax(0, 1fr); gap: 4px 10px; padding: 14px 16px; }
+    .ap-cand__rank { font-size: var(--fs-lg); }
+    .ap-hero { column-gap: 14px; padding: 16px; }
+    .ap-ring { width: 84px; height: 84px; grid-row: 1 / span 2; }
+    html.is-senior .ap-ring { width: 96px; height: 96px; }
+    .ap-ring .avatar { width: 46px; height: 46px; font-size: 19px; }
+    .ap-hero__main > .ap-clock, .ap-hero__main > .ap-hero__note { grid-column: 1 / -1; }
+    .ap-clock { margin-top: 10px; }
+    .ap-hero__acts { width: 100%; }
+    .ap-hero__acts .btn { flex: 1 1 auto; }
+    .ap-decide .btn { flex: 1 1 auto; }
+    .ap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    html.is-senior .ap-stats { grid-template-columns: minmax(0, 1fr); }
+    .ap-lect { grid-template-columns: minmax(0, 1fr); }
+    .ap-note { grid-template-columns: minmax(0, 1fr); }
+    .ap-locked { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link is-active" href="application.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head ap-head">
+        <div class="page-head__main">
+          <nav class="crumbs" id="ap-crumbs" aria-label="頁面路徑"></nav>
+          <div class="ap-title">
+            <h1 class="page-title" id="ap-title">案件詳情與媒合</h1>
+            <span id="ap-title-meta" class="cluster"></span>
+          </div>
+          <p class="page-lede ap-facts" id="ap-facts"></p>
+        </div>
+        <div class="page-head__actions">
+          <nav class="ap-switch" id="ap-switch" aria-label="同關卡案件切換"></nav>
+          <button class="btn" type="button" id="ap-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出案件摘要</button>
+        </div>
+      </div>
+
+      <section class="ap-band on-dark" id="ap-band" aria-labelledby="band-title">
+        <div class="ap-band__head">
+          <div>
+            <h2 class="ap-band__title" id="band-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-route"/></svg>案件進度</h2>
+            <p class="ap-band__sub" id="ap-band-sub"></p>
+          </div>
+          <div class="ap-band__meta" id="ap-band-meta"></div>
+        </div>
+        <div class="ap-rail-wrap" id="ap-rail-wrap">
+          <ol class="ap-rail" id="ap-rail" aria-label="案件 9 個關卡"></ol>
+        </div>
+      </section>
+
+      <div class="ap-alert" id="ap-alert" aria-live="polite"></div>
+
+      <div class="ap-layout">
+        <div class="ap-col">
+          <section class="card" id="review" aria-labelledby="review-title" hidden></section>
+          <section class="card" id="match" aria-labelledby="match-title"></section>
+          <section class="card" id="invite" aria-labelledby="invite-title"></section>
+          <section class="card" id="result" aria-labelledby="result-title" hidden></section>
+        </div>
+
+        <div class="ap-col">
+          <section class="card ap-detail" id="detail" aria-labelledby="detail-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="detail-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-file"/></svg>申請內容</h2>
+                <p class="card__sub" id="ap-detail-sub"></p>
+              </div>
+            </div>
+            <div class="card__body" id="ap-detail-body"></div>
+          </section>
+
+          <section class="card" id="fee" aria-labelledby="fee-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="fee-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-coin"/></svg>鐘點費預估</h2>
+                <p class="card__sub">講座鐘點費（示意費率，可於系統設定調整）</p>
+              </div>
+            </div>
+            <div class="card__body" id="ap-fee-body"></div>
+            <div class="card__foot">
+              <span>每節 50 分鐘；交通費依距離級距示意，實際依核定與單據核實支付</span>
+              <a class="link-arrow" href="claims.html#rates">示意費率設定<svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></a>
+            </div>
+          </section>
+
+          <section class="card" id="log" aria-labelledby="log-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="log-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>處理紀錄</h2>
+                <p class="card__sub" id="ap-log-sub"></p>
+              </div>
+            </div>
+            <div class="card__body">
+              <form class="ap-note" id="ap-note" novalidate>
+                <div class="field">
+                  <label class="sr-only" for="ap-note-input">新增處理備註</label>
+                  <input class="input" id="ap-note-input" type="text" required minlength="2" maxlength="120" placeholder="新增處理備註，例：已電話聯繫申請單位" data-error="請輸入備註內容（至少 2 個字）">
+                </div>
+                <button class="btn btn--primary" type="submit" data-fk="note-add"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>新增備註</button>
+              </form>
+              <div id="ap-tl"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+  const NOW_ISO = `${App.TODAY}T10:30`;
+  const T0 = performance.now();
+  const pad = n => String(n).padStart(2, '0');
+  const reqId = App.param('id');
+  const c = App.case(reqId || App.DEFAULT_CASE);
+
+  /* ---------- 找不到案號：給明確的回頭路，不留空白頁 ---------- */
+  if (!c) {
+    $('#ap-crumbs').innerHTML = `<a href="applications.html">申請案件</a>${icon('chevron-right')}<span aria-current="page">找不到案件</span>`;
+    $('#ap-title').textContent = '找不到這個案號';
+    // 代填申請建立的新案號只存在申請案件頁的記憶體，換頁後就不存在；與打錯案號分開說明
+    const lastNo = Math.max(...App.CASES.map(x => Number(x.id.slice(-4))));
+    const fresh = /^EE115-\d{4}$/i.test(reqId) && Number(reqId.slice(-4)) > lastNo;
+    $('#ap-facts').textContent = fresh
+      ? `「${reqId}」是在本次瀏覽中新建的案件；示範環境不保存資料，換頁後即不存在。`
+      : `「${reqId}」不在 115 年度申請案件中，可能是案號輸入錯誤。`;
+    $('#ap-switch').remove();
+    $('#ap-export').remove();
+    $('#ap-band').remove();
+    $('.ap-layout').innerHTML = `<div class="card ap-missing">${App.emptyState({ title: '查無此案號', text: '請確認案號格式（例如 EE115-0455），或從申請案件清單開啟。', action: { label: '前往申請案件', href: 'applications.html' } })}</div>`;
+    return;
+  }
+
+  const me = App.staff(App.ME);
+  const cty = App.county(c.county);
+  const L = id => App.lecturer(id);
+  const dtShort = s => `${fmt.md(s)} ${s.slice(11, 16)}`;
+  const stageSince = x => x.log[x.log.length - 1][1];
+  const INV = {
+    pending: { label: '等待回覆', tone: 'clay' },
+    accepted: { label: '已接受', tone: 'ok' },
+    declined: { label: '已婉拒', tone: 'neutral' },
+    expired: { label: '逾時未回覆', tone: 'neutral' },
+  };
+  const RATE_SHORT = { expert: '外聘專家學者', external: '外聘一般講師', internal: '內聘講師' };
+
+  /* ---------- 頁面狀態（媒合條件、備取順位、本頁新增的紀錄） ---------- */
+  const DEF = App.MATCH_DEFAULT;
+  const state = {
+    on: { region: true, topic: true, audience: true, slot: true, load: true, rating: true },
+    regionMode: DEF.region, loadMax: DEF.loadMax, minRating: DEF.minRating,
+    queue: [], queueMode: null,
+    extraLog: [], needAt: null,
+    feeLecturer: null, feeRate: null,
+    showAll: false,
+    result: null, funnelSig: '', shell: '',
+  };
+
+  // 案件所處的作業模式：決定各區塊要顯示什麼
+  const mode = () => {
+    if (c.status !== 'active') return 'exit';
+    if (c.stage === 'submitted' || c.stage === 'review') return 'review';
+    if (c.stage === 'matching' || c.stage === 'confirm') return 'match';
+    if (c.stage === 'scheduled') return c.exception && c.exception.type === 'leave' ? 'sub' : 'scheduled';
+    return 'executed';
+  };
+  // 代課邀請另存在 c.subInvites，避免混進原本的順位邀請（處理紀錄依 c.invites 產生）
+  const invList = () => (mode() === 'sub' ? c.subInvites || [] : c.invites);
+  const pendingInv = () => invList().find(i => i.status === 'pending') || null;
+  const criteria = () => ({
+    region: state.on.region ? state.regionMode : 'any',
+    topic: state.on.topic, audience: state.on.audience, slot: state.on.slot,
+    loadMax: state.on.load ? state.loadMax : 0,
+    minRating: state.on.rating ? state.minRating : 0,
+  });
+  const compute = () => (state.result = App.matchFunnel(c, criteria()));
+  const rankOf = id => invList().length + state.queue.indexOf(id) + 1;
+
+  /* ---------- 復原：整份案件與頁面狀態一起快照，復原後走同一套重繪 ---------- */
+  const snapshot = () => ({ c: JSON.parse(JSON.stringify(c)), queue: state.queue.slice(), queueMode: state.queueMode, extraLog: state.extraLog.slice(), needAt: state.needAt });
+  const restore = s => {
+    Object.keys(c).forEach(k => { if (!(k in s.c)) delete c[k]; });
+    Object.assign(c, JSON.parse(JSON.stringify(s.c)));
+    state.queue = s.queue.slice();
+    state.queueMode = s.queueMode;
+    state.extraLog = s.extraLog.slice();
+    state.needAt = s.needAt;
+  };
+  const commit = (reason, before, title, desc, tone) => {
+    App.emit(reason);
+    App.toast(title, { desc, tone, action: { label: '復原', onClick: () => { restore(before); App.emit(`${reason}-undo`); } } });
+  };
+  const logEntry = (title, note = '', tone = 'done', by = me.name) => ({ iso: App.TODAY, time: '10:30', title, by, note, tone });
+
+  // 重繪會換掉按鈕：記住目前焦點的 data-fk，重繪後還給同一個控制項
+  const withFocus = fn => {
+    const a = document.activeElement;
+    const fk = a && a.dataset ? a.dataset.fk : null;
+    fn();
+    if (fk) { const el = $(`[data-fk="${fk}"]`); if (el && el !== document.activeElement) el.focus(); }
+  };
+  const vertical = () => App.senior.on() || matchMedia('(max-width: 640px)').matches;
+  const scrollToEl = el => el.scrollIntoView({ behavior: App.calm() ? 'auto' : 'smooth', block: 'start' });
+
+  /* ===================================================================
+     頁首
+     =================================================================== */
+  function renderHead() {
+    const st = c.status === 'active' ? App.stage(c.stage) : null;
+    $('#ap-crumbs').innerHTML = `<a href="applications.html">申請案件</a>${icon('chevron-right')}${st ? `<a href="applications.html?stage=${c.stage}">${st.label}關卡</a>` : `<span>${App.EXITS[c.status]}</span>`}${icon('chevron-right')}<span aria-current="page">${c.id}</span>`;
+    $('#ap-title').textContent = c.org;
+    $('#ap-title-meta').innerHTML = `<span class="ap-id">${c.id}</span>${App.stageBadge(c)}${c.need && c.status === 'active' ? App.statusBadge('warn', '退件補正中') : ''}`;
+    const t = App.topic(c.topic);
+    $('#ap-facts').innerHTML = [
+      `${icon('map-pin')}${cty.name}${esc(c.district)}`,
+      `${icon('users')}${App.audience(c.audience).name} ${c.people} 人`,
+      `${icon(t.icon)}${t.name}`,
+      `${icon(c.mode === 'online' ? 'video' : 'building')}${App.MODES[c.mode]}・${c.sessions} 節`,
+      `${icon('calendar')}${c.date ? `${fmt.rocShort(c.date)} ${c.time.split('–')[0]}` : `候選 ${c.candidates.map(fmt.md).join('、')}`}`,
+    ].map(x => `<span>${x}</span>`).join('');
+
+    // 同關卡案件依進入關卡的先後排隊，方便承辦連續處理
+    const peers = (c.status === 'active'
+      ? App.CASES.filter(x => x.status === 'active' && x.stage === c.stage).sort((a, b) => stageSince(a).localeCompare(stageSince(b)) || a.id.localeCompare(b.id))
+      : App.CASES.filter(x => x.status !== 'active').sort((a, b) => a.id.localeCompare(b.id)));
+    const i = peers.indexOf(c);
+    const link = (x, dir) => (x
+      ? `<a class="btn btn--sm" href="application.html?id=${x.id}" title="${x.id} ${esc(x.org)}">${dir < 0 ? icon('chevron-left') : ''}${dir < 0 ? '上一件' : '下一件'}${dir > 0 ? icon('chevron-right') : ''}</a>`
+      : `<span class="btn btn--sm" aria-disabled="true">${dir < 0 ? icon('chevron-left') + '上一件' : '下一件' + icon('chevron-right')}</span>`);
+    $('#ap-switch').innerHTML = `${link(peers[i - 1], -1)}<span class="ap-switch__info">${st ? st.label : '已結束'} <b>${i + 1}</b>／${peers.length}</span>${link(peers[i + 1], 1)}`;
+  }
+
+  /* ===================================================================
+     案件進度帶
+     =================================================================== */
+  function stageClock() {
+    const s = App.stage(c.stage);
+    const since = stageSince(c);
+    const day = App.daysBetween(since, App.TODAY) + 1;
+    if (c.stage === 'scheduled') { const d = App.daysBetween(App.TODAY, c.date); return { now: d === 0 ? '今日授課' : `${d} 天後授課`, sla: `行前通知 ${fmt.md(App.addDays(c.date, -7))}`, hot: false }; }
+    if (c.stage === 'done') { const left = App.daysBetween(App.TODAY, App.addDays(c.date, 30)); return { now: `授課後 ${App.daysBetween(c.date, App.TODAY)} 天`, sla: left >= 0 ? `回填剩 ${left} 日` : `回填逾期 ${-left} 日`, hot: left < 0 }; }
+    if (c.stage === 'claim') return { now: `第 ${day} 天`, sla: `${c.batch} 撥付`, hot: false };
+    if (c.stage === 'closed') return { now: '已結案', sla: '', hot: false };
+    const left = App.daysBetween(App.TODAY, App.addDays(since, s.sla));
+    return { now: `第 ${day} 天`, sla: left > 0 ? `時限剩 ${left} 日` : left === 0 ? '今日到期' : `逾時 ${-left} 日`, hot: left <= 0 };
+  }
+  function renderBand() {
+    const active = c.status === 'active';
+    const idx = App.stageIndex(c.stage);
+    const clock = active ? stageClock() : null;
+    $('#ap-rail').innerHTML = App.STAGES.map((s, i) => {
+      let cls = '', body = '';
+      const d = App.logDate(c, s.key);
+      if (i < idx || (active && c.stage === 'closed' && i === idx)) {
+        cls = 'is-done';
+        body = `<span class="ap-step__date">${d ? fmt.md(d) : '—'}</span>`;
+      } else if (i === idx && !active) {
+        cls = 'is-exit';
+        body = `<span class="ap-step__now" style="background:#F4B5AA;color:#5C150D">${App.EXITS[c.status]}</span><span class="ap-step__date">${fmt.md(c.exitDate)}</span>`;
+      } else if (i === idx) {
+        cls = `is-current${clock.hot ? ' is-hot' : ''}`;
+        body = `<span class="ap-step__now">${clock.now}</span>${clock.sla ? `<span class="ap-step__sla${clock.hot ? ' is-hot' : ''}">${clock.sla}</span>` : ''}`;
+      }
+      const ico = cls === 'is-done' ? 'check' : cls === 'is-exit' ? 'x' : s.icon;
+      return `<li class="ap-step ${cls}"${i === idx ? ' aria-current="step"' : ''}><span class="ap-step__dot">${icon(ico)}</span><span class="ap-step__label">${s.label}</span>${body}</li>`;
+    }).join('');
+    const s = App.stage(c.stage);
+    $('#ap-band-sub').innerHTML = !active
+      ? `本案停在「<b>${s.label}</b>」關卡，後續關卡不再進行。`
+      : c.stage === 'closed' ? `費用已撥付，案件於 ${fmt.roc(App.logDate(c, 'closed'))} 結案。`
+      : `「<b>${s.label}</b>」關卡：${esc(s.desc)}`;
+    const span = App.daysBetween(c.submitted, active && c.stage !== 'closed' ? App.TODAY : (c.exitDate || App.logDate(c, 'closed')));
+    const chips = [
+      ...(active && s.sla != null && c.stage !== 'closed' ? [`時限 <b>${s.sla}</b> 日`] : []),
+      `承辦 <b>${c.owner ? App.staff(c.owner).name : '未指派'}</b>`,
+      `送件 <b>${fmt.md(c.submitted)}</b>`,
+      `${active && c.stage !== 'closed' ? '已歷時' : '歷時'} <b>${span}</b> 天`,
+    ];
+    if (c.matchDays) chips.push(`媒合 <b>${c.matchDays}</b> 天`);
+    $('#ap-band-meta').innerHTML = chips.map(x => `<span class="ap-dchip">${x}</span>`).join('') + (clock && clock.hot ? `<span class="ap-dchip ap-dchip--hot">${icon('alert')}${clock.sla}</span>` : '');
+    // 手機寬度：把目前關卡捲到軌道中央
+    const wrap = $('#ap-rail-wrap');
+    const cur = $('.ap-step[aria-current]', wrap);
+    if (cur && wrap.scrollWidth > wrap.clientWidth) wrap.scrollLeft = cur.offsetLeft - (wrap.clientWidth - cur.offsetWidth) / 2;
+  }
+
+  /* ---------- 頂部提醒：結束案件、改期申請 ---------- */
+  function renderAlert() {
+    const m = mode();
+    let html = '';
+    if (m === 'exit') html = `<div class="notice notice--err">${icon('alert')}<div><b>本案已${App.EXITS[c.status]}</b>（${fmt.roc(c.exitDate)}）：${esc(c.exitReason)}。案件僅供查閱，不再進入媒合與核銷流程。</div></div>`;
+    $('#ap-alert').innerHTML = html;
+  }
+
+  /* ===================================================================
+     初審
+     =================================================================== */
+  function reviewChecks() {
+    const first = c.date || c.candidates[0];
+    const lead = first ? App.daysBetween(c.submitted, first) : null;
+    const same = App.CASES.filter(x => x.org === c.org && x.id !== c.id);
+    const hasPlan = c.files.some(f => f.name.startsWith('活動企劃書'));
+    const hasVenue = c.mode === 'online' || c.files.some(f => f.name.startsWith('場地'));
+    const n = App.matchFunnel(c).ranked.length;
+    const rows = [
+      { label: '活動日期與送件間隔', detail: first ? `最早活動日 ${fmt.rocShort(first)}，距送件 ${lead} 日（規定至少 14 日）` : '尚未提供活動日期', result: first && lead >= 14 ? 'pass' : 'fail' },
+      { label: '預估參與人數', detail: c.people < 15 ? `${c.people} 人，未達 15 人下限` : c.people > 150 ? `${c.people} 人，超過 150 人，建議確認場地容量或分場辦理` : `${c.people} 人（下限 15 人）`, result: c.people < 15 ? 'fail' : c.people > 150 ? 'warn' : 'pass' },
+      { label: '必要附件', detail: `${c.files.map(f => f.name).join('、')}${hasVenue ? '' : '；實體場次缺場地照片'}`, result: hasPlan && hasVenue ? 'pass' : 'warn' },
+      { label: '重複申請比對', detail: same.length ? `本年度另有 ${same.length} 件同名單位申請（${same.slice(0, 3).map(x => x.id).join('、')}），請確認非同一場次` : '本年度首次申請', result: same.length ? 'warn' : 'pass' },
+      { label: '可媒合講師（預設條件）', detail: n ? `目前有 ${n} 位講師同時符合服務區域、專長、對象經驗與檔期` : '依預設條件目前無講師符合，通過後需放寬條件媒合', result: n >= 3 ? 'pass' : n ? 'warn' : 'fail' },
+    ];
+    if (c.need) rows.push({ label: '補件狀態', detail: `退件補正中：${c.need}`, result: 'fail' });
+    return rows;
+  }
+  function renderReview() {
+    const el = $('#review');
+    const m = mode();
+    el.hidden = m !== 'review';
+    if (el.hidden) return;
+    const submitted = c.stage === 'submitted';
+    const checks = reviewChecks();
+    const bad = checks.filter(k => k.result !== 'pass').length;
+    let acts;
+    if (submitted) acts = `<button type="button" class="btn btn--primary" data-act="rv-accept" data-fk="rv-main">${icon('inbox')}受理並開始初審</button>`;
+    else if (c.need) acts = `<button type="button" class="btn" data-act="rv-return" data-fk="rv-return">${icon('edit')}修改補正說明</button><button type="button" class="btn btn--primary" data-act="rv-resolve" data-fk="rv-main">${icon('check')}申請單位已補件，恢復審核</button>`;
+    else acts = `<button type="button" class="btn" data-act="rv-return" data-fk="rv-return">${icon('message')}退件補正</button><button type="button" class="btn btn--primary" data-act="rv-approve" data-fk="rv-main">${icon('check')}初審通過，進入媒合</button>`;
+    el.innerHTML = `<div class="card__head">
+  <div class="card__titles">
+    <h2 class="card__title" id="review-title">${icon('clipboard')}${submitted ? '受理與初審' : '初審作業'}</h2>
+    <p class="card__sub">系統先比對申請資格，承辦確認後決定通過或退件補正；退件須填寫補正理由並通知申請單位</p>
+  </div>
+  <div class="card__actions">${bad ? App.statusBadge('warn', `${bad} 項需確認`) : App.statusBadge('ok', '檢核全數通過')}</div>
+</div>
+<div class="card__body">
+  ${c.need ? `<div class="notice notice--warn ap-need">${icon('alert')}<div><b>退件補正中</b>${state.needAt ? `（${fmt.md(state.needAt.iso)} 通知）` : ''}：${esc(c.need)}<br>申請單位補件後，請按「申請單位已補件」恢復審核。</div></div>` : ''}
+  <p class="ap-cap">資格檢核<span>依申請資料自動比對</span></p>
+  ${App.checkRows(checks)}
+</div>
+<div class="card__foot ap-decide">
+  <span class="ap-decide__note">${submitted ? `新申請須於 2 日內受理（${fmt.md(App.addDays(c.submitted, 2))} 前）` : `初審時限：${fmt.md(App.addDays(App.logDate(c, 'review'), 3))} 前`}</span>
+  ${acts}
+</div>`;
+  }
+
+  /* ===================================================================
+     媒合：條件面板＋條件漏斗＋推薦名單
+     =================================================================== */
+  const CRIT_KEYS = ['region', 'topic', 'audience', 'slot', 'load', 'rating'];
+  const CRIT_LABEL = { region: '服務區域', topic: '專長主題', audience: '服務對象經驗', slot: '檔期', load: '近 30 日場次負載', rating: '滿意度門檻' };
+  function critRows() {
+    const dates = c.date ? [c.date] : c.candidates;
+    const regionParam = c.mode === 'online'
+      ? `<span>線上場次：改以「可線上授課」篩選</span>`
+      : `<div class="seg" id="ap-region" role="group" aria-label="服務區域範圍"><button type="button" data-value="serve" aria-pressed="${state.regionMode === 'serve'}">可到場${cty.name}</button><button type="button" data-value="region" aria-pressed="${state.regionMode === 'region'}">${cty.region}縣市皆可</button></div>`;
+    const rows = {
+      region: ['服務區域', regionParam],
+      topic: ['專長主題', App.topicTag(c.topic)],
+      audience: ['服務對象經驗', App.audienceTag(c.audience)],
+      slot: ['檔期', `${dates.map(d => `<span class="ap-date">${fmt.rocShort(d)}</span>`).join('')}<span>${dates.length > 1 ? '至少一日可配合' : '當日可配合'}</span>`],
+      load: ['近 30 日場次負載上限', `<div class="ap-crit__range"><input class="range" type="range" id="ap-load" min="2" max="10" step="1" value="${state.loadMax}" aria-label="近 30 日場次負載上限" data-fk="crit-load"><output for="ap-load" id="ap-load-out">≤ ${state.loadMax} 場</output></div>`],
+      rating: ['滿意度門檻', `<div class="ap-crit__range"><input class="range" type="range" id="ap-rating" min="40" max="49" step="1" value="${Math.round(state.minRating * 10)}" aria-label="平均滿意度門檻" data-fk="crit-rating"><output for="ap-rating" id="ap-rating-out">≥ ${state.minRating.toFixed(1)} 分</output></div>`],
+    };
+    return CRIT_KEYS.map(k => `<div class="ap-crit__row${state.on[k] ? '' : ' is-off'}" data-key="${k}">
+  <div class="ap-crit__top"><label class="switch"><input type="checkbox" data-crit="${k}" data-fk="crit-${k}"${state.on[k] ? ' checked' : ''}><span class="switch__track" aria-hidden="true"></span>${rows[k][0]}</label><span class="ap-crit__drop" data-drop="${k}"></span></div>
+  <div class="ap-crit__param">${rows[k][1]}</div>
+</div>`).join('');
+  }
+  let funnel = null;
+  function buildWorkbench() {
+    const m = mode();
+    const sub = m === 'sub';
+    const lv = sub ? L(c.lecturer) : null;
+    $('#match').innerHTML = `<div class="card__head">
+  <div class="card__titles">
+    <h2 class="card__title" id="match-title">${icon('sliders')}${sub ? '代課媒合' : '條件式媒合'}</h2>
+    <p class="card__sub">依系統規則逐條篩選啟用中的講師，每一步剩下幾位都看得到；調整條件立即重新計算</p>
+  </div>
+  <div class="card__actions"><button type="button" class="btn btn--sm btn--ghost" data-act="crit-reset" data-fk="crit-reset">${icon('refresh')}重設條件</button></div>
+</div>
+<div class="card__body">
+  ${sub ? `<div class="notice notice--clay ap-need">${icon('alert')}<div><b>${esc(lv.name)} 講師請假</b>（${fmt.md(c.exception.iso)} 來電）：${esc(c.exception.note)}<br>請為 <b>${fmt.rocShort(c.date)} ${c.time}</b> 場次安排代課講師，原講師已自動排除。</div></div>` : ''}
+  <form class="ap-crit" id="ap-crit" aria-label="媒合條件" novalidate>${critRows()}</form>
+  <div class="ap-crit-foot"><span id="ap-crit-sum" aria-live="polite"></span><span>新進講師尚無滿意度紀錄，不受門檻限制</span></div>
+  <div class="ap-funnel"><p class="ap-cap">條件漏斗<span>每一列為套用該條件後仍符合的講師；陶土色為被篩除者</span></p><div id="ap-funnel"></div></div>
+</div>
+<div class="ap-rank-head">
+  <p class="ap-rank-title">${icon('user-check')}推薦名單 <b id="ap-rank-n"></b> 位</p>
+  <details class="ap-formula"><summary>${icon('info')}排序方式</summary><p>排序分數＝基本 50 分＋可到場服務本縣市 15＋主要專長 12（次要專長 6）＋具服務對象經驗 8＋（平均滿意度 − 4.5）× 30 − 近 30 日場次 × 2。分數相同時依講師編號。</p></details>
+</div>
+<ol class="ap-cands" id="ap-cands"></ol>
+<div id="ap-cands-more"></div>`;
+    funnel = App.funnel($('#ap-funnel'), {});
+    state.funnelSig = '';
+    if (c.mode !== 'online') App.seg($('#ap-region'), { onChange: v => { state.regionMode = v; state.on.region = true; refreshMatch(); } });
+  }
+  function revealCands() {
+    const list = $('#ap-cands');
+    if (!list || App.calm()) return;
+    list.classList.remove('is-enter');
+    void list.offsetWidth;
+    list.classList.add('is-enter');
+  }
+  function refreshMatch() {
+    withFocus(() => { updateWorkbench(); renderInvite(); renderFee(); });
+  }
+  function updateWorkbench() {
+    const r = compute();
+    // 條件開關與參數同步（重設條件時也走這裡）
+    CRIT_KEYS.forEach(k => {
+      const row = $(`.ap-crit__row[data-key="${k}"]`);
+      row.classList.toggle('is-off', !state.on[k]);
+      $('input[type="checkbox"]', row).checked = state.on[k];
+      const step = r.steps.find(s => s.key === k);
+      const drop = $(`[data-drop="${k}"]`);
+      if (!step) { drop.className = 'ap-crit__drop is-off'; drop.textContent = '未套用'; return; }
+      const prev = r.steps[r.steps.indexOf(step) - 1];
+      const n = prev.ids.length - step.ids.length;
+      drop.className = `ap-crit__drop${n ? '' : ' is-zero'}`;
+      drop.innerHTML = n ? `−${n}<small>位</small>` : `±0<small>位</small>`;
+    });
+    const seg = $('#ap-region');
+    if (seg) $$('button', seg).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === state.regionMode)));
+    $('#ap-load').value = state.loadMax;
+    $('#ap-load-out').textContent = `≤ ${state.loadMax} 場`;
+    $('#ap-rating').value = Math.round(state.minRating * 10);
+    $('#ap-rating-out').textContent = `≥ ${state.minRating.toFixed(1)} 分`;
+    const applied = r.steps.length - 1;
+    $('#ap-crit-sum').innerHTML = `套用 <b>${applied}</b> 項條件，<b>${r.steps[0].ids.length}</b> 位講師中符合 <b>${r.ranked.length}</b> 位`;
+    // 條件真的改變才重播漏斗（催覆、加入順位等不會讓漏斗重跑）
+    const sig = JSON.stringify([r.steps.map(s => [s.key, s.ids.length]), r.criteria]);
+    if (sig !== state.funnelSig) {
+      const first = !state.funnelSig;
+      state.funnelSig = sig;
+      const host = $('#ap-funnel');
+      const play = () => { if (document.contains(host)) funnel.play(state.result.steps); };
+      if (first) App.whenVisible(host, play); else play();
+      renderCands();
+      // 條件改變後名單逐列浮現，讓承辦知道結果已更新（首次載入直接顯示，不讓名單空白等待）
+      if (!first) revealCands();
+      return;
+    }
+    renderCands();
+  }
+  function candStatus(id) {
+    if (mode() === 'sub' && id === c.lecturer) return App.statusBadge('err', '原授課講師（請假）');
+    const inv = invList().find(i => i.lecturer === id);
+    if (inv) return App.statusBadge(INV[inv.status].tone, `${INV[inv.status].label}・第 ${inv.rank} 順位`);
+    if (state.queue.includes(id)) return `${App.statusBadge('sprout', `第 ${rankOf(id)} 順位（備取）`)}<button type="button" class="btn btn--sm btn--ghost" data-act="q-remove" data-id="${id}" data-fk="cand-${id}">${icon('minus')}移出順位</button>`;
+    if (state.queue.length >= 5) return `<span class="subtle">順位名單已滿 5 位</span>`;
+    return `<button type="button" class="btn btn--sm btn--primary" data-act="q-add" data-id="${id}" data-fk="cand-${id}">${icon('plus')}加入順位</button>`;
+  }
+  function renderCands() {
+    const r = state.result;
+    const list = $('#ap-cands');
+    $('#ap-rank-n').textContent = r.ranked.length;
+    if (!r.ranked.length) {
+      // 逐一試算「只拿掉一條」的結果，建議真正能找回人選的那一條（篩除最多的不一定有用）
+      const best = CRIT_KEYS.filter(k => state.on[k]).map(k => {
+        state.on[k] = false;
+        const n = App.matchFunnel(c, criteria()).ranked.length;
+        state.on[k] = true;
+        return { k, n };
+      }).sort((a, b) => b.n - a.n)[0];
+      const ok = best && best.n > 0;
+      list.innerHTML = `<li>${App.emptyState({ title: '目前條件下沒有符合的講師', text: ok ? `取消「${CRIT_LABEL[best.k]}」條件可找回 ${best.n} 位講師。` : '放寬任一單項條件仍無講師符合，建議與申請單位討論調整主題、服務對象，或改為線上授課。' })}</li>`;
+      $('#ap-cands-more').innerHTML = ok ? `<div class="ap-empty-act"><button type="button" class="btn btn--primary" data-act="relax" data-key="${best.k}" data-fk="relax">${icon('sliders')}取消「${CRIT_LABEL[best.k]}」條件</button></div>` : '';
+      return;
+    }
+    const shown = state.showAll ? r.ranked : r.ranked.slice(0, 5);
+    const max = r.ranked[0].score;
+    list.innerHTML = shown.map((x, i) => {
+      const l = x.l;
+      const invited = invList().some(v => v.lecturer === l.id);
+      const queued = state.queue.includes(l.id);
+      const load = App.load30(l.id, (c.date || c.candidates[0] || App.TODAY));
+      const km = c.mode === 'online' ? null : App.distanceKm(l.county, c.county);
+      return `<li class="ap-cand${invited ? ' is-invited' : queued ? ' is-queued' : ''}" style="--i:${i}" data-id="${l.id}">
+  <span class="ap-cand__rank" aria-label="第 ${i + 1} 名">${i + 1}</span>
+  <div class="ap-cand__body">
+    <div class="ap-cand__top">
+      <div class="ap-cand__who">${App.avatar(l, 'md')}<div><p class="ap-cand__name"><a href="instructors.html?id=${l.id}">${esc(l.name)}</a><span class="badge badge--neutral">${RATE_SHORT[l.rateKey]}</span></p><p class="ap-cand__sub">${esc(l.title)}・${App.county(l.county).short}・${esc(l.org)}</p></div></div>
+      <div class="ap-score" title="排序分數，滿分約 100"><span class="ap-score__label">排序分數</span><span class="ap-score__n">${Math.round(x.score)}</span><span class="meter" aria-hidden="true"><span style="--p:${(x.score / Math.max(100, max)).toFixed(3)}"></span></span></div>
+    </div>
+    <ul class="ap-why" aria-label="符合理由">${x.reasons.map(t => `<li>${icon('check')}${esc(t)}</li>`).join('')}</ul>
+    <ul class="ap-warn" aria-label="衝突警示">${x.warns.length ? x.warns.map(t => `<li>${icon('alert')}${esc(t)}</li>`).join('') : `<li class="is-none">${icon('shield')}無衝突警示</li>`}</ul>
+    <div class="ap-cand__foot">
+      <p class="ap-cand__meta"><span>近 30 日 <b>${load}</b> 場</span>${km != null ? `<span>距離約 <b>${km}</b> 公里</span>` : '<span>線上授課</span>'}<span>認證至 <b>${fmt.roc(l.cert.until)}</b></span></p>
+      <div class="ap-cand__act">${candStatus(l.id)}<button type="button" class="btn btn--sm btn--ghost" data-act="fee-try" data-id="${l.id}">${icon('coin')}試算費用</button></div>
+    </div>
+  </div>
+</li>`;
+    }).join('');
+    $('#ap-cands-more').innerHTML = r.ranked.length > 5 ? `<div class="ap-more"><button type="button" class="btn btn--sm" data-act="cands-all" data-fk="cands-all">${state.showAll ? `${icon('chevron-up')}只顯示前 5 位` : `${icon('chevron-down')}顯示其餘 ${r.ranked.length - 5} 位`}</button></div>` : '';
+  }
+
+  /* ---------- 未開放媒合（初審中）：先讓承辦知道大概有幾位人選 ---------- */
+  function renderLocked() {
+    const r = App.matchFunnel(c);
+    $('#match').innerHTML = `<div class="card__head"><div class="card__titles"><h2 class="card__title" id="match-title">${icon('sliders')}條件式媒合</h2><p class="card__sub">初審通過後開放媒合與順位邀請</p></div></div>
+<div class="card__body ap-locked">
+  <span class="ap-locked__icon">${icon('lock')}</span>
+  <div>
+    <p class="ap-locked__title">尚未進入媒合關卡</p>
+    <p class="ap-locked__text">依預設條件試算，目前有 <b>${r.ranked.length}</b> 位講師可能符合（通過後可再調整條件）：</p>
+    <ol class="ap-mini-funnel">${r.steps.map((s, i) => `<li>${i ? icon('chevron-right') : ''}<b>${s.ids.length}</b>${esc(i ? s.label : '啟用講師')}</li>`).join('')}</ol>
+  </div>
+</div>`;
+  }
+
+  /* ---------- 已確認講師（待執行之後） ---------- */
+  function fitFacts(l) {
+    const out = [];
+    if (l.serve.includes(c.county)) out.push(l.county === c.county ? `戶籍即在${cty.name}` : `可到場服務${cty.name}`);
+    else if (c.mode === 'online') out.push('可線上授課');
+    if (l.topics[0] === c.topic) out.push(`主要專長為「${App.topic(c.topic).name}」`);
+    else if (l.topics.includes(c.topic)) out.push(`專長含「${App.topic(c.topic).name}」`);
+    if (l.audiences.includes(c.audience)) out.push(`具「${App.audience(c.audience).name}」授課經驗`);
+    if (l.rating != null) out.push(`平均滿意度 ${l.rating.toFixed(1)}（${l.sessions} 場）`);
+    return out;
+  }
+  function renderLecturer() {
+    const l = L(c.lecturer);
+    const cd = App.certDays(l);
+    $('#match').innerHTML = `<div class="card__head">
+  <div class="card__titles"><h2 class="card__title" id="match-title">${icon('user-check')}授課講師</h2><p class="card__sub">${App.logDate(c, 'scheduled') ? `${fmt.roc(App.logDate(c, 'scheduled'))} 確認授課` : '已確認授課'}${c.matchDays ? `・媒合歷時 ${c.matchDays} 天` : ''}</p></div>
+  <div class="card__actions"><a class="link-arrow" href="instructors.html?id=${l.id}">講師資料${icon('arrow-right')}</a></div>
+</div>
+<div class="card__body">
+  <div class="ap-lect">
+    ${App.avatar(l, 'lg')}
+    <div>
+      <p class="ap-lect__name"><a href="instructors.html?id=${l.id}">${esc(l.name)}</a>${App.statusBadge('ok', '已確認')}<span class="badge badge--neutral">${RATE_SHORT[l.rateKey]}</span></p>
+      <p class="ap-lect__sub">${esc(l.title)}・${esc(l.org)}・${App.county(l.county).name}</p>
+      <ul class="ap-why" aria-label="符合理由">${fitFacts(l).map(t => `<li>${icon('check')}${esc(t)}</li>`).join('')}</ul>
+    </div>
+    <dl class="kv ap-lect__kv">
+      <dt>授課時間</dt><dd>${fmt.rocLong(c.date)} ${c.time}</dd>
+      <dt>聯絡電話</dt><dd>${l.phone}</dd>
+      <dt>Email</dt><dd>${l.email}</dd>
+      <dt>認證字號</dt><dd>${esc(l.cert.no)}（${fmt.roc(l.cert.until)} 到期${cd <= 90 ? `，<span class="c-clay">剩 ${cd} 天</span>` : ''}）</dd>
+    </dl>
+  </div>
+</div>`;
+  }
+
+  function renderMatch() {
+    const m = mode();
+    const el = $('#match');
+    el.hidden = m === 'exit';
+    // 只有媒合工作台需要保留（條件控制項不能因重繪而失焦）；其他外框每次重畫
+    const shell = m === 'match' || m === 'sub' ? `wb-${m}` : m;
+    const rebuild = shell !== state.shell;
+    state.shell = shell;
+    if (shell.startsWith('wb')) { if (rebuild) buildWorkbench(); updateWorkbench(); }
+    else if (m === 'review') renderLocked();
+    else if (m === 'exit') el.innerHTML = '';
+    else renderLecturer();
+  }
+
+  /* ===================================================================
+     順位邀請（48 小時倒數＋接力軌）
+     =================================================================== */
+  const RING_C = 2 * Math.PI * 50;
+  const ringSVG = (frac, dashed) => {
+    const f = Math.max(0, Math.min(1, frac));
+    const a = (-90 + 360 * f) * Math.PI / 180;
+    const ticks = Array.from({ length: 8 }, (_, i) => { const t = i * Math.PI / 4; return `<line class="ap-ring__tick" x1="${60 + 56 * Math.cos(t)}" y1="${60 + 56 * Math.sin(t)}" x2="${60 + 59.5 * Math.cos(t)}" y2="${60 + 59.5 * Math.sin(t)}" stroke-width="1.5" stroke-linecap="round"/>`; }).join('');
+    return `<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ticks}<circle class="ap-ring__track" cx="60" cy="60" r="50" fill="none" stroke-width="8"/>${f > 0 ? `<circle class="ap-ring__arc" data-arc cx="60" cy="60" r="50" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dashed ? '5 7' : `${(f * RING_C).toFixed(2)} ${RING_C.toFixed(2)}`}" transform="rotate(-90 60 60)"/>` : ''}${f > 0 && f < 1 && !dashed ? `<circle class="ap-ring__head" data-head cx="${(60 + 50 * Math.cos(a)).toFixed(2)}" cy="${(60 + 50 * Math.sin(a)).toFixed(2)}" r="6"/>` : ''}</svg>`;
+  };
+  const elapsedH = () => (App.calm() ? 0 : (performance.now() - T0) / 36e5);
+  const isOverdue = inv => !inv.designated && App.hoursLeft(App.inviteDue(inv)) - elapsedH() < 0;
+  // 48 小時回覆期限若壓到活動前一天，承辦需要另外電話聯繫，不能只等系統轉送
+  const tightNote = due => (c.date && due.slice(0, 10) >= App.addDays(c.date, -1) ? `<br><span class="c-clay"><b class="c-clay">回覆期限已逼近活動日（${fmt.rocShort(c.date)}）</b>，建議同時電話聯繫講師。</span>` : '');
+  const clockHTML = h => {
+    const s = Math.max(0, Math.floor(h * 3600));
+    const H = Math.floor(s / 3600), M = Math.floor(s % 3600 / 60), S = s % 60;
+    return App.calm() ? `<b>${H}</b><small>小時</small><b>${pad(M)}</b><small>分</small>` : `<b>${H}</b><small>小時</small><b>${pad(M)}</b><small>分</small><b>${pad(S)}</b><small>秒</small>`;
+  };
+  const durHTML = h => {
+    const t = Math.max(0, Math.floor(h * 60));
+    const D = Math.floor(t / 1440), H = Math.floor(t % 1440 / 60), M = t % 60;
+    return D ? `<b>${D}</b><small>天</small><b>${H}</b><small>小時</small>` : `<b>${H}</b><small>小時</small><b>${pad(M)}</b><small>分</small>`;
+  };
+  // 每位講師依序往後推 48 小時：讓承辦一眼看到「最晚何時會輪到誰」
+  function projectedSend(k) {
+    const p = pendingInv();
+    let t = p ? App.inviteDue(p) : null;
+    if (!t || p.designated || App.hoursLeft(t) < 0) return null;
+    for (let i = 0; i < k; i++) { const d = new Date(App.toDate(t.slice(0, 10))); d.setHours(Number(t.slice(11, 13)) + 48, Number(t.slice(14, 16))); t = `${App.iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+    return t;
+  }
+  function heroHTML() {
+    const m = mode();
+    const p = pendingInv();
+    const next = state.queue[0] ? L(state.queue[0]) : null;
+    const reminded = c.reminders.some(r => r.startsWith(App.TODAY));
+    const dates = c.date ? [c.date] : c.candidates;
+    if (p) {
+      const l = L(p.lecturer);
+      const due = App.inviteDue(p);
+      const left = App.hoursLeft(due) - elapsedH();
+      const st = p.designated ? 'designated' : left < 0 ? 'overdue' : 'pending';
+      const waited = (App.NOW - new Date(App.toDate(p.sent.slice(0, 10)).setHours(Number(p.sent.slice(11, 13)), Number(p.sent.slice(14, 16))))) / 36e5;
+      const eyebrow = p.designated ? `${icon('flag')}申請單位指定講師・不自動轉送` : st === 'overdue' ? `${icon('alert')}第 ${p.rank} 順位・已逾 48 小時` : `${icon('hourglass')}第 ${p.rank} 順位・等待回覆`;
+      let clock, note;
+      if (st === 'designated') {
+        clock = `<p class="ap-clock">${durHTML(waited)}<span class="ap-clock__cap">已等待</span></p>`;
+        note = `${dtShort(p.sent)} 發出邀請。指定講師不受 48 小時自動轉送限制，逾 3 日未回覆請電話催覆；若婉拒，改依下方順位邀請${next ? `（第 ${rankOf(next.id)} 順位 <b>${esc(next.name)}</b>）` : ''}。`;
+      } else if (st === 'overdue') {
+        clock = `<p class="ap-clock">${durHTML(-left)}<span class="ap-clock__cap">已逾時</span></p>`;
+        note = next ? `${dtShort(due)} 已到期，系統將轉送第 ${rankOf(next.id)} 順位 <b>${esc(next.name)}</b>；也可立即轉送。` : `${dtShort(due)} 已到期，名單已無下一順位。請從推薦名單加入講師，或電話催覆。`;
+      } else {
+        clock = `<p class="ap-clock" data-clock data-due="${due}">${clockHTML(left)}<span class="ap-clock__cap">後到期</span></p>`;
+        note = `${fmt.rocShort(due)} ${due.slice(11, 16)} 到期，屆時未回覆將${next ? `自動轉送第 ${rankOf(next.id)} 順位 <b>${esc(next.name)}</b>` : '因名單無下一順位而停留，請先加入備取順位'}。${dates.length > 1 ? `講師需從候選日 ${dates.map(fmt.md).join('、')} 擇一回覆。` : ''}${tightNote(due)}`;
+      }
+      const frac = st === 'pending' ? left / 48 : st === 'designated' ? 1 : 0;
+      const acts = [
+        `<button type="button" class="btn btn--primary" data-act="inv-accept" data-fk="inv-accept">${icon('check')}記錄講師接受</button>`,
+        `<button type="button" class="btn" data-act="inv-decline" data-fk="inv-decline">${icon('x')}記錄婉拒</button>`,
+        reminded ? `<span class="ap-hero__done">${icon('check')}今日 10:30 已催覆</span>` : `<button type="button" class="btn btn--clay" data-act="inv-remind" data-fk="inv-remind">${icon('send')}催覆講師</button>`,
+        st === 'overdue' && next ? `<button type="button" class="btn btn--ghost" data-act="inv-forward" data-fk="inv-forward">${icon('swap')}立即轉送第 ${rankOf(next.id)} 順位</button>` : '',
+      ].join('');
+      return `<div class="ap-hero" data-state="${st}">
+  <div class="ap-ring" data-ring>${ringSVG(frac, st === 'designated')}${App.avatar(l, 'lg')}</div>
+  <div class="ap-hero__main">
+    <p class="ap-hero__eyebrow">${eyebrow}</p>
+    <p class="ap-hero__name"><a href="instructors.html?id=${l.id}">${esc(l.name)}</a><span>${esc(l.title)}・${App.county(l.county).short}・${l.phone}</span></p>
+    ${clock}
+    <p class="ap-hero__note">${note}</p>
+  </div>
+  <div class="ap-hero__acts">${acts}</div>
+</div>`;
+    }
+    if (next) {
+      return `<div class="ap-hero" data-state="idle">
+  <div class="ap-ring">${ringSVG(0)}${App.avatar(next, 'lg')}</div>
+  <div class="ap-hero__main">
+    <p class="ap-hero__eyebrow">${icon('send')}${invList().length ? `下一位：第 ${rankOf(next.id)} 順位` : '尚未發出邀請'}</p>
+    <p class="ap-hero__name"><a href="instructors.html?id=${next.id}">${esc(next.name)}</a><span>${esc(next.title)}・${App.county(next.county).short}</span></p>
+    <p class="ap-hero__note">發出後講師有 48 小時回覆；逾時或婉拒會依下方順位自動轉送${m === 'sub' ? '代課邀請' : ''}。順位可在發出前調整。${tightNote(App.inviteDue({ sent: NOW_ISO }))}</p>
+  </div>
+  <div class="ap-hero__acts"><button type="button" class="btn btn--primary" data-act="inv-send" data-fk="inv-send">${icon('send')}發出第 ${rankOf(next.id)} 順位${m === 'sub' ? '代課' : ''}邀請</button></div>
+</div>`;
+    }
+    return `<div class="ap-hero" data-state="idle">
+  <div class="ap-ring">${ringSVG(0)}<span class="ap-ring__empty">${icon('user-plus')}</span></div>
+  <div class="ap-hero__main">
+    <p class="ap-hero__eyebrow">${icon('info')}尚無邀請對象</p>
+    <p class="ap-hero__note">從上方推薦名單按「加入順位」建立邀請順序，第 1 順位發出後即開始 48 小時倒數。</p>
+  </div>
+</div>`;
+  }
+  function relayHTML(readonly) {
+    const m = mode();
+    const nodes = [];
+    if (m === 'sub') nodes.push({ kind: 'orig', l: L(c.lecturer) });
+    let list = invList();
+    // 早期案件沒有逐筆邀請資料：以確認紀錄補一個已接受節點，接力軌才不會是空的
+    if (readonly && !list.length && c.lecturer) list = [{ lecturer: c.lecturer, rank: 1, sent: `${App.logDate(c, 'confirm') || App.logDate(c, 'scheduled')}T10:00`, status: 'accepted', replied: `${App.logDate(c, 'scheduled')}T10:00` }];
+    list.forEach(inv => nodes.push({ kind: 'sent', inv, l: L(inv.lecturer) }));
+    if (!readonly) state.queue.forEach((id, k) => nodes.push({ kind: 'plan', l: L(id), qi: k }));
+    nodes.push({ kind: 'goal' });
+    const p = pendingInv();
+    const liveFrac = p && !p.designated ? Math.max(0, Math.min(1, 1 - (App.hoursLeft(App.inviteDue(p)) - elapsedH()) / 48)) : 0;
+    const accepted = list.some(i => i.status === 'accepted');
+    const stOf = n => (n.kind === 'orig' ? 'leave' : n.kind === 'sent' ? n.inv.status : n.kind);
+    const linkInto = (prev, n) => {
+      const ps = stOf(prev);
+      if (ps === 'pending' && !prev.inv.designated) return isOverdue(prev.inv) ? 'over' : 'live';
+      if (n.kind === 'plan' || (n.kind === 'goal' && !accepted)) return 'plan';
+      if (ps === 'accepted' || (n.kind === 'goal' && accepted)) return 'ok';
+      return 'done';
+    };
+    const html = nodes.map((n, i) => {
+      const st = stOf(n);
+      const link = i ? linkInto(nodes[i - 1], n) : '';
+      const out = i < nodes.length - 1 ? linkInto(n, nodes[i + 1]) : '';
+      const baton = (cls, on) => (on && !p.designated ? `<span class="ap-baton ${cls}" aria-hidden="true"></span>` : '');
+      const pv = link === 'live' || out === 'live' ? ` style="--p:${liveFrac.toFixed(4)}"` : '';
+      if (n.kind === 'goal') {
+        return `<li class="ap-node${accepted ? ' is-reached' : ''}" data-state="goal" data-link="${link}"${pv}>${baton('ap-baton--h', link === 'live')}<span class="ap-node__dot">${icon('flag')}</span><span class="ap-node__head"><span class="ap-node__rank">${m === 'sub' ? '代課確定' : '講師確定'}</span></span><span class="ap-node__st"><span class="ap-node__time">${accepted ? '已排定場次' : '接受後排定場次'}</span></span></li>`;
+      }
+      const l = n.l;
+      let rank, badge, time, ctl = '';
+      if (n.kind === 'orig') { rank = '原授課講師'; badge = App.statusBadge('err', '請假'); time = `${fmt.md(c.exception.iso)} 來電`; }
+      else if (n.kind === 'sent') {
+        const inv = n.inv;
+        rank = `${m === 'sub' ? '代課' : ''}第 ${inv.rank} 順位${inv.designated ? '・指定' : ''}`;
+        badge = App.statusBadge(INV[inv.status].tone, INV[inv.status].label);
+        time = inv.status === 'pending' ? `${dtShort(inv.sent)} 發出` : `${dtShort(inv.replied || inv.sent)} ${inv.status === 'accepted' ? '接受' : inv.status === 'declined' ? '婉拒' : '到期'}`;
+      } else {
+        const proj = projectedSend(n.qi);
+        rank = `第 ${rankOf(l.id)} 順位・備取`;
+        badge = App.statusBadge('sprout', proj ? '自動轉送' : '待發出');
+        time = proj ? `最快 ${dtShort(proj)} 轉送` : p && p.designated ? '指定講師婉拒後發出' : '依序發出';
+        const q = state.queue;
+        ctl = `<span class="ap-node__ctl">
+  <button type="button" class="icon-btn" data-act="q-up" data-i="${n.qi}" data-fk="up-${l.id}"${n.qi === 0 ? ' disabled' : ''}>${icon(vertical() ? 'arrow-up' : 'chevron-left')}<span class="icon-btn__label">提前</span></button>
+  <button type="button" class="icon-btn" data-act="q-down" data-i="${n.qi}" data-fk="down-${l.id}"${n.qi === q.length - 1 ? ' disabled' : ''}>${icon(vertical() ? 'arrow-down' : 'chevron-right')}<span class="icon-btn__label">延後</span></button>
+  <button type="button" class="icon-btn" data-act="q-remove" data-id="${l.id}" data-fk="rm-${l.id}">${icon('x')}<span class="icon-btn__label">移出</span></button>
+</span>`;
+      }
+      const mark = st === 'accepted' ? icon('check') : st === 'declined' || st === 'expired' ? icon('x') : st === 'leave' ? icon('alert') : '';
+      return `<li class="ap-node" data-state="${st}"${link ? ` data-link="${link}"` : ''}${out ? ` data-out="${out}"` : ''}${pv}>
+  ${baton('ap-baton--h', link === 'live')}${baton('ap-baton--v', out === 'live')}
+  <span class="ap-node__dot" style="--av:${l.color}">${esc(l.name.charAt(0))}${mark ? `<span class="ap-node__mark">${mark}</span>` : ''}</span>
+  <span class="ap-node__head"><span class="ap-node__rank">${rank}</span><a class="ap-node__name" href="instructors.html?id=${l.id}">${esc(l.name)}</a></span>
+  <span class="ap-node__st">${badge}<span class="ap-node__time">${time}</span></span>
+  ${ctl}
+</li>`;
+    }).join('');
+    return `<ol class="ap-relay${vertical() ? ' is-vertical' : ''}" aria-label="邀請順位">${html}</ol>`;
+  }
+  let clockLoop = null;
+  function renderInvite() {
+    const m = mode();
+    const el = $('#invite');
+    el.hidden = m === 'exit' || m === 'review';
+    if (el.hidden) { if (clockLoop) clockLoop.stop(); return; }
+    const live = m === 'match' || m === 'sub';
+    if (!live) {
+      el.innerHTML = `<div class="card__head"><div class="card__titles"><h2 class="card__title" id="invite-title">${icon('route')}邀請紀錄</h2><p class="card__sub">本案媒合時的順位邀請與回覆結果</p></div></div><div class="card__body">${relayHTML(true)}</div>`;
+      if (clockLoop) clockLoop.stop();
+      return;
+    }
+    const p = pendingInv();
+    const [tone, label] = !p ? ['neutral', '未發出'] : p.designated ? ['info', '指定講師'] : isOverdue(p) ? ['err', '已逾時'] : ['clay', '倒數中'];
+    el.innerHTML = `<div class="card__head">
+  <div class="card__titles"><h2 class="card__title" id="invite-title">${icon('hourglass')}${m === 'sub' ? '代課順位邀請' : '順位邀請'}</h2><p class="card__sub">每位講師 48 小時內回覆；逾時或婉拒即自動轉送下一順位（申請單位指定的講師除外）</p></div>
+  <div class="card__actions">${App.statusBadge(tone, label)}</div>
+</div>
+<div class="card__body">
+  ${heroHTML()}
+  <p class="ap-cap ap-relay-cap">接力順序<span>${state.queue.length ? `備取 ${state.queue.length} 位，可調整先後` : '尚無備取順位'}</span></p>
+  ${relayHTML(false)}
+  <p class="ap-rule"><span>${icon('clock')}回覆期限 48 小時</span><span>${icon('swap')}逾時或婉拒自動轉送</span><span>${icon('mail')}發出與轉送皆以 Email＋簡訊通知</span></p>
+</div>`;
+    // 倒數：只有一般順位邀請且非 calm 時才逐秒更新；離開視窗或分頁隱藏時 App.loop 自動暫停
+    if (!clockLoop) {
+      let acc = 0;
+      clockLoop = App.loop(el, dt => { acc += dt; if (acc >= 250) { acc = 0; tickClock(); } });
+    }
+    if (p && !p.designated && App.hoursLeft(App.inviteDue(p)) > 0 && !App.calm()) clockLoop.start(); else clockLoop.stop();
+  }
+  function tickClock() {
+    const el = $('[data-clock]');
+    if (!el) return;
+    const left = App.hoursLeft(el.dataset.due) - elapsedH();
+    el.innerHTML = `${clockHTML(left)}<span class="ap-clock__cap">後到期</span>`;
+    const f = Math.max(0, Math.min(1, left / 48));
+    const arc = $('[data-arc]');
+    if (arc) arc.setAttribute('stroke-dasharray', `${(f * RING_C).toFixed(2)} ${RING_C.toFixed(2)}`);
+    const head = $('[data-head]');
+    if (head) { const a = (-90 + 360 * f) * Math.PI / 180; head.setAttribute('cx', (60 + 50 * Math.cos(a)).toFixed(2)); head.setAttribute('cy', (60 + 50 * Math.sin(a)).toFixed(2)); }
+    $$('.ap-relay [style*="--p"]').forEach(n => n.style.setProperty('--p', (1 - f).toFixed(4)));
+  }
+
+  /* ===================================================================
+     行前準備／執行與成果
+     =================================================================== */
+  function renderResult() {
+    const m = mode();
+    const el = $('#result');
+    el.hidden = !(m === 'scheduled' || m === 'executed' || m === 'sub');
+    if (el.hidden) return;
+    if (m === 'scheduled' || m === 'sub') {
+      const send = App.addDays(c.date, -7);
+      const exc = c.exception && c.exception.type === 'resched' ? c.exception : null;
+      const free = exc ? App.isFree(c.lecturer, exc.newDate) : null;
+      el.innerHTML = `<div class="card__head"><div class="card__titles"><h2 class="card__title" id="result-title">${icon('calendar')}行前準備</h2><p class="card__sub">${fmt.rocLong(c.date)} ${c.time}・${esc(c.venue)}</p></div><div class="card__actions"><a class="link-arrow" href="schedule.html?id=${c.id}">執行管控${icon('arrow-right')}</a></div></div>
+<div class="card__body">
+  ${exc ? `<div class="notice notice--warn ap-need">${icon('alert')}<div><b>改期申請</b>（${fmt.md(exc.iso)}，${esc(c.contact)}）：${esc(exc.note)}<br>希望改至 <b>${fmt.rocShort(exc.newDate)}</b>；${free.ok ? `${esc(L(c.lecturer).name)} 講師當日檔期可配合。` : `<span class="c-err">${esc(L(c.lecturer).name)} 講師：${esc(free.reason)}</span>，同意前請先與講師確認。`}</div></div>` : ''}
+  <div class="ap-stats">
+    <div class="ap-stat"><span class="ap-stat__k">距活動</span><span class="ap-stat__v">${App.daysBetween(App.TODAY, c.date)}<small>天</small></span><span class="ap-stat__d">${fmt.rocShort(c.date)}</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">行前通知</span><span class="ap-stat__v">${fmt.md(send)}</span><span class="ap-stat__d">${send < App.TODAY ? '已寄送講師與申請單位' : send === App.TODAY ? '今日 09:00 已寄送' : '排程寄送（活動前 7 日）'}</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">預估人數</span><span class="ap-stat__v">${c.people}<small>人</small></span><span class="ap-stat__d">${App.audience(c.audience).name}</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">核定節數</span><span class="ap-stat__v">${c.sessions}<small>節</small></span><span class="ap-stat__d">${c.sessions * 50} 分鐘</span></div>
+  </div>
+</div>
+${exc ? `<div class="card__foot ap-decide"><span class="ap-decide__note">同意後通知講師與申請單位，並重新排程行前通知</span><a class="btn" href="schedule.html?id=${c.id}">${icon('calendar')}到執行管控處理</a><button type="button" class="btn btn--primary" data-act="resched-ok" data-fk="resched-ok">${icon('check')}同意改期至 ${fmt.md(exc.newDate)}</button></div>` : ''}`;
+      return;
+    }
+    // 已執行之後
+    const res = c.result;
+    const due = App.addDays(c.date, 30);
+    const left = App.daysBetween(App.TODAY, due);
+    const reminded = c.reminders.some(r => r.startsWith(App.TODAY));
+    if (!res) {
+      el.innerHTML = `<div class="card__head"><div class="card__titles"><h2 class="card__title" id="result-title">${icon('file')}執行與成果</h2><p class="card__sub">${fmt.rocLong(c.date)} 已辦理・等待講師回填成果與費用申請</p></div><div class="card__actions">${App.statusBadge(left < 0 ? 'err' : 'warn', left < 0 ? `逾期 ${-left} 日` : `剩 ${left} 日`)}</div></div>
+<div class="card__body">
+  <div class="notice ${left < 0 ? 'notice--err' : 'notice--info'}">${icon(left < 0 ? 'alert' : 'info')}<div>講師須於授課後 30 日內（<b>${fmt.rocShort(due)}</b> 前）回填實到人數、簽到表、活動照片與費用申請。${left < 0 ? '已逾期，逾期講師將暫停後續邀約。' : ''}</div></div>
+</div>
+<div class="card__foot ap-decide"><span class="ap-decide__note">${esc(L(c.lecturer).name)} 講師・${L(c.lecturer).phone}</span>${reminded ? `<span class="ap-hero__done">${icon('check')}今日已催交</span>` : `<button type="button" class="btn btn--clay" data-act="res-remind" data-fk="res-remind">${icon('send')}催交成果</button>`}<a class="btn" href="claims.html?id=${c.id}">${icon('receipt')}成果與費用核銷</a></div>`;
+      return;
+    }
+    const verdict = App.claimVerdict(c);
+    const vt = { pass: ['ok', '勾稽全數通過'], warn: ['warn', '勾稽有警示'], fail: ['err', '勾稽有不符'] }[verdict];
+    el.innerHTML = `<div class="card__head"><div class="card__titles"><h2 class="card__title" id="result-title">${icon('presentation')}執行與成果</h2><p class="card__sub">${fmt.rocLong(c.date)} 已辦理・${fmt.roc(res.submitted)} 講師回填</p></div><div class="card__actions">${App.statusBadge(vt[0], vt[1])}</div></div>
+<div class="card__body">
+  <div class="ap-stats">
+    <div class="ap-stat"><span class="ap-stat__k">實到人數</span><span class="ap-stat__v">${res.people}<small>／${c.people} 人</small></span><span class="ap-stat__d">到場率 ${Math.round(res.people / c.people * 100)}%</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">實際節數</span><span class="ap-stat__v">${res.hours}<small>／${c.sessions} 節</small></span><span class="ap-stat__d">每節 50 分鐘</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">滿意度</span><span class="ap-stat__v">${c.survey.avg.toFixed(2)}<small>/ 5</small></span><span class="ap-stat__d">回收 ${c.survey.responses}／${c.survey.invited} 份</span></div>
+    <div class="ap-stat"><span class="ap-stat__k">申請金額</span><span class="ap-stat__v">${fmt.num(c.claimed.total)}<small>元</small></span><span class="ap-stat__d">${c.batch ? `${c.batch} 批次` : '待勾稽'}</span></div>
+  </div>
+  <p class="ap-cap mt-4">勾稽檢查</p>
+  ${App.checkRows(App.claimChecks(c))}
+</div>
+<div class="card__foot"><span>${c.stage === 'closed' ? `${fmt.roc(App.logDate(c, 'closed'))} 撥付完成` : c.stage === 'claim' ? `已編入 ${c.batch}，待會計覆核撥付` : '待承辦逐項勾稽'}</span><a class="link-arrow" href="claims.html?id=${c.id}">成果與費用核銷${icon('arrow-right')}</a></div>`;
+  }
+
+  /* ===================================================================
+     申請內容
+     =================================================================== */
+  const PURPOSE = {
+    climate: '近年夏季高溫與強降雨頻繁，希望讓參與者認識氣候變遷對在地的影響，並討論可行的調適行動。',
+    netzero: '響應淨零綠生活，希望從食衣住行的日常選擇切入，帶參與者算出自己的碳足跡並訂下減碳小目標。',
+    circular: '配合資源回收與減量宣導，希望參與者理解回收之後的去向，並把「源頭減量、循環再生」帶回日常。',
+    energy: '希望讓參與者認識再生能源與節電方法，並以實際用電資料討論可以立即執行的節能行動。',
+    biodiv: '單位周邊有溼地與綠地，希望透過生態觀察與解說，讓參與者認識身邊的生物多樣性。',
+    food: '推動在地當季與惜食，希望講師帶領參與者認識食物里程與剩食減量，最好能搭配簡單實作。',
+    transit: '希望討論通勤、通學的交通選擇與碳排放，規劃適合本單位的低碳交通行動。',
+    health: '關注高溫、空氣品質與健康的關係，希望提供參與者日常可用的自我照護與調適方法。',
+  };
+  function renderDetail() {
+    $('#ap-detail-sub').textContent = `${fmt.roc(c.submitted)} 送件・${c.orgType}`;
+    const owners = App.STAFF.filter(s => s.id !== 'S05');
+    $('#ap-detail-body').innerHTML = `<dl class="kv">
+  <dt>申請單位</dt><dd>${esc(c.org)}</dd>
+  <dt>聯絡人</dt><dd>${esc(c.contact)}（${esc(c.contactTitle)}）</dd>
+  <dt>電話</dt><dd><a href="tel:${c.phone.replace(/-/g, '')}">${c.phone}</a></dd>
+  <dt>Email</dt><dd><a href="mailto:${c.email}">${c.email}</a></dd>
+  <dt>活動地點</dt><dd>${cty.name}${esc(c.district)}・${esc(c.venue)}</dd>
+  <dt>主題</dt><dd>${App.topicTag(c.topic)}</dd>
+  <dt>服務對象</dt><dd>${App.audienceTag(c.audience)} 預估 ${c.people} 人</dd>
+  <dt>辦理方式</dt><dd>${App.MODES[c.mode]}・${c.sessions} 節（${c.sessions * 50} 分鐘）</dd>
+  <dt>${c.date ? '活動日期' : '候選日期'}</dt><dd>${c.date ? `${fmt.rocShort(c.date)} ${c.time}` : `<span class="ap-dates">${c.candidates.map(d => `<span class="ap-date">${fmt.rocShort(d)}</span>`).join('')}</span><span class="ap-dd-sub">擇一日 ${c.time}</span>`}</dd>
+  <dt>承辦人員</dt><dd><span class="ap-owner"><label class="sr-only" for="ap-owner">承辦人員</label><select class="select select--sm" id="ap-owner" data-fk="owner"${c.status !== 'active' ? ' disabled' : ''}><option value="">未指派</option>${owners.map(s => `<option value="${s.id}"${s.id === c.owner ? ' selected' : ''}>${s.name}（${s.area}）</option>`).join('')}</select></span></dd>
+</dl>
+<div class="ap-purpose"><b>申請說明</b>${PURPOSE[c.topic]}參與對象為${App.audience(c.audience).name}約 ${c.people} 人，${c.mode === 'online' ? '以視訊方式進行，平台由本單位提供' : `場地已備投影機與麥克風`}，希望講師安排互動或實作。</div>
+<div class="ap-files"><p class="ap-cap">附件<span>${c.files.length} 個檔案</span></p><ul class="file-list">${c.files.map(f => `<li class="file-item">${icon(f.name.endsWith('.jpg') ? 'image' : 'file')}<div><p class="file-item__name">${esc(f.name)}</p><p class="file-item__meta">${f.size}・${fmt.md(c.submitted)} 上傳</p></div><button type="button" class="btn btn--sm btn--ghost" data-toast="已開啟「${esc(f.name)}」預覽" data-toast-desc="示範環境以縮圖預覽，正式環境會在新分頁開啟原檔">${icon('eye')}預覽</button></li>`).join('')}</ul></div>`;
+  }
+
+  /* ===================================================================
+     鐘點費預估
+     =================================================================== */
+  function feeCandidates() {
+    const out = [];
+    const add = (id, role) => { if (id && !out.some(o => o.id === id)) out.push({ id, role }); };
+    const m = mode();
+    if (c.lecturer && m !== 'sub') add(c.lecturer, '授課講師');
+    invList().filter(i => i.status === 'pending' || i.status === 'accepted').forEach(i => add(i.lecturer, i.status === 'pending' ? `第 ${i.rank} 順位・等待回覆` : '已接受'));
+    state.queue.forEach(id => add(id, `第 ${rankOf(id)} 順位・備取`));
+    const ranked = (m === 'match' || m === 'sub') ? state.result.ranked : App.matchFunnel(c).ranked;
+    ranked.slice(0, 6).forEach((r, i) => add(r.l.id, `推薦第 ${i + 1} 名`));
+    return out;
+  }
+  function renderFee() {
+    const el = $('#fee');
+    el.hidden = mode() === 'exit';
+    if (el.hidden) return;
+    const opts = feeCandidates();
+    const body = $('#ap-fee-body');
+    if (!opts.length) { body.innerHTML = `<p class="subtle">目前沒有可試算的講師，請先調整媒合條件。</p>`; return; }
+    if (!opts.some(o => o.id === state.feeLecturer)) { state.feeLecturer = opts[0].id; state.feeRate = null; }
+    const l = L(state.feeLecturer);
+    const rateKey = state.feeRate || l.rateKey;
+    const f = App.feeEstimate({ rateKey, sessions: c.sessions, from: l.county, to: c.county, mode: c.mode });
+    const total = f.total || 1;
+    const tierAmt = f.tier ? f.tier.amount : 0;
+    const tiers = App.FEE.travel.map(t => ({ label: t.max === Infinity ? '250 公里以上' : t.label, amount: t.amount })).concat([{ label: '跨海往返離島', amount: App.FEE.island.amount, island: true }]);
+    const onTier = t => f.tier && (f.tier.island ? t.island : !t.island && t.amount === tierAmt);
+    const claimed = c.claimed && state.feeLecturer === c.lecturer;
+    body.innerHTML = `<div class="ap-fee-ctl">
+  <div class="field"><label class="label" for="ap-fee-l">試算講師</label><select class="select" id="ap-fee-l" data-fk="fee-l">${opts.map(o => `<option value="${o.id}"${o.id === state.feeLecturer ? ' selected' : ''}>${esc(L(o.id).name)}（${o.role}）</option>`).join('')}</select></div>
+  <div class="field"><label class="label" for="ap-fee-r">費率類別</label><select class="select" id="ap-fee-r" data-fk="fee-r">${App.FEE.rates.map(r => `<option value="${r.key}"${r.key === rateKey ? ' selected' : ''}>${r.label}（每節 ${fmt.num(r.rate)} 元）</option>`).join('')}</select><p class="hint">講師資料登錄為「${RATE_SHORT[l.rateKey]}」${state.feeRate && state.feeRate !== l.rateKey ? '，目前為試算其他類別' : ''}</p></div>
+</div>
+<div class="ap-fee" aria-live="polite">
+  <div class="ap-fee__row"><span class="ap-fee__k"><i style="background:var(--forest)"></i>講座鐘點費</span><span class="ap-fee__v">${fmt.money(f.lecture)}</span><span class="ap-fee__d">${f.rate.label} ${fmt.num(f.rate.rate)} 元 × ${f.sessions} 節（${f.minutes} 分鐘）</span></div>
+  <div class="ap-fee__row"><span class="ap-fee__k"><i style="background:var(--clay)"></i>交通費</span><span class="ap-fee__v">${fmt.money(f.travel)}</span><span class="ap-fee__d">${c.mode === 'online' ? '線上授課，不支給交通費' : `${App.county(l.county).name} → ${cty.name}　約 ${f.km} 公里（${esc(f.tier.label)}）`}</span></div>
+  <div class="ap-fee__bar" role="img" aria-label="鐘點費占 ${Math.round(f.lecture / total * 100)}%，交通費占 ${Math.round(f.travel / total * 100)}%"><span style="width:${(f.lecture / total * 100).toFixed(1)}%;background:var(--forest)"></span><span style="width:${(f.travel / total * 100).toFixed(1)}%;background:var(--clay)"></span></div>
+  <div class="ap-fee__total"><span>預估合計</span><b>${fmt.num(f.total)}<small>元</small></b></div>
+  ${claimed ? `<div class="notice ${c.claimed.total === f.total ? 'notice--ok' : 'notice--warn'} ap-fee__cmp">${icon(c.claimed.total === f.total ? 'check' : 'alert')}<div>講師申請 <b>${fmt.money(c.claimed.total)}</b>${c.claimed.total === f.total ? '，與預估相符' : `，與預估差 ${fmt.money(Math.abs(c.claimed.total - f.total))}，請於核銷時確認`}</div></div>` : ''}
+</div>
+${c.mode === 'online' ? '' : `<p class="ap-cap mt-4">交通費距離級距（示意）</p><ul class="ap-tiers">${tiers.map(t => `<li class="ap-tier${onTier(t) ? ' is-on' : ''}"><span>${t.label}</span><span class="ap-tier__bar" aria-hidden="true"><span style="width:${(t.amount / App.FEE.island.amount * 100).toFixed(1)}%"></span></span><span class="ap-tier__v">${fmt.num(t.amount)}</span></li>`).join('')}</ul>`}`;
+  }
+
+  /* ===================================================================
+     處理紀錄
+     =================================================================== */
+  function buildLog() {
+    const first = c.invites[0];
+    const entries = App.caseLog(c).map(e => {
+      if (e.title === '退件補正' && state.needAt) return Object.assign({}, e, state.needAt);
+      if (first && e.title.startsWith('發出講師邀請')) return Object.assign({}, e, { iso: first.sent.slice(0, 10), time: first.sent.slice(11, 16) });
+      return e;
+    });
+    const by = c.owner ? App.staff(c.owner).name : '系統';
+    if (c.invites[0] && !App.logDate(c, 'confirm')) entries.push({ iso: c.invites[0].sent.slice(0, 10), time: c.invites[0].sent.slice(11, 16), title: `發出講師邀請（第 1 順位 ${L(c.invites[0].lecturer).name}）`, by, note: '', tone: 'done' });
+    (c.subInvites || []).forEach(inv => entries.push({ iso: inv.sent.slice(0, 10), time: inv.sent.slice(11, 16), title: `發出代課邀請（第 ${inv.rank} 順位 ${L(inv.lecturer).name}）`, by, note: '', tone: inv.rank > 1 ? 'warn' : 'done' }));
+    return entries.concat(state.extraLog).sort((a, b) => (b.iso + b.time).localeCompare(a.iso + a.time));
+  }
+  function renderLog() {
+    const entries = buildLog();
+    $('#ap-log-sub').textContent = `共 ${entries.length} 筆，新到舊`;
+    $('#ap-tl').innerHTML = App.timeline(entries);
+  }
+
+  /* ===================================================================
+     全頁重繪（任何資料改變都走這裡，含復原）
+     =================================================================== */
+  function initQueue(m) {
+    state.queueMode = m;
+    state.queue = [];
+    state.showAll = false;
+    if (m !== 'match' && m !== 'sub') return;
+    const invited = new Set(invList().map(i => i.lecturer));
+    // 系統依推薦名單帶入備取順位：還沒發過邀請就帶 3 位，已在接力中就補 2 位
+    state.queue = compute().ranked.map(x => x.l.id).filter(id => !invited.has(id) && !(m === 'sub' && id === c.lecturer)).slice(0, invList().length ? 2 : 3);
+  }
+  function renderAll() {
+    withFocus(() => {
+      const m = mode();
+      if (state.queueMode !== m) initQueue(m);
+      renderHead();
+      renderBand();
+      renderAlert();
+      renderReview();
+      renderMatch();
+      renderInvite();
+      renderResult();
+      renderDetail();
+      renderFee();
+      renderLog();
+      $('#ap-note').hidden = m === 'exit';
+      $('.ap-layout').classList.toggle('is-exit', m === 'exit');
+    });
+  }
+
+  /* ===================================================================
+     動作
+     =================================================================== */
+  function sendNext() {
+    const id = state.queue.shift();
+    const sub = mode() === 'sub';
+    const list = invList();
+    const inv = { lecturer: id, rank: list.length + 1, sent: NOW_ISO, status: 'pending' };
+    if (sub) { inv.sub = true; c.subInvites = (c.subInvites || []).concat(inv); }
+    else {
+      c.invites.push(inv);
+      if (c.stage === 'matching') { c.stage = 'confirm'; c.log.push(['confirm', c.invites[0].sent.slice(0, 10)]); }
+    }
+    return inv;
+  }
+  function openAccept() {
+    const p = pendingInv();
+    const l = L(p.lecturer);
+    const sub = mode() === 'sub';
+    const dates = c.date ? [c.date] : c.candidates;
+    const opts = dates.map(d => Object.assign({ d }, App.isFree(l.id, d)));
+    const okOpts = opts.filter(o => o.ok);
+    const body = `<form class="ap-form" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <div class="ap-mwho">${App.avatar(l, 'lg')}<div><p class="strong">${esc(l.name)}・${sub ? '代課' : ''}第 ${p.rank} 順位</p><p class="subtle">${esc(l.title)}｜${l.phone}</p></div></div>
+  <fieldset class="field"><legend class="label req">授課日期</legend><div class="ap-radios">${opts.map(o => `<label class="radio ap-radio${o.ok ? '' : ' is-off'}"><input type="radio" name="ap-date" value="${o.d}" required data-error="請選擇講師可配合的日期"${o.ok ? '' : ' disabled'}${okOpts.length === 1 && o.ok ? ' checked' : ''}><span class="check__box" aria-hidden="true"></span><span><b>${fmt.rocShort(o.d)}</b> ${c.time}<span class="ap-radio__note">${o.ok ? '講師檔期可配合' : esc(o.reason)}</span></span></label>`).join('')}</div></fieldset>
+  <div class="field"><label class="label" for="ap-acc-note">備註（選填）</label><input class="input" id="ap-acc-note" type="text" maxlength="80" placeholder="例：講師已電話確認，需投影機與無線麥克風"></div>
+  <div class="notice notice--ok">${icon('info')}<div>${sub ? `確認後由 <b>${esc(l.name)}</b> 接替原講師授課，系統通知申請單位與原講師。` : '確認後案件進入「待執行」，其餘備取順位自動取消，系統於活動前 7 日寄送行前通知。'}</div></div>
+</form>`;
+    const dlg = App.modal({
+      title: '記錄講師接受邀請', lead: `${c.id} ${c.org}`, icon: 'user-check', body,
+      actions: [{ label: '取消' }, {
+        label: '確認接受', variant: 'primary', onClick: (close, d) => {
+          const form = $('form', d);
+          if (!App.validate(form)) return false;
+          const date = $('input[name="ap-date"]:checked', form).value;
+          const note = $('#ap-acc-note', form).value.trim();
+          const before = snapshot();
+          p.status = 'accepted';
+          p.replied = NOW_ISO;
+          if (sub) {
+            const old = L(c.lecturer);
+            state.extraLog.push({ iso: c.exception.iso, time: '11:20', title: '講師請假', by: '講師', note: c.exception.note, tone: 'err' });
+            state.extraLog.push(logEntry(`代課講師確認：${l.name} 接替 ${old.name}`, note || '已通知申請單位與原講師'));
+            c.lecturer = l.id;
+            delete c.exception;
+            commit('sub-accept', before, `${l.name} 講師接下代課`, `${fmt.rocShort(c.date)} 場次已改由 ${l.name} 授課，申請單位與原講師已收到通知。`);
+          } else {
+            c.lecturer = l.id;
+            c.date = date;
+            if (!App.logDate(c, 'confirm')) c.log.push(['confirm', c.invites[0].sent.slice(0, 10)]);
+            c.log.push(['scheduled', App.TODAY]);
+            c.stage = 'scheduled';
+            c.matchDays = Math.max(1, App.daysBetween(App.logDate(c, 'matching'), App.TODAY));
+            if (note) state.extraLog.push(logEntry('接受邀請備註', note));
+            commit('invite-accept', before, `${l.name} 講師確認授課`, `${fmt.rocShort(date)} ${c.time}，案件進入「待執行」，媒合歷時 ${c.matchDays} 天。`);
+          }
+          return true;
+        },
+      }],
+    });
+    if (!okOpts.length) {
+      $('[data-act="1"]', dlg.el).disabled = true;
+      $('.form-alert', dlg.el).classList.add('is-on');
+      $('.form-alert', dlg.el).innerHTML = `${icon('alert')}<div>講師在${dates.length > 1 ? '所有候選日期' : '活動日期'}皆無法配合，請先與申請單位協調新日期，或記錄婉拒改邀下一順位。</div>`;
+    }
+  }
+  function openDecline() {
+    const p = pendingInv();
+    const l = L(p.lecturer);
+    const next = state.queue[0] ? L(state.queue[0]) : null;
+    const body = `<form class="ap-form" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <div class="field"><label class="label req" for="ap-dec-reason">婉拒原因</label><select class="select" id="ap-dec-reason" required data-error="請選擇婉拒原因"><option value="">請選擇</option><option>候選日期皆無法配合</option><option>距離或交通不便</option><option>主題非主要專長</option><option>近期授課負擔過重</option><option>個人因素</option></select></div>
+  <div class="field"><label class="label" for="ap-dec-note">補充說明（選填）</label><textarea class="textarea" id="ap-dec-note" rows="3" maxlength="120" placeholder="例：講師 12 月起可配合，下次可優先邀請"></textarea></div>
+  <div class="notice ${next ? 'notice--info' : 'notice--warn'}">${icon(next ? 'swap' : 'alert')}<div>${next ? `送出後立即轉送第 ${rankOf(next.id)} 順位 <b>${esc(next.name)}</b>，回覆期限 ${dtShort(App.inviteDue({ sent: NOW_ISO }))}。` : '名單已無備取順位，記錄後請從推薦名單加入講師再發出邀請。'}</div></div>
+</form>`;
+    App.modal({
+      title: `記錄 ${l.name} 婉拒`, lead: `${c.id} ${c.org}・第 ${p.rank} 順位`, icon: 'x', tone: 'clay', body,
+      actions: [{ label: '取消' }, {
+        label: next ? '記錄並轉送下一順位' : '記錄婉拒', variant: 'primary', onClick: (close, d) => {
+          const form = $('form', d);
+          if (!App.validate(form)) return false;
+          const reason = $('#ap-dec-reason', form).value;
+          const note = $('#ap-dec-note', form).value.trim();
+          const before = snapshot();
+          p.status = 'declined';
+          p.replied = NOW_ISO;
+          state.extraLog.push(logEntry(`${l.name} 婉拒邀請`, `${reason}${note ? `；${note}` : ''}`, 'warn', `${me.name}（電話登錄）`));
+          const inv = next ? sendNext() : null;
+          commit('invite-decline', before, inv ? `已轉送第 ${inv.rank} 順位 ${L(inv.lecturer).name}` : `已記錄 ${l.name} 婉拒`, inv ? `${l.name} 婉拒（${reason}）。新邀請回覆期限 ${dtShort(App.inviteDue(inv))}。` : '名單已無備取順位，請從推薦名單加入講師。', inv ? 'ok' : 'warn');
+          return true;
+        },
+      }],
+    });
+  }
+  const NEED_PRESETS = ['請補附活動企劃書（含流程與參與對象說明）。', '請重新確認 3 個可配合的候選日期。', '請補上場地可容納人數與投影設備資訊。', '請說明參與對象的年級或部門分布。'];
+  function openReturn() {
+    const body = `<form class="ap-form" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <div class="field"><span class="label">常見補正項目（點選帶入）</span><div class="ap-chips">${NEED_PRESETS.map((t, i) => `<button type="button" class="chip" aria-pressed="false" data-preset="${i}">${esc(t.replace(/[（(].*$|。$/g, ''))}</button>`).join('')}</div></div>
+  <div class="field"><label class="label req" for="ap-need-text">補正理由</label><textarea class="textarea" id="ap-need-text" rows="4" required maxlength="200" data-error="請填寫補正理由（至少 10 個字），申請單位會收到這段說明">${esc(c.need || '')}</textarea><p class="hint">將以 Email 與簡訊通知聯絡人 ${esc(c.contact)}（${esc(c.contactTitle)}）</p></div>
+  <div class="field"><label class="label req" for="ap-need-due">補件期限</label><input class="input" id="ap-need-due" type="date" required min="${App.TODAY}" value="${App.addDays(App.TODAY, 5)}" data-error="請選擇今天以後的補件期限"></div>
+</form>`;
+    const dlg = App.modal({
+      title: c.need ? '修改補正說明' : '退件補正', lead: `${c.id} ${c.org}`, icon: 'message', tone: 'clay', body,
+      actions: [{ label: '取消' }, {
+        label: '送出補正通知', variant: 'primary', onClick: (close, d) => {
+          const form = $('form', d);
+          const ta = $('#ap-need-text', form);
+          // minlength 只對使用者輸入生效，點選帶入的文字也要檢查長度
+          ta.setCustomValidity(ta.value.trim().length >= 10 ? '' : '至少 10 個字');
+          if (!App.validate(form)) return false;
+          const before = snapshot();
+          const due = $('#ap-need-due', form).value;
+          c.need = ta.value.trim();
+          state.needAt = { iso: App.TODAY, time: '10:30' };
+          commit('review-return', before, '已通知申請單位補正', `補件期限 ${fmt.rocShort(due)}；${c.contact} 會收到 Email 與簡訊。`);
+          return true;
+        },
+      }],
+    });
+    const ta = $('#ap-need-text', dlg.el);
+    ta.addEventListener('input', () => ta.setCustomValidity(''));
+    $('.ap-chips', dlg.el).addEventListener('click', e => {
+      const b = e.target.closest('[data-preset]');
+      if (!b) return;
+      const t = NEED_PRESETS[Number(b.dataset.preset)];
+      const on = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', String(on));
+      const lines = ta.value.split('\n').map(s => s.trim()).filter(Boolean).filter(s => s !== t);
+      ta.value = (on ? lines.concat(t) : lines).join('\n');
+      ta.setCustomValidity('');
+    });
+  }
+  function openApprove() {
+    const n = App.matchFunnel(c).ranked.length;
+    App.modal({
+      title: '初審通過，進入媒合？', lead: `${c.id} ${c.org}`, icon: 'check', size: 'sm',
+      body: `<form class="ap-form" novalidate><p>系統將依預設條件產生推薦名單（目前 ${n} 位），並帶入建議的邀請順位。</p><div class="field"><label class="label" for="ap-approve-note">審核備註（選填）</label><textarea class="textarea" id="ap-approve-note" rows="3" maxlength="120" placeholder="例：已電話確認場地可容納 ${c.people} 人"></textarea></div></form>`,
+      actions: [{ label: '取消' }, {
+        label: '確認通過', variant: 'primary', onClick: (close, d) => {
+          const note = $('#ap-approve-note', d).value.trim();
+          const before = snapshot();
+          c.stage = 'matching';
+          c.log.push(['matching', App.TODAY]);
+          if (note) state.extraLog.push(logEntry('初審備註', note));
+          commit('review-approve', before, `${c.id} 初審通過`, `已進入媒合關卡，推薦名單 ${n} 位；媒合時限 5 日（${fmt.md(App.addDays(App.TODAY, 5))} 前）。`);
+          return true;
+        },
+      }],
+    });
+  }
+
+  $('#main').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.disabled) return;
+    const act = b.dataset.act;
+    const id = b.dataset.id;
+    let before;
+    switch (act) {
+      case 'rv-accept':
+        before = snapshot();
+        if (!c.owner) c.owner = App.ME;
+        c.stage = 'review';
+        c.log.push(['review', App.TODAY]);
+        commit('review-accept', before, `已受理 ${c.id}`, `承辦 ${App.staff(c.owner).name}；初審時限 3 日（${fmt.md(App.addDays(App.TODAY, 3))} 前）。`);
+        break;
+      case 'rv-approve': openApprove(); break;
+      case 'rv-return': openReturn(); break;
+      case 'rv-resolve': {
+        before = snapshot();
+        const need = c.need;
+        state.extraLog.push(Object.assign({ title: '退件補正', by: c.owner ? App.staff(c.owner).name : '系統', note: need, tone: 'warn' }, state.needAt || { iso: App.logDate(c, 'review'), time: '16:40' }));
+        state.extraLog.push(logEntry('申請單位完成補件', `補正項目：${need}`, 'done', `${c.contact}（${c.org}）`));
+        delete c.need;
+        state.needAt = null;
+        commit('review-resolve', before, '已恢復審核', '補件已收齊，請繼續完成初審。');
+        break;
+      }
+      case 'crit-reset':
+        state.on = { region: true, topic: true, audience: true, slot: true, load: true, rating: true };
+        state.regionMode = DEF.region; state.loadMax = DEF.loadMax; state.minRating = DEF.minRating;
+        refreshMatch();
+        App.toast('已重設為預設媒合條件', { tone: 'info' });
+        break;
+      case 'relax':
+        state.on[b.dataset.key] = false;
+        refreshMatch();
+        break;
+      case 'cands-all':
+        state.showAll = !state.showAll;
+        withFocus(renderCands);
+        break;
+      case 'q-add': {
+        before = snapshot();
+        state.queue.push(id);
+        commit('queue-add', before, `已將 ${L(id).name} 排入第 ${rankOf(id)} 順位`, pendingInv() ? '前一順位逾時或婉拒時會自動轉送。' : '發出邀請前可隨時調整順位。', 'info');
+        break;
+      }
+      case 'q-remove': {
+        before = snapshot();
+        const r = rankOf(id);
+        state.queue = state.queue.filter(x => x !== id);
+        commit('queue-remove', before, `已將 ${L(id).name} 移出第 ${r} 順位`, '', 'info');
+        break;
+      }
+      case 'q-up': case 'q-down': {
+        const i = Number(b.dataset.i);
+        const j = act === 'q-up' ? i - 1 : i + 1;
+        [state.queue[i], state.queue[j]] = [state.queue[j], state.queue[i]];
+        App.emit('queue-move');
+        break;
+      }
+      case 'fee-try':
+        state.feeLecturer = id;
+        state.feeRate = null;
+        withFocus(renderFee);
+        App.toast(`鐘點費改以 ${L(id).name} 試算`, { desc: `預估合計 ${fmt.money(App.feeEstimate({ rateKey: L(id).rateKey, sessions: c.sessions, from: L(id).county, to: c.county, mode: c.mode }).total)}`, tone: 'info' });
+        if ($('#fee').getBoundingClientRect().top > innerHeight) scrollToEl($('#fee'));
+        break;
+      case 'inv-send': {
+        before = snapshot();
+        const inv = sendNext();
+        commit('invite-send', before, `已發出第 ${inv.rank} 順位邀請`, `${L(inv.lecturer).name} 講師會收到 Email 與簡訊，請於 ${dtShort(App.inviteDue(inv))} 前回覆。`);
+        break;
+      }
+      case 'inv-accept': openAccept(); break;
+      case 'inv-decline': openDecline(); break;
+      case 'inv-remind': {
+        before = snapshot();
+        c.reminders.push(NOW_ISO);
+        commit('remind', before, `已催覆 ${L(pendingInv().lecturer).name} 講師`, '已寄送 Email 與簡訊，並記錄在處理紀錄。');
+        break;
+      }
+      case 'inv-forward': {
+        before = snapshot();
+        const p = pendingInv();
+        p.status = 'expired';
+        p.replied = App.inviteDue(p);
+        const inv = sendNext();
+        commit('invite-forward', before, `已轉送第 ${inv.rank} 順位 ${L(inv.lecturer).name}`, `${L(p.lecturer).name} 逾 48 小時未回覆。新邀請回覆期限 ${dtShort(App.inviteDue(inv))}。`);
+        break;
+      }
+      case 'res-remind':
+        before = snapshot();
+        c.reminders.push(NOW_ISO);
+        commit('remind', before, `已提醒 ${L(c.lecturer).name} 講師回填成果`, '已寄送 Email 與簡訊，並記錄在處理紀錄。');
+        break;
+      case 'resched-ok': {
+        before = snapshot();
+        const exc = c.exception;
+        const old = c.date;
+        state.extraLog.push({ iso: exc.iso, time: '11:20', title: '申請改期', by: c.contact, note: exc.note, tone: 'err' });
+        state.extraLog.push(logEntry(`同意改期：${fmt.md(old)} → ${fmt.md(exc.newDate)}`, '已通知講師與申請單位，行前通知重新排程'));
+        c.date = exc.newDate;
+        delete c.exception;
+        commit('resched', before, `已同意改期至 ${fmt.rocShort(c.date)}`, '講師與申請單位已收到通知，行前通知改於活動前 7 日寄送。');
+        break;
+      }
+      default: break;
+    }
+  });
+
+  // 媒合條件：開關、滑桿（拖曳時即時顯示數值，放開或停頓後重算）
+  let critTimer = 0;
+  $('#main').addEventListener('change', e => {
+    const t = e.target;
+    if (t.matches('[data-crit]')) { state.on[t.dataset.crit] = t.checked; refreshMatch(); return; }
+    if (t.id === 'ap-owner') {
+      const before = snapshot();
+      c.owner = t.value || null;
+      commit('owner', before, c.owner ? `已改派承辦：${App.staff(c.owner).name}` : '已取消承辦指派', c.owner ? `${App.staff(c.owner).area}，案件會出現在其待辦清單。` : '案件會列入「尚未指派」。', 'info');
+      return;
+    }
+    if (t.id === 'ap-fee-l') { state.feeLecturer = t.value; state.feeRate = null; withFocus(renderFee); return; }
+    if (t.id === 'ap-fee-r') { state.feeRate = t.value; withFocus(renderFee); }
+  });
+  $('#main').addEventListener('input', e => {
+    const t = e.target;
+    if (t.id !== 'ap-load' && t.id !== 'ap-rating') return;
+    if (t.id === 'ap-load') { state.loadMax = Number(t.value); state.on.load = true; $('#ap-load-out').textContent = `≤ ${state.loadMax} 場`; }
+    else { state.minRating = Number(t.value) / 10; state.on.rating = true; $('#ap-rating-out').textContent = `≥ ${state.minRating.toFixed(1)} 分`; }
+    clearTimeout(critTimer);
+    critTimer = setTimeout(refreshMatch, 220);
+  });
+
+  // 處理備註
+  $('#ap-note').addEventListener('submit', e => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    if (!App.validate(form)) return;
+    const input = $('#ap-note-input');
+    const before = snapshot();
+    state.extraLog.push(logEntry('承辦備註', input.value.trim()));
+    input.value = '';
+    commit('note', before, '已新增處理備註', '備註只在後台顯示，不會通知申請單位或講師。', 'info');
+  });
+
+  // 匯出案件摘要（CSV）
+  $('#ap-export').addEventListener('click', () => {
+    const l = c.lecturer ? L(c.lecturer) : null;
+    const rows = [['欄位', '內容'],
+      ['案號', c.id], ['申請單位', c.org], ['單位類型', c.orgType], ['縣市', cty.name], ['鄉鎮市區', c.district], ['活動地點', c.venue],
+      ['聯絡人', `${c.contact}（${c.contactTitle}）`], ['電話', c.phone], ['Email', c.email],
+      ['主題', App.topic(c.topic).name], ['服務對象', App.audience(c.audience).name], ['預估人數', c.people], ['辦理方式', App.MODES[c.mode]],
+      [c.date ? '活動日期' : '候選日期', c.date ? fmt.roc(c.date) : c.candidates.map(fmt.roc).join('、')], ['時間', c.time], ['核定節數', c.sessions],
+      ['目前狀態', c.status === 'active' ? App.stage(c.stage).label : App.EXITS[c.status]], ['承辦', c.owner ? App.staff(c.owner).name : '未指派'], ['授課講師', l ? l.name : '尚未確認'],
+      [], ['處理紀錄', '']];
+    buildLog().slice().reverse().forEach(x => rows.push([`${fmt.roc(x.iso)} ${x.time}`, `${x.title}（${x.by}）${x.note ? `：${x.note}` : ''}`]));
+    App.downloadCSV(`案件摘要_${c.id}.csv`, rows);
+    App.toast('已匯出案件摘要', { desc: `${c.id}，含 ${buildLog().length} 筆處理紀錄，可直接以 Excel 開啟。` });
+  });
+
+  /* ---------- 初次繪製、資料同步、模式切換 ---------- */
+  renderAll();
+  App.on(renderAll);
+  // 高齡模式與手機寬度：接力軌改直向、倒數改分鐘顯示
+  App.onMode(() => withFocus(renderInvite));
+  matchMedia('(max-width: 640px)').addEventListener('change', () => withFocus(renderInvite));
+  // 進度帶的脈動光環：離開視窗或分頁隱藏時暫停
+  const band = $('#ap-band');
+  let bandIn = true;
+  const syncBand = () => band.classList.toggle('is-paused', !bandIn || document.hidden);
+  new IntersectionObserver(es => { bandIn = es[es.length - 1].isIntersecting; syncBand(); }).observe(band);
+  document.addEventListener('visibilitychange', syncBand);
+  // #match、#invite 的內容由程式產生，瀏覽器載入時的錨點捲動會落空：繪製後補捲一次
+  if (location.hash === '#match' || location.hash === '#invite' || location.hash === '#fee' || location.hash === '#log') {
+    const target = $(location.hash);
+    if (target && !target.hidden) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+  }
+});
+</script>
+</body>
+</html>

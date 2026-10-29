@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>講師資料管理 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="講師資料管理：講師苗圃總覽、資料完整度、認證效期與 90 日內到期提醒、專長與服務區域、側欄編輯與欄位驗證、異動紀錄與批次匯入。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+
+  /* =====================================================================
+     講師苗圃（本頁招牌）：每位講師是一株新芽。
+     莖高＝本年度授課場次、葉片長齊＝資料完整、陶土光環＝認證 90 日內到期、
+     待審核＝剛播下的種子、停用＝休眠種子。切換分組時新芽以 FLIP 移到新的苗床。
+     ===================================================================== */
+  .ins-nursery { display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+  .ins-nursery__main { position: relative; min-width: 0; padding: 4px 20px 14px; }
+  .ins-nursery__side {
+    display: grid; gap: 10px; align-content: start; padding: 16px 20px 18px;
+    border-left: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, var(--paper), var(--card) 75%);
+  }
+  .ins-beds { display: grid; }
+  .ins-bed { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 0 10px; align-items: start; padding: 6px 0 2px; }
+  .ins-bed + .ins-bed { border-top: 1px dashed var(--line); }
+  .ins-bed__label { display: grid; padding-top: 20px; font-size: var(--fs-sm); font-weight: 800; color: var(--ink); line-height: 1.35; }
+  .ins-bed__label small { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  /* 每一列新芽底下一條土壤帶：背景以列高重複，換行後每一列都有土 */
+  .ins-plot {
+    --plant-w: 40px; --plant-h: 74px; --row-gap: 6px; --soil-y: 59px;
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--row-gap) 2px;
+    min-height: var(--plant-h); padding: 0 6px;
+    background: linear-gradient(180deg, transparent var(--soil-y), var(--paper-2) var(--soil-y), var(--paper-2) calc(var(--soil-y) + 11px), transparent calc(var(--soil-y) + 11px)) 0 0 / 100% calc(var(--plant-h) + var(--row-gap)) repeat-y;
+  }
+  .ins-plot__empty { align-self: center; padding: 0 6px 16px; font-size: var(--fs-sm); color: var(--ink-3); }
+  .ins-plant {
+    position: relative; flex: none; display: grid; grid-template-rows: 74px auto; justify-items: center; align-content: start;
+    width: var(--plant-w); height: var(--plant-h); padding: 0; border: 0; border-radius: 10px;
+    background: transparent; color: var(--ink); font: inherit;
+    transition: background var(--dur-1), opacity var(--dur-3), box-shadow var(--dur-1);
+  }
+  .ins-plant:hover { background: rgba(31, 93, 74, .07); }
+  .ins-plant.is-current { background: var(--sprout-100); box-shadow: inset 0 0 0 2px var(--forest); }
+  .ins-plant.is-dim { opacity: .24; }
+  .ins-plant.is-dim:hover, .ins-plant.is-dim:focus-visible { opacity: .8; }
+  .ins-plant > svg { width: 42px; height: 74px; overflow: visible; }
+  .ins-plant__name { display: none; max-width: 100%; font-size: var(--fs-xs); font-weight: 800; line-height: 1.3; white-space: nowrap; color: var(--ink); }
+  .ins-plant.is-dim .ins-plant__name { color: var(--ink-3); }
+
+  /* 新芽的各部位（頁面專屬 class，不影響其他 SVG） */
+  .ins-p__mound { fill: var(--paper-3); }
+  .ins-p__stem { fill: none; stroke: var(--forest); stroke-dasharray: 1; stroke-dashoffset: 0; transition: stroke-dashoffset .7s var(--ease-out) var(--d, 0ms); }
+  .ins-p__crown { transform-box: fill-box; transform-origin: 50% 100%; transition: transform .65s var(--ease-spring) calc(var(--d, 0ms) + 280ms); }
+  .ins-p__leaf-a { fill: var(--forest); }
+  .ins-p__leaf-b { fill: var(--sprout); stroke: none; }
+  .ins-p__head { fill: var(--clay); }
+  [data-gap] .ins-p__leaf-b { fill: var(--card); stroke: var(--clay); stroke-dasharray: 3.2 2.6; }
+  .ins-p__seed--review { fill: var(--sky-100); stroke: var(--sky-ink); }
+  .ins-p__shoot { fill: var(--sprout); stroke: var(--forest); }
+  .ins-p__seed--dormant { fill: var(--paper-3); stroke: var(--ink-4); stroke-dasharray: 2.4 2; }
+  .ins-p__crack { fill: none; stroke: var(--ink-4); }
+  .ins-p__ring { fill: none; stroke: var(--clay); }
+  .ins-p__pulse { fill: none; stroke: var(--clay-glow); transform-box: fill-box; transform-origin: center; animation: ins-pulse 2.4s var(--ease-out) infinite; }
+  @keyframes ins-pulse { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
+  .ins-beds.is-paused .ins-p__pulse { animation-play-state: paused; }
+  /* 進場：莖由土裡長出、葉冠彈開（只在一般模式且未減少動態時加 .is-pre） */
+  .ins-beds.is-pre .ins-p__stem { stroke-dashoffset: 1; transition: none; }
+  .ins-beds.is-pre .ins-p__crown { transform: scale(0); transition: none; }
+  /* 資料補齊後新芽長大一次 */
+  .ins-plant.is-grew .ins-p__crown { animation: ins-grew 1s var(--ease-spring); }
+  @keyframes ins-grew { 0% { transform: scale(.5); } }
+  html.is-senior .ins-p__pulse { display: none; }
+
+  /* 滑過新芽的摘要卡 */
+  .ins-tip {
+    position: absolute; z-index: 6; left: 0; top: 0; width: 264px; padding: 12px 14px 12px;
+    border-radius: var(--r-md); background: var(--ink); color: var(--paper); box-shadow: var(--sh-3);
+    pointer-events: none; opacity: 0; transform: translate(-50%, calc(-100% - 6px)) translateY(6px);
+    transition: opacity var(--dur-1), transform var(--dur-2) var(--ease-out);
+  }
+  .ins-tip.is-on { opacity: 1; transform: translate(-50%, calc(-100% - 6px)); }
+  .ins-tip__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ins-tip__name { font-size: var(--fs-base); font-weight: 900; }
+  .ins-tip__sub { margin-top: 1px; font-size: var(--fs-xs); color: #D3DCD7; line-height: 1.45; }
+  .ins-tip dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(246, 243, 234, .16); font-size: var(--fs-xs); line-height: 1.45; }
+  .ins-tip dt { color: #C9D3CE; white-space: nowrap; }
+  .ins-tip dd { text-align: right; font-weight: 700; overflow-wrap: anywhere; }
+  .ins-tip dd.is-warn { color: var(--clay-glow); }
+  .ins-nursery__note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 10px; font-size: var(--fs-sm); color: var(--ink-3); }
+  .ins-nursery__note b { font-family: var(--font-en); color: var(--ink); }
+
+  /* 苗圃概況 */
+  .ins-stat {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px;
+    width: 100%; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
+    background: var(--card); color: var(--ink); text-align: left; font: inherit;
+    transition: border-color var(--dur-1), background var(--dur-1);
+  }
+  button.ins-stat:hover { border-color: var(--forest); }
+  .ins-stat[aria-pressed="true"] { border-color: var(--forest); background: var(--forest-50); box-shadow: inset 0 0 0 1px var(--forest); }
+  .ins-stat__label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 800; color: var(--ink-2); line-height: 1.35; }
+  .ins-stat__label .i { width: 18px; height: 18px; color: var(--forest); }
+  .ins-stat__n { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.1; white-space: nowrap; }
+  .ins-stat__n small { margin-left: 3px; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .ins-stat__note { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .ins-stat.is-alert .ins-stat__n, .ins-stat.is-alert .ins-stat__label .i { color: var(--clay-ink); }
+  .ins-stat .meter { grid-column: 1 / -1; margin-top: 4px; }
+  .ins-split { grid-column: 1 / -1; display: flex; gap: 2px; height: 8px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+  .ins-split > span { flex: var(--n) 1 0; min-width: 4px; }
+  html.is-senior .ins-split { height: 12px; }
+
+  /* 圖例 */
+  .ins-legend { gap: 8px 20px; font-size: var(--fs-xs); }
+  .ins-legend svg { width: 18px; height: 32px; flex: none; }
+  .ins-legend .ins-p__pulse { display: none; }
+  .ins-hint-warn { color: var(--clay-ink); font-weight: 700; }
+  html.is-senior .ins-legend { font-size: var(--fs-sm); }
+
+  /* ---------- 名冊（表格） ---------- */
+  .ins-listhead { margin-bottom: 12px; }
+  .ins-list { display: grid; gap: 12px; }
+  .ins-switch-field .switch { min-height: var(--ctl-h); white-space: nowrap; }
+  .ins-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .ins-person > div { min-width: 0; }
+  .ins-name { font-weight: 800; color: var(--ink); text-decoration: none; }
+  .ins-name:hover { color: var(--forest); text-decoration: underline; }
+  html.is-senior .ins-name { display: inline-flex; align-items: center; min-height: 48px; }
+  .ins-comp { display: flex; align-items: center; gap: 10px; }
+  .ins-comp .ring { --size: 36px; --w: 5px; }
+  html.is-senior .ins-comp .ring { --size: 44px; --w: 6px; }
+  .ins-comp__pct { display: block; font-family: var(--font-en); font-weight: 800; line-height: 1.3; }
+  .ins-comp__miss { display: block; max-width: 10em; font-size: var(--fs-xs); font-weight: 700; color: var(--clay-ink); line-height: 1.4; }
+  .ins-sent { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: var(--fs-xs); font-weight: 800; color: var(--ok); white-space: nowrap; }
+  .ins-sent .i { width: 14px; height: 14px; }
+  .ins-cert { display: grid; justify-items: start; gap: 3px; }
+  .ins-cert__date { font-family: var(--font-en); font-weight: 700; white-space: nowrap; }
+  .ins-cert .cell-sub { margin-top: 0; white-space: nowrap; }
+  .ins-topics { display: flex; align-items: flex-start; gap: 6px; line-height: 1.45; }
+  .ins-topics .i { width: 18px; height: 18px; margin-top: 2px; color: var(--forest); }
+  .ins-topics b { font-weight: 800; }
+  .ins-td-topics .cell-sub b { font-weight: 800; }
+  .ins-unit { display: none; }
+  /* 欄寬下限：auto 版面下避免講師與專長欄被擠成一字一行 */
+  #lect-table .ins-th-who { min-width: 210px; }
+  #lect-table .ins-th-comp { min-width: 120px; }
+  #lect-table .ins-th-cert { min-width: 124px; }
+  #lect-table .ins-th-topics { min-width: 220px; }
+  html.is-senior #lect-table .ins-th-who { min-width: 260px; }
+  html.is-senior #lect-table .ins-th-comp { min-width: 170px; }
+  html.is-senior #lect-table .col-check .check { min-height: 48px; min-width: 40px; align-items: center; }
+  #lect-table .ins-edit:hover { border-color: var(--forest); color: var(--forest); }
+
+  /* ---------- 近期異動紀錄 ---------- */
+  .ins-feed { display: grid; }
+  .ins-feed__item {
+    display: grid; grid-template-columns: 6.4em minmax(9em, 13em) minmax(0, 1fr) auto; gap: 4px 16px; align-items: center;
+    padding: 11px 20px; border-top: 1px solid var(--line-soft);
+  }
+  .ins-feed__item:first-child { border-top: 0; }
+  .ins-feed__date { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+  .ins-feed__who { display: inline-flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 800; text-align: left; }
+  .ins-feed__who:hover { color: var(--forest); text-decoration: underline; }
+  .ins-feed__what { min-width: 0; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.5; }
+  .ins-feed__what b { color: var(--ink); }
+  .ins-from { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--line-2); }
+  .ins-arrow { width: 14px; height: 14px; margin: 0 4px; vertical-align: -2px; color: var(--ink-3); }
+  .ins-feed__by { font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; }
+  .ins-feed__item.is-new { background: var(--sprout-50); }
+  html.is-senior .ins-feed__item { grid-template-columns: 7em minmax(0, 1fr); padding: 14px 22px; }
+  html.is-senior .ins-feed__what, html.is-senior .ins-feed__by { grid-column: 2; }
+  html.is-senior .ins-feed__who { min-height: 48px; }
+  /* ---------- 編輯抽屜 ---------- */
+  .ins-dhead { align-items: center; }
+  .ins-dhead .avatar { width: 48px; height: 48px; font-size: 20px; }
+  html.is-senior .ins-dhead .avatar { width: 56px; height: 56px; font-size: 22px; }
+  .ins-dhead .modal__title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .ins-dtabs { padding: 0 24px; border-bottom: 1px solid var(--line-soft); }
+  .ins-dtabs .tabs { border-bottom: 0; }
+  .ins-dprev {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: center;
+    margin-bottom: 18px; padding: 12px 18px 12px 12px; border-radius: var(--r-md);
+    background: var(--paper); border: 1px solid var(--line-soft);
+  }
+  .ins-dprev__plant { display: grid; place-items: center; width: 64px; height: 100px; border-radius: var(--r-sm); background: var(--card); box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .ins-dprev__plant svg { width: 50px; height: 88px; overflow: visible; }
+  .ins-dprev__plant.is-grew .ins-p__crown { animation: ins-grew 1s var(--ease-spring); }
+  .ins-dprev__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .ins-dprev__pct { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.1; }
+  .ins-dprev__cap { font-size: var(--fs-sm); font-weight: 800; color: var(--ink-2); }
+  .ins-dprev__hint { font-size: var(--fs-xs); color: var(--ink-3); }
+  .ins-req { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .ins-req li { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px 1px 7px; border-radius: var(--r-pill); background: var(--ok-bg); color: var(--ok); font-size: var(--fs-xs); font-weight: 800; line-height: 1.6; }
+  .ins-req li.is-miss { background: var(--clay-100); color: var(--clay-ink); }
+  .ins-req .i { width: 13px; height: 13px; }
+  .ins-fs { display: grid; gap: 14px; padding: 20px 0; border-top: 1px solid var(--line-soft); }
+  .ins-fs:first-of-type { border-top: 0; padding-top: 4px; }
+  .ins-fs__title { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 800; }
+  .ins-fs__title .i { width: 20px; height: 20px; color: var(--forest); }
+  .ins-fs__title small { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  fieldset.field > legend.label { margin-bottom: 6px; }
+  .ins-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; }
+  html.is-senior .ins-checks { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 14px; }
+  .ins-checks .check .i { width: 14px; height: 14px; }
+  .ins-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ins-chips .chip { min-width: 52px; justify-content: center; }
+  html.is-senior .ins-chips .chip { min-width: 64px; }
+  .ins-area { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px 20px; align-items: start; }
+  .ins-area__side { display: grid; gap: 10px; align-content: start; }
+  .ins-area__sum { font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); line-height: 1.6; }
+  .ins-area__sum.is-empty { color: var(--clay-ink); }
+  .ins-area .tilemap { margin-inline: 0; }
+  html.is-senior .ins-area { grid-template-columns: minmax(0, 1fr); }
+  .ins-dfoot-note { margin-right: auto; align-self: center; font-size: var(--fs-xs); color: var(--ink-3); }
+  .ins-tl .tl-item__note { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+  .ins-tl .tl-item__note .i { width: 14px; height: 14px; color: var(--ink-3); }
+  .ins-joined { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line-2); font-size: var(--fs-sm); color: var(--ink-3); }
+  .ins-csum { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .ins-cases { display: grid; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+  .ins-case { display: grid; grid-template-columns: 8.4em minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line-soft); }
+  .ins-case:first-child { border-top: 0; }
+  .ins-case__org { font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
+  .ins-case__more { padding: 10px 14px; border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--ink-3); }
+  html.is-senior .ins-case { grid-template-columns: minmax(0, 1fr) auto; }
+  html.is-senior .ins-case .cell-id { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .ins-case__org { grid-column: 1 / -1; grid-row: 2; }
+
+  /* ---------- 批次匯入 ---------- */
+  .ins-imp .steps { margin-bottom: 22px; }
+  .ins-imp__pane { display: grid; gap: 14px; }
+  .ins-drop { padding: 30px 20px; }
+  .ins-drop__title { font-size: var(--fs-md); font-weight: 800; color: var(--ink); }
+  .ins-drop__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
+  .ins-file-btn { position: relative; overflow: hidden; cursor: pointer; }
+  .ins-file-btn input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .ins-file-btn:focus-within { outline: var(--focus-w) solid var(--focus); outline-offset: 2px; box-shadow: 0 0 0 calc(var(--focus-w) + 4px) var(--focus-halo); }
+  .ins-imp .file-item__bar { height: 6px; border-radius: 3px; }
+  .ins-imp .table th, .ins-imp .table td { white-space: nowrap; }
+  .ins-imp .table td.ins-wrap { white-space: normal; min-width: 15em; }
+  .ins-imp .select { min-width: 10em; }
+  .ins-imp__sum { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ins-msgs { display: grid; gap: 2px; margin-top: 4px; font-size: var(--fs-xs); line-height: 1.45; }
+  .ins-msgs span { font-weight: 700; }
+  .ins-imp tr.is-skip > td { background: #FFF8F6; }
+  .ins-done { display: grid; justify-items: center; gap: 8px; padding: 10px 0 4px; text-align: center; }
+  .ins-done__icon { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--sprout-100); color: var(--forest); }
+  .ins-done__icon .i { width: 32px; height: 32px; }
+  .ins-done__list { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
+  .ins-imp__cancel { margin-right: auto; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1240px) {
+    .ins-nursery { grid-template-columns: minmax(0, 1fr); }
+    .ins-nursery__side { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); border-left: 0; border-top: 1px solid var(--line-soft); background: var(--paper); }
+  }
+  html.is-senior .ins-nursery { grid-template-columns: minmax(0, 1fr); }
+  html.is-senior .ins-nursery__side { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); border-left: 0; border-top: 1px solid var(--line-soft); background: var(--paper); }
+  html.is-senior .ins-plot { --plant-w: 68px; --plant-h: 102px; --row-gap: 8px; }
+  html.is-senior .ins-plant__name { display: block; }
+  html.is-senior .ins-bed { grid-template-columns: 112px minmax(0, 1fr); }
+  @media (max-width: 1100px) {
+    .ins-feed__item { grid-template-columns: 6.4em minmax(0, 1fr) auto; }
+    .ins-feed__what { grid-column: 2 / -1; }
+  }
+  @media (max-width: 640px) {
+    .ins-nursery__main { padding: 4px 12px 12px; }
+    .ins-nursery__side, html.is-senior .ins-nursery__side { padding: 12px; grid-template-columns: minmax(0, 1fr); }
+    .ins-bed, html.is-senior .ins-bed { grid-template-columns: minmax(0, 1fr); }
+    .ins-bed__label { display: flex; align-items: baseline; gap: 8px; padding: 6px 4px 2px; }
+    .ins-plot { --plant-w: 38px; padding: 0; }
+    html.is-senior .ins-plot { --plant-w: 62px; }
+    .ins-tip { width: 230px; }
+    .ins-feed__item, html.is-senior .ins-feed__item { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 16px; }
+    .ins-feed__date { grid-column: 1; grid-row: 1; }
+    .ins-feed__by { grid-column: 2; grid-row: 1; text-align: right; }
+    .ins-feed__who, .ins-feed__what, html.is-senior .ins-feed__what { grid-column: 1 / -1; }
+    .ins-dtabs { padding: 0 12px; }
+    .ins-dprev { grid-template-columns: minmax(0, 1fr); }
+    .ins-dprev__plant { display: none; }
+    .ins-area { grid-template-columns: minmax(0, 1fr); }
+    .ins-case { grid-template-columns: minmax(0, 1fr) auto; }
+    .ins-case__org { grid-column: 1 / -1; grid-row: 2; }
+    .ins-dfoot-note { width: 100%; }
+    /* 名冊改成精簡卡片：勾選＋講師＋狀態同一列，完整度與效期、場次與滿意度兩兩並排 */
+    #lect-table.table--stack tbody tr:not(.row-more) { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; align-items: start; padding: 14px 16px; }
+    #lect-table.table--stack td { grid-template-columns: minmax(0, 1fr); gap: 2px; width: auto; padding: 0; }
+    #lect-table.table--stack tbody tr > td[colspan] { grid-column: 1 / -1; }
+    #lect-table.table--stack .col-check { grid-column: 1; grid-row: 1; padding-top: 8px; }
+    #lect-table.table--stack .ins-td-who { grid-column: 2 / -1; grid-row: 1; }
+    #lect-table.table--stack .ins-td-st { grid-column: 2; align-self: center; justify-items: start; }
+    #lect-table.table--stack .ins-td-who::before, #lect-table.table--stack .ins-td-st::before { content: none; }
+    #lect-table.table--stack .ins-td-comp, #lect-table.table--stack .ins-td-n { grid-column: 2; }
+    #lect-table.table--stack .ins-td-cert, #lect-table.table--stack .ins-td-rate { grid-column: 3; }
+    #lect-table.table--stack .ins-td-topics, #lect-table.table--stack .col-more { grid-column: 2 / -1; text-align: left; }
+    #lect-table.table--stack .col-act { grid-column: 3; text-align: left; }
+    #lect-table.table--stack .ins-td-n { font-size: var(--fs-base); }
+    #lect-table .ins-unit { display: inline; font-family: var(--font-sans); font-size: var(--fs-xs); color: var(--ink-3); }
+    #lect-table.table--stack .col-act .ins-edit { width: 100%; padding: 0 14px; }
+    #lect-table.table--stack .col-act .ins-edit .icon-btn__label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; }
+    html.is-senior #lect-table.table--stack tbody tr:not(.row-more) { grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ins-p__pulse { display: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link is-active" href="instructors.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="麵包屑"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>資源與品質</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">講師資料管理</span></nav>
+          <h1 class="page-title">講師資料管理</h1>
+          <p class="page-lede">目前共 <b data-count="insTotal"></b> 位講師、<b data-count="insActive"></b> 位啟用中。其中 <b class="c-clay" data-count="insMissing"></b> 位資料缺漏、<b class="c-clay" data-count="insExpiring"></b> 位認證將於 90 日內到期，請優先通知補件與續證。</p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn" type="button" id="export-csv"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出名冊</button>
+          <button class="btn" type="button" id="open-import"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload"/></svg>批次匯入</button>
+          <button class="btn btn--primary" type="button" id="add-lect"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user-plus"/></svg>新增講師</button>
+        </div>
+      </div>
+
+      <section class="card" id="nursery-card" aria-labelledby="nursery-title" data-reveal>
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="nursery-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg>講師苗圃</h2>
+            <p class="card__sub">每株新芽是一位講師：莖越高、本年度授課越多；葉片長齊代表資料完整。點選新芽即可編輯資料。</p>
+          </div>
+          <div class="card__actions">
+            <div class="seg" id="group-seg" role="group" aria-label="苗床分組方式">
+              <button type="button" data-value="region" aria-pressed="true">依區域</button>
+              <button type="button" data-value="care" aria-pressed="false">依照顧狀態</button>
+            </div>
+          </div>
+        </div>
+        <div class="ins-nursery">
+          <div class="ins-nursery__main" id="nursery-main">
+            <div class="ins-beds" id="beds"></div>
+            <div class="ins-tip" id="plant-tip" aria-hidden="true"></div>
+            <p class="ins-nursery__note" id="nursery-note" aria-live="polite"></p>
+          </div>
+          <div class="ins-nursery__side" id="nursery-side" aria-label="苗圃概況"></div>
+        </div>
+        <div class="card__foot">
+          <ul class="legend ins-legend" id="legend" aria-label="圖例"></ul>
+        </div>
+      </section>
+
+      <section class="section-gap" aria-labelledby="list-title">
+        <div class="split ins-listhead">
+          <h2 class="h3" id="list-title">講師名冊</h2>
+          <p class="subtle" id="result-n" aria-live="polite"></p>
+        </div>
+        <div class="ins-list">
+          <div class="views" id="views" role="group" aria-label="常用檢視"></div>
+          <div class="filterbar" id="filters" role="search" aria-label="篩選講師">
+            <div class="field field--grow">
+              <label class="label" for="q">搜尋</label>
+              <div class="search"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><input class="input" id="q" type="search" placeholder="姓名、講師編號、單位、認證字號" autocomplete="off"></div>
+            </div>
+            <div class="field">
+              <label class="label" for="f-c">可服務縣市</label>
+              <select class="select" id="f-c"><option value="">全部縣市</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="f-t">專長主題</label>
+              <select class="select" id="f-t"><option value="">全部主題</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="f-a">服務對象</label>
+              <select class="select" id="f-a"><option value="">全部對象</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="f-s">啟用狀態</label>
+              <select class="select" id="f-s"><option value="">全部狀態</option><option value="active">啟用</option><option value="review">待審核</option><option value="inactive">停用</option></select>
+            </div>
+            <div class="field ins-switch-field">
+              <span class="label" id="f-exp-label">認證效期</span>
+              <label class="switch"><input type="checkbox" id="f-exp" aria-describedby="f-exp-label"><span class="switch__track" aria-hidden="true"></span>90 日內到期</label>
+            </div>
+            <div class="filterbar__actions">
+              <button class="btn btn--ghost" type="button" id="reset-filters"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>清除篩選</button>
+            </div>
+          </div>
+          <div class="bulkbar" id="bulk" role="region" aria-label="批次操作">
+            <span class="bulkbar__count">已選取 <b id="bulk-n">0</b> 位講師</span>
+            <button class="btn btn--sm" type="button" data-bulk="notify"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg>通知補件</button>
+            <button class="btn btn--sm" type="button" data-bulk="renew"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg>寄續證提醒</button>
+            <label class="sr-only" for="bulk-status">批次變更啟用狀態</label>
+            <select class="select select--sm" id="bulk-status"><option value="">變更啟用狀態…</option><option value="active">設為啟用</option><option value="inactive">設為停用</option></select>
+            <button class="btn btn--sm btn--sprout" type="button" data-bulk="status">套用</button>
+            <button class="btn btn--sm" type="button" data-bulk="export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出選取</button>
+            <button class="btn btn--sm" type="button" data-bulk="clear">取消選取</button>
+          </div>
+          <div class="card">
+            <div class="table-wrap">
+              <table class="table table--stack" id="lect-table">
+                <caption class="sr-only">講師名冊（可排序）</caption>
+                <thead>
+                  <tr>
+                    <th class="col-check" scope="col"><label class="check"><input type="checkbox" id="sel-all"><span class="check__box"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span><span class="sr-only">全選目前篩選結果</span></label></th>
+                    <th scope="col" class="ins-th-who" data-sort="id">講師</th>
+                    <th scope="col" class="ins-th-comp" data-sort="comp">資料完整度</th>
+                    <th scope="col" class="ins-th-cert" data-sort="cert">認證效期</th>
+                    <th scope="col" class="col-2nd ins-th-topics">專長與服務區域</th>
+                    <th scope="col" class="num col-2nd" data-sort="sessions">年度場次</th>
+                    <th scope="col" class="col-2nd" data-sort="rating">平均滿意度</th>
+                    <th scope="col" data-sort="status">狀態</th>
+                    <th scope="col" class="col-act"><span class="sr-only">操作</span></th>
+                  </tr>
+                </thead>
+                <tbody id="lect-body"></tbody>
+              </table>
+            </div>
+            <div class="table-foot" id="pager"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-gap" id="feed-card" aria-labelledby="feed-title" data-reveal>
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="feed-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>近期異動紀錄</h2>
+            <p class="card__sub">講師資料的每一次修改都留下欄位、修改前後與修改人，供稽核查對</p>
+          </div>
+        </div>
+        <ol class="ins-feed" id="feed"></ol>
+        <div class="card__foot" id="feed-foot"></div>
+      </section>
+    </main>
+
+    <!-- 側欄抽屜：講師資料編輯／異動紀錄／授課紀錄 -->
+    <dialog class="drawer drawer--wide" id="lect-drawer" aria-labelledby="dr-title">
+      <form class="drawer__box" id="lect-form" novalidate>
+        <div class="drawer__head ins-dhead">
+          <span id="dr-avatar"></span>
+          <div class="modal__titles">
+            <h2 class="modal__title" id="dr-title">講師資料</h2>
+            <p class="modal__lead" id="dr-lead"></p>
+          </div>
+          <button type="button" class="icon-btn modal__close" data-close><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg><span class="icon-btn__label">關閉</span></button>
+        </div>
+        <div class="ins-dtabs">
+          <div class="tabs" role="tablist" aria-label="講師資料分頁" id="dr-tabs">
+            <button type="button" class="tab" role="tab" id="dt-edit" aria-controls="dp-edit" aria-selected="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg>編輯資料</button>
+            <button type="button" class="tab" role="tab" id="dt-log" aria-controls="dp-log" aria-selected="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>異動紀錄<span class="tab__n" id="dr-log-n"></span></button>
+            <button type="button" class="tab" role="tab" id="dt-cases" aria-controls="dp-cases" aria-selected="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-presentation"/></svg>授課紀錄<span class="tab__n" id="dr-cases-n"></span></button>
+          </div>
+        </div>
+        <div class="drawer__body" id="dr-body">
+          <div id="dp-edit" role="tabpanel" aria-labelledby="dt-edit">
+            <div class="ins-dprev" id="dr-prev" aria-live="polite"></div>
+            <div class="form-alert" role="alert"></div>
+
+            <section class="ins-fs" aria-labelledby="fs-basic">
+              <h3 class="ins-fs__title" id="fs-basic"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user"/></svg>基本資料與聯絡方式</h3>
+              <div class="form-grid">
+                <div class="field"><label class="label req" for="f-name">姓名</label><input class="input" id="f-name" required maxlength="20" autocomplete="off" data-error="請輸入講師姓名"></div>
+                <div class="field"><label class="label req" for="f-county">戶籍縣市</label><select class="select" id="f-county" required data-error="請選擇戶籍縣市"><option value="">請選擇</option></select></div>
+                <div class="field"><label class="label req" for="f-title">現職／職稱</label><input class="input" id="f-title" required maxlength="30" autocomplete="off" data-error="請輸入現職或職稱"></div>
+                <div class="field"><label class="label req" for="f-org">服務單位</label><input class="input" id="f-org" required maxlength="30" autocomplete="off" data-error="請輸入服務單位"></div>
+                <div class="field"><label class="label req" for="f-phone">手機</label><input class="input" id="f-phone" type="tel" required pattern="09\d{2}-\d{3}-\d{3}" placeholder="0912-345-678" autocomplete="off" data-error="手機格式為 0912-345-678"></div>
+                <div class="field"><label class="label req" for="f-email">Email</label><input class="input" id="f-email" type="email" required autocomplete="off" data-error="請輸入有效的 Email"></div>
+              </div>
+            </section>
+
+            <section class="ins-fs" aria-labelledby="fs-cert">
+              <h3 class="ins-fs__title" id="fs-cert"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg>環境教育人員認證</h3>
+              <div class="form-grid">
+                <div class="field"><label class="label" for="f-way">認證方式</label><select class="select" id="f-way"></select></div>
+                <div class="field"><label class="label" for="f-field">認證領域</label><select class="select" id="f-field"></select></div>
+                <div class="field"><label class="label req" for="f-certno">認證字號</label><div class="input-group"><input class="input" id="f-certno" required pattern="\d{3}-\d{4}" placeholder="112-0187" autocomplete="off" data-error="格式為 3 碼年度－4 碼流水號，例如 112-0187"><span class="input-group__addon">號</span></div><p class="hint">完整字號為「環教人認字第 ○○○-○○○○ 號」</p></div>
+                <div class="field"><label class="label req" for="f-until">認證效期</label><input class="input" id="f-until" type="date" required data-error="請選擇認證效期"><p class="hint" id="f-until-hint"></p></div>
+              </div>
+            </section>
+
+            <section class="ins-fs" aria-labelledby="fs-skill">
+              <h3 class="ins-fs__title" id="fs-skill"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-award"/></svg>專長主題與服務對象</h3>
+              <fieldset class="field"><legend class="label req">專長主題</legend><div class="ins-checks" id="f-topics"></div></fieldset>
+              <fieldset class="field"><legend class="label req">服務對象經驗</legend><div class="ins-checks" id="f-auds"></div></fieldset>
+            </section>
+
+            <section class="ins-fs" aria-labelledby="fs-area">
+              <h3 class="ins-fs__title" id="fs-area"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-map"/></svg>服務區域與授課方式<small>點選方塊可複選</small></h3>
+              <div class="ins-area">
+                <div id="f-area"></div>
+                <div class="ins-area__side">
+                  <p class="ins-area__sum" id="f-area-sum" aria-live="polite"></p>
+                  <div class="cluster">
+                    <button class="btn btn--sm" type="button" id="area-region"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-map-pin"/></svg>加入戶籍所在區域</button>
+                    <button class="btn btn--sm btn--ghost" type="button" id="area-clear">清除</button>
+                  </div>
+                  <fieldset class="field"><legend class="label req">授課方式</legend><div class="cluster" id="f-modes"></div></fieldset>
+                </div>
+              </div>
+            </section>
+
+            <section class="ins-fs" aria-labelledby="fs-slot">
+              <h3 class="ins-fs__title" id="fs-slot"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>可授課時段與課程模組</h3>
+              <div class="field"><span class="label" id="lb-months">可授課月份</span><div class="ins-chips" id="f-months" role="group" aria-labelledby="lb-months"></div></div>
+              <div class="field"><span class="label" id="lb-days">可授課星期</span><div class="ins-chips" id="f-days" role="group" aria-labelledby="lb-days"></div><p class="hint">月份與星期都至少選一項，才會納入媒合的檔期條件</p></div>
+              <div class="field"><label class="label" for="f-module">課程模組簡介</label><textarea class="textarea" id="f-module" rows="4" placeholder="每行一個模組，例如：淨零綠生活：從一天的碳足跡開始（2 節）"></textarea><p class="hint">至少 10 字；會顯示在前台的講師介紹</p></div>
+            </section>
+
+            <section class="ins-fs" aria-labelledby="fs-fee">
+              <h3 class="ins-fs__title" id="fs-fee"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-coin"/></svg>費用、檔案與啟用狀態</h3>
+              <div class="form-grid">
+                <div class="field span-2"><label class="label" for="f-rate">講座鐘點費類別</label><select class="select" id="f-rate"></select><p class="hint">講座鐘點費（示意費率，可於系統設定調整），每節 50 分鐘</p></div>
+                <div class="field"><span class="label">授課照片</span><label class="switch"><input type="checkbox" id="f-photo"><span class="switch__track" aria-hidden="true"></span>已上傳授課照片</label></div>
+                <div class="field"><span class="label">銀行帳戶</span><label class="switch"><input type="checkbox" id="f-bank"><span class="switch__track" aria-hidden="true"></span>已建檔撥款帳戶</label></div>
+                <fieldset class="field span-2"><legend class="label req">啟用狀態</legend><div class="cluster" id="f-status"></div></fieldset>
+                <div class="field span-2"><label class="label" for="f-note" id="f-note-label">狀態備註</label><textarea class="textarea" id="f-note" rows="2" maxlength="80" data-error="待審核或停用時，請說明原因"></textarea></div>
+              </div>
+            </section>
+          </div>
+          <div id="dp-log" role="tabpanel" aria-labelledby="dt-log" hidden></div>
+          <div id="dp-cases" role="tabpanel" aria-labelledby="dt-cases" hidden></div>
+        </div>
+        <div class="drawer__foot">
+          <p class="ins-dfoot-note" id="dr-note"></p>
+          <button type="button" class="btn" data-close>取消</button>
+          <button type="submit" class="btn btn--primary"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>儲存變更</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- 批次匯入：上傳 → 欄位對應 → 預覽檢核 → 完成 -->
+    <dialog class="modal modal--lg ins-imp" id="imp" aria-labelledby="imp-title">
+      <div class="modal__box">
+        <div class="modal__head">
+          <span class="modal__icon"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload"/></svg></span>
+          <div class="modal__titles">
+            <h2 class="modal__title" id="imp-title">批次匯入講師</h2>
+            <p class="modal__lead">上傳講師名冊，確認欄位對應與檢核結果後匯入；匯入的講師一律先列為「待審核」。</p>
+          </div>
+          <button type="button" class="icon-btn modal__close" data-imp-close><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg><span class="icon-btn__label">關閉</span></button>
+        </div>
+        <div class="modal__body">
+          <ol class="steps" id="imp-steps" aria-label="匯入步驟"></ol>
+          <div class="ins-imp__pane" data-pane="1">
+            <div class="dropzone ins-drop" id="imp-drop">
+              <svg class="i" aria-hidden="true" focusable="false"><use href="#i-upload"/></svg>
+              <p class="ins-drop__title">把講師名冊拖曳到這裡</p>
+              <p class="subtle">支援 .xlsx、.csv，單檔 5 MB 以內；第一列須為欄位名稱</p>
+              <div class="ins-drop__actions">
+                <label class="btn ins-file-btn"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-file"/></svg>選擇檔案<input type="file" id="imp-file" accept=".xlsx,.csv"></label>
+                <button class="btn btn--sprout" type="button" id="imp-sample"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg>使用範例名冊</button>
+              </div>
+            </div>
+            <div class="file-list" id="imp-files"></div>
+            <p class="notice"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>示範環境：上傳的檔案會以範例名冊的內容模擬解析。需要格式說明可先 <button type="button" class="btn-link" id="imp-template">下載匯入範本（CSV）</button>。</span></p>
+          </div>
+          <div class="ins-imp__pane" data-pane="2" hidden>
+            <p class="muted">系統已依欄位名稱自動對應；多值欄位請確認分隔方式，不需要的欄位可設為「不匯入」。標示 * 的系統欄位必須對應。</p>
+            <div class="form-alert" id="imp-map-alert" role="alert"></div>
+            <div class="table-wrap"><table class="table table--compact" id="imp-map"><caption class="sr-only">欄位對應</caption><thead><tr><th scope="col">名冊欄位</th><th scope="col">第一筆範例值</th><th scope="col">對應系統欄位</th><th scope="col">狀態</th></tr></thead><tbody></tbody></table></div>
+          </div>
+          <div class="ins-imp__pane" data-pane="3" hidden>
+            <div class="ins-imp__sum" id="imp-sum"></div>
+            <div class="table-wrap"><table class="table table--compact" id="imp-prev"><caption class="sr-only">匯入預覽與檢核結果</caption><thead><tr><th scope="col">列</th><th scope="col">姓名</th><th scope="col">戶籍縣市</th><th scope="col">認證字號／效期</th><th scope="col">專長主題</th><th scope="col">檢核結果</th></tr></thead><tbody></tbody></table></div>
+          </div>
+          <div class="ins-imp__pane" data-pane="4" hidden>
+            <div class="ins-done" id="imp-done"></div>
+          </div>
+        </div>
+        <div class="modal__foot">
+          <button type="button" class="btn btn--ghost ins-imp__cancel" data-imp-close>取消</button>
+          <button type="button" class="btn" id="imp-back"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>上一步</button>
+          <button type="button" class="btn btn--primary" id="imp-next"></button>
+        </div>
+      </div>
+    </dialog>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+
+  /* =====================================================================
+     共用定義
+     ===================================================================== */
+  const STATUS = { active: { label: '啟用', tone: 'ok' }, review: { label: '待審核', tone: 'info' }, inactive: { label: '停用', tone: 'neutral' } };
+  const STATUS_ORDER = ['active', 'review', 'inactive'];
+  const CERT_WAYS = ['經歷', '學歷', '專長', '薦舉'];
+  const CERT_FIELDS = ['學校環境教育', '環境及資源管理', '社區參與', '自然保育', '公害防治', '氣候變遷', '文化保存', '災害防救'];
+  // 與 app.js 的頭像色盤相同，新建檔的講師依序取色
+  const AVATAR_COLORS = ['#1F5D4A', '#2A6D88', '#9A5223', '#184B3C', '#4F6B2C', '#35617A'];
+  // 下拉選單的縣市順序：依區域由北往南，比方塊地圖的座標順序好找
+  const COUNTY_ORDER = ['TPE', 'NTP', 'KEE', 'TAO', 'HSC', 'HSQ', 'MIA', 'TXG', 'CHA', 'NAN', 'YUN', 'CYI', 'CYQ', 'TNN', 'KHH', 'PIF', 'ILA', 'HUA', 'TTT', 'PEN', 'KIN', 'LIE'];
+  const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const DOW = '日一二三四五六';
+
+  const find = id => App.LECTURERS.find(l => l.id === id);
+  const pct = l => Math.round(App.completeness(l) * 100);
+  const short = id => App.county(id).short;
+  const sortCounties = ids => ids.slice().sort((a, b) => COUNTY_ORDER.indexOf(a) - COUNTY_ORDER.indexOf(b));
+  const certShort = l => (l.cert.no.match(/\d{3}-\d{4}/) || [''])[0];
+  const byLabel = by => (App.staff(by) ? App.staff(by).name : by);
+  // 與 App.dataIssues() 同一口徑：只計啟用中的講師
+  const isMissing = l => l.status === 'active' && l.missing.length > 0;
+  const isExpiring = l => l.status === 'active' && App.certDays(l) <= 90;
+  const certText = l => { const d = App.certDays(l); return d < 0 ? `認證已過期 ${-d} 天` : d <= 90 ? `認證剩 ${d} 天到期` : `認證有效至 ${fmt.roc(l.cert.until)}`; };
+  const countyOptions = () => App.REGIONS.map(r => `<optgroup label="${r}">${COUNTY_ORDER.filter(id => App.county(id).region === r).map(id => `<option value="${id}">${App.county(id).name}</option>`).join('')}</optgroup>`).join('');
+
+  /* =====================================================================
+     講師苗圃：每位講師畫成一株新芽（沿用品牌標誌的兩片葉＋圓點）
+     莖高＝本年度授課場次；葉片長齊＝資料完整；陶土光環＝認證 90 日內到期；
+     待審核＝剛播下的種子；停用＝休眠的種子
+     ===================================================================== */
+  const GROUND = 64;
+  const ringSVG = (cx, cy, r) => `<circle class="ins-p__ring" cx="${cx}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" stroke-width="1.6"/><circle class="ins-p__pulse" cx="${cx}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" stroke-width="1.6"/>`;
+  function plantSVG(l) {
+    const ring = l.status !== 'inactive' && App.certDays(l) <= 90;
+    let g = `<ellipse class="ins-p__mound" cx="21" cy="${GROUND + 1}" rx="14" ry="3.6"/>`;
+    if (l.status === 'active') {
+      const top = GROUND - (12 + Math.min(l.sessions, 16) / 16 * 28);
+      const s = 0.5 + 0.2 * App.completeness(l);
+      g += `<path class="ins-p__stem" d="M21 ${GROUND}V${top.toFixed(1)}" stroke-width="2.4" stroke-linecap="round" pathLength="1"/>`
+        + `<g class="ins-p__crown"><g transform="translate(${(21 - 24 * s).toFixed(2)} ${(top - 42 * s).toFixed(2)}) scale(${s.toFixed(3)})">`
+        + '<path class="ins-p__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>'
+        + '<path class="ins-p__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z" stroke-width="2.6"/>'
+        + `<circle class="ins-p__head" cx="24" cy="13" r="5.6"/></g>${ring ? ringSVG(21, top - 29 * s, 5.6 * s + 3) : ''}</g>`;
+    } else if (l.status === 'review') {
+      g += '<g class="ins-p__crown"><path class="ins-p__shoot" d="M21 57c-.4-5 1.6-8.6 6.4-10.4.4 4.8-2 8.6-6.4 10.4z" stroke-width="1.2"/><path class="ins-p__shoot" d="M21 57c-.2-3.4-2-5.6-5.4-6.4-.2 3.4 1.8 5.6 5.4 6.4z" stroke-width="1.2"/>'
+        + `<ellipse class="ins-p__seed--review" cx="21" cy="${GROUND - 2}" rx="7" ry="5" stroke-width="1.6"/>${ring ? ringSVG(21, GROUND - 2, 9) : ''}</g>`;
+    } else {
+      g += `<ellipse class="ins-p__seed--dormant" cx="21" cy="${GROUND - 2}" rx="7" ry="5" stroke-width="1.6"/><path class="ins-p__crack" d="M17.5 61l2.6 1.6 1.8-1.9 2.4 1.5" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    return `<svg viewBox="0 0 42 74" aria-hidden="true" focusable="false">${g}</svg>`;
+  }
+  const plantLabel = l => `${l.name}，${STATUS[l.status].label}，資料完整度 ${pct(l)}%${l.missing.length ? `（缺${l.missing.join('、')}）` : ''}，${certText(l)}，本年度 ${l.sessions} 場`;
+
+  const GROUPS = {
+    region: () => App.REGIONS.map(r => ({ label: r, sub: '', test: l => App.county(l.county).region === r })),
+    care: () => [
+      { label: '茁壯', sub: '資料完整', test: l => l.status === 'active' && !l.missing.length && App.certDays(l) > 90 },
+      { label: '待照顧', sub: '缺資料／將到期', test: l => isMissing(l) || isExpiring(l) },
+      { label: '新苗待審', sub: '', test: l => l.status === 'review' },
+      { label: '休眠', sub: '停用', test: l => l.status === 'inactive' },
+    ],
+  };
+  let groupMode = 'region';
+  const bedsEl = $('#beds');
+  const plantEls = new Map();
+  const grew = new Set();
+  let nurseryReady = false;
+
+  // 依資料同步每株新芽（新增、移除、重畫外觀），元素重用才能做 FLIP 位移
+  function syncPlants() {
+    const ids = new Set(App.LECTURERS.map(l => l.id));
+    plantEls.forEach((el, id) => { if (!ids.has(id)) { el.remove(); plantEls.delete(id); } });
+    App.LECTURERS.forEach((l, i) => {
+      let el = plantEls.get(l.id);
+      if (!el) {
+        el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'ins-plant';
+        el.dataset.id = l.id;
+        el.style.setProperty('--d', `${i * 14}ms`);
+        plantEls.set(l.id, el);
+      }
+      el.dataset.state = l.status;
+      el.toggleAttribute('data-gap', l.status === 'active' && l.missing.length > 0);
+      el.setAttribute('aria-label', plantLabel(l));
+      el.innerHTML = `${plantSVG(l)}<span class="ins-plant__name" aria-hidden="true">${esc(l.name)}</span>`;
+    });
+  }
+
+  function layoutBeds(animate) {
+    const first = new Map();
+    if (animate) plantEls.forEach((el, id) => { if (el.isConnected) first.set(id, el.getBoundingClientRect()); });
+    const focused = document.activeElement && document.activeElement.classList.contains('ins-plant') ? document.activeElement : null;
+    bedsEl.innerHTML = '';
+    GROUPS[groupMode]().forEach(g => {
+      const members = App.LECTURERS.filter(g.test);
+      const bed = document.createElement('div');
+      bed.className = 'ins-bed';
+      bed.setAttribute('role', 'group');
+      bed.setAttribute('aria-label', `${g.label}，${members.length} 位講師`);
+      bed.innerHTML = `<p class="ins-bed__label" aria-hidden="true">${esc(g.label)}${g.sub ? `<small>${esc(g.sub)}</small>` : ''}<small>${members.length} 位</small></p><div class="ins-plot"></div>`;
+      const plot = bed.lastElementChild;
+      members.forEach(l => plot.appendChild(plantEls.get(l.id)));
+      if (!members.length) plot.insertAdjacentHTML('beforeend', '<span class="ins-plot__empty">目前沒有講師</span>');
+      bedsEl.appendChild(bed);
+    });
+    if (focused) focused.focus({ preventScroll: true });
+    grew.forEach(id => {
+      const el = plantEls.get(id);
+      if (el && !App.calm()) { el.classList.remove('is-grew'); void el.offsetWidth; el.classList.add('is-grew'); }
+    });
+    grew.clear();
+    if (!animate || App.calm()) return;
+    // FLIP：先記下舊位置，換到新苗床後從舊位置平移回來；新出現的新芽從土裡冒出
+    plantEls.forEach((el, id) => {
+      const a = first.get(id);
+      const b = el.getBoundingClientRect();
+      if (!a) { el.animate([{ opacity: 0, transform: 'translateY(14px) scale(.4)' }, { opacity: 1, transform: 'none' }], { duration: 560, easing: 'cubic-bezier(.34,1.56,.64,1)' }); return; }
+      const dx = a.left - b.left, dy = a.top - b.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 680, easing: 'cubic-bezier(.22,1,.36,1)', delay: Math.min(240, Math.hypot(dx, dy) / 5) });
+    });
+  }
+
+  function renderNursery(animate) {
+    syncPlants();
+    layoutBeds(animate);
+    const cur = drawerOpenId();
+    plantEls.forEach((el, id) => el.classList.toggle('is-current', id === cur));
+    applyDim();
+  }
+
+  // 進場：莖由土裡長出、葉冠彈開；高齡模式與減少動態時直接顯示完成狀態
+  syncPlants();
+  layoutBeds(false);
+  if (!App.calm()) {
+    bedsEl.classList.add('is-pre');
+    App.whenVisible(bedsEl, () => requestAnimationFrame(() => bedsEl.classList.remove('is-pre')));
+  }
+  App.onMode(on => { if (on) bedsEl.classList.remove('is-pre'); });
+  nurseryReady = true;
+
+  // 認證到期的陶土光環是無限動畫：苗圃離開視窗或分頁隱藏時暫停
+  let nurseryInView = true;
+  const syncPause = () => bedsEl.classList.toggle('is-paused', !nurseryInView || document.hidden);
+  new IntersectionObserver(en => { nurseryInView = en[en.length - 1].isIntersecting; syncPause(); }).observe(bedsEl);
+  document.addEventListener('visibilitychange', syncPause);
+
+  App.seg($('#group-seg'), { onChange: v => { groupMode = v; hideTip(); layoutBeds(true); } });
+
+  /* ---------- 滑過新芽的摘要卡 ---------- */
+  const tip = $('#plant-tip');
+  const mainEl = $('#nursery-main');
+  function showTip(el) {
+    const l = find(el.dataset.id);
+    const d = App.certDays(l);
+    tip.innerHTML = `<div class="ins-tip__top"><span class="ins-tip__name">${esc(l.name)}</span>${App.statusBadge(STATUS[l.status].tone, STATUS[l.status].label)}</div>
+<p class="ins-tip__sub">${l.id}・${esc(l.title)}・${App.county(l.county).name}</p>
+<dl><dt>資料完整度</dt><dd${l.missing.length ? ' class="is-warn"' : ''}>${pct(l)}%${l.missing.length ? `・缺${esc(l.missing.join('、'))}` : ''}</dd>
+<dt>認證效期</dt><dd${d <= 90 ? ' class="is-warn"' : ''}>${fmt.roc(l.cert.until)}${d < 0 ? '（已過期）' : d <= 90 ? `（剩 ${d} 天）` : ''}</dd>
+<dt>本年度場次</dt><dd>${l.sessions} 場</dd><dt>平均滿意度</dt><dd>${l.rating == null ? '尚無紀錄' : l.rating.toFixed(2)}</dd></dl>`;
+    const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
+    const half = tip.offsetWidth / 2 + 4;
+    tip.style.left = `${Math.max(half, Math.min(m.width - half, r.left + r.width / 2 - m.left))}px`;
+    tip.style.top = `${r.top - m.top + 4}px`;
+    tip.classList.add('is-on');
+  }
+  const hideTip = () => tip.classList.remove('is-on');
+  bedsEl.addEventListener('pointerover', e => { const el = e.target.closest('.ins-plant'); if (el && e.pointerType !== 'touch') showTip(el); });
+  bedsEl.addEventListener('pointerleave', hideTip);
+  bedsEl.addEventListener('focusin', e => { const el = e.target.closest('.ins-plant'); if (el) showTip(el); });
+  bedsEl.addEventListener('focusout', hideTip);
+  bedsEl.addEventListener('click', e => { const el = e.target.closest('.ins-plant'); if (el) { hideTip(); openDrawer(el.dataset.id); } });
+
+  /* ---------- 圖例（用同一個繪製函式畫，與苗圃一致） ---------- */
+  const far = App.addDays(App.TODAY, 900), near = App.addDays(App.TODAY, 40);
+  const sample = (status, sessions, missing, until) => ({ status, sessions, missing, cert: { until } });
+  $('#legend').innerHTML = [
+    [sample('active', 16, [], far), '', '資料完整、授課較多'],
+    [sample('active', 3, [], far), '', '莖較矮＝本年度場次少'],
+    [sample('active', 10, ['銀行帳戶'], far), ' data-gap', '葉片未長齊＝資料缺漏'],
+    [sample('active', 10, [], near), '', '陶土光環＝認證 90 日內到期'],
+    [sample('review', 0, [], far), '', '種子＝待審核'],
+    [sample('inactive', 0, [], far), '', '休眠種子＝停用'],
+  ].map(([l, gap, text]) => `<li class="legend__item"><span${gap} style="display:inline-flex">${plantSVG(l)}</span>${text}</li>`).join('');
+
+  /* =====================================================================
+     常用檢視、計數（data-count 由 App.emit 統一重繪）
+     ===================================================================== */
+  const VIEWS = [
+    { key: 'all', label: '全部講師', icon: 'users', test: () => true },
+    { key: 'missing', label: '資料缺漏', icon: 'alert', test: isMissing },
+    { key: 'expiring', label: '認證 90 日內到期', icon: 'shield', test: isExpiring },
+    { key: 'review', label: '待審核', icon: 'hourglass', test: l => l.status === 'review' },
+    { key: 'inactive', label: '停用', icon: 'lock', test: l => l.status === 'inactive' },
+  ];
+  VIEWS.forEach(v => App.registerCount(`insV-${v.key}`, () => App.LECTURERS.filter(v.test).length));
+  App.registerCount('insTotal', () => App.LECTURERS.length);
+  App.registerCount('insActive', () => App.activeLecturers().length);
+  App.registerCount('insMissing', () => App.dataIssues().missing.length);
+  App.registerCount('insExpiring', () => App.dataIssues().expiring.length);
+  $('#views').innerHTML = VIEWS.map(v => `<button type="button" class="view" data-view="${v.key}" aria-pressed="${v.key === 'all'}">${icon(v.icon)}${v.label}<span class="view__n" data-count="insV-${v.key}"></span></button>`).join('');
+
+  /* ---------- 苗圃概況 ---------- */
+  function renderSide() {
+    const all = App.LECTURERS;
+    const n = s => all.filter(l => l.status === s).length;
+    const act = App.activeLecturers();
+    const avg = act.length ? act.reduce((a, l) => a + App.completeness(l), 0) / act.length : 0;
+    const d = App.dataIssues();
+    const tally = {};
+    d.missing.forEach(x => x.fields.forEach(f => { tally[f] = (tally[f] || 0) + 1; }));
+    const teach = all.filter(l => l.sessions > 0);
+    const total = all.reduce((a, l) => a + l.sessions, 0);
+    const soon = d.expiring[0];
+    const on = key => `aria-pressed="${state.view === key}"`;
+    $('#nursery-side').innerHTML = `
+<button type="button" class="ins-stat" data-view="all" ${on('all')}><span class="ins-stat__label">${icon('users')}講師總數</span><span class="ins-stat__n">${all.length}<small>位</small></span>
+  <span class="ins-split" aria-hidden="true"><span style="--n:${n('active')};background:var(--forest)"></span><span style="--n:${n('review')};background:var(--sky)"></span><span style="--n:${n('inactive')};background:var(--ink-4)"></span></span>
+  <span class="ins-stat__note">啟用 ${n('active')}・待審核 ${n('review')}・停用 ${n('inactive')}</span></button>
+<div class="ins-stat"><span class="ins-stat__label">${icon('clipboard')}平均資料完整度</span><span class="ins-stat__n">${Math.round(avg * 100)}<small>%</small></span>
+  <span class="meter" role="img" aria-label="啟用講師平均資料完整度 ${Math.round(avg * 100)}%"><span style="--p:${avg.toFixed(3)}"></span></span>
+  <span class="ins-stat__note">啟用中 ${act.length} 位・必填 ${App.REQUIRED_FIELDS.length} 項</span></div>
+<button type="button" class="ins-stat${d.missing.length ? ' is-alert' : ''}" data-view="missing" ${on('missing')}><span class="ins-stat__label">${icon('alert')}資料缺漏</span><span class="ins-stat__n">${d.missing.length}<small>位</small></span>
+  <span class="ins-stat__note">${Object.keys(tally).length ? Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([f, k]) => `${esc(f)} ${k}`).join('・') : '啟用講師資料皆已完整'}</span></button>
+<button type="button" class="ins-stat${d.expiring.length ? ' is-alert' : ''}" data-view="expiring" ${on('expiring')}><span class="ins-stat__label">${icon('shield')}認證 90 日內到期</span><span class="ins-stat__n">${d.expiring.length}<small>位</small></span>
+  <span class="ins-stat__note">${soon ? `最近：${esc(soon.l.name)}・剩 ${soon.days} 天` : '90 日內沒有到期的認證'}</span></button>
+<div class="ins-stat"><span class="ins-stat__label">${icon('presentation')}本年度授課</span><span class="ins-stat__n">${fmt.num(total)}<small>場</small></span>
+  <span class="ins-stat__note">${teach.length} 位講師已授課，平均每位 ${(total / Math.max(1, teach.length)).toFixed(1)} 場</span></div>`;
+  }
+
+  /* =====================================================================
+     篩選、排序、分頁
+     ===================================================================== */
+  const state = { q: '', county: '', topic: '', audience: '', status: '', expiring: false, view: 'all', sort: 'id', dir: 1, page: 1 };
+  // 手機一頁 10 位，避免卡片清單過長
+  const PAGE_SIZE = matchMedia('(max-width: 640px)').matches ? 10 : 20;
+  const selected = new Set();
+  const notified = new Set();   // 今日已通知補件（m）或寄送續證提醒（e）的講師
+  $('#f-c').insertAdjacentHTML('beforeend', countyOptions());
+  $('#f-t').insertAdjacentHTML('beforeend', App.TOPICS.map(t => `<option value="${t.id}">${t.name}</option>`).join(''));
+  $('#f-a').insertAdjacentHTML('beforeend', App.AUDIENCES.map(a => `<option value="${a.id}">${a.name}</option>`).join(''));
+
+  const filtersOn = () => state.view !== 'all' || state.q.trim() || state.county || state.topic || state.audience || state.status || state.expiring;
+  function filtered() {
+    const q = state.q.trim().toLowerCase();
+    const view = VIEWS.find(v => v.key === state.view);
+    return App.LECTURERS.filter(l => view.test(l)
+      && (!state.county || l.serve.includes(state.county))
+      && (!state.topic || l.topics.includes(state.topic))
+      && (!state.audience || l.audiences.includes(state.audience))
+      && (!state.status || l.status === state.status)
+      && (!state.expiring || isExpiring(l))
+      && (!q || `${l.id} ${l.name} ${l.title} ${l.org} ${l.cert.no} ${l.email}`.toLowerCase().includes(q)));
+  }
+  const SORTS = {
+    id: l => l.id,
+    comp: l => App.completeness(l),
+    cert: l => App.certDays(l),
+    sessions: l => l.sessions,
+    rating: l => (l.rating == null ? -1 : l.rating),
+    status: l => STATUS_ORDER.indexOf(l.status),
+  };
+  const sorted = list => list.slice().sort((a, b) => {
+    const x = SORTS[state.sort](a), y = SORTS[state.sort](b);
+    return (x < y ? -1 : x > y ? 1 : 0) * state.dir || a.id.localeCompare(b.id);
+  });
+
+  function applyDim() {
+    const on = filtersOn();
+    const ids = new Set(filtered().map(l => l.id));
+    plantEls.forEach((el, id) => el.classList.toggle('is-dim', !!on && !ids.has(id)));
+    $('#nursery-note').innerHTML = on
+      ? `${icon('filter')}<span>依名冊篩選標示 <b>${ids.size}</b> 位講師，其餘新芽已淡化</span><button type="button" class="btn-link" data-reset>顯示全部</button>`
+      : `${icon('info')}<span>共 <b>${App.LECTURERS.length}</b> 株新芽${App.senior.on() || !matchMedia('(hover: hover)').matches ? '，點選新芽可查看並編輯資料' : '，滑過新芽看摘要、點選即可編輯'}</span>`;
+  }
+
+  // 專長：第一項是主要專長（加粗＋主題圖示），其餘以頓號接續，讓列高維持兩行
+  function topicsHTML(l) {
+    if (!l.topics.length) return '<span class="ins-topics c-clay">未填專長主題</span>';
+    const [main, ...rest] = l.topics.map(App.topic);
+    return `<span class="ins-topics" title="主要專長：${esc(main.name)}">${icon(main.icon)}<span><b>${esc(main.short)}</b>${rest.length ? `、${rest.map(t => esc(t.short)).join('、')}` : ''}</span></span>`;
+  }
+  function rowHTML(l) {
+    const p = App.completeness(l);
+    const d = App.certDays(l);
+    const st = STATUS[l.status];
+    const certBadge = d < 0 ? `<span class="badge badge--err">已過期 ${-d} 天</span>` : d <= 90 ? `<span class="badge badge--clay">${icon('hourglass')}剩 ${d} 天</span>` : '';
+    const sent = [notified.has('m' + l.id) && '已通知補件', notified.has('e' + l.id) && '已寄續證提醒'].filter(Boolean);
+    return `<tr data-id="${l.id}"${selected.has(l.id) ? ' class="is-selected"' : ''}>
+  <td class="col-check"><label class="check"><input type="checkbox" data-sel="${l.id}"${selected.has(l.id) ? ' checked' : ''}><span class="check__box">${icon('check')}</span><span class="sr-only">選取 ${esc(l.name)}</span></label></td>
+  <td class="ins-td-who" data-label="講師"><div class="ins-person">${App.avatar(l)}<div><a class="ins-name" href="instructors.html?id=${l.id}" data-open="${l.id}">${esc(l.name)}</a><span class="cell-sub">${l.id}・${esc(l.title)}</span>${l.status !== 'active' && l.statusNote ? `<span class="cell-sub truncate" style="--tw:240px" title="${esc(l.statusNote)}">${esc(l.statusNote)}</span>` : ''}</div></div></td>
+  <td class="ins-td-comp" data-label="資料完整度"><div class="ins-comp"><span class="ring" style="--p:${p.toFixed(2)}${p < 1 ? ';--ring-c:var(--clay)' : ''}" aria-hidden="true"></span><span><span class="ins-comp__pct">${Math.round(p * 100)}%</span>${l.missing.length ? `<span class="ins-comp__miss">缺${esc(l.missing.join('、'))}</span>` : ''}${sent.map(s => `<span class="ins-sent">${icon('check')}${s}</span>`).join('')}</span></div></td>
+  <td class="ins-td-cert" data-label="認證效期"><div class="ins-cert"><span class="ins-cert__date">${fmt.roc(l.cert.until)}</span>${certBadge}<span class="cell-sub" title="${esc(l.cert.no)}・${esc(l.cert.field)}">字號 ${certShort(l)}</span></div></td>
+  <td class="col-2nd ins-td-topics" data-label="專長與服務區域">${topicsHTML(l)}<span class="cell-sub">服務：${l.serve.length ? sortCounties(l.serve).map(short).join('、') : '<b class="c-clay">未填服務區域</b>'}</span></td>
+  <td class="num col-2nd ins-td-n" data-label="年度場次"><span>${l.sessions}<span class="ins-unit"> 場</span></span></td>
+  <td class="col-2nd ins-td-rate" data-label="平均滿意度">${App.score(l.rating)}</td>
+  <td class="ins-td-st" data-label="狀態">${App.statusBadge(st.tone, st.label)}</td>
+  <td class="col-act ins-td-act"><button type="button" class="icon-btn icon-btn--outline ins-edit" data-open="${l.id}">${icon('edit')}<span class="icon-btn__label">編輯<span class="sr-only"> ${esc(l.name)}</span></span></button></td>
+</tr>`;
+  }
+
+  const pager = App.pager($('#pager'), { total: 0, page: 1, size: PAGE_SIZE, onChange: p => { state.page = p; renderTable(); $('#lect-table').scrollIntoView({ block: 'nearest' }); } });
+  function renderTable() {
+    const list = sorted(filtered());
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    state.page = Math.min(state.page, pages);
+    const rows = list.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
+    $('#lect-body').innerHTML = rows.length ? rows.map(rowHTML).join('')
+      : `<tr><td colspan="9">${App.emptyState({ title: '沒有符合條件的講師', text: '試著放寬篩選條件，或改用姓名、講師編號搜尋。', action: { label: '清除篩選', id: 'empty-reset' } })}</td></tr>`;
+    pager.set(state.page, list.length);
+    $('#result-n').textContent = filtersOn() ? `符合條件 ${list.length} 位（共 ${App.LECTURERS.length} 位）` : `共 ${App.LECTURERS.length} 位講師`;
+    const allSel = list.length > 0 && list.every(l => selected.has(l.id));
+    const someSel = list.some(l => selected.has(l.id));
+    $('#sel-all').checked = allSel;
+    $('#sel-all').indeterminate = !allSel && someSel;
+    $$('.view', $('#views')).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+    $$('.ins-stat[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+    renderBulk();
+    applyDim();
+  }
+  App.bindSort($('#lect-table'), { onSort: (key, dir) => { state.sort = key; state.dir = dir; state.page = 1; renderTable(); } });
+
+  const syncInputs = () => {
+    $('#q').value = state.q; $('#f-c').value = state.county; $('#f-t').value = state.topic;
+    $('#f-a').value = state.audience; $('#f-s').value = state.status; $('#f-exp').checked = state.expiring;
+  };
+  function setView(v) { state.view = v; state.page = 1; renderTable(); }
+  function resetFilters() {
+    Object.assign(state, { q: '', county: '', topic: '', audience: '', status: '', expiring: false, view: 'all', page: 1 });
+    syncInputs();
+    renderTable();
+  }
+  $('#views').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) setView(b.dataset.view); });
+  $('#nursery-side').addEventListener('click', e => { const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view); });
+  $('#q').addEventListener('input', e => { state.q = e.target.value; state.page = 1; renderTable(); });
+  [['#f-c', 'county'], ['#f-t', 'topic'], ['#f-a', 'audience'], ['#f-s', 'status']].forEach(([sel, key]) => $(sel).addEventListener('change', e => { state[key] = e.target.value; state.page = 1; renderTable(); }));
+  $('#f-exp').addEventListener('change', e => { state.expiring = e.target.checked; state.page = 1; renderTable(); });
+  $('#reset-filters').addEventListener('click', resetFilters);
+  document.addEventListener('click', e => { if (e.target.closest('#empty-reset, [data-reset]')) resetFilters(); });
+
+  /* ---------- 列內操作：開啟抽屜、勾選 ---------- */
+  $('#lect-body').addEventListener('click', e => {
+    const o = e.target.closest('[data-open]');
+    if (o) { e.preventDefault(); openDrawer(o.dataset.open); }
+  });
+  $('#lect-body').addEventListener('change', e => {
+    const c = e.target.closest('[data-sel]');
+    if (!c) return;
+    if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel);
+    c.closest('tr').classList.toggle('is-selected', c.checked);
+    renderTable();
+  });
+  $('#sel-all').addEventListener('change', e => {
+    filtered().forEach(l => { if (e.target.checked) selected.add(l.id); else selected.delete(l.id); });
+    renderTable();
+  });
+
+  /* =====================================================================
+     批次操作
+     ===================================================================== */
+  function renderBulk() {
+    // 被移除（例如復原匯入）的講師不再保留勾選
+    selected.forEach(id => { if (!find(id)) selected.delete(id); });
+    $('#bulk').classList.toggle('is-on', selected.size > 0);
+    $('#bulk-n').textContent = selected.size;
+  }
+  const pickSel = () => [...selected].map(find);
+  const names = list => `${list.slice(0, 3).map(l => l.name).join('、')}${list.length > 3 ? ` 等 ${list.length} 位` : ''}`;
+  const CSV_HEAD = ['講師編號', '姓名', '職稱', '服務單位', '戶籍縣市', '可服務縣市', '專長主題', '服務對象', '認證字號', '認證效期', '距到期天數', '資料完整度', '缺漏項目', '本年度場次', '平均滿意度', '狀態', '狀態備註', '最後異動'];
+  const csvRow = l => [l.id, l.name, l.title, l.org, App.county(l.county).name, sortCounties(l.serve).map(id => App.county(id).name).join('、'), l.topics.map(t => App.topic(t).name).join('、'), l.audiences.map(a => App.audience(a).name).join('、'), l.cert.no, fmt.roc(l.cert.until), App.certDays(l), `${pct(l)}%`, l.missing.join('、'), l.sessions, l.rating == null ? '' : l.rating.toFixed(2), STATUS[l.status].label, l.statusNote, fmt.roc(l.updated)];
+
+  $('#bulk').addEventListener('click', e => {
+    const b = e.target.closest('[data-bulk]');
+    if (!b) return;
+    const list = pickSel();
+    const kind = b.dataset.bulk;
+    if (kind === 'clear') { selected.clear(); renderTable(); return; }
+    if (kind === 'export') {
+      App.downloadCSV(`講師名冊_選取_${fmt.roc(App.TODAY).replace(/\//g, '')}.csv`, [CSV_HEAD, ...list.map(csvRow)]);
+      App.toast(`已匯出 ${list.length} 位講師`, { desc: 'CSV 檔可直接以 Excel 開啟。' });
+      return;
+    }
+    if (kind === 'notify' || kind === 'renew') {
+      const pre = kind === 'notify' ? 'm' : 'e';
+      const targets = list.filter(l => (kind === 'notify' ? l.missing.length > 0 : App.certDays(l) <= 90) && !notified.has(pre + l.id));
+      if (!targets.length) { App.toast(kind === 'notify' ? '選取的講師沒有需要補件的資料' : '選取的講師沒有 90 日內到期的認證', { tone: 'info', desc: '或今天已經寄送過通知。' }); return; }
+      targets.forEach(l => notified.add(pre + l.id));
+      renderTable();
+      App.toast(kind === 'notify' ? `已通知 ${targets.length} 位講師補齊資料` : `已寄送續證提醒給 ${targets.length} 位講師`, {
+        desc: `${names(targets)}：已寄送 Email 與簡訊，講師可在講師專區直接更新。`,
+        action: { label: '復原', onClick: () => { targets.forEach(l => notified.delete(pre + l.id)); renderTable(); } },
+      });
+      return;
+    }
+    // 變更啟用狀態：留下異動紀錄，可復原
+    const to = $('#bulk-status').value;
+    if (!to) { App.toast('請先選擇要變更的啟用狀態', { tone: 'warn' }); $('#bulk-status').focus(); return; }
+    const targets = list.filter(l => l.status !== to);
+    if (!targets.length) { App.toast(`選取的講師都已是「${STATUS[to].label}」`, { tone: 'info' }); return; }
+    const snaps = targets.map(l => ({ l, status: l.status, note: l.statusNote, updated: l.updated, n: l.changes.length }));
+    targets.forEach(l => {
+      const from = STATUS[l.status].label;
+      l.status = to;
+      l.statusNote = to === 'inactive' ? `${fmt.roc(App.TODAY)} 批次停用（${App.staff(App.ME).name}）` : '';
+      l.updated = App.TODAY;
+      l.changes.push({ iso: App.TODAY, by: App.ME, field: '啟用狀態', from, to: STATUS[to].label, seq: ++changeSeq });
+    });
+    $('#bulk-status').value = '';
+    App.emit('lecturer-status');
+    App.toast(`已將 ${targets.length} 位講師設為「${STATUS[to].label}」`, {
+      desc: names(targets),
+      action: { label: '復原', onClick: () => { snaps.forEach(s => { s.l.status = s.status; s.l.statusNote = s.note; s.l.updated = s.updated; s.l.changes.length = s.n; }); App.emit('lecturer-status-undo'); } },
+    });
+  });
+
+  $('#export-csv').addEventListener('click', () => {
+    const list = sorted(filtered());
+    App.downloadCSV(`講師名冊_${fmt.roc(App.TODAY).replace(/\//g, '')}.csv`, [CSV_HEAD, ...list.map(csvRow)]);
+    App.toast(`已匯出 ${list.length} 位講師`, { desc: filtersOn() ? '依目前篩選條件匯出，CSV 檔可直接以 Excel 開啟。' : 'CSV 檔可直接以 Excel 開啟。' });
+  });
+
+  /* =====================================================================
+     近期異動紀錄（跨講師彙整，新到舊）
+     ===================================================================== */
+  let changeSeq = 0;
+  let feedAll = false;
+  function renderFeed() {
+    const all = App.LECTURERS.flatMap(l => l.changes.map(ch => ({ l, ch })))
+      .sort((a, b) => b.ch.iso.localeCompare(a.ch.iso) || (b.ch.seq || 0) - (a.ch.seq || 0) || b.l.id.localeCompare(a.l.id));
+    const shown = feedAll ? all.slice(0, 30) : all.slice(0, 8);
+    $('#feed').innerHTML = shown.map(({ l, ch }) => `<li class="ins-feed__item${ch.seq ? ' is-new' : ''}">
+  <span class="ins-feed__date">${fmt.roc(ch.iso)}</span>
+  <button type="button" class="ins-feed__who" data-open="${l.id}">${App.avatar(l, 'sm')}<span>${esc(l.name)}</span></button>
+  <p class="ins-feed__what"><b>${esc(ch.field)}</b>：<span class="ins-from">${esc(ch.from)}</span>${icon('arrow-right', 'ins-arrow')}<b>${esc(ch.to)}</b></p>
+  <span class="ins-feed__by">${esc(byLabel(ch.by))}</span>
+</li>`).join('');
+    $('#feed-foot').innerHTML = `<span>共 ${all.length} 筆異動，顯示最近 ${shown.length} 筆</span>${all.length > 8 ? `<button type="button" class="btn btn--sm btn--ghost" id="feed-more">${feedAll ? '收合' : '顯示更多'}</button>` : ''}`;
+  }
+  $('#feed').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) openDrawer(b.dataset.open); });
+  $('#feed-foot').addEventListener('click', e => { if (e.target.closest('#feed-more')) { feedAll = !feedAll; renderFeed(); } });
+
+  /* =====================================================================
+     側欄抽屜：編輯資料（欄位驗證）、異動紀錄、授課紀錄
+     ===================================================================== */
+  const drawer = $('#lect-drawer');
+  const form = $('#lect-form');
+  const F = id => $(`#f-${id}`);
+  let editing = null;   // 編輯中的講師；新增時為 null
+  let base = null;      // 開啟當下的表單狀態：儲存時逐欄比對，產生異動紀錄
+  let areaSel = [];
+  let prevPct = 0;
+  const drawerOpenId = () => (drawer.open && editing ? editing.id : null);
+  const PHONE = /^09\d{2}-\d{3}-\d{3}$/;
+  const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  const CERTNO = /^\d{3}-\d{4}$/;
+
+  F('county').insertAdjacentHTML('beforeend', countyOptions());
+  F('way').innerHTML = CERT_WAYS.map(w => `<option>${w}</option>`).join('');
+  F('field').innerHTML = CERT_FIELDS.map(w => `<option>${w}</option>`).join('');
+  F('rate').innerHTML = App.FEE.rates.map(r => `<option value="${r.key}">${r.label}（每節 ${fmt.money(r.rate)}）</option>`).join('');
+  const checkHTML = (name, value, label) => `<label class="check"><input type="checkbox" name="${name}" value="${value}"><span class="check__box">${icon('check')}</span>${label}</label>`;
+  F('topics').innerHTML = App.TOPICS.map(t => checkHTML('topics', t.id, esc(t.name))).join('');
+  F('auds').innerHTML = App.AUDIENCES.map(a => checkHTML('auds', a.id, esc(a.name))).join('');
+  F('modes').innerHTML = Object.entries(App.MODES).map(([k, v]) => checkHTML('modes', k, `${v}授課`)).join('');
+  F('months').innerHTML = Array.from({ length: 12 }, (_, i) => `<button type="button" class="chip" aria-pressed="false" data-v="${i + 1}">${i + 1} 月</button>`).join('');
+  F('days').innerHTML = DOW_ORDER.map(d => `<button type="button" class="chip" aria-pressed="false" data-v="${d}">週${DOW[d]}</button>`).join('');
+  F('status').innerHTML = STATUS_ORDER.map(k => `<label class="radio"><input type="radio" name="status" value="${k}"><span class="check__box"></span>${STATUS[k].label}</label>`).join('');
+
+  // 服務區域：沿用縣市方塊地圖，選取的縣市以深綠填色
+  const areaMap = App.tileMap(F('area'), {
+    mode: 'select', multi: true, compact: true, values: {}, showValue: false, label: '可服務縣市（可複選）',
+    format: v => (v ? '可服務' : '未選'),
+    onChange: ids => { areaSel = ids; paintArea(); refreshPreview(); },
+  });
+  function paintArea() {
+    areaMap.setValues(Object.fromEntries(areaSel.map(id => [id, 1])));
+    const list = sortCounties(areaSel);
+    const sum = F('area-sum');
+    sum.textContent = list.length ? `已選 ${list.length} 縣市：${list.map(short).join('、')}` : '尚未選擇服務區域：列為資料缺漏，也不會符合媒合的服務區域條件';
+    sum.classList.toggle('is-empty', !list.length);
+  }
+  $('#area-region').addEventListener('click', () => {
+    const home = F('county').value;
+    if (!home) { App.toast('請先選擇戶籍縣市', { tone: 'warn' }); F('county').focus(); return; }
+    const region = App.county(home).region;
+    areaSel = [...new Set(areaSel.concat(App.COUNTIES.filter(c => c.region === region).map(c => c.id)))];
+    areaMap.select(areaSel);
+    paintArea();
+    refreshPreview();
+  });
+  $('#area-clear').addEventListener('click', () => { areaSel = []; areaMap.select([]); paintArea(); refreshPreview(); });
+  [F('months'), F('days')].forEach(host => host.addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if (!b) return;
+    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+    refreshPreview();
+  }));
+
+  /* ---------- 表單狀態 ---------- */
+  const moduleText = l => (l.moduleText != null ? l.moduleText : l.modules.map(m => `${m.title}（${m.sessions} 節）`).join('\n'));
+  function stateOf(l) {
+    // app.js 只在 missing 記錄「可授課時段／課程模組簡介」缺漏，表單上就呈現為未填
+    const noSlot = l.missing.includes('可授課時段');
+    return {
+      name: l.name, title: l.title, org: l.org, county: l.county, phone: l.phone, email: l.email,
+      certWay: l.cert.way, certField: l.cert.field, certNo: certShort(l), certUntil: l.cert.until,
+      topics: [...l.topics], audiences: [...l.audiences], serve: sortCounties(l.serve), modes: [...l.modes],
+      months: noSlot ? [] : [...l.months].sort((a, b) => a - b), weekdays: noSlot ? [] : DOW_ORDER.filter(d => l.weekdays.includes(d)),
+      module: l.missing.includes('課程模組簡介') ? '' : moduleText(l).trim(),
+      photo: l.photo, bank: l.bank, rateKey: l.rateKey, status: l.status, statusNote: l.statusNote,
+    };
+  }
+  const blankState = () => ({
+    name: '', title: '', org: '', county: '', phone: '', email: '', certWay: '經歷', certField: '社區參與', certNo: '', certUntil: '',
+    topics: [], audiences: [], serve: [], modes: ['onsite'], months: [], weekdays: [], module: '', photo: false, bank: false,
+    rateKey: 'external', status: 'review', statusNote: `${fmt.roc(App.TODAY)} 新增建檔，待審核認證文件`,
+  });
+  const checkedVals = name => $$(`[name="${name}"]`, form).filter(x => x.checked).map(x => x.value);
+  const pressedVals = host => $$('.chip', host).filter(b => b.getAttribute('aria-pressed') === 'true').map(b => Number(b.dataset.v));
+  function readForm() {
+    return {
+      name: F('name').value.trim(), title: F('title').value.trim(), org: F('org').value.trim(), county: F('county').value,
+      phone: F('phone').value.trim(), email: F('email').value.trim(), certWay: F('way').value, certField: F('field').value,
+      certNo: F('certno').value.trim(), certUntil: F('until').value,
+      topics: checkedVals('topics'), audiences: checkedVals('auds'), serve: sortCounties(areaSel), modes: checkedVals('modes'),
+      months: pressedVals(F('months')), weekdays: pressedVals(F('days')), module: F('module').value.trim(),
+      photo: F('photo').checked, bank: F('bank').checked, rateKey: F('rate').value,
+      status: (form.querySelector('[name="status"]:checked') || { value: 'review' }).value, statusNote: F('note').value.trim(),
+    };
+  }
+  function writeForm(s) {
+    [['name', s.name], ['title', s.title], ['org', s.org], ['county', s.county], ['phone', s.phone], ['email', s.email], ['way', s.certWay], ['field', s.certField], ['certno', s.certNo], ['until', s.certUntil], ['module', s.module], ['rate', s.rateKey], ['note', s.statusNote]]
+      .forEach(([id, v]) => { F(id).value = v; });
+    [['topics', s.topics], ['auds', s.audiences], ['modes', s.modes]].forEach(([name, list]) => $$(`[name="${name}"]`, form).forEach(x => { x.checked = list.includes(x.value); }));
+    $$('.chip', F('months')).forEach(b => b.setAttribute('aria-pressed', String(s.months.includes(Number(b.dataset.v)))));
+    $$('.chip', F('days')).forEach(b => b.setAttribute('aria-pressed', String(s.weekdays.includes(Number(b.dataset.v)))));
+    $$('[name="status"]', form).forEach(x => { x.checked = x.value === s.status; });
+    F('photo').checked = s.photo;
+    F('bank').checked = s.bank;
+    areaSel = [...s.serve];
+    areaMap.select(areaSel);
+    paintArea();
+    syncNoteRequired();
+    untilHint();
+  }
+  // 十項必填資料的檢核（順序與 App.REQUIRED_FIELDS 相同）；完整度與苗圃的葉片都依此計算
+  function missingFrom(s) {
+    const ok = {
+      基本資料: !!(s.name && s.title && s.org && s.county),
+      聯絡方式: PHONE.test(s.phone) && EMAIL.test(s.email),
+      認證字號: CERTNO.test(s.certNo) && !!s.certUntil,
+      專長主題: s.topics.length > 0,
+      服務對象: s.audiences.length > 0,
+      服務區域: s.serve.length > 0,
+      可授課時段: s.months.length > 0 && s.weekdays.length > 0,
+      課程模組簡介: s.module.length >= 10,
+      授課照片: s.photo,
+      銀行帳戶: s.bank,
+    };
+    return App.REQUIRED_FIELDS.filter(f => !ok[f]);
+  }
+  function applyState(l, s) {
+    // 保留原本的順序：專長第一項是「主要專長」，媒合排序會用到
+    const keep = (old, now) => old.filter(x => now.includes(x)).concat(now.filter(x => !old.includes(x)));
+    Object.assign(l, {
+      name: s.name, title: s.title, org: s.org, county: s.county, phone: s.phone, email: s.email,
+      topics: keep(l.topics, s.topics), audiences: keep(l.audiences, s.audiences), serve: keep(l.serve, s.serve), modes: keep(l.modes, s.modes),
+      photo: s.photo, bank: s.bank, rateKey: s.rateKey, status: s.status, statusNote: s.status === 'active' ? '' : s.statusNote,
+      moduleText: s.module, updated: App.TODAY, missing: missingFrom(s),
+    });
+    l.cert = { way: s.certWay, field: s.certField, no: `環教人認字第 ${s.certNo} 號`, until: s.certUntil };
+    if (s.months.length) l.months = s.months;
+    if (s.weekdays.length) l.weekdays = s.weekdays;
+  }
+
+  /* ---------- 即時預覽：填得越完整，新芽長得越完整 ---------- */
+  function refreshPreview() {
+    const s = readForm();
+    const miss = missingFrom(s);
+    const p = (App.REQUIRED_FIELDS.length - miss.length) / App.REQUIRED_FIELDS.length;
+    const fake = { status: s.status, sessions: editing ? editing.sessions : 0, missing: miss, cert: { until: s.certUntil || App.addDays(App.TODAY, 3650) } };
+    $('#dr-prev').innerHTML = `<span class="ins-dprev__plant${p > prevPct && !App.calm() ? ' is-grew' : ''}"${s.status === 'active' && miss.length ? ' data-gap' : ''}>${plantSVG(fake)}</span>
+<div><div class="ins-dprev__top"><span class="ins-dprev__cap">資料完整度</span><span class="ins-dprev__pct">${Math.round(p * 100)}%</span><span class="ins-dprev__hint">${miss.length ? `尚缺 ${miss.length} 項，補齊後新芽會長出完整葉片` : '十項必填資料皆已完整'}</span></div>
+<ul class="ins-req" aria-label="必填資料檢核">${App.REQUIRED_FIELDS.map(f => (miss.includes(f) ? `<li class="is-miss">${icon('alert')}缺${f}</li>` : `<li>${icon('check')}${f}</li>`)).join('')}</ul></div>`;
+    prevPct = p;
+  }
+  function syncNoteRequired() {
+    const st = (form.querySelector('[name="status"]:checked') || { value: 'active' }).value;
+    F('note').required = st !== 'active';
+    $('#f-note-label').classList.toggle('req', st !== 'active');
+    F('note').placeholder = st === 'inactive' ? '例如：本人申請暫停邀約至 116 年 3 月' : st === 'review' ? '例如：待審核認證文件' : '啟用中不需填寫';
+  }
+  function untilHint() {
+    const v = F('until').value;
+    const h = $('#f-until-hint');
+    const d = v ? App.daysBetween(App.TODAY, v) : null;
+    h.textContent = d == null ? '到期前 90 日系統會開始提醒' : d < 0 ? `已過期 ${-d} 天，請上傳換發後的證書` : d <= 90 ? `剩 ${d} 天到期，已列入續證提醒` : `距今 ${fmt.num(d)} 天到期`;
+    h.classList.toggle('ins-hint-warn', d != null && d <= 90);
+  }
+  // 勾選群組與 Email 重複：用 setCustomValidity 交給 App.validate 一起顯示。
+  // 群組錯誤放在最後一個選項上，因為 App.validate 依序處理同一欄位的每個 input，最後一個的結果會留在畫面上
+  function checkCustom() {
+    [['topics', '至少選擇一項專長主題'], ['auds', '至少選擇一項服務對象經驗'], ['modes', '至少選擇一種授課方式']].forEach(([name, msg]) => {
+      const boxes = $$(`[name="${name}"]`, form);
+      const last = boxes[boxes.length - 1];
+      last.dataset.error = msg;
+      last.setCustomValidity(boxes.some(b => b.checked) ? '' : msg);
+    });
+    const email = F('email');
+    const v = email.value.trim().toLowerCase();
+    const dupe = v && App.LECTURERS.find(l => l !== editing && l.email.toLowerCase() === v);
+    email.setCustomValidity(dupe ? 'duplicate' : '');
+    email.dataset.error = dupe ? `與 ${dupe.id} ${dupe.name} 的 Email 重複` : '請輸入有效的 Email';
+  }
+  function onFormEdit(e) {
+    if (e.target.name === 'status') syncNoteRequired();
+    if (e.target === F('until')) untilHint();
+    const field = e.target.closest('.field');
+    if (field && field.classList.contains('is-invalid')) {
+      checkCustom();
+      const els = $$('input, select, textarea', field);
+      if (els.every(x => x.checkValidity())) { field.classList.remove('is-invalid'); els.forEach(x => x.removeAttribute('aria-invalid')); }
+    }
+    refreshPreview();
+  }
+  form.addEventListener('input', onFormEdit);
+  form.addEventListener('change', onFormEdit);
+
+  /* ---------- 異動比對 ---------- */
+  function monthText(ms) {
+    const a = [...ms].sort((x, y) => x - y), out = [];
+    for (let i = 0; i < a.length;) { let j = i; while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++; out.push(i === j ? `${a[i]}` : `${a[i]}–${a[j]}`); i = j + 1; }
+    return `${out.join('、')} 月`;
+  }
+  const slotText = s => (s.months.length && s.weekdays.length ? `${monthText(s.months)}；週${DOW_ORDER.filter(d => s.weekdays.includes(d)).map(d => DOW[d]).join('、')}` : '未填');
+  const joinList = (arr, f) => arr.map(f).join('、') || '—';
+  const setKey = arr => [...arr].sort().join();
+  // [欄位名稱, 顯示值, 比對值（省略時用顯示值）]
+  const DIFF = [
+    ['姓名', s => s.name], ['職稱', s => s.title], ['服務單位', s => s.org],
+    ['戶籍縣市', s => (s.county ? App.county(s.county).name : '—')], ['手機', s => s.phone], ['Email', s => s.email],
+    ['認證方式', s => s.certWay], ['認證領域', s => s.certField], ['認證字號', s => s.certNo],
+    ['認證效期', s => (s.certUntil ? fmt.roc(s.certUntil) : '—')],
+    ['專長主題', s => joinList(s.topics, t => App.topic(t).short), s => setKey(s.topics)],
+    ['服務對象', s => joinList(s.audiences, a => App.audience(a).name), s => setKey(s.audiences)],
+    ['服務區域', s => (s.serve.length ? s.serve.map(short).join('、') : '未填'), s => setKey(s.serve)],
+    ['授課方式', s => joinList(s.modes, m => App.MODES[m]), s => setKey(s.modes)],
+    ['可授課時段', slotText],
+    ['課程模組簡介', s => (s.module ? `已填寫 ${s.module.length} 字` : '未填'), s => s.module],
+    ['授課照片', s => (s.photo ? '已上傳' : '未上傳')], ['銀行帳戶', s => (s.bank ? '已建檔' : '未建檔')],
+    ['講座鐘點費類別', s => App.rate(s.rateKey).label],
+    ['啟用狀態', s => STATUS[s.status].label], ['狀態備註', s => (s.status === 'active' ? '' : s.statusNote) || '—'],
+  ];
+
+  /* ---------- 開啟、儲存、新增 ---------- */
+  const drTabs = App.tabs($('#dr-tabs'));
+  function openDrawer(id) {
+    editing = id ? find(id) : null;
+    if (id && !editing) { App.toast(`找不到講師 ${id}`, { tone: 'warn', desc: '可能已被移除，請改用姓名或講師編號搜尋。' }); return; }
+    base = editing ? stateOf(editing) : blankState();
+    $$('.field.is-invalid', form).forEach(f => f.classList.remove('is-invalid'));
+    $$('[aria-invalid]', form).forEach(x => x.removeAttribute('aria-invalid'));
+    $('.form-alert', form).classList.remove('is-on');
+    writeForm(base);
+    prevPct = Infinity;
+    refreshPreview();
+    const l = editing;
+    $('#dr-avatar').innerHTML = l ? App.avatar(l, 'lg') : `<span class="avatar avatar--lg" style="--av:var(--forest)" aria-hidden="true">${icon('user-plus')}</span>`;
+    $('#dr-title').innerHTML = l ? `${esc(l.name)}${App.statusBadge(STATUS[l.status].tone, STATUS[l.status].label)}` : '新增講師';
+    $('#dr-lead').textContent = l ? `${l.id}・${l.title}・${l.org}` : '建檔後狀態為「待審核」，確認認證文件後再啟用';
+    $('#dr-note').textContent = l ? `最後異動 ${fmt.roc(l.updated)}・${fmt.roc(l.joined)} 加入系統` : '標示 * 的欄位為必填';
+    renderLog(l);
+    renderCases(l);
+    drTabs.select(0);
+    plantEls.forEach((el, pid) => el.classList.toggle('is-current', pid === id));
+    App.openDialog(drawer);
+    $('#dr-body').scrollTop = 0;
+  }
+  drawer.addEventListener('close', () => plantEls.forEach(el => el.classList.remove('is-current')));
+  $$('[data-close]', drawer).forEach(b => b.addEventListener('click', () => App.closeDialog(drawer)));
+  $('#add-lect').addEventListener('click', () => openDrawer(null));
+
+  function renderLog(l) {
+    const list = l ? l.changes.slice().sort((a, b) => b.iso.localeCompare(a.iso) || (b.seq || 0) - (a.seq || 0)) : [];
+    $('#dr-log-n').textContent = list.length;
+    $('#dp-log').innerHTML = (list.length
+      ? `<ol class="timeline ins-tl">${list.map((ch, i) => `<li class="tl-item ${i === 0 ? 'is-current' : 'is-done'}"><span class="tl-item__node">${icon(i === 0 ? 'edit' : 'check')}</span><div class="tl-item__body"><p class="tl-item__title">${esc(ch.field)}</p><p class="tl-item__meta">${fmt.roc(ch.iso)}・${esc(byLabel(ch.by))}</p><p class="tl-item__note"><span class="ins-from">${esc(ch.from)}</span>${icon('arrow-right')}<b>${esc(ch.to)}</b></p></div></li>`).join('')}</ol>`
+      : App.emptyState({ title: '尚無異動紀錄', text: l ? '這位講師的資料自加入系統後尚未修改。' : '儲存後會自動建立第一筆紀錄。' }))
+      + (l ? `<p class="ins-joined">${fmt.roc(l.joined)} 加入系統${l.joined === App.LAUNCH ? '（系統上線時由講師名冊匯入）' : ''}</p>` : '');
+  }
+  function renderCases(l) {
+    const when = c => c.date || c.candidates[0] || c.submitted;
+    const cs = l ? App.CASES.filter(c => c.lecturer === l.id || c.invites.some(i => i.lecturer === l.id && i.status === 'pending')).sort((a, b) => when(b).localeCompare(when(a))) : [];
+    $('#dr-cases-n').textContent = cs.length;
+    if (!cs.length) { $('#dp-cases').innerHTML = App.emptyState({ title: '尚無授課紀錄', text: '講師接受邀請或確認授課的案件會列在這裡。' }); return; }
+    const done = cs.filter(App.isExecuted).length;
+    const up = cs.filter(c => c.status === 'active' && c.stage === 'scheduled').length;
+    const inv = cs.filter(c => c.lecturer !== l.id).length;
+    $('#dp-cases').innerHTML = `<div class="ins-csum">${App.statusBadge('ok', `已執行 ${done} 場`)}${App.statusBadge('forest', `待執行 ${up} 場`)}${inv ? App.statusBadge('clay', `邀請中 ${inv} 件`) : ''}${App.statusBadge('info', `近 30 日負載 ${App.load30(l.id)} 場`)}</div>
+<ul class="ins-cases">${cs.slice(0, 15).map(c => `<li class="ins-case">${App.caseLink(c)}<div class="ins-case__org">${esc(c.org)}<span class="cell-sub">${c.date ? fmt.roc(c.date) : '日期待定'}・${App.county(c.county).name}${esc(c.district)}・${App.audience(c.audience).name} ${c.people} 人</span></div>${c.lecturer === l.id ? App.stageBadge(c) : App.statusBadge('clay', '邀請中')}</li>`).join('')}${cs.length > 15 ? `<li class="ins-case__more">另有 ${cs.length - 15} 件，可在申請案件以講師姓名搜尋</li>` : ''}</ul>`;
+  }
+
+  function flashRow(id) {
+    const i = sorted(filtered()).findIndex(l => l.id === id);
+    if (i < 0) return;
+    const page = Math.floor(i / PAGE_SIZE) + 1;
+    if (page !== state.page) { state.page = page; renderTable(); }
+    const tr = $(`#lect-body tr[data-id="${id}"]`);
+    if (tr) { tr.classList.remove('is-flash'); void tr.offsetWidth; tr.classList.add('is-flash'); }
+  }
+  const nextId = () => `L${String(Math.max(...App.LECTURERS.map(l => Number(l.id.slice(1)))) + 1).padStart(3, '0')}`;
+  function makeLecturer(s, note) {
+    const l = {
+      id: nextId(), gender: '', since: 2026, bio: '', life: [], sessions: 0, rating: null, responses: 0, modules: [], trend: [], footprint: {},
+      color: AVATAR_COLORS[App.LECTURERS.length % AVATAR_COLORS.length], topics: [], audiences: [], serve: [], modes: [], months: [], weekdays: [],
+      joined: App.TODAY, changes: [],
+    };
+    applyState(l, s);
+    l.changes.push({ iso: App.TODAY, by: App.ME, field: '講師資料', from: '—', to: note, seq: ++changeSeq });
+    return l;
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    drTabs.select(0);
+    checkCustom();
+    syncNoteRequired();
+    if (!App.validate(form)) return;
+    const s = readForm();
+    if (!editing) {
+      const l = makeLecturer(s, '新增建檔');
+      App.LECTURERS.push(l);
+      App.closeDialog(drawer);
+      App.emit('lecturer-add');
+      flashRow(l.id);
+      App.toast(`已新增講師 ${l.name}（${l.id}）`, {
+        desc: `狀態為「${STATUS[l.status].label}」，資料完整度 ${pct(l)}%。`,
+        action: { label: '復原', onClick: () => { App.LECTURERS.splice(App.LECTURERS.indexOf(l), 1); App.emit('lecturer-add-undo'); } },
+      });
+      return;
+    }
+    const changed = DIFF.filter(([, show, raw = show]) => raw(base) !== raw(s));
+    if (!changed.length) { App.toast('沒有需要儲存的變更', { tone: 'info', desc: '資料與開啟時相同。' }); return; }
+    const l = editing;
+    const snap = structuredClone(l);
+    const before = App.completeness(l);
+    applyState(l, s);
+    changed.forEach(([field, show]) => l.changes.push({ iso: App.TODAY, by: App.ME, field, from: show(base) || '—', to: show(s) || '—', seq: ++changeSeq }));
+    if (App.completeness(l) > before) grew.add(l.id);
+    App.closeDialog(drawer);
+    App.emit('lecturer-save');
+    flashRow(l.id);
+    App.toast(`已更新 ${l.name} 的資料`, {
+      desc: `${changed.length} 個欄位：${changed.slice(0, 4).map(c => c[0]).join('、')}${changed.length > 4 ? ' 等' : ''}，已寫入異動紀錄。`,
+      action: { label: '復原', onClick: () => { Object.keys(l).forEach(k => delete l[k]); Object.assign(l, snap); App.emit('lecturer-undo'); } },
+    });
+  });
+
+  /* =====================================================================
+     批次匯入：上傳 → 欄位對應 → 預覽檢核 → 完成
+     檢核規則即時依現有講師資料計算（Email 重複、字號格式、效期）
+     ===================================================================== */
+  const imp = $('#imp');
+  const IMP_HEAD = ['講師姓名', '性別', '現職／職稱', '服務單位', '戶籍縣市', '手機號碼', '電子郵件', '認證字號', '認證有效期限', '專長主題', '可服務縣市', '備註'];
+  const IMP_ROWS = [
+    ['何欣蓓', '女', '社區綠生活講師', '霞岸綠學社', '新北市', '0921-334-518', 'hexinbei@example.tw', '112-0187', '2032/05/31', '淨零綠生活、綠色飲食', '新北市、臺北市、基隆市', '社區大學推薦'],
+    ['莊明翰', '男', '再生能源推廣員', '澄溪能源教育坊', '桃園市', '0937-602-114', 'zhuang.mh@example.tw', '112-0203', '2032/07/31', '能源轉型與節能', '', '可支援週末場次'],
+    ['賴玉珊', '女', '溼地生態解說員', '鷺洲生態學會', '彰化縣', '0918-450-276', 'lai.ys@example.tw', '1120219', '2032/08/31', '生物多樣性', '彰化縣、雲林縣', ''],
+    ['宋柏諺', '男', '永續採購顧問', '青嵐永續顧問社', '臺北市', '0952-118-930', 'lecturer.l037@example.tw', '113-0044', '2033/04/30', '循環經濟與資源回收', '臺北市、新北市', ''],
+    ['田佳穎', '女', '長青健康促進講師', '樟原樂齡協會', '高雄市', '0975-221-604', 'tian.jy@example.tw', '111-0398', '2026/12/29', '環境與健康、綠色飲食', '高雄市、屏東縣', '證書換發中'],
+    ['邱子豪', '男', '低碳交通倡議者', '雁行單車協會', '臺南市', '0910-875-332', 'chiu.zh@example.tw', '113-0058', '2033/05/31', '低碳交通、氣候變遷與調適', '臺南市、高雄市、嘉義市', ''],
+  ];
+  const SYS = [
+    { key: 'name', label: '姓名', req: true }, { key: 'gender', label: '性別' }, { key: 'title', label: '現職／職稱', req: true },
+    { key: 'org', label: '服務單位', req: true }, { key: 'county', label: '戶籍縣市', req: true }, { key: 'phone', label: '手機', req: true },
+    { key: 'email', label: 'Email', req: true }, { key: 'certNo', label: '認證字號', req: true }, { key: 'certUntil', label: '認證效期', req: true },
+    { key: 'topics', label: '專長主題', req: true, multi: true }, { key: 'serve', label: '可服務縣市', multi: true },
+  ];
+  const AUTO_MAP = ['name', 'gender', 'title', 'org', 'county', 'phone', 'email', 'certNo', 'certUntil', 'topics', 'serve', ''];
+  const STEP_LABELS = ['上傳名冊', '欄位對應', '預覽檢核', '完成'];
+  let step = 1, file = null, mapping = [], parsed = [], uploadTimer = 0;
+  const sysOf = key => SYS.find(f => f.key === key);
+
+  function renderImp() {
+    if (step === 3) { parsed = IMP_ROWS.map((r, i) => parseRow(r, i)); renderPrev(); }
+    if (step === 2) renderMap();
+    $('#imp-steps').innerHTML = STEP_LABELS.map((t, i) => `<li class="step${i + 1 < step ? ' is-done' : i + 1 === step ? ' is-current' : ''}"${i + 1 === step ? ' aria-current="step"' : ''}><span class="step__dot">${i + 1 < step ? icon('check') : i + 1}</span><span class="step__label">${t}</span></li>`).join('');
+    $$('[data-pane]', imp).forEach(p => { p.hidden = Number(p.dataset.pane) !== step; });
+    $('#imp-back').hidden = step === 1 || step === 4;
+    $('.ins-imp__cancel', imp).hidden = step === 4;
+    const ok = parsed.filter(r => r.result !== 'fail').length;
+    const next = $('#imp-next');
+    next.innerHTML = step === 1 ? `下一步：欄位對應${icon('arrow-right')}` : step === 2 ? `下一步：預覽檢核${icon('arrow-right')}` : step === 3 ? `${icon('upload')}匯入 ${ok} 位講師` : `${icon('check')}完成`;
+    next.disabled = (step === 1 && !(file && file.ready)) || (step === 3 && !ok);
+  }
+
+  function startUpload(name, size) {
+    if (!/\.(xlsx|csv)$/i.test(name)) { App.toast('不支援這個檔案格式', { tone: 'err', desc: '請上傳 .xlsx 或 .csv 的講師名冊。' }); return; }
+    clearTimeout(uploadTimer);
+    file = { name, size, ready: false };
+    $('#imp-files').innerHTML = `<div class="file-item">${icon('file')}<div><p class="file-item__name">${esc(name)}</p><p class="file-item__meta" id="imp-meta">${esc(size)}・解析中…</p></div><button type="button" class="icon-btn" id="imp-remove">${icon('trash')}<span class="icon-btn__label">移除檔案</span></button><div class="file-item__bar"><span id="imp-bar"></span></div></div>`;
+    const finish = () => {
+      file.ready = true;
+      $('#imp-bar').style.setProperty('--p', 1);
+      $('#imp-meta').textContent = `${size}・偵測到 ${IMP_HEAD.length} 個欄位、${IMP_ROWS.length} 筆講師資料`;
+      renderImp();
+    };
+    renderImp();
+    if (App.calm()) { finish(); return; }
+    requestAnimationFrame(() => requestAnimationFrame(() => $('#imp-bar').style.setProperty('--p', 0.64)));
+    uploadTimer = setTimeout(finish, 900);
+  }
+  const sizeText = n => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  $('#imp-sample').addEventListener('click', () => startUpload('115年第4季新進講師名冊.xlsx', '28 KB'));
+  $('#imp-file').addEventListener('change', e => { const f = e.target.files[0]; if (f) startUpload(f.name, sizeText(f.size)); e.target.value = ''; });
+  const drop = $('#imp-drop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('is-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('is-over'); const f = e.dataTransfer.files[0]; if (f) startUpload(f.name, sizeText(f.size)); });
+  $('#imp-files').addEventListener('click', e => { if (e.target.closest('#imp-remove')) { clearTimeout(uploadTimer); file = null; $('#imp-files').innerHTML = ''; renderImp(); } });
+  $('#imp-template').addEventListener('click', () => {
+    App.downloadCSV('講師批次匯入範本.csv', [IMP_HEAD, IMP_ROWS[0]]);
+    App.toast('已下載匯入範本', { desc: '第一列為欄位名稱、第二列為填寫範例；多值欄位以「、」分隔。' });
+  });
+
+  /* ---------- 欄位對應 ---------- */
+  function mapStatus(i) {
+    const k = mapping[i];
+    if (!k) return App.statusBadge('neutral', '不匯入');
+    if (mapping.filter(x => x === k).length > 1) return App.statusBadge('err', '重複對應');
+    if (sysOf(k).multi) return App.statusBadge('warn', '多值・以「、」拆分');
+    return App.statusBadge('ok', k === AUTO_MAP[i] ? '自動對應' : '手動對應');
+  }
+  function renderMap() {
+    $('#imp-map tbody').innerHTML = IMP_HEAD.map((h, i) => `<tr><td><b>${esc(h)}</b></td><td>${IMP_ROWS[0][i] ? esc(IMP_ROWS[0][i]) : '<span class="subtle">（空白）</span>'}</td><td><label class="sr-only" for="map-${i}">「${esc(h)}」對應的系統欄位</label><select class="select select--sm" id="map-${i}" data-map="${i}"><option value="">不匯入</option>${SYS.map(f => `<option value="${f.key}"${mapping[i] === f.key ? ' selected' : ''}>${f.label}${f.req ? ' *' : ''}</option>`).join('')}</select></td><td data-st="${i}">${mapStatus(i)}</td></tr>`).join('');
+  }
+  $('#imp-map').addEventListener('change', e => {
+    const s = e.target.closest('[data-map]');
+    if (!s) return;
+    mapping[Number(s.dataset.map)] = s.value;
+    IMP_HEAD.forEach((h, i) => { $(`[data-st="${i}"]`, imp).innerHTML = mapStatus(i); });
+    $('#imp-map-alert').classList.remove('is-on');
+  });
+  function mapErrors() {
+    const errs = SYS.filter(f => f.req && !mapping.includes(f.key)).map(f => `「${f.label}」尚未對應到名冊欄位`);
+    [...new Set(mapping.filter((k, i) => k && mapping.indexOf(k) !== i))].forEach(k => errs.push(`「${sysOf(k).label}」被重複對應`));
+    return errs;
+  }
+
+  /* ---------- 預覽檢核 ---------- */
+  const splitList = v => String(v || '').split(/[、,，;；]/).map(x => x.trim()).filter(Boolean);
+  function parseRow(r, idx) {
+    const o = {};
+    mapping.forEach((k, i) => { if (k) o[k] = String(r[i] || '').trim(); });
+    const errs = [], warns = [];
+    const county = App.COUNTIES.find(c => c.name === o.county || c.short === o.county);
+    if (!o.name) errs.push('缺少姓名');
+    if (!o.title || !o.org) errs.push('缺少職稱或服務單位');
+    if (!county) errs.push('戶籍縣市無法辨識');
+    if (!PHONE.test(o.phone || '')) errs.push('手機格式不符（應為 0912-345-678）');
+    const mail = (o.email || '').toLowerCase();
+    if (!EMAIL.test(mail)) errs.push('Email 格式不符');
+    else {
+      const dupe = App.LECTURERS.find(l => l.email.toLowerCase() === mail);
+      if (dupe) errs.push(`Email 與既有講師 ${dupe.id} ${dupe.name} 重複`);
+      else if (IMP_ROWS.slice(0, idx).some(x => String(x[mapping.indexOf('email')] || '').toLowerCase() === mail)) errs.push('Email 與名冊前面的列重複');
+    }
+    if (!CERTNO.test(o.certNo || '')) errs.push('認證字號格式不符（應為 000-0000）');
+    const until = String(o.certUntil || '').replace(/\//g, '-');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) errs.push('認證效期格式不符');
+    else {
+      const d = App.daysBetween(App.TODAY, until);
+      if (d < 0) errs.push(`認證已於 ${fmt.roc(until)} 過期`);
+      else if (d <= 90) warns.push(`認證將於 ${d} 天後到期，匯入後列入續證提醒`);
+    }
+    const topics = splitList(o.topics).map(n => App.TOPICS.find(t => t.name === n || t.short === n)).filter(Boolean).map(t => t.id);
+    if (!topics.length) errs.push('專長主題無法辨識');
+    const serve = splitList(o.serve).map(n => App.COUNTIES.find(c => c.name === n || c.short === n)).filter(Boolean).map(c => c.id);
+    if (!serve.length) warns.push('未填可服務縣市，匯入後列為資料缺漏');
+    return { o, county: county ? county.id : '', until: /^\d{4}-\d{2}-\d{2}$/.test(until) ? until : '', topics, serve, errs, warns, result: errs.length ? 'fail' : warns.length ? 'warn' : 'pass' };
+  }
+  function renderPrev() {
+    const n = k => parsed.filter(r => r.result === k).length;
+    $('#imp-sum').innerHTML = `${App.statusBadge('ok', `通過 ${n('pass')} 列`)}${App.statusBadge('warn', `警示 ${n('warn')} 列`)}${App.statusBadge('err', `錯誤 ${n('fail')} 列`)}<span class="subtle">錯誤列不會匯入，可修正名冊後再上傳；警示列會匯入並標示待補資料。</span>`;
+    const RES = { pass: ['ok', '通過'], warn: ['warn', '警示'], fail: ['err', '錯誤・略過'] };
+    $('#imp-prev tbody').innerHTML = parsed.map((r, i) => `<tr${r.result === 'fail' ? ' class="is-skip"' : ''}>
+  <td class="num">${i + 2}</td><td><b>${esc(r.o.name || '—')}</b></td><td>${r.county ? App.county(r.county).name : esc(r.o.county || '—')}</td>
+  <td><span class="mono">${esc(r.o.certNo || '—')}</span><span class="cell-sub">${r.until ? `效期 ${fmt.roc(r.until)}` : '效期無法辨識'}</span></td>
+  <td><div class="tags">${r.topics.map(App.topicTag).join('') || '—'}</div></td>
+  <td class="ins-wrap">${App.statusBadge(...RES[r.result])}${r.errs.length || r.warns.length ? `<span class="ins-msgs">${r.errs.map(m => `<span class="c-err">${esc(m)}</span>`).join('')}${r.warns.map(m => `<span class="c-warn">${esc(m)}</span>`).join('')}</span>` : ''}</td>
+</tr>`).join('');
+  }
+
+  function doImport() {
+    const list = parsed.filter(r => r.result !== 'fail').map(r => {
+      const l = makeLecturer({
+        name: r.o.name, title: r.o.title, org: r.o.org, county: r.county, phone: r.o.phone, email: r.o.email,
+        certWay: '經歷', certField: '社區參與', certNo: r.o.certNo, certUntil: r.until,
+        topics: r.topics, audiences: [], serve: r.serve, modes: ['onsite'], months: [], weekdays: [], module: '',
+        photo: false, bank: false, rateKey: 'external', status: 'review', statusNote: `${fmt.roc(App.TODAY)} 批次匯入，待審核認證文件`,
+      }, `批次匯入（${file.name}）`);
+      l.gender = r.o.gender === '女' ? 'F' : r.o.gender === '男' ? 'M' : '';
+      App.LECTURERS.push(l);
+      return l;
+    });
+    App.emit('lecturer-import');
+    step = 4;
+    const skipped = parsed.length - list.length;
+    $('#imp-done').innerHTML = `<span class="ins-done__icon">${icon('check')}</span><p class="h3">已匯入 ${list.length} 位講師</p>
+<p class="muted">狀態皆為「待審核」。請確認認證文件，並補齊服務對象、授課時段、照片與銀行帳戶後再啟用。${skipped ? `另有 ${skipped} 列因錯誤略過。` : ''}</p>
+<div class="ins-done__list">${list.map(l => `<button type="button" class="btn btn--sm" data-imp-open="${l.id}">${App.avatar(l, 'sm')}${esc(l.name)}</button>`).join('')}</div>`;
+    renderImp();
+    App.toast(`已匯入 ${list.length} 位講師`, {
+      desc: '已列入「待審核」檢視與講師苗圃的新苗。',
+      action: { label: '復原', onClick: () => { list.forEach(l => { const i = App.LECTURERS.indexOf(l); if (i >= 0) App.LECTURERS.splice(i, 1); }); App.emit('lecturer-import-undo'); } },
+    });
+  }
+
+  $('#imp-next').addEventListener('click', () => {
+    if (step === 1) step = 2;
+    else if (step === 2) {
+      const errs = mapErrors();
+      if (errs.length) {
+        const a = $('#imp-map-alert');
+        a.innerHTML = `${icon('alert')}<div>欄位對應需要修正<ul>${errs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+        a.classList.add('is-on');
+        return;
+      }
+      step = 3;
+    } else if (step === 3) { doImport(); return; }
+    else { App.closeDialog(imp); return; }
+    renderImp();
+  });
+  $('#imp-back').addEventListener('click', () => { step = Math.max(1, step - 1); renderImp(); });
+  $$('[data-imp-close]', imp).forEach(b => b.addEventListener('click', () => App.closeDialog(imp)));
+  imp.addEventListener('click', e => {
+    const b = e.target.closest('[data-imp-open]');
+    if (!b) return;
+    App.closeDialog(imp);
+    setTimeout(() => openDrawer(b.dataset.impOpen), App.calm() ? 0 : 240);
+  });
+  $('#open-import').addEventListener('click', () => {
+    clearTimeout(uploadTimer);
+    step = 1; file = null; parsed = []; mapping = AUTO_MAP.slice();
+    $('#imp-files').innerHTML = '';
+    $('#imp-map-alert').classList.remove('is-on');
+    renderImp();
+    App.openDialog(imp);
+  });
+
+  /* =====================================================================
+     初次繪製、資料同步、URL 參數
+     ===================================================================== */
+  renderSide();
+  renderTable();
+  renderFeed();
+  App.on(() => {
+    renderNursery(true);
+    renderSide();
+    renderTable();
+    renderFeed();
+  });
+  App.onMode(() => applyDim());
+
+  const view = App.param('view');
+  if (VIEWS.some(v => v.key === view)) setView(view);
+  const pid = (App.param('id') || '').toUpperCase();
+  if (pid) {
+    if (find(pid)) { flashRow(pid); openDrawer(pid); }
+    else App.toast(`找不到講師 ${pid}`, { tone: 'warn', desc: '請改用姓名或講師編號搜尋。' });
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>績效分析 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="管理後台績效分析：依期間、縣市、服務對象與主題交叉檢視已執行場次、參與人次與滿意度，含縣市方塊地圖、區域涵蓋缺口、月趨勢、講師負載分布與報表匯出。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+  .an-stamp { display: inline-flex; align-items: center; gap: 6px; padding-left: 12px; border-left: 1px solid var(--line); font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+  .an-stamp .i { width: 16px; height: 16px; color: var(--forest); }
+  .an-stamp b { font-family: var(--font-en); color: var(--ink-2); }
+  .an-export { position: relative; }
+  .an-export__panel { right: 0; top: calc(100% + 8px); width: min(360px, calc(100vw - 32px)); padding: 8px; }
+  .an-export__cap { padding: 6px 10px 10px; margin-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.55; }
+  .an-export__cap b { color: var(--ink-2); }
+  .an-export .menu-item { align-items: flex-start; }
+  .an-export .menu-item > .i { margin-top: 2px; color: var(--forest); }
+  .an-mi { display: grid; gap: 1px; }
+  .an-mi small { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); line-height: 1.45; }
+
+
+  /* ---------- 篩選列與目前檢視 ---------- */
+  .an-filter .an-field-period { flex-grow: 1.6; }
+  .an-active { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 12px 2px 0; font-size: var(--fs-sm); color: var(--ink-2); }
+  .an-active__lead { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: var(--ink); }
+  .an-active__lead .i { width: 18px; height: 18px; color: var(--forest); }
+  .an-active__count { margin-left: auto; }
+  .an-active__count b { font-family: var(--font-en); font-weight: 800; color: var(--ink); }
+  .an-chip { min-height: 30px; padding: 2px 8px 2px 12px; }
+  .an-chip .i { width: 14px; height: 14px; color: var(--ink-3); }
+  .an-chip:hover .i { color: var(--err); }
+  .an-kpi-na { font-family: var(--font-en); color: var(--ink-3); }
+
+  /* ---------- 版面列 ---------- */
+  .an-row { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(16px, 1.6vw, 22px); margin-top: clamp(16px, 1.6vw, 22px); align-items: stretch; }
+  .an-row--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .an-row > .card { display: flex; flex-direction: column; }
+  .an-row > .card > .card__body { flex: 1; }
+  html.is-senior .an-row:not(.an-row--even) { grid-template-columns: minmax(0, 1fr); }
+  .an-seg { flex-wrap: wrap; max-width: 100%; }
+  .an-foot-note { display: inline-flex; align-items: center; gap: 6px; }
+  .an-foot-note .i { width: 16px; height: 16px; color: var(--ink-3); }
+
+  /* ---------- 縣市方塊地圖 ---------- */
+  .an-map { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: start; }
+  .an-map__map { display: grid; gap: 10px; justify-items: center; }
+  .an-map__side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .an-cty { display: grid; gap: 2px; padding: 14px 16px; border-radius: var(--r-md); background: var(--paper); border: 1px solid var(--line-soft); }
+  .an-cty__meta { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); letter-spacing: .04em; }
+  .an-cty__name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-md); font-weight: 900; line-height: 1.35; }
+  .an-cty__value { margin-top: 2px; font-family: var(--font-en); font-size: var(--fs-kpi); font-weight: 800; line-height: 1.1; }
+  .an-cty__value small { margin-left: 4px; font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); }
+  .an-cty__note { font-size: var(--fs-sm); color: var(--ink-2); }
+  .an-cty__act { justify-self: start; margin-top: 6px; }
+  .an-cap { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-3); letter-spacing: .06em; }
+  .an-map .hbar { grid-template-columns: 3.2em minmax(0, 1fr) auto; gap: 8px; }
+  .an-map .hbar__label, .an-map .hbar__val { font-size: var(--fs-xs); }
+  .an-map .hbar__val { min-width: 2.8em; }
+  /* 排行維持單行（共用樣式在窄版與高齡模式會把長條換到第二行） */
+  .an-map .hbar__track { grid-column: auto; grid-row: auto; }
+  html.is-senior .an-map .hbar { grid-template-columns: 4em minmax(0, 1fr) auto; }
+  html.is-senior .an-map .hbar__track { grid-column: auto; grid-row: auto; }
+  .an-regions-wrap { display: grid; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line-2); }
+  .an-regions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 104px), 1fr)); gap: 8px; }
+  .an-region { min-width: 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--paper); border: 1px solid var(--line-soft); }
+  .an-region__name { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+  .an-region__val { font-family: var(--font-en); font-size: var(--fs-lg); font-weight: 800; line-height: 1.25; white-space: nowrap; }
+  .an-region__val small { margin-left: 3px; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .an-region__sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .an-region.is-on { background: var(--clay-50); border-color: var(--clay-200); }
+  .an-region.is-on .an-region__name { color: var(--clay-ink); }
+
+  /* ---------- 區域涵蓋缺口（相對全國平均的差距條） ---------- */
+  .an-gap-scale, .an-gap__row { display: grid; grid-template-columns: 3.6em minmax(0, 1fr) 3.4em; gap: 10px; align-items: center; }
+  /* 刻度列與資料列共用以 em 計的欄寬：容器保持內文字級，只有子元素用小字，兩邊欄寬才會對齊 */
+  .an-gap-scale { padding: 0 8px 8px; font-weight: 700; color: var(--ink-3); }
+  .an-gap-scale > * { font-size: var(--fs-xs); }
+  .an-gap-scale__axis { position: relative; display: flex; justify-content: space-between; gap: 8px; }
+  .an-gap-scale__axis .is-neg { color: var(--clay-ink); }
+  .an-gap-scale__axis .is-pos { color: var(--forest); }
+  .an-gap-scale__zero { position: absolute; left: var(--a); bottom: -8px; width: 2px; height: 6px; margin-left: -1px; background: var(--ink-3); }
+  .an-gap { display: grid; gap: 2px; }
+  .an-gap__row {
+    width: 100%; min-height: 34px; padding: 4px 8px; border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--ink); font: inherit; text-align: left;
+    transition: background var(--dur-1);
+  }
+  .an-gap__row:hover { background: var(--row-hover); }
+  .an-gap__row[aria-pressed="true"] { background: var(--clay-50); box-shadow: inset 0 0 0 1.5px var(--clay); }
+  .an-gap__name { font-size: var(--fs-sm); font-weight: 800; white-space: nowrap; }
+  .an-gap__track { position: relative; height: 14px; }
+  .an-gap__track::before { content: ""; position: absolute; inset: 6px 0; border-radius: 1px; background: var(--paper-2); }
+  .an-gap__bar {
+    position: absolute; top: 0; bottom: 0; left: var(--l); width: var(--w); min-width: 2px;
+    border-radius: 3px; background: var(--forest);
+    transition: left .9s var(--ease-out), width .9s var(--ease-out);
+  }
+  .an-gap__row.is-neg .an-gap__bar { background: var(--clay); }
+  .an-gap__axis { position: absolute; top: -5px; bottom: -5px; left: var(--a); width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); }
+  .an-gap.is-waiting .an-gap__bar { left: var(--a); width: 0; min-width: 0; }
+  .an-gap__val { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; text-align: right; color: var(--forest); white-space: nowrap; }
+  .an-gap__row.is-neg .an-gap__val { color: var(--clay-ink); }
+  .an-gap:not(.is-all) > li:nth-child(n+13):not(.is-sel) { display: none; }
+  .an-gap-sum { margin-top: 14px; }
+  html.is-senior .an-gap-scale, html.is-senior .an-gap__row { grid-template-columns: 4.2em minmax(0, 1fr) 3.6em; }
+  html.is-senior .an-gap__row { min-height: 48px; }
+  html.is-senior .an-gap__name { font-size: var(--fs-base); }
+  html.is-senior .an-gap__track { height: 18px; }
+  html.is-senior .an-gap__track::before { inset: 8px 0; }
+
+  /* ---------- 月趨勢 ---------- */
+  .an-trend { position: relative; }
+  .an-trend svg { width: 100%; height: auto; }
+  .an-svg text { font-family: var(--font-sans); font-size: var(--fs-xs); }
+  .an-svg .t-lbl { fill: var(--ink-3); font-weight: 600; }
+  .an-svg .t-lbl.is-on { fill: var(--ink); font-weight: 800; }
+  .an-svg .t-val { fill: var(--ink); font-weight: 800; font-family: var(--font-en); }
+  .an-svg .t-band { fill: var(--forest); font-weight: 800; }
+  .an-svg .t-avg { fill: var(--clay-ink); font-weight: 800; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; paint-order: stroke; }
+  .an-svg .t-grid { stroke: var(--line-soft); }
+  .an-svg .t-base { stroke: var(--line-2); }
+  .an-pband { fill: var(--sprout-50); stroke: var(--sprout-200); }
+  .an-avg { stroke: var(--clay); }
+  .an-bar { fill: var(--forest-100); pointer-events: none; transform-box: fill-box; transform-origin: 50% 100%; transition: transform .8s var(--ease-out) calc(var(--i, 0) * 55ms), fill var(--dur-1); }
+  .an-bar.is-on { fill: var(--forest); }
+  .an-bar.is-hover { fill: var(--sprout-300); }
+  .an-bar.is-on.is-hover { fill: var(--forest-600); }
+  .an-hit { fill: transparent; }
+  .an-line { fill: none; stroke: var(--forest); stroke-dasharray: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 1.2s var(--ease-out); }
+  .an-line--muted { stroke: var(--forest-100); }
+  .an-pt { fill: var(--card); stroke: var(--forest); pointer-events: none; }
+  .an-pt--muted { stroke: var(--forest-100); }
+  .an-trend .t-val, .an-trend .an-pt, .an-trend .an-avg, .an-trend .t-avg { transition: opacity .5s .45s; }
+  .an-trend.is-waiting .an-bar { transform: scaleY(0); }
+  .an-trend.is-waiting .an-line { stroke-dashoffset: 1; }
+  .an-trend.is-waiting .t-val, .an-trend.is-waiting .an-pt, .an-trend.is-waiting .an-avg, .an-trend.is-waiting .t-avg { opacity: 0; }
+  .an-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); }
+  .an-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .an-legend i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .an-legend .lg-on { background: var(--forest); }
+  .an-legend .lg-off { background: var(--forest-100); }
+  .an-legend .lg-avg { height: 0; border-top: 2px dashed var(--clay); border-radius: 0; }
+  .an-legend .lg-band { background: var(--sprout-50); box-shadow: inset 0 0 0 1px var(--sprout-200); }
+
+  /* ---------- 重點觀察 ---------- */
+  .an-ins { display: grid; gap: 16px; }
+  .an-ins__mode { padding-bottom: 16px; border-bottom: 1px dashed var(--line-2); }
+  .an-ins__mode .donut { gap: 16px 22px; }
+  .an-ins__mode-note { margin-top: 8px; font-size: var(--fs-xs); color: var(--ink-3); }
+  html.is-senior .an-ins__mode-note { font-size: var(--fs-sm); }
+  .an-ins__list { display: grid; gap: 12px; }
+  .an-ins__item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; font-size: var(--fs-sm); line-height: 1.6; color: var(--ink-2); }
+  .an-ins__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--sprout-100); color: var(--forest); }
+  .an-ins__icon .i { width: 18px; height: 18px; }
+  .an-ins__item.is-clay .an-ins__icon { background: var(--clay-100); color: var(--clay-ink); }
+  .an-ins__item p { text-wrap: pretty; }
+  .an-ins__item b { color: var(--ink); font-weight: 800; }
+  .an-ins__item .num { font-family: var(--font-en); }
+  html.is-senior .an-ins__item { font-size: var(--fs-base); grid-template-columns: 40px minmax(0, 1fr); }
+  html.is-senior .an-ins__icon { width: 40px; height: 40px; }
+
+  /* ---------- 服務對象與主題分布（可點選篩選） ---------- */
+  .an-dist { display: grid; gap: 2px; }
+  .an-dist__row {
+    display: grid; grid-template-columns: minmax(84px, 7.6em) minmax(0, 1fr) 7.4em; gap: 14px; align-items: center;
+    width: 100%; min-height: 36px; padding: 5px 10px; border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--ink); font: inherit; text-align: left;
+    transition: background var(--dur-1);
+  }
+  .an-dist__row:hover { background: var(--row-hover); }
+  .an-dist__label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); line-height: 1.35; }
+  .an-dist__label .i { width: 18px; height: 18px; color: var(--forest); }
+  .an-dist__track { height: 12px; border-radius: 6px; background: var(--paper-2); overflow: hidden; }
+  .an-dist__fill { display: block; height: 100%; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--forest); transition: width .9s var(--ease-out), background var(--dur-2); }
+  .an-dist.is-waiting .an-dist__fill { width: 0; }
+  .an-dist__val { display: flex; justify-content: flex-end; align-items: baseline; gap: 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+  .an-dist__val b { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--ink); }
+  .an-dist__row[aria-pressed="true"] { background: var(--clay-50); box-shadow: inset 0 0 0 1.5px var(--clay); }
+  .an-dist__row[aria-pressed="true"] .an-dist__fill { background: var(--clay); }
+  .an-dist__row[aria-pressed="true"] .an-dist__label { color: var(--clay-ink); font-weight: 900; }
+  .an-dist__row[aria-pressed="true"] .an-dist__label .i { color: var(--clay-ink); }
+  .an-dist__row.is-zero .an-dist__label { color: var(--ink-3); }
+  html.is-senior .an-dist__row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; min-height: 48px; padding: 8px 12px; }
+  html.is-senior .an-dist__track { grid-column: 1 / -1; grid-row: 2; height: 16px; border-radius: 8px; }
+  html.is-senior .an-dist__label { font-size: var(--fs-base); }
+  html.is-senior .an-dist__label .i { width: 22px; height: 22px; }
+
+  /* ---------- 講師負載：種子分布（招牌） ---------- */
+  .an-load { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+  html.is-senior .an-load { grid-template-columns: minmax(0, 1fr) 340px; }
+  .an-swarm { position: relative; margin-top: 4px; }
+  .an-swarm__ground {
+    position: absolute; left: 0; right: 0; top: var(--axis-y); height: 3px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--paper-3), var(--line-2) 50%, var(--paper-3));
+  }
+  .an-swarm__tick { position: absolute; top: calc(var(--axis-y) + 10px); transform: translateX(-50%); font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); line-height: 1.2; }
+  .an-swarm__tick::before { content: ""; position: absolute; left: 50%; top: -9px; width: 1.5px; height: 6px; margin-left: -1px; background: var(--line-2); }
+  .an-swarm__ref { position: absolute; top: var(--ref-top); height: var(--ref-h); left: var(--ref-x); width: 0; border-left: 2px dashed var(--clay); transition: left .7s var(--ease-out); }
+  .an-swarm__ref-label {
+    position: absolute; bottom: calc(100% + 4px); left: var(--lbl-dx, 0); transform: translateX(-50%);
+    padding: 0 9px; border-radius: var(--r-pill); background: var(--clay-100); color: var(--clay-ink);
+    font-size: var(--fs-xs); font-weight: 800; line-height: 1.65; white-space: nowrap;
+  }
+  .an-swarm__stems { position: absolute; left: 0; right: 0; top: 0; height: var(--axis-y); pointer-events: none; }
+  .an-stem {
+    position: absolute; left: 0; bottom: 0; width: 2px; height: var(--h, 0px); border-radius: 2px 2px 0 0;
+    background: linear-gradient(0deg, var(--forest-700), var(--forest-600));
+    transform: translateX(var(--sx, 0px));
+    transition: height .8s var(--ease-out), transform .7s var(--ease-out), background var(--dur-2);
+  }
+  .an-stem.is-hot { background: linear-gradient(0deg, var(--clay-ink), var(--clay)); }
+  .an-stem__n {
+    position: absolute; left: 1px; bottom: calc(100% + 3px); transform: translateX(-50%);
+    font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; line-height: 1; color: var(--ink-3);
+    text-shadow: 0 0 3px var(--card), 0 0 3px var(--card), 0 0 2px var(--card);
+    transition: opacity .4s .5s;
+  }
+  .an-stem.is-hot .an-stem__n { color: var(--clay-ink); }
+  .an-stem.is-empty .an-stem__n, .an-swarm.is-waiting .an-stem__n { opacity: 0; transition-delay: 0s; }
+  .an-swarm.is-waiting .an-stem { height: 0; }
+  /* 葉片：右上尖、左下尖的葉形，左側葉片以 scaleX(-1) 鏡像，尖端都接在枝條上 */
+  .an-seed {
+    position: absolute; left: 0; top: 0; width: var(--leaf-w, 14px); height: var(--leaf-h, 9px);
+    border-radius: 9px 2px 9px 2px; background: var(--forest); cursor: pointer;
+    transform: translate(var(--x), var(--y)) scaleX(var(--s, 1));
+    transition: transform .75s var(--ease-out), opacity .4s, background var(--dur-2);
+  }
+  .an-seed::before { content: ""; position: absolute; inset: -4px; }
+  .an-seed:hover { z-index: 2; transform: translate(var(--x), var(--y)) scaleX(var(--s, 1)) scale(1.5); }
+  .an-seed.is-hot { background: var(--clay); }
+  .an-seed.is-new { background: var(--card); box-shadow: inset 0 0 0 1.8px var(--forest); }
+  .an-seed.is-off { opacity: 0; pointer-events: none; }
+  .an-swarm.is-waiting .an-seed { opacity: 0; transform: translate(var(--x), calc(var(--y) - 90px)) scaleX(var(--s, 1)) rotate(140deg); }
+  .an-swarm.is-sowing .an-seed { transition-delay: calc(240ms + var(--k, 0) * 18ms); }
+  html.is-senior .an-seed { transition: none; }
+  html.is-senior .an-swarm__ref, html.is-senior .an-stem { transition: none; }
+  .an-swarm__empty { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-size: var(--fs-sm); color: var(--ink-3); }
+  .an-swarm-cap { margin-top: 6px; text-align: center; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .an-legend .lg-seed { width: 14px; height: 9px; border-radius: 9px 2px 9px 2px; background: var(--forest); }
+  .an-legend .lg-seed.is-hot { background: var(--clay); }
+  .an-legend .lg-seed.is-new { background: var(--card); box-shadow: inset 0 0 0 1.8px var(--forest); }
+  .an-legend .lg-ref { width: 0; height: 14px; border-left: 2px dashed var(--clay); border-radius: 0; }
+  .an-idle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 14px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .an-idle__lead { font-weight: 800; color: var(--ink); }
+  .an-idle a.tag { text-decoration: none; }
+  .an-idle a.tag:hover { background: var(--paper-3); color: var(--ink); }
+  html.is-senior .an-idle a.tag { min-height: 48px; padding: 0 14px; }
+
+  .an-lstats { display: grid; gap: 10px; }
+  .an-lstat { padding: 12px 14px; border-radius: var(--r-md); background: var(--paper); border: 1px solid var(--line-soft); }
+  .an-lstat dt { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .04em; color: var(--ink-3); }
+  .an-lstat dd { margin-top: 2px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .an-lstat dd b { margin-right: 4px; font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; color: var(--ink); }
+  .an-lstat.is-clay { background: var(--clay-50); border-color: var(--clay-200); }
+  .an-lstat.is-clay dd b { color: var(--clay-ink); }
+  .an-lstat .meter { margin-top: 8px; }
+
+  .an-llists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line-soft); }
+  .an-llist { min-width: 0; padding: 14px 20px 16px; }
+  .an-llist + .an-llist { border-left: 1px solid var(--line-soft); }
+  .an-llist__cap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin-bottom: 4px; font-size: var(--fs-sm); font-weight: 800; color: var(--ink); }
+  .an-llist__cap span { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .an-lrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line-soft); }
+  .an-lrow:first-child { border-top: 0; }
+  .an-lrow__name { font-weight: 800; color: var(--ink); text-decoration: none; }
+  .an-lrow__name:hover { color: var(--forest); text-decoration: underline; }
+  .an-lrow__sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .an-lrow__side { display: grid; justify-items: end; gap: 4px; }
+  .an-lrow__n { font-family: var(--font-en); font-size: var(--fs-md); font-weight: 800; line-height: 1.1; white-space: nowrap; }
+  .an-lrow__n small { margin-left: 3px; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .an-lrow .meter { width: 96px; }
+  .an-lrow.is-hot .an-lrow__n { color: var(--clay-ink); }
+  .an-lempty { padding: 14px 0 6px; font-size: var(--fs-sm); color: var(--ink-3); }
+  html.is-senior .an-lrow__name { display: inline-flex; align-items: center; min-height: 48px; }
+
+  /* ---------- 縣市彙整表 ---------- */
+  .an-tcounty { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 800; text-align: left; }
+  .an-tcounty:hover { color: var(--forest); text-decoration: underline; text-underline-offset: .22em; }
+  .an-tcounty[aria-pressed="true"] { color: var(--clay-ink); }
+  html.is-senior .an-tcounty { min-height: 48px; }
+  .an-tcell { display: inline-flex; align-items: center; gap: 4px 8px; }
+  .an-tgap { font-family: var(--font-en); font-weight: 800; white-space: nowrap; }
+  .an-tgap.is-neg { color: var(--clay-ink); }
+  .an-tgap.is-pos { color: var(--forest); }
+  .an-tfoot { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .an-table th, .an-table td { white-space: nowrap; }
+  .an-tfoot b { font-family: var(--font-en); color: var(--ink); }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1280px) {
+    .an-row--even { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1180px) {
+    .an-row { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1024px) {
+    .an-load, html.is-senior .an-load { grid-template-columns: minmax(0, 1fr); }
+    .an-lstats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 860px) {
+    .an-llists { grid-template-columns: minmax(0, 1fr); }
+    .an-llist + .an-llist { border-left: 0; border-top: 1px solid var(--line-soft); }
+  }
+  @media (max-width: 640px) {
+    .an-export { flex: 1 1 auto; }
+    .an-export > .btn { width: 100%; }
+    .an-map { grid-template-columns: minmax(0, 1fr); }
+    .an-active__count { margin-left: 0; width: 100%; }
+    .an-stamp { padding-left: 0; border-left: 0; }
+    .an-lstats, html.is-senior .an-lstats { grid-template-columns: minmax(0, 1fr); }
+    .an-llist { padding: 12px 16px 14px; }
+    .an-dist__row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+    .an-dist__track { grid-column: 1 / -1; grid-row: 2; }
+    .an-gap-scale, .an-gap__row { grid-template-columns: 3.2em minmax(0, 1fr) 3em; gap: 8px; }
+    html.is-senior .an-gap-scale, html.is-senior .an-gap__row { grid-template-columns: 3.4em minmax(0, 1fr) 3.2em; gap: 6px; }
+    .an-gap-scale__axis span:not(.an-gap-scale__zero) { white-space: nowrap; }
+    /* 橫向捲動時縣市欄固定在左側 */
+    .an-table tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--card); box-shadow: 1px 0 0 var(--line-soft); }
+    .an-table thead tr > :first-child { background: var(--paper); }
+    .an-table tr.is-selected > :first-child { background: var(--sprout-50); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link is-active" href="analytics.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="導覽路徑"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>資源與品質</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">績效分析</span></nav>
+          <h1 class="page-title">績效分析</h1>
+          <p class="page-lede">以系統上線（115/03/02）後的執行紀錄即時統計。依期間、縣市、服務對象與主題交叉檢視成果，找出區域涵蓋缺口與講師負載失衡；點選地圖方塊或分布長條即可篩選全頁。</p>
+        </div>
+        <div class="page-head__actions">
+          <div class="an-export">
+            <button class="btn btn--primary" type="button" id="export-btn" aria-expanded="false" aria-controls="export-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出報表<svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></button>
+            <div class="popover an-export__panel" id="export-panel" hidden>
+              <p class="an-export__cap">依<b>目前篩選條件</b>匯出 CSV（UTF-8，可直接以 Excel 開啟）：<span id="export-desc"></span></p>
+              <div class="menu-list">
+                <button type="button" class="menu-item" data-export="county"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-map"/></svg><span class="an-mi"><span>縣市彙整表</span><small>22 縣市場次、人次、每萬人場次與涵蓋缺口</small></span></button>
+                <button type="button" class="menu-item" data-export="trend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-trend-up"/></svg><span class="an-mi"><span>月趨勢</span><small>3–10 月申請件數、場次、人次、滿意度與媒合天數</small></span></button>
+                <button type="button" class="menu-item" data-export="dist"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-pie"/></svg><span class="an-mi"><span>服務對象與主題分布</span><small>各類別場次與占比</small></span></button>
+                <button type="button" class="menu-item" data-export="load"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="an-mi"><span>講師負載明細</span><small>啟用講師的期間場次、近 30 日負載與滿意度</small></span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section class="filterbar an-filter" aria-label="篩選條件">
+        <div class="field an-field-period">
+          <label class="label" for="f-period">期間</label>
+          <select class="select" id="f-period"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="f-county">縣市</label>
+          <select class="select" id="f-county"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="f-audience">服務對象</label>
+          <select class="select" id="f-audience"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="f-topic">主題</label>
+          <select class="select" id="f-topic"></select>
+        </div>
+        <div class="filterbar__actions">
+          <button type="button" class="btn btn--ghost" id="f-reset"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>重設篩選</button>
+        </div>
+      </section>
+      <div class="an-active" id="an-active" aria-live="polite"></div>
+
+      <section class="section-gap" aria-labelledby="kpi-title">
+        <h2 class="sr-only" id="kpi-title">篩選條件下的關鍵指標</h2>
+        <div class="kpis" id="kpis"></div>
+      </section>
+
+      <div class="an-row">
+        <section class="card" id="map-card" aria-labelledby="map-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="map-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-map"/></svg>縣市方塊地圖</h2>
+              <p class="card__sub">不套用「縣市」篩選；點選方塊即以該縣市篩選全頁，再點一次取消</p>
+            </div>
+            <div class="card__actions">
+              <div class="seg an-seg" id="map-metric" role="group" aria-label="地圖指標">
+                <button type="button" data-value="sessions" aria-pressed="true">場次</button>
+                <button type="button" data-value="people" aria-pressed="false">參與人次</button>
+                <button type="button" data-value="per10k" aria-pressed="false">每萬人場次</button>
+              </div>
+            </div>
+          </div>
+          <div class="card__body">
+            <div class="an-map">
+              <div class="an-map__map">
+                <div id="map-host"></div>
+                <div id="map-legend"></div>
+              </div>
+              <div class="an-map__side" id="map-detail" aria-live="polite"></div>
+            </div>
+            <div class="an-regions-wrap">
+              <p class="an-cap">區域小計（依承辦分區）</p>
+              <ul class="an-regions" id="map-regions"></ul>
+            </div>
+          </div>
+          <div class="card__foot"><p class="an-foot-note" id="map-foot"></p></div>
+        </section>
+
+        <section class="card" id="gap-card" aria-labelledby="gap-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="gap-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-target"/></svg>區域涵蓋缺口</h2>
+              <p class="card__sub" id="gap-sub"></p>
+            </div>
+          </div>
+          <div class="card__body">
+            <div class="an-gap-scale" id="gap-scale" aria-hidden="true"></div>
+            <ol class="an-gap" id="gap-list" aria-label="各縣市與全國平均相比的場次差距（點選以篩選）"></ol>
+            <div class="notice notice--clay an-gap-sum" id="gap-sum"></div>
+          </div>
+          <div class="card__foot">
+            <span class="an-foot-note"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-info"/></svg>應有場次＝全國平均每萬人場次 × 縣市人口（示意值）</span>
+            <button type="button" class="btn btn--sm btn--ghost" id="gap-toggle" aria-expanded="false" aria-controls="gap-list"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg><span>顯示全部 22 縣市</span></button>
+          </div>
+        </section>
+      </div>
+
+      <div class="an-row">
+        <section class="card" id="trend-card" aria-labelledby="trend-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="trend-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-trend-up"/></svg>月趨勢</h2>
+              <p class="card__sub">固定顯示 3–10 月，以淡綠底標出所選期間；10 月統計至 10/28</p>
+            </div>
+            <div class="card__actions">
+              <div class="seg an-seg" id="trend-metric" role="group" aria-label="月趨勢指標">
+                <button type="button" data-value="sessions" aria-pressed="true">場次</button>
+                <button type="button" data-value="people" aria-pressed="false">人次</button>
+                <button type="button" data-value="apps" aria-pressed="false">申請件數</button>
+                <button type="button" data-value="sat" aria-pressed="false">滿意度</button>
+              </div>
+            </div>
+          </div>
+          <div class="card__body">
+            <div class="an-trend" id="trend"></div>
+          </div>
+          <div class="card__foot"><p class="an-legend" id="trend-legend"></p></div>
+        </section>
+
+        <section class="card" id="insight-card" aria-labelledby="insight-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="insight-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-leaf"/></svg>重點觀察</h2>
+              <p class="card__sub">依目前篩選條件自動整理，可作為月報摘要</p>
+            </div>
+          </div>
+          <div class="card__body an-ins">
+            <div class="an-ins__mode">
+              <div id="mode-donut"></div>
+              <p class="an-ins__mode-note" id="mode-note"></p>
+            </div>
+            <ul class="an-ins__list" id="ins-list"></ul>
+          </div>
+        </section>
+      </div>
+
+      <div class="an-row an-row--even">
+        <section class="card" id="aud-card" aria-labelledby="aud-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="aud-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg>服務對象分布</h2>
+              <p class="card__sub" id="aud-sub"></p>
+            </div>
+          </div>
+          <div class="card__body"><div class="an-dist" id="aud-dist" role="group" aria-labelledby="aud-title"></div></div>
+          <div class="card__foot"><span class="an-foot-note"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-info"/></svg>不套用「服務對象」篩選；陶土色為目前選取</span></div>
+        </section>
+        <section class="card" id="topic-card" aria-labelledby="topic-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="topic-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg>主題分布</h2>
+              <p class="card__sub" id="topic-sub"></p>
+            </div>
+          </div>
+          <div class="card__body"><div class="an-dist" id="topic-dist" role="group" aria-labelledby="topic-title"></div></div>
+          <div class="card__foot"><span class="an-foot-note"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-info"/></svg>不套用「主題」篩選；陶土色為目前選取</span></div>
+        </section>
+      </div>
+
+      <section class="card section-gap" id="load-card" aria-labelledby="load-title">
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="load-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-seed"/></svg>講師負載分布</h2>
+            <p class="card__sub" id="load-sub"></p>
+          </div>
+          <div class="card__actions">
+            <div class="seg an-seg" id="load-mode" role="group" aria-label="負載計算方式">
+              <button type="button" data-value="period" aria-pressed="true">期間已執行</button>
+              <button type="button" data-value="load30" aria-pressed="false">近 30 日負載</button>
+            </div>
+          </div>
+        </div>
+        <div class="card__body an-load">
+          <div>
+            <div class="an-swarm" id="swarm"></div>
+            <p class="an-swarm-cap" id="swarm-cap"></p>
+            <p class="an-legend mt-4" id="swarm-legend"></p>
+            <p class="an-idle" id="swarm-idle"></p>
+          </div>
+          <dl class="an-lstats" id="load-stats"></dl>
+        </div>
+        <div class="an-llists">
+          <div class="an-llist">
+            <p class="an-llist__cap">負載偏高<span id="hot-note"></span></p>
+            <ul class="an-lrows" id="hot-list"></ul>
+          </div>
+          <div class="an-llist">
+            <p class="an-llist__cap">可優先增派<span id="free-note"></span></p>
+            <ul class="an-lrows" id="free-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-gap" id="table-card" aria-labelledby="table-title">
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="table-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-list"/></svg>縣市彙整表</h2>
+            <p class="card__sub" id="table-sub"></p>
+          </div>
+          <div class="card__actions">
+            <button type="button" class="btn btn--sm" id="table-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出 CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table an-table" id="county-table">
+            <caption class="sr-only">各縣市已執行場次、參與人次、每萬人場次、滿意度、可服務講師與涵蓋缺口</caption>
+            <thead>
+              <tr>
+                <th scope="col" data-sort="name">縣市</th>
+                <th scope="col" class="col-2nd" data-sort="region">區域</th>
+                <th scope="col" class="num" data-sort="sessions" aria-sort="descending">已執行場次</th>
+                <th scope="col" class="num" data-sort="people">參與人次</th>
+                <th scope="col" class="num" data-sort="per10k">每萬人場次</th>
+                <th scope="col" class="num col-2nd" data-sort="satisfaction">平均滿意度</th>
+                <th scope="col" class="num col-2nd" data-sort="serve">可服務講師</th>
+                <th scope="col" class="num" data-sort="gap">與全國平均差距</th>
+              </tr>
+            </thead>
+            <tbody id="county-rows"></tbody>
+          </table>
+        </div>
+        <div class="card__foot"><p class="an-tfoot" id="table-foot"></p></div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+  const round = (v, d = 0) => Math.round(v * 10 ** d) / 10 ** d;
+  const signed = n => (n > 0 ? `+${fmt.num(n)}` : n < 0 ? `−${fmt.num(-n)}` : '±0');
+  const pctOf = (a, b) => (b ? Math.round(a / b * 100) : 0);
+  const niceMax = v => {
+    if (v <= 0) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(s => v / p <= s) * p;
+  };
+
+  /* ===================================================================
+     篩選定義與資料查詢
+     =================================================================== */
+  // 期間以活動日（已執行場次）或講師確認日（媒合天數）落點判斷；比較期間用於 KPI 增減
+  const PERIODS = [
+    { key: 'year', label: '115 年度累計', range: '3/2–10/28', from: '2026-03-01', to: '2026-10-31' },
+    { key: 'h1', label: '上半年', range: '3/2–6/30', from: '2026-03-01', to: '2026-06-30' },
+    { key: 'q3', label: '第三季', range: '7–9 月', from: '2026-07-01', to: '2026-09-30', cmp: { label: '第二季', from: '2026-04-01', to: '2026-06-30' } },
+    { key: 'm9', label: '上月', range: '9 月', from: '2026-09-01', to: '2026-09-30', cmp: { label: '8 月', from: '2026-08-01', to: '2026-08-31' } },
+    { key: 'm10', label: '本月', range: '10/1–10/28', from: '2026-10-01', to: '2026-10-31', cmp: { label: '9 月', from: '2026-09-01', to: '2026-09-30' } },
+  ];
+  const periodOf = key => PERIODS.find(p => p.key === key);
+  const MONTHS = [3, 4, 5, 6, 7, 8, 9, 10].map(m => {
+    const mm = String(m).padStart(2, '0');
+    return { m, ym: `2026-${mm}`, label: `${m}月`, from: `2026-${mm}-01`, to: `2026-${mm}-31` };
+  });
+  const TOTAL_POP = sum(App.COUNTIES.map(c => c.pop));
+  const LOAD_MAX = App.MATCH_DEFAULT.loadMax;
+  const ACTIVE = App.activeLecturers();
+  const SERVE = Object.fromEntries(App.COUNTIES.map(c => [c.id, ACTIVE.filter(l => l.serve.includes(c.id)).length]));
+
+  const f = { period: 'year', county: '', audience: '', topic: '' };
+  // URL 參數是外部輸入：只接受字典裡存在的值（總覽頁的「在績效分析中查看」會帶 ?county=）
+  const qp = App.param('period');
+  if (periodOf(qp)) f.period = qp;
+  const qc = (App.param('county') || '').toUpperCase();
+  if (App.county(qc)) f.county = qc;
+  const qa = App.param('audience');
+  if (qa && App.audience(qa)) f.audience = qa;
+  const qt = App.param('topic');
+  if (qt && App.topic(qt)) f.topic = qt;
+
+  // 交叉篩選：各圖表不套用自己那一個維度（omit），才看得到同條件下的完整分布
+  const dimOk = (c, omit = []) =>
+    (omit.includes('county') || !f.county || c.county === f.county) &&
+    (omit.includes('audience') || !f.audience || c.audience === f.audience) &&
+    (omit.includes('topic') || !f.topic || c.topic === f.topic);
+  const query = (omit = [], range = periodOf(f.period)) =>
+    App.CASES.filter(c => App.isExecuted(c) && c.date >= range.from && c.date <= range.to && dimOk(c, omit));
+  // 媒合完成的認定與 App.kpis() 相同（含媒合後才取消者），以講師確認日落在期間內計
+  const isMatched = c => c.matchDays && (c.status === 'active' ? (App.isExecuted(c) || c.stage === 'scheduled') : c.lecturer && c.stage === 'scheduled');
+  const matchAvg = range => {
+    const list = App.CASES.filter(c => {
+      if (!isMatched(c) || !dimOk(c)) return false;
+      const d = App.logDate(c, 'scheduled');
+      return d && d >= range.from && d <= range.to;
+    });
+    return list.length ? round(sum(list.map(c => c.matchDays)) / list.length, 1) : null;
+  };
+  function stats(cs) {
+    const withRes = cs.filter(c => c.result);
+    const people = sum(withRes.map(c => c.result.people));
+    // 滿意度：講師平均滿意度依場次加權，與總覽 KPI 同一算法（全年度即 4.74）
+    const rated = cs.map(c => App.lecturer(c.lecturer).rating).filter(v => v != null);
+    return {
+      sessions: cs.length,
+      people,
+      perSession: withRes.length ? Math.round(people / withRes.length) : 0,
+      satisfaction: rated.length ? round(sum(rated) / rated.length, 2) : null,
+      responses: sum(cs.map(c => c.survey.responses)),
+      lecturers: new Set(cs.map(c => c.lecturer)).size,
+      online: cs.filter(c => c.mode === 'online').length,
+    };
+  }
+
+  function compute() {
+    const p = periodOf(f.period);
+    const base = query();
+    const noCounty = query(['county']);
+    const rate = noCounty.length / TOTAL_POP;
+    const months = MONTHS.map(mo => {
+      const s = stats(query([], mo));
+      return Object.assign({}, mo, s, {
+        apps: App.CASES.filter(c => c.status !== 'withdrawn' && c.submitted.startsWith(mo.ym) && dimOk(c)).length,
+        matchDays: matchAvg(mo),
+        inPeriod: mo.ym >= p.from.slice(0, 7) && mo.ym <= p.to.slice(0, 7),
+      });
+    });
+    const counties = App.COUNTIES.map(c => {
+      const s = stats(noCounty.filter(x => x.county === c.id));
+      const expect = rate * c.pop;
+      return Object.assign({ c, per10k: s.sessions / c.pop, expect, gap: s.sessions - expect, serve: SERVE[c.id] }, s);
+    });
+    const audCs = query(['audience']);
+    const topCs = query(['topic']);
+    const lectPeriod = Object.fromEntries(ACTIVE.map(l => [l.id, 0]));
+    base.forEach(c => { if (c.lecturer in lectPeriod) lectPeriod[c.lecturer]++; });
+    return {
+      p, base, st: stats(base), noCounty, nat: stats(noCounty), rate, months, counties,
+      cmp: p.cmp ? stats(query([], p.cmp)) : null,
+      matchDays: matchAvg(p),
+      aud: { total: audCs.length, items: App.AUDIENCES.map(a => ({ key: a.id, label: a.name, n: audCs.filter(c => c.audience === a.id).length })) },
+      topic: { total: topCs.length, items: App.TOPICS.map(t => ({ key: t.id, label: t.name, short: t.short, icon: t.icon, n: topCs.filter(c => c.topic === t.id).length })) },
+      lectPeriod,
+      lectLoad30: Object.fromEntries(ACTIVE.map(l => [l.id, App.load30(l.id)])),
+    };
+  }
+  const describe = (omitCounty = false) => {
+    const p = periodOf(f.period);
+    return [`${p.label}（${p.range}）`, !omitCounty && (f.county ? App.county(f.county).name : '全國'), f.audience ? App.audience(f.audience).name : '全部服務對象', f.topic ? App.topic(f.topic).name : '全部主題'].filter(Boolean).join('・');
+  };
+
+  /* ===================================================================
+     篩選控制
+     =================================================================== */
+  const sel = { period: $('#f-period'), county: $('#f-county'), audience: $('#f-audience'), topic: $('#f-topic') };
+  sel.period.innerHTML = PERIODS.map(p => `<option value="${p.key}">${p.label}（${p.range}）</option>`).join('');
+  sel.county.innerHTML = '<option value="">全部縣市</option>' + App.REGIONS.map(r => `<optgroup label="${r}">${App.COUNTIES.filter(c => c.region === r).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`).join('');
+  sel.audience.innerHTML = '<option value="">全部服務對象</option>' + App.AUDIENCES.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  sel.topic.innerHTML = '<option value="">全部主題</option>' + App.TOPICS.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  Object.entries(sel).forEach(([k, el]) => el.addEventListener('change', () => setFilter({ [k]: el.value })));
+  const isDefault = () => f.period === 'year' && !f.county && !f.audience && !f.topic;
+  $('#f-reset').addEventListener('click', () => {
+    const before = Object.assign({}, f);
+    setFilter({ period: 'year', county: '', audience: '', topic: '' });
+    sel.period.focus();
+    App.toast('已重設篩選條件', { desc: '恢復為 115 年度累計、全國、全部服務對象與主題。', tone: 'info', action: { label: '復原', onClick: () => setFilter(before) } });
+  });
+  function syncControls() {
+    Object.entries(sel).forEach(([k, el]) => { el.value = f[k]; });
+    $('#f-reset').disabled = isDefault();
+  }
+  let ctx = null;
+  function setFilter(patch) {
+    Object.assign(f, patch);
+    syncControls();
+    renderAll(true);
+  }
+  const toggleFilter = (key, value) => setFilter({ [key]: f[key] === value ? '' : value });
+
+  // 目前檢視：可逐一移除的篩選 chip＋符合筆數
+  $('#an-active').addEventListener('click', e => {
+    const b = e.target.closest('[data-clear]');
+    if (!b) return;
+    const k = b.dataset.clear;
+    setFilter({ [k]: k === 'period' ? 'year' : '' });
+    sel[k].focus();
+  });
+  function renderActive() {
+    const p = ctx.p;
+    const chips = [];
+    if (f.period !== 'year') chips.push(['period', `${p.label}（${p.range}）`]);
+    if (f.county) chips.push(['county', App.county(f.county).name]);
+    if (f.audience) chips.push(['audience', App.audience(f.audience).name]);
+    if (f.topic) chips.push(['topic', App.topic(f.topic).name]);
+    $('#an-active').innerHTML = `<span class="an-active__lead">${icon('filter')}目前檢視</span>${chips.length
+      ? chips.map(([k, t]) => `<button type="button" class="chip an-chip" data-clear="${k}" aria-label="移除篩選：${esc(t)}">${esc(t)}${icon('x')}</button>`).join('')
+      : '<span>115 年度累計・全國・全部服務對象與主題</span>'}<span class="an-active__count">符合 <b>${fmt.num(ctx.st.sessions)}</b> 場已執行場次・<b>${fmt.num(ctx.st.people)}</b> 參與人次</span><span class="an-stamp">${icon('clock')}資料時間 <b>115/10/28 10:30</b></span>`;
+    $('#export-desc').textContent = describe();
+  }
+
+  // 圖形進場：第一次進入視窗才長出來；replay 時每次重繪都從基準線重新長出；calm（減少動態／高齡模式）時直接顯示
+  function grow(el, update, replay) {
+    const animate = !App.calm() && (replay || !el._seen);
+    if (animate) el.classList.add('is-waiting');
+    update();
+    if (!animate) { el.classList.remove('is-waiting'); return; }
+    if (!el._seen) {
+      if (!el._watching) {
+        el._watching = true;
+        App.whenVisible(el, () => { el._seen = true; requestAnimationFrame(() => el.classList.remove('is-waiting')); });
+      }
+      return;
+    }
+    void el.offsetWidth; // 先讓 is-waiting 的初始狀態生效，移除後才有轉場
+    el.classList.remove('is-waiting');
+  }
+
+  /* ===================================================================
+     KPI
+     =================================================================== */
+  const KPI = [
+    { key: 'sessions', label: '已執行場次', icon: 'presentation', unit: '場' },
+    { key: 'people', label: '參與人次', icon: 'users', unit: '人次' },
+    { key: 'satisfaction', label: '平均滿意度', icon: 'smile', unit: '/ 5', decimals: 2 },
+    { key: 'per10k', label: '每萬人場次', icon: 'map-pin', unit: '場', decimals: 2 },
+    { key: 'matchDays', label: '平均媒合天數', icon: 'hourglass', unit: '天', decimals: 1, tone: 'clay' },
+    { key: 'lecturers', label: '授課講師', icon: 'user-check', unit: '位' },
+  ];
+  $('#kpis').innerHTML = KPI.map((d, i) => `<article class="kpi" data-reveal style="--i:${i}">
+  <p class="kpi__label">${icon(d.icon)}${d.label}</p>
+  <p class="kpi__value"><span data-kpi="${d.key}"></span><span class="an-kpi-na" data-kpi-na="${d.key}" hidden>—</span><span class="kpi__unit">${d.unit}</span></p>
+  <p class="kpi__note" data-kpi-note="${d.key}"></p>
+  <div class="kpi__spark" data-kpi-spark="${d.key}"></div>
+</article>`).join('');
+  App.reveal($('#kpis'));
+  // 沒有場次的月份不能畫成 0（滿意度、媒合天數會被拉到谷底），以有值月份的平均補位
+  const fillGaps = arr => {
+    const vals = arr.filter(v => v != null);
+    if (!vals.length) return null;
+    const avg = sum(vals) / vals.length;
+    return arr.map(v => (v == null ? avg : v));
+  };
+  const deltaPill = (cur, prev) => {
+    if (!prev) return '';
+    const d = Math.round((cur / prev - 1) * 100);
+    return `<span class="delta ${d > 0 ? 'delta--up' : d < 0 ? 'delta--down' : ''}">${icon(d > 0 ? 'arrow-up' : d < 0 ? 'arrow-down' : 'minus')}${Math.abs(d)}%</span>`;
+  };
+  function renderKpis() {
+    const { st, p, months, cmp } = ctx;
+    const scopePop = f.county ? App.county(f.county).pop : TOTAL_POP;
+    const natPer = ctx.rate;
+    const per10k = st.sessions / scopePop;
+    const inMonths = months.filter(m => m.inPeriod).length;
+    const values = { sessions: st.sessions, people: st.people, satisfaction: st.satisfaction, per10k, matchDays: ctx.matchDays, lecturers: st.lecturers };
+    const notes = {
+      sessions: cmp ? `${deltaPill(st.sessions, cmp.sessions)}較${p.cmp.label} ${fmt.num(cmp.sessions)} 場` : `月平均 ${fmt.num(st.sessions / inMonths, 1)} 場`,
+      people: st.perSession ? `平均每場 ${st.perSession} 人` : '期間內尚無成果回填',
+      satisfaction: `回收 ${fmt.num(st.responses)} 份問卷`,
+      per10k: f.county
+        ? `<span class="delta ${per10k >= natPer ? 'delta--up' : 'delta--warn'}">${per10k >= natPer ? '高於' : '低於'}</span>全國平均 ${natPer.toFixed(2)}`
+        : '依人口示意值計算',
+      matchDays: ctx.matchDays == null ? '期間內無媒合完成案件'
+        : ctx.matchDays <= 5 ? `<span class="delta delta--up">${icon('check')}達標</span>目標 5 天內` : `<span class="delta delta--warn">${icon('alert')}未達標</span>目標 5 天內`,
+      lecturers: `占啟用講師 ${pctOf(st.lecturers, ACTIVE.length)}%`,
+    };
+    const sparks = {
+      sessions: months.map(m => m.sessions),
+      people: months.map(m => m.people),
+      satisfaction: fillGaps(months.map(m => m.satisfaction)),
+      per10k: months.map(m => m.sessions / scopePop),
+      matchDays: fillGaps(months.map(m => m.matchDays)),
+      lecturers: months.map(m => m.lecturers),
+    };
+    KPI.forEach(d => {
+      const v = values[d.key];
+      const el = $(`[data-kpi="${d.key}"]`);
+      el.hidden = v == null;
+      $(`[data-kpi-na="${d.key}"]`).hidden = v != null;
+      if (v != null) App.odometer(el, d.decimals ? round(v, d.decimals) : v, { decimals: d.decimals || 0 });
+      $(`[data-kpi-note="${d.key}"]`).innerHTML = notes[d.key];
+      $(`[data-kpi-spark="${d.key}"]`).innerHTML = sparks[d.key] ? App.sparkline(sparks[d.key], { tone: d.tone }) : '';
+    });
+  }
+
+  /* ===================================================================
+     縣市方塊地圖
+     =================================================================== */
+  const MAP_METRIC = {
+    sessions: { label: '已執行場次', unit: '場', fmt: v => fmt.num(v) },
+    people: { label: '參與人次', unit: '人次', fmt: v => fmt.num(v) },
+    per10k: { label: '每萬人場次', unit: '場／萬人', fmt: v => v.toFixed(2) },
+  };
+  let mapMetric = 'sessions';
+  const map = App.tileMap($('#map-host'), {
+    mode: 'select', compact: true, values: {}, unit: '場', label: '臺灣 22 縣市已執行場次（點選以篩選全頁）',
+    selected: f.county ? [f.county] : [],
+    onChange: ids => setFilter({ county: ids[0] || '' }),
+  });
+  $('#map-legend').innerHTML = App.tileLegend();
+  App.seg($('#map-metric'), { onChange: v => { mapMetric = v; renderMap(); } });
+  $('#map-detail').addEventListener('click', e => { if (e.target.closest('[data-clear-county]')) { setFilter({ county: '' }); sel.county.focus(); } });
+  const metricVal = r => (mapMetric === 'per10k' ? round(r.per10k, 2) : r[mapMetric]);
+  function renderMap() {
+    const m = MAP_METRIC[mapMetric];
+    const rows = ctx.counties;
+    const vals = Object.fromEntries(rows.map(r => [r.c.id, metricVal(r)]));
+    map.setFormat(m.fmt);
+    map.setValues(vals, m.unit);
+    map.select(f.county ? [f.county] : []);
+    const ranked = rows.slice().sort((a, b) => metricVal(b) - metricVal(a));
+    const nat = mapMetric === 'per10k' ? round(ctx.rate, 2) : ctx.nat[mapMetric];
+    let head;
+    if (f.county) {
+      const r = rows.find(x => x.c.id === f.county);
+      const c = r.c;
+      const rank = ranked.indexOf(r) + 1;
+      const g = Math.round(r.gap);
+      head = `<div class="an-cty">
+  <p class="an-cty__meta">${c.region}・人口約 ${fmt.num(c.pop, 1)} 萬（示意值）</p>
+  <p class="an-cty__name">${c.name}${c.island ? '<span class="badge badge--sky">離島</span>' : ''}<span class="badge badge--neutral">${m.label}全國第 ${rank}</span></p>
+  <p class="an-cty__value">${m.fmt(metricVal(r))}<small>${m.unit}</small></p>
+  <p class="an-cty__note">${r.sessions ? `每萬人 ${r.per10k.toFixed(2)} 場，${g < 0 ? `距全國平均尚差 <b class="c-clay">${-g} 場</b>` : g > 0 ? `已超前全國平均 <b>${g} 場</b>` : '與全國平均相當'}；可服務講師 ${r.serve} 位。` : '期間內尚無已執行場次。'}</p>
+  <button type="button" class="btn btn--sm btn--ghost an-cty__act" data-clear-county>${icon('x')}清除縣市篩選</button>
+</div>`;
+    } else {
+      const top = ranked[0];
+      head = `<div class="an-cty">
+  <p class="an-cty__meta">全國 22 縣市・點選方塊以縣市篩選全頁</p>
+  <p class="an-cty__name">全國</p>
+  <p class="an-cty__value">${m.fmt(nat)}<small>${m.unit}</small></p>
+  <p class="an-cty__note">${ctx.noCounty.length ? `${m.label}最高為${top.c.name}（${m.fmt(metricVal(top))} ${m.unit}）` : '期間內尚無已執行場次'}</p>
+</div>`;
+    }
+    const topRows = ranked.slice(0, 8);
+    if (f.county && !topRows.some(r => r.c.id === f.county)) topRows.push(rows.find(r => r.c.id === f.county));
+    $('#map-detail').innerHTML = `${head}<p class="an-cap">${m.label}排行</p><div id="map-top"></div>`;
+    App.hbars($('#map-top'), { data: topRows.map(r => ({ label: r.c.short, value: metricVal(r), hl: r.c.id === f.county })), format: m.fmt, unit: m.unit });
+    // 區域小計：與承辦分區對應（東部與離島同一位承辦），選取縣市所在區域以陶土色標示
+    const selRegion = f.county ? App.county(f.county).region : '';
+    $('#map-regions').innerHTML = App.REGIONS.map(rg => {
+      const rr = rows.filter(r => r.c.region === rg);
+      const ses = sum(rr.map(r => r.sessions));
+      const v = mapMetric === 'per10k' ? round(ses / sum(rr.map(r => r.c.pop)), 2) : sum(rr.map(r => r[mapMetric]));
+      const staff = App.STAFF.find(x => x.regions.includes(rg));
+      return `<li class="an-region${rg === selRegion ? ' is-on' : ''}"><p class="an-region__name">${rg}・${rr.length} 縣市</p><p class="an-region__val">${m.fmt(v)}<small>${m.unit}</small></p><p class="an-region__sub">承辦 ${staff.name}</p></li>`;
+    }).join('');
+    const uncovered = rows.filter(r => !r.sessions).map(r => r.c.name);
+    $('#map-foot').innerHTML = `${icon('map')}<span>本期 <b>${22 - uncovered.length}</b>／22 縣市有已執行場次${uncovered.length ? `；尚無場次：${uncovered.slice(0, 6).join('、')}${uncovered.length > 6 ? ` 等 ${uncovered.length} 縣市` : ''}` : '，全數涵蓋'}</span>`;
+  }
+
+  /* ===================================================================
+     區域涵蓋缺口
+     =================================================================== */
+  let gapAll = false;
+  const gapList = $('#gap-list');
+  $('#gap-toggle').addEventListener('click', e => {
+    gapAll = !gapAll;
+    const b = e.currentTarget;
+    b.setAttribute('aria-expanded', String(gapAll));
+    b.lastElementChild.textContent = gapAll ? '只看前 12 名' : '顯示全部 22 縣市';
+    b.querySelector('use').setAttribute('href', gapAll ? '#i-chevron-up' : '#i-chevron-down');
+    gapList.classList.toggle('is-all', gapAll);
+  });
+  gapList.addEventListener('click', e => {
+    const b = e.target.closest('[data-county]');
+    if (!b) return;
+    toggleFilter('county', b.dataset.county);
+    const again = gapList.querySelector(`[data-county="${b.dataset.county}"]`);
+    if (again) again.focus();
+  });
+  function renderGap(replay) {
+    const total = ctx.noCounty.length;
+    const rows = ctx.counties.slice().sort((a, b) => a.gap - b.gap || b.c.pop - a.c.pop);
+    $('#gap-sub').textContent = total
+      ? `以全國平均每萬人 ${ctx.rate.toFixed(2)} 場為基準，比較各縣市實際與應有場次（不套用縣市篩選）`
+      : '此條件下尚無已執行場次';
+    const maxNeg = Math.max(1, ...rows.map(r => -r.gap));
+    const maxPos = Math.max(1, ...rows.map(r => r.gap));
+    const span = maxNeg + maxPos;
+    const A = maxNeg / span * 100;
+    const scale = $('#gap-scale');
+    scale.style.setProperty('--a', `${A.toFixed(2)}%`);
+    scale.innerHTML = `<span>縣市</span><span class="an-gap-scale__axis"><span class="is-neg">← 低於平均</span><span class="is-pos">高於平均 →</span><span class="an-gap-scale__zero"></span></span><span class="text-right">差距</span>`;
+    gapList.style.setProperty('--a', `${A.toFixed(2)}%`);
+    grow(gapList, () => {
+      gapList.innerHTML = rows.map(r => {
+        const g = Math.round(r.gap);
+        const w = Math.abs(r.gap) / span * 100;
+        const neg = r.gap < 0;
+        const on = r.c.id === f.county;
+        return `<li${on ? ' class="is-sel"' : ''}><button type="button" class="an-gap__row${neg ? ' is-neg' : ''}" data-county="${r.c.id}" aria-pressed="${on}" aria-label="${r.c.name}：已執行 ${r.sessions} 場，依全國平均應有 ${Math.round(r.expect)} 場，${g < 0 ? `缺口 ${-g} 場` : g > 0 ? `超前 ${g} 場` : '與平均相當'}">
+  <span class="an-gap__name">${r.c.short}</span>
+  <span class="an-gap__track" aria-hidden="true"><span class="an-gap__bar" style="--l:${(neg ? A - w : A).toFixed(2)}%;--w:${w.toFixed(2)}%"></span><span class="an-gap__axis"></span></span>
+  <span class="an-gap__val" aria-hidden="true">${signed(g)}</span>
+</button></li>`;
+      }).join('');
+    }, replay);
+    const def = rows.filter(r => Math.round(r.gap) < 0);
+    let text;
+    if (!total) text = '此條件下尚無已執行場次，無法計算涵蓋缺口。可放寬期間或主題條件。';
+    else if (!def.length) text = '各縣市場次皆達全國平均水準，目前沒有明顯的涵蓋缺口。';
+    else {
+      const worst = def[0];
+      const g = -Math.round(worst.gap);
+      text = `<b>${def.length}</b> 個縣市低於全國平均，合計缺口 <b>${fmt.num(-sum(def.map(r => Math.round(r.gap))))}</b> 場；以<b>${worst.c.name}</b>（每萬人 ${worst.per10k.toFixed(2)} 場，缺 ${g} 場）最大。`
+        + (worst.serve >= 8 ? `當地可服務講師 ${worst.serve} 位，缺口主要在申請端，建議加強學校與社區宣導。` : `當地可服務講師僅 ${worst.serve} 位，建議優先招募在地講師。`);
+    }
+    $('#gap-sum').innerHTML = `${icon('alert')}<div>${text}</div>`;
+  }
+
+  /* ===================================================================
+     月趨勢（自繪 SVG：所選期間底色、期間月平均線、逐月提示）
+     =================================================================== */
+  const TREND = {
+    sessions: { label: '已執行場次', unit: '場', fmt: v => fmt.num(v) },
+    people: { label: '參與人次', unit: '人次', fmt: v => fmt.num(v) },
+    apps: { label: '申請件數', unit: '件', fmt: v => fmt.num(v) },
+    sat: { label: '平均滿意度', unit: '分', fmt: v => v.toFixed(2), line: true },
+  };
+  let trendMetric = 'sessions';
+  const trendHost = $('#trend');
+  App.seg($('#trend-metric'), { onChange: v => { trendMetric = v; renderTrend(true); } });
+  function drawTrend() {
+    const def = TREND[trendMetric];
+    const key = trendMetric === 'sat' ? 'satisfaction' : trendMetric;
+    const fs = App.senior.on() ? 16 : 13;
+    const W = Math.max(280, Math.round(trendHost.clientWidth) || 600);
+    // 桌機加高與右側「重點觀察」等高；窄版保持精簡
+    const H = (W < 520 ? 230 : 318) + (fs - 13) * 6;
+    const months = ctx.months;
+    const vals = months.map(m => m[key]);
+    const nums = vals.filter(v => v != null);
+    const min = def.line ? Math.min(4.4, Math.floor(((nums.length ? Math.min(...nums) : 4.5) - .05) * 10) / 10) : 0;
+    const max = def.line ? 5 : niceMax(Math.max(1, ...nums) * 1.12);
+    const tick = def.line ? v => v.toFixed(1) : v => fmt.num(v);
+    const P = { t: fs + 24, r: 12, b: fs + 24, l: Math.max(34, tick(max).length * fs * .62 + 14) };
+    const iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const band = iw / months.length;
+    const X = i => P.l + band * i + band / 2;
+    const Y = v => P.t + ih - ih * (v - min) / (max - min);
+    const on = months.map((m, i) => (m.inPeriod ? i : -1)).filter(i => i >= 0);
+    let svg = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = min + (max - min) * i / 4, y = Y(v);
+      svg += `<line class="${i ? 't-grid' : 't-base'}" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke-width="1"/><text class="t-lbl" x="${P.l - 8}" y="${y + fs * .35}" text-anchor="end">${tick(v)}</text>`;
+    }
+    if (on.length) {
+      const x0 = P.l + band * on[0] + 3;
+      svg = `<rect class="an-pband" x="${x0}" y="${P.t - fs - 14}" width="${band * on.length - 6}" height="${ih + fs + 14}" rx="10" stroke-width="1"/><text class="t-band" x="${x0 + 10}" y="${P.t - 8}">所選期間</text>` + svg;
+    }
+    // 數值標籤只標重點：期間內 4 個月以下全標，否則只標最高與最後一個月
+    const peak = on.length ? on.reduce((a, i) => ((vals[i] ?? -1) > (vals[a] ?? -1) ? i : a), on[0]) : -1;
+    const labelled = i => months[i].inPeriod && vals[i] != null && (on.length <= 4 || i === peak || i === on[on.length - 1]);
+    if (def.line) {
+      const pts = months.map((m, i) => (vals[i] == null ? null : [X(i), Y(vals[i])]));
+      const path = idx => {
+        let d = '', pen = false;
+        idx.forEach(i => { const p2 = pts[i]; if (!p2) { pen = false; return; } d += `${pen ? 'L' : 'M'}${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`; pen = true; });
+        return d;
+      };
+      const all = months.map((m, i) => i);
+      svg += `<path class="an-line an-line--muted" d="${path(all)}" stroke-width="2" pathLength="1"/>`;
+      if (on.length) svg += `<path class="an-line" d="${path(on)}" stroke-width="2.5" pathLength="1"/>`;
+      svg += pts.map((p2, i) => (p2 ? `<circle class="an-pt${months[i].inPeriod ? '' : ' an-pt--muted'}" cx="${p2[0]}" cy="${p2[1]}" r="${fs > 13 ? 5 : 4}" stroke-width="2.5"/>` : '')).join('');
+      svg += months.map((m, i) => (labelled(i) ? `<text class="t-val" x="${X(i)}" y="${Y(vals[i]) - 12}" text-anchor="middle">${def.fmt(vals[i])}</text>` : '')).join('');
+    } else {
+      const bw = Math.min(46, band * .58);
+      svg += months.map((m, i) => {
+        const v = vals[i] || 0;
+        const h = ih * v / max, x = X(i) - bw / 2, y = P.t + ih - h, r = Math.min(5, h);
+        return `<path class="an-bar${m.inPeriod ? ' is-on' : ''}" data-i="${i}" style="--i:${i}" d="M${x} ${P.t + ih}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + bw - r}Q${x + bw} ${y} ${x + bw} ${y + r}V${P.t + ih}Z"/>`
+          + (labelled(i) ? `<text class="t-val" x="${X(i)}" y="${y - 7}" text-anchor="middle">${def.fmt(v)}</text>` : '');
+      }).join('');
+      if (on.length > 1) {
+        const avg = sum(on.map(i => vals[i] || 0)) / on.length;
+        const ya = Y(avg);
+        svg += `<line class="an-avg" x1="${P.l}" x2="${W - P.r}" y1="${ya}" y2="${ya}" stroke-width="1.5" stroke-dasharray="5 4"/><text class="t-avg" x="${P.l + 6}" y="${ya - 6}">期間月平均 ${fmt.num(round(avg, 1), 1)}</text>`;
+      }
+    }
+    // 窄寬（手機高齡模式）放不下「10月」這類標籤時只標數字，單位留在最後一個月
+    const shortLbl = band < fs * 2.7;
+    svg += months.map((m, i) => `<text class="t-lbl${m.inPeriod ? ' is-on' : ''}" x="${X(i)}" y="${H - 8}" text-anchor="middle">${shortLbl && i < months.length - 1 ? m.label.replace('月', '') : m.label}</text>`).join('');
+    svg += months.map((m, i) => `<rect class="an-hit" data-i="${i}" x="${P.l + band * i}" y="${P.t}" width="${band}" height="${ih}"/>`).join('');
+    trendHost.innerHTML = `<svg class="an-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="3–10 月${def.label}">${svg}</svg>
+<div class="sr-only"><table><caption>3–10 月${def.label}（${esc(describe())}）</caption><tbody>${months.map((m, i) => `<tr><th scope="row">${m.label}</th><td>${vals[i] == null ? '無資料' : def.fmt(vals[i]) + ' ' + def.unit}</td></tr>`).join('')}</tbody></table></div>
+<div class="chart-tip" aria-hidden="true"></div>`;
+    const tip = $('.chart-tip', trendHost);
+    $$('.an-hit', trendHost).forEach(hit => {
+      const i = Number(hit.dataset.i);
+      hit.addEventListener('mouseenter', () => {
+        const m = months[i];
+        const bar = $(`.an-bar[data-i="${i}"]`, trendHost);
+        if (bar) bar.classList.add('is-hover');
+        tip.innerHTML = `${m.label}${m.ym === '2026-10' ? '（至 10/28）' : ''}<br>已執行 <b>${fmt.num(m.sessions)}</b> 場・參與 <b>${fmt.num(m.people)}</b> 人次<br>申請 <b>${fmt.num(m.apps)}</b> 件・滿意度 <b>${m.satisfaction == null ? '—' : m.satisfaction.toFixed(2)}</b>`;
+        tip.classList.add('is-on');
+        const tw = tip.offsetWidth;
+        const x = Math.min(W - tw / 2 - 4, Math.max(tw / 2 + 4, X(i)));
+        tip.style.left = `${x}px`;
+        tip.style.top = `${vals[i] == null ? P.t + ih / 2 : Y(Math.max(min, vals[i]))}px`;
+      });
+      hit.addEventListener('mouseleave', () => {
+        const bar = $(`.an-bar[data-i="${i}"]`, trendHost);
+        if (bar) bar.classList.remove('is-hover');
+        tip.classList.remove('is-on');
+      });
+    });
+    trendHost._w = W;
+  }
+  function renderTrend(replay) {
+    grow(trendHost, drawTrend, replay);
+    const def = TREND[trendMetric];
+    $('#trend-legend').innerHTML = `<span><i class="lg-band"></i>所選期間</span><span><i class="lg-on"></i>期間內月份</span><span><i class="lg-off"></i>期間外月份</span>${def.line ? '' : '<span><i class="lg-avg"></i>期間月平均（2 個月以上）</span>'}<span>單位：${def.unit}</span>`;
+  }
+
+  /* ===================================================================
+     重點觀察（實施方式＋自動摘要）
+     =================================================================== */
+  function renderInsights() {
+    const { st, p, months, aud, topic } = ctx;
+    const onsite = st.sessions - st.online;
+    App.donut($('#mode-donut'), {
+      title: '實施方式：實體與線上場次',
+      data: [{ label: '實體', value: onsite, color: '#1F5D4A' }, { label: '線上', value: st.online, color: '#3E8FB0' }],
+      center: `${pctOf(st.online, st.sessions)}%`, sub: '線上占比',
+    });
+    const isle = ctx.base.filter(c => c.mode === 'online' && App.county(c.county).island).length;
+    $('#mode-note').textContent = st.online ? `線上 ${st.online} 場中，有 ${isle} 場服務澎湖、金門、連江等離島。` : '本期沒有線上場次。';
+    const items = [];
+    if (!st.sessions) {
+      items.push({ icon: 'info', text: '此條件下尚無已執行場次。可放寬期間、縣市或主題條件後再檢視。' });
+    } else {
+      const on = months.filter(m => m.inPeriod);
+      if (on.length > 1) {
+        const peak = on.reduce((a, b) => (b.sessions > a.sessions ? b : a));
+        items.push({ icon: 'trend-up', text: `場次高峰在 <b>${peak.label}</b>（<span class="num">${fmt.num(peak.sessions)}</span> 場${peak.ym === '2026-10' ? '，統計至 10/28' : ''}），期間月平均 <b class="num">${fmt.num(st.sessions / on.length, 1)}</b> 場。` });
+      } else if (ctx.cmp && ctx.cmp.sessions) {
+        const d = Math.round((st.sessions / ctx.cmp.sessions - 1) * 100);
+        items.push({ icon: 'trend-up', text: `${p.label}已執行 <b class="num">${fmt.num(st.sessions)}</b> 場，較${p.cmp.label}${d >= 0 ? '增加' : '減少'} <b class="num">${Math.abs(d)}%</b>。` });
+      }
+      if (f.audience) {
+        const it = aud.items.find(x => x.key === f.audience);
+        items.push({ icon: 'users', text: `目前檢視 <b>${it.label}</b>：<span class="num">${fmt.num(it.n)}</span> 場，占同期間、同區域全部場次的 <b class="num">${pctOf(it.n, aud.total)}%</b>。` });
+      } else {
+        const has = aud.items.filter(x => x.n);
+        const top = has.reduce((a, b) => (b.n > a.n ? b : a));
+        const low = has.reduce((a, b) => (b.n < a.n ? b : a));
+        items.push({ icon: 'users', text: `服務對象以 <b>${top.label}</b> 最多（<span class="num">${top.n}</span> 場，占 <span class="num">${pctOf(top.n, aud.total)}%</span>）${low !== top ? `；<b>${low.label}</b> 最少（<span class="num">${low.n}</span> 場）` : ''}。` });
+      }
+      if (f.topic) {
+        const it = topic.items.find(x => x.key === f.topic);
+        items.push({ icon: App.topic(f.topic).icon, text: `「<b>${it.label}</b>」<span class="num">${fmt.num(it.n)}</span> 場，占同條件全部主題的 <b class="num">${pctOf(it.n, topic.total)}%</b>。` });
+      } else {
+        const sorted = topic.items.slice().sort((a, b) => b.n - a.n);
+        const low = sorted[sorted.length - 1];
+        items.push({ icon: low.icon, clay: true, text: `主題以「<b>${sorted[0].label}</b>」最多（<span class="num">${sorted[0].n}</span> 場）；「<b>${low.label}</b>」僅 <span class="num">${low.n}</span> 場（<span class="num">${pctOf(low.n, topic.total)}%</span>），可列為下一階段推廣重點。` });
+      }
+      if (f.county) {
+        const r = ctx.counties.find(x => x.c.id === f.county);
+        const g = Math.round(r.gap);
+        items.push({ icon: 'map-pin', clay: g < 0, text: `<b>${r.c.name}</b> 每萬人 <span class="num">${r.per10k.toFixed(2)}</span> 場，${r.per10k >= ctx.rate ? '高於' : '低於'}全國平均 <span class="num">${ctx.rate.toFixed(2)}</span>${g < 0 ? `，尚差 <b class="num">${-g}</b> 場` : ''}；可服務講師 <span class="num">${r.serve}</span> 位。` });
+      } else {
+        const worst = ctx.counties.slice().sort((a, b) => a.gap - b.gap)[0];
+        if (Math.round(worst.gap) < 0) items.push({ icon: 'map-pin', clay: true, text: `<b>${worst.c.name}</b> 每萬人僅 <span class="num">${worst.per10k.toFixed(2)}</span> 場，為全國平均的 <span class="num">${pctOf(worst.per10k, ctx.rate)}%</span>，尚差 <b class="num">${-Math.round(worst.gap)}</b> 場。` });
+      }
+    }
+    $('#ins-list').innerHTML = items.map(it => `<li class="an-ins__item${it.clay ? ' is-clay' : ''}"><span class="an-ins__icon">${icon(it.icon)}</span><p>${it.text}</p></li>`).join('');
+  }
+
+  /* ===================================================================
+     服務對象與主題分布（列可點選，切換對應篩選）
+     =================================================================== */
+  const DIST = {
+    audience: { host: $('#aud-dist'), sub: $('#aud-sub'), items: () => ctx.aud },
+    topic: { host: $('#topic-dist'), sub: $('#topic-sub'), items: () => ctx.topic },
+  };
+  Object.entries(DIST).forEach(([key, d]) => {
+    const list = key === 'audience' ? App.AUDIENCES.map(a => ({ key: a.id, label: esc(a.name) })) : App.TOPICS.map(t => ({ key: t.id, label: `${icon(t.icon)}<span>${esc(t.short)}</span>` }));
+    d.host.innerHTML = list.map(x => `<button type="button" class="an-dist__row" data-key="${x.key}" aria-pressed="false"><span class="an-dist__label">${x.label}</span><span class="an-dist__track" aria-hidden="true"><span class="an-dist__fill"></span></span><span class="an-dist__val"></span></button>`).join('');
+    d.host.addEventListener('click', e => {
+      const b = e.target.closest('.an-dist__row');
+      if (b) toggleFilter(key, b.dataset.key);
+    });
+  });
+  function renderDist() {
+    Object.entries(DIST).forEach(([key, d]) => {
+      const { total, items } = d.items();
+      const max = Math.max(1, ...items.map(x => x.n));
+      d.sub.textContent = `共 ${fmt.num(total)} 場・${key === 'audience' ? '依申請單位填寫的主要對象' : '依申請案件的主要主題'}`;
+      grow(d.host, () => {
+        items.forEach(x => {
+          const b = $(`[data-key="${x.key}"]`, d.host);
+          const on = f[key] === x.key;
+          b.setAttribute('aria-pressed', String(on));
+          b.classList.toggle('is-zero', !x.n);
+          b.setAttribute('aria-label', `${x.label}：${x.n} 場，占 ${pctOf(x.n, total)}%${on ? '（目前篩選中，再點一次取消）' : '（點選以篩選）'}`);
+          $('.an-dist__fill', b).style.setProperty('--p', (x.n / max).toFixed(4));
+          $('.an-dist__val', b).innerHTML = `<b>${fmt.num(x.n)}</b>場・${pctOf(x.n, total)}%`;
+        });
+      }, false);
+    });
+  }
+
+  /* ===================================================================
+     講師負載：新芽分布（招牌動態）
+     橫軸為場次；同一場次的講師長在同一根枝條上，每位講師是一片葉子、左右交錯往上長，
+     枝條越高代表越多講師落在這個負載（等同直方圖，但保留每位講師的身分）。
+     首次進入視窗時枝條從地面長出、葉片從上方「撒」下來落定；切換計算方式或篩選時平滑移位。
+     =================================================================== */
+  let loadMode = 'period';
+  const swarm = $('#swarm');
+  swarm.innerHTML = `<div class="an-swarm__stems"></div><div class="an-swarm__ground"></div><div class="an-swarm__ticks"></div><div class="an-swarm__ref" hidden><span class="an-swarm__ref-label"></span></div>
+${ACTIVE.map(l => `<span class="an-seed${l.rating == null ? ' is-new' : ''}" data-id="${l.id}"></span>`).join('')}
+<p class="an-swarm__empty" hidden>此條件下沒有講師授課紀錄</p><div class="chart-tip" aria-hidden="true"></div><div class="sr-only"><table><caption></caption><tbody></tbody></table></div>`;
+  const swarmTip = $('.chart-tip', swarm);
+  // 枝條依場次值建立後保留，數值不存在時高度歸零，切換時才有長高／縮回的轉場
+  const stems = new Map();
+  const stemOf = v => {
+    if (!stems.has(v)) {
+      const el = document.createElement('span');
+      el.className = 'an-stem';
+      el.innerHTML = '<span class="an-stem__n"></span>';
+      $('.an-swarm__stems', swarm).appendChild(el);
+      stems.set(v, el);
+    }
+    return stems.get(v);
+  };
+  App.seg($('#load-mode'), { onChange: v => { loadMode = v; renderLoad(); } });
+  const loadVals = () => (loadMode === 'period' ? ctx.lectPeriod : ctx.lectLoad30);
+  swarm.addEventListener('pointerover', e => {
+    const s = e.target.closest('.an-seed');
+    if (!s || s.classList.contains('is-off')) return;
+    const l = App.lecturer(s.dataset.id);
+    const v = loadVals()[l.id];
+    swarmTip.innerHTML = `${esc(l.name)}　<b>${v}</b> 場${loadMode === 'load30' ? '（近 30 日）' : ''}<br>${l.rating == null ? '新進講師' : `滿意度 ${l.rating.toFixed(1)}`}・${App.county(l.county).name}`;
+    swarmTip.classList.add('is-on');
+    const sr = s.getBoundingClientRect(), wr = swarm.getBoundingClientRect();
+    const tw = swarmTip.offsetWidth;
+    const x = Math.min(wr.width - tw / 2 - 4, Math.max(tw / 2 + 4, sr.left - wr.left + sr.width / 2));
+    swarmTip.style.left = `${x}px`;
+    swarmTip.style.top = `${sr.top - wr.top - 2}px`;
+  });
+  swarm.addEventListener('pointerout', e => { if (e.target.closest('.an-seed')) swarmTip.classList.remove('is-on'); });
+  // 滑鼠點種子可直接開講師資料；鍵盤與報讀使用者改用下方清單與螢幕報讀表格
+  swarm.addEventListener('click', e => {
+    const s = e.target.closest('.an-seed');
+    if (s && !s.classList.contains('is-off')) location.href = `instructors.html?id=${s.dataset.id}`;
+  });
+  let sowed = false;
+  function layoutSwarm() {
+    const senior = App.senior.on();
+    const fs = senior ? 16 : 13;
+    const W = Math.max(260, swarm.clientWidth);
+    const vals = loadVals();
+    const on = ACTIVE.filter(l => vals[l.id] > 0);
+    const mean = on.length ? sum(on.map(l => vals[l.id])) / on.length : 0;
+    const ref = loadMode === 'period' ? mean : LOAD_MAX;
+    // 高負載：期間模式為平均的 1.5 倍以上；近 30 日模式與媒合規則一致（達上限前 1 場即提醒）
+    const isHot = v => (loadMode === 'period' ? on.length >= 4 && v >= mean * 1.5 : v >= LOAD_MAX - 1);
+    // 橫軸從最小值前一格開始（0 場的講師另列在下方），窄螢幕枝條才不會擠在一起
+    const vmin = on.length ? Math.max(0, Math.min(...on.map(l => vals[l.id])) - 1) : 0;
+    const maxV = Math.max(vmin + 4, loadMode === 'load30' ? LOAD_MAX + 1 : 0, ...on.map(l => vals[l.id]));
+    const padL = 16, padR = 24;
+    const X = v => padL + (v - vmin) / (maxV - vmin) * (W - padL - padR);
+    const colGap = (W - padL - padR) / (maxV - vmin);
+    const sw = Math.max(8, Math.min(senior ? 18 : 14, Math.floor(colGap / 2) - 2));
+    const sh = Math.round(sw * .66), vstep = sh;
+    swarm.style.setProperty('--leaf-w', `${sw}px`);
+    swarm.style.setProperty('--leaf-h', `${sh}px`);
+    const cols = new Map();
+    // 滿意度高的講師長在枝條下方（最靠近地面）
+    on.slice().sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.id.localeCompare(b.id)).forEach(l => {
+      const v = vals[l.id];
+      if (!cols.has(v)) cols.set(v, []);
+      cols.get(v).push(l);
+    });
+    const maxStack = Math.max(1, ...[...cols.values()].map(a => a.length));
+    const top = fs + 22;
+    const plotH = Math.max(W < 520 ? 92 : senior ? 140 : 112, maxStack * vstep + sh + 30);
+    const axisY = top + plotH;
+    swarm.style.height = `${axisY + fs + 20}px`;
+    swarm.style.setProperty('--axis-y', `${axisY}px`);
+    const pos = {};
+    const order = [];
+    [...cols.keys()].sort((a, b) => a - b).forEach(v => cols.get(v).forEach((l, k) => {
+      const side = k % 2 ? -1 : 1;
+      pos[l.id] = [side > 0 ? X(v) + 1 : X(v) - 1 - sw, axisY - 8 - k * vstep - sh, side];
+      order.push(l.id);
+    }));
+    $$('.an-seed', swarm).forEach(el => {
+      const id = el.dataset.id;
+      const p2 = pos[id];
+      el.classList.toggle('is-off', !p2);
+      el.classList.toggle('is-hot', !!p2 && isHot(vals[id]));
+      // 沒有場次的講師停在原位淡出，下次出現時才從原位移過去
+      if (!p2) return;
+      el.style.setProperty('--x', `${p2[0].toFixed(1)}px`);
+      el.style.setProperty('--y', `${p2[1].toFixed(1)}px`);
+      el.style.setProperty('--s', String(p2[2]));
+      el.style.setProperty('--k', String(order.indexOf(id)));
+    });
+    stems.forEach((el, v) => { if (!cols.has(v)) { el.style.setProperty('--h', '0px'); el.classList.add('is-empty'); } });
+    cols.forEach((list, v) => {
+      const el = stemOf(v);
+      el.classList.toggle('is-hot', isHot(v));
+      el.classList.remove('is-empty');
+      el.firstElementChild.textContent = list.length;
+      el.style.setProperty('--sx', `${(X(v) - 1).toFixed(1)}px`);
+      el.style.setProperty('--h', `${(list.length - 1) * vstep + sh + 16}px`);
+    });
+    const every = maxV - vmin > 12 || (W < 520 && maxV - vmin > 7) ? 2 : 1;
+    let ticks = '';
+    for (let v = vmin; v <= maxV; v += every) ticks += `<span class="an-swarm__tick" style="left:${X(v).toFixed(1)}px">${v}</span>`;
+    $('.an-swarm__ticks', swarm).innerHTML = ticks;
+    const refEl = $('.an-swarm__ref', swarm);
+    refEl.hidden = !on.length;
+    if (on.length) {
+      const rx = X(ref);
+      refEl.style.setProperty('--ref-x', `${rx.toFixed(1)}px`);
+      refEl.style.setProperty('--ref-top', `${top}px`);
+      refEl.style.setProperty('--ref-h', `${plotH}px`);
+      const lbl = $('.an-swarm__ref-label', refEl);
+      lbl.textContent = loadMode === 'period' ? `平均 ${fmt.num(mean, 1)} 場` : `媒合負載上限 ${LOAD_MAX} 場`;
+      // 標籤靠近左右邊界時往內推，不超出卡片
+      const half = lbl.offsetWidth / 2;
+      lbl.style.setProperty('--lbl-dx', `${(Math.min(W - half - 2, Math.max(half + 2, rx)) - rx).toFixed(1)}px`);
+    }
+    $('.an-swarm__empty', swarm).hidden = on.length > 0;
+    $('caption', swarm).textContent = `講師${loadMode === 'period' ? '期間已執行場次' : '近 30 日場次'}（${describe()}）`;
+    $('tbody', swarm).innerHTML = on.map(l => `<tr><th scope="row">${esc(l.name)}</th><td>${vals[l.id]} 場</td></tr>`).join('');
+    return { on, mean, isHot, vals };
+  }
+  function renderLoad() {
+    const sowNow = !sowed && !App.calm();
+    if (sowNow) swarm.classList.add('is-waiting');
+    const { on, mean, isHot, vals } = layoutSwarm();
+    if (sowNow && !swarm._watching) {
+      swarm._watching = true;
+      App.whenVisible(swarm, () => {
+        sowed = true;
+        swarm.classList.add('is-sowing');
+        requestAnimationFrame(() => swarm.classList.remove('is-waiting'));
+        setTimeout(() => swarm.classList.remove('is-sowing'), 2400);
+      });
+    }
+    if (App.calm()) { sowed = true; swarm.classList.remove('is-waiting', 'is-sowing'); }
+    const period = loadMode === 'period';
+    $('#load-sub').textContent = period
+      ? `${ctx.p.label}每位啟用講師的已執行場次（套用全部篩選）；滑鼠移到葉片可看講師`
+      : '每位啟用講師前後 30 日的場次（含已排定，不受篩選影響），與媒合條件的負載上限同一算法';
+    $('#swarm-cap').textContent = `橫軸：每位講師${period ? '的已執行場次' : '前後 30 日的場次（含已排定）'}・枝條高度：落在該場次的講師人數`;
+    $('#swarm-legend').innerHTML = `<span><i class="lg-seed"></i>一片葉＝一位講師</span><span><i class="lg-seed is-hot"></i>${period ? '高於平均 1.5 倍' : `接近或達上限（${LOAD_MAX - 1} 場以上）`}</span><span><i class="lg-seed is-new"></i>115 年新進講師</span><span><i class="lg-ref"></i>${period ? '平均場次' : '媒合負載上限'}</span>`;
+    const idle = ACTIVE.filter(l => !vals[l.id]);
+    $('#swarm-idle').innerHTML = idle.length
+      ? `<span class="an-idle__lead">${period ? '本期未授課' : '近 30 日無場次'} ${idle.length} 位：</span>${idle.slice(0, 8).map(l => `<a class="tag tag--plain" href="instructors.html?id=${l.id}">${esc(l.name)}</a>`).join('')}${idle.length > 8 ? `<span>等 ${idle.length} 位</span>` : ''}`
+      : '';
+    // 統計
+    const sorted = on.map(l => vals[l.id]).sort((a, b) => b - a);
+    const total = sum(sorted);
+    const topN = Math.max(1, Math.ceil(sorted.length * .2));
+    const topShare = total ? Math.round(sum(sorted.slice(0, topN)) / total * 100) : 0;
+    const median = sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : 0;
+    const hot = on.filter(l => isHot(vals[l.id]));
+    $('#load-stats').innerHTML = `<div class="an-lstat"><dt>${period ? '授課講師' : '近 30 日有場次'}</dt><dd><b>${on.length}</b>／${ACTIVE.length} 位啟用講師<div class="meter" role="img" aria-label="占 ${pctOf(on.length, ACTIVE.length)}%"><span style="--p:${(on.length / ACTIVE.length).toFixed(3)}"></span></div></dd></div>
+<div class="an-lstat"><dt>每位講師</dt><dd><b>${fmt.num(mean, 1)}</b>場（中位數 ${fmt.num(median, median % 1 ? 1 : 0)} 場）</dd></div>
+<div class="an-lstat${topShare >= 35 || hot.length ? ' is-clay' : ''}"><dt>${period ? '前 20% 講師承擔' : '接近或達負載上限'}</dt><dd>${period ? `<b>${topShare}%</b>場次（${topN} 位講師）` : `<b>${hot.length}</b>位，媒合時順位自動調降`}</dd></div>`;
+    renderLoadLists();
+  }
+  // 可增派／負載偏高清單：依目前縣市、對象、主題篩出「可服務」的講師，以近 30 日負載判斷
+  function renderLoadLists() {
+    const fits = l => (!f.county || l.serve.includes(f.county)) && (!f.audience || l.audiences.includes(f.audience)) && (!f.topic || l.topics.includes(f.topic));
+    const load = ctx.lectLoad30;
+    const pool = ACTIVE.filter(fits);
+    const scope = [f.county && App.county(f.county).name, f.audience && App.audience(f.audience).name, f.topic && App.topic(f.topic).short].filter(Boolean).join('・');
+    const hot = pool.filter(l => load[l.id] >= LOAD_MAX - 1).sort((a, b) => load[b.id] - load[a.id] || a.id.localeCompare(b.id)).slice(0, 5);
+    const free = pool.filter(l => l.rating != null && l.rating >= 4.7 && load[l.id] <= 2).sort((a, b) => b.rating - a.rating || load[a.id] - load[b.id] || a.id.localeCompare(b.id)).slice(0, 5);
+    $('#hot-note').textContent = `近 30 日 ${LOAD_MAX - 1} 場以上${scope ? `・可服務${scope}` : ''}`;
+    $('#free-note').textContent = `滿意度 4.7 以上、近 30 日 2 場以下${scope ? `・可服務${scope}` : ''}`;
+    const row = (l, isHotRow) => `<li class="an-lrow${isHotRow ? ' is-hot' : ''}">${App.avatar(l)}<div><a class="an-lrow__name" href="instructors.html?id=${l.id}">${esc(l.name)}</a><p class="an-lrow__sub">${esc(l.title)}・${App.county(l.county).name}・${l.rating == null ? '新進講師' : `滿意度 ${l.rating.toFixed(1)}`}</p></div><div class="an-lrow__side"><span class="an-lrow__n">${load[l.id]}<small>場／近 30 日</small></span>${isHotRow ? `<span class="meter meter--clay" role="img" aria-label="負載 ${load[l.id]}／上限 ${LOAD_MAX}"><span style="--p:${Math.min(1, load[l.id] / LOAD_MAX).toFixed(3)}"></span></span>` : App.statusBadge('ok', '可增派')}</div></li>`;
+    $('#hot-list').innerHTML = hot.length ? hot.map(l => row(l, true)).join('') : `<li class="an-lempty">${scope ? '符合條件的講師' : '目前'}沒有負載偏高的講師。</li>`;
+    $('#free-list').innerHTML = free.length ? free.map(l => row(l, false)).join('') : `<li class="an-lempty">${scope ? '可服務此條件的講師中，' : ''}暫無符合條件的講師，可考慮新進講師或放寬滿意度門檻。</li>`;
+  }
+
+  /* ===================================================================
+     縣市彙整表
+     =================================================================== */
+  let sortKey = 'sessions', sortDir = -1;
+  const REGION_ORDER = Object.fromEntries(App.REGIONS.map((r, i) => [r, i]));
+  const SORTERS = {
+    name: r => App.COUNTIES.indexOf(r.c),
+    region: r => REGION_ORDER[r.c.region] * 100 + App.COUNTIES.indexOf(r.c),
+    sessions: r => r.sessions, people: r => r.people, per10k: r => r.per10k,
+    satisfaction: r => r.satisfaction ?? -1, serve: r => r.serve, gap: r => r.gap,
+  };
+  App.bindSort($('#county-table'), { onSort: (k, dir) => { sortKey = k; sortDir = dir; renderTable(); } });
+  $('#county-rows').addEventListener('click', e => {
+    const b = e.target.closest('[data-county]');
+    if (!b) return;
+    toggleFilter('county', b.dataset.county);
+    const again = $(`#county-rows [data-county="${b.dataset.county}"]`);
+    if (again) again.focus();
+  });
+  function renderTable() {
+    const rows = ctx.counties.slice().sort((a, b) => (SORTERS[sortKey](a) - SORTERS[sortKey](b)) * sortDir || App.COUNTIES.indexOf(a.c) - App.COUNTIES.indexOf(b.c));
+    $('#table-sub').textContent = `${describe(true)}・不套用縣市篩選，選取的縣市以底色標示`;
+    $('#county-rows').innerHTML = rows.map(r => {
+      const on = r.c.id === f.county;
+      const g = Math.round(r.gap);
+      return `<tr${on ? ' class="is-selected"' : ''}>
+  <td data-label="縣市"><span class="an-tcell"><button type="button" class="an-tcounty" data-county="${r.c.id}" aria-pressed="${on}" title="${on ? '取消縣市篩選' : '以此縣市篩選全頁'}">${r.c.name}</button>${r.c.island ? '<span class="badge badge--sky">離島</span>' : ''}</span></td>
+  <td class="col-2nd" data-label="區域">${r.c.region}</td>
+  <td class="num" data-label="已執行場次">${fmt.num(r.sessions)}</td>
+  <td class="num" data-label="參與人次">${fmt.num(r.people)}</td>
+  <td class="num" data-label="每萬人場次">${r.per10k.toFixed(2)}</td>
+  <td class="num col-2nd" data-label="平均滿意度">${r.satisfaction == null ? '—' : r.satisfaction.toFixed(2)}</td>
+  <td class="num col-2nd" data-label="可服務講師">${r.serve} 位</td>
+  <td class="num" data-label="與全國平均差距"><span class="an-tgap ${g < 0 ? 'is-neg' : g > 0 ? 'is-pos' : ''}">${signed(g)} 場</span></td>
+</tr>`;
+    }).join('');
+    const n = ctx.nat;
+    $('#table-foot').innerHTML = `<span>全國合計：已執行 <b>${fmt.num(n.sessions)}</b> 場</span><span>參與 <b>${fmt.num(n.people)}</b> 人次</span><span>每萬人 <b>${ctx.rate.toFixed(2)}</b> 場</span><span>平均滿意度 <b>${n.satisfaction == null ? '—' : n.satisfaction.toFixed(2)}</b></span>`;
+  }
+
+  /* ===================================================================
+     匯出報表（CSV，Blob 下載）
+     =================================================================== */
+  const fileTag = () => [periodOf(f.period).label, f.county ? App.county(f.county).name : '全國', f.audience && App.audience(f.audience).name, f.topic && App.topic(f.topic).short].filter(Boolean).join('_').replace(/\s+/g, '');
+  const EXPORTS = {
+    county: () => {
+      const rows = [['縣市', '區域', '人口（萬人，示意值）', '已執行場次', '參與人次', '每萬人場次', '平均滿意度', '可服務講師', '依全國平均應有場次', '與全國平均差距']];
+      ctx.counties.forEach(r => rows.push([r.c.name, r.c.region, r.c.pop, r.sessions, r.people, r.per10k.toFixed(2), r.satisfaction == null ? '' : r.satisfaction.toFixed(2), r.serve, Math.round(r.expect), Math.round(r.gap)]));
+      return { name: '縣市彙整', rows, title: '已匯出縣市彙整表', desc: '22 縣市，不套用縣市篩選' };
+    },
+    trend: () => {
+      const rows = [['月份', '期間內', '申請件數', '已執行場次', '參與人次', '平均滿意度', '平均媒合天數']];
+      ctx.months.forEach(m => rows.push([`115 年 ${m.m} 月${m.ym === '2026-10' ? '（至 10/28）' : ''}`, m.inPeriod ? '是' : '否', m.apps, m.sessions, m.people, m.satisfaction == null ? '' : m.satisfaction.toFixed(2), m.matchDays == null ? '' : m.matchDays]));
+      return { name: '月趨勢', rows, title: '已匯出月趨勢', desc: '3–10 月共 8 個月' };
+    },
+    dist: () => {
+      const rows = [['類別', '項目', '場次', '占比']];
+      ctx.aud.items.forEach(x => rows.push(['服務對象', x.label, x.n, `${pctOf(x.n, ctx.aud.total)}%`]));
+      ctx.topic.items.forEach(x => rows.push(['主題', x.label, x.n, `${pctOf(x.n, ctx.topic.total)}%`]));
+      return { name: '分布', rows, title: '已匯出服務對象與主題分布', desc: '各分布不套用自身維度的篩選' };
+    },
+    load: () => {
+      const rows = [['講師編號', '姓名', '戶籍縣市', '期間已執行場次', '近 30 日場次（含已排定）', '平均滿意度', '新進講師']];
+      ACTIVE.forEach(l => rows.push([l.id, l.name, App.county(l.county).name, ctx.lectPeriod[l.id], ctx.lectLoad30[l.id], l.rating == null ? '' : l.rating.toFixed(1), l.rating == null ? '是' : '否']));
+      return { name: '講師負載', rows, title: '已匯出講師負載明細', desc: `${ACTIVE.length} 位啟用講師` };
+    },
+  };
+  const exportPop = App.popover($('#export-btn'), $('#export-panel'));
+  const runExport = key => {
+    const x = EXPORTS[key]();
+    App.downloadCSV(`績效分析_${x.name}_${fileTag()}.csv`, x.rows);
+    App.toast(x.title, { desc: `${x.desc}・${describe()}` });
+  };
+  $('#export-panel').addEventListener('click', e => {
+    const b = e.target.closest('[data-export]');
+    if (!b) return;
+    runExport(b.dataset.export);
+    exportPop.close(true);
+  });
+  $('#table-export').addEventListener('click', () => runExport('county'));
+
+  /* ===================================================================
+     初次繪製與同步
+     =================================================================== */
+  // replay：篩選改變時差距條重新從基準線長出；資料同步或模式切換時直接更新
+  function renderAll(replay) {
+    ctx = compute();
+    renderActive();
+    renderKpis();
+    renderMap();
+    renderGap(replay);
+    renderTrend(false);
+    renderInsights();
+    renderDist();
+    renderLoad();
+    renderTable();
+  }
+  syncControls();
+  renderAll(false);
+  // 寬度改變時重算自繪圖形（不重播進場動畫）
+  new ResizeObserver(() => { if (Math.abs(trendHost.clientWidth - (trendHost._w || 0)) > 2) drawTrend(); }).observe(trendHost);
+  let swarmW = swarm.clientWidth;
+  new ResizeObserver(() => { if (Math.abs(swarm.clientWidth - swarmW) > 2) { swarmW = swarm.clientWidth; layoutSwarm(); } }).observe(swarm);
+  // 模式切換後字級與版面都變了：等新版面生效再整頁重繪（calm 時各圖直接呈現結果）
+  App.onMode(() => requestAnimationFrame(() => renderAll(false)));
+  App.on(() => renderAll(false));
+});
+</script>
+</body>
+</html>

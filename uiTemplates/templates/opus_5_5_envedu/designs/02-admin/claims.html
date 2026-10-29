@@ -1,0 +1,1833 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成果與費用核銷 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="成果回填與費用申請佇列、逐項勾稽（人數、時數、簽到表、照片、金額）、核准與退回補正、核銷批次清冊與示意費率設定。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+  .page-lede b { font-family: var(--font-en); color: var(--clay-ink); }
+  #rates .card__actions .badge { white-space: normal; }
+
+  /* ---------- 核銷流程帶：四張相連的票根（核銷＝單據，邊緣打孔） ---------- */
+  .cl-flow {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    /* 子元素用 mask 打孔，陰影改由父層 drop-shadow 依實際形狀投出 */
+    filter: drop-shadow(0 1px 1px rgba(30, 42, 38, .1)) drop-shadow(0 10px 16px rgba(30, 42, 38, .07));
+  }
+  .cl-stub {
+    --nl: 9px; --nr: 9px;
+    position: relative; display: grid; align-content: start; gap: 2px; min-width: 0;
+    padding: 16px 22px 15px; border: 0; background: var(--card); color: var(--ink);
+    text-align: left; font: inherit; line-height: 1.4;
+    -webkit-mask:
+      radial-gradient(circle at 0 0, transparent var(--nl), #000 calc(var(--nl) + .5px)) 0 0 / 51% 51% no-repeat,
+      radial-gradient(circle at 100% 0, transparent var(--nr), #000 calc(var(--nr) + .5px)) 100% 0 / 51% 51% no-repeat,
+      radial-gradient(circle at 0 100%, transparent var(--nl), #000 calc(var(--nl) + .5px)) 0 100% / 51% 51% no-repeat,
+      radial-gradient(circle at 100% 100%, transparent var(--nr), #000 calc(var(--nr) + .5px)) 100% 100% / 51% 51% no-repeat;
+    mask:
+      radial-gradient(circle at 0 0, transparent var(--nl), #000 calc(var(--nl) + .5px)) 0 0 / 51% 51% no-repeat,
+      radial-gradient(circle at 100% 0, transparent var(--nr), #000 calc(var(--nr) + .5px)) 100% 0 / 51% 51% no-repeat,
+      radial-gradient(circle at 0 100%, transparent var(--nl), #000 calc(var(--nl) + .5px)) 0 100% / 51% 51% no-repeat,
+      radial-gradient(circle at 100% 100%, transparent var(--nr), #000 calc(var(--nr) + .5px)) 100% 100% / 51% 51% no-repeat;
+    transition: background var(--dur-1);
+  }
+  .cl-stub:first-child { --nl: 0px; border-radius: var(--r-md) 0 0 var(--r-md); }
+  .cl-stub:last-child { --nr: 0px; border-radius: 0 var(--r-md) var(--r-md) 0; }
+  .cl-stub + .cl-stub::before {
+    /* 打孔虛線：上下兩個半圓缺口之間 */
+    content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; border-left: 2px dashed var(--line-2);
+  }
+  .cl-stub:hover { background: var(--row-hover); }
+  /* mask 會把外框 outline 一起裁掉，焦點改用內框 */
+  .cl-stub:focus-visible { outline: none; border-radius: 0; box-shadow: inset 0 0 0 var(--focus-w) var(--focus), inset 0 0 0 calc(var(--focus-w) + 4px) var(--focus-halo); }
+  .cl-stub__step { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); }
+  .cl-stub__no { font-family: var(--font-en); color: var(--forest); letter-spacing: .04em; }
+  .cl-stub__title { font-size: var(--fs-base); font-weight: 800; padding-right: 34px; }
+  .cl-stub__num { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; font-family: var(--font-en); font-size: var(--fs-kpi); font-weight: 800; line-height: 1.1; letter-spacing: -.01em; white-space: nowrap; }
+  .cl-stub__num .odo { height: 1.1em; }
+  .cl-stub__unit { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); letter-spacing: 0; }
+  .cl-stub__meta { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .cl-stub__meta b { font-family: var(--font-en); color: var(--clay-ink); }
+  .cl-stub__icon { position: absolute; right: 18px; top: 16px; width: 26px; height: 26px; color: var(--forest); transition: transform var(--dur-2) var(--ease-out); }
+  .cl-stub:hover .cl-stub__icon { transform: translateY(-2px); }
+  .cl-stub--hot { background: var(--forest); color: var(--on-forest); }
+  .cl-stub--hot:hover { background: var(--forest-600); }
+  .cl-stub--hot .cl-stub__step, .cl-stub--hot .cl-stub__unit, .cl-stub--hot .cl-stub__meta { color: var(--on-forest-2); }
+  .cl-stub--hot .cl-stub__no, .cl-stub--hot .cl-stub__icon { color: var(--sprout); }
+  .cl-stub--hot .cl-stub__meta b { color: var(--clay-glow); }
+  .cl-stub--hot:focus-visible { --focus: #F6F3EA; --focus-halo: rgba(168, 214, 114, .55); }
+  .cl-stub--money .cl-stub__num { color: var(--clay-ink); }
+  .cl-stub--money .cl-stub__icon { color: var(--clay); }
+  .cl-stub.is-hit .cl-stub__num { animation: cl-hit .7s var(--ease-spring); }
+  .cl-led.is-hit { animation: cl-hit-row .9s var(--ease-out); }
+  @keyframes cl-hit { 35% { transform: scale(1.08); } }
+  @keyframes cl-hit-row { 0%, 30% { background: var(--clay-100); } }
+
+  /* ---------- 工作台：左佇列、右勾稽單 ---------- */
+  .cl-bench { display: grid; grid-template-columns: minmax(330px, 392px) minmax(0, 1fr); gap: clamp(16px, 1.6vw, 22px); align-items: start; }
+  html.is-senior .cl-bench { grid-template-columns: minmax(360px, 430px) minmax(0, 1fr); }
+
+  /* 佇列 */
+  .cl-queue .card__head { padding-bottom: 12px; }
+  .cl-views { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+  .cl-view {
+    position: relative; display: grid; align-content: start; gap: 1px; min-width: 0;
+    padding: 7px 8px 8px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--card);
+    color: var(--ink-2); text-align: left; font: inherit;
+    transition: border-color var(--dur-1), background var(--dur-1);
+  }
+  .cl-view:hover { border-color: var(--forest); }
+  .cl-view__n { font-family: var(--font-en); font-size: var(--fs-lg); font-weight: 800; line-height: 1.2; color: var(--ink); }
+  .cl-view__label { font-size: var(--fs-xs); font-weight: 700; line-height: 1.35; white-space: nowrap; }
+  .cl-view.is-alert .cl-view__n { color: var(--clay-ink); }
+  .cl-view.is-alert::after { content: ""; position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--clay); }
+  .cl-view[aria-selected="true"] { border-color: var(--forest); background: var(--forest-50); box-shadow: inset 0 0 0 1px var(--forest); }
+  .cl-view[aria-selected="true"] .cl-view__label { color: var(--forest-900); }
+  .cl-tools { display: grid; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+  .cl-tools__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cl-tools .search { flex: 1 1 150px; }
+  .cl-tools .select { width: auto; flex: 0 0 auto; }
+  .cl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cl-chips { gap: 5px; }
+  .cl-chips .chip { min-height: 32px; padding: 3px 9px; gap: 5px; }
+  .cl-chips .chip__n { padding: 0 5px; }
+  html.is-senior .cl-chips .chip { min-height: 48px; padding: 6px 14px; }
+  .cl-chip .dot { width: 8px; height: 8px; }
+  .cl-bulk {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    margin: 12px 14px 0; padding: 10px 12px 10px 14px; border-radius: var(--r-sm);
+    background: var(--sprout-50); border: 1px dashed var(--forest-100); font-size: var(--fs-sm); color: var(--ink-2);
+  }
+  .cl-bulk b { font-family: var(--font-en); color: var(--forest-900); }
+  .cl-qlist { display: grid; gap: 3px; padding: 8px; }
+  .cl-qitem {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center;
+    width: 100%; padding: 9px 12px 9px 16px; border: 1.5px solid transparent; border-radius: var(--r-sm);
+    background: transparent; color: var(--ink); text-align: left; font: inherit; line-height: 1.45;
+    transition: background var(--dur-1), border-color var(--dur-1);
+  }
+  .cl-qitem::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: 10px; width: 4px; border-radius: 2px; background: var(--line-2); }
+  .cl-qitem[data-tone="fail"]::before { background: var(--err); }
+  .cl-qitem[data-tone="warn"]::before { background: #C99A1E; }
+  .cl-qitem[data-tone="pass"]::before { background: var(--ok); }
+  .cl-qitem[data-tone="late"]::before { background: var(--clay); }
+  .cl-qitem[data-tone="ret"]::before { background: var(--clay); }
+  .cl-qitem:hover { background: var(--row-hover); }
+  .cl-qitem[aria-pressed="true"] { background: var(--forest-50); border-color: var(--forest); }
+  .cl-qitem__org { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); font-weight: 800; }
+  .cl-qitem__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cl-qitem__amt { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; text-align: right; white-space: nowrap; }
+  .cl-qitem__amt small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-qitem__meta { min-width: 0; font-size: var(--fs-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cl-qitem__id { font-family: var(--font-en); font-weight: 800; color: var(--forest); }
+  .cl-qitem__due { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-3); text-align: right; white-space: nowrap; }
+  .cl-qitem__due.is-late { color: var(--clay-ink); }
+  /* 一般模式只給螢幕報讀（畫面上由色條與五格勾稽燈號表示），高齡模式直接顯示文字 */
+  .cl-qitem__verdict { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .cl-pips { display: inline-flex; gap: 3px; flex: none; }
+  .cl-pips i { width: 7px; height: 13px; border-radius: 2px; background: var(--ok); }
+  .cl-pips i[data-r="warn"] { background: #C99A1E; }
+  .cl-pips i[data-r="fail"] { background: var(--err); }
+  .cl-qempty .empty { padding: 28px 12px; }
+  .cl-more {
+    display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 40px; margin-top: 4px;
+    border: 1.5px dashed var(--line-2); border-radius: var(--r-sm); background: transparent; color: var(--forest-900);
+    font: inherit; font-size: var(--fs-sm); font-weight: 800;
+  }
+  .cl-more:hover { border-color: var(--forest); background: var(--forest-50); }
+  .cl-more .i { width: 18px; height: 18px; }
+  html.is-senior .cl-more { min-height: 52px; font-size: var(--fs-base); }
+  .cl-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .cl-legend .cl-pips i { height: 11px; }
+  html.is-senior .cl-views { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html.is-senior .cl-qitem { padding: 12px 14px 12px 20px; gap: 3px 12px; }
+  html.is-senior .cl-qitem__name, html.is-senior .cl-qitem__meta { white-space: normal; }
+  html.is-senior .cl-qitem__verdict { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; grid-column: 1 / -1; font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+  html.is-senior .cl-qitem__org { font-size: var(--fs-base); }
+
+  /* 勾稽單 */
+  .cl-sheet { container: cl-sheet / inline-size; }
+  .cl-sheet__bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 52px; padding: 6px 12px 6px 20px; border-bottom: 1px solid var(--line-soft);
+    background: var(--paper); border-radius: var(--r-md) var(--r-md) 0 0;
+  }
+  .cl-sheet__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; color: var(--ink-2); }
+  .cl-sheet__kicker .i { width: 18px; height: 18px; color: var(--forest); }
+  .cl-sheet__pos { font-family: var(--font-en); font-weight: 700; color: var(--ink-3); letter-spacing: .02em; }
+  .cl-sheet__nav { display: flex; gap: 4px; }
+  .cl-sheet__nav .icon-btn[disabled] { opacity: .4; pointer-events: none; }
+  .cl-sheet__head { position: relative; padding: 18px 168px 14px 20px; min-height: 132px; }
+  .cl-sheet__eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .cl-sheet__title { margin-top: 6px; font-family: var(--font-tc); font-size: var(--fs-xl); font-weight: 900; line-height: 1.3; }
+  .cl-sheet__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin-top: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cl-sheet__meta .i { width: 16px; height: 16px; color: var(--ink-3); margin-right: 6px; }
+  .cl-sheet__meta > span + span::before { content: "・"; color: var(--ink-3); }
+  html.is-senior .cl-sheet a.cell-id, html.is-senior .cl-facts a { display: inline-flex; align-items: center; min-height: 48px; }
+
+  /* 勾稽章：一枚蓋上去的圓章（紋理只是質感，高齡模式關閉） */
+  .cl-seal {
+    --seal: var(--ok);
+    position: absolute; right: 26px; top: 10px; z-index: 2;
+    width: 120px; height: 120px; display: grid; place-content: center; justify-items: center; padding-top: 12px;
+    color: var(--seal); transform: rotate(-10deg); pointer-events: none;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.4 2.15'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E") center / 140px 140px;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.4 2.15'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E") center / 140px 140px;
+  }
+  .cl-seal[data-tone="warn"] { --seal: var(--warn); }
+  .cl-seal[data-tone="err"] { --seal: var(--err); }
+  .cl-seal[data-tone="forest"] { --seal: var(--forest); }
+  .cl-seal__ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cl-seal__main { position: relative; font-family: var(--font-tc); font-size: 27px; font-weight: 900; line-height: 1.1; letter-spacing: .14em; margin-right: -.14em; }
+  .cl-seal__sub { position: relative; margin-top: 3px; font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .04em; }
+  .cl-seal.is-pending { opacity: 0; }
+  .cl-seal.is-stamped { animation: cl-stamp .48s cubic-bezier(.2, .8, .3, 1.15) both; }
+  .cl-seal.is-stamped::after {
+    /* 蓋章瞬間的一圈墨暈 */
+    content: ""; position: absolute; inset: 4px; border-radius: 50%; border: 3px solid currentColor;
+    animation: cl-ink .6s .2s var(--ease-out) both;
+  }
+  @keyframes cl-stamp { 0% { opacity: 0; transform: rotate(-26deg) scale(1.9); } 55% { opacity: 1; transform: rotate(-9deg) scale(.93); } 100% { opacity: 1; transform: rotate(-10deg) scale(1); } }
+  @keyframes cl-ink { from { opacity: .5; transform: scale(1); } to { opacity: 0; transform: scale(1.35); } }
+  html.is-senior .cl-seal { -webkit-mask: none; mask: none; width: 140px; height: 140px; padding-top: 14px; }
+  html.is-senior .cl-seal__main { font-size: 31px; }
+  html.is-senior .cl-sheet__head { padding-right: 186px; min-height: 160px; }
+  html.is-senior .cl-seal.is-stamped::after { display: none; }
+
+  /* 逾期倒數（回填追蹤） */
+  .cl-count {
+    position: absolute; right: 22px; top: 16px; display: grid; justify-items: center; gap: 0;
+    min-width: 108px; padding: 10px 14px 12px; border-radius: var(--r-md);
+    background: var(--forest-50); border: 1.5px solid var(--forest-100); color: var(--forest-900); text-align: center;
+  }
+  .cl-count b { font-family: var(--font-en); font-size: var(--fs-kpi); font-weight: 800; line-height: 1.1; }
+  .cl-count span { font-size: var(--fs-xs); font-weight: 800; }
+  .cl-count.is-late { background: var(--clay-50); border-color: var(--clay-200); color: var(--clay-ink); }
+
+  .cl-facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0 20px;
+    border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--paper); overflow: hidden;
+  }
+  /* 格線畫在每格的左上，外圈由容器裁掉；換行時不會露出空白格的底色 */
+  .cl-facts > div { min-width: 0; padding: 9px 14px 10px; box-shadow: -1px 0 0 var(--line-soft), 0 -1px 0 var(--line-soft); }
+  .cl-facts dt { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-facts dd { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: var(--fs-sm); font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
+  .cl-facts dd a { color: var(--ink); }
+  .cl-facts dd a:hover { color: var(--forest); }
+  .cl-facts__sub { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .cl-facts .is-late { color: var(--clay-ink); }
+
+  .cl-sheet__grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; padding: 18px 20px 0; align-items: start; }
+  .cl-block { min-width: 0; }
+  .cl-block__title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 10px; font-size: var(--fs-base); font-weight: 800; }
+  .cl-block__title > .i { width: 20px; height: 20px; color: var(--forest); }
+  .cl-block__count { margin-left: auto; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-pad { padding: 18px 20px 0; }
+
+  /* 逐項勾稽：掃描光條依序走過五項，結果一項項蓋上 */
+  .cl-scan { position: relative; }
+  .cl-beam {
+    position: absolute; left: -5px; right: -5px; top: 0; height: 56px; z-index: 1; pointer-events: none;
+    border-radius: 12px; opacity: 0;
+    background: linear-gradient(90deg, rgba(168, 214, 114, 0), rgba(168, 214, 114, .32) 45%, rgba(168, 214, 114, .08));
+    box-shadow: inset 0 0 0 1.5px rgba(31, 93, 74, .45), 0 0 18px rgba(168, 214, 114, .45);
+    transition: transform .22s var(--ease-out), height .22s var(--ease-out), opacity .25s;
+  }
+  .cl-beam.is-on { opacity: 1; }
+  .cl-scan .check-row { transition: background .3s, border-color .3s; }
+  .cl-scan .check-row__icon { transition: background .25s, color .25s; }
+  .cl-scan .check-row .status { transition: opacity .18s, transform .38s var(--ease-spring); }
+  .cl-scan .check-row__detail { transition: opacity .25s; }
+  .cl-scan.is-scanning .check-row:not(.is-done) { border-color: var(--line-soft); background: var(--card); }
+  .cl-scan.is-scanning .check-row:not(.is-done) .check-row__icon { background: var(--paper-2); color: transparent; }
+  .cl-scan.is-scanning .check-row:not(.is-done) .status { opacity: 0; transform: scale(1.7) rotate(-10deg); }
+  .cl-scan.is-scanning .check-row:not(.is-done) .check-row__detail { opacity: .35; }
+
+  /* 金額勾稽天平：左盤核算金額、右盤講師申請，不相等就傾斜，多出的錢幣以陶土色標出 */
+  .cl-scale {
+    --tilt: 0deg;
+    display: grid; gap: 4px; padding: 10px 14px 14px; border-radius: var(--r-md);
+    background: linear-gradient(180deg, var(--paper) 0%, var(--card) 78%); border: 1px solid var(--line-soft);
+  }
+  .cl-scale__svg { width: 100%; max-width: 330px; height: auto; margin-inline: auto; }
+  .cl-scale__base { fill: var(--forest-800); }
+  .cl-scale__post { fill: var(--forest-700); }
+  .cl-scale__shadow { fill: rgba(30, 42, 38, .1); }
+  .cl-scale__arc { stroke: var(--line-2); }
+  .cl-scale__tick { stroke: var(--line-2); }
+  .cl-scale__tick--zero { stroke: var(--forest); }
+  .cl-scale__bar { fill: var(--forest); }
+  .cl-scale__pivot { fill: var(--paper); stroke: var(--forest); }
+  .cl-scale__needle { stroke: var(--forest-900); }
+  .cl-scale__needle-tip { fill: var(--forest-900); }
+  .cl-scale__string { stroke: var(--ink-3); }
+  .cl-scale__hook { fill: var(--forest-900); }
+  .cl-scale__bowl { fill: var(--paper-2); stroke: var(--forest); }
+  .cl-coin { fill: var(--sprout-200); stroke: var(--forest); }
+  .cl-coin--x { fill: var(--clay-200); stroke: var(--clay-ink); }
+  .cl-scale[data-state="over"] .cl-scale__needle, .cl-scale[data-state="under"] .cl-scale__needle { stroke: var(--clay-ink); }
+  .cl-scale[data-state="over"] .cl-scale__needle-tip, .cl-scale[data-state="under"] .cl-scale__needle-tip { fill: var(--clay-ink); }
+  .cl-scale__beam { transform-origin: 160px 44px; transform: rotate(var(--tilt)); transition: transform 1.25s cubic-bezier(.3, 1.65, .45, 1); }
+  .cl-scale__pan { transition: transform 1.25s cubic-bezier(.3, 1.65, .45, 1); transform: rotate(calc(var(--tilt) * -1)); }
+  .cl-scale__pan--l { transform-origin: 46px 44px; }
+  .cl-scale__pan--r { transform-origin: 274px 44px; }
+  .cl-scale.is-static .cl-scale__beam, .cl-scale.is-static .cl-scale__pan { transition: none; }
+  .cl-scale.is-weighing .cl-coin { animation: cl-coin .5s var(--ease-out) both; animation-delay: calc(var(--i) * 70ms + 120ms); }
+  @keyframes cl-coin { from { opacity: 0; transform: translateY(-22px); } }
+  .cl-scale__read { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 8px; margin-top: -4px; }
+  .cl-scale__side { display: grid; min-width: 0; }
+  .cl-scale__side--r { text-align: right; }
+  .cl-scale__cap { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-scale__amt { font-family: var(--font-en); font-size: var(--fs-lg); font-weight: 800; line-height: 1.2; white-space: nowrap; }
+  .cl-scale__amt small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-scale__verdict {
+    display: inline-flex; align-items: center; gap: 4px; align-self: center; padding: 2px 10px; border-radius: var(--r-pill);
+    background: var(--ok-bg); color: var(--ok); font-size: var(--fs-xs); font-weight: 800; white-space: nowrap;
+  }
+  .cl-scale__verdict .i { width: 14px; height: 14px; }
+  .cl-scale[data-state="over"] .cl-scale__verdict, .cl-scale[data-state="under"] .cl-scale__verdict { background: var(--err-bg); color: var(--err); }
+  .cl-scale[data-state="over"] .cl-scale__side--r .cl-scale__amt { color: var(--err); }
+  .cl-scale[data-state="under"] .cl-scale__side:first-child .cl-scale__amt { color: var(--err); }
+  /* 核算式：像一張小計算單，逐列列出節數、費率、交通費與合計 */
+  .cl-calc { display: grid; margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); font-size: var(--fs-sm); }
+  .cl-calc li { display: grid; grid-template-columns: 1.3em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 12px; }
+  .cl-calc li + li { border-top: 1px solid var(--line-soft); }
+  .cl-calc__op { font-family: var(--font-en); font-weight: 800; color: var(--ink-3); text-align: center; }
+  .cl-calc__k { min-width: 0; color: var(--ink-2); }
+  .cl-calc__k small { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cl-calc__v { font-family: var(--font-en); font-weight: 800; white-space: nowrap; text-align: right; }
+  .cl-calc li.cl-calc__total { border-top: 1.5px dashed var(--line-2); background: var(--forest-50); border-radius: 0 0 var(--r-sm) var(--r-sm); }
+  .cl-calc__total .cl-calc__k { font-weight: 800; color: var(--forest-900); }
+  .cl-calc__total .cl-calc__v { font-size: var(--fs-md); color: var(--forest-900); }
+  .cl-feenote { margin-top: 8px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.55; }
+  html.is-senior .cl-scale__svg { max-width: 380px; }
+
+  /* 佐證資料 */
+  .cl-evi { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
+  .cl-tile { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; font: inherit; }
+  .cl-tile__img {
+    position: relative; display: block; aspect-ratio: 10 / 7; overflow: hidden;
+    border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--paper-2);
+    transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2);
+  }
+  .cl-tile__img svg { width: 100%; height: 100%; overflow: hidden; }
+  button.cl-tile:hover .cl-tile__img { transform: translateY(-2px); box-shadow: var(--sh-2); }
+  .cl-tile__cap { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); line-height: 1.4; }
+  .cl-tile__cap small { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .cl-tile--miss .cl-tile__img { display: grid; place-items: center; align-content: center; gap: 4px; border: 2px dashed var(--err-line); background: #FFF8F6; color: var(--err); font-size: var(--fs-xs); font-weight: 800; }
+  .cl-tile--miss .cl-tile__img .i { width: 22px; height: 22px; }
+  .cl-tile--thin .cl-tile__img { border-color: var(--warn-line); background: #FFFBF0; color: var(--warn); }
+  html.is-senior .cl-evi { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+  .cl-sheet__foot {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
+    margin-top: 18px; padding: 14px 20px; border-top: 1px solid var(--line-soft);
+    background: var(--paper); border-radius: 0 0 var(--r-md) var(--r-md);
+  }
+  .cl-sheet__hint { display: flex; gap: 8px; align-items: flex-start; max-width: 48ch; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.55; }
+  .cl-sheet__hint .i { width: 18px; height: 18px; margin-top: 2px; color: var(--forest); }
+  .cl-sheet__hint.is-fail .i { color: var(--err); }
+  .cl-sheet__hint.is-warn .i { color: var(--warn); }
+  .cl-sheet__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+  .cl-done { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 800; color: var(--ok); }
+  .cl-done .i { width: 16px; height: 16px; }
+  .cl-steps { margin-top: 4px; }
+  .cl-steps .step__label small { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .cl-note { margin: 16px 20px 0; }
+  .cl-sheet .empty { padding: 72px 20px; }
+
+  @container cl-sheet (max-width: 640px) {
+    .cl-sheet__grid { grid-template-columns: minmax(0, 1fr); }
+    .cl-scale { max-width: 520px; }
+  }
+  @container cl-sheet (max-width: 480px) {
+    .cl-sheet__head { padding-right: 104px; }
+    .cl-seal { width: 88px; height: 88px; top: 10px; right: 10px; padding-top: 8px; }
+    .cl-seal__main { font-size: 20px; }
+    html.is-senior .cl-sheet__head { padding-right: 132px; min-height: 0; }
+    html.is-senior .cl-seal { width: 118px; height: 118px; padding-top: 10px; }
+    html.is-senior .cl-seal__main { font-size: 24px; }
+    html.is-senior .cl-seal__sub { letter-spacing: 0; }
+    /* 小章面放不下「勾稽 10/28」整行，只留日期，避免字跑出印框 */
+    .cl-seal__verb { display: none; }
+    .cl-count { position: static; justify-self: start; margin-bottom: 8px; display: inline-grid; }
+    .cl-sheet__head:has(.cl-count) { padding-top: 16px; display: grid; }
+    .cl-scale__read { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .cl-scale__verdict { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+    .cl-sheet__acts { width: 100%; }
+    .cl-sheet__acts .btn { flex: 1 1 auto; }
+    html.is-senior .cl-facts { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .cl-facts > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; }
+    html.is-senior .cl-facts dd { margin-top: 0; }
+    html.is-senior .cl-scan .check-row { grid-template-columns: 34px minmax(0, 1fr); }
+    html.is-senior .cl-scan .check-row .status { grid-column: 2; justify-self: start; }
+  }
+
+  /* 飛入批次的金額標籤 */
+  .cl-fly {
+    position: fixed; left: 0; top: 0; z-index: 95; pointer-events: none;
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 6px 10px; border-radius: var(--r-pill);
+    background: var(--clay-ink); color: #FFF8F1; box-shadow: var(--sh-3);
+    font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; white-space: nowrap;
+  }
+  .cl-fly .i { width: 18px; height: 18px; }
+
+  /* 對話框內容 */
+  .cl-msum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--line-soft); overflow: hidden; }
+  .cl-msum > div { padding: 10px 12px; background: var(--paper); min-width: 0; }
+  .cl-msum dt { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-msum dd { font-size: var(--fs-sm); font-weight: 800; overflow-wrap: anywhere; }
+  .cl-msum__amt { font-family: var(--font-en); font-size: var(--fs-lg) !important; color: var(--clay-ink); }
+  .cl-mform { display: grid; gap: 14px; }
+  .cl-mlist { display: grid; gap: 6px; font-size: var(--fs-sm); }
+  .cl-mlist li { display: flex; gap: 8px; align-items: flex-start; }
+  .cl-mlist .i { width: 16px; height: 16px; margin-top: 3px; color: var(--warn); }
+  .cl-mitems { display: grid; gap: 4px; }
+  .cl-mitems .badge { margin-left: 6px; }
+  .cl-preview { display: grid; gap: 10px; }
+  .cl-preview__img { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); aspect-ratio: 10 / 7; background: var(--paper-2); }
+  .cl-preview__img svg { width: 100%; height: 100%; overflow: hidden; }
+  .cl-preview figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cl-preview figcaption b { font-family: var(--font-en); }
+
+  /* ---------- 核銷批次清冊 ---------- */
+  .cl-bbody { display: grid; grid-template-columns: 260px minmax(0, 1fr); }
+  .cl-ledger { padding: 12px; background: var(--paper); border-right: 1px solid var(--line-soft); border-radius: 0 0 0 var(--r-md); }
+  .cl-ledger__cap { padding: 4px 6px 8px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); }
+  .cl-ledger__list { display: grid; gap: 4px; }
+  .cl-led {
+    display: grid; gap: 4px; width: 100%; padding: 10px 12px; border: 1.5px solid transparent; border-radius: var(--r-sm);
+    background: transparent; color: var(--ink); text-align: left; font: inherit; line-height: 1.4;
+    transition: background var(--dur-1), border-color var(--dur-1);
+  }
+  .cl-led:hover { background: var(--card); border-color: var(--line); }
+  .cl-led[aria-pressed="true"] { background: var(--card); border-color: var(--forest); box-shadow: var(--sh-1); }
+  .cl-led__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .cl-led__id { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--forest); }
+  .cl-led__month { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-led__sum { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .cl-led__sum b { font-family: var(--font-en); font-size: var(--fs-base); font-weight: 800; color: var(--ink); }
+  .cl-led .meter { height: 6px; }
+  .cl-bdetail { min-width: 0; padding: 18px 20px 16px; }
+  .cl-bhead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px 28px; }
+  .cl-bhead__id { display: flex; align-items: center; gap: 10px; font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--forest); }
+  .cl-bhead__title { margin-top: 4px; font-size: var(--fs-lg); font-weight: 900; font-family: var(--font-tc); }
+  .cl-bhead__sub { margin-top: 2px; font-size: var(--fs-sm); color: var(--ink-3); }
+  .cl-bhead .steps { flex: 0 1 380px; min-width: 280px; }
+  .cl-bstats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 16px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--line-soft); overflow: hidden; }
+  .cl-bstat { display: grid; gap: 2px; min-width: 0; padding: 12px 16px; background: var(--card); }
+  .cl-bstat__label { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-bstat__val { display: flex; align-items: baseline; gap: 4px; font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.2; white-space: nowrap; }
+  .cl-bstat__val .odo { height: 1.1em; }
+  .cl-bstat__val small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-bstat--total { background: var(--clay-50); }
+  .cl-bstat--total .cl-bstat__val { color: var(--clay-ink); }
+  .cl-btools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 16px 0 10px; }
+  .cl-btools .search { flex: 0 1 340px; }
+  .cl-btools__note { font-size: var(--fs-xs); color: var(--ink-3); }
+  .cl-btable { --cell-px: 12px; }
+  html.is-senior .cl-btable { --cell-px: 16px; }
+  .cl-btable .cell-sub { --tw: 12em; }
+  .cl-btable td:nth-child(2) { white-space: nowrap; }
+  .cl-bfoot { padding-top: 12px; }
+  html.is-senior .cl-btable a { display: inline-flex; align-items: center; min-height: 48px; }
+
+  /* ---------- 示意費率設定 ---------- */
+  .cl-rates__body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .cl-rform { display: grid; gap: 4px; }
+  .cl-fs { display: grid; gap: 10px; padding-bottom: 18px; margin-bottom: 14px; border-bottom: 1px dashed var(--line); }
+  .cl-fs__legend { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: var(--fs-base); font-weight: 800; }
+  .cl-fs__legend .i { width: 20px; height: 20px; color: var(--forest); }
+  .cl-rrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) 92px; gap: 4px 14px; align-items: center; }
+  .cl-rrow .label { font-weight: 700; color: var(--ink-2); }
+  .cl-rrow .field__error { grid-column: 1 / -1; }
+  .cl-rrow .input { text-align: right; font-family: var(--font-en); font-weight: 700; }
+  .cl-rdiff { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-3); text-align: right; white-space: nowrap; }
+  .cl-rdiff.is-up { color: var(--clay-ink); }
+  .cl-rdiff.is-down { color: var(--sky-ink); }
+  .cl-rform__acts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+  .cl-impact { display: grid; gap: 14px; padding: 18px 20px; border-radius: var(--r-md); background: var(--paper); border: 1px solid var(--line-soft); }
+  .cl-impact__title { display: flex; align-items: center; gap: 8px; font-size: var(--fs-base); font-weight: 800; }
+  .cl-impact__title .i { width: 20px; height: 20px; color: var(--clay-ink); }
+  .cl-impact__lead { font-size: var(--fs-sm); color: var(--ink-3); margin-top: -8px; }
+  .cl-impact__big { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 10px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--line-soft); }
+  .cl-impact__big .i { width: 22px; height: 22px; color: var(--ink-3); align-self: center; }
+  .cl-impact__cap { display: block; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .cl-impact__val { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.2; white-space: nowrap; }
+  .cl-impact__val small { font-family: var(--font-sans); font-size: var(--fs-xs); color: var(--ink-3); font-weight: 700; }
+  .cl-impact__new .cl-impact__val { color: var(--forest-900); }
+  .cl-impact__delta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .cl-impact__delta b { font-family: var(--font-en); }
+  .cl-impact__delta .is-up { color: var(--clay-ink); }
+  .cl-impact__delta .is-down { color: var(--sky-ink); }
+  .cl-samples { display: grid; gap: 0; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--card); overflow: hidden; }
+  .cl-sample { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 14px; align-items: center; padding: 10px 14px; font-size: var(--fs-sm); border-top: 1px solid var(--line-soft); }
+  .cl-sample:first-child { border-top: 0; }
+  .cl-sample__name { font-weight: 700; color: var(--ink-2); }
+  .cl-sample__now { font-family: var(--font-en); color: var(--ink-3); text-decoration-thickness: 1.5px; white-space: nowrap; }
+  .cl-sample__now.is-changed { text-decoration: line-through; }
+  .cl-sample__new { font-family: var(--font-en); font-weight: 800; white-space: nowrap; text-align: right; min-width: 6.5em; }
+  html.is-senior .cl-rrow { grid-template-columns: minmax(0, 260px) auto; justify-content: start; }
+  html.is-senior .cl-rrow .label { grid-column: 1 / -1; }
+
+  /* ---------- 高齡友善模式：版面換排 ---------- */
+  html.is-senior .cl-stub { padding: 18px 22px; }
+  html.is-senior .cl-bbody { grid-template-columns: minmax(0, 1fr); }
+  html.is-senior .cl-ledger { border-right: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; }
+  html.is-senior .cl-ledger__list { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+  html.is-senior .cl-led { border-color: var(--line); background: var(--card); padding: 12px 14px; }
+  html.is-senior .cl-rates__body { grid-template-columns: minmax(0, 1fr); }
+  html.is-senior .cl-bstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1360px) {
+    .cl-bstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1280px) {
+    .cl-flow, html.is-senior .cl-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+    .cl-stub, .cl-stub:first-child, .cl-stub:last-child { --nl: 9px; --nr: 9px; border-radius: 0; }
+    .cl-stub:nth-child(odd) { --nl: 0px; border-radius: var(--r-md) 0 0 var(--r-md); }
+    .cl-stub:nth-child(even) { --nr: 0px; border-radius: 0 var(--r-md) var(--r-md) 0; }
+    .cl-stub:nth-child(3)::before { display: none; }
+    html.is-senior .cl-bench { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1100px) {
+    .cl-rates__body { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 960px) {
+    .cl-bench { grid-template-columns: minmax(0, 1fr); }
+    .cl-bbody { grid-template-columns: minmax(0, 1fr); }
+    .cl-ledger { border-right: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; }
+    .cl-ledger__list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .cl-stub { padding: 12px 14px 12px; }
+    .cl-stub__title { font-size: var(--fs-sm); padding-right: 24px; }
+    .cl-stub__num { font-size: var(--fs-xl); }
+    .cl-stub__icon { right: 12px; top: 12px; width: 20px; height: 20px; }
+    html.is-senior .cl-flow { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .cl-stub { --nl: 0px; --nr: 0px; border-radius: var(--r-md); }
+    html.is-senior .cl-stub::before { display: none; }
+    .cl-views { padding: 10px 12px; gap: 5px; }
+    .cl-view { padding: 6px 8px 7px; }
+    .cl-tools { padding: 10px 12px; }
+    .cl-facts { margin: 0 16px; }
+    .cl-sheet__bar { padding-left: 16px; }
+    .cl-sheet__grid, .cl-pad { padding-left: 16px; padding-right: 16px; }
+    .cl-sheet__foot { padding: 14px 16px; }
+    .cl-note { margin-left: 16px; margin-right: 16px; }
+    .cl-evi { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    html.is-senior .cl-evi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* 批次列表改成可橫向滑動的一排，省下垂直空間；右緣露出半張提示還有更多 */
+    .cl-ledger__list, html.is-senior .cl-ledger__list { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+    .cl-ledger__list > li { flex: 0 0 196px; scroll-snap-align: start; }
+    html.is-senior .cl-ledger__list > li { flex-basis: 236px; }
+    .cl-led { height: 100%; border-color: var(--line); background: var(--card); }
+    /* 批次清冊：每筆收成一張精簡卡片（案件＋合計、講師＋活動日、明細） */
+    .cl-btable.table--stack tr:not(.row-more) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 14px; }
+    .cl-btable.table--stack td { display: block; width: auto; padding: 0; }
+    .cl-btable.table--stack td::before { content: none; }
+    /* 用 flex-basis 控制換行：第一行案件＋合計、第二行講師＋活動日、第三行明細 */
+    .cl-btable.table--stack td:nth-child(1) { order: 1; flex: 1 1 58%; min-width: 0; }
+    .cl-btable.table--stack td:nth-child(6) { order: 2; margin-left: auto; font-size: var(--fs-md); }
+    .cl-btable.table--stack td:nth-child(6)::after { content: " 元"; font-family: var(--font-sans); font-size: var(--fs-xs); color: var(--ink-3); }
+    .cl-btable.table--stack td:nth-child(2) { order: 3; flex: 1 1 52%; min-width: 0; }
+    .cl-btable.table--stack td:nth-child(2) .cell-sub { display: inline; margin-left: 6px; }
+    .cl-btable.table--stack td:nth-child(3) { order: 4; font-size: var(--fs-sm); color: var(--ink-2); }
+    .cl-btable.table--stack td:nth-child(4), .cl-btable.table--stack td:nth-child(5), .cl-btable.table--stack td:nth-child(7) { order: 5; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+    .cl-btable.table--stack td:nth-child(4)::before, .cl-btable.table--stack td:nth-child(5)::before, .cl-btable.table--stack td:nth-child(7)::before { content: attr(data-label) " "; display: inline; padding: 0; font-weight: 600; }
+    .cl-btable.table--stack td:nth-child(4) .cell-sub { display: none; }
+    .cl-btable.table--stack td.col-more { order: 9; flex: 1 1 100%; }
+    html.is-senior .cl-tools .search, html.is-senior .cl-tools .select { flex: 1 1 100%; width: 100%; }
+    .cl-bdetail { padding: 16px; }
+    .cl-bhead .steps { min-width: 0; flex: 1 1 100%; }
+    .cl-btools .search { flex: 1 1 100%; }
+    .cl-rrow { grid-template-columns: minmax(0, 1fr) 136px; row-gap: 0; }
+    .cl-rrow .label { grid-column: 1; grid-row: 1; align-self: end; }
+    .cl-rrow .cl-rdiff { grid-column: 1; grid-row: 2; align-self: start; text-align: left; }
+    .cl-rrow .input-group { grid-column: 2; grid-row: 1 / span 2; }
+    html.is-senior .cl-rrow .label { grid-column: 1 / -1; }
+    html.is-senior .cl-rrow .input-group { grid-column: 1; grid-row: 2; }
+    html.is-senior .cl-rrow .cl-rdiff { grid-column: 2; grid-row: 2; align-self: center; }
+    .cl-impact { padding: 16px; }
+    .cl-impact__big { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .cl-impact__big > .i { display: none; }
+    html.is-senior .cl-impact__big { grid-template-columns: minmax(0, 1fr); }
+    .cl-sample { grid-template-columns: minmax(0, 1fr) auto; }
+    .cl-sample__name { grid-column: 1 / -1; }
+    .cl-sample__new { min-width: 0; }
+    .cl-msum { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link is-active" href="claims.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="目前位置"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>案件作業</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">成果與費用核銷</span></nav>
+          <h1 class="page-title">成果與費用核銷</h1>
+          <p class="page-lede" id="cl-lede"></p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn" type="button" id="cl-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出待勾稽清冊</button>
+          <a class="btn" href="#rates"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-settings"/></svg>示意費率設定</a>
+        </div>
+      </div>
+
+      <section class="cl-flow" id="cl-flow" aria-label="成果與費用流程現況">
+        <button type="button" class="cl-stub" data-go="late" id="cl-stub-done">
+          <span class="cl-stub__step"><span class="cl-stub__no">01</span>已執行</span>
+          <span class="cl-stub__title">待講師回填成果</span>
+          <span class="cl-stub__num"><span data-flow="done"></span><span class="cl-stub__unit">件</span></span>
+          <span class="cl-stub__meta" data-flow-meta="done"></span>
+          <svg class="i cl-stub__icon" aria-hidden="true" focusable="false"><use href="#i-presentation"/></svg>
+        </button>
+        <button type="button" class="cl-stub cl-stub--hot" data-go="audit" id="cl-stub-audit">
+          <span class="cl-stub__step"><span class="cl-stub__no">02</span>成果回填</span>
+          <span class="cl-stub__title">待承辦逐項勾稽</span>
+          <span class="cl-stub__num"><span data-flow="audit"></span><span class="cl-stub__unit">件</span></span>
+          <span class="cl-stub__meta" data-flow-meta="audit"></span>
+          <svg class="i cl-stub__icon" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg>
+        </button>
+        <button type="button" class="cl-stub cl-stub--money" data-go="batch-open" id="cl-stub-batch">
+          <span class="cl-stub__step"><span class="cl-stub__no">03</span>核銷</span>
+          <span class="cl-stub__title" data-flow-title="batch"></span>
+          <span class="cl-stub__num"><span data-flow="batch"></span><span class="cl-stub__unit">元</span></span>
+          <span class="cl-stub__meta" data-flow-meta="batch"></span>
+          <svg class="i cl-stub__icon" aria-hidden="true" focusable="false"><use href="#i-coin"/></svg>
+        </button>
+        <button type="button" class="cl-stub" data-go="batch-paid" id="cl-stub-paid">
+          <span class="cl-stub__step"><span class="cl-stub__no">04</span>結案</span>
+          <span class="cl-stub__title">本年度已撥付</span>
+          <span class="cl-stub__num"><span data-flow="paid"></span><span class="cl-stub__unit">元</span></span>
+          <span class="cl-stub__meta" data-flow-meta="paid"></span>
+          <svg class="i cl-stub__icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
+        </button>
+      </section>
+
+      <div class="cl-bench section-gap" id="queue">
+        <section class="card cl-queue" aria-labelledby="cl-q-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="cl-q-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-inbox"/></svg>成果與費用申請佇列</h2>
+              <p class="card__sub">點選案件，在右側逐項勾稽</p>
+            </div>
+            <div class="card__actions">
+              <label class="switch"><input type="checkbox" id="cl-mine"><span class="switch__track" aria-hidden="true"></span>只看我負責</label>
+            </div>
+          </div>
+          <div class="cl-views" id="cl-views" role="tablist" aria-label="佇列檢視">
+            <button type="button" class="cl-view" role="tab" id="cl-vt-audit" aria-controls="cl-qpanel" aria-selected="true" data-view="audit"><span class="cl-view__n" data-vn="audit"></span><span class="cl-view__label">待勾稽</span></button>
+            <button type="button" class="cl-view" role="tab" id="cl-vt-late" aria-controls="cl-qpanel" aria-selected="false" data-view="late"><span class="cl-view__n" data-vn="late"></span><span class="cl-view__label">逾期未回填</span></button>
+            <button type="button" class="cl-view" role="tab" id="cl-vt-pending" aria-controls="cl-qpanel" aria-selected="false" data-view="pending"><span class="cl-view__n" data-vn="pending"></span><span class="cl-view__label">待回填</span></button>
+            <button type="button" class="cl-view" role="tab" id="cl-vt-returned" aria-controls="cl-qpanel" aria-selected="false" data-view="returned"><span class="cl-view__n" data-vn="returned"></span><span class="cl-view__label">退回補正</span></button>
+          </div>
+          <div class="cl-tools">
+            <div class="cl-tools__row">
+              <div class="search">
+                <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+                <label class="sr-only" for="cl-q">搜尋佇列：案號、單位、講師</label>
+                <input id="cl-q" class="input input--sm" type="search" placeholder="案號、單位、講師" autocomplete="off">
+              </div>
+              <label class="sr-only" for="cl-sort">排序方式</label>
+              <select id="cl-sort" class="select select--sm">
+                <option value="due">期限近到遠</option>
+                <option value="amount">金額高到低</option>
+                <option value="date">活動日新到舊</option>
+              </select>
+            </div>
+            <div class="cl-chips" id="cl-chips" role="group" aria-label="勾稽結果篩選"></div>
+          </div>
+          <div class="cl-bulk" id="cl-bulk" hidden></div>
+          <div id="cl-qpanel" role="tabpanel" aria-labelledby="cl-vt-audit">
+            <ul class="cl-qlist" id="cl-qlist"></ul>
+          </div>
+          <div class="card__foot" id="cl-qfoot"></div>
+        </section>
+
+        <section class="card cl-sheet" id="cl-sheet" aria-labelledby="cl-sheet-title"></section>
+      </div>
+
+      <section class="card section-gap" id="batches" aria-labelledby="cl-b-title">
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="cl-b-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-coin"/></svg>核銷批次清冊</h2>
+            <p class="card__sub">每月勾稽通過的案件編成一批，會計覆核後於次月 12 日撥付講師帳戶</p>
+          </div>
+          <div class="card__actions">
+            <button class="btn btn--sm" type="button" id="cl-b-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出清冊</button>
+            <button class="btn btn--sm btn--primary" type="button" id="cl-b-send" data-toast="已通知會計黃國棟覆核 B115-11" data-toast-desc="清冊於 11/5（四）17:00 鎖定，之後勾稽通過的案件編入 12 月批次。"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg>送會計覆核</button>
+          </div>
+        </div>
+        <div class="cl-bbody">
+          <nav class="cl-ledger" aria-label="核銷批次">
+            <p class="cl-ledger__cap">115 年度批次</p>
+            <ul class="cl-ledger__list" id="cl-ledger"></ul>
+          </nav>
+          <div class="cl-bdetail">
+            <div class="cl-bhead" id="cl-bhead"></div>
+            <div class="cl-bstats">
+              <div class="cl-bstat"><span class="cl-bstat__label">案件數</span><span class="cl-bstat__val"><span data-bstat="n"></span><small>件</small></span></div>
+              <div class="cl-bstat"><span class="cl-bstat__label">講座鐘點費</span><span class="cl-bstat__val"><span data-bstat="lecture"></span><small>元</small></span></div>
+              <div class="cl-bstat"><span class="cl-bstat__label">交通費</span><span class="cl-bstat__val"><span data-bstat="travel"></span><small>元</small></span></div>
+              <div class="cl-bstat cl-bstat--total"><span class="cl-bstat__label">合計撥付</span><span class="cl-bstat__val"><span data-bstat="total"></span><small>元</small></span></div>
+            </div>
+            <div class="cl-btools">
+              <div class="search">
+                <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+                <label class="sr-only" for="cl-bq">搜尋本批次：案號、單位、講師</label>
+                <input id="cl-bq" class="input input--sm" type="search" placeholder="搜尋本批次案號、單位、講師" autocomplete="off">
+              </div>
+              <p class="cl-btools__note" id="cl-bnote"></p>
+            </div>
+            <div class="table-wrap">
+              <table class="table table--stack cl-btable" id="cl-btable">
+                <caption class="sr-only" id="cl-bcap">批次案件清冊</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-sort="id">案件</th>
+                    <th scope="col">講師</th>
+                    <th scope="col" data-sort="date">活動日</th>
+                    <th scope="col" class="num col-2nd">鐘點費</th>
+                    <th scope="col" class="num col-2nd">交通費</th>
+                    <th scope="col" class="num" data-sort="total">合計（元）</th>
+                    <th scope="col" class="col-2nd" data-sort="approved" aria-sort="descending">核准日</th>
+                  </tr>
+                </thead>
+                <tbody id="cl-btbody"></tbody>
+              </table>
+            </div>
+            <div class="cl-bfoot" id="cl-bpager"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-gap" id="rates" aria-labelledby="cl-r-title">
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="cl-r-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-settings"/></svg>示意費率設定</h2>
+            <p class="card__sub">講座鐘點費（示意費率，可於系統設定調整）・每節 50 分鐘・交通費依距離級距示意，皆非法規現值</p>
+          </div>
+          <div class="card__actions"><span class="badge badge--neutral">現行費率 115/03/02 起適用</span></div>
+        </div>
+        <div class="card__body cl-rates__body">
+          <form class="cl-rform" id="cl-rform" novalidate>
+            <div class="form-alert" role="alert"></div>
+            <fieldset class="cl-fs" id="cl-fs-rate">
+              <legend class="cl-fs__legend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-presentation"/></svg>講座鐘點費（每節）</legend>
+            </fieldset>
+            <fieldset class="cl-fs" id="cl-fs-travel">
+              <legend class="cl-fs__legend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-route"/></svg>交通費級距（每場往返）</legend>
+            </fieldset>
+            <div class="field">
+              <label class="label req" for="cl-eff">生效日</label>
+              <select class="select" id="cl-eff" required>
+                <option value="2026-12-01">115/12/01（下一批次起）</option>
+                <option value="2027-01-01">116/01/01（新年度起）</option>
+              </select>
+              <p class="hint">只適用生效日之後辦理的場次；已回填、已核准與已撥付的案件仍依原費率勾稽，不追溯。</p>
+            </div>
+            <div class="cl-rform__acts">
+              <button class="btn" type="button" id="cl-r-reset"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>還原現行費率</button>
+              <button class="btn btn--primary" type="submit"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>排定生效</button>
+            </div>
+          </form>
+          <aside class="cl-impact" id="cl-impact" aria-live="polite" aria-label="費率調整影響試算"></aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+
+  /* ---------- 共用查詢 ---------- */
+  const lect = c => App.lecturer(c.lecturer);
+  const place = c => `${App.county(c.county).name}${c.district}`;
+  const openBatch = () => App.BATCHES.find(b => b.status === '編製中');
+  const batchOf = id => App.BATCHES.find(b => b.id === id);
+  const isActive = c => c.status === 'active';
+  const reportedOn = c => App.logDate(c, 'report') || c.result.submitted;
+  const auditDue = c => App.addDays(reportedOn(c), 7);
+  const fileDue = c => App.addDays(c.date, 30);
+  const daysTo = iso => App.daysBetween(App.TODAY, iso);
+  const approvedOn = c => App.logDate(c, 'claim') || App.logDate(c, 'closed');
+  const remindedToday = c => c.reminders.some(r => r.startsWith(App.TODAY));
+  // 核算金額：依實際節數 × 費率＋交通費（尚未回填者以核定節數預估）
+  const calc = c => App.feeFor(c, c.result ? c.result.hours : c.sessions);
+  const dueText = n => (n < 0 ? `逾期 ${-n} 天` : n === 0 ? '今日到期' : `剩 ${n} 天`);
+  const SEV = { fail: 0, warn: 1, pass: 2 };
+  const countRes = (checks, r) => checks.filter(k => k.result === r).length;
+  const verdictText = checks => {
+    const f = countRes(checks, 'fail'), w = countRes(checks, 'warn');
+    return f || w ? [f ? `不符 ${f} 項` : '', w ? `警示 ${w} 項` : ''].filter(Boolean).join('・') : '五項全數通過';
+  };
+  const CHECK_SHORT = { people: '人數', hours: '時數', signin: '簽到', photos: '照片', amount: '金額' };
+
+  /* ---------- 佇列檢視（彼此不重疊） ---------- */
+  const VIEWS = {
+    audit: () => App.CASES.filter(c => isActive(c) && c.stage === 'report'),
+    late: () => App.CASES.filter(c => isActive(c) && c.stage === 'done' && !c.returned && daysTo(fileDue(c)) < 0),
+    pending: () => App.CASES.filter(c => isActive(c) && c.stage === 'done' && !c.returned && daysTo(fileDue(c)) >= 0),
+    returned: () => App.CASES.filter(c => isActive(c) && c.stage === 'done' && c.returned),
+  };
+  const viewOf = c => (c.stage === 'report' ? 'audit' : c.stage !== 'done' ? null : c.returned ? 'returned' : daysTo(fileDue(c)) < 0 ? 'late' : 'pending');
+  const state = { view: 'audit', verdict: 'all', q: '', mine: false, sort: 'due', sel: null, all: false };
+  // 佇列預設只列前幾件，讓左右兩欄高度相近；高齡模式每件較高，列得更少
+  const cap = () => (App.senior.on() ? 6 : 10);
+
+  function filtered() {
+    let list = VIEWS[state.view]();
+    if (state.view === 'audit' && state.verdict !== 'all') list = list.filter(c => App.claimVerdict(c) === state.verdict);
+    if (state.mine) list = list.filter(c => c.owner === App.ME);
+    const q = state.q.trim().toLowerCase();
+    if (q) list = list.filter(c => `${c.id} ${c.org} ${lect(c).name} ${place(c)}`.toLowerCase().includes(q));
+    const due = c => (c.stage === 'report' ? auditDue(c) : c.returned ? c.returned.due : fileDue(c));
+    const amt = c => (c.claimed ? c.claimed.total : calc(c).total);
+    const sev = c => (c.stage === 'report' ? SEV[App.claimVerdict(c)] : 3);
+    const sorters = {
+      due: (a, b) => due(a).localeCompare(due(b)) || sev(a) - sev(b) || a.id.localeCompare(b.id),
+      amount: (a, b) => amt(b) - amt(a) || a.id.localeCompare(b.id),
+      date: (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
+    };
+    return list.sort(sorters[state.sort]);
+  }
+
+  /* ---------- 網址參數：?view=late、?id=EE115-xxxx ---------- */
+  if (VIEWS[App.param('view')]) state.view = App.param('view');
+  const askedId = App.param('id');
+  if (askedId) {
+    const c = App.case(askedId);
+    if (c && isActive(c) && ['done', 'report', 'claim', 'closed'].includes(c.stage)) {
+      state.sel = c.id;
+      if (viewOf(c)) state.view = viewOf(c);
+    } else {
+      setTimeout(() => App.toast(c ? `${c.id} 尚未進入成果與核銷階段` : `找不到案號 ${askedId}`, {
+        desc: c ? `目前狀態：${isActive(c) ? App.stage(c.stage).label : App.EXITS[c.status]}。授課完成後才會出現在核銷佇列。` : '請確認案號格式，例如 EE115-0330。',
+        tone: c ? 'info' : 'warn',
+      }), 0);
+    }
+  }
+  $$('#cl-views .cl-view').forEach(t => t.setAttribute('aria-selected', String(t.dataset.view === state.view)));
+
+  /* ---------- 頁首說明與流程票根 ---------- */
+  function renderLede() {
+    const audit = VIEWS.audit();
+    const fails = audit.filter(c => App.claimVerdict(c) === 'fail').length;
+    $('#cl-lede').innerHTML = `講師於授課後 30 日內回填成果與費用，承辦在回填後 7 日內逐項勾稽；通過者編入當月核銷批次，次月 12 日撥付。目前 <b>${audit.length}</b> 件待勾稽，其中 <b>${fails}</b> 件有不符項目。`;
+  }
+  const flowNum = (key, v) => App.odometer($(`[data-flow="${key}"]`), v);
+  function renderFlow() {
+    const done = App.CASES.filter(c => isActive(c) && c.stage === 'done');
+    const late = VIEWS.late().length, ret = VIEWS.returned().length;
+    const audit = VIEWS.audit();
+    const by = v => audit.filter(c => App.claimVerdict(c) === v).length;
+    const ob = openBatch();
+    const paid = App.BATCHES.filter(b => b.status === '已撥付');
+    flowNum('done', done.length);
+    $('[data-flow-meta="done"]').innerHTML = `逾期 <b>${late}</b> 件・期限內 ${VIEWS.pending().length} 件${ret ? `・補正中 ${ret} 件` : ''}`;
+    flowNum('audit', audit.length);
+    $('[data-flow-meta="audit"]').innerHTML = `不符 <b>${by('fail')}</b>・警示 ${by('warn')}・通過 ${by('pass')}`;
+    $('[data-flow-title="batch"]').textContent = `${ob.id} 編製中`;
+    flowNum('batch', ob.total);
+    $('[data-flow-meta="batch"]').textContent = `${ob.cases.length} 件・預定 ${fmt.rocShort(ob.date)}撥付`;
+    flowNum('paid', sum(paid.map(b => b.total)));
+    $('[data-flow-meta="paid"]').textContent = `${paid.length} 批・${sum(paid.map(b => b.cases.length))} 件已結案`;
+  }
+
+  /* ---------- 佇列 ---------- */
+  function qItem(c) {
+    const l = lect(c);
+    const pressed = String(c.id === state.sel);
+    if (c.stage === 'report') {
+      const checks = App.claimChecks(c);
+      const v = App.claimVerdict(c);
+      const n = daysTo(auditDue(c));
+      return `<li><button type="button" class="cl-qitem" data-id="${c.id}" data-tone="${v}" aria-pressed="${pressed}">
+  <span class="cl-qitem__org"><span class="cl-pips" aria-hidden="true">${checks.map(k => `<i data-r="${k.result}"></i>`).join('')}</span><span class="cl-qitem__name">${esc(c.org)}</span></span>
+  <span class="cl-qitem__amt">${fmt.num(c.claimed.total)}<small> 元</small></span>
+  <span class="cl-qitem__meta"><span class="cl-qitem__id">${c.id}</span>・${esc(l.name)}・${fmt.rocShort(c.date)}</span>
+  <span class="cl-qitem__due${n < 0 ? ' is-late' : ''}">${dueText(n)}</span>
+  <span class="cl-qitem__verdict">勾稽：${verdictText(checks)}</span>
+</button></li>`;
+    }
+    const ret = c.returned;
+    const n = daysTo(ret ? ret.due : fileDue(c));
+    const tone = ret ? 'ret' : n < 0 ? 'late' : 'wait';
+    const sub = ret ? `退回 ${fmt.md(ret.iso)}・補 ${ret.items.length ? ret.items.map(k => CHECK_SHORT[k]).join('、') : '說明'}` : remindedToday(c) ? '今日已催交' : `授課後 ${App.daysBetween(c.date, App.TODAY)} 天`;
+    return `<li><button type="button" class="cl-qitem" data-id="${c.id}" data-tone="${tone}" aria-pressed="${pressed}">
+  <span class="cl-qitem__org"><span class="cl-qitem__name">${esc(c.org)}</span></span>
+  <span class="cl-qitem__amt">${fmt.num(ret ? c.claimed.total : calc(c).total)}<small> 元${ret ? '' : '（預估）'}</small></span>
+  <span class="cl-qitem__meta"><span class="cl-qitem__id">${c.id}</span>・${esc(l.name)}・${fmt.rocShort(c.date)}</span>
+  <span class="cl-qitem__due${n < 0 ? ' is-late' : ''}">${dueText(n)}</span>
+  <span class="cl-qitem__verdict">${esc(sub)}</span>
+</button></li>`;
+  }
+  const EMPTY = {
+    audit: ['目前沒有待勾稽的案件', '講師回填成果後會出現在這裡，回填後 7 日內完成勾稽。'],
+    late: ['沒有逾期未回填的成果', '所有已執行場次都在 30 日回填期限內。'],
+    pending: ['沒有等待回填的場次', '活動辦理完成後，會在這裡追蹤講師的成果回填進度。'],
+    returned: ['目前沒有退回補正中的案件', '勾稽有不符項目時可退回講師補正，補正期間的案件集中在這裡追蹤。'],
+  };
+  const CHIPS = [['all', '全部'], ['fail', '不符'], ['warn', '警示'], ['pass', '通過']];
+  function renderQueue() {
+    Object.keys(VIEWS).forEach(k => {
+      const n = VIEWS[k]().length;
+      const el = $(`[data-vn="${k}"]`);
+      el.textContent = n;
+      el.closest('.cl-view').classList.toggle('is-alert', (k === 'late' || k === 'returned') && n > 0);
+    });
+    const audit = VIEWS.audit();
+    const chips = $('#cl-chips');
+    chips.hidden = state.view !== 'audit';
+    chips.innerHTML = CHIPS.map(([v, label]) => {
+      const n = v === 'all' ? audit.length : audit.filter(c => App.claimVerdict(c) === v).length;
+      const dot = v === 'all' ? '' : `<i class="dot dot--${v === 'pass' ? 'ok' : v === 'warn' ? 'warn' : 'err'}" aria-hidden="true"></i>`;
+      return `<button type="button" class="chip cl-chip" data-verdict="${v}" aria-pressed="${state.verdict === v}">${dot}${label}<span class="chip__n">${n}</span></button>`;
+    }).join('');
+    const list = filtered();
+    $('#cl-qpanel').setAttribute('aria-labelledby', `cl-vt-${state.view}`);
+    const selAt = list.findIndex(c => c.id === state.sel);
+    const limit = state.all || selAt >= cap() ? list.length : cap();
+    const more = list.length - limit;
+    $('#cl-qlist').innerHTML = list.length ? list.slice(0, limit).map(qItem).join('') + (more > 0 ? `<li><button type="button" class="cl-more" id="cl-more">${icon('chevron-down')}再顯示 ${more} 件</button></li>` : '') : `<li class="cl-qempty">${App.emptyState({ title: (state.q || state.mine || state.verdict !== 'all') ? '沒有符合條件的案件' : EMPTY[state.view][0], text: (state.q || state.mine || state.verdict !== 'all') ? '試著清除搜尋或放寬篩選條件。' : EMPTY[state.view][1] })}</li>`;
+    const pass = state.view === 'audit' ? list.filter(c => App.claimVerdict(c) === 'pass') : [];
+    const bulk = $('#cl-bulk');
+    bulk.hidden = pass.length < 2;
+    bulk.innerHTML = pass.length < 2 ? '' : `<span>勾稽全數通過 <b>${pass.length}</b> 件，合計 <b>${fmt.num(sum(pass.map(c => c.claimed.total)))}</b> 元</span><button type="button" class="btn btn--sm btn--primary" id="cl-bulk-go">${icon('check')}一次核准</button>`;
+    const amount = sum(list.map(c => (c.claimed ? c.claimed.total : calc(c).total)));
+    $('#cl-qfoot').innerHTML = state.view === 'audit'
+      ? `<span>${list.length} 件・申請 ${fmt.money(amount)}</span><span class="cl-legend" aria-hidden="true"><span class="cl-pips"><i></i><i data-r="warn"></i><i data-r="fail"></i></span>依序為人數・時數・簽到・照片・金額</span>`
+      : `<span>${list.length} 件・${state.view === 'returned' ? '申請' : '預估'} ${fmt.money(amount)}</span><span>${state.view === 'returned' ? '補件後重新回到待勾稽' : '回填期限：授課後 30 日'}</span>`;
+  }
+  const viewTabs = App.tabs($('#cl-views'), {
+    onChange: (i, tab) => {
+      if (tab.dataset.view === state.view) return;
+      state.view = tab.dataset.view;
+      state.verdict = 'all';
+      renderQueue();
+      // 目前開啟的案件不在新檢視裡，就帶出新檢視的第一件
+      const list = filtered();
+      if (list.length && !list.some(c => c.id === state.sel)) select(list[0].id);
+    },
+  });
+  const setView = key => viewTabs.select(Object.keys(VIEWS).indexOf(key));
+
+  /* ---------- 勾稽單 ---------- */
+  let shownId = null, scanToken = 0, scanTimers = [];
+  const SEAL_RING = '<circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="3.5"/><circle cx="60" cy="60" r="47.5" fill="none" stroke="currentColor" stroke-width="1.4"/>'
+    + Array.from({ length: 30 }, (_, i) => { const a = i / 30 * Math.PI * 2; return `<circle cx="${(60 + 51.8 * Math.cos(a)).toFixed(2)}" cy="${(60 + 51.8 * Math.sin(a)).toFixed(2)}" r="1.4" fill="currentColor"/>`; }).join('')
+    + '<g transform="translate(51.5 15) scale(.36)" fill="currentColor"><path d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/><path d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/><circle cx="24" cy="13" r="5.6"/></g>';
+  const seal = (tone, main, sub) => `<div class="cl-seal" id="cl-seal" data-tone="${tone}" role="img" aria-label="勾稽章：${main}，${sub}"><svg class="cl-seal__ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${SEAL_RING}</svg><span class="cl-seal__main" aria-hidden="true">${main}</span><span class="cl-seal__sub" aria-hidden="true">${sub.replace(/^(\S+ )/, '<span class="cl-seal__verb">$1</span>')}</span></div>`;
+  const fact = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  const lecturerFact = c => { const l = lect(c); return fact('講師', `${App.avatar(l, 'sm')}<span>${App.lecturerLink(l)}<span class="cl-facts__sub">${esc(App.rate(l.rateKey).label)}</span></span>`); };
+  const ownerName = c => (c.owner ? App.staff(c.owner).name : '<span class="c-clay">未指派</span>');
+
+  function sheetBar(c, kicker, list) {
+    const i = list.indexOf(c);
+    return `<div class="cl-sheet__bar">
+  <p class="cl-sheet__kicker">${icon('receipt')}${kicker}${i >= 0 ? `<span class="cl-sheet__pos">第 ${i + 1}／${list.length} 件</span>` : ''}</p>
+  ${i >= 0 ? `<div class="cl-sheet__nav"><button type="button" class="icon-btn" data-act="prev"${i <= 0 ? ' disabled' : ''}>${icon('chevron-left')}<span class="icon-btn__label">上一件</span></button><button type="button" class="icon-btn" data-act="next"${i >= list.length - 1 ? ' disabled' : ''}><span class="icon-btn__label">下一件</span>${icon('chevron-right')}</button></div>` : ''}
+</div>`;
+  }
+  function sheetHead(c, aside) {
+    const badges = [App.stageBadge(c), c.returned ? App.statusBadge('clay', '退回補正中') : '', c.approval && c.approval.exception ? App.statusBadge('clay', '例外核准') : ''].join('');
+    return `<header class="cl-sheet__head">
+  <p class="cl-sheet__eyebrow">${App.caseLink(c)}${badges}</p>
+  <h2 class="cl-sheet__title" id="cl-sheet-title" tabindex="-1">${esc(c.org)}</h2>
+  <p class="cl-sheet__meta">${icon('map-pin')}<span>${place(c)}</span><span>${App.MODES[c.mode]}</span><span>${esc(App.topic(c.topic).short)}</span><span>${App.audience(c.audience).name}・申請 ${c.people} 人</span><span>承辦 ${ownerName(c)}</span></p>
+  ${aside}
+</header>`;
+  }
+
+  // 天平：左盤核算金額、右盤講師申請；每 1,000 元一枚錢幣，多出的錢幣以陶土色標出
+  function scaleSVG(left, right) {
+    const coins = v => Math.max(1, Math.min(7, Math.round(v / 1000)));
+    const nL = coins(left), nR = coins(right), base = Math.min(nL, nR);
+    const pt = (deg, r) => [160 + r * Math.sin(deg * Math.PI / 180), 44 - r * Math.cos(deg * Math.PI / 180)].map(v => v.toFixed(1)).join(' ');
+    const ticks = [-30, -20, -10, 0, 10, 20, 30].map(d => `<path class="cl-scale__tick${d ? '' : ' cl-scale__tick--zero'}" d="M${pt(d, 25)}L${pt(d, d ? 31 : 34)}" stroke-width="${d ? 1.5 : 2.5}" stroke-linecap="round"/>`).join('');
+    const pan = (cx, n, side) => `<g class="cl-scale__pan cl-scale__pan--${side}">
+  <path class="cl-scale__string" d="M${cx} 44L${cx - 34} 122M${cx} 44L${cx + 34} 122" fill="none" stroke-width="1.4"/>
+  ${Array.from({ length: n }, (_, i) => `<ellipse class="cl-coin${i >= base ? ' cl-coin--x' : ''}" style="--i:${i}" cx="${cx}" cy="${119 - i * 5}" rx="15" ry="4" stroke-width="1.5"/>`).join('')}
+  <path class="cl-scale__bowl" d="M${cx - 40} 122H${cx + 40}Q${cx + 35} 139 ${cx} 139Q${cx - 35} 139 ${cx - 40} 122Z" stroke-width="2"/>
+  <circle class="cl-scale__hook" cx="${cx}" cy="44" r="3.4"/>
+</g>`;
+    return `<svg class="cl-scale__svg" viewBox="0 0 320 186" aria-hidden="true" focusable="false">
+  <ellipse class="cl-scale__shadow" cx="160" cy="181" rx="70" ry="4"/>
+  <path class="cl-scale__base" d="M116 180H204L193 167H127Z"/>
+  <rect class="cl-scale__post" x="156" y="44" width="8" height="126" rx="3"/>
+  <path class="cl-scale__arc" d="M${pt(-34, 28)}A28 28 0 0 1 ${pt(34, 28)}" fill="none" stroke-width="1.5"/>
+  ${ticks}
+  <g class="cl-scale__beam">
+    <path class="cl-scale__needle" d="M160 44V17" stroke-width="2.5" stroke-linecap="round"/>
+    <circle class="cl-scale__needle-tip" cx="160" cy="16" r="3"/>
+    <rect class="cl-scale__bar" x="40" y="40" width="240" height="8" rx="4"/>
+    ${pan(46, nL, 'l')}
+    ${pan(274, nR, 'r')}
+    <circle class="cl-scale__pivot" cx="160" cy="44" r="7" stroke-width="3"/>
+  </g>
+</svg>`;
+  }
+  function scaleBlock(c, estimate) {
+    const l = lect(c);
+    const f = calc(c);
+    const claimed = estimate ? f.total : c.claimed.total;
+    const diff = claimed - f.total;
+    // 差額越大傾斜越多，上限 11 度，避免小差額看不出來、大差額翻過頭
+    const tilt = diff === 0 ? 0 : Math.sign(diff) * Math.min(11, 4 + Math.abs(diff) / f.total * 40);
+    const st = diff === 0 ? 'ok' : diff > 0 ? 'over' : 'under';
+    const hours = estimate ? c.sessions : Math.min(c.result.hours, c.sessions);
+    const km = c.mode === 'online' ? 0 : App.distanceKm(l.county, c.county);
+    const route = c.mode === 'online' ? '線上授課' : l.county === c.county ? `同縣市，約 ${km} 公里` : f.tier.island ? `${App.county(l.county).short} → ${App.county(c.county).short} 跨海` : `${App.county(l.county).short} → ${App.county(c.county).short} 約 ${km} 公里`;
+    const start = (tilt > 0 ? -7 : 7);
+    return `<div class="cl-scale" id="cl-scale" data-state="${st}" data-tilt="${tilt.toFixed(1)}deg" style="--tilt:${start}deg">
+  ${scaleSVG(f.total, claimed)}
+  <div class="cl-scale__read">
+    <p class="cl-scale__side"><span class="cl-scale__cap">${estimate ? '預估應付' : '核算金額'}</span><b class="cl-scale__amt">${fmt.num(f.total)}<small> 元</small></b></p>
+    <p class="cl-scale__verdict">${estimate ? `${icon('clock')}待回填` : diff === 0 ? `${icon('check')}金額相符` : `${icon('alert')}${diff > 0 ? '多報' : '少報'} ${fmt.num(Math.abs(diff))} 元`}</p>
+    <p class="cl-scale__side cl-scale__side--r"><span class="cl-scale__cap">講師申請</span><b class="cl-scale__amt">${estimate ? '—' : `${fmt.num(claimed)}<small> 元</small>`}</b></p>
+  </div>
+  <ol class="cl-calc" aria-label="核算方式">
+    <li><span class="cl-calc__op" aria-hidden="true"></span><span class="cl-calc__k">${estimate ? '核定節數' : '實際節數'}<small>（每節 ${App.FEE.minutes} 分鐘）</small></span><span class="cl-calc__v">${hours} 節</span></li>
+    <li><span class="cl-calc__op" aria-hidden="true">×</span><span class="cl-calc__k">${esc(f.rate.label)}／節</span><span class="cl-calc__v">${fmt.num(f.rate.rate)}</span></li>
+    <li><span class="cl-calc__op" aria-hidden="true">＋</span><span class="cl-calc__k">交通費<small>・${esc(route)}</small></span><span class="cl-calc__v">${fmt.num(f.travel)}</span></li>
+    <li class="cl-calc__total"><span class="cl-calc__op" aria-hidden="true">＝</span><span class="cl-calc__k">${estimate ? '預估應付' : '核算金額'}</span><span class="cl-calc__v">${fmt.num(f.total)} 元</span></li>
+  </ol>
+  <p class="cl-feenote">${esc(App.FEE.note)}；${esc(App.FEE.travelNote)}</p>
+</div>`;
+  }
+
+  // 活動照片與簽到表的縮圖：依案號固定亂數自繪，不引用外部圖片
+  const SHIRTS = ['#1F5D4A', '#3E8FB0', '#C8743C', '#56625D', '#9A5223', '#2A6D88', '#6E8B3D', '#B98A4E'];
+  function photoArt(seed) {
+    const r = App.rng(seed);
+    r(); r(); r();
+    const pick = a => a[Math.floor(r() * a.length)];
+    let s = '';
+    if (r() < .62) {
+      // 室內講座：投影幕、講師、兩排聽眾的背影
+      s += `<rect width="200" height="140" fill="${pick(['#EEE9DC', '#E1EEF4', '#EAF2ED'])}"/><rect y="100" width="200" height="40" fill="#D9D1BD"/>`;
+      s += '<rect x="34" y="12" width="100" height="60" rx="3" fill="#FFFDF8" stroke="#C9BFA8" stroke-width="2"/>';
+      if (r() < .5) s += '<path d="M66 64c0-21 15-38 40-40-1 25-17 40-40 40z" fill="#A8D672"/><path d="M66 64c9-11 18-18 28-23" stroke="#1F5D4A" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
+      else s += [0, 1, 2, 3].map(i => { const h = Math.round(14 + r() * 32); return `<rect x="${54 + i * 17}" y="${64 - h}" width="11" height="${h}" rx="1.5" fill="${i === 3 ? '#C8743C' : '#1F5D4A'}"/>`; }).join('');
+      s += `<circle cx="160" cy="48" r="8" fill="#5A4636"/><path d="M147 94c0-18 5-35 13-35s13 17 13 35z" fill="${pick(['#1F5D4A', '#C8743C', '#2A6D88'])}"/>`;
+      for (let row = 0; row < 2; row++) {
+        for (let i = 0; i < 8; i++) {
+          const x = 12 + i * 25 + (row ? 11 : 0) + r() * 4, y = row ? 128 : 111;
+          s += `<path d="M${(x - 11).toFixed(1)} ${y + 20}c0-11 4-16 11-16s11 5 11 16z" fill="${pick(SHIRTS)}"/><circle cx="${x.toFixed(1)}" cy="${y - 2}" r="6.6" fill="${pick(['#3B2E25', '#2B2420', '#5A4636'])}"/>`;
+        }
+      }
+    } else {
+      // 戶外觀察：天空、丘陵、樹與一群人
+      s += `<rect width="200" height="140" fill="#DDEDF4"/><circle cx="${Math.round(150 + r() * 30)}" cy="26" r="13" fill="#F2B27A"/>`;
+      s += '<path d="M0 78c40-22 80-26 120-10s60 8 80 0v72H0z" fill="#C3E39C"/><path d="M0 98c50-14 110-12 200 4v38H0z" fill="#A8D672"/>';
+      for (let i = 0; i < 5; i++) {
+        const x = 14 + i * 44 + r() * 10, h = 22 + r() * 14;
+        s += `<rect x="${(x - 2).toFixed(1)}" y="${(84 - h / 2).toFixed(1)}" width="4" height="${(h / 2 + 8).toFixed(1)}" fill="#5A4636"/><circle cx="${x.toFixed(1)}" cy="${(80 - h / 2).toFixed(1)}" r="${(h / 2.2).toFixed(1)}" fill="${i % 2 ? '#2B6D58' : '#1F5D4A'}"/>`;
+      }
+      for (let i = 0; i < 7; i++) {
+        const x = 30 + i * 22 + r() * 6, y = 104 + r() * 10;
+        s += `<path d="M${(x - 6).toFixed(1)} ${(y + 22).toFixed(1)}l1-14c0-4 2-6 5-6s5 2 5 6l1 14z" fill="${pick(SHIRTS)}"/><circle cx="${x.toFixed(1)}" cy="${(y + 3).toFixed(1)}" r="4.6" fill="#3B2E25"/>`;
+      }
+    }
+    return `<svg viewBox="0 0 200 140" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">${s}</svg>`;
+  }
+  function signinArt(seed) {
+    const r = App.rng(seed);
+    let s = '<rect width="200" height="140" fill="#E4DDCB"/><g transform="rotate(-3 100 70)"><rect x="36" y="8" width="128" height="130" fill="#FFFDF8" stroke="#C9BFA8"/>';
+    s += '<rect x="48" y="16" width="64" height="6" rx="2" fill="#56625D"/><rect x="48" y="25" width="40" height="3.5" rx="1.5" fill="#C9BFA8"/>';
+    s += '<path d="M46 36H154M46 36V134M72 36V134M128 36V134M154 36V134" stroke="#C9BFA8" fill="none"/>';
+    for (let i = 0; i < 9; i++) {
+      const y = 36 + (i + 1) * 10.8;
+      s += `<path d="M46 ${y.toFixed(1)}H154" stroke="#E4DDCB" fill="none"/><rect x="52" y="${(y - 6.5).toFixed(1)}" width="${(10 + r() * 8).toFixed(1)}" height="3" rx="1.5" fill="#C9BFA8"/>`;
+      if (i < 8) {
+        let d = `M${(78 + r() * 6).toFixed(1)} ${(y - 3).toFixed(1)}`;
+        for (let k = 0; k < 4; k++) d += `q${(3 + r() * 3).toFixed(1)} ${(-5 - r() * 3).toFixed(1)} ${(7 + r() * 4).toFixed(1)} ${(r() * 2 - 1).toFixed(1)}`;
+        s += `<path d="${d}" stroke="#2A4A7A" stroke-width="1.3" fill="none" stroke-linecap="round"/>`;
+      }
+    }
+    return `<svg viewBox="0 0 200 140" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">${s}</g></svg>`;
+  }
+  const photoMeta = (c, i) => {
+    const base = 4100 + Math.floor(App.rng(`${c.id}:files`)() * 800);
+    const r = App.rng(`${i}:${c.id}:size`);
+    r();
+    return { name: `IMG_${base + i * 3}.jpg`, size: `${(1.6 + r() * 2.6).toFixed(1)} MB` };
+  };
+  function evidence(c) {
+    const res = c.result;
+    const miss = (label, text, thin) => `<div class="cl-tile cl-tile--miss${thin ? ' cl-tile--thin' : ''}"><span class="cl-tile__img">${icon(thin ? 'alert' : 'x')}${text}</span><span class="cl-tile__cap">${label}<small>${thin ? '建議至少 2 張' : '需請講師補件'}</small></span></div>`;
+    const tiles = [res.signin
+      ? `<button type="button" class="cl-tile" data-evi="signin" aria-label="檢視簽到表"><span class="cl-tile__img">${signinArt(c.id)}</span><span class="cl-tile__cap">簽到表<small>PDF・${res.people} 人簽名</small></span></button>`
+      : miss('簽到表', '未上傳')];
+    for (let i = 0; i < res.photos; i++) tiles.push(`<button type="button" class="cl-tile" data-evi="photo" data-i="${i}" aria-label="檢視活動照片 ${i + 1}／${res.photos}"><span class="cl-tile__img">${photoArt(`${i}:${c.id}:photo`)}</span><span class="cl-tile__cap">活動照片 ${i + 1}<small>${photoMeta(c, i).name}</small></span></button>`);
+    if (res.photos === 0) tiles.push(miss('活動照片', '未上傳'));
+    if (res.photos === 1) tiles.push(miss('活動照片', '僅 1 張', true));
+    return `<section class="cl-block cl-pad" aria-labelledby="cl-h-evi"><h3 class="cl-block__title" id="cl-h-evi">${icon('image')}佐證資料<span class="cl-block__count">講師回填於 ${fmt.roc(reportedOn(c))}</span></h3><div class="cl-evi">${tiles.join('')}</div></section>`;
+  }
+
+  function auditSheet(c, list) {
+    const checks = App.claimChecks(c);
+    const v = App.claimVerdict(c);
+    const n = daysTo(auditDue(c));
+    const ob = openBatch();
+    const SEAL = { pass: ['ok', '通過'], warn: ['warn', '警示'], fail: ['err', '補正'] }[v];
+    const HINT = {
+      pass: ['check', '五項勾稽全數通過，可直接核准；核准後自動帶出下一件。'],
+      warn: ['alert', '有警示項目，確認後仍可核准；警示內容會記錄在處理紀錄。'],
+      fail: ['alert', '有不符項目，建議退回講師補正；補件後會重新回到待勾稽。'],
+    }[v];
+    const acts = v === 'fail'
+      ? `<button type="button" class="btn" data-act="approve" id="cl-approve">例外核准</button><button type="button" class="btn btn--clay" data-act="return">${icon('swap')}退回補正</button>`
+      : `<button type="button" class="btn btn--danger" data-act="return">${icon('swap')}退回補正</button><button type="button" class="btn btn--primary" data-act="approve" id="cl-approve">${icon('check')}核准並編入 ${ob.id}</button>`;
+    return sheetBar(c, '勾稽單', list)
+      + sheetHead(c, seal(SEAL[0], SEAL[1], `勾稽 ${fmt.md(App.TODAY)}`))
+      + `<dl class="cl-facts">${lecturerFact(c)}${fact('活動日', `${fmt.rocShort(c.date)} ${c.time}`)}${fact('講師回填', fmt.roc(reportedOn(c)))}${fact('勾稽期限', `<span class="${n < 0 ? 'is-late' : ''}">${fmt.md(auditDue(c))}・${dueText(n)}</span>`)}</dl>`
+      + `<div class="cl-sheet__grid">
+  <section class="cl-block" aria-labelledby="cl-h-chk"><h3 class="cl-block__title" id="cl-h-chk">${icon('clipboard')}逐項勾稽<span class="cl-block__count">${verdictText(checks)}</span></h3><div class="cl-scan" id="cl-scan"><span class="cl-beam" aria-hidden="true"></span>${App.checkRows(checks)}</div></section>
+  <section class="cl-block" aria-labelledby="cl-h-amt"><h3 class="cl-block__title" id="cl-h-amt">${icon('coin')}金額勾稽</h3>${scaleBlock(c)}</section>
+</div>`
+      + evidence(c)
+      + `<footer class="cl-sheet__foot"><p class="cl-sheet__hint is-${v}">${icon(HINT[0])}<span>${HINT[1]}</span></p><div class="cl-sheet__acts">${acts}</div></footer>`;
+  }
+
+  function waitSheet(c, list) {
+    const l = lect(c);
+    const ret = c.returned;
+    const due = ret ? ret.due : fileDue(c);
+    const n = daysTo(due);
+    const steps = [['活動辦理', fmt.md(c.date)], ['講師回填', ret ? '補正中' : n < 0 ? '已逾期' : '等待中'], ['承辦勾稽', ''], ['編入批次', ''], ['撥付', '']];
+    const note = ret
+      ? `<div class="notice notice--clay cl-note">${icon('swap')}<div><b>${fmt.roc(ret.iso)} 退回補正</b>（${App.staff(App.ME).name}）${ret.items.length ? `：${ret.items.map(k => esc(RETURN_ITEMS[k])).join('、')}` : ''}。<br>補正說明：${esc(ret.reason)}</div></div>`
+      : n < 0 ? `<div class="notice notice--warn cl-note">${icon('alert')}<div><b>已逾回填期限 ${-n} 天</b>（期限 ${fmt.roc(due)}）。逾期講師將暫停後續邀約，建議先電話了解原因。</div></div>` : '';
+    const done = remindedToday(c);
+    return sheetBar(c, ret ? '補正追蹤' : '回填追蹤', list)
+      + sheetHead(c, `<div class="cl-count${n < 0 ? ' is-late' : ''}"><b>${Math.abs(n)}</b><span>${n < 0 ? '天已逾期' : n === 0 ? '今日到期' : '天後到期'}</span></div>`)
+      + `<dl class="cl-facts">${lecturerFact(c)}${fact('活動日', `${fmt.rocShort(c.date)} ${c.time}`)}${fact(ret ? '補件期限' : '回填期限', `<span class="${n < 0 ? 'is-late' : ''}">${fmt.roc(due)}</span>`)}${fact('已催交', c.reminders.length ? `${c.reminders.length} 次` : '尚未催交')}</dl>`
+      + note
+      + `<div class="cl-sheet__grid">
+  <section class="cl-block" aria-labelledby="cl-h-prog"><h3 class="cl-block__title" id="cl-h-prog">${icon('route')}回填進度</h3><ol class="steps cl-steps">${steps.map((s, i) => `<li class="step${i === 0 ? ' is-done' : i === 1 ? ' is-current' : ''}"><span class="step__dot">${i === 0 ? icon('check') : i + 1}</span><span class="step__label">${s[0]}${s[1] ? `<small>${s[1]}</small>` : ''}</span></li>`).join('')}</ol>
+    <ul class="meta-list mt-4"><li>${icon('phone')}${esc(l.phone)}</li><li>${icon('mail')}${esc(l.email)}</li></ul></section>
+  <section class="cl-block" aria-labelledby="cl-h-est"><h3 class="cl-block__title" id="cl-h-est">${icon('coin')}${ret ? '金額勾稽' : '預估應付金額'}</h3>${ret ? scaleBlock(c) : scaleBlock(c, true)}</section>
+</div>`
+      + `<footer class="cl-sheet__foot"><p class="cl-sheet__hint">${icon('info')}<span>${ret ? '講師補件後，案件會自動回到「待勾稽」。' : '講師回填成果、簽到表與照片後，會自動進入「待勾稽」。'}</span></p><div class="cl-sheet__acts">
+  <a class="btn btn--ghost" href="schedule.html?id=${c.id}">${icon('calendar')}場次資訊</a>
+  ${done ? `<span class="cl-done">${icon('check')}今日已${ret ? '催補件' : '催交'}</span>` : `<button type="button" class="btn btn--clay" data-act="remind">${icon('send')}${ret ? '催補件' : '催交成果'}</button>`}
+</div></footer>`;
+  }
+
+  function settledSheet(c, list) {
+    const b = batchOf(c.batch);
+    const open = b.status === '編製中';
+    const checks = App.claimChecks(c);
+    const closed = c.stage === 'closed';
+    const ap = c.approval;
+    return sheetBar(c, '核銷紀錄', list)
+      + sheetHead(c, seal('forest', closed ? '撥付' : '核准', `${closed ? '撥付' : '核准'} ${fmt.md(closed ? App.logDate(c, 'closed') : approvedOn(c))}`))
+      + `<dl class="cl-facts">${lecturerFact(c)}${fact('活動日', fmt.rocShort(c.date))}${fact('核准日', fmt.roc(approvedOn(c)))}${fact('核銷批次', `${b.id}・${b.status}`)}</dl>`
+      + `<div class="notice notice--ok cl-note">${icon('check')}<div>${open ? `已編入 <b>${b.id}</b>（編製中），預定 ${fmt.rocLong(b.date)}撥付。` : `<b>${b.id}</b> 已於 ${fmt.roc(b.date)} 撥付，案件結案。`}${ap && ap.cut ? `核准時已依核算金額核減 ${fmt.money(ap.cut)}。` : ''}${ap && ap.exception ? `<br>例外核准理由：${esc(ap.exception)}（送計畫督導覆核）` : ''}</div></div>`
+      + `<div class="cl-sheet__grid">
+  <section class="cl-block" aria-labelledby="cl-h-chk"><h3 class="cl-block__title" id="cl-h-chk">${icon('clipboard')}勾稽結果<span class="cl-block__count">${verdictText(checks)}</span></h3><div class="cl-scan" id="cl-scan"><span class="cl-beam" aria-hidden="true"></span>${App.checkRows(checks)}</div></section>
+  <section class="cl-block" aria-labelledby="cl-h-amt"><h3 class="cl-block__title" id="cl-h-amt">${icon('coin')}金額勾稽</h3>${scaleBlock(c)}</section>
+</div>`
+      + `<footer class="cl-sheet__foot"><p class="cl-sheet__hint">${icon('info')}<span>${open ? '會計覆核前如需更正，請聯絡會計黃國棟退回本批次。' : '已撥付案件僅供查閱。'}</span></p><div class="cl-sheet__acts"><a class="btn btn--ghost" href="application.html?id=${c.id}">${icon('file')}完整處理紀錄</a><button type="button" class="btn btn--primary" data-act="to-batch">${icon('list')}在批次清冊中查看</button></div></footer>`;
+  }
+
+  function renderSheet() {
+    scanTimers.forEach(clearTimeout);
+    scanTimers = [];
+    scanToken++;
+    const host = $('#cl-sheet');
+    const c = state.sel ? App.case(state.sel) : null;
+    if (!c) {
+      shownId = null;
+      host.innerHTML = App.emptyState({ title: '從左側佇列選一件開始', text: '勾稽單會逐項比對人數、時數、簽到表、照片與金額。' });
+      return;
+    }
+    // 換了一件才重跑掃描與秤量；同一件因資料同步重繪時直接呈現結果
+    const fresh = c.id !== shownId;
+    shownId = c.id;
+    const list = filtered();
+    if (c.stage === 'report') host.innerHTML = auditSheet(c, list);
+    else if (c.stage === 'done') host.innerHTML = waitSheet(c, list);
+    else host.innerHTML = settledSheet(c, list);
+    runScan(fresh && c.stage === 'report');
+    if (c.stage === 'done' && fresh && !App.calm()) {
+      const sc = $('#cl-scale');
+      requestAnimationFrame(() => requestAnimationFrame(() => sc.style.setProperty('--tilt', sc.dataset.tilt)));
+    } else if (c.stage === 'done') settleScale();
+  }
+  function settleScale() {
+    const sc = $('#cl-scale');
+    if (!sc) return;
+    sc.classList.add('is-static');
+    sc.style.setProperty('--tilt', sc.dataset.tilt);
+  }
+  function runScan(animate) {
+    const wrap = $('#cl-scan');
+    if (!wrap) return;
+    const sealEl = $('#cl-seal'), sc = $('#cl-scale');
+    if (!animate || App.calm()) {
+      wrap.classList.remove('is-scanning');
+      settleScale();
+      return;
+    }
+    // 先停在「待掃描」狀態，勾稽單進入視窗才開始：五項依序亮起、天平秤定、最後蓋章
+    wrap.classList.add('is-scanning');
+    sealEl.classList.add('is-pending');
+    sc.classList.add('is-weighing');
+    const token = scanToken;
+    App.whenVisible(wrap, () => {
+      if (token !== scanToken) return;
+      const rows = $$('.check-row', wrap);
+      const beam = $('.cl-beam', wrap);
+      rows.forEach((row, i) => scanTimers.push(setTimeout(() => {
+        beam.style.height = `${row.offsetHeight + 4}px`;
+        beam.style.transform = `translateY(${row.offsetTop - 2}px)`;
+        beam.classList.add('is-on');
+        scanTimers.push(setTimeout(() => {
+          row.classList.add('is-done');
+          if (i === rows.length - 1) sc.style.setProperty('--tilt', sc.dataset.tilt);
+        }, 150));
+      }, 60 + i * 230)));
+      scanTimers.push(setTimeout(() => {
+        beam.classList.remove('is-on');
+        wrap.classList.remove('is-scanning');
+        $$('.check-row', wrap).forEach(row => row.classList.add('is-done'));
+        sealEl.classList.remove('is-pending');
+        sealEl.classList.add('is-stamped');
+      }, 60 + rows.length * 230 + 260));
+    });
+  }
+
+  function select(id, o = {}) {
+    state.sel = id;
+    $$('#cl-qlist .cl-qitem').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+    // 用上一件／下一件走到收合範圍外時，把佇列展開到選中的那件
+    if (!$(`#cl-qlist .cl-qitem[data-id="${id}"]`) && filtered().some(c => c.id === id)) renderQueue();
+    renderSheet();
+    // 單欄版面（手機、平板、高齡模式窄螢幕）時把勾稽單捲進視窗
+    if (o.reveal && getComputedStyle($('#queue')).gridTemplateColumns.split(' ').length === 1) {
+      $('#cl-sheet').scrollIntoView({ behavior: App.calm() ? 'auto' : 'smooth', block: 'start' });
+    }
+  }
+  $('#cl-qlist').addEventListener('click', e => {
+    if (e.target.closest('#cl-more')) { state.all = true; renderQueue(); return; }
+    const b = e.target.closest('.cl-qitem');
+    if (b) select(b.dataset.id, { reveal: true });
+  });
+
+  /* ---------- 核准 ---------- */
+  function approve(c, exception) {
+    const b = openBatch();
+    const before = Object.assign({}, c.claimed);
+    const f = calc(c);
+    const cut = c.claimed.total - f.total;
+    if (cut) c.claimed = { lecture: f.lecture, travel: f.travel, total: f.total };
+    const entry = ['claim', App.TODAY];
+    c.log.push(entry);
+    c.stage = 'claim';
+    c.batch = b.id;
+    b.cases.push(c.id);
+    c.approval = { iso: App.TODAY, by: App.ME, cut, exception: exception || '' };
+    return () => {
+      c.claimed = before;
+      c.log.splice(c.log.indexOf(entry), 1);
+      c.stage = 'report';
+      delete c.batch;
+      delete c.approval;
+      b.cases.splice(b.cases.indexOf(c.id), 1);
+    };
+  }
+  function nextAfter(list) {
+    const visible = filtered();
+    const pos = visible.indexOf(list[list.length - 1]);
+    return visible.slice(pos + 1).find(c => !list.includes(c)) || visible.slice(0, pos).reverse().find(c => !list.includes(c)) || null;
+  }
+  function commitApprove(list, exception, fromEl) {
+    const from = fromEl ? fromEl.getBoundingClientRect() : null;
+    const next = nextAfter(list);
+    const undos = list.map(c => approve(c, exception));
+    const total = sum(list.map(c => c.claimed.total));
+    if (list.some(c => c.id === state.sel)) state.sel = next ? next.id : null;
+    bs.id = openBatch().id;
+    bs.flash = new Set(list.map(c => c.id));
+    App.emit('claim-approve');
+    setTimeout(() => { bs.flash = null; }, 1700);
+    // 等對話框收起再讓金額飛進批次，否則會被 top layer 的背景蓋住
+    setTimeout(() => flyToBatch(from, fmt.money(total)), 220);
+    const b = openBatch();
+    App.toast(list.length > 1 ? `已核准 ${list.length} 件，編入 ${b.id}` : `已核准 ${list[0].id}，編入 ${b.id}`, {
+      desc: `${list.length > 1 ? `合計 ${fmt.money(total)}` : `${list[0].org}・${fmt.money(total)}`}；${b.id} 目前 ${b.cases.length} 件，合計 ${fmt.money(b.total)}。`,
+      action: { label: '復原', onClick: () => { undos.reverse().forEach(u => u()); state.sel = list[0].id; bs.flash = null; App.emit('claim-approve-undo'); } },
+    });
+  }
+  function flyToBatch(from, label) {
+    if (!from || App.calm()) return;
+    const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; };
+    const stub = $('#cl-stub-batch');
+    // 票根或清冊在視窗內就飛進去；都不在（已往下捲）就朝上方票根的方向飛出視窗
+    const to = [stub, $(`.cl-led[data-batch="${openBatch().id}"]`)].find(inView) || stub;
+    const t = to.getBoundingClientRect();
+    const chip = document.createElement('div');
+    chip.className = 'cl-fly';
+    chip.setAttribute('aria-hidden', 'true');
+    chip.innerHTML = `${icon('coin')}${esc(label)}`;
+    document.body.appendChild(chip);
+    const w = chip.offsetWidth, h = chip.offsetHeight;
+    const x0 = from.left + from.width / 2 - w / 2, y0 = from.top + from.height / 2 - h / 2;
+    const x1 = t.left + t.width / 2 - w / 2, y1 = Math.max(t.top + t.height / 2 - h / 2, -h - 20);
+    const peak = Math.min(y0, y1) - 70;
+    chip.animate([
+      { transform: `translate(${x0}px, ${y0}px) scale(.6)`, opacity: 0 },
+      { transform: `translate(${x0}px, ${y0 - 22}px) scale(1)`, opacity: 1, offset: .16 },
+      { transform: `translate(${(x0 + x1) / 2}px, ${peak}px) scale(1)`, opacity: 1, offset: .58 },
+      { transform: `translate(${x1}px, ${y1}px) scale(.45)`, opacity: .15 },
+    ], { duration: 980, easing: 'cubic-bezier(.45, 0, .25, 1)' }).onfinish = () => {
+      chip.remove();
+      to.classList.remove('is-hit');
+      void to.offsetWidth;
+      to.classList.add('is-hit');
+    };
+  }
+  function openApprove(c, fromEl) {
+    const checks = App.claimChecks(c);
+    const f = calc(c);
+    const b = openBatch();
+    const cut = c.claimed.total - f.total;
+    const hard = checks.filter(k => k.result === 'fail' && k.key !== 'amount');
+    const warns = checks.filter(k => k.result === 'warn');
+    App.modal({
+      title: hard.length ? `例外核准 ${c.id}` : `核准 ${c.id} 並編入 ${b.id}`,
+      lead: `${c.org}・${lect(c).name} 講師・${fmt.rocShort(c.date)}`,
+      icon: 'coin', tone: hard.length ? 'clay' : undefined,
+      body: `<form class="cl-mform" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <dl class="cl-msum"><div><dt>核准金額</dt><dd class="cl-msum__amt">${fmt.money(f.total)}</dd></div><div><dt>編入批次</dt><dd>${b.id}（目前 ${b.cases.length} 件）</dd></div><div><dt>預定撥付</dt><dd>${fmt.rocLong(b.date)}</dd></div></dl>
+  ${cut ? `<p class="notice notice--clay">${icon('coin')}<span>講師申請 <b>${fmt.money(c.claimed.total)}</b>，核算為 <b>${fmt.money(f.total)}</b>；核准時將依核算金額${cut > 0 ? '核減' : '補足'} <b>${fmt.money(Math.abs(cut))}</b>，並通知講師。</span></p>` : ''}
+  ${warns.length ? `<div class="field"><p class="label">警示項目</p><ul class="cl-mlist">${warns.map(k => `<li>${icon('alert')}<span><b>${esc(k.label)}</b>：${esc(k.detail)}</span></li>`).join('')}</ul><label class="check mt-2"><input type="checkbox" name="ack" required data-error="請先確認已檢視警示項目"><span class="check__box">${icon('check')}</span>已檢視上述警示，確認可以核准</label></div>` : ''}
+  ${hard.length ? `<div class="field"><label class="label req" for="cl-exc">例外核准理由</label><textarea class="textarea" id="cl-exc" name="exception" required minlength="10" data-error="請填寫至少 10 個字的例外核准理由" placeholder="例如：簽到表正本由學校另以公文寄送，已先取得掃描檔"></textarea><p class="hint">有 ${hard.length} 項不符（${hard.map(k => k.label.split(' ')[0]).join('、')}），依規定應退回補正；例外核准會送計畫督導 ${App.staff('S06').name} 覆核。</p></div>` : ''}
+  ${!cut && !warns.length && !hard.length ? `<p class="notice notice--ok">${icon('check')}<span>五項勾稽全數通過，核准後通知講師並編入撥付清冊。</span></p>` : ''}
+</form>`,
+      actions: [
+        { label: '取消' },
+        {
+          label: hard.length ? '送出例外核准' : '核准並編入批次', variant: 'primary',
+          onClick: (close, d) => {
+            const form = $('form', d);
+            if (!App.validate(form)) return false;
+            commitApprove([c], form.exception ? form.exception.value.trim() : '', fromEl);
+          },
+        },
+      ],
+    });
+  }
+  function openBulk(fromEl) {
+    const list = filtered().filter(c => c.stage === 'report' && App.claimVerdict(c) === 'pass');
+    const b = openBatch();
+    App.modal({
+      title: `一次核准 ${list.length} 件`, lead: `勾稽五項全數通過，核准後編入 ${b.id}，預定 ${fmt.rocShort(b.date)}撥付`, icon: 'check',
+      body: `<div class="table-wrap"><table class="table table--compact"><caption class="sr-only">將核准的案件</caption><thead><tr><th scope="col">案件</th><th scope="col">講師</th><th scope="col" class="num">金額（元）</th></tr></thead><tbody>${list.map(c => `<tr><td><span class="cell-main">${c.id}</span><span class="cell-sub">${esc(c.org)}</span></td><td>${esc(lect(c).name)}</td><td class="num">${fmt.num(c.claimed.total)}</td></tr>`).join('')}</tbody></table></div><p class="notice notice--ok mt-4">${icon('coin')}<span>合計 <b>${fmt.money(sum(list.map(c => c.claimed.total)))}</b>；可從通知的「復原」撤回。</span></p>`,
+      actions: [{ label: '取消' }, { label: `核准 ${list.length} 件`, variant: 'primary', onClick: () => commitApprove(list, '', fromEl) }],
+    });
+  }
+
+  /* ---------- 退回補正 ---------- */
+  const RETURN_ITEMS = { people: '說明實到人數落差', hours: '確認實際授課節數', signin: '補上傳簽到表', photos: '補上傳活動照片（至少 2 張）', amount: '修正費用申請金額' };
+  function openReturn(c) {
+    const checks = App.claimChecks(c);
+    App.modal({
+      title: `退回 ${c.id} 給講師補正`, lead: `${lect(c).name} 講師・${c.org}`, icon: 'swap', tone: 'clay',
+      body: `<form class="cl-mform" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <fieldset class="field"><legend class="label">需補正項目</legend><div class="cl-mitems">${checks.map(k => `<label class="check"><input type="checkbox" name="items" value="${k.key}"${k.result !== 'pass' ? ' checked' : ''}><span class="check__box">${icon('check')}</span><span>${esc(RETURN_ITEMS[k.key])}${k.result !== 'pass' ? App.statusBadge(k.result === 'warn' ? 'warn' : 'err', k.result === 'warn' ? '警示' : '不符') : ''}</span></label>`).join('')}</div></fieldset>
+  <div class="field"><label class="label req" for="cl-ret-reason">補正說明</label><textarea class="textarea" id="cl-ret-reason" name="reason" required minlength="6" data-error="請填寫至少 6 個字的補正說明，講師會在通知中看到">${esc(checks.filter(k => k.result !== 'pass').map(k => k.detail).join('；'))}</textarea></div>
+  <div class="form-grid">
+    <div class="field"><label class="label" for="cl-ret-days">補件期限</label><select class="select" id="cl-ret-days" name="days"><option value="7">7 日內（${fmt.md(App.addDays(App.TODAY, 7))}）</option><option value="10">10 日內（${fmt.md(App.addDays(App.TODAY, 10))}）</option><option value="14">14 日內（${fmt.md(App.addDays(App.TODAY, 14))}）</option></select></div>
+    <div class="field"><span class="label">通知方式</span><label class="check"><input type="checkbox" name="notify" checked><span class="check__box">${icon('check')}</span>Email 與簡訊通知講師</label></div>
+  </div>
+</form>`,
+      actions: [
+        { label: '取消' },
+        {
+          label: '確認退回', variant: 'clay',
+          onClick: (close, d) => {
+            const form = $('form', d);
+            if (!App.validate(form)) return false;
+            commitReturn(c, {
+              items: $$('input[name="items"]:checked', form).map(x => x.value),
+              reason: form.reason.value.trim(),
+              days: Number(form.days.value),
+              notify: form.notify.checked,
+            });
+          },
+        },
+      ],
+    });
+  }
+  function commitReturn(c, data) {
+    const next = nextAfter([c]);
+    c.stage = 'done';
+    c.returned = { iso: App.TODAY, items: data.items, reason: data.reason, due: App.addDays(App.TODAY, data.days) };
+    if (state.sel === c.id) state.sel = next ? next.id : null;
+    App.emit('claim-return');
+    App.toast(`已退回 ${c.id} 給 ${lect(c).name} 講師補正`, {
+      desc: `補件期限 ${fmt.rocShort(c.returned.due)}；${data.notify ? '已寄送 Email 與簡訊通知。' : '未寄送通知，請另行聯繫。'}案件移到「退回補正」追蹤。`,
+      tone: 'info',
+      action: { label: '復原', onClick: () => { c.stage = 'report'; delete c.returned; state.sel = c.id; App.emit('claim-return-undo'); } },
+    });
+  }
+
+  /* ---------- 催交、附件預覽 ---------- */
+  function remind(c) {
+    const stamp = `${App.TODAY}T10:30`;
+    c.reminders.push(stamp);
+    App.emit('remind');
+    App.toast(c.returned ? `已催 ${lect(c).name} 講師補件` : `已提醒 ${lect(c).name} 講師回填成果`, {
+      desc: `${c.id} ${c.org}：已寄送 Email 與簡訊，並記錄在處理紀錄。`,
+      action: { label: '復原', onClick: () => { c.reminders.splice(c.reminders.indexOf(stamp), 1); App.emit('remind-undo'); } },
+    });
+  }
+  function openEvidence(c, kind, start) {
+    const n = c.result.photos;
+    let cur = start;
+    const body = () => {
+      if (kind === 'signin') {
+        const r = App.rng(`${c.id}:signin`);
+        return `<figure class="cl-preview"><div class="cl-preview__img">${signinArt(c.id)}</div><figcaption><span>簽到表_${c.id}.pdf・${Math.round(180 + r() * 240)} KB</span><span>簽名 <b>${c.result.people}</b> 人／申請 <b>${c.people}</b> 人</span></figcaption></figure>`;
+      }
+      const m = photoMeta(c, cur);
+      return `<figure class="cl-preview"><div class="cl-preview__img">${photoArt(`${cur}:${c.id}:photo`)}</div><figcaption><span>${m.name}・${m.size}</span><span>上傳 ${fmt.roc(reportedOn(c))}・${esc(lect(c).name)} 講師</span></figcaption></figure>`;
+    };
+    const title = () => (kind === 'signin' ? '簽到表' : `活動照片 ${cur + 1}／${n}`);
+    const step = d => (close, dlg) => { cur = (cur + d + n) % n; $('.modal__title', dlg).textContent = title(); $('.modal__body', dlg).innerHTML = body(); };
+    App.modal({
+      title: title(), lead: `${c.id} ${c.org}`, icon: kind === 'signin' ? 'file' : 'image', tone: 'sky', size: 'lg', body: body(),
+      actions: kind === 'photo' && n > 1
+        ? [{ label: '上一張', keepOpen: true, onClick: step(-1) }, { label: '下一張', keepOpen: true, onClick: step(1) }, { label: '關閉', variant: 'primary' }]
+        : [{ label: '關閉', variant: 'primary' }],
+    });
+  }
+
+  $('#cl-sheet').addEventListener('click', e => {
+    const c = state.sel && App.case(state.sel);
+    if (!c) return;
+    const act = e.target.closest('[data-act]');
+    const evi = e.target.closest('[data-evi]');
+    if (evi) { openEvidence(c, evi.dataset.evi, Number(evi.dataset.i || 0)); return; }
+    if (!act) return;
+    const a = act.dataset.act;
+    if (a === 'approve') openApprove(c, act);
+    else if (a === 'return') openReturn(c);
+    else if (a === 'remind') remind(c);
+    else if (a === 'to-batch') goToBatchRow(c);
+    else if (a === 'prev' || a === 'next') {
+      const list = filtered();
+      const target = list[list.indexOf(c) + (a === 'next' ? 1 : -1)];
+      if (!target) return;
+      select(target.id);
+      const again = $(`#cl-sheet [data-act="${a}"]`);
+      (again && !again.disabled ? again : $('#cl-sheet-title')).focus({ preventScroll: true });
+    }
+  });
+
+  /* ---------- 佇列工具列 ---------- */
+  $('#cl-chips').addEventListener('click', e => {
+    const b = e.target.closest('[data-verdict]');
+    if (!b) return;
+    state.verdict = b.dataset.verdict;
+    renderQueue();
+  });
+  $('#cl-q').addEventListener('input', e => { state.q = e.target.value; renderQueue(); });
+  $('#cl-sort').addEventListener('change', e => { state.sort = e.target.value; renderQueue(); renderSheet(); });
+  $('#cl-mine').addEventListener('change', e => { state.mine = e.target.checked; renderQueue(); });
+  $('#cl-bulk').addEventListener('click', e => { const b = e.target.closest('#cl-bulk-go'); if (b) openBulk(b); });
+  $('#cl-flow').addEventListener('click', e => {
+    const b = e.target.closest('[data-go]');
+    if (!b) return;
+    const go = b.dataset.go;
+    if (go === 'late' || go === 'audit') {
+      setView(go === 'late' && !VIEWS.late().length ? 'pending' : go);
+      $('#queue').scrollIntoView({ behavior: App.calm() ? 'auto' : 'smooth', block: 'start' });
+    } else {
+      bs.id = go === 'batch-open' ? openBatch().id : App.BATCHES.find(x => x.status === '已撥付').id;
+      bs.page = 1;
+      renderBatches();
+      $('#batches').scrollIntoView({ behavior: App.calm() ? 'auto' : 'smooth', block: 'start' });
+    }
+  });
+  $('#cl-export').addEventListener('click', () => {
+    const list = VIEWS.audit();
+    const mark = { pass: '通過', warn: '警示', fail: '不符' };
+    const rows = [['案號', '申請單位', '縣市鄉鎮', '講師', '費率類別', '活動日', '講師回填日', '勾稽期限', '實到／申請人數', '實際／核定節數', '簽到表', '照片張數', '講師申請金額', '核算金額', '勾稽結果', '承辦']];
+    list.forEach(c => {
+      const f = calc(c);
+      rows.push([c.id, c.org, place(c), lect(c).name, App.rate(lect(c).rateKey).label, fmt.roc(c.date), fmt.roc(reportedOn(c)), fmt.roc(auditDue(c)), `${c.result.people}／${c.people}`, `${c.result.hours}／${c.sessions}`, c.result.signin ? '已上傳' : '未上傳', c.result.photos, c.claimed.total, f.total, mark[App.claimVerdict(c)], c.owner ? App.staff(c.owner).name : '未指派']);
+    });
+    App.downloadCSV(`待勾稽清冊_${fmt.roc(App.TODAY).replace(/\//g, '')}.csv`, rows);
+    App.toast('已匯出待勾稽清冊', { desc: `共 ${list.length} 件，CSV 檔可直接以 Excel 開啟。` });
+  });
+
+  /* ---------- 核銷批次清冊 ---------- */
+  const bs = { id: openBatch().id, sort: 'approved', dir: -1, page: 1, q: '', flash: null };
+  const PAGE = 10;
+  function batchRows() {
+    const b = batchOf(bs.id);
+    const q = bs.q.trim().toLowerCase();
+    const key = { id: c => c.id, date: c => c.date, total: c => c.claimed.total, approved: c => approvedOn(c) }[bs.sort];
+    return b.cases.map(App.case)
+      .filter(c => !q || `${c.id} ${c.org} ${lect(c).name}`.toLowerCase().includes(q))
+      .sort((x, y) => { const a = key(x), z = key(y); return (a < z ? -1 : a > z ? 1 : 0) * bs.dir || x.id.localeCompare(y.id); });
+  }
+  const bstat = (key, v) => {
+    const el = $(`[data-bstat="${key}"]`);
+    // 第一次直接寫數字，之後數字變動才用滾動數字，避免捲到這裡時先閃成 0
+    if (el.dataset.ready) App.odometer(el, v); else { el.textContent = fmt.num(v); el.dataset.ready = '1'; }
+  };
+  let pager = null;
+  function renderBatches() {
+    const max = Math.max(...App.BATCHES.map(b => b.total));
+    $('#cl-ledger').innerHTML = App.BATCHES.map(b => {
+      const open = b.status === '編製中';
+      return `<li><button type="button" class="cl-led" data-batch="${b.id}" aria-pressed="${b.id === bs.id}">
+  <span class="cl-led__top"><span class="cl-led__id">${b.id}</span>${App.statusBadge(open ? 'clay' : 'ok', b.status)}</span>
+  <span class="cl-led__month">${fmt.rocYM(b.month)}撥付・${open ? '預定' : ''}${fmt.md(b.date)}</span>
+  <span class="cl-led__sum"><span>${b.cases.length} 件</span><span><b>${fmt.num(b.total)}</b> 元</span></span>
+  <span class="meter${open ? ' meter--clay' : ''}" aria-hidden="true"><span style="--p:${(b.total / max).toFixed(3)}"></span></span>
+</button></li>`;
+    }).join('');
+    const b = batchOf(bs.id);
+    const open = b.status === '編製中';
+    const cases = b.cases.map(App.case);
+    const first = cases.map(approvedOn).sort()[0];
+    const stepDefs = open
+      ? [['編製清冊', `${b.cases.length} 件`, 'current'], ['會計覆核', App.staff('S05').name, ''], ['撥付', fmt.md(b.date), '']]
+      : [['編製清冊', '完成', 'done'], ['會計覆核', App.staff('S05').name, 'done'], ['撥付', fmt.md(b.date), 'done']];
+    $('#cl-bhead').innerHTML = `<div>
+  <p class="cl-bhead__id">${b.id}${App.statusBadge(open ? 'clay' : 'ok', b.status)}</p>
+  <h3 class="cl-bhead__title">${fmt.rocYM(b.month)}撥付批次</h3>
+  <p class="cl-bhead__sub">${fmt.rocYM(first.slice(0, 7))}勾稽通過的案件・${open ? `預定 ${fmt.rocLong(b.date)}撥付` : `已於 ${fmt.roc(b.date)} 撥付講師帳戶`}</p>
+</div>
+<ol class="steps">${stepDefs.map(([label, sub, st], i) => `<li class="step${st ? ` is-${st}` : ''}"><span class="step__dot">${st === 'done' ? icon('check') : i + 1}</span><span class="step__label">${label}<span class="cl-facts__sub">${esc(sub)}</span></span></li>`).join('')}</ol>`;
+    bstat('n', cases.length);
+    bstat('lecture', sum(cases.map(c => c.claimed.lecture)));
+    bstat('travel', sum(cases.map(c => c.claimed.travel)));
+    bstat('total', b.total);
+    $('#cl-b-send').hidden = !open;
+    const today = cases.filter(c => approvedOn(c) === App.TODAY).length;
+    $('#cl-bnote').textContent = open ? `${today ? `今日新增 ${today} 件・` : ''}核准後即時編入，會計覆核前可退回更正` : '已撥付批次僅供查閱與匯出';
+    renderBatchRows();
+  }
+  function renderBatchRows() {
+    const rows = batchRows();
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+    bs.page = Math.min(bs.page, pages);
+    const shown = rows.slice((bs.page - 1) * PAGE, bs.page * PAGE);
+    $('#cl-bcap').textContent = `${bs.id} 案件清冊，共 ${rows.length} 件`;
+    $('#cl-btbody').innerHTML = shown.length ? shown.map(c => {
+      const l = lect(c);
+      return `<tr${bs.flash && bs.flash.has(c.id) ? ' class="is-flash"' : ''} data-id="${c.id}">
+  <td data-label="案件"><span class="cell-main">${App.caseLink(c)}</span><span class="cell-sub truncate">${esc(c.org)}</span></td>
+  <td data-label="講師">${App.lecturerLink(l)}<span class="cell-sub">${esc(App.rate(l.rateKey).label)}</span></td>
+  <td data-label="活動日" class="nowrap">${fmt.roc(c.date)}</td>
+  <td data-label="鐘點費" class="num col-2nd">${fmt.num(c.claimed.lecture)}<span class="cell-sub">${Math.min(c.result.hours, c.sessions)} 節 × ${fmt.num(c.claimed.lecture / Math.min(c.result.hours, c.sessions))}</span></td>
+  <td data-label="交通費" class="num col-2nd">${fmt.num(c.claimed.travel)}</td>
+  <td data-label="合計（元）" class="num"><b>${fmt.num(c.claimed.total)}</b></td>
+  <td data-label="核准日" class="col-2nd nowrap">${fmt.roc(approvedOn(c))}</td>
+</tr>`;
+    }).join('') : `<tr><td colspan="7">${App.emptyState({ title: '本批次沒有符合的案件', text: '試著改用其他關鍵字。' })}</td></tr>`;
+    if (!pager) pager = App.pager($('#cl-bpager'), { total: rows.length, page: bs.page, size: PAGE, onChange: p => { bs.page = p; bs.flash = null; renderBatchRows(); } });
+    else pager.set(bs.page, rows.length);
+  }
+  function goToBatchRow(c) {
+    bs.id = c.batch;
+    bs.q = '';
+    $('#cl-bq').value = '';
+    bs.flash = new Set([c.id]);
+    const idx = batchRows().indexOf(c);
+    bs.page = Math.floor(idx / PAGE) + 1;
+    renderBatches();
+    const row = $(`#cl-btbody tr[data-id="${c.id}"]`);
+    row.scrollIntoView({ behavior: App.calm() ? 'auto' : 'smooth', block: 'center' });
+    bs.flash = null;
+  }
+  $('#cl-ledger').addEventListener('click', e => {
+    const b = e.target.closest('.cl-led');
+    if (!b || b.dataset.batch === bs.id) return;
+    bs.id = b.dataset.batch;
+    bs.page = 1;
+    bs.flash = null;
+    renderBatches();
+  });
+  $('#cl-bq').addEventListener('input', e => { bs.q = e.target.value; bs.page = 1; bs.flash = null; renderBatchRows(); });
+  App.bindSort($('#cl-btable'), { onSort: (key, dir) => { bs.sort = key; bs.dir = dir; bs.page = 1; bs.flash = null; renderBatchRows(); } });
+  $('#cl-b-export').addEventListener('click', () => {
+    const b = batchOf(bs.id);
+    const rows = [['批次', '案號', '申請單位', '縣市鄉鎮', '講師', '費率類別', '活動日', '節數', '講座鐘點費', '交通費', '合計', '核准日', '承辦']];
+    batchRows().forEach(c => rows.push([b.id, c.id, c.org, place(c), lect(c).name, App.rate(lect(c).rateKey).label, fmt.roc(c.date), Math.min(c.result.hours, c.sessions), c.claimed.lecture, c.claimed.travel, c.claimed.total, fmt.roc(approvedOn(c)), c.owner ? App.staff(c.owner).name : '未指派']));
+    App.downloadCSV(`核銷清冊_${b.id}.csv`, rows);
+    App.toast(`已匯出 ${b.id} 核銷清冊`, { desc: `${rows.length - 1} 件，合計 ${fmt.money(b.total)}。` });
+  });
+
+  /* ---------- 示意費率設定 ----------
+     試算只改這張表單的草稿，不直接改 App.FEE：已回填的案件依原費率勾稽，
+     若直接改共用費率，所有待勾稽案件的「金額」都會變成不符。 */
+  const current = () => ({ rates: Object.fromEntries(App.FEE.rates.map(r => [r.key, r.rate])), travel: App.FEE.travel.map(t => t.amount), island: App.FEE.island.amount });
+  let draft = current();
+  let scheduled = null;
+  const moneyInput = (id, name, value, label) => `<div class="field cl-rrow">
+  <label class="label" for="${id}">${label}</label>
+  <div class="input-group"><input class="input" id="${id}" name="${name}" type="number" inputmode="numeric" min="0" max="20000" step="100" value="${value}" required data-error="請輸入 0–20,000 元、以 100 元為單位的金額"><span class="input-group__addon">元</span></div>
+  <span class="cl-rdiff" data-diff="${name}"></span>
+</div>`;
+  $('#cl-fs-rate').insertAdjacentHTML('beforeend', App.FEE.rates.map(r => moneyInput(`cl-rate-${r.key}`, `rate:${r.key}`, r.rate, `${r.label}／節`)).join(''));
+  $('#cl-fs-travel').insertAdjacentHTML('beforeend', App.FEE.travel.map((t, i) => moneyInput(`cl-travel-${i}`, `travel:${i}`, t.amount, t.label)).join('') + moneyInput('cl-island', 'island', App.FEE.island.amount, '跨海往返離島（示意）'));
+  const readDraft = () => {
+    $$('#cl-rform input[type="number"]').forEach(inp => {
+      // 欄位暫時不合法時沿用上一個合法值，試算不會跳成 NaN
+      if (!inp.checkValidity()) return;
+      const v = Number(inp.value);
+      const [kind, k] = inp.name.split(':');
+      if (kind === 'rate') draft.rates[k] = v; else if (kind === 'travel') draft.travel[Number(k)] = v; else draft.island = v;
+    });
+  };
+  const feeUnder = (d, c) => {
+    const l = lect(c);
+    const lecture = d.rates[l.rateKey] * Math.min(c.result ? c.result.hours : c.sessions, c.sessions);
+    let travel = 0;
+    if (c.mode !== 'online') {
+      const tier = App.travelTier(l.county, c.county);
+      travel = tier.island ? d.island : d.travel[App.FEE.travel.findIndex(t => t.label === tier.label)];
+    }
+    return { lecture, travel, total: lecture + travel };
+  };
+  const changes = () => {
+    const now = current(), out = [];
+    App.FEE.rates.forEach(r => { if (draft.rates[r.key] !== now.rates[r.key]) out.push(`${r.label} ${fmt.num(now.rates[r.key])} → ${fmt.num(draft.rates[r.key])} 元`); });
+    App.FEE.travel.forEach((t, i) => { if (draft.travel[i] !== now.travel[i]) out.push(`交通費 ${t.label} ${fmt.num(now.travel[i])} → ${fmt.num(draft.travel[i])} 元`); });
+    if (draft.island !== now.island) out.push(`離島交通費 ${fmt.num(now.island)} → ${fmt.num(draft.island)} 元`);
+    return out;
+  };
+  const deltaTag = (v, unit = ' 元') => (v === 0 ? '<b>±0</b>' : `<b class="${v > 0 ? 'is-up' : 'is-down'}">${v > 0 ? '+' : '−'}${fmt.num(Math.abs(v))}${unit}</b>`);
+  const SAMPLES = [
+    { label: '外聘專家學者 2 節・同縣市', rateKey: 'expert', h: 2, tier: 0 },
+    { label: '外聘一般講師 2 節・30–80 公里', rateKey: 'external', h: 2, tier: 1 },
+    { label: '外聘專家學者 3 節・80–150 公里', rateKey: 'expert', h: 3, tier: 2 },
+    { label: '內聘講師 1 節・線上授課', rateKey: 'internal', h: 1, tier: -1 },
+  ];
+  function renderImpact() {
+    readDraft();
+    const now = current();
+    $$('#cl-rform [data-diff]').forEach(el => {
+      const [kind, k] = el.dataset.diff.split(':');
+      const a = kind === 'rate' ? now.rates[k] : kind === 'travel' ? now.travel[Number(k)] : now.island;
+      const b = kind === 'rate' ? draft.rates[k] : kind === 'travel' ? draft.travel[Number(k)] : draft.island;
+      el.className = `cl-rdiff${b > a ? ' is-up' : b < a ? ' is-down' : ''}`;
+      el.textContent = b === a ? `現行 ${fmt.num(a)}` : `${b > a ? '+' : '−'}${fmt.num(Math.abs(b - a))}`;
+    });
+    const ob = openBatch();
+    const cases = ob.cases.map(App.case);
+    const A = cases.map(c => feeUnder(now, c)), B = cases.map(c => feeUnder(draft, c));
+    const tot = (arr, k) => sum(arr.map(x => x[k]));
+    const dAll = tot(B, 'total') - tot(A, 'total');
+    const pct = tot(A, 'total') ? dAll / tot(A, 'total') * 100 : 0;
+    const sample = (d, s) => d.rates[s.rateKey] * s.h + (s.tier < 0 ? 0 : d.travel[s.tier]);
+    $('#cl-impact').innerHTML = `<p class="cl-impact__title">${icon('chart')}影響試算</p>
+<p class="cl-impact__lead">以編製中的 ${ob.id}（${ob.cases.length} 件）重新計算；本批次實際仍依現行費率撥付。</p>
+<div class="cl-impact__big">
+  <div><span class="cl-impact__cap">現行費率</span><span class="cl-impact__val">${fmt.num(tot(A, 'total'))}<small> 元</small></span></div>
+  ${icon('arrow-right')}
+  <div class="cl-impact__new"><span class="cl-impact__cap">調整後</span><span class="cl-impact__val">${fmt.num(tot(B, 'total'))}<small> 元</small></span></div>
+  <p class="cl-impact__delta"><span>合計 ${deltaTag(dAll)}（${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%）</span><span>鐘點費 ${deltaTag(tot(B, 'lecture') - tot(A, 'lecture'))}</span><span>交通費 ${deltaTag(tot(B, 'travel') - tot(A, 'travel'))}</span></p>
+</div>
+<div class="cl-samples" role="list" aria-label="單場試算範例">${SAMPLES.map(s => { const a = sample(now, s), b = sample(draft, s); return `<div class="cl-sample" role="listitem"><span class="cl-sample__name">${s.label}</span><span class="cl-sample__now${a !== b ? ' is-changed' : ''}">${fmt.num(a)}</span><span class="cl-sample__new">${fmt.num(b)} 元</span></div>`; }).join('')}</div>
+${scheduled
+    ? `<div class="notice notice--ok">${icon('calendar')}<div><b>已排定 ${fmt.roc(scheduled.from)} 起適用</b><br>${scheduled.list.map(esc).join('<br>')}<br><button type="button" class="btn-link mt-2" id="cl-r-cancel">取消排程</button></div></div>`
+    : `<p class="notice">${icon('info')}<span>${esc(App.FEE.travelNote)}；費率調整需經計畫督導同意，排定後於生效日自動套用到新案件的鐘點費預估。</span></p>`}`;
+  }
+  $('#cl-rform').addEventListener('input', renderImpact);
+  $('#cl-r-reset').addEventListener('click', () => {
+    draft = current();
+    $$('#cl-rform input[type="number"]').forEach(inp => {
+      const [kind, k] = inp.name.split(':');
+      inp.value = kind === 'rate' ? draft.rates[k] : kind === 'travel' ? draft.travel[Number(k)] : draft.island;
+      inp.closest('.field').classList.remove('is-invalid');
+      inp.removeAttribute('aria-invalid');
+    });
+    $('#cl-rform .form-alert').classList.remove('is-on');
+    renderImpact();
+    App.toast('已還原為現行費率', { tone: 'info' });
+  });
+  $('#cl-rform').addEventListener('submit', e => {
+    e.preventDefault();
+    if (!App.validate($('#cl-rform'))) return;
+    readDraft();
+    const list = changes();
+    if (!list.length) { App.toast('費率沒有變更', { tone: 'info', desc: '目前輸入的金額與現行費率相同，不需要排程。' }); return; }
+    const prev = scheduled;
+    scheduled = { from: $('#cl-eff').value, list };
+    renderImpact();
+    App.toast(`已排定 ${fmt.roc(scheduled.from)} 起適用新費率`, {
+      desc: `${list.length} 項調整，已送計畫督導 ${App.staff('S06').name} 備查。`,
+      action: { label: '復原', onClick: () => { scheduled = prev; renderImpact(); } },
+    });
+  });
+  $('#cl-impact').addEventListener('click', e => {
+    if (!e.target.closest('#cl-r-cancel')) return;
+    const prev = scheduled;
+    scheduled = null;
+    renderImpact();
+    App.toast('已取消費率排程', { tone: 'info', action: { label: '復原', onClick: () => { scheduled = prev; renderImpact(); } } });
+  });
+
+  /* ---------- 初次繪製與資料同步 ---------- */
+  function renderAll() {
+    renderLede();
+    renderFlow();
+    renderQueue();
+    renderSheet();
+    renderBatches();
+    renderImpact();
+  }
+  if (!state.sel) { const first = filtered()[0]; state.sel = first ? first.id : null; }
+  renderAll();
+  App.on(renderAll);
+  App.onMode(() => { renderQueue(); renderSheet(); renderFlow(); });
+  if (askedId && state.sel === App.case(askedId)?.id && getComputedStyle($('#queue')).gridTemplateColumns.split(' ').length === 1) {
+    requestAnimationFrame(() => $('#cl-sheet').scrollIntoView({ block: 'start' }));
+  }
+  // 內容由 JS 繪製，瀏覽器原生的錨點捲動可能早於版面完成，繪製後再定位一次
+  if (location.hash === '#batches' || location.hash === '#rates') requestAnimationFrame(() => document.getElementById(location.hash.slice(1)).scrollIntoView({ block: 'start' }));
+});
+</script>
+</body>
+</html>

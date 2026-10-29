@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>申請案件 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="申請案件清單：常用檢視、流程關卡分布、活動日期刷選，依狀態、縣市、服務對象、主題與承辦人篩選，批次指派承辦人與匯出 CSV。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+
+  /* ---------- 常用檢視 ---------- */
+  /* 兩組檢視各占一列，標題欄對齊 */
+  .ap-viewbar { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px 14px; margin-bottom: clamp(16px, 1.6vw, 22px); }
+  .ap-vgroup { display: contents; }
+  .ap-vgroup__cap { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; color: var(--ink-3); white-space: nowrap; }
+  .ap-vgroup .views { gap: 6px; }
+  .ap-vgroup .view__n { min-width: 1.4em; text-align: right; }
+  .view.is-alert .view__n { color: var(--clay-ink); }
+  .view[aria-pressed="true"] .view__n { color: var(--forest-900); }
+
+  /* ---------- 概覽：流程關卡＋活動日期 ---------- */
+  .ap-overview { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(16px, 1.6vw, 22px); align-items: stretch; }
+  .ap-overview > .card { display: flex; flex-direction: column; }
+  .ap-overview > .card > .card__body { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  html.is-senior .ap-overview { grid-template-columns: minmax(0, 1fr); }
+
+  /* 流程關卡軌道：9 站等寬，一條管線串起，種子沿線流動 */
+  .ap-rail { --dot: 48px; position: relative; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 2px; padding-top: 12px; }
+  html.is-senior .ap-rail { --dot: 52px; }
+  .ap-rail__line {
+    position: absolute; left: calc(100% / 18); right: calc(100% / 18); top: calc(12px + var(--dot) / 2 - 2px);
+    height: 4px; border-radius: 2px; background: var(--forest-100); overflow: hidden; pointer-events: none;
+  }
+  .ap-rail__flow {
+    position: absolute; top: 0; bottom: 0; left: -40px; right: 0;
+    background: repeating-linear-gradient(90deg, transparent 0 28px, var(--sprout) 28px 38px, transparent 38px 40px);
+    animation: ap-flow 2.6s linear infinite;
+  }
+  @keyframes ap-flow { to { transform: translateX(40px); } }
+  .ap-flow.is-paused .ap-rail__flow, .ap-flow.is-paused .ap-stop__dot::after { animation-play-state: paused; }
+  html.is-senior .ap-rail__flow { display: none; }
+  .ap-stop { min-width: 0; }
+  .ap-stop__btn {
+    position: relative; width: 100%; height: 100%;
+    display: grid; justify-items: center; align-content: start; gap: 2px;
+    padding: 0 2px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink); text-align: center;
+  }
+  .ap-stop__dot {
+    position: relative; z-index: 1; width: var(--dot); height: var(--dot); margin-bottom: 6px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--card); border: 2px solid var(--forest-100); color: var(--forest);
+    transition: transform var(--dur-2) var(--ease-out), background var(--dur-2), border-color var(--dur-2), box-shadow var(--dur-2);
+  }
+  .ap-stop__dot .i { width: 20px; height: 20px; }
+  html.is-senior .ap-stop__dot .i { width: 24px; height: 24px; }
+  .ap-stop__btn:hover .ap-stop__dot { border-color: var(--forest); transform: translateY(-2px); }
+  .ap-stop__n { font-family: var(--font-en); font-size: var(--fs-2xl); font-weight: 800; line-height: 1.1; color: var(--ink); }
+  .ap-stop__label { font-size: var(--fs-sm); font-weight: 800; line-height: 1.3; color: var(--ink-2); }
+  .ap-stop__meta { min-height: 1.5em; font-size: var(--fs-xs); line-height: 1.5; color: var(--ink-3); }
+  .ap-stop__late { display: inline-flex; padding: 0 7px; border-radius: var(--r-pill); background: var(--clay-100); color: var(--clay-ink); font-weight: 800; white-space: nowrap; }
+  .ap-stop.is-empty .ap-stop__dot { border-color: var(--line); color: var(--ink-4); }
+  .ap-stop.is-empty .ap-stop__n { color: var(--ink-3); }
+  .ap-stop__btn[aria-pressed="true"] .ap-stop__dot { background: var(--forest); border-color: var(--forest); color: var(--sprout); box-shadow: 0 0 0 5px var(--sprout-100); }
+  .ap-stop__btn[aria-pressed="true"] .ap-stop__label { color: var(--forest-900); }
+  .ap-stop__btn[aria-pressed="true"]::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 0; height: 3px; border-radius: 3px; background: var(--forest); }
+  /* 瓶頸關卡：陶土外環向外擴散（高齡模式與減少動態改成靜態外環） */
+  .ap-stop.is-hot .ap-stop__dot { border-color: var(--clay); background: var(--clay-50); color: var(--clay-ink); }
+  .ap-stop.is-hot .ap-stop__btn[aria-pressed="true"] .ap-stop__dot { background: var(--clay-ink); border-color: var(--clay-ink); color: #FFF8F1; box-shadow: 0 0 0 5px var(--clay-100); }
+  .ap-stop.is-hot .ap-stop__dot::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--clay);
+    animation: ap-hot 2.4s var(--ease-out) infinite; pointer-events: none;
+  }
+  @keyframes ap-hot { 0% { transform: scale(1); opacity: .85; } 100% { transform: scale(1.55); opacity: 0; } }
+  html.is-senior .ap-stop.is-hot .ap-stop__dot::after { animation: none; opacity: 1; transform: none; inset: -7px; border-width: 3px; }
+  .ap-stop__hot {
+    position: absolute; z-index: 2; top: -12px; left: 50%; transform: translateX(-50%);
+    padding: 0 7px; border-radius: var(--r-pill); background: var(--clay-ink); color: #FFF8F1;
+    font-size: var(--fs-xs); font-weight: 900; line-height: 1.5; white-space: nowrap; letter-spacing: .04em;
+  }
+  .ap-exits { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+  .ap-exits__cap { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); margin-right: 4px; }
+  .ap-exits .chip { min-height: 32px; }
+  .ap-hotnote { align-items: center; }
+  .ap-hotnote__txt { flex: 1; min-width: 0; }
+  .ap-hotnote .btn { flex: none; }
+
+  /* 活動日期刷選：每週堆疊長條＋可拖曳的區間把手 */
+  .ap-brush { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; cursor: crosshair; }
+  .ap-hist { display: block; width: 100%; overflow: visible; }
+  .ap-hist text { font-family: var(--font-sans); font-size: var(--fs-xs); }
+  .ap-hist__month { fill: var(--ink-3); font-weight: 700; }
+  .ap-hist__tick, .ap-hist__base { stroke: var(--line-2); stroke-width: 1; }
+  .ap-hist__future { fill: var(--paper); }
+  .ap-hist__hover { fill: var(--sprout-100); opacity: 0; transition: opacity var(--dur-1); }
+  .ap-hist__hover.is-on { opacity: 1; }
+  .ap-hist__today { stroke: var(--clay-ink); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .ap-hist__today-label { fill: var(--clay-ink); font-weight: 800; }
+  .ap-hist__wk { transition: opacity var(--dur-3); }
+  .ap-hist__wk.is-out { opacity: .22; }
+  .ap-hist__wk rect { transition: y .7s var(--ease-out) calc(var(--k, 0) * 14ms), height .7s var(--ease-out) calc(var(--k, 0) * 14ms); }
+  html.is-senior .ap-hist__wk rect { transition: none; }
+  .ap-brush__sel {
+    position: absolute; top: var(--pt, 26px); height: var(--ih, 92px);
+    background: rgba(31, 93, 74, .07); box-shadow: inset 0 2px 0 var(--forest); cursor: grab;
+  }
+  .ap-brush__sel:active { cursor: grabbing; }
+  .ap-brush__h {
+    position: absolute; top: var(--pt, 26px); height: var(--ih, 92px); width: 28px; margin-left: -14px; padding: 0;
+    display: grid; place-items: center; border: 0; background: none; cursor: ew-resize; touch-action: none; z-index: 2;
+  }
+  .ap-brush__h::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--forest); border-radius: 1px; }
+  .ap-brush__grip {
+    position: relative; width: 12px; height: 32px; border-radius: 6px;
+    background: var(--forest) linear-gradient(90deg, transparent 3px, var(--sprout-200) 3px 4.5px, transparent 4.5px 7.5px, var(--sprout-200) 7.5px 9px, transparent 9px) center / 100% 14px no-repeat;
+    box-shadow: 0 0 0 2px var(--card), var(--sh-1);
+    transition: transform var(--dur-1);
+  }
+  .ap-brush__h:hover .ap-brush__grip { transform: scaleY(1.12); }
+  .ap-brush.is-full .ap-brush__h::before { background: var(--line-2); }
+  .ap-brush.is-full .ap-brush__grip { background-color: var(--ink-3); }
+  html.is-senior .ap-brush__h { width: 48px; margin-left: -24px; }
+  html.is-senior .ap-brush__grip { width: 16px; height: 44px; }
+  /* 提示框放在長條旁邊、貼齊圖表頂端，不蓋住卡片標題 */
+  .ap-brush .chart-tip { transform: none; white-space: nowrap; line-height: 1.65; }
+  .ap-brush .chart-tip:not(.is-on) { visibility: hidden; }
+  .ap-tip__key { display: inline-block; width: 12px; height: 3px; margin-right: 6px; border-radius: 2px; background: var(--c); vertical-align: middle; }
+  .ap-tip__date { color: #D7DDD9; }
+  .ap-time__total { display: grid; justify-items: end; line-height: 1.2; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+  .ap-time__total b { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; color: var(--ink); }
+  .ap-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); }
+  .ap-legend li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .ap-legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; }
+  .ap-legend b { font-family: var(--font-en); font-weight: 800; color: var(--ink); }
+  .ap-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+  .ap-range__fields { display: flex; align-items: flex-start; gap: 8px; }
+  .ap-range .field { width: 128px; }
+  html.is-senior .ap-range .field { width: 168px; }
+  .ap-range .label { font-size: var(--fs-xs); color: var(--ink-2); }
+  .ap-range__dash { align-self: flex-start; margin-top: calc(var(--fs-xs) * 1.6 + 6px + var(--ctl-h-sm) / 2 - .8em); color: var(--ink-3); font-weight: 700; }
+  .ap-range .field__error { font-size: var(--fs-xs); }
+  .ap-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ap-presets .chip { min-height: 32px; padding: 2px 11px; }
+
+  /* ---------- 篩選列 ---------- */
+  .ap-filters .field--grow { flex: 2 1 260px; }
+  .ap-more { display: none; }
+  html.is-senior .ap-filters .field { flex: 1 1 180px; }
+  html.is-senior .ap-filters .field--grow { flex: 1 1 100%; }
+  .ap-applied { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+  .ap-applied:empty { display: none; }
+  .ap-applied__cap { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--ink-3); }
+  .ap-pill {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 2px 8px 2px 12px;
+    border-radius: var(--r-pill); border: 1px solid var(--forest-100); background: var(--forest-50); color: var(--forest-900);
+    font-size: var(--fs-sm); font-weight: 700; line-height: 1.3; text-align: left;
+  }
+  .ap-pill:hover { border-color: var(--forest); }
+  .ap-pill .i { width: 14px; height: 14px; color: var(--forest); }
+  .ap-clear { min-height: 32px; font-size: var(--fs-sm); }
+  html.is-senior .ap-pill { min-height: 48px; padding: 4px 12px 4px 16px; font-size: var(--fs-base); }
+  html.is-senior .ap-pill .i { width: 18px; height: 18px; }
+  html.is-senior .ap-clear { min-height: 48px; font-size: var(--fs-base); }
+
+  /* ---------- 批次操作 ---------- */
+  .ap-bulk { position: sticky; top: calc(var(--topbar-h) + 10px); z-index: 6; margin-top: clamp(16px, 1.6vw, 22px); }
+  .ap-bulk__sep { width: 1px; align-self: stretch; background: rgba(246, 243, 234, .22); }
+  .ap-bulk__assign { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ap-bulk__end { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+  .ap-bulk .btn-link { color: var(--sprout-200); font-size: var(--fs-sm); }
+  .ap-bulk .btn-link:hover { color: var(--paper); }
+  html.is-senior .ap-bulk .btn-link { min-height: 48px; font-size: var(--fs-base); }
+
+  /* ---------- 案件清單 ---------- */
+  .ap-list { margin-top: clamp(16px, 1.6vw, 22px); }
+  .ap-bulk.is-on + .ap-list { margin-top: 10px; }
+  .ap-total { display: inline-flex; align-items: baseline; gap: 4px; padding: 0 10px; border-radius: var(--r-pill); background: var(--paper-2); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
+  .ap-total b { font-family: var(--font-en); font-size: var(--fs-md); font-weight: 800; color: var(--ink); }
+  .ap-mobile-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ap-mobile-tools .select { width: auto; }
+  .ap-table td { vertical-align: middle; }
+  .ap-table .cell-id { font-size: var(--fs-table); }
+  .ap-table .cell-main { overflow-wrap: anywhere; }
+  .ap-table .cell-sub { white-space: normal; }
+  .ap-table .cell-sub.ap-nw { white-space: nowrap; }
+  .ap-c-stage .cell-sub { margin-top: 4px; }
+  .ap-c-stage .truncate { --tw: 168px; }
+  .ap-late { display: inline-flex; align-items: center; gap: 4px; color: var(--clay-ink); font-weight: 800; }
+  .ap-late .i { width: 14px; height: 14px; }
+  .ap-warn { color: var(--warn); font-weight: 800; }
+  .ap-owner { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-weight: 600; }
+  .ap-lect { font-weight: 700; }
+  .ap-lect--wait { color: var(--clay-ink); }
+  .ap-muted { color: var(--ink-3); }
+  .ap-act { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  .ap-act .icon-btn { min-width: var(--ctl-h-sm); min-height: var(--ctl-h-sm); }
+  .ap-done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 800; color: var(--ok); white-space: nowrap; }
+  .ap-done .i { width: 14px; height: 14px; }
+  .ap-today { margin-left: 6px; vertical-align: .1em; }
+  .table-foot .select { width: auto; }
+  .ap-size { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-3); font-weight: 700; }
+  html.is-senior .ap-table .cell-id,
+  html.is-senior .ap-table .cell-main a { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .ap-table .col-check .check { min-width: 48px; min-height: 48px; align-items: center; justify-content: center; }
+  html.is-senior .ap-act .icon-btn { min-height: 48px; }
+  html.is-senior .ap-c-stage .truncate { max-width: 220px; }
+
+  /* ---------- 快速預覽抽屜 ---------- */
+  .ap-peek__id { font-family: var(--font-en); font-weight: 800; font-size: var(--fs-sm); color: var(--forest); letter-spacing: .02em; }
+  .ap-peek__head-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; }
+  .ap-peek .steps { margin: 6px 0 4px; }
+  .ap-peek .step__label { font-size: var(--fs-xs); }
+  .ap-peek__sec { margin-top: 22px; }
+  .ap-peek__h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: var(--fs-sm); font-weight: 800; letter-spacing: .06em; color: var(--ink-2); }
+  .ap-peek__h .i { width: 18px; height: 18px; color: var(--forest); }
+  .ap-peek .notice { margin-top: 14px; }
+  .ap-files { display: grid; gap: 4px; }
+  .ap-files li { display: flex; align-items: center; gap: 8px; }
+  .ap-files .i { width: 16px; height: 16px; color: var(--forest); }
+  .ap-files span { color: var(--ink-3); font-size: var(--fs-xs); }
+
+  /* ---------- 代填申請 ---------- */
+  .ap-fs + .ap-fs { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+  .ap-fs__legend { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: var(--fs-base); font-weight: 800; }
+  .ap-fs__legend .i { width: 20px; height: 20px; color: var(--forest); }
+  .ap-radios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; min-height: var(--ctl-h); }
+  .ap-dates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; }
+  .ap-new .form-alert { margin-bottom: 16px; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1180px) {
+    .ap-overview { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .ap-dates { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .ap-viewbar { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .ap-vgroup + .ap-vgroup .ap-vgroup__cap { margin-top: 8px; }
+    /* 手機：搜尋常駐，其餘篩選收進「更多篩選條件」 */
+    .ap-more { display: inline-flex; width: 100%; justify-content: space-between; }
+    .ap-more .i { transition: transform var(--dur-2); }
+    .ap-more[aria-expanded="true"] .i { transform: rotate(180deg); }
+    .ap-filters:not(.is-open) .ap-fsel { display: none; }
+    .ap-hotnote { flex-wrap: wrap; }
+    .ap-time__total { display: flex; align-items: baseline; gap: 8px; }
+    .ap-hotnote .btn { width: 100%; }
+    /* 一般模式：常用檢視改為可橫向滑動的一列；高齡模式維持換行，避免藏住選項 */
+    html:not(.is-senior) .ap-vgroup .views {
+      flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+      margin-inline: -16px; padding: 2px 16px 4px;
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 28px), transparent);
+      mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 28px), transparent);
+    }
+    html:not(.is-senior) .ap-vgroup .views::-webkit-scrollbar { display: none; }
+    .ap-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 0; }
+    html.is-senior .ap-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ap-rail__line { display: none; }
+    /* 關卡改成小卡：圖示與件數同列，名稱與逾時另起一列 */
+    .ap-stop__btn {
+      grid-template-columns: auto minmax(0, 1fr); justify-items: start; align-items: center;
+      column-gap: 8px; row-gap: 2px; padding: 8px 10px 10px; border: 1px solid var(--line-soft); background: var(--card); text-align: left;
+    }
+    .ap-rail { --dot: 30px; }
+    html.is-senior .ap-rail { --dot: 40px; }
+    .ap-stop__dot { margin: 0; border-width: 1.5px; }
+    .ap-stop__dot .i, html.is-senior .ap-stop__dot .i { width: 16px; height: 16px; }
+    .ap-stop__n { font-size: var(--fs-lg); }
+    .ap-stop__label, .ap-stop__meta { grid-column: 1 / -1; }
+    .ap-stop__meta { min-height: 0; }
+    .ap-stop__meta:empty { display: none; }
+    .ap-stop__hot { top: -9px; left: auto; right: 6px; transform: none; }
+    .ap-stop__btn[aria-pressed="true"] { border-color: var(--forest); background: var(--forest-50); }
+    .ap-stop__btn[aria-pressed="true"]::after { display: none; }
+    .ap-range .field, html.is-senior .ap-range .field { width: auto; flex: 1; }
+    .ap-range__fields { width: 100%; }
+    .ap-bulk { position: static; }
+    .ap-bulk__end { margin-left: 0; }
+    .ap-bulk__assign { width: 100%; }
+    .ap-bulk__assign .select { flex: 1; }
+    .ap-bulk__sep { display: none; }
+    /* 卡片式清單 */
+    .ap-table.table--stack tbody tr[data-id] {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "check id stage" "check org org" "check topic topic" "check date date" "check lect lect" "check owner owner" "check act act" "check more more";
+      column-gap: 12px; row-gap: 2px; padding: 14px 16px;
+    }
+    .ap-table.table--stack td { padding: 2px 0; }
+    .ap-table.table--stack td.ap-c-check { grid-area: check; width: auto; padding-top: 2px; }
+    .ap-table.table--stack td.ap-c-id { grid-area: id; }
+    .ap-table.table--stack td.ap-c-org { grid-area: org; }
+    .ap-table.table--stack td.ap-c-topic { grid-area: topic; }
+    .ap-table.table--stack td.ap-c-date { grid-area: date; }
+    .ap-table.table--stack td.ap-c-lect { grid-area: lect; }
+    .ap-table.table--stack td.ap-c-stage { grid-area: stage; justify-self: end; text-align: right !important; }
+    .ap-table.table--stack td.ap-c-owner { grid-area: owner; }
+    .ap-table.table--stack td.ap-c-act { grid-area: act; width: auto; padding-top: 8px; }
+    .ap-table.table--stack td.col-more { grid-area: more; width: auto; padding-top: 6px; }
+    .ap-table.table--stack td[data-label] { grid-template-columns: 4.6em minmax(0, 1fr); align-items: baseline; }
+    html.is-senior .ap-table.table--stack td[data-label] { grid-template-columns: 5.4em minmax(0, 1fr); }
+    .ap-table.table--stack td[data-label] .cell-main, .ap-table.table--stack td[data-label] .cell-sub { display: inline; margin: 0 8px 0 0; }
+    .ap-table.table--stack .ap-c-id .cell-sub { display: inline; margin-left: 8px; }
+    .ap-act { justify-content: flex-start; }
+    .ap-c-stage .truncate { --tw: 130px; }
+    html.is-senior .ap-table.table--stack tbody tr[data-id] { grid-template-areas: "check id id" "check stage stage" "check org org" "check date date" "check act act" "check more more"; }
+    html.is-senior .ap-table.table--stack td.ap-c-stage { justify-self: start; text-align: left !important; }
+    .table-foot { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link is-active" href="applications.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="頁面位置"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>案件作業</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">申請案件</span></nav>
+          <h1 class="page-title">申請案件</h1>
+          <p class="page-lede" id="ap-lede"></p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn" type="button" id="ap-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出 CSV</button>
+          <button class="btn btn--primary" type="button" id="ap-new"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>代填申請案件</button>
+        </div>
+      </div>
+
+      <div class="ap-viewbar" id="ap-viewbar">
+        <div class="ap-vgroup">
+          <p class="ap-vgroup__cap" id="vg-main">常用檢視</p>
+          <div class="views" role="group" aria-labelledby="vg-main" data-group="main"></div>
+        </div>
+        <div class="ap-vgroup">
+          <p class="ap-vgroup__cap" id="vg-todo">待辦類別</p>
+          <div class="views" role="group" aria-labelledby="vg-todo" data-group="todo"></div>
+        </div>
+      </div>
+
+      <div class="ap-overview">
+        <section class="card ap-flow" id="ap-flow" aria-labelledby="flow-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="flow-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-route"/></svg>流程關卡</h2>
+              <p class="card__sub" id="flow-sub"></p>
+            </div>
+          </div>
+          <div class="card__body">
+            <div class="ap-rail" id="ap-rail" role="group" aria-label="依流程關卡篩選">
+              <div class="ap-rail__line" aria-hidden="true"><span class="ap-rail__flow"></span></div>
+            </div>
+            <div class="notice notice--clay ap-hotnote" id="ap-hotnote"></div>
+            <div class="ap-exits" id="ap-exits" role="group" aria-label="依案件狀態篩選"></div>
+          </div>
+        </section>
+
+        <section class="card ap-time" id="ap-time" aria-labelledby="time-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="time-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>活動日期分布</h2>
+              <p class="card__sub">每週件數，未定案者以第一候選日計</p>
+            </div>
+            <p class="card__actions ap-time__total" id="ap-time-total" aria-live="polite"></p>
+          </div>
+          <div class="card__body">
+            <div class="ap-brush" id="ap-brush"></div>
+            <ul class="ap-legend" id="ap-legend" aria-label="選取區間內的案件組成"></ul>
+            <div class="ap-range">
+              <div class="ap-range__fields">
+                <div class="field">
+                  <label class="label" for="ap-from">活動日期 起</label>
+                  <input class="input input--sm" id="ap-from" type="text" inputmode="numeric" autocomplete="off" placeholder="115/03/02" aria-describedby="ap-range-hint">
+                </div>
+                <span class="ap-range__dash" aria-hidden="true">–</span>
+                <div class="field">
+                  <label class="label" for="ap-to">迄</label>
+                  <input class="input input--sm" id="ap-to" type="text" inputmode="numeric" autocomplete="off" placeholder="115/12/31" aria-describedby="ap-range-hint">
+                </div>
+              </div>
+              <p class="sr-only" id="ap-range-hint">請以民國年輸入，例如 115/11/24；也可以在上方長條圖拖曳選取，或使用方向鍵移動區間把手。</p>
+              <div class="ap-presets" id="ap-presets" role="group" aria-label="快速區間"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <form class="filterbar ap-filters section-gap" id="ap-filters" role="search" aria-label="篩選申請案件">
+        <div class="field field--grow">
+          <label class="label" for="ap-q">搜尋</label>
+          <div class="search">
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+            <input class="input" id="ap-q" type="search" autocomplete="off" placeholder="案號、申請單位、聯絡人、講師、地區">
+          </div>
+        </div>
+        <button type="button" class="btn ap-more" id="ap-more" aria-expanded="false" aria-controls="ap-filters"><span>更多篩選條件<span id="ap-more-n"></span></span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></button>
+        <div class="field ap-fsel">
+          <label class="label" for="ap-status">關卡／狀態</label>
+          <select class="select" id="ap-status"></select>
+        </div>
+        <div class="field ap-fsel">
+          <label class="label" for="ap-county">縣市</label>
+          <select class="select" id="ap-county"></select>
+        </div>
+        <div class="field ap-fsel">
+          <label class="label" for="ap-audience">服務對象</label>
+          <select class="select" id="ap-audience"></select>
+        </div>
+        <div class="field ap-fsel">
+          <label class="label" for="ap-topic">主題</label>
+          <select class="select" id="ap-topic"></select>
+        </div>
+        <div class="field ap-fsel">
+          <label class="label" for="ap-owner">承辦人</label>
+          <select class="select" id="ap-owner"></select>
+        </div>
+      </form>
+      <div class="ap-applied" id="ap-applied" aria-live="polite"></div>
+
+      <div class="bulkbar ap-bulk" id="ap-bulk" role="region" aria-label="批次操作">
+        <p class="bulkbar__count">已選取 <b id="ap-sel-n">0</b> 件</p>
+        <button type="button" class="btn-link" id="ap-sel-all" hidden></button>
+        <span class="ap-bulk__sep" aria-hidden="true"></span>
+        <div class="ap-bulk__assign">
+          <label class="sr-only" for="ap-assign">指派承辦人</label>
+          <select class="select select--sm" id="ap-assign"></select>
+          <button type="button" class="btn btn--sm btn--sprout" id="ap-assign-go"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-user-check"/></svg>套用指派</button>
+        </div>
+        <div class="ap-bulk__end">
+          <button type="button" class="btn btn--sm" id="ap-sel-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出所選</button>
+          <button type="button" class="btn btn--sm" id="ap-sel-clear"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg>取消選取</button>
+        </div>
+      </div>
+
+      <section class="card ap-list" id="ap-list" aria-labelledby="list-title">
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="list-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg>案件清單<span class="ap-total"><b id="ap-count">0</b>件</span></h2>
+            <p class="card__sub" id="ap-list-sub"></p>
+          </div>
+          <div class="card__actions only-sm">
+            <div class="ap-mobile-tools">
+              <label class="check"><input type="checkbox" id="ap-all-sm"><span class="check__box"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span>選取本頁</label>
+              <label class="sr-only" for="ap-sort-sm">排序方式</label>
+              <select class="select select--sm" id="ap-sort-sm">
+                <option value="id:-1">案號：新到舊</option>
+                <option value="id:1">案號：舊到新</option>
+                <option value="date:1">活動日期：近到遠</option>
+                <option value="date:-1">活動日期：遠到近</option>
+                <option value="stage:1">關卡順序</option>
+                <option value="org:1">申請單位名稱</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table table--stack ap-table" id="ap-table">
+            <caption class="sr-only">115 年度申請案件清單</caption>
+            <thead>
+              <tr>
+                <th class="col-check" scope="col"><label class="check"><input type="checkbox" id="ap-all" aria-label="選取本頁全部案件"><span class="check__box"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></span></label></th>
+                <th scope="col" data-sort="id" aria-sort="descending">案號</th>
+                <th scope="col" data-sort="org">申請單位</th>
+                <th scope="col" class="col-2nd">主題</th>
+                <th scope="col" data-sort="date">活動日期</th>
+                <th scope="col" class="col-2nd">講師</th>
+                <th scope="col" data-sort="stage">關卡</th>
+                <th scope="col" class="col-2nd" data-sort="owner">承辦</th>
+                <th scope="col" class="col-act"><span class="sr-only">操作</span></th>
+              </tr>
+            </thead>
+            <tbody id="ap-tbody"></tbody>
+          </table>
+        </div>
+        <div class="table-foot">
+          <div id="ap-pager"></div>
+          <label class="ap-size">每頁
+            <select class="select select--sm" id="ap-size">
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>筆</label>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<!-- 快速預覽：不離開清單即可看案件摘要與處理紀錄 -->
+<dialog class="drawer drawer--wide ap-peek" id="ap-peek" aria-labelledby="ap-peek-title">
+  <div class="drawer__box">
+    <div class="drawer__head">
+      <div class="modal__titles">
+        <p class="ap-peek__id" id="ap-peek-id"></p>
+        <h2 class="modal__title" id="ap-peek-title"></h2>
+        <div class="ap-peek__head-meta" id="ap-peek-meta"></div>
+      </div>
+      <button type="button" class="icon-btn modal__close" data-close><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg><span class="icon-btn__label">關閉</span></button>
+    </div>
+    <div class="drawer__body" id="ap-peek-body"></div>
+    <div class="drawer__foot">
+      <button type="button" class="btn" data-close>關閉</button>
+      <a class="btn btn--primary" id="ap-peek-open" href="application.html">開啟案件詳情<svg class="i i-arrow" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></a>
+    </div>
+  </div>
+</dialog>
+
+<!-- 代填申請：電話、紙本或 Email 申請由承辦代為建檔 -->
+<dialog class="modal modal--lg ap-new" id="ap-new-dialog" aria-labelledby="ap-new-title">
+  <form class="modal__box" id="ap-new-form" novalidate>
+    <div class="modal__head">
+      <span class="modal__icon"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg></span>
+      <div class="modal__titles">
+        <h2 class="modal__title" id="ap-new-title">代填申請案件</h2>
+        <p class="modal__lead">適用電話、紙本函文或 Email 申請。送出後立即取得案號並進入「申請」關卡，由你擔任承辦。</p>
+      </div>
+      <button type="button" class="icon-btn modal__close" data-close><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg><span class="icon-btn__label">關閉</span></button>
+    </div>
+    <div class="modal__body">
+      <div class="form-alert" role="alert"></div>
+      <fieldset class="ap-fs">
+        <legend class="ap-fs__legend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-building"/></svg>申請單位</legend>
+        <div class="form-grid">
+          <div class="field">
+            <label class="label req" for="nf-org">單位名稱</label>
+            <input class="input" id="nf-org" name="org" required minlength="2" maxlength="40" autocomplete="organization" data-error="請填寫申請單位名稱（至少 2 個字）">
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-type">單位類型</label>
+            <select class="select" id="nf-type" name="orgType" required data-error="請選擇單位類型">
+              <option value="">請選擇</option>
+              <option>學校</option><option>社區</option><option>團體</option><option>企業</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-county">縣市</label>
+            <select class="select" id="nf-county" name="county" required data-error="請選擇活動所在縣市"></select>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-district">鄉鎮市區</label>
+            <input class="input" id="nf-district" name="district" required maxlength="10" placeholder="例：板橋區" data-error="請填寫鄉鎮市區">
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-contact">聯絡人</label>
+            <input class="input" id="nf-contact" name="contact" required maxlength="20" autocomplete="name" data-error="請填寫聯絡人姓名">
+          </div>
+          <div class="field">
+            <label class="label" for="nf-title">聯絡人職稱</label>
+            <input class="input" id="nf-title" name="contactTitle" maxlength="20" placeholder="例：教務主任">
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-phone">聯絡電話</label>
+            <input class="input" id="nf-phone" name="phone" type="tel" required pattern="0\d{1,3}-?\d{3,4}-?\d{3,4}" placeholder="02-2960-3388" data-error="電話格式如 02-2960-3388 或 0912-345-678">
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-email">Email</label>
+            <input class="input" id="nf-email" name="email" type="email" required autocomplete="email" placeholder="name@example.tw" data-error="請填寫正確的 Email">
+          </div>
+        </div>
+      </fieldset>
+      <fieldset class="ap-fs">
+        <legend class="ap-fs__legend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-presentation"/></svg>活動需求</legend>
+        <div class="form-grid">
+          <div class="field">
+            <label class="label req" for="nf-topic">講座主題</label>
+            <select class="select" id="nf-topic" name="topic" required data-error="請選擇講座主題"></select>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-aud">服務對象</label>
+            <select class="select" id="nf-aud" name="audience" required data-error="請選擇服務對象"></select>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-people">預估參與人數</label>
+            <input class="input" id="nf-people" name="people" type="number" inputmode="numeric" required min="15" max="300" step="1" data-error="預估人數需介於 15–300 人（未達 15 人不予受理）">
+          </div>
+          <div class="field">
+            <span class="label req" id="nf-mode-label">辦理方式</span>
+            <div class="ap-radios" role="radiogroup" aria-labelledby="nf-mode-label">
+              <label class="radio"><input type="radio" name="mode" value="onsite" checked><span class="check__box"></span>實體</label>
+              <label class="radio"><input type="radio" name="mode" value="online"><span class="check__box"></span>線上（視訊）</label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-sessions">節數</label>
+            <select class="select" id="nf-sessions" name="sessions" required>
+              <option value="1">1 節（50 分鐘）</option>
+              <option value="2" selected>2 節（100 分鐘）</option>
+              <option value="3">3 節（150 分鐘）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label req" for="nf-start">開始時間</label>
+            <select class="select" id="nf-start" name="start" required>
+              <option>09:00</option><option selected>09:30</option><option>10:10</option><option>13:30</option><option>14:00</option><option>19:00</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
+      <fieldset class="ap-fs">
+        <legend class="ap-fs__legend"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>候選日期與來源</legend>
+        <p class="hint" id="nf-date-hint">請提供 1–3 個候選日期（民國年，例如 115/11/24），須在申請日 14 日後且於 115 年度內。</p>
+        <div class="ap-dates mt-2">
+          <div class="field">
+            <label class="label req" for="nf-d1">第 1 候選日</label>
+            <input class="input" id="nf-d1" name="d1" required inputmode="numeric" autocomplete="off" placeholder="115/11/24" aria-describedby="nf-date-hint">
+          </div>
+          <div class="field">
+            <label class="label" for="nf-d2">第 2 候選日</label>
+            <input class="input" id="nf-d2" name="d2" inputmode="numeric" autocomplete="off" placeholder="115/11/26" aria-describedby="nf-date-hint">
+          </div>
+          <div class="field">
+            <label class="label" for="nf-d3">第 3 候選日</label>
+            <input class="input" id="nf-d3" name="d3" inputmode="numeric" autocomplete="off" placeholder="115/12/01" aria-describedby="nf-date-hint">
+          </div>
+        </div>
+        <div class="form-grid mt-4">
+          <div class="field">
+            <label class="label req" for="nf-channel">申請管道</label>
+            <select class="select" id="nf-channel" name="channel" required>
+              <option>電話申請</option><option>紙本函文</option><option>Email 申請</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="nf-note">備註</label>
+            <input class="input" id="nf-note" name="note" maxlength="80" placeholder="例：學校以公文來函，文號另附">
+          </div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="modal__foot">
+      <button type="button" class="btn" data-close>取消</button>
+      <button type="submit" class="btn btn--primary"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>建立案件</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const pad = n => String(n).padStart(2, '0');
+
+  /* ===================================================================
+     共用判斷（口徑與 app.js 的 stageStats／filterCases 一致）
+     =================================================================== */
+  const findCase = id => App.CASES.find(c => c.id === id);
+  const sinceOf = c => c.log[c.log.length - 1][1];
+  // 活動日期：未定案者以第一候選日、再不然以送件日計（與 App.filterCases 相同）
+  const effDate = c => c.date || c.candidates[0] || c.submitted;
+  const isOpen = c => c.status === 'active' && c.stage !== 'closed';
+  const dwell = c => (c.stage === 'done' ? App.daysBetween(c.date, App.TODAY) : c.stage === 'scheduled' ? App.daysBetween(App.TODAY, c.date) : App.daysBetween(sinceOf(c), App.TODAY));
+  const lateBy = c => {
+    if (c.status !== 'active') return 0;
+    const s = App.stage(c.stage);
+    return s.sla == null ? 0 : Math.max(0, dwell(c) - s.sla);
+  };
+  const remindedToday = c => c.reminders.some(r => r.startsWith(App.TODAY));
+  const ASSIGNABLE = App.STAFF.filter(s => s.regions.length);
+  const statusOk = (c, v) => (v === 'open' ? isOpen(c) : App.EXITS[v] ? c.status === v : c.status === 'active' && c.stage === v);
+  const statusLabel = v => (v === 'open' ? '進行中（未結案）' : App.EXITS[v] || App.stage(v).label);
+  const roc = iso => fmt.roc(iso);
+  const parseRoc = s => {
+    const m = String(s || '').trim().match(/^(\d{2,3})\s*[/.\-年]\s*(\d{1,2})\s*[/.\-月]\s*(\d{1,2})\s*日?$/);
+    if (!m) return null;
+    const y = Number(m[1]) + 1911, mo = Number(m[2]), d = Number(m[3]);
+    const dt = new Date(y, mo - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+    return App.iso(dt);
+  };
+
+  /* ===================================================================
+     狀態
+     =================================================================== */
+  const state = { view: 'all', q: '', status: '', county: '', audience: '', topic: '', owner: '', from: null, to: null, sort: { key: 'id', dir: -1 }, page: 1, size: 20 };
+  const selected = new Set();
+  let flash = new Set();
+  let current = [];   // 目前篩選、排序後的清單
+
+  /* ---------- 常用檢視（待辦類別與總覽的待辦用同一套計算） ---------- */
+  const idsOf = items => new Set(items.map(x => x.c.id));
+  const VIEWS = [
+    { key: 'all', group: 'main', label: '全部案件', icon: 'layers', desc: '115 年度全部申請案件，含已結案與未成案', ids: () => null },
+    { key: 'mine', group: 'main', label: '我的待辦', icon: 'user-check', desc: '北區由你承辦、目前需要處理的案件', ids: t => idsOf(Object.values(t.mine).flat()) },
+    { key: 'week', group: 'main', label: '本週執行', icon: 'calendar', desc: `本週（${fmt.rocShort(App.WEEK.start)}–${fmt.rocShort(App.WEEK.end)}）排定執行的場次`, ids: () => new Set(App.weekSessions().flatMap(d => d.sessions.map(c => c.id))) },
+    { key: 'unassigned', group: 'main', label: '未指派承辦', icon: 'user-plus', desc: '尚未指派承辦人的案件，可勾選後批次指派', ids: () => new Set(App.CASES.filter(c => c.status === 'active' && !c.owner).map(c => c.id)), alert: true },
+    { key: 'review', group: 'todo', label: '待審', icon: 'clipboard', desc: '新申請待受理與初審中的案件，初審須於 3 日內完成', ids: t => idsOf(t.all.review) },
+    { key: 'matching', group: 'todo', label: '待媒合', icon: 'sliders', desc: '已通過初審、尚未發出講師邀請的案件', ids: t => idsOf(t.all.matching) },
+    { key: 'noreply', group: 'todo', label: '講師逾 3 日未回覆', icon: 'hourglass', desc: '發邀逾 3 日仍無講師確認；指定講師的案件不自動轉送，建議電話催覆', ids: t => idsOf(t.all.noReply), alert: true },
+    { key: 'report-late', group: 'todo', label: '成果逾期未回填', icon: 'file', desc: '授課後逾 30 日仍未回填成果的場次', ids: t => idsOf(t.all.reportLate), alert: true },
+    { key: 'claim', group: 'todo', label: '待核銷', icon: 'receipt', desc: '講師已回填成果，待承辦逐項勾稽核銷', ids: t => idsOf(t.all.claim) },
+  ];
+  const view = key => VIEWS.find(v => v.key === key);
+
+  /* ---------- 活動日期分布的分類（色相固定、依流程先後堆疊；已用色盲模擬驗證相鄰色可區分） ---------- */
+  const CATS = [
+    { key: 'exec', label: '已執行', note: '含成果回填、核銷與結案', color: '#8CC152', test: c => App.isExecuted(c) },
+    { key: 'sched', label: '待執行', color: '#1F5D4A', test: c => c.status === 'active' && c.stage === 'scheduled' },
+    { key: 'match', label: '媒合・講師確認', color: '#C8743C', test: c => c.status === 'active' && (c.stage === 'matching' || c.stage === 'confirm') },
+    { key: 'intake', label: '申請・初審', color: '#3E8FB0', test: c => c.status === 'active' && (c.stage === 'submitted' || c.stage === 'review') },
+    { key: 'exit', label: '未成案', note: '取消、退件、撤回', color: '#B5AA90', test: c => c.status !== 'active' },
+  ];
+  const catOf = c => CATS.findIndex(cat => cat.test(c));
+
+  /* 日期軸：從系統上線日（週一）到 115/12/31，每 7 天一格 */
+  const DAY0 = App.LAUNCH;
+  const DAY_END = '2026-12-31';
+  const DAYS = App.daysBetween(DAY0, DAY_END) + 1;
+  const dayIdx = iso => clamp(App.daysBetween(DAY0, iso), 0, DAYS - 1);
+  const isoAt = i => App.addDays(DAY0, i);
+  const WEEKS = [];
+  for (let i = 0; i < DAYS; i += 7) WEEKS.push({ i0: i, i1: Math.min(i + 6, DAYS - 1) });
+  const weekStart = i => Math.floor(i / 7) * 7;
+  const weekEnd = i => Math.min(weekStart(i) + 6, DAYS - 1);
+
+  /* ===================================================================
+     篩選
+     =================================================================== */
+  function pass(c, except) {
+    if (except !== 'status' && state.status && !statusOk(c, state.status)) return false;
+    if (state.county && c.county !== state.county) return false;
+    if (state.audience && c.audience !== state.audience) return false;
+    if (state.topic && c.topic !== state.topic) return false;
+    if (state.owner && (state.owner === 'none' ? c.owner : c.owner !== state.owner)) return false;
+    if (except !== 'date' && (state.from || state.to)) {
+      const d = effDate(c);
+      if (state.from && d < state.from) return false;
+      if (state.to && d > state.to) return false;
+    }
+    if (state.q) {
+      const l = c.lecturer && App.lecturer(c.lecturer);
+      const inv = App.currentInvite(c);
+      const hay = `${c.id} ${c.org} ${c.contact} ${App.county(c.county).name}${c.district} ${l ? l.name : ''} ${inv ? App.lecturer(inv.lecturer).name : ''}`.toLowerCase();
+      if (!hay.includes(state.q.toLowerCase())) return false;
+    }
+    return true;
+  }
+  const stageRank = c => (c.status === 'active' ? App.stageIndex(c.stage) : 9 + ['cancelled', 'rejected', 'withdrawn'].indexOf(c.status));
+  const ownerName = c => (c.owner ? App.staff(c.owner).name : '');
+  const SORTERS = {
+    id: (a, b) => a.id.localeCompare(b.id),
+    org: (a, b) => a.org.localeCompare(b.org, 'zh-Hant') || a.id.localeCompare(b.id),
+    date: (a, b) => effDate(a).localeCompare(effDate(b)) || a.id.localeCompare(b.id),
+    stage: (a, b) => stageRank(a) - stageRank(b) || lateBy(b) - lateBy(a) || a.id.localeCompare(b.id),
+    owner: (a, b) => ownerName(a).localeCompare(ownerName(b), 'zh-Hant') || a.id.localeCompare(b.id),
+  };
+  const SORT_TEXT = { id: ['案號由舊到新', '案號由新到舊'], org: ['申請單位名稱排序', '申請單位名稱反向排序'], date: ['活動日期由近到遠', '活動日期由遠到近'], stage: ['依流程關卡先後', '依流程關卡反序'], owner: ['依承辦人排序', '依承辦人反向排序'] };
+
+  /* ===================================================================
+     控制項初始化
+     =================================================================== */
+  const opt = (v, t) => `<option value="${esc(v)}">${esc(t)}</option>`;
+  $('#ap-status').innerHTML = opt('', '全部狀態') + opt('open', '進行中（未結案）') +
+    `<optgroup label="流程關卡">${App.STAGES.map(s => opt(s.key, s.label)).join('')}</optgroup>` +
+    `<optgroup label="未成案">${Object.entries(App.EXITS).map(([k, v]) => opt(k, v)).join('')}</optgroup>`;
+  const countyOptions = App.REGIONS.map(r => `<optgroup label="${r}">${App.COUNTIES.filter(c => c.region === r).map(c => opt(c.id, c.name)).join('')}</optgroup>`).join('');
+  $('#ap-county').innerHTML = opt('', '全部縣市') + countyOptions;
+  $('#ap-audience').innerHTML = opt('', '全部對象') + App.AUDIENCES.map(a => opt(a.id, a.name)).join('');
+  $('#ap-topic').innerHTML = opt('', '全部主題') + App.TOPICS.map(t => opt(t.id, t.name)).join('');
+  $('#ap-owner').innerHTML = opt('', '全部承辦人') + ASSIGNABLE.map(s => opt(s.id, `${s.name}（${s.area}）`)).join('') + opt('none', '未指派');
+  $('#ap-assign').innerHTML = opt('', '指派給…') + ASSIGNABLE.map(s => opt(s.id, `${s.name}（${s.area}）`)).join('');
+  $('#nf-county').innerHTML = opt('', '請選擇') + countyOptions;
+  $('#nf-topic').innerHTML = opt('', '請選擇') + App.TOPICS.map(t => opt(t.id, t.name)).join('');
+  $('#nf-aud').innerHTML = opt('', '請選擇') + App.AUDIENCES.map(a => opt(a.id, a.name)).join('');
+
+  // 常用檢視按鈕
+  $$('.ap-vgroup .views').forEach(host => {
+    host.innerHTML = VIEWS.filter(v => v.group === host.dataset.group).map(v => `<button type="button" class="view${v.alert ? ' is-alert' : ''}" data-view="${v.key}" aria-pressed="false">${icon(v.icon)}${esc(v.label)}<span class="view__n" data-vn="${v.key}"></span></button>`).join('');
+  });
+
+  // 流程關卡軌道
+  const rail = $('#ap-rail');
+  rail.insertAdjacentHTML('beforeend', App.STAGES.map(s => `<div class="ap-stop" data-key="${s.key}">
+  <button type="button" class="ap-stop__btn" aria-pressed="false">
+    <span class="ap-stop__dot">${icon(s.icon)}</span>
+    <span class="ap-stop__n" data-odo>0</span>
+    <span class="ap-stop__label">${s.label}</span>
+    <span class="ap-stop__meta"></span>
+  </button>
+</div>`).join(''));
+  const stopEls = Object.fromEntries($$('.ap-stop', rail).map(el => [el.dataset.key, el]));
+
+  // 軌道上的流動與瓶頸脈動：離開視窗或分頁隱藏時暫停
+  const flowCard = $('#ap-flow');
+  let flowVisible = true;
+  const syncFlow = () => flowCard.classList.toggle('is-paused', !flowVisible || document.hidden);
+  new IntersectionObserver(es => { flowVisible = es[es.length - 1].isIntersecting; syncFlow(); }, { threshold: 0 }).observe(flowCard);
+  document.addEventListener('visibilitychange', syncFlow);
+
+  // 快速區間
+  const ym = App.TODAY.slice(0, 7);
+  const monthEnd = iso => App.addDays(App.iso(new Date(App.toDate(iso).getFullYear(), App.toDate(iso).getMonth() + 1, 1)), -1);
+  const nextMonth = App.iso(new Date(App.toDate(App.TODAY).getFullYear(), App.toDate(App.TODAY).getMonth() + 1, 1));
+  const PRESETS = [
+    { key: 'all', label: '全年度', range: [null, null] },
+    { key: 'week', label: '本週', range: [App.WEEK.start, App.WEEK.end] },
+    { key: 'month', label: '本月', range: [`${ym}-01`, monthEnd(`${ym}-01`)] },
+    { key: 'next30', label: '未來 30 日', range: [App.TODAY, App.addDays(App.TODAY, 29)] },
+    { key: 'nextm', label: '下個月', range: [nextMonth, monthEnd(nextMonth)] },
+  ];
+  $('#ap-presets').innerHTML = PRESETS.map(p => `<button type="button" class="chip" data-preset="${p.key}" aria-pressed="false">${p.label}</button>`).join('');
+
+  /* ===================================================================
+     招牌互動：活動日期刷選
+     每週一根堆疊長條（依案件所在流程分色），拖曳背景畫出區間、拖曳把手調整、拖曳區間整段平移；
+     把手是 role="slider"，方向鍵以週為單位移動（Shift＋方向鍵以日為單位）。
+     =================================================================== */
+  function createBrush(host, o) {
+    host.innerHTML = `<svg class="ap-hist" role="img" focusable="false"></svg>
+<div class="ap-brush__sel" hidden></div>
+<button type="button" class="ap-brush__h" data-h="from" role="slider" aria-label="活動日期起日" aria-valuemin="0" aria-valuemax="${DAYS - 1}"><span class="ap-brush__grip" aria-hidden="true"></span></button>
+<button type="button" class="ap-brush__h" data-h="to" role="slider" aria-label="活動日期迄日" aria-valuemin="0" aria-valuemax="${DAYS - 1}"><span class="ap-brush__grip" aria-hidden="true"></span></button>
+<div class="chart-tip" aria-hidden="true"></div>
+<table class="sr-only"><caption>各週活動件數（依活動日期）</caption><tbody></tbody></table>`;
+    const svg = $('svg', host), sel = $('.ap-brush__sel', host), tip = $('.chart-tip', host), srBody = $('tbody', host);
+    const [hFrom, hTo] = $$('.ap-brush__h', host);
+    let W = 0, P = null, iw = 0, ih = 0, wkEls = [], hoverRect = null;
+    let counts = WEEKS.map(() => CATS.map(() => 0)), sig = '';
+    let range = null;              // {f, t}：日索引（含頭含尾）；null＝全年度
+    let grown = App.calm();        // 首次進入視窗才讓長條長出來
+    let drag = null;
+    const x = i => P.l + i / DAYS * iw;
+    const dayAtX = px => clamp(Math.floor((px - P.l) / iw * DAYS), 0, DAYS - 1);
+
+    function build() {
+      W = Math.round(host.clientWidth) || 400;
+      const senior = App.senior.on();
+      const fs = senior ? 16 : 13;
+      P = { l: senior ? 26 : 16, r: senior ? 26 : 16, t: fs + 16, b: fs + 16 };
+      ih = senior ? 112 : 96;
+      iw = W - P.l - P.r;
+      const H = P.t + ih + P.b;
+      const base = P.t + ih;
+      host.style.setProperty('--pt', `${P.t}px`);
+      host.style.setProperty('--ih', `${ih}px`);
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('height', H);
+      const tx = x(dayIdx(App.TODAY) + .5);
+      // 月份標籤太擠時隔月顯示
+      const skip = iw / 10 < fs * 2.6 ? 2 : 1;
+      let months = '';
+      for (let m = 3; m <= 12; m++) {
+        const xm = x(m === 3 ? 0 : dayIdx(`2026-${pad(m)}-01`));
+        months += `<line class="ap-hist__tick" x1="${xm.toFixed(1)}" x2="${xm.toFixed(1)}" y1="${base}" y2="${base + 5}"/>`;
+        if ((m - 3) % skip === 0) months += `<text class="ap-hist__month" x="${(xm + 3).toFixed(1)}" y="${base + fs + 7}">${m}月</text>`;
+      }
+      svg.innerHTML = `<rect class="ap-hist__future" x="${tx.toFixed(1)}" y="${P.t}" width="${(P.l + iw - tx).toFixed(1)}" height="${ih}"/>
+<rect class="ap-hist__hover" x="0" y="${P.t}" width="0" height="${ih}"/>
+<g>${WEEKS.map((w, k) => `<g class="ap-hist__wk" style="--k:${k}">${CATS.map(cat => `<rect fill="${cat.color}" rx="1.5"/>`).join('')}</g>`).join('')}</g>
+<line class="ap-hist__base" x1="${P.l}" x2="${P.l + iw}" y1="${base}" y2="${base}"/>
+${months}
+<line class="ap-hist__today" x1="${tx.toFixed(1)}" x2="${tx.toFixed(1)}" y1="${P.t - 4}" y2="${base}"/>
+<text class="ap-hist__today-label" x="${tx.toFixed(1)}" y="${P.t - 9}" text-anchor="middle">今天 ${fmt.md(App.TODAY)}</text>`;
+      wkEls = $$('.ap-hist__wk', svg).map(g => [...g.children]);
+      hoverRect = $('.ap-hist__hover', svg);
+      paint();
+      place();
+    }
+
+    function paint() {
+      if (!P) return;
+      const totals = counts.map(r => r.reduce((a, b) => a + b, 0));
+      const unit = ih / (Math.max(4, ...totals) * 1.06);
+      WEEKS.forEach((w, k) => {
+        const x0 = x(w.i0) + 1, bw = Math.max(1, x(w.i1 + 1) - x(w.i0) - 2);
+        let y = P.t + ih;
+        wkEls[k].forEach((r, j) => {
+          const h = grown ? counts[k][j] * unit : 0;
+          // 堆疊段之間留一道紙色細縫，分類交界才看得清楚
+          const gap = h > 3 && y < P.t + ih ? 1.5 : 0;
+          const top = (y - h + gap).toFixed(1), hh = Math.max(0, h - gap).toFixed(1);
+          r.setAttribute('x', x0.toFixed(1));
+          r.setAttribute('width', bw.toFixed(1));
+          r.setAttribute('y', top);
+          r.setAttribute('height', hh);
+          // 同時寫 CSS 幾何屬性，才能用 transition 讓長條平滑變形
+          r.style.setProperty('y', `${top}px`);
+          r.style.setProperty('height', `${hh}px`);
+          y -= h;
+        });
+      });
+    }
+
+    function place() {
+      if (!P) return;
+      const f = range ? range.f : 0, t = range ? range.t : DAYS - 1;
+      const xl = x(f), xr = x(t + 1);
+      sel.hidden = !range;
+      sel.style.left = `${xl.toFixed(1)}px`;
+      sel.style.width = `${(xr - xl).toFixed(1)}px`;
+      hFrom.style.left = `${xl.toFixed(1)}px`;
+      hTo.style.left = `${xr.toFixed(1)}px`;
+      host.classList.toggle('is-full', !range);
+      [[hFrom, f], [hTo, t]].forEach(([h, v]) => { h.setAttribute('aria-valuenow', v); h.setAttribute('aria-valuetext', fmt.rocLong(isoAt(v))); });
+      wkEls.forEach((rs, k) => rs[0].parentNode.classList.toggle('is-out', !!range && (WEEKS[k].i1 < f || WEEKS[k].i0 > t)));
+    }
+
+    function commit(f, t) {
+      range = f <= 0 && t >= DAYS - 1 ? null : { f, t };
+      place();
+      o.onChange(range ? isoAt(range.f) : null, range ? isoAt(range.t) : null);
+    }
+
+    function hideTip() { tip.classList.remove('is-on'); if (hoverRect) hoverRect.classList.remove('is-on'); }
+    function hover(px) {
+      if (px < P.l || px > P.l + iw) { hideTip(); return; }
+      const k = Math.floor(dayAtX(px) / 7);
+      const w = WEEKS[k];
+      const row = counts[k];
+      const total = row.reduce((a, b) => a + b, 0);
+      const x0 = x(w.i0), x1 = x(w.i1 + 1);
+      hoverRect.setAttribute('x', x0.toFixed(1));
+      hoverRect.setAttribute('width', (x1 - x0).toFixed(1));
+      hoverRect.classList.add('is-on');
+      tip.innerHTML = `<span class="ap-tip__date">${fmt.rocShort(isoAt(w.i0))} – ${fmt.rocShort(isoAt(w.i1))}</span><br><b>${total}</b> 件${CATS.map((cat, j) => (row[j] ? `<br><span class="ap-tip__key" style="--c:${cat.color}"></span>${cat.label} ${row[j]}` : '')).join('')}`;
+      tip.classList.add('is-on');
+      const tw = tip.offsetWidth;
+      tip.style.left = `${(x0 + x1) / 2 < W / 2 ? x1 + 8 : x0 - 8 - tw}px`;
+      tip.style.top = `${P.t}px`;
+    }
+
+    host.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      const px = e.clientX - host.getBoundingClientRect().left;
+      const h = e.target.closest('.ap-brush__h');
+      const cur = range ? { f: range.f, t: range.t } : { f: 0, t: DAYS - 1 };
+      if (h) drag = Object.assign({ mode: h.dataset.h }, cur);
+      else if (e.target.closest('.ap-brush__sel')) drag = Object.assign({ mode: 'move', start: dayAtX(px) }, cur);
+      else drag = { mode: 'new', anchor: dayAtX(px) };
+      drag.x0 = px;
+      drag.moved = false;
+      host.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      if (h) h.focus();
+      hideTip();
+    });
+    host.addEventListener('pointermove', e => {
+      const px = e.clientX - host.getBoundingClientRect().left;
+      if (!drag) { if (e.pointerType === 'mouse') hover(px); return; }
+      if (Math.abs(px - drag.x0) > 3) drag.moved = true;
+      if (!drag.moved) return;
+      const d = dayAtX(px);
+      let f, t;
+      if (drag.mode === 'new') { f = weekStart(Math.min(drag.anchor, d)); t = weekEnd(Math.max(drag.anchor, d)); }
+      else if (drag.mode === 'from') { f = Math.min(weekStart(d), weekStart(drag.t)); t = drag.t; }
+      else if (drag.mode === 'to') { t = Math.max(weekEnd(d), weekEnd(drag.f)); f = drag.f; }
+      else {
+        const len = drag.t - drag.f;
+        f = clamp(drag.f + Math.round((d - drag.start) / 7) * 7, 0, DAYS - 1 - len);
+        t = f + len;
+      }
+      if (!range || range.f !== f || range.t !== t) commit(f, t);
+    });
+    host.addEventListener('pointerup', () => {
+      if (!drag) return;
+      // 在背景上單點：選取那一週
+      if (!drag.moved && drag.mode === 'new') commit(weekStart(drag.anchor), weekEnd(drag.anchor));
+      drag = null;
+    });
+    host.addEventListener('pointercancel', () => { drag = null; });
+    host.addEventListener('pointerleave', () => { if (!drag) hideTip(); });
+    host.addEventListener('keydown', e => {
+      const h = e.target.closest('.ap-brush__h');
+      if (!h) return;
+      const steps = { ArrowLeft: -7, ArrowDown: -7, ArrowRight: 7, ArrowUp: 7, PageDown: -28, PageUp: 28 };
+      if (!(e.key in steps) && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      let f = range ? range.f : 0, t = range ? range.t : DAYS - 1;
+      const isFrom = h.dataset.h === 'from';
+      if (e.key === 'Home') { if (isFrom) f = 0; else t = f; }
+      else if (e.key === 'End') { if (isFrom) f = t; else t = DAYS - 1; }
+      else {
+        const s = e.shiftKey ? Math.sign(steps[e.key]) : steps[e.key];
+        if (isFrom) f = clamp(f + s, 0, t); else t = clamp(t + s, f, DAYS - 1);
+      }
+      commit(f, t);
+    });
+
+    build();
+    App.whenVisible(host, () => { if (!grown) { grown = true; paint(); } });
+    new ResizeObserver(() => { if (Math.abs(Math.round(host.clientWidth) - W) >= 2) build(); }).observe(host);
+    App.onMode(() => { if (App.calm()) grown = true; build(); });
+
+    return {
+      setData(list) {
+        const next = WEEKS.map(() => CATS.map(() => 0));
+        list.forEach(c => { next[Math.floor(dayIdx(effDate(c)) / 7)][catOf(c)]++; });
+        const s = next.join('|');
+        if (s === sig) return;
+        sig = s;
+        counts = next;
+        paint();
+        const totals = counts.map(r => r.reduce((a, b) => a + b, 0));
+        const peak = totals.indexOf(Math.max(...totals));
+        svg.setAttribute('aria-label', `每週活動件數長條圖，共 ${list.length} 件，最多為 ${fmt.rocShort(isoAt(WEEKS[peak].i0))} 起的一週 ${totals[peak]} 件`);
+        srBody.innerHTML = WEEKS.map((w, k) => (totals[k] ? `<tr><th scope="row">${fmt.rocShort(isoAt(w.i0))}–${fmt.rocShort(isoAt(w.i1))}</th><td>${totals[k]} 件</td></tr>` : '')).join('');
+      },
+      setRange(from, to) {
+        range = from || to ? { f: from ? dayIdx(from) : 0, t: to ? dayIdx(to) : DAYS - 1 } : null;
+        place();
+      },
+      peak: () => Math.max(...counts.map(r => r.reduce((a, b) => a + b, 0))),
+    };
+  }
+
+  let raf = 0;
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderAll(); }); };
+  const brush = createBrush($('#ap-brush'), {
+    onChange(from, to) { state.from = from; state.to = to; state.page = 1; schedule(); },
+  });
+
+  /* ===================================================================
+     繪製
+     =================================================================== */
+  function renderViews(sets) {
+    VIEWS.forEach(v => {
+      const b = $(`[data-view="${v.key}"]`);
+      b.setAttribute('aria-pressed', String(state.view === v.key));
+      const n = v.key === 'all' ? App.CASES.length : sets[v.key].size;
+      $('.view__n', b).textContent = fmt.num(n);
+      b.classList.toggle('is-alert', !!v.alert && n > 0);
+    });
+  }
+
+  function renderRail(list) {
+    const hot = App.bottleneck();
+    App.STAGES.forEach(s => {
+      const el = stopEls[s.key];
+      const cs = list.filter(c => c.status === 'active' && c.stage === s.key);
+      const late = cs.filter(c => lateBy(c) > 0).length;
+      const exc = s.key === 'scheduled' ? cs.filter(c => c.exception).length : 0;
+      el.classList.toggle('is-empty', !cs.length);
+      el.classList.toggle('is-hot', s.key === hot);
+      const btn = el.firstElementChild;
+      btn.setAttribute('aria-pressed', String(state.status === s.key));
+      btn.setAttribute('aria-label', `${s.label}：${cs.length} 件${late ? `，${late} 件超過處理時限` : ''}${exc ? `，${exc} 件異常` : ''}${s.key === hot ? '，目前瓶頸' : ''}`);
+      App.odometer($('.ap-stop__n', el), cs.length);
+      $('.ap-stop__meta', el).innerHTML = late ? `<span class="ap-stop__late">逾時 ${late}</span>` : exc ? `<span class="ap-stop__late">異常 ${exc}</span>` : s.sla != null && cs.length ? `時限 ${s.sla} 天` : '';
+      let tag = $('.ap-stop__hot', el);
+      if (s.key === hot && !tag) { btn.insertAdjacentHTML('afterbegin', '<span class="ap-stop__hot" aria-hidden="true">瓶頸</span>'); }
+      else if (s.key !== hot && tag) tag.remove();
+    });
+    const exits = [['open', '進行中', list.filter(isOpen).length], ...Object.entries(App.EXITS).map(([k, v]) => [k, v, list.filter(c => c.status === k).length])];
+    $('#ap-exits').innerHTML = `<span class="ap-exits__cap">案件狀態</span>${exits.map(([k, label, n]) => `<button type="button" class="chip" data-status="${k}" aria-pressed="${state.status === k}">${label}<span class="chip__n">${fmt.num(n)}</span></button>`).join('')}`;
+    const open = list.filter(isOpen).length;
+    $('#flow-sub').textContent = `目前條件下進行中 ${fmt.num(open)} 件・點選關卡即可篩選`;
+    // 瓶頸提示看全系統（不受篩選影響），直接給出處理入口
+    const hs = App.stageStats().find(s => s.key === hot);
+    const designated = hs.key === 'confirm' ? hs.cases.filter(x => x.days > hs.sla && App.currentInvite(x.c) && App.currentInvite(x.c).designated).length : 0;
+    const hotView = HOT_VIEW[hs.key];
+    $('#ap-hotnote').innerHTML = `${icon('alert')}<p class="ap-hotnote__txt"><b>瓶頸在「${hs.label}」</b>：${hs.count} 件中有 ${hs.late} 件超過處理時限（${hs.slaText}）${designated ? `，其中 ${designated} 件為指定講師、不自動轉送` : ''}。</p><button type="button" class="btn btn--sm btn--clay" ${hotView ? `data-hot-view="${hotView}"` : `data-hot-stage="${hs.key}"`}>${hotView ? `查看 ${hs.late} 件逾時案件` : '查看此關卡案件'}</button>`;
+  }
+  // 瓶頸關卡對應的待辦檢視（口徑完全相同時才直接切換檢視）
+  const HOT_VIEW = { confirm: 'noreply', done: 'report-late' };
+
+  function renderTime(list) {
+    brush.setData(list);
+    brush.setRange(state.from, state.to);
+    const inRange = list.filter(c => { const d = effDate(c); return (!state.from || d >= state.from) && (!state.to || d <= state.to); });
+    $('#ap-legend').innerHTML = CATS.map(cat => `<li><i style="--c:${cat.color}" aria-hidden="true"></i>${cat.label}<b>${fmt.num(inRange.filter(cat.test).length)}</b></li>`).join('');
+    $('#ap-time-total').innerHTML = `${state.from || state.to ? '區間內' : '全年度・可拖曳選取'}<span><b>${fmt.num(inRange.length)}</b> 件</span>`;
+    // 正在輸入的欄位不覆寫
+    [['#ap-from', state.from], ['#ap-to', state.to]].forEach(([sel, v]) => {
+      const el = $(sel);
+      if (document.activeElement !== el) { el.value = v ? roc(v) : ''; setFieldError(el, ''); }
+    });
+    $$('#ap-presets [data-preset]').forEach(b => {
+      const p = PRESETS.find(x => x.key === b.dataset.preset);
+      b.setAttribute('aria-pressed', String(p.range[0] === state.from && p.range[1] === state.to));
+    });
+  }
+
+  function renderApplied() {
+    const items = [];
+    if (state.q) items.push(['q', `關鍵字：${state.q}`]);
+    if (state.status) items.push(['status', `狀態：${statusLabel(state.status)}`]);
+    if (state.county) items.push(['county', `縣市：${App.county(state.county).name}`]);
+    if (state.audience) items.push(['audience', `對象：${App.audience(state.audience).name}`]);
+    if (state.topic) items.push(['topic', `主題：${App.topic(state.topic).name}`]);
+    if (state.owner) items.push(['owner', `承辦：${state.owner === 'none' ? '未指派' : App.staff(state.owner).name}`]);
+    if (state.from || state.to) items.push(['date', `活動日期：${roc(state.from || DAY0)}–${roc(state.to || DAY_END)}`]);
+    $('#ap-applied').innerHTML = items.length ? `<span class="ap-applied__cap">已套用</span>${items.map(([k, t]) => `<button type="button" class="ap-pill" data-clear="${k}" aria-label="移除條件：${esc(t)}">${esc(t)}${icon('x')}</button>`).join('')}${items.length > 1 ? '<button type="button" class="btn-link ap-clear" data-clear="all">清除全部條件</button>' : ''}` : '';
+  }
+
+  /* ---------- 表格儲存格 ---------- */
+  function dateCell(c) {
+    if (c.date) return `<span class="cell-main">${fmt.rocShort(c.date)}${c.date === App.TODAY ? '<span class="badge badge--sprout ap-today">今天</span>' : ''}</span><span class="cell-sub">${esc(c.time)}${c.mode === 'online' ? '・線上' : ''}</span>`;
+    if (c.candidates.length) {
+      const first = c.candidates[0], last = c.candidates[c.candidates.length - 1];
+      return `<span class="cell-main">候選 ${c.candidates.length} 日</span><span class="cell-sub ap-nw" title="${c.candidates.map(fmt.rocShort).join('、')}">${fmt.md(first)}${last !== first ? `–${fmt.md(last)}` : ''}</span>`;
+    }
+    return '<span class="cell-main ap-muted">未排定</span>';
+  }
+  function lectCell(c) {
+    if (c.lecturer) { const l = App.lecturer(c.lecturer); return `<span class="ap-lect">${esc(l.name)}</span><span class="cell-sub truncate" style="--tw:150px">${esc(l.title)}</span>`; }
+    const inv = App.currentInvite(c);
+    if (inv) return `<span class="ap-lect ap-lect--wait">邀請中</span><span class="cell-sub">第 ${inv.rank} 順位 ${esc(App.lecturer(inv.lecturer).name)}${inv.designated ? '・指定' : ''}</span>`;
+    if (c.status === 'active' && c.stage === 'matching') return '<span class="ap-muted">待媒合</span>';
+    return '<span class="ap-muted">—</span>';
+  }
+  function stageNote(c) {
+    if (c.status !== 'active') return `<span class="cell-sub truncate" title="${esc(c.exitReason)}">${fmt.md(c.exitDate)}・${esc(c.exitReason)}</span>`;
+    const d = dwell(c), late = lateBy(c);
+    const lateTxt = t => `<span class="cell-sub ap-late">${icon('alert')}${t}</span>`;
+    switch (c.stage) {
+      case 'closed': return `<span class="cell-sub">${fmt.md(App.logDate(c, 'closed'))} 結案</span>`;
+      case 'claim': return `<span class="cell-sub">已編入 ${esc(c.batch || '')}</span>`;
+      case 'scheduled':
+        if (c.exception) return lateTxt(c.exception.type === 'leave' ? '講師請假・需代課' : '改期申請中');
+        return `<span class="cell-sub">${fmt.rel(c.date)}</span>`;
+      case 'done': return late ? lateTxt(`逾期 ${late} 天未回填`) : `<span class="cell-sub">授課後 ${d} 天</span>`;
+      default:
+        if (c.need) return '<span class="cell-sub ap-warn">退件補正中</span>';
+        return late ? lateTxt(`逾時 ${late} 天`) : `<span class="cell-sub">第 ${d + 1} 天</span>`;
+    }
+  }
+  function ownerCell(c) {
+    if (!c.owner) return '<span class="badge badge--clay">未指派</span>';
+    const s = App.staff(c.owner);
+    return `<span class="ap-owner">${App.avatar(s, 'sm')}${esc(s.name)}</span>`;
+  }
+  function actionCell(c) {
+    const href = `application.html?id=${c.id}`;
+    let main;
+    if (c.status !== 'active' || c.stage === 'closed' || c.stage === 'claim') main = `<a class="btn btn--sm btn--ghost" href="${href}">查看</a>`;
+    else if (c.stage === 'submitted') main = `<button type="button" class="btn btn--sm btn--primary" data-act="accept" data-id="${c.id}">受理</button>`;
+    else if (c.stage === 'review') main = `<a class="btn btn--sm" href="${href}">審核</a>`;
+    else if (c.stage === 'matching') main = App.currentInvite(c) ? `<a class="btn btn--sm" href="${href}#invite">邀請進度</a>` : `<a class="btn btn--sm btn--primary" href="${href}#match">開始媒合</a>`;
+    else if (c.stage === 'confirm') main = lateBy(c) ? (remindedToday(c) ? `<span class="ap-done">${icon('check')}今日已催覆</span>` : `<button type="button" class="btn btn--sm btn--clay" data-act="remind" data-id="${c.id}">催覆講師</button>`) : `<a class="btn btn--sm" href="${href}#invite">邀請進度</a>`;
+    else if (c.stage === 'scheduled') main = c.exception && c.exception.type === 'leave' ? `<a class="btn btn--sm btn--clay" href="${href}#match">安排代課</a>` : `<a class="btn btn--sm" href="schedule.html?id=${c.id}">執行管控</a>`;
+    else if (c.stage === 'done') main = lateBy(c) ? (remindedToday(c) ? `<span class="ap-done">${icon('check')}今日已催交</span>` : `<button type="button" class="btn btn--sm btn--clay" data-act="chase" data-id="${c.id}">催交成果</button>`) : `<a class="btn btn--sm btn--ghost" href="schedule.html?id=${c.id}">查看</a>`;
+    else main = `<a class="btn btn--sm" href="claims.html?id=${c.id}">勾稽核銷</a>`;
+    return `<div class="ap-act">${main}<button type="button" class="icon-btn" data-act="peek" data-id="${c.id}" title="快速預覽">${icon('eye')}<span class="icon-btn__label">預覽</span></button></div>`;
+  }
+  function rowHtml(c) {
+    const on = selected.has(c.id);
+    const cn = App.county(c.county);
+    return `<tr data-id="${c.id}" class="${on ? 'is-selected' : ''}${flash.has(c.id) ? ' is-flash' : ''}">
+  <td class="col-check ap-c-check"><label class="check"><input type="checkbox" data-pick="${c.id}"${on ? ' checked' : ''} aria-label="選取 ${c.id} ${esc(c.org)}"><span class="check__box">${icon('check')}</span></label></td>
+  <td class="ap-c-id">${App.caseLink(c)}<span class="cell-sub">送件 ${fmt.md(c.submitted)}</span></td>
+  <td class="ap-c-org"><span class="cell-main"><a href="application.html?id=${c.id}">${esc(c.org)}</a></span><span class="cell-sub">${cn.name}${esc(c.district)}・<span class="nowrap">${App.audience(c.audience).name} ${c.people} 人</span></span></td>
+  <td class="col-2nd ap-c-topic" data-label="主題"><div>${App.topicTag(c.topic)}</div></td>
+  <td class="ap-c-date" data-label="活動日期"><div>${dateCell(c)}</div></td>
+  <td class="col-2nd ap-c-lect" data-label="講師"><div>${lectCell(c)}</div></td>
+  <td class="ap-c-stage">${App.stageBadge(c)}${stageNote(c)}</td>
+  <td class="col-2nd ap-c-owner" data-label="承辦"><div>${ownerCell(c)}</div></td>
+  <td class="col-act ap-c-act">${actionCell(c)}</td>
+</tr>`;
+  }
+
+  const tbody = $('#ap-tbody');
+  let pager;
+  const makePager = () => {
+    // App.pager 的每頁筆數在建立時固定：改筆數時換一個乾淨的容器重建
+    const old = $('#ap-pager');
+    const host = old.cloneNode(false);
+    old.replaceWith(host);
+    pager = App.pager(host, { total: current.length, page: state.page, size: state.size, onChange: p => {
+      state.page = p;
+      renderList();
+      const card = $('#ap-list');
+      if (card.getBoundingClientRect().top < 0) card.scrollIntoView({ block: 'start', behavior: App.calm() ? 'auto' : 'smooth' });
+    } });
+  };
+
+  function renderList() {
+    const pages = Math.max(1, Math.ceil(current.length / state.size));
+    state.page = clamp(state.page, 1, pages);
+    const items = current.slice((state.page - 1) * state.size, state.page * state.size);
+    tbody.innerHTML = items.length ? items.map(rowHtml).join('') : `<tr class="ap-empty-row"><td colspan="9">${App.emptyState({ title: '沒有符合條件的案件', text: '試著移除部分篩選條件、放寬活動日期區間，或切換到「全部案件」。', action: { label: '清除篩選條件', id: 'ap-empty-clear' } })}</td></tr>`;
+    flash = new Set();
+    pager.set(state.page, current.length);
+    App.odometer($('#ap-count'), current.length);
+    const v = view(state.view);
+    $('#ap-list-sub').textContent = `${v.desc}・${SORT_TEXT[state.sort.key][state.sort.dir > 0 ? 0 : 1]}`;
+    syncChecks(items);
+  }
+
+  function syncChecks(items = current.slice((state.page - 1) * state.size, state.page * state.size)) {
+    const n = items.filter(c => selected.has(c.id)).length;
+    ['#ap-all', '#ap-all-sm'].forEach(sel => {
+      const box = $(sel);
+      box.checked = items.length > 0 && n === items.length;
+      box.indeterminate = n > 0 && n < items.length;
+    });
+    const bar = $('#ap-bulk');
+    bar.classList.toggle('is-on', selected.size > 0);
+    $('#ap-sel-n').textContent = fmt.num(selected.size);
+    const allBtn = $('#ap-sel-all');
+    const missing = current.filter(c => !selected.has(c.id)).length;
+    allBtn.hidden = !(n === items.length && items.length && missing);
+    allBtn.textContent = `選取全部符合條件的 ${fmt.num(current.length)} 件`;
+  }
+
+  function renderLede() {
+    const valid = App.CASES.filter(c => c.status !== 'withdrawn').length;
+    const open = App.CASES.filter(isOpen).length;
+    const unassigned = App.CASES.filter(c => c.status === 'active' && !c.owner).length;
+    $('#ap-lede').innerHTML = `115 年度共 <b>${fmt.num(valid)}</b> 件有效申請，進行中 <b>${fmt.num(open)}</b> 件${unassigned ? `，其中 <b class="c-clay">${unassigned}</b> 件尚未指派承辦` : ''}。勾選多筆可批次指派承辦人或匯出 CSV。`;
+  }
+
+  function syncControls() {
+    [['#ap-status', 'status'], ['#ap-county', 'county'], ['#ap-audience', 'audience'], ['#ap-topic', 'topic'], ['#ap-owner', 'owner']].forEach(([sel, k]) => { $(sel).value = state[k]; });
+    const q = $('#ap-q');
+    if (document.activeElement !== q) q.value = state.q;
+    $('#ap-sort-sm').value = `${state.sort.key}:${state.sort.dir}`;
+    if (!$('#ap-sort-sm').value) $('#ap-sort-sm').selectedIndex = 0;
+    $$('th[data-sort]', table).forEach(th => {
+      if (th.dataset.sort === state.sort.key) th.setAttribute('aria-sort', state.sort.dir > 0 ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+    const n = ['status', 'county', 'audience', 'topic', 'owner'].filter(k => state[k]).length;
+    $('#ap-more-n').textContent = n ? `（已套用 ${n}）` : '';
+  }
+
+  function renderAll() {
+    const T = { all: App.todo(), mine: App.todo({ mine: true }) };
+    const sets = Object.fromEntries(VIEWS.map(v => [v.key, v.ids(T)]));
+    const base = sets[state.view];
+    const pool = base ? App.CASES.filter(c => base.has(c.id)) : App.CASES;
+    const noStatus = pool.filter(c => pass(c, 'status'));
+    const noDate = pool.filter(c => pass(c, 'date'));
+    current = noStatus.filter(c => !state.status || statusOk(c, state.status));
+    const cmp = SORTERS[state.sort.key];
+    current.sort((a, b) => cmp(a, b) * state.sort.dir);
+    renderViews(sets);
+    renderRail(noStatus);
+    renderTime(noDate);
+    renderApplied();
+    renderList();
+    renderLede();
+    syncControls();
+    if ($('#ap-peek').open) renderPeek();
+  }
+
+  /* ===================================================================
+     事件：檢視、關卡、篩選
+     =================================================================== */
+  const setFilter = patch => { Object.assign(state, patch, { page: 1 }); renderAll(); };
+  $('#ap-viewbar').addEventListener('click', e => {
+    const b = e.target.closest('[data-view]');
+    if (!b) return;
+    // 檢視本身以關卡區分，切換時一併清除關卡條件，避免組合出空清單
+    setFilter({ view: b.dataset.view, status: '' });
+  });
+  rail.addEventListener('click', e => {
+    const stop = e.target.closest('.ap-stop');
+    if (!stop) return;
+    setFilter({ status: state.status === stop.dataset.key ? '' : stop.dataset.key });
+  });
+  $('#ap-hotnote').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.hotView) setFilter({ view: b.dataset.hotView, status: '' });
+    else setFilter({ view: 'all', status: b.dataset.hotStage, sort: { key: 'stage', dir: 1 } });
+    $('#ap-list').scrollIntoView({ block: 'start', behavior: App.calm() ? 'auto' : 'smooth' });
+  });
+  $('#ap-more').addEventListener('click', e => {
+    const open = !$('#ap-filters').classList.contains('is-open');
+    $('#ap-filters').classList.toggle('is-open', open);
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+  });
+  $('#ap-exits').addEventListener('click', e => {
+    const b = e.target.closest('[data-status]');
+    if (!b) return;
+    setFilter({ status: state.status === b.dataset.status ? '' : b.dataset.status });
+  });
+  [['#ap-status', 'status'], ['#ap-county', 'county'], ['#ap-audience', 'audience'], ['#ap-topic', 'topic'], ['#ap-owner', 'owner']].forEach(([sel, k]) => {
+    $(sel).addEventListener('change', e => setFilter({ [k]: e.target.value }));
+  });
+  let qTimer = 0;
+  $('#ap-q').addEventListener('input', e => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => setFilter({ q: e.target.value.trim() }), 160);
+  });
+  $('#ap-filters').addEventListener('submit', e => { e.preventDefault(); clearTimeout(qTimer); setFilter({ q: $('#ap-q').value.trim() }); });
+  const CLEAR = { q: { q: '' }, status: { status: '' }, county: { county: '' }, audience: { audience: '' }, topic: { topic: '' }, owner: { owner: '' }, date: { from: null, to: null } };
+  const clearAll = () => setFilter({ q: '', status: '', county: '', audience: '', topic: '', owner: '', from: null, to: null });
+  $('#ap-applied').addEventListener('click', e => {
+    const b = e.target.closest('[data-clear]');
+    if (!b) return;
+    if (b.dataset.clear === 'all') clearAll(); else setFilter(CLEAR[b.dataset.clear]);
+    $('#ap-q').focus({ preventScroll: true });
+  });
+
+  // 活動日期：快速區間與民國年輸入
+  $('#ap-presets').addEventListener('click', e => {
+    const b = e.target.closest('[data-preset]');
+    if (!b) return;
+    const p = PRESETS.find(x => x.key === b.dataset.preset);
+    setFilter({ from: p.range[0], to: p.range[1] });
+  });
+  function setFieldError(input, msg) {
+    const field = input.closest('.field');
+    field.classList.toggle('is-invalid', !!msg);
+    let err = $('.field__error', field);
+    if (msg && !err) { err = document.createElement('p'); err.className = 'field__error'; err.id = `${input.id}-err`; field.appendChild(err); }
+    if (err) err.innerHTML = msg ? `${icon('alert')}${esc(msg)}` : '';
+    input.setAttribute('aria-invalid', String(!!msg));
+    if (msg) input.setAttribute('aria-describedby', `${input.id}-err ap-range-hint`); else input.setAttribute('aria-describedby', 'ap-range-hint');
+  }
+  function commitRangeInput(input, key) {
+    const raw = input.value.trim();
+    if (!raw) { setFieldError(input, ''); if (state[key]) setFilter({ [key]: null }); return; }
+    const iso = parseRoc(raw);
+    if (!iso) { setFieldError(input, '請以民國年輸入，例如 115/11/24'); return; }
+    if (iso < DAY0 || iso > DAY_END) { setFieldError(input, `請輸入 ${roc(DAY0)}–${roc(DAY_END)} 之間的日期`); return; }
+    const other = key === 'from' ? state.to : state.from;
+    if (other && (key === 'from' ? iso > other : iso < other)) { setFieldError(input, key === 'from' ? '起日不可晚於迄日' : '迄日不可早於起日'); return; }
+    setFieldError(input, '');
+    input.value = roc(iso);
+    // Enter 送出後失焦還會再觸發 change：值沒變就不重繪，避免重繪中途吃掉使用者接著的點擊
+    if (iso !== state[key]) setFilter({ [key]: iso });
+  }
+  [['#ap-from', 'from'], ['#ap-to', 'to']].forEach(([sel, key]) => {
+    const input = $(sel);
+    input.addEventListener('change', () => commitRangeInput(input, key));
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitRangeInput(input, key); } });
+  });
+
+  // 排序
+  const table = $('#ap-table');
+  App.bindSort(table, { onSort: (key, dir) => { state.sort = { key, dir }; state.page = 1; renderAll(); } });
+  $('#ap-sort-sm').addEventListener('change', e => {
+    const [key, dir] = e.target.value.split(':');
+    state.sort = { key, dir: Number(dir) };
+    state.page = 1;
+    renderAll();
+  });
+  $('#ap-size').addEventListener('change', e => { state.size = Number(e.target.value); state.page = 1; makePager(); renderAll(); });
+
+  /* ===================================================================
+     勾選與批次操作
+     =================================================================== */
+  const pageItems = () => current.slice((state.page - 1) * state.size, state.page * state.size);
+  tbody.addEventListener('change', e => {
+    const box = e.target.closest('[data-pick]');
+    if (!box) return;
+    if (box.checked) selected.add(box.dataset.pick); else selected.delete(box.dataset.pick);
+    box.closest('tr').classList.toggle('is-selected', box.checked);
+    syncChecks();
+  });
+  ['#ap-all', '#ap-all-sm'].forEach(sel => $(sel).addEventListener('change', e => {
+    pageItems().forEach(c => { if (e.target.checked) selected.add(c.id); else selected.delete(c.id); });
+    renderList();
+  }));
+  $('#ap-sel-all').addEventListener('click', () => { current.forEach(c => selected.add(c.id)); renderList(); });
+  $('#ap-sel-clear').addEventListener('click', () => { selected.clear(); renderList(); });
+
+  $('#ap-assign-go').addEventListener('click', () => {
+    const owner = $('#ap-assign').value;
+    if (!selected.size) { App.toast('尚未勾選案件', { tone: 'warn', desc: '請先在清單中勾選要指派的案件。' }); return; }
+    if (!owner) { App.toast('請先選擇要指派的承辦人', { tone: 'warn' }); $('#ap-assign').focus(); return; }
+    const picked = [...selected].map(findCase).filter(Boolean);
+    const target = picked.filter(isOpen);
+    const skipped = picked.length - target.length;
+    const changed = target.filter(c => c.owner !== owner);
+    const prev = changed.map(c => [c, c.owner]);
+    const s = App.staff(owner);
+    changed.forEach(c => { c.owner = owner; });
+    flash = new Set(changed.map(c => c.id));
+    selected.clear();
+    $('#ap-assign').value = '';
+    App.emit('assign');
+    App.toast(changed.length ? `已將 ${changed.length} 件指派給 ${s.name}` : `所選案件原本就由 ${s.name} 承辦`, {
+      desc: [skipped ? `已略過 ${skipped} 件已結案或未成案的案件。` : '', changed.length ? `${s.name}（${s.area}）會在待辦中看到這些案件。` : ''].join('') || undefined,
+      tone: changed.length ? 'ok' : 'info',
+      action: changed.length ? { label: '復原', onClick: () => { prev.forEach(([c, o]) => { c.owner = o; }); App.emit('assign-undo'); } } : undefined,
+    });
+  });
+
+  /* ---------- 匯出 CSV ---------- */
+  function exportCSV(list, label) {
+    if (!list.length) { App.toast('沒有可匯出的案件', { tone: 'warn', desc: '目前的篩選條件下沒有案件。' }); return; }
+    const rows = [['案號', '送件日期', '申請單位', '單位類型', '縣市', '鄉鎮市區', '聯絡人', '聯絡電話', '主題', '服務對象', '申請人數', '辦理方式', '活動日期', '時間', '節數', '講師', '關卡／狀態', '承辦人', '備註']];
+    list.forEach(c => {
+      const l = c.lecturer && App.lecturer(c.lecturer);
+      rows.push([c.id, roc(c.submitted), c.org, c.orgType, App.county(c.county).name, c.district, c.contact, c.phone, App.topic(c.topic).name, App.audience(c.audience).name, c.people,
+        App.MODES[c.mode], c.date ? roc(c.date) : c.candidates.length ? `候選：${c.candidates.map(roc).join('、')}` : '', c.time, c.sessions, l ? l.name : '',
+        c.status === 'active' ? App.stage(c.stage).label : App.EXITS[c.status], c.owner ? App.staff(c.owner).name : '未指派', c.exitReason || c.need || '']);
+    });
+    App.downloadCSV(`申請案件_${label}_${roc(App.TODAY).replace(/\//g, '')}.csv`, rows);
+    App.toast(`已匯出 ${fmt.num(list.length)} 件案件`, { desc: 'CSV 檔（UTF-8）可直接以 Excel 開啟。' });
+  }
+  $('#ap-export').addEventListener('click', () => exportCSV(current, view(state.view).label));
+  $('#ap-sel-export').addEventListener('click', () => exportCSV(App.CASES.filter(c => selected.has(c.id)), '所選'));
+
+  /* ===================================================================
+     列內快速動作
+     =================================================================== */
+  tbody.addEventListener('click', e => {
+    if (e.target.closest('#ap-empty-clear')) { setFilter({ view: 'all', q: '', status: '', county: '', audience: '', topic: '', owner: '', from: null, to: null }); return; }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const c = findCase(b.dataset.id);
+    if (!c) return;
+    if (b.dataset.act === 'peek') { openPeek(c.id); return; }
+    if (b.dataset.act === 'accept') {
+      const prev = { stage: c.stage, log: c.log.slice(), owner: c.owner };
+      c.stage = 'review';
+      c.log.push(['review', App.TODAY]);
+      if (!c.owner) c.owner = App.ME;
+      flash = new Set([c.id]);
+      App.emit('accept');
+      App.toast(`已受理 ${c.id}`, {
+        desc: `${c.org} 進入初審，承辦 ${App.staff(c.owner).name}；初審請於 3 日內完成。`,
+        action: { label: '復原', onClick: () => { Object.assign(c, prev); App.emit('accept-undo'); } },
+      });
+      return;
+    }
+    // 催覆講師（講師確認逾時）／催交成果（授課後逾 30 日）
+    const stamp = `${App.TODAY}T10:30`;
+    const who = App.lecturer(b.dataset.act === 'remind' ? App.currentInvite(c).lecturer : c.lecturer);
+    c.reminders.push(stamp);
+    App.emit('remind');
+    App.toast(b.dataset.act === 'remind' ? `已催覆 ${who.name} 講師` : `已提醒 ${who.name} 講師回填成果`, {
+      desc: `${c.id} ${c.org}：已寄送 Email 與簡訊，並記錄在處理紀錄。`,
+      action: { label: '復原', onClick: () => { c.reminders = c.reminders.filter(r => r !== stamp); App.emit('remind-undo'); } },
+    });
+  });
+
+  /* ===================================================================
+     快速預覽抽屜
+     =================================================================== */
+  const peek = $('#ap-peek');
+  let peekId = null;
+  function renderPeek() {
+    const c = findCase(peekId);
+    if (!c) return;
+    const cn = App.county(c.county);
+    const l = c.lecturer && App.lecturer(c.lecturer);
+    const inv = App.currentInvite(c);
+    const idx = App.stageIndex(c.stage);
+    $('#ap-peek-id').textContent = c.id;
+    $('#ap-peek-title').textContent = c.org;
+    $('#ap-peek-meta').innerHTML = `${App.stageBadge(c)}${App.topicTag(c.topic)}${App.audienceTag(c.audience)}`;
+    $('#ap-peek-open').href = `application.html?id=${c.id}`;
+    const notices = [];
+    if (c.status !== 'active') notices.push(`<p class="notice notice--err">${icon('alert')}<span><b>${App.EXITS[c.status]}</b>（${roc(c.exitDate)}）：${esc(c.exitReason)}</span></p>`);
+    if (c.need) notices.push(`<p class="notice notice--warn">${icon('alert')}<span><b>退件補正中</b>：${esc(c.need)}</span></p>`);
+    if (c.exception) notices.push(`<p class="notice notice--clay">${icon('alert')}<span><b>${c.exception.type === 'leave' ? '講師請假' : '申請改期'}</b>：${esc(c.exception.note)}</span></p>`);
+    else if (lateBy(c)) notices.push(`<p class="notice notice--clay">${icon('hourglass')}<span>已超過「${App.stage(c.stage).label}」處理時限 <b>${lateBy(c)}</b> 天（${esc(App.stage(c.stage).slaText)}）。</span></p>`);
+    const dateTxt = c.date ? `${fmt.rocLong(c.date)} ${esc(c.time)}` : c.candidates.length ? `候選：${c.candidates.map(fmt.rocShort).join('、')}（${esc(c.time)}）` : '未排定';
+    const lectTxt = l ? `${esc(l.name)}・${esc(l.title)}` : inv ? `邀請中：第 ${inv.rank} 順位 ${esc(App.lecturer(inv.lecturer).name)}${inv.designated ? '（申請單位指定）' : ''}，${App.hoursLeft(App.inviteDue(inv)) > 0 ? `回覆期限剩 ${fmt.hours(App.hoursLeft(App.inviteDue(inv)))}` : '已逾 48 小時'}` : '尚未媒合';
+    $('#ap-peek-body').innerHTML = `<ol class="steps" aria-label="案件流程進度">${App.STAGES.map((s, i) => {
+      const done = c.status === 'active' ? i < idx || c.stage === 'closed' : i < idx;
+      const cur = c.status === 'active' && i === idx && c.stage !== 'closed';
+      return `<li class="step${done ? ' is-done' : ''}${cur ? ' is-current' : ''}"${cur ? ' aria-current="step"' : ''}><span class="step__dot">${done ? icon('check') : i + 1}</span><span class="step__label">${s.label}</span></li>`;
+    }).join('')}</ol>
+${notices.join('')}
+<section class="ap-peek__sec" aria-labelledby="pk-info"><h3 class="ap-peek__h" id="pk-info">${icon('clipboard')}申請內容</h3>
+<dl class="kv">
+  <dt>申請單位</dt><dd>${esc(c.org)}（${esc(c.orgType)}）</dd>
+  <dt>活動地點</dt><dd>${cn.name}${esc(c.district)}・${esc(c.venue)}</dd>
+  <dt>聯絡人</dt><dd>${esc(c.contact)}${c.contactTitle ? ` ${esc(c.contactTitle)}` : ''}・${esc(c.phone)}<br>${esc(c.email)}</dd>
+  <dt>服務對象</dt><dd>${App.audience(c.audience).name}・申請 ${c.people} 人${c.result ? `（實到 ${c.result.people} 人）` : ''}</dd>
+  <dt>辦理方式</dt><dd>${App.MODES[c.mode]}・${c.sessions} 節（每節 ${App.FEE.minutes} 分鐘）</dd>
+  <dt>活動日期</dt><dd>${dateTxt}</dd>
+  <dt>講師</dt><dd>${lectTxt}</dd>
+  <dt>承辦</dt><dd>${c.owner ? `${App.staff(c.owner).name}（${App.staff(c.owner).area}）` : '<span class="badge badge--clay">未指派</span>'}</dd>
+  <dt>附件</dt><dd>${c.files.length ? `<ul class="ap-files">${c.files.map(f => `<li>${icon('file')}${esc(f.name)}<span>${esc(f.size)}</span></li>`).join('')}</ul>` : '尚無附件'}</dd>
+</dl></section>
+<section class="ap-peek__sec" aria-labelledby="pk-log"><h3 class="ap-peek__h" id="pk-log">${icon('clock')}處理紀錄</h3>${App.timeline(App.caseLog(c).slice(0, 6))}</section>`;
+  }
+  function openPeek(id) {
+    peekId = id;
+    renderPeek();
+    App.openDialog(peek);
+  }
+  $$('[data-close]', peek).forEach(b => b.addEventListener('click', () => App.closeDialog(peek)));
+
+  /* ===================================================================
+     代填申請案件
+     =================================================================== */
+  const newDlg = $('#ap-new-dialog');
+  const form = $('#ap-new-form');
+  const minDate = App.addDays(App.TODAY, 14);
+  function openNew() {
+    form.reset();
+    $$('.field.is-invalid', form).forEach(f => f.classList.remove('is-invalid'));
+    $$('[aria-invalid]', form).forEach(el => el.removeAttribute('aria-invalid'));
+    const alert = $('.form-alert', form);
+    alert.classList.remove('is-on');
+    alert.innerHTML = '';
+    App.openDialog(newDlg);
+    $('#nf-org').focus();
+  }
+  $('#ap-new').addEventListener('click', openNew);
+  $$('[data-close]', newDlg).forEach(b => b.addEventListener('click', () => App.closeDialog(newDlg)));
+  // 候選日期：格式、14 日前申請、年度內、不可重複（訊息交給 App.validate 統一呈現）
+  function checkDates() {
+    const seen = new Set();
+    ['#nf-d1', '#nf-d2', '#nf-d3'].forEach(sel => {
+      const el = $(sel);
+      const raw = el.value.trim();
+      let msg = '';
+      if (raw) {
+        const iso = parseRoc(raw);
+        if (!iso) msg = '日期格式請用民國年，例如 115/11/24';
+        else if (iso < minDate) msg = `需為 ${roc(minDate)} 以後（活動前 14 日須完成申請）`;
+        else if (iso > DAY_END) msg = '需在 115 年度內（115/12/31 前）';
+        else if (seen.has(iso)) msg = '與其他候選日期重複';
+        else { seen.add(iso); el.value = roc(iso); }
+      }
+      el.setCustomValidity(msg);
+      if (msg) el.dataset.error = msg; else delete el.dataset.error;
+    });
+  }
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    checkDates();
+    if (!App.validate(form)) return;
+    const fd = new FormData(form);
+    const g = k => String(fd.get(k) || '').trim();
+    const sessions = Number(g('sessions'));
+    const [h, m] = g('start').split(':').map(Number);
+    const endMin = h * 60 + m + sessions * App.FEE.minutes;
+    const num = Math.max(...App.CASES.map(c => Number(c.id.slice(-4)))) + 1;
+    const mode = g('mode') || 'onsite';
+    const c = {
+      id: `EE115-${String(num).padStart(4, '0')}`, org: g('org'), orgType: g('orgType'), county: g('county'), district: g('district'),
+      venue: mode === 'online' ? '線上（視訊）' : `${g('org')} 活動場地（待確認）`,
+      contact: g('contact'), contactTitle: g('contactTitle'), phone: g('phone'), email: g('email'),
+      topic: g('topic'), audience: g('audience'), people: Number(g('people')), mode, date: null,
+      time: `${g('start')}–${pad(Math.floor(endMin / 60))}:${pad(endMin % 60)}`, sessions,
+      candidates: ['d1', 'd2', 'd3'].map(k => parseRoc(g(k))).filter(Boolean).sort(),
+      lecturer: null, invites: [], stage: 'submitted', status: 'active', submitted: App.TODAY, owner: App.ME,
+      log: [['submitted', App.TODAY]], files: [], reminders: [], note: `${g('channel')}，由 ${App.staff(App.ME).name} 代填${g('note') ? `：${g('note')}` : ''}`,
+    };
+    App.CASES.push(c);
+    App.closeDialog(newDlg);
+    selected.clear();
+    Object.assign(state, { view: 'all', q: '', status: '', county: '', audience: '', topic: '', owner: '', from: null, to: null, sort: { key: 'id', dir: -1 }, page: 1 });
+    flash = new Set([c.id]);
+    App.emit('case-new');
+    App.toast(`已建立 ${c.id}`, {
+      desc: `${c.org}（${App.county(c.county).name}${c.district}）已進入「申請」關卡，承辦 ${App.staff(App.ME).name}。`,
+      action: { label: '復原', onClick: () => { App.CASES.splice(App.CASES.indexOf(c), 1); selected.delete(c.id); App.emit('case-new-undo'); } },
+    });
+  });
+
+  /* ===================================================================
+     初始化：URL 參數（總覽頁的連結）＋首次繪製＋資料同步
+     =================================================================== */
+  const pv = App.param('view');
+  if (pv && view(pv)) state.view = pv;
+  const ps = App.param('stage');
+  if (ps && (App.stage(ps) || App.EXITS[ps] || ps === 'open')) state.status = ps;
+  makePager();
+  renderAll();
+  App.on(renderAll);
+  if (App.param('new') === '1') openNew();
+});
+</script>
+</body>
+</html>

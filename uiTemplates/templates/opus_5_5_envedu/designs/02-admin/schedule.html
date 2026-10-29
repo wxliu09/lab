@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>執行管控 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="執行管控：今日場次即時看板、月／週行事曆與清單、場次異常（講師請假、改期、取消）處理、改期與代課安排、行前通知寄送紀錄。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* ---------- 頁首 ---------- */
+
+  /* ---------- 首列：今日看板＋異常待處理 ---------- */
+  .sc-top { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: clamp(16px, 1.6vw, 22px); align-items: stretch; }
+  html.is-senior .sc-top { grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- 今日執行看板（招牌：時間軸＋現在指針＋進行中場次的種子流） ---------- */
+  .sc-today {
+    position: relative; isolation: isolate; overflow: hidden; min-width: 0;
+    padding: 20px 22px 20px; border-radius: var(--r-lg);
+    background: radial-gradient(120% 140% at 85% -20%, #2B6D58 0%, var(--forest) 42%, var(--forest-800) 100%);
+    color: var(--on-forest); box-shadow: var(--sh-2);
+  }
+  .sc-today::before {
+    /* 等高線紋理：只是質感，高齡模式關閉 */
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='320' fill='none' stroke='%23A8D672' stroke-opacity='.14' stroke-width='1.3'%3E%3Cpath d='M470 40c-70-26-170-8-196 52s40 118 118 112 112-62 98-112-6-38-20-52z'/%3E%3Cpath d='M452 62c-52-18-124-4-142 40s30 86 86 82 82-46 72-82c-3-14-7-28-16-40z'/%3E%3Cpath d='M432 86c-34-11-80-2-92 26s20 56 56 53 54-30 47-54c-2-10-5-18-11-25z'/%3E%3Cpath d='M410 108c-17-5-40 0-46 13s10 27 28 26 27-15 23-27c-1-5-2-9-5-12z'/%3E%3Cpath d='M490 18c-90-34-214-12-246 66s52 152 152 144 146-80 128-146c-6-24-14-46-34-64z'/%3E%3C/svg%3E") right -80px top -70px / 520px 320px no-repeat;
+  }
+  html.is-senior .sc-today { background: var(--forest-800); }
+  html.is-senior .sc-today::before { display: none; }
+  .sc-today__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 20px; }
+  .sc-today__title { display: flex; align-items: center; gap: 10px; font-family: var(--font-tc); font-size: var(--fs-lg); font-weight: 900; color: var(--paper); }
+  .sc-today__title .i { width: 22px; height: 22px; color: var(--sprout); }
+  .sc-today__sub { margin-top: 4px; font-size: var(--fs-sm); color: var(--on-forest-2); }
+  .sc-today__sub b { font-family: var(--font-en); color: var(--paper); }
+  .sc-today { display: flex; flex-direction: column; }
+  .sc-tlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 4px; font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); }
+  .sc-tlegend li { display: inline-flex; align-items: center; gap: 6px; }
+  .sc-k { width: 18px; height: 10px; border-radius: 5px; flex: none; }
+  .sc-k--done { background: rgba(168, 214, 114, .32); box-shadow: inset 0 0 0 1.5px rgba(168, 214, 114, .75); }
+  .sc-k--live { background: var(--sprout); }
+  .sc-k--next { border: 1.5px dashed rgba(246, 243, 234, .7); }
+  .sc-k--alert { background: rgba(242, 178, 122, .2); box-shadow: inset 0 0 0 1.5px var(--clay-glow); }
+
+  /* 本週種子列：每一場是一顆種子，顏色代表狀態 */
+  .sc-wk { margin-top: auto; padding-top: 16px; }
+  .sc-wk__cap { display: flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px dashed rgba(246, 243, 234, .2); font-size: var(--fs-sm); font-weight: 800; color: var(--on-forest-2); }
+  .sc-wk__cap b { font-family: var(--font-en); color: var(--paper); }
+  .sc-wk__cap .pulse-dot { background: var(--sprout); }
+  .sc-wk__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+  .sc-wkd {
+    display: grid; justify-items: center; align-content: start; gap: 3px; min-width: 0; padding: 8px 4px 9px;
+    border: 1px solid rgba(246, 243, 234, .14); border-radius: var(--r-sm); background: rgba(9, 32, 25, .3);
+    color: var(--on-forest-2); line-height: 1.25;
+    transition: background var(--dur-1), border-color var(--dur-1), transform var(--dur-2) var(--ease-out);
+  }
+  .sc-wkd:hover { background: rgba(246, 243, 234, .1); border-color: rgba(168, 214, 114, .6); transform: translateY(-2px); }
+  .sc-wkd.is-today { border-color: var(--sprout); background: rgba(168, 214, 114, .14); }
+  .sc-wkd__dow { font-size: var(--fs-xs); font-weight: 700; }
+  .sc-wkd.is-today .sc-wkd__dow { color: var(--sprout-200); font-weight: 900; }
+  .sc-wkd__date { font-family: var(--font-en); font-size: var(--fs-lg); font-weight: 800; color: var(--paper); }
+  .sc-wkd__seeds { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; min-height: 9px; max-width: 54px; }
+  .sc-seed { width: 11px; height: 8px; border-radius: 8px 2px 8px 2px; background: var(--sprout); }
+  .sc-seed[data-tone="ok"] { background: rgba(168, 214, 114, .45); }
+  .sc-seed[data-tone="today"] { background: var(--paper); }
+  .sc-seed[data-tone="forest"] { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(246, 243, 234, .75); }
+  .sc-seed[data-tone="err"], .sc-seed[data-tone="warn"] { background: var(--clay-glow); }
+  .sc-wkd__n { font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
+  .sc-wkd__n b { font-family: var(--font-en); color: var(--paper); }
+  .sc-wkd.is-empty .sc-wkd__n { opacity: .85; }
+  html.is-senior .sc-wkd { padding: 10px 4px 12px; }
+  html.is-senior .sc-seed { width: 13px; height: 9px; }
+
+  .sc-ruler { margin-top: 12px; font-size: var(--fs-xs); }
+  .sc-ruler svg { width: 100%; height: auto; }
+  .scr-track { stroke: rgba(9, 32, 25, .6); }
+  .scr-elapsed { stroke: var(--sprout); transition: stroke-dashoffset 1.6s var(--ease-out); }
+  .scr-tick { stroke: rgba(246, 243, 234, .26); }
+  .scr-tick--major { stroke: rgba(246, 243, 234, .5); }
+  .scr-lbl { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 700; fill: var(--on-forest-2); }
+  .scr-lbl.is-past { fill: var(--sprout-200); }
+  .scr-cap { transition: opacity .5s var(--ease-out) calc(var(--ci, 0) * 140ms + .25s); }
+  .scr-cap--done .scr-cap__body { fill: rgba(168, 214, 114, .26); stroke: rgba(168, 214, 114, .7); }
+  .scr-cap--live .scr-cap__body { fill: rgba(246, 243, 234, .1); stroke: var(--sprout); }
+  .scr-cap--next .scr-cap__body { fill: rgba(246, 243, 234, .07); stroke: rgba(246, 243, 234, .62); }
+  .scr-cap--alert .scr-cap__body { fill: rgba(242, 178, 122, .16); stroke: var(--clay-glow); }
+  .scr-prog { fill: var(--sprout); transform-box: fill-box; transform-origin: left center; transition: transform 1s var(--ease-out) .6s; }
+  .scr-leaf { fill: var(--forest-700); opacity: .38; }
+  .scr-flow-wrap { transition: opacity .6s 1.4s; }
+  .scr-cap__dot { fill: var(--forest-900); }
+  .scr-cap--alert .scr-cap__dot { fill: #5B3216; }
+  .scr-cap__n { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; fill: var(--sprout-200); }
+  .scr-cap--alert .scr-cap__n { fill: #FFE3C9; }
+  .scr-needle { transition: transform 1.6s var(--ease-out); }
+  .scr-needle__line { stroke: var(--clay-glow); }
+  .scr-chip { fill: var(--clay-glow); }
+  .scr-chip__t { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 800; fill: #3A1A06; }
+  .scr-pulse { stroke: var(--clay-glow); transform-box: fill-box; transform-origin: center; animation: scr-pulse 2.4s var(--ease-out) infinite; }
+  @keyframes scr-pulse { 0% { transform: scale(1); opacity: .85; } 100% { transform: scale(1.9); opacity: 0; } }
+  .sc-today.is-paused .scr-pulse { animation-play-state: paused; }
+  html.is-senior .scr-pulse { display: none; }
+  /* 進場前的狀態：指針停在 08:00、已過時段與進度未描繪；可見後才移除 .is-pre 播放轉場 */
+  .is-pre .scr-needle { transform: translateX(var(--from)); }
+  .is-pre .scr-elapsed { stroke-dashoffset: var(--len); }
+  .is-pre .scr-prog { transform: scaleX(0); }
+  .is-pre .scr-flow-wrap, .is-pre .scr-cap { opacity: 0; }
+
+  .sc-trows { display: grid; gap: 8px; margin-top: 12px; }
+  .sc-trow {
+    display: grid; grid-template-columns: 28px 86px minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+    padding: 12px 14px; border-radius: var(--r-md);
+    background: rgba(246, 243, 234, .06); border: 1px solid rgba(246, 243, 234, .13);
+  }
+  .sc-trow[data-state="live"] { background: rgba(168, 214, 114, .11); border-color: rgba(168, 214, 114, .5); }
+  .sc-trow[data-state="leave"], .sc-trow[data-state="resched"] { border-color: rgba(242, 178, 122, .55); }
+  .sc-trow__n {
+    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; align-self: start; margin-top: 2px;
+    background: var(--forest-900); color: var(--sprout-200); box-shadow: inset 0 0 0 1.5px rgba(246, 243, 234, .3);
+    font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800;
+  }
+  .sc-trow[data-state="live"] .sc-trow__n { background: var(--sprout); color: var(--forest-900); box-shadow: none; }
+  .sc-trow__time { display: grid; align-self: start; font-family: var(--font-en); line-height: 1.2; }
+  .sc-trow__time b { font-size: var(--fs-lg); font-weight: 800; color: var(--paper); }
+  .sc-trow__time span { margin-top: 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--on-forest-2); }
+  .sc-trow__main { min-width: 0; }
+  .sc-trow__org { line-height: 1.4; }
+  .sc-trow__link {
+    padding: 0; border: 0; background: none; color: var(--paper); text-align: left;
+    font-size: var(--fs-base); font-weight: 800; line-height: 1.4; overflow-wrap: anywhere;
+  }
+  .sc-trow__link:hover { color: var(--sprout-200); text-decoration: underline; text-underline-offset: .22em; }
+  .sc-trow__meta { margin-top: 1px; font-size: var(--fs-xs); color: var(--on-forest-2); }
+  .sc-trow__check { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; font-size: var(--fs-xs); font-weight: 700; color: var(--sprout-200); }
+  .sc-trow__check .i { width: 15px; height: 15px; margin-top: 1px; }
+  .sc-trow[data-state="leave"] .sc-trow__check, .sc-trow[data-state="resched"] .sc-trow__check { color: var(--clay-glow); }
+  .sc-trow__side { display: grid; justify-items: end; gap: 8px; }
+  .sc-trow__eta { font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); white-space: nowrap; }
+  .sc-trow__eta b { font-family: var(--font-en); color: var(--paper); font-size: var(--fs-sm); }
+  .sc-prog { display: grid; gap: 5px; width: 168px; font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); }
+  .sc-prog b { font-family: var(--font-en); color: var(--paper); }
+  .sc-prog__bar { height: 6px; border-radius: 3px; background: rgba(9, 32, 25, .6); overflow: hidden; }
+  .sc-prog__bar > span { display: block; height: 100%; width: calc(var(--p) * 100%); border-radius: inherit; background: var(--sprout); }
+  .sc-trow__acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .sc-today__empty { margin-top: 14px; padding: 18px; border-radius: var(--r-md); background: rgba(246, 243, 234, .06); color: var(--on-forest-2); text-align: center; }
+  html.is-senior .sc-trow { grid-template-columns: 36px minmax(0, 1fr); padding: 16px 18px; gap: 6px 14px; }
+  html.is-senior .sc-trow__n { grid-row: 1 / span 3; width: 34px; height: 34px; }
+  html.is-senior .sc-trow__time { display: flex; align-items: baseline; gap: 10px; }
+  html.is-senior .sc-trow__time span { margin: 0; }
+  html.is-senior .sc-trow__side { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 10px 16px; }
+  html.is-senior .sc-trow__link { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .sc-prog { width: 220px; }
+  html.is-senior .sc-prog__bar { height: 10px; border-radius: 5px; }
+  @media (min-width: 1100px) {
+    /* 高齡模式看板全寬：狀態與操作移到右欄，不必往下找 */
+    html.is-senior .sc-trow { grid-template-columns: 36px minmax(0, 1fr) 260px; }
+    html.is-senior .sc-trow__time, html.is-senior .sc-trow__main { grid-column: 2; }
+    html.is-senior .sc-trow__side { grid-column: 3; grid-row: 1 / span 3; flex-direction: column; align-items: flex-end; justify-content: center; }
+  }
+
+  /* ---------- 異常待處理 ---------- */
+  .sc-exc { display: flex; flex-direction: column; }
+  .sc-exc .card__title .i { color: var(--clay-ink); }
+  /* 卡片全寬時（高齡模式或窄螢幕）異常改為多欄並排；1px 間隙當分隔線 */
+  .sc-exc-list { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); align-content: start; gap: 1px; background: var(--line-soft); }
+  .sc-exc-item { display: grid; align-content: start; gap: 6px; padding: 14px 20px 16px; background: var(--card); }
+  .sc-exc-item__top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .sc-exc-item__when { margin-left: auto; font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--ink); white-space: nowrap; }
+  .sc-exc-item__org { font-size: var(--fs-base); line-height: 1.4; }
+  .sc-exc-item__meta { font-size: var(--fs-xs); color: var(--ink-3); }
+  .sc-exc-item__note {
+    padding: 8px 12px; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--line-soft); border-left: 3px solid var(--err);
+    font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.55;
+  }
+  .sc-exc-item[data-type="resched"] .sc-exc-item__note { border-left-color: #C99A1E; }
+  .sc-exc-item__note b { color: var(--ink); }
+  .sc-exc-item__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
+  .sc-cd { display: inline-flex; align-items: center; gap: 10px; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); line-height: 1.35; }
+  .sc-cd b { display: block; font-family: var(--font-en); font-size: var(--fs-base); font-weight: 800; color: var(--ink); }
+  .sc-cd.is-urgent b { color: var(--clay-ink); }
+  .sc-cd .ring { --size: 36px; --w: 5px; --ring-c: var(--sky); }
+  .sc-cd.is-urgent .ring { --ring-c: var(--clay); }
+  .sc-cd .ring::before { background: var(--clay-50); }
+  .sc-exc-item__acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sc-exc-empty { display: grid; justify-items: center; gap: 8px; padding: 34px 20px; text-align: center; color: var(--ink-2); }
+  .sc-exc-empty .i { width: 36px; height: 36px; color: var(--ok); }
+  .sc-exc-empty b { font-size: var(--fs-md); color: var(--ink); }
+  .sc-exc .card__foot { display: grid; gap: 6px; justify-content: stretch; }
+  .sc-cancel-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--ink-2); }
+  .sc-cancel-row .mono { color: var(--ink-3); font-size: var(--fs-xs); }
+  html.is-senior .sc-exc-item { padding: 18px 22px 20px; gap: 8px; }
+
+  .sc-nw { white-space: nowrap; }
+  .sc-exc-item__meta .cell-id { font-size: var(--fs-xs); }
+
+  /* 列內的連結型按鈕 */
+  .sc-linkbtn {
+    padding: 0; border: 0; background: none; color: var(--ink); text-align: left;
+    font-weight: 800; line-height: 1.4; overflow-wrap: anywhere;
+  }
+  .sc-linkbtn:hover { color: var(--forest); text-decoration: underline; text-underline-offset: .22em; text-decoration-thickness: 1.5px; }
+  html.is-senior .sc-linkbtn { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .sc-table .cell-id, html.is-senior .sc-exc .cell-id { display: inline-flex; align-items: center; min-height: 48px; }
+
+  /* ---------- 行事曆 ---------- */
+  .sc-cal .card__head { padding-bottom: 12px; }
+  .sc-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; padding: 14px 20px 0; }
+  .sc-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sc-nav__title { min-width: 7.5em; font-family: var(--font-tc); font-size: var(--fs-lg); font-weight: 900; text-align: center; white-space: nowrap; }
+  .sc-nav .icon-btn[disabled] { opacity: .4; pointer-events: none; }
+  .sc-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .sc-filters .search { width: 250px; }
+  html.is-senior .sc-filters .search { width: 300px; }
+  .sc-chips { display: flex; gap: 8px; padding: 14px 20px; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--line-soft); }
+  .sc-chips .chip { flex: none; }
+  .sc-chip-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+  .chip[aria-pressed="true"] .sc-chip-dot { box-shadow: 0 0 0 2px var(--paper); }
+  .sc-panel { padding: 16px 20px 20px; }
+  .sc-panel:not([hidden]) { animation: sc-panel-in var(--dur-3) var(--ease-out); }
+  @keyframes sc-panel-in { from { opacity: 0; transform: translateY(6px); } }
+  .sc-cal .card__foot { justify-content: space-between; }
+
+  /* 月檢視：月曆格＋選定日行程 */
+  .sc-month { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 18px; align-items: start; }
+  html.is-senior .sc-month { grid-template-columns: minmax(0, 1fr) 360px; }
+  .sc-dow-pre { font-weight: 700; }
+  .sc-cell { min-height: 116px; }
+  .sc-cell.is-sel { outline: 2.5px solid var(--clay); outline-offset: -2.5px; position: relative; z-index: 1; }
+  .sc-day {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 6px;
+    width: 100%; min-height: 26px; padding: 2px 4px; border: 0; border-radius: 6px; background: none; color: var(--ink-2); text-align: left;
+  }
+  .sc-day:hover { background: var(--paper-2); }
+  .sc-day__d { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--ink); }
+  .sc-cell.is-out .sc-day__d { color: var(--ink-3); font-weight: 600; }
+  .sc-cell.is-today .sc-day__d { color: var(--forest); }
+  .sc-day__today { padding: 0 6px; border-radius: var(--r-pill); background: var(--forest); color: var(--paper); font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 800; line-height: 1.5; }
+  .sc-day__sum { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .sc-day__dots, .sc-day__exc { display: none; }
+  .sc-day__dots { gap: 3px; flex-wrap: wrap; }
+  .sc-day__dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--forest); }
+  .sc-day__exc { align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 800; color: var(--err); }
+  .sc-day__exc::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+  .sc-evs { display: grid; gap: 3px; min-width: 0; }
+  .sc-evs .cal__ev b { font-family: var(--font-en); font-weight: 800; margin-right: 4px; }
+  .sc-evs .cal__ev:hover { box-shadow: inset 0 0 0 1px rgba(30, 42, 38, .22); }
+  .cal__ev[data-tone="warn"] { border-color: #C99A1E; background: var(--warn-bg); }
+  .cal__ev[data-tone="cancel"] { border-color: var(--ink-4); background: var(--paper-2); color: var(--ink-3); }
+  .cal__ev[data-tone="cancel"] .sc-ev__org { text-decoration: line-through; }
+  .sc-more { justify-self: start; padding: 1px 6px; border: 0; border-radius: 5px; background: none; color: var(--forest); font-size: var(--fs-xs); font-weight: 800; }
+  .sc-more:hover { background: var(--forest-50); text-decoration: underline; }
+  :is(.sc-day__dots i, .sc-key)[data-tone="clay"] { background: var(--clay); }
+  :is(.sc-day__dots i, .sc-key)[data-tone="ok"] { background: var(--ok); }
+  :is(.sc-day__dots i, .sc-key)[data-tone="err"] { background: var(--err); }
+  :is(.sc-day__dots i, .sc-key)[data-tone="warn"] { background: #C99A1E; }
+  :is(.sc-day__dots i, .sc-key)[data-tone="today"] { background: var(--sprout); box-shadow: inset 0 0 0 1.5px var(--forest-900); }
+  :is(.sc-day__dots i, .sc-key)[data-tone="cancel"] { background: var(--ink-4); }
+  .is-target { box-shadow: 0 0 0 2px var(--card), 0 0 0 4.5px var(--clay) !important; }
+  /* 高齡模式：月曆格只放日期、場次數與異常標記，完整資訊在右側行程（不截斷） */
+  html.is-senior .sc-evs { display: none; }
+  html.is-senior .sc-cell { min-height: 104px; padding: 4px; }
+  html.is-senior .sc-day { display: grid; align-content: start; justify-items: start; gap: 4px; min-height: 94px; padding: 6px 8px; }
+  html.is-senior .sc-day__sum { font-size: var(--fs-base); font-weight: 800; color: var(--ink); }
+  html.is-senior .sc-day__dots { display: flex; }
+  html.is-senior .sc-day__dots i { width: 9px; height: 9px; }
+  html.is-senior .sc-day__exc { display: inline-flex; }
+  html.is-senior .sc-day[aria-pressed="true"] { background: var(--clay-50); }
+
+  .sc-agenda { position: sticky; top: calc(var(--topbar-h) + 16px); min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); overflow: hidden; }
+  .sc-agenda__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  .sc-agenda__date { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 900; }
+  .sc-agenda__n { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+  .sc-alist { display: grid; gap: 8px; padding: 12px; }
+  .sc-agenda__empty { display: grid; justify-items: center; gap: 6px; padding: 30px 16px; text-align: center; font-size: var(--fs-sm); color: var(--ink-3); }
+  .sc-agenda__empty .i { width: 28px; height: 28px; color: var(--ink-4); }
+  :is(.sc-aitem, .sc-wev) { --t-line: var(--forest); --t-bg: var(--forest-50); }
+  :is(.sc-aitem, .sc-wev)[data-tone="clay"] { --t-line: var(--clay); --t-bg: var(--clay-50); }
+  :is(.sc-aitem, .sc-wev)[data-tone="ok"] { --t-line: var(--ok); --t-bg: var(--ok-bg); }
+  :is(.sc-aitem, .sc-wev)[data-tone="err"] { --t-line: var(--err); --t-bg: var(--err-bg); }
+  :is(.sc-aitem, .sc-wev)[data-tone="warn"] { --t-line: #C99A1E; --t-bg: var(--warn-bg); }
+  :is(.sc-aitem, .sc-wev)[data-tone="today"] { --t-line: var(--forest-900); --t-bg: var(--sprout-200); }
+  :is(.sc-aitem, .sc-wev)[data-tone="cancel"] { --t-line: var(--ink-4); --t-bg: var(--paper-2); }
+  .sc-aitem {
+    display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 2px 12px; width: 100%;
+    padding: 10px 12px; border: 1px solid var(--line-soft); border-left: 4px solid var(--t-line); border-radius: var(--r-sm);
+    background: var(--card); color: var(--ink); text-align: left;
+    transition: box-shadow var(--dur-2), border-color var(--dur-1);
+  }
+  .sc-aitem:hover { box-shadow: var(--sh-2); border-color: var(--line-2); border-left-color: var(--t-line); }
+  .sc-aitem__time { display: grid; align-content: start; font-family: var(--font-en); line-height: 1.3; }
+  .sc-aitem__time b { font-size: var(--fs-base); font-weight: 800; }
+  .sc-aitem__time span { font-size: var(--fs-xs); color: var(--ink-3); }
+  .sc-aitem__body { min-width: 0; }
+  .sc-aitem__org { display: block; font-size: var(--fs-sm); font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; }
+  .sc-aitem__meta { display: block; margin-top: 1px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.45; }
+  .sc-aitem__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; }
+  .sc-aitem__id { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; color: var(--forest); letter-spacing: .02em; }
+  html.is-senior .sc-aitem { grid-template-columns: 64px minmax(0, 1fr); padding: 14px 14px; }
+  html.is-senior .sc-aitem__org { font-size: var(--fs-base); }
+
+  /* 週檢視 */
+  .sc-week { gap: 8px; }
+  .sc-week .week__col { min-height: 260px; padding: 8px; }
+  .sc-week .week__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; padding: 2px 2px 7px; margin-bottom: 2px; border-bottom: 1px solid var(--line); font-size: var(--fs-xs); }
+  .sc-week .week__head b { font-family: var(--font-en); font-size: var(--fs-md); font-weight: 800; color: var(--ink); }
+  .sc-wk-today { padding: 0 6px; border-radius: var(--r-pill); background: var(--forest); color: var(--paper); font-weight: 800; }
+  .sc-wk-n { margin-left: auto; color: var(--ink-3); font-weight: 700; }
+  .sc-wk-evs { display: grid; gap: 6px; align-content: start; }
+  .sc-wev {
+    display: grid; gap: 1px; width: 100%; padding: 8px 9px; border: 0; border-left: 3px solid var(--t-line); border-radius: 7px;
+    background: var(--t-bg); color: var(--ink); text-align: left; box-shadow: var(--sh-1);
+    transition: box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out);
+  }
+  .sc-wev:hover { box-shadow: var(--sh-2); transform: translateY(-1px); }
+  .sc-wev__time { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+  .sc-wev__org { font-size: var(--fs-sm); font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+  .sc-wev[data-tone="cancel"] .sc-wev__org { text-decoration: line-through; color: var(--ink-3); }
+  .sc-wev__meta { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.4; overflow-wrap: anywhere; }
+  .sc-wev__st { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+  .sc-wev__st::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--t-line); }
+  .sc-wk-empty { padding: 10px 2px; font-size: var(--fs-xs); color: var(--ink-3); }
+  html.is-senior .sc-week { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  html.is-senior .sc-week .week__col { grid-template-columns: 150px minmax(0, 1fr); gap: 10px 18px; min-height: 0; padding: 12px 14px; }
+  html.is-senior .sc-week .week__head { display: grid; align-content: start; gap: 2px; margin: 0; padding: 4px 14px 4px 0; border-bottom: 0; border-right: 1px solid var(--line-2); }
+  html.is-senior .sc-wk-n { margin-left: 0; }
+  html.is-senior .sc-wk-today { justify-self: start; }
+  html.is-senior .sc-wk-evs { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
+  html.is-senior .sc-wev { padding: 12px 14px; }
+  html.is-senior .sc-wev__org { font-size: var(--fs-base); }
+
+  /* 清單 */
+  .sc-table .cell-main { margin-top: 1px; }
+  .sc-table td:first-child .cell-main, .sc-table td:first-child .cell-sub, .sc-table td.sc-td-nw { white-space: nowrap; }
+  .sc-table td.col-act .btn { min-width: 6.5em; }
+  .sc-list-empty td { padding: 0; }
+
+  /* ---------- 行前通知寄送紀錄 ---------- */
+  .sc-nsum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; padding: 12px 20px; border-bottom: 1px solid var(--line-soft); background: var(--paper); font-size: var(--fs-sm); color: var(--ink-2); }
+  .sc-nsum span { display: inline-flex; align-items: baseline; gap: 4px; }
+  .sc-nsum b { font-family: var(--font-en); font-size: var(--fs-md); font-weight: 800; color: var(--ink); }
+  .sc-nsum .is-err b { color: var(--err); }
+  .sc-nsum .is-warn b { color: var(--warn); }
+  .sc-n { display: inline-flex; align-items: flex-start; gap: 7px; font-size: var(--fs-xs); line-height: 1.4; color: var(--ink-2); }
+  .sc-n .i { width: 16px; height: 16px; margin-top: 1px; flex: none; }
+  .sc-n b { display: block; font-weight: 800; }
+  .sc-n__at { display: block; font-family: var(--font-en); font-weight: 600; color: var(--ink-3); }
+  .sc-n[data-tone="ok"] .i, .sc-n[data-tone="ok"] b { color: var(--ok); }
+  .sc-n[data-tone="err"] .i, .sc-n[data-tone="err"] b { color: var(--err); }
+  .sc-n[data-tone="warn"] .i, .sc-n[data-tone="warn"] b { color: var(--warn); }
+  .sc-n[data-tone="neutral"] .i { color: var(--ink-3); }
+  .sc-seg-n { margin-left: 6px; font-family: var(--font-en); font-weight: 800; color: var(--ink-3); }
+  .seg > button[aria-pressed="true"] .sc-seg-n { color: var(--forest); }
+  .sc-acts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  html.is-senior .sc-n { font-size: var(--fs-sm); }
+
+  /* ---------- 場次詳情抽屜 ---------- */
+  .sc-dr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 4px; }
+  .sc-dr-sec + .sc-dr-sec { margin-top: 22px; }
+  .sc-dr-sec > .notice + .notice { margin-top: 8px; }
+  .sc-dr-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 10px; font-size: var(--fs-sm); font-weight: 800; color: var(--ink-2); }
+  .sc-dr-cap .i { width: 18px; height: 18px; color: var(--forest); }
+  .sc-dr-cap small { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .sc-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .sc-fact { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--paper); }
+  .sc-fact dt { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .sc-fact dd { margin-top: 2px; font-size: var(--fs-sm); font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
+  .sc-fact dd small { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  html.is-senior .sc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc-people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .sc-person { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-content: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); min-width: 0; }
+  .sc-person > .avatar { grid-row: span 4; }
+  .sc-person__role { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-3); }
+  .sc-person__name { font-weight: 800; line-height: 1.4; }
+  .sc-person__name a { color: var(--ink); }
+  .sc-person__sub { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.55; overflow-wrap: anywhere; }
+  .sc-person .btn { justify-self: start; margin-top: 8px; }
+  .sc-fee { margin-top: 10px; padding: 9px 12px; border-radius: var(--r-sm); background: var(--clay-50); border: 1px dashed var(--clay-200); font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.6; }
+  .sc-fee b { font-family: var(--font-en); color: var(--clay-ink); }
+  .sc-nlist { display: grid; gap: 6px; }
+  .sc-nitem { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--card); }
+  .sc-nitem__t { font-size: var(--fs-sm); font-weight: 800; }
+  .sc-nitem__c { font-size: var(--fs-xs); color: var(--ink-3); }
+  .sc-nitem__r { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+  .sc-dr-danger { margin-right: auto; }
+  html.is-senior .sc-nitem { grid-template-columns: minmax(0, 1fr); }
+  html.is-senior .sc-nitem__r { justify-content: flex-start; }
+
+  /* ---------- 改期／取消對話框 ---------- */
+  .sc-form .form-alert { margin-bottom: 14px; }
+  .sc-form > .notice { margin-bottom: 14px; }
+  .sc-rs-sum { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; margin-bottom: 16px; padding: 12px 16px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--paper); }
+  .sc-rs-sum__cap { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .sc-rs-sum__v { font-family: var(--font-en); font-size: var(--fs-base); font-weight: 800; }
+  .sc-rs-sum__v.is-new { color: var(--forest); }
+  .sc-rs-sum__arrow { width: 22px; height: 22px; color: var(--clay); }
+  .sc-rs-avail { margin-top: 14px; }
+  .sc-rs-avail:empty { display: none; }
+  .sc-rs-notify { margin-top: 14px; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1280px) {
+    html.is-senior .sc-month { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .sc-agenda { position: static; }
+  }
+  @media (max-width: 1180px) {
+    .sc-top { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1100px) {
+    .sc-month { grid-template-columns: minmax(0, 1fr); }
+    .sc-agenda { position: static; }
+    .sc-week .week__col { min-height: 200px; }
+  }
+  @media (max-width: 860px) {
+    .sc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sc-people { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .sc-today { padding: 16px 16px 16px; border-radius: var(--r-md); }
+    .sc-trow, html.is-senior .sc-trow { grid-template-columns: 28px minmax(0, 1fr); padding: 12px; }
+    .sc-trow__n, html.is-senior .sc-trow__n { grid-row: 1 / span 3; }
+    .sc-trow__time { display: flex; align-items: baseline; gap: 8px; }
+    .sc-trow__time span { margin: 0; }
+    .sc-trow__side, html.is-senior .sc-trow__side { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px 12px; }
+    .sc-trow__acts { justify-content: flex-start; }
+    .sc-prog, html.is-senior .sc-prog { width: 100%; }
+    .sc-exc-item, html.is-senior .sc-exc-item { padding: 14px 16px; }
+    .sc-exc-item__when { margin-left: 0; }
+    .sc-toolbar { padding: 12px 16px 0; }
+    .sc-nav { width: 100%; }
+    .sc-nav__title { order: -1; flex: 1 1 100%; min-width: 0; text-align: left; }
+    .sc-filters, .sc-filters .search, html.is-senior .sc-filters .search { width: 100%; }
+    .sc-chips { padding: 12px 16px; }
+    .sc-panel { padding: 14px 16px 16px; }
+    .sc-nsum { padding: 12px 16px; gap: 4px 16px; }
+    /* 手機月曆：格內改為圓點，完整行程看下方清單 */
+    .sc-dow-pre { display: none; }
+    .cal__dow { padding: 6px 0; }
+    .sc-cell, html.is-senior .sc-cell { min-height: 58px; padding: 2px; }
+    .sc-evs { display: none; }
+    .sc-day, html.is-senior .sc-day { display: grid; justify-items: center; align-content: start; gap: 4px; min-height: 52px; padding: 5px 0; }
+    .sc-day__sum, .sc-day__today, .sc-day__exc, html.is-senior .sc-day__sum, html.is-senior .sc-day__exc { display: none; }
+    .sc-day__dots, html.is-senior .sc-day__dots { display: flex; justify-content: center; max-width: 34px; }
+    .sc-day__dots i { width: 6px; height: 6px; }
+    html.is-senior .sc-day__dots i { width: 8px; height: 8px; }
+    .sc-rs-sum { grid-template-columns: minmax(0, 1fr); }
+    .sc-rs-sum__arrow { transform: rotate(90deg); }
+    .sc-facts, html.is-senior .sc-facts { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .sc-week .week__col { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .sc-week .week__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid var(--line-2); }
+    html.is-senior .sc-wk-n { margin-left: auto; }
+    .sc-acts { justify-content: flex-start; }
+    .sc-wk__days { gap: 4px; }
+    .sc-wkd { padding: 7px 2px 8px; }
+    .sc-wkd__date { font-size: var(--fs-md); }
+    .sc-wkd__unit { display: none; }
+    .sc-wkd__seeds { max-width: 30px; }
+    .sc-seed, html.is-senior .sc-seed { width: 9px; height: 7px; }
+    .sc-tlegend { gap: 4px 12px; }
+    #sc-notice .card__actions { width: 100%; }
+    #sc-nseg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+    .sc-nav__title { white-space: normal; }
+    /* 手機表格卡片：場次置頂跨欄，其餘欄位兩兩並排、標籤疊在值上方，卡片高度約減半 */
+    .sc-table.table--stack tr:not(.row-more) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 14px 16px; }
+    .sc-table.table--stack td { display: block; padding: 0; }
+    .sc-table.table--stack td::before { display: block; margin-bottom: 1px; padding: 0; }
+    .sc-table.table--stack td[data-label="場次"] { grid-column: 1 / -1; order: -1; }
+    .sc-table.table--stack td[data-label="場次"]::before { content: none; }
+    .sc-table.table--stack td.col-act, .sc-table.table--stack td.col-more { grid-column: 1 / -1; }
+    .sc-table.table--stack td.col-act::before { content: none; }
+    .sc-table.table--stack tr.sc-list-empty { display: block; padding: 0; }
+    /* 只有「詳情」的操作欄在手機省略：單位名稱本身就能開啟同一個詳情 */
+    .sc-table.table--stack td.sc-act-plain { display: none; }
+    .sc-table td.sc-td-nw { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link is-active" href="schedule.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link" href="surveys.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="導覽路徑"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>案件作業</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">執行管控</span></nav>
+          <h1 class="page-title">執行管控</h1>
+          <p class="page-lede" id="sc-lede"></p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn" type="button" id="sc-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出場次 CSV</button>
+          <button class="btn btn--primary" type="button" id="sc-eve"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg><span id="sc-eve-label">寄送明日提醒</span></button>
+        </div>
+      </div>
+
+      <div class="sc-top">
+        <section class="sc-today" id="sc-today" aria-labelledby="sc-today-title">
+          <div class="sc-today__head">
+            <div>
+              <h2 class="sc-today__title" id="sc-today-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-presentation"/></svg>今日執行看板</h2>
+              <p class="sc-today__sub" id="sc-today-sub"></p>
+            </div>
+            <ul class="sc-tlegend" aria-label="時間軸圖例">
+              <li><i class="sc-k sc-k--done" aria-hidden="true"></i>已辦理</li>
+              <li><i class="sc-k sc-k--live" aria-hidden="true"></i>進行中</li>
+              <li><i class="sc-k sc-k--next" aria-hidden="true"></i>待開始</li>
+              <li><i class="sc-k sc-k--alert" aria-hidden="true"></i>異常</li>
+            </ul>
+          </div>
+          <div class="sc-ruler" id="sc-ruler" role="img"></div>
+          <ol class="sc-trows" id="sc-trows"></ol>
+          <div class="sc-wk">
+            <p class="sc-wk__cap"><span class="pulse-dot" aria-hidden="true"></span><span id="sc-wk-cap"></span></p>
+            <div class="sc-wk__days" id="sc-wk-days" role="group" aria-label="本週各日場次，點選在行事曆查看"></div>
+          </div>
+        </section>
+
+        <section class="card card--alert sc-exc" id="sc-exc" aria-labelledby="sc-exc-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="sc-exc-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg>異常待處理<span class="card__count" id="sc-exc-n"></span></h2>
+              <p class="card__sub">講師請假需安排代課；改期申請需重新排定並通知雙方</p>
+            </div>
+          </div>
+          <ul class="sc-exc-list" id="sc-exc-list" aria-live="polite"></ul>
+          <div class="card__foot" id="sc-exc-foot"></div>
+        </section>
+      </div>
+
+      <section class="card section-gap sc-cal" id="sc-cal" aria-labelledby="sc-cal-title" data-reveal>
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="sc-cal-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>場次行事曆</h2>
+            <p class="card__sub" id="sc-range-sub"></p>
+          </div>
+          <div class="card__actions">
+            <div class="tabs tabs--pill" role="tablist" aria-label="檢視方式" id="sc-views">
+              <button class="tab" type="button" role="tab" id="sc-t-month" aria-controls="sc-p-month" aria-selected="true" data-view="month"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg>月曆</button>
+              <button class="tab" type="button" role="tab" id="sc-t-week" aria-controls="sc-p-week" aria-selected="false" data-view="week"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>週曆</button>
+              <button class="tab" type="button" role="tab" id="sc-t-list" aria-controls="sc-p-list" aria-selected="false" data-view="list"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-list"/></svg>清單</button>
+            </div>
+          </div>
+        </div>
+        <div class="sc-toolbar">
+          <div class="sc-nav">
+            <button class="icon-btn icon-btn--outline" type="button" id="sc-prev"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg><span class="icon-btn__label" id="sc-prev-label">上個月</span></button>
+            <h3 class="sc-nav__title" id="sc-nav-title" aria-live="polite"></h3>
+            <button class="icon-btn icon-btn--outline" type="button" id="sc-next"><span class="icon-btn__label" id="sc-next-label">下個月</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>
+            <button class="btn btn--sm" type="button" id="sc-goto-today">回到今天</button>
+          </div>
+          <div class="sc-filters">
+            <div class="search">
+              <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+              <label class="sr-only" for="sc-q">篩選場次：案號、申請單位、縣市、講師</label>
+              <input class="input input--sm" id="sc-q" type="search" placeholder="篩選案號、單位、縣市、講師" autocomplete="off">
+            </div>
+            <label class="switch"><input type="checkbox" id="sc-mine"><span class="switch__track" aria-hidden="true"></span>只看我負責（北區）</label>
+          </div>
+        </div>
+        <div class="sc-chips" role="group" aria-label="依場次狀態篩選" id="sc-chips"></div>
+
+        <div class="sc-panel" id="sc-p-month" role="tabpanel" aria-labelledby="sc-t-month">
+          <div class="sc-month">
+            <div class="cal" id="sc-grid"></div>
+            <aside class="sc-agenda" id="sc-agenda" aria-live="polite" aria-label="選定日期的場次"></aside>
+          </div>
+        </div>
+        <div class="sc-panel" id="sc-p-week" role="tabpanel" aria-labelledby="sc-t-week" hidden>
+          <div class="week sc-week" id="sc-week"></div>
+        </div>
+        <div class="sc-panel" id="sc-p-list" role="tabpanel" aria-labelledby="sc-t-list" hidden>
+          <div class="table-wrap">
+            <table class="table table--stack sc-table" id="sc-table">
+              <caption class="sr-only">場次清單</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-sort="date" aria-sort="ascending">日期時間</th>
+                  <th scope="col" data-sort="org">案號・申請單位</th>
+                  <th scope="col" class="col-2nd" data-sort="county">地點</th>
+                  <th scope="col" data-sort="lecturer">講師</th>
+                  <th scope="col" class="col-2nd">對象・人數</th>
+                  <th scope="col" class="col-2nd">承辦</th>
+                  <th scope="col" data-sort="state">狀態</th>
+                  <th scope="col" class="col-act">操作</th>
+                </tr>
+              </thead>
+              <tbody id="sc-tbody"></tbody>
+            </table>
+            <div class="table-foot" id="sc-pager"></div>
+          </div>
+        </div>
+
+        <div class="card__foot">
+          <ul class="legend" aria-label="場次狀態圖例">
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="clay"></span>待確認（講師邀請中）</li>
+            <li class="legend__item"><span class="legend__swatch sc-key"></span>待執行</li>
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="today"></span>今日／進行中</li>
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="ok"></span>已執行</li>
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="err"></span>講師請假</li>
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="warn"></span>改期申請</li>
+            <li class="legend__item"><span class="legend__swatch sc-key" data-tone="cancel"></span>已取消</li>
+          </ul>
+          <span>點選場次開啟詳情；講師請假可一鍵帶到媒合安排代課</span>
+        </div>
+      </section>
+
+      <section class="card section-gap" id="sc-notice" aria-labelledby="sc-notice-title" data-reveal>
+        <div class="card__head">
+          <div class="card__titles">
+            <h2 class="card__title" id="sc-notice-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-mail"/></svg>行前通知寄送紀錄</h2>
+            <p class="card__sub">活動前 7 日 09:00 自動寄送講師（Email＋簡訊）與申請單位（Email），前一日 17:00 以簡訊提醒講師；需處理與排程中的場次排在前面</p>
+          </div>
+          <div class="card__actions">
+            <div class="seg" id="sc-nseg" role="group" aria-label="寄送狀態">
+              <button type="button" data-value="all" aria-pressed="true">全部<span class="sc-seg-n" data-n="all"></span></button>
+              <button type="button" data-value="issue" aria-pressed="false">需處理<span class="sc-seg-n" data-n="issue"></span></button>
+              <button type="button" data-value="scheduled" aria-pressed="false">排程中<span class="sc-seg-n" data-n="scheduled"></span></button>
+              <button type="button" data-value="sent" aria-pressed="false">已全數寄送<span class="sc-seg-n" data-n="sent"></span></button>
+            </div>
+          </div>
+        </div>
+        <p class="sc-nsum" id="sc-nsum"></p>
+        <div class="table-wrap">
+          <table class="table table--stack sc-table" id="sc-ntable">
+            <caption class="sr-only">行前通知寄送紀錄</caption>
+            <thead>
+              <tr>
+                <th scope="col">活動日期</th>
+                <th scope="col">場次</th>
+                <th scope="col">講師（Email＋簡訊）</th>
+                <th scope="col">申請單位（Email）</th>
+                <th scope="col" class="col-2nd">前一日簡訊</th>
+                <th scope="col" class="col-act">操作</th>
+              </tr>
+            </thead>
+            <tbody id="sc-nbody"></tbody>
+          </table>
+          <div class="table-foot" id="sc-npager"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<dialog class="drawer drawer--wide" id="sc-drawer" aria-labelledby="sc-dr-title">
+  <div class="drawer__box">
+    <div class="drawer__head">
+      <span class="modal__icon" id="sc-dr-icon"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg></span>
+      <div class="modal__titles">
+        <div class="sc-dr-meta" id="sc-dr-meta"></div>
+        <h2 class="modal__title" id="sc-dr-title">場次詳情</h2>
+        <p class="modal__lead" id="sc-dr-lead"></p>
+      </div>
+      <button class="icon-btn modal__close" type="button" id="sc-dr-close"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-x"/></svg><span class="icon-btn__label">關閉</span></button>
+    </div>
+    <div class="drawer__body" id="sc-dr-body"></div>
+    <div class="drawer__foot" id="sc-dr-foot"></div>
+  </div>
+</dialog>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, esc, fmt, icon } = App;
+
+  /* ===================================================================
+     共用：時間與場次判斷
+     =================================================================== */
+  const EXEC = new Set(['done', 'report', 'claim', 'closed']);
+  const pad = n => String(n).padStart(2, '0');
+  const NOW_HM = `${pad(App.NOW.getHours())}:${pad(App.NOW.getMinutes())}`;
+  const NOW_DT = `${App.TODAY}T${NOW_HM}`;
+  const TOMORROW = App.addDays(App.TODAY, 1);
+  const FIRST_MONTH = App.LAUNCH.slice(0, 7);
+  const LAST_MONTH = '2026-12';
+  const YEAR_END = '2026-12-31';
+  const ME = App.staff(App.ME);
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const hm = min => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+  const timeRange = (start, n) => `${start}–${hm(toMin(start) + n * App.FEE.minutes)}`;
+  const startOf = c => c.time.split('–')[0];
+  const endOf = c => c.time.split('–')[1];
+  const where = c => `${App.county(c.county).name}${c.district}`;
+  const monday = iso => App.addDays(iso, -((App.toDate(iso).getDay() + 6) % 7));
+  const monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return `${ym}-${pad(new Date(y, m, 0).getDate())}`; };
+  const addMonths = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+  const whenText = dt => {
+    const d = dt.slice(0, 10), t = dt.slice(11, 16);
+    if (d === App.TODAY) return `今日 ${t}`;
+    if (d === TOMORROW) return `明日 ${t}`;
+    if (d === App.addDays(App.TODAY, -1)) return `昨日 ${t}`;
+    return `${fmt.md(d)} ${t}`;
+  };
+  const duration = min => (min >= 60 ? `${Math.floor(min / 60)} 小時${min % 60 ? ` ${min % 60} 分` : ''}` : `${min} 分鐘`);
+  // 中繼資訊只在「・」之間換行，避免「企業 28 人」被拆成兩行
+  const meta = parts => parts.filter(Boolean).map(p => `<span class="sc-nw">${p}</span>`).join('・');
+  const byWhen = (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time);
+
+  // 場次：有活動日期、已進入「講師確認」之後的案件；已取消者若曾排入行程也保留，方便追溯
+  const isSession = c => !!c.date && (c.status === 'active'
+    ? c.stage === 'confirm' || c.stage === 'scheduled' || EXEC.has(c.stage)
+    : c.status === 'cancelled' && (c.stage === 'scheduled' || c.stage === 'confirm'));
+  const stateOf = c => App.sessionState(c);
+  const GROUP = { pending: 'pending', upcoming: 'upcoming', today: 'today', live: 'today', done: 'done', leave: 'exception', resched: 'exception', cancelled: 'exception' };
+  const TONE = { pending: 'clay', upcoming: 'forest', today: 'today', live: 'today', done: 'ok', leave: 'err', resched: 'warn', cancelled: 'cancel' };
+  const STATE_ORDER = ['live', 'today', 'leave', 'resched', 'pending', 'upcoming', 'done', 'cancelled'];
+  const isException = c => GROUP[stateOf(c).key] === 'exception';
+  const badgeOf = c => { const s = stateOf(c); return App.statusBadge(s.tone, s.label); };
+  const lectLine = c => {
+    if (c.lecturer) return `${App.lecturer(c.lecturer).name} 講師`;
+    const inv = App.currentInvite(c);
+    return inv ? `邀請 ${App.lecturer(inv.lecturer).name}（第 ${inv.rank} 順位）` : '講師待定';
+  };
+  const lectNameOf = c => (c.lecturer ? App.lecturer(c.lecturer).name : (App.currentInvite(c) ? App.lecturer(App.currentInvite(c).lecturer).name : ''));
+  // 只有尚未開始的場次可以改期或取消
+  const canChange = c => ['pending', 'upcoming', 'today', 'leave', 'resched'].includes(stateOf(c).key);
+
+  /* ===================================================================
+     行前通知：由活動日推算寄送時間；手動寄送與重寄記在 noticeOverride
+     =================================================================== */
+  const NOTICE_KINDS = [
+    { key: 'lect', label: '講師行前通知', to: '講師', channel: 'Email＋簡訊', offset: -7, time: '09:00' },
+    { key: 'org', label: '申請單位行前通知', to: '申請單位聯絡人', channel: 'Email', offset: -7, time: '09:00' },
+    { key: 'eve', label: '前一日提醒', to: '講師', channel: '簡訊', offset: -1, time: '17:00' },
+  ];
+  const KIND = Object.fromEntries(NOTICE_KINDS.map(k => [k.key, k]));
+  const NSTAT = {
+    read: { tone: 'ok', icon: 'eye', label: '已讀' },
+    delivered: { tone: 'ok', icon: 'check', label: '已寄達' },
+    resent: { tone: 'ok', icon: 'refresh', label: '已重寄' },
+    bounced: { tone: 'err', icon: 'alert', label: '退信' },
+    scheduled: { tone: 'neutral', icon: 'clock', label: '排程中' },
+    paused: { tone: 'warn', icon: 'hourglass', label: '暫停寄送' },
+    void: { tone: 'neutral', icon: 'x', label: '不寄送' },
+  };
+  const SENT = new Set(['read', 'delivered', 'resent']);
+  const noticeOverride = new Map();
+  const hasNotices = c => !!c.date && !!c.lecturer && (c.status === 'cancelled' || c.stage === 'scheduled' || EXEC.has(c.stage));
+  const noticeAt = (c, k) => `${App.addDays(c.date, k.offset)}T${k.time}`;
+  // 退信：示意資料固定一筆「申請單位信箱已滿」，讓「需處理」有可操作的內容
+  const bounced = new Set();
+  {
+    const pool = App.CASES.filter(c => c.status === 'active' && c.stage === 'scheduled' && c.lecturer && !c.exception
+      && c.date > App.TODAY && noticeAt(c, KIND.org) <= NOW_DT);
+    const pick = pool.map(c => ({ c, r: App.rng(`${c.id}:bounce`)() })).sort((a, b) => a.r - b.r)[0];
+    if (pick) bounced.add(pick.c.id);
+  }
+  const noticeOf = (c, k) => {
+    const ov = noticeOverride.get(`${c.id}:${k.key}`);
+    if (ov) return ov;
+    const at = noticeAt(c, k);
+    if (at > NOW_DT) {
+      if (c.status === 'cancelled') return { status: 'void', at, note: '場次已取消' };
+      if (c.exception) return { status: 'paused', at, note: c.exception.type === 'leave' ? '講師請假處理中' : '改期處理中' };
+      return { status: 'scheduled', at };
+    }
+    if (k.key === 'org' && bounced.has(c.id)) return { status: 'bounced', at, note: '收件信箱容量已滿' };
+    return { status: k.key !== 'eve' && App.rng(`${c.id}:${k.key}:read`)() < .72 ? 'read' : 'delivered', at };
+  };
+  const nchip = n => {
+    const s = NSTAT[n.status];
+    const when = n.status === 'scheduled' ? `預定 ${whenText(n.at)}` : n.status === 'paused' || n.status === 'void' ? n.note : n.status === 'bounced' ? `${whenText(n.at)}・${n.note}` : whenText(n.at);
+    return `<span class="sc-n" data-tone="${s.tone}">${icon(s.icon)}<span><b>${s.label}</b><span class="sc-n__at">${esc(when)}</span></span></span>`;
+  };
+
+  /* ===================================================================
+     頁面狀態與處理紀錄（本頁新增的紀錄，與 App.caseLog 合併顯示）
+     =================================================================== */
+  const F = { view: 'month', day: App.TODAY, status: 'all', mine: false, q: '', sortKey: 'date', sortDir: 1, page: 1, target: null };
+  const NF = { filter: 'all', page: 1 };
+  const LIST_SIZE = 12;
+  const NOTICE_SIZE = 8;
+  const pageLog = new Map();
+  const addLog = (id, entry) => { pageLog.set(id, (pageLog.get(id) || []).concat(entry)); return entry; };
+  const dropLog = (id, entry) => { pageLog.set(id, (pageLog.get(id) || []).filter(e => e !== entry)); };
+  const logEntry = (title, note = '', tone = 'done') => ({ iso: App.TODAY, time: NOW_HM, title, by: ME.name, note, tone });
+
+  /* ===================================================================
+     頁首
+     =================================================================== */
+  function renderLede() {
+    const today = App.daySessions(App.TODAY);
+    const live = today.filter(c => stateOf(c).key === 'live').length;
+    const week = App.weekSessions().reduce((a, d) => a + d.sessions.length, 0);
+    const exc = App.CASES.filter(c => c.status === 'active' && c.exception).length;
+    $('#sc-lede').innerHTML = `今日 <b>${today.length}</b> 場（進行中 <b>${live}</b> 場），本週共 <b>${week}</b> 場；${exc ? `<b class="c-clay">${exc}</b> 場異常待處理，請優先安排代課或改期。` : '目前沒有待處理的異常。'}`;
+  }
+  const eveTargets = () => App.daySessions(TOMORROW).filter(c => noticeOf(c, KIND.eve).status === 'scheduled');
+  function renderEve() {
+    const n = eveTargets().length;
+    $('#sc-eve').disabled = !n;
+    $('#sc-eve-label').textContent = n ? `寄送明日提醒（${n} 場）` : '明日提醒已寄出';
+  }
+
+  /* ===================================================================
+     今日執行看板：時間軸（08:00–22:00）＋現在指針＋場次列
+     =================================================================== */
+  const rulerHost = $('#sc-ruler');
+  const todayPanel = $('#sc-today');
+  let rulerPlayed = App.calm();
+  let rulerW = 0;
+  const T0 = 8 * 60, T1 = 22 * 60;
+
+  function drawRuler() {
+    const W = Math.round(rulerHost.clientWidth);
+    if (!W) return;
+    rulerW = W;
+    const fs = parseFloat(getComputedStyle(rulerHost).fontSize);
+    const list = App.daySessions(App.TODAY);
+    const nowM = toMin(NOW_HM);
+    // 刻度文字一律置中對齊，左右預留半個標籤寬，頭尾兩個標籤才不會跟鄰居疊在一起
+    const wide = Math.ceil(fs * 1.5) + 2;
+    const longLbl = (W - wide * 2) / ((T1 - T0) / 60) >= fs * 3.6;
+    const L = longLbl ? wide : Math.ceil(fs * .8) + 2, R = L;
+    const X = m => L + (Math.min(T1, Math.max(T0, m)) - T0) / (T1 - T0) * (W - L - R);
+    const hourPx = (W - L - R) / ((T1 - T0) / 60);
+    const step = hourPx >= fs * 1.9 ? 1 : 2;
+    const capH = Math.round(fs * 2.2);
+    const chipH = Math.round(fs + 10);
+    const trackY = chipH + 12 + capH / 2;
+    const tickY = trackY + capH / 2 + 6;
+    const lblY = tickY + 10 + fs;
+    const H = Math.ceil(lblY + 6);
+    let ticks = '', labels = '';
+    for (let h = T0 / 60; h <= T1 / 60; h++) {
+      const x = X(h * 60).toFixed(1);
+      const major = h % 2 === 0;
+      ticks += `<line class="scr-tick${major ? ' scr-tick--major' : ''}" x1="${x}" x2="${x}" y1="${tickY}" y2="${tickY + (major ? 8 : 5)}" stroke-width="1.5"/>`;
+      if ((h - T0 / 60) % step === 0) labels += `<text class="scr-lbl${h * 60 <= nowM ? ' is-past' : ''}" x="${x}" y="${lblY}" text-anchor="middle">${longLbl ? `${pad(h)}:00` : pad(h)}</text>`;
+    }
+    const x0 = X(T0), xn = X(nowM), x1 = X(T1);
+    const elLen = Math.max(1, xn - x0);
+    const caps = list.map((c, i) => {
+      const st = stateOf(c).key;
+      const a = X(toMin(startOf(c)));
+      const b = Math.max(X(toMin(endOf(c))), a + capH);
+      const w = b - a, y = trackY - capH / 2, r = capH / 2;
+      const kind = st === 'live' ? 'live' : st === 'done' ? 'done' : st === 'leave' || st === 'resched' ? 'alert' : 'next';
+      let inner = '';
+      if (kind === 'live') {
+        const pw = Math.max(0, Math.min(w, xn - a));
+        let leaves = '';
+        for (let x = a - 16; x < b; x += 16) leaves += `<path class="scr-leaf" d="M${x.toFixed(1)} ${trackY}c3-4.2 8.5-4.2 11 0-2.5 4.2-8 4.2-11 0z"/>`;
+        inner = `<clipPath id="scr-clip-${i}"><rect x="${a.toFixed(1)}" y="${y}" width="${pw.toFixed(1)}" height="${capH}" rx="${r}"/></clipPath>
+<rect class="scr-prog" x="${a.toFixed(1)}" y="${y}" width="${pw.toFixed(1)}" height="${capH}" rx="${r}"/>
+<g class="scr-flow-wrap" clip-path="url(#scr-clip-${i})"><g class="scr-flow">${leaves}</g></g>`;
+      }
+      // 進行中場次的編號放右端，左側讓給已進行的進度與種子流
+      const numX = w < capH * 1.8 ? a + w / 2 : kind === 'live' ? b - r : a + r;
+      return `<g class="scr-cap scr-cap--${kind}" style="--ci:${i}">
+<rect class="scr-cap__body" x="${a.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${capH}" rx="${r}" stroke-width="1.5"${kind === 'next' ? ' stroke-dasharray="5 4"' : ''}/>
+${inner}
+<circle class="scr-cap__dot" cx="${numX.toFixed(1)}" cy="${trackY}" r="${r - 4}"/>
+<text class="scr-cap__n" x="${numX.toFixed(1)}" y="${trackY}" dy=".35em" text-anchor="middle">${i + 1}</text>
+</g>`;
+    }).join('');
+    const chipText = `現在 ${NOW_HM}`;
+    const chipW = Math.round(fs * 5.4 + 20);
+    const chipX = Math.min(W - chipW, Math.max(0, xn - chipW / 2));
+    const needle = `<g class="scr-needle" style="--from:${(x0 - xn).toFixed(1)}px">
+<line class="scr-needle__line" x1="${xn.toFixed(1)}" x2="${xn.toFixed(1)}" y1="${chipH}" y2="${tickY + 4}" stroke-width="2"/>
+<circle class="scr-pulse" cx="${xn.toFixed(1)}" cy="${trackY}" r="${capH / 2 + 2}" fill="none" stroke-width="2"/>
+<rect class="scr-chip" x="${chipX.toFixed(1)}" y="0" width="${chipW}" height="${chipH}" rx="${chipH / 2}"/>
+<text class="scr-chip__t" x="${(chipX + chipW / 2).toFixed(1)}" y="${chipH / 2}" dy=".36em" text-anchor="middle">${chipText}</text>
+</g>`;
+    rulerHost.innerHTML = `<svg class="${rulerPlayed ? '' : 'is-pre'}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">
+<line class="scr-track" x1="${x0}" x2="${x1.toFixed(1)}" y1="${trackY}" y2="${trackY}" stroke-width="6" stroke-linecap="round"/>
+<line class="scr-elapsed" x1="${x0}" x2="${xn.toFixed(1)}" y1="${trackY}" y2="${trackY}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${elLen.toFixed(1)} ${elLen.toFixed(1)}" style="--len:${elLen.toFixed(1)}px"/>
+${ticks}${labels}${caps}${needle}
+</svg>`;
+    rulerHost.setAttribute('aria-label', `今日時間軸 08:00 至 22:00，現在 ${NOW_HM}。${list.map((c, i) => `第 ${i + 1} 場 ${c.time}，${stateOf(c).label}`).join('；') || '今日沒有場次'}`);
+  }
+  // 首次進入視窗才讓指針從 08:00 掃到現在；高齡模式與減少動態直接畫出結果
+  App.whenVisible(rulerHost, () => {
+    if (rulerPlayed) return;
+    requestAnimationFrame(() => {
+      rulerPlayed = true;
+      const svg = rulerHost.querySelector('svg');
+      if (svg) svg.classList.remove('is-pre');
+    });
+  });
+  new ResizeObserver(() => { if (Math.round(rulerHost.clientWidth) !== rulerW) drawRuler(); }).observe(rulerHost);
+  // 進行中場次的種子流：離開視窗或分頁隱藏時 App.loop 自動暫停（同時暫停指針脈動）
+  let flowOffset = 0;
+  const flowLoop = App.loop(todayPanel, dt => {
+    flowOffset = (flowOffset + dt * .02) % 16;
+    const g = rulerHost.querySelector('.scr-flow');
+    if (g) g.setAttribute('transform', `translate(${flowOffset.toFixed(2)} 0)`);
+  });
+  const syncFlow = () => { if (App.calm()) flowLoop.stop(); else flowLoop.start(); };
+
+  const checkinOf = c => hm(toMin(startOf(c)) - 12 - Math.floor(App.rng(`${c.id}:checkin`)() * 14));
+  function renderToday() {
+    const list = App.daySessions(App.TODAY);
+    const nowM = toMin(NOW_HM);
+    const live = list.filter(c => stateOf(c).key === 'live').length;
+    const online = list.filter(c => c.mode === 'online').length;
+    $('#sc-today-sub').innerHTML = `${fmt.rocLong(App.TODAY)}・共 <b>${list.length}</b> 場・進行中 <b>${live}</b>・實體 <b>${list.length - online}</b>／線上 <b>${online}</b>・預計 <b>${fmt.num(list.reduce((a, c) => a + c.people, 0))}</b> 人參與`;
+    $('#sc-trows').innerHTML = list.length ? list.map((c, i) => {
+      const st = stateOf(c);
+      const l = App.lecturer(c.lecturer);
+      const s = toMin(startOf(c)), e = toMin(endOf(c));
+      let side = '';
+      if (st.key === 'live') side = `<div class="sc-prog"><span>已進行 <b>${nowM - s}</b>／${e - s} 分鐘</span><span class="sc-prog__bar" aria-hidden="true"><span style="--p:${((nowM - s) / (e - s)).toFixed(3)}"></span></span></div>`;
+      else if (nowM < s) side = `<span class="sc-trow__eta"><b>${duration(s - nowM)}</b>後開始</span>`;
+      let check;
+      if (st.key === 'live') check = c.mode === 'online' ? `${icon('video')}<span>講師 ${checkinOf(c)} 已上線・視訊進行中</span>` : `${icon('user-check')}<span>講師 ${checkinOf(c)} 已報到・現場簽到進行中</span>`;
+      else if (st.key === 'leave' || st.key === 'resched') check = `${icon('alert')}<span>${st.key === 'leave' ? '講師請假，需安排代課' : '改期申請處理中'}</span>`;
+      else if (st.key === 'done') check = `${icon('check')}<span>活動已結束，等待講師回填成果</span>`;
+      else if (c.mode === 'online') check = `${icon('video')}<span>視訊連結已於 ${whenText(noticeAt(c, KIND.lect))} 隨行前通知寄出</span>`;
+      else check = `${icon('send')}<span>前一日提醒 ${whenText(noticeAt(c, KIND.eve))} 已寄送・講師預計 ${hm(s - 30)} 前報到</span>`;
+      return `<li class="sc-trow" data-state="${st.key}">
+  <span class="sc-trow__n" aria-hidden="true">${i + 1}</span>
+  <span class="sc-trow__time"><b>${startOf(c)}</b><span>至 ${endOf(c)}</span></span>
+  <div class="sc-trow__main">
+    <p class="sc-trow__org"><button type="button" class="sc-trow__link" data-open="${c.id}">${esc(c.org)}</button></p>
+    <p class="sc-trow__meta">${meta([c.id, where(c), App.MODES[c.mode], `${esc(l.name)} 講師`, `${App.audience(c.audience).name} ${c.people} 人`])}</p>
+    <p class="sc-trow__check">${check}</p>
+  </div>
+  <div class="sc-trow__side">${App.statusBadge(st.tone, st.label)}${side}<div class="sc-trow__acts"><button type="button" class="btn btn--on-dark btn--sm" data-call="${c.id}">${icon('phone')}聯絡講師</button></div></div>
+</li>`;
+    }).join('') : `<li class="sc-today__empty">今日沒有排定的場次</li>`;
+    drawRuler();
+    renderWeekStrip();
+  }
+  function renderWeekStrip() {
+    const w = App.weekSessions();
+    $('#sc-wk-cap').innerHTML = `本週 ${fmt.md(App.WEEK.start)}–${fmt.md(App.WEEK.end)}・共 <b>${w.reduce((a, d) => a + d.sessions.length, 0)}</b> 場・點選日期在行事曆查看`;
+    $('#sc-wk-days').innerHTML = w.map(d => {
+      const n = d.sessions.length;
+      const exc = d.sessions.filter(isException).length;
+      const isToday = d.iso === App.TODAY;
+      return `<button type="button" class="sc-wkd${isToday ? ' is-today' : ''}${n ? '' : ' is-empty'}" data-jump="${d.iso}" aria-label="${fmt.rocShort(d.iso)}${isToday ? '（今天）' : ''}，${n} 場${exc ? `，含 ${exc} 場異常` : ''}">
+  <span class="sc-wkd__dow">${isToday ? '今天' : `<span class="sc-dow-pre">週</span>${fmt.dow(d.iso)}`}</span>
+  <span class="sc-wkd__date">${App.toDate(d.iso).getDate()}</span>
+  <span class="sc-wkd__seeds" aria-hidden="true">${d.sessions.map(c => `<i class="sc-seed" data-tone="${TONE[stateOf(c).key]}"></i>`).join('')}</span>
+  <span class="sc-wkd__n"><b>${n}</b><span class="sc-wkd__unit"> 場</span></span>
+</button>`;
+    }).join('');
+  }
+
+  /* ===================================================================
+     異常待處理
+     =================================================================== */
+  function renderExceptions() {
+    const list = App.CASES.filter(c => c.status === 'active' && c.exception && c.date).sort(byWhen);
+    $('#sc-exc-n').textContent = list.length || '';
+    $('#sc-exc-list').innerHTML = list.length ? list.map(c => {
+      const ex = c.exception;
+      const left = Math.max(0, App.hoursLeft(`${c.date}T${startOf(c)}`));
+      const urgent = left < 72;
+      const p = Math.max(.06, Math.min(1, 1 - left / (14 * 24)));
+      const st = stateOf(c);
+      const acts = ex.type === 'leave'
+        ? `<a class="btn btn--sm btn--clay" href="application.html?id=${c.id}#match">${icon('sliders')}安排代課</a><button type="button" class="btn btn--sm" data-resched="${c.id}">改期</button>`
+        : `<button type="button" class="btn btn--sm btn--clay" data-resched="${c.id}">${icon('calendar')}處理改期</button><button type="button" class="btn btn--sm" data-open="${c.id}">詳情</button>`;
+      return `<li class="sc-exc-item" data-type="${ex.type}">
+  <div class="sc-exc-item__top">${App.statusBadge(st.tone, st.label)}<span class="sc-exc-item__when">${fmt.rocShort(c.date)} ${startOf(c)}</span></div>
+  <p class="sc-exc-item__org"><button type="button" class="sc-linkbtn" data-open="${c.id}">${esc(c.org)}</button></p>
+  <p class="sc-exc-item__meta">${meta([App.caseLink(c), where(c), esc(lectLine(c)), `承辦 ${c.owner ? App.staff(c.owner).name : '未指派'}`])}</p>
+  <p class="sc-exc-item__note">${esc(ex.note)}${ex.newDate ? `<br>申請改至 <b>${fmt.rocShort(ex.newDate)}</b>` : ''}（${fmt.md(ex.iso)} 通報）</p>
+  <div class="sc-exc-item__foot">
+    <span class="sc-cd${urgent ? ' is-urgent' : ''}"><span class="ring" style="--p:${p.toFixed(3)}" aria-hidden="true"></span><span>距活動<b>${fmt.hours(left)}</b></span></span>
+    <span class="sc-exc-item__acts">${acts}</span>
+  </div>
+</li>`;
+    }).join('') : `<li class="sc-exc-empty">${icon('shield')}<b>異常都處理完了</b><span>講師請假或改期申請進來時，會在這裡提醒你。</span></li>`;
+    const ym = App.TODAY.slice(0, 7);
+    const cancelled = App.CASES.filter(c => c.status === 'cancelled' && isSession(c) && c.exitDate && c.exitDate.startsWith(ym)).sort((a, b) => b.exitDate.localeCompare(a.exitDate));
+    $('#sc-exc-foot').innerHTML = `<span>本月已取消 <b class="card__count">${cancelled.length}</b> 場</span>${cancelled.slice(0, 3).map(c => `<span class="sc-cancel-row"><span class="mono">${fmt.md(c.date)}</span><button type="button" class="sc-linkbtn" data-open="${c.id}">${esc(c.org)}</button><span>${esc(c.exitReason)}</span></span>`).join('')}`;
+  }
+
+  /* ===================================================================
+     行事曆：月曆＋選定日行程／週曆／清單（同一組篩選）
+     =================================================================== */
+  const rangeOf = () => {
+    if (F.view === 'week') { const s = monday(F.day); return { from: s, to: App.addDays(s, 6) }; }
+    const ym = F.day.slice(0, 7);
+    return { from: `${ym}-01`, to: monthEnd(ym) };
+  };
+  const passBase = c => {
+    if (F.mine && c.owner !== App.ME) return false;
+    if (!F.q) return true;
+    return `${c.id} ${c.org} ${where(c)} ${lectNameOf(c)}`.toLowerCase().includes(F.q);
+  };
+  const passStatus = c => F.status === 'all' || GROUP[stateOf(c).key] === F.status;
+  const sessionsBetween = (from, to) => App.CASES.filter(c => isSession(c) && c.date >= from && c.date <= to && passBase(c)).sort(byWhen);
+  const CHIPS = [
+    { key: 'all', label: '全部' },
+    { key: 'pending', label: '待確認', c: 'var(--clay)' },
+    { key: 'upcoming', label: '待執行', c: 'var(--forest)' },
+    { key: 'today', label: '今日', c: 'var(--sprout)' },
+    { key: 'done', label: '已執行', c: 'var(--ok)' },
+    { key: 'exception', label: '異常', c: 'var(--err)' },
+  ];
+  $('#sc-chips').innerHTML = CHIPS.map(k => `<button type="button" class="chip" data-chip="${k.key}" aria-pressed="${k.key === F.status}">${k.c ? `<span class="sc-chip-dot" style="--c:${k.c}" aria-hidden="true"></span>` : ''}${k.label}<span class="chip__n" data-chip-n="${k.key}"></span></button>`).join('');
+
+  const rangeLabel = () => {
+    const { from, to } = rangeOf();
+    return F.view === 'week' ? `${fmt.rocShort(from)} – ${fmt.rocShort(to)}` : fmt.rocYM(from.slice(0, 7));
+  };
+  function renderCalendar() {
+    const { from, to } = rangeOf();
+    const all = sessionsBetween(from, to);
+    const counts = { all: all.length, pending: 0, upcoming: 0, today: 0, done: 0, exception: 0 };
+    all.forEach(c => { counts[GROUP[stateOf(c).key]]++; });
+    CHIPS.forEach(k => {
+      $(`[data-chip-n="${k.key}"]`).textContent = counts[k.key];
+      $(`[data-chip="${k.key}"]`).setAttribute('aria-pressed', String(k.key === F.status));
+    });
+    const shown = all.filter(passStatus);
+    const isWeek = F.view === 'week';
+    $('#sc-nav-title').textContent = isWeek ? `${App.toDate(from).getFullYear() - 1911} 年 ${rangeLabel()}` : rangeLabel();
+    $('#sc-prev-label').textContent = isWeek ? '上一週' : '上個月';
+    $('#sc-next-label').textContent = isWeek ? '下一週' : '下個月';
+    $('#sc-prev').disabled = isWeek ? App.addDays(from, -7) < monday(App.LAUNCH) : from.slice(0, 7) <= FIRST_MONTH;
+    $('#sc-next').disabled = isWeek ? App.addDays(from, 7) > YEAR_END : from.slice(0, 7) >= LAST_MONTH;
+    $('#sc-range-sub').textContent = `${rangeLabel()}・${all.length} 場${shown.length !== all.length ? `，符合篩選 ${shown.length} 場` : ''}${F.mine ? '・只看我負責' : ''}`;
+    if (F.view === 'month') renderMonth(shown);
+    else if (isWeek) renderWeek(shown);
+    else renderList(shown);
+  }
+
+  const MAX_EV = 3;
+  function renderMonth(shown) {
+    const ym = F.day.slice(0, 7);
+    const start = monday(`${ym}-01`);
+    const end = App.addDays(monday(monthEnd(ym)), 6);
+    const byDay = {};
+    shown.forEach(c => { (byDay[c.date] = byDay[c.date] || []).push(c); });
+    let html = '一二三四五六日'.split('').map(d => `<div class="cal__dow" aria-hidden="true"><span class="sc-dow-pre">週</span>${d}</div>`).join('');
+    for (let d = start; d <= end; d = App.addDays(d, 1)) {
+      const out = d.slice(0, 7) !== ym;
+      const dn = App.toDate(d).getDate();
+      const cls = `cal__cell sc-cell${out ? ' is-out' : ''}${d === App.TODAY ? ' is-today' : ''}${!out && d === F.day ? ' is-sel' : ''}`;
+      if (out) { html += `<div class="${cls}"><span class="sc-day" aria-hidden="true"><span class="sc-day__d">${dn}</span></span></div>`; continue; }
+      // 異常優先排在前面，格子只放得下三筆時也不會被藏起來
+      const list = (byDay[d] || []).slice().sort((a, b) => (isException(b) - isException(a)) || a.time.localeCompare(b.time));
+      const n = list.length;
+      const exc = list.filter(isException).length;
+      const label = `${fmt.rocShort(d)}${d === App.TODAY ? '（今天）' : ''}，${n ? `${n} 場` : '無場次'}${exc ? `，含 ${exc} 場異常` : ''}`;
+      html += `<div class="${cls}">
+<button type="button" class="sc-day" data-day="${d}" aria-pressed="${d === F.day}" aria-label="${label}">
+  <span class="sc-day__d">${dn}${d === App.TODAY ? '<span class="sc-day__today">今天</span>' : ''}</span>
+  ${n ? `<span class="sc-day__sum">${n} 場</span>` : ''}
+  ${n ? `<span class="sc-day__dots" aria-hidden="true">${list.slice(0, 6).map(c => `<i data-tone="${TONE[stateOf(c).key]}"></i>`).join('')}</span>` : ''}
+  ${exc ? `<span class="sc-day__exc">異常 ${exc}</span>` : ''}
+</button>
+<div class="sc-evs">${list.slice(0, MAX_EV).map(c => {
+        const s = stateOf(c);
+        return `<button type="button" class="cal__ev${c.id === F.target ? ' is-target' : ''}" data-tone="${TONE[s.key]}" data-open="${c.id}" title="${esc(`${c.time} ${c.org}（${s.label}）`)}"><b>${startOf(c)}</b><span class="sc-ev__org">${esc(c.org)}</span><span class="sr-only">，${s.label}</span></button>`;
+      }).join('')}${n > MAX_EV ? `<button type="button" class="sc-more" data-day="${d}">還有 ${n - MAX_EV} 場</button>` : ''}</div>
+</div>`;
+    }
+    $('#sc-grid').innerHTML = html;
+    renderAgenda(shown);
+  }
+
+  const agendaItem = c => {
+    const s = stateOf(c);
+    return `<button type="button" class="sc-aitem${c.id === F.target ? ' is-target' : ''}" data-tone="${TONE[s.key]}" data-open="${c.id}">
+  <span class="sc-aitem__time"><b>${startOf(c)}</b><span>${endOf(c)}</span></span>
+  <span class="sc-aitem__body">
+    <span class="sc-aitem__org">${esc(c.org)}</span>
+    <span class="sc-aitem__meta">${meta([where(c), App.MODES[c.mode], esc(lectLine(c))])}</span>
+    <span class="sc-aitem__foot"><span class="sc-aitem__id">${c.id}</span>${App.statusBadge(s.tone, s.label)}</span>
+  </span>
+</button>`;
+  };
+  function renderAgenda(shown) {
+    const d = F.day;
+    const list = shown.filter(c => c.date === d);
+    $('#sc-agenda').innerHTML = `<div class="sc-agenda__head"><p class="sc-agenda__date">${fmt.rocShort(d)}${d === App.TODAY ? '<span class="badge badge--forest">今天</span>' : ''}</p><p class="sc-agenda__n">${list.length} 場</p></div>
+${list.length ? `<div class="sc-alist">${list.map(agendaItem).join('')}</div>` : `<p class="sc-agenda__empty">${icon('calendar')}這一天沒有${F.status !== 'all' || F.q || F.mine ? '符合篩選的' : ''}場次</p>`}`;
+  }
+
+  function renderWeek(shown) {
+    const s = monday(F.day);
+    let html = '';
+    for (let i = 0; i < 7; i++) {
+      const d = App.addDays(s, i);
+      const list = shown.filter(c => c.date === d);
+      html += `<div class="week__col${d === App.TODAY ? ' is-today' : ''}">
+<p class="week__head"><span>週${fmt.dow(d)}</span><b>${fmt.md(d)}</b>${d === App.TODAY ? '<span class="sc-wk-today">今天</span>' : ''}<span class="sc-wk-n">${list.length} 場</span></p>
+<div class="sc-wk-evs">${list.length ? list.map(c => {
+        const st = stateOf(c);
+        return `<button type="button" class="sc-wev${c.id === F.target ? ' is-target' : ''}" data-tone="${TONE[st.key]}" data-open="${c.id}">
+  <span class="sc-wev__time">${c.time}</span>
+  <span class="sc-wev__org">${esc(c.org)}</span>
+  <span class="sc-wev__meta">${where(c)}${c.mode === 'online' ? '・線上' : ''}</span>
+  <span class="sc-wev__meta">${esc(lectLine(c))}</span>
+  <span class="sc-wev__st">${st.label}</span>
+</button>`;
+      }).join('') : '<p class="sc-wk-empty">沒有場次</p>'}</div>
+</div>`;
+    }
+    $('#sc-week').innerHTML = html;
+  }
+
+  const SORTERS = {
+    date: byWhen,
+    org: (a, b) => a.org.localeCompare(b.org, 'zh-Hant') || byWhen(a, b),
+    county: (a, b) => App.COUNTIES.indexOf(App.county(a.county)) - App.COUNTIES.indexOf(App.county(b.county)) || byWhen(a, b),
+    lecturer: (a, b) => lectNameOf(a).localeCompare(lectNameOf(b), 'zh-Hant') || byWhen(a, b),
+    state: (a, b) => STATE_ORDER.indexOf(stateOf(a).key) - STATE_ORDER.indexOf(stateOf(b).key) || byWhen(a, b),
+  };
+  const listPager = App.pager($('#sc-pager'), { total: 0, size: LIST_SIZE, onChange: p => { F.page = p; renderCalendar(); } });
+  function rowAction(c) {
+    const k = stateOf(c).key;
+    if (k === 'leave') return `<a class="btn btn--sm btn--clay" href="application.html?id=${c.id}#match">${icon('sliders')}安排代課</a>`;
+    if (k === 'resched') return `<button type="button" class="btn btn--sm btn--clay" data-resched="${c.id}">處理改期</button>`;
+    return `<button type="button" class="btn btn--sm" data-open="${c.id}">詳情</button>`;
+  }
+  function renderList(shown) {
+    const sorted = shown.slice().sort((a, b) => SORTERS[F.sortKey](a, b) * F.sortDir);
+    const pages = Math.max(1, Math.ceil(sorted.length / LIST_SIZE));
+    F.page = Math.min(F.page, pages);
+    const rows = sorted.slice((F.page - 1) * LIST_SIZE, F.page * LIST_SIZE);
+    $('#sc-tbody').innerHTML = rows.length ? rows.map(c => `<tr${c.id === F.target ? ' class="is-selected"' : ''}>
+  <td data-label="日期時間"><div><span class="cell-main">${fmt.rocShort(c.date)}</span><span class="cell-sub">${c.time}</span></div></td>
+  <td data-label="場次"><div><a class="cell-id" href="application.html?id=${c.id}">${c.id}</a><span class="cell-main"><button type="button" class="sc-linkbtn" data-open="${c.id}">${esc(c.org)}</button></span></div></td>
+  <td class="col-2nd sc-td-nw" data-label="地點"><div>${where(c)}<span class="cell-sub">${App.MODES[c.mode]}</span></div></td>
+  <td data-label="講師">${esc(lectLine(c))}</td>
+  <td class="col-2nd sc-td-nw" data-label="對象・人數"><div>${App.audience(c.audience).name}<span class="cell-sub">${c.people} 人</span></div></td>
+  <td class="col-2nd sc-td-nw" data-label="承辦">${c.owner ? App.staff(c.owner).name : '未指派'}</td>
+  <td data-label="狀態">${badgeOf(c)}</td>
+  <td class="col-act${['leave', 'resched'].includes(stateOf(c).key) ? '' : ' sc-act-plain'}" data-label="操作">${rowAction(c)}</td>
+</tr>`).join('') : `<tr class="sc-list-empty"><td colspan="8">${App.emptyState({ title: '沒有符合條件的場次', text: '調整狀態篩選、搜尋字詞或切換月份再試試。' })}</td></tr>`;
+    listPager.set(F.page, sorted.length);
+  }
+  App.bindSort($('#sc-table'), { onSort: (key, dir) => { F.sortKey = key; F.sortDir = dir; F.page = 1; renderCalendar(); } });
+
+  // 換月或換週時，選定日落在有場次的那天（本月就選今天）
+  const pickDay = (from, to) => {
+    if (App.TODAY >= from && App.TODAY <= to) return App.TODAY;
+    const first = App.CASES.filter(c => isSession(c) && c.date >= from && c.date <= to).map(c => c.date).sort()[0];
+    return first || from;
+  };
+  function shift(dir) {
+    if (F.view === 'week') {
+      const s = App.addDays(monday(F.day), dir * 7);
+      F.day = pickDay(s, App.addDays(s, 6));
+    } else {
+      const ym = addMonths(F.day.slice(0, 7), dir);
+      F.day = pickDay(`${ym}-01`, monthEnd(ym));
+    }
+    F.page = 1;
+    F.target = null;
+    renderCalendar();
+  }
+  $('#sc-prev').addEventListener('click', () => shift(-1));
+  $('#sc-next').addEventListener('click', () => shift(1));
+  $('#sc-goto-today').addEventListener('click', () => { F.day = App.TODAY; F.page = 1; F.target = null; renderCalendar(); });
+  $('#sc-chips').addEventListener('click', e => {
+    const b = e.target.closest('[data-chip]');
+    if (!b) return;
+    F.status = b.dataset.chip;
+    F.page = 1;
+    renderCalendar();
+  });
+  $('#sc-q').addEventListener('input', e => { F.q = e.target.value.trim().toLowerCase(); F.page = 1; renderCalendar(); });
+  $('#sc-mine').addEventListener('change', e => { F.mine = e.target.checked; F.page = 1; renderCalendar(); });
+  App.tabs($('#sc-views'), { onChange: (i, tab) => { F.view = tab.dataset.view; F.page = 1; renderCalendar(); } });
+
+  /* ===================================================================
+     行前通知寄送紀錄（近 2 日至未來 14 日的場次）
+     =================================================================== */
+  const noticeCategory = c => {
+    const st = NOTICE_KINDS.map(k => noticeOf(c, k).status);
+    if (st.includes('bounced') || st.includes('paused')) return 'issue';
+    if (st.includes('scheduled')) return 'scheduled';
+    return 'sent';
+  };
+  const noticePager = App.pager($('#sc-npager'), { total: 0, size: NOTICE_SIZE, onChange: p => { NF.page = p; renderNotices(); } });
+  const nseg = App.seg($('#sc-nseg'), { onChange: v => { NF.filter = v; NF.page = 1; renderNotices(); } });
+  function renderNotices() {
+    const from = App.addDays(App.TODAY, -2), to = App.addDays(App.TODAY, 14);
+    const all = App.CASES.filter(c => c.status === 'active' && hasNotices(c) && c.date >= from && c.date <= to);
+    const cat = new Map(all.map(c => [c.id, noticeCategory(c)]));
+    // 需處理、排程中排前面（依活動日先後），已全數寄送的依最近活動日倒序
+    const PRI = { issue: 0, scheduled: 1, sent: 2 };
+    all.sort((a, b) => PRI[cat.get(a.id)] - PRI[cat.get(b.id)] || (cat.get(a.id) === 'sent' ? byWhen(b, a) : byWhen(a, b)));
+    const counts = { all: all.length, issue: 0, scheduled: 0, sent: 0 };
+    all.forEach(c => { counts[cat.get(c.id)]++; });
+    Object.entries(counts).forEach(([k, v]) => { $(`[data-n="${k}"]`).textContent = v; });
+    const flat = all.flatMap(c => NOTICE_KINDS.map(k => noticeOf(c, k).status));
+    const n = s => flat.filter(x => s.includes(x)).length;
+    $('#sc-nsum').innerHTML = `<span>${fmt.rocShort(from)} – ${fmt.rocShort(to)}・<b>${all.length}</b>場</span><span>已寄送<b>${n(['read', 'delivered', 'resent'])}</b>則</span><span>其中已讀<b>${n(['read'])}</b>則</span><span>排程中<b>${n(['scheduled'])}</b>則</span><span class="is-err">退信<b>${n(['bounced'])}</b>則</span><span class="is-warn">暫停<b>${n(['paused'])}</b>則</span>`;
+    const rows = all.filter(c => NF.filter === 'all' || cat.get(c.id) === NF.filter);
+    const pages = Math.max(1, Math.ceil(rows.length / NOTICE_SIZE));
+    NF.page = Math.min(NF.page, pages);
+    const page = rows.slice((NF.page - 1) * NOTICE_SIZE, NF.page * NOTICE_SIZE);
+    $('#sc-nbody').innerHTML = page.length ? page.map(c => {
+      const ns = Object.fromEntries(NOTICE_KINDS.map(k => [k.key, noticeOf(c, k)]));
+      const acts = [];
+      if (ns.org.status === 'bounced') acts.push(`<button type="button" class="btn btn--sm btn--clay" data-resend="${c.id}">${icon('refresh')}重寄</button>`);
+      if (NOTICE_KINDS.some(k => ns[k.key].status === 'scheduled') && c.date <= App.addDays(App.TODAY, 7)) acts.push(`<button type="button" class="btn btn--sm" data-sendnow="${c.id}">${icon('send')}立即寄送</button>`);
+      if (NOTICE_KINDS.some(k => ns[k.key].status === 'paused')) acts.push(`<button type="button" class="btn btn--sm" data-open="${c.id}">處理異常</button>`);
+      const plain = !acts.length;
+      if (plain) acts.push(`<button type="button" class="btn btn--sm btn--ghost" data-open="${c.id}">詳情</button>`);
+      return `<tr>
+  <td data-label="活動日期"><div><span class="cell-main">${fmt.rocShort(c.date)}</span><span class="cell-sub">${c.time}</span></div></td>
+  <td data-label="場次"><div><a class="cell-id" href="application.html?id=${c.id}">${c.id}</a><span class="cell-main"><button type="button" class="sc-linkbtn" data-open="${c.id}">${esc(c.org)}</button></span><span class="cell-sub">${where(c)}・${esc(App.lecturer(c.lecturer).name)} 講師</span></div></td>
+  <td data-label="講師">${nchip(ns.lect)}</td>
+  <td data-label="申請單位">${nchip(ns.org)}</td>
+  <td class="col-2nd" data-label="前一日簡訊">${nchip(ns.eve)}</td>
+  <td class="col-act${plain ? ' sc-act-plain' : ''}" data-label="操作"><span class="sc-acts">${acts.join('')}</span></td>
+</tr>`;
+    }).join('') : `<tr class="sc-list-empty"><td colspan="6">${App.emptyState({ title: '這一類目前沒有場次', text: '行前通知都在正常排程中。' })}</td></tr>`;
+    noticePager.set(NF.page, rows.length);
+  }
+
+  /* 寄送：立即寄送、重寄都記在 noticeOverride，並回傳復原函式 */
+  function sendNotices(c, keys, status, title) {
+    const prev = keys.map(k => [k, noticeOverride.get(`${c.id}:${k}`)]);
+    keys.forEach(k => noticeOverride.set(`${c.id}:${k}`, { status, at: NOW_DT }));
+    const entry = addLog(c.id, logEntry(title));
+    return () => {
+      prev.forEach(([k, v]) => { if (v) noticeOverride.set(`${c.id}:${k}`, v); else noticeOverride.delete(`${c.id}:${k}`); });
+      dropLog(c.id, entry);
+    };
+  }
+
+  /* ===================================================================
+     場次詳情抽屜
+     =================================================================== */
+  const drawer = $('#sc-drawer');
+  let drawerId = null;
+  const openSession = id => {
+    drawerId = id;
+    renderDrawer();
+    App.openDialog(drawer);
+    drawer.querySelector('.drawer__body').scrollTop = 0;
+  };
+  $('#sc-dr-close').addEventListener('click', () => App.closeDialog(drawer));
+  drawer.addEventListener('close', () => { drawerId = null; });
+
+  function renderDrawer() {
+    const c = App.case(drawerId);
+    const st = stateOf(c);
+    const l = c.lecturer ? App.lecturer(c.lecturer) : null;
+    const inv = App.currentInvite(c);
+    $('#sc-dr-icon').className = `modal__icon${st.key === 'leave' || st.key === 'cancelled' ? ' modal__icon--err' : st.key === 'resched' || st.key === 'pending' ? ' modal__icon--clay' : ''}`;
+    $('#sc-dr-meta').innerHTML = `${App.caseLink(c)}${App.statusBadge(st.tone, st.label)}${c.status === 'active' ? App.stageBadge(c) : ''}`;
+    $('#sc-dr-title').textContent = c.org;
+    $('#sc-dr-lead').textContent = `${fmt.rocLong(c.date)} ${c.time}・${where(c)}`;
+
+    const notes = [];
+    if (c.status === 'cancelled') notes.push(`<div class="notice notice--err">${icon('x')}<div><b>場次已取消</b>（${fmt.roc(c.exitDate)}）：${esc(c.exitReason)}</div></div>`);
+    else if (c.exception) notes.push(`<div class="notice ${c.exception.type === 'leave' ? 'notice--err' : 'notice--warn'}">${icon('alert')}<div><b>${c.exception.type === 'leave' ? '講師請假' : '申請改期'}</b>（${fmt.roc(c.exception.iso)} 通報）：${esc(c.exception.note)}${c.exception.newDate ? `<br>申請改至 <b>${fmt.rocShort(c.exception.newDate)}</b>，請確認講師檔期後改期。` : '<br>可一鍵帶到媒合頁安排代課講師，或與申請單位協調改期。'}</div></div>`);
+    if (st.key === 'live') {
+      const s = toMin(startOf(c)), e = toMin(endOf(c)), now = toMin(NOW_HM);
+      notes.push(`<div class="notice notice--ok">${icon('user-check')}<div><b>進行中</b>：已進行 ${now - s} 分鐘，預計 ${endOf(c)} 結束。講師 ${checkinOf(c)} ${c.mode === 'online' ? '已上線' : '已報到'}。</div></div>`);
+    }
+    if (st.key === 'pending' && inv) {
+      const due = App.inviteDue(inv);
+      const left = App.hoursLeft(due);
+      notes.push(`<div class="notice notice--warn">${icon('hourglass')}<div><b>講師確認中</b>：已邀請 ${esc(App.lecturer(inv.lecturer).name)}（第 ${inv.rank} 順位），${inv.designated ? '申請單位指定講師，不自動轉送，建議電話催覆。' : left > 0 ? `回覆期限 ${fmt.dt(due)}（剩 ${fmt.hours(left)}），逾時自動轉下一順位。` : '已逾 48 小時，系統將轉下一順位。'}</div></div>`);
+    }
+
+    const facts = [
+      ['日期時間', `${fmt.rocShort(c.date)}<small>${c.time}</small>`],
+      ['節數', `${c.sessions} 節<small>每節 ${App.FEE.minutes} 分鐘，共 ${c.sessions * App.FEE.minutes} 分鐘</small>`],
+      ['辦理方式', `${App.MODES[c.mode]}<small>${esc(c.venue)}</small>`],
+      ['服務對象', `${App.audience(c.audience).name}<small>申請 ${c.people} 人${c.result ? `・實到 ${c.result.people} 人` : ''}</small>`],
+      ['主題', `${App.topic(c.topic).name}`],
+      ['承辦', c.owner ? `${App.staff(c.owner).name}<small>${App.staff(c.owner).area}</small>` : '未指派'],
+    ];
+
+    const lectBlock = l ? `<div class="sc-person">${App.avatar(l)}
+  <p class="sc-person__role">授課講師</p>
+  <p class="sc-person__name">${App.lecturerLink(l)}</p>
+  <p class="sc-person__sub">${esc(l.title)}・${esc(l.org)}<br>${l.phone}・${l.email}<br>近 30 日 ${App.load30(l.id, c.date)} 場・平均滿意度 ${l.rating == null ? '尚無紀錄' : l.rating.toFixed(2)}</p>
+  <button type="button" class="btn btn--sm" data-call="${c.id}">${icon('phone')}聯絡講師</button>
+</div>` : `<div class="sc-person">${App.avatar({ name: inv ? App.lecturer(inv.lecturer).name : '待', color: '#56625D' })}
+  <p class="sc-person__role">授課講師</p>
+  <p class="sc-person__name">${inv ? `${esc(App.lecturer(inv.lecturer).name)}（邀請中）` : '尚未確認'}</p>
+  <p class="sc-person__sub">${inv ? `第 ${inv.rank} 順位・${fmt.dt(inv.sent)} 發出邀請` : '尚未發出講師邀請'}</p>
+</div>`;
+    const fee = l && App.feeFor(c);
+    const feeLine = fee ? `<p class="sc-fee">${esc(App.FEE.note)}：${fee.rate.label} ${fee.sessions} 節 × <b>${fmt.money(fee.rate.rate)}</b>${fee.travel ? `＋交通費 <b>${fmt.money(fee.travel)}</b>（${esc(fee.tier.label)}）` : '（線上，無交通費）'}＝<b class="sc-nw">${fmt.money(fee.total)}</b></p>` : '';
+    const orgBlock = `<div class="sc-person">${App.avatar({ name: c.contact, color: '#35617A' })}
+  <p class="sc-person__role">申請單位聯絡人</p>
+  <p class="sc-person__name">${esc(c.contact)}・${esc(c.contactTitle)}</p>
+  <p class="sc-person__sub">${esc(c.phone)}<br>${esc(c.email)}</p>
+</div>`;
+
+    let noticeBlock;
+    if (!hasNotices(c)) noticeBlock = `<p class="subtle">講師確認後，系統會在活動前 7 日自動排程行前通知。</p>`;
+    else {
+      noticeBlock = `<ul class="sc-nlist">${NOTICE_KINDS.map(k => {
+        const n = noticeOf(c, k);
+        const act = n.status === 'bounced' ? `<button type="button" class="btn btn--sm btn--clay" data-resend="${c.id}">${icon('refresh')}重寄</button>`
+          : n.status === 'scheduled' && c.status === 'active' ? `<button type="button" class="btn btn--sm" data-sendnow="${c.id}" data-kind="${k.key}">${icon('send')}立即寄送</button>` : '';
+        return `<li class="sc-nitem"><div><p class="sc-nitem__t">${k.label}</p><p class="sc-nitem__c">寄給${k.to}・${k.channel}</p></div><div class="sc-nitem__r">${nchip(n)}${act}</div></li>`;
+      }).join('')}</ul>`;
+    }
+    const log = App.caseLog(c).concat(pageLog.get(c.id) || []).sort((a, b) => (b.iso + b.time).localeCompare(a.iso + a.time));
+
+    $('#sc-dr-body').innerHTML = `${notes.length ? `<section class="sc-dr-sec">${notes.join('')}</section>` : ''}
+<section class="sc-dr-sec"><h3 class="sc-dr-cap">${icon('calendar')}場次資訊</h3><dl class="sc-facts">${facts.map(([k, v]) => `<div class="sc-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></section>
+<section class="sc-dr-sec"><h3 class="sc-dr-cap">${icon('users')}講師與申請單位</h3><div class="sc-people">${lectBlock}${orgBlock}</div>${feeLine}</section>
+<section class="sc-dr-sec"><h3 class="sc-dr-cap">${icon('mail')}行前通知<small>活動前 7 日 09:00・前一日 17:00</small></h3>${noticeBlock}</section>
+<section class="sc-dr-sec"><h3 class="sc-dr-cap">${icon('clock')}處理紀錄</h3>${App.timeline(log)}</section>`;
+
+    const foot = [];
+    if (canChange(c)) foot.push(`<button type="button" class="btn btn--danger sc-dr-danger" data-cancel="${c.id}">${icon('x')}取消場次</button>`, `<button type="button" class="btn" data-resched="${c.id}">${icon('calendar')}改期</button>`);
+    if (st.key === 'leave') foot.push(`<a class="btn btn--clay" href="application.html?id=${c.id}#match">${icon('sliders')}安排代課</a>`);
+    foot.push(`<a class="btn btn--primary" href="application.html?id=${c.id}">案件詳情${icon('arrow-right', 'i-arrow')}</a>`);
+    $('#sc-dr-foot').innerHTML = foot.join('');
+  }
+
+  /* ===================================================================
+     改期對話框：即時檢查講師檔期，通過驗證才寫入；可復原
+     =================================================================== */
+  const START_TIMES = ['08:30', '09:00', '09:30', '10:00', '10:10', '10:30', '13:10', '13:30', '14:00', '15:00', '19:00'];
+  function openReschedule(id) {
+    const c = App.case(id);
+    const who = c.lecturer ? App.lecturer(c.lecturer) : App.currentInvite(c) ? App.lecturer(App.currentInvite(c).lecturer) : null;
+    const ex = c.exception;
+    const minDate = App.addDays(App.TODAY, 3);
+    const starts = START_TIMES.includes(startOf(c)) ? START_TIMES : START_TIMES.concat(startOf(c)).sort();
+    const form = document.createElement('form');
+    form.className = 'sc-form';
+    form.noValidate = true;
+    form.innerHTML = `<div class="form-alert" role="alert"></div>
+<div class="sc-rs-sum">
+  <div><p class="sc-rs-sum__cap">原活動時間</p><p class="sc-rs-sum__v">${fmt.rocShort(c.date)} ${c.time}</p></div>
+  ${icon('arrow-right', 'sc-rs-sum__arrow')}
+  <div><p class="sc-rs-sum__cap">新活動時間</p><p class="sc-rs-sum__v is-new" id="rs-preview">請選擇日期</p></div>
+</div>
+${ex && ex.type === 'resched' ? `<div class="notice notice--warn">${icon('info')}<div>申請單位於 ${fmt.roc(ex.iso)} 申請改至 <b>${fmt.rocShort(ex.newDate)}</b>：${esc(ex.note)}</div></div>` : ''}
+${ex && ex.type === 'leave' ? `<div class="notice notice--err">${icon('alert')}<div>講師已請假：${esc(ex.note)}改期須先確認講師新日期可出席；若改由其他講師授課，請改用「安排代課」。</div></div>` : ''}
+<div class="form-grid">
+  <div class="field"><label class="label req" for="rs-date">新活動日期</label><input class="input" type="date" id="rs-date" required min="${minDate}" max="${YEAR_END}" value="${ex && ex.newDate ? ex.newDate : ''}"><p class="hint" id="rs-date-hint"></p></div>
+  <div class="field"><label class="label req" for="rs-time">開始時間</label><select class="select" id="rs-time" required data-error="請選擇開始時間">${starts.map(t => `<option value="${t}"${t === startOf(c) ? ' selected' : ''}>${t}</option>`).join('')}</select><p class="hint" id="rs-time-hint"></p></div>
+  <div class="field span-2"><label class="label req" for="rs-reason">改期原因</label><select class="select" id="rs-reason" required data-error="請選擇改期原因"><option value="">請選擇</option>${['申請單位提出', '講師提出', '天候或不可抗力', '其他'].map(r => `<option${ex && ((ex.type === 'resched' && r === '申請單位提出') || (ex.type === 'leave' && r === '講師提出')) ? ' selected' : ''}>${r}</option>`).join('')}</select></div>
+  <div class="field span-2"><label class="label req" for="rs-note">說明</label><textarea class="textarea" id="rs-note" rows="3" required minlength="6" data-error="請填寫改期說明（至少 6 個字）" placeholder="例如：申請單位段考調整，已電話確認講師可配合新日期">${ex ? esc(ex.note) : ''}</textarea></div>
+</div>
+<div class="sc-rs-avail" id="rs-avail" aria-live="polite"></div>
+<label class="check sc-rs-notify"><input type="checkbox" id="rs-notify" checked><span class="check__box">${icon('check')}</span>寄送改期通知給講師與申請單位（Email＋簡訊）</label>`;
+    const dateEl = $('#rs-date', form), timeEl = $('#rs-time', form);
+    // 日期檢查寫進 customValidity，App.validate 會讀 data-error 顯示同一句話
+    const check = () => {
+      const v = dateEl.value;
+      let msg = '';
+      if (!v) msg = '請選擇新的活動日期';
+      else if (v === c.date) msg = '新日期與原活動日相同';
+      else if (v < minDate) msg = `新日期需在 ${fmt.rocShort(minDate)} 以後，才來得及寄送通知`;
+      else if (v > YEAR_END) msg = '僅能改至 115 年 12 月 31 日前（本年度內）';
+      else if (who) { const f = App.isFree(who.id, v); if (!f.ok) msg = `${who.name} 講師該日無法配合：${f.reason}`; }
+      dateEl.setCustomValidity(msg);
+      dateEl.dataset.error = msg || '請選擇新的活動日期';
+      const range = timeRange(timeEl.value, c.sessions);
+      $('#rs-date-hint', form).textContent = v ? `民國 ${fmt.roc(v)}（${fmt.dow(v)}）` : `需在 ${fmt.rocShort(minDate)} 以後、本年度內`;
+      $('#rs-time-hint', form).textContent = `${c.sessions} 節（${c.sessions * App.FEE.minutes} 分鐘），${range}`;
+      $('#rs-preview', form).textContent = v ? `${fmt.rocShort(v)} ${range}` : '請選擇日期';
+      const avail = $('#rs-avail', form);
+      if (!v) { avail.innerHTML = ''; return; }
+      if (msg) avail.innerHTML = `<div class="notice notice--warn">${icon('alert')}<div>${esc(msg)}${who && msg.includes('講師') ? `；也可以改用<a href="application.html?id=${c.id}#match">代課媒合</a>另找講師。` : ''}</div></div>`;
+      else {
+        const notice = App.addDays(v, -7);
+        avail.innerHTML = `<div class="notice notice--ok">${icon('check')}<div>${who ? `${esc(who.name)} 講師 ${fmt.rocShort(v)} 檔期可配合。` : ''}${notice > App.TODAY ? `行前通知將於 ${fmt.rocShort(notice)} 09:00 重新排程寄送。` : '距活動不足 7 日，行前資訊會隨改期通知一併寄出。'}</div></div>`;
+      }
+    };
+    dateEl.addEventListener('input', check);
+    dateEl.addEventListener('change', check);
+    timeEl.addEventListener('change', check);
+    check();
+    const submit = () => {
+      check();
+      if (!App.validate(form)) return false;
+      const prev = { date: c.date, time: c.time, exception: c.exception };
+      const prevOv = NOTICE_KINDS.map(k => [k.key, noticeOverride.get(`${c.id}:${k.key}`)]);
+      const newDate = dateEl.value;
+      const notify = $('#rs-notify', form).checked;
+      c.date = newDate;
+      c.time = timeRange(timeEl.value, c.sessions);
+      delete c.exception;
+      NOTICE_KINDS.forEach(k => noticeOverride.delete(`${c.id}:${k.key}`));
+      // 新日期距今不足 7 日：行前資訊隨改期通知當下寄出
+      if (notify) NOTICE_KINDS.filter(k => k.key !== 'eve' && noticeAt(c, k) <= NOW_DT).forEach(k => noticeOverride.set(`${c.id}:${k.key}`, { status: 'delivered', at: NOW_DT }));
+      const entries = [addLog(c.id, logEntry(`改期：${fmt.rocShort(prev.date)} ${prev.time.split('–')[0]} → ${fmt.rocShort(newDate)} ${startOf(c)}`, `${$('#rs-reason', form).value}：${$('#rs-note', form).value.trim()}`, 'warn'))];
+      if (notify) entries.push(addLog(c.id, logEntry('寄送改期通知給講師與申請單位')));
+      F.day = newDate;
+      F.target = c.id;
+      F.page = 1;
+      App.emit('reschedule');
+      App.toast(`已將 ${c.id} 改至 ${fmt.rocShort(newDate)} ${startOf(c)}`, {
+        desc: notify ? '已通知講師與申請單位，行前通知依新日期重新排程。' : '未寄送通知，請記得聯繫講師與申請單位。',
+        action: { label: '復原', onClick: () => {
+          c.date = prev.date;
+          c.time = prev.time;
+          if (prev.exception) c.exception = prev.exception;
+          prevOv.forEach(([k, v]) => { if (v) noticeOverride.set(`${c.id}:${k}`, v); else noticeOverride.delete(`${c.id}:${k}`); });
+          entries.forEach(e => dropLog(c.id, e));
+          F.day = prev.date;
+          App.emit('reschedule-undo');
+        } },
+      });
+      return true;
+    };
+    const m = App.modal({
+      title: '場次改期', lead: `${c.id}・${c.org}${who ? `・${who.name} 講師` : ''}`, icon: 'calendar', tone: ex ? 'clay' : undefined, body: form,
+      actions: [{ label: '取消', variant: 'ghost' }, { label: '確認改期', variant: 'primary', onClick: submit }],
+    });
+    form.addEventListener('submit', e => { e.preventDefault(); m.el.querySelector('[data-act="1"]').click(); });
+  }
+
+  /* ===================================================================
+     取消場次
+     =================================================================== */
+  function openCancel(id) {
+    const c = App.case(id);
+    const form = document.createElement('form');
+    form.className = 'sc-form';
+    form.noValidate = true;
+    form.innerHTML = `<div class="form-alert" role="alert"></div>
+<div class="notice notice--err">${icon('alert')}<div>取消後此場次不再寄送行前通知，案件會移出流程管線並計入「已取消」。如只是日期調整，請改用「改期」。</div></div>
+<div class="form-grid">
+  <div class="field span-2"><label class="label req" for="cx-reason">取消原因</label><select class="select" id="cx-reason" required data-error="請選擇取消原因"><option value="">請選擇</option>${['申請單位取消活動', '講師請假，申請單位不需代課', '天候或不可抗力（停班停課）', '參與對象人數不足', '其他'].map(r => `<option${c.exception && c.exception.type === 'leave' && r.startsWith('講師請假') ? ' selected' : ''}>${r}</option>`).join('')}</select></div>
+  <div class="field span-2"><label class="label" for="cx-note">補充說明</label><textarea class="textarea" id="cx-note" rows="3" placeholder="例如：學校因校慶調整行程，明年度再申請"></textarea><p class="hint">會記錄在處理紀錄，並附在通知信中。</p></div>
+</div>
+<label class="check sc-rs-notify"><input type="checkbox" id="cx-notify" checked><span class="check__box">${icon('check')}</span>寄送取消通知給${c.lecturer ? '講師與' : ''}申請單位</label>`;
+    const submit = () => {
+      if (!App.validate(form)) return false;
+      const prev = { status: c.status, exitReason: c.exitReason, exitDate: c.exitDate };
+      const note = $('#cx-note', form).value.trim();
+      c.status = 'cancelled';
+      c.exitReason = `${$('#cx-reason', form).value}${note ? `：${note}` : ''}`;
+      c.exitDate = App.TODAY;
+      const entries = [addLog(c.id, logEntry('場次取消', c.exitReason, 'err'))];
+      if ($('#cx-notify', form).checked) entries.push(addLog(c.id, logEntry(`寄送取消通知給${c.lecturer ? '講師與' : ''}申請單位`)));
+      F.target = c.id;
+      App.emit('cancel');
+      App.toast(`已取消 ${c.id} ${fmt.rocShort(c.date)} 場次`, {
+        desc: c.exitReason, tone: 'warn',
+        action: { label: '復原', onClick: () => {
+          c.status = prev.status;
+          if (prev.exitReason) c.exitReason = prev.exitReason; else delete c.exitReason;
+          if (prev.exitDate) c.exitDate = prev.exitDate; else delete c.exitDate;
+          entries.forEach(e => dropLog(c.id, e));
+          App.emit('cancel-undo');
+        } },
+      });
+      return true;
+    };
+    const m = App.modal({
+      title: '取消場次', lead: `${c.id}・${c.org}・${fmt.rocShort(c.date)} ${c.time}`, icon: 'x', tone: 'err', size: 'sm', body: form,
+      actions: [{ label: '返回', variant: 'ghost' }, { label: '確認取消', variant: 'danger', onClick: submit }],
+    });
+    form.addEventListener('submit', e => { e.preventDefault(); m.el.querySelector('[data-act="1"]').click(); });
+  }
+
+  /* ===================================================================
+     事件（委派）：開啟詳情、選日、改期、取消、聯絡、寄送
+     =================================================================== */
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-open], [data-day], [data-jump], [data-resched], [data-cancel], [data-call], [data-resend], [data-sendnow]');
+    if (!t) return;
+    const d = t.dataset;
+    if (d.jump) {
+      F.day = d.jump;
+      F.target = null;
+      F.page = 1;
+      renderCalendar();
+      $('#sc-cal').scrollIntoView({ block: 'start', behavior: App.calm() ? 'auto' : 'smooth' });
+    } else if (d.open) {
+      const c = App.case(d.open);
+      if (F.view === 'month' && c.date.slice(0, 7) === F.day.slice(0, 7) && t.closest('#sc-cal')) { F.day = c.date; renderCalendar(); }
+      openSession(d.open);
+    } else if (d.day) {
+      F.day = d.day;
+      renderCalendar();
+      const btn = $(`.sc-day[data-day="${d.day}"]`);
+      if (btn) btn.focus();
+      if (matchMedia('(max-width: 1100px)').matches) $('#sc-agenda').scrollIntoView({ block: 'nearest', behavior: App.calm() ? 'auto' : 'smooth' });
+    } else if (d.resched) openReschedule(d.resched);
+    else if (d.cancel) openCancel(d.cancel);
+    else if (d.call) {
+      const c = App.case(d.call);
+      const l = App.lecturer(c.lecturer);
+      App.toast(`${l.name} 講師　${l.phone}`, { desc: `${l.email}・通話後可在案件處理紀錄補記聯絡內容。`, tone: 'info' });
+    } else if (d.resend) {
+      const c = App.case(d.resend);
+      const undo = sendNotices(c, ['org'], 'resent', '重寄申請單位行前通知（改寄聯絡人備用信箱）');
+      App.emit('notice-resend');
+      App.toast(`已重寄 ${c.id} 行前通知`, { desc: `改寄 ${c.contact} ${c.contactTitle}的備用信箱，並以簡訊提醒查收。`, action: { label: '復原', onClick: () => { undo(); App.emit('notice-undo'); } } });
+    } else if (d.sendnow) {
+      const c = App.case(d.sendnow);
+      const keys = (d.kind ? [d.kind] : NOTICE_KINDS.map(k => k.key)).filter(k => noticeOf(c, KIND[k]).status === 'scheduled');
+      if (!keys.length) return;
+      const labels = keys.map(k => KIND[k].label).join('、');
+      const undo = sendNotices(c, keys, 'delivered', `提前寄送${labels}`);
+      App.emit('notice-send');
+      App.toast(`已寄出 ${c.id} ${labels}`, { desc: `${c.org}・${fmt.rocShort(c.date)} ${startOf(c)}`, action: { label: '復原', onClick: () => { undo(); App.emit('notice-undo'); } } });
+    }
+  });
+
+  $('#sc-eve').addEventListener('click', () => {
+    const list = eveTargets();
+    if (!list.length) return;
+    const undos = list.map(c => sendNotices(c, ['eve'], 'delivered', '提前寄送前一日提醒簡訊'));
+    App.emit('eve-send');
+    App.toast(`已寄出明日 ${list.length} 場的前一日提醒`, {
+      desc: list.map(c => `${startOf(c)} ${App.lecturer(c.lecturer).name}`).join('、'),
+      action: { label: '復原', onClick: () => { undos.forEach(u => u()); App.emit('eve-undo'); } },
+    });
+  });
+
+  $('#sc-export').addEventListener('click', () => {
+    const { from, to } = rangeOf();
+    const list = sessionsBetween(from, to).filter(passStatus);
+    const rows = [['日期', '時間', '案號', '申請單位', '縣市', '鄉鎮市區', '方式', '講師', '服務對象', '主題', '申請人數', '狀態', '承辦']];
+    list.forEach(c => rows.push([fmt.roc(c.date), c.time, c.id, c.org, App.county(c.county).name, c.district, App.MODES[c.mode], lectNameOf(c), App.audience(c.audience).name, App.topic(c.topic).name, c.people, stateOf(c).label, c.owner ? App.staff(c.owner).name : '未指派']));
+    App.downloadCSV(`執行場次_${fmt.roc(from).replace(/\//g, '')}-${fmt.roc(to).replace(/\//g, '')}.csv`, rows);
+    App.toast('已匯出場次清單', { desc: `${rangeLabel()}・共 ${list.length} 場（依目前篩選條件）。` });
+  });
+
+  /* ===================================================================
+     初次繪製、資料同步與網址參數
+     =================================================================== */
+  function renderAll() {
+    renderLede();
+    renderEve();
+    renderToday();
+    renderExceptions();
+    renderCalendar();
+    renderNotices();
+    if (drawer.open && drawerId) renderDrawer();
+  }
+  // 從總覽或通知帶 ?id= 進來：跳到該場次所在月份並開啟詳情
+  const pid = App.param('id');
+  const target = pid && App.case(pid);
+  if (target && isSession(target)) { F.day = target.date; F.target = target.id; }
+  renderAll();
+  nseg.set(NF.filter);
+  syncFlow();
+  App.on(renderAll);
+  App.onMode(() => { drawRuler(); syncFlow(); });
+  if (target && isSession(target)) openSession(target.id);
+  else if (target) App.toast(`${target.id} 尚未排定活動日期`, { desc: `案件目前在「${target.status === 'active' ? App.stage(target.stage).label : App.EXITS[target.status]}」，講師確認後才會出現在行事曆。`, tone: 'info' });
+  else if (pid) App.toast(`找不到案號 ${pid}`, { desc: '請確認案號是否正確，或使用頂列搜尋。', tone: 'warn' });
+});
+</script>
+</body>
+</html>

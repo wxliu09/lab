@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>滿意度調查 — 環境教育人員推廣運用管理系統（管理後台）</title>
+<meta name="description" content="管理後台滿意度調查：問卷回收年輪、各題結果分布、開放意見關鍵詞、講師滿意度排行、問卷發送與回收紀錄，以及問卷題目編輯與填答預覽。">
+<script>
+  // 繪製前套用：JS 可用標記，以及使用者上次選擇的高齡友善模式（換頁不閃爍）
+  document.documentElement.classList.add('js');
+  if (localStorage.getItem('envedu.mis.senior') === '1') document.documentElement.classList.add('is-senior');
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+<style>
+  /* =====================================================================
+     滿意度調查（surveys.html）頁面專屬樣式，class 一律以 sv- 開頭
+     ===================================================================== */
+  .tab__n:empty { display: none; }
+
+  /* ---------- 招牌：回收年輪（深綠面板，與總覽的流程管線同一語彙） ---------- */
+  .sv-hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 24px 40px; align-items: center;
+    padding: 26px 32px 26px 26px; border-radius: var(--r-lg);
+    background: radial-gradient(95% 130% at 16% 50%, #2B6D58 0%, var(--forest) 42%, var(--forest-800) 100%);
+    color: var(--on-forest); box-shadow: var(--sh-2);
+  }
+  .sv-hero::before {
+    /* 年輪後方的柔光：只是質感，高齡模式關閉 */
+    content: ""; position: absolute; z-index: -1; left: 6px; top: 50%; width: 440px; aspect-ratio: 1;
+    transform: translateY(-50%); border-radius: 50%; pointer-events: none;
+    background: radial-gradient(closest-side, rgba(168, 214, 114, .16), rgba(168, 214, 114, 0) 72%);
+  }
+  html.is-senior .sv-hero { background: var(--forest-800); }
+  html.is-senior .sv-hero::before { display: none; }
+  .sv-hero :focus-visible { --focus: #F6F3EA; --focus-halo: rgba(168, 214, 114, .5); }
+
+  .sv-disc { display: grid; justify-items: center; gap: 8px; min-width: 0; }
+  .sv-rings { position: relative; width: min(100%, 380px); aspect-ratio: 1; }
+  .sv-rings svg { width: 100%; height: 100%; overflow: visible; cursor: crosshair; touch-action: manipulation; }
+  .sv-ring { stroke: rgba(246, 243, 234, .2); }
+  .sv-band { stroke: rgba(168, 214, 114, .17); transition: stroke-width var(--dur-3) var(--ease-out); }
+  .sv-node { transition: opacity var(--dur-2); }
+  .sv-node.is-dim { opacity: .16; }
+  .sv-dot--hi { fill: var(--sprout); }
+  .sv-dot--mid { fill: var(--sprout); fill-opacity: .42; }
+  .sv-dot--lo { fill: var(--clay-glow); }
+  .sv-dot { transform-box: fill-box; transform-origin: center; transition: transform .55s var(--ease-spring) calc(var(--d, 0) * 2.4ms), opacity .3s ease-out calc(var(--d, 0) * 2.4ms); }
+  .sv-rings.is-waiting .sv-dot { transform: scale(0); opacity: 0; }
+  .sv-halo { fill: none; stroke: var(--clay-glow); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  /* 仍在回收期內的場次：外圈一圈一圈擴散（等待發芽）；calm 時停在靜態外環 */
+  .sv-node.is-live .sv-halo { opacity: .6; animation: sv-halo 2.8s var(--ease-out) infinite; animation-delay: calc(var(--k, 0) * -.4s); }
+  @keyframes sv-halo { 0% { transform: scale(.85); opacity: .85; } 100% { transform: scale(2.5); opacity: 0; } }
+  .sv-rings.is-paused .sv-halo { animation-play-state: paused; }
+  .sv-pick { fill: none; stroke: var(--paper); }
+  .sv-tip { max-width: 260px; white-space: normal; text-align: left; }
+  .sv-tip.is-below { transform: translate(-50%, 16px); }
+  .sv-disc__cap { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-3); }
+  .sv-disc__cap .i { width: 14px; height: 14px; color: var(--sprout); }
+
+  .sv-hero__body { min-width: 0; display: grid; gap: 16px; align-content: center; }
+  .sv-hero__title { margin-top: 6px; font-family: var(--font-tc); font-size: var(--fs-xl); font-weight: 900; color: var(--paper); }
+  .sv-hero__lead { margin-top: 4px; font-size: var(--fs-sm); color: var(--on-forest-2); max-width: 42em; }
+  .sv-big { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 18px; }
+  .sv-big__num { font-family: var(--font-en); font-size: calc(var(--fs-kpi) * 1.75); font-weight: 800; line-height: 1; letter-spacing: -.02em; color: var(--paper); white-space: nowrap; }
+  .sv-big__num small { margin-left: 4px; font-size: .45em; color: var(--sprout-200); letter-spacing: 0; }
+  .sv-big__label { padding-bottom: 4px; font-size: var(--fs-sm); line-height: 1.55; color: var(--on-forest-2); }
+  .sv-big__label b { font-family: var(--font-en); color: var(--paper); }
+  .sv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 1px solid var(--on-forest-line); }
+  .sv-stat { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 14px; border-left: 1px solid var(--on-forest-line); text-align: left; }
+  .sv-stat:first-child { border-left: 0; padding-left: 0; }
+  .sv-stat__label { font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-3); }
+  .sv-stat__val { font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.2; color: var(--paper); white-space: nowrap; }
+  .sv-stat__val small { margin-left: 3px; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-3); }
+  .sv-stat__note { font-size: var(--fs-xs); color: var(--on-forest-3); }
+  button.sv-stat { font: inherit; color: inherit; background: none; border: 0; border-left: 1px solid var(--on-forest-line); border-radius: 0; cursor: pointer; transition: background var(--dur-1); }
+  button.sv-stat:hover { background: rgba(246, 243, 234, .07); }
+  button.sv-stat .sv-stat__val { color: var(--clay-glow); }
+  button.sv-stat .sv-stat__note { display: inline-flex; align-items: center; gap: 4px; color: var(--sprout-200); font-weight: 800; }
+  button.sv-stat .sv-stat__note .i { width: 14px; height: 14px; transition: transform var(--dur-2) var(--ease-out); }
+  button.sv-stat:hover .sv-stat__note .i { transform: translateX(3px); }
+  .sv-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); }
+  .sv-legend li { display: inline-flex; align-items: center; gap: 7px; }
+  .sv-legend svg { width: 16px; height: 12px; flex: none; }
+  .sv-months { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sv-hero .chip { background: transparent; border-color: rgba(246, 243, 234, .3); color: var(--on-forest-2); }
+  .sv-hero .chip:hover { border-color: var(--sprout); color: var(--paper); }
+  .sv-hero .chip[aria-pressed="true"] { background: var(--paper); border-color: var(--paper); color: var(--forest-900); }
+  /* 最小高度容得下「單一場次」的內容，點選圓點時面板不會把整個年輪往下推 */
+  .sv-focus { min-height: 9.4em; padding: 14px 16px; border-radius: var(--r-md); background: rgba(9, 32, 25, .42); border: 1px solid rgba(246, 243, 234, .12); }
+  .sv-focus__title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: var(--fs-base); font-weight: 900; color: var(--paper); }
+  .sv-focus__title a { color: var(--sprout-200); font-family: var(--font-en); text-decoration: none; }
+  .sv-focus__title a:hover { color: var(--paper); text-decoration: underline; }
+  .sv-focus__text { margin-top: 4px; font-size: var(--fs-sm); color: var(--on-forest-2); }
+  .sv-focus__text b { font-family: var(--font-en); color: var(--paper); }
+  .sv-tiers { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: var(--fs-xs); font-weight: 700; color: var(--on-forest-2); }
+  .sv-tiers li { display: inline-flex; align-items: center; gap: 6px; }
+  .sv-tiers b { font-family: var(--font-en); font-size: var(--fs-sm); color: var(--paper); }
+  .sv-tiers i { width: 9px; height: 9px; border-radius: 50%; background: var(--sw); }
+  .sv-focus__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  html.is-senior .sv-focus__title a { display: inline-flex; align-items: center; min-height: 48px; }
+
+  /* ---------- 分頁籤與版面 ---------- */
+  .sv-tabs { margin-top: clamp(22px, 2.4vw, 30px); }
+  .sv-panel { margin-top: 18px; }
+  .sv-panel:focus-visible { border-radius: var(--r-md); }
+  .sv-row { display: grid; gap: clamp(16px, 1.6vw, 22px); align-items: stretch; }
+  .sv-row + .sv-row, .sv-row + .card, .card + .sv-row { margin-top: clamp(16px, 1.6vw, 22px); }
+  .sv-row--84 { grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); }
+  .sv-row--75 { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .sv-row > .card { display: flex; flex-direction: column; }
+  .sv-row > .card > .card__body { flex: 1; }
+  html.is-senior .sv-row { grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- 量表題：發散堆疊長條（以「普通」為中線） ---------- */
+  .sv-lk-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); }
+  .sv-lk-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .sv-sw { display: inline-block; width: 14px; height: 12px; border-radius: 3px; background: var(--sw); flex: none; }
+  .sv-sw--3 { box-shadow: inset 0 0 0 1px var(--line-2); }
+  .sv-lk { margin-top: 10px; }
+  /* 題目在上、長條占滿整欄：比例差異集中在 4、5 分，長條要夠寬才看得出差距 */
+  .sv-lk__row {
+    display: grid; grid-template-columns: minmax(0, 1fr) 76px;
+    grid-template-areas: "q mean" "bar mean" "meta mean"; gap: 6px 24px; align-items: center;
+    padding: 14px 0; border-top: 1px solid var(--line-soft);
+  }
+  .sv-lk__q { grid-area: q; font-size: var(--fs-sm); font-weight: 700; line-height: 1.5; color: var(--ink); }
+  .sv-lk__no { display: inline-block; min-width: 2.2em; font-family: var(--font-en); font-weight: 800; color: var(--forest); }
+  .sv-lk__bar { grid-area: bar; position: relative; height: 30px; }
+  .sv-lk__zero { position: absolute; left: var(--x0); top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink-2); }
+  .sv-lk__neg, .sv-lk__pos { position: absolute; top: 0; bottom: 0; display: flex; overflow: hidden; transition: transform .9s var(--ease-out) calc(var(--i, 0) * 90ms); }
+  .sv-lk__neg { right: calc(100% - var(--x0)); width: var(--wn); flex-direction: row-reverse; transform-origin: right center; border-radius: 6px 0 0 6px; }
+  .sv-lk__pos { left: var(--x0); width: var(--wp); transform-origin: left center; border-radius: 0 6px 6px 0; }
+  .sv-lk.is-waiting .sv-lk__neg, .sv-lk.is-waiting .sv-lk__pos { transform: scaleX(0); }
+  .sv-seg { flex: none; width: var(--w); height: 100%; display: grid; place-items: center; overflow: hidden; font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 800; white-space: nowrap; }
+  .sv-seg > span.is-hidden { visibility: hidden; }
+  .sv-seg[data-s="5"] { background: var(--forest); color: var(--paper); }
+  .sv-seg[data-s="4"] { background: var(--sprout); color: var(--forest-900); }
+  .sv-seg[data-s="3"] { background: var(--paper-3); }
+  .sv-seg[data-s="2"] { background: var(--clay-200); }
+  .sv-seg[data-s="1"] { background: var(--clay); }
+  .sv-lk__meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .sv-lk__meta b { font-family: var(--font-en); color: var(--ink-2); }
+  .sv-lk__meta .is-neg b { color: var(--clay-ink); }
+  .sv-lk__mean { grid-area: mean; text-align: right; font-family: var(--font-en); font-size: var(--fs-xl); font-weight: 800; line-height: 1.15; }
+  .sv-lk__mean small { display: block; font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .sv-lk__axisrow { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 0 24px; padding-top: 6px; border-top: 1px solid var(--line-soft); }
+  .sv-lk__axis { position: relative; height: 1.6em; font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-3); }
+  .sv-lk__axis span { position: absolute; left: var(--x); transform: translateX(-50%); white-space: nowrap; }
+  .sv-lk__axis span:last-child { transform: translateX(-100%); }
+  html.is-senior .sv-lk__row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "q mean" "bar bar" "meta meta"; }
+  html.is-senior .sv-lk__axisrow { grid-template-columns: minmax(0, 1fr); }
+  html.is-senior .sv-lk__bar { height: 36px; }
+
+  /* ---------- 第 6 題：淨零綠生活七面向 ---------- */
+  .sv-life-list { display: grid; gap: 2px; }
+  .sv-life { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; grid-template-areas: "ic name name" "ic bar val"; gap: 4px 12px; align-items: center; padding: 7px 0; }
+  .sv-life__ic { grid-area: ic; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--sprout-100); color: var(--forest); }
+  .sv-life__ic .i { width: 24px; height: 24px; }
+  .sv-life.is-top .sv-life__ic { background: var(--forest); color: var(--sprout); }
+  .sv-life__name { grid-area: name; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.35; }
+  .sv-life__name b { font-family: var(--font-tc); font-size: var(--fs-md); font-weight: 900; color: var(--ink); }
+  .sv-life__name .sv-life__n { margin-left: auto; font-family: var(--font-en); font-weight: 600; white-space: nowrap; }
+  .sv-life__bar { grid-area: bar; height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; }
+  .sv-life__bar > span { display: block; height: 100%; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--sprout); transition: width 1s var(--ease-out) calc(var(--i, 0) * 70ms); }
+  .sv-life.is-top .sv-life__bar > span { background: var(--forest); }
+  .sv-life-list.is-waiting .sv-life__bar > span { width: 0; }
+  .sv-life__val { grid-area: val; min-width: 3.6em; text-align: right; font-family: var(--font-en); font-weight: 800; white-space: nowrap; }
+  html.is-senior .sv-life__bar { height: 12px; border-radius: 6px; }
+
+  /* ---------- 開放意見 ---------- */
+  .sv-kw-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
+  .sv-kw-note { font-size: var(--fs-xs); color: var(--ink-3); }
+  .sv-kw .kw { display: inline-flex; align-items: baseline; gap: 6px; border: 0; font-family: inherit; cursor: pointer; transition: box-shadow var(--dur-1); }
+  .sv-kw .kw:hover { box-shadow: inset 0 0 0 1.5px var(--forest); }
+  .sv-kw .kw--neg:hover { box-shadow: inset 0 0 0 1.5px var(--clay-ink); }
+  .sv-kw .kw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--forest); }
+  .sv-kw .kw--neg[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--clay-ink); }
+  .sv-kw__n { font-family: var(--font-en); font-size: var(--fs-xs); font-weight: 600; }
+  html.is-senior .sv-kw .kw { align-items: center; min-height: 48px; padding: 4px 16px; }
+  .sv-cmts { display: grid; margin-top: 18px; border-top: 1px solid var(--line-soft); }
+  .sv-cmt { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--line-soft); }
+  .sv-cmt:last-child { border-bottom: 0; }
+  .sv-cmt__score { width: 46px; height: 46px; border-radius: 50% 50% 50% 14%; display: grid; place-items: center; align-content: center; background: var(--forest-50); color: var(--forest); font-family: var(--font-en); font-size: var(--fs-md); font-weight: 800; line-height: 1; }
+  .sv-cmt__score small { font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 700; }
+  .sv-cmt.is-neg .sv-cmt__score { background: var(--clay-100); color: var(--clay-ink); }
+  .sv-cmt__text { font-size: var(--fs-base); line-height: 1.65; color: var(--ink); }
+  .sv-cmt__text mark { padding: 0 2px; border-radius: 3px; background: var(--sprout-200); color: inherit; }
+  .sv-cmt.is-neg .sv-cmt__text mark { background: var(--clay-100); }
+  .sv-cmt__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 4px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .sv-cmt__meta a { font-weight: 700; }
+  .sv-cmt__act { align-self: center; }
+  .sv-done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 800; color: var(--ok); white-space: nowrap; }
+  .sv-done .i { width: 14px; height: 14px; }
+  html.is-senior .sv-cmt__meta a { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .sv-cmt { grid-template-columns: 52px minmax(0, 1fr); }
+  html.is-senior .sv-cmt__act { grid-column: 2; justify-self: start; }
+
+  /* ---------- 講師滿意度排行 ---------- */
+  .sv-rank-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .sv-rank-tools .select { width: auto; }
+  .sv-rank .rank { grid-template-columns: 28px auto minmax(0, 1fr) 72px auto; gap: 4px 12px; }
+  .sv-rank .rank__name a { color: var(--ink); text-decoration: none; }
+  .sv-rank .rank__name a:hover { color: var(--forest); text-decoration: underline; }
+  .sv-rank__spark { height: 28px; }
+  .sv-rank .score__bar { display: none; }   /* 已有逐場折線，分數只留數字，名字欄才不會被擠成三行 */
+  .sv-rank .rank__val { font-size: var(--fs-md); }
+  .sv-rank__why { grid-column: 3 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .sv-rank__why .btn { margin-left: auto; }
+  .sv-rank__empty { padding: 20px 6px; color: var(--ink-3); font-size: var(--fs-sm); }
+  /* 高齡模式卡片改為整列：排行分兩欄（1–5 在左、6–10 在右），七面向也分兩欄，不讓長條拉成一整條 */
+  html.is-senior .sv-rank { display: block; columns: 2 380px; column-gap: 40px; }
+  html.is-senior .sv-rank .rank { grid-template-columns: 32px auto minmax(0, 1fr) 72px auto; break-inside: avoid; }
+  html.is-senior .sv-life-card .sv-life-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); gap: 8px 40px; }
+  html.is-senior .sv-q__acts { gap: 8px; }
+  html.is-senior .sv-rank .rank__name a { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .sv-rank__why .btn { margin-left: 0; }
+
+  /* ---------- 依服務對象：點狀圖 ---------- */
+  .sv-dp { display: grid; }
+  .sv-dp__row { display: grid; grid-template-columns: 7.2em minmax(0, 1fr) 3.2em 4.2em; gap: 12px; align-items: center; padding: 4px 0; }
+
+  /* ---------- 推廣管道與服務對象（同一張卡片左右兩欄） ---------- */
+  .sv-split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  .sv-split__col { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 18px 20px 20px; }
+  .sv-split__col + .sv-split__col { border-left: 1px solid var(--line-soft); }
+  .sv-split__title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: var(--fs-base); font-weight: 800; }
+  .sv-split__title span { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .sv-split__fill { flex: 1; display: flex; flex-direction: column; }
+  #sv-q7 .hbars { flex: 1; align-content: space-evenly; gap: 18px; }
+  /* 窄欄要與右側點狀圖等高：標籤與百分比一列、長條獨立一列，避免單列長條之間留大片空白 */
+  #sv-q7 .hbar { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  #sv-q7 .hbar__track { grid-column: 1 / -1; grid-row: 2; height: 14px; border-radius: 7px; }
+  .sv-split__note { padding: 10px 14px; border-radius: var(--r-sm); background: var(--paper); font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.55; }
+  .sv-life-card .card__body { display: flex; flex-direction: column; }
+  .sv-life-card .sv-life-list { flex: 1; align-content: space-between; }
+  .sv-dp__label { font-size: var(--fs-sm); font-weight: 700; line-height: 1.3; }
+  .sv-dp__label small { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
+  .sv-dp__track { position: relative; height: 22px; }
+  .sv-dp__track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--paper-3); }
+  .sv-dp__avg { position: absolute; top: -4px; bottom: -4px; left: var(--x); width: 0; border-left: 2px dashed var(--ink-3); }
+  .sv-dp__dot { position: absolute; top: 50%; left: var(--x); width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--forest); box-shadow: 0 0 0 3px var(--card); transition: left 1s var(--ease-out); }
+  .sv-dp__dot.is-low { background: var(--clay); }
+  .sv-dp.is-waiting .sv-dp__dot { left: 0; }
+  .sv-dp__val { font-family: var(--font-en); font-weight: 800; text-align: right; }
+  .sv-dp__rate { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 700; color: var(--ink-3); text-align: right; }
+  /* 欄寬用 em：表頭與刻度列的字級要放在子元素上，容器維持與資料列相同字級，刻度才會對準軌道 */
+  .sv-dp__head, .sv-dp__axis { display: grid; grid-template-columns: 7.2em minmax(0, 1fr) 3.2em 4.2em; gap: 12px; font-weight: 700; color: var(--ink-3); }
+  .sv-dp__head > span, .sv-dp__axis > span { font-size: var(--fs-xs); }
+  .sv-dp__head { padding-bottom: 4px; border-bottom: 1px solid var(--line-soft); }
+  .sv-dp__head span:nth-child(n+3) { text-align: right; }
+  .sv-dp__ticks { grid-column: 2; position: relative; height: 1.6em; font-family: var(--font-en); }
+  .sv-dp__ticks span { position: absolute; left: var(--x); transform: translateX(-50%); }
+  .sv-dp__axis { padding-top: 6px; border-top: 1px solid var(--line-soft); }
+  html.is-senior .sv-dp__row, html.is-senior .sv-dp__head, html.is-senior .sv-dp__axis { grid-template-columns: 7.6em minmax(0, 1fr) 3.4em; }
+  html.is-senior .sv-dp__rate, html.is-senior .sv-dp__head span:nth-child(4) { display: none; }
+  /* 高齡模式手機寬度：16px 刻度字放不下 6 個，隔一個標示 */
+  @media (max-width: 640px) { html.is-senior .sv-dp__ticks span:nth-child(even) { visibility: hidden; } }
+
+  /* ---------- 發送與回收 ---------- */
+  .sv-chart-host[hidden] { display: none !important; }
+  .sv-rules { display: grid; }
+  .sv-rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line-soft); }
+  .sv-rule:first-child { border-top: 0; padding-top: 0; }
+  .sv-rule__title { font-size: var(--fs-sm); font-weight: 800; }
+  .sv-rule__desc { font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .sv-rule .select { width: auto; }
+  .sv-qtools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 20px; border-bottom: 1px solid var(--line-soft); }
+  .sv-qtools .views { flex: 1 1 auto; }
+  .sv-qtools .search { flex: 0 1 300px; }
+  .sv-qtools .select { width: auto; }
+  .sv-rate { display: grid; grid-template-columns: 64px auto; gap: 10px; align-items: center; }
+  .sv-rate b { font-family: var(--font-en); }
+  .sv-rate small { display: block; font-size: var(--fs-xs); color: var(--ink-3); font-family: var(--font-en); white-space: nowrap; }
+  #sv-table .score__bar { display: none; }   /* 回收率欄已有長條，平均分只留數字 */
+  #sv-table td.sv-lect { white-space: nowrap; }
+  #sv-table td.sv-org { min-width: 12em; }
+  .sv-st { display: grid; justify-items: start; gap: 3px; }
+  .sv-st small { font-size: var(--fs-xs); color: var(--ink-3); white-space: nowrap; }
+  .sv-st small.is-done { color: var(--ok); font-weight: 700; }
+  html.is-senior #sv-table a { display: inline-flex; align-items: center; min-height: 48px; }
+  html.is-senior .sv-rate { grid-template-columns: 80px auto; }
+
+  /* ---------- 題目編輯 ---------- */
+  .sv-ver { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 16px 20px; }
+  .sv-ver__info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+  .sv-ver__name { display: flex; align-items: center; gap: 10px; font-size: var(--fs-md); font-weight: 900; }
+  .sv-ver__name .i { width: 22px; height: 22px; color: var(--forest); }
+  .sv-ver__meta { font-size: var(--fs-sm); color: var(--ink-3); }
+  .sv-ver__acts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sv-ed { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: clamp(16px, 1.6vw, 22px); align-items: start; margin-top: clamp(16px, 1.6vw, 22px); }
+  html.is-senior .sv-ed { grid-template-columns: minmax(0, 1fr) 440px; }
+  .sv-qlist { display: grid; gap: 10px; }
+  .sv-qlist.is-sorting { cursor: grabbing; user-select: none; }
+  .sv-q { border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--card); transition: border-color var(--dur-1), box-shadow var(--dur-2), background var(--dur-1); }
+  .sv-q.is-open { border-color: var(--forest); box-shadow: var(--sh-2); }
+  .sv-q.is-dragging { border-color: var(--forest); background: var(--sprout-50); box-shadow: var(--sh-3); }
+  .sv-q__row { display: grid; grid-template-columns: auto 34px minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 10px 12px 10px 6px; }
+  .sv-q__handle {
+    display: grid; place-items: center; width: 30px; min-height: var(--ctl-h); padding: 0;
+    border: 0; border-radius: 8px; background: none; color: var(--ink-3); cursor: grab; touch-action: none;
+  }
+  .sv-q__handle:hover { background: var(--paper-2); color: var(--ink); }
+  .sv-q.is-dragging .sv-q__handle { cursor: grabbing; color: var(--forest); }
+  .sv-q__no { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--forest-50); color: var(--forest); font-family: var(--font-en); font-weight: 800; }
+  .sv-q__main { min-width: 0; }
+  .sv-q__title { font-weight: 800; line-height: 1.45; overflow-wrap: anywhere; }
+  .sv-q__title.is-empty { color: var(--err); }
+  .sv-q__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+  .sv-q__acts { display: flex; flex-wrap: wrap; gap: 2px; }
+  .sv-q__acts .icon-btn[disabled] { opacity: .35; pointer-events: none; }
+  .sv-q__acts .sv-q__del:hover { color: var(--err); background: var(--err-bg); }
+  .sv-q__edit { padding: 14px 18px 16px 52px; border-top: 1px dashed var(--line); }
+  .sv-q__done { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .sv-opts { display: grid; gap: 8px; }
+  .sv-opt { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .sv-opt__n { font-family: var(--font-en); font-size: var(--fs-sm); font-weight: 800; color: var(--ink-3); text-align: center; }
+  .sv-opt .field { gap: 2px; }
+  .sv-opt .icon-btn[disabled] { opacity: .35; pointer-events: none; }
+  .sv-qempty .empty { padding: 28px 12px; }
+  .sv-add { display: flex; flex-wrap: wrap; gap: 8px; }
+  html.is-senior .sv-q__row { grid-template-columns: auto 40px minmax(0, 1fr); }
+  html.is-senior .sv-q__no { width: 40px; height: 40px; }
+  html.is-senior .sv-q__acts { grid-column: 2 / -1; }
+  html.is-senior .sv-q__handle { width: 40px; }
+  html.is-senior .sv-q__edit { padding-left: 18px; }
+
+  /* 填答預覽：手機外框 */
+  .sv-ed__preview { position: sticky; top: calc(var(--topbar-h) + 16px); display: grid; gap: 12px; }
+  .sv-pv-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .sv-phone { width: min(100%, 380px); margin-inline: auto; padding: 10px; border-radius: 36px; background: var(--ink); box-shadow: var(--sh-3); }
+  html.is-senior .sv-phone { width: min(100%, 440px); }
+  .sv-phone__screen { max-height: min(680px, calc(100vh - var(--topbar-h) - 120px)); overflow-y: auto; border-radius: 27px; background: var(--paper); scrollbar-width: thin; }
+  .sv-pv__bar { display: flex; align-items: center; gap: 8px; padding: 14px 18px 12px; background: var(--forest); color: var(--on-forest); font-size: var(--fs-xs); font-weight: 800; }
+  .sv-pv__bar .logo { width: 24px; height: 24px; }
+  .sv-pv__head { padding: 18px 18px 4px; }
+  .sv-pv__title { margin-top: 6px; font-family: var(--font-tc); font-size: var(--fs-md); font-weight: 900; line-height: 1.4; }
+  .sv-pv__title span { display: block; }   /* 依標題中的空白分兩行，避免平衡斷行把「講座」拆開 */
+  .sv-pv__ctx { margin-top: 6px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
+  .sv-pv__list { display: grid; gap: 10px; padding: 12px 12px 4px; }
+  .sv-pv__q { padding: 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); }
+  .sv-pv__qt { font-size: var(--fs-sm); font-weight: 800; line-height: 1.5; }
+  .sv-pv__qt.is-empty { color: var(--ink-3); font-weight: 600; }
+  .sv-pv__req { color: var(--err); margin-left: 2px; }
+  .sv-pv__scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+  .sv-pv__scale button { min-height: var(--ctl-h); border: 1.5px solid var(--line-2); border-radius: 12px; background: var(--card); color: var(--ink-2); font-family: var(--font-en); font-size: var(--fs-base); font-weight: 800; }
+  .sv-pv__scale button:hover { border-color: var(--forest); }
+  .sv-pv__scale button[aria-pressed="true"] { background: var(--forest); border-color: var(--forest); color: var(--paper); }
+  .sv-pv__ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: var(--fs-xs); color: var(--ink-3); }
+  .sv-pv__opts { display: grid; gap: 4px; margin-top: 8px; }
+  .sv-pv__opts .radio { min-height: 32px; }
+  .sv-pv__q .textarea { margin-top: 8px; min-height: 84px; }
+  .sv-pv__foot { padding: 12px 12px 18px; display: grid; gap: 8px; }
+  .sv-pv__note { font-size: var(--fs-xs); color: var(--ink-3); text-align: center; }
+
+  /* ---------- RWD ---------- */
+  @media (max-width: 1280px) {
+    .sv-hero { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 20px 28px; }
+    .sv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sv-stat:nth-child(3) { border-left: 0; padding-left: 0; }
+    .sv-stat:nth-child(n+3) { border-top: 1px solid var(--on-forest-line); }
+  }
+  @media (max-width: 1180px) {
+    .sv-row--84, .sv-row--75 { grid-template-columns: minmax(0, 1fr); }
+    .sv-ed, html.is-senior .sv-ed { grid-template-columns: minmax(0, 1fr); }
+    .sv-ed__preview { position: static; }
+    html.is-senior .sv-hero { grid-template-columns: minmax(0, 1fr); }
+    html.is-senior .sv-hero::before { display: none; }
+  }
+  @media (max-width: 960px) {
+    .sv-hero { grid-template-columns: minmax(0, 1fr); padding: 22px; }
+    .sv-hero::before { left: 50%; top: 22px; width: 360px; transform: translateX(-50%); }
+    .sv-split { grid-template-columns: minmax(0, 1fr); }
+    .sv-split__col + .sv-split__col { border-left: 0; border-top: 1px solid var(--line-soft); }
+  }
+  @media (max-width: 640px) {
+    .sv-hero { padding: 18px 16px 16px; border-radius: var(--r-md); gap: 16px; }
+    .sv-rings { width: min(100%, 320px); }
+    .sv-big__num { font-size: calc(var(--fs-kpi) * 1.5); }
+    .sv-stat { padding: 10px 10px; }
+    .sv-focus { padding: 12px 14px; }
+    .sv-tabs .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+    .sv-tabs .tab { justify-content: center; padding: 6px 6px; white-space: normal; text-align: center; line-height: 1.3; flex-wrap: wrap; gap: 4px 6px; }
+    .sv-tabs .tab .i { display: none; }
+    .sv-tab__t { white-space: nowrap; }
+    html.is-senior .sv-tabs .tab { font-size: var(--fs-sm); padding-inline: 4px; }
+    html.is-senior .sv-q__acts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sv-lk__row, .sv-lk__axisrow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "q mean" "bar bar" "meta meta"; gap: 8px 12px; }
+    .sv-lk__axis { grid-column: 1 / -1; }
+    .sv-cmt { grid-template-columns: 40px minmax(0, 1fr); gap: 4px 12px; }
+    .sv-cmt__score { width: 40px; height: 40px; }
+    .sv-cmt__act { grid-column: 2; justify-self: start; }
+    .sv-rank .rank, html.is-senior .sv-rank .rank { grid-template-columns: 24px auto minmax(0, 1fr) auto; }
+    .sv-rank__spark { display: none; }
+    .sv-dp__row, .sv-dp__head, .sv-dp__axis, html.is-senior .sv-dp__row, html.is-senior .sv-dp__head, html.is-senior .sv-dp__axis { grid-template-columns: 6em minmax(0, 1fr) 3.2em; gap: 10px; }
+    .sv-dp__rate, .sv-dp__head span:nth-child(4) { display: none; }
+    .sv-qtools { padding: 12px 16px; }
+    #sv-table td.col-act.is-empty { display: none; }
+    #sv-table td.sv-org { min-width: 0; }
+    .sv-qtools .search { flex: 1 1 100%; }
+    .sv-q__row { grid-template-columns: auto 34px minmax(0, 1fr); }
+    .sv-q__acts { grid-column: 2 / -1; }
+    .sv-q__edit { padding: 12px 14px 14px; }
+    .sv-phone, html.is-senior .sv-phone { width: 100%; padding: 0; border-radius: var(--r-md); background: none; box-shadow: none; border: 1px solid var(--line); overflow: hidden; }
+    .sv-phone__screen { max-height: none; border-radius: 0; }
+    .sv-ver { padding: 14px 16px; }
+    .sv-ver__acts { width: 100%; }
+    .sv-ver__acts .btn { flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要內容</a>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <a class="sidebar__brand" href="index.html" aria-label="環境教育人員推廣運用管理系統 管理後台 總覽">
+      <svg class="logo logo--on-dark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+        <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+        <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+        <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+      </svg>
+      <span><span class="sidebar__name"><span>環境教育人員推廣</span><span>運用管理系統</span></span><span class="sidebar__sub"><b>MIS</b>管理後台</span></span>
+    </a>
+    <nav class="sidebar__nav" aria-label="主要導覽">
+      <div class="nav-group">
+        <span class="nav-group__label">工作台</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg><span class="nav__text">總覽</span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">案件作業</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="applications.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg><span class="nav__text">申請案件</span><span class="nav__count" data-count="navReview" aria-label="待審件數"></span></a></li>
+          <li><a class="nav__link" href="application.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg><span class="nav__text">案件詳情與媒合</span><span class="nav__count nav__count--alert" data-count="navMatch" aria-label="待媒合與待講師確認件數"></span></a></li>
+          <li><a class="nav__link" href="schedule.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span class="nav__text">執行管控</span><span class="nav__count" data-count="navToday" aria-label="今日場次"></span></a></li>
+          <li><a class="nav__link" href="claims.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-receipt"/></svg><span class="nav__text">成果與費用核銷</span><span class="nav__count" data-count="navClaims" aria-label="待核銷件數"></span></a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group__label">資源與品質</span>
+        <ul class="nav">
+          <li><a class="nav__link" href="instructors.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-users"/></svg><span class="nav__text">講師資料管理</span><span class="nav__count nav__count--alert" data-count="navLecturer" aria-label="講師資料提醒"></span></a></li>
+          <li><a class="nav__link is-active" href="surveys.html" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-smile"/></svg><span class="nav__text">滿意度調查</span></a></li>
+          <li><a class="nav__link" href="analytics.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="nav__text">績效分析</span></a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sidebar__foot">
+      <p class="sidebar__year"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg><span><b>115 年度</b>・建置與基礎維運期</span></p>
+      <div class="sidebar__links">
+        <a class="sidebar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <a class="backlink" href="../../index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>返回目錄</a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app__main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-nav-toggle aria-controls="sidebar" aria-expanded="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="icon-btn__label">選單</span></button>
+      <a class="topbar__brand" href="index.html" aria-label="管理後台總覽">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span class="topbar__brand-text">管理後台</span>
+      </a>
+      <div class="gsearch" data-gsearch>
+        <button class="icon-btn gsearch__open" type="button" aria-expanded="false" aria-controls="gsearch-input"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><span class="icon-btn__label">搜尋</span></button>
+        <div class="gsearch__field" role="search">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <label class="sr-only" for="gsearch-input">全域搜尋：案號、申請單位、講師</label>
+          <input id="gsearch-input" class="gsearch__input" type="search" placeholder="搜尋案號、申請單位、講師…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="gsearch-panel" aria-autocomplete="list">
+          <span class="kbd gsearch__kbd" aria-hidden="true">/</span>
+        </div>
+        <div class="popover gsearch__panel" id="gsearch-panel" role="listbox" aria-label="搜尋結果" hidden></div>
+      </div>
+      <div class="topbar__actions">
+        <div class="notif">
+          <button class="icon-btn" type="button" data-notif-btn aria-expanded="false" aria-controls="notif-panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-bell"/></svg><span class="icon-btn__label">通知</span><span class="notif__dot" data-count="notif"></span></button>
+          <div class="popover notif__panel" id="notif-panel" hidden></div>
+        </div>
+        <button class="senior-toggle" type="button" data-senior-toggle aria-pressed="false" title="放大字級與按鈕、關閉裝飾動態">
+          <svg class="i" aria-hidden="true" focusable="false"><use href="#i-text-size"/></svg>
+          <span>高齡友善</span>
+          <span class="senior-toggle__switch" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__sep" aria-hidden="true"></span>
+        <a class="topbar__link" href="../01-portal/index.html"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>前台網站</a>
+        <div class="user-menu">
+          <button class="user-btn" type="button" data-user-btn aria-expanded="false" aria-controls="user-panel" aria-label="使用者選單：周文琪">
+            <span class="avatar avatar--sm" style="--av:#9A5223" aria-hidden="true">周</span>
+            <span class="user-btn__who"><span class="user-btn__name">周文琪</span><span class="user-btn__role">計畫承辦｜北區</span></span>
+            <svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="popover user-menu__panel" id="user-panel" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page">
+      <div class="page-head">
+        <div class="page-head__main">
+          <nav class="crumbs" aria-label="目前位置"><a href="index.html">總覽</a><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span>資源與品質</span><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><span aria-current="page">滿意度調查</span></nav>
+          <h1 class="page-title">滿意度調查</h1>
+          <p class="page-lede" id="sv-lede"></p>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn" type="button" id="sv-export"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出結果報表</button>
+          <button class="btn btn--primary" type="button" id="sv-go-editor"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg>編輯問卷題目</button>
+        </div>
+      </div>
+
+      <!-- 招牌：回收年輪 -->
+      <section class="sv-hero" id="sv-hero" aria-labelledby="sv-hero-title">
+        <div class="sv-disc">
+          <div class="sv-rings" id="sv-rings"></div>
+          <p class="sv-disc__cap" aria-hidden="true"><svg class="i" focusable="false"><use href="#i-sprout"/></svg>內圈 3 月 → 外圈 10 月</p>
+          <p class="sr-only" id="sv-rings-desc"></p>
+        </div>
+        <div class="sv-hero__body">
+          <div>
+            <p class="eyebrow eyebrow--on-dark">115 年度參與者問卷</p>
+            <h2 class="sv-hero__title" id="sv-hero-title">回收年輪</h2>
+            <p class="sv-hero__lead">每一場已執行的講座都是一顆種子：問卷回收率達 60% 就算發芽。依活動月份由內而外排列，一圈一圈長成整年度的回饋。</p>
+          </div>
+          <div class="sv-big">
+            <p class="sv-big__num"><span id="sv-rate">0.0</span><small>%</small></p>
+            <p class="sv-big__label">年度回收率<br>已寄送 <b id="sv-sent"></b> 份・回收 <b id="sv-resp"></b> 份</p>
+          </div>
+          <div class="sv-stats" id="sv-stats"></div>
+          <ul class="sv-legend" aria-label="圖例">
+            <li><svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><ellipse cx="8" cy="6" rx="7" ry="3.8" fill="#A8D672"/></svg>已發芽：回收 60% 以上</li>
+            <li><svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><ellipse cx="8" cy="6" rx="6" ry="3.3" fill="#A8D672" fill-opacity=".42"/></svg>成長中：40–60%</li>
+            <li><svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><circle cx="8" cy="6" r="3.4" fill="#F2B27A"/></svg>種子：未達 40%</li>
+            <li><svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><circle cx="8" cy="6" r="5" fill="none" stroke="#F2B27A" stroke-width="1.4"/><circle cx="8" cy="6" r="2" fill="#F2B27A"/></svg>外環：仍在回收期內</li>
+          </ul>
+          <div class="sv-months" id="sv-months" role="group" aria-label="依活動月份檢視"></div>
+          <div class="sv-focus" id="sv-focus" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <div class="sv-tabs">
+        <div class="tabs" role="tablist" aria-label="滿意度調查功能" id="sv-tablist">
+          <button class="tab" type="button" role="tab" id="tab-results" aria-controls="panel-results" aria-selected="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span class="sv-tab__t">結果分析</span></button>
+          <button class="tab" type="button" role="tab" id="tab-send" aria-controls="panel-send" aria-selected="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg><span class="sv-tab__t">發送與回收</span><span class="tab__n tab__n--alert" data-count="svRemind" aria-label="待提醒場次"></span></button>
+          <button class="tab" type="button" role="tab" id="tab-editor" aria-controls="panel-editor" aria-selected="false"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg><span class="sv-tab__t">題目編輯</span><span class="tab__n" data-count="svDraft" aria-label="未發布變更"></span></button>
+        </div>
+      </div>
+
+      <!-- 分頁 1：結果分析 -->
+      <section class="sv-panel" id="panel-results" role="tabpanel" aria-labelledby="tab-results" tabindex="0">
+        <div class="sv-row sv-row--84">
+          <section class="card" aria-labelledby="sv-lk-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-lk-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg>各題結果分布・量表題</h2>
+                <p class="card__sub" id="sv-lk-sub"></p>
+              </div>
+              <div class="card__actions">
+                <div class="seg" id="sv-lk-mode" role="group" aria-label="長條內標示">
+                  <button type="button" data-value="pct" aria-pressed="true">百分比</button>
+                  <button type="button" data-value="count" aria-pressed="false">人數</button>
+                </div>
+              </div>
+            </div>
+            <div class="card__body">
+              <ul class="sv-lk-legend" aria-label="圖例">
+                <li><span class="sv-sw" style="--sw:var(--forest)"></span>5 非常同意</li>
+                <li><span class="sv-sw" style="--sw:var(--sprout)"></span>4 同意</li>
+                <li><span class="sv-sw sv-sw--3" style="--sw:var(--paper-3)"></span>3 普通（跨中線）</li>
+                <li><span class="sv-sw" style="--sw:var(--clay-200)"></span>2 不同意</li>
+                <li><span class="sv-sw" style="--sw:var(--clay)"></span>1 非常不同意</li>
+              </ul>
+              <div id="sv-likert"></div>
+            </div>
+          </section>
+
+          <section class="card sv-life-card" aria-labelledby="sv-life-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-life-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-sprout"/></svg>第 6 題・最想開始的綠生活</h2>
+                <p class="card__sub">淨零綠生活七大面向，單選</p>
+              </div>
+            </div>
+            <div class="card__body">
+              <ul class="sv-life-list" id="sv-life"></ul>
+            </div>
+            <div class="card__foot" id="sv-life-foot"></div>
+          </section>
+        </div>
+
+        <div class="sv-row sv-row--75">
+          <section class="card" id="sv-voice" aria-labelledby="sv-voice-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-voice-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-message"/></svg>開放意見與關鍵詞</h2>
+                <p class="card__sub" id="sv-voice-sub"></p>
+              </div>
+              <div class="card__actions"><span class="badge badge--clay" id="sv-neg-badge"></span></div>
+            </div>
+            <div class="card__body">
+              <div class="sv-kw-tools">
+                <div class="seg" id="sv-cm-filter" role="group" aria-label="意見類型">
+                  <button type="button" data-value="all" aria-pressed="true">全部</button>
+                  <button type="button" data-value="pos" aria-pressed="false">正向回饋</button>
+                  <button type="button" data-value="neg" aria-pressed="false">待改善</button>
+                </div>
+                <p class="sv-kw-note">點選關鍵詞篩選意見；陶土色為待改善詞</p>
+              </div>
+              <div class="kw-cloud sv-kw" id="sv-kw" role="group" aria-label="開放意見關鍵詞"></div>
+              <ul class="sv-cmts" id="sv-comments" aria-live="polite"></ul>
+            </div>
+            <div class="card__foot" id="sv-comments-foot"></div>
+          </section>
+
+          <section class="card" id="sv-rank-card" aria-labelledby="sv-rank-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-rank-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-award"/></svg>講師滿意度排行</h2>
+                <p class="card__sub" id="sv-rank-sub"></p>
+              </div>
+            </div>
+            <div class="card__body">
+              <div class="sv-rank-tools">
+                <div class="seg" id="sv-rank-mode" role="group" aria-label="排行檢視">
+                  <button type="button" data-value="top" aria-pressed="true">最高 10 位</button>
+                  <button type="button" data-value="watch" aria-pressed="false">需關注</button>
+                </div>
+                <label class="sr-only" for="sv-rank-min">場次門檻</label>
+                <select class="select select--sm" id="sv-rank-min">
+                  <option value="1">不限場次</option>
+                  <option value="5" selected>5 場以上</option>
+                  <option value="10">10 場以上</option>
+                </select>
+              </div>
+              <ol class="rank-list sv-rank" id="sv-rank"></ol>
+            </div>
+            <div class="card__foot">
+              <span id="sv-rank-foot"></span>
+              <a class="link-arrow" href="instructors.html">講師資料管理<svg class="i" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></a>
+            </div>
+          </section>
+        </div>
+
+        <section class="card sv-profile" aria-labelledby="sv-profile-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="sv-profile-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-target"/></svg>推廣管道與服務對象</h2>
+              <p class="card__sub">下年度調整推廣通路與課程設計的參考</p>
+            </div>
+          </div>
+          <div class="sv-split">
+            <section class="sv-split__col" aria-labelledby="sv-q7-title">
+              <h3 class="sv-split__title" id="sv-q7-title">第 7 題・得知活動的管道<span>單選</span></h3>
+              <div class="sv-split__fill" id="sv-q7"></div>
+              <p class="sv-split__note" id="sv-q7-foot"></p>
+            </section>
+            <section class="sv-split__col" aria-labelledby="sv-aud-title">
+              <h3 class="sv-split__title" id="sv-aud-title">依服務對象的滿意度<span>各場次平均分依回收份數加權，虛線為整體滿意度</span></h3>
+              <div id="sv-aud"></div>
+              <p class="sv-split__note" id="sv-aud-foot"></p>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <!-- 分頁 2：發送與回收 -->
+      <section class="sv-panel" id="panel-send" role="tabpanel" aria-labelledby="tab-send" tabindex="0" hidden>
+        <div class="sv-row sv-row--75">
+          <section class="card" aria-labelledby="sv-trend-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-trend-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-trend-up"/></svg>各月回收趨勢</h2>
+                <p class="card__sub">依活動月份統計</p>
+              </div>
+              <div class="card__actions">
+                <div class="seg" id="sv-trend-metric" role="group" aria-label="趨勢指標">
+                  <button type="button" data-value="rate" aria-pressed="true">回收率</button>
+                  <button type="button" data-value="sat" aria-pressed="false">平均滿意度</button>
+                </div>
+              </div>
+            </div>
+            <div class="card__body">
+              <div class="sv-chart-host" id="sv-trend-rate"></div>
+              <div class="sv-chart-host" id="sv-trend-sat" hidden></div>
+            </div>
+            <div class="card__foot" id="sv-trend-foot"></div>
+          </section>
+
+          <section class="card" aria-labelledby="sv-rules-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-rules-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-settings"/></svg>自動發送規則</h2>
+                <p class="card__sub">套用於所有已執行場次</p>
+              </div>
+            </div>
+            <div class="card__body"><div class="sv-rules" id="sv-rules"></div></div>
+            <div class="card__foot" id="sv-rules-foot"></div>
+          </section>
+        </div>
+
+        <section class="card" id="sv-queue" aria-labelledby="sv-queue-title">
+          <div class="card__head">
+            <div class="card__titles">
+              <h2 class="card__title" id="sv-queue-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-mail"/></svg>問卷發送與回收紀錄</h2>
+              <p class="card__sub" id="sv-queue-sub"></p>
+            </div>
+            <div class="card__actions">
+              <button class="btn btn--sm" type="button" id="sv-csv"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>匯出 CSV</button>
+              <button class="btn btn--sm btn--clay" type="button" id="sv-remind-all"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg><span></span></button>
+            </div>
+          </div>
+          <div class="sv-qtools">
+            <div class="views" id="sv-views" role="group" aria-label="常用檢視"></div>
+            <div class="search">
+              <svg class="i" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+              <label class="sr-only" for="sv-q-search">搜尋案號、申請單位或講師</label>
+              <input class="input" id="sv-q-search" type="search" placeholder="搜尋案號、單位、講師" autocomplete="off">
+            </div>
+            <label class="sr-only" for="sv-q-month">活動月份</label>
+            <select class="select" id="sv-q-month"></select>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--stack" id="sv-table">
+              <caption class="sr-only">問卷發送與回收紀錄</caption>
+              <thead>
+                <tr>
+                  <th scope="col">案號</th>
+                  <th scope="col">申請單位</th>
+                  <th scope="col" data-sort="date" aria-sort="descending">活動日</th>
+                  <th scope="col" class="col-2nd">講師</th>
+                  <th scope="col" class="num col-2nd" data-sort="invited">寄送</th>
+                  <th scope="col" data-sort="rate">回收率</th>
+                  <th scope="col" class="col-2nd" data-sort="avg">平均分</th>
+                  <th scope="col">回收狀態</th>
+                  <th scope="col" class="col-act"><span class="sr-only">操作</span></th>
+                </tr>
+              </thead>
+              <tbody id="sv-tbody"></tbody>
+            </table>
+          </div>
+          <div class="table-foot"><div id="sv-pager"></div></div>
+        </section>
+      </section>
+
+      <!-- 分頁 3：題目編輯 -->
+      <section class="sv-panel" id="panel-editor" role="tabpanel" aria-labelledby="tab-editor" tabindex="0" hidden>
+        <div class="card sv-ver">
+          <div class="sv-ver__info" id="sv-ver"></div>
+          <div class="sv-ver__acts">
+            <button class="btn" type="button" id="sv-revert"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>還原為已發布版本</button>
+            <button class="btn btn--primary" type="button" id="sv-publish"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-send"/></svg>發布新版本</button>
+          </div>
+        </div>
+        <div class="sv-ed">
+          <section class="card" aria-labelledby="sv-ed-title">
+            <div class="card__head">
+              <div class="card__titles">
+                <h2 class="card__title" id="sv-ed-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg>問卷題目（草稿）</h2>
+                <p class="card__sub">拖曳左側把手或使用上移、下移調整順序；發布後只套用於之後辦理的場次</p>
+              </div>
+            </div>
+            <div class="card__body">
+              <ol class="sv-qlist" id="sv-qlist"></ol>
+              <p class="sr-only" id="sv-ed-hint">按上、下方向鍵可移動這一題</p>
+              <p class="sr-only" id="sv-ed-live" aria-live="polite"></p>
+            </div>
+            <div class="card__foot">
+              <span>新增題目</span>
+              <div class="sv-add">
+                <button class="btn btn--sm" type="button" data-add="scale"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>量表題</button>
+                <button class="btn btn--sm" type="button" data-add="single"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>單選題</button>
+                <button class="btn btn--sm" type="button" data-add="open"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>開放題</button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="sv-ed__preview" aria-labelledby="sv-pv-title">
+            <div class="sv-pv-head">
+              <h2 class="card__title" id="sv-pv-title"><svg class="i" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg>填答預覽</h2>
+              <span class="badge badge--sprout">即時反映草稿</span>
+            </div>
+            <div class="sv-phone"><div class="sv-phone__screen" id="sv-preview"></div></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="app-footer__brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path class="logo__leaf-a" d="M24 42C14 40.2 7.6 32.4 7 20c9.6 1.4 16.2 8.8 17 22z"/>
+          <path class="logo__rib-a" d="M22.6 39.6C19 33.4 14.6 27.6 9.6 23" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="logo__leaf-b" d="M24 42c.8-14 7.6-23.6 18-27 .6 14.2-6.4 24.6-18 27z"/>
+          <path class="logo__rib" d="M25.4 39.6c3.4-7.8 8-14.6 14.2-21.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+          <circle class="logo__dot" cx="24" cy="13" r="5.6"/>
+        </svg>
+        <span>環境教育人員推廣運用管理系統・管理後台　v1.0（115 年度建置版）</span>
+      </div>
+      <div class="app-footer__links">
+        <span>資料時間 115/10/28 10:30</span>
+        <button type="button" data-toast="操作手冊將於 11 月教育訓練後提供下載" data-toast-desc="教育訓練：115/11/10（二）14:00，線上會議">操作手冊</button>
+        <button type="button" data-toast="系統維護公告：115/11/01（日）02:00–04:00" data-toast-desc="維護期間前台申請與後台作業暫停服務">系統公告</button>
+        <a href="../01-portal/index.html">前台網站</a>
+      </div>
+    </footer>
+  </div>
+  <div class="scrim" data-nav-close aria-hidden="true"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const { $, $$, esc, fmt, icon } = App;
+  const S = App.SURVEY;
+  const R = S.responses;
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+  const pct = (v, d = 1) => `${(v * 100).toFixed(d)}%`;
+  const calm = App.calm;
+
+  /* =====================================================================
+     共用資料與規則
+     ===================================================================== */
+  // 已執行場次依活動日由舊到新：既是年輪由內而外的順序，也是發送紀錄的資料來源
+  const EXEC = App.CASES.filter(App.isExecuted)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
+  const MONTHS = [...new Set(EXEC.map(c => c.date.slice(0, 7)))];
+  const monthLabel = ym => `${Number(ym.slice(5))} 月`;
+  // 發送規則（記憶體內設定）：回收期限會直接改變哪些場次算「回收中」
+  const rules = { autoSend: true, qrCard: true, remind7: true, closeDays: 14, alertLow: true };
+  const REMIND_AFTER = 3;     // 活動後第 3 日起才需要人工提醒，前幾天回收率本來就低
+  const GOOD_RATE = .6;
+  const rateOf = c => c.survey.responses / c.survey.invited;
+  const ageOf = c => App.daysBetween(c.date, App.TODAY);
+  const isLive = c => ageOf(c) < rules.closeDays;
+  const daysLeft = c => rules.closeDays - ageOf(c);
+  const tierOf = c => (rateOf(c) >= GOOD_RATE ? 'hi' : rateOf(c) >= .4 ? 'mid' : 'lo');
+  const TIER_LABEL = { hi: '已發芽', mid: '成長中', lo: '種子' };
+  const remindsOf = c => c.survey.reminders || [];
+  const remindedToday = c => remindsOf(c).some(t => t.startsWith(App.TODAY));
+  const needsRemind = c => isLive(c) && ageOf(c) >= REMIND_AFTER && rateOf(c) < GOOD_RATE;
+  const remindable = () => EXEC.filter(c => needsRemind(c) && !remindedToday(c));
+  const statsOf = list => {
+    const inv = sum(list.map(c => c.survey.invited));
+    const res = sum(list.map(c => c.survey.responses));
+    const tiers = { hi: 0, mid: 0, lo: 0 };
+    list.forEach(c => { tiers[tierOf(c)]++; });
+    return { n: list.length, inv, res, rate: inv ? res / inv : 0, avg: res ? sum(list.map(c => c.survey.avg * c.survey.responses)) / res : 0, tiers, live: list.filter(isLive).length };
+  };
+  const SAT = App.kpis().satisfaction;
+  const lect = c => App.lecturer(c.lecturer);
+  const where = c => `${App.county(c.county).name}${c.district}`;
+
+  // 提醒未填答者：寫進案件的 survey 物件，所有衍生數字經 App.emit 同步
+  function remind(list) {
+    const stamp = `${App.TODAY}T10:30`;
+    list.forEach(c => { c.survey.reminders = remindsOf(c).concat(stamp); });
+    App.emit('survey-remind');
+    const people = sum(list.map(c => c.survey.invited - c.survey.responses));
+    App.toast(list.length === 1 ? `已提醒 ${list[0].id} 的未填答者` : `已提醒 ${list.length} 場的未填答者`, {
+      desc: `以 Email 與簡訊寄送填答提醒給 ${fmt.num(people)} 位尚未填答的參與者，並記錄在發送紀錄。`,
+      action: { label: '復原', onClick: () => { list.forEach(c => { c.survey.reminders = remindsOf(c).filter(t => t !== stamp); }); App.emit('survey-remind-undo'); } },
+    });
+  }
+
+  /* =====================================================================
+     頁首說明
+     ===================================================================== */
+  function renderLede() {
+    const live = EXEC.filter(isLive).length;
+    $('#sv-lede').innerHTML = `活動結束後自動寄送參與者問卷，回收期 ${rules.closeDays} 日；目前 <b>${live}</b> 場仍在回收中，<b>${remindable().length}</b> 場回收率偏低待提醒。`;
+  }
+
+  /* =====================================================================
+     招牌：回收年輪（向日葵葉序排列，內圈舊、外圈新）
+     ===================================================================== */
+  const ringsHost = $('#sv-rings');
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));   // 黃金角：點與點不重疊、均勻填滿圓盤
+  const VB = 400, C0 = 200, RMAX = 186;
+  const K = RMAX / Math.sqrt(EXEC.length);
+  const ringR = n => K * Math.sqrt(n);
+  const nodes = EXEC.map((c, i) => {
+    const r = K * Math.sqrt(i + .5), a = i * GOLDEN;
+    return { c, i, x: C0 + r * Math.cos(a), y: C0 + r * Math.sin(a), deg: (a * 180 / Math.PI) % 360 };
+  });
+  const bounds = MONTHS.map(ym => {
+    const idx = nodes.filter(n => n.c.date.startsWith(ym)).map(n => n.i);
+    return { ym, from: idx[0], to: idx[idx.length - 1] + 1 };
+  });
+  const shape = n => {
+    const t = tierOf(n.c);
+    if (t === 'hi') return `<ellipse class="sv-dot sv-dot--hi" rx="5.4" ry="2.9" style="--d:${n.i}"/>`;
+    if (t === 'mid') return `<ellipse class="sv-dot sv-dot--mid" rx="4.6" ry="2.5" style="--d:${n.i}"/>`;
+    return `<circle class="sv-dot sv-dot--lo" r="2.7" style="--d:${n.i}"/>`;
+  };
+  ringsHost.innerHTML = `<svg viewBox="0 0 ${VB} ${VB}" role="img" aria-labelledby="sv-rings-desc" focusable="false">
+  <circle class="sv-band" cx="${C0}" cy="${C0}" r="1" fill="none" stroke-width="0"/>
+  ${bounds.map(b => `<circle class="sv-ring" cx="${C0}" cy="${C0}" r="${ringR(b.to).toFixed(1)}" fill="none" stroke-width="1" stroke-dasharray="1.5 4.5"/>`).join('')}
+  <g>${nodes.map(n => `<g class="sv-node" data-i="${n.i}" data-m="${n.c.date.slice(0, 7)}" transform="translate(${n.x.toFixed(1)} ${n.y.toFixed(1)}) rotate(${n.deg.toFixed(0)})" style="--k:${n.i % 7}"><circle class="sv-halo" r="6" stroke-width="1.3"/>${shape(n)}</g>`).join('')}</g>
+  <circle class="sv-pick" cx="0" cy="0" r="10" stroke-width="2" display="none"/>
+</svg><div class="chart-tip sv-tip" aria-hidden="true"></div>`;
+  const svg = $('svg', ringsHost);
+  const gNodes = $$('.sv-node', svg);
+  const tip = $('.sv-tip', ringsHost);
+  let month = 'all';
+  let picked = null;   // 點選的場次案號
+
+  // 展開動畫：種子由圓心依序長出；calm 時直接呈現，並保底在 2.5 秒後一定顯示
+  if (!calm()) {
+    ringsHost.classList.add('is-waiting');
+    const show = () => ringsHost.classList.remove('is-waiting');
+    App.whenVisible(ringsHost, show);
+    setTimeout(show, 2500);
+  }
+  // 回收中的外環脈動：離開視窗或分頁隱藏時暫停
+  let ringsInView = true;
+  const syncPause = () => ringsHost.classList.toggle('is-paused', !ringsInView || document.hidden);
+  new IntersectionObserver(es => { ringsInView = es[es.length - 1].isIntersecting; syncPause(); }, { threshold: 0 }).observe(ringsHost);
+  document.addEventListener('visibilitychange', syncPause);
+
+  function paintRings() {
+    gNodes.forEach(g => {
+      const n = nodes[Number(g.dataset.i)];
+      g.classList.toggle('is-live', isLive(n.c));
+      g.classList.toggle('is-dim', month !== 'all' && g.dataset.m !== month);
+    });
+    const band = $('.sv-band', svg);
+    if (month === 'all') band.setAttribute('stroke-width', '0');
+    else {
+      const b = bounds.find(x => x.ym === month);
+      const r0 = ringR(b.from), r1 = ringR(b.to);
+      band.setAttribute('r', ((r0 + r1) / 2).toFixed(1));
+      band.setAttribute('stroke-width', Math.max(2, r1 - r0 + 8).toFixed(1));
+    }
+    const pick = $('.sv-pick', svg);
+    const sel = picked && nodes.find(n => n.c.id === picked);
+    if (sel) { pick.setAttribute('cx', sel.x.toFixed(1)); pick.setAttribute('cy', sel.y.toFixed(1)); pick.removeAttribute('display'); }
+    else pick.setAttribute('display', 'none');
+    const st = statsOf(EXEC);
+    $('#sv-rings-desc').textContent = `回收年輪：${st.n} 場已執行講座依活動月份由內而外排列；回收率達 60% 的 ${st.tiers.hi} 場、40% 至 60% 的 ${st.tiers.mid} 場、未達 40% 的 ${st.tiers.lo} 場，其中 ${st.live} 場仍在回收期內。`;
+  }
+
+  const toVB = e => { const r = svg.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * VB, y: (e.clientY - r.top) / r.height * VB, r }; };
+  const nearest = (x, y) => {
+    let best = null, bd = 11 * 11;
+    nodes.forEach(n => { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n; } });
+    return best;
+  };
+  let hover = null;
+  svg.addEventListener('pointermove', e => {
+    const p = toVB(e);
+    const n = nearest(p.x, p.y);
+    if (n === hover) return;
+    hover = n;
+    if (!n) { tip.classList.remove('is-on'); return; }
+    const c = n.c;
+    tip.innerHTML = `<b>${c.id}</b>　${esc(c.org)}<br>${fmt.rocShort(c.date)}・回收 ${c.survey.responses}／${c.survey.invited} 份（${pct(rateOf(c), 0)}）`;
+    const wr = ringsHost.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const x = p.r.left - wr.left + n.x / VB * p.r.width;
+    tip.style.left = `${Math.min(wr.width + 16 - tw / 2, Math.max(tw / 2 - 16, x))}px`;
+    tip.style.top = `${p.r.top - wr.top + n.y / VB * p.r.height}px`;
+    tip.classList.toggle('is-below', n.y < VB * .22);
+    tip.classList.add('is-on');
+  });
+  svg.addEventListener('pointerleave', () => { hover = null; tip.classList.remove('is-on'); });
+  svg.addEventListener('click', e => {
+    const p = toVB(e);
+    const n = nearest(p.x, p.y);
+    picked = n ? n.c.id : null;
+    if (n && month !== 'all' && n.c.date.slice(0, 7) !== month) setMonth('all', true);
+    paintRings();
+    renderFocus();
+  });
+
+  // 月份篩選
+  const monthsEl = $('#sv-months');
+  monthsEl.innerHTML = [['all', '全年度']].concat(MONTHS.map(ym => [ym, monthLabel(ym)])).map(([v, t]) => `<button type="button" class="chip" data-month="${v}" aria-pressed="${v === 'all'}">${t}</button>`).join('');
+  function setMonth(v, keepPick) {
+    month = v;
+    if (!keepPick) picked = null;
+    $$('.chip', monthsEl).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.month === v)));
+  }
+  monthsEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-month]');
+    if (!b) return;
+    setMonth(b.dataset.month);
+    paintRings();
+    renderFocus();
+  });
+
+  const tierList = t => `<ul class="sv-tiers"><li><i style="--sw:var(--sprout)"></i><b>${t.hi}</b> 場已發芽</li><li><i style="--sw:rgba(168,214,114,.45)"></i><b>${t.mid}</b> 場成長中</li><li><i style="--sw:var(--clay-glow)"></i><b>${t.lo}</b> 場種子</li></ul>`;
+  function renderFocus() {
+    const host = $('#sv-focus');
+    const c = picked && App.case(picked);
+    if (c) {
+      const live = isLive(c);
+      const canRemind = needsRemind(c) && !remindedToday(c);
+      host.innerHTML = `<p class="sv-focus__title"><a href="application.html?id=${c.id}">${c.id}</a>${esc(c.org)}</p>
+<p class="sv-focus__text">${fmt.rocShort(c.date)}・${where(c)}・${esc(lect(c).name)} 講師・${App.audience(c.audience).name}</p>
+<p class="sv-focus__text">回收 <b>${c.survey.responses}</b>／${c.survey.invited} 份（<b>${pct(rateOf(c), 0)}</b>，${TIER_LABEL[tierOf(c)]}）・平均 <b>${c.survey.avg.toFixed(2)}</b> 分・${live ? `回收中，剩 ${daysLeft(c)} 天` : '已截止'}${remindedToday(c) ? '・今日已提醒' : ''}</p>
+<div class="sv-focus__acts">${canRemind ? `<button type="button" class="btn btn--sm btn--sprout" data-focus-remind="${c.id}">${icon('send')}提醒未填答者</button>` : ''}<button type="button" class="btn btn--sm btn--on-dark" data-focus-clear>${icon('x')}取消選取</button></div>`;
+      return;
+    }
+    if (month === 'all') {
+      const st = statsOf(EXEC);
+      const ms = MONTHS.map(ym => ({ ym, s: statsOf(EXEC.filter(x => x.date.startsWith(ym))) }));
+      const closed = ms.filter(m => !m.s.live);
+      const best = closed.reduce((a, b) => (b.s.rate > a.s.rate ? b : a)), worst = closed.reduce((a, b) => (b.s.rate < a.s.rate ? b : a));
+      host.innerHTML = `<p class="sv-focus__title">115 年度・${st.n} 場已執行講座</p>
+<p class="sv-focus__text">外環閃動的 <b>${st.live}</b> 場仍在 ${rules.closeDays} 日回收期內。滑過或點選圓點可查看單一場次，也可依月份檢視。</p>
+<p class="sv-focus__text">已截止月份中回收最好的是 ${monthLabel(best.ym)}（<b>${pct(best.s.rate)}</b>），最低為 ${monthLabel(worst.ym)}（<b>${pct(worst.s.rate)}</b>）。</p>${tierList(st.tiers)}`;
+      return;
+    }
+    const st = statsOf(EXEC.filter(x => x.date.startsWith(month)));
+    host.innerHTML = `<p class="sv-focus__title">${App.fmt.rocYM(month)}・${st.n} 場</p>
+<p class="sv-focus__text">寄送 <b>${fmt.num(st.inv)}</b> 份・回收 <b>${fmt.num(st.res)}</b> 份（<b>${pct(st.rate)}</b>）・平均 <b>${st.avg.toFixed(2)}</b> 分${st.live ? `・${st.live} 場回收中` : ''}</p>${tierList(st.tiers)}`;
+  }
+  $('#sv-focus').addEventListener('click', e => {
+    if (e.target.closest('[data-focus-clear]')) { picked = null; paintRings(); renderFocus(); return; }
+    const b = e.target.closest('[data-focus-remind]');
+    if (b) remind([App.case(b.dataset.focusRemind)]);
+  });
+
+  // 數字
+  $('#sv-sent').textContent = fmt.num(S.sent);
+  $('#sv-resp').textContent = fmt.num(R);
+  App.whenVisible($('#sv-hero'), () => App.countUp($('#sv-rate'), R / S.sent * 100, { decimals: 1 }));
+  function renderHeroStats() {
+    const live = EXEC.filter(isLive).length;
+    const todo = remindable().length;
+    const q8 = S.questions.find(q => q.type === 'open');
+    $('#sv-stats').innerHTML = `<div class="sv-stat"><span class="sv-stat__label">整體滿意度</span><span class="sv-stat__val">${SAT.toFixed(2)}<small>／5</small></span><span class="sv-stat__note">第 1 題平均分</span></div>
+<div class="sv-stat"><span class="sv-stat__label">開放意見</span><span class="sv-stat__val">${fmt.num(q8.count)}<small>則</small></span><span class="sv-stat__note">第 8 題填寫</span></div>
+<div class="sv-stat"><span class="sv-stat__label">回收中</span><span class="sv-stat__val">${live}<small>場</small></span><span class="sv-stat__note">回收期 ${rules.closeDays} 日</span></div>
+<button type="button" class="sv-stat" id="sv-go-remind"><span class="sv-stat__label">待提醒</span><span class="sv-stat__val">${todo}<small>場</small></span><span class="sv-stat__note">${todo ? '前往提醒' : '查看發送紀錄'}${icon('arrow-right')}</span></button>`;
+  }
+  $('#sv-stats').addEventListener('click', e => {
+    if (!e.target.closest('#sv-go-remind')) return;
+    tabs.select(1);
+    setView(remindable().length ? 'remind' : 'live');
+    $('#sv-queue').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'start' });
+  });
+
+  /* =====================================================================
+     分頁籤（?tab=send|editor 可直接開啟）
+     ===================================================================== */
+  const TAB_KEYS = ['results', 'send', 'editor'];
+  const want = TAB_KEYS.indexOf(App.param('tab') || location.hash.slice(1));
+  if (want > 0) $$('#sv-tablist [role="tab"]').forEach((t, i) => t.setAttribute('aria-selected', String(i === want)));
+  const tabs = App.tabs($('#sv-tablist'));
+  const goEditor = () => { tabs.select(2); $('.sv-tabs').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'start' }); };
+  $('#sv-go-editor').addEventListener('click', goEditor);
+
+  /* =====================================================================
+     結果分析 1：量表題發散長條
+     ===================================================================== */
+  const SCALE = S.questions.map((q, i) => ({ q, no: i + 1 })).filter(x => x.q.type === 'scale');
+  const SCALE_LABEL = { 5: '非常同意', 4: '同意', 3: '普通', 2: '不同意', 1: '非常不同意' };
+  const LO = -.1, SPAN = 1.1;          // 座標由 −10% 到 100%：負向比例很小，中線不必放在正中央
+  const X0 = -LO / SPAN;
+  let lkMode = 'pct', lkShown = calm();
+  $('#sv-lk-sub').textContent = `以「普通」為中線，左側為負向、右側為正向・問卷 v1 共 ${fmt.num(R)} 份`;
+  function renderLikert() {
+    const host = $('#sv-likert');
+    host.innerHTML = `<div class="sv-lk${lkShown ? '' : ' is-waiting'}" style="--x0:${(X0 * 100).toFixed(3)}%">${SCALE.map(({ q, no }, i) => {
+      const [c5, c4, c3, c2, c1] = q.counts;
+      const tot = sum(q.counts);
+      const neg = (c1 + c2 + c3 / 2) / tot, pos = (c5 + c4 + c3 / 2) / tot;
+      const seg = (s, n, base) => `<span class="sv-seg" data-s="${s}" style="--w:${(n / tot / base * 100).toFixed(3)}%" title="${s} 分 ${SCALE_LABEL[s]}：${fmt.num(Math.round(s === 3 ? n * 2 : n))} 人（${pct((s === 3 ? n * 2 : n) / tot)}）">${s >= 4 ? `<span>${lkMode === 'pct' ? pct(n / tot) : fmt.num(n)}</span>` : ''}</span>`;
+      return `<div class="sv-lk__row" style="--i:${i}">
+  <p class="sv-lk__q"><span class="sv-lk__no">Q${no}</span>${esc(q.title)}</p>
+  <div class="sv-lk__bar" role="img" aria-label="Q${no}：非常同意 ${pct(c5 / tot)}、同意 ${pct(c4 / tot)}、普通 ${pct(c3 / tot)}、不同意 ${pct(c2 / tot)}、非常不同意 ${pct(c1 / tot)}">
+    <span class="sv-lk__neg" style="--wn:${(neg / SPAN * 100).toFixed(3)}%">${seg(3, c3 / 2, neg)}${seg(2, c2, neg)}${seg(1, c1, neg)}</span>
+    <span class="sv-lk__pos" style="--wp:${(pos / SPAN * 100).toFixed(3)}%">${seg(3, c3 / 2, pos)}${seg(4, c4, pos)}${seg(5, c5, pos)}</span>
+    <span class="sv-lk__zero" aria-hidden="true"></span>
+  </div>
+  <p class="sv-lk__meta"><span>正向（4–5 分）<b>${pct((c5 + c4) / tot)}</b></span><span>普通 <b>${pct(c3 / tot)}</b></span><span class="is-neg">負向（1–2 分）<b>${pct((c1 + c2) / tot)}</b></span></p>
+  <p class="sv-lk__mean">${q.mean.toFixed(2)}<small>平均分</small></p>
+</div>`;
+    }).join('')}<div class="sv-lk__axisrow" aria-hidden="true"><div class="sv-lk__axis">${[0, .25, .5, .75, 1].map(t => `<span style="--x:${((t - LO) / SPAN * 100).toFixed(3)}%">${t * 100}%</span>`).join('')}</div></div></div>`;
+    fitSegLabels();
+    if (!lkShown) App.whenVisible(host.firstElementChild, () => { lkShown = true; host.firstElementChild.classList.remove('is-waiting'); });
+  }
+  // 長條內的數字放不下就隱藏（改由下方的正向／負向比例與 title 提供）
+  function fitSegLabels() {
+    $$('#sv-likert .sv-seg > span').forEach(sp => {
+      sp.classList.remove('is-hidden');
+      if (sp.offsetWidth + 8 > sp.parentElement.clientWidth) sp.classList.add('is-hidden');
+    });
+  }
+  new ResizeObserver(fitSegLabels).observe($('#sv-likert'));
+  App.seg($('#sv-lk-mode'), { onChange: v => { lkMode = v; renderLikert(); } });
+  renderLikert();
+
+  /* =====================================================================
+     結果分析 2：第 6 題（淨零綠生活七面向）、第 7 題、依服務對象
+     ===================================================================== */
+  const LIFE_NOTE = { food: '在地當季、減少剩食', cloth: '惜物穿搭、衣物循環', home: '居家節電、節水', move: '步行單車、大眾運輸', edu: '環境學習、親子共學', play: '低碳旅遊、走進自然', shop: '綠色消費、減塑' };
+  const q6 = S.questions.find(q => q.id === 'q6');
+  const q6tot = sum(q6.counts);
+  const q6max = Math.max(...q6.counts);
+  const life = App.LIFE.map(l => ({ l, n: q6.counts[q6.options.indexOf(l.char)] }));
+  $('#sv-life').innerHTML = life.map(({ l, n }, i) => `<li class="sv-life${n === q6max ? ' is-top' : ''}" style="--i:${i}">
+  <span class="sv-life__ic">${icon(l.icon)}</span>
+  <span class="sv-life__name"><b>${l.char}</b><span>${LIFE_NOTE[l.id]}</span><span class="sv-life__n">${fmt.num(n)} 人</span></span>
+  <span class="sv-life__bar" aria-hidden="true"><span style="--p:${(n / q6max).toFixed(4)}"></span></span>
+  <span class="sv-life__val">${pct(n / q6tot)}</span>
+</li>`).join('');
+  const lifeSorted = life.slice().sort((a, b) => b.n - a.n);
+  $('#sv-life-foot').innerHTML = `<span>最多人想從「${lifeSorted[0].l.char}」開始（${pct(lifeSorted[0].n / q6tot)}），其次為「${lifeSorted[1].l.char}」與「${lifeSorted[2].l.char}」</span>`;
+  if (!calm()) { $('#sv-life').classList.add('is-waiting'); App.whenVisible($('#sv-life'), () => $('#sv-life').classList.remove('is-waiting')); }
+
+  const q7 = S.questions.find(q => q.id === 'q7');
+  const q7tot = sum(q7.counts);
+  App.hbars($('#sv-q7'), { data: q7.options.map((o, i) => ({ label: o, value: q7.counts[i] })), format: v => pct(v / q7tot), unit: '' });
+  $('#sv-q7-foot').textContent = `「${q7.options[0]}」占 ${pct(q7.counts[0] / q7tot)}，仍是主要來源；社群媒體與社區公告合計 ${pct((q7.counts[1] + q7.counts[3]) / q7tot)}，適合用來觸及非學校的參與者。`;
+
+  const aud = App.AUDIENCES.map(a => ({ a, ...statsOf(EXEC.filter(c => c.audience === a.id)) })).filter(x => x.n);
+  const audLo = Math.floor((Math.min(...aud.map(x => x.avg)) - .05) * 10) / 10, audHi = 5;
+  const ax = v => (v - audLo) / (audHi - audLo);
+  const audMin = Math.min(...aud.map(x => x.avg)), audMax = Math.max(...aud.map(x => x.avg));
+  const ticks = [];
+  for (let t = audLo; t <= audHi + 1e-9; t += .1) ticks.push(Math.round(t * 10) / 10);
+  $('#sv-aud').innerHTML = `<div class="sv-dp${calm() ? '' : ' is-waiting'}">
+  <div class="sv-dp__head" aria-hidden="true"><span>服務對象</span><span></span><span>平均</span><span>回收率</span></div>
+  ${aud.map(x => `<div class="sv-dp__row"><span class="sv-dp__label">${x.a.name}<small>${x.n} 場</small></span><span class="sv-dp__track" role="img" aria-label="${x.a.name} 平均 ${x.avg.toFixed(2)} 分"><span class="sv-dp__avg" style="--x:${(ax(SAT) * 100).toFixed(2)}%"></span><span class="sv-dp__dot${x.avg === audMin ? ' is-low' : ''}" style="--x:${(ax(x.avg) * 100).toFixed(2)}%"></span></span><span class="sv-dp__val">${x.avg.toFixed(2)}</span><span class="sv-dp__rate">${pct(x.rate, 0)}</span></div>`).join('')}
+  <div class="sv-dp__axis" aria-hidden="true"><span></span><span class="sv-dp__ticks">${ticks.map(t => `<span style="--x:${(ax(t) * 100).toFixed(2)}%">${t.toFixed(1)}</span>`).join('')}</span></div>
+</div>`;
+  if (!calm()) App.whenVisible($('#sv-aud .sv-dp'), () => $('#sv-aud .sv-dp').classList.remove('is-waiting'));
+  const hiA = aud.find(x => x.avg === audMax), loA = aud.find(x => x.avg === audMin);
+  $('#sv-aud-foot').textContent = `最高為「${hiA.a.name}」${hiA.avg.toFixed(2)} 分；「${loA.a.name}」${loA.avg.toFixed(2)} 分最低，可請講師在這類場次加強實作與互動設計。`;
+
+  /* =====================================================================
+     結果分析 3：開放意見與關鍵詞
+     ===================================================================== */
+  // 關鍵詞的同義詞：依詞彙比對歸類意見（規則式，不做語意推論）
+  const KW_MATCH = {
+    實作: ['實作', '煮了'], 生活化: ['生活化', '回家馬上', '回家還'], 互動: ['互動', '討論', '發問'], 淺顯易懂: ['淺顯易懂', '一看就懂', '聽得懂'],
+    在地案例: ['在地'], 節電: ['節電', '電費'], 剩食: ['剩食'], 想再上: ['想再上', '再來', '還想'], 教具: ['教具', '字卡', '拼圖'],
+    長輩聽得懂: ['長輩聽得懂', '長輩也看得清楚', '長輩們都說'], 戶外觀察: ['戶外觀察', '昆蟲'], 減塑: ['減塑', '環保杯'],
+    時間太短: ['時間太短', '意猶未盡'], 音量: ['音量', '聽不太清楚', '麥克風'], 場地太熱: ['場地太熱'], 講義字太小: ['講義字太小', '字可以再大'],
+  };
+  // 代表性意見：App.SURVEY 的 8 則，再補上各類場次的回饋（依對象與主題對應到實際已執行的案件）
+  const EXTRA = [
+    { aud: 'community', topic: 'food', score: 5, text: '跟著講師用剩食做了三道小菜，原來冰箱裡的食材可以這樣搭配，回家馬上試。' },
+    { aud: 'elem', topic: 'biodiv', score: 5, text: '孩子們最喜歡戶外觀察，拿著放大鏡找到好多種昆蟲，回教室還在討論。' },
+    { aud: 'community', topic: 'netzero', score: 5, text: '講師講話慢、例子都是菜市場和廚房的事，長輩聽得懂也願意發問。' },
+    { aud: 'enterprise', topic: 'energy', score: 5, text: '用公司自己的電費單分析節電空間，很實際，同事們會後馬上討論要先換哪些設備。' },
+    { aud: 'junior', topic: 'circular', score: 5, text: '分組實作把廢紙做成再生紙，全班都很投入，大家都說想再上一堂。' },
+    { aud: 'senior', topic: 'climate', score: 4, text: '用學校附近的淹水紀錄當在地案例，比課本更有感，可惜時間太短。' },
+    { aud: 'community', topic: 'health', score: 3, text: '活動中心沒有冷氣，下午場地太熱，有幾位長輩中途先離開。' },
+    { aud: 'elem', topic: 'netzero', score: 5, text: '碳足跡拼圖教具很好用，小朋友一看就懂，內容淺顯易懂又有趣。' },
+    { aud: 'agency', topic: 'circular', score: 5, text: '減塑的數據很有說服力，我們志工隊決定下次活動全面改用環保杯。' },
+    { aud: 'community', topic: 'food', score: 3, text: '講義字太小，老花眼看得很吃力，希望改成大字版。' },
+    { aud: 'senior', topic: 'energy', score: 3, text: '後排同學反映音量不夠，播放影片時聽不太清楚。' },
+    { aud: 'college', topic: 'netzero', score: 5, text: '先用手機記錄一週的碳足跡再互動分享，比單向講課有收穫，很生活化。' },
+    { aud: 'preschool', topic: 'biodiv', score: 5, text: '繪本加上種子盒實作，小朋友回家還跟爸媽介紹今天認識的植物。' },
+    { aud: 'enterprise', topic: 'transit', score: 4, text: '低碳通勤的試算很實用，但兩節課時間太短，來不及討論公司的接駁方案。' },
+    { aud: 'elem', topic: 'energy', score: 5, text: '太陽能小車實作超好玩，孩子說還想再上這位老師的課。' },
+    { aud: 'community', topic: 'netzero', score: 5, text: '節電小撇步很生活化，里長說要印給全里的長輩參考。' },
+  ];
+  const used = new Set(S.comments.map(c => c.case).filter(Boolean));
+  const recentFirst = list => { const r = list.filter(c => c.date >= '2026-09-01'); return r.length ? r : list; };
+  const COMMENTS = S.comments.map((c, i) => ({ key: `s${i}`, text: c.text, score: c.score, case: c.case ? App.case(c.case) : null }))
+    .concat(EXTRA.map((x, i) => {
+      const rnd = App.rng(`sv-comment-${i}`);
+      let pool = EXEC.filter(c => c.audience === x.aud && c.topic === x.topic && !used.has(c.id));
+      if (!pool.length) pool = EXEC.filter(c => c.audience === x.aud && !used.has(c.id));
+      pool = recentFirst(pool);
+      const c = pool[Math.floor(rnd() * pool.length)];
+      used.add(c.id);
+      return { key: `x${i}`, text: x.text, score: x.score, case: c, lag: 1 + Math.floor(rnd() * 3) };
+    }))
+    .map(m => {
+      const kws = S.keywords.filter(k => KW_MATCH[k.word].some(s => m.text.includes(s))).map(k => k.word);
+      const neg = m.score <= 3 || S.keywords.some(k => k.neg && kws.includes(k.word));
+      const date = m.case ? [App.addDays(m.case.date, m.lag || 1), App.TODAY].sort()[0] : null;
+      return Object.assign(m, { kws, neg, date });
+    })
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const forwarded = new Set();
+  let kwSel = null, cmFilter = 'all', cmAll = false;
+  const CM_PAGE = 6;
+  const kwMax = Math.max(...S.keywords.map(k => k.n));
+  const weight = n => { const r = n / kwMax; return r >= .85 ? 5 : r >= .6 ? 4 : r >= .35 ? 3 : r >= .2 ? 2 : 1; };
+  $('#sv-kw').innerHTML = S.keywords.map(k => `<button type="button" class="kw${k.neg ? ' kw--neg' : ''}" data-w="${weight(k.n)}" data-kw="${esc(k.word)}" aria-pressed="false">${esc(k.word)}<span class="sv-kw__n">${k.n}</span></button>`).join('');
+  const q8 = S.questions.find(q => q.type === 'open');
+  $('#sv-voice-sub').textContent = `第 8 題共 ${fmt.num(q8.count)} 則，依詞彙出現次數歸納；以下為各類代表性意見`;
+  const highlight = (text, words) => {
+    const subs = words.flatMap(w => KW_MATCH[w]).sort((a, b) => b.length - a.length);
+    if (!subs.length) return esc(text);
+    const re = new RegExp(`(${subs.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+    return text.split(re).map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join('');
+  };
+  function renderComments() {
+    $$('#sv-kw .kw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kw === kwSel)));
+    const list = COMMENTS.filter(m => (!kwSel || m.kws.includes(kwSel)) && (cmFilter === 'all' || (cmFilter === 'neg' ? m.neg : !m.neg)));
+    const shown = cmAll ? list : list.slice(0, CM_PAGE);
+    $('#sv-comments').innerHTML = shown.length ? shown.map(m => {
+      const c = m.case;
+      const l = c && lect(c);
+      const act = !c ? '' : forwarded.has(m.key) ? `<span class="sv-done">${icon('check')}已轉知講師</span>` : m.neg ? `<button type="button" class="btn btn--sm" data-forward="${m.key}">${icon('send')}轉知講師</button>` : '';
+      return `<li class="sv-cmt${m.neg ? ' is-neg' : ''}">
+  <span class="sv-cmt__score" aria-label="${m.score} 分">${m.score}<small>分</small></span>
+  <div>
+    <p class="sv-cmt__text">${highlight(m.text, kwSel ? [kwSel] : m.kws)}</p>
+    <p class="sv-cmt__meta">${c ? `${App.caseLink(c)}<span>${esc(c.org)}</span><span>${esc(l.name)} 講師</span><span>${fmt.md(m.date)} 填答</span>` : '<span>由通用 QR code 連結填答，未對應場次</span>'}</p>
+  </div>
+  ${act ? `<div class="sv-cmt__act">${act}</div>` : ''}
+</li>`;
+    }).join('') : `<li>${App.emptyState({ title: '沒有符合的意見', text: '這個關鍵詞目前沒有對應此類型的代表性意見，可以改選「全部」。' })}</li>`;
+    $('#sv-comments-foot').innerHTML = `<span>顯示 ${shown.length}／${list.length} 則代表性意見${kwSel ? `・關鍵詞「${esc(kwSel)}」` : ''}</span><span class="cluster">${kwSel ? '<button type="button" class="btn btn--sm btn--ghost" data-kw-clear>清除關鍵詞</button>' : ''}${list.length > CM_PAGE ? `<button type="button" class="btn btn--sm" data-cm-more>${cmAll ? '收合' : `顯示全部 ${list.length} 則`}</button>` : ''}</span>`;
+    const pending = COMMENTS.filter(m => m.neg && m.case && !forwarded.has(m.key)).length;
+    $('#sv-neg-badge').textContent = pending ? `待轉知 ${pending} 則` : '待改善意見已全數轉知';
+    $('#sv-neg-badge').className = `badge ${pending ? 'badge--clay' : 'badge--ok'}`;
+  }
+  $('#sv-kw').addEventListener('click', e => {
+    const b = e.target.closest('[data-kw]');
+    if (!b) return;
+    kwSel = kwSel === b.dataset.kw ? null : b.dataset.kw;
+    cmAll = false;
+    renderComments();
+  });
+  App.seg($('#sv-cm-filter'), { onChange: v => { cmFilter = v; cmAll = false; renderComments(); } });
+  $('#sv-voice').addEventListener('click', e => {
+    if (e.target.closest('[data-kw-clear]')) { kwSel = null; renderComments(); return; }
+    if (e.target.closest('[data-cm-more]')) { cmAll = !cmAll; renderComments(); return; }
+    const b = e.target.closest('[data-forward]');
+    if (!b) return;
+    const m = COMMENTS.find(x => x.key === b.dataset.forward);
+    forwarded.add(m.key);
+    App.emit('survey-forward');
+    App.toast(`已轉知 ${lect(m.case).name} 講師`, {
+      desc: `${m.case.id} 的意見已去識別化後寄給講師，並副知承辦 ${m.case.owner ? App.staff(m.case.owner).name : '計畫督導'}。`,
+      action: { label: '復原', onClick: () => { forwarded.delete(m.key); App.emit('survey-forward-undo'); } },
+    });
+  });
+
+  /* =====================================================================
+     結果分析 4：講師滿意度排行
+     ===================================================================== */
+  const WATCH_RECENT = 4.6, WATCH_SESSION = 4.4;
+  const LECT = App.LECTURERS.filter(l => l.status === 'active' && l.rating != null).map(l => {
+    const cs = EXEC.filter(c => c.lecturer === l.id);
+    const last3 = cs.slice(-3);
+    const r3 = sum(last3.map(c => c.survey.responses));
+    return { l, cs, n: cs.length, res: sum(cs.map(c => c.survey.responses)), recent: r3 ? sum(last3.map(c => c.survey.avg * c.survey.responses)) / r3 : null, low: cs.filter(c => c.survey.avg < WATCH_SESSION) };
+  }).filter(x => x.n > 0);
+  const digest = new Set();
+  let rkMode = 'top', rkMin = 5;
+  const watchOf = x => x.recent < WATCH_RECENT || x.low.length > 0;
+  function renderRanking() {
+    const pool = LECT.filter(x => x.n >= rkMin);
+    const list = rkMode === 'top'
+      ? pool.slice().sort((a, b) => b.l.rating - a.l.rating || b.res - a.res).slice(0, 10)
+      : pool.filter(watchOf).sort((a, b) => Math.min(a.l.rating, a.recent) - Math.min(b.l.rating, b.recent));
+    $('#sv-rank-sub').textContent = rkMode === 'top' ? `${pool.length} 位講師中滿意度最高者，同分依回收份數排序` : `近 3 場平均低於 ${WATCH_RECENT.toFixed(2)}，或有單場低於 ${WATCH_SESSION.toFixed(2)} 分`;
+    $('#sv-rank').innerHTML = list.length ? list.map((x, i) => {
+      const l = x.l;
+      const spark = x.cs.length > 1 ? App.sparkline(x.cs.map(c => c.survey.avg), { w: 72, h: 28, tone: rkMode === 'watch' ? 'clay' : '' }) : '';
+      const why = rkMode === 'watch' ? `<div class="sv-rank__why">${x.recent < WATCH_RECENT ? `<span class="badge badge--clay">近 3 場平均 ${x.recent.toFixed(2)}</span>` : ''}${x.low.length ? `<span class="badge badge--warn">${x.low.length} 場低於 ${WATCH_SESSION.toFixed(1)}（最近 ${fmt.md(x.low[x.low.length - 1].date)}）</span>` : ''}${digest.has(l.id) ? `<span class="sv-done">${icon('check')}已寄送意見摘要</span>` : `<button type="button" class="btn btn--sm" data-digest="${l.id}">${icon('mail')}寄送意見摘要</button>`}</div>` : '';
+      return `<li class="rank">
+  <span class="rank__n">${i + 1}</span>
+  ${App.avatar(l)}
+  <span class="rank__name"><a href="instructors.html?id=${l.id}">${esc(l.name)}</a><span class="rank__sub">${App.county(l.county).short}・${x.n} 場・回收 ${fmt.num(x.res)} 份</span></span>
+  <span class="sv-rank__spark" title="${x.n} 場逐場滿意度，近 3 場平均 ${x.recent.toFixed(2)}" aria-hidden="true">${spark}</span>
+  <span class="rank__val">${App.score(l.rating)}</span>
+  ${why}
+</li>`;
+    }).join('') : `<li class="sv-rank__empty">符合條件的講師目前都沒有需關注的情形。</li>`;
+    $('#sv-rank-foot').textContent = rkMode === 'top' ? '分數為講師 115 年度平均滿意度' : `共 ${list.length} 位，寄送摘要後由講師自行調整課程`;
+  }
+  App.seg($('#sv-rank-mode'), { onChange: v => { rkMode = v; renderRanking(); } });
+  $('#sv-rank-min').addEventListener('change', e => { rkMin = Number(e.target.value); renderRanking(); });
+  $('#sv-rank').addEventListener('click', e => {
+    const b = e.target.closest('[data-digest]');
+    if (!b) return;
+    const l = App.lecturer(b.dataset.digest);
+    digest.add(l.id);
+    App.emit('survey-digest');
+    App.toast(`已寄送意見摘要給 ${l.name}`, {
+      desc: '內容含近 3 場逐題分數與去識別化的開放意見，講師可於講師專區查看。',
+      action: { label: '復原', onClick: () => { digest.delete(l.id); App.emit('survey-digest-undo'); } },
+    });
+  });
+
+  /* =====================================================================
+     發送與回收 1：各月趨勢
+     ===================================================================== */
+  const monthStats = MONTHS.map(ym => statsOf(EXEC.filter(c => c.date.startsWith(ym))));
+  const mLabels = MONTHS.map(ym => `${Number(ym.slice(5))}月`);
+  App.lineChart($('#sv-trend-rate'), { labels: mLabels, series: [{ name: '回收率', values: monthStats.map(s => Math.round(s.rate * 100)) }], min: 40, max: 80, unit: '%', height: 290, title: '各月問卷回收率（%）' });
+  App.lineChart($('#sv-trend-sat'), { labels: mLabels, series: [{ name: '平均滿意度', values: App.monthly('satisfaction').map(m => m.value) }], min: 4.4, max: 5, decimals: 2, unit: '分', height: 290, title: '各月平均滿意度' });
+  App.seg($('#sv-trend-metric'), { onChange: v => { $('#sv-trend-rate').hidden = v !== 'rate'; $('#sv-trend-sat').hidden = v !== 'sat'; } });
+
+  /* =====================================================================
+     發送與回收 2：自動發送規則
+     ===================================================================== */
+  const RULES = [
+    { key: 'autoSend', title: '活動結束 2 小時後自動寄送', desc: '以 Email 與簡訊寄出填答連結，講師端同步收到現場用 QR code。' },
+    { key: 'qrCard', title: '講師現場發放 QR code 問卷卡', desc: '適合長青與學前場次，可由陪同人員協助填答。' },
+    { key: 'remind7', title: '第 7 日自動提醒未填答者', desc: '只自動提醒一次，避免打擾參與者。' },
+    { key: 'closeDays', title: '回收期限', desc: '期限後停止收件，並納入月結統計。', options: [7, 14, 21] },
+    { key: 'alertLow', title: '收到 1–2 分評價時通知承辦', desc: '同步通知該案承辦，於 3 日內了解狀況。' },
+  ];
+  function renderRules() {
+    $('#sv-rules').innerHTML = RULES.map(r => `<div class="sv-rule">
+  <div><p class="sv-rule__title" id="sv-rule-${r.key}">${r.title}</p><p class="sv-rule__desc">${r.desc}</p></div>
+  ${r.options ? `<select class="select select--sm" data-rule="${r.key}" aria-labelledby="sv-rule-${r.key}">${r.options.map(o => `<option value="${o}"${o === rules[r.key] ? ' selected' : ''}>活動後 ${o} 日</option>`).join('')}</select>`
+    : `<label class="switch"><input type="checkbox" data-rule="${r.key}"${rules[r.key] ? ' checked' : ''} aria-labelledby="sv-rule-${r.key}"><span class="switch__track" aria-hidden="true"></span><span>${rules[r.key] ? '開啟' : '關閉'}</span></label>`}
+</div>`).join('');
+    const last = EXEC[EXEC.length - 1].date;
+    const lastSent = EXEC.filter(c => c.date === last);
+    $('#sv-rules-foot').innerHTML = `<span>最近一次自動寄送：${fmt.rocShort(last)} 共 ${lastSent.length} 場、${fmt.num(sum(lastSent.map(c => c.survey.invited)))} 份</span>`;
+  }
+  $('#sv-rules').addEventListener('change', e => {
+    const el = e.target.closest('[data-rule]');
+    if (!el) return;
+    const r = RULES.find(x => x.key === el.dataset.rule);
+    const prev = rules[r.key];
+    rules[r.key] = r.options ? Number(el.value) : el.checked;
+    App.emit('survey-rules');
+    App.toast(r.options ? `回收期限改為活動後 ${rules[r.key]} 日` : `已${rules[r.key] ? '開啟' : '關閉'}「${r.title}」`, {
+      desc: r.options ? `目前 ${EXEC.filter(isLive).length} 場在回收期內，待提醒 ${remindable().length} 場。` : '設定立即生效，套用於之後寄送的問卷。',
+      action: { label: '復原', onClick: () => { rules[r.key] = prev; App.emit('survey-rules-undo'); } },
+    });
+  });
+
+  /* =====================================================================
+     發送與回收 3：發送紀錄表
+     ===================================================================== */
+  const VIEWS = [
+    { key: 'remind', label: '待提醒', icon: 'bell', test: c => needsRemind(c) && !remindedToday(c) },
+    { key: 'live', label: '回收中', icon: 'clock', test: isLive },
+    { key: 'low', label: '回收率未達 60%', icon: 'alert', test: c => rateOf(c) < GOOD_RATE },
+    { key: 'all', label: '全部場次', icon: 'list', test: () => true },
+  ];
+  const PAGE = 10;
+  let qView = 'live', qMonth = '', qSearch = '', qSort = { key: 'date', dir: -1 }, qPage = 1;
+  $('#sv-q-month').innerHTML = `<option value="">全部月份</option>${MONTHS.map(ym => `<option value="${ym}">${monthLabel(ym)}</option>`).join('')}`;
+  function setView(v) { qView = v; qPage = 1; renderQueue(); }
+  $('#sv-views').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) setView(b.dataset.view); });
+  $('#sv-q-search').addEventListener('input', e => { qSearch = e.target.value.trim().toLowerCase(); qPage = 1; renderQueue(); });
+  $('#sv-q-month').addEventListener('change', e => { qMonth = e.target.value; qPage = 1; renderQueue(); });
+  App.bindSort($('#sv-table'), { onSort: (key, dir) => { qSort = { key, dir }; qPage = 1; renderQueue(); } });
+  const pager = App.pager($('#sv-pager'), { total: 0, page: 1, size: PAGE, onChange: p => { qPage = p; renderQueue(); } });
+  const SORT = { date: c => c.date + c.time, invited: c => c.survey.invited, rate: rateOf, avg: c => c.survey.avg };
+  function queueList() {
+    const view = VIEWS.find(v => v.key === qView);
+    return EXEC.filter(view.test)
+      .filter(c => !qMonth || c.date.startsWith(qMonth))
+      .filter(c => !qSearch || `${c.id} ${c.org} ${lect(c).name} ${where(c)}`.toLowerCase().includes(qSearch))
+      .sort((a, b) => { const x = SORT[qSort.key](a), y = SORT[qSort.key](b); return (x < y ? -1 : x > y ? 1 : 0) * qSort.dir || b.id.localeCompare(a.id); });
+  }
+  function renderQueue() {
+    $('#sv-views').innerHTML = VIEWS.map(v => `<button type="button" class="view" data-view="${v.key}" aria-pressed="${v.key === qView}">${icon(v.icon)}${v.label}<span class="view__n">${EXEC.filter(v.test).length}</span></button>`).join('');
+    const list = queueList();
+    const pages = Math.max(1, Math.ceil(list.length / PAGE));
+    qPage = Math.min(qPage, pages);
+    const rows = list.slice((qPage - 1) * PAGE, qPage * PAGE);
+    $('#sv-tbody').innerHTML = rows.length ? rows.map(c => {
+      const r = rateOf(c);
+      const t = tierOf(c);
+      const live = isLive(c);
+      const auto = rules.remind7 && live && ageOf(c) >= 7;
+      const act = needsRemind(c) && !remindedToday(c) ? `<button type="button" class="btn btn--sm btn--clay" data-remind="${c.id}">${icon('send')}提醒</button>` : remindedToday(c) ? `<span class="sv-done">${icon('check')}今日已提醒</span>` : '';
+      return `<tr>
+  <td data-label="案號">${App.caseLink(c)}</td>
+  <td data-label="申請單位" class="sv-org"><div><span class="cell-main"><a href="application.html?id=${c.id}">${esc(c.org)}</a></span><span class="cell-sub">${where(c)}・${App.audience(c.audience).name}</span></div></td>
+  <td data-label="活動日" class="nowrap">${fmt.rocShort(c.date)}</td>
+  <td data-label="講師" class="col-2nd sv-lect">${App.lecturerLink(lect(c))}</td>
+  <td data-label="寄送" class="num col-2nd">${c.survey.invited}</td>
+  <td data-label="回收率"><div class="sv-rate"><span class="meter${t === 'lo' ? ' meter--clay' : t === 'mid' ? ' meter--sprout' : ''}" role="img" aria-label="回收率 ${pct(r, 0)}"><span style="--p:${r.toFixed(3)}"></span></span><span><b>${pct(r, 0)}</b><small>${c.survey.responses}／${c.survey.invited} 份</small></span></div></td>
+  <td data-label="平均分" class="col-2nd">${App.score(c.survey.avg)}</td>
+  <td data-label="回收狀態"><div class="sv-st">${live ? App.statusBadge('info', `回收中・剩 ${daysLeft(c)} 天`) : App.statusBadge('neutral', '已截止')}${remindedToday(c) ? '<small class="is-done">今日已人工提醒</small>' : auto ? '<small>第 7 日已自動提醒</small>' : ''}</div></td>
+  <td class="col-act${act ? '' : ' is-empty'}" data-label="操作">${act || '<span class="subtle" aria-label="無需處理">—</span>'}</td>
+</tr>`;
+    }).join('') : `<tr><td colspan="10">${App.emptyState({ title: '沒有符合的場次', text: qView === 'remind' ? '回收期內的場次都已達 60% 或今日已提醒。' : '試著切換常用檢視、月份或清除搜尋。' })}</td></tr>`;
+    pager.set(qPage, list.length);
+    const todo = remindable();
+    const allBtn = $('#sv-remind-all');
+    allBtn.disabled = !todo.length;
+    allBtn.querySelector('span').textContent = todo.length ? `提醒全部待提醒（${todo.length}）` : '沒有待提醒場次';
+    $('#sv-queue-sub').textContent = `${EXEC.length} 場已執行講座；活動後第 ${REMIND_AFTER} 日起回收率未達 60% 即列入待提醒`;
+    const lastLive = monthStats[monthStats.length - 1];
+    $('#sv-trend-foot').innerHTML = `<span>${monthLabel(MONTHS[MONTHS.length - 1])}有 ${EXEC.filter(c => isLive(c) && c.date.startsWith(MONTHS[MONTHS.length - 1])).length} 場仍在回收期內，回收率（目前 ${pct(lastLive.rate)}）會再上升</span>`;
+  }
+  $('#sv-tbody').addEventListener('click', e => { const b = e.target.closest('[data-remind]'); if (b) remind([App.case(b.dataset.remind)]); });
+  $('#sv-remind-all').addEventListener('click', () => { const list = remindable(); if (list.length) remind(list); });
+  $('#sv-csv').addEventListener('click', () => {
+    const list = queueList();
+    const rows = [['案號', '申請單位', '縣市', '鄉鎮市區', '活動日', '講師', '服務對象', '寄送份數', '回收份數', '回收率', '平均分', '回收狀態', '今日提醒']];
+    list.forEach(c => rows.push([c.id, c.org, App.county(c.county).name, c.district, fmt.roc(c.date), lect(c).name, App.audience(c.audience).name, c.survey.invited, c.survey.responses, pct(rateOf(c)), c.survey.avg.toFixed(2), isLive(c) ? `回收中（剩 ${daysLeft(c)} 天）` : '已截止', remindedToday(c) ? '是' : '']));
+    App.downloadCSV(`問卷發送紀錄_${VIEWS.find(v => v.key === qView).label}_${fmt.roc(App.TODAY).replace(/\//g, '')}.csv`, rows);
+    App.toast('已匯出問卷發送紀錄', { desc: `共 ${list.length} 場，CSV 檔可直接以 Excel 開啟。` });
+  });
+
+  /* =====================================================================
+     匯出結果報表（頁首）
+     ===================================================================== */
+  $('#sv-export').addEventListener('click', () => {
+    const rows = [['題號', '題型', '題目', '選項／分數', '人數', '百分比']];
+    S.questions.forEach((q, i) => {
+      if (q.type === 'scale') q.counts.forEach((n, j) => rows.push([`Q${i + 1}`, '量表', q.title, `${5 - j} 分 ${SCALE_LABEL[5 - j]}`, n, pct(n / R)]));
+      else if (q.type === 'single') q.options.forEach((o, j) => rows.push([`Q${i + 1}`, '單選', q.title, o, q.counts[j], pct(q.counts[j] / R)]));
+      else rows.push([`Q${i + 1}`, '開放題', q.title, '填寫則數', q.count, pct(q.count / R)]);
+    });
+    rows.push([], ['關鍵詞', '提及次數', '類型']);
+    S.keywords.forEach(k => rows.push([k.word, k.n, k.neg ? '待改善' : '正向']));
+    App.downloadCSV(`滿意度調查結果_115年度_${fmt.roc(App.TODAY).replace(/\//g, '')}.csv`, rows);
+    App.toast('已匯出滿意度調查結果', { desc: `${S.questions.length} 題分布與 ${S.keywords.length} 個關鍵詞，回收 ${fmt.num(R)} 份。` });
+  });
+
+  /* =====================================================================
+     題目編輯：草稿與已發布版本
+     ===================================================================== */
+  const TYPE = { scale: { label: '量表 1–5 分', icon: 'star' }, single: { label: '單選題', icon: 'list' }, open: { label: '開放題', icon: 'message' } };
+  const SCALE_LOW = '非常不同意', SCALE_HIGH = '非常同意';
+  const toModel = q => ({ id: q.id, type: q.type, title: q.title, required: q.type !== 'open', options: q.type === 'single' ? q.options.slice() : ['', ''], low: SCALE_LOW, high: SCALE_HIGH, max: 200 });
+  const clone = list => list.map(q => Object.assign({}, q, { options: q.options.slice() }));
+  const published = { version: 1, date: App.LAUNCH, questions: S.questions.map(toModel) };
+  let draft = clone(published.questions);
+  const opened = new Set();
+  let seq = 0;
+  const sig = q => JSON.stringify([q.type, q.title.trim(), q.required, q.type === 'single' ? q.options.map(o => o.trim()) : q.type === 'scale' ? [q.low.trim(), q.high.trim()] : [q.max]]);
+  const pubOf = id => published.questions.find(p => p.id === id);
+  function draftChanges() {
+    let n = 0;
+    draft.forEach(q => { const p = pubOf(q.id); if (!p || sig(p) !== sig(q)) n++; });
+    published.questions.forEach(p => { if (!draft.some(q => q.id === p.id)) n++; });
+    const common = draft.filter(q => pubOf(q.id)).map(q => q.id);
+    if (common.join() !== published.questions.filter(p => common.includes(p.id)).map(p => p.id).join()) n++;
+    return n;
+  }
+  App.registerCount('svRemind', () => remindable().length || '');
+  App.registerCount('svDraft', () => draftChanges() || '');
+
+  const GRIP = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></g></svg>';
+  const listEl = $('#sv-qlist');
+  const announce = t => { $('#sv-ed-live').textContent = t; };
+  function editHTML(q) {
+    const id = q.id;
+    const typeSpecific = q.type === 'scale'
+      ? `<div class="field"><label class="label req" for="sv-lo-${id}">1 分的標籤</label><input class="input" id="sv-lo-${id}" data-f="low" value="${esc(q.low)}" required maxlength="10" data-error="請輸入 1 分的標籤"></div>
+<div class="field"><label class="label req" for="sv-hi-${id}">5 分的標籤</label><input class="input" id="sv-hi-${id}" data-f="high" value="${esc(q.high)}" required maxlength="10" data-error="請輸入 5 分的標籤"></div>`
+      : q.type === 'single'
+        ? `<div class="field span-2"><span class="label req" id="sv-ol-${id}">選項（2–8 個）</span><div class="sv-opts" role="group" aria-labelledby="sv-ol-${id}">${q.options.map((o, i) => `<div class="sv-opt"><span class="sv-opt__n" aria-hidden="true">${i + 1}</span><div class="field"><label class="label sr-only" for="sv-o-${id}-${i}">選項 ${i + 1}</label><input class="input" id="sv-o-${id}-${i}" data-opt="${i}" value="${esc(o)}" required maxlength="20" data-error="請輸入選項 ${i + 1} 的文字"></div><button type="button" class="icon-btn" data-act="opt-del" data-i="${i}"${q.options.length <= 2 ? ' disabled' : ''} title="移除選項 ${i + 1}">${icon('x')}<span class="icon-btn__label">移除選項 ${i + 1}</span></button></div>`).join('')}</div>${q.options.length < 8 ? `<div><button type="button" class="btn btn--sm btn--ghost" data-act="opt-add">${icon('plus')}新增選項</button></div>` : ''}</div>`
+        : `<div class="field"><label class="label" for="sv-max-${id}">字數上限</label><select class="select" id="sv-max-${id}" data-f="max">${[100, 200, 500].map(n => `<option value="${n}"${n === q.max ? ' selected' : ''}>${n} 字</option>`).join('')}</select></div>`;
+    return `<form class="sv-q__edit" id="sv-qe-${id}" novalidate>
+  <div class="form-alert" role="alert"></div>
+  <div class="form-grid">
+    <div class="field span-2"><label class="label req" for="sv-t-${id}">題目文字</label><input class="input" id="sv-t-${id}" data-f="title" value="${esc(q.title)}" required maxlength="40" data-error="請輸入題目文字"><p class="hint">建議 30 字以內；長青場次以口語、短句為佳。</p></div>
+    <div class="field"><label class="label" for="sv-ty-${id}">題型</label><select class="select" id="sv-ty-${id}" data-f="type">${Object.entries(TYPE).map(([k, t]) => `<option value="${k}"${k === q.type ? ' selected' : ''}>${t.label}</option>`).join('')}</select></div>
+    <div class="field"><span class="label">填答設定</span><label class="switch"><input type="checkbox" data-f="required"${q.required ? ' checked' : ''}><span class="switch__track" aria-hidden="true"></span>必填</label></div>
+    ${typeSpecific}
+  </div>
+  <div class="sv-q__done"><button type="submit" class="btn btn--sm btn--primary">${icon('check')}完成</button></div>
+</form>`;
+  }
+  function renderEditorList() {
+    listEl.innerHTML = draft.length ? draft.map((q, i) => {
+      const open = opened.has(q.id);
+      const p = pubOf(q.id);
+      const state = !p ? '<span class="badge badge--sprout">新增</span>' : sig(p) !== sig(q) ? '<span class="badge badge--clay">已修改</span>' : '';
+      const filled = q.options.filter(o => o.trim()).length;
+      return `<li class="sv-q${open ? ' is-open' : ''}" data-id="${q.id}">
+  <div class="sv-q__row">
+    <button type="button" class="sv-q__handle" aria-label="調整第 ${i + 1} 題的順序" aria-describedby="sv-ed-hint" title="拖曳調整順序">${GRIP}</button>
+    <span class="sv-q__no" aria-hidden="true">${i + 1}</span>
+    <div class="sv-q__main">
+      <p class="sv-q__title${q.title.trim() ? '' : ' is-empty'}">${esc(q.title.trim() || '尚未輸入題目文字')}</p>
+      <p class="sv-q__meta"><span class="badge badge--sky">${icon(TYPE[q.type].icon)}${TYPE[q.type].label}</span><span class="badge ${q.required ? 'badge--neutral' : 'badge--outline'}">${q.required ? '必填' : '選填'}</span>${q.type === 'single' ? `<span class="subtle">${filled} 個選項</span>` : ''}${state}</p>
+    </div>
+    <div class="sv-q__acts">
+      <button type="button" class="icon-btn" data-act="up"${i === 0 ? ' disabled' : ''} title="上移">${icon('arrow-up')}<span class="icon-btn__label">上移</span></button>
+      <button type="button" class="icon-btn" data-act="down"${i === draft.length - 1 ? ' disabled' : ''} title="下移">${icon('arrow-down')}<span class="icon-btn__label">下移</span></button>
+      <button type="button" class="icon-btn" data-act="toggle" aria-expanded="${open}" aria-controls="sv-qe-${q.id}" title="${open ? '收合' : '編輯'}">${icon(open ? 'chevron-up' : 'edit')}<span class="icon-btn__label">${open ? '收合' : '編輯'}</span></button>
+      <button type="button" class="icon-btn sv-q__del" data-act="del" title="刪除">${icon('trash')}<span class="icon-btn__label">刪除</span></button>
+    </div>
+  </div>
+  ${open ? editHTML(q) : ''}
+</li>`;
+    }).join('') : `<li class="sv-qempty">${App.emptyState({ title: '問卷目前沒有題目', text: '從下方新增量表、單選或開放題；至少需要 1 題才能發布。' })}</li>`;
+  }
+  function renderEditorMeta() {
+    const n = draftChanges();
+    $('#sv-ver').innerHTML = `<p class="sv-ver__name">${icon('file')}問卷 v${published.version}</p>
+<p class="sv-ver__meta">${fmt.roc(published.date)} 發布・${published.questions.length} 題・${published.version === 1 ? `已套用於全部 ${EXEC.length} 場` : `${fmt.rocShort(App.addDays(published.date, 1))}起辦理的場次適用`}</p>
+${n ? `<span class="badge badge--clay">${icon('edit')}草稿有 ${n} 項未發布變更</span>` : '<span class="badge badge--ok">草稿與已發布版本相同</span>'}`;
+    $('#sv-publish').disabled = !n;
+    $('#sv-revert').disabled = !n;
+  }
+  const qOf = id => draft.find(q => q.id === id);
+  function move(id, d, focusSel) {
+    const i = draft.findIndex(q => q.id === id), j = i + d;
+    if (j < 0 || j >= draft.length) return;
+    [draft[i], draft[j]] = [draft[j], draft[i]];
+    App.emit('survey-draft');
+    announce(`已將第 ${i + 1} 題移到第 ${j + 1} 題`);
+    const item = $(`.sv-q[data-id="${id}"]`, listEl);
+    const btn = focusSel && $(focusSel, item);
+    (btn && !btn.disabled ? btn : $('.sv-q__handle', item)).focus();
+  }
+  listEl.addEventListener('click', e => {
+    const item = e.target.closest('.sv-q');
+    if (!item) return;
+    const id = item.dataset.id;
+    const q = qOf(id);
+    if (e.target.closest('.sv-q__handle')) {
+      if (!dragMoved) App.toast('拖曳把手即可調整題目順序', { desc: '使用鍵盤時，聚焦把手後按上、下方向鍵移動。', tone: 'info' });
+      return;
+    }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'up' || act === 'down') move(id, act === 'up' ? -1 : 1, `[data-act="${act}"]`);
+    else if (act === 'toggle') {
+      if (opened.has(id)) opened.delete(id); else opened.add(id);
+      renderEditorList();
+      const it = $(`.sv-q[data-id="${id}"]`, listEl);
+      if (opened.has(id)) $('[data-f="title"]', it).focus(); else $('[data-act="toggle"]', it).focus();
+    } else if (act === 'del') {
+      const i = draft.indexOf(q);
+      draft.splice(i, 1);
+      opened.delete(id);
+      App.emit('survey-draft');
+      App.toast(`已刪除第 ${i + 1} 題`, {
+        desc: q.title.trim() || TYPE[q.type].label,
+        action: { label: '復原', onClick: () => { draft.splice(Math.min(i, draft.length), 0, q); App.emit('survey-draft-undo'); } },
+      });
+      const next = $$('.sv-q', listEl)[Math.min(i, draft.length - 1)];
+      if (next) $('.sv-q__handle', next).focus();
+    } else if (act === 'opt-add') {
+      q.options.push('');
+      App.emit('survey-draft');
+      const inputs = $$(`.sv-q[data-id="${id}"] [data-opt]`, listEl);
+      inputs[inputs.length - 1].focus();
+    } else if (act === 'opt-del') {
+      q.options.splice(Number(b.dataset.i), 1);
+      App.emit('survey-draft');
+      $(`.sv-q[data-id="${id}"] [data-opt]`, listEl).focus();
+    }
+  });
+  // 打字只更新資料、題目列與預覽，不重繪清單（游標才不會跳掉）
+  listEl.addEventListener('input', e => {
+    const item = e.target.closest('.sv-q');
+    if (!item || e.target.type === 'checkbox' || e.target.tagName === 'SELECT') return;
+    const q = qOf(item.dataset.id);
+    const f = e.target.dataset.f;
+    if (f === 'title' || f === 'low' || f === 'high') q[f] = e.target.value;
+    else if (e.target.dataset.opt != null) q.options[Number(e.target.dataset.opt)] = e.target.value;
+    else return;
+    if (f === 'title') {
+      const t = $('.sv-q__title', item);
+      t.textContent = q.title.trim() || '尚未輸入題目文字';
+      t.classList.toggle('is-empty', !q.title.trim());
+    }
+    App.emit('survey-draft-input');
+  });
+  listEl.addEventListener('change', e => {
+    const item = e.target.closest('.sv-q');
+    if (!item) return;
+    const q = qOf(item.dataset.id);
+    const f = e.target.dataset.f;
+    if (f === 'type') { q.type = e.target.value; if (q.type === 'open') q.required = false; }
+    else if (f === 'required') q.required = e.target.checked;
+    else if (f === 'max') q.max = Number(e.target.value);
+    else return;
+    App.emit('survey-draft');
+    const sel = $(`.sv-q[data-id="${q.id}"] [data-f="${f}"]`, listEl);
+    if (sel) sel.focus();
+  });
+  listEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const form = e.target;
+    if (!App.validate(form)) return;
+    const id = form.closest('.sv-q').dataset.id;
+    opened.delete(id);
+    renderEditorList();
+    $(`.sv-q[data-id="${id}"] [data-act="toggle"]`, listEl).focus();
+  });
+  listEl.addEventListener('keydown', e => {
+    const h = e.target.closest('.sv-q__handle');
+    if (!h || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    move(h.closest('.sv-q').dataset.id, e.key === 'ArrowUp' ? -1 : 1, '.sv-q__handle');
+  });
+
+  // 拖曳排序：按住把手上下移動，經過其他題目的中線就換位；放開後才寫回草稿
+  let drag = null, dragMoved = false;
+  listEl.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.sv-q__handle');
+    if (!h || e.button > 0) return;
+    e.preventDefault();
+    h.focus();
+    drag = { item: h.closest('.sv-q'), y: e.clientY };
+    dragMoved = false;
+    drag.item.classList.add('is-dragging');
+    listEl.classList.add('is-sorting');
+  });
+  addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (Math.abs(e.clientY - drag.y) > 4) dragMoved = true;
+    const others = $$('.sv-q', listEl).filter(x => x !== drag.item);
+    const before = others.find(x => { const r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+    if (before) { if (drag.item.nextElementSibling !== before) listEl.insertBefore(drag.item, before); }
+    else if (listEl.lastElementChild !== drag.item) listEl.appendChild(drag.item);
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const id = drag.item.dataset.id;
+    const from = draft.findIndex(q => q.id === id);
+    const order = $$('.sv-q', listEl).map(x => x.dataset.id);
+    drag.item.classList.remove('is-dragging');
+    listEl.classList.remove('is-sorting');
+    drag = null;
+    const to = order.indexOf(id);
+    if (to === from) return;
+    draft = order.map(qOf);
+    App.emit('survey-draft');
+    announce(`已將第 ${from + 1} 題移到第 ${to + 1} 題`);
+    $(`.sv-q[data-id="${id}"] .sv-q__handle`, listEl).focus();
+  };
+  addEventListener('pointerup', endDrag);
+  addEventListener('pointercancel', endDrag);
+
+  $$('[data-add]').forEach(b => b.addEventListener('click', () => {
+    const type = b.dataset.add;
+    const q = { id: `n${++seq}`, type, title: '', required: type !== 'open', options: ['', ''], low: SCALE_LOW, high: SCALE_HIGH, max: 200 };
+    draft.push(q);
+    opened.add(q.id);
+    App.emit('survey-draft');
+    const input = $(`.sv-q[data-id="${q.id}"] [data-f="title"]`, listEl);
+    input.focus();
+    input.closest('.sv-q').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'center' });
+  }));
+
+  $('#sv-publish').addEventListener('click', () => {
+    if (!draft.length) { App.toast('至少需要 1 題才能發布', { tone: 'err' }); return; }
+    const bad = draft.find(q => !q.title.trim() || (q.type === 'single' && q.options.some(o => !o.trim())) || (q.type === 'scale' && (!q.low.trim() || !q.high.trim())));
+    if (bad) {
+      opened.add(bad.id);
+      renderEditorList();
+      const form = $(`#sv-qe-${bad.id}`);
+      App.validate(form);
+      form.closest('.sv-q').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'center' });
+      App.toast(`第 ${draft.indexOf(bad) + 1} 題還沒填完`, { tone: 'err', desc: '題目文字、選項與量表標籤都填寫後才能發布。' });
+      return;
+    }
+    const dupe = draft.find(q => q.type === 'single' && new Set(q.options.map(o => o.trim())).size !== q.options.length);
+    if (dupe) { App.toast(`第 ${draft.indexOf(dupe) + 1} 題有重複的選項`, { tone: 'err', desc: '請修改或移除重複的選項後再發布。' }); return; }
+    const prev = { version: published.version, date: published.date, questions: clone(published.questions) };
+    published.version += 1;
+    published.date = App.TODAY;
+    published.questions = clone(draft);
+    opened.clear();
+    App.emit('survey-publish');
+    App.toast(`已發布問卷 v${published.version}`, {
+      desc: `${fmt.rocShort(App.addDays(App.TODAY, 1))}起辦理的場次會寄送新版問卷；既有 ${fmt.num(R)} 份回收結果仍依 v${prev.version} 統計。`,
+      action: { label: '復原', onClick: () => { Object.assign(published, prev); App.emit('survey-publish-undo'); } },
+    });
+  });
+  $('#sv-revert').addEventListener('click', () => {
+    const before = clone(draft);
+    const wasOpen = new Set(opened);
+    draft = clone(published.questions);
+    opened.clear();
+    App.emit('survey-draft');
+    App.toast(`已還原為問卷 v${published.version}`, {
+      desc: '草稿中尚未發布的變更已捨棄。',
+      action: { label: '復原', onClick: () => { draft = before; wasOpen.forEach(id => opened.add(id)); App.emit('survey-draft-undo'); } },
+    });
+  });
+
+  /* ---------- 填答預覽 ---------- */
+  const pvAnswers = new Map();
+  const sample = EXEC[EXEC.length - 1];
+  const LOGO = $('.topbar__brand .logo').outerHTML.replace('class="logo"', 'class="logo logo--on-dark"');
+  function renderPreview() {
+    const n = draft.length;
+    $('#sv-preview').innerHTML = `<div class="sv-pv__bar">${LOGO}<span>環境教育人員推廣運用管理系統</span></div>
+<div class="sv-pv__head">
+  <p class="eyebrow">講座回饋問卷・約 2 分鐘</p>
+  <h3 class="sv-pv__title">${S.title.split(/ (?=[^ ]+$)/).map(t => `<span>${esc(t)}</span>`).join('')}</h3>
+  <p class="sv-pv__ctx">${esc(sample.org)}・${fmt.rocShort(sample.date)}・${esc(lect(sample).name)} 講師<br>填答內容僅用於改善講座品質，不會公開個人資料。</p>
+</div>
+<ol class="sv-pv__list">${n ? draft.map((q, i) => {
+      const title = q.title.trim();
+      const head = `<p class="sv-pv__qt${title ? '' : ' is-empty'}" id="sv-pvq-${q.id}">${i + 1}. ${esc(title || '（題目文字尚未輸入）')}${q.required ? '<span class="sv-pv__req" aria-label="必填">*</span>' : ''}</p>`;
+      if (q.type === 'scale') {
+        const v = pvAnswers.get(q.id);
+        return `<li class="sv-pv__q">${head}<div class="sv-pv__scale" role="group" aria-labelledby="sv-pvq-${q.id}">${[1, 2, 3, 4, 5].map(s => `<button type="button" data-pv="${q.id}" data-v="${s}" aria-pressed="${v === s}" aria-label="${s} 分">${s}</button>`).join('')}</div><p class="sv-pv__ends"><span>1 ${esc(q.low)}</span><span>5 ${esc(q.high)}</span></p></li>`;
+      }
+      if (q.type === 'single') return `<li class="sv-pv__q">${head}<div class="sv-pv__opts" role="radiogroup" aria-labelledby="sv-pvq-${q.id}">${q.options.map((o, k) => `<label class="radio"><input type="radio" name="sv-pv-${q.id}" value="${k}"${pvAnswers.get(q.id) === k ? ' checked' : ''}><span class="check__box" aria-hidden="true"></span>${esc(o.trim() || `選項 ${k + 1}（未填）`)}</label>`).join('')}</div></li>`;
+      return `<li class="sv-pv__q">${head}<textarea class="textarea" aria-labelledby="sv-pvq-${q.id}" maxlength="${q.max}" placeholder="最多 ${q.max} 字" data-pv-text="${q.id}">${esc(pvAnswers.get(q.id) || '')}</textarea></li>`;
+    }).join('') : '<li class="sv-pv__q"><p class="sv-pv__qt is-empty">問卷還沒有題目</p></li>'}</ol>
+<div class="sv-pv__foot"><button type="button" class="btn btn--primary btn--block" data-pv-submit>送出問卷</button><p class="sv-pv__note">預覽模式：填答不會被記錄</p></div>`;
+  }
+  $('#sv-preview').addEventListener('click', e => {
+    const b = e.target.closest('[data-pv]');
+    if (b) {
+      pvAnswers.set(b.dataset.pv, Number(b.dataset.v));
+      $$(`[data-pv="${b.dataset.pv}"]`, $('#sv-preview')).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      return;
+    }
+    if (e.target.closest('[data-pv-submit]')) {
+      const miss = draft.filter(q => q.required && q.type !== 'open' && !pvAnswers.has(q.id)).length;
+      App.toast(miss ? `預覽：還有 ${miss} 題必填未作答` : '預覽：問卷可以送出', { tone: 'info', desc: '這是填答預覽，送出不會產生任何回收資料。' });
+    }
+  });
+  $('#sv-preview').addEventListener('change', e => {
+    const r = e.target.closest('input[type="radio"]');
+    if (r) pvAnswers.set(r.name.replace('sv-pv-', ''), Number(r.value));
+  });
+  $('#sv-preview').addEventListener('input', e => { const t = e.target.closest('[data-pv-text]'); if (t) pvAnswers.set(t.dataset.pvText, t.value); });
+
+  /* =====================================================================
+     初次繪製與資料同步
+     ===================================================================== */
+  function sync(reason = '') {
+    // 編輯草稿只影響題目編輯區；打字時不重繪題目清單
+    if (reason.startsWith('survey-draft') || reason.startsWith('survey-publish')) {
+      renderEditorMeta();
+      renderPreview();
+      if (reason !== 'survey-draft-input') renderEditorList();
+      return;
+    }
+    renderLede();
+    renderHeroStats();
+    paintRings();
+    renderFocus();
+    renderComments();
+    renderRanking();
+    renderRules();
+    renderQueue();
+    renderEditorMeta();
+  }
+  sync();
+  renderEditorList();
+  renderPreview();
+  App.on(d => sync(d.reason || ''));
+});
+</script>
+</body>
+</html>
