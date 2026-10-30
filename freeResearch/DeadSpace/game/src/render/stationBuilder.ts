@@ -167,6 +167,8 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   const wnrm: number[] = []
   const cap = new Batcher()
   const trimMat = Mat.metal(th.trim, 0.5, false)
+  // 室外（行星、衛星）：岩壁沒有燈條、牆頂不是船殼板
+  const outdoor = !!st.outdoor
   const strips = new Map<string, Batcher>()
   const face = (ax: number, az: number, bx: number, bz: number, nx: number, nz: number, uStart: number) => {
     // 由 a 到 b 的垂直牆面（底 0、頂 WALL_H）
@@ -207,7 +209,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         const nc = col + (nx > 0 ? 1 : nx < 0 ? -1 : 0)
         const nr = row + (nz > 0 ? 1 : nz < 0 ? -1 : 0)
         const ri = l.roomOf[nr * l.w + nc]
-        if (ri >= 0 && (col + row) % 3 !== 0) {
+        if (!outdoor && ri >= 0 && (col + row) % 3 !== 0) {
           const color = l.rooms[ri].spec.light ?? th.light
           let bt = strips.get(color)
           if (!bt) strips.set(color, (bt = new Batcher()))
@@ -217,8 +219,9 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
           bt.add(box(nx !== 0 ? 0.04 : 0.86, 0.06, nz !== 0 ? 0.04 : 0.86), Mat.emissive(color, 2.6), mx, 1.62, mz, along)
         }
       }
-      // 牆頂：暗色船殼板＋亮邊
-      cap.add(box(1, 0.06, 1), capMat, col + 0.5, WALL_H + 0.03, -(l.h - row - 0.5))
+      // 牆頂：暗色船殼板＋亮邊（室外岩壁只蓋同材質的頂，不加飾條）
+      cap.add(box(1, 0.06, 1), outdoor ? wallMat : capMat, col + 0.5, WALL_H + 0.03, -(l.h - row - 0.5))
+      if (outdoor) continue
       // 面向房間的牆頂邊緣飾條
       for (const [dc, dr, ox, oz, sx, sz] of [
         [0, -1, 0, -0.47, 1, 0.06],
