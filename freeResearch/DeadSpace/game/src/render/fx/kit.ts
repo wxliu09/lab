@@ -356,14 +356,11 @@ export function ghost(gs: GameScene, root: THREE.Object3D, color: THREE.ColorRep
   root.getWorldPosition(center)
   gs.fx.addTransient(g, dur, gs.zone, (k) => {
     mat.opacity = base * (1 - k) ** 1.5
-    if (o.drift) g.position.copy(o.drift).multiplyScalar(k)
-    if (grow !== 1) {
-      const s = 1 + (grow - 1) * k
-      g.scale.setScalar(s)
-      g.position.x += center.x * (1 - s)
-      g.position.z += center.z * (1 - s)
-      g.position.y += center.y * (1 - s)
-    }
+    // 以單位中心為原點縮放，再加上漂移
+    const s = 1 + (grow - 1) * k
+    g.scale.setScalar(s)
+    g.position.set(center.x * (1 - s), center.y * (1 - s), center.z * (1 - s))
+    if (o.drift) g.position.addScaledVector(o.drift, k)
   })
 }
 

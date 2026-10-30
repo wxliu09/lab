@@ -137,6 +137,24 @@ void main() {
   a *= a;
   gl_FragColor = vec4(vColor.rgb * a * vColor.a, a * vColor.a);
 }`
+const SPARK_PT_VERT = `
+attribute vec4 color;
+varying vec4 vColor;
+void main() {
+  vColor = color;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = 0.07 * (300.0 / -mv.z);
+  gl_Position = projectionMatrix * mv;
+}`
+const SPARK_PT_FRAG = `
+varying vec4 vColor;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float r = dot(d, d) * 4.0;
+  if (r > 1.0 || vColor.a < 0.01) discard;
+  float a = (1.0 - r) * vColor.a;
+  gl_FragColor = vec4(vColor.rgb * 0.5 * a, a);
+}`
 const SMOKE_VERT = `
 attribute float aSize;
 attribute vec4 aColor;
@@ -185,6 +203,12 @@ class Layer {
     if (kind === 'spark') {
       this.geo.setAttribute('color', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage))
       this.obj = new THREE.LineSegments(this.geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+      // 火花頭：同一份 buffer 再畫一次點（尾端 alpha 0 會被丟掉），1px 線之外多一顆亮點，遠看也讀得到
+      const heads = new THREE.Points(this.geo, new THREE.ShaderMaterial({ vertexShader: SPARK_PT_VERT, fragmentShader: SPARK_PT_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+      heads.frustumCulled = false
+      heads.renderOrder = 3
+      heads.raycast = () => {}
+      scene.add(heads)
     } else {
       this.siz = new Float32Array(cap)
       this.geo.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage))

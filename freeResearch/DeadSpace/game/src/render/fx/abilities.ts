@@ -6,7 +6,7 @@ import type { FxEvent } from '../../shared/protocol/messages'
 import { sfx } from '../../audio/sfx'
 import { GEO } from '../fx'
 import { fxTex } from './tex'
-import { at, beam, bolt, dome, entPos, follow3, ghost, pillar, shake, telegraph, viewRoot, W } from './kit'
+import { at, beam, bolt, dome, entPos, follow3, ghost, pillar, shake, shieldMat, telegraph, viewRoot, W } from './kit'
 
 const XV = '#7a3cff'
 const XC = '#33ffd1'
@@ -198,12 +198,16 @@ regFx('coreForm', (gs, _w, f) => {
 })
 
 regFx('coreReform', (gs, _w, f) => {
+  // 裸核重生：四周的光與肉屑被吸回核心，最後一爆長回原形
   const p = at(gs, f)
   sfx('morph', p.x, p.y)
-  gs.fx.emit(f.z, p.x, p.y, 0.6, 50, { color: XV, color2: XC, speed: 1.4, life: 0.6, size: 0.3, up: 0.3, area: 2.2, ring: true, radial: -1, pull: 8, hArea: 1 })
+  gs.fx.ring(f.z, p.x, p.y, 2.6, 0.3, XV, 0.5, { tex: 'ring', k: 2.6, ease: 'in' })
+  gs.fx.glow(f.z, p.x, p.y, 0.8, XC, 1.6, 0.5, { k: 2, grow: 0.4, fadeIn: 0.6 })
+  gs.fx.emit(f.z, p.x, p.y, 0.6, 60, { color: '#c9a8ff', color2: XC, speed: 1.6, life: 0.55, size: 0.3, up: 0.3, area: 2.4, ring: true, radial: -1, pull: 10, hArea: 1.2 })
+  gs.fx.debris(f.z, p.x, p.y, 0.2, 6, 'flesh', { speed: 0.6, size: 0.06, up: 2.2, colors: ['#3a1a5a', '#7a3cff'] })
   gs.fx.after(0.45, () => {
     const q = entPos(gs, f.e) ?? p
-    gs.fx.flash(f.z, q.x, q.y, 1, '#b28cff', 1.4, 0.4)
+    gs.fx.flash(f.z, q.x, q.y, 1, '#b28cff', 1.2, 0.4)
     gs.fx.ring(f.z, q.x, q.y, 0.2, 2.6, XC, 0.5, { tex: 'ring', k: 2.4 })
     gs.fx.debris(f.z, q.x, q.y, 1, 8, 'flesh', { speed: 3, size: 0.08, colors: ['#3a1a5a', '#7a3cff'] })
   })
@@ -211,7 +215,7 @@ regFx('coreReform', (gs, _w, f) => {
 
 regFx('web', (gs, _w, f) => {
   sfx('silk', f.x, f.y)
-  gs.fx.decal(f.z, f.x, f.y, 1.6, 'web', '#e8f6ff', 8, { add: true, k: 0.9, opacity: 0.55, fadeIn: 0.05 })
+  gs.fx.decal(f.z, f.x, f.y, 2.2, 'web', '#e8f6ff', 8, { add: true, k: 1.1, opacity: 0.7, fadeIn: 0.05 })
   gs.fx.emit(f.z, f.x, f.y, 0.3, 14, { color: '#ffffff', speed: 1.4, life: 0.6, size: 0.1, up: 0.6, grav: 3 })
 })
 
@@ -270,18 +274,29 @@ regFx('relocate', (gs, _w, f) => {
   sfx('warp', f.x, f.y)
   const g = new THREE.Group()
   const slit = gs.fx.mesh(GEO.plane, '#05010a', 1, { add: false, side: THREE.DoubleSide, map: fxTex('soft'), opacity: 0.95 })
-  const edge = gs.fx.mesh(GEO.plane, '#b28cff', 3, { side: THREE.DoubleSide, map: fxTex('soft') })
-  edge.scale.set(1.3, 1.08, 1)
-  edge.position.z = -0.01
-  g.add(edge, slit)
+  const glow = gs.fx.mesh(GEO.plane, '#8a4cff', 2.2, { side: THREE.DoubleSide, map: fxTex('soft'), opacity: 0.8 })
+  glow.scale.set(2.2, 1.3, 1)
+  glow.position.z = -0.02
+  const rim = gs.fx.mesh(GEO.plane, '#d8c0ff', 3.5, { side: THREE.DoubleSide, map: fxTex('ring') })
+  rim.scale.set(1.15, 1.05, 1)
+  rim.position.z = 0.01
+  const crack = gs.fx.mesh(GEO.plane, '#ffffff', 4, { side: THREE.DoubleSide, map: fxTex('streak') })
+  crack.rotation.z = Math.PI / 2
+  crack.scale.set(1.2, 0.08, 1)
+  crack.position.z = 0.02
+  g.add(glow, slit, rim, crack)
   g.position.copy(W(f.x, f.y, 1.1))
   const look = new THREE.Vector3()
+  const rm = rim.material as THREE.MeshBasicMaterial
+  const cm = crack.material as THREE.MeshBasicMaterial
   gs.fx.addTransient(g, 0.7, f.z, (k) => {
     look.copy(gs.camera.position)
     look.y = g.position.y
     g.lookAt(look)
     const open = Math.sin(Math.min(1, k * 1.15) * Math.PI)
-    g.scale.set(0.15 + open * 0.75, 2.4 * (0.4 + open * 0.6), 1)
+    g.scale.set(0.12 + open * 0.8, 2.4 * (0.4 + open * 0.6), 1)
+    rm.opacity = open
+    cm.opacity = 1 - open * 0.7
   })
   gs.fx.emit(f.z, f.x, f.y, 1.1, 36, { color: '#b28cff', color2: XC, speed: 0.8, life: 0.6, size: 0.16, up: 0, area: 1.6, ring: true, radial: -1, pull: 9, hArea: 1.6, drag: 0.2 })
   gs.fx.light(f.z, f.x, f.y, 1.2, '#8a4cff', 20, 5, 0.7, { attack: 0.3 })
@@ -310,15 +325,18 @@ regFx('rewind', (gs, _w, f) => {
 })
 
 regFx('masks', (gs, _w, f) => {
+  // 化身／卸面：紫黑色的煙把身體包起來，碎面具片收攏（化身）或炸開（卸面）
   const p = at(gs, f)
   const end = f.s === 'end'
   sfx('morph', p.x, p.y)
-  gs.fx.emit(f.z, p.x, p.y, 0.8, 26, { color: '#1a0a24', speed: 0.8, life: 1.2, size: 0.7, up: 0.8, area: 0.5, swirl: 4, hArea: 1.4, layer: 'smoke', alpha: 0.85 })
-  gs.fx.emit(f.z, p.x, p.y, 1, 22, { color: '#b28cff', color2: XC, speed: 1.2, life: 0.7, size: 0.16, up: 0.4, area: end ? 0 : 1.4, ring: !end, radial: end ? 1 : -1, hArea: 1.4 })
-  gs.fx.debris(f.z, p.x, p.y, 1.2, 8, 'glass', { speed: end ? 2.5 : 1.2, size: 0.07, life: 1, colors: ['#e8dcff', '#b28cff'] })
-  gs.fx.flash(f.z, p.x, p.y, 1.1, '#7a3cff', 0.6, 0.3)
+  gs.fx.flash(f.z, p.x, p.y, p.h * 0.6, '#b28cff', 0.7, 0.35)
+  gs.fx.ring(f.z, p.x, p.y, end ? 0.3 : 1.8, end ? 1.8 : 0.3, '#b28cff', 0.5, { tex: 'ring', k: 2.4, ease: end ? 'out' : 'in' })
+  pillar(gs, f.z, p.x, p.y, 0.55, p.h * 1.2, '#7a3cff', 0.6, { k: 1.6, shrink: !end })
+  gs.fx.emit(f.z, p.x, p.y, 0.8, 26, { color: '#2a1440', speed: 0.8, life: 1.2, size: 0.7, up: 0.8, area: 0.5, swirl: 4, hArea: 1.4, layer: 'smoke', alpha: 0.85 })
+  gs.fx.emit(f.z, p.x, p.y, 1, 30, { color: '#d8c0ff', color2: XC, speed: 1.4, life: 0.7, size: 0.18, up: 0.4, area: end ? 0 : 1.4, ring: !end, radial: end ? 1 : -1, hArea: 1.4 })
+  gs.fx.debris(f.z, p.x, p.y, 1.2, 10, 'glass', { speed: end ? 3 : 1.4, size: 0.08, life: 1, colors: ['#e8dcff', '#b28cff'] })
   const r = viewRoot(gs, f.e)
-  if (r) ghost(gs, r, '#b28cff', 0.45, { opacity: 0.5, grow: end ? 1.3 : 0.8 })
+  if (r) ghost(gs, r, '#b28cff', 0.5, { opacity: 0.55, grow: end ? 1.3 : 0.85 })
 })
 
 // ───────── 變種人 ─────────
@@ -343,12 +361,15 @@ regFx('smash', (gs, _w, f) => {
 })
 
 regFx('bite', (gs, _w, f) => {
+  // 媒介蟲咬：紅色噴濺＋黃綠膿液，咬痕處一閃
   const p = at(gs, f)
   sfx('bite', p.x, p.y)
   const h = Math.min(1.2, p.h * 0.5)
-  gs.fx.emit(f.z, p.x, p.y, h, 12, { color: '#ff4a3a', color2: '#4a0a0a', speed: 2.2, life: 0.45, size: 0.14, up: 0.5, grav: 9 })
-  gs.fx.emit(f.z, p.x, p.y, h, 6, { color: '#c8e84a', color2: '#5a6a10', speed: 1, life: 0.8, size: 0.16, up: 0.2, grav: 3 })
-  gs.fx.decal(f.z, p.x, p.y, 0.7, 'splat', '#4a0a0a', 6, { opacity: 0.7 })
+  gs.fx.flash(f.z, p.x, p.y, h, '#ff4a3a', 0.35, 0.2)
+  gs.fx.emit(f.z, p.x, p.y, h, 20, { color: '#ff5a4a', color2: '#4a0a0a', speed: 2.6, life: 0.5, size: 0.2, up: 0.5, grav: 9 })
+  gs.fx.emit(f.z, p.x, p.y, h, 10, { color: '#ffffff', color2: '#ff3b3b', speed: 3, life: 0.3, size: 1, up: 0.4, grav: 8, layer: 'spark' })
+  gs.fx.emit(f.z, p.x, p.y, h, 8, { color: '#c8e84a', color2: '#5a6a10', speed: 1.2, life: 0.9, size: 0.2, up: 0.2, grav: 3 })
+  gs.fx.decal(f.z, p.x, p.y, 0.9, 'splat', '#7a1010', 6, { opacity: 0.8 })
 })
 
 regFx('burst', (gs, _w, f) => {
@@ -357,7 +378,7 @@ regFx('burst', (gs, _w, f) => {
   sfx('squelch', p.x, p.y)
   sfx('boom', p.x, p.y)
   gs.fx.flash(f.z, p.x, p.y, 0.8, MA, 0.8, 0.25)
-  gs.fx.debris(f.z, p.x, p.y, 0.9, 22, 'flesh', { speed: 5, size: 0.12, up: 1.1 })
+  gs.fx.debris(f.z, p.x, p.y, 0.9, 22, 'flesh', { speed: 5, size: 0.11, up: 1.1, colors: ['#6a1a24', '#4a2030', '#7a3a2a', '#c8b060'] })
   gs.fx.emit(f.z, p.x, p.y, 0.8, 36, { color: '#ff4a3a', color2: '#3a0505', speed: 4, life: 0.7, size: 0.22, up: 0.8, grav: 9 })
   gs.fx.emit(f.z, p.x, p.y, 0.8, 16, { color: '#d8e84a', color2: '#4a5a10', speed: 3, life: 0.8, size: 0.2, up: 0.9, grav: 8 })
   gs.fx.emit(f.z, p.x, p.y, 0.6, 12, { color: '#3a1010', speed: 1.4, life: 1.6, size: 0.9, up: 0.4, layer: 'smoke', alpha: 0.7 })
@@ -367,11 +388,14 @@ regFx('burst', (gs, _w, f) => {
 })
 
 regFx('taint', (gs, _w, f) => {
+  // 污染販賣機（只有變種人看得到）：機身冒出黃綠膿霧、流下黏液
   const p = at(gs, f)
   sfx('squelch', p.x, p.y)
-  gs.fx.emit(f.z, p.x, p.y, 1.6, 20, { color: '#a8e840', color2: '#3a2a4a', speed: 0.6, life: 1.4, size: 0.18, up: 0.1, grav: 3, area: 0.4 })
-  gs.fx.emit(f.z, p.x, p.y, 1.2, 10, { color: '#4a5a2a', speed: 0.5, life: 2, size: 0.7, up: 0.6, layer: 'smoke', alpha: 0.6, area: 0.4 })
-  gs.fx.decal(f.z, p.x, p.y, 1.6, 'splat', '#3a4a14', 20, { opacity: 0.8 })
+  gs.fx.glow(f.z, p.x, p.y, 1.2, '#a8e840', 2.2, 0.8, { k: 1.6, grow: 1.3 })
+  gs.fx.ring(f.z, p.x, p.y, 0.3, 1.8, '#a8e840', 0.6, { tex: 'ring', k: 2 })
+  gs.fx.emit(f.z, p.x, p.y, 1.6, 26, { color: '#c8ff5a', color2: '#4a2a4a', speed: 0.8, life: 1.4, size: 0.22, up: 0.1, grav: 3, area: 0.5 })
+  gs.fx.emit(f.z, p.x, p.y, 1.2, 12, { color: '#6a7a3a', speed: 0.5, life: 2, size: 0.8, up: 0.6, layer: 'smoke', alpha: 0.6, area: 0.4 })
+  gs.fx.decal(f.z, p.x, p.y, 1.8, 'splat', '#5a7a14', 20, { add: true, k: 0.5, opacity: 0.7 })
 })
 
 // ───────── 防護服 ─────────
@@ -380,12 +404,14 @@ regFx('voidBurst', (gs, _w, f) => {
   const r = f.v ?? 2.5
   sfx('void', f.x, f.y)
   sfx('implode', f.x, f.y)
-  const s = gs.fx.mesh(GEO.sphere, '#7a3cff', 1.6, { opacity: 0.6 })
+  const sm = shieldMat('#9b5de5', 2.2, 0)
+  const s = new THREE.Mesh(GEO.sphere, sm)
+  s.raycast = () => {}
   s.position.copy(W(f.x, f.y, 0.6))
-  const sm = s.material as THREE.MeshBasicMaterial
-  gs.fx.addTransient(s, 0.5, f.z, (k) => {
+  gs.fx.addTransient(s, 0.5, f.z, (k, t) => {
     s.scale.setScalar(0.2 + r * (1 - (1 - k) ** 2))
-    sm.opacity = 0.6 * (1 - k) ** 1.5
+    sm.uniforms.uTime.value = t
+    sm.uniforms.uOpacity.value = (1 - k) ** 1.5
   })
   gs.fx.ring(f.z, f.x, f.y, 0.4, r, '#2a0a4a', 0.9, { tex: 'swirl', k: 1, add: false, spin: 6, opacity: 0.8 })
   gs.fx.ring(f.z, f.x, f.y, 0.2, r * 1.1, '#9b5de5', 0.5, { tex: 'ring', k: 2.4 })
