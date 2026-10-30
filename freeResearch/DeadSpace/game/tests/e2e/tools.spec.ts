@@ -92,6 +92,9 @@ test('解鎖只對本機分頁生效；其他分頁沒有收到任何訊息、�
   const hostRecv0 = (await recv(host)).filter((t) => t === 'chat').length
   await bob.keyboard.press('Enter')
   await expect(bob.getByTestId('chatinput')).toBeVisible()
+  // 負載高時聊天框出現與取得焦點之間有落差：明確聚焦後再輸入
+  await bob.getByTestId('chatinput').focus()
+  await expect(bob.getByTestId('chatinput')).toBeFocused()
   await bob.keyboard.type(K, { delay: 15 })
   await bob.keyboard.press('Escape')
   expect(await globals(bob)).toEqual(['undefined', 'undefined'])

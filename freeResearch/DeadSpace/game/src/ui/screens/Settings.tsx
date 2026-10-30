@@ -16,7 +16,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         if (!Array.isArray(v)) throw new Error('not array')
         parsed = v as RTCIceServer[]
       } catch {
-        setErr('JSON 格式錯誤')
+        setErr(t('settings.badJson'))
         return
       }
     }

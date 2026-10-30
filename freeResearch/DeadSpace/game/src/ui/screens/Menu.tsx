@@ -81,7 +81,7 @@ export function Menu() {
         </div>
       </div>
       <div class="foot">
-        {t('menu.netHint', { strategy: loadNetSettings().strategy })} · 致敬 Metastasis（FelFox &amp; Clan Sirs）
+        {t('menu.netHint', { strategy: loadNetSettings().strategy })} · {t('menu.homage')}
       </div>
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </>

@@ -270,9 +270,9 @@ export function CommandCard({ input }: { input: Input | null }) {
   const passives = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target === 'passive')
   const keys = ['Q', 'W', 'E', 'R', 'D', 'F']
   const basic = [
-    { key: 'A', icon: 'attack', name: '攻擊', run: () => (targetMode.value = { kind: 'attack' }) },
-    { key: 'S', icon: 'stop', name: '停止', run: () => sendCmd({ k: 'stop' }) },
-    { key: 'H', icon: 'hold', name: '原地', run: () => sendCmd({ k: 'hold' }) },
+    { key: 'A', icon: 'attack', name: t('cmd.attack'), run: () => (targetMode.value = { kind: 'attack' }) },
+    { key: 'S', icon: 'stop', name: t('cmd.stop'), run: () => sendCmd({ k: 'stop' }) },
+    { key: 'H', icon: 'hold', name: t('cmd.hold'), run: () => sendCmd({ k: 'hold' }) },
   ]
   return (
     <div class="panel cmdcard">
@@ -312,7 +312,7 @@ export function CommandCard({ input }: { input: Input | null }) {
               onMouseEnter={(e) =>
                 setTip({
                   title: `${loc(ab.name)} (${keys[i] ?? ''})`,
-                  body: `${loc(ab.desc)}\n${ab.cd ? `冷卻 ${ab.cd}s · ` : ''}${ab.mana ? `能量 ${ab.mana} · ` : ''}${ab.range ? `射程 ${ab.range}m` : ''}`,
+                  body: `${loc(ab.desc)}\n${ab.cd ? `${t('tip.cd')} ${ab.cd}s · ` : ''}${ab.mana ? `${t('tip.mana')} ${ab.mana} · ` : ''}${ab.range ? `${t('tip.range')} ${ab.range}m` : ''}`,
                   x: e.clientX,
                   y: e.clientY,
                 })
@@ -355,7 +355,7 @@ export function Inventory({ input }: { input: Input | null }) {
               e.preventDefault()
               if (it) sendCmd({ k: 'drop', s: i })
             }}
-            onMouseEnter={(e) => def && setTip({ title: loc(def.name), body: loc(def.desc) + (it && it.charges ? `\n充能 ${it.charges}` : ''), x: e.clientX, y: e.clientY })}
+            onMouseEnter={(e) => def && setTip({ title: loc(def.name), body: loc(def.desc) + (it && it.charges ? `\n${t('tip.charges')} ${it.charges}` : ''), x: e.clientX, y: e.clientY })}
             onMouseLeave={() => setTip(null)}
           >
             <span class="key">{i + 1}</span>
@@ -437,8 +437,8 @@ export function TargetHint() {
   const tm = targetMode.value
   if (!tm) return null
   let name: string
-  if (tm.kind === 'attack') name = '攻擊：點選目標或地面'
-  else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + '：選擇目標（右鍵取消）'
-  else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + '：選擇目標（右鍵取消）'
+  if (tm.kind === 'attack') name = t('target.attack')
+  else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
+  else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
   return <div class="panel banner" style={{ top: '96px', color: 'var(--xeno2)' }}>{name}</div>
 }
