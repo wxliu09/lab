@@ -1372,12 +1372,12 @@ def verdance():
     s.edge_props(65, 50, 70, 56, sides='ns', pattern='xx.')
     for cc, r in ((19, 12), (20, 12), (27, 12), (28, 12)):
         s.at(cc, r, 'x')
-    s.room('meadow', '異星草原', 'Alien Meadow', 'grass', (60, 40), '#c9b8ff', '#9fe7ff')
-    s.room('base', '軍事基地停機場', 'Base Airfield', 'base', (12, 12), '#e8e4ff', '#ffc23d')
-    s.room('barracks', '營舍', 'Barracks', 'quarters', (40, 15), '#ffd9a8', '#c9b8ff')
-    s.room('outpost', '前哨商店群', 'Outpost Bazaar', 'outpost', (49, 54), '#fff0d8', '#c9b8ff')
-    s.room('bunker', '補給掩體', 'Supply Bunker', 'closet', (67, 54), '#ffb46b')
-    s.room('radar', '雷達丘', 'Radar Hill', 'radar', (83, 24), '#b0c4ff', '#ffc23d')
+    s.room('meadow', '異星草原', 'Alien Meadow', 'grass', (60, 40), '#5e5680', '#9fe7ff')
+    s.room('base', '軍事基地停機場', 'Base Airfield', 'base', (12, 12), '#686678', '#ffc23d')
+    s.room('barracks', '營舍', 'Barracks', 'quarters', (40, 15), '#806a50', '#c9b8ff')
+    s.room('outpost', '前哨商店群', 'Outpost Bazaar', 'outpost', (49, 54), '#7a7262', '#c9b8ff')
+    s.room('bunker', '補給掩體', 'Supply Bunker', 'closet', (67, 54), '#7a5434', '#ffb46b')
+    s.room('radar', '雷達丘', 'Radar Hill', 'radar', (83, 24), '#545c7c', '#ffc23d')
     s.expect = {'spawns': 1, 'pads': 8, 'poi': {'s': 24}}
     s.finish(trim=0)
     meta = """
@@ -1452,9 +1452,9 @@ def cinder():
     s.edge_props(5, 5, 20, 14, sides='nw', pattern='x.x..')
     s.edge_props(5, 5, 20, 14, sides='s', pattern='xx...')
     s.scatter(4, 4, 58, 43, 40, 52, clear=2)
-    s.room('surface', '碎石原', 'Rubble Plain', 'rock', (28, 22), '#c8ccd8', '#ff9a4a')
-    s.room('factory', '模組工廠', 'Module Works', 'factory', (12, 12), '#ffd9a8', '#7fd8ff')
-    s.room('crater', '重力坑', 'Gravity Crater', 'crater', (42, 30), '#8fd8ff', '#b28cff')
+    s.room('surface', '碎石原', 'Rubble Plain', 'rock', (28, 22), '#585a64', '#ff9a4a')
+    s.room('factory', '模組工廠', 'Module Works', 'factory', (12, 12), '#7a6850', '#7fd8ff')
+    s.room('crater', '重力坑', 'Gravity Crater', 'crater', (42, 30), '#3e6274', '#b28cff')
     s.expect = {'spawns': 0, 'pads': 4}
     s.finish(trim=0)
     meta = """

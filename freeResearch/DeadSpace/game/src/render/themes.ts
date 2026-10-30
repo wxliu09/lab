@@ -233,11 +233,12 @@ THEMES.portage = {
 }
 
 /** 翠原星：異星草原、淡紫天光、軍事基地混凝土（室外：岩壁、草地）*/
+// 室外站：岩壁上的燈條顏色 = 房間燈色，所以房間燈用低明度色、lightScale 拉高補回亮度（燈條看起來像微光的苔蘚礦脈）
 THEMES.verdance = {
-  wall: 'rock:#6e6674',
+  wall: 'rock:#6a6670',
   wallAccent: '#86c46e',
-  hull: 'rock:#5c5662',
-  trim: 'rock:#7c7486',
+  hull: 'rock:#5a5860',
+  trim: 'rock:#787480',
   floor: {
     grass: { variant: 'grass', tint: '#5f8862' },
     base: { variant: 'concrete', tint: '#6a6c70' },
@@ -247,11 +248,11 @@ THEMES.verdance = {
     radar: { variant: 'concrete', tint: '#5e6066' },
   },
   defaultFloor: { variant: 'grass', tint: '#5f8862' },
-  light: '#e8e0ff',
+  light: '#6a6488',
   ambientSky: '#a49ad8',
   ambientGround: '#33402c',
   ambient: 1.5,
-  lightScale: 0.85,
+  lightScale: 2.2,
   grade: { hue: 0, sat: 0.06, bright: 0.02, contrast: 0.06 },
 }
 
@@ -267,11 +268,11 @@ THEMES.cinder = {
     factory: { variant: 'plate', tint: '#40434a' },
   },
   defaultFloor: { variant: 'rock', tint: '#5a5753' },
-  light: '#dfe6ff',
+  light: '#5a5e6c',
   ambientSky: '#5a6274',
   ambientGround: '#121214',
   ambient: 1.1,
-  lightScale: 1,
+  lightScale: 2.4,
   grade: { hue: 0, sat: -0.12, bright: 0, contrast: 0.1 },
 }
 

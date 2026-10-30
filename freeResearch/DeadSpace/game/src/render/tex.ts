@@ -800,7 +800,8 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
       const slab = wv.id[i]
       const h = 0.55 + (1 - wv.f1[i]) * 0.18 + (big[i] - 0.5) * 0.3 + (fine[i] - 0.5) * 0.12 - crack * 0.45
       height[i] = h
-      const lum = (0.7 + slab * 0.3 + (big[i] - 0.5) * 0.5 + (fine[i] - 0.5) * 0.3) * (1 - crack * 0.65)
+      const cap = mode === 'cap'
+      const lum = (0.72 + slab * (cap ? 0.14 : 0.3) + (big[i] - 0.5) * 0.55 + (fine[i] - 0.5) * 0.35) * (1 - crack * (cap ? 0.35 : 0.65))
       albedo[i * 4] = tr * lum * (0.95 + slab * 0.1)
       albedo[i * 4 + 1] = tg * lum
       albedo[i * 4 + 2] = tb * lum * (1.05 - slab * 0.1)

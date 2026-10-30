@@ -122,12 +122,12 @@ export const VERDANCE: StationDef = {
       '62,52': { clearance: 'janitor' },
     },
     rooms: [
-      { id: 'meadow', name: { zh: '異星草原', en: 'Alien Meadow' }, type: 'grass', seed: [60, 40], light: '#c9b8ff', accent: '#9fe7ff' },
-      { id: 'base', name: { zh: '軍事基地停機場', en: 'Base Airfield' }, type: 'base', seed: [12, 12], light: '#e8e4ff', accent: '#ffc23d' },
-      { id: 'barracks', name: { zh: '營舍', en: 'Barracks' }, type: 'quarters', seed: [40, 15], light: '#ffd9a8', accent: '#c9b8ff' },
-      { id: 'outpost', name: { zh: '前哨商店群', en: 'Outpost Bazaar' }, type: 'outpost', seed: [49, 54], light: '#fff0d8', accent: '#c9b8ff' },
-      { id: 'bunker', name: { zh: '補給掩體', en: 'Supply Bunker' }, type: 'closet', seed: [67, 54], light: '#ffb46b' },
-      { id: 'radar', name: { zh: '雷達丘', en: 'Radar Hill' }, type: 'radar', seed: [83, 24], light: '#b0c4ff', accent: '#ffc23d' },
+      { id: 'meadow', name: { zh: '異星草原', en: 'Alien Meadow' }, type: 'grass', seed: [60, 40], light: '#5e5680', accent: '#9fe7ff' },
+      { id: 'base', name: { zh: '軍事基地停機場', en: 'Base Airfield' }, type: 'base', seed: [12, 12], light: '#686678', accent: '#ffc23d' },
+      { id: 'barracks', name: { zh: '營舍', en: 'Barracks' }, type: 'quarters', seed: [40, 15], light: '#806a50', accent: '#c9b8ff' },
+      { id: 'outpost', name: { zh: '前哨商店群', en: 'Outpost Bazaar' }, type: 'outpost', seed: [49, 54], light: '#7a7262', accent: '#c9b8ff' },
+      { id: 'bunker', name: { zh: '補給掩體', en: 'Supply Bunker' }, type: 'closet', seed: [67, 54], light: '#7a5434', accent: '#ffb46b' },
+      { id: 'radar', name: { zh: '雷達丘', en: 'Radar Hill' }, type: 'radar', seed: [83, 24], light: '#545c7c', accent: '#ffc23d' },
     ],
   },
 }

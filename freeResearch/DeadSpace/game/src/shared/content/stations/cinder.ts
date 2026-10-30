@@ -81,9 +81,9 @@ export const CINDER: StationDef = {
       l: { kind: 'podLanding', solid: false },
     },
     rooms: [
-      { id: 'surface', name: { zh: '碎石原', en: 'Rubble Plain' }, type: 'rock', seed: [28, 22], light: '#c8ccd8', accent: '#ff9a4a' },
-      { id: 'factory', name: { zh: '模組工廠', en: 'Module Works' }, type: 'factory', seed: [12, 12], light: '#ffd9a8', accent: '#7fd8ff' },
-      { id: 'crater', name: { zh: '重力坑', en: 'Gravity Crater' }, type: 'crater', seed: [42, 30], light: '#8fd8ff', accent: '#b28cff' },
+      { id: 'surface', name: { zh: '碎石原', en: 'Rubble Plain' }, type: 'rock', seed: [28, 22], light: '#585a64', accent: '#ff9a4a' },
+      { id: 'factory', name: { zh: '模組工廠', en: 'Module Works' }, type: 'factory', seed: [12, 12], light: '#7a6850', accent: '#7fd8ff' },
+      { id: 'crater', name: { zh: '重力坑', en: 'Gravity Crater' }, type: 'crater', seed: [42, 30], light: '#3e6274', accent: '#b28cff' },
     ],
   },
 }
