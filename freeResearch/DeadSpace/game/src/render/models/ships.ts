@@ -4,7 +4,7 @@ import { regModel, type ModelView } from './index'
 import { Batcher, box, cyl, rbox, sphere } from '../batch'
 import { Mat } from '../materials'
 import { buildStationHull } from '../space/hulls'
-import { makeSun } from '../space/sky'
+import { makePlanet, makeSun } from '../space/sky'
 
 interface ShipLook {
   hull: string
@@ -179,7 +179,7 @@ regModel('space.sun', () => {
   return { root, height: 3, update: (t) => root.children[1]?.scale.setScalar(22 + Math.sin(t * 0.8) * 0.6) }
 })
 
-for (const id of ['nyx', 'adjudicatrix', 'tenshu', 'hulk7', 'bravado', 'caldera', 'vivarium', 'portage']) {
+for (const id of ['nyx', 'adjudicatrix', 'tenshu', 'hulk7', 'bravado', 'caldera', 'vivarium', 'portage', 'pirate']) {
   regModel('station.' + id, (def) => {
     const g = buildStationHull(id, (def?.radius ?? 3) / 4)
     return {
@@ -193,3 +193,71 @@ for (const id of ['nyx', 'adjudicatrix', 'tenshu', 'hulk7', 'bravado', 'caldera'
     }
   })
 }
+
+// ───────── 天體與異物 ─────────
+
+/** 恆星在 three 座標的位置（sim (6.5, -2.9) → three (x, h, -y)）*/
+const SUN_POS = new THREE.Vector3(6.5, 0, 2.9)
+const tmpV = new THREE.Vector3()
+
+function planetModel(radius: number, base: string, atmo: string, extra?: (g: THREE.Group) => (t: number) => void): ModelView {
+  const p = makePlanet(radius, base, atmo, new THREE.Vector3(1, 0.3, 0))
+  const root = new THREE.Group()
+  root.add(p.mesh)
+  const tick = extra?.(root)
+  const mats = p.mesh.children.map((c) => (c as THREE.Mesh).material as THREE.ShaderMaterial)
+  return {
+    root,
+    height: radius * 2,
+    update: (t) => {
+      p.update(t)
+      tick?.(t)
+      // 光照方向跟著恆星走（星體會公轉）
+      root.getWorldPosition(tmpV)
+      const dir = SUN_POS.clone().sub(tmpV).normalize()
+      for (const m of mats) m.uniforms.uSun?.value.copy(dir)
+    },
+  }
+}
+
+regModel('station.verdance', (def) => planetModel(def?.radius ?? 4, '#4f7a58', '#b9a6ff'))
+
+regModel('station.cinder', (def) =>
+  planetModel(def?.radius ?? 2, '#58504a', '#2b2a33', (g) => {
+    // 環形光：重力場的指示環
+    const r = def?.radius ?? 2
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.45, 0.05, 8, 96), Mat.emissive('#9fe7ff', 2.2))
+    ring.rotation.x = Math.PI / 2.3
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(r * 1.7, 0.025, 6, 96), Mat.emissive('#c9b6ff', 1.4))
+    ring2.rotation.x = Math.PI / 2.1
+    g.add(ring, ring2)
+    return (t) => {
+      ring.rotation.z = t * 0.15
+      ring2.rotation.z = -t * 0.09
+    }
+  }),
+)
+
+regModel('station.uo', (def) => {
+  const r = def?.radius ?? 2
+  const root = new THREE.Group()
+  // 扭結的有機外殼＋內部發光：說不上是船還是生物
+  const shell = new THREE.Mesh(new THREE.TorusKnotGeometry(r * 0.7, r * 0.22, 160, 16, 2, 3), Mat.organic('#3a2a4a', '#7dff9a'))
+  shell.castShadow = true
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.35, 2), Mat.emissive('#7dff9a', 3))
+  const halo = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.55, 1), Mat.emissive('#b26bff', 0.9))
+  ;(halo.material as THREE.Material).transparent = true
+  ;(halo.material as THREE.Material).opacity = 0.35
+  root.add(shell, core, halo)
+  return {
+    root,
+    height: r * 2,
+    update: (t) => {
+      shell.rotation.y = t * 0.12
+      shell.rotation.x = Math.sin(t * 0.21) * 0.3
+      const k = 1 + Math.sin(t * 2.3) * 0.08
+      core.scale.setScalar(k)
+      halo.scale.setScalar(1.1 + Math.sin(t * 1.1) * 0.12)
+    },
+  }
+})

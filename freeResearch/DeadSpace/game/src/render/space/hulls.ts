@@ -18,6 +18,7 @@ const SPECS: Record<string, HullSpec> = {
   caldera: { hull: '#7a6a2a', accent: '#ffc23d', glow: '#ff9a3a' },
   vivarium: { hull: '#3a5a4a', accent: '#5cf2a5', glow: '#5cf2a5' },
   portage: { hull: '#5a6a7a', accent: '#4aa8ff', glow: '#4aa8ff' },
+  pirate: { hull: '#4a2c2a', accent: '#ff3b3b', glow: '#ff6a3a' },
 }
 
 /** 站點外觀：中央艙＋環＋輻條＋太陽能板＋對接臂 */

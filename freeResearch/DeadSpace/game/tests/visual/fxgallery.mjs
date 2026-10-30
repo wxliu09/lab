@@ -1,4 +1,4 @@
-// 特效截圖自評：node tests/visual/fxgallery.mjs <outDir> [群組或名稱篩選，逗號分隔] [quality]
+// 特效截圖自評（輸出 <outDir>/<名稱>.jpg）：node tests/visual/fxgallery.mjs <outDir> [群組或名稱篩選，逗號分隔] [quality]
 // 需要先 build test 版並在背景跑 preview：
 //   npx vite build --mode e2e --outDir .e2e-dist
 //   npx vite preview --outDir .e2e-dist --port 4174 --strictPort
@@ -367,7 +367,7 @@ await page.evaluate(() => {
         gs.update = function (dt, t) {
           up.call(this, dt, t)
           gs.update = up
-          queueMicrotask(() => res(document.querySelector('canvas.view').toDataURL('image/png')))
+          queueMicrotask(() => res(document.querySelector('canvas.view').toDataURL('image/jpeg', 0.92)))
         }
       })
     },
@@ -394,13 +394,17 @@ for (const [name, group, spec] of S) {
     inSpace = space
     await page.waitForTimeout(2500)
   }
+  const tp = Date.now()
+  const lapP = (s) => process.env.XC_PROF && console.log('  ', s, Date.now() - tp)
   await page.evaluate(([fakes, space]) => {
     window.__fxg.clear()
     for (const [id, d, dx, dy, extra] of fakes) window.__fxg.fake(id, d, dx, dy, extra ?? {}, space)
   }, [spec.fakes ?? [], space])
   await page.evaluate(([c, space]) => window.__fxg.cam(c[0], c[1], c[2], space), [spec.cam ?? [0, 0, 0.15], space])
+  lapP('fakes')
   // 讓視圖建好、鏡頭到位
   await page.waitForTimeout(900)
+  lapP('settle')
   if (spec.move) {
     // 讓假人移動（殘影只在移動時出現）
     await page.evaluate((id) => {
@@ -435,9 +439,12 @@ for (const [name, group, spec] of S) {
     if (dt > 0) await page.waitForTimeout(dt)
     await page.evaluate(([f, space]) => window.__fxg.fx(f, space), [f, space])
   }
+  lapP('fx')
   await page.waitForTimeout((spec.wait ?? 300) / SLOW)
+  lapP('wait')
   const url = await page.evaluate(() => window.__fxg.capture())
-  writeFileSync(`${out}/${name}.png`, Buffer.from(url.split(',')[1], 'base64'))
+  lapP('capture')
+  writeFileSync(`${out}/${name}.jpg`, Buffer.from(url.split(',')[1], 'base64'))
   console.log('shot', name, ((Date.now() - T0) / 1000).toFixed(1) + 's', JSON.stringify(await page.evaluate(() => window.__xcScene.fx.stats())))
   if (spec.perf) {
     await page.waitForTimeout(1500)
