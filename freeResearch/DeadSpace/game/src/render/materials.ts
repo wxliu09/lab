@@ -1,6 +1,6 @@
 // 材質庫：所有場景材質都經過這裡，並注入戰爭迷霧（視野外降飽和、壓暗、細掃描線）
 import * as THREE from 'three'
-import { fabricSet, floorSet, metalSet, wallSet, type PbrSet } from './tex'
+import { fabricSet, floorSet, metalSet, organicSet, rockSet, rockWallSet, wallSet, type FloorVariant, type PbrSet } from './tex'
 
 export const fogUniforms = {
   uFogTex: { value: null as THREE.Texture | null },
@@ -101,18 +101,51 @@ export function withRim<T extends THREE.MeshStandardMaterial>(m: T, color = '#9f
 }
 
 export const Mat = {
-  floor(variant: 'plate' | 'grate' | 'tile' | 'rubber' | 'concrete', tint: string): THREE.MeshStandardMaterial {
+  floor(variant: FloorVariant, tint: string): THREE.MeshStandardMaterial {
     return std(`floor:${variant}:${tint}`, () => {
-      const m = pbr(floorSet(variant, tint), { metalness: variant === 'concrete' || variant === 'rubber' ? 0.05 : 0.55, vertexColors: true })
+      const soft = variant === 'concrete' || variant === 'rubber' || variant === 'grass' || variant === 'rock'
+      const m = pbr(floorSet(variant, tint), { metalness: soft ? (variant === 'grass' ? 0 : 0.05) : 0.55, vertexColors: true })
       m.normalScale.set(0.8, 0.8)
       return m
     })
   },
+  /** 站內牆板；tint 以 'rock:' 開頭時改用岩壁（室外地表，accent = 苔蘚／礦脈色），'flesh:' 改用有機組織 */
   wall(tint: string, accent: string): THREE.MeshStandardMaterial {
+    if (tint.startsWith('rock:')) return std(`rockwall:${tint}:${accent}`, () => pbr(rockWallSet(tint.slice(5), accent), { metalness: 0, vertexColors: true }))
+    if (tint.startsWith('flesh:')) return std(`fleshwall:${tint}:${accent}`, () => pbr(organicSet(tint.slice(6), accent), { metalness: 0, vertexColors: true }))
     return std(`wall:${tint}:${accent}`, () => pbr(wallSet(tint, accent), { metalness: 0.5, vertexColors: true }))
   },
+  /** 金屬；tint 以 'rock:'／'flesh:' 開頭時改用岩石／有機組織（室外地表、外星腔室的牆頂與邊緣）*/
   metal(tint: string, metalness = 0.7, panels = true): THREE.MeshStandardMaterial {
+    if (tint.startsWith('rock:')) return Mat.rock(tint.slice(5), panels ? 'cap' : 'floor')
+    if (tint.startsWith('flesh:')) return Mat.organic(tint.slice(6), '#5a3a7a')
     return std(`metal:${tint}:${metalness}:${panels}`, () => pbr(metalSet(tint, 11, panels), { metalness }))
+  },
+  /** 岩石（巨石、岩壁頂、雕像）*/
+  rock(tint: string, mode: 'floor' | 'cap' = 'cap'): THREE.MeshStandardMaterial {
+    return std(`rock:${tint}:${mode}`, () => {
+      const m = pbr(rockSet(tint, 7, mode), { metalness: 0 })
+      m.normalScale.set(1.2, 1.2)
+      return m
+    })
+  },
+  /** 濕潤有機組織（外星腔室、植物）：clearcoat 高光＋血管紋 */
+  organic(tint: string, vein = '#33ffd1', veinGlow = 0): THREE.MeshPhysicalMaterial {
+    return std(`organic:${tint}:${vein}:${veinGlow}`, () => {
+      const set = organicSet(tint, vein)
+      return new THREE.MeshPhysicalMaterial({
+        map: set.map,
+        roughnessMap: set.roughnessMap,
+        normalMap: set.normalMap,
+        roughness: 1,
+        metalness: 0,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.25,
+        emissive: vein,
+        emissiveMap: veinGlow > 0 ? set.map : null,
+        emissiveIntensity: veinGlow,
+      })
+    }) as THREE.MeshPhysicalMaterial
   },
   paint(tint: string, roughness = 0.5): THREE.MeshStandardMaterial {
     return std(`paint:${tint}:${roughness}`, () => {

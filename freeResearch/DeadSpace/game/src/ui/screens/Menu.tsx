@@ -1,8 +1,9 @@
 import { useState } from 'preact/hooks'
 import { PLAYER_COLORS, ROOM_ALPHABET } from '../../shared/constants'
-import { createRoom, joinRoom, loadProfile, notice, screen } from '../../client/session'
+import { createRoom, joinRoom, loadProfile, notice, screen, startPractice } from '../../client/session'
 import { t } from '../i18n'
 import { Settings } from './Settings'
+import { codexOpen } from '../hud/Codex'
 import { loadNetSettings } from '../../net/trystero'
 
 export function Menu() {
@@ -64,6 +65,12 @@ export function Menu() {
             </button>
           </div>
           <div class="row">
+            <button class="ghost grow" data-testid="practice" disabled={connecting} title={t('menu.practiceHint')} onClick={() => void startPractice(profile(), 5)}>
+              {t('menu.practice')}
+            </button>
+            <button class="ghost grow" data-testid="codex-open" onClick={() => (codexOpen.value = true)}>
+              {t('codex.title')}
+            </button>
             <button class="ghost grow" onClick={() => setShowSettings(true)}>
               {t('menu.settings')}
             </button>

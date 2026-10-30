@@ -51,6 +51,13 @@ export interface Zone {
 
 const BUCKET = 4
 
+/** 密碼學亂數種子：身分分配與實體 id 用，不得由任何送出去的資料推回 */
+export function secretSeed(): number {
+  const a = new Uint32Array(1)
+  globalThis.crypto.getRandomValues(a)
+  return (a[0] & 0x7fffffff) || 1
+}
+
 function bkey(x: number, y: number): number {
   return (Math.floor(x / BUCKET) + 512) * 4096 + (Math.floor(y / BUCKET) + 512)
 }
@@ -61,9 +68,12 @@ export class World {
   readonly zones: Zone[] = []
   readonly ents = new Map<number, Ent>()
   readonly rng: Rng
+  /** 實體 id 用獨立、不可由地圖種子推得的亂數流（id 會送給 client）*/
+  private readonly idRng: Rng
 
-  constructor(seed: number) {
+  constructor(seed: number, idSeed = secretSeed()) {
     this.rng = new Rng(seed)
+    this.idRng = new Rng(idSeed)
     this.zones.push(this.newZone('space', 'space', null))
   }
 
@@ -112,8 +122,8 @@ export class World {
   }
 
   newId(): number {
-    let id = this.rng.id31()
-    while (this.ents.has(id)) id = this.rng.id31()
+    let id = this.idRng.id31()
+    while (this.ents.has(id)) id = this.idRng.id31()
     return id
   }
 
@@ -122,6 +132,13 @@ export class World {
     this.ents.set(e.id, e)
     this.bucketAdd(e)
     return e
+  }
+
+  /** 換 id（呼叫端負責修正其他地方存的舊 id）*/
+  rekey(e: Ent, nid: number): void {
+    this.ents.delete(e.id)
+    e.id = nid
+    this.ents.set(nid, e)
   }
 
   remove(e: Ent): void {

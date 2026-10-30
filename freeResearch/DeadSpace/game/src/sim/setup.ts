@@ -8,6 +8,7 @@ import { NEUTRAL, type Ent } from './ent'
 import type { Game } from './game'
 import { SPACE_ZONE, type Zone } from './world'
 import { initVendor } from './systems/vendors'
+import { STATION_MANA } from '../shared/content/facilities'
 import '../shared/content/index'
 
 export function stationUnitId(st: StationDef): string {
@@ -19,14 +20,15 @@ export function ensureStationDef(st: StationDef): UnitDef {
   const id = stationUnitId(st)
   const have = UNITS.get(id)
   if (have) return have
+  const mana = STATION_MANA[st.id]
   const def: UnitDef = {
     id,
     name: st.name,
     model: st.space.model,
     hp: st.space.hp,
     hpRegen: st.space.hpRegen,
-    mp: 0,
-    mpRegen: 0,
+    mp: mana?.[1] ?? 0,
+    mpRegen: mana?.[2] ?? 0,
     speed: st.space.speed,
     radius: st.space.radius,
     sight: 30,
@@ -92,6 +94,8 @@ export function addStation(g: Game, st: StationDef, pos?: [number, number], owne
   se.global = true
   se.data.interior = z.id
   se.data.station = st.id
+  const mana = STATION_MANA[st.id]
+  if (mana) se.mp = mana[0]
   z.spaceEnt = se.id
   g.stations.push(st.id)
   for (const poi of z.layout!.pois) placePoi(g, z, poi)
@@ -132,6 +136,34 @@ export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
     case 'enhancer':
       def = unitDef('struct.enhancer')
       break
+    // ───── 各站特殊設施（M7；行為在 systems/facilities.ts）─────
+    case 'fabricator':
+      def = unitDef('fac.fabricator')
+      break
+    case 'moduleSocket':
+      def = unitDef('fac.moduleSocket')
+      break
+    case 'moduleFactory':
+      def = unitDef('fac.moduleFactory')
+      break
+    case 'cellConsole':
+      def = unitDef('fac.cellConsole')
+      break
+    case 'cageConsole':
+      def = unitDef('fac.cageConsole')
+      break
+    case 'codePanel':
+      def = unitDef('fac.codePanel')
+      break
+    case 'penguinStatue':
+      def = unitDef('fac.penguinStatue')
+      break
+    case 'landingSite':
+      def = unitDef('fac.landingSite')
+      break
+    case 'landingPortal':
+      def = unitDef('fac.landingPortal')
+      break
     default:
       // 純標記（出生點、生成點）：存在 zone.data
       ;(markersOf(z)[poi.def.kind] ??= []).push({ x: poi.x, y: poi.y, ref: poi.def.ref })
@@ -142,6 +174,8 @@ export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
   e.data.poi = poi.def.kind
   if (poi.def.ref) e.data.ref = poi.def.ref
   if (poi.def.kind === 'vendor') e.data.vendor = poi.def.ref
+  if (poi.def.data) e.data.poiData = { ...poi.def.data }
+  if (poi.def.kind === 'moduleSocket') e.data.god = true
   // GIT 檢測儀也販售基因檢測器（420 秒後上架）
   if (poi.def.kind === 'git') e.data.vendor = 'gitTester'
   if (e.data.vendor) initVendor(g, e)

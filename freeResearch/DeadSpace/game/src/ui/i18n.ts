@@ -4,6 +4,9 @@ import type { Loc } from '../shared/content/types'
 import { GAME_EN, GAME_ZH } from './strings/game'
 import { ITEM_STRINGS } from '../shared/content/items'
 import { EVENT_EN, EVENT_ZH } from './strings/events'
+import { CODEX_EN, CODEX_ZH } from './strings/codex'
+import { FAC_EN, FAC_ZH } from './strings/facilities'
+import { ITEMS } from '../shared/content/registry'
 
 export type Lang = 'zh' | 'en'
 
@@ -45,6 +48,7 @@ const zh: Dict = {
   'menu.join': '加入房間',
   'menu.code': '房號',
   'menu.practice': '單機練習',
+  'menu.practiceHint': '不連網，和 5 個 AI 玩一局（身分隨機）',
   'menu.settings': '設定',
   'menu.codex': '圖鑑',
   'menu.howto': '怎麼玩',
@@ -161,6 +165,7 @@ const en: Dict = {
   'menu.join': 'Join room',
   'menu.code': 'Room code',
   'menu.practice': 'Practice',
+  'menu.practiceHint': 'Offline game against 5 AI players (random roles)',
   'menu.settings': 'Settings',
   'menu.codex': 'Codex',
   'menu.howto': 'How to play',
@@ -269,8 +274,13 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH)
-Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN)
+
+/** 測試用：某語言是否有這個 key */
+export function hasString(l: Lang, key: string): boolean {
+  return key in dicts[l]
+}
 
 /** 其他模組可以補充字典（內容、事件、系統訊息）*/
 export function addStrings(z: Dict, e: Dict): void {
@@ -294,5 +304,8 @@ export function sysText(raw: string): string {
     const i = p.indexOf('=')
     if (i > 0) args[p.slice(0, i)] = p.slice(i + 1)
   }
+  // 參數 item 是道具 id：換成目前語言的名稱
+  const it = args.item ? ITEMS.get(args.item) : undefined
+  if (it) args.item = loc(it.name)
   return t(key, args)
 }

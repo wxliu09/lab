@@ -13,7 +13,8 @@ import type {
   StartInfo,
 } from '../shared/protocol/messages'
 import { TICK_DT } from '../shared/constants'
-import { World } from './world'
+import { World, secretSeed } from './world'
+import { Rng } from '../shared/rng'
 import type { Ent } from './ent'
 import { setupWorld } from './setup'
 import { assignRoles } from './systems/roles'
@@ -44,6 +45,10 @@ import { installCreatureAi } from './ai/creatures'
 import { installXenoSystems } from './scripts/xeno'
 import { itemRuntime } from './scripts/items'
 import { installEvents, type EventState } from './systems/events'
+import { installStations } from './systems/stations'
+import { installFacilities } from './systems/facilities'
+import { installBots } from './ai/bots'
+import { installRemote } from './scripts/remote'
 import { installMutantSystems } from './scripts/mutant'
 import type { Zone } from './world'
 import type { PoiInstance } from '../shared/layout'
@@ -53,6 +58,8 @@ export type Faction = 'crew' | 'xeno' | 'mutant'
 
 export interface GameInit {
   seed: number
+  /** 身分分配與實體 id 的種子（不可由 seed 推得；省略 = 密碼學亂數）*/
+  secret?: number
   settings: LobbySettings
   players: { slot: number; name: string; color: number; bot: boolean; connected: boolean; spectator: boolean }[]
   send: (slot: number, msg: HostMsg) => void
@@ -115,6 +122,8 @@ export interface GamePlayer {
 
 export class Game {
   readonly world: World
+  /** 身分、職業、出生點等隱藏資訊專用的亂數流 */
+  readonly secret: Rng
   readonly players: GamePlayer[] = []
   readonly settings: LobbySettings
   readonly send: GameInit['send']
@@ -158,7 +167,9 @@ export class Game {
   constructor(init: GameInit) {
     this.settings = init.settings
     this.send = init.send
-    this.world = new World(init.seed)
+    const secret = init.secret ?? secretSeed()
+    this.secret = new Rng(secret)
+    this.world = new World(init.seed, (secret * 2654435761) >>> 1 || 7)
     for (const p of init.players) {
       this.players[p.slot] = {
         slot: p.slot,
@@ -211,6 +222,10 @@ export class Game {
     installXenoSystems(this)
     installMutantSystems(this)
     installEvents(this)
+    installStations(this)
+    installFacilities(this)
+    installBots(this)
+    installRemote(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
 
@@ -424,7 +439,10 @@ export class Game {
     const ev = this.data.events as EventState | undefined
     if (!ev) return 1
     if (ev.apoc) return 0
-    return Math.max(0, Math.min(1, Math.round((1 - this.time / ev.apocAt) * 100) / 100))
+    // 軟計時：5% 一格、每局隨機偏移 ±90 秒，看得出大概但推不出精確時刻
+    const jitter = ((this.data.stabJitter as number | undefined) ??= this.secret.range(-90, 90))
+    const k = 1 - (this.time + jitter) / ev.apocAt
+    return Math.max(0.05, Math.min(1, Math.ceil(k * 20) / 20))
   }
 
   epNext(p: GamePlayer): number {
@@ -509,6 +527,43 @@ export class Game {
   startApocalypse?: (kind: 'fleet' | 'orbit') => boolean
   /** 摧毀站點（M6）*/
   destroyStation?: (key: string) => boolean
+
+  /** 換一個新的實體 id（偽裝、分身時用）：client 端看起來就是舊單位離開視野、新單位出現，
+   * 改過的 client 也無法用 id 的連續性分辨真假。修正所有存舊 id 的地方。*/
+  reassignId(e: Ent): number {
+    const old = e.id
+    const nid = this.world.newId()
+    this.world.rekey(e, nid)
+    const fix = (v: number) => (v === old ? nid : v)
+    for (const p of this.allPlayers()) {
+      p.main = fix(p.main)
+      p.control = fix(p.control)
+      if (p.data.slug === old) p.data.slug = nid
+    }
+    for (const o of this.world.ents.values()) {
+      o.master = fix(o.master)
+      o.piloting = fix(o.piloting)
+      o.pilot = fix(o.pilot)
+      o.lastHitBy = fix(o.lastHitBy)
+      o.windupTarget = fix(o.windupTarget)
+      o.animTarget = fix(o.animTarget)
+      if (o.order?.e === old) o.order.e = nid
+      for (const q of o.queue) if (q.e === old) q.e = nid
+      for (const b of o.buffs) b.src = fix(b.src)
+      if (o.data.aggro === old) o.data.aggro = nid
+    }
+    for (const z of this.world.zones) z.spaceEnt = fix(z.spaceEnt)
+    const sp = this.data.space as { pilots?: Map<number, number> } | undefined
+    if (sp?.pilots) {
+      for (const [k, v] of [...sp.pilots]) {
+        if (k === old) sp.pilots.delete(k)
+        sp.pilots.set(fix(k), fix(v))
+      }
+    }
+    this.onReassign?.(old, nid)
+    return nid
+  }
+  onReassign?: (oldId: number, newId: number) => void
 
   /** 結束本局：送出結算 */
   endGame(winner: EndResult['winner']): void {

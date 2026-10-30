@@ -9,6 +9,8 @@ import { buildModel, type ModelView } from './models/index'
 import { attachSuit } from './models/suits'
 import './models/misc'
 import './models/xeno'
+import './models/mutant'
+import './models/android'
 import { decalTex } from './tex'
 import { W } from './stationBuilder'
 

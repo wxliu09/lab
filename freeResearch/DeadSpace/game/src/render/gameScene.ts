@@ -18,6 +18,8 @@ import { SHIP_BY_ID } from '../shared/content/ships'
 import type { StationDef } from '../shared/content/stations/types'
 import { makeSky } from './space/sky'
 import './models/ships'
+import './models/devices'
+import { updateBuffFx } from './buffFx'
 
 export interface ZoneInfo {
   id: number
@@ -242,6 +244,7 @@ export class GameScene implements SceneLike {
       }, full)
     }
     this.units.sync(w.ents.values(), zid, (e) => this.isStaticStructure(e), dt, t)
+    updateBuffFx(this, dt, t)
     // 燈光池：離鏡頭最近的房間燈
     this.lightT -= dt
     if (view && this.lightT <= 0) {

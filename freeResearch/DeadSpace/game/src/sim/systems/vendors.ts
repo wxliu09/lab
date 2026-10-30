@@ -46,7 +46,7 @@ export function updateVendorView(g: Game, e: Ent): void {
     const wait = s.count < s.max ? Math.max(0, Math.ceil((t < s.availAt ? s.availAt : s.nextAt) - t)) : 0
     parts.push(`${s.item}:${s.count}:${wait}`)
   }
-  e.x2 = { s: parts.join('|'), off: (e.data.disabledUntil ?? 0) > t ? Math.ceil(e.data.disabledUntil - t) : 0, taint: !!e.data.tainted && false }
+  e.x2 = { s: parts.join('|'), off: (e.data.disabledUntil ?? 0) > t ? Math.ceil(e.data.disabledUntil - t) : 0, taint: !!e.data.tainted && false, ...(vendorPowered(g, e) ? {} : { nopow: true }) }
 }
 
 export function stepVendors(g: Game): void {
@@ -55,6 +55,15 @@ export function stepVendors(g: Game): void {
   for (const e of g.world.ents.values()) {
     const st = e.data.stock as StockState[] | undefined
     if (!st || !e.alive) continue
+    // 沒有供電：暫停（補貨計時與開局延遲都不前進）
+    if (!vendorPowered(g, e)) {
+      for (const s of st) {
+        s.nextAt += 0.5
+        if (!s.started) s.availAt += 0.5
+      }
+      updateVendorView(g, e)
+      continue
+    }
     for (const s of st) {
       if (t < s.availAt) continue
       if (!s.started) {
@@ -93,6 +102,14 @@ export function restockAll(g: Game, vendorRef?: string): number {
   return n
 }
 
+/** 販賣機需要的站點電力是否供應中（LQ 倉儲只在女帝號動力分配台切到實驗室模式時運作，研究 03 §4.4）*/
+export function vendorPowered(g: Game, vendor: Ent): boolean {
+  const need = VENDORS.get(vendor.data.vendor as string)?.needsPower
+  if (!need) return true
+  if (need === 'lab') return g.world.zones.some((z) => z.alive && z.key === 'nyx' && !!z.data.labPower)
+  return true
+}
+
 function buy(g: Game, p: GamePlayer, u: Ent, c: Command): void {
   if (c.e === undefined || !c.a || !canSee(g, p, c.e)) return
   const v = g.world.get(c.e)
@@ -105,6 +122,10 @@ function buy(g: Game, p: GamePlayer, u: Ent, c: Command): void {
   }
   if ((v.data.disabledUntil ?? 0) > g.time) {
     g.privateLine(p.slot, 'vendor.offline')
+    return
+  }
+  if (!vendorPowered(g, v)) {
+    g.privateLine(p.slot, 'vendor.noPower')
     return
   }
   const s = st.find((x) => x.item === c.a)

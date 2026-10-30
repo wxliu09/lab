@@ -76,6 +76,8 @@ export type CommandKind =
   | 'follow'
   | 'spec'
   | 'enhance'
+  /** 站內設施操作（動力分配台、模組工廠、隔間門、籠子）：e = 設施實體、a = 動作、s = 選項 */
+  | 'facility'
 
 export interface Command {
   k: CommandKind
@@ -293,7 +295,20 @@ export interface PrivateState {
   doorLog: { door: number; zone: number; log: { t: number; sil: string }[] } | null
   /** 站在政府強化劑旁、可以五選一 */
   enh: boolean
+  /** 站在可操作的設施旁：操作面板（M7）*/
+  fac: FacilityView | null
 }
+
+/** 設施操作面板（只給站在旁邊的本人）*/
+export type FacilityView =
+  /** 女帝號動力分配台：mode = content/facilities.ts POWER_MODES 的索引；cd = 各模式剩餘冷卻秒數；off = 停機秒數 */
+  | { k: 'power'; e: number; mode: number; cd: number[]; off: number }
+  /** 餘燼衛星模組工廠：cur = 生產中的模組（'' = 閒置）、left = 剩餘秒數 */
+  | { k: 'factory'; e: number; cur: string; left: number; off: number }
+  /** 活體庫號隔間門：open[i] = 第 i+1 間隔間的門是否開著 */
+  | { k: 'cells'; e: number; open: boolean[]; off: number }
+  /** 活體庫號籠子：busy = 製籠剩餘秒數、pad = 平台上的標本數 */
+  | { k: 'cage'; e: number; busy: number; pad: number; off: number }
 
 export interface NoteEntry {
   slot: Slot

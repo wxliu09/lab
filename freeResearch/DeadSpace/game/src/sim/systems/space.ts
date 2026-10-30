@@ -26,6 +26,8 @@ export interface ShipInst {
   linkUntil: number
   /** 開局隱藏（王牌飛行員沒人抽到時）*/
   hidden: boolean
+  /** 已裝紅隼升級模組（M7）*/
+  mk2?: boolean
 }
 
 export interface SpaceState {
@@ -113,6 +115,7 @@ function dock(g: Game, inst: ShipInst, zoneId: number, pad: number, hpK = 1): bo
   e.hp = e.maxHp * hpK
   e.data.ship = inst.key
   e.facing = -Math.PI / 2
+  if (inst.mk2) e.x2 = { mk2: 1 }
   pads[pad] = inst.key
   inst.docked = { zone: zoneId, pad }
   inst.dockedEnt = e.id
@@ -131,12 +134,23 @@ function freePad(g: Game, zoneId: number): number {
 export function launchTo(g: Game, inst: ShipInst, x: number, y: number, hpK = 1): Ent {
   const e = g.world.spawn(unitDef('ship.' + inst.def.id), SPACE_ZONE, x, y, NEUTRAL)
   e.global = true
+  if (inst.mk2) applyMk2(e)
   e.hp = e.maxHp * hpK
   e.data.ship = inst.key
   e.data.interior = inst.zone
   g.world.zones[inst.zone].spaceEnt = e.id
   inst.spaceEnt = e.id
   return e
+}
+
+/** 紅隼升級模組（研究 03 §3.2 RUM）：+30000 HP、技能升級、+0.3 移速、+400 傷害（buff）*/
+export function applyMk2(e: Ent): void {
+  e.maxHp += 30000
+  e.data.hpAdd = 30000
+  e.abilities = e.abilities.map((a) => (a === 'ship.payload' ? 'ship.payload2' : a === 'ship.overload' ? 'ship.overload2' : a))
+  e.data.modPassives = ['bf.kestrelMk2']
+  e.data.passives = ['bf.kestrelMk2']
+  e.statsDirty = true
 }
 
 function undock(g: Game, inst: ShipInst): void {
@@ -166,7 +180,8 @@ function consolePos(g: Game, z: Zone): { x: number; y: number; ent?: Ent } | nul
   return c ? { x: c.x, y: c.y, ent: c } : null
 }
 
-function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
+/** 讓載具改由某人駕駛（null = 還給中立）*/
+export function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
   const sp = spaceOf(g)
   const prev = sp.pilots.get(vehicle.id)
   if (prev === (pilot?.id ?? undefined)) return
@@ -193,8 +208,8 @@ function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
   vehicle.color = pilot.anon ? -1 : pilot.color
   p.control = vehicle.id
   if (pilot.def.speed > 0) issue(pilot, null)
-  // 王牌飛行員：駕駛的船／站攻速 +15%；重力學博士：船速 +15%
-  vehicle.data.passives = [...(p.classId === 'ace' ? ['bf.acePilot'] : []), ...(p.phd === 'gravitics' ? ['bf.gravPilot'] : [])]
+  // 王牌飛行員：駕駛的船／站攻速 +15%；重力學博士：船速 +15%（模組帶來的被動保留）
+  vehicle.data.passives = [...((vehicle.data.modPassives as string[] | undefined) ?? []), ...(p.classId === 'ace' ? ['bf.acePilot'] : []), ...(p.phd === 'gravitics' ? ['bf.gravPilot'] : [])]
   vehicle.statsDirty = true
   g.privateLine(p.slot, 'space.accessGranted', { name: vehicle.def.name.zh })
 }
@@ -238,9 +253,19 @@ export function stepSpace(g: Game): void {
     if (!c) continue
     const vehicle = w.get(z.spaceEnt)
     const ship = z.data.ship ? sp.ships.get(z.data.ship as string) : undefined
+    // 自動駕駛交出控制台的人要先離開控制台才能再接手
+    let locked = z.data.consoleLock as number[] | undefined
+    if (locked?.length) {
+      locked = locked.filter((id) => {
+        const u = w.get(id)
+        return !!u && u.alive && u.zone === z.id && Math.hypot(u.x - c.x, u.y - c.y) <= CONSOLE_R + 0.3
+      })
+      z.data.consoleLock = locked
+    }
     let pilot: Ent | null = null
     for (const u of w.query(z.id, c.x, c.y, CONSOLE_R)) {
       if (!u.alive || !u.isMain || u.owner < 0) continue
+      if (locked?.includes(u.id)) continue
       pilot = u
       break
     }
@@ -299,6 +324,8 @@ export function stepSpace(g: Game): void {
 
 function canTravel(g: Game, u: Ent): boolean {
   if (!u.alive || u.def.speed <= 0 || u.tags.has('structure') || u.tags.has('noTarget') || u.data.zoneObj) return false
+  // 防禦無人機不能上船（研究 03 §2.3：不能開船或站）
+  if (u.tags.has('drone')) return false
   if (u.tags.has('cocoon') || u.data.frozen) return false
   void g
   return u.owner >= 0 || u.tags.has('cage')

@@ -1063,7 +1063,7 @@ INSTANT_ITEMS.set('radarPing', (g, buyer, vendor) => {
   if (slot < 0) return false
   let n = 0
   const z = g.world.zones[vendor.zone]
-  if (z?.key === 'minertha') {
+  if (z?.key === 'verdance') {
     // 地表掃描：該區所有非中立、非敵對的單位
     for (const e of g.world.inZone(vendor.zone)) {
       if (e === buyer || !e.alive || e.owner < 0 || e.tags.has('structure') || e.tags.has('noTarget') || e.def.speed <= 0) continue

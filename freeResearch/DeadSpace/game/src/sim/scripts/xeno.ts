@@ -294,7 +294,10 @@ regScript('xeno.steal', (g, ctx) => {
   g.onItemLost?.(t, it)
   if (u.inv) giveItem(g, u, it)
   else dropOnGround(g, u.zone, u.x, u.y, it)
-  g.emitFx({ k: 'steal', z: t.zone, x: t.x, y: t.y, x2: u.x, y2: u.y, e: u.id, e2: t.id, s: it.id })
+  // 偷到什麼只有雙方知道；旁人只看到一道光
+  const both = [u.owner, t.owner].filter((s) => s >= 0)
+  g.emitFx({ k: 'steal', z: t.zone, x: t.x, y: t.y, x2: u.x, y2: u.y, e: u.id, e2: t.id, s: it.id }, both)
+  g.emitFx({ k: 'steal', z: t.zone, x: t.x, y: t.y, x2: u.x, y2: u.y, e: u.id, e2: t.id }, g.allPlayers().map((q) => q.slot).filter((s) => !both.includes(s) && g.players[s]!.view.visible.has(u.id)))
 })
 
 /** 神經毒涎（普攻 onHit）：機體底盤與抗毒者免疫 */
@@ -318,6 +321,8 @@ regScript('xeno.flux', (g, ctx) => {
   const a = g.world.rng.range(0, Math.PI * 2)
   const pt = openNear(g, t.zone, t.x + Math.cos(a) * 1.2, t.y + Math.sin(a) * 1.2)
   const echo = spawnMirror(g, ctx.caster, t, pt, XBF.echo, 900, true)
+  // 目標也換新 id：殘影與本人同時以新單位出現
+  g.reassignId(t)
   g.emitFx({ k: 'flux', z: t.zone, x: t.x, y: t.y, e: t.id })
   g.emitFx({ k: 'summon', z: t.zone, x: pt.x, y: pt.y, e: echo.id, s: echo.def.id })
 })
@@ -373,6 +378,8 @@ regScript('xeno.manifold', (g, ctx, p) => {
   const n = Math.max(1, Number(p.n) || 1)
   const passive = Number(p.pct) === 20 ? XBF.mirage20 : XBF.mirage30
   const life = Number(p.life) || 600
+  // 本尊也換新 id：分身與本尊同時以新單位出現
+  g.reassignId(u)
   const copies: Ent[] = []
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + g.world.rng.range(0, 1)
@@ -837,6 +844,7 @@ regScript('xeno.masks', (g, ctx, p) => {
   u.cast = null
   stopActions(u)
   g.emitFx({ k: 'masks', z: u.zone, x: u.x, y: u.y, e: u.id })
+  g.reassignId(u)
 })
 
 function endMask(g: Game, u: Ent): void {
@@ -853,6 +861,7 @@ function endMask(g: Game, u: Ent): void {
   if (m.noSuit === undefined) delete u.data.noSuit
   else u.data.noSuit = m.noSuit
   g.emitFx({ k: 'masks', z: u.zone, x: u.x, y: u.y, e: u.id, s: 'end' })
+  g.reassignId(u)
 }
 
 regScript('xeno.unmask', (g, ctx) => {

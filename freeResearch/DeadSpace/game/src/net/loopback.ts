@@ -7,25 +7,43 @@ export class LoopbackHub {
   latency = 0
   jitter = 0
   loss = 0
+  /** 'drop' = 掉了就沒了（不可靠通道）；'retransmit' = 模擬 WebRTC 可靠有序通道：掉包的那則晚一個來回才到，後面的排隊等它 */
+  lossMode: 'drop' | 'retransmit' = 'drop'
   rand: () => number = Math.random
+  private lastAt = new Map<string, number>()
 
   connect(id: PeerId): LoopbackTransport {
     const t = new LoopbackTransport(this, id)
-    for (const other of this.peers.values()) {
+    const others = [...this.peers.values()]
+    // 先登錄再通知：對方在 join 事件裡立刻送的訊息才收得到
+    this.peers.set(id, t)
+    for (const other of others) {
       other.joinEv.emit(id)
       t.joinEv.emit(other.selfId)
     }
-    this.peers.set(id, t)
     return t
   }
 
   deliver(from: PeerId, to: PeerId, data: Uint8Array): void {
     const target = this.peers.get(to)
     if (!target) return
-    if (this.loss > 0 && this.rand() < this.loss) return
+    const lost = this.loss > 0 && this.rand() < this.loss
+    if (lost && this.lossMode === 'drop') return
     const copy = data.slice()
-    if (this.latency === 0 && this.jitter === 0) target.msgEv.emit(from, copy)
-    else setTimeout(() => target.msgEv.emit(from, copy), this.latency + this.rand() * this.jitter)
+    if (this.latency === 0 && this.jitter === 0 && !lost) {
+      target.msgEv.emit(from, copy)
+      return
+    }
+    let delay = this.latency + this.rand() * this.jitter + (lost ? 2 * this.latency + 40 : 0)
+    if (this.lossMode === 'retransmit') {
+      // 有序：不能比同一對 peer 的前一則更早到
+      const key = from + '>' + to
+      const now = Date.now()
+      const at = Math.max(now + delay, this.lastAt.get(key) ?? 0)
+      this.lastAt.set(key, at)
+      delay = at - now
+    }
+    setTimeout(() => target.msgEv.emit(from, copy), delay)
   }
 
   remove(id: PeerId): void {

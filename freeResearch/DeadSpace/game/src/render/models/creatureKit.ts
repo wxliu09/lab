@@ -36,9 +36,22 @@ function cached<T extends THREE.Material>(k: string, f: () => T): T {
   return m
 }
 
-/** 濕潤有機皮膚：低金屬、低粗糙度（高光濕亮）、fresnel 邊光。gloss 越小越濕 */
+/** 濕潤有機皮膚：細胞紋＋血管紋貼圖（Mat.organic）、clearcoat 濕亮、fresnel 邊光。gloss 越小越濕 */
 export function flesh(tint: string, rim: string, gloss = 0.3, rimK = 0.55): THREE.MeshStandardMaterial {
   return cached(`flesh:${tint}:${rim}:${gloss}:${rimK}`, () => {
+    const vein = '#' + new THREE.Color(tint).lerp(new THREE.Color(rim), 0.3).multiplyScalar(1.25).getHexString()
+    const m = Mat.organic(tint, vein, 0).clone()
+    m.metalness = 0
+    m.roughness = 0.6 + gloss * 0.8
+    m.clearcoat = THREE.MathUtils.clamp(1.05 - gloss, 0.2, 1)
+    m.clearcoatRoughness = 0.12 + gloss * 0.35
+    return rimmed(withFog(m), rim, rimK)
+  })
+}
+
+/** 光滑表面（骨、面具、衣物殘片）：烤漆貼圖、低金屬、邊光 */
+export function smooth(tint: string, rim: string, gloss = 0.4, rimK = 0.4): THREE.MeshStandardMaterial {
+  return cached(`smooth:${tint}:${rim}:${gloss}:${rimK}`, () => {
     const m = Mat.paint(tint, gloss).clone()
     m.metalness = 0.04
     return rimmed(withFog(m), rim, rimK)
@@ -67,6 +80,21 @@ export function shellPaint(tint: string, rim: string, rough = 0.45, rimK = 0.3):
 /** 半透明膜（clearcoat） */
 export function membrane(tint: string, opacity = 0.35): THREE.MeshPhysicalMaterial {
   return Mat.glass(tint, opacity)
+}
+
+/** 機械零件：烤漆／橡膠金屬＋很淡的邊光（避免與沒有邊光的 Mat.* 共用 shader 程式）*/
+export function metalPart(tint: string, metalness = 0.7, rim = '#9fe7ff', rimK = 0.15): THREE.MeshStandardMaterial {
+  return cached(`mpart:${tint}:${metalness}:${rim}:${rimK}`, () => {
+    const m = Mat.metal(tint, metalness, false).clone()
+    return rimmed(withFog(m), rim, rimK)
+  })
+}
+
+export function rubberPart(tint = '#1d2024', rim = '#9fe7ff'): THREE.MeshStandardMaterial {
+  return cached(`rpart:${tint}:${rim}`, () => {
+    const m = Mat.rubber(tint).clone()
+    return rimmed(withFog(m), rim, 0.12)
+  })
 }
 
 /** 共用發光（不脈動）*/
@@ -185,9 +213,20 @@ export function lumpGeo(r: number, seed: number, amp = 0.18, ws = 14, hs = 10): 
   })
 }
 
-/** 環狀刻度（時鐘骨環）：n 個齒 */
+/** 岩塊／殘骸（低面數十二面體，共用）*/
+export function rockGeo(): THREE.BufferGeometry {
+  return geo('rock', () => new THREE.DodecahedronGeometry(1, 0))
+}
+
+/** Lathe（旋轉體），共用 */
 export function lathe(points: [number, number][], seg = 16): THREE.BufferGeometry {
   return geo(`lathe:${JSON.stringify(points)}:${seg}`, () => new THREE.LatheGeometry(points.map(([x, y]) => new THREE.Vector2(x, y)), seg))
+}
+
+/** 以建構時的縮放為基準乘上倍率（脈動用，避免覆蓋掉橢球的原始比例）*/
+export function scaleBy(o: THREE.Object3D, k: number): void {
+  const b = (o.userData.s0 as THREE.Vector3 | undefined) ?? (o.userData.s0 = o.scale.clone())
+  o.scale.copy(b).multiplyScalar(k)
 }
 
 // ───── 物件組裝 ─────
@@ -364,8 +403,8 @@ export function pustules(
     const g = grp(parent, x, y, z)
     d.set(x - center[0], y - center[1], z - center[2])
     if (d.lengthSq() > 1e-6) g.quaternion.setFromUnitVectors(up, d.normalize())
-    part(g, dome(1, 10, 5, Math.PI * 0.55), skin, 0, -s * 0.25, 0, s * 1.15, s * 0.9, s * 1.15)
-    const c = part(g, dome(1, 10, 5, Math.PI * 0.5), core, 0, s * 0.05, 0, s * 0.8, s * 0.75, s * 0.8)
+    part(g, dome(1, 8, 4, Math.PI * 0.55), skin, 0, -s * 0.25, 0, s * 1.15, s * 0.9, s * 1.15)
+    const c = part(g, dome(1, 8, 3, Math.PI * 0.5), core, 0, s * 0.05, 0, s * 0.8, s * 0.75, s * 0.8)
     c.castShadow = false
     out.push(c)
   }
@@ -464,7 +503,7 @@ export type Tick = (t: number, dt: number) => void
 
 /** 有機肢段：從關節往 -Y 長 l 的橢球（自然收尾）*/
 export function seg(parent: THREE.Object3D, l: number, r: number, m: THREE.Material, rz = r): THREE.Mesh {
-  return part(parent, sphereGeo(), m, 0, -l / 2, 0, r, l * 0.56, rz)
+  return part(parent, sphereGeo(), m, 0, -l / 2, 0, r, l * 0.62, rz)
 }
 
 /** 共用的單位球（縮放成橢球用）*/
@@ -535,17 +574,17 @@ export interface SpiderLeg {
 }
 
 /** 側向的多節腿：hip 在 (x,y,z)，朝 yaw 方向（0 = +X）展開；股節往上 up、脛節往下到地面 */
-export function spiderLeg(parent: THREE.Object3D, x: number, y: number, z: number, yaw: number, l1: number, r: number, up: number, reach: number, m: THREE.Material, tip?: THREE.Material): SpiderLeg {
+export function spiderLeg(parent: THREE.Object3D, x: number, y: number, z: number, yaw: number, l1: number, r: number, up: number, reach: number, m: THREE.Material, tip?: THREE.Material, ws = 8, hs = 5): SpiderLeg {
   const hip = grp(parent, x, y, z, 0, yaw, 0)
   const femur = grp(hip, 0, 0, 0, 0, 0, up)
-  part(femur, sphereGeo(10, 8), m, l1 / 2, 0, 0, l1 * 0.55, r, r)
+  part(femur, sphereGeo(ws, hs), m, l1 / 2, 0, 0, l1 * 0.55, r, r)
   // 膝蓋位置 (l1·cos up, y + l1·sin up)；脛節要從那裡落到地面、水平再伸 reach
   const ky = y + l1 * Math.sin(up)
   const down = Math.atan2(ky, reach)
   const l2 = Math.hypot(ky, reach)
   const knee = grp(femur, l1, 0, 0, 0, 0, -up - down)
-  part(knee, sphereGeo(10, 8), m, l2 / 2, 0, 0, l2 * 0.53, r * 0.75, r * 0.75)
-  if (tip) part(knee, spikeGeo(r * 0.55, 0.22, 5), tip, l2 * 0.97, 0, 0, 1, 1, 1, 0, 0, -Math.PI / 2)
+  part(knee, sphereGeo(ws, hs), m, l2 / 2, 0, 0, l2 * 0.53, r * 0.75, r * 0.75)
+  if (tip) part(knee, spikeGeo(r * 0.55, Math.min(0.22, l2 * 0.3), 4), tip, l2 * 0.97, 0, 0, 1, 1, 1, 0, 0, -Math.PI / 2)
   return { hip, femur, knee, yaw, up, down }
 }
 
@@ -639,7 +678,7 @@ export function animQuad(r: QuadRig, L: Life, t: number, amp = 0.45, bob = 0.06,
   for (let i = 0; i < 2; i++) r.legs[i].hip.rotation.x -= Math.max(0, s) * 0.8
   r.neck.rotation.x = -r.o.neckPitch + Math.sin(t * 0.7 + L.ph) * 0.05 * (1 - k) + k * 0.15 + Math.max(0, s) * 0.3
   r.neck.rotation.y = Math.sin(t * 0.45 + L.ph) * 0.25 * (1 - k) * (1 - L.atk)
-  if (r.tail) r.tail.bend(t, 0.08 + k * 0.06, 0.2 + k * 0.1, 1.6 + k * 2.5, L.ph, 0.11 - k * 0.05, 0)
+  if (r.tail) r.tail.bend(t, 0.08 + k * 0.06, 0.2 + k * 0.1, 1.6 + k * 2.5, L.ph, 0.11 - k * 0.05, Math.sin(t * 0.37 + L.ph) * 0.14 * (1 - k))
   if (L.dead > 0) {
     for (const l of r.legs) foldLeg(l, L.dead)
     topple(r.body, L.dead, 1, r.o.shH)

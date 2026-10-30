@@ -36,8 +36,9 @@ describe('事件導演', () => {
     expect(ev.next).toBeGreaterThanOrEqual(45)
     expect(ev.next).toBeLessThanOrEqual(180)
     sec(h, 900)
+    // 門故障可重複、假結束 5/6 沒有效果，不計入；900 秒內至少要有 2 個生效
     const fired = ev.used.size + (12 - ev.news.length)
-    expect(fired).toBeGreaterThanOrEqual(3)
+    expect(fired).toBeGreaterThanOrEqual(2)
   })
 
   it('事件倍率 0：不會有隨機事件', () => {
@@ -267,9 +268,12 @@ describe('各事件效果', () => {
 describe('末日與穩定度', () => {
   it('穩定度隨時間下降，觸發後歸零', () => {
     const { h, g } = setup(3, { apocalypse: [5, 5] })
-    expect(g.stability()).toBe(1)
+    expect(g.stability()).toBeGreaterThan(0.6)
     sec(h, 150)
-    expect(g.stability()).toBeCloseTo(0.5, 1)
+    // 5% 一格、每局隨機偏移 ±90 秒
+    const mid = g.stability()
+    expect(mid).toBeGreaterThanOrEqual(0.15)
+    expect(mid).toBeLessThanOrEqual(0.85)
     sec(h, 151)
     expect(eventsOf(g).apoc).not.toBe('')
     expect(g.stability()).toBe(0)

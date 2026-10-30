@@ -80,7 +80,8 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
       buffs.push(b.id)
   }
   s.b = buffs
-  if (e.animTarget) s.tg = e.animTarget
+  // 動作目標：只在攻擊／施法中、且觀看者看得到目標時送出（否則會洩漏過去或看不見的目標）
+  if (e.animTarget && (e.anim === 2 || e.anim === 3 || e.anim === 5) && viewer.view.visible.has(e.animTarget)) s.tg = e.animTarget
   if (e.x2) s.x2 = e.x2
   return s
 }
@@ -132,14 +133,37 @@ export function buildSnapshot(g: Game, p: GamePlayer, vis: VisionResult): Snapsh
   for (const f of g.fx) {
     if (f.vis) {
       if (!f.vis.includes(p.slot)) continue
-    } else if (f.e && seen.has(f.e)) {
+      const { vis: _v, ...rest } = f
+      fx.push(rest)
+      continue
+    }
+    const src = f.e ? g.world.get(f.e) : undefined
+    if (f.e && seen.has(f.e)) {
       // 附著在看得到的實體上
-    } else if (!pointVisible(g, vis, f.z, f.x, f.y)) continue
+    } else if (src && src.alive && src.stats.stealth) continue
+    else if (!pointVisible(g, vis, f.z, f.x, f.y)) continue
     const { vis: _v, ...rest } = f
+    // 次要欄位逐一過濾：看不見的實體 id 拿掉；另一端看不見時，攻擊類只保留方向（截短），位移類整個拿掉
+    if (rest.e && !seen.has(rest.e)) delete rest.e
+    if (rest.e2 && !seen.has(rest.e2)) delete rest.e2
+    if (rest.x2 !== undefined && rest.y2 !== undefined && !pointVisible(g, vis, f.z, rest.x2, rest.y2)) {
+      if (rest.k === 'atk' || rest.k === 'proj' || rest.k === 'beam') {
+        const dx = rest.x2 - rest.x
+        const dy = rest.y2 - rest.y
+        const d = Math.hypot(dx, dy) || 1
+        rest.x2 = rest.x + (dx / d) * Math.min(d, 1.5)
+        rest.y2 = rest.y + (dy / d) * Math.min(d, 1.5)
+      } else {
+        delete rest.x2
+        delete rest.y2
+      }
+    }
     fx.push(rest)
   }
   if (p.fxOut.length) fx.push(...p.fxOut.splice(0))
   if (fx.length) snap.fx = fx
+  // 依 id（隨機）排序：同時出現的新單位（分身、殘影）不能從順序看出哪個是本尊
+  snap.e.sort((a, b) => a.i - b.i)
   // 視野來源
   const vsArr = vis.sources.map((s) => [s.zone, Math.round(s.x * 10), Math.round(s.y * 10), Math.round(s.r * 10)] as [number, number, number, number])
   const vsKey = JSON.stringify(vsArr)

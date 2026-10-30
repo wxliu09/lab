@@ -64,6 +64,7 @@ export class GameServer {
   /** server 時鐘（秒），由 tick 推進；測試可直接改 */
   now = 0
   private lobbyDirty = false
+  private games = 0
   private rng: Rng
   hostHidden = false
 
@@ -71,9 +72,12 @@ export class GameServer {
     readonly code: string,
     private io: ServerIO,
     seed = (Math.random() * 0x7fffffff) | 0,
+    /** 身分分配用的種子；省略 = 每局密碼學亂數（測試可固定）*/
+    private secret?: number,
   ) {
     this.rng = new Rng(seed)
-    this.settings.seed = seed
+    // 地圖種子只留在主機：大廳設定裡的 seed 只有主機手動指定時才非 0
+    this.settings.seed = 0
   }
 
   // ───────── 連線事件 ─────────
@@ -300,6 +304,7 @@ export class GameServer {
     if (roster.length === 0) return
     const init: GameInit = {
       seed: this.settings.seed || this.rng.id31(),
+      secret: this.secret !== undefined ? this.secret + this.games : undefined,
       settings: { ...this.settings },
       players: roster.map((p) => ({
         slot: p.slot,
@@ -316,6 +321,7 @@ export class GameServer {
     }
     this.phase = 'game'
     this.game = new Game(init)
+    this.games++
     this.lobbyDirty = true
   }
 

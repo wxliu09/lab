@@ -150,6 +150,8 @@ describe('異形變身（匿名）', () => {
       const m = g.mainOf(p)!
       if (p !== x) g.world.relocate(m, nu.zone, nu.x + 1.5, nu.y)
     }
+    // 只比對搬動之後送出的快照（之前的快照對應的是搬動前的位置）
+    for (const r of h.raw.values()) r.length = 0
     h.ticks(3)
     expect(scanAll(h)).toEqual([])
   })

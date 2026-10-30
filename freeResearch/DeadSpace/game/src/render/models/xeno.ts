@@ -31,6 +31,7 @@ import {
   part,
   pustules,
   rng,
+  smooth,
   sphereGeo,
   spike,
   spikeGeo,
@@ -48,7 +49,7 @@ import {
 const SKIN = () => flesh('#1c1030', XENO.main, 0.26, 0.6)
 const SKIN2 = () => flesh('#2c1a4e', XENO.main, 0.3, 0.55)
 const PLATE = () => chitin('#2b1a44', XENO.main, 0.4)
-const BONE = () => flesh('#c9bde0', XENO.main, 0.5, 0.35)
+const BONE = () => smooth('#c9bde0', XENO.main, 0.5, 0.35)
 const RED = () => chitin('#5e0f1c', XENO.main, 0.45, 0.5)
 const REDSKIN = () => flesh('#240a12', XENO.main, 0.3, 0.55)
 
@@ -255,13 +256,13 @@ regModel('xeno.brute', (def, s) => {
     tailMat: armor,
   })
   // 背甲：大型拱殼＋層疊甲片＋棘刺
-  part(r.chest, dome(1, 18, 8, Math.PI * 0.5), armor, 0, 0.05, -0.02, 0.55, 0.52, 0.6, -0.12)
-  part(r.chest, dome(1, 16, 6, Math.PI * 0.42), dark, 0, 0.22, 0.25, 0.42, 0.32, 0.38, 0.35)
-  part(r.pelvis, dome(1, 16, 7, Math.PI * 0.48), armor, 0, 0.04, 0, 0.38, 0.36, 0.42, -0.1)
-  dorsal(r.spine, 4, 0.0, -0.75, 1.42, 1.08, 0.3, dark, 0)
+  part(r.chest, dome(1, 14, 6, Math.PI * 0.5), armor, 0, 0.05, -0.02, 0.55, 0.52, 0.6, -0.12)
+  part(r.chest, dome(1, 12, 5, Math.PI * 0.42), dark, 0, 0.22, 0.25, 0.42, 0.32, 0.38, 0.35)
+  part(r.pelvis, dome(1, 12, 5, Math.PI * 0.48), armor, 0, 0.04, 0, 0.38, 0.36, 0.42, -0.1)
+  dorsal(r.spine, 3, 0.0, -0.75, 1.42, 1.08, 0.3, dark, 0)
   for (let i = 0; i < 5; i++) {
     const a = (i - 2) * 0.35
-    spike(r.chest, 0.07, 0.36 - Math.abs(i - 2) * 0.05, bone, Math.sin(a) * 0.4, 0.42 - Math.abs(i - 2) * 0.05, 0.0 - Math.abs(i - 2) * 0.05, -0.55, -a * 0.9)
+    spike(r.chest, 0.07, 0.36 - Math.abs(i - 2) * 0.05, bone, Math.sin(a) * 0.4, 0.42 - Math.abs(i - 2) * 0.05, 0.0 - Math.abs(i - 2) * 0.05, -0.55, -a * 0.9, 5)
   }
   // 撞角頭：寬平的額盾＋前伸彎角
   const h = r.head
@@ -283,7 +284,7 @@ regModel('xeno.brute', (def, s) => {
   for (const l of r.legs) {
     ell(l.hip, armor, 0, -0.22, 0.02, 0.19, 0.3, 0.18)
     if (l.front) ell(l.knee, armor, 0, -0.2, 0.05, 0.14, 0.24, 0.15)
-    claws(l.foot, l.front ? 3 : 2, 0.2, 0.04, bone, 0.8)
+    claws(l.foot, 2, 0.2, 0.04, bone, 0.6)
   }
   return view(b, 1, 1.55, (t) => {
     const L = b.L
@@ -342,7 +343,7 @@ regModel('xeno.puppeteer', (def, s) => {
   const halo = liveGlow(tone('#9a5cff', b.v), 2.8 * b.v.gk)
   const w = wraith(fl, skin, bone, gl)
   // 頭後光環（雙環）
-  const hg = grp(w.head, 0, 0.05, -0.2)
+  const hg = grp(w.head, 0, 0.08, -0.2, -0.45)
   const h1 = part(hg, torus(0.34, 0.02, 6, 44), halo)
   const h2 = part(hg, torus(0.25, 0.01, 4, 36), halo, 0, 0, 0.02)
   for (let i = 0; i < 8; i++) {
@@ -640,9 +641,10 @@ regModel('xeno.phantasm', (def, s) => {
   const main = phantasmBody(fl, skin, cloak, blade, gl)
   // 殘影：同一副身體換成半透明紫青，落後並偏移
   const ghostM = [liveGlass('#8a5cff', 0.22), liveGlass(XENO.acc, 0.14)]
-  ghostM.forEach((m) => {
-    m.emissive.set(ghostM.indexOf(m) ? XENO.acc : '#7a3cff')
-    m.emissiveIntensity = 0.6 * b.v.gk
+  ghostM.forEach((m, i) => {
+    m.emissive.set(i ? XENO.acc : '#9a5cff')
+    m.emissiveIntensity = 1.4 * b.v.gk
+    m.blending = THREE.AdditiveBlending
   })
   const ghosts = ghostM.map((m) => phantasmBody(fl, m, m, m, m))
   return view(b, 1.25, 2.35, (t) => {
@@ -783,9 +785,9 @@ regModel('xeno.hydra', (def, s) => {
   const necks: Tentacle[] = []
   const heads: THREE.Group[] = []
   for (let i = 0; i < 3; i++) {
-    const a = (i - 1) * 0.8
-    const g = grp(base3, Math.sin(a) * 0.32, 0.12, 0.22 + Math.cos(a) * 0.12, 0.75, a, 0)
-    const N = new Tentacle(g, { len: 1.05, r0: 0.11, r1: 0.075, bones: 5, tub: 12, rad: 8, ridge: 0.1 }, skin)
+    const a = (i - 1) * 1.05
+    const g = grp(base3, Math.sin(a) * 0.34, 0.12, 0.2 + Math.cos(a) * 0.14, 0.7, a, 0)
+    const N = new Tentacle(g, { len: 1.3, r0: 0.11, r1: 0.07, bones: 5, tub: 12, rad: 8, ridge: 0.1 }, skin)
     const h = grp(N.tip, 0, 0.05, 0, 0.9)
     ell(h, skin, 0, 0, 0.08, 0.1, 0.08, 0.16)
     part(h, dome(1, 10, 4, Math.PI * 0.45), armor, 0, 0.03, 0.05, 0.11, 0.08, 0.17)
@@ -931,7 +933,7 @@ regModel('xeno.voidwalker', (def, s) => {
   const hover = 0.55
   const fl = grp(b.root, 0, hover, 0)
   const skin = flesh('#0a0814', '#a070ff', 0.2, 0.9)
-  const bone = flesh('#3a2e52', '#a070ff', 0.4, 0.6)
+  const bone = smooth('#3a2e52', '#a070ff', 0.4, 0.6)
   const gl = liveGlow(tone('#b48cff', b.v), 3 * b.v.gk)
   const voidC = liveGlow(tone('#6a2cff', b.v), 2.4 * b.v.gk)
   const w = wraith(fl, skin, bone, gl)
@@ -1004,7 +1006,7 @@ regModel('xeno.chronarch', (def, s) => {
   const vio = liveGlow(tone('#9a5cff', b.v), 2.4 * b.v.gk)
   const w = wraith(fl, skin, bone, gl)
   // 背後的大骨環＝鐘面：十二道骨齒、兩根指針
-  const clock = grp(fl, 0, 1.55, -0.38)
+  const clock = grp(fl, 0, 1.55, -0.42, -0.5)
   part(clock, torus(0.95, 0.06, 6, 56), bone)
   part(clock, torus(0.8, 0.018, 4, 48), vio)
   for (let i = 0; i < 12; i++) {
@@ -1055,10 +1057,10 @@ regModel('xeno.chronarch', (def, s) => {
     beat(vio, 2.4 * b.v.gk, t, L, 2, 0.3)
     if (L.dead > 0) {
       drop(fl, L.dead, hover)
-      clock.rotation.x = L.dead * 1.2
+      clock.rotation.x = -0.5 - L.dead * 1.0
     } else {
       fl.scale.y = 1
-      clock.rotation.x = 0
+      clock.rotation.x = -0.5
     }
   })
 })
@@ -1070,7 +1072,7 @@ regModel('xeno.mimic', (def, s) => {
   const skin = flesh('#2a1446', XENO.main, 0.22, 0.6)
   const skin2 = flesh('#4a2470', '#33ffd1', 0.2, 0.5)
   const irid = liveLiquid(tone('#5ad8ff', b.v), 0.45, 0.7 * b.v.gk)
-  const mask = flesh('#e8e0d8', XENO.main, 0.45, 0.25)
+  const mask = smooth('#e8e0d8', XENO.main, 0.45, 0.25)
   const gl = liveGlow(tone(XENO.acc, b.v), 2.6 * b.v.gk)
   const body = grp(b.root)
   // 起伏的肉團
@@ -1142,7 +1144,7 @@ regModel('xeno.mimic', (def, s) => {
 regModel('xeno.timeZombie', (def, s) => {
   const b = base(def, s, 4.5, 0.8)
   const skin = flesh('#6c6478', XENO.main, 0.55, 0.45)
-  const suit = flesh('#2e3846', '#9fe7ff', 0.75, 0.3)
+  const suit = smooth('#2e3846', '#9fe7ff', 0.75, 0.3)
   const crystal = liveLiquid(tone('#9a5cff', b.v), 0.65, 1.2 * b.v.gk)
   const gl = liveGlow(tone(XENO.acc, b.v), 2.4 * b.v.gk)
   const r = buildBiped(b.root, {
@@ -1338,16 +1340,20 @@ regModel('xeno.cocoon', (_def, s) => {
     const a = (i / 7) * Math.PI * 2
     part(root, hornGeo(0.75, 0.07, 0.6, 6, 5), strand, Math.sin(a) * 0.5, 0.25, Math.cos(a) * 0.5, 1, 1, 1, 1.9, a, 0)
   }
+  let deadAt = -1
   return {
     root,
     height: 2.45,
-    update(t) {
+    update(t, _dt, _sp, state) {
+      if (state === 4 && deadAt < 0) deadAt = t
+      if (state !== 4) deadAt = -1
+      const d = deadAt < 0 ? 0 : Math.min(1, (t - deadAt) / 0.9)
       // 心跳式雙重脈動
       const c = (t * 0.9 + ph) % 1
-      const h = Math.exp(-Math.pow((c - 0.1) * 14, 2)) + 0.6 * Math.exp(-Math.pow((c - 0.3) * 14, 2))
-      pulse.scale.set(1 + h * 0.05, 1 + h * 0.03, 1 + h * 0.05)
-      core.emissiveIntensity = 2 + h * 3
-      vio.emissiveIntensity = 1.6 + h * 2.4
+      const h = Math.exp(-Math.pow((c - 0.1) * 14, 2)) * (1 - d) + 0.6 * Math.exp(-Math.pow((c - 0.3) * 14, 2)) * (1 - d)
+      pulse.scale.set((1 + h * 0.05) * (1 + d * 0.15), (1 + h * 0.03) * (1 - d * 0.6), (1 + h * 0.05) * (1 + d * 0.15))
+      core.emissiveIntensity = (2 + h * 3) * (1 - d * 0.9)
+      vio.emissiveIntensity = (1.6 + h * 2.4) * (1 - d * 0.9)
       inner.scale.set(0.5 + h * 0.06, 0.75 + h * 0.05, 0.5 + h * 0.06)
       petals.forEach((p, i) => (p.rotation.z = Math.sin(t * 1.3 + i) * 0.015))
     },
@@ -1377,8 +1383,8 @@ const petalCache = new Map<string, THREE.BufferGeometry>()
 regModel('xeno.egg', (_def, s) => {
   const root = new THREE.Group()
   const ph = s.i * 1.3
-  const leath = flesh('#3a2458', XENO.main, 0.18, 0.6)
-  const memb = liveLiquid('#7a3cff', 0.5, 0.5)
+  const leath = flesh('#4a2c70', XENO.acc, 0.16, 0.45)
+  const memb = liveLiquid('#9a6cff', 0.5, 0.8)
   const core = liveGlow('#33ffd1', 2.6)
   const slime = liveLiquid('#4a2a80', 0.6, 0.35)
   const egg = grp(root)
@@ -1392,6 +1398,8 @@ regModel('xeno.egg', (_def, s) => {
     [0.08, 0.66],
   ]
   part(egg, lathe(prof, 18), leath)
+  // 濕潤的外膜（半透明、略大一圈）
+  part(egg, lathe(prof, 18), memb, 0, -0.01, 0, 1.06, 1.03, 1.06)
   // 頂部十字裂口：半透明膜下透出青光
   const glowIn = ell(egg, core, 0, 0.5, 0, 0.13, 0.1, 0.13, 10, 8)
   part(egg, dome(1, 14, 6, Math.PI * 0.5), memb, 0, 0.52, 0, 0.2, 0.15, 0.2)
@@ -1402,16 +1410,21 @@ regModel('xeno.egg', (_def, s) => {
   }
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2
-    vein(egg, [[Math.sin(a) * 0.26, 0.1, Math.cos(a) * 0.26], [Math.sin(a + 0.2) * 0.33, 0.32, Math.cos(a + 0.2) * 0.33], [Math.sin(a + 0.1) * 0.2, 0.56, Math.cos(a + 0.1) * 0.2]], 0.014, core)
+    vein(egg, [[Math.sin(a) * 0.27, 0.1, Math.cos(a) * 0.27], [Math.sin(a + 0.2) * 0.335, 0.32, Math.cos(a + 0.2) * 0.335], [Math.sin(a + 0.1) * 0.21, 0.56, Math.cos(a + 0.1) * 0.21]], 0.02, core, 8)
   }
   part(root, sphereGeo(16, 6), slime, 0, 0, 0, 0.55, 0.04, 0.55).castShadow = false
+  root.scale.setScalar(1.2)
+  let deadAt = -1
   return {
     root,
-    height: 0.75,
-    update(t) {
+    height: 0.9,
+    update(t, _dt, _sp, state) {
+      if (state === 4 && deadAt < 0) deadAt = t
+      if (state !== 4) deadAt = -1
+      const d = deadAt < 0 ? 0 : Math.min(1, (t - deadAt) / 0.6)
       const c = (t * 0.8 + ph) % 1
-      const h = Math.exp(-Math.pow((c - 0.15) * 10, 2))
-      egg.scale.set(1 + h * 0.06, 1 - h * 0.03, 1 + h * 0.06)
+      const h = Math.exp(-Math.pow((c - 0.15) * 10, 2)) * (1 - d)
+      egg.scale.set((1 + h * 0.06) * (1 + d * 0.3), (1 - h * 0.03) * (1 - d * 0.7), (1 + h * 0.06) * (1 + d * 0.3))
       core.emissiveIntensity = 1.6 + h * 2.6
       glowIn.scale.set(0.13 * (1 + h * 0.2), 0.1 * (1 + h * 0.2), 0.13 * (1 + h * 0.2))
       memb.opacity = 0.45 + h * 0.2

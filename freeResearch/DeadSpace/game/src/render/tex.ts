@@ -105,7 +105,12 @@ function hexRgb(hex: string): [number, number, number] {
 
 // ───── 地板金屬板（2×2 m 一個 tile）─────
 
-export function floorSet(variant: 'plate' | 'grate' | 'tile' | 'rubber' | 'concrete', tint: string, seed = 3): PbrSet {
+/** 地板材質種類：站內金屬／磁磚／橡膠／混凝土，室外草地與岩地 */
+export type FloorVariant = 'plate' | 'grate' | 'tile' | 'rubber' | 'concrete' | 'grass' | 'rock'
+
+export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet {
+  if (variant === 'grass') return grassSet(tint, seed)
+  if (variant === 'rock') return rockSet(tint, seed, 'floor')
   const key = `floor:${variant}:${tint}:${seed}`
   const have = cache.get(key + ':map')
   if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
@@ -484,7 +489,7 @@ export function screenTex(kind: 'ui' | 'radar' | 'dna' | 'vendor' | 'warn', colo
 }
 
 /** 地面貼花：箭頭、編號、警示邊 */
-export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | 'glow', color = '#ffc23d'): THREE.Texture {
+export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | 'glow' | 'hex' | 'chevron' | 'dash' | 'stain' | 'frame' | 'sweep', color = '#ffc23d'): THREE.Texture {
   const key = `decal:${kind}:${color}`
   const have = cache.get(key)
   if (have) return have
@@ -535,6 +540,93 @@ export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | '
     x.beginPath()
     x.arc(128, 128, 104, 0, Math.PI * 2)
     x.stroke()
+  } else if (kind === 'hex') {
+    // 蜂巢格（傳送台）：一格 256 px 剛好拼接
+    x.lineWidth = 5
+    const r = 32
+    const hw = Math.sqrt(3) * r
+    for (let row = -1; row < 6; row++) {
+      for (let col = -1; col < 5; col++) {
+        const cx = col * hw + (row % 2 ? hw / 2 : 0)
+        const cy = row * r * 1.5
+        x.beginPath()
+        for (let k = 0; k <= 6; k++) {
+          const a = Math.PI / 6 + (k * Math.PI) / 3
+          if (k === 0) x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+          else x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+        }
+        x.stroke()
+      }
+    }
+  } else if (kind === 'chevron') {
+    x.lineWidth = 22
+    x.lineJoin = 'miter'
+    for (let k = 0; k < 3; k++) {
+      x.globalAlpha = 0.45 + k * 0.25
+      x.beginPath()
+      x.moveTo(60 + k * 52, 40)
+      x.lineTo(110 + k * 52, 128)
+      x.lineTo(60 + k * 52, 216)
+      x.stroke()
+    }
+    x.globalAlpha = 1
+  } else if (kind === 'dash') {
+    x.lineWidth = 10
+    x.setLineDash([26, 18])
+    x.beginPath()
+    x.arc(128, 128, 108, 0, Math.PI * 2)
+    x.stroke()
+    x.setLineDash([])
+  } else if (kind === 'stain') {
+    // 不規則潑濺：大塊＋飛濺小點
+    let rs = 977
+    const rnd = () => ((rs = (rs * 9301 + 49297) % 233280) / 233280)
+    for (let k = 0; k < 14; k++) {
+      const a = rnd() * Math.PI * 2
+      const d = rnd() * 46
+      x.globalAlpha = 0.5 + rnd() * 0.4
+      x.beginPath()
+      x.ellipse(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 18 + rnd() * 30, 12 + rnd() * 22, rnd() * 3, 0, Math.PI * 2)
+      x.fill()
+    }
+    for (let k = 0; k < 40; k++) {
+      const a = rnd() * Math.PI * 2
+      const d = 60 + rnd() * 60
+      x.globalAlpha = 0.4 + rnd() * 0.5
+      x.beginPath()
+      x.arc(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 1.5 + rnd() * 5, 0, Math.PI * 2)
+      x.fill()
+    }
+    x.globalAlpha = 1
+  } else if (kind === 'sweep') {
+    // 雷達掃描扇形：前緣亮、往後漸淡，外加刻度環
+    for (let k = 0; k < 60; k++) {
+      x.globalAlpha = Math.pow(1 - k / 60, 2) * 0.9
+      x.beginPath()
+      x.moveTo(128, 128)
+      x.arc(128, 128, 124, -k * 0.018 - 0.018, -k * 0.018)
+      x.closePath()
+      x.fill()
+    }
+    x.globalAlpha = 0.5
+    x.lineWidth = 2
+    for (const r of [40, 80, 122]) {
+      x.beginPath()
+      x.arc(128, 128, r, 0, Math.PI * 2)
+      x.stroke()
+    }
+    x.globalAlpha = 1
+  } else if (kind === 'frame') {
+    x.lineWidth = 8
+    x.strokeRect(8, 8, 240, 240)
+    x.lineWidth = 18
+    for (const [cx, cy, dx, dy] of [[8, 8, 1, 1], [248, 8, -1, 1], [8, 248, 1, -1], [248, 248, -1, -1]]) {
+      x.beginPath()
+      x.moveTo(cx, cy + dy * 46)
+      x.lineTo(cx, cy)
+      x.lineTo(cx + dx * 46, cy)
+      x.stroke()
+    }
   } else {
     const g = x.createRadialGradient(128, 128, 0, 128, 128, 128)
     g.addColorStop(0, color)
@@ -543,7 +635,7 @@ export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | '
     x.fillRect(0, 0, 256, 256)
   }
   // 磨損：挖掉一些像素
-  if (kind !== 'glow' && kind !== 'ring') {
+  if (kind !== 'glow' && kind !== 'ring' && kind !== 'sweep') {
     const img = x.getImageData(0, 0, 256, 256)
     for (let y = 0; y < 256; y++)
       for (let xx = 0; xx < 256; xx++) {
@@ -552,6 +644,297 @@ export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | '
       }
     x.putImageData(img, 0, 0)
   }
+  const t = toTex(c, true, false)
+  cache.set(key, t)
+  return t
+}
+
+// ───── 室外：草地、岩地、岩壁、有機組織（翠原星、餘燼衛星、未識別物體）─────
+
+function cache3(key: string, make: () => PbrSet): PbrSet {
+  const have = cache.get(key + ':map')
+  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
+  const set = make()
+  cache.set(key + ':map', set.map)
+  cache.set(key + ':r', set.roughnessMap)
+  cache.set(key + ':n', set.normalMap)
+  return set
+}
+
+function rand32(seed: number): () => number {
+  let a = seed * 2654435761 + 1013904223
+  return () => {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** 可無縫拼接的 Worley（F1、F2）：cells×cells 格、每格一點 */
+function worley(size: number, cells: number, seed: number): { f1: Float32Array; f2: Float32Array; id: Float32Array } {
+  const rnd = rand32(seed)
+  const pts: [number, number][] = []
+  for (let i = 0; i < cells * cells; i++) pts.push([rnd(), rnd()])
+  const f1 = new Float32Array(size * size)
+  const f2 = new Float32Array(size * size)
+  const id = new Float32Array(size * size)
+  const cs = size / cells
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const cx = Math.floor(x / cs)
+      const cy = Math.floor(y / cs)
+      let d1 = 1e9
+      let d2 = 1e9
+      let best = 0
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const gx = cx + ox
+          const gy = cy + oy
+          const wx = ((gx % cells) + cells) % cells
+          const wy = ((gy % cells) + cells) % cells
+          const k = wy * cells + wx
+          const px = (gx + pts[k][0]) * cs
+          const py = (gy + pts[k][1]) * cs
+          const d = Math.hypot(px - x, py - y) / cs
+          if (d < d1) {
+            d2 = d1
+            d1 = d
+            best = k
+          } else if (d < d2) d2 = d
+        }
+      }
+      const i = y * size + x
+      f1[i] = d1
+      f2[i] = d2
+      id[i] = (best * 0.618034) % 1
+    }
+  }
+  return { f1, f2, id }
+}
+
+function finishSet(S: number, albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array, strength: number): PbrSet {
+  const [ca, xa] = canvas(S, S)
+  const [cr, xr] = canvas(S, S)
+  const [cn, xn] = canvas(S, S)
+  const a = xa.createImageData(S, S)
+  a.data.set(albedo)
+  xa.putImageData(a, 0, 0)
+  const r = xr.createImageData(S, S)
+  for (let i = 0; i < S * S; i++) {
+    const v = Math.max(0, Math.min(1, rough[i])) * 255
+    r.data[i * 4] = r.data[i * 4 + 1] = r.data[i * 4 + 2] = v
+    r.data[i * 4 + 3] = 255
+  }
+  xr.putImageData(r, 0, 0)
+  xn.putImageData(heightToNormal(height, S, strength), 0, 0)
+  return { map: toTex(ca, true), roughnessMap: toTex(cr, false), normalMap: toTex(cn, false) }
+}
+
+/** 異星草地：底色斑塊＋細草葉筆觸＋泥土塊，草葉高度做法線 */
+export function grassSet(tint: string, seed = 3): PbrSet {
+  return cache3(`grass:${tint}:${seed}`, () => {
+    const S = 512
+    const patch = noiseField(S, 5, seed + 40, 3)
+    const fine = noiseField(S, 3, seed + 41, 48)
+    const [tr, tg, tb] = hexRgb(tint)
+    const albedo = new Uint8ClampedArray(S * S * 4)
+    const rough = new Float32Array(S * S)
+    const height = new Float32Array(S * S)
+    for (let i = 0; i < S * S; i++) {
+      const p = patch[i]
+      const dirt = Math.max(0, 0.36 - p) * 2.2
+      const lum = 0.72 + p * 0.5 + (fine[i] - 0.5) * 0.25
+      // 斑塊：暖黃綠到冷青紫之間偏移
+      const warm = (p - 0.5) * 0.35
+      albedo[i * 4] = (tr * (1 + warm * 0.6) * lum) * (1 - dirt) + 74 * dirt
+      albedo[i * 4 + 1] = (tg * (1 + warm * 0.2) * lum) * (1 - dirt) + 60 * dirt
+      albedo[i * 4 + 2] = (tb * (1 - warm * 0.5) * lum) * (1 - dirt) + 52 * dirt
+      albedo[i * 4 + 3] = 255
+      rough[i] = 0.82 + fine[i] * 0.12 - dirt * 0.1
+      height[i] = 0.35 + fine[i] * 0.1
+    }
+    // 草葉：短筆觸（顏色與高度同時寫入）
+    const rnd = rand32(seed + 7)
+    const strokes = 5200
+    for (let k = 0; k < strokes; k++) {
+      const x0 = rnd() * S
+      const y0 = rnd() * S
+      const len = 5 + rnd() * 11
+      const ang = -Math.PI / 2 + (rnd() - 0.5) * 1.3
+      const light = 0.75 + rnd() * 0.6
+      const tipHue = rnd() < 0.12
+      for (let t = 0; t < len; t++) {
+        const f = t / len
+        const x = Math.floor(x0 + Math.cos(ang) * t + f * f * 2 * (rnd() - 0.5)) & (S - 1)
+        const y = Math.floor(y0 + Math.sin(ang) * t) & (S - 1)
+        const i = y * S + x
+        const l = light * (0.75 + f * 0.45)
+        albedo[i * 4] = Math.min(255, tr * l * (tipHue ? 1.35 : 1))
+        albedo[i * 4 + 1] = Math.min(255, tg * l * (tipHue ? 0.9 : 1))
+        albedo[i * 4 + 2] = Math.min(255, tb * l * (tipHue ? 1.4 : 1))
+        height[i] = 0.45 + f * 0.5
+        rough[i] = 0.62 + (1 - f) * 0.2
+      }
+    }
+    return finishSet(S, albedo, rough, height, 5)
+  })
+}
+
+/** 岩地／岩塊：Worley 裂紋＋碎石＋fbm 明暗（floor 用較平、cap 用較粗）*/
+export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor'): PbrSet {
+  return cache3(`rock:${tint}:${seed}:${mode}`, () => {
+    const S = 512
+    const wv = worley(S, mode === 'floor' ? 7 : 5, seed + 90)
+    const big = noiseField(S, 5, seed + 91, 3)
+    const fine = noiseField(S, 4, seed + 92, 40)
+    const [tr, tg, tb] = hexRgb(tint)
+    const albedo = new Uint8ClampedArray(S * S * 4)
+    const rough = new Float32Array(S * S)
+    const height = new Float32Array(S * S)
+    const rnd = rand32(seed + 93)
+    for (let i = 0; i < S * S; i++) {
+      const edge = wv.f2[i] - wv.f1[i]
+      const crack = edge < 0.05 ? 1 - edge / 0.05 : 0
+      const slab = wv.id[i]
+      const h = 0.55 + (1 - wv.f1[i]) * 0.18 + (big[i] - 0.5) * 0.3 + (fine[i] - 0.5) * 0.12 - crack * 0.45
+      height[i] = h
+      const lum = (0.7 + slab * 0.3 + (big[i] - 0.5) * 0.5 + (fine[i] - 0.5) * 0.3) * (1 - crack * 0.65)
+      albedo[i * 4] = tr * lum * (0.95 + slab * 0.1)
+      albedo[i * 4 + 1] = tg * lum
+      albedo[i * 4 + 2] = tb * lum * (1.05 - slab * 0.1)
+      albedo[i * 4 + 3] = 255
+      rough[i] = 0.78 + crack * 0.2 + (fine[i] - 0.5) * 0.2 - (h > 0.75 ? 0.15 : 0)
+    }
+    // 碎石
+    for (let k = 0; k < (mode === 'floor' ? 900 : 300); k++) {
+      const cx = rnd() * S
+      const cy = rnd() * S
+      const r = 1 + rnd() * (mode === 'floor' ? 3.2 : 2)
+      const l = 0.6 + rnd() * 0.8
+      for (let y = Math.floor(cy - r); y <= cy + r; y++) {
+        for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+          const d = Math.hypot(x - cx, y - cy) / r
+          if (d > 1) continue
+          const i = (y & (S - 1)) * S + (x & (S - 1))
+          height[i] += (1 - d * d) * 0.25
+          albedo[i * 4] = tr * l
+          albedo[i * 4 + 1] = tg * l
+          albedo[i * 4 + 2] = tb * l
+          rough[i] = 0.6
+        }
+      }
+    }
+    return finishSet(S, albedo, rough, height, mode === 'floor' ? 6 : 8)
+  })
+}
+
+/** 岩壁（u = 沿牆 2 m，v = 牆高）：水平岩層、裂縫、縫隙裡的苔蘚／礦脈（accent）*/
+export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
+  return cache3(`rockwall:${tint}:${accent}:${seed}`, () => {
+    const S = 512
+    const big = noiseField(S, 5, seed + 60, 3)
+    const fine = noiseField(S, 4, seed + 61, 36)
+    const wv = worley(S, 6, seed + 62)
+    const [tr, tg, tb] = hexRgb(tint)
+    const [ar, ag, ab] = hexRgb(accent)
+    const albedo = new Uint8ClampedArray(S * S * 4)
+    const rough = new Float32Array(S * S)
+    const height = new Float32Array(S * S)
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const i = y * S + x
+        const v = y / S
+        // 岩層：被噪音扭曲的水平帶
+        const band = Math.sin((v * 9 + big[i] * 1.6) * Math.PI)
+        const ledge = band > 0.82 ? (band - 0.82) / 0.18 : 0
+        const edge = wv.f2[i] - wv.f1[i]
+        const crack = edge < 0.04 ? 1 - edge / 0.04 : 0
+        const moss = Math.max(0, (crack * 0.8 + ledge * 0.6) * (fine[i] + big[i] - 0.7) * 2)
+        const lum = (0.62 + wv.id[i] * 0.25 + (big[i] - 0.5) * 0.4 + (fine[i] - 0.5) * 0.25 + band * 0.08) * (1 - crack * 0.6) * (0.82 + (1 - v) * 0.25)
+        const m = Math.min(1, moss)
+        albedo[i * 4] = tr * lum * (1 - m) + ar * 0.55 * m
+        albedo[i * 4 + 1] = tg * lum * (1 - m) + ag * 0.55 * m
+        albedo[i * 4 + 2] = tb * lum * (1 - m) + ab * 0.55 * m
+        albedo[i * 4 + 3] = 255
+        rough[i] = 0.85 - ledge * 0.15 + crack * 0.12 - m * 0.25
+        height[i] = 0.5 + band * 0.12 + (1 - wv.f1[i]) * 0.2 + (fine[i] - 0.5) * 0.15 - crack * 0.4
+      }
+    }
+    return finishSet(S, albedo, rough, height, 7)
+  })
+}
+
+/** 有機組織：濕潤的肉質表面＋發光血管（未識別物體、標本）*/
+export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
+  return cache3(`organic:${tint}:${vein}:${seed}`, () => {
+    const S = 256
+    const wv = worley(S, 6, seed + 70)
+    const big = noiseField(S, 4, seed + 71, 3)
+    const fine = noiseField(S, 3, seed + 72, 24)
+    const [tr, tg, tb] = hexRgb(tint)
+    const [vr, vg, vb] = hexRgb(vein)
+    const albedo = new Uint8ClampedArray(S * S * 4)
+    const rough = new Float32Array(S * S)
+    const height = new Float32Array(S * S)
+    for (let i = 0; i < S * S; i++) {
+      const edge = wv.f2[i] - wv.f1[i]
+      const v = edge < 0.06 ? 1 - edge / 0.06 : 0
+      const lum = 0.65 + big[i] * 0.45 + (fine[i] - 0.5) * 0.2
+      albedo[i * 4] = tr * lum * (1 - v) + vr * v
+      albedo[i * 4 + 1] = tg * lum * (1 - v) + vg * v
+      albedo[i * 4 + 2] = tb * lum * (1 - v) + vb * v
+      albedo[i * 4 + 3] = 255
+      rough[i] = 0.35 + fine[i] * 0.3 - v * 0.15
+      height[i] = 0.5 + (wv.f1[i] - 0.4) * 0.3 + v * 0.3 + (fine[i] - 0.5) * 0.1
+    }
+    return finishSet(S, albedo, rough, height, 5)
+  })
+}
+
+/** 外星文字面板：發光符號格（未識別物體的啟用碼面板）*/
+export function glyphTex(color: string, seed = 1): THREE.Texture {
+  const key = `glyph:${color}:${seed}`
+  const have = cache.get(key)
+  if (have) return have
+  const [c, x] = canvas(256, 256)
+  x.fillStyle = '#020604'
+  x.fillRect(0, 0, 256, 256)
+  const rnd = rand32(seed + 3)
+  x.strokeStyle = color
+  x.fillStyle = color
+  x.lineCap = 'round'
+  for (let gy = 0; gy < 5; gy++) {
+    for (let gx = 0; gx < 4; gx++) {
+      const ox = 22 + gx * 56
+      const oy = 18 + gy * 46
+      x.globalAlpha = 0.55 + rnd() * 0.45
+      x.lineWidth = 2 + rnd() * 2
+      x.beginPath()
+      for (let k = 0; k < 4; k++) {
+        const ax = ox + rnd() * 30
+        const ay = oy + rnd() * 30
+        if (rnd() < 0.5) {
+          x.moveTo(ax, ay)
+          x.lineTo(ox + rnd() * 30, oy + rnd() * 30)
+        } else {
+          x.moveTo(ax + 6, ay)
+          x.arc(ax, ay, 4 + rnd() * 6, 0, Math.PI * (1 + rnd()))
+        }
+      }
+      x.stroke()
+      if (rnd() < 0.3) {
+        x.beginPath()
+        x.arc(ox + 15, oy + 15, 2.5, 0, Math.PI * 2)
+        x.fill()
+      }
+    }
+  }
+  x.globalAlpha = 0.16
+  x.fillStyle = '#000'
+  for (let y = 0; y < 256; y += 3) x.fillRect(0, y, 256, 1)
+  x.globalAlpha = 1
   const t = toTex(c, true, false)
   cache.set(key, t)
   return t

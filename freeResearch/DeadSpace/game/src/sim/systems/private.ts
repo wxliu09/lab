@@ -3,6 +3,7 @@ import type { AbilityState, InvSlot, PrivateState } from '../../shared/protocol/
 import { abilityDef } from '../../shared/content/registry'
 import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
+import { facilityView } from './facilities'
 
 export function privateState(g: Game, p: GamePlayer): PrivateState {
   const main = g.mainOf(p)
@@ -65,6 +66,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     feeds: feedsOf(g, p),
     doorLog: doorLogOf(g, ctl),
     enh: !!p.data.enhOffer,
+    fac: facilityView(g, p),
   }
 }
 
@@ -88,7 +90,8 @@ function doorLogOf(g: Game, u: Ent | undefined): PrivateState['doorLog'] {
   let bestD = 2.6 * 2.6
   for (const d of z.layout.doors) {
     const dd = (d.x - u.x) ** 2 + (d.y - u.y) ** 2
-    if (dd < bestD) {
+    // 要看得到那扇門（不能隔著牆讀另一間房的門禁）
+    if (dd < bestD && (!z.nav || z.nav.los(u.x, u.y, d.x, d.y, true))) {
       bestD = dd
       best = d.index
     }

@@ -192,7 +192,8 @@ function think(g: Game, u: Ent): void {
     const z = g.world.zones[u.zone]
     const r = z.layout ? roomAt(z.layout, u.x, u.y) : null
     if (!r || r.index !== u.data.cell) {
-      if (!z.data.cellsOpen) {
+      // 隔間門被收容控制台打開（整站或單間）時不拉回
+      if (!z.data.cellsOpen && !(z.data.openCells as number[] | undefined)?.includes(u.data.cell)) {
         g.world.relocate(u, u.zone, home.x, home.y)
         issue(u, null)
         return

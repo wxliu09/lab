@@ -13,6 +13,7 @@ import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
 import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
 import { EnhancerPanel, FakeEnd } from '../hud/Events'
+import { FacilityPanel } from '../hud/Facilities'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -71,6 +72,7 @@ export function GameScreen() {
       <DeathVote />
       <EvolveMenu />
       <EnhancerPanel />
+      <FacilityPanel />
       <FakeEnd />
       <EndScreen />
       <RoleReveal />

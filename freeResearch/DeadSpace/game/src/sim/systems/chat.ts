@@ -55,8 +55,11 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
   const fake = main?.data.fake as { name: string; color: number } | undefined
   const shown = fake && name ? fake.name : name
   const color = fake && name ? fake.color : p.color
-  const line: ChatLine = { from: shown, color: shown ? color : -1, ch: 'all', text, time: t, e: inLastWords || !main ? undefined : main.id }
-  deliver(g, line, to)
+  const line: ChatLine = { from: shown, color: shown ? color : -1, ch: 'all', text, time: t }
+  // 對話泡泡只掛在「看起來就是說話者」的單位上：匿名形態或被消音時不掛（否則等於公開身分；千面化身例外，泡泡掛在偽裝上），
+  // 而且只給當下看得到那個單位的人
+  const bubble = !inLastWords && main && (!main.anon || !!fake) && !!shown ? main.id : 0
+  for (const q of to) q.chatOut.push(bubble && q.view.visible.has(bubble) ? { ...line, e: bubble } : line)
 }
 
 function uniq(a: GamePlayer[]): GamePlayer[] {
@@ -102,6 +105,10 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
   const arg = rest.join(' ')
   const f = g.faction(p)
   switch (head.toLowerCase()) {
+    case 'help':
+    case 'commands':
+      g.privateLine(p.slot, 'chat.help')
+      break
     case 'names': {
       const list = g.allPlayers().map((q) => `${q.name}${q.alive ? '' : '（DEAD）'}`).join('、')
       g.privateLine(p.slot, 'chat.names', { list })
@@ -183,6 +190,11 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       const cls = p.name.slice(0, p.name.length - p.baseName.length)
       const nn = arg.replace(/[^\p{L}\p{N} _-]/gu, '').slice(0, 16)
       if (!nn) return
+      // 不能改成別人的名字（冒名發言）
+      if (g.allPlayers().some((q) => q !== p && (q.baseName.toLowerCase() === nn.toLowerCase() || q.name.toLowerCase().endsWith(nn.toLowerCase())))) {
+        g.privateLine(p.slot, 'chat.nameTaken')
+        return
+      }
       p.baseName = nn
       p.name = cls + nn
       const u = g.mainOf(p)

@@ -2,6 +2,7 @@
 import { signal } from '@preact/signals'
 import type { ChatLine, ClientMsg, Command, EndResult, HostMsg, LobbyPlayerInfo, LobbySettings, StartInfo } from '../shared/protocol/messages'
 import { PLAYER_COLORS, ROOM_ALPHABET, ROOM_CODE_LEN } from '../shared/constants'
+import { LoopbackHub } from '../net/loopback'
 import { BroadcastChannelTransport } from '../net/broadcast'
 import { NetClient } from '../net/client'
 import { HostRelay } from '../net/hostRelay'
@@ -100,7 +101,14 @@ async function makeTransport(code: string): Promise<Transport> {
   })
 }
 
+/** 測試 build：記錄收到的訊息型別（e2e 檢查其他分頁沒有多收任何東西）*/
+const recvLog: string[] = []
+
 function onHostMsg(m: HostMsg): void {
+  if (__TEST_HOOKS__) {
+    recvLog.push(m.t)
+    if (recvLog.length > 5000) recvLog.splice(0, 1000)
+  }
   switch (m.t) {
     case 'welcome':
       mySlot.value = m.slot
@@ -113,6 +121,12 @@ function onHostMsg(m: HostMsg): void {
       break
     case 'lobbyState':
       lobby.value = { players: m.players, settings: m.settings, code: m.code }
+      if (practiceBots && isHost.value) {
+        const n = practiceBots
+        practiceBots = 0
+        send({ t: 'settings', s: { bots: n } })
+        send({ t: 'start' })
+      }
       break
     case 'start':
       world.reset()
@@ -169,6 +183,23 @@ export async function createRoom(profile: Profile): Promise<void> {
   notice.value = ''
   isHost.value = true
   const transport = await makeTransport(roomCode)
+  const seed = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1
+  relay = new HostRelay(roomCode, transport, seed)
+  const client = new NetClient(relay.local, { ...profile, token: sessionToken(roomCode) })
+  attach(client)
+  exposeTestHooks()
+}
+
+/** 單機練習：不連網，主機分頁自己跑模擬，其餘座位由 AI 填滿 */
+let practiceBots = 0
+export async function startPractice(profile: Profile, bots = 5): Promise<void> {
+  saveProfile(profile)
+  roomCode = 'SOLO0'
+  screen.value = 'connecting'
+  notice.value = ''
+  isHost.value = true
+  practiceBots = Math.max(1, Math.min(11, bots))
+  const transport = new LoopbackHub().connect('host')
   const seed = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1
   relay = new HostRelay(roomCode, transport, seed)
   const client = new NetClient(relay.local, { ...profile, token: sessionToken(roomCode) })
@@ -235,5 +266,5 @@ function exposeTestHooks(): void {
 }
 
 if (__TEST_HOOKS__) {
-  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult }
+  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog }
 }

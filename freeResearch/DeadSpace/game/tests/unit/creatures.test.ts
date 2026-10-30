@@ -6,6 +6,7 @@ import { spawnCreature } from '../../src/sim/ai/creatures'
 import { giveItem, makeItem, wearSuit } from '../../src/sim/systems/items'
 import { unitDef } from '../../src/shared/content/registry'
 import { damage } from '../../src/sim/systems/damage'
+import { isHostile } from '../../src/sim/systems/combat'
 import { HOSTILE, NEUTRAL, type Ent } from '../../src/sim/ent'
 import type { Game } from '../../src/sim/game'
 import { SPACE_ZONE } from '../../src/sim/world'
@@ -104,13 +105,15 @@ describe('生物 AI', () => {
     sk.data.aggro = undefined
     sk.data.returning = false
     sk.data.home = { x: sk.x, y: sk.y }
+    // 薰香：不會被主動挑選
+    expect(isHostile(g, sk, v)).toBe(false)
     const hv = v.hp
     sec(h, 3)
     expect(v.hp).toBe(hv)
     // 被打之後記仇
     damage(g, v, sk, 5)
-    sec(h, 3)
-    expect(v.hp).toBeLessThan(hv)
+    expect(sk.data.aggro).toBe(v.id)
+    expect(isHostile(g, sk, v)).toBe(true)
   })
 
   it('小動物受傷會逃離攻擊者', () => {

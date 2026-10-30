@@ -152,8 +152,10 @@ function useItem(g: Game, p: GamePlayer, u: Ent, c: Command): void {
   }
   if (order.e === undefined && (ab.target === 'point' || ab.target === 'unitOrPoint')) {
     if (c.x === undefined || c.y === undefined) return
-    order.x = c.x
-    order.y = c.y
+    const z = g.world.zones[u.zone]
+    const lim = z.layout ? Math.max(z.layout.w, z.layout.h) + 2 : 60
+    order.x = Math.max(-lim, Math.min(lim, c.x))
+    order.y = Math.max(-lim, Math.min(lim, c.y))
   }
   if (ab.target === 'none' || ab.target === 'self') {
     order.x = u.x

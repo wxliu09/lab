@@ -5,11 +5,12 @@ import type { Game, GamePlayer } from '../game'
 import { spawnPoints } from '../setup'
 import type { Ent } from '../ent'
 import { setupClass } from './roleSystem'
+import { classSpawn } from './facilities'
 
 /** 依人數決定陣營數量（原作程式門檻：≤4、<7）*/
 export function roleCounts(g: Game, n: number): { xeno: number; mutant: number; android: number } {
   const s = g.settings
-  const rng = g.world.rng
+  const rng = g.secret
   let xeno = 0
   let mutant = 0
   let android = 0
@@ -34,7 +35,7 @@ export function roleCounts(g: Game, n: number): { xeno: number; mutant: number; 
 }
 
 export function assignRoles(g: Game): void {
-  const rng = g.world.rng
+  const rng = g.secret
   const active = g.allPlayers().filter((p) => !p.spectator)
   const c = roleCounts(g, active.length)
   const pool = rng.shuffle([...active])
@@ -50,7 +51,8 @@ export function assignRoles(g: Game): void {
   for (const p of rng.shuffle([...active])) {
     p.classId = deck.pop() ?? 'researcher'
     if (p.classId === 'researcher') p.phd = rng.pick(PHDS)
-    spawnPlayer(g, p, pts.pop() ?? pts[0])
+    // 艦長、工程師、王牌飛行員有固定出生點（站沒啟用就照一般規則）
+    spawnPlayer(g, p, classSpawn(g, p.classId) ?? pts.pop() ?? pts[0])
   }
 }
 

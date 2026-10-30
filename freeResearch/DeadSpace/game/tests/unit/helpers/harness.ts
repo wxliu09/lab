@@ -25,7 +25,8 @@ export class Harness {
   leakProblems: string[] = []
 
   constructor(seed = 1234) {
-    this.server = new GameServer('TEST1', { send: (peer, data) => this.deliver(peer, data) }, seed)
+    // 測試固定身分種子，讓結果可重現
+    this.server = new GameServer('TEST1', { send: (peer, data) => this.deliver(peer, data) }, seed, seed ^ 0x5bd1e995)
   }
 
   private deliver(peer: string, data: Uint8Array): void {

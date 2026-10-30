@@ -1,12 +1,28 @@
-// 異類／仿生人模型截圖自評：node tests/visual/models.mjs <outDir> [篩選字串]
-// 需要先在背景跑 dev server：npx vite --port 5199 --strictPort（models.html 只存在於 dev server，不進正式 build）
+// 異形／變種人／仿生人模型截圖自評：node tests/visual/models.mjs <outDir> [篩選字串]
+// 篩選字串以 ! 開頭表示排除（例：!close）。單張自訂：node tests/visual/models.mjs <outDir> "?ids=mut.brawn,human&dist=12&pitch=20" [名稱] [狀態] [速度]
+// 預設會用 vite（--mode e2e）把 models.html 另外 build 到 <outDir>/../models-dist 再 preview（不進正式 build、不受 HMR 干擾）；
+// 已經有 server 時用 XC_URL=http://localhost:5199/ 指定，XC_NOBUILD=1 則沿用上次的 build。
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const out = process.argv[2] ?? '.'
+const out = resolve(process.argv[2] ?? '.')
 const filter = process.argv[3] ?? ''
-const base = process.env.XC_URL ?? 'http://localhost:5199/'
 mkdirSync(out, { recursive: true })
+let base = process.env.XC_URL
+let server = null
+if (!base) {
+  const { build, preview } = await import('vite')
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const configFile = resolve(root, 'vite.config.ts')
+  const dist = resolve(out, '../models-dist')
+  if (!process.env.XC_NOBUILD) {
+    await build({ root, configFile, mode: 'e2e', logLevel: 'warn', build: { outDir: dist, emptyOutDir: true, rollupOptions: { input: { models: resolve(root, 'models.html') } } } })
+  }
+  server = await preview({ root, configFile, mode: 'e2e', logLevel: 'warn', build: { outDir: dist }, preview: { port: 5198, strictPort: true } })
+  base = 'http://localhost:5198/'
+}
 
 const XENO12 = 'human,xeno.protoform,xeno.protoform.spawn,xeno.lumen,xeno.brute,xeno.puppeteer,xeno.egg,xeno.cocoon'
 const XENO3 = 'human,xeno.pyreheart,xeno.arcflayer,xeno.phantasm,xeno.gorgon,xeno.hydra,xeno.weaver,xeno.voidwalker,xeno.chronarch,xeno.mimic'
@@ -48,9 +64,10 @@ page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning' || t.startsWith('[gallery]')) console.log('[console]', m.type(), t.slice(0, 1500))
 })
 page.on('pageerror', (e) => console.log('[pageerror]', e.message))
-for (const [name, query, st, speed] of SHOTS) {
-  if (filter && !name.includes(filter)) continue
-  await page.goto(`${base}models.html?${query}&q=low`)
+const custom = filter.startsWith('?') ? [[process.argv[4] ?? 'custom', filter.slice(1), +(process.argv[5] ?? 0), +(process.argv[6] ?? 0)]] : null
+for (const [name, query, st, speed] of custom ?? SHOTS) {
+  if (!custom && filter && (filter.startsWith('!') ? name.includes(filter.slice(1)) : !name.includes(filter))) continue
+  await page.goto(`${base}models.html?${query}&q=low`, { timeout: 120000 })
   await page.waitForFunction(() => window.__gallery && window.__gallery.frames > 6, null, { timeout: 120000 })
   if (st) {
     await page.evaluate(([a, b]) => window.__gallery.set(a, b), [st, speed])
@@ -61,3 +78,4 @@ for (const [name, query, st, speed] of SHOTS) {
   console.log('shot', name)
 }
 await browser.close()
+await server?.close()
