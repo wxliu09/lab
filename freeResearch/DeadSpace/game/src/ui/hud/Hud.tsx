@@ -1,5 +1,5 @@
 // 遊戲 HUD（致敬 WC3 版面）：上方資訊列、左下小地圖、中下頭像與數值、右下指令卡＋背包、左側聊天
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useRef, useState, useLayoutEffect } from 'preact/hooks'
 import { Stability } from './Events'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
@@ -373,8 +373,12 @@ export function Inventory({ input }: { input: Input | null }) {
 export function Chat() {
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (chatOpen.value) setTimeout(() => inputRef.current?.focus(), 0)
+  useLayoutEffect(() => {
+    if (!chatOpen.value) return
+    inputRef.current?.focus()
+    // 保險：某些瀏覽器第一幀還不能 focus
+    const id = setTimeout(() => inputRef.current?.focus(), 0)
+    return () => clearTimeout(id)
   }, [chatOpen.value])
   const lines = chatLog.value.slice(-12)
   const submit = () => {

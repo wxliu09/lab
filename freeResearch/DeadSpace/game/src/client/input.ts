@@ -166,7 +166,8 @@ export class Input {
   }
 
   private key(e: KeyboardEvent, down: boolean): void {
-    if (typingInField()) return
+    // 聊天框剛打開、還沒拿到焦點的那一瞬間也不觸發快捷鍵
+    if (typingInField() || chatOpen.value) return
     if (e.code.startsWith('Arrow')) {
       this.scene.rts.key(e.code, down)
       e.preventDefault()
