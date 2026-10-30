@@ -179,6 +179,10 @@ export class Engine {
 
 let shared: Engine | null = null
 
+export function currentFps(): number {
+  return shared?.fps ?? 0
+}
+
 /** 全頁共用一個 WebGL context（主選單與遊戲切換場景）*/
 export function getEngine(canvas: HTMLCanvasElement): Engine {
   if (shared && shared.canvas !== canvas) {

@@ -266,7 +266,7 @@ export function CommandCard({ input }: { input: Input | null }) {
               onMouseEnter={(e) =>
                 setTip({
                   title: `${loc(ab.name)} (${keys[i] ?? ''})`,
-                  body: `${loc(ab.desc)}\n${ab.cd ? `冷卻 ${ab.cd}s　` : ''}${ab.mana ? `能量 ${ab.mana}　` : ''}${ab.range ? `射程 ${ab.range}m` : ''}`,
+                  body: `${loc(ab.desc)}\n${ab.cd ? `冷卻 ${ab.cd}s · ` : ''}${ab.mana ? `能量 ${ab.mana} · ` : ''}${ab.range ? `射程 ${ab.range}m` : ''}`,
                   x: e.clientX,
                   y: e.clientY,
                 })
@@ -390,7 +390,7 @@ export function Chat() {
 export function TargetHint() {
   const tm = targetMode.value
   if (!tm) return null
-  let name = ''
+  let name: string
   if (tm.kind === 'attack') name = '攻擊：點選目標或地面'
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + '：選擇目標（右鍵取消）'
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + '：選擇目標（右鍵取消）'

@@ -1,6 +1,7 @@
 // 介面文字：zh-TW 為主、en 為輔
 import { signal } from '@preact/signals'
 import type { Loc } from '../shared/content/types'
+import { GAME_EN, GAME_ZH } from './strings/game'
 
 export type Lang = 'zh' | 'en'
 
@@ -128,6 +129,25 @@ const zh: Dict = {
   'end.draw': '無人生還',
   'end.aborted': '本局中止',
   'end.back': '回到主選單',
+  'vendor.stock': '庫存 {n}',
+  'vendor.restock': '{s} 秒後補貨',
+  'vendor.take': '取用',
+  'vendor.offlineFor': '電磁干擾停機中（{s} 秒）',
+  'vendor.tooFar': '離販賣機太遠',
+  'vendor.offline': '販賣機停機中',
+  'vendor.soldOut': '已售完',
+  'item.full': '背包已滿',
+  'item.uniqueOnly': '這種裝置每人只能帶一個',
+  'item.cantSuit': '這個形態不能穿防護服',
+  'cast.stunned': '暈眩中',
+  'cast.silenced': '被沉默，無法施放技能',
+  'cast.mana': '能量不足',
+  'cast.target': '無效的目標',
+  'cast.zone': '目標不在同一區域',
+  'cast.space': '這裡不能使用',
+  'cast.once': '每局只能使用一次',
+  'cast.dead': '',
+  'death.innocent': '一名無辜者遇害了',
 }
 
 const en: Dict = {
@@ -225,9 +245,30 @@ const en: Dict = {
   'end.draw': 'No survivors',
   'end.aborted': 'Game aborted',
   'end.back': 'Back to menu',
+  'vendor.stock': 'Stock {n}',
+  'vendor.restock': 'restock in {s}s',
+  'vendor.take': 'Take',
+  'vendor.offlineFor': 'EMP shutdown ({s}s)',
+  'vendor.tooFar': 'Too far from the vendor',
+  'vendor.offline': 'Vendor is offline',
+  'vendor.soldOut': 'Sold out',
+  'item.full': 'Inventory full',
+  'item.uniqueOnly': 'You may only carry one of these devices',
+  'item.cantSuit': 'This form cannot wear rigs',
+  'cast.stunned': 'Stunned',
+  'cast.silenced': 'Silenced',
+  'cast.mana': 'Not enough energy',
+  'cast.target': 'Invalid target',
+  'cast.zone': 'Target is in another area',
+  'cast.space': 'Cannot use that here',
+  'cast.once': 'Only once per game',
+  'cast.dead': '',
+  'death.innocent': 'An innocent has been killed',
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
+Object.assign(zh, GAME_ZH)
+Object.assign(en, GAME_EN)
 
 /** 其他模組可以補充字典（內容、事件、系統訊息）*/
 export function addStrings(z: Dict, e: Dict): void {

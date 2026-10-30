@@ -4,6 +4,7 @@ import { CLASSES, unitDef } from '../../shared/content/registry'
 import type { Game, GamePlayer } from '../game'
 import { spawnPoints } from '../setup'
 import type { Ent } from '../ent'
+import { setupClass } from './roleSystem'
 
 /** 依人數決定陣營數量（原作程式門檻：≤4、<7）*/
 export function roleCounts(g: Game, n: number): { xeno: number; mutant: number; android: number } {
@@ -68,5 +69,6 @@ export function spawnPlayer(g: Game, p: GamePlayer, at: { zone: number; x: numbe
   p.alive = true
   p.bio = `bio.${p.classId}.${p.role}`
   void SECURITY_SUITS
+  setupClass(g, p, u)
   return u
 }

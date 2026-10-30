@@ -6,6 +6,8 @@ import { PLAYER_COLORS } from '../shared/constants'
 import type { CEnt } from '../client/world'
 import { animateRig, buildHuman, type Rig } from './models/human'
 import { buildModel, type ModelView } from './models/index'
+import { attachSuit } from './models/suits'
+import './models/misc'
 import { decalTex } from './tex'
 import { W } from './stationBuilder'
 
@@ -43,14 +45,16 @@ export class UnitLayer {
 
   private create(e: CEnt): UnitView {
     const s = e.s
-    const def = UNITS.get(s.d ?? '')
+    const isItem = (s.d ?? '').startsWith('item:')
+    const def = isItem ? UNITS.get('groundItem') : UNITS.get(s.d ?? '')
     const root = new THREE.Group()
     let rig: Rig | null = null
     let model: ModelView | null = null
-    let height = 1.8
+    let height: number
     const modelId = def?.model ?? 'unknown'
     if (modelId === 'human') {
       rig = buildHuman(s.cl || 'researcher', colorOf(s.c), s.i % 5)
+      if ((s.d ?? '').startsWith('suit.')) attachSuit(rig, s.d!, colorOf(s.c))
       rig.root.scale.setScalar(1.18)
       root.add(rig.root)
       height = rig.height * 1.18
@@ -61,7 +65,7 @@ export class UnitLayer {
     }
     if (def?.scale) root.scale.setScalar(def.scale)
     let ring: THREE.Mesh | null = null
-    const isUnit = !def?.tags.includes('structure')
+    const isUnit = !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse)
     if (isUnit) {
       const col = s.o !== undefined && s.o >= 0 ? colorOf(s.c) : (s.fl ?? 0) & EntFlag.Hostile ? '#ff3b3b' : '#9fb3c2'
       ring = new THREE.Mesh(

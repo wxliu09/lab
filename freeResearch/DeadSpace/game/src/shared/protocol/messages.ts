@@ -74,6 +74,7 @@ export type CommandKind =
   | 'evolve'
   | 'autocast'
   | 'follow'
+  | 'spec'
 
 export interface Command {
   k: CommandKind
@@ -313,6 +314,10 @@ export interface WorldPublic {
   pz: boolean
   /** 末日類型（觸發後才公開）*/
   apo: string
+  /** 進行中的投票 */
+  vote: { kind: 'death'; until: number; boot: number; spec: number } | null
+  /** 死亡模式 */
+  boot: boolean
 }
 
 export interface EndResult {

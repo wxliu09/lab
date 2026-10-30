@@ -23,7 +23,7 @@ export function oracleVisible(g: Game, slot: number): Set<number> {
   const out = new Set<number>()
   const w = g.world
   for (const e of w.ents.values()) if (e.zone === SPACE_ZONE) out.add(e.id)
-  if (!p.alive || p.spectator || p.flags.mapHack) {
+  if (!p.alive || p.spectator || p.flags.wide) {
     for (const e of w.ents.values()) out.add(e.id)
     return out
   }
@@ -76,7 +76,7 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
         if (ent && !vis.has(e.i)) problems.push(`slot${slot} 看到不可見實體 ${ent.def.id}`)
         if (ent && ent.anon) {
           const o = ent.owner >= 0 ? g.players[ent.owner] : null
-          const allowed = ent.owner === slot || viewer.flags.xray || (o && fv !== 'crew' && g.faction(o) === fv && viewer.alive)
+          const allowed = ent.owner === slot || viewer.flags.reveal || (o && fv !== 'crew' && g.faction(o) === fv && viewer.alive)
           if (!allowed) {
             if (e.o !== undefined && e.o >= 0 && !ent.data.fake) problems.push(`匿名單位 ${ent.def.id} 洩漏擁有者給 slot${slot}`)
             if (e.n && !ent.data.fake) problems.push(`匿名單位名稱洩漏給 slot${slot}`)
@@ -89,12 +89,12 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
     }
     if (m.t === 'chat') {
       for (const l of m.lines) {
-        if (l.ch === 'dead' && viewer.alive && !viewer.flags.hear) problems.push(`活人 slot${slot} 收到死者聊天`)
-        if (l.ch === 'team' && fv === 'crew' && !viewer.flags.hear) problems.push(`人類 slot${slot} 收到陣營私頻`)
-        if (l.ch === 'group' && !viewer.flags.hear && viewer.alive && !l.group) problems.push(`slot${slot} 收到不明群組訊息`)
+        if (l.ch === 'dead' && viewer.alive && !viewer.flags.listen) problems.push(`活人 slot${slot} 收到死者聊天`)
+        if (l.ch === 'team' && fv === 'crew' && !viewer.flags.listen) problems.push(`人類 slot${slot} 收到陣營私頻`)
+        if (l.ch === 'group' && !viewer.flags.listen && viewer.alive && !l.group) problems.push(`slot${slot} 收到不明群組訊息`)
       }
     }
-    if (m.t === 'TuneResult' || m.t === 'lobbyState' || m.t === 'start') {
+    if (m.t === 'lobbyState' || m.t === 'start') {
       const keyProblems: string[] = []
       walk(m, m.t, keyProblems)
       problems.push(...keyProblems)

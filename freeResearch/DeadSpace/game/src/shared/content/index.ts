@@ -1,3 +1,12 @@
 // 匯入全部內容檔（副作用：註冊到 registry）
 import './units/base'
 import './classes'
+import './classAbilities'
+import './suits'
+import './items'
+import './vendors'
+import './forms'
+import './forms/xeno'
+import './forms/mutant'
+import './forms/android'
+import './roleAbilities'

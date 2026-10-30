@@ -26,7 +26,7 @@ export function knowsOwner(g: Game, viewer: GamePlayer, e: Ent): boolean {
   if (!e.anon) return true
   if (e.owner < 0) return false
   if (e.owner === viewer.slot) return true
-  if (viewer.flags.xray) return true
+  if (viewer.flags.reveal) return true
   const owner = g.players[e.owner]
   if (!owner) return false
   const fo = g.faction(owner)
@@ -70,11 +70,25 @@ export function computeVision(g: Game): Map<number, VisionResult> {
     res.set(p.slot, r)
     // 太空層所有人可見（隱形船除外）
     for (const e of spaceEnts) if (!e.stats.stealth || canSeeStealth(g, p, e)) r.ents.add(e)
+    // 死去的仿生人只能透過記憶核心觀看
+    if (!p.alive && p.data.coreOnly && !p.stayDead) {
+      const core = findCore(g, p)
+      if (core) {
+        r.sources = [{ zone: core.zone, x: core.x, y: core.y, r: 6.5 }]
+        near.length = 0
+        g.world.query(core.zone, core.x, core.y, 6.5, near)
+        const z = g.world.zones[core.zone]
+        for (const e of near) if (!z.nav || z.nav.los(core.x, core.y, e.x, e.y, true)) r.ents.add(e)
+        r.ents.add(core)
+      }
+      p.view.visible = new Set([...r.ents].map((e) => e.id))
+      continue
+    }
     const spectating = !p.alive || p.spectator
-    if (spectating || p.flags.mapHack) {
+    if (spectating || p.flags.wide) {
       const zones = new Set<number>()
       if (spectating) zones.add(p.specZone)
-      if (p.flags.mapHack) {
+      if (p.flags.wide) {
         const cu = g.controlOf(p)
         if (cu) zones.add(cu.zone)
         if (spectating) zones.add(p.specZone)
@@ -82,7 +96,7 @@ export function computeVision(g: Game): Map<number, VisionResult> {
       for (const zid of zones) {
         r.fullZones.add(zid)
         for (const e of w.inZone(zid)) {
-          if (e.stats.stealth && !canSeeStealth(g, p, e) && !p.flags.mapHack) continue
+          if (e.stats.stealth && !canSeeStealth(g, p, e) && !p.flags.wide) continue
           r.ents.add(e)
         }
         const z = w.zones[zid]
@@ -123,6 +137,17 @@ export function computeVision(g: Game): Map<number, VisionResult> {
     p.view.visible = new Set([...r.ents].map((e) => e.id))
   }
   return res
+}
+
+/** 記憶核心可能在地上，也可能在某人的背包裡 */
+function findCore(g: Game, p: GamePlayer): Ent | undefined {
+  const id = p.data.core as number | undefined
+  const onGround = id ? g.world.get(id) : undefined
+  if (onGround) return onGround
+  for (const e of g.world.ents.values()) {
+    if (e.inv?.some((it) => it?.id === 'memoryCore' && (it.data as { android?: number } | undefined)?.android === p.slot)) return e
+  }
+  return undefined
 }
 
 export function canSeeStealth(g: Game, viewer: GamePlayer, e: Ent): boolean {

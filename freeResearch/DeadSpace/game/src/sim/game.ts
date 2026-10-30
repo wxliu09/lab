@@ -37,6 +37,7 @@ import type { ItemInst } from './ent'
 import { NEUTRAL } from './ent'
 import { unitDef } from '../shared/content/registry'
 import './scripts/index'
+import { installRoles } from './systems/roleSystem'
 
 export type Role = 'human' | 'xeno' | 'mutant' | 'android'
 export type Faction = 'crew' | 'xeno' | 'mutant'
@@ -50,9 +51,12 @@ export interface GameInit {
 
 /** 每位玩家各自的資訊放寬旗標（除錯工具用；只影響本人的快照與聊天）*/
 export interface ViewFlags {
-  mapHack: boolean
-  hear: boolean
-  xray: boolean
+  /** 看得到整個所在 zone */
+  wide: boolean
+  /** 收得到所有頻道 */
+  listen: boolean
+  /** 看得穿匿名單位的擁有者 */
+  reveal: boolean
 }
 
 export interface GamePlayer {
@@ -96,6 +100,8 @@ export interface GamePlayer {
   feeds: number[]
   /** 本局身分揭露是否已送出 */
   started: boolean
+  /** 各系統的私有資料 */
+  data: Record<string, any>
 }
 
 export class Game {
@@ -162,7 +168,7 @@ export class Game {
         notes: new Map(),
         gitReports: [],
         view: newViewState(),
-        flags: { mapHack: false, hear: false, xray: false },
+        flags: { wide: false, listen: false, reveal: false },
         stats: { kills: 0, infections: 0, tests: 0 },
         chatOut: [],
         fxOut: [],
@@ -171,10 +177,12 @@ export class Game {
         specZone: 1,
         feeds: [],
         started: false,
+        data: {},
       }
     }
     this.tuning = new Tuning(this)
     setupWorld(this)
+    installRoles(this)
     assignRoles(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
@@ -254,6 +262,11 @@ export class Game {
   handleCommand(slot: number, c: Command): void {
     const p = this.players[slot]
     if (!p || this.ended) return
+    if (c.k === 'spec') {
+      // 旁觀者切換觀看的 zone
+      if ((!p.alive || p.spectator) && c.s !== undefined && this.world.zones[c.s]?.alive && !p.data.coreOnly) p.specZone = c.s
+      return
+    }
     handleCommand(this, p, c)
   }
 
@@ -263,8 +276,54 @@ export class Game {
     routeChat(this, p, ch, text, to)
   }
 
-  handleVote(_slot: number, _v: string, _arg?: number): void {
-    // M4：死亡模式投票、禁言投票
+  /** 死亡模式投票（開局 180 秒內一次；本作修正原作只算單方票數的 bug）與禁言投票 */
+  handleVote(slot: number, v: string, arg?: number): void {
+    const p = this.players[slot]
+    if (!p) return
+    const vs = this.votes
+    if (v === 'deathStart') {
+      if (this.time > 180 || vs.deathDone || vs.death) return
+      vs.death = { until: this.time + 30, ballots: new Map() }
+      this.systemAll('vote.deathStarted')
+      return
+    }
+    if ((v === 'boot' || v === 'spectate') && vs.death && p.alive) {
+      vs.death.ballots.set(slot, v)
+      return
+    }
+    if (v === 'kick' && arg !== undefined && p.alive) {
+      const t = this.players[arg]
+      if (!t || t.alive) return
+      const set = vs.kick.get(arg) ?? new Set<number>()
+      set.add(slot)
+      vs.kick.set(arg, set)
+      const alive = this.allPlayers().filter((q) => q.alive && q.connected).length
+      if (set.size >= alive / 2) {
+        t.data.deadMuted = true
+        this.systemAll('vote.kicked', { name: t.baseName })
+      } else this.privateLine(slot, 'vote.kickLeft', { n: Math.ceil(alive / 2 - set.size) })
+    }
+  }
+
+  votes: {
+    death: { until: number; ballots: Map<number, string> } | null
+    deathDone: boolean
+    kick: Map<number, Set<number>>
+  } = { death: null, deathDone: false, kick: new Map() }
+
+  private stepVotes(): void {
+    const d = this.votes.death
+    if (!d || this.time < d.until) return
+    let boot = 0
+    let spec = 0
+    for (const b of d.ballots.values()) {
+      if (b === 'boot') boot++
+      else spec++
+    }
+    this.votes.death = null
+    this.votes.deathDone = true
+    this.settings.bootOnDeath = boot > spec
+    this.systemAll(boot > spec ? 'vote.bootOn' : 'vote.spectateOn', { boot, spec })
   }
 
   handleNote(slot: number, target: number, mark: NoteMark, text: string): void {
@@ -320,6 +379,10 @@ export class Game {
       st: this.world.zones.filter((z) => z.alive && z.station).map((z) => z.key),
       bg: this.hostHidden,
       pz: this.paused,
+      vote: this.votes.death
+        ? { kind: 'death', until: Math.ceil(this.votes.death.until - this.time), boot: [...this.votes.death.ballots.values()].filter((b) => b === 'boot').length, spec: [...this.votes.death.ballots.values()].filter((b) => b === 'spectate').length }
+        : null,
+      boot: this.settings.bootOnDeath,
     }
   }
 
@@ -359,6 +422,76 @@ export class Game {
     }
     if (u.data.keepOnDeath) return
     this.world.remove(u)
+  }
+
+  // ───── 身分機制 API（systems/roles*.ts 實作；內容腳本可以呼叫）─────
+
+  /** 增減某位玩家的 EP（依大廳 EP 倍率）*/
+  addEp(slot: number, amount: number): void {
+    const p = this.players[slot]
+    if (!p) return
+    p.ep = Math.max(0, p.ep + (amount > 0 ? amount * this.settings.epMult : amount))
+  }
+
+  /** 延遲 0.25 秒做勝負判定（原作事件驅動）*/
+  checkVictory(): void {
+    this.victoryPending = true
+  }
+  victoryPending = false
+
+  /** 讓死去的玩家在指定位置復活（回傳新的主單位）*/
+  revivePlayer(slot: number, at: { zone: number; x: number; y: number }, defId = 'personnel', hpPct = 1): Ent | null {
+    return this.rolesApi?.revive(slot, at, defId, hpPct) ?? null
+  }
+
+  /** 把玩家轉成某陣營的 spawn（主單位換成該陣營目前的 spawn 型）*/
+  convertToSpawn(slot: number, faction: 'xeno' | 'mutant', at?: { zone: number; x: number; y: number }, hpPct = 0.33): Ent | null {
+    return this.rolesApi?.convert(slot, faction, at, hpPct) ?? null
+  }
+
+  /** 石化主單位（勝負判定視為死亡）；解除時呼叫 unpetrify */
+  petrify(u: Ent, on: boolean): void {
+    this.rolesApi?.petrify(u, on)
+  }
+
+  rolesApi: {
+    revive(slot: number, at: { zone: number; x: number; y: number }, defId: string, hpPct: number): Ent | null
+    convert(slot: number, faction: 'xeno' | 'mutant', at: { zone: number; x: number; y: number } | undefined, hpPct: number): Ent | null
+    petrify(u: Ent, on: boolean): void
+  } | null = null
+
+  onHiveship?: (p: GamePlayer, u: Ent) => void
+  /** 事件導演（M8）：forced = 由測試或除錯觸發，但對玩家呈現與隨機抽到相同 */
+  triggerEvent?: (id: string, forced: boolean) => boolean
+  eventIds?: () => string[]
+  startApocalypse?: (kind: 'fleet' | 'orbit') => boolean
+  /** 摧毀站點（M6）*/
+  destroyStation?: (key: string) => boolean
+
+  /** 結束本局：送出結算 */
+  endGame(winner: EndResult['winner']): void {
+    if (this.ended) return
+    const key = winner === 'crew' ? 'end.crew' : winner === 'xeno' ? 'end.xeno' : winner === 'mutant' ? 'end.mutant' : winner === 'draw' ? 'end.draw' : 'end.aborted'
+    this.systemAll(key)
+    this.log(key)
+    this.ended = {
+      winner,
+      duration: Math.round(this.time),
+      timeline: this.timeline.slice(-200),
+      players: this.allPlayers().map((p) => ({
+        slot: p.slot,
+        name: p.baseName,
+        color: p.color,
+        role: p.role,
+        classId: p.classId,
+        spawn: !!p.spawnOf,
+        alive: p.alive,
+        kills: p.stats.kills,
+        infections: p.stats.infections,
+        tests: p.stats.tests,
+      })),
+    }
+    for (const p of this.allPlayers()) if (p.connected && !p.bot) this.send(p.slot, { t: 'end', result: this.ended })
   }
 
   /** 主單位死亡（roles 系統會覆寫以處理 spawn 轉化與公告）*/
@@ -460,6 +593,7 @@ export class Game {
         }
       }
     }
+    this.stepVotes()
     stepDoors(this)
     stepAutocast(this)
     stepCasting(this)

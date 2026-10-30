@@ -38,6 +38,17 @@ export function issue(u: Ent, o: Order | null, queue = false): void {
   if (u.cast && !u.cast.channeling && o && o.k !== 'cast') u.cast = null
 }
 
+/** 異類陣營預設不能攻擊自己人（主腦打 -allow 解除）*/
+export function mayAttack(g: Game, p: GamePlayer, t: Ent): boolean {
+  if (t.owner < 0 || t.owner === p.slot) return true
+  const f = g.faction(p)
+  if (f === 'crew') return true
+  const o = g.players[t.owner]
+  if (!o || g.faction(o) !== f) return true
+  const m = g.allPlayers().find((q) => q.role === f && !q.spawnOf)
+  return !!m?.data.allowSpawnAttack
+}
+
 export function handleCommand(g: Game, p: GamePlayer, c: Command): void {
   if (!p.alive) return
   const u = g.controlOf(p)
@@ -65,6 +76,10 @@ export function handleCommand(g: Game, p: GamePlayer, c: Command): void {
       if (c.e === undefined || !canSee(g, p, c.e)) return
       const t = g.world.get(c.e)
       if (!t || !t.alive || t.zone !== u.zone || t === u || t.tags.has('noTarget')) return
+      if (!mayAttack(g, p, t)) {
+        g.privateLine(p.slot, 'role.cantAttackMate')
+        return
+      }
       if (!u.def.attack) {
         issue(u, { k: 'follow', e: t.id }, c.q)
         return

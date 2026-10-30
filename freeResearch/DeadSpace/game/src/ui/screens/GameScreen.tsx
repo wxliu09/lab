@@ -6,6 +6,10 @@ import { GameScene } from '../../render/gameScene'
 import { Overlay } from '../../render/overlay'
 import { Banner, Chat, CommandCard, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
 import { bindFx } from '../../render/fxBinding'
+import '../../render/fxHandlers'
+import { setListener, startAmbient, stopAmbient } from '../../audio/sfx'
+import { VendorPanel } from '../hud/VendorPanel'
+import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -21,8 +25,10 @@ export function GameScreen() {
     const overlay = new Overlay(wrap.current)
     const unbind = bindFx(gs, world)
     const origUpdate = gs.update.bind(gs)
+    startAmbient('station')
     gs.update = (dt, t) => {
       origUpdate(dt, t)
+      setListener(gs.rts.tx, gs.rts.ty)
       engine.damagePulse = Math.max(engine.damagePulse, gs.damage)
       gs.damage = 0
       overlay.draw(gs, world)
@@ -38,6 +44,7 @@ export function GameScreen() {
       inp.dispose()
       overlay.dispose()
       unbind()
+      stopAmbient()
       engine.setScene(null)
     }
   }, [])
@@ -47,6 +54,11 @@ export function GameScreen() {
       <TopBar />
       <Banner />
       <TargetHint />
+      <VendorPanel />
+      <SpectatorBar />
+      <DeathVote />
+      <EvolveMenu />
+      <EndScreen />
       <Chat />
       <div class="hud-bottom">
         {scene && <Minimap scene={scene} />}
