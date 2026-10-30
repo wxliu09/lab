@@ -113,8 +113,19 @@ export function roomProp(b: Batcher, type: string, cx: number, cz: number, rot: 
       break
     }
     case 'commissary': {
+      // 櫃台：深色檯面＋前緣燈條＋幾件貨品（俯視時不再是一整片發光方塊）
       b.add(rbox(0.95, 1.0, 0.95, 0.05), Mat.paint('#2b3238', 0.4), cx, 0.5, cz, rot)
-      b.add(box(0.98, 0.04, 0.98), Mat.emissive('#ffb46b', 1.2), cx, 1.0, cz, rot)
+      b.add(rbox(1.0, 0.05, 1.0, 0.02), mid, cx, 1.02, cz, rot)
+      const fx = Math.cos(rot) * 0.47
+      const fz = -Math.sin(rot) * 0.47
+      b.add(box(0.06, 0.03, 0.9), Mat.emissive('#ffb46b', 1.6), cx + fx, 1.05, cz + fz, rot)
+      const goods = ['#3a6a8a', '#8a5a3a', '#5a7a4a', '#6a4a7a']
+      for (let i = 0; i < 3; i++) {
+        const gx = cx + Math.sin(seed * 1.7 + i * 2.1) * 0.28
+        const gz = cz + Math.cos(seed * 1.3 + i * 2.7) * 0.28
+        const sz = 0.16 + ((seed + i) % 3) * 0.05
+        b.add(rbox(sz, sz * 0.8, sz, 0.02), Mat.paint(goods[(seed + i) % goods.length], 0.55), gx, 1.05 + sz * 0.4, gz, rot + i)
+      }
       break
     }
     case 'power': {

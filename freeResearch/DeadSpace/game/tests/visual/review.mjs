@@ -37,12 +37,19 @@ for (let i = 0; i < 3; i++) {
 }
 await page.waitForTimeout(9000)
 await page.screenshot({ path: `${out}/04-start.png`, timeout: 120000 })
-// 關掉角色揭露
-await page.keyboard.press('Escape')
+// 關掉角色揭露（點一下背景；不要按 Esc，Esc 會打開進化選單）
+if (await page.getByTestId('reveal').isVisible()) await page.getByTestId('reveal').click()
 await page.evaluate(() => window.__xcTest.hook('vision', [0, true]))
 for (const st of STATIONS) {
   await page.evaluate((st) => window.__xcTest.hook('run', [0, 'we', [st]]), st)
-  await page.waitForTimeout(5000)
+  await page.waitForTimeout(2500)
+  // 鏡頭對準自己（傳送後畫面才會跟上）
+  await page.evaluate(() => {
+    const s = window.__xcScene
+    const u = s.myUnit()
+    if (u) s.rts.jump(u.x, u.y)
+  })
+  await page.waitForTimeout(3000)
   await page.screenshot({ path: `${out}/10-${st}.png`, timeout: 180000 })
 }
 // 太空
