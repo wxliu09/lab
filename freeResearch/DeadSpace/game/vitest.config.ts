@@ -6,5 +6,5 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 60000,
   },
-  define: { __DEV__: 'true' },
+  define: { __DEV__: 'true', __TEST_HOOKS__: 'true' },
 })

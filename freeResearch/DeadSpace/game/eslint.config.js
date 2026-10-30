@@ -7,7 +7,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    languageOptions: { globals: { ...globals.browser, ...globals.node, __DEV__: 'readonly' } },
+    languageOptions: { globals: { ...globals.browser, ...globals.node, __DEV__: 'readonly', __TEST_HOOKS__: 'readonly' } },
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
