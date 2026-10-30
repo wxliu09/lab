@@ -117,7 +117,7 @@ regFx('mute', (gs, _w, f) => {
   for (let i = 0; i < 3; i++) {
     gs.fx.after(i * 0.12, () => gs.fx.ring(f.z, p.x, p.y, 1.6, 0.15, '#b28cff', 0.45, { tex: 'ring', k: 2.4, h, ease: 'in', follow: follow3(gs, f.e, 0) }))
   }
-  const icon = gs.fx.glow(f.z, p.x, p.y, h + 0.5, '#d8c8ff', 0.5, 1.6, { tex: 'muted', k: 1.8, fadeIn: 0.15, follow: () => {
+  const icon = gs.fx.glow(f.z, p.x, p.y, h + 0.5, '#d8c8ff', 0.5, 1.6, { tex: 'muted', k: 1.8, fadeIn: 0.15, over: true, follow: () => {
     const q = entPos(gs, f.e)
     return q ? W(q.x, q.y, Math.min(2, q.h * 0.95) + 0.5) : null
   } })
@@ -487,7 +487,7 @@ regFx('weld', (gs, _w, f) => {
     const q = entPos(gs, f.e) ?? p
     gs.fx.emit(f.z, q.x, q.y, h, 4, { color: '#ffffff', color2: '#ff8a2a', speed: 3, life: 0.5, size: 1, up: 0.6, grav: 12, layer: 'spark' })
   })
-  gs.fx.glow(f.z, p.x, p.y, h, '#bfe8ff', 0.7, 0.5, { tex: 'star', k: 3, follow: follow3(gs, f.e, 0.5) })
+  gs.fx.glow(f.z, p.x, p.y, h, '#bfe8ff', 0.9, 0.5, { tex: 'star', k: 3.4, follow: follow3(gs, f.e, 0.5), over: true, spin: 6 })
   gs.fx.light(f.z, p.x, p.y, h + 0.2, '#bfe8ff', 16, 3.5, 0.5, { flicker: 0.6 })
   gs.fx.emit(f.z, p.x, p.y, h, 3, { color: '#8a8a8a', speed: 0.3, life: 1.2, size: 0.35, up: 1, layer: 'smoke', alpha: 0.3 })
 })
@@ -544,7 +544,7 @@ regFx('doorLock', (gs, _w, f) => {
   const locked = (f.v ?? 1) > 0
   const col = locked ? '#ff3b3b' : '#5cf2a5'
   sfx(locked ? 'lock' : 'unlock', f.x, f.y)
-  const s = gs.fx.glow(f.z, f.x, f.y, 1.7, col, 0.7, 1.4, { tex: locked ? 'lock' : 'unlock', k: 2.2, fadeIn: 0.1 })
+  const s = gs.fx.glow(f.z, f.x, f.y, 2.3, col, 0.7, 1.4, { tex: locked ? 'lock' : 'unlock', k: 2.2, fadeIn: 0.1, over: true })
   const y0 = s.position.y
   gs.fx.addTransient(new THREE.Object3D(), 1.4, f.z, (k) => (s.position.y = y0 + k * 0.3))
   gs.fx.ring(f.z, f.x, f.y, 0.3, 1.4, col, 0.6, { tex: 'ring', k: 2 })
@@ -669,7 +669,7 @@ regFx('revive', (gs, _w, f) => {
     const a = Math.random() * Math.PI * 2
     bolt(gs, f.z, W(p.x, p.y, 1), W(p.x + Math.cos(a) * 0.6, p.y + Math.sin(a) * 0.6, 0.3 + Math.random()), '#bfe8ff', 0.02, 0.15, { branches: 0 })
   }
-  const c = gs.fx.glow(f.z, p.x, p.y, 1.6, '#5cf2a5', 0.6, 1.2, { tex: 'cross', k: 2.6, fadeIn: 0.15 })
+  const c = gs.fx.glow(f.z, p.x, p.y, Math.max(1.6, p.h + 0.3), '#5cf2a5', 0.6, 1.2, { tex: 'cross', k: 2.6, fadeIn: 0.15, over: true })
   const y0 = c.position.y
   gs.fx.addTransient(new THREE.Object3D(), 1.2, f.z, (k) => (c.position.y = y0 + k * 1))
   gs.fx.emit(f.z, p.x, p.y, 0.3, 20, { color: '#d8ffe8', color2: '#5cf2a5', speed: 0.5, life: 1.2, size: 0.2, up: 2.4, area: 0.5 })

@@ -473,6 +473,8 @@ export interface GlowOpts {
   /** 跟隨（回傳 three 座標）*/
   follow?: () => THREE.Vector3 | null
   add?: boolean
+  /** 不做深度測試（疊在單位身上的圖示、焊光，避免被身體擋住）*/
+  over?: boolean
 }
 
 export interface RingOpts {
@@ -635,13 +637,13 @@ export class Fx {
     return m
   }
 
-  spriteMat(tex: FxTexName, color: THREE.ColorRepresentation, k = 1, add = true): THREE.SpriteMaterial {
+  spriteMat(tex: FxTexName, color: THREE.ColorRepresentation, k = 1, add = true, depthTest = true): THREE.SpriteMaterial {
     const map = fxTex(tex)
-    const key = `s|${add ? 1 : 0}|${map.uuid}`
+    const key = `s|${add ? 1 : 0}|${map.uuid}|${depthTest ? 1 : 0}`
     const list = this.matPool.get(key)
     let m = list?.pop() as THREE.SpriteMaterial | undefined
     if (!m) {
-      m = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending })
+      m = new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, depthTest, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending })
       m.userData.pool = key
     }
     m.color.set(color).multiplyScalar(k)
@@ -668,8 +670,8 @@ export class Fx {
     return m
   }
 
-  sprite(tex: FxTexName, color: THREE.ColorRepresentation, k = 1, add = true): THREE.Sprite {
-    const s = new THREE.Sprite(this.spriteMat(tex, color, k, add))
+  sprite(tex: FxTexName, color: THREE.ColorRepresentation, k = 1, add = true, depthTest = true): THREE.Sprite {
+    const s = new THREE.Sprite(this.spriteMat(tex, color, k, add, depthTest))
     s.raycast = () => {}
     return s
   }
@@ -873,7 +875,8 @@ export class Fx {
 
   /** 光暈 sprite（面向鏡頭）*/
   glow(zone: number, x: number, y: number, h: number, color: THREE.ColorRepresentation, size: number, dur: number, o: GlowOpts = {}): THREE.Sprite {
-    const s = this.sprite(o.tex ?? 'soft', color, o.k ?? 1.5, o.add ?? true)
+    const s = this.sprite(o.tex ?? 'soft', color, o.k ?? 1.5, o.add ?? true, !o.over)
+    if (o.over) s.renderOrder = 8
     s.position.copy(W(x, y, h))
     s.scale.setScalar(size)
     const sm = s.material

@@ -106,7 +106,7 @@ reg('camera', (_def, s) => {
   part(head, sphere(0.012, 8, 6), rec, 0.05, 0.12, 0.13)
   part(head, cyl(0.004, 0.004, 0.16, 4), dark(), -0.05, 0.22, -0.06)
   // 視野錐（淡）
-  const coneGeo = new THREE.CircleGeometry(3.2, 18, Math.PI / 2 - 0.45, 0.9).rotateX(-Math.PI / 2)
+  const coneGeo = new THREE.CircleGeometry(3.2, 18, -Math.PI / 2 - 0.45, 0.9).rotateX(-Math.PI / 2)
   const cone = new THREE.Mesh(coneGeo, glowMat('#7fd8ff', 0.6, fxTex('soft'), 0.12))
   cone.position.y = 0.04
   cone.raycast = () => {}

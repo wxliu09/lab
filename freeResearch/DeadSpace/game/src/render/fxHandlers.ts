@@ -127,8 +127,10 @@ metalMat.userData.keep = true
 
 function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, from: { x: number; y: number }, color: string, n = 3): void {
   // 三道平行的斜爪痕，面向攻擊者、由左上劃到右下
+  // 面向鏡頭（俯視下才看得到爪痕；若面向攻擊者，橫向攻擊時會變成側面一條線）
+  void from
   const g = new THREE.Group()
-  g.rotation.y = Math.atan2(x - from.x, -(y - from.y))
+  g.quaternion.copy(gs.camera.quaternion)
   g.position.copy(W(x, y, h))
   const len = 0.62
   const slashes: THREE.Mesh[] = []
@@ -537,7 +539,7 @@ regFx('heal', (gs, _w, f) => {
     const a = (i / 3) * Math.PI * 2 + Math.random()
     const cx = p.x + Math.cos(a) * 0.35
     const cy = p.y + Math.sin(a) * 0.35
-    const s = gs.fx.glow(z, cx, cy, 0.6 + i * 0.25, '#5cf2a5', 0.28, 0.9, { tex: 'cross', k: 2.4, fadeIn: 0.15 })
+    const s = gs.fx.glow(z, cx, cy, 0.6 + i * 0.25, '#5cf2a5', 0.28, 0.9, { tex: 'cross', k: 2.4, fadeIn: 0.15, over: true })
     const y0 = s.position.y
     gs.fx.addTransient(new THREE.Object3D(), 0.9, z, (k) => (s.position.y = y0 + k * 0.9))
   }
