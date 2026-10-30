@@ -393,16 +393,19 @@ function simScore(t,s){
   let sc=t.kind===L.g?4:-6;
   if(t.style===s.style){sc+=3;why.push('風格相同');}
   else if((t.alt||[]).includes(s.style)){sc+=1.5;why.push('風格相近');}
+  // a template whose home page is another kind can still have an inner page of the chosen layout
+  const page=t.layout===s.layout?null:(t.pages||[]).find(p=>p[2]===s.layout);
   if(t.layout===s.layout){sc+=2;why.push('版型相同');}
+  else if(page){sc+=2;why.push(`含${L.name}`);}
   const a=hexToHsl(t.color),b=hexToHsl(paletteOf(s).p);
   let cs=0;
   if(a[1]<.18&&b[1]<.18) cs=1;
   else if(a[1]>=.18&&b[1]>=.18) cs=Math.max(0,1-hueDist(a[0],b[0])/70);
   sc+=cs*2.5;if(cs>=.55)why.push('色調相近');
   if(!!t.dark===th.dark){sc+=1;why.push(th.dark?'同為深色':'同為淺色');}
-  return {score:sc,why};
+  return {score:sc,why,page};
 }
-function tplParts(t,why){
+function tplParts(t,why,page){
   const L=byId(LAYOUTS,t.layout),S=byId(STYLES,t.style),home=esc(t.path+(t.home||'index.html'));
   const feat=HAS_FEAT&&lib.scope==='all'&&t.featured?'<span class="tpl-feat">精選</span>':'';
   return {
@@ -411,16 +414,17 @@ function tplParts(t,why){
     top:`<div class="tpl-top"><span class="tpl-dot" style="background:${esc(t.color)}"></span><span class="tpl-name" title="${esc(t.name)}">${esc(t.name)}</span><span class="tpl-set">${esc(TSET[t.set]||t.set)}</span></div>`,
     why:why&&why.length?`<div class="why">${why.slice(0,3).map(x=>`<span>${x}</span>`).join('')}</div>`:'',
     map:`<div class="tpl-map">${L?`<span>${L.id.toUpperCase()} ${L.name}</span>`:''}${S?`<span>${S.id.toUpperCase()} ${S.name}</span>`:''}${(t.tags||[]).slice(0,2).map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`,
-    pages:`<div class="tpl-pages">${(t.pages||[]).map(([f,l])=>`<a href="${esc(t.path+f)}" target="_blank" rel="noopener">${esc(l)}</a>`).join('')}</div>`
+    match:page?`<a class="tpl-match" href="${esc(t.path+page[0])}" target="_blank" rel="noopener">對應頁面：${esc(page[1])} ↗</a>`:'',
+    pages:`<div class="tpl-pages">${(t.pages||[]).map(([f,l])=>`<a href="${esc(t.path+f)}" target="_blank" rel="noopener"${page&&f===page[0]?' class="is-match"':''}>${esc(l)}</a>`).join('')}</div>`
   };
 }
-function libCard(t,why){
-  const p=tplParts(t,why);
-  return `<article class="tpl-card">${p.shot}<div class="tpl-body">${p.top}<p class="tpl-desc">${esc(t.desc)}</p>${p.why}${p.map}${p.pages}<div class="tpl-act"><a class="btn" href="${p.home}" target="_blank" rel="noopener">開啟範本</a><button class="btn btn-primary" type="button" data-apply="${esc(t.id)}">用這個方向選配</button></div></div></article>`;
+function libCard(t,why,page){
+  const p=tplParts(t,why,page);
+  return `<article class="tpl-card">${p.shot}<div class="tpl-body">${p.top}<p class="tpl-desc">${esc(t.desc)}</p>${p.why}${p.match}${p.map}${p.pages}<div class="tpl-act"><a class="btn" href="${p.home}" target="_blank" rel="noopener">開啟範本</a><button class="btn btn-primary" type="button" data-apply="${esc(t.id)}">用這個方向選配</button></div></div></article>`;
 }
-function simCard(t,why){
-  const p=tplParts(t,why);
-  return `<article class="sim-card">${p.shot}<div class="tpl-body">${p.top}${p.why}<p class="tpl-desc">${esc(t.desc)}</p><div class="tpl-act"><a class="btn" href="${p.home}" target="_blank" rel="noopener">開啟範本</a><button class="btn" type="button" data-apply="${esc(t.id)}">用這個方向選配</button></div></div></article>`;
+function simCard(t,why,page){
+  const p=tplParts(t,why,page);
+  return `<article class="sim-card">${p.shot}<div class="tpl-body">${p.top}${p.why}${p.match}<p class="tpl-desc">${esc(t.desc)}</p><div class="tpl-act"><a class="btn" href="${p.home}" target="_blank" rel="noopener">開啟範本</a><button class="btn" type="button" data-apply="${esc(t.id)}">用這個方向選配</button></div></div></article>`;
 }
 function renderLibrary(){
   const P=pool(),counts={};
@@ -437,19 +441,23 @@ function renderLibrary(){
   if(lib.sort==='similar') rows.sort((a,b)=>b.score-a.score);
   $('#libResult').innerHTML=`顯示 <b>${rows.length}</b> / ${P.length} 套${HAS_FEAT&&lib.scope!=='all'?`（精選，另有 ${TL.length-P.length} 套未顯示）`:''}`;
   $('#libBasis').textContent=lib.sort==='similar'?`依目前組合 ${shortCode(state)}（${labelOf(state)}）排序`:'';
-  $('#libGrid').innerHTML=rows.length?rows.map(r=>libCard(r.t,lib.sort==='similar'?r.why:null)).join(''):'<div class="empty">沒有符合條件的範本，試著放寬篩選或換個關鍵字。</div>';
+  $('#libGrid').innerHTML=rows.length?rows.map(r=>lib.sort==='similar'?libCard(r.t,r.why,r.page):libCard(r.t,null)).join(''):'<div class="empty">沒有符合條件的範本，試著放寬篩選或換個關鍵字。</div>';
 }
 function renderSimilar(){
   const sec=$('#similar');
   if(!TL.length){sec.hidden=true;return;}
   const g=byId(LAYOUTS,state.layout).g,cand=pool().filter(t=>t.kind===g);
-  const top=cand.map(t=>Object.assign({t},simScore(t,state))).sort((a,b)=>b.score-a.score).slice(0,3);
+  const ranked=cand.map(t=>Object.assign({t},simScore(t,state))).sort((a,b)=>b.score-a.score);
+  // keep one of the three slots for a template with this kind of page, so its matching page is always offered
+  const fits=r=>r.t.layout===state.layout||r.page;
+  const top=ranked.slice(0,3);
+  if(top.length===3&&!top.some(fits)){const r=ranked.find(fits);if(r)top[2]=r;}
   sec.hidden=!top.length;
   const scopeWord=HAS_FEAT?(lib.scope==='all'?'全部':'精選的'):'';
   $('#simNote').textContent=`依版型、風格、主色與深淺，從${scopeWord} ${cand.length} 套${g==='admin'?'後台':'前台'}範本挑出最接近的 ${top.length} 套。`;
   const sb=$('#simScope');sb.hidden=!HAS_FEAT;
   sb.textContent=lib.scope==='all'?'只用精選範本推薦':`改從全部 ${TL.length} 套推薦`;
-  $('#simGrid').innerHTML=top.map(r=>simCard(r.t,r.why)).join('');
+  $('#simGrid').innerHTML=top.map(r=>simCard(r.t,r.why,r.page)).join('');
 }
 function showLibrary(opts){
   if(!TL.length) return;
