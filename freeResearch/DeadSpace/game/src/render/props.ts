@@ -84,7 +84,10 @@ export function roomProp(b: Batcher, type: string, cx: number, cz: number, rot: 
     case 'lab': {
       // 培養槽：玻璃圓筒＋發光液體＋懸浮標本
       b.add(cyl(0.55, 0.62, 0.35, 24), dark, cx, 0.17, cz)
-      b.add(cyl(0.55, 0.55, 0.25, 24), dark, cx, 2.1, cz)
+      // 頂蓋：俯視鏡頭最先看到的面，用亮一點的金屬＋發光環＋中央接頭，避免一片黑
+      b.add(cyl(0.55, 0.55, 0.25, 24), mid, cx, 2.1, cz)
+      b.add(cyl(0.18, 0.22, 0.14, 12), dark, cx, 2.29, cz)
+      b.add(torus(0.42, 0.035, 6, 24), Mat.emissive(seed % 3 === 0 ? '#b28cff' : '#33ffd1', 2.2), cx, 2.24, cz, 0, 1, 1, 1, Math.PI / 2)
       b.add(torus(0.52, 0.04, 6, 24), Mat.emissive('#33ffd1', 2.5), cx, 0.37, cz, 0, 1, 1, 1, Math.PI / 2)
       const liquid = new THREE.Mesh(cyl(0.47, 0.47, 1.6, 24), Mat.liquid(seed % 3 === 0 ? '#7a3cff' : '#33d1a0'))
       liquid.position.set(cx, 1.15, cz)
