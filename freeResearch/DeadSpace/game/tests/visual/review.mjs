@@ -26,7 +26,15 @@ await page.getByTestId('lobby').waitFor({ timeout: 30000 })
 await page.waitForTimeout(800)
 await page.screenshot({ path: `${out}/03-lobby.png`, timeout: 120000 })
 await page.getByTestId('start').click()
-await page.getByTestId('game').waitFor({ timeout: 30000 })
+// SwiftShader＋高負載時開局可能很慢：輪詢畫面狀態，必要時再按一次開始
+for (let i = 0; i < 3; i++) {
+  try {
+    await page.waitForFunction(() => window.__xcState?.screen?.value === 'game', null, { timeout: 60000 })
+    break
+  } catch {
+    if (await page.getByTestId('start').isVisible()) await page.getByTestId('start').click()
+  }
+}
 await page.waitForTimeout(9000)
 await page.screenshot({ path: `${out}/04-start.png`, timeout: 120000 })
 // 關掉角色揭露
