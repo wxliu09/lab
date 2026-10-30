@@ -5,7 +5,7 @@ import { endResult, leave, send, sendCmd, snapTick, startInfo, world } from '../
 import { evolveOpen } from '../../client/input'
 import { loc, t } from '../i18n'
 import { Icon } from '../icons'
-import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { stationDefOf } from '../../render/gameScene'
 
 const FACTION_COLOR: Record<string, string> = { xeno: '#7a3cff', mutant: '#c8323c', android: '#ffb000' }
 
@@ -89,7 +89,7 @@ export function SpectatorBar() {
         </button>
         {zones.map(([id, , st]) => (
           <button key={id} class={'small' + (me.specZone === id ? ' primary' : '')} onClick={() => sendCmd({ k: 'spec', s: id })}>
-            {loc(STATION_BY_ID.get(st)?.name)}
+            {loc(stationDefOf(st)?.name)}
           </button>
         ))}
       </div>

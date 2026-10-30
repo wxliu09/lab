@@ -38,6 +38,10 @@ import { NEUTRAL } from './ent'
 import { unitDef } from '../shared/content/registry'
 import './scripts/index'
 import { installRoles } from './systems/roleSystem'
+import { installSpace, setupShips } from './systems/space'
+import { placePoi } from './setup'
+import type { Zone } from './world'
+import type { PoiInstance } from '../shared/layout'
 
 export type Role = 'human' | 'xeno' | 'mutant' | 'android'
 export type Faction = 'crew' | 'xeno' | 'mutant'
@@ -124,6 +128,8 @@ export class Game {
   /** 系統訊息佇列 */
   sysLines: { line: ChatLine; to: number[] | 'all' }[] = []
   projectiles: Projectile[] = []
+  /** 各系統的共享狀態 */
+  readonly data: Record<string, any> = {}
   private timers: { at: number; fn: () => void }[] = []
   /** 其他系統掛上的事件 */
   onCast?: (u: Ent, ab: AbilityDef, target?: Ent) => void
@@ -183,7 +189,9 @@ export class Game {
     this.tuning = new Tuning(this)
     setupWorld(this)
     installRoles(this)
+    installSpace(this)
     assignRoles(this)
+    setupShips(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
 
@@ -461,6 +469,7 @@ export class Game {
   } | null = null
 
   onHiveship?: (p: GamePlayer, u: Ent) => void
+  placePoi?: (z: Zone, poi: PoiInstance) => Ent | null = (z, poi) => placePoi(this, z, poi)
   /** 事件導演（M8）：forced = 由測試或除錯觸發，但對玩家呈現與隨機抽到相同 */
   triggerEvent?: (id: string, forced: boolean) => boolean
   eventIds?: () => string[]

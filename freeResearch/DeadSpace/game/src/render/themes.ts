@@ -45,6 +45,15 @@ export const THEMES: Record<string, Theme> = {
   },
 }
 
+THEMES.ship = {
+  ...THEMES.nyx,
+  wall: '#6a737c',
+  wallAccent: '#7fd8ff',
+  floor: { cabin: { variant: 'grate', tint: '#4a525a' } },
+  defaultFloor: { variant: 'grate', tint: '#4a525a' },
+  ambient: 0.8,
+}
+
 export function theme(id: string): Theme {
   return THEMES[id] ?? THEMES.nyx
 }

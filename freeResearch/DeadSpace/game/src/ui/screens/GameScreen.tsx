@@ -10,6 +10,7 @@ import '../../render/fxHandlers'
 import { setListener, startAmbient, stopAmbient } from '../../audio/sfx'
 import { VendorPanel } from '../hud/VendorPanel'
 import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
+import { RoleReveal } from '../hud/RoleReveal'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -59,6 +60,7 @@ export function GameScreen() {
       <DeathVote />
       <EvolveMenu />
       <EndScreen />
+      <RoleReveal />
       <Chat />
       <div class="hud-bottom">
         {scene && <Minimap scene={scene} />}

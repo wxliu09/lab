@@ -14,12 +14,26 @@ import { fogUniforms } from './materials'
 import { preset } from './quality'
 import { Fx } from './fx'
 import '../shared/content/index'
+import { SHIP_BY_ID } from '../shared/content/ships'
+import type { StationDef } from '../shared/content/stations/types'
+import { makeSky } from './space/sky'
+import './models/ships'
 
 export interface ZoneInfo {
   id: number
   key: string
   station: string
   layout: ParsedLayout
+}
+
+/** 站點或船艇內艙的定義 */
+export function stationDefOf(id: string): StationDef | undefined {
+  if (id.startsWith('ship:')) {
+    const sh = SHIP_BY_ID.get(id.slice(5))
+    if (!sh) return undefined
+    return { id, name: sh.name, theme: 'ship', layout: sh.layout, space: { hp: 1, hpRegen: 0, radius: 1, pos: [0, 0], speed: 0, abilities: [], pilotable: true, model: '' }, enable: 'core' }
+  }
+  return STATION_BY_ID.get(id)
 }
 
 export class GameScene implements SceneLike {
@@ -82,25 +96,57 @@ export class GameScene implements SceneLike {
 
   setZones(list: [number, string, string][]): void {
     for (const [id, key, stationId] of list) {
-      const st = STATION_BY_ID.get(stationId)
+      const st = stationDefOf(stationId)
       if (!st) continue
       this.zones.set(id, { id, key, station: stationId, layout: parseLayout(st.layout) })
     }
+  }
+
+  private space: { group: THREE.Group; update: (t: number) => void; sun: THREE.DirectionalLight } | null = null
+
+  private ensureSpace(): void {
+    if (!this.space) {
+      const sky = makeSky(260)
+      const group = new THREE.Group()
+      group.add(sky.group)
+      const sun = new THREE.DirectionalLight('#fff1d6', 3.2)
+      sun.position.set(6.5, 30, 2.9)
+      sun.target.position.set(0, 0, 0)
+      group.add(sun, sun.target)
+      this.scene.add(group)
+      this.space = { group, update: sky.update, sun }
+    }
+    this.space.group.visible = true
   }
 
   private ensureZone(id: number): void {
     if (this.zone === id) return
     const old = this.views.get(this.zone)
     if (old) old.group.visible = false
+    if (this.space) this.space.group.visible = false
     this.zone = id
     const info = this.zones.get(id)
     if (!info) {
       fogUniforms.uFogOn.value = 0
+      if (id === 0) {
+        this.ensureSpace()
+        this.hemi.color.set('#22304a')
+        this.hemi.groundColor.set('#05060a')
+        this.hemi.intensity = 0.7
+        this.rts.setBounds(-49, -49, 49, 49)
+        this.rts.minDist = 22
+        this.rts.maxDist = 95
+        this.grade = { hue: 0, sat: 0.1, bright: 0, contrast: 0.08 }
+        this.units.clear()
+        this.onZoneChange?.({ id: 0, key: 'space', station: 'space', layout: null as never })
+      }
       return
     }
+    this.rts.minDist = 14
+    this.rts.maxDist = 60
     let v = this.views.get(id)
     if (!v) {
-      v = buildStation(STATION_BY_ID.get(info.station)!, info.layout)
+      v = buildStation(stationDefOf(info.station)!, info.layout)
       this.views.set(id, v)
       this.scene.add(v.group)
       this.fogs.set(id, new FogMap(info.layout))
@@ -214,6 +260,7 @@ export class GameScene implements SceneLike {
       this.flashTarget.position.set(p.x + Math.cos(mine.f) * 6, 0, p.z - Math.sin(mine.f) * 6)
       this.flash.intensity = 30
     } else this.flash.intensity = 0
+    this.space?.update(t)
     this.fx.update(dt, t, zid)
     this.rts.update(dt, window.innerWidth, window.innerHeight)
   }

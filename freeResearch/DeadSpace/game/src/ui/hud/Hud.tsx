@@ -68,6 +68,10 @@ export function Minimap({ scene }: { scene: GameScene }) {
     const draw = () => {
       raf = requestAnimationFrame(draw)
       const c = ref.current
+      if (c && scene.zone === 0) {
+        drawSpace(c, scene)
+        return
+      }
       const info = scene.zones.get(scene.zone)
       if (!c || !info) return
       const l = info.layout
@@ -125,9 +129,15 @@ export function Minimap({ scene }: { scene: GameScene }) {
   }, [scene])
   const toWorld = (ev: MouseEvent) => {
     const c = ref.current!
+    const r = c.getBoundingClientRect()
+    if (scene.zone === 0) {
+      const k = Math.min(c.width, c.height) / 100
+      const px = ((ev.clientX - r.left) / r.width) * c.width
+      const py = ((ev.clientY - r.top) / r.height) * c.height
+      return { x: (px - c.width / 2) / k, y: -(py - c.height / 2) / k }
+    }
     const info = scene.zones.get(scene.zone)
     if (!info) return null
-    const r = c.getBoundingClientRect()
     const l = info.layout
     const k = Math.min((c.width - 8) / l.w, (c.height - 8) / l.h)
     const ox = (c.width - l.w * k) / 2
@@ -150,6 +160,45 @@ export function Minimap({ scene }: { scene: GameScene }) {
       />
     </div>
   )
+}
+
+/** 太空層小地圖：所有太空物件 */
+function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
+  const W = c.clientWidth
+  const H = c.clientHeight
+  if (c.width !== W * 2) {
+    c.width = W * 2
+    c.height = H * 2
+  }
+  const x = c.getContext('2d')!
+  x.fillStyle = '#04060c'
+  x.fillRect(0, 0, c.width, c.height)
+  const k = Math.min(c.width, c.height) / 100
+  const ox = c.width / 2
+  const oy = c.height / 2
+  x.strokeStyle = 'rgba(159,231,255,0.15)'
+  for (let r = 10; r < 50; r += 10) {
+    x.beginPath()
+    x.arc(ox, oy, r * k, 0, Math.PI * 2)
+    x.stroke()
+  }
+  for (const e of world.ents.values()) {
+    if (e.s.z !== 0) continue
+    const def = UNITS.get(e.s.d ?? '')
+    const px = ox + e.x * k
+    const py = oy - e.y * k
+    const big = def?.tags.includes('station')
+    x.fillStyle = def?.id === 'space.sun' ? '#fff1d6' : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? '#9fe7ff' : '#cfd8df'
+    x.beginPath()
+    x.arc(px, py, big ? 5 : def?.id === 'space.sun' ? 7 : 3, 0, Math.PI * 2)
+    x.fill()
+  }
+  const tx = scene.rts.tx
+  const ty = scene.rts.ty
+  const vw = scene.rts.distance() * 0.8
+  x.strokeStyle = 'rgba(255,255,255,0.6)'
+  x.lineWidth = 2
+  x.strokeRect(ox + (tx - vw) * k, oy - (ty + vw * 0.55) * k, vw * 2 * k, vw * 1.1 * k)
 }
 
 export function Portrait() {

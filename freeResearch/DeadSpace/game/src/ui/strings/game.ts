@@ -71,6 +71,7 @@ export const GAME_ZH: Record<string, string> = {
   'chat.groupList': '群組 {group}：{list}',
   'chat.noGroup': '你不在群組 {group} 裡',
   'chat.unknownCmd': '未知的指令',
+  'reveal.dismiss': '點一下或按空白鍵開始',
 }
 
 export const GAME_EN: Record<string, string> = {
@@ -145,4 +146,5 @@ export const GAME_EN: Record<string, string> = {
   'chat.groupList': 'Group {group}: {list}',
   'chat.noGroup': 'You are not in group {group}',
   'chat.unknownCmd': 'Unknown command',
+  'reveal.dismiss': 'Click or press Space to begin',
 }

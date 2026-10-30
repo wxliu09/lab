@@ -228,3 +228,52 @@ regFx('emp', (gs, _w, f) => {
 export function genericFx(gs: GameScene, f: { z: number; x: number; y: number }, color = '#b28cff'): void {
   gs.fx.emit(f.z, f.x, f.y, 1, 10, { color, speed: 1.5, life: 0.5, size: 0.25, up: 1 })
 }
+
+regFx('stationBoom', (gs, _w, f) => {
+  sfx('bigBoom', f.x, f.y)
+  const r = (f.v ?? 3) * 1.5
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => {
+      const ox = f.x + (Math.random() - 0.5) * r
+      const oy = f.y + (Math.random() - 0.5) * r
+      gs.fx.flash(f.z, ox, oy, 1, '#ffd9a0', r * 0.8, 0.6)
+      gs.fx.emit(f.z, ox, oy, 1, 120, { color: '#ff9a3a', speed: r * 2.5, life: 1.4, size: 1.4, up: 0.3, drag: 1 })
+    }, i * 350)
+  }
+  gs.fx.shock(f.z, f.x, f.y, r * 4, '#ffd9a0', 1.6)
+  gs.rts.shake = 1
+})
+
+regFx('launch', (gs, _w, f) => {
+  sfx('rocket', f.x, f.y)
+  gs.fx.emit(f.z, f.x, f.y, 0.5, 40, { color: '#9fe7ff', speed: 2, life: 0.8, size: 0.6, up: 0.4 })
+})
+regFx('dock', (gs, _w, f) => gs.fx.shock(f.z, f.x, f.y, 3, '#9fe7ff', 0.8))
+regFx('board', (gs, _w, f) => gs.fx.emit(f.z, f.x, f.y, 1, 10, { color: '#ffc23d', speed: 1, life: 0.4, size: 0.2, up: 1 }))
+regFx('boardLink', (gs, _w, f) => gs.fx.tracer(f.z, f.x, f.y, 0.5, f.x2 ?? f.x, f.y2 ?? f.y, 0.5, '#ffc23d', 0.08, 1))
+regFx('alarm', (gs, _w, f) => {
+  sfx('alarm', f.x, f.y)
+  gs.fx.shock(f.z, f.x, f.y, 4, '#ff3b3b', 1)
+})
+regFx('xenoShift', (gs, w, f) => {
+  const e = f.e ? w.ents.get(f.e) : undefined
+  const x = e?.x ?? f.x
+  const y = e?.y ?? f.y
+  sfx('void', x, y)
+  gs.fx.emit(f.z, x, y, 1, 40, { color: '#7a3cff', speed: 2.5, life: 0.9, size: 0.35, up: 1 })
+  gs.fx.emit(f.z, x, y, 0.5, 20, { color: '#33ffd1', speed: 1.5, life: 0.7, size: 0.25, up: 0.5 })
+})
+regFx('cocoon', (gs, _w, f) => {
+  gs.fx.shock(f.z, f.x, f.y, 2.5, f.s === 'mutant' ? '#c8323c' : '#7a3cff', 1.2)
+  gs.fx.emit(f.z, f.x, f.y, 0.6, 50, { color: f.s === 'mutant' ? '#e8b04a' : '#33ffd1', speed: 2, life: 1.2, size: 0.4, up: 1.4 })
+})
+regFx('evolved', (gs, _w, f) => {
+  sfx('bigBoom', f.x, f.y)
+  gs.fx.flash(f.z, f.x, f.y, 1.2, '#b28cff', 2.5, 0.6)
+  gs.fx.shock(f.z, f.x, f.y, 5, '#b28cff', 1)
+  gs.fx.emit(f.z, f.x, f.y, 0.8, 100, { color: '#b28cff', speed: 5, life: 1, size: 0.5, up: 1 })
+})
+regFx('infect', (gs, _w, f) => gs.fx.emit(f.z, f.x, f.y, 0.5, 30, { color: '#7a3cff', speed: 1.2, life: 1.2, size: 0.4, up: 0.6 }))
+regFx('egg', (gs, _w, f) => gs.fx.emit(f.z, f.x, f.y, 0.3, 14, { color: '#33ffd1', speed: 1, life: 0.8, size: 0.25, up: 0.8 }))
+regFx('devour', (gs, _w, f) => gs.fx.emit(f.z, f.x, f.y, 0.6, 24, { color: '#c8323c', speed: 2, life: 0.6, size: 0.3, up: 1, grav: 4 }))
+LOOKS.shipGun = { color: '#9fe7ff', size: 0.18, hit: 0.6, sound: 'heavy', style: 'orb' }

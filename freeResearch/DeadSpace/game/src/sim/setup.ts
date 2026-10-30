@@ -87,7 +87,7 @@ export function setupWorld(g: Game): void {
   }
 }
 
-function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
+export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
   const w = g.world
   let def: UnitDef
   switch (poi.def.kind) {
