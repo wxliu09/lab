@@ -229,7 +229,7 @@ export const ITEM_ABILITIES: AbilityDef[] = [
   A({
     id: 'ab.item.verdict',
     name: L('宣判', 'Sentence'),
-    desc: L('瞄準 1.5 秒後開槍，造成 125 傷害並讓目標短暫失衡。瞄準期間受到攻擊會被打斷。', 'Aim for 1.5 s, then fire for 125 damage and a brief stagger. Taking a hit while aiming can break the shot.'),
+    desc: L('瞄準 1.5 秒後開槍，造成 125 傷害並讓目標短暫失衡。瞄準時移動就得重來。', 'Aim for 1.5 s, then fire for 125 damage and a brief stagger. Move while aiming and you start over.'),
     icon: 'gun',
     target: 'unit',
     range: 14,
@@ -258,7 +258,7 @@ export const ITEM_ABILITIES: AbilityDef[] = [
   A({
     id: 'ab.item.janitorCard',
     name: L('刷卡', 'Swipe Card'),
-    desc: L('對身邊 2.5 m 內的門刷卡：鎖著的打開，開著的鎖上。', 'Swipe at doors within 2.5 m: locked ones open, unlocked ones lock.'),
+    desc: L('對身邊 2.5 m 內的門刷卡：上了鎖的解鎖，沒上鎖的鎖上。', 'Swipe at doors within 2.5 m: locked ones unlock, unlocked ones lock.'),
     icon: 'card',
     target: 'none',
     cast: 1,

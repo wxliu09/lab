@@ -75,17 +75,17 @@ export function recomputeStats(u: Ent): void {
   let moveAdd = 0
   const apply = (d: BuffDef, stacks = 1) => {
     if (d.move !== undefined) moveMult *= Math.pow(d.move, stacks)
-    if (d.moveAdd) moveAdd += d.moveAdd * stacks
-    if (d.atkSpeed) s.atkSpeed *= Math.pow(d.atkSpeed, stacks)
-    if (d.dmgMult) s.dmgMult *= Math.pow(d.dmgMult, stacks)
+    if (d.moveAdd !== undefined) moveAdd += d.moveAdd * stacks
+    if (d.atkSpeed !== undefined) s.atkSpeed *= Math.pow(d.atkSpeed, stacks)
+    if (d.dmgMult !== undefined) s.dmgMult *= Math.pow(d.dmgMult, stacks)
     if (d.dmgTaken !== undefined) s.dmgTaken *= Math.pow(d.dmgTaken, stacks)
-    if (d.armor) s.armor += d.armor * stacks
-    if (d.regen) s.regen += d.regen * stacks
-    if (d.mpRegen) s.mpRegen += d.mpRegen * stacks
-    if (d.sightMult) s.sight *= d.sightMult
-    if (d.sightAdd) s.sight += d.sightAdd * stacks
-    if (d.rangeAdd) s.range += d.rangeAdd * stacks
-    if (d.evade) s.evade = 1 - (1 - s.evade) * (1 - d.evade)
+    if (d.armor !== undefined) s.armor += d.armor * stacks
+    if (d.regen !== undefined) s.regen += d.regen * stacks
+    if (d.mpRegen !== undefined) s.mpRegen += d.mpRegen * stacks
+    if (d.sightMult !== undefined) s.sight *= d.sightMult
+    if (d.sightAdd !== undefined) s.sight += d.sightAdd * stacks
+    if (d.rangeAdd !== undefined) s.range += d.rangeAdd * stacks
+    if (d.evade !== undefined) s.evade = 1 - (1 - s.evade) * (1 - d.evade)
     if (d.stun) s.stunned = true
     if (d.silence) s.silenced = true
     if (d.disarm) s.disarmed = true

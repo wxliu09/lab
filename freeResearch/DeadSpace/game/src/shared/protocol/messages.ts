@@ -284,8 +284,10 @@ export interface PrivateState {
   hint: string
   /** 旁觀模式：可看的 zone */
   specZone: number
-  /** 監視器畫面等額外視角 */
-  feeds: number[]
+  /** 自己的監視器：[實體 id, zone, x×10, y×10] */
+  feeds: [number, number, number, number][]
+  /** 身旁那扇門的門禁紀錄（最近 5 次通過的剪影）*/
+  doorLog: { door: number; zone: number; log: { t: number; sil: string }[] } | null
 }
 
 export interface NoteEntry {

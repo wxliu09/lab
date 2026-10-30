@@ -101,7 +101,7 @@ export interface GamePlayer {
   bio: string
   hint: string
   specZone: number
-  feeds: number[]
+  feeds: [number, number, number, number][]
   /** 本局身分揭露是否已送出 */
   started: boolean
   /** 各系統的私有資料 */

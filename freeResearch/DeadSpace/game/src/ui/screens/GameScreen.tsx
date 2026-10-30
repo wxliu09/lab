@@ -11,6 +11,7 @@ import { setListener, startAmbient, stopAmbient } from '../../audio/sfx'
 import { VendorPanel } from '../hud/VendorPanel'
 import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
+import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -22,6 +23,7 @@ export function GameScreen() {
     if (!c || !wrap.current) return
     const engine = getEngine(c)
     const gs = new GameScene(world)
+    gs.viewOverride = () => feedView.value
     gs.setZones(startInfo.value?.zones ?? [])
     const overlay = new Overlay(wrap.current)
     const unbind = bindFx(gs, world)
@@ -57,6 +59,9 @@ export function GameScreen() {
       <TargetHint />
       <VendorPanel />
       <SpectatorBar />
+      <NotesPanel />
+      <FeedsPanel />
+      <DoorLog />
       <DeathVote />
       <EvolveMenu />
       <EndScreen />

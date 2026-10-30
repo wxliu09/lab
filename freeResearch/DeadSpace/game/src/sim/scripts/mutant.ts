@@ -78,6 +78,12 @@ function openNear(g: Game, zone: number, x: number, y: number): { x: number; y: 
   return z.nav.nearestOpen(x, y)
 }
 
+/** 感染到玩家主單位時記入結算統計 */
+function countInfection(g: Game, src: Ent | null, t: Ent): void {
+  const p = src && src.owner >= 0 ? g.players[src.owner] : undefined
+  if (p && t.isMain) p.stats.infections++
+}
+
 function refundCd(u: Ent, ab?: { id: string; sharedCd?: string }): void {
   if (ab) u.cds.delete(ab.sharedCd ?? ab.id)
 }
@@ -367,7 +373,8 @@ function onTaintedBuy(g: Game, u: Ent, v: Ent, item: string): void {
       }
     }
   }
-  applyBuff(g, u, 'bf.prionStrong', undefined, infectSource(g, t.src, t.slot))
+  const src = infectSource(g, t.src, t.slot)
+  if (applyBuff(g, u, 'bf.prionStrong', undefined, src)) countInfection(g, src, u)
 }
 
 reg('mutant.taintVendor', (g, ctx) => {
@@ -535,7 +542,9 @@ reg('mutant.totalInfection', (g, ctx) => {
     if (!q.alive || g.faction(q) === 'mutant') continue
     const m = g.mainOf(q)
     if (!m || !m.alive) continue
-    if (applyBuff(g, m, 'bf.prionStrong', undefined, c)) n++
+    if (!applyBuff(g, m, 'bf.prionStrong', undefined, c)) continue
+    countInfection(g, c, m)
+    n++
   }
   tell(g, c, 'mut.totalInfection', { n })
 })
@@ -600,7 +609,7 @@ reg('mutant.carrierTick', (g, ctx, p) => {
     if (!t.tags.has('personnel') && !t.tags.has('organic')) continue
     if (isMutantSide(g, t) || hasBuff(t, 'bf.prionCarrier')) continue
     if (src === undefined) src = infectSource(g, b.src, b.srcSlot)
-    applyBuff(g, t, 'bf.prionCarrier', undefined, src)
+    if (applyBuff(g, t, 'bf.prionCarrier', undefined, src)) countInfection(g, src, t)
   }
 })
 

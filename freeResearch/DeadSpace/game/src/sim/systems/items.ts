@@ -119,7 +119,7 @@ export function morph(g: Game, u: Ent, defId: string): void {
   u.mp = def.mp * mpK
   u.radius = def.radius
   u.abilities = [...def.abilities, ...((u.data.extraAbilities as string[]) ?? [])]
-  if (u.suit) u.abilities.push('suit.drop')
+  if (u.suit && !u.abilities.includes('suit.drop')) u.abilities.push('suit.drop')
   u.autocast = new Set([...u.autocast].filter((a) => u.abilities.includes(a)))
   u.atkReady = g.time + 0.3
   u.statsDirty = true

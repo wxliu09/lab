@@ -169,7 +169,25 @@ export class GameScene implements SceneLike {
     return id ? this.world.ents.get(id) : undefined
   }
 
+  /** 監視器畫面等：暫時看另一個位置 */
+  viewOverride: (() => { zone: number; x: number; y: number } | null) | null = null
+  private lastOverride: unknown = null
+
   viewZone(): number {
+    const ov = this.viewOverride?.()
+    if (ov) {
+      if (this.lastOverride !== ov) {
+        this.lastOverride = ov
+        this.rts.jump(ov.x, ov.y)
+        this.rts.follow = null
+      }
+      return ov.zone
+    }
+    if (this.lastOverride) {
+      this.lastOverride = null
+      const u = this.myUnit()
+      if (u) this.rts.jump(u.x, u.y)
+    }
     const me = this.world.me
     if (me.alive === false || me.role === 'spectator') return me.specZone ?? 1
     const u = this.myUnit()

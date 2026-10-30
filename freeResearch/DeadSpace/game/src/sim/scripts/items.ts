@@ -81,8 +81,8 @@ const RUNTIME = new WeakMap<Game, ItemRuntime>()
 
 /** 取得（必要時建立並註冊）這一局的道具 runtime */
 export function itemRuntime(g: Game): ItemRuntime {
-  let rt = RUNTIME.get(g)
-  if (rt) return rt
+  const have = RUNTIME.get(g)
+  if (have) return have
   const created: ItemRuntime = {
     sentries: new Set(),
     sensors: new Set(),
@@ -91,7 +91,6 @@ export function itemRuntime(g: Game): ItemRuntime {
     hostileFn: null,
     podCd: new Map(),
   }
-  rt = created
   RUNTIME.set(g, created)
   g.systems.push({ name: 'items', fn: (gg) => stepItemRuntime(gg, created) })
   // 保險：還沒初始化庫存的販賣機（setup 沒呼叫 initVendor 時）在這裡補上

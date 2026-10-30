@@ -143,7 +143,15 @@ export function stepCombat(g: Game): void {
     }
     u.anim = 2
     u.animTarget = target.id
-    u.windupUntil = t + (u.def.attack.windup ?? 0.12)
+    const wu = u.def.attack.windup ?? (u.def.attack.cd < 0.4 ? 0 : 0.12)
+    if (wu <= 0) {
+      // 高射速武器：同一 tick 直接開火，冷卻從上一發起算（避免被 tick 量化拖慢）
+      fireAttack(g, u, target)
+      const cd = u.def.attack.cd / Math.max(0.1, u.stats.atkSpeed)
+      u.atkReady = Math.max(u.atkReady + cd, t + cd - 0.05)
+      continue
+    }
+    u.windupUntil = t + wu
     u.windupTarget = target.id
   }
 }
