@@ -14,6 +14,7 @@ import { rockMat } from './fx/mats'
 import './fx/abilities'
 import './fx/primitives'
 import './fx/space'
+import './fx/stations'
 
 type Style =
   | 'tracer'
@@ -478,7 +479,7 @@ regFx('boom', (gs, _w, f) => {
   const z = f.z
   sfx(r > 3 ? 'bigBoom' : 'boom', f.x, f.y)
   gs.fx.flash(z, f.x, f.y, 0.8, '#ffd9a0', Math.min(2.5, r * 0.5), 0.25)
-  gs.fx.glow(z, f.x, f.y, 0.6, '#ff8a3a', r * 3.2, 0.5, { k: 1.8, grow: 1.4 })
+  gs.fx.glow(z, f.x, f.y, 0.6, '#ff8a3a', r * 2.2, 0.5, { k: 1.2, grow: 1.4, opacity: 0.75 })
   gs.fx.shock(z, f.x, f.y, r * 1.2, '#ffb46b', 0.45)
   gs.fx.emit(z, f.x, f.y, 0.5, Math.min(110, 26 + r * 12), { color: '#fff0c0', color2: '#ff4a1a', speed: r * 3, life: 0.6, size: 0.6, grow: 1.6, up: 0.8, drag: 2.5, grav: 2 })
   gs.fx.emit(z, f.x, f.y, 0.5, Math.min(50, 14 + r * 8), { color: '#ffffff', color2: '#ffb46b', speed: r * 4 + 3, life: 0.55, size: 1, up: 0.9, grav: 9, drag: 0.8, layer: 'spark' })

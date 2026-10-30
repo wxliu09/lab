@@ -20,8 +20,8 @@ if (!base) {
   if (!process.env.XC_NOBUILD) {
     await build({ root, configFile, mode: 'e2e', logLevel: 'warn', build: { outDir: dist, emptyOutDir: true, rollupOptions: { input: { models: resolve(root, 'models.html') } } } })
   }
-  server = await preview({ root, configFile, mode: 'e2e', logLevel: 'warn', build: { outDir: dist }, preview: { port: 5198, strictPort: true } })
-  base = 'http://localhost:5198/'
+  server = await preview({ root, configFile, mode: 'e2e', logLevel: 'warn', build: { outDir: dist }, preview: { port: 5198, strictPort: false } })
+  base = server.resolvedUrls?.local[0] ?? 'http://localhost:5198/'
 }
 
 const XENO12 = 'human,xeno.protoform,xeno.protoform.spawn,xeno.lumen,xeno.brute,xeno.puppeteer,xeno.egg,xeno.cocoon'
@@ -30,6 +30,7 @@ const MUT1 = 'human,mut.apex,mut.sporemother,mut.drone,mut.blitz,mut.brawn,mut.m
 const MUT3 = 'human,mut.carcinid,mut.colossus,mut.taurus,mut.plagueQueen,mut.broodmother,mut.blightcrawler,mut.hiveground,mut.mass'
 const MINI = 'human,mut.fleshy,mut.spiderling,mut.sporeling,mut.worm,mut.swarm,mut.tentacle,mut.carrierSack,mut.harbinger,mut.vectorBug,mut.slime,mut.hiveground.spawn'
 const DROID = 'human,android.bulwark,android.gale,android.pengu,butler'
+const EXTRA = 'human,xeno.timeZombie,xeno.eldritch,xeno.hydraCore,xeno.entropyField,xeno.webAnchor,mut.hiveground.spawn,mut.guardian,mut.hiveship'
 
 // [名稱, 查詢字串, 狀態, 速度]
 const SHOTS = [
@@ -45,6 +46,8 @@ const SHOTS = [
   ['mut-t3-close', `ids=${MUT3}&cols=5&sp=5&dist=24`, 0, 0],
   ['mut-minion-close', `ids=${MINI}&cols=6&sp=2.8&dist=16`, 0, 0],
   ['droid-close', `ids=${DROID}&cols=5&sp=3.2&dist=13`, 0, 0],
+  ['extra-close', `ids=${EXTRA}&cols=5&sp=4.4&dist=20`, 0, 0],
+  ['extra-dead', `ids=${EXTRA}&cols=5&sp=4.4&dist=20`, 4, 0],
   ['xeno-move', `ids=${XENO12}&cols=4&sp=4.6&dist=30`, 1, 3],
   ['xeno-attack', `ids=${XENO3}&cols=5&sp=5.2&dist=36`, 2, 0],
   ['mut-move', `ids=${MUT1}&cols=5&sp=4.6&dist=32`, 1, 3],
@@ -67,15 +70,19 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message))
 const custom = filter.startsWith('?') ? [[process.argv[4] ?? 'custom', filter.slice(1), +(process.argv[5] ?? 0), +(process.argv[6] ?? 0)]] : null
 for (const [name, query, st, speed] of custom ?? SHOTS) {
   if (!custom && filter && (filter.startsWith('!') ? name.includes(filter.slice(1)) : !name.includes(filter))) continue
-  await page.goto(`${base}models.html?${query}&q=low`, { timeout: 120000 })
-  await page.waitForFunction(() => window.__gallery && window.__gallery.frames > 6, null, { timeout: 120000 })
-  if (st) {
-    await page.evaluate(([a, b]) => window.__gallery.set(a, b), [st, speed])
-    await page.waitForFunction((f) => window.__gallery.frames > f, await page.evaluate(() => window.__gallery.frames + 12), { timeout: 120000 })
-    await page.waitForTimeout(st === 4 ? 2500 : 600)
-  } else await page.waitForTimeout(800)
-  await page.screenshot({ path: `${out}/${name}.png`, timeout: 120000 })
-  console.log('shot', name)
+  try {
+    await page.goto(`${base}models.html?${query}&q=low`, { timeout: 120000 })
+    await page.waitForFunction(() => window.__gallery && window.__gallery.frames > 6, null, { timeout: 120000 })
+    if (st) {
+      await page.evaluate(([a, b]) => window.__gallery.set(a, b), [st, speed])
+      await page.waitForFunction((f) => window.__gallery.frames > f, await page.evaluate(() => window.__gallery.frames + 12), { timeout: 120000 })
+      await page.waitForTimeout(st === 4 ? 2500 : 600)
+    } else await page.waitForTimeout(800)
+    await page.screenshot({ path: `${out}/${name}.png`, timeout: 300000 })
+    console.log('shot', name)
+  } catch (e) {
+    console.log('fail', name, String(e).split('\n')[0])
+  }
 }
 await browser.close()
 await server?.close()

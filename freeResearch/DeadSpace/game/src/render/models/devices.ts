@@ -913,6 +913,130 @@ reg('metal', (_def, s) => {
   }
 })
 
+// ───────── 標本籠（站內設施生成）─────────
+
+reg('fac.cage', (_def, s) => {
+  const root = new THREE.Group()
+  const frame = Mat.metal('#4a535c', 0.75)
+  part(root, rbox(1.2, 0.1, 1.2, 0.03), Mat.metal('#2b3138', 0.7), 0, 0.05, 0)
+  part(root, box(1.22, 0.03, 1.22), Mat.paint('#ffc23d', 0.5), 0, 0.11, 0)
+  part(root, rbox(1.2, 0.08, 1.2, 0.03), frame, 0, 1.3, 0)
+  for (const [x, z] of [
+    [-0.56, -0.56],
+    [0.56, -0.56],
+    [-0.56, 0.56],
+    [0.56, 0.56],
+  ])
+    part(root, rbox(0.07, 1.2, 0.07, 0.015), frame, x, 0.7, z)
+  // 欄杆與玻璃
+  for (let i = -2; i <= 2; i++) {
+    part(root, cyl(0.012, 0.012, 1.18, 6), frame, i * 0.2, 0.7, 0.56)
+    part(root, cyl(0.012, 0.012, 1.18, 6), frame, i * 0.2, 0.7, -0.56)
+    part(root, cyl(0.012, 0.012, 1.18, 6), frame, 0.56, 0.7, i * 0.2)
+    part(root, cyl(0.012, 0.012, 1.18, 6), frame, -0.56, 0.7, i * 0.2)
+  }
+  const glass = Mat.glass('#c8fff0', 0.16)
+  for (const [x, z, ry] of [
+    [0, 0.555, 0],
+    [0, -0.555, 0],
+    [0.555, 0, Math.PI / 2],
+    [-0.555, 0, Math.PI / 2],
+  ])
+    part(root, box(1.08, 1.16, 0.01), glass, x, 0.7, z, 0, ry)
+  const lamp = liveEmi('#5cf2a5', 2)
+  part(root, box(0.9, 0.025, 0.9), lamp, 0, 1.25, 0)
+  const inner = sprite(root, 'soft', '#5cf2a5', 0.8, 1.4, 0.6, true, 0.5)
+  // 裡面的標本：依 x2.n 顯示幾團蜷縮的陰影
+  const lumps: THREE.Mesh[] = []
+  const shadowMat = withFog(new THREE.MeshStandardMaterial({ color: '#2a2a24', roughness: 0.6, emissive: '#1a3a24', emissiveIntensity: 0.3 }))
+  for (let i = 0; i < 3; i++) {
+    const m = part(root, sphere(0.16, 10, 8), shadowMat, (i - 1) * 0.3, 0.26, (i % 2) * 0.2 - 0.1)
+    m.scale.set(1.2, 0.7, 0.9)
+    lumps.push(m)
+  }
+  return {
+    root,
+    height: 1.4,
+    update(t) {
+      const n = Number(s.x2?.n ?? 0)
+      lumps.forEach((m, i) => {
+        m.visible = i < n
+        m.position.y = 0.26 + Math.sin(t * 1.5 + i * 2) * 0.02
+      })
+      lamp.emissiveIntensity = 1.6 + Math.sin(t * 2.4) * 0.4
+      inner.material.opacity = 0.4 + 0.1 * Math.sin(t * 2.4)
+    },
+  }
+})
+
+// ───────── 天守主砲的能量球（太空層）─────────
+
+reg('space.cannonOrb', (_def, s) => {
+  const root = new THREE.Group()
+  const H = 0.6
+  const core = new THREE.Mesh(GEO.sphere, glowMat('#e8f8ff', 5, null))
+  core.scale.setScalar(0.45)
+  core.position.y = H
+  core.raycast = () => {}
+  root.add(core)
+  const shellM = new THREE.Mesh(GEO.ico1, glowMat('#7fd8ff', 1.8, null, 0.4))
+  shellM.scale.setScalar(0.75)
+  shellM.position.y = H
+  shellM.raycast = () => {}
+  root.add(shellM)
+  const halo = sprite(root, 'soft', '#7fd8ff', 2.4, 4.5, H)
+  const star = sprite(root, 'star', '#bfefff', 2, 3, H)
+  const rings: THREE.Mesh[] = []
+  for (let i = 0; i < 2; i++) {
+    const r = new THREE.Mesh(GEO.torus, glowMat('#9fe7ff', 2.4, null, 0.8))
+    r.scale.set(0.95 + i * 0.25, 1.4, 0.95 + i * 0.25)
+    r.position.y = H
+    r.raycast = () => {}
+    root.add(r)
+    rings.push(r)
+  }
+  let em = 0
+  return {
+    root,
+    height: 1.2,
+    update(t, dt) {
+      const j = 1 + Math.sin(t * 18 + s.i) * 0.05
+      core.scale.setScalar(0.45 * j)
+      shellM.rotation.set(t * 1.3, t * 0.9, 0)
+      rings[0].rotation.set(t * 1.7, 0, t * 0.6)
+      rings[1].rotation.set(-t * 1.1, t * 0.4, 0)
+      halo.scale.setScalar(4.5 * j)
+      star.material.rotation = t
+      em += dt
+      if (em > 0.05) {
+        em = 0
+        const p = simPos(root)
+        fx()?.emitHere(p.x, p.y, H, 2, { color: '#d8f6ff', color2: '#3a7aff', speed: 0.6, life: 1.4, size: 0.5, up: 0, drag: 0.5, area: 0.4 })
+      }
+    },
+  }
+})
+
+// ───────── 重力校正指揮點（太空層，只有操控者看得到）─────────
+
+reg('space.gravTargeter', () => {
+  const root = new THREE.Group()
+  const a = flatDisc(root, 1.6, glowMat('#9fa8ff', 2, fxTex('arrows'), 0.8), 0.2)
+  const b = flatDisc(root, 2.2, glowMat('#7fd8ff', 1.6, fxTex('ring'), 0.6), 0.2)
+  const c = flatDisc(root, 0.9, glowMat('#c8d0ff', 1.6, fxTex('clock'), 0.6), 0.22)
+  const dot = sprite(root, 'star', '#c8d0ff', 2.4, 1.2, 0.3)
+  return {
+    root,
+    height: 0.6,
+    update(t) {
+      a.rotation.y = t * 0.8
+      c.rotation.y = -t * 1.4
+      ;(b.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.2 * Math.sin(t * 4)
+      dot.scale.setScalar(1.1 + Math.sin(t * 6) * 0.15)
+    },
+  }
+})
+
 /** 裝置模型清單（截圖用）*/
-export const DEVICE_MODELS = ['camera', 'motionSensor', 'sentry', 'forceBarrier', 'regenBeacon', 'fusionCharge', 'protoPortal', 'gitResolver', 'singularity', 'wormBait', 'teslaStorm', 'plasmaBall', 'fireField', 'radZone', 'acidPool', 'cloud', 'drainer', 'rdg', 'firefly', 'energyBank', 'metal']
+export const DEVICE_MODELS = ['camera', 'motionSensor', 'sentry', 'forceBarrier', 'regenBeacon', 'fusionCharge', 'protoPortal', 'gitResolver', 'singularity', 'wormBait', 'teslaStorm', 'plasmaBall', 'fireField', 'radZone', 'acidPool', 'cloud', 'drainer', 'rdg', 'firefly', 'energyBank', 'metal', 'fac.cage', 'space.cannonOrb', 'space.gravTargeter']
 export type { ModelView }

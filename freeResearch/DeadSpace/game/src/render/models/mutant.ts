@@ -257,7 +257,7 @@ regModel('mut.brawn', (def, s) => {
     // 拳頭拖地的猩猩姿態；攻擊時雙拳砸地
     const st = L.strike * L.atk
     for (const a of r.arms) {
-      a.sh.rotation.x += 0.25 - Math.max(0, st) * 0.6
+      a.sh.rotation.x += -0.2 - Math.max(0, st) * 0.6
       a.sh.rotation.z *= 1.8
     }
     r.arms[0].sh.rotation.x = r.arms[1].sh.rotation.x
@@ -456,7 +456,7 @@ regModel('mut.colossus', (def, s) => {
     animBiped(r, L, t, 0.38, 0.35)
     const st = L.strike * L.atk
     for (const a of r.arms) {
-      a.sh.rotation.x += 0.15 - Math.max(0, st) * 0.4
+      a.sh.rotation.x += -0.15 - Math.max(0, st) * 0.4
       a.sh.rotation.z *= 1.6
     }
     r.body.position.y += Math.abs(Math.sin(L.walk)) * 0.04 * L.move

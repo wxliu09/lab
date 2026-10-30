@@ -751,6 +751,7 @@ docked: [],
 def hulk7():
     s = St('hulk7', 56, 46)
     s.poi('w', 'patrol', solid=False)
+    s.poi('a', 'arcLeak')
     s.rect(4, 2, 19, 9)
     s.rect(22, 2, 33, 9)
     s.rect(4, 12, 28, 20)
@@ -771,6 +772,14 @@ def hulk7():
         s.at(cc, r, '~')
     for cc, r in ((10, 16), (24, 16), (38, 31), (10, 6)):
         s.at(cc, r, 'w')
+    # 漏電點：放在每團危險區旁、最靠近重心的空地上（模型的電弧向四周亂跳）
+    for hz in (((37, 18), (38, 18), (39, 18), (37, 19), (38, 19), (36, 20), (40, 17)), ((20, 14), (21, 14), (21, 15)), ((31, 31), (32, 31))):
+        gx = sum(c for c, _ in hz) / len(hz)
+        gy = sum(r for _, r in hz) / len(hz)
+        cand = [(abs(cc - gx) + abs(r - gy), cc, r) for cc in range(int(gx) - 3, int(gx) + 4) for r in range(int(gy) - 3, int(gy) + 4)
+                if s.c.get(cc, r) == '.' and any((cc + dc, r + dr) in hz for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)))]
+        _, cc, r = min(cand)
+        s.at(cc, r, 'a')
     # 殘骸：大量 x
     s.edge_props(4, 2, 19, 9, sides='nsew', pattern='xx..x.')
     s.edge_props(22, 2, 33, 9, sides='nsew', pattern='x.xx..')
@@ -1009,7 +1018,7 @@ def caldera():
     s.at(33, 9, 'x')
     s.at(39, 9, 'x')
     s.edge_props(36, 21, 41, 31, sides='w', pattern='x..')
-    s.room('refinery', '精煉爐房', 'Refinery', 'furnace', (9, 11), '#ff8a2a', '#ffd23d')
+    s.room('refinery', '精煉爐房', 'Refinery', 'furnace', (9, 11), '#ffb070', '#ff7a1a')
     s.room('medbay', '醫療角', 'Med Nook', 'medbay', (23, 5), '#f2f6ff', '#5cf2a5')
     s.room('pods', '救生艙室', 'Escape Pods', 'pods', (23, 12), '#ffb46b', '#ff3b3b')
     s.room('bridge', '駕駛艙', 'Bridge', 'bridge', (36, 10), '#ffe08a', '#7fd8ff')

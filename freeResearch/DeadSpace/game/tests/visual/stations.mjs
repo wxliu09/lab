@@ -21,6 +21,9 @@ await page.getByTestId('name').fill('Alice')
 await page.getByTestId('create').click()
 await page.getByTestId('lobby').waitFor({ timeout: 20000 })
 await page.waitForTimeout(300)
+// 依人數啟用的站（火口號、活體庫號、擺渡號）在大廳指定開啟；事件站（未識別物體、海盜船）開局後用事件掛勾叫出來
+await page.evaluate(() => window.__xcTest.hook('settings', [{ stations: ['caldera', 'vivarium', 'portage'] }]))
+await page.waitForTimeout(300)
 await page.getByTestId('start').click()
 await page.waitForTimeout(6000)
 // 截圖只看場景：藏起 HUD、迷霧改成全亮（vision 掛勾只影響伺服器端可見性，client 迷霧照樣算）
@@ -35,7 +38,13 @@ await page.evaluate(() => {
     return orig.call(this, a, b, true)
   }
 })
+const EVENT = { uo: 'wormhole', pirate: 'pirate' }
 for (const [id, list] of Object.entries(spots)) {
+  if (EVENT[id]) {
+    const e = await page.evaluate((ev) => window.__xcTest.hook('run', [0, 'ua', [ev]]), EVENT[id])
+    console.log('event', EVENT[id], JSON.stringify(e).slice(0, 120))
+    await page.waitForTimeout(1500)
+  }
   const r = await page.evaluate((id) => window.__xcTest.hook('run', [0, 'we', [id]]), id)
   console.log('teleport', id, JSON.stringify(r).slice(0, 120))
   await page.evaluate(() => window.__xcTest.hook('vision', [0, true]))

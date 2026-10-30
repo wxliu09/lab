@@ -683,6 +683,12 @@ const FACTORIES: Record<string, Factory> = {
   hatPirate: (c) => hat(c, 'pirate'),
 }
 
+// 同名 fx 的保底（新的 buff 沿用這些 fx 名稱時也有樣子）
+FACTORIES.cloak = FACTORIES.stealth
+FACTORIES.flame = FACTORIES.burn
+FACTORIES.force = FACTORIES.forceWard
+FACTORIES.heal = FACTORIES.lifeSupport
+
 function hat(c: Ctx, kind: 'festive' | 'pirate'): Att {
   const h = buildHat(kind)
   if (c.v.rig) {

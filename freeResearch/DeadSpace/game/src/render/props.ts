@@ -629,9 +629,10 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     // 坩堝爐：熔融金屬頂面閃爍、地面熱光
     const iron = Mat.metal('#2a2520', 0.8)
     const melt = pulse(c.anim, '#ff7a1a', 3, 1.2, 4.7, c.seed)
-    part(c, cyl(0.46, 0.38, 0.95, 22), iron, 0, 0.48, 0)
-    part(c, torus(0.46, 0.06, 8, 26), Mat.metal('#5a4a3a', 0.6), 0, 0.95, 0, 0, Math.PI / 2)
-    part(c, cyl(0.41, 0.41, 0.03, 22), melt, 0, 0.92, 0)
+    part(c, cyl(0.46, 0.38, 0.95, 22, true), iron, 0, 0.48, 0)
+    part(c, cyl(0.41, 0.41, 0.04, 22), melt, 0, 0.9, 0)
+    part(c, torus(0.45, 0.07, 8, 26), Mat.metal('#5a4a3a', 0.6), 0, 0.95, 0, 0, Math.PI / 2)
+    part(c, sphere(0.12, 10, 8), melt, 0.1, 0.93, -0.08, 0, 0, 0, 1.6, 0.35, 1.2)
     part(c, box(0.16, 0.08, 0.3), iron, 0, 0.9, 0.5)
     part(c, box(0.7, 0.06, 0.06), Mat.paint('#ffd23d', 0.5), 0, 0.3, 0.46)
     glowDecal(c.group, '#ff7a1a', 2.2, c.cx, c.cz, 0.28)
@@ -897,12 +898,12 @@ function poiKit() {
 }
 
 /** 地板格標記（每格一塊，拼成 3×3 平台）*/
-function floorTile(color: string, deco: 'frame' | 'hex' | 'hazard', pulseSpeed: number): PoiModel {
+function floorTile(color: string, deco: 'frame' | 'hex' | 'hazard', pulseSpeed: number, bright = 0.2): PoiModel {
   const k = poiKit()
   k.add(box(0.98, 0.04, 0.98), Mat.metal('#23272d', 0.7), 0, 0.02, 0, 0, 0, 0, false)
-  k.decal(decalTex(deco, color), 0.98, 0.045, 0.9)
+  k.decal(decalTex(deco, color), 0.98, 0.045, 0.9, bright > 0.3)
   const glow = k.decal(decalTex('glow', color), 1.3, 0.05, 0.25, true)
-  k.anim.push({ obj: glow, update: (t) => ((glow.material as THREE.MeshBasicMaterial).opacity = 0.18 + 0.14 * Math.sin(t * pulseSpeed)) })
+  k.anim.push({ obj: glow, update: (t) => ((glow.material as THREE.MeshBasicMaterial).opacity = bright + 0.14 * Math.sin(t * pulseSpeed)) })
   return { root: k.root, anim: k.anim }
 }
 
@@ -963,7 +964,7 @@ const EXTRA_POIS: Record<string, PoiFn> = {
   },
   fabricatorPad: () => floorTile('#ffb000', 'frame', 2.2),
   cagePad: () => floorTile('#ffc23d', 'hazard', 1.6),
-  teleportPad: () => floorTile('#6fb8ff', 'hex', 3.2),
+  teleportPad: () => floorTile('#6fb8ff', 'hex', 3.2, 0.45),
   moduleSocket(_r, seed) {
     // 模組安裝座：空插槽＋青色指示環
     const k = poiKit()
@@ -1086,6 +1087,52 @@ const EXTRA_POIS: Record<string, PoiFn> = {
       lamps.push(k.add(sphere(0.07, 10, 8), Mat.emissive('#ff3b3b', 4), Math.cos(a) * 5.6, 0.12, Math.sin(a) * 5.6, 0, 0, 0, false))
     }
     k.anim.push({ obj: k.root, update: (t) => lamps.forEach((l, i) => (l.visible = Math.sin(t * 3 - i * 0.785) > 0)) })
+    return { root: k.root, anim: k.anim }
+  },
+  arcLeak(_r, seed) {
+    // 七號廢站漏電點：斷裂導管＋亂跳的電弧與火花，地面藍白光暈蓋住旁邊的危險區
+    const k = poiKit()
+    const iron = Mat.metal('#4a3c32', 0.6)
+    k.add(rbox(0.62, 1.0, 0.5, 0.04), Mat.paint('#6e4a32', 0.85), 0, 0.5, 0, 0, 0, 0.1)
+    k.add(cyl(0.11, 0.11, 0.9, 10), iron, 0, 1.3, 0, 0.25, 0, 0.2)
+    k.add(cyl(0.12, 0.12, 0.08, 10), Mat.metal('#1a1410', 0.5, false), 0.09, 1.75, 0.11, 0.25, 0, 0.2)
+    const glow = k.decal(decalTex('glow', '#8fd0ff'), 4.2, 0.03, 0.4, true)
+    const sparkMat = Mat.emissive('#dff4ff', 6)
+    const sparks: THREE.Mesh[] = []
+    for (let i = 0; i < 7; i++) sparks.push(k.add(sphere(0.035, 6, 4), sparkMat, 0, 0.3, 1, 0, 0, 0, false))
+    const pts = new Float32Array(9 * 3)
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pts, 3))
+    const arc = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: '#cfeaff', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }))
+    k.root.add(arc)
+    let next = 0
+    k.anim.push({
+      obj: arc,
+      update: (t) => {
+        const burst = Math.sin(t * 5.3 + seed) * Math.sin(t * 1.7) > 0.2
+        arc.visible = burst
+        ;(glow.material as THREE.MeshBasicMaterial).opacity = burst ? 0.35 + Math.random() * 0.25 : 0.12
+        if (t < next) return
+        next = t + 0.05
+        const a = Math.random() * Math.PI * 2
+        const d = 0.8 + Math.random() * 1.2
+        const [ex, ez] = [Math.cos(a) * d, Math.sin(a) * d]
+        for (let i = 0; i < 9; i++) {
+          const f = i / 8
+          const j = i % 8 ? 1 : 0
+          pts[i * 3] = 0.09 + (ex - 0.09) * f + j * (Math.random() - 0.5) * 0.3
+          pts[i * 3 + 1] = 1.75 * (1 - f) * (1 - f * 0.3) + 0.03 + j * Math.random() * 0.15
+          pts[i * 3 + 2] = 0.11 + (ez - 0.11) * f + j * (Math.random() - 0.5) * 0.3
+        }
+        geo.attributes.position.needsUpdate = true
+        for (const sp of sparks) {
+          sp.visible = burst && Math.random() < 0.6
+          const b = Math.random() * Math.PI * 2
+          const e = 0.4 + Math.random() * 1.6
+          sp.position.set(Math.cos(b) * e, 0.05 + Math.random() * 0.6, Math.sin(b) * e)
+        }
+      },
+    })
     return { root: k.root, anim: k.anim }
   },
   podLanding() {

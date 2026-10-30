@@ -483,17 +483,19 @@ export function stepOf(walk: number, offset: number): [number, number] {
   return [Math.sin(a), Math.max(0, Math.cos(a))]
 }
 
-/** 死亡：往側邊倒下並下沉（body 為要倒的 group，h 為重心高度）*/
+/** 死亡：往側邊倒下（body 為要倒的 group、樞紐在腳底；h 為重心高度）。往回平移讓屍體留在原地、略高於地面 */
 export function topple(body: THREE.Object3D, k: number, side = 1, h = 0.5): void {
-  body.rotation.z = side * k * 1.35
-  body.position.y = -k * h * 0.55
+  const a = side * k * 1.3
+  body.rotation.z = a
+  body.position.x = Math.sin(a) * h * 0.75
+  body.position.y = -h * 0.55 * (1 - Math.cos(a)) + k * 0.12
 }
 
-/** 漂浮者死亡：掉到地上並壓扁 */
+/** 漂浮者死亡：往前撲倒在地上並略微壓扁 */
 export function drop(body: THREE.Object3D, k: number, hover: number): void {
-  body.position.y = hover * (1 - k) - k * 0.15
-  body.rotation.x = k * 0.9
-  body.scale.y = 1 - k * 0.35
+  body.position.y = hover * (1 - k) + k * 0.08
+  body.rotation.x = k * 1.3
+  body.scale.y = 1 - k * 0.2
 }
 
 /** 把整棵 Object3D 內的觸手／動畫掛點一起更新的小工具 */
@@ -685,7 +687,7 @@ export function animQuad(r: QuadRig, L: Life, t: number, amp = 0.45, bob = 0.06,
     if (r.tail) r.tail.bend(t, 0, 0, 0, 0, 0.15 * L.dead, 0.2 * L.dead)
   } else {
     r.body.rotation.z = 0
-    r.body.position.y = 0
+    r.body.position.set(0, 0, 0)
   }
 }
 
@@ -763,12 +765,14 @@ export function animBiped(r: BipedRig, L: Life, t: number, amp = 0.55, swingArms
   r.torso.scale.set(1 + br * 0.025, 1 + br * 0.02, 1 + br * 0.025)
   r.neck.rotation.y = Math.sin(t * 0.5 + L.ph) * 0.3 * (1 - k) * (1 - L.atk)
   const s = L.strike * L.atk
+  // 手臂抵銷軀幹前傾，自然下垂（否則駝背的角色手會往後甩）
+  const comp = -r.torso.rotation.x * 0.9
   for (let i = 0; i < 2; i++) {
     const a = r.arms[i]
     const sw = Math.sin(L.walk + i * Math.PI) * swingArms * k
     // 攻擊：右手主揮、左手輔助；蓄力往後上舉，出手往前下劈
     const hit = i === 1 ? s : s * 0.45
-    a.sh.rotation.x = sw - Math.max(0, hit) * 1.6 + Math.min(0, hit) * -2.2 - L.cast * 1.1
+    a.sh.rotation.x = comp + sw - Math.max(0, hit) * 1.6 + Math.min(0, hit) * -2.2 - L.cast * 1.1
     a.el.rotation.x = -0.35 - Math.max(0, -hit) * 1.2 - L.cast * 0.3
     a.sh.rotation.z = (i === 0 ? -1 : 1) * (0.12 + Math.max(0, hit) * 0.3 + L.cast * 0.25)
   }
@@ -778,7 +782,10 @@ export function animBiped(r: BipedRig, L: Life, t: number, amp = 0.55, swingArms
     r.body.rotation.x = -d * Math.PI * 0.47
     r.body.position.y = d * 0.15
     for (const l of r.legs) l.hip.rotation.x = THREE.MathUtils.lerp(l.hip.rotation.x, -0.5, d)
-    for (const a of r.arms) a.sh.rotation.x = THREE.MathUtils.lerp(a.sh.rotation.x, -2.4, d)
+    r.arms.forEach((a, i) => {
+      a.sh.rotation.x = THREE.MathUtils.lerp(a.sh.rotation.x, -1.3, d)
+      a.sh.rotation.z = THREE.MathUtils.lerp(a.sh.rotation.z, (i ? 1 : -1) * 1.1, d)
+    })
   } else {
     r.body.rotation.x = 0
     r.body.position.y = 0

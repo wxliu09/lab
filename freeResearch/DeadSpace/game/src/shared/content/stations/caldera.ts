@@ -68,7 +68,7 @@ export const CALDERA: StationDef = {
       w: { kind: 'patrol', solid: false },
     },
     rooms: [
-      { id: 'refinery', name: { zh: '精煉爐房', en: 'Refinery' }, type: 'furnace', seed: [9, 11], light: '#ff8a2a', accent: '#ffd23d' },
+      { id: 'refinery', name: { zh: '精煉爐房', en: 'Refinery' }, type: 'furnace', seed: [9, 11], light: '#ffb070', accent: '#ff7a1a' },
       { id: 'medbay', name: { zh: '醫療角', en: 'Med Nook' }, type: 'medbay', seed: [23, 5], light: '#f2f6ff', accent: '#5cf2a5' },
       { id: 'pods', name: { zh: '救生艙室', en: 'Escape Pods' }, type: 'pods', seed: [23, 12], light: '#ffb46b', accent: '#ff3b3b' },
       { id: 'bridge', name: { zh: '駕駛艙', en: 'Bridge' }, type: 'bridge', seed: [36, 10], light: '#ffe08a', accent: '#7fd8ff' },

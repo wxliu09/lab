@@ -22,15 +22,21 @@ export class MenuScene implements SceneLike {
     this.planet = makePlanet(26, '#3f7a4a', '#7fd8ff', sunDir)
     this.planet.mesh.position.set(38, -14, -70)
     this.scene.add(this.planet.mesh)
-    this.moon = makePlanet(5, '#6a625a', '#c9b6ff', sunDir)
-    this.moon.mesh.position.set(6, 10, -48)
+    // 衛星沒有大氣：光暈用很暗的色，只留一圈邊緣
+    this.moon = makePlanet(4, '#6a625a', '#2b2a33', sunDir)
+    this.moon.mesh.position.set(30, 16, -95)
     this.scene.add(this.moon.mesh)
     const key = new THREE.DirectionalLight('#fff1d6', 3)
     key.position.copy(sunDir).multiplyScalar(50)
-    this.scene.add(key, new THREE.HemisphereLight('#1b2633', '#050608', 0.4))
+    // 背光：從站體後方打向鏡頭，讓剪影的邊緣亮起來
+    const rim = new THREE.DirectionalLight('#8fd8ff', 2.2)
+    rim.position.set(14, 6, -60)
+    rim.target.position.set(9, 1, -26)
+    this.scene.add(key, rim, rim.target, new THREE.HemisphereLight('#22303f', '#06080b', 0.55))
+    // 站體放在畫面右側三分之一（左側是選單面板），稍遠一點、整個輪廓入鏡
     this.station = buildStationHull('nyx', 1)
-    this.station.position.set(-4, -1, -14)
-    this.station.rotation.set(0.35, 0.8, 0.12)
+    this.station.position.set(9, 1.2, -26)
+    this.station.rotation.set(0.3, 0.8, 0.1)
     this.scene.add(this.station)
     this.camera.position.set(0, 0, 0)
   }

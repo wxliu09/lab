@@ -473,7 +473,7 @@ regModel('xeno.pyreheart', (def, s) => {
     const L = b.L
     animBiped(r, L, t, 0.5, 0.6)
     // 長臂接近地面（猩猩式）
-    for (const a of r.arms) a.sh.rotation.x += 0.3 - L.move * 0.2
+    for (const a of r.arms) a.sh.rotation.x += -0.25 - L.move * 0.2
     const fl = 0.75 + 0.25 * Math.sin(t * 9 + Math.sin(t * 3.7) * 2)
     fire.emissiveIntensity = 3.2 * b.v.gk * fl * (1 + L.atk * 0.4 + L.cast * 0.6) * (1 - L.dead * 0.85)
     hot.emissiveIntensity = 4 * b.v.gk * (0.85 + 0.15 * fl) * (1 - L.dead * 0.9)
@@ -820,7 +820,10 @@ regModel('xeno.hydra', (def, s) => {
     if (L.dead > 0) {
       topple(body, L.dead, -1, 0.8)
       for (const N of necks) N.bend(t, 0, 0, 0, 0, 0.3 * L.dead, 0)
-    } else body.rotation.z = 0
+    } else {
+      body.rotation.z = 0
+      body.position.x = 0
+    }
   })
 })
 

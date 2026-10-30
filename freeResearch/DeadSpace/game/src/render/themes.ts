@@ -167,7 +167,7 @@ THEMES.caldera = {
   hull: '#1b1710',
   trim: '#c9a23a',
   floor: {
-    furnace: { variant: 'grate', tint: '#3a332a' },
+    furnace: { variant: 'grate', tint: '#4a4236' },
     conveyor: { variant: 'plate', tint: '#443d32' },
     bridge: { variant: 'tile', tint: '#2f2c27' },
     corridor: { variant: 'grate', tint: '#3d372d' },

@@ -816,7 +816,7 @@ export class Fx {
       m.scale.setScalar(size * 0.6 * (1 + k))
       mm.opacity = (1 - k) ** 1.5
     })
-    this.glow(zone, x, y, h, color, size * 3.2, dur * 1.6, { k: 2.2, grow: 1.3 })
+    this.glow(zone, x, y, h, color, size * 2.4, dur * 1.6, { k: 1.8, grow: 1.3 })
     this.light(zone, x, y, h + 0.3, color, size * 60, Math.max(3, size * 10), dur * 1.6)
   }
 
@@ -939,6 +939,19 @@ export class Fx {
         this.trans.splice(i, 1)
       }
     }
+  }
+
+  /** 清掉所有進行中的特效（換場、截圖工具用）*/
+  clear(): void {
+    for (const tr of this.trans) this.free(tr.obj)
+    this.trans = []
+    this.timers = []
+    this.glowL.ps.length = 0
+    this.smokeL.ps.length = 0
+    this.sparkL.ps.length = 0
+    for (const p of this.debrisPools.values()) p.ds.length = 0
+    for (const d of this.decals) d.until = 0
+    for (const s of this.lights) s.until = 0
   }
 
   /** 統計（效能檢查用）*/
