@@ -6,7 +6,7 @@ import { MAX_PLAYERS, PLAYER_COLORS } from '../constants'
 
 const COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>([
   'move', 'amove', 'attack', 'stop', 'hold', 'cast', 'use', 'drop', 'pickup', 'swapItem', 'give',
-  'interact', 'buy', 'evolve', 'autocast', 'follow', 'spec',
+  'interact', 'buy', 'evolve', 'autocast', 'follow', 'spec', 'enhance',
 ])
 const CHANNELS: ReadonlySet<ChatChannel> = new Set<ChatChannel>(['all', 'team', 'group', 'dead'])
 const MARKS: ReadonlySet<NoteMark> = new Set<NoteMark>(['none', 'trust', 'suspect', 'confirmedEvil', 'confirmedClean'])
@@ -100,8 +100,12 @@ function validSettings(s: unknown): Partial<LobbySettings> | null {
         out[k] = v
         break
       case 'epMult':
-      case 'eventMult':
         if (!isNum(v, 0.25, 4)) return null
+        out[k] = v
+        break
+      case 'eventMult':
+        // 0 = 關閉隨機事件（練習用）
+        if (!isNum(v, 0, 4)) return null
         out[k] = v
         break
       case 'seed':

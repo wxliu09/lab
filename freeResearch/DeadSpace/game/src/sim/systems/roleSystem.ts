@@ -267,7 +267,7 @@ export function installRoles(g: Game): void {
   }
 
   // 主單位死亡：先處理轉化（必須排在掉落與屍體之前）
-  DEATH_HOOKS.unshift((g2, u, killer, killerSlot) => {
+  DEATH_HOOKS.unshift((g2, u, killer, _killerSlot) => {
     if (g2 !== g || !u.isMain || u.owner < 0) return
     const p = g.players[u.owner]
     if (!p || p.main !== u.id) return

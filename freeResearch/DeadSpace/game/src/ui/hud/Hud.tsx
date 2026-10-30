@@ -1,5 +1,6 @@
 // 遊戲 HUD（致敬 WC3 版面）：上方資訊列、左下小地圖、中下頭像與數值、右下指令卡＋背包、左側聊天
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { Stability } from './Events'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import { Cell } from '../../shared/layout'
@@ -32,11 +33,7 @@ export function TopBar() {
       <span>
         {t('game.time')} <b>{fmtTime(w.t ?? 0)}</b>
       </span>
-      {w.stab !== undefined && (
-        <span>
-          {t('game.stability')} <b>{Math.round((w.stab ?? 1) * 100)}%</b>
-        </span>
-      )}
+      <Stability />
       <span data-testid="role" style={{ color: ROLE_COLOR[me.role ?? 'human'], fontFamily: 'var(--title)', letterSpacing: '0.1em' }}>
         {me.role ? t('role.' + me.role) + (me.spawn ? ' spawn' : '') : ''}
       </span>

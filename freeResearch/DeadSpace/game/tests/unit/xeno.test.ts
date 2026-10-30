@@ -8,7 +8,6 @@ import { damage } from '../../src/sim/systems/damage'
 import { applyBuff, hasBuff } from '../../src/sim/systems/buffs'
 import { entView } from '../../src/sim/systems/snapshot'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
-import { checkMessages } from './helpers/leak'
 import { NEUTRAL, type Ent } from '../../src/sim/ent'
 import type { Game } from '../../src/sim/game'
 

@@ -121,6 +121,9 @@ function onHostMsg(m: HostMsg): void {
       chatLog.value = []
       screen.value = 'game'
       break
+    case 'zones':
+      if (startInfo.value) startInfo.value = { ...startInfo.value, zones: m.zones }
+      break
     case 'snap':
       world.apply(m.s)
       snapTick.value++

@@ -12,6 +12,7 @@ import { VendorPanel } from '../hud/VendorPanel'
 import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
 import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
+import { EnhancerPanel, FakeEnd } from '../hud/Events'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -51,6 +52,11 @@ export function GameScreen() {
       engine.setScene(null)
     }
   }, [])
+  // 對局中出現新的地點（事件站）
+  const zones = startInfo.value?.zones
+  useEffect(() => {
+    if (scene && zones) scene.setZones(zones)
+  }, [scene, zones])
   return (
     <div class="layer" ref={wrap}>
       <canvas class="view" ref={ref} data-testid="view" />
@@ -64,6 +70,8 @@ export function GameScreen() {
       <DoorLog />
       <DeathVote />
       <EvolveMenu />
+      <EnhancerPanel />
+      <FakeEnd />
       <EndScreen />
       <RoleReveal />
       <Chat />

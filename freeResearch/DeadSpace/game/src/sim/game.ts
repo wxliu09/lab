@@ -43,6 +43,7 @@ import { placePoi } from './setup'
 import { installCreatureAi } from './ai/creatures'
 import { installXenoSystems } from './scripts/xeno'
 import { itemRuntime } from './scripts/items'
+import { installEvents, type EventState } from './systems/events'
 import { installMutantSystems } from './scripts/mutant'
 import type { Zone } from './world'
 import type { PoiInstance } from '../shared/layout'
@@ -144,6 +145,11 @@ export class Game {
   customHostile?: (a: Ent, b: Ent) => boolean
   /** 鎮定（降低敵對生物仇恨）*/
   isCalm?: (u: Ent) => boolean
+  /** 對局中新增了 zone（事件站）：通知所有 client */
+  zonesChanged?: () => void = () => {
+    const zones = this.zoneList()
+    for (const p of this.allPlayers()) this.send(p.slot, { t: 'zones', zones })
+  }
   /** 死者附身蛞蝓仔 */
   possessSlug?: (slot: number) => boolean
   /** 每 tick 額外執行的系統（AI、事件、太空…）*/
@@ -204,6 +210,7 @@ export class Game {
     installCreatureAi(this)
     installXenoSystems(this)
     installMutantSystems(this)
+    installEvents(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
 
@@ -248,6 +255,10 @@ export class Game {
     if (c) p.view = newViewState()
   }
 
+  zoneList(): [number, string, string][] {
+    return this.world.zones.filter((z) => z.station).map((z) => [z.id, z.key, z.station!.id] as [number, string, string])
+  }
+
   resendStart(slot: number): void {
     const p = this.players[slot]
     if (!p) return
@@ -255,7 +266,7 @@ export class Game {
       slot,
       seed: 0,
       stations: this.stations,
-      zones: this.world.zones.filter((z) => z.station).map((z) => [z.id, z.key, z.station!.id] as [number, string, string]),
+      zones: this.zoneList(),
       players: this.allPlayers().map((q) => ({ slot: q.slot, name: q.baseName, color: q.color, bot: q.bot })),
       spectator: p.spectator,
     }
@@ -397,6 +408,8 @@ export class Game {
     return {
       t: Math.floor(this.time),
       st: this.world.zones.filter((z) => z.alive && z.station).map((z) => z.key),
+      stab: this.stability(),
+      apo: (this.data.events as EventState | undefined)?.apoc ?? '',
       bg: this.hostHidden,
       pz: this.paused,
       vote: this.votes.death
@@ -404,6 +417,14 @@ export class Game {
         : null,
       boot: this.settings.bootOnDeath,
     }
+  }
+
+  /** 星區穩定度 0..1：末日的軟計時（GDD §7.8），觸發時歸零 */
+  stability(): number {
+    const ev = this.data.events as EventState | undefined
+    if (!ev) return 1
+    if (ev.apoc) return 0
+    return Math.max(0, Math.min(1, Math.round((1 - this.time / ev.apocAt) * 100) / 100))
   }
 
   epNext(p: GamePlayer): number {

@@ -79,18 +79,23 @@ export function chooseStations(g: Game): StationDef[] {
 }
 
 export function setupWorld(g: Game): void {
+  for (const st of chooseStations(g)) addStation(g, st)
+}
+
+/** 建立一個地點：內部 zone、太空實體、設施（開局或事件中途出現的站都走這裡）*/
+export function addStation(g: Game, st: StationDef, pos?: [number, number], owner = NEUTRAL): Zone {
   const w = g.world
-  for (const st of chooseStations(g)) {
-    const z = w.addInterior(st.id, st)
-    const def = ensureStationDef(st)
-    const se = w.spawn(def, SPACE_ZONE, st.space.pos[0], st.space.pos[1], NEUTRAL)
-    se.global = true
-    se.data.interior = z.id
-    se.data.station = st.id
-    z.spaceEnt = se.id
-    g.stations.push(st.id)
-    for (const poi of z.layout!.pois) placePoi(g, z, poi)
-  }
+  const z = w.addInterior(st.id, st)
+  const def = ensureStationDef(st)
+  const [x, y] = pos ?? st.space.pos
+  const se = w.spawn(def, SPACE_ZONE, x, y, owner)
+  se.global = true
+  se.data.interior = z.id
+  se.data.station = st.id
+  z.spaceEnt = se.id
+  g.stations.push(st.id)
+  for (const poi of z.layout!.pois) placePoi(g, z, poi)
+  return z
 }
 
 export type Marker = { x: number; y: number; ref?: string }

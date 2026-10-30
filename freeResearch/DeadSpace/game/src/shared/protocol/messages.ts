@@ -75,6 +75,7 @@ export type CommandKind =
   | 'autocast'
   | 'follow'
   | 'spec'
+  | 'enhance'
 
 export interface Command {
   k: CommandKind
@@ -135,6 +136,8 @@ export type HostMsg =
   | { t: 'end'; result: EndResult }
   | { t: 'notice'; key: string; args?: Record<string, string | number> }
   | { t: 'TuneResult'; id: number; ok: boolean; msg: string; data?: unknown }
+  /** 對局中出現新的地點（事件站）*/
+  | { t: 'zones'; zones: [number, string, string][] }
 
 export interface StartInfo {
   slot: Slot
@@ -288,6 +291,8 @@ export interface PrivateState {
   feeds: [number, number, number, number][]
   /** 身旁那扇門的門禁紀錄（最近 5 次通過的剪影）*/
   doorLog: { door: number; zone: number; log: { t: number; sil: string }[] } | null
+  /** 站在政府強化劑旁、可以五選一 */
+  enh: boolean
 }
 
 export interface NoteEntry {

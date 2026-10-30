@@ -113,9 +113,9 @@ export function morph(g: Game, u: Ent, defId: string): void {
   const mpK = u.maxMp > 0 ? u.mp / u.maxMp : 1
   u.def = def
   u.tags = new Set(def.tags)
-  u.maxHp = def.hp * (u.data.hpMult ?? 1)
+  u.maxHp = def.hp * (u.data.hpMult ?? 1) + (u.data.hpAdd ?? 0)
   u.hp = Math.max(1, u.maxHp * hpK)
-  u.maxMp = def.mp
+  u.maxMp = def.mp + (u.data.mpAdd ?? 0)
   u.mp = def.mp * mpK
   u.radius = def.radius
   u.abilities = [...def.abilities, ...((u.data.extraAbilities as string[]) ?? [])]

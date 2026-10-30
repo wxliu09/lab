@@ -64,6 +64,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     specZone: p.specZone,
     feeds: feedsOf(g, p),
     doorLog: doorLogOf(g, ctl),
+    enh: !!p.data.enhOffer,
   }
 }
 
