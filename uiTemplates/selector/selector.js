@@ -56,19 +56,27 @@ function buildPresets(){
   box.addEventListener('toggle',()=>{try{localStorage.setItem(PKEY,box.open?'1':'0');}catch(e){}});
 }
 function chipInner(d,i,label){
-  if(d.key==='font'&&i>0) return `<span class="ff" style="font-family:${FONTVARS[i]}">${label}</span>`;
+  if(d.key==='font'&&i>0) return `<span class="ff" style="font-family:${FONTVARS[i][0]}">${label}</span>`;
   if(d.key==='button'&&i>0) return `<i class="bs" style="border-radius:${['0','0','4px','99px'][i]}"></i>${label}`;
   return label;
 }
 function buildDetails(){
-  const groups=DETAILS.map(d=>`<div class="dgroup" data-key="${d.key}"><div class="dgroup-h"><b>${d.label}</b><span>${d.hint}</span></div><div class="chips" role="group" aria-label="${d.label}">${d.opts.map((o,i)=>`<button type="button" class="chip" data-v="${i}" aria-pressed="false">${chipInner(d,i,o)}</button>`).join('')}</div><p class="dgroup-note" hidden></p></div>`).join('');
-  const mods=`<div class="dgroup" data-key="mods"><div class="dgroup-h"><b>功能模組</b><span>可複選，常見的網站附加功能</span></div><div class="mods">${MODULES.map(m=>`<button type="button" class="mod" data-k="${m.k}" data-scope="${m.scope}" aria-pressed="false"><span class="box">${ic('check',3)}</span><b>${m.n}</b><small>${m.d}</small></button>`).join('')}</div><p class="dgroup-note" hidden></p></div>`;
-  $('#details').innerHTML=groups+mods;
+  const group=d=>`<div class="dgroup" data-key="${d.key}"><div class="dgroup-h"><b>${d.label}</b><span>${d.hint}</span></div><div class="chips" role="group" aria-label="${d.label}">${d.opts.map((o,i)=>`<button type="button" class="chip" data-v="${i}" aria-pressed="false">${chipInner(d,i,o)}</button>`).join('')}</div><p class="dgroup-note" hidden></p></div>`;
+  const mods=`<div class="dgroup" data-key="mods"><div class="dgroup-h"><span></span></div><div class="mods">${MODULES.map(m=>`<button type="button" class="mod" data-k="${m.k}" data-scope="${m.scope}" aria-pressed="false"><span class="box">${ic('check',3)}</span><b>${m.n}</b><small>${m.d}</small></button>`).join('')}</div><p class="dgroup-note" hidden></p></div>`;
+  $('#dnav').innerHTML=DSECS.map(([k,,n])=>`<button type="button" class="dnav-b" data-sec="${k}">${n}<span class="dnav-n"></span></button>`).join('');
+  $('#details').innerHTML=DSECS.map(([k,n])=>`<section class="dsec" data-sec="${k}"><h3 class="dsec-h">${n}</h3>${k==='mods'?mods:DETAILS.filter(d=>d.sec===k).map(group).join('')}</section>`).join('');
   $('#details').addEventListener('click',e=>{
     const chip=e.target.closest('.chip');
     if(chip){state[chip.closest('.dgroup').dataset.key]=Number(chip.dataset.v);update();return;}
     const mod=e.target.closest('.mod');
     if(mod){const k=mod.dataset.k,i=state.mods.indexOf(k);if(i>=0)state.mods.splice(i,1);else state.mods.push(k);state.mods.sort((a,b)=>modIdx(a)-modIdx(b));update();}
+  });
+  // jump to a group: inside the panel's own scroll area on desktop, the page on phones
+  $('#dnav').addEventListener('click',e=>{
+    const b=e.target.closest('.dnav-b');if(!b)return;
+    const sec=$(`.dsec[data-sec="${b.dataset.sec}"]`),ps=$('#panelScroll');
+    if(getComputedStyle(ps).overflowY==='visible') sec.scrollIntoView({block:'start',behavior:'smooth'});
+    else ps.scrollTo({top:sec.offsetTop-$('#dnav').offsetHeight-8,behavior:'smooth'});
   });
 }
 
@@ -124,8 +132,8 @@ function update(){
       $('.dgroup-h span',g).textContent=adm?'後台常見的附加功能，可複選':'前台網站常見的附加功能，可複選';
       return;
     }
-    if(key==='hero') g.hidden=adm&&state.layout!=='l13';
-    else if(['side','table','tabs'].includes(key)) g.hidden=!detailApplies(key,state.layout);
+    // 主視覺 stays visible on front pages without a hero so the note can explain why it does nothing
+    g.hidden=key==='hero'?adm&&state.layout!=='l13':!detailApplies(key,state.layout);
     $$('.chip',g).forEach(c=>c.setAttribute('aria-pressed',String(Number(c.dataset.v)===state[key])));
     if(key==='hero'){
       const scope=HERO_SCOPE[state.layout];
@@ -134,6 +142,13 @@ function update(){
       else if(scope==='photo'&&state.hero>1) msg=state.layout==='l13'?'登入頁只有「情境照片」會換掉左側品牌區。':'雜誌格狀只有「情境照片」會替換焦點圖。';
       note.hidden=!msg;note.textContent=msg;
     }
+  });
+  DSECS.forEach(([k])=>{
+    const sec=$(`.dsec[data-sec="${k}"]`),b=$(`.dnav-b[data-sec="${k}"]`);
+    const n=k==='mods'?state.mods.filter(m=>modApplies(m,state.layout)).length
+      :DETAILS.filter(d=>d.sec===k&&detailApplies(d.key,state.layout)&&state[d.key]!==(d.def||0)).length;
+    sec.hidden=b.hidden=!$$('.dgroup',sec).some(g=>!g.hidden);
+    $('.dnav-n',b).textContent=n||'';
   });
   const code=enc(state);
   let onPreset=null;
@@ -175,12 +190,16 @@ function refreshSaveUI(){
   $('#savedCount').textContent=saved.length;
   $('#savedBtn').disabled=saved.length===0;
 }
-function toggleSave(){
-  const c=enc(state),i=saved.indexOf(c);
+function toggleSaveCode(code){
+  const i=saved.indexOf(code);
   if(i>=0){saved.splice(i,1);toast('已取消收藏');}
-  else{if(saved.length>=6){toast('最多收藏 6 組，請先在收藏比較裡移除一組');return;}saved.push(c);toast(`已收藏 ${shortCode(state)}，共 ${saved.length} 組`);}
+  else{if(saved.length>=6){toast('最多收藏 6 組，請先在收藏比較裡移除一組');return false;}saved.push(code);toast(`已收藏 ${shortCode(dec(code))}，共 ${saved.length} 組`);}
   persistSaved();refreshSaveUI();
+  return true;
 }
+const toggleSave=()=>toggleSaveCode(enc(state));
+const shareUrl=s=>location.href.split('#')[0]+'#'+enc(s);
+const isHosted=()=>/^https?:$/.test(location.protocol);
 
 function specText(){
   const L=byId(LAYOUTS,state.layout),S=byId(STYLES,state.style),C=paletteOf(state),t=theme(state);
@@ -196,7 +215,7 @@ function specText(){
     `對比｜按鈕文字 ${fmtR(t.pRatio)}（${grade(t.pRatio)[0]}）、連結文字 ${fmtR(t.ptRatio)}（${grade(t.ptRatio)[0]}）、內文 ${fmtR(t.bodyRatio)}（${grade(t.bodyRatio)[0]}）`,
     `備註｜${(notes[enc(state)]||'').trim()||'無'}`,
     `完整代碼｜${enc(state)}`
-  ].join('\n');
+  ].concat(isHosted()?[`分享連結｜${shareUrl(state)}`]:[]).join('\n');
 }
 function renderSpec(){
   const L=byId(LAYOUTS,state.layout),S=byId(STYLES,state.style),C=paletteOf(state),t=theme(state);
@@ -211,7 +230,7 @@ function renderSpec(){
     <div class="spec-card"><span class="code">無障礙對比</span><span class="nm">WCAG 2.x 文字對比</span>${cr('按鈕文字',t.pRatio)}${cr('連結文字',t.ptRatio)}${cr('內文',t.bodyRatio)}<small>${t.pt!==t.p?'主色直接當文字太淺，連結與標籤已自動加深。':'一般文字需 4.5:1 以上才符合 AA 等級。'}</small></div>`;
 }
 
-function showView(v){['workspace','result','compare','library'].forEach(id=>{$('#'+id).hidden=id!==v;});}
+function showView(v){['workspace','result','compare','library','explore'].forEach(id=>{$('#'+id).hidden=id!==v;});}
 function clearHash(){if(location.hash){try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}}}
 function showResult(setHash){
   showView('result');
@@ -238,24 +257,85 @@ function showCompare(){
   renderCompare();
   window.scrollTo(0,0);
 }
+// every dimension a combination can differ in, as [label, value of a combination, default value]
+const CMP_DIMS=[['版型',s=>byId(LAYOUTS,s.layout).name],['風格',s=>byId(STYLES,s.style).name],['色系',colorName],
+  ...DETAILS.map(d=>[d.label,s=>detailApplies(d.key,s.layout)?d.opts[s[d.key]]:'不適用',d.opts[d.def||0]]),
+  ['功能模組',s=>s.mods.filter(k=>modApplies(k,s.layout)).map(k=>MODULES[modIdx(k)].n).join('、')||'無','無']];
 function renderCompare(){
   cmpPreviews.forEach(p=>p.destroy());cmpPreviews=[];
   $('#cmpCount').textContent=`${saved.length} / 6`;
-  const g=$('#cmpGrid');
+  const g=$('#cmpGrid'),cm=$('#cmpCommon');
+  cm.hidden=saved.length<2;
   if(!saved.length){g.innerHTML='<div class="empty">還沒有收藏。挑到喜歡的組合時按「收藏」，就能在這裡並排比較。</div>';return;}
-  g.innerHTML=saved.map((code,i)=>{const s=full(dec(code));const dl=detailList(s);return `<article class="cmp-card"><div class="frame-wrap" data-device="desktop"></div><div class="cmp-meta"><b>${shortCode(s)}</b><span>${labelOf(s)}</span><span>${dl.length?'細節：'+dl.join('、'):'細節：沿用預設'}</span>${notes[code]&&notes[code].trim()?`<span class="cmp-note">${esc(notes[code].trim())}</span>`:''}</div><div class="cmp-act"><button class="btn" type="button" data-open="${i}">看示意畫面</button><button class="btn" type="button" data-del="${i}">移除</button></div></article>`;}).join('');
-  $$('.cmp-card',g).forEach((card,i)=>{const p=new Preview($('.frame-wrap',card));p.render(full(dec(saved[i])));cmpPreviews.push(p);});
+  const list=saved.map(code=>full(dec(code)));
+  const vals=CMP_DIMS.map(([,f])=>list.map(f));
+  // an option that only some pages have (後台側欄 vs 前台頁首) is not a difference by itself
+  const differs=vals.map(v=>new Set(v.filter(x=>x!=='不適用')).size>1);
+  if(saved.length>1){
+    const same=CMP_DIMS.map((d,i)=>[d[0],vals[i][0],d[2],differs[i]]).filter(([,v,def,df])=>!df&&v!==def&&v!=='不適用').map(([n,v])=>`<span>${n}：${v}</span>`);
+    const n=differs.filter(Boolean).length;
+    cm.innerHTML=`<b>共同點</b>${same.join('')||'<span>沒有共同的設定</span>'}<small>${n} 項不同，標在各組下方；沒列出的細節都是預設值</small>`;
+  }
+  g.innerHTML=list.map((s,i)=>{
+    const code=saved[i],dl=detailList(s);
+    const diff=saved.length>1?`<div class="cmp-diff">${CMP_DIMS.map(([n],j)=>differs[j]&&vals[j][i]!=='不適用'?`<span><i>${n}</i>${vals[j][i]}</span>`:'').join('')}</div>`:`<span>${dl.length?'細節：'+dl.join('、'):'細節：沿用預設'}</span>`;
+    return `<article class="cmp-card"><div class="frame-wrap" data-device="desktop"></div><div class="cmp-meta"><b>${shortCode(s)}</b><span>${labelOf(s)}</span>${diff}${notes[code]&&notes[code].trim()?`<span class="cmp-note">${esc(notes[code].trim())}</span>`:''}</div><div class="cmp-act"><button class="btn" type="button" data-open="${i}">看示意畫面</button><button class="btn" type="button" data-del="${i}">移除</button></div></article>`;
+  }).join('');
+  $$('.cmp-card',g).forEach((card,i)=>{const p=new Preview($('.frame-wrap',card));p.render(list[i]);cmpPreviews.push(p);});
 }
 
+/* ---------- explore: variations that change one thing ---------- */
+let expAxis='color',expItems=[],expPreviews=[];
+const shuffled=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+function variations(axis,base){
+  const one=o=>Object.assign({},base,{mods:base.mods.slice()},o);
+  if(axis==='color'){
+    const rec=byId(STYLES,base.style).rec.filter(id=>id!==base.color);
+    return [...rec,...shuffled(COLORS.map(c=>c.id).filter(id=>id!==base.color&&!rec.includes(id)))].slice(0,6).map(id=>({s:one({color:id}),why:rec.includes(id)?['推薦色系']:[]}));
+  }
+  if(axis==='style') return shuffled(STYLES.filter(x=>x.id!==base.style)).slice(0,6).map(x=>({s:one({style:x.id}),why:[]}));
+  if(axis==='layout'){
+    const g=byId(LAYOUTS,base.layout).g;
+    return shuffled(LAYOUTS.filter(l=>l.g===g&&l.id!==base.layout)).slice(0,6).map(l=>({s:one({layout:l.id}),why:[]}));
+  }
+  return Array.from({length:6},()=>{
+    const s=one(randomDetails(base));
+    return {s,why:DETAILS.filter(d=>detailApplies(d.key,s.layout)&&s[d.key]!==base[d.key]).map(d=>`${d.label}：${d.opts[s[d.key]]}`)};
+  });
+}
+function renderExplore(){
+  expPreviews.forEach(p=>p.destroy());expPreviews=[];
+  const base=full(dec(enc(state)));base.custom=state.custom;
+  $('#expBase').textContent=shortCode(base);
+  $$('#expAxis button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===expAxis)));
+  expItems=variations(expAxis,base);
+  $('#expGrid').innerHTML=expItems.map((it,i)=>{
+    const on=saved.includes(enc(it.s));
+    const why=it.why.length?it.why:(expAxis==='details'?['和目前一樣']:[]);
+    return `<article class="cmp-card exp-card"><div class="frame-wrap" data-device="desktop"></div><div class="cmp-meta"><b>${shortCode(it.s)}</b><span>${labelOf(it.s)}</span>${why.length?`<div class="cmp-diff">${why.map(w=>`<span>${w}</span>`).join('')}</div>`:''}</div><div class="cmp-act"><button class="btn btn-primary" type="button" data-use="${i}">套用這組</button><button class="btn" type="button" data-save="${i}" aria-pressed="${on}">${on?'已收藏':'收藏'}</button></div></article>`;
+  }).join('');
+  $$('.exp-card').forEach((card,i)=>{const p=new Preview($('.frame-wrap',card));p.render(expItems[i].s);expPreviews.push(p);});
+}
+function showExplore(){showView('explore');clearHash();renderExplore();window.scrollTo(0,0);}
+
+const LOCKKEY='site-style-picker-locks',LOCKNAME={layout:'版型',style:'風格',color:'色系',details:'細節'};
+const locks={layout:false,style:false,color:false,details:true};
+try{const l=JSON.parse(localStorage.getItem(LOCKKEY)||'null');if(l&&typeof l==='object')for(const k in locks)if(typeof l[k]==='boolean')locks[k]=l[k];}catch(e){}
+const refreshLocks=()=>$$('.combo [data-lock]').forEach(b=>b.setAttribute('aria-pressed',String(locks[b.dataset.lock])));
 function shuffle(){
+  if(Object.values(locks).every(Boolean)){toast('四項都鎖定了，先點上方的代碼解鎖想換的項目');return;}
   const pick=(arr,cur)=>{const pool=arr.filter(x=>x!==cur);return pool[Math.floor(Math.random()*pool.length)];};
   withUndo(()=>{
-    state.layout=pick(LAYOUTS.map(x=>x.id),state.layout);
-    state.style=pick(STYLES.map(x=>x.id),state.style);
-    const S=byId(STYLES,state.style);
-    state.color=Math.random()<.75?S.rec[Math.floor(Math.random()*S.rec.length)]:pick(COLORS.map(x=>x.id),state.color);
+    const g=byId(LAYOUTS,state.layout).g;
+    if(!locks.layout) state.layout=pick(LAYOUTS.filter(l=>l.g===g).map(x=>x.id),state.layout);
+    if(!locks.style) state.style=pick(STYLES.map(x=>x.id),state.style);
+    if(!locks.color){
+      const rec=byId(STYLES,state.style).rec.filter(id=>id!==state.color);
+      state.color=Math.random()<.75&&rec.length?rec[Math.floor(Math.random()*rec.length)]:pick(COLORS.map(x=>x.id),state.color);
+    }
+    if(!locks.details) Object.assign(state,randomDetails(state));
     if(!$('#result').hidden) showResult(true); else update();
-  },()=>`已換成 ${shortCode(state)}`);
+  },()=>{const kept=Object.keys(locks).filter(k=>locks[k]).map(k=>LOCKNAME[k]);return `已換成 ${shortCode(state)}${kept.length?`，保留${kept.join('、')}`:''}`;});
 }
 
 let tt;
@@ -272,13 +352,18 @@ function withUndo(fn,msg){
   toast(typeof msg==='function'?msg():msg,()=>{Object.assign(state,before);if(!$('#result').hidden)showResult(true);else update();toast('已復原上一個組合');});
 }
 
-function copySpec(){
-  const txt=specText();
-  const fallback=()=>{const d=$('#specDetails');d.open=true;const r=document.createRange();r.selectNodeContents($('#specPre'));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);toast('已選取規格文字，請按 Ctrl+C 複製');};
+function copyText(txt,done,fallback){
   try{
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast('已複製規格文字')).catch(fallback);}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast(done)).catch(fallback);}
     else fallback();
   }catch(e){fallback();}
+}
+function copySpec(){
+  copyText(specText(),'已複製規格文字',()=>{const d=$('#specDetails');d.open=true;const r=document.createRange();r.selectNodeContents($('#specPre'));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);toast('已選取規格文字，請按 Ctrl+C 複製');});
+}
+function copyLink(){
+  const url=shareUrl(state);
+  copyText(url,isHosted()?'已複製連結，對方打開就會看到這組示意畫面':'已複製連結；這是本機檔案的路徑，放上網站後才能傳給別人',()=>window.prompt('複製這個連結',url));
 }
 
 /* ---------- template library (data from template-library.js) ---------- */
@@ -444,6 +529,37 @@ $('#back').addEventListener('click',()=>showWorkspace(3));
 $('#shuffle').addEventListener('click',shuffle);
 $('#shuffle2').addEventListener('click',shuffle);
 $('#copy').addEventListener('click',copySpec);
+$('#shareLink').addEventListener('click',copyLink);
+$('#printBtn').addEventListener('click',()=>window.print());
+// printing the result page: A4 sheets with the spec first and the previews after (print rules in selector.css)
+window.addEventListener('beforeprint',()=>{
+  if($('#result').hidden) return;
+  document.body.classList.add('print-result');
+  const d=$('#specDetails');d.dataset.wasOpen=d.open?'1':'';d.open=true;
+  $('#printNote').textContent=(notes[enc(state)]||'').trim()||'（沒有討論紀錄）';
+  $('#printMeta').textContent=`產出日期 ${new Date().toLocaleDateString('zh-TW')}${isHosted()?`・線上檢視 ${shareUrl(state)}`:''}`;
+});
+window.addEventListener('afterprint',()=>{
+  if(!document.body.classList.contains('print-result')) return;
+  document.body.classList.remove('print-result');
+  const d=$('#specDetails');d.open=!!d.dataset.wasOpen;
+  [resDesk,resPhone].forEach(p=>p.queue());
+});
+refreshLocks();
+$$('.combo [data-lock]').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.lock;locks[k]=!locks[k];refreshLocks();
+  try{localStorage.setItem(LOCKKEY,JSON.stringify(locks));}catch(e){}
+  toast(locks[k]?`已鎖定${LOCKNAME[k]}，隨機組合時不會換掉`:`已解鎖${LOCKNAME[k]}，隨機組合時會一起換`);
+}));
+$('#exploreBtn').addEventListener('click',showExplore);
+$('#expBack').addEventListener('click',()=>showWorkspace());
+$('#expMore').addEventListener('click',renderExplore);
+$$('#expAxis button').forEach(b=>b.addEventListener('click',()=>{expAxis=b.dataset.v;renderExplore();}));
+$('#expGrid').addEventListener('click',e=>{
+  const use=e.target.closest('[data-use]'),sv=e.target.closest('[data-save]');
+  if(use){const it=expItems[Number(use.dataset.use)];withUndo(()=>{Object.assign(state,it.s,{mods:it.s.mods.slice()});showWorkspace();window.scrollTo(0,0);},`已套用 ${shortCode(it.s)}，可再微調`);}
+  else if(sv){const code=enc(expItems[Number(sv.dataset.save)].s);if(toggleSaveCode(code)){const on=saved.includes(code);sv.setAttribute('aria-pressed',String(on));sv.textContent=on?'已收藏':'收藏';}}
+});
 $('#saveLive').addEventListener('click',toggleSave);
 $('#saveRes').addEventListener('click',toggleSave);
 $('#savedBtn').addEventListener('click',showCompare);
@@ -480,7 +596,8 @@ $('#noteBox').addEventListener('input',e=>{
   clearTimeout(noteT);noteT=setTimeout(persistNotes,300);
 });
 $('#cmpBack').addEventListener('click',()=>showWorkspace());
-$('#resetDetails').addEventListener('click',()=>withUndo(()=>{Object.assign(state,{mode:0,font:0,density:1,button:0,nav:0,hero:0,side:0,table:0,tabs:0,mods:[]});update();},'細節已恢復預設'));
+$('#resetDetails').addEventListener('click',()=>withUndo(()=>{resetDetails(state);update();},'細節已恢復預設'));
+$('#randDetails').addEventListener('click',()=>withUndo(()=>{Object.assign(state,randomDetails(state));update();},()=>{const n=detailList(state).length-state.mods.filter(k=>modApplies(k,state.layout)).length;return n?`隨機搭配了 ${n} 項細節`:'這次抽到全部預設，再按一次試試';}));
 $$('#lgSeg button').forEach(b=>b.addEventListener('click',()=>{
   const g=b.dataset.g;if(byId(LAYOUTS,state.layout).g===g)return;
   state.layout=groupLayout[g];update();

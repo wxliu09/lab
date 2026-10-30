@@ -42,7 +42,9 @@ const ICONS={
   eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
   back:'<path d="M19 12H5M11 6l-6 6 6 6"/>',
-  clip:'<path d="M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/>'
+  clip:'<path d="M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/>',
+  contrast:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
+  volume:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'
 };
 const ic=(n,w=1.7)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -86,6 +88,12 @@ const LOCS=[
   {n:'北區運動中心',t:'運動中心',a:'青川市興北路 210 號',h:'06:00–22:00',d:'2.6 km',s:'warn',st:'人潮較多'}
 ];
 const PINS=[[44,30],[27,55],[66,38],[80,72],[18,82]];
+const CAL_EVENTS={8:[['河濱音樂節','p']],9:[['河濱音樂節','p']],12:[['親子木工手作','a']],15:[['城市馬拉松','d']],18:[['老城散步導覽','a']],20:[['攝影展開幕','p'],['講座：城市記憶','d']],22:[['講座：城市記憶','d']],28:[['小農市集','a']],29:[['小農市集','a']]};
+const CAL_NEXT=[
+  {m:11,d:'08',w:'日',t:'青川河濱音樂節',pl:'河濱公園舊碼頭',tag:'表演',st:'免報名・自由入場',open:0},
+  {m:11,d:'12',w:'四',t:'親子木工手作坊',pl:'市立圖書館 3F 創客教室',tag:'親子',st:'剩 6 個名額',open:1},
+  {m:11,d:'15',w:'日',t:'2026 青川城市馬拉松',pl:'市政府廣場出發',tag:'運動',st:'報名已截止',open:0}
+];
 
 /* ---------- mock templates ---------- */
 const LOGO='<span class="m-logo"><span class="m-mark">青</span><span class="m-name">青川市民服務網<small>QINGCHUAN CITY</small></span></span>';
@@ -194,7 +202,42 @@ const TPL={
     <div class="m-form-act"><span class="m-btn m-btn-ghost">上一步</span><span class="m-btn">下一步：確認送出 ${ic('arrow')}</span></div>
   </div>
   <aside class="m-form-side"><div class="m-card m-notice"><div class="m-eyebrow">申請須知</div><ul class="m-list"><li>設籍青川市滿 6 個月</li><li>子女未滿 2 歲</li><li>審核約 7 個工作天</li><li>核准後次月 10 日撥款</li></ul></div><div class="m-card m-notice"><h3 class="m-h3">需要協助？</h3><p class="m-p">撥打 1999 轉社會局，或使用線上客服。</p><span class="m-btn m-btn-sm m-btn-ghost">線上客服</span></div></aside>
-  </div></div></section>${footer(c)}`
+  </div></div></section>${footer(c)}`,
+
+  l15:c=>`${header()}
+  <section class="m-section m-sec-tight"><div class="m-wrap">
+  <div class="m-crumb">首頁<i>/</i>市政新聞<i>/</i>政策說明<i>/</i><b>公共自行車 2.0</b></div>
+  <div class="m-art-grid"><article class="m-article">
+    <span class="m-tag">交通政策</span>
+    <h1 class="m-h1 m-h1-sm">公共自行車 2.0 上路：前 30 分鐘免費，站點增加到 420 站</h1>
+    <div class="m-art-meta"><span class="m-date">2026.10.27</span><span>交通局・公共運輸科</span><span>閱讀約 4 分鐘</span></div>
+    <p class="m-art-lead">為了讓短程移動更方便，青川市公共自行車 11 月 1 日起全面升級：新增 160 個站點、開放市民卡直接借車，前 30 分鐘維持免費。</p>
+    <figure class="m-art-fig">${scene('m-art-img')}<figcaption>河濱路新設的雙層車架站，可停放 48 輛車。</figcaption></figure>
+    <h2 class="m-h2 m-h2-sm">有哪些改變？</h2>
+    <ul class="m-art-list"><li><b>站點加密：</b>捷運站、區公所與學校周邊 500 公尺內都有站。</li><li><b>市民卡借車：</b>不用另外註冊，嗶卡就能借還。</li><li><b>電輔車加入：</b>山城區先導入 300 輛電動輔助自行車。</li></ul>
+    <blockquote class="m-quote">「希望讓最後一哩路，騎車比開車更方便。」<cite>交通局長 林○遠</cite></blockquote>
+    <h2 class="m-h2 m-h2-sm">收費方式</h2>
+    <div class="m-card m-table-card"><div class="m-table-scroll"><table class="m-table"><thead><tr><th>使用時間</th><th>一般車</th><th>電輔車</th></tr></thead><tbody><tr><td>前 30 分鐘</td><td>免費</td><td>10 元</td></tr><tr><td>30 分鐘至 4 小時</td><td>每 30 分鐘 10 元</td><td>每 30 分鐘 20 元</td></tr><tr><td>超過 4 小時</td><td>每 30 分鐘 20 元</td><td>每 30 分鐘 40 元</td></tr></tbody></table></div></div>
+    <div class="m-art-foot"><span class="m-meta">更新日期 2026.10.28・瀏覽人次 8,412</span><span class="m-art-share">分享${['ext','chat','thumb'].map(i=>`<span class="m-soc">${ic(i)}</span>`).join('')}</span></div>
+  </article>
+  <aside class="m-art-side">
+    <div class="m-card m-toc"><b>本頁目錄</b>${['有哪些改變？','收費方式','如何開始使用','常見問題'].map((t,i)=>`<span class="${i===0?'is-active':''}">${t}</span>`).join('')}</div>
+    <div class="m-card m-notice"><div class="m-eyebrow">附件下載</div>${['站點分布圖.pdf','收費標準.pdf'].map(f=>`<div class="m-dl">${ic('doc')}<span>${f}</span>${ic('download')}</div>`).join('')}</div>
+    <div class="m-card m-notice"><h3 class="m-h3">相關文章</h3>${NEWS.slice(0,3).map(n=>`<div class="m-rel"><span class="m-date">${n.d}</span><span>${n.t}</span></div>`).join('')}</div>
+  </aside></div></div></section>${footer(c)}`,
+
+  l16:c=>{
+    // 2026-11-01 is a Sunday, so the month fills exactly five weeks
+    const cells=Array.from({length:35},(_,i)=>{const d=i<30?i+1:0;return `<div class="m-cal-d${d===8?' is-sel':''}${d?'':' is-out'}"><span class="n">${d||i-29}</span>${(CAL_EVENTS[d]||[]).map(([t,k])=>`<span class="m-ev ev-${k}">${t}</span>`).join('')}</div>`;}).join('');
+    return `${header()}
+  <section class="m-section m-sec-tight"><div class="m-wrap">
+  <div class="m-page-top"><div><div class="m-eyebrow">藝文活動</div><h1 class="m-h1 m-h1-sm">活動行事曆</h1></div><span class="a-viewseg"><span class="is-on">月</span><span>週</span><span>清單</span></span></div>
+  <div class="m-chips">${['全部活動','展覽','表演','講座','親子','運動'].map((t,i)=>`<span class="m-tag${i===0?' is-on':''}">${t}</span>`).join('')}</div>
+  <div class="m-cal-wrap"><div class="m-card m-cal"><div class="m-cal-head"><b class="m-h3">2026 年 11 月</b><span class="m-cal-nav">‹</span><span class="m-cal-nav">›</span><span class="m-btn m-btn-sm m-btn-ghost">今天</span></div>
+  <div class="m-cal-grid">${'日一二三四五六'.split('').map(w=>`<span class="m-cal-w">${w}</span>`).join('')}${cells}</div></div>
+  <aside class="m-cal-side"><h2 class="m-h2 m-h2-sm">近期活動</h2>${CAL_NEXT.map(e=>`<div class="m-card m-evc"><div class="m-evd"><small>${e.m} 月</small><b>${e.d}</b><small>週${e.w}</small></div><div class="m-evb"><span class="m-tag">${e.tag}</span><h3 class="m-h3">${e.t}</h3><span class="m-loc-row">${ic('pin')}${e.pl}</span><div class="m-evf"><span class="m-meta">${e.st}</span><span class="m-btn m-btn-sm${e.open?'':' m-btn-ghost'}">${e.open?'我要報名':'查看詳情'}</span></div></div></div>`).join('')}</aside></div>
+  </div></section>${footer(c)}`;
+  }
 };
 /* ---------- admin system templates ---------- */
 const ALOGO='<span class="m-logo"><span class="m-mark">青</span><span class="m-name">案件管理系統<small>QINGCHUAN ADMIN</small></span></span>';
@@ -205,7 +248,8 @@ const ASUB={
   '案件管理':[['全部案件','1,284'],['待受理','12'],['審核中','37'],['待補件','9'],['已結案','1,209'],['逾期案件','17']],
   '流程看板':[['我的看板'],['全部承辦'],['已封存']],
   '統計報表':[['申辦統計'],['處理效率'],['滿意度調查'],['匯出紀錄']],
-  '帳號權限':[['角色權限'],['帳號管理','34'],['登入紀錄'],['操作紀錄']]
+  '帳號權限':[['角色權限'],['帳號管理','34'],['登入紀錄'],['操作紀錄']],
+  '系統設定':[['一般設定'],['通知設定'],['案件流程'],['資料保存'],['介面偏好']]
 };
 const NOTIF=`<div class="a-notif"><div class="a-notif-h"><b>通知</b><span class="m-link">全部標為已讀</span></div>${[['bad','A11510250089 已逾期 2 天，請優先處理','10 分鐘前'],['warn','主管退回 1 件育兒津貼申請','1 小時前'],['info','系統將於 11/2 22:00 進行維護','昨天']].map(([k,t,w])=>`<div class="a-notif-i"><span class="a-dot ${k}"></span><div><b>${t}</b><small>${w}</small></div></div>`).join('')}</div>`;
 function adminShell(c,o){
@@ -294,7 +338,17 @@ function tplReport(c){
   <div class="m-card m-table-card"><div class="m-table-head"><h3 class="m-h3">各區處理效率</h3><span class="m-meta">目標：3 天內結案、達成率 90% 以上</span></div><div class="m-table-scroll"><table class="m-table"><thead><tr><th>行政區</th><th class="m-hide-s">受理件數</th><th>平均天數</th><th>達成率</th></tr></thead><tbody>${DIST.map(d=>`<tr><td>${d[0]}</td><td class="m-hide-s m-num">${d[1]}</td><td class="m-num">${d[2]} 天</td><td><span class="a-rate"><i><b class="${d[3]<90?'lo':''}" style="width:${d[3]}%"></b></i><span class="m-num">${d[3]}%</span></span></td></tr>`).join('')}</tbody></table></div></div>`;
   return adminShell(c,{active:'統計報表',crumb:['統計報表','申辦統計'],tabs:['總覽','案件列表','統計報表'],tab:2,subOn:0,body});
 }
-Object.assign(TPL,{l9:tplList,l10:tplDetail,l11:tplBoard,l12:tplPerm,l13:tplLogin,l14:tplReport});
+function tplSettings(c){
+  const row=(t,d,on)=>`<div class="a-setrow"><div><b>${t}</b><small>${d}</small></div><span class="a-sw${on?' on':''}"></span></div>`;
+  const act=(t,d,b)=>`<div class="a-setrow"><div><b>${t}</b><small>${d}</small></div><span class="m-btn m-btn-sm a-btn-bad">${b}</span></div>`;
+  const body=`<div class="a-head"><div><h1 class="m-h1 m-h1-sm">通知設定</h1><div class="a-head-meta">變更會留存在操作紀錄・上次修改 10.21 李○婷</div></div><div class="a-actions"><span class="m-btn m-btn-ghost">還原預設</span><span class="m-btn">${ic('check')}儲存設定</span></div></div>
+  <div class="m-card a-setcard"><div class="a-set-h"><h3 class="m-h3">通知管道</h3><p class="m-p">案件狀態改變時，用哪些方式通知承辦人。</p></div>${row('系統內通知','右上角鈴鐺與通知中心',1)}${row('電子郵件','寄到機關信箱，每小時彙整一次',1)}${row('簡訊','只用於逾期、退件等緊急事項',0)}${row('LINE 通知','綁定機關官方帳號後即時推播',1)}</div>
+  <div class="m-card a-setcard"><div class="a-set-h"><h3 class="m-h3">期限提醒</h3><p class="m-p">在處理期限前後提醒，避免案件逾期。</p></div><div class="a-grid2">${fld('到期前提醒','3 天前 <span class="m-muted">▾</span>')}${fld('逾期通知對象','承辦人與科長 <span class="m-muted">▾</span>')}${fld('每日彙整寄送時間','08:30',{icon:'clock'})}<div class="m-field"><label>遇到假日</label><span class="a-viewseg"><span class="is-on">自動順延</span><span>不順延</span></span></div></div></div>
+  <div class="m-card a-setcard a-danger"><div class="a-set-h"><h3 class="m-h3">危險操作</h3><p class="m-p">以下操作無法復原，執行前需要主管二次驗證。</p></div>${act('清除測試資料','刪除所有標記為測試的案件與附件','清除')}${act('強制所有人重新登入','立即登出目前在線的 34 個帳號','執行')}</div>`;
+  return adminShell(c,{active:'系統設定',crumb:['系統設定','通知設定'],tabs:['總覽','案件列表','系統設定'],tab:2,subOn:1,body});
+}
+Object.assign(TPL,{l9:tplList,l10:tplDetail,l11:tplBoard,l12:tplPerm,l13:tplLogin,l14:tplReport,l17:tplSettings});
+const ENV_BAR='<div class="a-env"><b>測試環境</b><span>資料為模擬，不會寫入正式資料庫</span><code>v2.8.0-rc.3</code></div>';
 
 function floats(m,l){
   const has=k=>m.has(k)&&modApplies(k,l);
@@ -303,6 +357,8 @@ function floats(m,l){
   if(has('top')) parts.push(`<span class="m-fab m-fab-top">${ic('up')}</span>`);
   if(has('chat')) parts.push(`<span class="m-chat-bubble">您好！有什麼可以幫您？</span><span class="m-fab m-fab-chat">${ic('chat')}<b>線上客服</b></span>`);
   if(parts.length) h+=`<div class="m-fabs">${parts.join('')}</div>`;
+  if(has('a11y')) h+=`<div class="m-a11y" aria-hidden="true"><span>A+</span><span>A−</span><span>${ic('contrast')}</span><span>${ic('volume')}</span></div>`;
+  if(has('survey')) h+=`<div class="m-survey"><span class="m-ico m-ico-sm">${ic('heart')}</span><div><b>花 1 分鐘告訴我們</b><span>您對這個網站滿意嗎？</span></div><span class="m-btn m-btn-sm">填寫問卷</span><span class="m-x">${ic('x')}</span></div>`;
   const mid=[];
   if(has('timeout')) mid.push(`<div class="a-timeout"><span class="t-ic">${ic('clock')}</span><div class="t-tx"><b>閒置提醒</b><span>您已 28 分鐘沒有操作，系統將於 <code>01:58</code> 後自動登出。</span></div><span class="m-btn m-btn-sm m-btn-ghost">立即登出</span><span class="m-btn m-btn-sm">繼續使用</span></div>`);
   if(has('bulk')) mid.push(`<div class="a-bulk"><b>已選取 3 筆</b><span class="sep"></span><span>${ic('users')}批次指派</span><span>${ic('flow')}變更狀態</span><span>${ic('download')}匯出</span><span class="sep"></span><span>${ic('x')}取消選取</span></div>`);
@@ -311,39 +367,52 @@ function floats(m,l){
   return h;
 }
 
+// the accent (強調色 detail) can be re-derived from the primary instead of taken from the palette
+function accentOf(c,k){
+  if(!k) return c.a;
+  const [h,sat]=hexToHsl(c.p);
+  if(k===1) return hslToHex(h+180,Math.max(.55,Math.min(sat,.85)),.55);
+  if(k===2) return hslToHex(h+40,Math.max(.5,Math.min(sat,.85)),.52);
+  if(k===3) return hslToHex(h,Math.max(.35,sat*.8),.7);
+  return hslToHex(h,.08,.3);
+}
 function theme(s){
-  const st=byId(STYLES,s.style),c=paletteOf(s),W='#FFFFFF';
+  const st=byId(STYLES,s.style),c=paletteOf(s),W='#FFFFFF',warm=st.id==='s8'||st.id==='s12';
   const dark=s.mode===2||(s.mode!==1&&!!st.dark);
+  const a=accentOf(c,s.accent||0);
   let bg,surface,ink,p,deep;
   if(dark){
-    bg=st.id==='s8'?'#16140F':'#0C1015';
-    surface=st.id==='s4'?bg:st.id==='s8'?'#1F1C16':'#141A22';
+    bg=warm?'#16140F':st.id==='s11'?'#1B1F26':'#0C1015';
+    surface=(st.id==='s4'||st.id==='s11')?bg:warm?'#1F1C16':'#141A22';
     ink='#E4E9EF';p=c.pd;deep=mix(c.pd,bg,.16);
   }else{
     ink=c.ink;p=c.p;deep=c.deep;
-    bg={s1:W,s2:mix(c.p,W,.04),s3:mix(c.ink,W,.035),s4:'#FAFAF7',s5:mix(c.a,W,.09),s6:'#F6F8FA',s7:mix(c.p,'#F4F6FA',.06),s8:mix(c.a,'#FBF8F1',.05),s9:'#F7F8FA'}[st.id]||W;
-    surface=st.id==='s4'?bg:st.id==='s8'?'#FFFDF8':W;
+    bg={s1:W,s2:mix(c.p,W,.04),s3:mix(c.ink,W,.035),s4:'#FAFAF7',s5:mix(a,W,.09),s6:'#F6F8FA',s7:mix(c.p,'#F4F6FA',.06),s8:mix(a,'#FBF8F1',.05),s9:'#F7F8FA',s10:W,s11:mix(c.p,'#E6EAF0',.05),s12:mix(a,'#F6F1E7',.04)}[st.id]||W;
+    // s11 (soft UI) only works when cards are the same colour as the page
+    surface=(st.id==='s4'||st.id==='s11')?bg:warm?'#FFFDF8':W;
   }
   const onP=onColor(p);
   let pt=p;
   for(let t=.92;contrast(pt,bg)<4.6&&t>0;t-=.08) pt=mix(p,ink,t);
   if(contrast(pt,bg)<4.6) pt=ink;
-  return {dark,bg,surface,ink,p,pt,deep,a:c.a,onP,onDeep:onColor(deep),onA:onColor(c.a),pRatio:contrast(p,onP),bodyRatio:contrast(ink,bg),ptRatio:contrast(pt,bg)};
+  return {dark,bg,surface,ink,p,pt,deep,a,onP,onDeep:onColor(deep),onA:onColor(a),pRatio:contrast(p,onP),bodyRatio:contrast(ink,bg),ptRatio:contrast(pt,bg)};
 }
 const navEff=s=>s.nav===1?'plain':s.nav===2?'brand':s.nav===3?'deep':(s.style==='s3'?'brand':(s.side===3&&isAdmin(s.layout))?'deep':'plain');
+// details that only switch a data-* attribute; mock.css does the rest
+const ATTR_DETAILS=['side','table','tabs','card','icon','field','texture','width','header','footer'];
+const HEADING=[null,{'--m-hs':'.86','--m-hw':'500'},{'--m-hs':'1.16','--m-hw':'800'},{'--m-hs':'1.42','--m-hw':'900','--m-hls':'-.02em'}];
+const RADIUS=[null,{'--m-r':'0px','--m-rt':'0px','--m-rm':'0px'},{'--m-r':'6px','--m-rt':'4px','--m-rm':'6px'},{'--m-r':'22px','--m-rt':'999px','--m-rm':'18px'}];
 function applyMock(el,s){
   const t=theme(s);
   const map={'--m-bg':t.bg,'--m-surface':t.surface,'--m-ink':t.ink,'--m-p':t.p,'--m-pt':t.pt,'--m-on-p':t.onP,'--m-deep':t.deep,'--m-on-deep':t.onDeep,'--m-a':t.a,'--m-on-a':t.onA};
-  for(const k in map) el.style.setProperty(k,map[k]);
-  if(s.font){el.style.setProperty('--m-fh',FONTVARS[s.font]);el.style.setProperty('--m-fb',FONTVARS[s.font]);}
-  else{el.style.removeProperty('--m-fh');el.style.removeProperty('--m-fb');}
-  if(s.button) el.style.setProperty('--m-rb',BTNR[s.button]); else el.style.removeProperty('--m-rb');
+  const f=FONTVARS[s.font]||[],h=HEADING[s.heading]||{},r=RADIUS[s.radius]||{};
+  Object.assign(map,{'--m-fh':f[0],'--m-fb':f[1],'--m-rb':BTNR[s.button]},h,r);
+  for(const k of ['--m-hs','--m-hw','--m-hls','--m-r','--m-rt','--m-rm']) if(!(k in map)) map[k]=null;
+  for(const k in map){if(map[k]) el.style.setProperty(k,map[k]); else el.style.removeProperty(k);}
   el.dataset.style=s.style;
   el.dataset.nav=navEff(s);
   el.dataset.density='d'+s.density;
-  el.dataset.side=String(s.side||0);
-  el.dataset.table=String(s.table||0);
-  el.dataset.tabs=String(s.tabs||0);
+  for(const k of ATTR_DETAILS) el.dataset[k]=String(detailApplies(k,s.layout)?s[k]||0:0);
   el.toggleAttribute('data-dark',t.dark);
   return t;
 }
@@ -364,14 +433,14 @@ class Preview{
     applyMock(this.mock,s);applyMock(this.float,s);
     this.mock.style.width=this.base+'px';this.float.style.width=this.base+'px';
     const act=new Set([...mods].filter(k=>modApplies(k,s.layout)));
-    const ck=[s.layout,dev,s.hero,['alert','links','feedback','social','notify','watermark','bulk'].filter(k=>act.has(k)).join('.')].join('|');
+    const ck=[s.layout,dev,s.hero,['env','alert','links','feedback','social','notify','watermark','bulk'].filter(k=>act.has(k)).join('.')].join('|');
     if(this.ck!==ck){
       const prevLayout=this.ck?this.ck.split('|')[0]+this.ck.split('|')[1]:'';
-      this.mock.innerHTML=(act.has('alert')?(isAdmin(s.layout)?ALERT_SYS:ALERT):'')+TPL[s.layout]({hero:s.hero,mods:act,layout:s.layout});
+      this.mock.innerHTML=(act.has('env')?ENV_BAR:'')+(act.has('alert')?(isAdmin(s.layout)?ALERT_SYS:ALERT):'')+TPL[s.layout]({hero:s.hero,mods:act,layout:s.layout});
       if(prevLayout!==s.layout+dev) this.vp.scrollTop=0;
       this.ck=ck;
     }
-    const fk=s.layout+':'+['chat','cookie','top','timeout','bulk'].filter(k=>act.has(k)).join('.');
+    const fk=s.layout+':'+['chat','cookie','top','timeout','bulk','a11y','survey'].filter(k=>act.has(k)).join('.');
     if(this.fk!==fk){
       this.float.innerHTML=floats(act,s.layout);
       this.float.classList.toggle('has-cookie',act.has('cookie'));
