@@ -711,10 +711,9 @@ regScript('xeno.backFromHell', (g, ctx) => {
   }
   if (!pick) pick = [...cands].sort((a, b) => b.deadAt - a.deadAt)[0] ?? null
   if (pick) {
-    // 時滯殭屍以 1 HP 從死前一刻被拉回，隨即轉成異形 spawn（主單位換成目前的 spawn 型）
-    const z = g.revivePlayer(pick.slot, at, XUNIT.timeZombie, 1 / unitDef(XUNIT.timeZombie).hp)
+    // 時滯殭屍以 1 HP 從死前一刻被拉回，成為異形 spawn（本體保持殭屍型態）
+    const z = g.convertToSpawn(pick.slot, 'xeno', at, 1 / unitDef(XUNIT.timeZombie).hp, XUNIT.timeZombie)
     if (z) {
-      g.convertToSpawn(pick.slot, 'xeno', at, 1)
       // 屍體被「用掉」了
       for (const c of g.world.ents.values()) if (c.tags.has('corpse') && c.data.wasMain && c.data.slot === pick.slot) g.world.remove(c)
       g.emitFx({ k: 'rewind', z: at.zone, x: at.x, y: at.y })

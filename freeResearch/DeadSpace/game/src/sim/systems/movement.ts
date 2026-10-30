@@ -69,9 +69,13 @@ function goalOf(g: Game, u: Ent): { x: number; y: number; stopAt: number } | nul
   }
 }
 
+/** AI／NPC 每 tick 最多重算幾次路徑（真人玩家的單位不受限）：避免大家同時出發時卡一下 */
+const PATH_BUDGET = 6
+
 export function stepMovement(g: Game): void {
   const w = g.world
   const dt = TICK_DT
+  let budget = PATH_BUDGET
   for (const u of w.ents.values()) {
     if (!u.alive || u.removed) continue
     // 外力（擊退、推擠）
@@ -113,7 +117,14 @@ export function stepMovement(g: Game): void {
     if (z.nav) {
       const pass = doorPassFor(g, u, z)
       const goalMoved = (u.pathGoalX - goal.x) ** 2 + (u.pathGoalY - goal.y) ** 2 > 0.5
-      if (!u.path || (g.time >= u.repathAt && goalMoved) || (u.stuckT > 0.6 && g.time >= u.repathAt)) {
+      const wantPath = !u.path || (g.time >= u.repathAt && goalMoved) || (u.stuckT > 0.6 && g.time >= u.repathAt)
+      const human = u.owner >= 0 && !!g.players[u.owner] && !g.players[u.owner]!.bot
+      if (wantPath && !human && budget <= 0) {
+        // 預算用完：還沒有路徑的等下一 tick，有舊路徑的先沿用
+        if (!u.path) continue
+        u.repathAt = g.time + 0.1
+      } else if (wantPath) {
+        if (!human) budget--
         u.path = z.nav.findPath(u.x, u.y, goal.x, goal.y, u.radius, pass)
         u.pathIdx = 0
         u.pathGoalX = goal.x

@@ -159,6 +159,8 @@ export class Game {
     const zones = this.zoneList()
     for (const p of this.allPlayers()) this.send(p.slot, { t: 'zones', zones })
   }
+  /** 群組頻道發言（黑洞裝置彩蛋）*/
+  onGroupChat?: (p: GamePlayer, text: string) => void
   /** 死者附身蛞蝓仔 */
   possessSlug?: (slot: number) => boolean
   /** 每 tick 額外執行的系統（AI、事件、太空…）*/
@@ -504,8 +506,8 @@ export class Game {
   }
 
   /** 把玩家轉成某陣營的 spawn（主單位換成該陣營目前的 spawn 型）*/
-  convertToSpawn(slot: number, faction: 'xeno' | 'mutant', at?: { zone: number; x: number; y: number }, hpPct = 0.33): Ent | null {
-    return this.rolesApi?.convert(slot, faction, at, hpPct) ?? null
+  convertToSpawn(slot: number, faction: 'xeno' | 'mutant', at?: { zone: number; x: number; y: number }, hpPct = 0.33, defId?: string): Ent | null {
+    return this.rolesApi?.convert(slot, faction, at, hpPct, defId) ?? null
   }
 
   /** 石化主單位（勝負判定視為死亡）；解除時呼叫 unpetrify */
@@ -515,7 +517,7 @@ export class Game {
 
   rolesApi: {
     revive(slot: number, at: { zone: number; x: number; y: number }, defId: string, hpPct: number): Ent | null
-    convert(slot: number, faction: 'xeno' | 'mutant', at: { zone: number; x: number; y: number } | undefined, hpPct: number): Ent | null
+    convert(slot: number, faction: 'xeno' | 'mutant', at: { zone: number; x: number; y: number } | undefined, hpPct: number, defId?: string): Ent | null
     petrify(u: Ent, on: boolean): void
   } | null = null
 

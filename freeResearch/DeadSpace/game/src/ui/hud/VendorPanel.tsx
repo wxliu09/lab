@@ -24,6 +24,7 @@ export function VendorPanel() {
   if (!vendor) return null
   const def = UNITS.get(vendor.s.d ?? '')
   const off = Number(vendor.s.x2?.off ?? 0)
+  const noPow = !!vendor.s.x2?.nopow
   const rows = String(vendor.s.x2!.s)
     .split('|')
     .filter(Boolean)
@@ -36,10 +37,11 @@ export function VendorPanel() {
     <div class="panel" data-testid="vendor" style={{ position: 'absolute', right: '12px', bottom: '210px', width: '300px', padding: '12px' }}>
       <h3>{loc(def?.name)}</h3>
       {off > 0 && <div class="notice">{t('vendor.offlineFor', { s: off })}</div>}
+      {noPow && <div class="notice">{t('vendor.noPower')}</div>}
       <div class="col" style={{ gap: '6px' }}>
         {rows.map((r) => {
           const it = itemDef(r.item)
-          const can = r.count > 0 && off <= 0
+          const can = r.count > 0 && off <= 0 && !noPow
           return (
             <div class="row" key={r.item} style={{ gap: '8px' }}>
               <Icon name={it?.icon ?? 'unknown'} size={22} color={it?.cat === 'suit' ? '#ffc23d' : '#9fe7ff'} />

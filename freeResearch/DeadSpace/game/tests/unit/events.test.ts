@@ -314,3 +314,25 @@ describe('末日與穩定度', () => {
     expect([...new Set(h.leakProblems)]).toEqual([])
   })
 })
+
+describe('彩蛋：黑洞裝置', () => {
+  it('蟲洞事件後、45 分鐘以後，在群組頻道輸入通關句＋啟用碼 → 黑洞裝置與蛞蝓特工出現；太早只會提示', () => {
+    const { h, g, cs } = setup()
+    expect(g.triggerEvent!('wormhole', true)).toBe(true)
+    const code = eventsOf(g).code
+    expect(code).toMatch(/^\d{4}$/)
+    cs[0].send({ t: 'chat', ch: 'all', text: '-creategroup lab' })
+    sec(h, 0.2)
+    const ops = () => count(g, 'npc.slugOperative')
+    const devices = () => [...g.world.ents.values()].filter((e) => (e.data.item as { id?: string } | undefined)?.id === 'singularity').length
+    cs[0].send({ t: 'chat', ch: 'group', to: 'lab', text: `願群星記得我們 ${code}` })
+    sec(h, 0.2)
+    expect(ops()).toBe(0)
+    g.world.time = 2701
+    cs[0].send({ t: 'chat', ch: 'group', to: 'lab', text: `May the stars remember us, ${code}` })
+    sec(h, 0.2)
+    expect(ops()).toBeGreaterThan(0)
+    expect(devices() + (g.world.zoneByKey('cinder') ? 0 : 1)).toBeGreaterThan(0)
+    expect(eventsOf(g).code).toBe('')
+  })
+})

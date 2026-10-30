@@ -97,6 +97,7 @@ function groupChat(g: Game, p: GamePlayer, name: string, text: string): void {
   const line: ChatLine = { from: p.mutedUntil > g.time ? '' : p.name, color: p.color, ch: 'group', text, time: g.time, group: gr.name }
   const to = g.allPlayers().filter((q) => gr.members.has(q.slot) || !q.alive || q.flags.listen)
   deliver(g, line, uniq(to))
+  g.onGroupChat?.(p, text)
 }
 
 /** 以「-」開頭的聊天指令 */

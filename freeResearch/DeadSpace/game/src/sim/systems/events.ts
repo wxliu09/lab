@@ -10,7 +10,7 @@ import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { populateZone, spawnCreature } from '../ai/creatures'
 import { DEATH_HOOKS, damage } from './damage'
 import { EXTRA_COMMANDS } from './orders'
-import { giveItem, makeItem } from './items'
+import { dropOnGround, giveItem, makeItem } from './items'
 import { restockAll } from './vendors'
 import { destroyInterior, spaceOf } from './space'
 import { recomputeStats } from './buffs'
@@ -70,6 +70,8 @@ export interface EventState {
   tenshuUntil: number
   /** 強化劑 */
   enhancer: boolean
+  /** 未識別物體的啟用碼（蟲洞閉合後仍有效，用一次就失效）*/
+  code: string
 }
 
 export function eventsOf(g: Game): EventState {
@@ -117,7 +119,8 @@ const EVENTS: EventDef[] = [
       const ev = eventsOf(g)
       ev.uoZone = z.id
       ev.uoUntil = g.time + 397
-      z.data.code = String(g.world.rng.int(1000, 9999))
+      z.data.code = String(g.secret.int(1000, 9999))
+      ev.code = z.data.code as string
       const se = g.world.get(z.spaceEnt)
       if (se) g.emitFx({ k: 'ping', z: SPACE_ZONE, x: se.x, y: se.y, v: 15, s: 'event' })
       g.systemAll('event.wormhole', { m: 6, s: 37 })
@@ -729,6 +732,7 @@ export function installEvents(g: Game): void {
     pirateWander: 0,
     tenshuUntil: 0,
     enhancer: false,
+    code: '',
   }
   g.data.events = ev
 
@@ -753,6 +757,7 @@ export function installEvents(g: Game): void {
     },
   })
 
+  g.onGroupChat = (p, text) => blackHoleEgg(g, p, text)
   g.triggerEvent = (id, forced) => fire(g, id, forced)
   g.eventIds = () => EVENTS.map((e) => e.id)
   g.startApocalypse = (kind) => startApocalypse(g, kind)
@@ -778,6 +783,37 @@ export function installEvents(g: Game): void {
   })
 }
 
+// ───────── 彩蛋：黑洞裝置（研究 03 §7）─────────
+// 原作的通關句以雜湊比對、無法還原；本作自訂一句致敬台詞，加上未識別物體裡的 4 位數啟用碼。
+const PASS = ['願群星記得我們', 'may the stars remember us']
+const EGG_TIME = 2700
+
+function blackHoleEgg(g: Game, p: GamePlayer, text: string): void {
+  const ev = eventsOf(g)
+  if (!ev.code) return
+  const norm = text.toLowerCase().replace(/[\s,，.。!！'’]/g, '')
+  if (!PASS.some((x) => norm.includes(x.replace(/\s/g, ''))) || !norm.includes(ev.code)) return
+  if (g.time < EGG_TIME) {
+    g.privateLine(p.slot, 'egg.tooEarly', { s: Math.ceil(EGG_TIME - g.time) })
+    return
+  }
+  ev.code = ''
+  g.privateLine(p.slot, 'egg.accepted')
+  // 黑洞裝置出現在餘燼衛星；7 座站的落點各出現一名蛞蝓特工
+  const cinder = zoneByKey(g, 'cinder')
+  const at = cinder ? (markersOf(cinder).moduleOut?.[0] ?? cinder.layout?.spawns[0] ?? null) : null
+  if (cinder && at) dropOnGround(g, cinder.id, at.x, at.y, makeItem('singularity'))
+  let n = 0
+  for (const z of g.world.zones) {
+    if (n >= 7 || !z.alive || !z.layout || !z.station || z.station.enable === 'event' || z.key.startsWith('ship:')) continue
+    const pt = markersOf(z).podLanding?.[0] ?? z.layout.spawns[0]
+    if (!pt) continue
+    spawnCreature(g, 'npc.slugOperative', z.id, pt.x, pt.y, 1)
+    n++
+  }
+  g.log('黑洞裝置啟動')
+}
+
 /** 天守砲台對翠原星放電（M7 主砲腳本呼叫）：解除收容失效 */
 export function tenshuDischarged(g: Game, target: Ent): boolean {
   const ev = eventsOf(g)
@@ -796,4 +832,3 @@ export function uoCode(g: Game): string | null {
   return z?.alive ? ((z.data.code as string) ?? null) : null
 }
 
-void markersOf

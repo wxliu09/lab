@@ -225,13 +225,13 @@ export function installRoles(g: Game): void {
       g.emitFx({ k: 'summon', z: at.zone, x: at.x, y: at.y, e: u.id })
       return u
     },
-    convert(slot, f, at, hpPct) {
+    convert(slot, f, at, hpPct, defId) {
       const p = g.players[slot]
       if (!p) return null
       const old = g.mainOf(p)
       const pos = at ?? (old ? { zone: old.zone, x: old.x, y: old.y } : null)
       if (!pos) return null
-      const def = unitDef(spawnDefFor(g, f))
+      const def = unitDef(defId ?? spawnDefFor(g, f))
       const u = g.world.spawn(def, pos.zone, pos.x, pos.y, slot)
       u.hp = Math.max(1, u.maxHp * hpPct)
       if (old) {
