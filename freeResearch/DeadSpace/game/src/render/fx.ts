@@ -784,25 +784,39 @@ export class Fx {
     })
   }
 
-  /** 曳光彈：白熱核心＋有色外暈 */
+  /** 曳光彈：一段白熱彈頭從槍口飛向目標（有色外暈），身後留下一條很淡、很快消失的軌跡 */
   tracer(zone: number, x0: number, y0: number, h0: number, x1: number, y1: number, h1: number, color: string, width = 0.05, dur = 0.08): void {
     const a = W(x0, y0, h0)
     const b = W(x1, y1, h1)
     const len = a.distanceTo(b)
     if (len < 0.01) return
     const g = new THREE.Group()
+    const streak = Math.min(len, Math.max(0.5, len * 0.35))
     const core = this.mesh(GEO.beam, new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.55), 5)
-    core.scale.set(width * 0.45, width * 0.45, len)
-    const glow = this.mesh(GEO.beam, color, 2.2, { opacity: 0.35 })
-    glow.scale.set(width * 1.6, width * 1.6, len)
-    g.add(core, glow)
+    const glow = this.mesh(GEO.beam, color, 2.2, { opacity: 0.4 })
+    const trail = this.mesh(GEO.beam, color, 1.6, { opacity: 0.16 })
+    trail.scale.set(width * 0.6, width * 0.6, len)
+    g.add(trail, core, glow)
     g.position.copy(a)
     g.lookAt(b)
     const cm = core.material as THREE.MeshBasicMaterial
     const gm = glow.material as THREE.MeshBasicMaterial
+    const tm = trail.material as THREE.MeshBasicMaterial
+    const place = (k: number) => {
+      const head = Math.min(len, len * k * 1.5 + streak * 0.3)
+      const s = Math.max(0.01, Math.min(streak, head))
+      core.position.z = head - s
+      core.scale.set(width * 0.45, width * 0.45, s)
+      glow.position.z = head - s
+      glow.scale.set(width * 1.7, width * 1.7, s)
+    }
+    place(0)
     this.addTransient(g, dur, zone, (k) => {
-      cm.opacity = 1 - k
-      gm.opacity = 0.35 * (1 - k)
+      place(k)
+      const f = k < 0.66 ? 1 : 1 - (k - 0.66) / 0.34
+      cm.opacity = f
+      gm.opacity = 0.4 * f
+      tm.opacity = 0.16 * (1 - k)
     })
   }
 

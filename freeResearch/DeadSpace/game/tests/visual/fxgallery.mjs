@@ -258,6 +258,11 @@ sp('space-jumpArrive', { fx: [{ k: 'jumpArrive', x: 4, y: 0, x2: -6, y2: 0 }], w
 sp('space-hiveSpore', { fx: [{ k: 'proj', x: -5, y: 0, x2: 5, y2: 0, v: 8, s: 'hiveSpore' }], wait: 600, cam: [0, 0, 0.1] })
 sp('space-shipGun', { fx: [{ k: 'proj', x: -5, y: 0, x2: 5, y2: 0, v: 10, s: 'shipGun' }], wait: 500, cam: [0, 0, 0.1] })
 
+// ── 效能：20 個同時爆炸＋10 個熱融炸彈（量 fx.update 的 CPU 時間與存活物件數）──
+const many = (k, n, r, v) => Array.from({ length: n }, (_, i) => ({ k, dx: Math.cos(i * 2.4) * r * Math.sqrt((i + 1) / n), dy: Math.sin(i * 2.4) * r * Math.sqrt((i + 1) / n), v }))
+add('perf-20booms', 'perf', { fx: many('boom', 20, 6, 1.75), wait: 250, cam: [0, 0, 0.45], perf: true })
+add('perf-10fusion', 'perf', { fx: many('fusion', 10, 6, 5.5), wait: 400, cam: [0, 0, 0.55], perf: true })
+
 const want = (name, group) => !filter.length || filter.some((f) => f === group || name.includes(f))
 
 const T00 = Date.now()
@@ -395,7 +400,7 @@ for (const [name, group, spec] of S) {
   }, [spec.fakes ?? [], space])
   await page.evaluate(([c, space]) => window.__fxg.cam(c[0], c[1], c[2], space), [spec.cam ?? [0, 0, 0.15], space])
   // 讓視圖建好、鏡頭到位
-  await page.waitForTimeout(1200)
+  await page.waitForTimeout(900)
   if (spec.move) {
     // 讓假人移動（殘影只在移動時出現）
     await page.evaluate((id) => {
@@ -410,6 +415,20 @@ for (const [name, group, spec] of S) {
       }, 50)
     }, spec.move)
   }
+  if (spec.perf)
+    await page.evaluate(() => {
+      const fx = window.__xcScene.fx
+      if (!fx.__perfWrap) {
+        fx.__perfWrap = true
+        const up = fx.update.bind(fx)
+        fx.update = (dt, t, z) => {
+          const a = performance.now()
+          up(dt, t, z)
+          ;(fx.__ms ??= []).push(performance.now() - a)
+        }
+      }
+      fx.__ms = []
+    })
   const t0 = Date.now()
   for (const f of spec.fx ?? []) {
     const dt = (f.at ?? 0) / SLOW - (Date.now() - t0)
@@ -420,6 +439,15 @@ for (const [name, group, spec] of S) {
   const url = await page.evaluate(() => window.__fxg.capture())
   writeFileSync(`${out}/${name}.png`, Buffer.from(url.split(',')[1], 'base64'))
   console.log('shot', name, ((Date.now() - T0) / 1000).toFixed(1) + 's', JSON.stringify(await page.evaluate(() => window.__xcScene.fx.stats())))
+  if (spec.perf) {
+    await page.waitForTimeout(1500)
+    const ms = await page.evaluate(() => {
+      const a = window.__xcScene.fx.__ms ?? []
+      const s = [...a].sort((x, y) => x - y)
+      return { frames: a.length, avg: a.reduce((x, y) => x + y, 0) / Math.max(1, a.length), p95: s[Math.floor(s.length * 0.95)] ?? 0, max: s[s.length - 1] ?? 0 }
+    })
+    console.log('perf', name, JSON.stringify(ms), JSON.stringify(await page.evaluate(() => window.__xcScene.fx.stats())))
+  }
 }
 await page.evaluate(() => window.__fxg.clear())
 await browser.close()

@@ -171,11 +171,18 @@ describe('各事件效果', () => {
     expect(count(g, 'creature.entity', z.id)).toBe(4)
     const zonesMsg = (h.raw.get('local') ?? []).map((r) => decode(r) as HostMsg).find((m) => m.t === 'zones')
     expect(zonesMsg && zonesMsg.t === 'zones' && zonesMsg.zones.some((x) => x[1] === 'uo')).toBe(true)
-    // 有人留在裡面
+    // 固定身分，避免中途有人死亡就分出勝負（對局結束後事件系統不再運作）
+    g.setRole(ps[0], 'xeno')
+    g.setRole(ps[1], 'human')
+    g.setRole(ps[2], 'mutant')
+    // 有人留在裡面（撐到解體：站點毀滅是必殺，會無視無敵）
     const u = g.mainOf(ps[1])!
+    u.data.god = true
+    u.statsDirty = true
     const sp = z.layout!.pads[0] ?? z.layout!.spawns[0]
     g.world.relocate(u, z.id, sp.x, sp.y)
     sec(h, 398)
+    expect(g.ended).toBeNull()
     expect(z.alive).toBe(false)
     expect(u.alive).toBe(false)
     expect(g.world.get(z.spaceEnt)).toBeUndefined()

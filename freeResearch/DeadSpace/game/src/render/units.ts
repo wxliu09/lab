@@ -66,7 +66,10 @@ export class UnitLayer {
       root.add(model.root)
       height = model.height
     }
-    if (def?.scale) root.scale.setScalar(def.scale)
+    if (def?.scale) {
+      root.scale.setScalar(def.scale)
+      height *= def.scale
+    }
     let ring: THREE.Mesh | null = null
     const isUnit = !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse)
     if (isUnit) {

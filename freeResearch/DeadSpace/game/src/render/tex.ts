@@ -786,7 +786,7 @@ export function grassSet(tint: string, seed = 3): PbrSet {
 export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor'): PbrSet {
   return cache3(`rock:${tint}:${seed}:${mode}`, () => {
     const S = 512
-    const wv = worley(S, mode === 'floor' ? 7 : 5, seed + 90)
+    const wv = worley(S, mode === 'floor' ? 3 : 4, seed + 90)
     const big = noiseField(S, 5, seed + 91, 3)
     const fine = noiseField(S, 4, seed + 92, 40)
     const [tr, tg, tb] = hexRgb(tint)
@@ -796,7 +796,7 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
     const rnd = rand32(seed + 93)
     for (let i = 0; i < S * S; i++) {
       const edge = wv.f2[i] - wv.f1[i]
-      const crack = edge < 0.05 ? 1 - edge / 0.05 : 0
+      const crack = edge < 0.035 ? (1 - edge / 0.035) * (0.55 + big[i] * 0.6) : 0
       const slab = wv.id[i]
       const h = 0.55 + (1 - wv.f1[i]) * 0.18 + (big[i] - 0.5) * 0.3 + (fine[i] - 0.5) * 0.12 - crack * 0.45
       height[i] = h

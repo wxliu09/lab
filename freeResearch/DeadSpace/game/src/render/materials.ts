@@ -53,7 +53,9 @@ export function withFog<T extends THREE.Material>(m: T): T {
         }`,
       )
   }
-  m.customProgramCacheKey = () => 'xcfog'
+  // 保留原本的 key（邊光等其他注入），否則不同注入的材質會共用同一支 shader
+  const prevKey = m.customProgramCacheKey.bind(m)
+  m.customProgramCacheKey = () => prevKey() + ':xcfog'
   return m
 }
 
@@ -91,7 +93,7 @@ export function withRim<T extends THREE.MeshStandardMaterial>(m: T, color = '#9f
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        float rimF = pow(1.0 - clamp(dot(normalize(-vViewPosition), normal), 0.0, 1.0), 2.5);
+        float rimF = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 2.5);
         totalEmissiveRadiance += uRimColor * rimF * uRimK;`,
       )
   }

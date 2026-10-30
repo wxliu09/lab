@@ -436,6 +436,45 @@ export function burst(gs: GameScene, z: number, x: number, y: number, h: number,
   if (o.smoke) gs.fx.emit(z, x, y, h * 0.6, Math.round(4 + r * 4), { color: o.smoke, speed: r * 0.9, life: 1.4, size: 0.6 + r * 0.25, up: 0.5, drag: 1.5, layer: 'smoke', alpha: 0.55 })
 }
 
+// ───────── 預熱 ─────────
+
+/**
+ * 進場時把特效會用到的每種材質變體各畫一次（藏在地板下、只留幾幀），
+ * 讓 shader 在載入時就編譯好，而不是第一次爆炸時卡一下（SwiftShader 上一個變體要好幾秒）。
+ */
+export function prewarm(gs: GameScene, extra: THREE.Material[] = []): void {
+  const z = gs.zone
+  const g = new THREE.Group()
+  const mats: THREE.Material[] = []
+  const put = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(gs.rts.tx, -30, -gs.rts.ty)
+    m.scale.setScalar(0.01)
+    m.frustumCulled = false
+    m.raycast = () => {}
+    g.add(m)
+  }
+  put(GEO.sphere, gs.fx.mat('#ffffff', 1))
+  put(GEO.flat, gs.fx.mat('#ffffff', 1, { map: fxTex('ring') }))
+  put(GEO.flat, gs.fx.mat('#ffffff', 1, { map: fxTex('ring'), side: THREE.DoubleSide }))
+  put(GEO.sphere, gs.fx.mat('#ffffff', 1, { side: THREE.DoubleSide }))
+  put(GEO.flat, gs.fx.mat('#ffffff', 1, { map: fxTex('ring'), add: false }))
+  const sp = gs.fx.sprite('soft', '#ffffff', 1)
+  sp.position.set(gs.rts.tx, -30, -gs.rts.ty)
+  sp.scale.setScalar(0.01)
+  g.add(sp)
+  const sh = shieldMat('#ffffff')
+  mats.push(sh)
+  put(GEO.sphere, sh)
+  for (const m of extra) put(GEO.sphere, m)
+  gs.fx.addTransient(g, 0.3, z)
+  for (const k of ['rock', 'metal', 'ice', 'glass', 'flesh', 'bone'] as const) gs.fx.debris(z, gs.rts.tx, gs.rts.ty, 0.001, 1, k, { speed: 0, size: 0.0005, life: 0.25, up: 0 })
+  for (const layer of ['glow', 'smoke', 'spark'] as const) gs.fx.emit(z, gs.rts.tx, gs.rts.ty, -30, 1, { color: '#000000', speed: 0, life: 0.25, size: 0.001, layer })
+  gs.fx.after(0.4, () => {
+    for (const m of mats) m.dispose()
+  })
+}
+
 /** 人形單位根節點（殘影、殼層用）*/
 export function viewRoot(gs: GameScene, id?: number): THREE.Object3D | null {
   if (!id) return null

@@ -13,9 +13,9 @@ import { BUFFS } from '../shared/content/registry'
 import { EntFlag } from '../shared/protocol/messages'
 import { GEO } from './fx'
 import { fxTex } from './fx/tex'
-import { bolt, ghost, shieldMat, W } from './fx/kit'
+import { bolt, ghost, prewarm, shieldMat, W } from './fx/kit'
 import { Mat } from './materials'
-import { stoneMat } from './fx/mats'
+import { fleshMat, rockMat, stoneMat } from './fx/mats'
 
 // ───────── 殼層材質 ─────────
 
@@ -782,11 +782,16 @@ function disposeLink(L: Link): void {
 // ───────── 主迴圈 ─────────
 
 const keys = new Set<string>()
+const warmed = new WeakSet<GameScene>()
 
 /** 每幀呼叫一次（GameScene.update，units.sync 之後）*/
 export function updateBuffFx(gs: GameScene, dt: number, t: number): void {
   let states = STATES.get(gs)
   if (!states) STATES.set(gs, (states = new Map()))
+  if (!warmed.has(gs) && gs.zone >= 0) {
+    warmed.add(gs)
+    prewarm(gs, [shellMat('rim', '#ffffff'), stoneMat(), rockMat(), fleshMat()])
+  }
   for (const m of shellCache.values()) (m.userData.fxU as { uFxTime: { value: number } }).uFxTime.value = t
   const alive = new Set<number>()
   for (const [id, v] of gs.units.views) {

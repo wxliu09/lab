@@ -1489,7 +1489,7 @@ docked: [],
 @station
 def uo():
     s = St('uo', 52, 42)
-    s.poi('k', 'codePanel')
+    s.poi('k', 'codePanel', facing='-Math.PI / 2')
     s.poi('d', 'deadScientist', solid=False)
     s.poi('e', 'entitySpawn', solid=False)
     s.blob(11, 25, 9, 7, 61, 0.12)
@@ -1511,7 +1511,7 @@ def uo():
     s.door_ns(10, 2, 12, 17)
     s.at(7, 25, 'P')
     s.at(15, 26, 'P')
-    s.at(40, 32, 'k')
+    s.at(39, 28, 'k')
     for cc, r in ((4, 21), (12, 30), (18, 24), (28, 9), (36, 8), (39, 16), (30, 18), (9, 6), (15, 9)):
         s.at(cc, r, 'd')
     for cc, r in ((27, 13), (38, 12), (13, 7), (5, 28)):
