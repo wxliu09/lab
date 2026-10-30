@@ -76,6 +76,7 @@ export type CommandKind =
   | 'follow'
   | 'spec'
   | 'enhance'
+  | 'feedReplay'
   /** 站內設施操作（動力分配台、模組工廠、隔間門、籠子）：e = 設施實體、a = 動作、s = 選項 */
   | 'facility'
 
@@ -138,6 +139,8 @@ export type HostMsg =
   | { t: 'end'; result: EndResult }
   | { t: 'notice'; key: string; args?: Record<string, string | number> }
   | { t: 'TuneResult'; id: number; ok: boolean; msg: string; data?: unknown }
+  /** 監視器回放（只給擁有者）：每格 [顯示 def, x×10, y×10, 顏色, 名字, 動作] */
+  | { t: 'replay'; cam: number; zone: number; x: number; y: number; r: number; frames: { t: number; u: [string, number, number, number, string, number][] }[] }
   /** 對局中出現新的地點（事件站）*/
   | { t: 'zones'; zones: [number, string, string][] }
 

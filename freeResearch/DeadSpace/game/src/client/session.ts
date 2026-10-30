@@ -19,6 +19,8 @@ export interface LobbyView {
   code: string
 }
 
+/** 最近一次收到的監視器回放（只有自己的）*/
+export const replay = signal<Extract<HostMsg, { t: 'replay' }> | null>(null)
 export const screen = signal<Screen>('menu')
 export const lobby = signal<LobbyView | null>(null)
 export const mySlot = signal(-1)
@@ -134,6 +136,9 @@ function onHostMsg(m: HostMsg): void {
       endResult.value = null
       chatLog.value = []
       screen.value = 'game'
+      break
+    case 'replay':
+      replay.value = m
       break
     case 'zones':
       if (startInfo.value) startInfo.value = { ...startInfo.value, zones: m.zones }

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { signal } from '@preact/signals'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { NoteMark } from '../../shared/protocol/messages'
-import { send, snapTick, startInfo, world } from '../../client/session'
+import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { typingInField } from '../../client/input'
 import { t } from '../i18n'
 import { Icon } from '../icons'
@@ -141,9 +141,14 @@ export function FeedsPanel() {
       </h3>
       <div class="col" style={{ gap: '4px' }}>
         {feeds.map(([id, zone, x, y], i) => (
-          <button key={id} class={'small' + (fv?.id === id ? ' primary' : '')} onClick={() => (feedView.value = fv?.id === id ? null : { id, zone, x: x / 10, y: y / 10 })}>
-            {t('feed.cam', { n: i + 1 })}
-          </button>
+          <div key={id} class="row" style={{ gap: '4px' }}>
+            <button class={'small grow' + (fv?.id === id ? ' primary' : '')} onClick={() => (feedView.value = fv?.id === id ? null : { id, zone, x: x / 10, y: y / 10 })}>
+              {t('feed.cam', { n: i + 1 })}
+            </button>
+            <button class="small ghost" title={t('feed.replay')} data-testid={'replay-' + i} onClick={() => sendCmd({ k: 'feedReplay', e: id })}>
+              ⟲
+            </button>
+          </div>
         ))}
         {fv && (
           <button class="small ghost" onClick={() => (feedView.value = null)}>

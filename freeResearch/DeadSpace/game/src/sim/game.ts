@@ -49,6 +49,7 @@ import { installStations } from './systems/stations'
 import { installFacilities } from './systems/facilities'
 import { installBots } from './ai/bots'
 import { installRemote } from './scripts/remote'
+import { installFeeds } from './systems/feeds'
 import { installMutantSystems } from './scripts/mutant'
 import type { Zone } from './world'
 import type { PoiInstance } from '../shared/layout'
@@ -228,6 +229,7 @@ export class Game {
     installFacilities(this)
     installBots(this)
     installRemote(this)
+    installFeeds(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
 

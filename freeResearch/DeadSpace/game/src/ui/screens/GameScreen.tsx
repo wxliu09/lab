@@ -13,6 +13,7 @@ import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
 import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
 import { EnhancerPanel, FakeEnd } from '../hud/Events'
+import { ReplayPanel } from '../hud/Replay'
 import { FacilityPanel } from '../hud/Facilities'
 
 export function GameScreen() {
@@ -68,6 +69,7 @@ export function GameScreen() {
       <SpectatorBar />
       <NotesPanel />
       <FeedsPanel />
+      <ReplayPanel />
       <DoorLog />
       <DeathVote />
       <EvolveMenu />
