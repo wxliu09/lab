@@ -69,7 +69,8 @@ export class Harness {
     const h = new Harness(seed)
     const cs = [h.connect('host', true)]
     for (let i = 1; i < n; i++) cs.push(h.connect('p' + i))
-    if (Object.keys(settings).length) cs[0].send({ t: 'settings', s: settings as never })
+    // 單元測試預設不放 NPC 船員（巡邏會干擾累積多 tick 的洩漏比對）；要測船員時明確傳 npcCrew
+    cs[0].send({ t: 'settings', s: { npcCrew: 0, ...settings } as never })
     cs[0].send({ t: 'start' })
     h.ticks(2)
     return { h, cs }

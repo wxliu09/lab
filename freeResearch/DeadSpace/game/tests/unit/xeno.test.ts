@@ -8,6 +8,7 @@ import { damage } from '../../src/sim/systems/damage'
 import { applyBuff, hasBuff } from '../../src/sim/systems/buffs'
 import { entView } from '../../src/sim/systems/snapshot'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
+import { checkMessages } from './helpers/leak'
 import { NEUTRAL, type Ent } from '../../src/sim/ent'
 import type { Game } from '../../src/sim/game'
 
@@ -23,14 +24,16 @@ interface Spot {
   y: number
 }
 
-/** 找一塊 9×9 公尺沒有牆、沒有門的空地 */
+/** 找一塊 9×9 公尺沒有牆、沒有門、遠離停機坪與出入口（不會被登艇系統帶走）的空地 */
 function openSpot(g: Game, r = 4): Spot {
   for (const z of g.world.zones) {
-    if (!z.nav || !z.layout) continue
+    if (!z.nav || !z.layout || z.data.ship) continue
     const { w, h } = z.layout
+    const avoid = [...z.layout.pads, ...z.layout.exits]
     for (let y = r + 1; y < h - r - 1; y++) {
       for (let x = r + 1; x < w - r - 1; x++) {
-        let ok = true
+        let ok = !avoid.some((p) => Math.hypot(p.x - x, p.y - y) < r + 6)
+        if (ok && g.world.query(z.id, x + 0.5, y + 0.5, r + 2).some((e) => !e.isMain)) ok = false
         for (let dy = -r; dy <= r && ok; dy++) {
           for (let dx = -r; dx <= r && ok; dx++) {
             const i = z.nav.idx(x + dx + 0.5, y + dy + 0.5)
@@ -74,6 +77,19 @@ function cast(e: Ent, a: string, t?: Ent | { x: number; y: number }): void {
 }
 
 const sec = (h: Harness, s: number) => h.ticks(Math.round(s * 20))
+
+/** 掃描目前為止送給每個 peer 的訊息，回報隱藏資訊洩漏 */
+function leaks(h: Harness): string[] {
+  const g = h.server.game!
+  const out: string[] = []
+  for (const [peer, raws] of h.raw) {
+    const slot = h.server.slotOfPeer(peer)
+    if (slot === null) continue
+    out.push(...checkMessages(g, slot, raws))
+    raws.length = 0
+  }
+  return out
+}
 
 describe('異形形態 def', () => {
   // [HP, 回血, 攻擊, CD, 射程, 移速]（研究 02 §3.6）
@@ -217,6 +233,8 @@ describe('異形技能', () => {
     expect(echo).toBeTruthy()
     expect(echo!.owner).toBe(ps[0].slot)
     expect(entView(g, ps[2], echo!).o).toBe(ps[1].slot)
+    sec(h, 0.5)
+    expect(leaks(h)).toEqual([])
   })
 
   it('噤聲：目標玩家 mutedUntil 延長 60 秒', () => {
@@ -254,6 +272,7 @@ describe('異形技能', () => {
     sec(h, 1.6)
     expect(v.alive).toBe(false)
     expect(friend.hp).toBe(friend.maxHp)
+    arc.mp = 100
     cast(arc, XAB.disrupt)
     sec(h, 4.3)
     const z = g.world.zones[spot.zone]
@@ -334,7 +353,7 @@ describe('異形技能', () => {
     const { h, g, ps, spot } = setup()
     const weaver = put(g, 'xeno.weaver', spot, -2, 0, ps[0].slot)
     cast(weaver, XAB.webwire, { x: weaver.x, y: weaver.y })
-    sec(h, 0.2)
+    sec(h, 1.1)
     place(g, weaver, spot, 2, 0)
     cast(weaver, XAB.webwire, { x: weaver.x, y: weaver.y })
     sec(h, 0.2)
@@ -436,6 +455,8 @@ describe('異形技能', () => {
     const seen = entView(g, ps[2], mimic)
     expect([seen.o, seen.n, seen.d, seen.mhp]).toEqual([ps[1].slot, t.name, t.def.id, Math.round(t.maxHp)])
     expect(entView(g, ps[0], mimic).o).toBe(ps[0].slot)
+    sec(h, 0.5)
+    expect(leaks(h)).toEqual([])
     cast(mimic, XAB.unmask)
     sec(h, 0.2)
     expect(mimic.def.id).toBe('xeno.mimic')

@@ -13,7 +13,7 @@ import { SCRIPTS } from '../../src/sim/systems/effects'
 import { itemRuntime } from '../../src/sim/scripts/items'
 import { NEUTRAL, type Ent } from '../../src/sim/ent'
 import type { Game, GamePlayer } from '../../src/sim/game'
-import type { FxEvent } from '../../src/shared/protocol/messages'
+import { EntFlag, type FxEvent } from '../../src/shared/protocol/messages'
 import type { Effect } from '../../src/shared/content/types'
 
 interface Ctx {
@@ -204,6 +204,65 @@ describe('醫療與充能', () => {
     sec(c, 47)
     expect(hasBuff(u, 'bf.containedParasite')).toBe(false)
     expect(hasBuff(u, 'bf.antibody')).toBe(false)
+  })
+
+  it('急速治療器：45 秒內死亡的人可以救回，超過就救不回來（退還道具）', () => {
+    const { h, cs } = Harness.started(4)
+    const g = h.server.game!
+    itemRuntime(g)
+    // 被害者挑人類船員，避免死亡觸發勝負判定
+    const victim = g.allPlayers().find((q) => g.faction(q) === 'crew' && q.role === 'human')!
+    const medic = g.allPlayers().find((q) => q !== victim)!
+    const m = g.mainOf(medic)!
+    const c: Ctx = { h, cs, g, p: medic, u: m }
+    if (m.suit) removeSuit(g, m)
+    m.inv!.fill(null)
+    arena(c, 5)
+    const kill = () => {
+      const v = g.mainOf(victim)!
+      if (v.suit) removeSuit(g, v)
+      v.inv!.fill(null)
+      g.world.relocate(v, m.zone, m.x + 1.5, m.y)
+      damage(g, null, v, 99999, { pure: true, lethal: true })
+      expect(victim.alive).toBe(false)
+      return ents(g, 'corpse').find((e) => e.data.slot === victim.slot)!
+    }
+    const corpse = kill()
+    sec(c, 0.1)
+    useItem(c, 'rapidRevive', { x: corpse.x, y: corpse.y })
+    sec(c, 2.5)
+    expect(victim.alive).toBe(true)
+    expect(g.mainOf(victim)!.alive).toBe(true)
+    expect(corpse.removed).toBe(true)
+    expect(hasItem(m, 'rapidRevive')).toBe(false)
+    // 超過 45 秒
+    const old = kill()
+    sec(c, 46)
+    m.cds.clear()
+    useItem(c, 'rapidRevive', { x: old.x, y: old.y })
+    sec(c, 2.5)
+    expect(victim.alive).toBe(false)
+    expect(hasItem(m, 'rapidRevive')).toBe(true)
+    expect(chatOf(cs[medic.slot])).toContain('@item.reviveFail')
+  })
+
+  it('醫療再生器每秒回復 2% 生命；力場讓範圍內玩家單位受到的傷害減半', () => {
+    const c = setup()
+    const { g, u } = c
+    arena(c, 6)
+    u.hp = 100
+    useItem(c, 'regenBeacon', { x: u.x + 1, y: u.y })
+    sec(c, 2.1)
+    expect(u.hp).toBeGreaterThanOrEqual(116 - 0.01)
+    expect(u.hp).toBeLessThan(130)
+    const npc = dummy(c, -1, 0, 2000)
+    useItem(c, 'forceBarrier', { x: u.x, y: u.y + 1 })
+    sec(c, 0.6)
+    expect(hasBuff(u, 'bf.forceWard')).toBe(true)
+    expect(hasBuff(npc, 'bf.forceWard')).toBe(false)
+    const hp = u.hp
+    damage(g, null, u, 100, { pure: true })
+    expect(hp - u.hp).toBeCloseTo(50, 5)
   })
 
   it('重症維生系統擋下致命傷一次', () => {
@@ -490,6 +549,63 @@ describe('裝置與偵查', () => {
     sec(c, 0.5)
     expect(chatOf(c.cs[0])).toContain('@item.sensorAlert')
     expect(chatOf(c.cs[1])).not.toContain('@item.sensorAlert')
+  })
+
+  it('全像分身：第三者看到的是本尊的外觀，看不到分身 buff 與真正擁有者', () => {
+    const { h, cs } = Harness.started(3)
+    const g = h.server.game!
+    itemRuntime(g)
+    const p = g.players[0]
+    const u = g.mainOf(p)!
+    if (u.suit) removeSuit(g, u)
+    u.inv!.fill(null)
+    const c: Ctx = { h, cs, g, p, u }
+    arena(c, 6)
+    const q = g.mainOf(g.players[1])!
+    const w = g.mainOf(g.players[2])!
+    if (q.suit) removeSuit(g, q)
+    g.world.relocate(q, u.zone, u.x + 3, u.y)
+    g.world.relocate(w, u.zone, u.x - 3, u.y)
+    q.inv!.fill(null)
+    giveItem(g, q, makeItem('pirateHat'))
+    sec(c, 0.6)
+    expect(hasBuff(q, 'bf.pirateHat')).toBe(true)
+    useItem(c, 'holoProjector', q)
+    sec(c, 0.5)
+    const holo = [...g.world.ents.values()].find((e) => e.illusion && e.alive)!
+    expect(holo).toBeTruthy()
+    expect(holo.owner).toBe(p.slot)
+    sec(c, 0.6)
+    const seen = cs[2].ents.get(holo.id)!
+    expect(seen).toBeTruthy()
+    expect(seen.o).toBe(q.owner)
+    expect(seen.n).toBe(q.name)
+    expect(seen.b).toContain('bf.pirateHat')
+    expect(seen.b).not.toContain('bf.holo')
+    expect((seen.fl ?? 0) & EntFlag.Hallucination).toBe(0)
+    const mine = cs[0].ents.get(holo.id)!
+    expect((mine.fl ?? 0) & EntFlag.Hallucination).toBe(EntFlag.Hallucination)
+    // 一碰就碎
+    damage(g, null, holo, 5, { pure: true })
+    expect(holo.alive).toBe(false)
+    expect(ents(g, 'corpse').some((e) => e.x === holo.x && e.y === holo.y)).toBe(false)
+  })
+
+  it('相位斗篷：4 秒內別人的快照裡看不到自己', () => {
+    const c = setup()
+    const { g, u } = c
+    arena(c, 6)
+    const q = g.mainOf(g.players[1])!
+    g.world.relocate(q, u.zone, u.x + 3, u.y)
+    sec(c, 0.2)
+    expect(c.cs[1].ents.has(u.id)).toBe(true)
+    useItem(c, 'phaseCloak')
+    sec(c, 0.3)
+    expect(u.stats.stealth).toBe(true)
+    expect(c.cs[1].ents.has(u.id)).toBe(false)
+    expect(c.cs[0].ents.has(u.id)).toBe(true)
+    sec(c, 4)
+    expect(c.cs[1].ents.has(u.id)).toBe(true)
   })
 
   it('背包掃描器的結果只私訊給使用者', () => {

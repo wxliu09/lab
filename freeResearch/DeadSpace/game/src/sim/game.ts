@@ -40,6 +40,10 @@ import './scripts/index'
 import { installRoles } from './systems/roleSystem'
 import { installSpace, setupShips } from './systems/space'
 import { placePoi } from './setup'
+import { installCreatureAi } from './ai/creatures'
+import { installXenoSystems } from './scripts/xeno'
+import { itemRuntime } from './scripts/items'
+import { installMutantSystems } from './scripts/mutant'
 import type { Zone } from './world'
 import type { PoiInstance } from '../shared/layout'
 
@@ -138,6 +142,10 @@ export class Game {
   onBuy?: (u: Ent, vendor: Ent, item: string) => void
   onMorph?: (u: Ent) => void
   customHostile?: (a: Ent, b: Ent) => boolean
+  /** 鎮定（降低敵對生物仇恨）*/
+  isCalm?: (u: Ent) => boolean
+  /** 死者附身蛞蝓仔 */
+  possessSlug?: (slot: number) => boolean
   /** 每 tick 額外執行的系統（AI、事件、太空…）*/
   readonly systems: { name: string; fn: (g: Game) => void }[] = []
 
@@ -192,6 +200,10 @@ export class Game {
     installSpace(this)
     assignRoles(this)
     setupShips(this)
+    itemRuntime(this)
+    installCreatureAi(this)
+    installXenoSystems(this)
+    installMutantSystems(this)
     for (const p of this.allPlayers()) this.resendStart(p.slot)
   }
 

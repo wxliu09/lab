@@ -97,7 +97,7 @@ ids.forEach((id, i) => {
   scene.add(root)
   let view: ModelView | null = null
   let rig: Rig | null = null
-  let height = 2
+  let height: number
   let radius = 0.4
   if (id === 'human') {
     rig = buildHuman('security', '#ff4a4a', 1)

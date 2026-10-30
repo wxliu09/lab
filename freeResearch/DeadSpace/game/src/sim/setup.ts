@@ -7,6 +7,7 @@ import type { PoiInstance } from '../shared/layout'
 import { NEUTRAL, type Ent } from './ent'
 import type { Game } from './game'
 import { SPACE_ZONE, type Zone } from './world'
+import { initVendor } from './systems/vendors'
 import '../shared/content/index'
 
 export function stationUnitId(st: StationDef): string {
@@ -67,9 +68,14 @@ function ensureVendorDef(ref: string): UnitDef {
 
 export function chooseStations(g: Game): StationDef[] {
   const s = g.settings.stations
-  if (s !== 'auto') return ALL_STATIONS.filter((st) => st.enable === 'core' || s.includes(st.id))
-  // M7 起依人數啟用；目前全部啟用已實作的站
-  return ALL_STATIONS
+  const pool = ALL_STATIONS.filter((st) => st.enable !== 'event')
+  if (s !== 'auto') return pool.filter((st) => st.enable === 'core' || s.includes(st.id))
+  // 依人數啟用：核心站永遠在；人越多開越多額外站（GDD §6.2）
+  const n = g.allPlayers().filter((p) => !p.spectator).length
+  const extra = pool.filter((st) => st.enable === 'auto')
+  const want = n >= 9 ? extra.length : n >= 6 ? Math.min(extra.length, 2) : n >= 4 ? Math.min(extra.length, 1) : 0
+  const pick = g.world.rng.shuffle([...extra]).slice(0, want)
+  return pool.filter((st) => st.enable === 'core' || pick.includes(st))
 }
 
 export function setupWorld(g: Game): void {
@@ -85,6 +91,12 @@ export function setupWorld(g: Game): void {
     g.stations.push(st.id)
     for (const poi of z.layout!.pois) placePoi(g, z, poi)
   }
+}
+
+export type Marker = { x: number; y: number; ref?: string }
+
+export function markersOf(z: Zone): Record<string, Marker[]> {
+  return (z.data.markers ??= {}) as Record<string, Marker[]>
 }
 
 export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
@@ -117,8 +129,7 @@ export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
       break
     default:
       // 純標記（出生點、生成點）：存在 zone.data
-      ;((z.data.markers ??= {}) as Record<string, { x: number; y: number }[]>)[poi.def.kind] ??= []
-      ;(z.data.markers as Record<string, { x: number; y: number }[]>)[poi.def.kind].push({ x: poi.x, y: poi.y })
+      ;(markersOf(z)[poi.def.kind] ??= []).push({ x: poi.x, y: poi.y, ref: poi.def.ref })
       return null
   }
   const e = w.spawn(def, z.id, poi.x, poi.y, NEUTRAL)
@@ -126,6 +137,9 @@ export function placePoi(g: Game, z: Zone, poi: PoiInstance): Ent | null {
   e.data.poi = poi.def.kind
   if (poi.def.ref) e.data.ref = poi.def.ref
   if (poi.def.kind === 'vendor') e.data.vendor = poi.def.ref
+  // GIT 檢測儀也販售基因檢測器（420 秒後上架）
+  if (poi.def.kind === 'git') e.data.vendor = 'gitTester'
+  if (e.data.vendor) initVendor(g, e)
   return e
 }
 

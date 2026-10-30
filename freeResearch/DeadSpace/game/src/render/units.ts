@@ -8,6 +8,7 @@ import { animateRig, buildHuman, type Rig } from './models/human'
 import { buildModel, type ModelView } from './models/index'
 import { attachSuit } from './models/suits'
 import './models/misc'
+import './models/xeno'
 import { decalTex } from './tex'
 import { W } from './stationBuilder'
 

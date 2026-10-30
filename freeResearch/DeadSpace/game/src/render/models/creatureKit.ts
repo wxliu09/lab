@@ -12,6 +12,24 @@ export const DROID = { main: '#ffb000', acc: '#e6e6e6' }
 // ───── 材質（都由 Mat.* 衍生，保留戰爭迷霧與程序化貼圖）─────
 
 const mats = new Map<string, THREE.Material>()
+
+/**
+ * 邊光：沿用 materials.ts 的 withRim，但修正視線方向。
+ * withRim 目前用 normalize(-vViewPosition)（相機→表面），正面像素的 dot 一律被 clamp 成 0，
+ * 邊光變成整個正面均勻發光；這裡只對本檔的材質把方向改成 normalize(vViewPosition)（表面→相機）。
+ * withRim 修好之後這個 replace 不會命中，自動變成 no-op。
+ */
+function rimmed<T extends THREE.MeshStandardMaterial>(m: T, color: string, k: number): T {
+  withRim(m, color, k)
+  const prev = m.onBeforeCompile
+  m.onBeforeCompile = (shader, r) => {
+    prev.call(m, shader, r)
+    shader.fragmentShader = shader.fragmentShader.replace('dot(normalize(-vViewPosition), normal)', 'dot(normalize(vViewPosition), normal)')
+  }
+  const key = m.customProgramCacheKey.bind(m)
+  m.customProgramCacheKey = () => key() + ':fix'
+  return m
+}
 function cached<T extends THREE.Material>(k: string, f: () => T): T {
   let m = mats.get(k) as T | undefined
   if (!m) mats.set(k, (m = f()))
@@ -23,7 +41,7 @@ export function flesh(tint: string, rim: string, gloss = 0.3, rimK = 0.55): THRE
   return cached(`flesh:${tint}:${rim}:${gloss}:${rimK}`, () => {
     const m = Mat.paint(tint, gloss).clone()
     m.metalness = 0.04
-    return withRim(withFog(m), rim, rimK)
+    return rimmed(withFog(m), rim, rimK)
   })
 }
 
@@ -33,7 +51,7 @@ export function chitin(tint: string, rim: string, metal = 0.35, rimK = 0.45): TH
     const m = Mat.armor(tint, rim).clone()
     m.metalness = metal
     m.roughness = 0.75
-    return withRim(withFog(m), rim, rimK)
+    return rimmed(withFog(m), rim, rimK)
   })
 }
 
@@ -42,7 +60,7 @@ export function shellPaint(tint: string, rim: string, rough = 0.45, rimK = 0.3):
   return cached(`shell:${tint}:${rim}:${rough}:${rimK}`, () => {
     const m = Mat.metal(tint, 0.45, true).clone()
     m.roughness = rough * 1.8
-    return withRim(withFog(m), rim, rimK)
+    return rimmed(withFog(m), rim, rimK)
   })
 }
 
@@ -327,7 +345,7 @@ export function plates(parent: THREE.Object3D, n: number, z0: number, z1: number
   return out
 }
 
-/** 膿包／發光囊：在 parent 上撒 n 個，回傳 mesh 陣列（呼叫 pulse 讓它們脈動）*/
+/** 膿包／發光囊：at 回傳 [x, y, z, 大小]，以 center 為中心朝外生長；回傳發光核心（可脈動）*/
 export function pustules(
   parent: THREE.Object3D,
   n: number,
@@ -335,18 +353,20 @@ export function pustules(
   at: (r: () => number, i: number) => [number, number, number, number],
   skin: THREE.Material,
   core: THREE.Material,
+  center: [number, number, number] = [0, 0, 0],
 ): THREE.Mesh[] {
   const r = rng(seed)
   const out: THREE.Mesh[] = []
+  const up = new THREE.Vector3(0, 1, 0)
+  const d = new THREE.Vector3()
   for (let i = 0; i < n; i++) {
     const [x, y, z, s] = at(r, i)
     const g = grp(parent, x, y, z)
+    d.set(x - center[0], y - center[1], z - center[2])
+    if (d.lengthSq() > 1e-6) g.quaternion.setFromUnitVectors(up, d.normalize())
     part(g, dome(1, 10, 5, Math.PI * 0.55), skin, 0, -s * 0.25, 0, s * 1.15, s * 0.9, s * 1.15)
     const c = part(g, dome(1, 10, 5, Math.PI * 0.5), core, 0, s * 0.05, 0, s * 0.8, s * 0.75, s * 0.8)
     c.castShadow = false
-    // 讓膿包朝外（以 parent 原點為中心）
-    g.lookAt(g.position.clone().multiplyScalar(2).add(new THREE.Vector3(0, 0.0001, 0)))
-    g.rotateX(Math.PI / 2)
     out.push(c)
   }
   return out
@@ -439,3 +459,289 @@ export function drop(body: THREE.Object3D, k: number, hover: number): void {
 
 /** 把整棵 Object3D 內的觸手／動畫掛點一起更新的小工具 */
 export type Tick = (t: number, dt: number) => void
+
+// ───── 肢段 ─────
+
+/** 有機肢段：從關節往 -Y 長 l 的橢球（自然收尾）*/
+export function seg(parent: THREE.Object3D, l: number, r: number, m: THREE.Material, rz = r): THREE.Mesh {
+  return part(parent, sphereGeo(), m, 0, -l / 2, 0, r, l * 0.56, rz)
+}
+
+/** 共用的單位球（縮放成橢球用）*/
+export function sphereGeo(ws = 10, hs = 7): THREE.BufferGeometry {
+  return geo(`usph:${ws}:${hs}`, () => new THREE.SphereGeometry(1, ws, hs))
+}
+
+/** 橢球零件 */
+export function ell(parent: THREE.Object3D, m: THREE.Material, x: number, y: number, z: number, rx: number, ry: number, rz: number, ws = 10, hs = 7): THREE.Mesh {
+  return part(parent, sphereGeo(ws, hs), m, x, y, z, rx, ry, rz)
+}
+
+export interface Leg {
+  hip: THREE.Group
+  knee: THREE.Group
+  foot: THREE.Group
+  a1: number
+  a2: number
+  front: boolean
+  side: number
+}
+
+/**
+ * 兩節腿：hip 在 (x,y,z)，大腿長 l1、與垂直夾角 a1（正值往後），小腿總角 a12（相對垂直）。
+ * 小腿長度自動算到腳底碰地。
+ */
+export function leg2(parent: THREE.Object3D, x: number, y: number, z: number, l1: number, a1: number, a12: number, r1: number, r2: number, m: THREE.Material, front: boolean, ground = y): Leg {
+  const hip = grp(parent, x, y, z, a1)
+  seg(hip, l1, r1, m)
+  const l2 = Math.max(0.1, (ground - l1 * Math.cos(a1)) / Math.cos(a12))
+  const knee = grp(hip, 0, -l1, 0, a12 - a1)
+  seg(knee, l2, r2, m)
+  const foot = grp(knee, 0, -l2, 0, -(a12))
+  return { hip, knee, foot, a1, a2: a12 - a1, front, side: Math.sign(x) || 1 }
+}
+
+/** 腳爪：在 foot 上加 n 根往前的爪 */
+export function claws(foot: THREE.Object3D, n: number, len: number, r: number, m: THREE.Material, spread = 0.5): void {
+  for (let i = 0; i < n; i++) {
+    const a = n === 1 ? 0 : (i / (n - 1) - 0.5) * spread
+    const g = grp(foot, Math.sin(a) * r * 1.5, r * 0.3, 0, Math.PI / 2 - 0.25, a, 0)
+    part(g, hornGeo(len, r, 0.5, 4, 4), m)
+  }
+}
+
+/** 腿的步態：swing -1..1、lift 0..1、k 為移動權重 */
+export function animLeg(l: Leg, sw: number, lift: number, k: number, amp = 0.45, bend = 0.7): void {
+  l.hip.rotation.x = l.a1 - sw * amp * k
+  l.knee.rotation.x = l.a2 + (l.front ? -1 : 1) * lift * bend * k
+  l.foot.rotation.x = -(l.a1 + l.a2) + sw * amp * k * 0.5
+}
+
+/** 死亡時把腿縮起來 */
+export function foldLeg(l: Leg, k: number): void {
+  l.hip.rotation.x = THREE.MathUtils.lerp(l.hip.rotation.x, l.a1 + (l.front ? -0.9 : 0.9), k)
+  l.knee.rotation.x = THREE.MathUtils.lerp(l.knee.rotation.x, l.a2 + (l.front ? 1.2 : -1.2), k)
+}
+
+// ───── 蜘蛛式多足（側向展開、膝蓋高於身體）─────
+
+export interface SpiderLeg {
+  hip: THREE.Group
+  femur: THREE.Group
+  knee: THREE.Group
+  yaw: number
+  up: number
+  down: number
+}
+
+/** 側向的多節腿：hip 在 (x,y,z)，朝 yaw 方向（0 = +X）展開；股節往上 up、脛節往下到地面 */
+export function spiderLeg(parent: THREE.Object3D, x: number, y: number, z: number, yaw: number, l1: number, r: number, up: number, reach: number, m: THREE.Material, tip?: THREE.Material): SpiderLeg {
+  const hip = grp(parent, x, y, z, 0, yaw, 0)
+  const femur = grp(hip, 0, 0, 0, 0, 0, up)
+  part(femur, sphereGeo(10, 8), m, l1 / 2, 0, 0, l1 * 0.55, r, r)
+  // 膝蓋位置 (l1·cos up, y + l1·sin up)；脛節要從那裡落到地面、水平再伸 reach
+  const ky = y + l1 * Math.sin(up)
+  const down = Math.atan2(ky, reach)
+  const l2 = Math.hypot(ky, reach)
+  const knee = grp(femur, l1, 0, 0, 0, 0, -up - down)
+  part(knee, sphereGeo(10, 8), m, l2 / 2, 0, 0, l2 * 0.53, r * 0.75, r * 0.75)
+  if (tip) part(knee, spikeGeo(r * 0.55, 0.22, 5), tip, l2 * 0.97, 0, 0, 1, 1, 1, 0, 0, -Math.PI / 2)
+  return { hip, femur, knee, yaw, up, down }
+}
+
+export function animSpider(l: SpiderLeg, sw: number, lift: number, k: number, amp = 0.25): void {
+  l.hip.rotation.y = l.yaw + sw * amp * k
+  l.femur.rotation.z = l.up + lift * 0.35 * k
+}
+
+// ───── 四足骨架（異形原型體系、潛伏者…）─────
+
+export interface QuadOpts {
+  skin: THREE.Material
+  /** 胸腔與骨盆的橢球半徑 */
+  chest: [number, number, number]
+  pelvis: [number, number, number]
+  chestZ: number
+  pelvisZ: number
+  shH: number
+  hipH: number
+  legW: number
+  /** 前腿：[大腿長, 大腿角, 小腿角] */
+  fl: [number, number, number]
+  rl: [number, number, number]
+  legR: [number, number]
+  neckLen: number
+  neckPitch: number
+  tail?: TentacleOpts
+  tailMat?: THREE.Material
+}
+
+export interface QuadRig {
+  body: THREE.Group
+  spine: THREE.Group
+  chest: THREE.Group
+  pelvis: THREE.Group
+  neck: THREE.Group
+  head: THREE.Group
+  legs: Leg[]
+  tail: Tentacle | null
+  tailBase: THREE.Group | null
+  o: QuadOpts
+}
+
+export function buildQuad(parent: THREE.Object3D, o: QuadOpts): QuadRig {
+  const body = grp(parent)
+  const spine = grp(body)
+  const chest = grp(spine, 0, o.shH, o.chestZ)
+  ell(chest, o.skin, 0, 0, 0, ...o.chest)
+  const pelvis = grp(spine, 0, o.hipH, o.pelvisZ)
+  ell(pelvis, o.skin, 0, 0, 0, ...o.pelvis)
+  // 腰：連接胸腔與骨盆
+  const wz = (o.chestZ + o.pelvisZ) / 2
+  ell(spine, o.skin, 0, (o.shH + o.hipH) / 2 + 0.02, wz, o.pelvis[0] * 0.75, o.pelvis[1] * 0.8, Math.abs(o.chestZ - o.pelvisZ) * 0.45)
+  const neck = grp(chest, 0, o.chest[1] * 0.35, o.chest[2] * 0.75, -o.neckPitch)
+  ell(neck, o.skin, 0, 0, o.neckLen / 2, o.chest[0] * 0.42, o.chest[1] * 0.42, o.neckLen * 0.6)
+  const head = grp(neck, 0, 0, o.neckLen, o.neckPitch)
+  const [fl1, fa1, fa2] = o.fl
+  const [rl1, ra1, ra2] = o.rl
+  const legs = [
+    leg2(spine, -o.legW, o.shH - o.chest[1] * 0.25, o.chestZ + o.chest[2] * 0.25, fl1, fa1, fa2, o.legR[0], o.legR[1], o.skin, true),
+    leg2(spine, o.legW, o.shH - o.chest[1] * 0.25, o.chestZ + o.chest[2] * 0.25, fl1, fa1, fa2, o.legR[0], o.legR[1], o.skin, true),
+    leg2(spine, -o.legW * 0.92, o.hipH - o.pelvis[1] * 0.2, o.pelvisZ - o.pelvis[2] * 0.1, rl1, ra1, ra2, o.legR[0] * 1.1, o.legR[1], o.skin, false),
+    leg2(spine, o.legW * 0.92, o.hipH - o.pelvis[1] * 0.2, o.pelvisZ - o.pelvis[2] * 0.1, rl1, ra1, ra2, o.legR[0] * 1.1, o.legR[1], o.skin, false),
+  ]
+  let tail: Tentacle | null = null
+  let tailBase: THREE.Group | null = null
+  if (o.tail) {
+    tailBase = grp(pelvis, 0, o.pelvis[1] * 0.25, -o.pelvis[2] * 0.8, -Math.PI / 2 - 0.25)
+    tail = new Tentacle(tailBase, o.tail, o.tailMat ?? o.skin)
+  }
+  return { body, spine, chest, pelvis, neck, head, legs, tail, tailBase, o }
+}
+
+/** 四足的標準動畫（小跑步態、呼吸、前撲、側倒）*/
+export function animQuad(r: QuadRig, L: Life, t: number, amp = 0.45, bob = 0.06, lunge = 0.3): void {
+  const k = L.move
+  const off = [0, 0.5, 0.5, 0]
+  for (let i = 0; i < 4; i++) {
+    const [sw, lift] = stepOf(L.walk, off[i])
+    animLeg(r.legs[i], sw, lift, k, amp)
+  }
+  const br = L.breathe(t)
+  r.chest.scale.set(1 + br * 0.03, 1 + br * 0.04, 1)
+  r.spine.position.y = Math.abs(Math.sin(L.walk)) * bob * k + (1 - k) * (br - 0.5) * 0.015
+  r.spine.rotation.x = Math.sin(L.walk * 2) * 0.03 * k + 0.05 * k
+  r.spine.rotation.z = Math.sin(L.walk) * 0.03 * k
+  // 攻擊：前撲＋前腳抬起
+  const s = L.strike * L.atk
+  r.spine.position.z = s * lunge
+  r.spine.rotation.x += -Math.max(0, s) * 0.12 + Math.min(0, s) * -0.1
+  for (let i = 0; i < 2; i++) r.legs[i].hip.rotation.x -= Math.max(0, s) * 0.8
+  r.neck.rotation.x = -r.o.neckPitch + Math.sin(t * 0.7 + L.ph) * 0.05 * (1 - k) + k * 0.15 + Math.max(0, s) * 0.3
+  r.neck.rotation.y = Math.sin(t * 0.45 + L.ph) * 0.25 * (1 - k) * (1 - L.atk)
+  if (r.tail) r.tail.bend(t, 0.08 + k * 0.06, 0.2 + k * 0.1, 1.6 + k * 2.5, L.ph, 0.11 - k * 0.05, 0)
+  if (L.dead > 0) {
+    for (const l of r.legs) foldLeg(l, L.dead)
+    topple(r.body, L.dead, 1, r.o.shH)
+    if (r.tail) r.tail.bend(t, 0, 0, 0, 0, 0.15 * L.dead, 0.2 * L.dead)
+  } else {
+    r.body.rotation.z = 0
+    r.body.position.y = 0
+  }
+}
+
+// ───── 雙足骨架（變種人、時滯殭屍…）─────
+
+export interface BipedOpts {
+  skin: THREE.Material
+  limb?: THREE.Material
+  hipH: number
+  /** 軀幹橢球半徑 */
+  torso: [number, number, number]
+  /** 骨盆橢球半徑 */
+  pelvis: [number, number, number]
+  /** 駝背（前傾）*/
+  hunch: number
+  shoulderW: number
+  arm: [number, number]
+  armR: [number, number]
+  /** 大腿長、大腿角、小腿角（數位腳：小腿往後）*/
+  thigh: [number, number, number]
+  legR: [number, number]
+  legW: number
+  headR: [number, number, number]
+  neckLen: number
+}
+
+export interface BipedRig {
+  body: THREE.Group
+  hips: THREE.Group
+  torso: THREE.Group
+  head: THREE.Group
+  neck: THREE.Group
+  arms: { sh: THREE.Group; el: THREE.Group; hand: THREE.Group }[]
+  legs: Leg[]
+  o: BipedOpts
+}
+
+export function buildBiped(parent: THREE.Object3D, o: BipedOpts): BipedRig {
+  const limb = o.limb ?? o.skin
+  const body = grp(parent)
+  const hips = grp(body, 0, o.hipH, 0)
+  ell(hips, o.skin, 0, 0, 0, ...o.pelvis)
+  const torso = grp(hips, 0, o.pelvis[1] * 0.6, 0, o.hunch)
+  ell(torso, o.skin, 0, o.torso[1] * 0.85, 0, ...o.torso)
+  const top = o.torso[1] * 1.6
+  const neck = grp(torso, 0, top, o.torso[2] * 0.25, -o.hunch * 0.6)
+  ell(neck, o.skin, 0, o.neckLen * 0.4, 0, o.headR[0] * 0.55, o.neckLen * 0.7, o.headR[0] * 0.55)
+  const head = grp(neck, 0, o.neckLen, 0.02)
+  const arms: BipedRig['arms'] = []
+  for (const sd of [-1, 1]) {
+    const sh = grp(torso, sd * o.shoulderW, top * 0.88, 0, 0, 0, sd * 0.12)
+    ell(sh, o.skin, 0, 0, 0, o.armR[0] * 1.3, o.armR[0] * 1.2, o.armR[0] * 1.3)
+    seg(sh, o.arm[0], o.armR[0], limb)
+    const el = grp(sh, 0, -o.arm[0], 0, -0.35)
+    seg(el, o.arm[1], o.armR[1], limb)
+    const hand = grp(el, 0, -o.arm[1], 0)
+    arms.push({ sh, el, hand })
+  }
+  const [l1, a1, a2] = o.thigh
+  const legs = [-1, 1].map((sd) => leg2(hips, sd * o.legW, 0, 0, l1, a1, a2, o.legR[0], o.legR[1], limb, false, o.hipH))
+  return { body, hips, torso, head, neck, arms, legs, o }
+}
+
+/** 雙足的標準動畫：走路、呼吸、雙臂輪流揮擊、往後倒 */
+export function animBiped(r: BipedRig, L: Life, t: number, amp = 0.55, swingArms = 0.5): void {
+  const k = L.move
+  const br = L.breathe(t, 1.4)
+  for (let i = 0; i < 2; i++) {
+    const [sw, lift] = stepOf(L.walk, i * 0.5)
+    animLeg(r.legs[i], sw, lift, k, amp, 0.9)
+  }
+  r.hips.position.y = r.o.hipH + Math.abs(Math.cos(L.walk)) * 0.05 * k - k * 0.03
+  r.torso.rotation.x = r.o.hunch + k * 0.1 + (br - 0.5) * 0.02
+  r.torso.rotation.y = Math.sin(L.walk) * 0.1 * k
+  r.torso.scale.set(1 + br * 0.025, 1 + br * 0.02, 1 + br * 0.025)
+  r.neck.rotation.y = Math.sin(t * 0.5 + L.ph) * 0.3 * (1 - k) * (1 - L.atk)
+  const s = L.strike * L.atk
+  for (let i = 0; i < 2; i++) {
+    const a = r.arms[i]
+    const sw = Math.sin(L.walk + i * Math.PI) * swingArms * k
+    // 攻擊：右手主揮、左手輔助；蓄力往後上舉，出手往前下劈
+    const hit = i === 1 ? s : s * 0.45
+    a.sh.rotation.x = sw - Math.max(0, hit) * 1.6 + Math.min(0, hit) * -2.2 - L.cast * 1.1
+    a.el.rotation.x = -0.35 - Math.max(0, -hit) * 1.2 - L.cast * 0.3
+    a.sh.rotation.z = (i === 0 ? -1 : 1) * (0.12 + Math.max(0, hit) * 0.3 + L.cast * 0.25)
+  }
+  r.torso.rotation.y += s * 0.25
+  if (L.dead > 0) {
+    const d = L.dead
+    r.body.rotation.x = -d * Math.PI * 0.47
+    r.body.position.y = d * 0.15
+    for (const l of r.legs) l.hip.rotation.x = THREE.MathUtils.lerp(l.hip.rotation.x, -0.5, d)
+    for (const a of r.arms) a.sh.rotation.x = THREE.MathUtils.lerp(a.sh.rotation.x, -2.4, d)
+  } else {
+    r.body.rotation.x = 0
+    r.body.position.y = 0
+  }
+}

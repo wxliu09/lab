@@ -18,6 +18,8 @@ export function isHostile(g: Game, a: Ent, b: Ent): boolean {
   if (ah && bh) return false
   if (ah || bh) {
     if (b.tags.has('structure') && !b.tags.has('device') && !b.tags.has('station')) return false
+    // 鎮定薰香：敵對生物不主動挑選，除非被對方打過
+    if (ah && a.data.aggro !== b.id && g.isCalm?.(b)) return false
     return true
   }
   // 自訂敵意（綏靖機器人、海盜等由 AI 決定）

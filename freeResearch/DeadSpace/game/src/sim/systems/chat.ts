@@ -51,7 +51,11 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
     to = everyone.filter((q) => !q.alive || g.mainOf(q)?.zone === main.zone || q.slot === p.slot)
     to = uniq([...to, ...eavesdrop])
   }
-  const line: ChatLine = { from: name, color: name ? p.color : -1, ch: 'all', text, time: t, e: inLastWords || !main ? undefined : main.id }
+  // 千面化身：聲音也跟著偽裝成目標
+  const fake = main?.data.fake as { name: string; color: number } | undefined
+  const shown = fake && name ? fake.name : name
+  const color = fake && name ? fake.color : p.color
+  const line: ChatLine = { from: shown, color: shown ? color : -1, ch: 'all', text, time: t, e: inLastWords || !main ? undefined : main.id }
   deliver(g, line, to)
 }
 
@@ -126,6 +130,11 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       }
       break
     }
+    case 'slug':
+    case 'iamtheslugling':
+      if (p.alive || p.spectator) return
+      if (!g.possessSlug?.(p.slot)) g.privateLine(p.slot, 'chat.noSlug')
+      break
     case 'allow':
     case 'disallow':
       if (f === 'crew' || p.spawnOf) return

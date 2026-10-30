@@ -2,6 +2,7 @@
 import { signal } from '@preact/signals'
 import type { Loc } from '../shared/content/types'
 import { GAME_EN, GAME_ZH } from './strings/game'
+import { ITEM_STRINGS } from '../shared/content/items'
 
 export type Lang = 'zh' | 'en'
 
@@ -267,8 +268,8 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH)
-Object.assign(en, GAME_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en)
 
 /** 其他模組可以補充字典（內容、事件、系統訊息）*/
 export function addStrings(z: Dict, e: Dict): void {

@@ -90,7 +90,7 @@ export function setupShips(g: Game): void {
 }
 
 let shipSeq = 0
-function createShip(g: Game, def: ShipDef): ShipInst {
+export function createShip(g: Game, def: ShipDef): ShipInst {
   const key = `ship:${def.id}:${++shipSeq}`
   const z = g.world.addInterior(key, shipStationDef(def))
   z.data.ship = key
@@ -128,7 +128,7 @@ function freePad(g: Game, zoneId: number): number {
   return free.length ? g.world.rng.pick(free) : -1
 }
 
-function launchTo(g: Game, inst: ShipInst, x: number, y: number, hpK = 1): Ent {
+export function launchTo(g: Game, inst: ShipInst, x: number, y: number, hpK = 1): Ent {
   const e = g.world.spawn(unitDef('ship.' + inst.def.id), SPACE_ZONE, x, y, NEUTRAL)
   e.global = true
   e.hp = e.maxHp * hpK

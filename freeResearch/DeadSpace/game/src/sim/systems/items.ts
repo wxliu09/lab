@@ -229,6 +229,7 @@ export function stepItemOrders(g: Game): void {
       if (freeSlot(t) >= 0) {
         u.inv[o.s] = null
         u.statsDirty = true
+        t.data.lastGiver = u.id
         giveItem(g, t, it)
         g.onItemLost?.(u, it)
       }

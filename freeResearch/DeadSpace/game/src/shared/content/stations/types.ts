@@ -12,8 +12,8 @@ export interface StationDef {
   docked?: { ship: string; pad: number }[]
   /** 危險區每秒傷害 */
   hazardDps?: number
-  /** 'core' = 永遠啟用；'auto' = 依人數／設定 */
-  enable: 'core' | 'auto'
+  /** 'core' = 永遠啟用；'auto' = 依人數／設定；'event' = 只在事件發生時出現（未識別物體、海盜船）*/
+  enable: 'core' | 'auto' | 'event' | 'event'
   /** 被站內掃描所需秒數（Lifeform Scan）*/
   scanTime?: number
   /** 逃生艙落點（layout 的 POI key）*/

@@ -98,7 +98,13 @@ export function replaceMain(g: Game, p: GamePlayer, old: Ent, defId: string, opt
   u.mp = u.maxMp * mpK
   moveInventory(old, u)
   // 保留持續中的負面狀態（寄生不會因變身消失）
-  for (const b of old.buffs) if (!BUFFS.get(b.id)?.good && !BUFFS.get(b.id)?.stun) u.buffs.push({ ...b })
+  // 只帶走看不見的負面狀態（感染等）：全域可見的減益若跟著變身，旁人就能把兩種外形對起來
+  for (const b of old.buffs) {
+    const d = BUFFS.get(b.id)
+    if (!d || d.good || d.stun) continue
+    if (d.vis === 'all' && !d.infection) continue
+    u.buffs.push({ ...b })
+  }
   u.data.extraAbilities = old.data.extraAbilities
   u.data.passives = old.data.passives
   setMain(g, p, u, opts.anon)

@@ -495,8 +495,9 @@ const explosion = (id: string, cd: number, mana: number, note: Loc): AbilityDef 
       k: 'delay',
       t: 3,
       then: [
-        { k: 'damage', amount: 5000, to: 'point', aoe: 2.5, kind: 'blast' },
-        { k: 'damage', amount: 200, to: 'point', aoe: 5.5, kind: 'blast' },
+        // 與熱融炸彈相同：2.5 m 內 5000＋5.5 m 內 200（傷害種類也與炸彈一致）
+        { k: 'damage', amount: 5000, to: 'point', aoe: 2.5, kind: 'fire' },
+        { k: 'damage', amount: 200, to: 'point', aoe: 5.5, kind: 'fire' },
         { k: 'fx', fx: 'fusion', at: 'point' },
       ],
     },

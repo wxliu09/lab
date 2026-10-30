@@ -11,7 +11,7 @@ import { regScript, runEffects, type ScriptFn } from '../systems/effects'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage, heal } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff } from '../systems/buffs'
 import { EXTRA_COMMANDS, handleCommand, issue, type CommandHandler } from '../systems/orders'
-import { updateVendorView, type StockState } from '../systems/vendors'
+import { initVendor, updateVendorView, type StockState } from '../systems/vendors'
 
 // ───────── 陣營工具 ─────────
 
@@ -380,6 +380,7 @@ function onTaintedBuy(g: Game, u: Ent, v: Ent, item: string): void {
 reg('mutant.taintVendor', (g, ctx) => {
   const c = ctx.caster
   const v = ctx.target
+  if (v && v.data.vendor && !v.data.stock) initVendor(g, v)
   const st = v?.data.stock as StockState[] | undefined
   if (!v || !st) {
     refundCd(c, ctx.ability)

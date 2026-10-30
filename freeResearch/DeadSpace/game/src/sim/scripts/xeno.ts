@@ -1,6 +1,7 @@
 // 異形形態技能腳本（研究 02 §3.6「重要能力腳本細節」）。
 // 每局第一次用到（施放、受傷、死亡）時掛上 'xeno.forms' 系統，負責：
 // def 旗標同步（焰主、雷殛者穿鎖門）、十秒迴圈取樣、裸核復原、石化解除、熵渦、絆絲、幻象跟隨、千面時限。
+// 主程式也可以在開局直接呼叫 installXenoSystems(g)（建議：確保十秒迴圈從一開始就有取樣）。
 import { passesFilter, regScript } from '../systems/effects'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff, removeBuffsWhere } from '../systems/buffs'
@@ -362,7 +363,6 @@ regScript('xeno.lockdown', (g, ctx, p) => {
     d.lockUntil = Math.max(d.lockUntil, until)
   }
   syncFlags(u)
-  g.emitFx({ k: 'emLock', z: u.zone, x: u.x, y: u.y })
 })
 
 // ───────── 幻影者 ─────────
@@ -623,16 +623,23 @@ regScript('xeno.relocate', (g, ctx) => {
   const rng = g.world.rng
   let dest: { zone: number; x: number; y: number } | null = null
   if (u.zone !== SPACE_ZONE) {
-    const stations = g.world.inZone(SPACE_ZONE).filter((e) => e.alive && e.tags.has('station'))
-    if (stations.length) {
+    const inSpace = g.world.inZone(SPACE_ZONE)
+    const stations = inSpace.filter((e) => e.alive && e.tags.has('station'))
+    // 避開恆星灼燒範圍
+    const suns = inSpace.filter((e) => e.def.id === 'space.sun')
+    for (let i = 0; i < 12 && stations.length && !dest; i++) {
       const s = rng.pick(stations)
       const a = rng.range(0, Math.PI * 2)
       const d = s.radius + rng.range(2, 6)
       const p = openNear(g, SPACE_ZONE, s.x + Math.cos(a) * d, s.y + Math.sin(a) * d)
+      if (suns.some((sun) => Math.hypot(sun.x - p.x, sun.y - p.y) < 9)) continue
       dest = { zone: SPACE_ZONE, x: p.x, y: p.y }
-    } else dest = randomInterior(g, u.zone)
+    }
+    if (!dest) dest = randomInterior(g, u.zone)
   } else {
-    const zs = g.world.zones.filter((z) => z.kind === 'interior' && z.alive && z.nav)
+    // 優先落進太空站（飛船內艙只在沒有站時才考慮）
+    const all = g.world.zones.filter((z) => z.kind === 'interior' && z.alive && z.nav)
+    const zs = all.some((z) => !z.data.ship) ? all.filter((z) => !z.data.ship) : all
     if (zs.length) dest = randomInterior(g, rng.pick(zs).id)
   }
   if (!dest) {
@@ -697,7 +704,8 @@ regScript('xeno.backFromHell', (g, ctx) => {
   }
   if (!pick) pick = [...cands].sort((a, b) => b.deadAt - a.deadAt)[0] ?? null
   if (pick) {
-    const z = g.revivePlayer(pick.slot, at, XUNIT.timeZombie, 1)
+    // 時滯殭屍以 1 HP 從死前一刻被拉回，隨即轉成異形 spawn（主單位換成目前的 spawn 型）
+    const z = g.revivePlayer(pick.slot, at, XUNIT.timeZombie, 1 / unitDef(XUNIT.timeZombie).hp)
     if (z) {
       g.convertToSpawn(pick.slot, 'xeno', at, 1)
       // 屍體被「用掉」了

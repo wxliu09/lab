@@ -50,7 +50,7 @@ export function mayAttack(g: Game, p: GamePlayer, t: Ent): boolean {
 }
 
 export function handleCommand(g: Game, p: GamePlayer, c: Command): void {
-  if (!p.alive) return
+  if (!p.alive && !(p.data.slug && p.control === p.data.slug)) return
   const u = g.controlOf(p)
   if (!u || !u.alive || u.owner !== p.slot) return
   if (u.data.frozen) return

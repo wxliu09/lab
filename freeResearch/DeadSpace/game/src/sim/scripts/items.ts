@@ -44,8 +44,6 @@ export const CAPACITOR_BONUS = 150
 export const REVIVE_WINDOW = 45
 export const PORTAL_DELAY = 3
 export const PORTAL_R = 4
-export const POD_PREP = 4
-export const POD_COOLDOWN = 100
 export const RESOLVER_BOOT = 10
 const SING_LIFE = 8
 const SING_R = 8
@@ -73,8 +71,6 @@ interface ItemRuntime {
   barriers: Set<number>
   beacons: Set<number>
   hostileFn: ((a: Ent, b: Ent) => boolean) | null
-  /** 救生艙每位玩家的冷卻到期 */
-  podCd: Map<number, number>
 }
 
 const RUNTIME = new WeakMap<Game, ItemRuntime>()
@@ -89,7 +85,6 @@ export function itemRuntime(g: Game): ItemRuntime {
     barriers: new Set(),
     beacons: new Set(),
     hostileFn: null,
-    podCd: new Map(),
   }
   RUNTIME.set(g, created)
   g.systems.push({ name: 'items', fn: (gg) => stepItemRuntime(gg, created) })
@@ -191,9 +186,11 @@ function syncCarried(g: Game): void {
       u.mp = Math.min(u.mp, u.maxMp)
       u.data.capBonus = want || undefined
     }
-    if (!u.inv) continue
+    // 全像分身的外觀 buff 在投影時從本尊複製，不跟著背包同步
+    if (!u.inv || u.data.holo) continue
     for (const [item, buff] of CARRY_BUFFS) {
-      const has = u.inv.some((it) => it?.id === item)
+      // 匿名形態（異形形態等）不顯示：帽子是公開外觀，會讓人認出是誰
+      const has = !u.anon && u.inv.some((it) => it?.id === item)
       const on = hasBuff(u, buff)
       if (has && !on) applyBuff(g, u, buff, undefined, u)
       else if (!has && on) removeBuff(g, u, buff)
@@ -358,7 +355,7 @@ function takeUsedItem(g: Game, ctx: EffectCtx, id: string) {
   return it
 }
 
-// ───────── 傷害 hook：重症維生系統、救生艙準備 ─────────
+// ───────── 傷害 hook：重症維生系統、全像分身 ─────────
 
 /** 致命傷時由重症維生系統搶救；回傳是否救回 */
 export function criticalRescue(g: Game, u: Ent): boolean {
@@ -387,7 +384,11 @@ export function criticalRescue(g: Game, u: Ent): boolean {
 // damage() 先跑 hooks 才判定死亡，所以在這裡把血量拉回來就不會死
 DAMAGE_HOOKS.push((g, _src, t, amount, o) => {
   itemRuntime(g)
-  if (t.data.podPrepUntil && t.data.podPrepUntil > g.time) t.data.podDmg = ((t.data.podDmg as number | undefined) ?? 0) + amount
+  // 全像分身一碰就碎（背包是複製品，不會觸發重症維生系統）
+  if (t.data.holo) {
+    if (amount > 0) t.hp = 0
+    return
+  }
   if (t.hp > 0 || o.lethal || !t.inv || !t.alive) return
   criticalRescue(g, t)
 })
@@ -936,6 +937,8 @@ regScript('item.holo', (g, ctx) => {
   h.data.holo = true
   if (t.inv && h.inv) for (let i = 0; i < h.inv.length; i++) h.inv[i] = t.inv[i] ? makeItem(t.inv[i]!.id, t.inv[i]!.charges) : null
   applyBuff(g, h, 'bf.holo', undefined, u)
+  // 公開可見的外觀（帽子）也要一樣，否則一眼就能看穿
+  for (const [, buff] of CARRY_BUFFS) if (BUFFS.get(buff)?.vis === 'all' && hasBuff(t, buff)) applyBuff(g, h, buff, undefined, h)
   g.emitFx({ k: 'holo', z: h.zone, x: h.x, y: h.y, e: h.id })
 })
 
@@ -1082,47 +1085,7 @@ INSTANT_ITEMS.set('radarPing', (g, buyer, vendor) => {
   return true
 })
 
-INSTANT_ITEMS.set('escapePass', (g, buyer) => {
-  const rt = itemRuntime(g)
-  const slot = buyer.owner
-  const p = slot >= 0 ? g.players[slot] : undefined
-  if (!p || !buyer.isMain) return false
-  if (!SCRIPTS.has('pod.launch')) {
-    g.privateLine(slot, 'item.podUnavailable')
-    return false
-  }
-  const left = (rt.podCd.get(slot) ?? 0) - g.time
-  if (left > 0) {
-    g.privateLine(slot, 'item.podCooldown', { s: Math.ceil(left) })
-    return false
-  }
-  if (hasBuff(buyer, 'bf.evolving') || buyer.tags.has('cocoon')) return false
-  rt.podCd.set(slot, g.time + POD_COOLDOWN)
-  const ox = buyer.x
-  const oy = buyer.y
-  buyer.data.podPrepUntil = g.time + POD_PREP + 0.5
-  buyer.data.podDmg = 0
-  g.privateLine(slot, 'item.podPrep')
-  g.emitFx({ k: 'castStart', z: buyer.zone, x: buyer.x, y: buyer.y, e: buyer.id, s: 'escapePass', v: POD_PREP }, [slot])
-  let n = 0
-  const check = () => {
-    if (!buyer.alive || buyer.removed) return
-    const moved = Math.hypot(buyer.x - ox, buyer.y - oy) >= 0.9
-    if (moved || ((buyer.data.podDmg as number | undefined) ?? 0) >= 35) {
-      buyer.data.podPrepUntil = 0
-      g.privateLine(slot, 'item.podFail')
-      return
-    }
-    if (++n < POD_PREP * 10) {
-      g.after(0.1, check)
-      return
-    }
-    buyer.data.podPrepUntil = 0
-    delegate(g, 'pod.launch', { caster: buyer, x: buyer.x, y: buyer.y, zone: buyer.zone }, { hpPct: buyer.hp / buyer.maxHp })
-  }
-  g.after(0.1, check)
-  return true
-})
+// 救生艙憑證（escapePass）由太空系統 installSpace 註冊（systems/space.ts）
 
 INSTANT_ITEMS.set('testResults', (g, buyer, vendor) => {
   if (delegate(g, 'git.results', { caster: buyer, target: vendor, x: vendor.x, y: vendor.y, zone: vendor.zone })) return true

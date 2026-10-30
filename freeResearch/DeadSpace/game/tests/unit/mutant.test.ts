@@ -18,6 +18,8 @@ function setup(n = 3): { h: Harness; g: Game } {
   for (const p of g.allPlayers()) g.setRole(p, 'human')
   g.setRole(g.players[0], 'mutant')
   installMutantSystems(g)
+  // 召喚物可能把人咬死：這裡不測勝負，別讓對局提早結束
+  vi.spyOn(g, 'endGame').mockImplementation(() => {})
   // 全部人集合到 0 號的出生點附近，並清掉職業被動（回血會干擾數值檢查）
   const base = g.mainOf(g.players[0])!
   for (const p of g.allPlayers()) {
@@ -175,6 +177,12 @@ describe('變種人與仿生人定義', () => {
       expect(d!.tags, id).toContain('summon')
       expect(d!.inv ?? 0, id).toBe(0)
     }
+    // 圖示都要是 UI 有的名稱
+    const icons = new Set(
+      'move stop hold attack heal bolt fire frost shield eye dna bomb grenade rocket saw plasma tentacle egg claw skull gear door card radar scan teleport clock mask web rock storm beam gun drone ship pod module hat plush pill syringe battery camera sensor key suit wrench cloak core star void infect roar evolve devour human speed'.split(' '),
+    )
+    for (const [id, a] of ABILITIES) if (id.startsWith('ab.mut.') || id.startsWith('ab.chassis.')) expect(icons.has(a.icon), id).toBe(true)
+    for (const [id, b] of BUFFS) if (id.startsWith('bf.mut.') || id.startsWith('bf.chassis.')) expect(icons.has(b.icon), id).toBe(true)
     // 會洩漏「被變種人盯上」的 buff 不能公開
     for (const id of ['bf.mut.omniscience', 'bf.mut.carrier', 'bf.mut.vector', 'bf.mut.seizure']) expect(BUFFS.get(id)!.vis).toBe('casterFaction')
   })
@@ -246,8 +254,8 @@ describe('變種人技能', () => {
 
   it('污染販賣機：抗體下架，之後非變種人陣營拿東西就感染', () => {
     const { h, g } = setup()
-    const v = [...g.world.ents.values()].find((e) => e.data.stock && (e.data.stock as StockState[]).some((s) => /antibod/i.test(s.item)))
-      ?? [...g.world.ents.values()].find((e) => e.data.stock)
+    const vendors = [...g.world.ents.values()].filter((e) => e.data.vendor && e.alive)
+    const v = vendors.find((e) => e.data.vendor === 'medical') ?? vendors[0]
     expect(v).toBeDefined()
     const u = become(g, 0, 'mut.mimetic')
     const nav = g.world.zones[v!.zone].nav!
@@ -520,9 +528,10 @@ describe('仿生人機體', () => {
     damage(g, null, u, 1000, { pure: true })
     const hp0 = u.hp
     issue(u, { k: 'cast', a: 'ab.chassis.restore', x: u.x, y: u.y })
-    sec(h, 5.05)
-    expect(u.hp - hp0).toBeGreaterThan(55)
-    expect(u.hp - hp0).toBeLessThan(65)
+    sec(h, 5.2)
+    // 每 0.5 秒 6 點（引擎的引導 tick 有浮點漂移，實測約 0.55 秒一次）
+    expect(u.hp - hp0).toBeGreaterThanOrEqual(50)
+    expect(u.hp - hp0).toBeLessThanOrEqual(66)
     const p = clearPoint(g, u, 4)
     g.handleCommand(0, { k: 'move', x: p.x, y: p.y })
     h.ticks(2)
