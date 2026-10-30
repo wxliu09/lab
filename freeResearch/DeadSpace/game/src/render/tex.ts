@@ -110,7 +110,7 @@ export function floorSet(variant: 'plate' | 'grate' | 'tile' | 'rubber' | 'concr
   const have = cache.get(key + ':map')
   if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
   const S = 512
-  const grime = noiseField(S, 6, seed, 3)
+  const grime = noiseField(S, 6, seed, 6)
   const fine = noiseField(S, 3, seed + 9, 32)
   const height = new Float32Array(S * S)
   const [ca, xa] = canvas(S, S)
@@ -187,9 +187,9 @@ export function floorSet(variant: 'plate' | 'grate' | 'tile' | 'rubber' | 'concr
       }
       // 髒污：凹處與隨機區塊
       const g = grime[i]
-      const dirt = Math.max(0, g - 0.45) * 1.8 + (hgt < 0.3 ? 0.25 : 0)
-      const scratch = fine[i] > 0.82 ? 0.08 : 0
-      const lum = base * (0.92 + fine[i] * 0.16) * (1 - dirt * 0.45) + scratch
+      const dirt = Math.max(0, g - 0.5) * 1.1 + (hgt < 0.3 ? 0.25 : 0)
+      const scratch = fine[i] > 0.86 ? 0.05 : 0
+      const lum = base * (0.93 + fine[i] * 0.14) * (1 - dirt * 0.35) + scratch
       height[i] = hgt + (fine[i] - 0.5) * 0.04
       const o = i * 4
       albedo.data[o] = Math.min(255, tr * lum * (1 - dirt * 0.1))

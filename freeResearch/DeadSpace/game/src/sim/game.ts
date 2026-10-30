@@ -24,6 +24,19 @@ import { buildSnapshot, type ViewState, newViewState } from './systems/snapshot'
 import { routeChat } from './systems/chat'
 import { Tuning } from './systems/tuning'
 import { stepCombat } from './systems/combat'
+import { stepBuffs } from './systems/buffs'
+import { stepCasting, stepAutocast } from './systems/abilities'
+import { stepProjectiles, type Projectile } from './systems/projectiles'
+import { stepDashes, SCRIPTS } from './systems/effects'
+import { stepItemOrders } from './systems/items'
+import { stepVendors } from './systems/vendors'
+import { DEATH_HOOKS, damage } from './systems/damage'
+import { stepLife } from './systems/death'
+import type { AbilityDef } from '../shared/content/types'
+import type { ItemInst } from './ent'
+import { NEUTRAL } from './ent'
+import { unitDef } from '../shared/content/registry'
+import './scripts/index'
 
 export type Role = 'human' | 'xeno' | 'mutant' | 'android'
 export type Faction = 'crew' | 'xeno' | 'mutant'
@@ -104,6 +117,17 @@ export class Game {
   fx: (FxEvent & { vis?: number[] })[] = []
   /** 系統訊息佇列 */
   sysLines: { line: ChatLine; to: number[] | 'all' }[] = []
+  projectiles: Projectile[] = []
+  private timers: { at: number; fn: () => void }[] = []
+  /** 其他系統掛上的事件 */
+  onCast?: (u: Ent, ab: AbilityDef, target?: Ent) => void
+  onItemGained?: (u: Ent, it: ItemInst) => void
+  onItemLost?: (u: Ent, it: ItemInst) => void
+  onBuy?: (u: Ent, vendor: Ent, item: string) => void
+  onMorph?: (u: Ent) => void
+  customHostile?: (a: Ent, b: Ent) => boolean
+  /** 每 tick 額外執行的系統（AI、事件、太空…）*/
+  readonly systems: { name: string; fn: (g: Game) => void }[] = []
 
   constructor(init: GameInit) {
     this.settings = init.settings
@@ -203,6 +227,7 @@ export class Game {
       slot,
       seed: 0,
       stations: this.stations,
+      zones: this.world.zones.filter((z) => z.station).map((z) => [z.id, z.key, z.station!.id] as [number, string, string]),
       players: this.allPlayers().map((q) => ({ slot: q.slot, name: q.baseName, color: q.color, bot: q.bot })),
       spectator: p.spectator,
     }
@@ -311,15 +336,90 @@ export class Game {
   // ───────── 生命週期 ─────────
 
   kill(u: Ent, killer: Ent | null): void {
+    this.killEnt(u, killer, killer?.owner ?? -1)
+  }
+
+  /** 單位死亡：hooks（掉落、屍體、身分轉化、公告、勝負）→ 移除 */
+  killEnt(u: Ent, killer: Ent | null, killerSlot = killer?.owner ?? -1): void {
     if (!u.alive) return
     u.alive = false
     u.hp = 0
     u.anim = 4
     u.order = null
+    u.queue.length = 0
     u.path = null
     u.cast = null
-    void killer
+    u.data.dash = undefined
+    for (const h of DEATH_HOOKS) {
+      try {
+        h(this, u, killer, killerSlot)
+      } catch (e) {
+        if (__DEV__) console.error('[death hook]', e)
+      }
+    }
+    if (u.data.keepOnDeath) return
     this.world.remove(u)
+  }
+
+  /** 主單位死亡（roles 系統會覆寫以處理 spawn 轉化與公告）*/
+  onMainDeath(p: GamePlayer, u: Ent, _killer: Ent | null, _killerSlot: number): void {
+    p.alive = false
+    p.deadAt = this.time
+    p.specZone = u.zone
+    p.control = 0
+    this.systemAll('death.innocent')
+  }
+
+  /** 排程：t 秒後執行 */
+  after(t: number, fn: () => void): void {
+    this.timers.push({ at: this.time + t, fn })
+  }
+
+  castFail(u: Ent, why: string): void {
+    if (u.owner >= 0 && u.isMain) this.privateLine(u.owner, 'cast.' + why)
+  }
+
+  spawnRubble(zone: number, x: number, y: number, count: number, radius: number): void {
+    const z = this.world.zones[zone]
+    if (!z.nav) return
+    const def = unitDef('rubble')
+    for (let i = 0; i < count; i++) {
+      const a = this.world.rng.range(0, Math.PI * 2)
+      const r = Math.sqrt(this.world.rng.next()) * radius
+      const px = x + Math.cos(a) * r
+      const py = y + Math.sin(a) * r
+      const idx = z.nav.idx(px, py)
+      if (idx < 0 || z.nav.solid[idx] || z.nav.dyn[idx] || z.nav.doorOf[idx] >= 0) continue
+      const e = this.world.spawn(def, zone, Math.floor(px) + 0.5, Math.floor(py) + 0.5, NEUTRAL)
+      e.facing = a
+      e.data.navIdx = idx
+      z.nav.dyn[idx]++
+    }
+  }
+
+  damageDoorsNear(zone: number, x: number, y: number, r: number, dmg: number): void {
+    const z = this.world.zones[zone]
+    if (!z.layout) return
+    for (const d of z.layout.doors) {
+      if ((d.x - x) ** 2 + (d.y - y) ** 2 > (r + d.width / 2) ** 2) continue
+      const st = z.doors[d.index]
+      if (st.broken) continue
+      st.hp -= dmg
+      if (st.hp <= 0) {
+        st.broken = true
+        st.open = true
+        z.nav!.doorClosed[d.index] = 0
+        this.emitFx({ k: 'doorBreak', z: zone, x: d.x, y: d.y })
+      }
+    }
+  }
+
+  damage(src: Ent | null, t: Ent, amount: number): number {
+    return damage(this, src, t, amount)
+  }
+
+  script(name: string) {
+    return SCRIPTS.get(name)
   }
 
   /** 由 server 以 20 Hz 呼叫；依 timeScale 推進模擬 */
@@ -346,9 +446,38 @@ export class Game {
     w.tick++
     w.time += TICK_DT
     this.tick = w.tick
+    // 排程
+    if (this.timers.length) {
+      const due = this.timers.filter((x) => x.at <= w.time)
+      if (due.length) {
+        this.timers = this.timers.filter((x) => x.at > w.time)
+        for (const d of due) {
+          try {
+            d.fn()
+          } catch (e) {
+            if (__DEV__) console.error('[timer]', e)
+          }
+        }
+      }
+    }
     stepDoors(this)
-    stepCombat(this)
+    stepAutocast(this)
+    stepCasting(this)
+    stepItemOrders(this)
+    for (const s of this.systems) {
+      try {
+        s.fn(this)
+      } catch (e) {
+        if (__DEV__) console.error('[system]', s.name, e)
+      }
+    }
     stepMovement(this)
+    stepDashes(this, TICK_DT)
+    stepBuffs(this)
+    stepCombat(this)
+    stepProjectiles(this)
+    stepVendors(this)
+    stepLife(this)
   }
 
   /** 每次 server tick 都送快照（暫停時也送，讓畫面維持）*/

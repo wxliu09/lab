@@ -6,7 +6,7 @@ import { MAX_PLAYERS, PLAYER_COLORS } from '../constants'
 
 const COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>([
   'move', 'amove', 'attack', 'stop', 'hold', 'cast', 'use', 'drop', 'pickup', 'swapItem', 'give',
-  'interact', 'buy', 'evolve', 'autocast',
+  'interact', 'buy', 'evolve', 'autocast', 'follow',
 ])
 const CHANNELS: ReadonlySet<ChatChannel> = new Set<ChatChannel>(['all', 'team', 'group', 'dead'])
 const MARKS: ReadonlySet<NoteMark> = new Set<NoteMark>(['none', 'trust', 'suspect', 'confirmedEvil', 'confirmedClean'])

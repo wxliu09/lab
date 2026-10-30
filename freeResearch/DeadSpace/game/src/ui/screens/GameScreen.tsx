@@ -1,14 +1,60 @@
-import { snapTick, world } from '../../client/session'
-import { t } from '../i18n'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { startInfo, world } from '../../client/session'
+import { Input } from '../../client/input'
+import { getEngine } from '../../render/engine'
+import { GameScene } from '../../render/gameScene'
+import { Overlay } from '../../render/overlay'
+import { Banner, Chat, CommandCard, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
+import { bindFx } from '../../render/fxBinding'
 
 export function GameScreen() {
-  void snapTick.value
-  const me = world.me
+  const ref = useRef<HTMLCanvasElement>(null)
+  const wrap = useRef<HTMLDivElement>(null)
+  const [scene, setScene] = useState<GameScene | null>(null)
+  const [input, setInput] = useState<Input | null>(null)
+  useEffect(() => {
+    const c = ref.current
+    if (!c || !wrap.current) return
+    const engine = getEngine(c)
+    const gs = new GameScene(world)
+    gs.setZones(startInfo.value?.zones ?? [])
+    const overlay = new Overlay(wrap.current)
+    const unbind = bindFx(gs, world)
+    const origUpdate = gs.update.bind(gs)
+    gs.update = (dt, t) => {
+      origUpdate(dt, t)
+      engine.damagePulse = Math.max(engine.damagePulse, gs.damage)
+      gs.damage = 0
+      overlay.draw(gs, world)
+    }
+    gs.onZoneChange = () => engine.setScene(gs)
+    engine.setScene(gs)
+    engine.start()
+    const inp = new Input(c, gs)
+    setScene(gs)
+    setInput(inp)
+    if (__TEST_HOOKS__) (window as unknown as Record<string, unknown>).__xcScene = gs
+    return () => {
+      inp.dispose()
+      overlay.dispose()
+      unbind()
+      engine.setScene(null)
+    }
+  }, [])
   return (
-    <div class="layer" data-testid="game">
-      <div class="panel hud-top">
-        <span>{t('game.time')} {Math.floor((world.w.t ?? 0) / 60)}:{String((world.w.t ?? 0) % 60).padStart(2, '0')}</span>
-        <span data-testid="role">{me.role ? t('role.' + me.role) : ''}</span>
+    <div class="layer" ref={wrap}>
+      <canvas class="view" ref={ref} data-testid="view" />
+      <TopBar />
+      <Banner />
+      <TargetHint />
+      <Chat />
+      <div class="hud-bottom">
+        {scene && <Minimap scene={scene} />}
+        <Portrait />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <Inventory input={input} />
+          <CommandCard input={input} />
+        </div>
       </div>
     </div>
   )

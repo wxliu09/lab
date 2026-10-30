@@ -99,7 +99,12 @@ export class ClientWorld {
     if (s.doors) for (const [k, v] of Object.entries(s.doors)) this.doors.set(Number(k), v)
     if (s.vs) this.vs = s.vs
     if (s.w) Object.assign(this.w, s.w)
-    if (s.fx) for (const f of s.fx) this.onFx ? this.onFx(f) : this.fxQueue.push(f)
+    if (s.fx) {
+      for (const f of s.fx) {
+        if (this.onFx) this.onFx(f)
+        else this.fxQueue.push(f)
+      }
+    }
   }
 
   /** 每幀呼叫：更新插值位置 */

@@ -73,6 +73,7 @@ export type CommandKind =
   | 'buy'
   | 'evolve'
   | 'autocast'
+  | 'follow'
 
 export interface Command {
   k: CommandKind
@@ -139,6 +140,8 @@ export interface StartInfo {
   seed: number
   /** 啟用的站點 id */
   stations: string[]
+  /** zone 列表：[zone id, key, 站點 id] */
+  zones: [number, string, string][]
   players: { slot: Slot; name: string; color: number; bot: boolean }[]
   spectator: boolean
 }

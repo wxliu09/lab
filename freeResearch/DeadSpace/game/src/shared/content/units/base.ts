@@ -53,4 +53,7 @@ regUnits([
   }),
   S('struct.pad', '停機坪', 'Landing Pad', 1, 'pad', { tags: ['structure', 'invuln', 'noTarget'], radius: 3 }),
   S('struct.enhancer', '強化劑注射站', 'Enhancement Station', 1, 'enhancer', { tags: ['structure', 'invuln'] }),
+  S('groundItem', '物品', 'Item', 1, 'groundItem', { tags: ['invuln'], radius: 0.3, sight: 0 }),
+  S('corpse', '屍體', 'Corpse', 1, 'corpse', { tags: ['corpse', 'invuln', 'noTarget'], radius: 0.4, sight: 0 }),
+  S('rubble', '瓦礫', 'Rubble', 400, 'rubble', { tags: ['rubble', 'structure', 'mechanical'], radius: 0.5, sight: 0 }),
 ])

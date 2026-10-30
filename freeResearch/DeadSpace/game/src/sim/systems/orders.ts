@@ -72,6 +72,13 @@ export function handleCommand(g: Game, p: GamePlayer, c: Command): void {
       issue(u, { k: 'attack', e: t.id }, c.q)
       break
     }
+    case 'follow': {
+      if (c.e === undefined || !canSee(g, p, c.e)) return
+      const t = g.world.get(c.e)
+      if (!t || !t.alive || t.zone !== u.zone || t === u) return
+      issue(u, { k: 'follow', e: t.id }, c.q)
+      break
+    }
     case 'stop':
       issue(u, null)
       u.cast = null

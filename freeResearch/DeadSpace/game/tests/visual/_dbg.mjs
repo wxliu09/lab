@@ -1,0 +1,12 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+page.on('console', (m) => console.log('[console]', m.type(), m.text().slice(0, 400)))
+page.on('pageerror', (e) => console.log('[pageerror]', e.message, e.stack?.slice(0, 600)))
+await page.goto('http://localhost:4173/?net=bc')
+await page.getByTestId('create').click()
+await page.getByTestId('lobby').waitFor({ timeout: 20000 })
+await page.getByTestId('start').click()
+await page.waitForTimeout(4000)
+console.log((await page.content()).slice(0, 1500))
+await browser.close()

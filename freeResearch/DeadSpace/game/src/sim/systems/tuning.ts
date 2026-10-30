@@ -30,6 +30,13 @@ export class Tuning {
         for (let i = 0; i < n; i++) g.stepOnce()
         return { time: g.time }
       }
+      case 'vision': {
+        // 截圖用：讓某位玩家看得到整個 zone
+        const p = g.players[Number(args[0])]
+        if (!p) return { error: 'bad slot' }
+        p.flags.mapHack = !!args[1]
+        return { ok: true }
+      }
       case 'role': {
         // 強制身分：role(slot, 'xeno' | 'mutant' | 'android' | 'human')
         const p = g.players[Number(args[0])]
