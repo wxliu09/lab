@@ -409,7 +409,7 @@ regScript('item.antibody', (g, ctx) => {
   itemRuntime(g)
   const u = ctx.caster
   // 帶原觸發器（研究 02 §8：抗體包會移除）
-  removeBuffsWhere(g, u, (d) => !!d.flags?.carrier)
+  removeBuffsWhere(g, u, (d) => !!d.flags?.carrier || !!d.flags?.prion)
   // 寄生／朊毒 → 受控（保留原本的施放者，讓感染方仍看得到）。另一位同事的 buff 不存在時就跳過。
   for (const b of [...u.buffs]) {
     const inf = BUFFS.get(b.id)?.infection

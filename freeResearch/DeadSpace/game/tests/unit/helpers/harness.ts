@@ -2,6 +2,7 @@
 import { GameServer, LOCAL_PEER } from '../../../src/sim/server'
 import { decode, encode } from '../../../src/shared/protocol/codec'
 import type { ClientMsg, HostMsg, SnapEntity, Snapshot } from '../../../src/shared/protocol/messages'
+import { checkMessages } from './leak'
 
 export interface FakeClient {
   peer: string
@@ -19,6 +20,9 @@ export class Harness {
   clients = new Map<string, FakeClient>()
   /** 所有送給每個 peer 的原始位元組（洩漏測試掃描用）*/
   raw = new Map<string, Uint8Array[]>()
+  /** 開啟後每個 tick 都立刻比對送出的訊息（避免累積多 tick 後拿最後狀態比對的誤報）*/
+  leakWatch = false
+  leakProblems: string[] = []
 
   constructor(seed = 1234) {
     this.server = new GameServer('TEST1', { send: (peer, data) => this.deliver(peer, data) }, seed)
@@ -61,7 +65,24 @@ export class Harness {
   }
 
   ticks(n: number): void {
-    for (let i = 0; i < n; i++) this.server.tick()
+    for (let i = 0; i < n; i++) {
+      this.server.tick()
+      if (this.leakWatch) this.drainLeaks()
+    }
+  }
+
+  /** 比對目前累積的訊息並清空；回傳累積至今的問題 */
+  drainLeaks(): string[] {
+    const g = this.server.game
+    if (g) {
+      for (const [peer, raws] of this.raw) {
+        const slot = this.server.slotOfPeer(peer)
+        if (slot === null) continue
+        this.leakProblems.push(...checkMessages(g, slot, raws))
+        raws.length = 0
+      }
+    }
+    return this.leakProblems
   }
 
   /** 建房＋n 人加入＋開局 */

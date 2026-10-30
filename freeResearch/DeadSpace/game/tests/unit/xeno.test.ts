@@ -55,6 +55,9 @@ function setup() {
   g.setRole(ps[1], 'human')
   g.setRole(ps[2], 'human')
   const spot = openSpot(g)
+  // 開局快照是在玩家被搬到空地之前送的：先清掉，之後逐 tick 比對
+  for (const r of h.raw.values()) r.length = 0
+  h.leakWatch = true
   // 玩家主單位先移到空地外圍，需要時再拉進來
   for (let i = 0; i < ps.length; i++) place(g, g.mainOf(ps[i])!, spot, -3.5 + i * 3.5, 3.8)
   installXenoSystems(g)
@@ -80,14 +83,8 @@ const sec = (h: Harness, s: number) => h.ticks(Math.round(s * 20))
 
 /** 掃描目前為止送給每個 peer 的訊息，回報隱藏資訊洩漏 */
 function leaks(h: Harness): string[] {
-  const g = h.server.game!
-  const out: string[] = []
-  for (const [peer, raws] of h.raw) {
-    const slot = h.server.slotOfPeer(peer)
-    if (slot === null) continue
-    out.push(...checkMessages(g, slot, raws))
-    raws.length = 0
-  }
+  const out = [...h.drainLeaks()]
+  h.leakProblems.length = 0
   return out
 }
 

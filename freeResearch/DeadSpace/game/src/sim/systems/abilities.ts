@@ -93,8 +93,9 @@ export function stepCasting(g: Game): void {
         continue
       }
       // 引導中
-      if (ab.tickEffects && t >= c.nextTick) {
-        c.nextTick = t + (ab.channelTick ?? 1)
+      if (ab.tickEffects && t >= c.nextTick - 1e-6) {
+        // 週期以排程時間累加（不從現在起算），避免 tick 量化讓週期越拖越長
+        c.nextTick += ab.channelTick ?? 1
         runEffects(g, { caster: u, target, x: c.x, y: c.y, zone: u.zone, ability: ab }, ab.tickEffects)
       }
       if (t >= c.end) {

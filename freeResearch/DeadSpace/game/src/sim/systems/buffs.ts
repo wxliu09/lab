@@ -146,8 +146,8 @@ export function stepBuffs(g: Game): void {
       if (!u.alive) break
       if (d.hot) heal(g, u, d.hot * dt * b.stacks)
       if (d.manaBurn) u.mp = Math.max(0, u.mp - d.manaBurn * dt)
-      if (d.every && d.tickEffects && t >= b.nextTick) {
-        b.nextTick = t + d.every
+      if (d.every && d.tickEffects && t >= b.nextTick - 1e-6) {
+        b.nextTick = Math.max(b.nextTick + d.every, t)
         runEffects(g, { caster: src ?? u, target: u, x: u.x, y: u.y, zone: u.zone, buff: b }, d.tickEffects)
       }
     }
