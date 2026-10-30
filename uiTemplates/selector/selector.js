@@ -448,10 +448,10 @@ function renderSimilar(){
   if(!TL.length){sec.hidden=true;return;}
   const g=byId(LAYOUTS,state.layout).g,cand=pool().filter(t=>t.kind===g);
   const ranked=cand.map(t=>Object.assign({t},simScore(t,state))).sort((a,b)=>b.score-a.score);
-  // keep one of the three slots for a template with this kind of page, so its matching page is always offered
-  const fits=r=>r.t.layout===state.layout||r.page;
+  // inner-page layouts (行事曆、系統設定…) are rarely a home page: if no pick shares the layout,
+  // give the third slot to the best template that has such a page, so that page is always offered
   const top=ranked.slice(0,3);
-  if(top.length===3&&!top.some(fits)){const r=ranked.find(fits);if(r)top[2]=r;}
+  if(top.length===3&&!top.some(r=>r.t.layout===state.layout||r.page)){const r=ranked.find(r=>r.page);if(r)top[2]=r;}
   sec.hidden=!top.length;
   const scopeWord=HAS_FEAT?(lib.scope==='all'?'全部':'精選的'):'';
   $('#simNote').textContent=`依版型、風格、主色與深淺，從${scopeWord} ${cand.length} 套${g==='admin'?'後台':'前台'}範本挑出最接近的 ${top.length} 套。`;
