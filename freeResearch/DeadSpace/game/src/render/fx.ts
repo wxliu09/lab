@@ -509,7 +509,7 @@ export class Fx {
   emit(zone: number, x: number, y: number, h: number, n: number, o: EmitOpts): void {
     const layer = o.layer === 'smoke' ? this.smokeL : o.layer === 'spark' ? this.sparkL : this.glowL
     const cap = layer === this.glowL ? Math.min(layer.cap, preset().particles) : layer.cap
-    const cnt = n <= 2 ? n : Math.max(1, Math.round(n * qk()))
+    const cnt = n <= 4 ? n : Math.max(4, Math.round(n * qk()))
     const c = new THREE.Color(o.color)
     const c2 = o.color2 ? new THREE.Color(o.color2) : c
     const ps = layer.ps
@@ -820,17 +820,25 @@ export class Fx {
     })
   }
 
-  /** 光爆（爆炸、槍口）：核心球＋光暈 sprite＋借用點光 */
+  /** 光爆（爆炸、槍口）：白熱核心 sprite＋星芒＋有色外暈＋借用點光（不用實心球，避免「一顆白球」）*/
   flash(zone: number, x: number, y: number, h: number, color: string, size: number, dur = 0.12): void {
-    const m = this.mesh(GEO.sphere, new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.35), 5)
-    m.position.copy(W(x, y, h))
-    m.scale.setScalar(size * 0.6)
-    const mm = m.material as THREE.MeshBasicMaterial
-    this.addTransient(m, dur, zone, (k) => {
-      m.scale.setScalar(size * 0.6 * (1 + k))
-      mm.opacity = (1 - k) ** 1.5
+    const p = W(x, y, h)
+    const core = this.sprite('soft', new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.6), 4)
+    core.position.copy(p)
+    const star = this.sprite('star', color, 2.6)
+    star.position.copy(p)
+    star.material.rotation = Math.random() * Math.PI
+    const g = new THREE.Group()
+    g.add(core, star)
+    const cm = core.material
+    const sm = star.material
+    this.addTransient(g, dur, zone, (k) => {
+      core.scale.setScalar(size * 1.6 * (0.7 + k * 0.6))
+      star.scale.setScalar(size * 2.6 * (1 + k * 0.4))
+      cm.opacity = (1 - k) ** 1.6
+      sm.opacity = (1 - k) ** 2.2
     })
-    this.glow(zone, x, y, h, color, size * 2.4, dur * 1.6, { k: 1.8, grow: 1.3 })
+    this.glow(zone, x, y, h, color, size * 2.4, dur * 1.6, { k: 1.6, grow: 1.3, opacity: 0.8 })
     this.light(zone, x, y, h + 0.3, color, size * 60, Math.max(3, size * 10), dur * 1.6)
   }
 

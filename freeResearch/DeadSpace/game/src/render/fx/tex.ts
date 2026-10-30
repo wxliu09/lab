@@ -26,6 +26,7 @@ export type FxTexName =
   | 'grid'
   | 'flare'
   | 'grad'
+  | 'embers'
 
 const cache = new Map<string, THREE.Texture>()
 
@@ -55,6 +56,25 @@ function radial(x: CanvasRenderingContext2D, cx: number, cy: number, r: number, 
 }
 
 const BUILDERS: Record<FxTexName, () => HTMLCanvasElement> = {
+  embers: () => {
+    // 圓形遮罩的斑駁雜訊（餘燼、液面反光、污染地面）：邊緣淡出，不會露出方形邊
+    const src = BUILDERS.noise()
+    const [c, x] = canvas(128)
+    x.drawImage(src, 0, 0)
+    const img = x.getImageData(0, 0, 128, 128)
+    for (let j = 0; j < 128; j++)
+      for (let i = 0; i < 128; i++) {
+        const k = (j * 128 + i) * 4
+        const d = Math.hypot(i - 63.5, j - 63.5) / 64
+        const n = img.data[k] / 255
+        const m = Math.max(0, 1 - d) ** 0.8
+        const v = Math.max(0, Math.min(1, (n - 0.35) * 2.2)) * m
+        img.data[k] = img.data[k + 1] = img.data[k + 2] = 255
+        img.data[k + 3] = Math.round(v * 255)
+      }
+    x.putImageData(img, 0, 0)
+    return c
+  },
   grad: () => {
     // 光柱：底部亮、往上淡出，帶細直紋
     const [c, x] = canvas(64, 128)

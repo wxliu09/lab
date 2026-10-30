@@ -54,6 +54,8 @@ interface Look {
   shape?: 'flask' | 'rock' | 'wrench' | 'debris'
   /** wave：地面波的種類 */
   wave?: 'energy' | 'dust' | 'goo'
+  /** 暗核（吸光的核心＋有色外暈，暗物質用）*/
+  dark?: boolean
 }
 
 export const LOOKS: Record<string, Look> = {
@@ -66,7 +68,7 @@ export const LOOKS: Record<string, Look> = {
   flame: { color: '#ff8a2a', color2: '#ff3b1a', hit: 0.15, sound: 'flame', style: 'flame' },
   photon: { color: '#fff2a8', w: 0.05, hit: 0.18, sound: 'laser', style: 'beam' },
   saw: { color: '#ffd080', w: 0.025, hit: 0.12, sound: 'saw', style: 'tracer' },
-  void: { color: '#9b5de5', color2: '#2a0a4a', size: 0.14, hit: 0.22, sound: 'void', style: 'orb' },
+  void: { color: '#9b5de5', color2: '#2a0a4a', size: 0.14, hit: 0.22, sound: 'void', style: 'orb', dark: true },
   mirage: { color: '#c9b6ff', w: 0.035, hit: 0.1, sound: 'rifle', style: 'tracer' },
   rad: { color: '#7dff6a', size: 0.13, hit: 0.2, sound: 'plasma', style: 'orb' },
   operative: { color: '#ff7a6a', w: 0.04, muzzle: 0.2, hit: 0.15, sound: 'heavy', style: 'tracer' },
@@ -137,15 +139,21 @@ function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, fr
     const m = gs.fx.mesh(GEO.beam, hot(color, 0.45), 4.5)
     m.rotation.y = Math.PI / 2
     m.position.x = -len / 2
-    m.scale.set(0.014, 0.014, 0.01)
+    m.scale.set(0.03, 0.03, 0.01)
+    const halo = gs.fx.mesh(GEO.beam, color, 2, { opacity: 0.35 })
+    halo.scale.set(3, 3, 1)
+    m.add(halo)
     pivot.add(m)
     g.add(pivot)
     slashes.push(m)
   }
   const mats = slashes.map((m) => m.material as THREE.MeshBasicMaterial)
-  gs.fx.addTransient(g, 0.24, z, (k) => {
+  const hmats = slashes.map((m) => (m.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial)
+  gs.fx.addTransient(g, 0.28, z, (k) => {
     slashes.forEach((m, i) => (m.scale.z = len * Math.max(0.01, Math.min(1, k * 5 - i * 0.35))))
-    mats.forEach((m) => (m.opacity = k < 0.3 ? 1 : (1 - (k - 0.3) / 0.7) ** 1.3))
+    const f = k < 0.3 ? 1 : (1 - (k - 0.3) / 0.7) ** 1.3
+    mats.forEach((m) => (m.opacity = f))
+    hmats.forEach((m) => (m.opacity = 0.35 * f))
   })
 }
 
@@ -169,7 +177,28 @@ regFx('atk', (gs, w, f) => {
       const dx = to.x - from.x
       const dy = to.y - from.y
       const d = Math.hypot(dx, dy)
-      gs.fx.emit(z, from.x, from.y, from.h, 16, { color: '#fff0b0', color2: L.color2 ?? '#ff3b1a', speed: d * 2.2, life: 0.42, size: 0.55, grow: 2.2, up: 0.12, drag: 3, dir: [dx, dy], spread: 0.16 })
+      gs.fx.emit(z, from.x, from.y, from.h, 26, { color: '#fff0b0', color2: L.color2 ?? '#ff3b1a', speed: d * 2.2, life: 0.42, size: 0.6, grow: 2.2, up: 0.12, drag: 3, dir: [dx, dy], spread: 0.16 })
+      // 火舌：沿射線的錐形光，閃爍
+      const jet = new THREE.Group()
+      const c1 = gs.fx.mesh(GEO.cone, '#ffd080', 2.6, { map: fxTex('grad'), side: THREE.DoubleSide, opacity: 0.9 })
+      const c2 = gs.fx.mesh(GEO.cone, L.color, 1.8, { map: fxTex('grad'), side: THREE.DoubleSide, opacity: 0.6 })
+      jet.add(c1, c2)
+      const A = W(from.x, from.y, from.h)
+      const B = W(to.x, to.y, hitH)
+      jet.position.copy(B)
+      jet.lookAt(A)
+      // 錐尖朝槍口：cone 的 +Y 是尖端 → 轉到 +Z 再朝向槍口
+      c1.rotation.x = c2.rotation.x = Math.PI / 2
+      const dl = A.distanceTo(B)
+      const m1 = c1.material as THREE.MeshBasicMaterial
+      const m2 = c2.material as THREE.MeshBasicMaterial
+      gs.fx.addTransient(jet, 0.22, z, (k) => {
+        const fl = 0.85 + Math.random() * 0.3
+        c1.scale.set(0.22 * fl, dl * Math.min(1, k * 4), 0.22 * fl)
+        c2.scale.set(0.45 * fl, dl * Math.min(1, k * 4) * 1.02, 0.45 * fl)
+        m1.opacity = 0.9 * (1 - k)
+        m2.opacity = 0.6 * (1 - k)
+      })
       gs.fx.emit(z, from.x, from.y, from.h, 3, { color: '#2a2420', speed: d * 1.4, life: 1, size: 0.6, up: 0.5, drag: 2, dir: [dx, dy], spread: 0.25, layer: 'smoke', alpha: 0.4 })
       gs.fx.light(z, (from.x + to.x) / 2, (from.y + to.y) / 2, 0.9, '#ff8a2a', 18, 5, 0.25, { flicker: 0.4 })
       break
@@ -295,7 +324,13 @@ function projBody(gs: GameScene, L: Look): { g: THREE.Group; spin?: THREE.Object
     shell.scale.setScalar(size * 0.9)
     g.add(shell)
   }
-  if (L.color2 && style === 'orb') {
+  if (L.dark) {
+    // 吸光核心：黑色實心球蓋在發光核外面，只剩邊緣一圈紫光
+    const hole = new THREE.Mesh(GEO.sphere, gs.fx.mat('#05010a', 1, { add: false, opacity: 0.95 }))
+    hole.scale.setScalar(size * 1.15)
+    hole.renderOrder = 5
+    g.add(hole)
+  } else if (L.color2 && style === 'orb') {
     const outer = gs.fx.sprite('star', L.color2, 1.6)
     outer.scale.setScalar(size * 4)
     g.add(outer)
@@ -613,25 +648,28 @@ regFx('fusion', (gs, _w, f) => {
   const z = f.z
   sfx('nuke', f.x, f.y)
   screenFlash(gs, '#fff4e0', 3, 0.5, f.x, f.y)
-  gs.fx.flash(z, f.x, f.y, 1, '#fff4e0', Math.min(4, r * 0.7), 0.5)
-  gs.fx.glow(z, f.x, f.y, 1.2, '#ffb060', r * 3.5, 1.4, { k: 2.2, grow: 1.3 })
+  gs.fx.flash(z, f.x, f.y, 1, '#fff4e0', Math.min(3, r * 0.5), 0.5)
+  gs.fx.glow(z, f.x, f.y, 1.2, '#ffb060', r * 2.4, 1.4, { k: 1.6, grow: 1.3, opacity: 0.85 })
   gs.fx.light(z, f.x, f.y, 2, '#ffb46b', 900, r * 4, 1.6)
   gs.fx.ring(z, f.x, f.y, 0.5, r * 1.25, '#ffd9a0', 0.8, { tex: 'ring', k: 3 })
   gs.fx.ring(z, f.x, f.y, 0.3, r * 0.8, '#ff8a3a', 1.3, { tex: 'ring', k: 2 })
   gs.fx.emit(z, f.x, f.y, 0.6, 160, { color: '#fff4d0', color2: '#ff3b1a', speed: r * 1.7, life: 0.9, size: 0.9, grow: 1.8, up: 0.5, drag: 2 })
   gs.fx.emit(z, f.x, f.y, 0.6, 60, { color: '#ffffff', color2: '#ffb46b', speed: r * 2.2, life: 0.8, size: 1, up: 0.8, grav: 6, drag: 0.6, layer: 'spark' })
-  gs.fx.emit(z, f.x, f.y, 0.4, 50, { color: '#3a3430', speed: r * 0.6, life: 3, size: 1.6, up: 0.3, drag: 1.2, layer: 'smoke', alpha: 0.75, area: r * 0.3 })
+  gs.fx.emit(z, f.x, f.y, 0.4, 50, { color: '#5a524a', speed: r * 0.6, life: 3, size: 1.6, up: 0.3, drag: 1.2, layer: 'smoke', alpha: 0.7, area: r * 0.3 })
   gs.fx.debris(z, f.x, f.y, 0.5, 24, 'metal', { speed: r * 1.6, size: 0.12, up: 1.2 })
   gs.fx.debris(z, f.x, f.y, 0.5, 14, 'rock', { speed: r * 1.2, size: 0.14, up: 1.4 })
   // 煙柱
   for (let i = 0; i < 8; i++) {
     gs.fx.after(0.1 + i * 0.12, () => {
-      gs.fx.emit(z, f.x, f.y, 0.5 + i * 0.5, 6, { color: i < 3 ? '#5a3a20' : '#3a3430', speed: 0.6 + i * 0.12, life: 2.6, size: 1.3 + i * 0.12, up: 0.9, drag: 1, layer: 'smoke', alpha: 0.7 })
+      gs.fx.emit(z, f.x, f.y, 0.5 + i * 0.5, 6, { color: i < 3 ? '#7a5a3a' : '#8a8279', speed: 0.6 + i * 0.12, life: 2.6, size: 1.3 + i * 0.14, up: 0.9, drag: 1, layer: 'smoke', alpha: 0.65 })
       gs.fx.emit(z, f.x, f.y, 0.5 + i * 0.5, 3, { color: '#ffb060', color2: '#a02010', speed: 0.5, life: 0.8, size: 0.9, up: 0.8 })
     })
   }
   gs.fx.decal(z, f.x, f.y, r * 1.9, 'scorch', '#ffffff', 30, { opacity: 0.95 })
-  gs.fx.decal(z, f.x, f.y, r * 1.3, 'soft', '#ff5a1a', 4, { add: true, k: 1.5 })
+  gs.fx.decal(z, f.x, f.y, r * 0.9, 'embers', '#ff5a1a', 4, { add: true, k: 1.6, opacity: 0.8 })
+  gs.fx.decal(z, f.x, f.y, r * 0.8, 'soft', '#ff8a2a', 4, { add: true, k: 1.4, opacity: 0.7 })
+  // 餘燼：焦土上冒出的火星
+  gs.fx.after(0.6, () => gs.fx.emit(z, f.x, f.y, 0.1, 30, { color: '#ffd080', color2: '#ff3b1a', speed: 0.4, life: 2.4, size: 0.12, up: 2, area: r * 0.6, drag: 0.6 }))
   shake(gs, 1, f.x, f.y)
 })
 

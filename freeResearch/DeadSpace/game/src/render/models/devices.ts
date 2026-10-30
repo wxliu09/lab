@@ -606,7 +606,7 @@ reg('fireField', (def) => {
   const R = def?.radius ?? 2
   const root = new THREE.Group()
   flatDisc(root, R * 1.05, new THREE.MeshBasicMaterial({ color: '#ffffff', map: fxTex('scorch'), transparent: true, opacity: 0.9, depthWrite: false }), 0.02)
-  const ember = flatDisc(root, R, glowMat('#ff5a1a', 1.6, fxTex('noise'), 0.8), 0.028)
+  const ember = flatDisc(root, R, glowMat('#ff5a1a', 1.6, fxTex('embers'), 0.9), 0.028)
   const glow = flatDisc(root, R * 1.15, glowMat('#ff8a2a', 1.2, fxTex('soft'), 0.55), 0.032)
   const heat = sprite(root, 'soft', '#ff8a2a', 1, R * 2.2, 0.6, true, 0.25)
   let em = 0
@@ -646,7 +646,7 @@ reg('radZone', (def) => {
   const glow = flatDisc(root, R, glowMat('#5adf4a', 0.6, fxTex('soft'), 0.6), 0.025)
   const edge = flatDisc(root, R, glowMat('#7dff6a', 1.4, fxTex('ring'), 0.5), 0.03)
   const sym = flatDisc(root, R * 0.4, glowMat('#7dff6a', 1, fxTex('trefoil'), 0.35), 0.035)
-  const noise = flatDisc(root, R * 0.95, glowMat('#3a8a2a', 0.8, fxTex('noise'), 0.35), 0.028)
+  const noise = flatDisc(root, R * 0.95, glowMat('#3a8a2a', 1.2, fxTex('embers'), 0.45), 0.028)
   let em = 0
   let snd = 0
   return {
@@ -688,7 +688,7 @@ reg('acidPool', (def) => {
   pool.receiveShadow = true
   pool.raycast = () => {}
   root.add(pool)
-  const sheen = flatDisc(root, R * 0.9, glowMat('#c8ff3a', 0.7, fxTex('noise'), 0.4), 0.035)
+  const sheen = flatDisc(root, R * 0.9, glowMat('#c8ff3a', 1, fxTex('embers'), 0.45), 0.035)
   const rim = flatDisc(root, R * 1.08, glowMat('#b6ff3a', 0.9, fxTex('ring'), 0.35), 0.026)
   const bubbles: { m: THREE.Mesh; t0: number; life: number }[] = []
   const bMat = new THREE.MeshStandardMaterial({ color: '#c8ff5a', emissive: '#6aaa1a', emissiveIntensity: 1.2, roughness: 0.05, transparent: true, opacity: 0.8 })

@@ -402,6 +402,18 @@ const FACTORIES: Record<string, Factory> = {
   stealth: (c) =>
     combine(
       shell(c.body, shellMat('shimmer', '#bfefff', 1.3)),
+      {
+        // 半透明閃爍：只改 units.ts 為隱形複製出來的材質（userData.prevMat 存在），不碰共用材質
+        update(cc) {
+          const glitch = Math.random() < 0.04 ? 0.5 : 1
+          cc.body.traverse((o) => {
+            if (!o.userData.prevMat || o.userData.fx) return
+            const m = (o as THREE.Mesh).material as THREE.Material
+            if (m && m.transparent && m !== o.userData.prevMat) m.opacity = (0.2 + 0.16 * (0.5 + 0.5 * Math.sin(cc.t * 7 + o.id))) * glitch
+          })
+        },
+        dispose() {},
+      },
       emitter(0.25, (cc) => cc.gs.fx.emit(cc.z, cc.x, cc.y, Math.random() * cc.h, 1, { color: '#d8f6ff', speed: 0.2, life: 0.4, size: 0.08, up: 0.4, area: 0.3 })),
     ),
   void: (c) =>

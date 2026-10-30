@@ -147,7 +147,7 @@ export function bolt(gs: GameScene, z: number, a: THREE.Vector3, b: THREE.Vector
     const g = new THREE.Group()
     const main = boltPath(a, b, segs, jag)
     const core = new THREE.Mesh(tubeOf(main, width * 0.4), gs.fx.mat(hot(color, 0.7), o.k ?? 6))
-    const halo = new THREE.Mesh(tubeOf(main, width * (o.halo ?? 2.6)), gs.fx.mat(color, 2.2, { opacity: 0.35 }))
+    const halo = new THREE.Mesh(tubeOf(main, width * (o.halo ?? 1.9)), gs.fx.mat(new THREE.Color(color).multiply(new THREE.Color('#8fb8ff')), 2.4, { opacity: 0.3 }))
     g.add(core, halo)
     for (let i = 0; i < nb; i++) {
       const s = main[1 + Math.floor(Math.random() * (main.length - 2))]

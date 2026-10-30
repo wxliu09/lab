@@ -57,7 +57,8 @@ regFx('deflect', (gs, _w, f) => {
 
 regFx('mirageBreak', (gs, _w, f) => {
   sfx('shatter', f.x, f.y)
-  gs.fx.flash(f.z, f.x, f.y, 1, '#c9b6ff', 0.4, 0.2)
+  gs.fx.flash(f.z, f.x, f.y, 1, '#c9b6ff', 0.5, 0.35)
+  gs.fx.ring(f.z, f.x, f.y, 0.3, 1.4, '#c9b6ff', 0.4, { tex: 'ring', k: 2 })
   gs.fx.debris(f.z, f.x, f.y, 1, 14, 'glass', { speed: 3.5, size: 0.08, up: 0.9, life: 1.4 })
   gs.fx.emit(f.z, f.x, f.y, 1, 20, { color: '#e8dcff', color2: '#7a3cff', speed: 2.5, life: 0.6, size: 0.14, up: 0.6, hArea: 1.2 })
 })
@@ -139,27 +140,47 @@ regFx('manifold', (gs, _w, f) => {
 })
 
 regFx('petrify', (gs, _w, f) => {
+  // 石化：蛇瞳的綠光一閃，石殼由腳往頭爬上去（一圈灰環往上掃），石屑與塵霧
   const p = at(gs, f)
   sfx('stone', p.x, p.y)
-  gs.fx.flash(f.z, p.x, p.y, p.h * 0.6, '#b8ff9a', 0.5, 0.3)
-  gs.fx.emit(f.z, p.x, p.y, 0.2, 26, { color: '#7a766c', speed: 0.6, life: 1.6, size: 0.45, up: 1.6, area: 0.6, swirl: 3, layer: 'smoke', alpha: 0.6 })
-  gs.fx.emit(f.z, p.x, p.y, p.h * 0.5, 14, { color: '#d8e8c0', speed: 1.2, life: 0.8, size: 0.12, up: 0.4, hArea: p.h * 0.8 })
-  gs.fx.debris(f.z, p.x, p.y, 0.2, 6, 'rock', { speed: 1.2, size: 0.06, up: 0.6, colors: ['#8a867a', '#6a665c'] })
-  gs.fx.decal(f.z, p.x, p.y, 1.8, 'crack', '#2a2824', 12, { opacity: 0.7 })
+  gs.fx.flash(f.z, p.x, p.y, p.h * 0.7, '#b8ff9a', 0.7, 0.35)
+  const ring = gs.fx.mesh(GEO.ringThin, '#d8e0c8', 2.6)
+  ring.scale.setScalar(0.5)
+  const band = gs.fx.mesh(GEO.cyl, '#c8d0b8', 1.2, { map: fxTex('grad'), side: THREE.DoubleSide, opacity: 0.6 })
+  const g = new THREE.Group()
+  g.add(ring, band)
+  g.position.copy(W(p.x, p.y, 0))
+  const rm = ring.material as THREE.MeshBasicMaterial
+  const bm = band.material as THREE.MeshBasicMaterial
+  gs.fx.addTransient(g, 0.9, f.z, (k) => {
+    const h = p.h * Math.min(1, k * 1.4)
+    ring.position.y = h
+    band.scale.set(0.45, Math.max(0.01, h), 0.45)
+    rm.opacity = 1 - k * 0.6
+    bm.opacity = 0.6 * (1 - k)
+  })
+  gs.fx.emit(f.z, p.x, p.y, 0.2, 30, { color: '#8a867a', speed: 0.7, life: 1.6, size: 0.5, up: 1.4, area: 0.6, swirl: 3, layer: 'smoke', alpha: 0.65 })
+  gs.fx.emit(f.z, p.x, p.y, p.h * 0.5, 18, { color: '#e8f0d0', color2: '#7a8a6a', speed: 1.2, life: 0.8, size: 0.14, up: 0.4, hArea: p.h * 0.8 })
+  gs.fx.debris(f.z, p.x, p.y, 0.3, 8, 'rock', { speed: 1.4, size: 0.07, up: 0.8, colors: ['#9a968a', '#7a766c'] })
+  gs.fx.decal(f.z, p.x, p.y, 1.8, 'crack', '#2a2824', 12, { opacity: 0.75 })
 })
 
 regFx('unpetrify', (gs, _w, f) => {
+  // 石殼崩裂：白光一閃、大塊石片四散、塵霧
   const p = at(gs, f)
   sfx('crumble', p.x, p.y)
-  gs.fx.debris(f.z, p.x, p.y, p.h * 0.6, 16, 'rock', { speed: 2.4, size: 0.09, up: 0.7, colors: ['#8a867a', '#6a665c', '#9a968a'], area: 0.3 })
-  gs.fx.emit(f.z, p.x, p.y, p.h * 0.5, 18, { color: '#8a867a', speed: 1.2, life: 1.4, size: 0.5, up: 0.4, hArea: p.h * 0.8, layer: 'smoke', alpha: 0.55 })
+  gs.fx.flash(f.z, p.x, p.y, p.h * 0.6, '#f0f0e0', 0.6, 0.25)
+  gs.fx.debris(f.z, p.x, p.y, p.h * 0.6, 22, 'rock', { speed: 3, size: 0.14, up: 0.8, colors: ['#9a968a', '#7a766c', '#b0aca0'], area: 0.3 })
+  gs.fx.emit(f.z, p.x, p.y, p.h * 0.5, 24, { color: '#9a968a', speed: 1.6, life: 1.6, size: 0.6, up: 0.4, hArea: p.h * 0.8, layer: 'smoke', alpha: 0.6 })
+  gs.fx.ring(f.z, p.x, p.y, 0.3, 1.6, '#d8d4c8', 0.45, { tex: 'ring', k: 1.8 })
 })
 
 regFx('swarmbolt', (gs, _w, f) => {
   const a = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.6 }
   const b = entPos(gs, f.e2) ?? { x: f.x2 ?? f.x, y: f.y2 ?? f.y, h: 1.6 }
   sfx('zap', a.x, a.y)
-  bolt(gs, f.z, W(a.x, a.y, Math.min(1.4, a.h * 0.6)), W(b.x, b.y, Math.min(1.3, b.h * 0.55)), '#b28cff', 0.04, 0.22, { flicker: 0.05, branches: 1 })
+  bolt(gs, f.z, W(a.x, a.y, Math.min(1.4, a.h * 0.6)), W(b.x, b.y, Math.min(1.3, b.h * 0.55)), '#c9a8ff', 0.07, 0.25, { flicker: 0.05, branches: 1, k: 7 })
+  gs.fx.glow(f.z, b.x, b.y, Math.min(1.3, b.h * 0.55), '#b28cff', 1.2, 0.25, { tex: 'star', k: 2.4 })
   gs.fx.emit(f.z, b.x, b.y, Math.min(1.3, b.h * 0.55), 8, { color: XC, color2: XV, speed: 2.5, life: 0.35, size: 0.16, up: 0.5 })
   gs.fx.light(f.z, b.x, b.y, 1, '#b28cff', 14, 4, 0.2, { flicker: 0.5 })
 })

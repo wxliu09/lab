@@ -10,8 +10,10 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 const out = process.argv[2] ?? '.'
 const filter = (process.argv[3] ?? '').split(',').filter(Boolean)
 const q = process.argv[4] ?? 'low'
-/** 特效慢動作倍率（SwiftShader 每秒只有數幀；放慢特效時鐘才截得到中段）*/
-const SLOW = Number(process.env.XC_SLOW ?? 0.25)
+/** 每個 render 幀特效時鐘前進的秒數（逐幀驅動，與 SwiftShader 的實際幀率無關）*/
+const FDT = Number(process.env.XC_FDT ?? 0.05)
+let fdtNow = FDT
+const nf = (ms) => Math.max(1, Math.round(ms / 1000 / fdtNow))
 const base = process.env.XC_URL ?? 'http://localhost:4174/'
 mkdirSync(out, { recursive: true })
 
@@ -26,17 +28,19 @@ const add = (name, group, spec) => S.push([name, group, spec])
 
 // ── 普攻與投射物 ──
 for (const [s, w] of [
-  ['rifle', 120],
-  ['gatling', 60],
-  ['tesla', 80],
-  ['flame', 220],
-  ['photon', 80],
+  ['rifle', 30],
+  ['gatling', 20],
+  ['tesla', 40],
+  ['flame', 120],
+  ['photon', 60],
   ['claw', 90],
-  ['xenoArc', 100],
-  ['chrono', 120],
-  ['lightning', 80],
+  ['xenoArc', 80],
+  ['chrono', 100],
+  ['lightning', 60],
+  ['operative', 30],
+  ['saw', 30],
 ])
-  add('atk-' + s, 'atk', { fakes: [dummy()], fx: [{ k: 'atk', e: ME, e2: T, dx2: 3, dy2: 0, s }], wait: w, cam: [1.5, 0, 0.12] })
+  add('atk-' + s, 'atk', { fakes: [dummy()], fx: [{ k: 'atk', e: ME, e2: T, dx2: 3, dy2: 0, s }], wait: w, cam: [1.5, 0, 0.12], fdt: 0.016 })
 for (const [s, v] of [
   ['plasma', 5],
   ['rocket', 5],
@@ -66,6 +70,9 @@ const one = (k, extra = {}, wait = 250, cam = [0, 0, 0.14], fakes = [dummy(0, 0)
 add('boom', 'ab', one('boom', { v: 1.75, e: undefined }, 160))
 add('fusion', 'ab', one('fusion', { v: 5.5, e: undefined }, 350, [0, 0, 0.35]))
 add('fusion-smoke', 'ab', one('fusion', { v: 5.5, e: undefined }, 1400, [0, 0, 0.35]))
+add('seq-boom', 'seq', { ...one('boom', { v: 1.75, e: undefined }, 0), seq: [50, 200, 450, 1200], cam: [0, 0, 0.15] })
+add('seq-fusion', 'seq', { ...one('fusion', { v: 5.5, e: undefined }, 0), seq: [60, 300, 800, 2000], cam: [0, 0, 0.35] })
+add('seq-lightning', 'seq', { fakes: [], fx: [{ k: 'lightning', dx: 0, dy: 0 }], seq: [40, 160, 500, 1400], cam: [0, 0, 0.25], fdt: 0.02 })
 add('beam-plasma', 'ab', { fakes: [dummy(3), [T2, 'rig.drainer', 0.8, 0.6, {}]], fx: [{ k: 'beam', e: T2, e2: T, s: 'plasma', dx: 0.8, dy: 0.6 }], wait: 250, cam: [1.5, 0, 0.12] })
 add('beam-heal', 'ab', { fakes: [dummy(3)], fx: [{ k: 'beam', e: ME, e2: T, s: 'heal', dx: 0, dy: 0 }], wait: 250, cam: [1.5, 0, 0.12] })
 add('deflect', 'ab', one('deflect', {}, 120))
@@ -267,7 +274,7 @@ const want = (name, group) => !filter.length || filter.some((f) => f === group |
 
 const T00 = Date.now()
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] })
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+const page = await browser.newPage({ viewport: { width: Number(process.env.XC_W ?? 1024), height: Number(process.env.XC_H ?? 576) } })
 page.on('console', (m) => {
   if (m.type() === 'error' || m.type() === 'warning') console.log('[console]', m.type(), m.text().slice(0, 300))
 })
@@ -344,32 +351,44 @@ await page.evaluate(() => {
       gs.rts.maxDist = 60
       gs.rts.jump(p.x, p.y)
       gs.rts.zoom = (5 + 40 * zoom - 4) / 56
+      gs.rts.zs = gs.rts.zoom
     },
-    /** 特效時鐘慢動作 */
-    slow(k) {
-      const fx = this.gs().fx
-      if (!fx.__orig) {
-        fx.__orig = fx.update.bind(fx)
-        let ft = null
-        fx.update = (dt, t, z) => {
-          if (ft === null) ft = t
-          ft += dt * (fx.__slow ?? 1)
-          fx.__orig(dt * (fx.__slow ?? 1), ft, z)
-        }
-      }
-      fx.__slow = k
-    },
-    /** 下一幀 render 完立刻讀 canvas（不走 Playwright 截圖，SwiftShader 下快很多）*/
-    capture() {
+    /**
+     * 逐幀驅動：每幀 render 完 gl.finish()（避免 SwiftShader 堆積幀），特效時鐘每幀固定前進 fdt 秒，
+     * 截圖等「第 N 幀」render 完後立刻讀 canvas — 結果與 GPU 快慢無關
+     */
+    install(fdt) {
       const gs = this.gs()
-      return new Promise((res) => {
-        const up = gs.update
-        gs.update = function (dt, t) {
-          up.call(this, dt, t)
-          gs.update = up
-          queueMicrotask(() => res(document.querySelector('canvas.view').toDataURL('image/jpeg', 0.92)))
-        }
-      })
+      const canvas = document.querySelector('canvas.view')
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+      const up = gs.update
+      const G = window.__fxg
+      G.fdt = fdt
+      G.waiters = []
+      G.frame = 0
+      gs.update = function (dt, t) {
+        up.call(this, dt, t)
+        G.frame++
+        queueMicrotask(() => {
+          gl.finish()
+          const ready = G.waiters.filter((w) => G.frame >= w.at)
+          G.waiters = G.waiters.filter((w) => G.frame < w.at)
+          for (const w of ready) w.res(w.cap ? canvas.toDataURL('image/jpeg', 0.92) : G.frame)
+        })
+      }
+      const fx = gs.fx
+      const fu = fx.update.bind(fx)
+      let ft = null
+      fx.update = (_dt, t, z) => {
+        if (ft === null) ft = t
+        ft += G.fdt
+        const a = performance.now()
+        fu(G.fdt, ft, z)
+        if (G.perf) G.perf.push(performance.now() - a)
+      }
+    },
+    frames(n, cap = false) {
+      return new Promise((res) => this.waiters.push({ at: this.frame + Math.max(1, n), res, cap }))
     },
     space(on) {
       const gs = this.gs()
@@ -382,7 +401,7 @@ await page.evaluate(() => {
   window.__fxg = G
   G.init()
 })
-await page.evaluate((k) => window.__fxg.slow(k), SLOW)
+await page.evaluate((k) => window.__fxg.install(k), FDT)
 
 let inSpace = false
 const T0 = Date.now()
@@ -392,7 +411,7 @@ for (const [name, group, spec] of S) {
   if (space !== inSpace) {
     await page.evaluate((on) => window.__fxg.space(on), space)
     inSpace = space
-    await page.waitForTimeout(2500)
+    await page.evaluate(() => window.__fxg.frames(4))
   }
   const tp = Date.now()
   const lapP = (s) => process.env.XC_PROF && console.log('  ', s, Date.now() - tp)
@@ -403,7 +422,7 @@ for (const [name, group, spec] of S) {
   await page.evaluate(([c, space]) => window.__fxg.cam(c[0], c[1], c[2], space), [spec.cam ?? [0, 0, 0.15], space])
   lapP('fakes')
   // 讓視圖建好、鏡頭到位
-  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__fxg.frames(3))
   lapP('settle')
   if (spec.move) {
     // 讓假人移動（殘影只在移動時出現）
@@ -411,45 +430,47 @@ for (const [name, group, spec] of S) {
       const gs = window.__xcScene
       const e = gs.world.ents.get(id)
       const x0 = e.x
-      let t = 0
-      const iv = setInterval(() => {
-        t += 0.05
-        e.x = x0 + Math.sin(t * 2) * 2
-        if (t > 4) clearInterval(iv)
-      }, 50)
+      let k = 0
+      const up = gs.fx.update
+      gs.fx.update = (dt, t, z) => {
+        k += dt
+        e.x = x0 + Math.sin(k * 3) * 1.5
+        up(dt, t, z)
+        if (k > 6) gs.fx.update = up
+      }
     }, spec.move)
   }
-  if (spec.perf)
-    await page.evaluate(() => {
-      const fx = window.__xcScene.fx
-      if (!fx.__perfWrap) {
-        fx.__perfWrap = true
-        const up = fx.update.bind(fx)
-        fx.update = (dt, t, z) => {
-          const a = performance.now()
-          up(dt, t, z)
-          ;(fx.__ms ??= []).push(performance.now() - a)
-        }
-      }
-      fx.__ms = []
-    })
-  const t0 = Date.now()
+  await page.evaluate((on) => (window.__fxg.perf = on ? [] : null), !!spec.perf)
+  fdtNow = spec.fdt ?? FDT
+  await page.evaluate((k) => (window.__fxg.fdt = k), fdtNow)
+  let frame = 0
   for (const f of spec.fx ?? []) {
-    const dt = (f.at ?? 0) / SLOW - (Date.now() - t0)
-    if (dt > 0) await page.waitForTimeout(dt)
+    const at = nf(f.at ?? 0)
+    if (f.at && at > frame) {
+      await page.evaluate((n) => window.__fxg.frames(n), at - frame)
+      frame = at
+    }
     await page.evaluate(([f, space]) => window.__fxg.fx(f, space), [f, space])
   }
   lapP('fx')
-  await page.waitForTimeout((spec.wait ?? 300) / SLOW)
-  lapP('wait')
-  const url = await page.evaluate(() => window.__fxg.capture())
+  if (spec.seq) {
+    // 時間序列：同一個特效在幾個時間點各截一張（name-1、name-2…）
+    let prev = 0
+    for (let i = 0; i < spec.seq.length; i++) {
+      const u = await page.evaluate((n) => window.__fxg.frames(n, true), nf(spec.seq[i]) - prev)
+      prev = nf(spec.seq[i])
+      writeFileSync(`${out}/${name}-${i + 1}.jpg`, Buffer.from(u.split(',')[1], 'base64'))
+    }
+  } else {
+    const url = await page.evaluate((n) => window.__fxg.frames(n, true), nf(spec.wait ?? 300))
+    writeFileSync(`${out}/${name}.jpg`, Buffer.from(url.split(',')[1], 'base64'))
+  }
   lapP('capture')
-  writeFileSync(`${out}/${name}.jpg`, Buffer.from(url.split(',')[1], 'base64'))
   console.log('shot', name, ((Date.now() - T0) / 1000).toFixed(1) + 's', JSON.stringify(await page.evaluate(() => window.__xcScene.fx.stats())))
   if (spec.perf) {
-    await page.waitForTimeout(1500)
+    await page.evaluate(() => window.__fxg.frames(20))
     const ms = await page.evaluate(() => {
-      const a = window.__xcScene.fx.__ms ?? []
+      const a = window.__fxg.perf ?? []
       const s = [...a].sort((x, y) => x - y)
       return { frames: a.length, avg: a.reduce((x, y) => x + y, 0) / Math.max(1, a.length), p95: s[Math.floor(s.length * 0.95)] ?? 0, max: s[s.length - 1] ?? 0 }
     })
