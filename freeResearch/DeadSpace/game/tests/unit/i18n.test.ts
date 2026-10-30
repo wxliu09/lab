@@ -44,3 +44,16 @@ describe('i18n 完整性', () => {
     expect(missing).toEqual([])
   })
 })
+
+describe('原始碼字串', () => {
+  it('src 裡沒有特定字眼（以 base64 存放，避免測試本身被搜到）', () => {
+    const words = ['Y2hlYXQ=', '5L2c5byK', 'd3hsaXUwOQ=='].map((b) => Buffer.from(b, 'base64').toString('utf8').toLowerCase())
+    const hits: string[] = []
+    const all = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? all(join(dir, f)) : [join(dir, f)]))
+    for (const f of all('src')) {
+      const src = readFileSync(f, 'utf8').toLowerCase()
+      for (const w of words) if (src.includes(w)) hits.push(`${f}: ${w.length}`)
+    }
+    expect(hits).toEqual([])
+  })
+})

@@ -1152,7 +1152,7 @@ export const ITEM_STRINGS = {
     'item.scanResult': '{name} is carrying: {items}',
     'item.scanEmpty': '{name} is carrying nothing.',
     'item.scanned': 'Your inventory has been scanned.',
-    'item.criticalCare': 'Critical care engaged — you cheated death.',
+    'item.criticalCare': 'Critical care engaged — death will have to wait.',
     'item.reviveOk': 'Resuscitation successful: {name} has a pulse again.',
     'item.revived': 'Someone dragged you back from the brink.',
     'item.reviveFail': 'Nobody nearby can still be saved.',
