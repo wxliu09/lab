@@ -10,6 +10,14 @@ export interface ClientIdentity {
   token: string
 }
 
+/** 重連用的 token：sha256(本機 token + 主機 peer id)，取前 40 個十六進位字元 */
+export async function bindToken(base: string, hostPeer: string): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) return base
+  const b = await subtle.digest('SHA-256', new TextEncoder().encode(base + ':' + hostPeer))
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 40)
+}
+
 export class NetClient {
   hostPeer: string | null = null
   /** 有第二個 peer 也宣稱自己是主機（可能是冒充）*/
@@ -54,7 +62,10 @@ export class NetClient {
       }
       if (!this.hostPeer) {
         this.hostPeer = from
-        this.send({ t: 'hello', name: this.id.name, color: this.id.color, ver: PROTOCOL_VERSION, token: this.id.token })
+        // token 與主機的 peer id 綁定：就算先回應的是冒充者，它拿到的 token 對真正的主機也沒有用
+        void bindToken(this.id.token, from).then((token) => {
+          if (this.hostPeer === from) this.send({ t: 'hello', name: this.id.name, color: this.id.color, ver: PROTOCOL_VERSION, token })
+        })
       }
       return
     }

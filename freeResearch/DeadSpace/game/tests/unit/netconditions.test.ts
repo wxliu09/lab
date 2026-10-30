@@ -15,7 +15,7 @@ describe('網路條件', () => {
     vi.useRealTimers()
   })
 
-  it('150 ms 延遲、5% 掉包：加入、開局、移動指令生效、client 位置跟上主機', () => {
+  it('150 ms 延遲、5% 掉包：加入、開局、移動指令生效、client 位置跟上主機', async () => {
     const hub = new LoopbackHub()
     hub.latency = 150
     hub.jitter = 40
@@ -58,7 +58,12 @@ describe('網路條件', () => {
         server.tick()
       }
     }
-    run(3000)
+    // hello 的 token 要先用 crypto.subtle 計算（真的非同步），讓事件迴圈轉幾圈
+    for (let i = 0; i < 60 && slot < 0; i++) {
+      run(100)
+      await new Promise((r) => setImmediate(r))
+    }
+    run(1000)
     expect(slot).toBeGreaterThanOrEqual(0)
     hostSend({ t: 'settings', s: { npcCrew: 0, eventMult: 0 } })
     hostSend({ t: 'start' })
@@ -86,5 +91,16 @@ describe('網路條件', () => {
     expect(client.rtt).toBeGreaterThan(250)
     expect(client.rtt).toBeLessThan(900)
     client.close()
+  })
+})
+
+describe('token 綁定主機', () => {
+  it('同一個本機 token 對不同主機產生不同的 hello token（冒充者拿到的對真主機無效）', async () => {
+    const { bindToken } = await import('../../src/net/client')
+    const a = await bindToken('localtoken123', 'realhost')
+    const b = await bindToken('localtoken123', 'impostor')
+    expect(a).not.toBe(b)
+    expect(a).toMatch(/^[0-9a-f]{40}$/)
+    expect(await bindToken('localtoken123', 'realhost')).toBe(a)
   })
 })
