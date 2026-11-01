@@ -4,7 +4,7 @@
 
 ## 目前狀態（2026-10-30）
 
-- 工作分支：雲端環境強制使用 `ccr-30c0fa50-e9j08w`（不是 main），所有 commit 都推到這個分支；要上 GitHub Pages 時由使用者合併到 main。
+- **分支**：原始碼、文件、研究資料都在 `deadspace-dev`（原 `ccr-30c0fa50-e9j08w`，2026-11-01 改名）；**main 只放發佈成品 `play/`**，發佈流程見 `CLAUDE.md`「Repo 慣例（分支）」。
 - **M0–M9 完成；M10 打磨進行中；M11 硬化大部分完成**（見下）。
 - 單元測試約 310 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）與 Playwright 多分頁 e2e。
 - **下一步**：
@@ -49,7 +49,9 @@
 
 ## 真實 WebRTC 驗證
 
-- **容器內已驗證可用**：兩個獨立的 Chromium（不同 browser 實例）透過 Trystero＋公共 Nostr relay 建立 WebRTC，進入同一房間並同步大廳（`tests/e2e/p2p.spec.ts`，需外網：`XC_P2P=1 npx playwright test p2p`；Playwright 要設 proxy bypass `localhost,127.0.0.1`）。
+- **容器內已驗證可用**（2026-11-01）：兩個獨立的 Chromium（不同 browser 實例）透過 Trystero＋公共 Nostr relay 建立 WebRTC，進入同一房間、開始遊戲，雙方都進到遊戲畫面、客人端持續收到主機快照（`tests/e2e/p2p.spec.ts`，需外網：`XC_P2P=1 npx playwright test p2p`；Playwright 要設 proxy bypass `localhost,127.0.0.1`）。
+- **Nostr relay**：Trystero 預設依 appId 從 29 個公共 relay 固定挑 5 個，其中 `nostr.robosats.org` 已關閉，Console 會一直刷 WebSocket 連線失敗。已改成明確指定 7 個實測可連的 relay（`src/net/trystero.ts` 的 `NOSTR_RELAYS`）；之後若又有 relay 關閉，改這份清單即可（所有人要用同一版才碰得到彼此）。
+- 使用者 2026-10-31 回報「GitHub Pages 版開始遊戲後一直黑畫面」：原因是 `play/` 一直是 M1 時期的 build（那時還沒有遊戲畫面）。已重新 build 並發佈到 main。
 - 多分頁流程測試用 `BroadcastChannelTransport`（`?net=bc`）。
 - **手動驗證步驟（朋友之間）**：
   1. 主機開 `play/index.html`（GitHub Pages 網址），輸入名字 → 建立房間，把 5 字元房號傳給朋友。

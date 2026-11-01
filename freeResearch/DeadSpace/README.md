@@ -43,7 +43,7 @@ npm ci
 npm run dev          # 開發伺服器
 npm run check        # tsc＋eslint＋vitest
 npx playwright test  # 多分頁 e2e（BroadcastChannel）；真實 WebRTC：XC_P2P=1 npx playwright test p2p
-npm run build        # 輸出到 ../play/
+npm run build        # 輸出到 ../play/（發佈到 main 的流程見 CLAUDE.md）
 ```
 
 ## 文件導覽

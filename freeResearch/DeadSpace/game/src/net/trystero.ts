@@ -9,6 +9,18 @@ export const DEFAULT_ICE: RTCIceServer[] = [
   { urls: 'stun:stun.cloudflare.com:3478' },
 ]
 
+/** Nostr relay：Trystero 預設會依 appId 從 29 個公共 relay 固定挑 5 個，其中有已經關閉的（例如 nostr.robosats.org），
+ * 連不上的 relay 會一直重試、在 Console 狂刷錯誤。改成明確指定一組常用、2026-11 實測可連的 relay；所有人用同一組才會碰得到彼此。*/
+export const NOSTR_RELAYS = [
+  'wss://nos.lol',
+  'wss://relay.damus.io',
+  'wss://nostr.mom',
+  'wss://offchain.pub',
+  'wss://relay.nostr.net',
+  'wss://nostr-pub.wellorder.net',
+  'wss://nostr.oxtr.dev',
+]
+
 export interface NetSettings {
   strategy: SignalStrategy
   /** 使用者貼上的 TURN 設定（JSON 陣列，RTCIceServer 格式）*/
@@ -92,6 +104,7 @@ export class TrysteroTransport implements Transport {
         appId: APP_ID,
         password: code,
         rtcConfig: { iceServers: [...DEFAULT_ICE, ...settings.turn] },
+        ...(settings.strategy === 'nostr' ? { relayConfig: { urls: NOSTR_RELAYS, warnOnRelayFailure: false } } : {}),
       },
       code,
       { onJoinError: (d: { error: string }) => onError?.(d.error) },

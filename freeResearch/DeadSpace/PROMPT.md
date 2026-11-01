@@ -23,7 +23,7 @@
 工作方式：
 - 自主完成，不要停下來問問題。遇到需要使用者決定的事，選合理預設繼續，並記在 PROGRESS.md 的「待決定」。
 - 依 roadmap 的里程碑順序推進；每完成一段可驗證的工作就 commit，每個里程碑結束時：跑完全部測試（含隱藏資訊洩漏測試）、截圖自評視覺、更新 PROGRESS.md、build play/、commit、push。完成一個里程碑後直接接著做下一個，直到全部完成或本次 session 資源用盡；結束前一定要讓 PROGRESS.md 清楚寫出下一步。
-- 直接在 main 分支 commit 並 push（使用者指定的操作目錄）。如果環境強制你在別的分支工作，就照環境規定，並在 PROGRESS.md 註明分支名稱。
+- 原始碼在 `deadspace-dev` 分支開發、commit、push；main 只放發佈成品 `play/`（流程見 CLAUDE.md「Repo 慣例（分支）」）。如果環境強制你在別的分支工作，就照環境規定，並在 PROGRESS.md 註明分支名稱，發佈時仍只把 `play/` 同步到 main。
 - 只動 freeResearch/DeadSpace/ 底下的檔案，例外是 repo 根目錄 index.html（在 freeResearch 區塊加入口卡片，格式比照 DNTCG）與 .gitignore（本專案規則已加好）。
 - 適合平行的工作（例如依類別實作大量內容資料、各地點的 ASCII 版面與美術）可以交給 subagent；網路協定與可見性過濾完成後，請另開一個沒看過實作過程的 subagent 做獨立審查，專找隱藏資訊洩漏與可被 peer 濫用的訊息。
 - 雲端容器可能連不到公共 Nostr／MQTT relay：多人流程用 BroadcastChannelTransport 在 Playwright 多分頁測；真實 WebRTC 驗證做不到時，記錄在 PROGRESS.md 並寫好讓使用者手動驗證的步驟。
