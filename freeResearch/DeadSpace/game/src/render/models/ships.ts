@@ -174,21 +174,25 @@ function asteroidGeometry(seed: number): THREE.BufferGeometry {
     return ((st ^ (st >>> 14)) >>> 0) / 4294967296
   }
   const craters: { c: THREE.Vector3; r: number; d: number }[] = []
-  for (let i = 0; i < 13; i++) {
+  for (let i = 0; i < 11; i++) {
     const c = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize()
-    craters.push({ c, r: 0.16 + rnd() * rnd() * 0.42, d: 0.6 + rnd() * 0.5 })
+    // 前三個是大坑（遠距離也看得出來），其餘小坑
+    craters.push({ c, r: i < 3 ? 0.42 + rnd() * 0.2 : 0.14 + rnd() * rnd() * 0.3, d: 0.7 + rnd() * 0.5 })
   }
   const ph = [rnd() * 9, rnd() * 9, rnd() * 9]
   const n3 = (x: number, y: number, z: number) =>
     Math.sin(x * 2.1 + ph[0]) * Math.cos(y * 1.7 + ph[1]) * Math.sin(z * 2.3 + ph[2]) * 0.6 +
     Math.sin(x * 4.7 + y * 3.1 + ph[1]) * Math.sin(z * 5.3 - x * 2.2 + ph[2]) * 0.25 +
     Math.sin(x * 11 + z * 9 + ph[0]) * Math.sin(y * 10 - z * 7) * 0.08
-  const squash = new THREE.Vector3(1.18, 0.82, 1 + (rnd() - 0.5) * 0.3)
+  const squash = new THREE.Vector3(1.2 + rnd() * 0.15, 0.78, 1 + (rnd() - 0.5) * 0.35)
+  // 一側凸出的瘤，讓輪廓不對稱
+  const lobe = new THREE.Vector3(rnd() * 2 - 1, (rnd() - 0.5) * 0.6, rnd() * 2 - 1).normalize()
   const v = new THREE.Vector3()
   const tone = new Float32Array(pos.count)
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i).normalize()
-    let d = n3(v.x, v.y, v.z) * 0.2
+    // 低頻起伏放大一點，剪影才不會像顆馬鈴薯
+    let d = n3(v.x, v.y, v.z) * 0.3 + Math.max(0, v.dot(lobe)) ** 2 * 0.22
     let t = 0.92 + n3(v.z * 1.3, v.x * 1.3, v.y * 1.3) * 0.12
     for (const k of craters) {
       const a = Math.acos(Math.max(-1, Math.min(1, v.dot(k.c)))) / k.r
@@ -197,7 +201,7 @@ function asteroidGeometry(seed: number): THREE.BufferGeometry {
       const bowl = a < 1 ? -(1 - a * a) * k.r * 0.32 * k.d : 0
       const rim = Math.exp(-((a - 1) ** 2) * 14) * k.r * 0.12
       d += bowl + rim
-      t *= a < 0.95 ? 0.72 + a * 0.2 : 1 + rim * 1.6
+      t *= a < 0.95 ? 0.55 + a * 0.3 : 1 + rim * 2.6
     }
     tone[i] = t
     v.multiplyScalar(1 + d).multiply(squash)

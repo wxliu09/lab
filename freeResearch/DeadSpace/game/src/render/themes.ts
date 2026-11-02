@@ -137,7 +137,7 @@ THEMES.hulk7 = {
   ambient: 0.9,
   lightScale: 0.7,
   // 斷電的廢站：只補很淡的一層，保留黑暗感（緊急照明燈道具另外提供光點）
-  fill: 0.35,
+  fill: 0.5,
   grade: { hue: 0.03, sat: -0.12, bright: -0.03, contrast: 0.14 },
   dust: '#c8a070',
 }

@@ -558,10 +558,12 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     const rust = Mat.paint('#6e4a32', 0.85)
     const steel = Mat.metal('#4a3c32', 0.5)
     const conc = Mat.paint('#5a5048', 0.9)
-    const k = c.seed % 5
-    if (k === 4) {
+    const k = c.seed % 4
+    if (rnd01(c.seed, 9) < 0.13) {
       // 緊急照明燈：電池箱＋三腳架＋燈頭，燈頭慢慢明滅（電力不穩），地上留一圈暖光
-      const lamp = pulse(c.anim, '#ffb46b', 3.2, 0.9, 1.3 + rnd01(c.seed, 1) * 0.8, c.seed)
+      // 只有兩種節奏（共用材質，合併後不會每盞燈多一個 draw call）
+      const v = c.seed % 2
+      const lamp = pulse(c.anim, '#ffb46b', 3.2, 0.9, v ? 1.9 : 1.3, v * 2.1)
       const frame = Mat.metal('#2a2420', 0.6)
       part(c, rbox(0.42, 0.26, 0.3, 0.04), Mat.paint('#c8902a', 0.7), 0.1, 0.13, -0.05, 0.2)
       part(c, box(0.3, 0.02, 0.04), Mat.paint('#1a1a1a', 0.6), 0.1, 0.27, -0.05, 0.2)
