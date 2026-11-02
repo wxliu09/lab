@@ -3,8 +3,9 @@ import * as THREE from 'three'
 import { regModel, type ModelView } from './index'
 import { Batcher, box, cyl, rbox, sphere } from '../batch'
 import { Mat } from '../materials'
-import { buildStationHull } from '../space/hulls'
+import { buildStationHull, pebble, stationHullScale } from '../space/hulls'
 import { makePlanet, makeSun } from '../space/sky'
+import { STATION_BY_ID } from '../../shared/content/stations/index'
 
 interface ShipLook {
   hull: string
@@ -267,15 +268,26 @@ regModel('space.sun', () => {
   return { root, height: 3, update: (t) => root.children[1]?.scale.setScalar(22 + Math.sin(t * 0.8) * 0.6) }
 })
 
+/**
+ * 站點的碰撞半徑：client 端查不到站點 UnitDef（只在 sim worker 動態註冊），
+ * 直接讀站點內容定義的 space.radius，模型大小才會跟碰撞圈、名牌位置一致
+ */
+function stationRadius(id: string, fallback: number | undefined): number {
+  return STATION_BY_ID.get(id)?.space.radius ?? fallback ?? 3
+}
+
 for (const id of ['nyx', 'adjudicatrix', 'tenshu', 'hulk7', 'bravado', 'caldera', 'vivarium', 'portage', 'pirate']) {
   regModel('station.' + id, (def) => {
-    const g = buildStationHull(id, (def?.radius ?? 3) / 4)
+    const g = buildStationHull(id, stationHullScale(id, stationRadius(id, def?.radius)))
+    // 站體緩慢自轉；船艦型（豪勇號、火口號、海盜船）船頭要對著航向，不自轉（模型內建輕微橫搖）
+    const spin = (g.userData.spin as number | undefined) ?? 0.02
+    const tick = g.userData.update as ((t: number) => void) | undefined
     return {
       root: g,
-      height: 3,
+      height: (g.userData.height as number | undefined) ?? 3,
       update: (t, _dt, _s, state) => {
-        ;(g.userData.update as ((t: number) => void) | undefined)?.(t)
-        g.rotation.y = t * 0.02
+        tick?.(t)
+        if (spin) g.rotation.y = t * spin
         if (state === 4) g.scale.multiplyScalar(0.995)
       },
     }
@@ -308,34 +320,150 @@ function planetModel(radius: number, base: string, atmo: string, extra?: (g: THR
   }
 }
 
-regModel('station.verdance', (def) => planetModel(def?.radius ?? 4, '#4f7a58', '#b9a6ff'))
+/** 行星類的外觀半徑：比碰撞半徑略大，遠景也看得出輪廓 */
+const planetR = (id: string, def: { radius: number } | undefined, k: number) =>
+  stationRadius(id, def?.radius) * k
 
-regModel('station.cinder', (def) =>
-  planetModel(def?.radius ?? 2, '#58504a', '#2b2a33', (g) => {
+/** 球面上的一點（lat/lon 弧度）→ 位置與朝外的姿態（局部 +y 朝外）*/
+function onSphere(r: number, lat: number, lon: number): { p: THREE.Vector3; q: THREE.Quaternion } {
+  const n = new THREE.Vector3(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon))
+  return {
+    p: n.clone().multiplyScalar(r),
+    q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n),
+  }
+}
+
+const tmpM = new THREE.Matrix4()
+const ONE = new THREE.Vector3(1, 1, 1)
+
+regModel('station.verdance', (def) => {
+  const r = planetR('verdance', def, 1.12)
+  return planetModel(r, '#4f7a58', '#b9a6ff', (g) => {
+    // 地表的軍事基地：混凝土停機坪＋跑道燈＋塔台燈（貼在球體上，跟著自轉）
+    const surf = (g.children[0] as THREE.Group).children[0] as THREE.Mesh
+    const b = new Batcher()
+    const pad = Mat.paint('#8a8c84', 0.7)
+    const lamp = Mat.emissive('#ffc27a', 3)
+    const beacon = Mat.emissive('#ff5a4a', 3)
+    for (const [lat, lon] of [
+      [0.35, 0.4],
+      [-0.25, 2.6],
+      [0.15, 4.4],
+    ]) {
+      const { p, q } = onSphere(r * 0.995, lat, lon)
+      tmpM.compose(p, q, ONE)
+      b.addMatrix(box(r * 0.22, 0.04, r * 0.14), pad, tmpM)
+      for (let i = 0; i < 6; i++) {
+        const o = onSphere(r * 1.0, lat + (i % 2 ? 1 : -1) * 0.045, lon - 0.07 + Math.floor(i / 2) * 0.07)
+        tmpM.compose(o.p, o.q, ONE)
+        b.addMatrix(box(0.07, 0.05, 0.07), lamp, tmpM)
+      }
+      const t = onSphere(r * 1.0, lat + 0.07, lon + 0.09)
+      tmpM.compose(t.p, t.q, ONE)
+      b.addMatrix(cyl(0.04, 0.06, 0.3, 6), pad, tmpM)
+      const tt = onSphere(r * 1.0 + 0.16, lat + 0.07, lon + 0.09)
+      tmpM.compose(tt.p, tt.q, ONE)
+      b.addMatrix(sphere(0.06, 6, 4), beacon, tmpM)
+    }
+    b.build(surf, { cast: false, receive: false })
+    // 兩顆軌道防衛衛星（太陽能板＋閃燈）
+    const sats = new THREE.Group()
+    const sb = new Batcher()
+    const navs: THREE.Mesh[] = []
+    for (const [a, inc] of [
+      [0, 0.35],
+      [Math.PI, -0.25],
+    ]) {
+      const x = Math.sin(a) * r * 1.45
+      const z = Math.cos(a) * r * 1.45
+      const y = Math.sin(inc) * r * 0.4
+      sb.add(rbox(0.32, 0.22, 0.32, 0.05, 1), Mat.metal('#c4ccd3', 0.6), x, y, z)
+      sb.add(box(1.1, 0.03, 0.26), Mat.metal('#1d2a4a', 0.9, false), x, y, z)
+      const m = new THREE.Mesh(sphere(0.08, 8, 6), Mat.emissive('#ff3b3b', 6))
+      m.position.set(x, y + 0.18, z)
+      sats.add(m)
+      navs.push(m)
+    }
+    sb.build(sats, { cast: false, receive: false })
+    g.add(sats)
+    return (t) => {
+      sats.rotation.y = t * 0.05
+      navs.forEach((n, i) => (n.visible = Math.sin(t * 3 + i * 2) > 0.3))
+    }
+  })
+})
+
+regModel('station.cinder', (def) => {
+  const r = planetR('cinder', def, 1.2)
+  return planetModel(r, '#58504a', '#2b2a33', (g) => {
     // 環形光：重力場的指示環
-    const r = def?.radius ?? 2
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.45, 0.05, 8, 96), Mat.emissive('#9fe7ff', 2.2))
     ring.rotation.x = Math.PI / 2.3
     const ring2 = new THREE.Mesh(new THREE.TorusGeometry(r * 1.7, 0.025, 6, 96), Mat.emissive('#c9b6ff', 1.4))
     ring2.rotation.x = Math.PI / 2.1
     g.add(ring, ring2)
+    // 重力裝置：地表三座發青光的塔（跟著星體自轉）
+    const surf = (g.children[0] as THREE.Group).children[0] as THREE.Mesh
+    const b = new Batcher()
+    for (const [lat, lon] of [
+      [0.6, 0.3],
+      [-0.2, 2.4],
+      [0.1, 4.3],
+    ]) {
+      const o = onSphere(r * 0.98, lat, lon)
+      tmpM.compose(o.p, o.q, ONE)
+      b.addMatrix(cyl(0.08, 0.18, 0.5, 8), Mat.metal('#3a3c42', 0.7), tmpM)
+      const t = onSphere(r * 0.98 + 0.3, lat, lon)
+      tmpM.compose(t.p, t.q, ONE)
+      b.addMatrix(sphere(0.1, 8, 6), Mat.emissive('#9fe7ff', 4), tmpM)
+    }
+    b.build(surf, { cast: false, receive: false })
+    // 低重力：漂浮在星體周圍的碎石帶
+    const rocks = new THREE.Group()
+    const rb = new Batcher()
+    const rock = Mat.rock('#5a524c')
+    let st = 9
+    const rnd = () => ((st = (st * 16807) % 2147483647), st / 2147483647)
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2 + rnd() * 0.3
+      const d = r * (1.25 + rnd() * 0.55)
+      const s = 0.06 + rnd() * rnd() * 0.22
+      rb.add(
+        pebble(i % 4),
+        rock,
+        Math.sin(a) * d,
+        (rnd() - 0.5) * r * 0.7,
+        Math.cos(a) * d,
+        rnd() * 3,
+        s,
+        s,
+        s,
+        rnd() * 3,
+      )
+    }
+    rb.build(rocks, { cast: false, receive: false })
+    g.add(rocks)
     return (t) => {
       ring.rotation.z = t * 0.15
       ring2.rotation.z = -t * 0.09
+      rocks.rotation.y = t * 0.04
+      rocks.position.y = Math.sin(t * 0.5) * 0.05
     }
-  }),
-)
+  })
+})
 
 regModel('station.uo', (def) => {
-  const r = def?.radius ?? 2
+  const r = planetR('uo', def, 1.35)
   const root = new THREE.Group()
   // 扭結的有機外殼＋內部發光：說不上是船還是生物
-  const shell = new THREE.Mesh(new THREE.TorusKnotGeometry(r * 0.7, r * 0.22, 160, 16, 2, 3), Mat.organic('#3a2a4a', '#7dff9a'))
+  const shell = new THREE.Mesh(
+    new THREE.TorusKnotGeometry(r * 0.7, r * 0.22, 160, 16, 2, 3),
+    Mat.organic('#3a2a4a', '#7dff9a'),
+  )
   shell.castShadow = true
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.35, 2), Mat.emissive('#7dff9a', 3))
-  const halo = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.55, 1), Mat.emissive('#b26bff', 0.9))
-  ;(halo.material as THREE.Material).transparent = true
-  ;(halo.material as THREE.Material).opacity = 0.35
+  // 光暈：半透明紫色外膜（用快取的玻璃材質，不要改共用的 Mat.emissive 材質的透明度）
+  const halo = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.55, 1), Mat.glass('#b26bff', 0.3))
   root.add(shell, core, halo)
   return {
     root,
