@@ -9,7 +9,7 @@
   - 2026-11-02 首次整理 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
   - 舊的遠端分支 `ccr-30c0fa50-e9j08w` 無法從雲端 session 刪除（git proxy 回 403）；內容已完整包含在 `deadspace-dev`，可以在 GitHub 的 Branches 頁面手動刪掉。
 - **M0–M11 完成**（見下）；只剩選配的 M12（近距離語音）。
-- 單元測試 343 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）、Playwright 多分頁 e2e、真實 WebRTC e2e（`XC_P2P=1`）、正式 build 冒煙測試（`tests/visual/smoke.mjs`）、線上版雙瀏覽器驗證（`tests/visual/live.mjs`）。
+- 單元測試 369 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）、Playwright 多分頁 e2e、真實 WebRTC e2e（`XC_P2P=1`）、正式 build 冒煙測試（`tests/visual/smoke.mjs`）、線上版雙瀏覽器驗證（`tests/visual/live.mjs`）。
 - **2026-11-02 線上版驗證通過**：GitHub Pages 上的 `play/`，兩個獨立瀏覽器經真實 Nostr／WebRTC 建房、加入、開局，客人端持續收到快照、沒有斷線、relay 連線失敗 0 次。
 - **下一步**：
   1. 收集朋友試玩回饋：介面大小與字級、指引內容是否足夠、音量平衡（`src/audio/` 的 GAIN、BARK_GAIN、SFX_BASE）。
@@ -94,6 +94,7 @@
 | 2026-10-30 | M7 設施、M9 bots 與練習模式、GIT、遙控器、圖鑑、獨立洩漏審查與修正、網路條件與長時間測試、README／入口卡片 |
 | 2026-11-01 | 修 GitHub Pages 黑畫面（play/ 過舊）、改用明確的 Nostr relay 清單、客人端在主機短暫失聯後自動重新連上；分支改名 `deadspace-dev`，main 只留 play/ |
 | 2026-11-02 | 背景音樂、環境音、回饋音效、打擊與叫聲、技能音效；visual-review 待改項目全部修正（岩壁、偏暗站點補光、疫蟲、選取圈、石化凍結、小行星）；發佈到 main |
+| 2026-11-02 | 兩支獨立審查（UI/UX 與遊戲體驗、bug）後的修正：偽裝駕駛外洩、設定視窗、聊天 200 行上限、Esc 衝突、tooltip 卡住、詠唱中斷、跨 zone 音效、站點材質釋放；控制台右鍵、鏡頭跟隨、名字避讓、抽血進度、小地圖設施分色與房間懸停、Esc 遊戲選單（進化改 V）、販賣機回饋與防護服數值、進化兩步確認、死因說明、大廳改版、單機練習選身分、死亡即退出實作；太空層站點改用各自模型（原本退回預設膠囊）並重做 9 座站外型、站名常駐標示 |
 | 2026-11-02 | 介面改善（使用者試玩回饋）：音效加大、邊緣捲動修正、介面自動縮放與字級、全域 tooltip、場景物件懸停說明、互動面板與頭頂提示、公告橫幅、詠唱進度條、遊戲內指引（目標面板、情境提示、G 說明）、預設繁中；修正右鍵撿不起地上物品、新增離開控制台（B） |
 
 ## 待決定（使用者）
@@ -118,10 +119,15 @@
 - **指引**：`src/ui/hud/Guide.tsx`（目標面板、一次性情境提示、G 說明面板）；提示紀錄 `xc.hints.seen`，設定頁可關閉或重設。
 - **公告**：`src/ui/hud/Announce.tsx`（全場事件放大、私人訊息在 HUD 上方、自己的詠唱進度條）。
 - **離開控制台**：新指令 `unpilot`（B 鍵或指令卡上方按鈕），站點、船艇、防禦無人機都適用；交回後在離開控制台／控制圈前不會被自動接回。
+- **按鍵**：Esc＝取消瞄準／遊戲選單（繼續、進化、說明、圖鑑、設定、離開對局）；V＝進化選單；G＝說明；B＝離開控制台；脫防護服要連按兩次。
+- **身分數量規則**：`src/shared/roleRules.ts`（sim 開局分配與大廳／練習預覽共用，有一致性測試）。
+- **太空站點**：外型在 `src/render/space/hulls.ts`（每座站獨立輪廓、依 `STATION_BY_ID` 真實半徑縮放）；client 沒有站點的 UnitDef，`units.ts` 以外觀 id（`station.<id>`）選模型。
 
 ## 已知問題
 
 - 測試環境：2026-11-02 起這個雲端容器在**同一個瀏覽器開多個分頁**時，分頁共用 SwiftShader GPU 行程，第二個分頁卡在初始化（主選單都出不來），所以 `lobby.spec.ts`、`tools.spec.ts` 等多分頁 e2e 在這裡會逾時；舊版本（`5c77478`）一樣失敗，確認是環境問題。對應的邏輯有單元測試涵蓋；單分頁 e2e（ux、guide、audio）與兩個獨立瀏覽器的線上驗證都通過。在有 GPU 的機器上應照常可跑。
+- 太空：翠原星、餘燼衛星常以夜面朝鏡頭（`sky.ts` 行星 shader）；七號廢站在最遠鏡頭下仍最不顯眼；模型展示頁（`src/devtools/modelGallery.ts`）沒有 import `models/ships`，看不到站點。
+- 死因：「環境傷害」「被主腦清除」「看不見」三種判定是推估（見 `src/sim/systems/death.ts`）。
 - 介面：說明面板英文版在 1600×900 需要捲動；小地圖圖例的顏色是從 `Hud.tsx` 的 Minimap 抄的，改色時要同步 `src/ui/strings/guide.ts`／`Guide.tsx`。
 - 音訊：沒有屍體的機械單位死亡是用「低血量時在近處消失」推斷的，偶爾會在低血量機械離開視野時誤播死亡聲；只影響音效，不影響資訊。
 - 音訊：雲端容器只能量測音量、沒辦法實際聽，聽感需要真人試玩確認。

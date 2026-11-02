@@ -71,7 +71,8 @@ export class Overlay {
         const nm = loc(entDefName(e.s.d))
         if (nm) {
           // 依站點半徑在螢幕上的大小，把名字放在模型正下方
-          const rad = STATION_BY_ID.get((e.s.d ?? '').slice(8))?.space.radius ?? 3
+          // 外觀半徑（模型上的 userData.radius）優先，沒有才用碰撞半徑
+          const rad = (uv.model?.root.userData.radius as number | undefined) ?? STATION_BY_ID.get((e.s.d ?? '').slice(8))?.space.radius ?? 3
           this.v.copy(uv.root.position).project(cam)
           const cx = (this.v.x * 0.5 + 0.5) * w
           const cy = (-this.v.y * 0.5 + 0.5) * h
