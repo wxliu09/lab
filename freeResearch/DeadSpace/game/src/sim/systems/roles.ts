@@ -6,32 +6,13 @@ import { spawnPoints } from '../setup'
 import type { Ent } from '../ent'
 import { setupClass } from './roleSystem'
 import { classSpawn } from './facilities'
+import { applyRoleOverrides, baseRoleMix, type RoleMix } from '../../shared/roleRules'
 
 /** 依人數決定陣營數量（原作程式門檻：≤4、<7）*/
-export function roleCounts(g: Game, n: number): { xeno: number; mutant: number; android: number } {
-  const s = g.settings
-  const rng = g.secret
-  let xeno = 0
-  let mutant = 0
-  let android = 0
-  if (n <= 4) {
-    if (rng.int(1, 2) === 1) xeno = 1
-    else mutant = 1
-  } else {
-    xeno = 1
-    mutant = 1
-    android = n >= 7 ? 1 : 0
-  }
-  if (s.aliens !== 'auto') xeno = s.aliens
-  if (s.mutants !== 'auto') mutant = s.mutants
-  if (s.androids !== 'auto') android = s.androids
-  // 不能多於參與人數
-  while (xeno + mutant + android > n) {
-    if (android) android--
-    else if (mutant) mutant--
-    else xeno--
-  }
-  return { xeno, mutant, android }
+export function roleCounts(g: Game, n: number): RoleMix {
+  // 規則在 shared/roleRules.ts（大廳預覽共用）；≤4 人時異形／變種人二選一用祕密亂數抽（亂數消耗與原本相同）
+  const pickXeno = n <= 4 ? g.secret.int(1, 2) === 1 : true
+  return applyRoleOverrides(n, g.settings, baseRoleMix(n, pickXeno))
 }
 
 export function assignRoles(g: Game): void {

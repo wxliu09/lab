@@ -1,72 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren, JSX } from 'preact'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../../shared/constants'
-import type { LobbySettings, PracticeRole } from '../../shared/protocol/messages'
+import type { LobbySettings } from '../../shared/protocol/messages'
+import { roleOutcomes, type RoleMix } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
 import '../lobby2.css'
 
-// ───────── 身分預覽（只用公開規則：GDD §4.1，與 sim 的 roleCounts／練習模式指定身分的規則相同）─────────
-
-export interface RoleMix {
-  xeno: number
-  mutant: number
-  android: number
-}
-
-type RoleRules = Pick<LobbySettings, 'aliens' | 'mutants' | 'androids'>
-
-function applyOverrides(n: number, s: RoleRules, base: RoleMix): RoleMix {
-  const c = { ...base }
-  if (s.aliens !== 'auto') c.xeno = s.aliens
-  if (s.mutants !== 'auto') c.mutant = s.mutants
-  if (s.androids !== 'auto') c.android = s.androids
-  return fit(c, n)
-}
-
-/** 異類總數不能多於人數：依序先減仿生人、變種人、異形 */
-function fit(c: RoleMix, n: number): RoleMix {
-  while (c.xeno + c.mutant + c.android > n) {
-    if (c.android) c.android--
-    else if (c.mutant) c.mutant--
-    else c.xeno--
-  }
-  return c
-}
-
-/**
- * 依人數與大廳設定列出可能的異類組合（3–4 人時異形與變種人各半機率，所以可能有兩種）。
- * forced = 單機練習指定的自己的身分；此時回傳的是「其他人」之中的組合。
- */
-export function roleOutcomes(n: number, s: RoleRules, forced?: Exclude<PracticeRole, 'random'>): RoleMix[] {
-  if (n <= 0) return []
-  const bases: RoleMix[] =
-    n <= 4
-      ? [
-          { xeno: 1, mutant: 0, android: 0 },
-          { xeno: 0, mutant: 1, android: 0 },
-        ]
-      : [{ xeno: 1, mutant: 1, android: n >= 7 ? 1 : 0 }]
-  const out: RoleMix[] = []
-  for (const b of bases) {
-    let c = applyOverrides(n, s, b)
-    if (forced) {
-      c = { ...c }
-      if (forced === 'xeno') {
-        c.xeno = 1
-        if (n <= 4 && s.mutants === 'auto') c.mutant = 0
-      } else if (forced === 'mutant') {
-        c.mutant = 1
-        if (n <= 4 && s.aliens === 'auto') c.xeno = 0
-      } else if (forced === 'android') c.android = 1
-      if (forced !== 'human') c[forced]--
-      c = fit(c, n - 1)
-    }
-    if (!out.some((o) => o.xeno === c.xeno && o.mutant === c.mutant && o.android === c.android)) out.push(c)
-  }
-  return out
-}
+// 身分預覽：規則在 shared/roleRules.ts（與 sim 共用）
+export { roleOutcomes, type RoleMix } from '../../shared/roleRules'
 
 function Chip({ r, children }: { r: string; children: ComponentChildren }) {
   return <span class={'rchip r-' + r}>{children}</span>

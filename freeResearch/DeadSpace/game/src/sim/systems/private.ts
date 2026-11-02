@@ -44,6 +44,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     slot: p.slot,
     alive: p.alive,
     dead: !p.alive && !p.spectator,
+    booted: !p.alive && !!p.data.booted,
     role: p.spectator ? 'spectator' : p.role,
     faction: p.spectator ? 'none' : f,
     spawn: !!p.spawnOf,

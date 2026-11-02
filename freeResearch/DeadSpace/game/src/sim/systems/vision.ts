@@ -84,6 +84,12 @@ export function computeVision(g: Game): Map<number, VisionResult> {
       p.view.visible = new Set([...r.ents].map((e) => e.id))
       continue
     }
+    // 死亡即退出：出局的死者不再觀戰，什麼都看不到（連太空層也不給）
+    if (!p.alive && p.data.booted && !p.flags.wide) {
+      r.ents.clear()
+      p.view.visible = new Set()
+      continue
+    }
     const spectating = !p.alive || p.spectator
     if (spectating || p.flags.wide) {
       const zones = new Set<number>()

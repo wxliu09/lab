@@ -65,7 +65,9 @@ export class UnitLayer {
     let rig: Rig | null = null
     let model: ModelView | null = null
     let height: number
-    const modelId = def?.model ?? 'unknown'
+    // 站點的 UnitDef 只在 sim 端動態註冊（client 查不到）；它的 model id 本來就是外觀 id（'station.<id>'）
+    const station = !def && (s.d ?? '').startsWith('station.')
+    const modelId = def?.model ?? (station ? s.d! : 'unknown')
     if (modelId === 'human') {
       rig = buildHuman(s.cl || 'researcher', colorOf(s.c), s.i % 5)
       if ((s.d ?? '').startsWith('suit.')) attachSuit(rig, s.d!, colorOf(s.c))
@@ -82,7 +84,7 @@ export class UnitLayer {
       height *= def.scale
     }
     let ring: THREE.Mesh | null = null
-    const isUnit = !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse) && !isZoneObject(def)
+    const isUnit = !station && !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse) && !isZoneObject(def)
     if (isUnit) {
       const col = s.o !== undefined && s.o >= 0 ? colorOf(s.c) : (s.fl ?? 0) & EntFlag.Hostile ? '#ff3b3b' : '#9fb3c2'
       ring = new THREE.Mesh(

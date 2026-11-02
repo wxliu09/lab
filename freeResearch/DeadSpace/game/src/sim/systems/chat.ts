@@ -23,8 +23,13 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
   const t = g.time
   const inLastWords = !p.alive && p.deadAt >= 0 && t - p.deadAt <= LAST_WORDS
   const speakingAlive = p.alive || inLastWords
+  // 死亡即退出：出局的人只剩遺言時間能說話，也收不到死者頻道
+  if (!p.alive && p.data.booted && !inLastWords) {
+    g.privateLine(p.slot, 'chat.booted')
+    return
+  }
   const everyone = g.allPlayers()
-  const dead = everyone.filter((q) => !q.alive)
+  const dead = everyone.filter((q) => !q.alive && !q.data.booted)
   const eavesdrop = everyone.filter((q) => q.flags.listen)
   const name = p.alive && p.mutedUntil > t ? '' : p.name
   const main = g.mainOf(p)

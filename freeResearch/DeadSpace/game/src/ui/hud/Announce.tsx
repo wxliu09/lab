@@ -37,7 +37,11 @@ export function Announcements() {
     const tap = (lines: ChatLine[]) => {
       const now = performance.now()
       const add: Item[] = []
+      // 死因（最多 3 行：擊殺者＋最近的傷害來源）合併成一則，不要連跳三個提示
+      const death = lines.filter((l) => l.ch === 'private' && /^@death\.(cause|hit)\./.test(l.text ?? ''))
+      if (death.length) add.push({ id: ++seq, text: death.map((l) => sysText(l.text)).join('　'), kind: 'sys', until: now + 9000, life: 9000 })
       for (const l of lines) {
+        if (death.includes(l)) continue
         const kind = classify(l)
         if (!kind) continue
         const life = kind === 'apoc' ? 10000 : kind === 'event' || kind === 'sys' ? 7000 : 4200

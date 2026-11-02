@@ -103,6 +103,21 @@ export function SpectatorBar() {
   const me = world.me
   const dead = me.alive === false || me.role === 'spectator'
   if (!dead) return null
+  // 死亡即退出：出局，不能觀戰
+  if (me.booted)
+    return (
+      <div class="modal-back" data-testid="booted">
+        <div class="panel modal" style={{ textAlign: 'center', width: 'min(460px, 92vw)' }}>
+          <h2>{t('boot.title')}</h2>
+          <p class="dim" style={{ fontSize: '15px', lineHeight: 1.6 }}>
+            {t('boot.body')}
+          </p>
+          <button class="primary" onClick={() => leave()}>
+            {t('boot.leave')}
+          </button>
+        </div>
+      </div>
+    )
   const zones = startInfo.value?.zones ?? []
   return (
     <div class="panel" style={{ position: 'absolute', top: '54px', right: '12px', padding: '10px', width: '220px', maxHeight: 'calc(100vh / var(--ui-zoom, 1) - 290px)', overflowY: 'auto' }}>

@@ -298,6 +298,8 @@ export interface PrivateState {
   gitReports: GitReport[]
   /** 進行中的施法進度 [abilityId, 0..1] */
   cast: [string, number] | null
+  /** 死亡即退出模式下已出局（不能觀戰、不能用死者頻道）*/
+  booted?: boolean
   muted: boolean
   groups: string[]
   /** 可以互動的設施提示 */

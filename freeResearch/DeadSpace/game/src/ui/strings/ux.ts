@@ -123,6 +123,10 @@ export const UX_ZH: Record<string, string> = {
 
   // ───── 進化、結算、筆記 ─────
   'evo.confirm': '確認進化成 {name}',
+  'boot.title': '你已出局',
+  'boot.body': '這局是「死亡即退出」模式：死後不能觀戰、也不能用死者頻道。結果會在對局結束時公布。',
+  'boot.leave': '回到主選單',
+  'chat.booted': '「死亡即退出」模式：出局後不能發言。',
   'suit.dropConfirm': '再按一次：脫下防護服',
   'gmenu.title': '遊戲選單',
   'gmenu.resume': '繼續（Esc）',
@@ -270,6 +274,10 @@ export const UX_EN: Record<string, string> = {
   'settings.hintsResetDone': 'Reset',
 
   'evo.confirm': 'Evolve into {name}',
+  'boot.title': 'You are out',
+  'boot.body': 'This game uses Boot on Death: the dead cannot spectate or use the dead channel. Results are announced when the game ends.',
+  'boot.leave': 'Back to menu',
+  'chat.booted': 'Boot on Death: you cannot speak after you are out.',
   'suit.dropConfirm': 'Press again to take off your suit',
   'gmenu.title': 'Game menu',
   'gmenu.resume': 'Resume (Esc)',
