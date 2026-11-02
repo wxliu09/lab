@@ -132,18 +132,18 @@ function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, fr
   const g = new THREE.Group()
   g.quaternion.copy(gs.camera.quaternion)
   g.position.copy(W(x, y, h))
-  const len = 0.62
+  const len = 0.95
   const slashes: THREE.Mesh[] = []
   for (let i = 0; i < n; i++) {
     const pivot = new THREE.Group()
-    pivot.position.set((i - (n - 1) / 2) * 0.14, (i - (n - 1) / 2) * -0.04, 0)
+    pivot.position.set((i - (n - 1) / 2) * 0.2, (i - (n - 1) / 2) * -0.05, 0.3)
     pivot.rotation.z = n === 2 ? (i ? -0.7 : 0.7) : -0.85
     const m = gs.fx.mesh(GEO.beam, hot(color, 0.45), 4.5)
     m.rotation.y = Math.PI / 2
     m.position.x = -len / 2
-    m.scale.set(0.03, 0.03, 0.01)
-    const halo = gs.fx.mesh(GEO.beam, color, 2, { opacity: 0.35 })
-    halo.scale.set(3, 3, 1)
+    m.scale.set(0.04, 0.04, 0.01)
+    const halo = gs.fx.mesh(GEO.beam, color, 2.2, { opacity: 0.4 })
+    halo.scale.set(3.2, 3.2, 1)
     m.add(halo)
     pivot.add(m)
     g.add(pivot)

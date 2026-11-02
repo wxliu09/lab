@@ -37,7 +37,7 @@ regFx('solar', (gs, _w, f) => {
   screenFlash(gs, '#fff0d0', 1.6, 1.2)
   gs.fx.glow(z, f.x, f.y, 0, '#fff4d8', 34, 2.5, { tex: 'star', k: 3, grow: 1.6, spin: 0.3 })
   gs.fx.glow(z, f.x, f.y, 0, '#ffb060', 70, 3.5, { k: 1.6, grow: 1.4 })
-  gs.fx.glow(z, f.x, f.y, 0, '#ffb060', 40, 40, { k: 0.9, fadeIn: 0.05, opacity: 0.6 })
+  gs.fx.glow(z, f.x, f.y, 0, '#ffb060', 26, 40, { k: 0.8, fadeIn: 0.05, opacity: 0.3 })
   for (let i = 0; i < 6; i++) {
     const ang = Math.random() * Math.PI * 2
     gs.fx.after(i * 0.25, () => prominence(gs, z, f.x, f.y, 2.3, ang, 0.5 + Math.random() * 0.6, 3 + Math.random() * 4, i % 2 ? '#ff8a3a' : '#ffd27a', 3 + Math.random()))
@@ -54,7 +54,7 @@ regFx('orbitFail', (gs, _w, f) => {
   sfx('orbitFail')
   screenFlash(gs, '#ff3b2a', 1.2, 1.6)
   gs.fx.glow(z, f.x, f.y, 0, '#ff3b2a', 60, 4, { k: 1.8, grow: 1.2 })
-  gs.fx.glow(z, f.x, f.y, 0, '#ff5a3a', 36, 60, { k: 0.8, fadeIn: 0.03, opacity: 0.55 })
+  gs.fx.glow(z, f.x, f.y, 0, '#ff5a3a', 26, 60, { k: 0.8, fadeIn: 0.03, opacity: 0.3 })
   for (let i = 0; i < 4; i++) gs.fx.after(i * 0.7, () => gs.fx.ring(z, f.x, f.y, 70, 3, '#ff5a3a', 2.4, { tex: 'ring', k: 2.2, h: 0, ease: 'in' }))
   for (let i = 0; i < 6; i++) {
     gs.fx.after(i * 0.5, () =>

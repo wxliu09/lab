@@ -104,3 +104,45 @@ describe('token 綁定主機', () => {
     expect(await bindToken('localtoken123', 'realhost')).toBe(a)
   })
 })
+
+describe('主機暫時失聯後恢復', () => {
+  it('傳輸層誤判主機離開後，只要主機的訊息又來了，client 會重新打招呼並收到完整的開局資料', async () => {
+    const hub = new LoopbackHub()
+    // 非同步遞送（client 建好之後才收到主機宣告）
+    hub.latency = 1
+    const hostT = hub.connect('host')
+    const server = new GameServer('NETC2', { send: (peer, data) => peer.startsWith('r:') && hostT.send(peer.slice(2), data) }, 5, 9)
+    hostT.onPeerJoin((id) => server.onJoin('r:' + id))
+    hostT.onMessage((from, data) => server.onMessage('r:' + from, data))
+    server.onJoin(LOCAL_PEER)
+    server.onMessage(LOCAL_PEER, encode({ t: 'hello', name: 'Host', color: 0, ver: 1, token: 'hosttoken01' }))
+    const guestT = hub.connect('guest')
+    const client = new NetClient(guestT, { name: 'Guest', color: 3, token: 'guesttoken01' })
+    const got: string[] = []
+    let lost = 0
+    client.onMsg((m) => got.push(m.t))
+    client.onHostLost(() => lost++)
+    const settle = async () => {
+      for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5))
+    }
+    await settle()
+    expect(got).toContain('welcome')
+    server.onMessage(LOCAL_PEER, encode({ t: 'start' }))
+    server.tick()
+    await settle()
+    expect(got).toContain('start')
+    // 模擬心跳逾時的誤判
+    guestT.leaveEv.emit('host')
+    expect(lost).toBe(1)
+    got.length = 0
+    server.tick()
+    await settle()
+    server.tick()
+    await settle()
+    expect(got).toContain('welcome')
+    expect(got).toContain('start')
+    expect(got).toContain('snap')
+    expect(client.hostPeer).toBe('host')
+    client.close()
+  })
+})

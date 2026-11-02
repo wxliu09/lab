@@ -247,7 +247,7 @@ for (const [name, d, zoom] of [
   ['metal', 'rig.metal', 0.05],
   ['cage', 'fac.cage', 0.08],
 ])
-  add('dev-' + name, 'dev', { fakes: [[T, d, 0, 0, { mp: 70, mmp: 100, x2: d === 'fac.cage' ? { n: 2 } : undefined }]], fx: [], wait: 900, cam: [0, 0, zoom] })
+  add('dev-' + name, 'dev', { fakes: [[T, d, 1.5, -1, { mp: 70, mmp: 100, x2: d === 'fac.cage' ? { n: 2 } : undefined }]], fx: [], wait: 900, cam: [1.5, -1, zoom] })
 
 // ── 太空層 ──
 const sp = (name, spec) => add(name, 'space', { space: true, ...spec })

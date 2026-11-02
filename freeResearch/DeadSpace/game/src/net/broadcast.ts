@@ -9,7 +9,8 @@ interface Frame {
 }
 
 const BEAT_MS = 700
-const TIMEOUT_MS = 3500
+/** 主機分頁開局時可能卡住好幾秒（建場景、編譯 shader）：逾時要夠寬，否則會誤判離線 */
+const TIMEOUT_MS = 10000
 
 export class BroadcastChannelTransport implements Transport {
   readonly selfId: PeerId = randomId(12)

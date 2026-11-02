@@ -419,7 +419,11 @@ reg('singularity', () => {
   disk.add(d1, d2)
   // 地面：中心的暗斑＋8 m 引力範圍
   flatDisc(root, 2.2, new THREE.MeshBasicMaterial({ color: '#000000', map: fxTex('soft'), transparent: true, opacity: 0.85, depthWrite: false }))
-  const edge = flatDisc(root, R, glowMat('#9b5de5', 1.4, fxTex('ring'), 0.4))
+  const edge = new THREE.Mesh(GEO.ringThin, glowMat('#b28cff', 1.6, null, 0.4))
+  edge.scale.setScalar(R)
+  edge.position.y = 0.04
+  edge.raycast = () => {}
+  root.add(edge)
   const inner = flatDisc(root, R * 0.6, glowMat('#ff9a5a', 0.8, fxTex('swirl'), 0.25), 0.035)
   let em = 0
   let snd = 0
@@ -432,7 +436,7 @@ reg('singularity', () => {
       inner.rotation.y -= dt * 1.2
       lens.rotation.y = t * 0.5
       rim.scale.setScalar(1.5 + Math.sin(t * 7) * 0.08)
-      ;(edge.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.12 * Math.sin(t * 3)
+      ;(edge.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.15 * Math.sin(t * 3)
       em += dt
       snd -= dt
       if (em > 0.04) {
@@ -514,7 +518,11 @@ reg('teslaStorm', (def) => {
   for (let i = 0; i < 3; i++) flashes.push(sprite(root, 'soft', '#9fd8ff', 2.2, R * 0.9, H - 0.1))
   const bolts = [stormBolt(H, R * 0.8), stormBolt(H, R * 0.6), stormBolt(H, R * 0.9)]
   for (const b of bolts) root.add(b)
-  const edge = flatDisc(root, R, glowMat('#7fd8ff', 1.4, fxTex('ring'), 0.45))
+  const edge = new THREE.Mesh(GEO.ringThin, glowMat('#9fd8ff', 1.8, null, 0.45))
+  edge.scale.setScalar(R)
+  edge.position.y = 0.04
+  edge.raycast = () => {}
+  root.add(edge)
   const floor = flatDisc(root, R, glowMat('#3a5a8a', 0.8, fxTex('soft'), 0.35), 0.025)
   let next = 0
   let showUntil = 0

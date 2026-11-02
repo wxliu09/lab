@@ -27,6 +27,7 @@ export class NetClient {
   private handlers: ((m: HostMsg) => void)[] = []
   private lostHandlers: (() => void)[] = []
   welcomed = false
+  private lostHost: string | null = null
 
   constructor(
     readonly transport: Transport,
@@ -35,6 +36,9 @@ export class NetClient {
     transport.onMessage((from, data) => this.onData(from, data))
     transport.onPeerLeave((peer) => {
       if (peer === this.hostPeer) {
+        // 記住剛失聯的主機：主機分頁卡住幾秒（開局建場景、編譯 shader）時心跳會中斷，
+        // 之後只要再收到它的任何訊息就重新打招呼，伺服器會重送 welcome 與完整的開局資料
+        this.lostHost = peer
         this.hostPeer = null
         this.welcomed = false
         for (const h of this.lostHandlers) h()
@@ -67,6 +71,15 @@ export class NetClient {
           if (this.hostPeer === from) this.send({ t: 'hello', name: this.id.name, color: this.id.color, ver: PROTOCOL_VERSION, token })
         })
       }
+      return
+    }
+    // 失聯的主機又出現了：重新連上
+    if (!this.hostPeer && from === this.lostHost) {
+      this.hostPeer = from
+      this.lostHost = null
+      void bindToken(this.id.token, from).then((token) => {
+        if (this.hostPeer === from) this.send({ t: 'hello', name: this.id.name, color: this.id.color, ver: PROTOCOL_VERSION, token })
+      })
       return
     }
     // 只接受主機的訊息
