@@ -5,6 +5,8 @@
 ## 目前狀態（2026-10-30）
 
 - **分支**：原始碼、文件、研究資料都在 `deadspace-dev`（原 `ccr-30c0fa50-e9j08w`，2026-11-01 改名）；**main 只放發佈成品 `play/`**，發佈流程見 `CLAUDE.md`「Repo 慣例（分支）」。
+  - 2026-11-02 已發佈到 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
+  - 舊的遠端分支 `ccr-30c0fa50-e9j08w` 無法從雲端 session 刪除（git proxy 回 403）；內容已完整包含在 `deadspace-dev`，可以在 GitHub 的 Branches 頁面手動刪掉。
 - **M0–M9 完成；M10 打磨進行中；M11 硬化大部分完成**（見下）。
 - 單元測試約 310 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）與 Playwright 多分頁 e2e。
 - **下一步**：
