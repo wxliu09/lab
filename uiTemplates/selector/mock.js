@@ -89,6 +89,26 @@ const LOCS=[
 ];
 const PINS=[[44,30],[27,55],[66,38],[80,72],[18,82]];
 const CAL_EVENTS={8:[['河濱音樂節','p']],9:[['河濱音樂節','p']],12:[['親子木工手作','a']],15:[['城市馬拉松','d']],18:[['老城散步導覽','a']],20:[['攝影展開幕','p'],['講座：城市記憶','d']],22:[['講座：城市記憶','d']],28:[['小農市集','a']],29:[['小農市集','a']]};
+const SEARCH_HITS=[
+  ['常見問答','<mark>育兒津貼</mark>和托育補助可以同時申請嗎？','社會局 › 常見問答','兩者不能重複領取。子女已送托公共或準公共托育機構時，請改申請托育補助…','2026.10.15'],
+  ['最新消息','115 年度<mark>育兒津貼</mark>加碼，第二胎起每月 6,000 元','市政新聞 › 社會福利','自 115 年 1 月起，第二胎以上子女每月加發 1,000 元，已核定的家長不必重新申請…','2026.10.02'],
+  ['法規','青川市<mark>育兒津貼</mark>發給辦法','法規資料庫 › 社會福利類','第 3 條　申請人應符合下列條件：一、設籍本市滿六個月；二、子女未滿二歲…','2025.12.30'],
+  ['表單下載','<mark>育兒津貼</mark>申請書（臨櫃用）','表單下載 › 社會局','PDF・2 頁・臨櫃辦理時填寫，也可以下載後郵寄到社會局兒少福利科。','2025.11.20']
+];
+const FAQS=[
+  ['社會福利','育兒津貼和托育補助可以同時申請嗎？','不可以重複領取。子女送托公共托育中心或準公共托育機構時，請改申請托育補助；沒有送托的家長才申請育兒津貼。兩者都可以在「線上申辦」查詢審核進度。'],
+  ['交通停車','路邊停車費繳錯了，怎麼申請退費？'],
+  ['戶政','戶籍謄本可以請別人代為申請嗎？'],
+  ['稅務規費','房屋稅繳款書遺失，要怎麼補發？'],
+  ['環境清潔','大型家具要丟，怎麼預約清運？'],
+  ['網站使用','忘記會員密碼怎麼辦？']
+];
+const DATASETS=[
+  ['路外停車場即時剩餘車位','交通局',['JSON','API'],'即時','1 分鐘前','48,210','全市 212 處公有路外停車場的剩餘車位、收費標準與營業時間。'],
+  ['空氣品質監測小時值','環境保護局',['CSV','JSON','API'],'每小時','12 分鐘前','21,876','18 座測站的 PM2.5、PM10、臭氧與 AQI，保留近三年資料。'],
+  ['社會福利機構名冊','社會局',['CSV','XML'],'每月','2026.10.01','3,120','老人、身障、兒少福利機構的地址、電話、床位數與評鑑等第。'],
+  ['都市計畫土地使用分區','都市發展局',['SHP','KML'],'每年','2026.03.15','1,844','全市都市計畫區的使用分區圖資，座標系統為 TWD97。']
+];
 const CAL_NEXT=[
   {m:11,d:'08',w:'日',t:'青川河濱音樂節',pl:'河濱公園舊碼頭',tag:'表演',st:'免報名・自由入場',open:0},
   {m:11,d:'12',w:'四',t:'親子木工手作坊',pl:'市立圖書館 3F 創客教室',tag:'親子',st:'剩 6 個名額',open:1},
@@ -237,7 +257,54 @@ const TPL={
   <div class="m-cal-grid">${'日一二三四五六'.split('').map(w=>`<span class="m-cal-w">${w}</span>`).join('')}${cells}</div></div>
   <aside class="m-cal-side"><h2 class="m-h2 m-h2-sm">近期活動</h2>${CAL_NEXT.map(e=>`<div class="m-card m-evc"><div class="m-evd"><small>${e.m} 月</small><b>${e.d}</b><small>週${e.w}</small></div><div class="m-evb"><span class="m-tag">${e.tag}</span><h3 class="m-h3">${e.t}</h3><span class="m-loc-row">${ic('pin')}${e.pl}</span><div class="m-evf"><span class="m-meta">${e.st}</span><span class="m-btn m-btn-sm${e.open?'':' m-btn-ghost'}">${e.open?'我要報名':'查看詳情'}</span></div></div></div>`).join('')}</aside></div>
   </div></section>${footer(c)}`;
-  }
+  },
+
+  l18:c=>`${header()}
+  <section class="m-section m-sec-tight"><div class="m-wrap">
+  <div class="m-crumb">首頁<i>/</i><b>站內搜尋</b></div>
+  <div class="m-srch-top"><div class="m-search m-search-lg">${ic('search')}<span>育兒津貼</span></div><span class="m-btn">搜尋</span></div>
+  <div class="m-srch-meta">找到 <b>128</b> 筆與「育兒津貼」有關的結果・您是不是要找：${['托育補助','生育津貼','育嬰留職停薪'].map(t=>`<span class="m-link">${t}</span>`).join('')}</div>
+  <div class="m-srch-grid"><aside class="m-card m-facets">${[['結果類型',[['全部',128,1],['申辦服務',12],['最新消息',46],['法規',18],['表單下載',21],['常見問答',31]]],['發布單位',[['社會局',64],['戶政事務所',22],['衛生局',15]]],['發布時間',[['不限',0,1],['一個月內'],['一年內']]]].map(([h,items])=>`<div class="m-facet"><b>${h}</b>${items.map(([t,n,on])=>`<span class="${on?'is-on':''}">${t}${n?`<em>${n}</em>`:''}</span>`).join('')}</div>`).join('')}</aside>
+  <div class="m-results"><div class="m-card m-best"><span class="m-ico">${ic('doc')}</span><div><span class="m-eyebrow">申辦服務</span><h2 class="m-h2 m-h2-sm">育兒津貼線上申請</h2><p class="m-p">設籍本市滿 6 個月、子女未滿 2 歲即可申請，每月 5,000 元，約 7 個工作天審核完成。</p><div class="m-actions"><span class="m-btn m-btn-sm">線上申請 ${ic('arrow')}</span><span class="m-btn m-btn-sm m-btn-ghost">申請資格</span></div></div></div>
+  ${SEARCH_HITS.map(([k,t,path,d,date])=>`<article class="m-hit"><div class="m-hit-top"><span class="m-tag">${k}</span><span class="m-path">${path}</span></div><h3 class="m-h3">${t}</h3><p class="m-p">${d.replace('育兒津貼','<mark>育兒津貼</mark>')}</p><span class="m-date">${date}</span></article>`).join('')}
+  <div class="a-pages m-srch-pages"><span>‹</span><span class="is-on">1</span><span>2</span><span>3</span><span class="gap">…</span><span>13</span><span>›</span></div></div></div>
+  </div></section>${footer(c)}`,
+
+  l19:c=>`${header()}
+  <section class="m-section m-sec-tight"><div class="m-wrap">
+  <div class="m-crumb">首頁<i>/</i>便民服務<i>/</i><b>常見問答</b></div>
+  <div class="m-page-top"><div><div class="m-eyebrow">常見問答</div><h1 class="m-h1 m-h1-sm">有問題？先在這裡找找看</h1></div><div class="m-search m-search-lg">${ic('search')}<span>輸入關鍵字，例如：停車費退費</span></div></div>
+  <div class="m-faq-grid"><nav class="m-faq-cats">${[['grid','全部問題',86,1],['users','戶政',18],['heart','社會福利',21],['bus','交通停車',16],['card','稅務規費',12],['leaf','環境清潔',11],['gear','網站使用',8]].map(([i,t,n,on])=>`<span class="${on?'is-active':''}">${ic(i)}${t}<em>${n}</em></span>`).join('')}</nav>
+  <div class="m-qas">${FAQS.map(([k,q,a],i)=>`<div class="m-card m-qa${a?' is-open':''}"><div class="m-qa-q"><span class="m-qa-n">Q${i+1}</span><b>${q}</b><span class="m-tag">${k}</span><span class="m-faq-ic">${a?'−':'+'}</span></div>${a?`<div class="m-qa-a"><p>${a}</p><div class="m-qa-foot"><span>這個回答有幫助嗎？</span><span class="m-btn m-btn-sm m-btn-ghost">${ic('thumb')}有幫助</span><span class="m-btn m-btn-sm m-btn-ghost">沒有</span><span class="m-link">相關服務：托育補助申請 ${ic('arrow')}</span></div></div>`:''}</div>`).join('')}</div></div>
+  <div class="m-card m-faq-help"><div><h2 class="m-h2 m-h2-sm">還是找不到答案？</h2><p class="m-p">留言給我們，或直接撥打服務專線，週一至週五 08:30–17:30 有專人回覆。</p></div><div class="m-actions"><span class="m-btn">${ic('chat')}意見信箱</span><span class="m-btn m-btn-ghost">${ic('phone')}撥打 1999</span></div></div>
+  </div></section>${footer(c)}`,
+
+  l20:c=>`${header()}
+  <section class="m-section m-sec-tight"><div class="m-wrap">
+  <div class="m-crumb">首頁<i>/</i>互動專區<i>/</i><b>市長信箱</b></div>
+  <div class="m-form-head"><h1 class="m-h1 m-h1-sm">市長信箱</h1><span class="m-meta">一般案件 6 個工作天內回覆・本月已回覆 1,284 件</span></div>
+  <div class="m-form-grid m-mail-grid"><div class="m-card m-form">
+    <div class="m-mail-note">${ic('lock')}<span>緊急狀況請撥 110 或 119。您的個人資料只會用於回覆本案，不會公開。</span></div>
+    <div class="m-field-row">${fld('姓名 <em>*</em>','林○華')}${fld('電子郵件 <em>*</em>','lin••••@mail.example')}</div>
+    <div class="m-field-row">${fld('聯絡電話','0912-•••-321')}${fld('案件類別 <em>*</em>','交通號誌與道路 <span class="m-muted">▾</span>')}</div>
+    ${fld('主旨 <em>*</em>','河濱路與中正路口行人號誌秒數太短')}
+    <div class="m-field"><label>內容 <em>*</em></label><div class="m-textarea">每天早上 7:30 帶小孩過這個路口，行人綠燈只有 18 秒，長輩和推娃娃車的人常常走不完，希望能延長秒數或加設行人庇護島。</div></div>
+    <div class="m-file"><span class="m-ico m-ico-sm">${ic('camera')}</span><div><b>路口現況.jpg</b><span class="m-meta">2.1 MB・上傳完成</span></div><span class="m-pill ok">完成</span></div>
+    <div class="m-field"><label>驗證碼 <em>*</em></label><div class="a-captcha"><div class="m-input"></div><span class="a-cimg">4X9M</span><span class="a-refresh">${ic('refresh')}</span></div></div>
+    <div class="m-agree"><span class="m-cbx on">${ic('check',3)}</span>我已閱讀並同意個人資料蒐集告知事項</div>
+    <div class="m-form-act"><span class="m-btn m-btn-ghost">暫存草稿</span><span class="m-btn">送出意見 ${ic('arrow')}</span></div>
+  </div>
+  <aside class="m-form-side"><div class="m-card m-notice"><div class="m-eyebrow">處理流程</div><ol class="a-tl"><li>收件確認<small>立即寄出案件編號</small></li><li class="now">分案給主管機關<small>1 個工作天內</small></li><li>承辦處理<small>需要時會電話聯絡</small></li><li>回覆結果<small>6 個工作天內</small></li></ol></div>
+  <div class="m-card m-notice"><h3 class="m-h3">查詢案件進度</h3><div class="m-input">輸入案件編號，例如 M1151029-0128</div><span class="m-btn m-btn-sm m-btn-ghost">查詢</span></div>
+  <div class="m-card m-notice"><h3 class="m-h3">其他反映管道</h3><ul class="m-list"><li>1999 市民熱線（24 小時）</li><li>區公所服務台臨櫃反映</li><li>智慧客服（右下角）</li></ul></div></aside>
+  </div></div></section>${footer(c)}`,
+
+  l21:c=>`${header()}
+  <section class="m-portal m-data-hero"><div class="m-wrap"><div class="m-eyebrow">資料開放</div><h1 class="m-h1">青川市開放資料平台</h1><div class="m-bigsearch">${ic('search')}<span class="m-ph">搜尋資料集，例如：停車、空氣品質、人口</span><span class="m-btn">搜尋</span></div><div class="m-qstats"><span><b>1,286</b>個資料集</span><span><b>42</b>個提供機關</span><span><b>186 萬</b>次下載</span></div></div></section>
+  <section class="m-section m-sec-tight"><div class="m-wrap m-data-grid"><aside class="m-card m-facets">${[['主題',[['全部',1286,1],['交通',214],['環境',186],['社會福利',142],['觀光',98],['財政',76]]],['更新頻率',[['即時',38],['每日',126],['每月',402],['每年',720]]]].map(([h,items])=>`<div class="m-facet"><b>${h}</b>${items.map(([t,n,on])=>`<span class="${on?'is-on':''}">${t}<em>${n}</em></span>`).join('')}</div>`).join('')}<div class="m-facet"><b>檔案格式</b><div class="m-fmts">${['CSV','JSON','API','XML','SHP'].map((f,i)=>`<span class="m-fmt${i===2?' is-on':''}">${f}</span>`).join('')}</div></div></aside>
+  <div class="m-dsets"><div class="m-dset-bar"><span>共 <b>1,286</b> 個資料集</span><span class="a-sel"><em>排序</em>最近更新</span></div>
+  ${DATASETS.map(([t,org,fmts,freq,upd,dl,d],i)=>`<article class="m-card m-dset"><div class="m-dset-top"><h3 class="m-h3">${t}</h3><span class="m-fmts">${fmts.map(f=>`<span class="m-fmt">${f}</span>`).join('')}</span></div><p class="m-p">${d}</p><div class="m-dset-meta"><span>${ic('users')}${org}</span><span>${ic('refresh')}${freq}・${upd}更新</span><span>${ic('download')}${dl} 次下載</span></div>${i===0?`<pre class="m-code"><b>GET</b> /api/v1/parking/available?district=中正區
+{ "name": "市府轉運站地下停車場", "available": 128, "total": 412 }</pre>`:''}</article>`).join('')}</div></div></section>${footer(c)}`
 };
 /* ---------- admin system templates ---------- */
 const ALOGO='<span class="m-logo"><span class="m-mark">青</span><span class="m-name">案件管理系統<small>QINGCHUAN ADMIN</small></span></span>';
@@ -417,6 +484,30 @@ function applyMock(el,s){
   return t;
 }
 
+/* ---------- client brand: swaps the fictional city for the client's own names in every preview ---------- */
+const BRAND_DEF={name:'青川市民服務網',en:'QINGCHUAN CITY',mark:'青',org:'青川市政府',place:'青川市',phone:'1999',domain:'www.qingchuan.example',logo:''};
+const brand=Object.assign({},BRAND_DEF);
+let brandRev=0;
+function setBrand(b){
+  Object.assign(brand,BRAND_DEF);
+  for(const k in BRAND_DEF) if(b&&typeof b[k]==='string'&&(b[k].trim()||k==='logo')) brand[k]=b[k].trim();
+  brandRev++;
+}
+const brandOn=()=>Object.keys(BRAND_DEF).some(k=>brand[k]!==BRAND_DEF[k]);
+const brandMark=()=>brand.logo?`<img src="${esc(brand.logo)}" alt="">`:esc(brand.mark||brand.name.charAt(0));
+function brandify(html){
+  if(!brandOn()) return html;
+  const v=x=>()=>esc(x);   // function replacements, so "$" in user text is taken literally
+  return html
+    .replace(/<span class="m-mark">青<\/span>/g,()=>`<span class="m-mark${brand.logo?' has-img':''}">${brandMark()}</span>`)
+    .replace(/青川市民服務網/g,v(brand.name))
+    .replace(/QINGCHUAN CITY/g,v(brand.en))
+    .replace(/QINGCHUAN ADMIN/g,v(`${brand.en.split(/\s+/)[0]} ADMIN`))
+    .replace(/青川市政府/g,v(brand.org))
+    .replace(/青川市/g,v(brand.place))
+    .replace(/1999/g,v(brand.phone));
+}
+
 /* ---------- preview frames ---------- */
 class Preview{
   constructor(root){
@@ -426,17 +517,19 @@ class Preview{
     this.raf=0;
     if('ResizeObserver' in window){this.ro=new ResizeObserver(()=>this.queue());this.ro.observe(this.vp);this.ro.observe(this.mock);}
   }
-  get base(){return this.root.dataset.device==='phone'?390:1200;}
+  // data-zoom simulates browser zoom: the page lays out narrower, then is scaled back up to the frame
+  get base(){return (this.root.dataset.device==='phone'?390:1200)/(Number(this.root.dataset.zoom)||1);}
   setDevice(d){this.root.dataset.device=d;}
   render(s){
     const dev=this.root.dataset.device,mods=new Set(s.mods);
     applyMock(this.mock,s);applyMock(this.float,s);
     this.mock.style.width=this.base+'px';this.float.style.width=this.base+'px';
     const act=new Set([...mods].filter(k=>modApplies(k,s.layout)));
-    const ck=[s.layout,dev,s.hero,['env','alert','links','feedback','social','notify','watermark','bulk'].filter(k=>act.has(k)).join('.')].join('|');
+    const ck=[s.layout,dev,s.hero,brandRev,['env','alert','links','feedback','social','notify','watermark','bulk'].filter(k=>act.has(k)).join('.')].join('|');
     if(this.ck!==ck){
       const prevLayout=this.ck?this.ck.split('|')[0]+this.ck.split('|')[1]:'';
-      this.mock.innerHTML=(act.has('env')?ENV_BAR:'')+(act.has('alert')?(isAdmin(s.layout)?ALERT_SYS:ALERT):'')+TPL[s.layout]({hero:s.hero,mods:act,layout:s.layout});
+      this.mock.innerHTML=brandify((act.has('env')?ENV_BAR:'')+(act.has('alert')?(isAdmin(s.layout)?ALERT_SYS:ALERT):'')+TPL[s.layout]({hero:s.hero,mods:act,layout:s.layout}));
+      $('.url',this.root).textContent='https://'+brand.domain;
       if(prevLayout!==s.layout+dev) this.vp.scrollTop=0;
       this.ck=ck;
     }

@@ -18,7 +18,30 @@ try{const n=JSON.parse(localStorage.getItem(NKEY)||'{}');if(n&&typeof n==='objec
 const persistNotes=()=>{try{localStorage.setItem(NKEY,JSON.stringify(notes));}catch(e){}};
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const persistSaved=()=>{try{localStorage.setItem(SKEY,JSON.stringify(saved));}catch(e){}};
-const parseHash=()=>dec((location.hash||'').slice(1));
+const BKEY='site-style-picker-brand',RKEY='site-style-picker-recent';
+try{const b=JSON.parse(localStorage.getItem(BKEY)||'null');if(b&&typeof b==='object')setBrand(b);}catch(e){}
+let recent=[];
+try{recent=(JSON.parse(localStorage.getItem(RKEY)||'[]')||[]).filter(r=>r&&typeof r.c==='string'&&dec(r.c)).slice(0,12);}catch(e){recent=[];}
+const persistBrand=()=>{try{if(brandOn())localStorage.setItem(BKEY,JSON.stringify(brand));else localStorage.removeItem(BKEY);return true;}catch(e){return false;}};
+
+/* ---------- links: #<code> for one combination, #set=<code>,<code>… for a comparison; &b= brand text, &n= notes ---------- */
+const b64e=o=>{let t='';new TextEncoder().encode(JSON.stringify(o)).forEach(x=>{t+=String.fromCharCode(x);});return btoa(t).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+const b64d=v=>{try{return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(v.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0))));}catch(e){return null;}};
+const brandText=()=>{const o={};for(const k in BRAND_DEF) if(k!=='logo'&&brand[k]!==BRAND_DEF[k]) o[k]=brand[k];return o;};
+const brandParam=()=>Object.keys(brandText()).length?'&b='+b64e(brandText()):'';
+const baseUrl=()=>location.href.split('#')[0];
+function readHash(){
+  const raw=(location.hash||'').slice(1);if(!raw) return null;
+  const kv={};let code='';
+  raw.split('&').forEach((part,i)=>{const j=part.indexOf('=');if(j<0){if(i===0)code=part;}else kv[part.slice(0,j)]=part.slice(j+1);});
+  const b=kv.b?b64d(kv.b):null,br=b&&typeof b==='object'?b:null;
+  if(kv.set){
+    const codes=kv.set.split(',').filter(c=>dec(c)).slice(0,6),n=kv.n?b64d(kv.n):null;
+    return codes.length?{set:codes,notes:Array.isArray(n)?n:[],brand:br}:null;
+  }
+  const combo=dec(code);
+  return combo?{combo,brand:br}:null;
+}
 
 /* ---------- option lists ---------- */
 const CHECK=`<span class="check">${ic('check',3)}</span>`;
@@ -158,6 +181,7 @@ function update(){
   refreshSaveUI();
   live.render(state);
   save();
+  noteRecent();
 }
 
 function setStep(i){
@@ -198,7 +222,8 @@ function toggleSaveCode(code){
   return true;
 }
 const toggleSave=()=>toggleSaveCode(enc(state));
-const shareUrl=s=>location.href.split('#')[0]+'#'+enc(s);
+const shareUrl=s=>baseUrl()+'#'+enc(s)+brandParam();
+const setUrl=codes=>{const n=codes.map(c=>(notes[c]||'').trim());return baseUrl()+'#set='+codes.join(',')+(n.some(Boolean)?'&n='+b64e(n):'')+brandParam();};
 const isHosted=()=>/^https?:$/.test(location.protocol);
 
 function specText(){
@@ -207,6 +232,7 @@ function specText(){
   const mods=state.mods.filter(k=>modApplies(k,state.layout)).map(k=>MODULES[modIdx(k)].n);
   return [
     `【網站樣式選配】組合 ${shortCode(state)}`,
+    ...(brandOn()?[`網站｜${brand.name}（${brand.org}）`]:[]),
     `版型｜${L.id.toUpperCase()} ${L.name}：${L.desc}（適合：${L.fit}）`,
     `風格｜${S.id.toUpperCase()} ${S.name}：圓角 ${S.radius}／字體 ${S.font}／${S.detail}`,
     `色系｜${state.color.toUpperCase()} ${C.name}（${C.mood}）：主色 ${t.p}、深色 ${t.deep}、強調 ${t.a}、文字 ${t.ink}、底色 ${t.bg}`,
@@ -248,12 +274,16 @@ function showResult(setHash){
   update();
 }
 function showWorkspace(step){
+  cmpShared=null;
   showView('workspace');clearHash();
   if(typeof step==='number') setStep(step);
   update();
 }
+// a comparison opened from a shared link; it never touches the viewer's own saved list
+let cmpShared=null;
 function showCompare(){
-  showView('compare');clearHash();
+  showView('compare');
+  if(!cmpShared) clearHash();
   renderCompare();
   window.scrollTo(0,0);
 }
@@ -263,23 +293,28 @@ const CMP_DIMS=[['版型',s=>byId(LAYOUTS,s.layout).name],['風格',s=>byId(STYL
   ['功能模組',s=>s.mods.filter(k=>modApplies(k,s.layout)).map(k=>MODULES[modIdx(k)].n).join('、')||'無','無']];
 function renderCompare(){
   cmpPreviews.forEach(p=>p.destroy());cmpPreviews=[];
-  $('#cmpCount').textContent=`${saved.length} / 6`;
+  const codes=cmpShared||saved,sh=!!cmpShared;
+  $('#cmpKind').textContent=sh?'分享的比較':'收藏比較';
+  $('#cmpCount').textContent=sh?`${codes.length} 組`:`${saved.length} / 6`;
+  $('#cmpTitle').textContent=sh?'別人分享給你的候選組合':'並排比較收藏的組合';
+  $('#cmpDesc').textContent=sh?'這些組合來自分享連結，不會改動你自己的收藏；喜歡的可以收藏起來。':'最多收藏 6 組。收藏只存在這台裝置的瀏覽器裡。';
+  $('#cmpClear').hidden=sh;$('#cmpShare').hidden=sh||!saved.length;$('#cmpAddAll').hidden=!sh;
   const g=$('#cmpGrid'),cm=$('#cmpCommon');
-  cm.hidden=saved.length<2;
-  if(!saved.length){g.innerHTML='<div class="empty">還沒有收藏。挑到喜歡的組合時按「收藏」，就能在這裡並排比較。</div>';return;}
-  const list=saved.map(code=>full(dec(code)));
+  cm.hidden=codes.length<2;
+  if(!codes.length){g.innerHTML='<div class="empty">還沒有收藏。挑到喜歡的組合時按「收藏」，就能在這裡並排比較。</div>';return;}
+  const list=codes.map(code=>full(dec(code)));
   const vals=CMP_DIMS.map(([,f])=>list.map(f));
   // an option that only some pages have (後台側欄 vs 前台頁首) is not a difference by itself
   const differs=vals.map(v=>new Set(v.filter(x=>x!=='不適用')).size>1);
-  if(saved.length>1){
+  if(codes.length>1){
     const same=CMP_DIMS.map((d,i)=>[d[0],vals[i][0],d[2],differs[i]]).filter(([,v,def,df])=>!df&&v!==def&&v!=='不適用').map(([n,v])=>`<span>${n}：${v}</span>`);
     const n=differs.filter(Boolean).length;
     cm.innerHTML=`<b>共同點</b>${same.join('')||'<span>沒有共同的設定</span>'}<small>${n} 項不同，標在各組下方；沒列出的細節都是預設值</small>`;
   }
   g.innerHTML=list.map((s,i)=>{
-    const code=saved[i],dl=detailList(s);
-    const diff=saved.length>1?`<div class="cmp-diff">${CMP_DIMS.map(([n],j)=>differs[j]&&vals[j][i]!=='不適用'?`<span><i>${n}</i>${vals[j][i]}</span>`:'').join('')}</div>`:`<span>${dl.length?'細節：'+dl.join('、'):'細節：沿用預設'}</span>`;
-    return `<article class="cmp-card"><div class="frame-wrap" data-device="desktop"></div><div class="cmp-meta"><b>${shortCode(s)}</b><span>${labelOf(s)}</span>${diff}${notes[code]&&notes[code].trim()?`<span class="cmp-note">${esc(notes[code].trim())}</span>`:''}</div><div class="cmp-act"><button class="btn" type="button" data-open="${i}">看示意畫面</button><button class="btn" type="button" data-del="${i}">移除</button></div></article>`;
+    const code=codes[i],dl=detailList(s);
+    const diff=codes.length>1?`<div class="cmp-diff">${CMP_DIMS.map(([n],j)=>differs[j]&&vals[j][i]!=='不適用'?`<span><i>${n}</i>${vals[j][i]}</span>`:'').join('')}</div>`:`<span>${dl.length?'細節：'+dl.join('、'):'細節：沿用預設'}</span>`;
+    return `<article class="cmp-card"><div class="frame-wrap" data-device="desktop"></div><div class="cmp-meta"><b>${shortCode(s)}</b><span>${labelOf(s)}</span>${diff}${notes[code]&&notes[code].trim()?`<span class="cmp-note">${esc(notes[code].trim())}</span>`:''}</div><div class="cmp-act"><button class="btn" type="button" data-open="${i}">看示意畫面</button>${sh?`<button class="btn" type="button" data-save="${i}" aria-pressed="${saved.includes(code)}">${saved.includes(code)?'已收藏':'收藏'}</button>`:`<button class="btn" type="button" data-del="${i}">移除</button>`}</div></article>`;
   }).join('');
   $$('.cmp-card',g).forEach((card,i)=>{const p=new Preview($('.frame-wrap',card));p.render(list[i]);cmpPreviews.push(p);});
 }
@@ -354,7 +389,7 @@ function withUndo(fn,msg){
 
 function copyText(txt,done,fallback){
   try{
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast(done)).catch(fallback);}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>{if(done)toast(done);}).catch(fallback);}
     else fallback();
   }catch(e){fallback();}
 }
@@ -364,6 +399,168 @@ function copySpec(){
 function copyLink(){
   const url=shareUrl(state);
   copyText(url,isHosted()?'已複製連結，對方打開就會看到這組示意畫面':'已複製連結；這是本機檔案的路徑，放上網站後才能傳給別人',()=>window.prompt('複製這個連結',url));
+}
+
+/* ---------- client brand dialog ---------- */
+let draftLogo='';
+function refreshBrandUI(){
+  $$('#optsS .swatch .m-mark').forEach(m=>{m.className='m-mark'+(brand.logo?' has-img':'');m.innerHTML=brandMark();});
+  $('#brandBtn').classList.toggle('is-on',brandOn());
+}
+function brandChanged(){
+  refreshBrandUI();live.render(state);
+  if(!$('#result').hidden){resDesk.render(state);resPhone.render(state);$('#specPre').textContent=specText();}
+}
+function logoPreview(){
+  const f=$('#brandForm').elements,el=$('#logoPrev');
+  el.innerHTML=draftLogo?`<img src="${esc(draftLogo)}" alt="">`:esc(f.mark.value.trim()||f.name.value.trim().charAt(0)||BRAND_DEF.mark);
+  el.classList.toggle('has-img',!!draftLogo);$('#logoClear').hidden=!draftLogo;
+}
+const readFile=f=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f);});
+const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src;});
+// a small PNG is plenty for a 40px mark and keeps localStorage light
+function shrinkLogo(img){
+  const w=img.naturalWidth||160,h=img.naturalHeight||160,k=Math.min(1,160/Math.max(w,h)),c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/png');
+}
+// the logo's main colours: saturated pixels bucketed by hue and lightness, biggest buckets first
+function logoColors(img){
+  const c=document.createElement('canvas');c.width=c.height=48;
+  const x=c.getContext('2d');x.drawImage(img,0,0,48,48);
+  const d=x.getImageData(0,0,48,48).data,bins={},out=[];
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]<128) continue;
+    const [h,sat,l]=hexToHsl(rgbToHex([d[i],d[i+1],d[i+2]]));
+    if(sat<.25||l<.14||l>.88) continue;
+    const k=Math.round(h/20)%18+'-'+Math.round(l*3);
+    (bins[k]=bins[k]||[]).push([d[i],d[i+1],d[i+2]]);
+  }
+  Object.values(bins).sort((p,q)=>q.length-p.length).forEach(px=>{
+    if(px.length<12||out.length>=4) return;
+    const hex=rgbToHex([0,1,2].map(j=>px.reduce((t,v)=>t+v[j],0)/px.length)),[h,,l]=hexToHsl(hex);
+    if(!out.some(o=>{const [oh,,ol]=hexToHsl(o);return hueDist(oh,h)<18&&Math.abs(ol-l)<.15;})) out.push(hex);
+  });
+  return out;
+}
+async function showLogoColors(src){
+  const box=$('#logoColors'),hint=$('#logoColorHint');
+  let cs=[];
+  try{cs=logoColors(await loadImg(src));}catch(e){cs=[];}
+  box.hidden=false;
+  $('#logoSwatches').innerHTML=cs.map(h=>`<button type="button" class="dlg-swb" data-hex="${h}" aria-pressed="${state.color==='c0'&&state.custom===h}" title="設為主色 ${h}"><i style="background:${h}"></i><code>${h}</code></button>`).join('');
+  hint.textContent=cs.length?'點一下設為主色（色系會切換成自訂主色）':'這個 Logo 主要是黑白灰，建議選石墨灰、墨金或高對比色系。';
+}
+function openBrand(){
+  const f=$('#brandForm').elements;
+  for(const k in BRAND_DEF) if(k!=='logo'){f[k].value=brand[k];f[k].placeholder=BRAND_DEF[k];}
+  draftLogo=brand.logo;logoPreview();$('#logoColors').hidden=true;
+  if(draftLogo) showLogoColors(draftLogo);
+  $('#brandDlg').showModal();
+}
+
+/* ---------- design tokens, read back from the rendered result preview ---------- */
+function cssHex(v){
+  let m=/rgba?\(([^)]+)\)/.exec(v),c;
+  if(m) c=m[1].split(/[\s,/]+/).filter(Boolean).slice(0,3).map(Number);
+  else if((m=/color\(srgb ([^)]+)\)/.exec(v))) c=m[1].split(/\s+/).slice(0,3).map(x=>Number(x)*255);
+  return c?rgbToHex(c):v;
+}
+// browsers report mixed colours as color(srgb r g b / a); spell them as rgba() for readability
+const tidyColors=v=>v.replace(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/g,(m,r,g,b,a)=>`rgba(${[r,g,b].map(x=>Math.round(x*255)).join(', ')}, ${a===undefined?1:Number(Number(a).toFixed(3))})`);
+const TOKEN_COLORS=[['primary','--m-p','主色'],['primary-text','--m-pt','主色文字（連結、標籤）'],['on-primary','--m-on-p','主色上的文字'],['deep','--m-deep','深色'],['on-deep','--m-on-deep','深色上的文字'],['accent','--m-a','強調色'],['on-accent','--m-on-a','強調色上的文字'],['text','--m-ink','內文'],['muted','--m-muted','次要文字'],['border','--m-line','框線'],['background','--m-bg','頁面底色'],['surface','--m-surface','卡片底色'],['soft','--m-soft','主色淡底'],['subtle','--m-alt','區塊淡底'],['success','--m-ok','成功'],['warning','--m-warn','警告'],['danger','--m-bad','錯誤']];
+function readTokens(){
+  const m=resDesk.mock,pr=document.createElement('div');
+  pr.style.cssText='position:absolute;left:0;top:0;visibility:hidden;pointer-events:none';
+  m.appendChild(pr);
+  const cs=getComputedStyle(pr),get=(prop,val,out)=>{pr.style[prop]=val;const r=cs[out||prop];pr.style[prop]='';return r;};
+  const v=name=>getComputedStyle(m).getPropertyValue(name).trim();
+  const type=cls=>{const e=document.createElement('div');e.className=cls;e.textContent='字';pr.appendChild(e);const c=getComputedStyle(e),r={size:c.fontSize,weight:c.fontWeight,line:(parseFloat(c.lineHeight)/parseFloat(c.fontSize)).toFixed(2).replace(/\.?0+$/,'')};e.remove();return r;};
+  const wrap=m.querySelector('.m-wrap'),front=!isAdmin(state.layout);
+  const t={
+    color:TOKEN_COLORS.map(([k,name,label])=>[k,cssHex(get('color',`var(${name})`)),label]),
+    font:[['heading',get('fontFamily','var(--m-fh)')],['body',get('fontFamily','var(--m-fb)')],['label',get('fontFamily','var(--m-fl)')]],
+    text:[['h1',type('m-h1')],['h2',type('m-h2')],['h3',type('m-h3')],['base',{size:getComputedStyle(m).fontSize,weight:'400',line:'1.65'}]],
+    radius:[['card',v('--m-r')],['button',v('--m-rb')],['tag',v('--m-rt')],['icon',v('--m-rm')]],
+    shadow:[['card',tidyColors(get('boxShadow','var(--m-shadow)'))],['button',tidyColors(get('boxShadow','var(--m-bshadow)'))]],
+    space:[['gap',get('width','var(--m-g)')],['card',get('padding','var(--m-cpad)','paddingTop')]],
+    width:front&&wrap?getComputedStyle(wrap).maxWidth:'none'
+  };
+  pr.style.borderTopStyle='solid';t.border=get('borderTopWidth','var(--m-bw)');   // a width only computes with a style
+  pr.remove();
+  return t;
+}
+const tokenNote=()=>`網站樣式選配器・${shortCode(state)}（${labelOf(state)}）${theme(state).dark?'深色':'淺色'}模式
+ * 完整代碼 ${enc(state)}・${new Date().toLocaleDateString('zh-TW')} 匯出；字級以桌機 1200px 版面為準`;
+function tokensText(fmt){
+  const t=readTokens(),L=[];
+  if(fmt==='json'){
+    const o={$description:`網站樣式選配器 ${shortCode(state)}：${labelOf(state)}`,color:{},font:{},typography:{},radius:{},shadow:{},space:{},size:{}};
+    t.color.forEach(([k,h,d])=>{o.color[k]={$type:'color',$value:h,$description:d};});
+    t.font.forEach(([k,f])=>{o.font[k]={$type:'fontFamily',$value:f.split(',').map(x=>x.trim().replace(/^"|"$/g,''))};});
+    t.text.forEach(([k,x])=>{o.typography[k]={$type:'typography',$value:{fontFamily:k==='base'?'{font.body}':'{font.heading}',fontSize:x.size,fontWeight:Number(x.weight),lineHeight:Number(x.line)}};});
+    t.radius.forEach(([k,r])=>{o.radius[k]={$type:'dimension',$value:r};});
+    t.shadow.forEach(([k,r])=>{o.shadow[k]={$value:r};});
+    t.space.forEach(([k,r])=>{o.space[k]={$type:'dimension',$value:r};});
+    o.size['border-width']={$type:'dimension',$value:t.border};
+    if(t.width!=='none') o.size['content-width']={$type:'dimension',$value:t.width};
+    return JSON.stringify(o,null,2);
+  }
+  const tw=fmt==='tailwind',p=tw?{text:'--text-',radius:'--radius-',shadow:'--shadow-',space:'--spacing-',width:'--container-content'}:{text:'--text-',radius:'--radius-',shadow:'--shadow-',space:'--space-',width:'--content-width'};
+  L.push(tw?`@import "tailwindcss";\n\n/*\n * ${tokenNote()}\n * 用法：bg-primary text-on-primary font-heading text-h1 rounded-card shadow-card max-w-content\n */\n@theme {`:`/*\n * ${tokenNote()}\n */\n:root {`);
+  L.push('  /* 顏色 */');t.color.forEach(([k,h,d])=>L.push(`  --color-${k}: ${h};${tw?'':` /* ${d} */`}`));
+  L.push('  /* 字體 */');t.font.forEach(([k,f])=>L.push(`  --font-${k}: ${f};`));
+  L.push('  /* 字級 */');t.text.forEach(([k,x])=>{L.push(`  ${p.text}${k}: ${x.size};`);L.push(`  ${p.text}${k}--line-height: ${x.line};`);L.push(`  ${p.text}${k}--font-weight: ${x.weight};`);});
+  L.push('  /* 形狀 */');t.radius.forEach(([k,r])=>L.push(`  ${p.radius}${k}: ${r};`));
+  if(!tw) L.push(`  --border-width: ${t.border};`);
+  t.shadow.forEach(([k,r])=>L.push(`  ${p.shadow}${k}: ${r};`));
+  L.push('  /* 間距與寬度 */');t.space.forEach(([k,r])=>L.push(`  ${p.space}${k}: ${r};`));
+  if(t.width!=='none') L.push(`  ${p.width}: ${t.width};`);
+  L.push('}');
+  return L.join('\n');
+}
+let tokensFmt='css';
+const TOKEN_FILE={css:['tokens.css','text/css'],tailwind:['tailwind-theme.css','text/css'],json:['tokens.json','application/json']};
+function renderTokens(){
+  $$('#tokensSeg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===tokensFmt)));
+  $('#tokensPre').textContent=tokensText(tokensFmt);
+  $('#tokensNote').textContent=`${shortCode(state)}・${theme(state).dark?'深色':'淺色'}模式`;
+}
+
+/* ---------- accessibility view on the live preview: colour-vision filters and page zoom ---------- */
+const view={vision:'',zoom:1};
+function applyView(){
+  const lp=$('#livePreview');
+  lp.dataset.vision=view.vision;lp.dataset.zoom=String(view.zoom);
+  $$('#visionSeg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===view.vision)));
+  $$('#zoomSeg button').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.v)===view.zoom)));
+  $('#a11yBtn').classList.toggle('is-on',!$('#a11yBar').hidden);
+  live.render(state);
+}
+
+/* ---------- recently viewed: combinations that stayed on screen for a moment ---------- */
+let recentT=0;
+function noteRecent(){
+  clearTimeout(recentT);
+  recentT=setTimeout(()=>{
+    const c=enc(state);if(recent[0]&&recent[0].c===c) return;
+    recent=[{c,t:Date.now()},...recent.filter(r=>r.c!==c)].slice(0,12);
+    try{localStorage.setItem(RKEY,JSON.stringify(recent));}catch(e){}
+    if(!$('#recentPop').hidden) renderRecent();
+  },1500);
+}
+const ago=t=>{const m=Math.round((Date.now()-t)/60000);return m<1?'剛剛':m<60?`${m} 分鐘前`:m<1440?`${Math.round(m/60)} 小時前`:`${Math.round(m/1440)} 天前`;};
+function renderRecent(){
+  const cur=enc(state);
+  $('#recentPop').innerHTML=`<div class="pop-h"><b>最近看過</b><small>停留超過 1.5 秒的組合會記在這裡</small></div>`+(recent.length?recent.map(r=>{
+    const s=full(dec(r.c)),t=theme(s);
+    return `<button type="button" class="rc${r.c===cur?' is-cur':''}" data-c="${r.c}"><span class="rc-sw">${[t.p,t.a,t.bg].map(h=>`<i style="background:${h}"></i>`).join('')}</span><span class="rc-t"><b>${shortCode(s)}</b><span>${labelOf(s)}</span></span><small>${r.c===cur?'目前':ago(r.t)}</small></button>`;
+  }).join(''):'<p class="pop-empty">還沒有紀錄。換幾個組合看看，這裡會自動記下來。</p>');
+}
+function toggleRecent(open){
+  const pop=$('#recentPop');pop.hidden=!open;$('#recentBtn').setAttribute('aria-expanded',String(open));
+  if(open) renderRecent();
 }
 
 /* ---------- template library (data from template-library.js) ---------- */
@@ -560,6 +757,60 @@ $$('.combo [data-lock]').forEach(b=>b.addEventListener('click',()=>{
   toast(locks[k]?`已鎖定${LOCKNAME[k]}，隨機組合時不會換掉`:`已解鎖${LOCKNAME[k]}，隨機組合時會一起換`);
 }));
 $('#exploreBtn').addEventListener('click',showExplore);
+$('#brandBtn').addEventListener('click',openBrand);
+$('#brandForm').addEventListener('input',e=>{if(e.target.name==='mark'||e.target.name==='name')logoPreview();});
+$('#logoFile').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f) return;
+  try{const img=await loadImg(await readFile(f));try{draftLogo=shrinkLogo(img);}catch(err){draftLogo=img.src;}logoPreview();showLogoColors(draftLogo);}
+  catch(err){$('#logoColors').hidden=false;$('#logoSwatches').innerHTML='';$('#logoColorHint').textContent='讀不出這個檔案，請換成 PNG、JPG 或 SVG 圖片。';}
+});
+$('#logoClear').addEventListener('click',()=>{draftLogo='';logoPreview();$('#logoColors').hidden=true;});
+$('#logoSwatches').addEventListener('click',e=>{
+  const b=e.target.closest('[data-hex]');if(!b) return;
+  state.custom=b.dataset.hex;state.color='c0';update();
+  $$('#logoSwatches [data-hex]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  $('#logoColorHint').textContent=`主色已換成 ${b.dataset.hex}，關掉視窗就能在預覽看到`;
+});
+$('#brandReset').addEventListener('click',()=>{const f=$('#brandForm').elements;for(const k in BRAND_DEF) if(k!=='logo') f[k].value=BRAND_DEF[k];draftLogo='';logoPreview();$('#logoColors').hidden=true;});
+$('#brandDlg').addEventListener('close',()=>{
+  if($('#brandDlg').returnValue!=='save') return;
+  const f=$('#brandForm').elements,o={logo:draftLogo};
+  for(const k in BRAND_DEF) if(k!=='logo') o[k]=f[k].value.trim();
+  if(!o.mark&&o.name) o.mark=o.name.charAt(0);
+  setBrand(o);
+  if(!persistBrand()){setBrand(Object.assign(o,{logo:''}));persistBrand();toast('Logo 圖片太大存不進瀏覽器，已先用文字標誌');}
+  else toast(brandOn()?`已換成「${brand.name}」，所有預覽都會用這個名稱`:'已恢復範例名稱');
+  brandChanged();
+});
+$('#tokensBtn').addEventListener('click',()=>{renderTokens();$('#tokensDlg').showModal();});
+$$('#tokensSeg button').forEach(b=>b.addEventListener('click',()=>{tokensFmt=b.dataset.v;renderTokens();}));
+$('#tokensClose').addEventListener('click',()=>$('#tokensDlg').close());
+$('#tokensCopy').addEventListener('click',()=>{
+  const b=$('#tokensCopy');
+  copyText($('#tokensPre').textContent,null,()=>{const r=document.createRange();r.selectNodeContents($('#tokensPre'));const sel=getSelection();sel.removeAllRanges();sel.addRange(r);});
+  b.textContent='已複製';setTimeout(()=>{b.textContent='複製';},1600);
+});
+$('#tokensDl').addEventListener('click',()=>{
+  const [name,mime]=TOKEN_FILE[tokensFmt],a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([$('#tokensPre').textContent],{type:mime}));a.download=`${shortCode(state).toLowerCase()}-${name}`;
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+$('#a11yBtn').addEventListener('click',()=>{
+  const bar=$('#a11yBar');bar.hidden=!bar.hidden;$('#a11yBtn').setAttribute('aria-expanded',String(!bar.hidden));
+  if(bar.hidden){view.vision='';view.zoom=1;}
+  applyView();
+});
+$$('#visionSeg button').forEach(b=>b.addEventListener('click',()=>{view.vision=b.dataset.v;applyView();}));
+$$('#zoomSeg button').forEach(b=>b.addEventListener('click',()=>{view.zoom=Number(b.dataset.v);applyView();}));
+$('#recentBtn').addEventListener('click',()=>toggleRecent($('#recentPop').hidden));
+$('#recentPop').addEventListener('click',e=>{
+  const b=e.target.closest('[data-c]');if(!b) return;
+  toggleRecent(false);
+  if(b.dataset.c===enc(state)) return;
+  withUndo(()=>{Object.assign(state,dec(b.dataset.c));update();},`已切回 ${shortCode(dec(b.dataset.c))}`);
+});
+document.addEventListener('click',e=>{if(!$('#recentPop').hidden&&!e.target.closest('#recentPop,#recentBtn'))toggleRecent(false);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#recentPop').hidden){toggleRecent(false);$('#recentBtn').focus();}});
 $('#expBack').addEventListener('click',()=>showWorkspace());
 $('#expMore').addEventListener('click',renderExplore);
 $$('#expAxis button').forEach(b=>b.addEventListener('click',()=>{expAxis=b.dataset.v;renderExplore();}));
@@ -570,7 +821,7 @@ $('#expGrid').addEventListener('click',e=>{
 });
 $('#saveLive').addEventListener('click',toggleSave);
 $('#saveRes').addEventListener('click',toggleSave);
-$('#savedBtn').addEventListener('click',showCompare);
+$('#savedBtn').addEventListener('click',()=>{cmpShared=null;showCompare();});
 if(TL.length){
   $('#libBtn').hidden=false;
   refreshScopeUI();
@@ -620,23 +871,48 @@ $('#cmpClear').addEventListener('click',e=>{
   saved=[];persistSaved();refreshSaveUI();renderCompare();toast('已清空收藏');
 });
 $('#cmpGrid').addEventListener('click',e=>{
-  const o=e.target.closest('[data-open]'),d=e.target.closest('[data-del]');
-  if(o){Object.assign(state,full(dec(saved[Number(o.dataset.open)])));showResult(true);}
+  const o=e.target.closest('[data-open]'),d=e.target.closest('[data-del]'),sv=e.target.closest('[data-save]');
+  const codes=cmpShared||saved;
+  if(o){Object.assign(state,dec(codes[Number(o.dataset.open)]));cmpShared=null;showResult(true);}
   else if(d){saved.splice(Number(d.dataset.del),1);persistSaved();refreshSaveUI();renderCompare();toast('已移除');}
+  else if(sv&&toggleSaveCode(codes[Number(sv.dataset.save)])) renderCompare();
+});
+$('#cmpShare').addEventListener('click',()=>{
+  const n=saved.filter(c=>(notes[c]||'').trim()).length;
+  copyText(setUrl(saved),`已複製分享連結：${saved.length} 組${n?`與 ${n} 則討論紀錄`:''}，對方打開會直接看到並排比較`,()=>window.prompt('複製這個連結',setUrl(saved)));
+});
+$('#cmpAddAll').addEventListener('click',()=>{
+  const add=cmpShared.filter(c=>!saved.includes(c)),room=6-saved.length,n=Math.min(add.length,room);
+  saved.push(...add.slice(0,room));persistSaved();refreshSaveUI();renderCompare();
+  toast(!add.length?'這些組合都已經在你的收藏裡':n<add.length?`收藏已滿 6 組，只加入了 ${n} 組`:`已加入 ${n} 組到你的收藏`);
 });
 $$('#devSeg button').forEach(b=>b.addEventListener('click',()=>{
   state.device=b.dataset.device;live.setDevice(state.device);
   $$('#devSeg button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
   live.render(state);save();
 }));
+function openHash(h){
+  if(h.brand&&Object.keys(h.brand).length&&JSON.stringify(h.brand)!==JSON.stringify(brandText())){
+    setBrand(h.brand);persistBrand();brandChanged();
+    setTimeout(()=>toast(`已套用連結裡的客戶名稱「${brand.name}」，可在「客戶品牌」修改`),400);
+  }
+  if(h.set){
+    // shared notes fill in only where this browser has none, so nothing local is overwritten
+    h.set.forEach((c,i)=>{const t=typeof h.notes[i]==='string'?h.notes[i].trim():'';if(t&&!(notes[c]||'').trim())notes[c]=t;});
+    persistNotes();
+    cmpShared=h.set;showCompare();return;
+  }
+  Object.assign(state,h.combo);showResult(false);
+}
 window.addEventListener('hashchange',()=>{
-  const p=parseHash();
-  if(p){Object.assign(state,full(p));showResult(false);}
+  const h=readHash();
+  if(h) openHash(h);
   else if(!$('#result').hidden){showWorkspace(3);}
 });
 if(document.fonts&&document.fonts.ready){document.fonts.ready.then(()=>{[live,resDesk,resPhone].concat(cmpPreviews).forEach(p=>p.queue());});}
 
-const fromHash=parseHash();
+const fromHash=readHash();
 update();
 setStep(Math.min(Math.max(Number(state.step)||0,0),3));
-if(fromHash){Object.assign(state,full(fromHash));showResult(false);}
+refreshBrandUI();
+if(fromHash) openHash(fromHash);
