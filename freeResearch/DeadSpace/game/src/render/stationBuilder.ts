@@ -7,6 +7,7 @@ import { Mat } from './materials'
 import { decalTex } from './tex'
 import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
+import { buildRockWalls, classifyOutdoor, groundTone } from './rockWalls'
 
 export const WALL_H = 2.4
 const DOOR_H = 2.15
@@ -83,6 +84,12 @@ function roomLabelTex(zh: string, en: string): THREE.CanvasTexture {
   return t
 }
 
+function hashId(id: string): number {
+  let h = 7
+  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0
+  return h & 0xffff
+}
+
 export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   const th = theme(st.theme)
   const group = new THREE.Group()
@@ -96,6 +103,10 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     const r = l.roomOf[row * l.w + col]
     return r >= 0 ? l.rooms[r].spec.type : 'corridor'
   }
+
+  // 室外（行星、衛星）：自然岩壁＋人造建物牆（rockWalls.ts），岩壁沒有燈條
+  const outdoor = !!st.outdoor
+  const ocls = outdoor ? classifyOutdoor(l, th, cellAt, roomType) : null
 
   // ───── 地板：依房間類型分材質，世界座標 UV，頂點 AO ─────
   const floorGeo = new Map<string, { pos: number[]; uv: number[]; col: number[]; nrm: number[] }>()
@@ -111,12 +122,22 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   for (let row = 0; row < l.h; row++) {
     for (let col = 0; col < l.w; col++) {
       const c = cellAt(col, row)
-      if (!isFloorish(c)) continue
-      let rt = roomType(col, row)
-      if (c === Cell.Door) {
-        // 門格跟隨相鄰房間
-        rt = 'corridor'
-      }
+      let rt: string
+      if (!isFloorish(c)) {
+        // 室外：自然岩壁的邊緣格底下也鋪地板（輪廓平滑後岩壁會往內縮，不能露出底下的黑色背景）
+        const i = row * l.w + col
+        if (!ocls || c !== Cell.Wall || ocls.built[i] || ocls.dist[i] !== 1) continue
+        let nb: [number, number] | null = null
+        for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+          const k = cellAt(col + dc, row + dr)
+          if (isFloorish(k) && k !== Cell.Door) {
+            nb = [col + dc, row + dr]
+            break
+          }
+        }
+        if (!nb) continue
+        rt = roomType(nb[0], nb[1])
+      } else rt = c === Cell.Door ? 'corridor' : roomType(col, row) // 門格跟隨走廊
       const f = th.floor[rt] ?? th.defaultFloor
       const key = `${f.variant}|${f.tint}`
       let g = floorGeo.get(key)
@@ -132,18 +153,22 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         [x0, y1, col, row],
       ]
       const ao = corners.map(([, , cc, rr]) => 1 - Math.min(2, blockedCorner(cc, rr)) * 0.22)
-      const jitter = 0.94 + (((col * 73856093) ^ (row * 19349663)) >>> 0) % 1000 / 1000 * 0.1
+      // 站內：每格一點隨機明暗；室外：跨格連續的低頻明暗（打散草地／岩地貼圖的重複感）
+      const jitter = outdoor ? 1 : 0.94 + (((col * 73856093) ^ (row * 19349663)) >>> 0) % 1000 / 1000 * 0.1
+      // 岩地貼圖 4 m 一個 tile（其他 2 m）
+      const us = f.variant === 'rock' ? 0.25 : 0.5
       const tri = [0, 1, 2, 0, 2, 3]
       for (const k of tri) {
         const [x, y] = corners[k]
         g.pos.push(x, 0, -y)
-        g.uv.push(x / 2, y / 2)
+        g.uv.push(x * us, y * us)
         g.nrm.push(0, 1, 0)
-        const a = ao[k] * jitter * (c === Cell.Hazard ? 0.8 : 1)
+        const a = ao[k] * jitter * (c === Cell.Hazard ? 0.8 : 1) * (outdoor ? groundTone(x, y) : 1)
         g.col.push(a, a, a)
       }
     }
   }
+  const fillGeos: THREE.BufferGeometry[] = []
   for (const [key, g] of floorGeo) {
     const [variant, tint] = key.split('|') as ['plate' | 'grate' | 'tile' | 'rubber' | 'concrete', string]
     const geo = new THREE.BufferGeometry()
@@ -152,7 +177,8 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2))
     geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3))
     geo.computeBoundingSphere()
-    const mesh = new THREE.Mesh(geo, Mat.floor(variant, tint))
+    if (th.fill) fillGeos.push(geo)
+    const mesh = new THREE.Mesh(geo, Mat.floor(variant, tint, !!th.fill))
     mesh.receiveShadow = true
     mesh.matrixAutoUpdate = false
     group.add(mesh)
@@ -167,8 +193,6 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   const wnrm: number[] = []
   const cap = new Batcher()
   const trimMat = Mat.metal(th.trim, 0.5, false)
-  // 室外（行星、衛星）：岩壁沒有燈條、牆頂不是船殼板
-  const outdoor = !!st.outdoor
   const strips = new Map<string, Batcher>()
   const face = (ax: number, az: number, bx: number, bz: number, nx: number, nz: number, uStart: number) => {
     // 由 a 到 b 的垂直牆面（底 0、頂 WALL_H）
@@ -186,7 +210,8 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       wcol.push(a, a, a)
     }
   }
-  for (let row = 0; row < l.h; row++) {
+  if (ocls) buildRockWalls({ l, th, group, cls: ocls, cellAt, wallH: WALL_H, seed: hashId(st.id) })
+  for (let row = 0; row < l.h && !outdoor; row++) {
     for (let col = 0; col < l.w; col++) {
       if (cellAt(col, row) !== Cell.Wall) continue
       const x0 = col
@@ -209,7 +234,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         const nc = col + (nx > 0 ? 1 : nx < 0 ? -1 : 0)
         const nr = row + (nz > 0 ? 1 : nz < 0 ? -1 : 0)
         const ri = l.roomOf[nr * l.w + nc]
-        if (!outdoor && ri >= 0 && (col + row) % 3 !== 0) {
+        if (ri >= 0 && (col + row) % 3 !== 0) {
           const color = l.rooms[ri].spec.light ?? th.light
           let bt = strips.get(color)
           if (!bt) strips.set(color, (bt = new Batcher()))
@@ -219,9 +244,8 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
           bt.add(box(nx !== 0 ? 0.04 : 0.86, 0.06, nz !== 0 ? 0.04 : 0.86), Mat.emissive(color, 2.6), mx, 1.62, mz, along)
         }
       }
-      // 牆頂：暗色船殼板＋亮邊（室外岩壁只蓋同材質的頂，不加飾條）
-      cap.add(box(1, 0.06, 1), outdoor ? wallMat : capMat, col + 0.5, WALL_H + 0.03, -(l.h - row - 0.5))
-      if (outdoor) continue
+      // 牆頂：暗色船殼板＋亮邊
+      cap.add(box(1, 0.06, 1), capMat, col + 0.5, WALL_H + 0.03, -(l.h - row - 0.5))
       // 面向房間的牆頂邊緣飾條
       for (const [dc, dr, ox, oz, sx, sz] of [
         [0, -1, 0, -0.47, 1, 0.06],
@@ -235,17 +259,19 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       }
     }
   }
-  const wg = new THREE.BufferGeometry()
-  wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3))
-  wg.setAttribute('normal', new THREE.Float32BufferAttribute(wnrm, 3))
-  wg.setAttribute('uv', new THREE.Float32BufferAttribute(wuv, 2))
-  wg.setAttribute('color', new THREE.Float32BufferAttribute(wcol, 3))
-  wg.computeBoundingSphere()
-  const walls = new THREE.Mesh(wg, wallMat)
-  walls.castShadow = true
-  walls.receiveShadow = true
-  walls.matrixAutoUpdate = false
-  group.add(walls)
+  if (wpos.length) {
+    const wg = new THREE.BufferGeometry()
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3))
+    wg.setAttribute('normal', new THREE.Float32BufferAttribute(wnrm, 3))
+    wg.setAttribute('uv', new THREE.Float32BufferAttribute(wuv, 2))
+    wg.setAttribute('color', new THREE.Float32BufferAttribute(wcol, 3))
+    wg.computeBoundingSphere()
+    const walls = new THREE.Mesh(wg, wallMat)
+    walls.castShadow = true
+    walls.receiveShadow = true
+    walls.matrixAutoUpdate = false
+    group.add(walls)
+  }
   cap.build(group, { cast: false, receive: true })
   for (const bt of strips.values()) bt.build(group, { cast: false, receive: false })
 
@@ -387,6 +413,9 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       group.add(cross)
     }
   }
+  // 地板烘焙補光：每盞房間燈在地板上留一圈暗光（不受燈光池上限影響）
+  if (th.fill) bakeFill(fillGeos, lights, th.fill)
+
   // 走廊箭頭
   const arrowMat = new THREE.MeshBasicMaterial({ map: decalTex('arrow', '#ffc23d'), transparent: true, opacity: 0.4, depthWrite: false })
   for (const r of l.rooms) {
@@ -416,6 +445,35 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         if (m.geometry && !m.geometry.userData.shared) m.geometry.dispose()
       })
     },
+  }
+}
+
+/** 依房間燈算地板頂點的補光（線性色），半徑跟燈的照射距離走、平方衰減，各通道封頂避免過曝 */
+function bakeFill(geos: THREE.BufferGeometry[], lights: RoomLight[], k: number): void {
+  for (const geo of geos) {
+    const pos = geo.attributes.position
+    const out = new Float32Array(pos.count * 3)
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const z = pos.getZ(i)
+      let r = 0
+      let g = 0
+      let b = 0
+      for (const l of lights) {
+        const R = Math.min(15, Math.max(5, l.distance * 0.55))
+        const t = ((x - l.x) ** 2 + (z - l.z) ** 2) / (R * R)
+        if (t >= 1) continue
+        const w = (1 - t) * (1 - t) * Math.min(1.4, l.intensity / 30) * k
+        r += l.color.r * w
+        g += l.color.g * w
+        b += l.color.b * w
+      }
+      const cap = k * 1.3
+      out[i * 3] = Math.min(cap, r)
+      out[i * 3 + 1] = Math.min(cap, g)
+      out[i * 3 + 2] = Math.min(cap, b)
+    }
+    geo.setAttribute('xcFill', new THREE.Float32BufferAttribute(out, 3))
   }
 }
 

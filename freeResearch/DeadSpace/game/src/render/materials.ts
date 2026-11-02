@@ -102,13 +102,35 @@ export function withRim<T extends THREE.MeshStandardMaterial>(m: T, color = '#9f
   return m
 }
 
+/**
+ * 烘焙補光：幾何帶 `xcFill`（vec3，線性色）時，把 albedo × xcFill 當自發光加上去。
+ * 站體建構時依房間燈位置算好每個地板頂點的補光，暗站在 low 畫質（燈光池只有 4 盞）也讀得出地板；
+ * 加在自發光，所以戰爭迷霧照樣壓暗。只給一定會帶這個 attribute 的幾何用（缺 attribute 時 WebGL 會沿用該 location 的通用值）。
+ */
+function withFill<T extends THREE.MeshStandardMaterial>(m: T): T {
+  const prev = m.onBeforeCompile
+  m.onBeforeCompile = (shader, r) => {
+    prev?.call(m, shader, r)
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 xcFill;\nvarying vec3 vXcFill;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvXcFill = xcFill;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vXcFill;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vXcFill;')
+  }
+  const key = m.customProgramCacheKey.bind(m)
+  m.customProgramCacheKey = () => key() + ':fill'
+  return m
+}
+
 export const Mat = {
-  floor(variant: FloorVariant, tint: string): THREE.MeshStandardMaterial {
-    return std(`floor:${variant}:${tint}`, () => {
+  /** 地板；fill = 幾何帶烘焙補光 attribute（見 withFill）*/
+  floor(variant: FloorVariant, tint: string, fill = false): THREE.MeshStandardMaterial {
+    return std(`floor:${variant}:${tint}:${fill}`, () => {
       const soft = variant === 'concrete' || variant === 'rubber' || variant === 'grass' || variant === 'rock'
       const m = pbr(floorSet(variant, tint), { metalness: soft ? (variant === 'grass' ? 0 : 0.05) : 0.55, vertexColors: true })
       m.normalScale.set(0.8, 0.8)
-      return m
+      return fill ? withFill(m) : m
     })
   },
   /** 站內牆板；tint 以 'rock:' 開頭時改用岩壁（室外地表，accent = 苔蘚／礦脈色），'flesh:' 改用有機組織 */
@@ -124,9 +146,9 @@ export const Mat = {
     return std(`metal:${tint}:${metalness}:${panels}`, () => pbr(metalSet(tint, 11, panels), { metalness }))
   },
   /** 岩石（巨石、岩壁頂、雕像）*/
-  rock(tint: string, mode: 'floor' | 'cap' = 'cap'): THREE.MeshStandardMaterial {
-    return std(`rock:${tint}:${mode}`, () => {
-      const m = pbr(rockSet(tint, 7, mode), { metalness: 0 })
+  rock(tint: string, mode: 'floor' | 'cap' = 'cap', vertexColors = false): THREE.MeshStandardMaterial {
+    return std(`rock:${tint}:${mode}:${vertexColors}`, () => {
+      const m = pbr(rockSet(tint, 7, mode), { metalness: 0, vertexColors })
       m.normalScale.set(1.2, 1.2)
       return m
     })

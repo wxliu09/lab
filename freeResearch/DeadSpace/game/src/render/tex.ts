@@ -782,13 +782,26 @@ export function grassSet(tint: string, seed = 3): PbrSet {
   })
 }
 
-/** 岩地／岩塊：Worley 裂紋＋碎石＋fbm 明暗（floor 用較平、cap 用較粗）*/
+const sstep = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * 岩地（floor）／岩塊（cap）。
+ * floor：細砂風化層＋露出的基岩斑塊（裂紋只在基岩上、斷斷續續）＋小隕石坑＋碎石，沒有一格一格的石板明暗；
+ *        站體以 4 m 一個 tile 鋪（stationBuilder），再疊頂點色的低頻明暗，看不出重複。
+ * cap：巨石、岩壁頂、雕像：fbm 明暗＋斷續的細裂紋＋礦物斑點，Worley 面只留很淡的面差。
+ */
 export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor'): PbrSet {
-  return cache3(`rock:${tint}:${seed}:${mode}`, () => {
+  return cache3(`rock2:${tint}:${seed}:${mode}`, () => {
     const S = 512
-    const wv = worley(S, mode === 'floor' ? 3 : 4, seed + 90)
-    const big = noiseField(S, 5, seed + 91, 3)
+    const floor = mode === 'floor'
+    const wv = worley(S, floor ? 6 : 5, seed + 90)
+    const big = noiseField(S, 5, seed + 91, floor ? 2 : 3)
+    const mid = noiseField(S, 4, seed + 94, floor ? 6 : 10)
     const fine = noiseField(S, 4, seed + 92, 40)
+    const grain = noiseField(S, 2, seed + 95, 128)
     const [tr, tg, tb] = hexRgb(tint)
     const albedo = new Uint8ClampedArray(S * S * 4)
     const rough = new Float32Array(S * S)
@@ -796,47 +809,92 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
     const rnd = rand32(seed + 93)
     for (let i = 0; i < S * S; i++) {
       const edge = wv.f2[i] - wv.f1[i]
-      const crack = edge < 0.035 ? (1 - edge / 0.035) * (0.55 + big[i] * 0.6) : 0
-      const slab = wv.id[i]
-      const h = 0.55 + (1 - wv.f1[i]) * 0.18 + (big[i] - 0.5) * 0.3 + (fine[i] - 0.5) * 0.12 - crack * 0.45
+      let lum: number
+      let h: number
+      let r: number
+      let warm: number
+      if (floor) {
+        const b = big[i] * 0.65 + mid[i] * 0.35
+        const bed = sstep(0.5, 0.6, b)
+        const crack = (edge < 0.03 ? 1 - edge / 0.03 : 0) * bed * sstep(0.42, 0.6, fine[i] * 0.6 + mid[i] * 0.5)
+        const lumBed = 0.8 + (fine[i] - 0.5) * 0.5 + (mid[i] - 0.5) * 0.35 + (wv.id[i] - 0.5) * 0.08 - crack * 0.55
+        const lumReg = 0.98 + (grain[i] - 0.5) * 0.3 + (mid[i] - 0.5) * 0.28 + (fine[i] - 0.5) * 0.12 + (big[i] - 0.5) * 0.2
+        lum = lumReg + (lumBed - lumReg) * bed
+        h = 0.42 + grain[i] * 0.06 + fine[i] * 0.04 + (0.16 + (1 - wv.f1[i]) * 0.05 + (fine[i] - 0.5) * 0.22) * bed - crack * 0.3
+        r = 0.93 + (0.82 + (fine[i] - 0.5) * 0.22 - 0.93) * bed + crack * 0.06
+        warm = 0.03 - bed * 0.06
+      } else {
+        const crack = (edge < 0.025 ? 1 - edge / 0.025 : 0) * sstep(0.45, 0.6, mid[i])
+        lum = (0.76 + (wv.id[i] - 0.5) * 0.1 + (big[i] - 0.5) * 0.5 + (fine[i] - 0.5) * 0.35 + (mid[i] - 0.5) * 0.2) * (1 - crack * 0.45)
+        h = 0.55 + (1 - wv.f1[i]) * 0.1 + (big[i] - 0.5) * 0.25 + (fine[i] - 0.5) * 0.18 - crack * 0.45
+        r = 0.8 + crack * 0.15 + (fine[i] - 0.5) * 0.2
+        warm = (big[i] - 0.5) * 0.06
+      }
       height[i] = h
-      const cap = mode === 'cap'
-      const lum = (0.72 + slab * (cap ? 0.14 : 0.3) + (big[i] - 0.5) * 0.55 + (fine[i] - 0.5) * 0.35) * (1 - crack * (cap ? 0.35 : 0.65))
-      albedo[i * 4] = tr * lum * (0.95 + slab * 0.1)
+      albedo[i * 4] = tr * lum * (1 + warm)
       albedo[i * 4 + 1] = tg * lum
-      albedo[i * 4 + 2] = tb * lum * (1.05 - slab * 0.1)
+      albedo[i * 4 + 2] = tb * lum * (1 - warm)
       albedo[i * 4 + 3] = 255
-      rough[i] = 0.78 + crack * 0.2 + (fine[i] - 0.5) * 0.2 - (h > 0.75 ? 0.15 : 0)
+      rough[i] = r
     }
-    // 碎石
-    for (let k = 0; k < (mode === 'floor' ? 900 : 300); k++) {
-      const cx = rnd() * S
-      const cy = rnd() * S
-      const r = 1 + rnd() * (mode === 'floor' ? 3.2 : 2)
-      const l = 0.6 + rnd() * 0.8
-      for (let y = Math.floor(cy - r); y <= cy + r; y++) {
-        for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-          const d = Math.hypot(x - cx, y - cy) / r
-          if (d > 1) continue
-          const i = (y & (S - 1)) * S + (x & (S - 1))
-          height[i] += (1 - d * d) * 0.25
-          albedo[i * 4] = tr * l
-          albedo[i * 4 + 1] = tg * l
-          albedo[i * 4 + 2] = tb * l
-          rough[i] = 0.6
+    const W = S - 1
+    // 小隕石坑（只在岩地）：碗狀凹陷＋隆起的坑緣、坑底略暗
+    if (floor) {
+      for (let k = 0; k < 16; k++) {
+        const cx = rnd() * S
+        const cy = rnd() * S
+        const R = 5 + rnd() * rnd() * 46
+        const ext = Math.ceil(R * 1.5)
+        for (let y = Math.floor(cy - ext); y <= cy + ext; y++) {
+          for (let x = Math.floor(cx - ext); x <= cx + ext; x++) {
+            const d = Math.hypot(x - cx, y - cy) / R
+            if (d > 1.5) continue
+            const i = (y & W) * S + (x & W)
+            const bowl = d < 1 ? -(1 - d * d) * 0.32 : 0
+            const rim = Math.exp(-((d - 1) ** 2) * 28) * 0.14
+            height[i] += bowl + rim
+            const l = d < 0.95 ? 0.86 + d * 0.08 : 1 + rim * 0.9
+            albedo[i * 4] *= l
+            albedo[i * 4 + 1] *= l
+            albedo[i * 4 + 2] *= l
+            if (d < 1) rough[i] = Math.min(1, rough[i] + 0.04)
+          }
         }
       }
     }
-    return finishSet(S, albedo, rough, height, mode === 'floor' ? 6 : 8)
+    // 碎石／礦物斑點
+    for (let k = 0; k < (floor ? 700 : 260); k++) {
+      const cx = rnd() * S
+      const cy = rnd() * S
+      const rr = floor ? 1.5 + rnd() * rnd() * 5 : 0.8 + rnd() * 1.6
+      const l = floor ? 0.55 + rnd() * 0.75 : 1.1 + rnd() * 0.35
+      for (let y = Math.floor(cy - rr); y <= cy + rr; y++) {
+        for (let x = Math.floor(cx - rr); x <= cx + rr; x++) {
+          const d = Math.hypot(x - cx, y - cy) / rr
+          if (d > 1) continue
+          const i = (y & W) * S + (x & W)
+          height[i] += (1 - d * d) * (floor ? 0.22 : 0.06)
+          albedo[i * 4] = tr * l
+          albedo[i * 4 + 1] = tg * l
+          albedo[i * 4 + 2] = tb * l * 1.02
+          rough[i] = floor ? 0.62 : 0.55
+        }
+      }
+    }
+    return finishSet(S, albedo, rough, height, floor ? 6 : 8)
   })
 }
 
-/** 岩壁（u = 沿牆 2 m，v = 牆高）：水平岩層、裂縫、縫隙裡的苔蘚／礦脈（accent）*/
+/**
+ * 岩壁（u = 沿牆 2 m，v = 牆高 2.4 m，垂直方向也無縫）：被扭曲的水平岩層（粗細兩組）、
+ * 突出的層理岩棚、斷續的裂縫、縫隙與岩棚上的苔蘚／礦脈（accent）。Worley 面只留很淡的明暗。
+ */
 export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
-  return cache3(`rockwall:${tint}:${accent}:${seed}`, () => {
+  return cache3(`rockwall2:${tint}:${accent}:${seed}`, () => {
     const S = 512
     const big = noiseField(S, 5, seed + 60, 3)
     const fine = noiseField(S, 4, seed + 61, 36)
+    const mid = noiseField(S, 4, seed + 63, 8)
     const wv = worley(S, 6, seed + 62)
     const [tr, tg, tb] = hexRgb(tint)
     const [ar, ag, ab] = hexRgb(accent)
@@ -847,20 +905,23 @@ export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
       for (let x = 0; x < S; x++) {
         const i = y * S + x
         const v = y / S
-        // 岩層：被噪音扭曲的水平帶
-        const band = Math.sin((v * 9 + big[i] * 1.6) * Math.PI)
-        const ledge = band > 0.82 ? (band - 0.82) / 0.18 : 0
+        // 岩層：sin 的頻率取偶數倍 π，垂直方向無縫；以低頻噪音扭曲成起伏的層理
+        const s1 = Math.sin((v * 8 + big[i] * 1.8) * Math.PI)
+        const s2 = Math.sin((v * 22 + big[i] * 2.6 + mid[i] * 0.8) * Math.PI)
+        const layer = s1 * 0.65 + s2 * 0.3
+        const ledge = s1 > 0.78 ? (s1 - 0.78) / 0.22 : 0
+        const groove = s1 < -0.86 ? (-0.86 - s1) / 0.14 : 0
         const edge = wv.f2[i] - wv.f1[i]
-        const crack = edge < 0.04 ? 1 - edge / 0.04 : 0
-        const moss = Math.max(0, (crack * 0.8 + ledge * 0.6) * (fine[i] + big[i] - 0.7) * 2)
-        const lum = (0.62 + wv.id[i] * 0.25 + (big[i] - 0.5) * 0.4 + (fine[i] - 0.5) * 0.25 + band * 0.08) * (1 - crack * 0.6) * (0.82 + (1 - v) * 0.25)
+        const crack = Math.max(edge < 0.035 ? (1 - edge / 0.035) * sstep(0.44, 0.6, mid[i]) : 0, groove * 0.7)
+        const moss = Math.max(0, (crack * 0.8 + ledge * 0.7) * (fine[i] + big[i] - 0.72) * 2.2)
+        const lum = (0.66 + layer * 0.13 + (wv.id[i] - 0.5) * 0.08 + (big[i] - 0.5) * 0.36 + (fine[i] - 0.5) * 0.26 + ledge * 0.08) * (1 - crack * 0.6)
         const m = Math.min(1, moss)
         albedo[i * 4] = tr * lum * (1 - m) + ar * 0.55 * m
         albedo[i * 4 + 1] = tg * lum * (1 - m) + ag * 0.55 * m
         albedo[i * 4 + 2] = tb * lum * (1 - m) + ab * 0.55 * m
         albedo[i * 4 + 3] = 255
-        rough[i] = 0.85 - ledge * 0.15 + crack * 0.12 - m * 0.25
-        height[i] = 0.5 + band * 0.12 + (1 - wv.f1[i]) * 0.2 + (fine[i] - 0.5) * 0.15 - crack * 0.4
+        rough[i] = 0.86 - ledge * 0.12 + crack * 0.1 - m * 0.25
+        height[i] = 0.5 + layer * 0.16 + ledge * 0.12 + (1 - wv.f1[i]) * 0.06 + (fine[i] - 0.5) * 0.15 - crack * 0.4
       }
     }
     return finishSet(S, albedo, rough, height, 7)

@@ -17,6 +17,10 @@ export interface Theme {
   lightScale: number
   grade: { hue: number; sat: number; bright: number; contrast: number }
   dust?: string
+  /** 地板烘焙補光強度（0 = 不補）：依房間燈位置在地板頂點加一層暗光，暗站在 low 畫質也讀得出地板 */
+  fill?: number
+  /** 室外站：圍著這些房間類型的牆是人造的（筆直混凝土牆＋金屬壓條），其餘是自然岩壁 */
+  built?: { rooms: string[]; wall: string; cap: string; trim: string }
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -84,6 +88,8 @@ THEMES.adjudicatrix = {
   ambientGround: '#07090e',
   ambient: 1.15,
   lightScale: 1,
+  // 大房間（鑄造廠 17 m）只配一盞頂燈，聚光燈邊緣以外很暗：補一層地板暗光
+  fill: 0.16,
   grade: { hue: -0.02, sat: 0.04, bright: 0, contrast: 0.08 },
 }
 
@@ -110,6 +116,8 @@ THEMES.tenshu = {
   ambientGround: '#0a0806',
   ambient: 1.2,
   lightScale: 1.3,
+  // 黑＋橘：橘色暗光讓地板讀得出來，燈與燈之間仍是暗的
+  fill: 0.2,
   grade: { hue: 0.02, sat: 0.06, bright: -0.01, contrast: 0.12 },
 }
 
@@ -128,6 +136,8 @@ THEMES.hulk7 = {
   ambientGround: '#060504',
   ambient: 0.9,
   lightScale: 0.7,
+  // 斷電的廢站：只補很淡的一層，保留黑暗感（緊急照明燈道具另外提供光點）
+  fill: 0.12,
   grade: { hue: 0.03, sat: -0.12, bright: -0.03, contrast: 0.14 },
   dust: '#c8a070',
 }
@@ -254,6 +264,8 @@ THEMES.verdance = {
   ambient: 1.5,
   lightScale: 2.2,
   grade: { hue: 0, sat: 0.06, bright: 0.02, contrast: 0.06 },
+  // 營舍、前哨商店、補給掩體是軍方蓋的建物
+  built: { rooms: ['quarters', 'outpost', 'closet'], wall: '#7c7a76', cap: '#2e3136', trim: '#9aa0a6' },
 }
 
 /** 餘燼衛星：灰黑岩、漂浮碎石、重力裝置環形光（室外：岩壁、岩地）*/
@@ -274,6 +286,7 @@ THEMES.cinder = {
   ambient: 1.1,
   lightScale: 2.4,
   grade: { hue: 0, sat: -0.12, bright: 0, contrast: 0.1 },
+  built: { rooms: ['factory'], wall: '#5e6064', cap: '#25282d', trim: '#8a9096' },
 }
 
 /** 未識別物體：不安的紫綠、有機腔壁 */
