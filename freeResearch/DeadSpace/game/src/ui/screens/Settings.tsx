@@ -2,6 +2,9 @@ import { useState } from 'preact/hooks'
 import { lang, setLang, t, type Lang } from '../i18n'
 import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net/trystero'
 import { quality, setQuality, type Quality } from '../../render/quality'
+import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
+
+const VOL_KEYS: (keyof Omit<AudioPrefs, 'muted'>)[] = ['master', 'music', 'sfx', 'ambient']
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const ns = loadNetSettings()
@@ -44,6 +47,31 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 </option>
               ))}
             </select>
+          </div>
+          <h3 style={{ margin: '8px 0 2px' }}>{t('settings.audio')}</h3>
+          {VOL_KEYS.map((k) => (
+            <div class="setrow" key={k}>
+              <label>{t('settings.vol.' + k)}</label>
+              <div class="row" style={{ gap: '8px' }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(audioPrefs.value[k] * 100)}
+                  style={{ width: '160px' }}
+                  data-testid={'vol-' + k}
+                  onInput={(e) => setAudioPref(k, Number((e.target as HTMLInputElement).value) / 100)}
+                  onChange={() => sfx(k === 'music' || k === 'ambient' ? 'notify' : 'pickup')}
+                />
+                <span class="mono dim" style={{ width: '32px', textAlign: 'right' }}>
+                  {Math.round(audioPrefs.value[k] * 100)}
+                </span>
+              </div>
+            </div>
+          ))}
+          <div class="setrow">
+            <label>{t('settings.mute')}</label>
+            <input type="checkbox" checked={audioPrefs.value.muted} onChange={(e) => setAudioPref('muted', (e.target as HTMLInputElement).checked)} />
           </div>
           <div class="setrow">
             <label>{t('settings.net')}</label>

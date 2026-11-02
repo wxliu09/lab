@@ -38,6 +38,8 @@ export class ClientWorld {
   tick = 0
   snapCount = 0
   onFx: ((f: FxEvent) => void) | null = null
+  /** 其他模組（音訊導演）旁聽特效事件 */
+  readonly fxTaps: ((f: FxEvent) => void)[] = []
 
   reset(): void {
     this.ents.clear()
@@ -103,6 +105,7 @@ export class ClientWorld {
       for (const f of s.fx) {
         if (this.onFx) this.onFx(f)
         else this.fxQueue.push(f)
+        for (const tap of this.fxTaps) tap(f)
       }
     }
   }

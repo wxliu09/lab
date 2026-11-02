@@ -1,0 +1,337 @@
+// 音訊導演：依畫面與局勢決定背景音樂情境、環境音，並把各種狀態變化轉成回饋音效。
+// 只看 client 本來就看得到的資料（快照、自己的私有狀態、聊天），不會因為音樂而洩漏看不到的東西。
+import { effect } from '@preact/signals'
+import { EntFlag, type ChatLine, type FxEvent } from '../shared/protocol/messages'
+import { STATION_BY_ID } from '../shared/content/stations/index'
+import { chatLog, cmdTaps, endResult, lobby, screen, snapTick, startInfo, world } from '../client/session'
+import { chatOpen, evolveOpen } from '../client/input'
+import type { GameScene } from '../render/gameScene'
+import { setAmbient, type AmbientKind } from './ambient'
+import { currentMood, setMood, type Mood } from './music'
+import { audioContext, debugLevel, debugPeak, listenerPos, sfx } from './sfx'
+import { notesOpen } from '../ui/hud/Investigation'
+import { codexOpen } from '../ui/hud/Codex'
+
+let scene: GameScene | null = null
+let forced: Mood | null = null
+
+/** GameScreen 掛上場景（知道目前看的是哪個 zone、門在哪裡）*/
+export function bindAudioScene(gs: GameScene | null): void {
+  scene = gs
+}
+
+// ───────── 局勢判定 ─────────
+
+const st = {
+  hurtAt: -1e9,
+  combatUntil: 0,
+  tenseUntil: 0,
+  alarmUntil: 0,
+  lastHp: -1,
+  lastAlive: true,
+  lastInv: [] as (string | null)[],
+  lastEp: -1,
+  lastCd: new Map<string, number>(),
+  lastDoors: new Map<number, number>(),
+  steps: new Map<number, { x: number; y: number; acc: number }>(),
+  heartbeatAt: 0,
+  revealedFor: null as unknown,
+  chatSeen: 0,
+  lobbyN: -1,
+  lobbyReady: -1,
+  inGame: false,
+}
+
+const now = () => performance.now() / 1000
+
+const ERROR_KEYS = /^@(cast\.|vendor\.(soldOut|tooFar|offline|noPower)|item\.(full|uniqueOnly|cantSuit|notYet|deployFail)|role\.cant|chat\.(no|nameTaken)|git\.msg\.already|fac\.(tooFar|offline))/
+
+function myUnit() {
+  const id = world.me.control ?? world.me.unit
+  return id ? world.ents.get(id) : undefined
+}
+
+function zoneKind(): AmbientKind {
+  const zid = scene?.zone ?? -1
+  if (zid === 0) return 'space'
+  const info = startInfo.value?.zones.find((z) => z[0] === zid)
+  const sid = info?.[2] ?? ''
+  if (sid.startsWith('ship:')) return 'ship'
+  if (sid === 'hulk7') return 'derelict'
+  if (sid === 'uo') return 'organic'
+  if (STATION_BY_ID.get(sid)?.outdoor) return 'outdoor'
+  return 'station'
+}
+
+/** 這個實體看起來是不是威脅（只用快照裡看得到的欄位）*/
+function threatening(e: { s: { fl?: number; o?: number; d?: string } }): boolean {
+  const fl = e.s.fl ?? 0
+  if (fl & (EntFlag.Mine | EntFlag.Ally | EntFlag.Corpse)) return false
+  if (fl & EntFlag.Hostile) return true
+  const d = e.s.d ?? ''
+  return d.startsWith('xeno.') || d.startsWith('mut.') || d.startsWith('fleet.') || d.startsWith('pirate.')
+}
+
+function pickMood(): Mood {
+  const s = screen.value
+  if (s === 'menu' || s === 'connecting') return 'menu'
+  if (s === 'lobby') return 'lobby'
+  if (endResult.value) return 'dead'
+  const me = world.me
+  if (me.alive === false) return 'dead'
+  if (world.w.apo) return 'apocalypse'
+  const t = now()
+  const u = myUnit()
+  if (u) {
+    const zid = u.s.z
+    for (const e of world.ents.values()) {
+      if (e.s.z !== zid || !threatening(e)) continue
+      const d = Math.hypot(e.x - u.x, e.y - u.y)
+      if (d < 9 && e.s.st === 2) st.combatUntil = Math.max(st.combatUntil, t + 8)
+      if (d < 15) st.tenseUntil = Math.max(st.tenseUntil, t + 6)
+    }
+    if (u.s.st === 2) st.combatUntil = Math.max(st.combatUntil, t + 6)
+    const hpK = (u.s.hp ?? 1) / Math.max(1, u.s.mhp ?? 1)
+    if (hpK < 0.3) st.tenseUntil = Math.max(st.tenseUntil, t + 3)
+  }
+  if (t < st.combatUntil || t - st.hurtAt < 6) return 'combat'
+  if (t < st.alarmUntil) return 'alarm'
+  if (t < st.tenseUntil || (world.w.stab ?? 1) <= 0.25) return 'tense'
+  return 'explore'
+}
+
+// ───────── 每個快照的回饋 ─────────
+
+function onSnap(): void {
+  if (screen.value !== 'game') return
+  const me = world.me
+  const u = myUnit()
+  const t = now()
+  // 角色揭露（每局一次）
+  if (me.role && st.revealedFor !== startInfo.value) {
+    st.revealedFor = startInfo.value
+    const r = me.role
+    sfx(r === 'xeno' ? 'revealXeno' : r === 'mutant' ? 'revealMutant' : r === 'android' ? 'revealAndroid' : 'revealHuman')
+  }
+  // 死亡
+  const alive = me.alive !== false
+  if (st.lastAlive && !alive) sfx('death')
+  st.lastAlive = alive
+  // 受傷／低血
+  if (u && alive) {
+    const hp = u.s.hp ?? 0
+    const mhp = Math.max(1, u.s.mhp ?? 1)
+    if (st.lastHp >= 0 && hp < st.lastHp - 2) {
+      st.hurtAt = t
+      sfx(st.lastHp - hp > mhp * 0.12 ? 'hurtBig' : 'hurt')
+    }
+    st.lastHp = hp
+    if (hp / mhp < 0.3 && t >= st.heartbeatAt) {
+      st.heartbeatAt = t + (hp / mhp < 0.15 ? 0.7 : 1.05)
+      sfx('heartbeat')
+    }
+  } else st.lastHp = -1
+  // 背包：拿到新東西
+  const inv = (me.inv ?? []).map((x) => x?.item ?? null)
+  if (st.lastInv.length === inv.length) {
+    for (let i = 0; i < inv.length; i++) if (inv[i] && inv[i] !== st.lastInv[i] && !st.lastInv.includes(inv[i])) sfx('pickup')
+  }
+  st.lastInv = inv
+  // EP 增加（異類）
+  const ep = me.ep ?? 0
+  if (st.lastEp >= 0 && ep > st.lastEp + 0.5) sfx('epTick')
+  st.lastEp = ep
+  // 長冷卻的技能好了
+  for (const a of me.abilities ?? []) {
+    const prev = st.lastCd.get(a.id) ?? 0
+    if (prev > 0.2 && a.cd <= 0 && a.maxCd >= 8) sfx('ready')
+    st.lastCd.set(a.id, a.cd)
+  }
+  // 門：鏡頭附近的門開關
+  const zid = scene?.zone ?? -1
+  const layout = scene?.zones.get(zid)?.layout
+  const l = listenerPos()
+  for (const [k, v] of world.doors) {
+    const prev = st.lastDoors.get(k)
+    st.lastDoors.set(k, v)
+    if (prev === undefined || prev === v || Math.floor(k / 10000) !== zid || !layout) continue
+    const d = layout.doors[k % 10000]
+    if (!d || Math.hypot(d.x - l.x, d.y - l.y) > 16) continue
+    if (v === 1) sfx('doorOpen', d.x, d.y)
+    else if (prev === 1 && v === 0) sfx('doorClose', d.x, d.y)
+  }
+  // 腳步：自己和附近會走路的單位（最多 4 個來源）
+  if (u) stepSounds(u.s.z ?? -1, u.s.i)
+}
+
+function stepSounds(zid: number, myId: number): void {
+  const l = listenerPos()
+  const near = [...world.ents.values()]
+    .filter((e) => e.s.z === zid && (e.s.st === 1 || e.s.i === myId) && !((e.s.fl ?? 0) & (EntFlag.Corpse | EntFlag.Hover)))
+    .map((e) => ({ e, d: Math.hypot(e.x - l.x, e.y - l.y) }))
+    .filter((x) => x.d < 12)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 4)
+  const keep = new Set<number>()
+  for (const { e } of near) {
+    keep.add(e.s.i)
+    const prev = st.steps.get(e.s.i)
+    if (!prev) {
+      st.steps.set(e.s.i, { x: e.x, y: e.y, acc: 0 })
+      continue
+    }
+    prev.acc += Math.hypot(e.x - prev.x, e.y - prev.y)
+    prev.x = e.x
+    prev.y = e.y
+    const d = e.s.d ?? ''
+    const heavy = d.startsWith('suit.') || d.includes('brute') || d.includes('colossus') || d.includes('pacifier') || d.includes('bulwark')
+    const crawler = d.startsWith('creature.') || d.includes('skitter') || d.includes('spider') || d.includes('weaver')
+    const stride = heavy ? 1.6 : crawler ? 0.9 : 1.25
+    if (prev.acc >= stride) {
+      prev.acc = 0
+      sfx(crawler ? 'scuttle' : heavy ? 'stepHeavy' : d.startsWith('xeno.') || d.startsWith('mut.') ? 'squish' : 'step', e.x, e.y)
+    }
+  }
+  for (const id of st.steps.keys()) if (!keep.has(id)) st.steps.delete(id)
+}
+
+// ───────── 特效、聊天、指令 ─────────
+
+function onFx(f: FxEvent): void {
+  if (f.k === 'alarm' && f.z === (scene?.zone ?? -2)) st.alarmUntil = now() + 18
+  if (f.k === 'stationBoom' || f.k === 'doorBreak') st.combatUntil = Math.max(st.combatUntil, now() + 5)
+}
+
+function onChat(lines: ChatLine[]): void {
+  for (const ln of lines) {
+    const text = ln.text ?? ''
+    if (ln.ch === 'private') sfx(ERROR_KEYS.test(text) ? 'error' : 'notify')
+    else if (ln.ch === 'sys') {
+      if (text.startsWith('@apoc.')) sfx('apocSting')
+      else if (text.startsWith('@event.') || text.startsWith('@space.destroyed') || text.startsWith('@git.destroyed')) sfx('eventSting')
+      else sfx('announce')
+    } else if (ln.ch === 'team' || ln.ch === 'group') sfx('chatTeam')
+    else if (ln.ch === 'dead') sfx('chatDead')
+    else sfx('chat')
+  }
+}
+
+function installUiSounds(): void {
+  let lastHover: Element | null = null
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      const el = (e.target as Element | null)?.closest?.('button:not([disabled]), .codex-item, .swatch, .pcard')
+      if (!el || el === lastHover) return
+      lastHover = el
+      sfx('uiHover')
+    },
+    true,
+  )
+  document.addEventListener(
+    'click',
+    (e) => {
+      const el = (e.target as Element | null)?.closest?.('button:not([disabled]), .codex-item, .swatch')
+      if (el) sfx('ui')
+    },
+    true,
+  )
+}
+
+let installed = false
+
+export function installAudioDirector(): void {
+  if (installed || typeof window === 'undefined') return
+  installed = true
+  installUiSounds()
+  world.fxTaps.push(onFx)
+  cmdTaps.push((c) => {
+    if (c.k === 'move' || c.k === 'follow') sfx('cmdMove')
+    else if (c.k === 'attack' || c.k === 'amove') sfx('cmdAttack')
+  })
+  // 畫面切換
+  let prevScreen = screen.value
+  effect(() => {
+    const s = screen.value
+    if (s === 'game' && prevScreen !== 'game') {
+      sfx('gameStart')
+      st.lastHp = -1
+      st.lastInv = []
+      st.lastEp = -1
+      st.lastCd.clear()
+      st.lastDoors.clear()
+      st.steps.clear()
+      st.chatSeen = chatLog.value.length
+    }
+    if (s !== 'game') setAmbient(null)
+    prevScreen = s
+    setMood(forced ?? pickMood())
+  })
+  // 大廳：有人加入／離開／準備
+  effect(() => {
+    const lb = lobby.value
+    if (!lb || screen.value !== 'lobby') {
+      st.lobbyN = -1
+      return
+    }
+    const n = lb.players.length
+    const ready = lb.players.filter((p) => p.ready).length
+    if (st.lobbyN >= 0 && n > st.lobbyN) sfx('join')
+    if (st.lobbyN >= 0 && n < st.lobbyN) sfx('leaveLobby')
+    if (st.lobbyReady >= 0 && ready > st.lobbyReady) sfx('readyUp')
+    st.lobbyN = n
+    st.lobbyReady = ready
+  })
+  // 快照
+  effect(() => {
+    void snapTick.value
+    onSnap()
+  })
+  // 聊天
+  effect(() => {
+    const log = chatLog.value
+    if (log.length < st.chatSeen) st.chatSeen = 0
+    if (screen.value === 'game' && log.length > st.chatSeen) onChat(log.slice(st.chatSeen))
+    st.chatSeen = log.length
+  })
+  // 結算
+  effect(() => {
+    const r = endResult.value
+    if (!r) return
+    const f = world.me.faction
+    const won = r.winner !== 'draw' && r.winner !== 'aborted' && ((r.winner === 'crew' && f === 'crew') || r.winner === f)
+    sfx(won ? 'victory' : 'defeat')
+  })
+  // 面板開關
+  let prevChat = chatOpen.value
+  const prevPanels = [evolveOpen.value, notesOpen.value, codexOpen.value]
+  effect(() => {
+    const c = chatOpen.value
+    const panels = [evolveOpen.value, notesOpen.value, codexOpen.value]
+    panels.forEach((v, i) => {
+      if (v !== prevPanels[i]) sfx(v ? 'uiOpen' : 'uiClose')
+      prevPanels[i] = v
+    })
+    if (c && !prevChat) sfx('uiHover')
+    prevChat = c
+  })
+  if (__TEST_HOOKS__) {
+    ;(window as unknown as Record<string, unknown>).__xcAudio = {
+      mood: () => currentMood(),
+      state: () => audioContext()?.state ?? 'none',
+      level: () => debugLevel(),
+      peak: () => debugPeak(),
+      /** 測試：鎖定某個情境（不再自動判定）*/
+      force: (m: Mood | null) => {
+        forced = m
+        if (m) setMood(m)
+      },
+      sfx: (n: string) => sfx(n),
+    }
+  }
+  // 局勢：每 0.5 秒重新判定音樂情境與環境音
+  setInterval(() => {
+    setMood(forced ?? pickMood())
+    if (screen.value === 'game') setAmbient(zoneKind())
+  }, 500)
+}

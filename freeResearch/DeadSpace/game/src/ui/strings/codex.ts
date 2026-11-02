@@ -1,6 +1,13 @@
 // 圖鑑文字（原創）：規則摘要、分類、生物行為、地點介紹
 export const CODEX_ZH: Record<string, string> = {
   'codex.title': '圖鑑',
+  'settings.audio': '音效與音樂',
+  'settings.vol.master': '總音量',
+  'settings.vol.music': '背景音樂',
+  'settings.vol.sfx': '音效',
+  'settings.vol.ambient': '環境音',
+  'settings.mute': '全部靜音',
+  'hud.mute': '靜音（M）',
   'cmd.attack': '攻擊',
   'cmd.stop': '停止',
   'cmd.hold': '原地',
@@ -100,6 +107,13 @@ export const CODEX_ZH: Record<string, string> = {
 
 export const CODEX_EN: Record<string, string> = {
   'codex.title': 'Codex',
+  'settings.audio': 'Sound & music',
+  'settings.vol.master': 'Master volume',
+  'settings.vol.music': 'Music',
+  'settings.vol.sfx': 'Sound effects',
+  'settings.vol.ambient': 'Ambience',
+  'settings.mute': 'Mute all',
+  'hud.mute': 'Mute (M)',
   'cmd.attack': 'Attack',
   'cmd.stop': 'Stop',
   'cmd.hold': 'Hold',

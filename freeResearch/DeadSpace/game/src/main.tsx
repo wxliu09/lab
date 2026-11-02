@@ -9,7 +9,9 @@ import './ui/styles.css'
 import { App } from './ui/App'
 import { lang } from './ui/i18n'
 import { installDevtools } from './client/devtools'
+import { installAudioDirector } from './audio/director'
 
 document.documentElement.lang = lang.value === 'zh' ? 'zh-Hant-TW' : 'en'
 render(<App />, document.getElementById('app')!)
 installDevtools()
+installAudioDirector()

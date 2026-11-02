@@ -7,7 +7,8 @@ import { Overlay } from '../../render/overlay'
 import { Banner, Chat, CommandCard, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
 import { bindFx } from '../../render/fxBinding'
 import '../../render/fxHandlers'
-import { setListener, startAmbient, stopAmbient } from '../../audio/sfx'
+import { setListener } from '../../audio/sfx'
+import { bindAudioScene } from '../../audio/director'
 import { VendorPanel } from '../hud/VendorPanel'
 import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
@@ -31,7 +32,7 @@ export function GameScreen() {
     const overlay = new Overlay(wrap.current)
     const unbind = bindFx(gs, world)
     const origUpdate = gs.update.bind(gs)
-    startAmbient('station')
+    bindAudioScene(gs)
     gs.update = (dt, t) => {
       origUpdate(dt, t)
       setListener(gs.rts.tx, gs.rts.ty)
@@ -50,7 +51,7 @@ export function GameScreen() {
       inp.dispose()
       overlay.dispose()
       unbind()
-      stopAmbient()
+      bindAudioScene(null)
       engine.setScene(null)
     }
   }, [])

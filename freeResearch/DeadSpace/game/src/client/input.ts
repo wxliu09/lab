@@ -1,5 +1,6 @@
 // 輸入：致敬 WC3 的操作（右鍵移動／攻擊／互動、A 攻擊、S 停止、H 原地、QWERDF 技能、1–6 背包、空白鍵回鏡頭）
 import { signal } from '@preact/signals'
+import { audioPrefs, setAudioPref } from '../audio/sfx'
 import { abilityDef, itemDef, UNITS } from '../shared/content/registry'
 import { EntFlag } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
@@ -185,6 +186,9 @@ export class Input {
       case 'Enter':
         chatOpen.value = true
         e.preventDefault()
+        return
+      case 'KeyM':
+        setAudioPref('muted', !audioPrefs.value.muted)
         return
       case 'Escape':
         if (targetMode.value) targetMode.value = null

@@ -4,29 +4,70 @@ import { signal } from '@preact/signals'
 let ctx: AudioContext | null = null
 let master: GainNode | null = null
 let noiseBuf: AudioBuffer | null = null
-let ambient: { stop: () => void } | null = null
 const listener = { x: 0, y: 0 }
 
-function initialVolume(): number {
-  try {
-    const v = Number(localStorage.getItem('xc.volume'))
-    if (Number.isFinite(v) && v >= 0 && v <= 1 && localStorage.getItem('xc.volume') !== null) return v
-  } catch {
-    /* ignore */
-  }
-  return 0.6
+// ───────── 分軌與音量 ─────────
+
+/** sfx = 世界音效、ui = 介面與通知、music = 背景音樂、ambient = 環境音 */
+export type Bus = 'sfx' | 'ui' | 'music' | 'ambient'
+
+export interface AudioPrefs {
+  master: number
+  sfx: number
+  music: number
+  ambient: number
+  muted: boolean
 }
 
-export const volume = signal(initialVolume())
+const PREF_KEY = 'xc.audio'
+const DEFAULT_PREFS: AudioPrefs = { master: 0.8, sfx: 0.8, music: 0.55, ambient: 0.6, muted: false }
 
-export function setVolume(v: number): void {
-  volume.value = v
-  if (master) master.gain.value = v
+function loadPrefs(): AudioPrefs {
   try {
-    localStorage.setItem('xc.volume', String(v))
+    const raw = localStorage.getItem(PREF_KEY)
+    if (raw) {
+      const v = JSON.parse(raw) as Partial<AudioPrefs>
+      const n = (x: unknown, d: number) => (typeof x === 'number' && x >= 0 && x <= 1 ? x : d)
+      return { master: n(v.master, DEFAULT_PREFS.master), sfx: n(v.sfx, DEFAULT_PREFS.sfx), music: n(v.music, DEFAULT_PREFS.music), ambient: n(v.ambient, DEFAULT_PREFS.ambient), muted: v.muted === true }
+    }
+    // 舊版只有一個總音量
+    const old = localStorage.getItem('xc.volume')
+    if (old !== null && Number.isFinite(Number(old))) return { ...DEFAULT_PREFS, master: Math.max(0, Math.min(1, Number(old))) }
   } catch {
     /* ignore */
   }
+  return { ...DEFAULT_PREFS }
+}
+
+export const audioPrefs = signal<AudioPrefs>(loadPrefs())
+const buses: Partial<Record<Bus, GainNode>> = {}
+
+function applyPrefs(): void {
+  const p = audioPrefs.value
+  const c = ctx
+  if (!c || !master) return
+  const t = c.currentTime
+  master.gain.setTargetAtTime(p.muted ? 0 : p.master, t, 0.05)
+  buses.sfx?.gain.setTargetAtTime(p.sfx, t, 0.05)
+  buses.ui?.gain.setTargetAtTime(Math.min(1, p.sfx * 0.9 + 0.1), t, 0.05)
+  buses.music?.gain.setTargetAtTime(p.music, t, 0.05)
+  buses.ambient?.gain.setTargetAtTime(p.ambient, t, 0.05)
+}
+
+export function setAudioPref<K extends keyof AudioPrefs>(k: K, v: AudioPrefs[K]): void {
+  audioPrefs.value = { ...audioPrefs.value, [k]: v }
+  applyPrefs()
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify(audioPrefs.value))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 相容舊介面：總音量 */
+export const volume = { get value() { return audioPrefs.value.master } }
+export function setVolume(v: number): void {
+  setAudioPref('master', v)
 }
 
 function ac(): AudioContext | null {
@@ -34,11 +75,22 @@ function ac(): AudioContext | null {
   try {
     ctx = new AudioContext()
     master = ctx.createGain()
-    master.gain.value = volume.value
     const comp = ctx.createDynamicsCompressor()
     comp.threshold.value = -14
     comp.ratio.value = 4
     master.connect(comp).connect(ctx.destination)
+    for (const b of ['sfx', 'ui', 'music', 'ambient'] as Bus[]) {
+      const g = ctx.createGain()
+      g.connect(master)
+      buses[b] = g
+    }
+    applyPrefs()
+    if (__TEST_HOOKS__) {
+      // 測試 build：量測實際輸出音量（e2e 驗證背景音樂有在發聲）
+      analyser = ctx.createAnalyser()
+      analyser.fftSize = 2048
+      master.connect(analyser)
+    }
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate)
     const d = noiseBuf.getChannelData(0)
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
@@ -46,6 +98,42 @@ function ac(): AudioContext | null {
     ctx = null
   }
   return ctx
+}
+
+let analyser: AnalyserNode | null = null
+
+/** 測試用：目前輸出的 RMS 音量 */
+export function debugLevel(): number {
+  if (!analyser) return 0
+  const buf = new Float32Array(analyser.fftSize)
+  analyser.getFloatTimeDomainData(buf)
+  let s = 0
+  for (const v of buf) s += v * v
+  return Math.sqrt(s / buf.length)
+}
+
+/** 測試用：目前輸出的峰值 */
+export function debugPeak(): number {
+  if (!analyser) return 0
+  const buf = new Float32Array(analyser.fftSize)
+  analyser.getFloatTimeDomainData(buf)
+  let m = 0
+  for (const v of buf) m = Math.max(m, Math.abs(v))
+  return m
+}
+
+/** 其他音訊模組（背景音樂、環境音）共用同一個 AudioContext 與分軌 */
+export function audioContext(): AudioContext | null {
+  return ac()
+}
+export function busNode(b: Bus): GainNode | null {
+  return ac() ? (buses[b] ?? null) : null
+}
+export function noiseBuffer(): AudioBuffer | null {
+  return ac() ? noiseBuf : null
+}
+export function audioRunning(): boolean {
+  return !!ctx && ctx.state === 'running'
 }
 
 /** 第一次使用者互動時解鎖音訊 */
@@ -64,9 +152,27 @@ export function setListener(x: number, y: number): void {
   listener.y = y
 }
 
-function out(x?: number, y?: number, gain = 1): AudioNode | null {
+export function listenerPos(): { x: number; y: number } {
+  return listener
+}
+
+/** 介面與通知類的音效：不做距離衰減、走 ui 分軌 */
+const UI_SOUNDS = new Set(['ui', 'uiHover', 'uiOpen', 'uiClose', 'error', 'notify', 'announce', 'eventSting', 'apocSting', 'chat', 'chatTeam', 'chatDead', 'join', 'leaveLobby', 'readyUp', 'gameStart', 'victory', 'defeat', 'revealHuman', 'revealXeno', 'revealMutant', 'revealAndroid', 'ready', 'cmdMove', 'cmdAttack', 'death', 'hurt', 'hurtBig', 'pickup', 'drop', 'epTick', 'heartbeat', 'countdown'])
+
+/** 混音：回饋音相對於背景音樂要聽得清楚（依 e2e 實測的峰值調整，目標：提示音約 0.06–0.1、重大事件約 0.12–0.15）*/
+const GAIN: Record<string, number> = {
+  ui: 1.6, uiHover: 1.8, uiOpen: 1.8, uiClose: 1.8, cmdMove: 2.6, cmdAttack: 2.4,
+  error: 3.2, notify: 3.2, announce: 3.4, chat: 2.6, chatTeam: 2.6, chatDead: 2.4,
+  eventSting: 4.6, apocSting: 1.9, gameStart: 2.2, countdown: 2,
+  victory: 4, defeat: 5, revealHuman: 5, revealXeno: 6, revealMutant: 3.6, revealAndroid: 4.4,
+  join: 2.6, leaveLobby: 2.4, readyUp: 2.6, pickup: 3.6, drop: 3, ready: 4.2, epTick: 2.8,
+  step: 1.8, stepSoft: 2, stepHeavy: 1.4, scuttle: 1.5, squish: 1.5, doorOpen: 1.7, doorClose: 1.7,
+}
+
+function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null {
   const c = ac()
-  if (!c || !master) return null
+  const dest = buses[b]
+  if (!c || !dest) return null
   const g = c.createGain()
   let vol = gain
   let pan = 0
@@ -81,7 +187,7 @@ function out(x?: number, y?: number, gain = 1): AudioNode | null {
   g.gain.value = vol
   const p = c.createStereoPanner()
   p.pan.value = pan
-  g.connect(p).connect(master)
+  g.connect(p).connect(dest)
   return g
 }
 
@@ -167,9 +273,214 @@ function rumble(dest: AudioNode, t0: number, dur: number, amp = 1, f = 180): voi
   tone(dest, t0, dur * 0.8, 48, 26, 'sine', amp * 0.6)
 }
 
+/** 介面、通知與回饋音（不做空間定位）。回傳 false 表示交給下面的通用音效表 */
+function uiSound(name: string, d: AudioNode, now: number): boolean {
+  switch (name) {
+    case 'uiHover':
+      tone(d, now, 0.035, 1900, 1750, 'sine', 0.035)
+      return true
+    case 'uiOpen':
+      tone(d, now, 0.14, 380, 920, 'triangle', 0.09)
+      noise(d, now, 0.12, 2400, 5200, 1.2, 'bandpass', 0.08)
+      return true
+    case 'uiClose':
+      tone(d, now, 0.12, 900, 360, 'triangle', 0.08)
+      noise(d, now, 0.1, 4200, 1800, 1.2, 'bandpass', 0.06)
+      return true
+    case 'error':
+      tone(d, now, 0.075, 185, 175, 'square', 0.09)
+      tone(d, now + 0.095, 0.11, 150, 140, 'square', 0.09)
+      return true
+    case 'notify':
+      fm(d, now, 0.45, 1318.5, 2, 1.4, 0.1)
+      fm(d, now + 0.085, 0.6, 1760, 2, 1.1, 0.07)
+      return true
+    case 'announce':
+      // 站內廣播的兩聲提示音（帶一點回音）
+      for (const [i, f] of [[0, 659.3], [1, 987.8]] as const) {
+        tone(d, now + i * 0.22, 0.5, f, f, 'sine', 0.1)
+        tone(d, now + i * 0.22 + 0.13, 0.45, f, f, 'sine', 0.035)
+      }
+      return true
+    case 'eventSting':
+      swell(d, now, 2.2, 110, 104, 'sawtooth', 0.05, 0.35)
+      swell(d, now, 2.2, 164.8, 156, 'sawtooth', 0.035, 0.35)
+      for (const [i, f] of [[0, 880], [1, 659.3], [2, 523.3]] as const) fm(d, now + 0.25 + i * 0.28, 1.2, f, 3.01, 0.9, 0.06)
+      return true
+    case 'apocSting':
+      swell(d, now, 3.4, 55, 52, 'sawtooth', 0.12, 0.25)
+      swell(d, now, 3.4, 82.4, 78, 'sawtooth', 0.08, 0.25)
+      swell(d, now + 0.4, 3, 116.5, 110, 'square', 0.03, 0.4)
+      rumble(d, now, 3, 0.5)
+      return true
+    case 'chat':
+      tone(d, now, 0.05, 1180, 1240, 'sine', 0.05)
+      tone(d, now + 0.05, 0.06, 1480, 1500, 'sine', 0.04)
+      return true
+    case 'chatTeam':
+      fm(d, now, 0.18, 740, 1.5, 2.5, 0.06)
+      fm(d, now + 0.08, 0.22, 554, 1.5, 2.5, 0.05)
+      return true
+    case 'chatDead':
+      tone(d, now, 0.25, 330, 300, 'sine', 0.05)
+      tone(d, now + 0.02, 0.3, 333, 302, 'sine', 0.04)
+      return true
+    case 'join':
+      tone(d, now, 0.12, 523.3, 523.3, 'triangle', 0.09)
+      tone(d, now + 0.1, 0.18, 784, 784, 'triangle', 0.09)
+      return true
+    case 'leaveLobby':
+      tone(d, now, 0.12, 784, 784, 'triangle', 0.08)
+      tone(d, now + 0.1, 0.18, 523.3, 523.3, 'triangle', 0.08)
+      return true
+    case 'readyUp':
+      tone(d, now, 0.07, 880, 880, 'square', 0.04)
+      tone(d, now + 0.07, 0.12, 1318.5, 1318.5, 'square', 0.04)
+      return true
+    case 'countdown':
+      tone(d, now, 0.05, 1000, 1000, 'square', 0.05)
+      return true
+    case 'gameStart':
+      noise(d, now, 1.2, 300, 4000, 0.8, 'bandpass', 0.25)
+      swell(d, now, 1.6, 73.4, 146.8, 'sawtooth', 0.07, 0.8)
+      tone(d, now + 1.2, 0.9, 98, 40, 'sine', 0.5)
+      noise(d, now + 1.2, 0.8, 900, 80, 0.7, 'lowpass', 0.5)
+      return true
+    case 'victory':
+      for (const [i, f] of [[0, 523.3], [1, 659.3], [2, 784], [3, 1046.5]] as const) fm(d, now + i * 0.16, 1.6, f, 2, 1.2, 0.08)
+      swell(d, now + 0.5, 2.6, 261.6, 261.6, 'sawtooth', 0.04, 0.3)
+      swell(d, now + 0.5, 2.6, 392, 392, 'sawtooth', 0.03, 0.3)
+      return true
+    case 'defeat':
+      for (const [i, f] of [[0, 587.3], [1, 523.3], [2, 466.2], [3, 349.2]] as const) tone(d, now + i * 0.32, 1.1, f, f * 0.98, 'triangle', 0.08)
+      swell(d, now + 0.3, 3, 87.3, 82, 'sawtooth', 0.06, 0.3)
+      return true
+    case 'revealHuman':
+      for (const f of [293.7, 370, 440]) swell(d, now, 2, f, f, 'sawtooth', 0.04, 0.25)
+      fm(d, now + 0.1, 1.4, 880, 2, 0.8, 0.05)
+      return true
+    case 'revealXeno':
+      fm(d, now, 2.4, 220, 1.414, 6, 0.07)
+      swell(d, now, 2.4, 110, 116.5, 'sawtooth', 0.05, 0.6)
+      noise(d, now, 2, 500, 3500, 6, 'bandpass', 0.06)
+      return true
+    case 'revealMutant':
+      swell(d, now, 2.2, 73.4, 65.4, 'sawtooth', 0.09, 0.3)
+      swell(d, now, 2.2, 77.8, 69.3, 'sawtooth', 0.06, 0.3)
+      noise(d, now, 1.6, 400, 120, 1.2, 'lowpass', 0.35)
+      return true
+    case 'revealAndroid':
+      for (let i = 0; i < 6; i++) tone(d, now + i * 0.07, 0.06, [880, 1318.5, 1760, 1318.5, 2093, 2637][i], [880, 1318.5, 1760, 1318.5, 2093, 2637][i], 'square', 0.035)
+      swell(d, now + 0.3, 1.6, 220, 220, 'triangle', 0.06, 0.2)
+      return true
+    case 'ready':
+      fm(d, now, 0.5, 2093, 3.5, 0.6, 0.045)
+      return true
+    case 'cmdMove':
+      noise(d, now, 0.025, 3200, 2200, 2, 'bandpass', 0.12)
+      tone(d, now, 0.03, 980, 900, 'sine', 0.025)
+      return true
+    case 'cmdAttack':
+      noise(d, now, 0.03, 2600, 1400, 2, 'bandpass', 0.16)
+      tone(d, now, 0.05, 520, 300, 'square', 0.035)
+      return true
+    case 'death':
+      rumble(d, now, 1.6, 0.6)
+      tone(d, now, 1.3, 196, 98, 'sawtooth', 0.08)
+      tone(d, now + 0.05, 2.2, 1568, 1550, 'sine', 0.04)
+      return true
+    case 'hurt':
+      tone(d, now, 0.16, 150, 60, 'sine', 0.3)
+      noise(d, now, 0.08, 900, 200, 0.8, 'lowpass', 0.25)
+      return true
+    case 'hurtBig':
+      tone(d, now, 0.28, 130, 45, 'sine', 0.45)
+      noise(d, now, 0.18, 2600, 300, 0.7, 'bandpass', 0.35)
+      return true
+    case 'pickup':
+      tone(d, now, 0.07, 660, 990, 'triangle', 0.07)
+      tone(d, now + 0.06, 0.1, 990, 1320, 'triangle', 0.06)
+      return true
+    case 'drop':
+      tone(d, now, 0.1, 620, 300, 'triangle', 0.06)
+      return true
+    case 'epTick':
+      tone(d, now, 0.14, 220, 330, 'sine', 0.045)
+      tone(d, now + 0.03, 0.14, 224, 336, 'sine', 0.03)
+      return true
+  }
+  return false
+}
+
+/** 新增的世界音效（門、腳步、環境小事件）；回傳 false 交給通用表 */
+function worldSound(name: string, d: AudioNode, now: number): boolean {
+  switch (name) {
+    case 'doorOpen':
+      noise(d, now, 0.32, 1800, 600, 1.4, 'bandpass', 0.22)
+      tone(d, now, 0.3, 90, 140, 'sawtooth', 0.04)
+      tone(d, now + 0.28, 0.06, 220, 160, 'square', 0.05)
+      return true
+    case 'doorClose':
+      noise(d, now, 0.26, 700, 1600, 1.4, 'bandpass', 0.2)
+      tone(d, now + 0.22, 0.12, 120, 60, 'sine', 0.22)
+      noise(d, now + 0.22, 0.06, 1200, 300, 1, 'lowpass', 0.25)
+      return true
+    case 'step':
+      noise(d, now, 0.05, 1400 + Math.random() * 500, 400, 1.6, 'bandpass', 0.11)
+      tone(d, now, 0.04, 110 + Math.random() * 20, 70, 'sine', 0.06)
+      return true
+    case 'stepHeavy':
+      noise(d, now, 0.08, 700 + Math.random() * 200, 160, 1.2, 'lowpass', 0.2)
+      tone(d, now, 0.07, 75, 40, 'sine', 0.14)
+      noise(d, now + 0.01, 0.04, 3200, 2000, 3, 'bandpass', 0.05)
+      return true
+    case 'stepSoft':
+      noise(d, now, 0.06, 900, 300, 0.8, 'lowpass', 0.08)
+      return true
+    case 'scuttle':
+      ticks(d, now, 0.12, 4, 2600, 0.12, 5)
+      return true
+    case 'squish':
+      noise(d, now, 0.1, 500, 200, 2, 'bandpass', 0.12)
+      tone(d, now, 0.08, 160, 110, 'sine', 0.05)
+      return true
+    case 'ventHiss':
+      noise(d, now, 1.6, 5200, 3800, 0.9, 'highpass', 0.05)
+      return true
+    case 'creak':
+      tone(d, now, 0.9, 72, 64, 'sawtooth', 0.025)
+      tone(d, now + 0.1, 0.7, 108, 96, 'triangle', 0.02)
+      return true
+    case 'clankFar':
+      fm(d, now, 0.9, 160 + Math.random() * 80, 2.73, 4, 0.05)
+      return true
+    case 'drip':
+      tone(d, now, 0.08, 1700 + Math.random() * 600, 900, 'sine', 0.04)
+      return true
+    case 'electricBuzz':
+      tone(d, now, 0.5, 120, 120, 'sawtooth', 0.02)
+      ticks(d, now, 0.45, 6, 4200, 0.06)
+      return true
+    case 'windGust':
+      noise(d, now, 3, 400, 900, 0.6, 'bandpass', 0.1)
+      return true
+    case 'birdcall':
+      tone(d, now, 0.12, 2400, 3200, 'sine', 0.025)
+      tone(d, now + 0.16, 0.1, 2600, 3500, 'sine', 0.02)
+      return true
+    case 'hullGroan':
+      swell(d, now, 2.4, 46, 40, 'sawtooth', 0.04, 0.5)
+      return true
+    case 'radioChatter':
+      for (let i = 0; i < 5; i++) noise(d, now + i * 0.11, 0.08, 1500 + Math.random() * 900, 1300, 6, 'bandpass', 0.05)
+      return true
+  }
+  return false
+}
+
 const last = new Map<string, number>()
 
-export function sfx(name: string, x?: number, y?: number): void {
+export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
   const c = ac()
   if (!c || c.state !== 'running') return
   const now = c.currentTime
@@ -177,8 +488,12 @@ export function sfx(name: string, x?: number, y?: number): void {
   const minGap = name === 'gatling' ? 0.06 : 0.03
   if ((last.get(name) ?? 0) > now - minGap) return
   last.set(name, now)
-  const d = out(x, y, 0.5)
+  const ui = UI_SOUNDS.has(name)
+  const k = 0.5 * (GAIN[name] ?? 1)
+  const d = ui ? out(undefined, undefined, k, 'ui') : out(x, y, k, b ?? 'sfx')
   if (!d) return
+  if (ui && uiSound(name, d, now)) return
+  if (!ui && worldSound(name, d, now)) return
   switch (name) {
     case 'pistol':
       noise(d, now, 0.12, 3200, 600, 0.8, 'bandpass', 0.9)
@@ -603,46 +918,4 @@ export function sfx(name: string, x?: number, y?: number): void {
     default:
       tone(d, now, 0.08, 600, 400, 'sine', 0.1)
   }
-}
-
-/** 站體低頻嗡鳴與通風 */
-export function startAmbient(kind: 'station' | 'space' = 'station'): void {
-  const c = ac()
-  if (!c || !master || ambient) return
-  const g = c.createGain()
-  g.gain.value = 0.06
-  g.connect(master)
-  const o1 = c.createOscillator()
-  o1.type = 'sine'
-  o1.frequency.value = kind === 'space' ? 38 : 55
-  const o2 = c.createOscillator()
-  o2.type = 'sine'
-  o2.frequency.value = kind === 'space' ? 57.3 : 82.5
-  const src = c.createBufferSource()
-  src.buffer = noiseBuf
-  src.loop = true
-  const f = c.createBiquadFilter()
-  f.type = 'lowpass'
-  f.frequency.value = 380
-  const ng = c.createGain()
-  ng.gain.value = 0.35
-  o1.connect(g)
-  o2.connect(g)
-  src.connect(f).connect(ng).connect(g)
-  o1.start()
-  o2.start()
-  src.start()
-  ambient = {
-    stop: () => {
-      o1.stop()
-      o2.stop()
-      src.stop()
-      g.disconnect()
-    },
-  }
-}
-
-export function stopAmbient(): void {
-  ambient?.stop()
-  ambient = null
 }

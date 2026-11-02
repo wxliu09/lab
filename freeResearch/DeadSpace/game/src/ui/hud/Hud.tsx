@@ -1,6 +1,7 @@
 // 遊戲 HUD（致敬 WC3 版面）：上方資訊列、左下小地圖、中下頭像與數值、右下指令卡＋背包、左側聊天
 import { useEffect, useRef, useState, useLayoutEffect } from 'preact/hooks'
 import { Stability } from './Events'
+import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import { Cell } from '../../shared/layout'
@@ -44,6 +45,9 @@ export function TopBar() {
         </span>
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
+      <button class="small ghost" title={t('hud.mute')} data-testid="mute" style={{ padding: '1px 6px' }} onClick={() => setAudioPref('muted', !audioPrefs.value.muted)}>
+        <Icon name={audioPrefs.value.muted ? 'muted' : 'sound'} size={16} color={audioPrefs.value.muted ? '#8b9aa8' : '#9fe7ff'} />
+      </button>
     </div>
   )
 }

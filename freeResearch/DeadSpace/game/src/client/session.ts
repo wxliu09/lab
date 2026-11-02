@@ -244,7 +244,11 @@ export function send(m: ClientMsg): void {
   net?.send(m)
 }
 
+/** 送出指令時的旁聽（音訊回饋）*/
+export const cmdTaps: ((c: Command) => void)[] = []
+
 export function sendCmd(c: Command): void {
+  for (const tap of cmdTaps) tap(c)
   net?.send({ t: 'cmd', seq: cmdSeq++, c })
 }
 

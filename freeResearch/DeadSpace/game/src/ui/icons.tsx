@@ -3,6 +3,8 @@ import type { JSX } from 'preact'
 
 const P: Record<string, string> = {
   move: 'M12 3l7 7h-4v8h-6v-8H5z',
+  sound: 'M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 010 6M18.5 6.5a7.5 7.5 0 010 11',
+  muted: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
   stop: 'M6 6h12v12H6z',
   hold: 'M7 4v16M12 4v16M17 4v16',
   attack: 'M4 20L16 8M14 4l6 6M6 14l4 4M3 21l3-1-2-2z',
