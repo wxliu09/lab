@@ -12,6 +12,7 @@ import { bindAudioScene } from '../../audio/director'
 import { VendorPanel } from '../hud/VendorPanel'
 import { DeathVote, EndScreen, EvolveMenu, SpectatorBar } from '../hud/Panels'
 import { RoleReveal } from '../hud/RoleReveal'
+import { Guide } from '../hud/Guide'
 import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
 import { EnhancerPanel, FakeEnd } from '../hud/Events'
 import { ReplayPanel } from '../hud/Replay'
@@ -83,6 +84,7 @@ export function GameScreen() {
       {scene && <WorldHover scene={scene} />}
       <FakeEnd />
       <EndScreen />
+      <Guide />
       <RoleReveal />
       <Chat />
       <div class="hud-bottom">
