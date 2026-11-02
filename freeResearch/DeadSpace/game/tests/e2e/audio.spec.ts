@@ -16,7 +16,7 @@ async function peak(p: Page, ms: number): Promise<number> {
   return m
 }
 
-test('背景音樂：主選單 → 大廳 → 對局；有聲音輸出；靜音後歸零', async ({ page }) => {
+test('背景音樂：主選單 → 大廳 → 對局 → 戰鬥；命中音與叫聲；靜音後歸零', async ({ page }) => {
   test.setTimeout(240000)
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -42,6 +42,15 @@ test('背景音樂：主選單 → 大廳 → 對局；有聲音輸出；靜音�
   await expect(page.getByTestId('game')).toBeVisible({ timeout: 60000 })
   await expect.poll(async () => (await audio(page)).mood, { timeout: 20000 }).toMatch(/explore|tense|combat|alarm/)
   expect(await peak(page, 4000)).toBeGreaterThan(0.002)
+
+  // 戰鬥：身邊生成兩個敵對海盜 → 命中音、痛叫、戰鬥配樂
+  type C = { __xcAudio: { combat: () => { hits: number; barks: number } }; __xcTest: { hook: (op: string, a: unknown[]) => unknown } }
+  if (await page.getByTestId('reveal').isVisible()) await page.getByTestId('reveal').click()
+  const before = await page.evaluate(() => (window as unknown as C).__xcAudio.combat())
+  await page.evaluate(() => (window as unknown as C).__xcTest.hook('run', [0, 'wj', ['pirate.crew', 2]]))
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as C).__xcAudio.combat())).hits, { timeout: 30000 }).toBeGreaterThan(before.hits)
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as C).__xcAudio.combat())).barks, { timeout: 30000 }).toBeGreaterThan(before.barks)
+  await expect.poll(async () => (await audio(page)).mood, { timeout: 20000 }).toBe('combat')
 
   // 靜音
   await page.getByTestId('mute').click()

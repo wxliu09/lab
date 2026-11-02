@@ -9,6 +9,7 @@ import type { GameScene } from '../render/gameScene'
 import { setAmbient, type AmbientKind } from './ambient'
 import { currentMood, setMood, type Mood } from './music'
 import { audioContext, debugLevel, debugPeak, listenerPos, sfx } from './sfx'
+import { FAMILIES, combatStats, familyOf, playBark, playHit, voicePitch, type BarkKind, type Family, type Hit, type Mat } from './combat'
 import { notesOpen } from '../ui/hud/Investigation'
 import { codexOpen } from '../ui/hud/Codex'
 
@@ -34,6 +35,9 @@ const st = {
   lastCd: new Map<string, number>(),
   lastDoors: new Map<number, number>(),
   steps: new Map<number, { x: number; y: number; acc: number }>(),
+  /** 叫聲追蹤：上一個快照看到的樣子 */
+  ents: new Map<number, { hp: number; mhp: number; dead: boolean; x: number; y: number; d?: string; c?: number }>(),
+  nextIdle: 0,
   heartbeatAt: 0,
   revealedFor: null as unknown,
   chatSeen: 0,
@@ -143,8 +147,11 @@ function onSnap(): void {
   st.lastEp = ep
   // 長冷卻的技能好了
   for (const a of me.abilities ?? []) {
+    const had = st.lastCd.has(a.id)
     const prev = st.lastCd.get(a.id) ?? 0
     if (prev > 0.2 && a.cd <= 0 && a.maxCd >= 8) sfx('ready')
+    // 自己放出技能（冷卻剛開始）：施放音，讓按下去有回饋
+    if (had && prev <= 0.05 && a.cd > 0.5 && u) sfx('cast', u.x, u.y)
     st.lastCd.set(a.id, a.cd)
   }
   // 門：鏡頭附近的門開關
@@ -162,6 +169,69 @@ function onSnap(): void {
   }
   // 腳步：自己和附近會走路的單位（最多 4 個來源）
   if (u) stepSounds(u.s.z ?? -1, u.s.i)
+  // 受傷、死亡、怪物叫聲：看的是鏡頭所在的 zone
+  if (zid >= 0) barks(zid, t)
+}
+
+/**
+ * 鏡頭附近每個看得到的單位：血量下降 → 痛叫；死亡 → 死亡叫聲；怪物偶爾低吼。
+ * 只用快照裡看得到的欄位；叫聲的音色由外觀＋顯示顏色決定（不看 id，偽裝者不會因聲音露餡）。
+ */
+function barks(zid: number, t: number): void {
+  const l = listenerPos()
+  let pains = 0
+  let deaths = 0
+  const seen = new Set<number>()
+  const fresh: { x: number; y: number }[] = []
+  for (const e of world.ents.values()) {
+    const s = e.s
+    if (s.z !== zid) continue
+    const corpse = !!((s.fl ?? 0) & EntFlag.Corpse)
+    const prev = st.ents.get(s.i)
+    if (corpse) {
+      // 新出現的屍體（sim 會移除單位、在原地生成屍體）
+      if (!prev) fresh.push({ x: e.x, y: e.y })
+      st.ents.set(s.i, { hp: 0, mhp: 1, dead: true, x: e.x, y: e.y })
+      seen.add(s.i)
+      continue
+    }
+    const fam = familyOf(s.d)
+    if (!fam) continue
+    seen.add(s.i)
+    const hp = s.hp ?? 0
+    const mhp = Math.max(1, s.mhp ?? 1)
+    const dead = hp <= 0
+    st.ents.set(s.i, { hp, mhp, dead, x: e.x, y: e.y, d: s.d, c: s.c })
+    if (!prev || prev.dead || Math.hypot(e.x - l.x, e.y - l.y) > 22) continue
+    const k = voicePitch(s.d, s.c)
+    if (dead) {
+      if (deaths++ < 2) playBark(fam, 'death', e.x, e.y, k)
+    } else if (prev.mhp === mhp && hp < prev.hp - Math.max(2, mhp * 0.03)) {
+      if (pains++ < 3) playBark(fam, 'pain', e.x, e.y, k, prev.hp - hp > mhp * 0.12)
+    }
+  }
+  // 消失的單位：原地冒出屍體 → 死了（用它死前的樣子叫）；沒有屍體的機械，低血量時在近處消失也算
+  for (const [id, p] of st.ents) {
+    if (seen.has(id)) continue
+    st.ents.delete(id)
+    if (p.dead || !p.d || Math.hypot(p.x - l.x, p.y - l.y) > 22) continue
+    const fam = familyOf(p.d)
+    if (!fam) continue
+    const corpseHere = fresh.some((c) => Math.hypot(c.x - p.x, c.y - p.y) < 1.5)
+    const wreck = fam === 'machine' && p.hp <= p.mhp * 0.3 && Math.hypot(p.x - l.x, p.y - l.y) < 14
+    if ((corpseHere || wreck) && deaths++ < 2) playBark(fam, 'death', p.x, p.y, voicePitch(p.d, p.c))
+  }
+  // 怪物待機叫聲：每 3–8 秒，挑一隻附近看得到的非人類
+  if (t >= st.nextIdle) {
+    st.nextIdle = t + 3 + Math.random() * 5
+    const cand = [...world.ents.values()].filter((e) => {
+      if (e.s.z !== zid || (e.s.fl ?? 0) & (EntFlag.Corpse | EntFlag.Mine)) return false
+      const fam = familyOf(e.s.d)
+      return !!fam && fam !== 'human' && Math.hypot(e.x - l.x, e.y - l.y) < 16
+    })
+    const e = cand[Math.floor(Math.random() * cand.length)]
+    if (e) playBark(familyOf(e.s.d)!, 'idle', e.x, e.y, voicePitch(e.s.d, e.s.c))
+  }
 }
 
 function stepSounds(zid: number, myId: number): void {
@@ -261,6 +331,7 @@ export function installAudioDirector(): void {
       st.lastCd.clear()
       st.lastDoors.clear()
       st.steps.clear()
+      st.ents.clear()
       st.chatSeen = chatLog.value.length
     }
     if (s !== 'game') setAmbient(null)
@@ -327,6 +398,17 @@ export function installAudioDirector(): void {
         if (m) setMood(m)
       },
       sfx: (n: string) => sfx(n),
+      /** 測試與混音：在鏡頭位置播叫聲 */
+      bark: (fam: Family, kind: BarkKind, big = false) => {
+        const l = listenerPos()
+        return playBark(fam, kind, l.x, l.y, 1, big)
+      },
+      families: () => FAMILIES,
+      combat: () => ({ ...combatStats }),
+      hit: (kind: Hit, mat: Mat) => {
+        const l = listenerPos()
+        playHit(kind, mat, l.x, l.y)
+      },
     }
   }
   // 局勢：每 0.5 秒重新判定音樂情境與環境音

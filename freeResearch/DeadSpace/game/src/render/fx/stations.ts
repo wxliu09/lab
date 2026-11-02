@@ -359,6 +359,7 @@ regFx('gitDraw', (gs, _w, f) => {
 regFx('neurotoxin', (gs, _w, f) => {
   // 神經毒素灌進站內（只給受害者本人看）：身邊冒出黃綠色毒霧
   const p = at(gs, f)
+  sfx('gas', p.x, p.y)
   gs.fx.emit(f.z, p.x, p.y, 0.4, 4, { color: '#8a9a3a', speed: 0.4, life: 1.6, size: 0.8, up: 0.5, area: 0.6, layer: 'smoke', alpha: 0.35 })
   gs.fx.emit(f.z, p.x, p.y, 1, 3, { color: '#c8ff5a', speed: 0.2, life: 0.8, size: 0.1, up: 0.4, area: 0.4 })
 })

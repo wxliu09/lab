@@ -5,6 +5,7 @@ import { regFx } from './fxBinding'
 import { W } from './stationBuilder'
 import type { GameScene } from './gameScene'
 import { sfx } from '../audio/sfx'
+import { hitKind, materialOf, playHit, playSwing } from '../audio/combat'
 import { GEO } from './fx'
 import { fxTex } from './fx/tex'
 import { beam, bolt, burst, entPos, hot, muzzleOf, posOf, screenFlash, shake } from './fx/kit'
@@ -168,6 +169,17 @@ regFx('atk', (gs, w, f) => {
   if (L.sound) sfx(L.sound, from.x, from.y)
   const style = L.style ?? 'tracer'
   const z = f.z
+  // 命中音：武器類型 × 目標外觀的材質（近戰先有破風聲）
+  {
+    const tgt = f.e2 ? w.ents.get(f.e2)?.s : undefined
+    const hx = to.x
+    const hy = to.y
+    const play = () => (L.hitSound ? sfx(L.hitSound, hx, hy) : playHit(hitKind(style, L.shape), materialOf(tgt), hx, hy))
+    if (style === 'claw') {
+      playSwing(from.x, from.y, f.s === 'bite')
+      gs.fx.after(0.07, play)
+    } else gs.fx.after(0.02, play)
+  }
   switch (style) {
     case 'bolt': {
       bolt(gs, z, W(from.x, from.y, from.h), W(to.x, to.y, hitH), L.color, (L.w ?? 0.04) * 1.2, f.s === 'lightning' ? 0.22 : 0.14, { flicker: 0.05 })
@@ -340,10 +352,11 @@ function projBody(gs: GameScene, L: Look): { g: THREE.Group; spin?: THREE.Object
   return { g, spin: style === 'spore' ? core : undefined, light: (L.size ?? 0) >= 0.12 }
 }
 
-function impact(gs: GameScene, z: number, L: Look, x: number, y: number, h: number, dir: [number, number]): void {
+function impact(gs: GameScene, z: number, L: Look, x: number, y: number, h: number, dir: [number, number], tgt?: { d?: string; fl?: number }): void {
   const c = L.color
   const hit = L.hit ?? 0.2
   if (L.hitSound) sfx(L.hitSound, x, y)
+  else if (L.style !== 'rocket' && L.style !== 'grenade' && L.style !== 'wave') playHit(hitKind(L.style, L.shape), tgt ? materialOf(tgt) : 'stone', x, y)
   switch (L.style) {
     case 'spit':
       gs.fx.emit(z, x, y, h, 14, { color: c, color2: L.color2, speed: 2.6, life: 0.5, size: 0.16, up: 0.7, grav: 9 })
@@ -504,7 +517,7 @@ regFx('proj', (gs, w, f) => {
     }
     if (k >= 0.999 && !done) {
       done = true
-      impact(gs, z, L, x, y, h, dir)
+      impact(gs, z, L, x, y, h, dir, f.e2 ? w.ents.get(f.e2)?.s : undefined)
     }
   })
 })
@@ -547,6 +560,7 @@ regFx('heal', (gs, _w, f) => {
 
 regFx('miss', (gs, _w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.6 }
+  sfx('whiff', p.x, p.y)
   gs.fx.emit(f.z, p.x, p.y, Math.min(1.4, p.h * 0.7), 5, { color: '#ffffff', speed: 1.5, life: 0.3, size: 0.12, up: 1 })
   gs.fx.ring(f.z, p.x, p.y, 0.3, 0.7, '#ffffff', 0.3, { tex: 'ring', k: 1.2, opacity: 0.6, h: 0.5 })
 })
@@ -566,6 +580,7 @@ regFx('blink', (gs, _w, f) => {
 })
 
 regFx('dash', (gs, w, f) => {
+  sfx('dash', f.x, f.y)
   const dx = (f.x2 ?? f.x) - f.x
   const dy = (f.y2 ?? f.y) - f.y
   gs.fx.emit(f.z, f.x, f.y, 0.3, 16, { color: '#e8f6ff', speed: 2, life: 0.4, size: 0.35, up: 0.2, dir: [-dx, -dy], spread: 0.4 })
@@ -616,6 +631,7 @@ regFx('suitOn', (gs, _w, f) => {
 })
 regFx('suitOff', (gs, _w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.8 }
+  sfx('suitOff', p.x, p.y)
   gs.fx.emit(f.z, p.x, p.y, 1, 12, { color: '#9fe7ff', speed: 1, life: 0.5, size: 0.2, up: 1 })
   gs.fx.debris(f.z, p.x, p.y, 1, 5, 'metal', { speed: 2, size: 0.07 })
 })
@@ -623,6 +639,9 @@ regFx('suitOff', (gs, _w, f) => {
 regFx('castStart', (gs, _w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.8 }
   const dur = Math.min(4, Math.max(0.4, f.v ?? 0.5))
+  sfx('castCharge', p.x, p.y)
+  // 長詠唱：每 0.6 秒再充一次能，最後一下在施放前
+  for (let t = 0.6; t < dur - 0.3; t += 0.6) gs.fx.after(t, () => sfx('castCharge', p.x, p.y))
   gs.fx.ring(f.z, p.x, p.y, 1.1, 0.4, '#b28cff', dur, { tex: 'ring', k: 1.8, ease: 'linear' })
 })
 
@@ -724,7 +743,10 @@ regFx('dock', (gs, _w, f) => {
   sfx('clang', f.x, f.y)
   gs.fx.shock(f.z, f.x, f.y, 3, '#9fe7ff', 0.8)
 })
-regFx('board', (gs, _w, f) => gs.fx.emit(f.z, f.x, f.y, 1, 10, { color: '#ffc23d', speed: 1, life: 0.4, size: 0.2, up: 1 }))
+regFx('board', (gs, _w, f) => {
+  sfx('dock', f.x, f.y)
+  gs.fx.emit(f.z, f.x, f.y, 1, 10, { color: '#ffc23d', speed: 1, life: 0.4, size: 0.2, up: 1 })
+})
 regFx('boardLink', (gs, _w, f) => beam(gs, f.z, W(f.x, f.y, 0.5), W(f.x2 ?? f.x, f.y2 ?? f.y, 0.5), '#ffc23d', 0.12, 1, { flow: '#ffe08a' }))
 regFx('alarm', (gs, _w, f) => {
   sfx('alarm', f.x, f.y)
@@ -756,6 +778,7 @@ regFx('evolved', (gs, _w, f) => {
   shake(gs, 0.5, f.x, f.y)
 })
 regFx('infect', (gs, _w, f) => {
+  sfx('infect', f.x, f.y)
   gs.fx.emit(f.z, f.x, f.y, 0.5, 30, { color: '#7a3cff', speed: 1.2, life: 1.2, size: 0.4, up: 0.6 })
   gs.fx.emit(f.z, f.x, f.y, 0.5, 8, { color: '#14081e', speed: 0.8, life: 1.6, size: 0.7, up: 0.4, layer: 'smoke', alpha: 0.6 })
 })

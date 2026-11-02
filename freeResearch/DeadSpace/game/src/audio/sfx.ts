@@ -167,6 +167,8 @@ const GAIN: Record<string, number> = {
   victory: 4, defeat: 5, revealHuman: 5, revealXeno: 6, revealMutant: 3.6, revealAndroid: 4.4,
   join: 2.6, leaveLobby: 2.4, readyUp: 2.6, pickup: 3.6, drop: 3, ready: 4.2, epTick: 2.8,
   step: 1.8, stepSoft: 2, stepHeavy: 1.4, scuttle: 1.5, squish: 1.5, doorOpen: 1.7, doorClose: 1.7,
+  // 近戰攻擊原本比槍聲小很多
+  claw: 3, bite: 3,
 }
 
 function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null {
@@ -191,7 +193,7 @@ function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null
   return g
 }
 
-function noise(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, q = 1, type: BiquadFilterType = 'bandpass', amp = 1): void {
+export function noise(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, q = 1, type: BiquadFilterType = 'bandpass', amp = 1): void {
   const c = ctx!
   const src = c.createBufferSource()
   src.buffer = noiseBuf
@@ -208,7 +210,7 @@ function noise(dest: AudioNode, t0: number, dur: number, f0: number, f1: number,
   src.stop(t0 + dur + 0.05)
 }
 
-function tone(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.5): void {
+export function tone(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.5): void {
   const c = ctx!
   const o = c.createOscillator()
   o.type = type
@@ -224,7 +226,7 @@ function tone(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, 
 }
 
 /** 緩起音的持續音（充能、嗡鳴）*/
-function swell(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.3, att = 0.5): void {
+export function swell(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.3, att = 0.5): void {
   const c = ctx!
   const o = c.createOscillator()
   o.type = type
@@ -240,7 +242,7 @@ function swell(dest: AudioNode, t0: number, dur: number, f0: number, f1: number,
 }
 
 /** FM 合成（金屬撞擊、鐘聲、電子音）*/
-function fm(dest: AudioNode, t0: number, dur: number, carrier: number, ratio: number, index: number, amp = 0.3, type: OscillatorType = 'sine'): void {
+export function fm(dest: AudioNode, t0: number, dur: number, carrier: number, ratio: number, index: number, amp = 0.3, type: OscillatorType = 'sine'): void {
   const c = ctx!
   const car = c.createOscillator()
   car.type = type
@@ -263,12 +265,12 @@ function fm(dest: AudioNode, t0: number, dur: number, carrier: number, ratio: nu
 }
 
 /** 一串隨機短促的雜訊爆點（蓋革計數器、電弧劈啪、翻找）*/
-function ticks(dest: AudioNode, t0: number, dur: number, n: number, f: number, amp = 0.5, q = 4): void {
+export function ticks(dest: AudioNode, t0: number, dur: number, n: number, f: number, amp = 0.5, q = 4): void {
   for (let i = 0; i < n; i++) noise(dest, t0 + Math.random() * dur, 0.012 + Math.random() * 0.02, f * (0.7 + Math.random() * 0.6), f * 0.5, q, 'bandpass', amp * (0.5 + Math.random() * 0.5))
 }
 
 /** 低頻轟鳴（地震、核爆尾音）*/
-function rumble(dest: AudioNode, t0: number, dur: number, amp = 1, f = 180): void {
+export function rumble(dest: AudioNode, t0: number, dur: number, amp = 1, f = 180): void {
   noise(dest, t0, dur, f, 30, 0.7, 'lowpass', amp)
   tone(dest, t0, dur * 0.8, 48, 26, 'sine', amp * 0.6)
 }
@@ -480,6 +482,33 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
 
 const last = new Map<string, number>()
 
+// ───────── 外掛音效表（戰鬥、叫聲等模組在載入時註冊，避免循環 import）─────────
+
+type SoundFn = (d: AudioNode, now: number) => void
+const EXTRA = new Map<string, SoundFn>()
+
+/** 註冊具名的世界音效；gain 為混音增益（同 GAIN 表）*/
+export function regSound(name: string, fn: SoundFn, gain = 1): void {
+  EXTRA.set(name, fn)
+  GAIN[name] = gain
+}
+
+/**
+ * 直接播放一段自訂合成（帶參數的音效，例如每個角色音高不同的叫聲）。
+ * 沿用節流（以 key 計）、距離衰減與分軌。
+ */
+export function playSynth(key: string, x: number | undefined, y: number | undefined, gain: number, fn: SoundFn, minGap = 0.03, b: Bus = 'sfx'): boolean {
+  const c = ac()
+  if (!c || c.state !== 'running') return false
+  const now = c.currentTime
+  if ((last.get(key) ?? -1) > now - minGap) return false
+  const d = out(x, y, 0.5 * gain, b)
+  if (!d) return false
+  last.set(key, now)
+  fn(d, now)
+  return true
+}
+
 export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
   const c = ac()
   if (!c || c.state !== 'running') return
@@ -494,6 +523,11 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
   if (!d) return
   if (ui && uiSound(name, d, now)) return
   if (!ui && worldSound(name, d, now)) return
+  const ex = EXTRA.get(name)
+  if (ex) {
+    ex(d, now)
+    return
+  }
   switch (name) {
     case 'pistol':
       noise(d, now, 0.12, 3200, 600, 0.8, 'bandpass', 0.9)
