@@ -5,7 +5,8 @@
 ## 目前狀態（2026-11-02）
 
 - **分支**：原始碼、文件、研究資料都在 `deadspace-dev`（原 `ccr-30c0fa50-e9j08w`，2026-11-01 改名）；**main 只放發佈成品 `play/`**，發佈流程見 `CLAUDE.md`「Repo 慣例（分支）」。
-  - 2026-11-02 已發佈到 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
+  - 最新發佈：2026-11-02 main commit `cee43f7`（背景音樂、音效、visual-review 修正）。
+  - 2026-11-02 首次整理 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
   - 舊的遠端分支 `ccr-30c0fa50-e9j08w` 無法從雲端 session 刪除（git proxy 回 403）；內容已完整包含在 `deadspace-dev`，可以在 GitHub 的 Branches 頁面手動刪掉。
 - **M0–M11 完成**（見下）；只剩選配的 M12（近距離語音）。
 - 單元測試 316 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）、Playwright 多分頁 e2e、真實 WebRTC e2e（`XC_P2P=1`）、正式 build 冒煙測試（`tests/visual/smoke.mjs`）、線上版雙瀏覽器驗證（`tests/visual/live.mjs`）。
