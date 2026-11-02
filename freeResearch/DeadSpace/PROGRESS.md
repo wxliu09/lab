@@ -5,7 +5,7 @@
 ## 目前狀態（2026-11-02）
 
 - **分支**：原始碼、文件、研究資料都在 `deadspace-dev`（原 `ccr-30c0fa50-e9j08w`，2026-11-01 改名）；**main 只放發佈成品 `play/`**，發佈流程見 `CLAUDE.md`「Repo 慣例（分支）」。
-  - 最新發佈：2026-11-02 main commit `1b86e71`（介面改善、遊戲內指引、離開控制台）；之前 `cee43f7`（背景音樂、音效、visual-review 修正）。線上版雙瀏覽器驗證通過。
+  - 最新發佈：2026-11-02 main commit `1d79b21`（審查修正、太空站點外型、遊戲選單、死因說明、大廳與練習改版），線上雙瀏覽器驗證通過；之前 `1b86e71`（介面改善、遊戲內指引、離開控制台）；之前 `cee43f7`（背景音樂、音效、visual-review 修正）。線上版雙瀏覽器驗證通過。
   - 2026-11-02 首次整理 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
   - 舊的遠端分支 `ccr-30c0fa50-e9j08w` 無法從雲端 session 刪除（git proxy 回 403）；內容已完整包含在 `deadspace-dev`，可以在 GitHub 的 Branches 頁面手動刪掉。
 - **M0–M11 完成**（見下）；只剩選配的 M12（近距離語音）。
