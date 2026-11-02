@@ -8,6 +8,7 @@ import type { GameScene } from './gameScene'
 import { loc, t } from '../ui/i18n'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName } from '../ui/names'
+import { STATION_BY_ID } from '../shared/content/stations/index'
 
 const requested = new Set<string>()
 /** 靠近時會開啟操作面板的設施 */
@@ -54,6 +55,7 @@ export class Overlay {
     const now = world.now()
     const z = Math.min(1.6, uiZoom.value)
     const labels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
+    const stationLabels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
     const bubbles = new Map<number, { text: string; color: number }>()
     world.bubbles = world.bubbles.filter((b) => b.until > now)
     for (const b of world.bubbles) bubbles.set(b.e, b)
@@ -64,6 +66,26 @@ export class Overlay {
       if (def?.tags.includes('structure') && !def.tags.includes('egg')) continue
       const fl = e.s.fl ?? 0
       if (fl & EntFlag.Corpse) continue
+      // 太空層：站點與行星一律標名字（畫在模型下方），不然整片星空分不出哪裡是哪裡
+      if (scene.zone === 0 && (e.s.d ?? '').startsWith('station.')) {
+        const nm = loc(entDefName(e.s.d))
+        if (nm) {
+          // 依站點半徑在螢幕上的大小，把名字放在模型正下方
+          const rad = STATION_BY_ID.get((e.s.d ?? '').slice(8))?.space.radius ?? 3
+          this.v.copy(uv.root.position).project(cam)
+          const cx = (this.v.x * 0.5 + 0.5) * w
+          const cy = (-this.v.y * 0.5 + 0.5) * h
+          this.v.copy(uv.root.position)
+          this.v.z += rad
+          this.v.project(cam)
+          const by = (-this.v.y * 0.5 + 0.5) * h
+          if (Math.abs(cx / w - 0.5) <= 0.55 && cy > -50 && cy < h + 50) {
+            const piloted = (e.s.o ?? -1) >= 0 && e.s.c !== undefined && e.s.c >= 0
+            stationLabels.push({ name: nm, sx: cx, sy: Math.max(cy, by) + 18 * z, color: piloted ? PLAYER_COLORS[e.s.c!].hex : '#bfe9ff', pri: 1 })
+          }
+        }
+        continue
+      }
       this.v.copy(uv.root.position)
       this.v.y += uv.height + 0.35
       this.v.project(cam)
@@ -99,6 +121,19 @@ export class Overlay {
     const pr = this.prompt(scene, world, x, w, h, z, now)
     if (pr) placed.push(pr)
     this.drawLabels(x, labels, placed, z)
+    // 站名：字大一點、全部畫（站點彼此距離遠，不做省略）
+    x.save()
+    x.font = `700 ${Math.round(15 * z)}px "Noto Sans TC", sans-serif`
+    x.textAlign = 'center'
+    for (const lb of stationLabels) {
+      ensureGlyphs(lb.name)
+      x.lineWidth = 4
+      x.strokeStyle = 'rgba(0,0,0,0.85)'
+      x.strokeText(lb.name, lb.sx, lb.sy)
+      x.fillStyle = lb.color
+      x.fillText(lb.name, lb.sx, lb.sy)
+    }
+    x.restore()
   }
 
   /**

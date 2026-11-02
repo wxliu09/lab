@@ -250,16 +250,36 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
     x.arc(ox, oy, r * k, 0, Math.PI * 2)
     x.stroke()
   }
+  const placed: { l: number; r: number; t: number; b: number }[] = []
   for (const e of world.ents.values()) {
     if (e.s.z !== 0) continue
     const def = UNITS.get(e.s.d ?? '')
     const px = ox + e.x * k
     const py = oy - e.y * k
-    const big = def?.tags.includes('station')
+    // 站點的 UnitDef 只在 sim 端註冊，client 用外觀 id 判斷
+    const big = def?.tags.includes('station') || (e.s.d ?? '').startsWith('station.')
     x.fillStyle = def?.id === 'space.sun' ? '#fff1d6' : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? '#9fe7ff' : '#cfd8df'
     x.beginPath()
     x.arc(px, py, big ? 5 : def?.id === 'space.sun' ? 7 : 3, 0, Math.PI * 2)
     x.fill()
+    if (big) {
+      const nm = loc(entDefName(e.s.d))
+      if (nm) {
+        x.font = '600 18px "Noto Sans TC", sans-serif'
+        x.textAlign = 'center'
+        const hw = x.measureText(nm).width / 2 + 2
+        // 名字避讓：上方擠就放下方，兩邊都擠就不畫（滑鼠懸停到場景上的站還是看得到）
+        const spot = [py - 9, py + 22].find((yy) => !placed.some((r) => px - hw < r.r && px + hw > r.l && yy - 17 < r.b && yy + 2 > r.t))
+        if (spot !== undefined) {
+          placed.push({ l: px - hw, r: px + hw, t: spot - 17, b: spot + 2 })
+          x.lineWidth = 3
+          x.strokeStyle = 'rgba(0,0,0,0.85)'
+          x.strokeText(nm, px, spot)
+          x.fillStyle = '#dff6ff'
+          x.fillText(nm, px, spot)
+        }
+      }
+    }
   }
   const tx = scene.rts.tx
   const ty = scene.rts.ty

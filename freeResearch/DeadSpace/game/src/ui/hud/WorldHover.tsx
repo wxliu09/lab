@@ -34,6 +34,20 @@ export function hoverTip(id: number): TipData | null {
   const name = s.n || loc(entDefName(d)) || d
   const hpRow: [string, string][] = s.mhp && !(fl & EntFlag.Corpse) ? [[t('tip.hp'), `${Math.ceil(s.hp ?? 0)} / ${s.mhp}`]] : []
   if (fl & EntFlag.Corpse) return { title: name, sub: t('hover.cat.corpse'), body: desc('corpse'), hint: t('hover.hint.corpse'), color: '#8b9aa8' }
+  // 太空層的站點與行星：名稱、用途介紹、有沒有人在駕駛
+  if (d.startsWith('station.')) {
+    const sid = d.slice(8)
+    const piloted = (s.o ?? -1) >= 0
+    const isMine = id === world.me.control
+    return {
+      title: name,
+      sub: t(isMine ? 'hover.station.mine' : piloted ? 'hover.station.piloted' : 'hover.cat.station'),
+      body: t('codex.place.' + sid),
+      rows: hpRow,
+      hint: t('hover.hint.station'),
+      color: piloted && s.c !== undefined && s.c >= 0 ? PLAYER_COLORS[s.c]?.hex : '#9fe7ff',
+    }
+  }
   if (id === (world.me.control ?? world.me.unit)) return { title: name, sub: t('hover.cat.me'), rows: hpRow }
   const tags = def?.tags ?? []
   if (typeof s.x2?.s === 'string') return { title: name, sub: t('hover.cat.vendor'), body: desc(d), hint: t('hover.hint.vendor'), color: '#5cf2a5' }
