@@ -19,6 +19,8 @@ export class RtsCamera {
   private keys = new Set<string>()
   private mouse = { x: -1, y: -1, inside: false }
   edgeScroll = true
+  /** 邊緣捲動速度倍率（設定頁）*/
+  edgeSpeed = 1
   follow: (() => { x: number; y: number } | null) | null = null
 
   constructor() {
@@ -73,11 +75,14 @@ export class RtsCamera {
     if (this.keys.has('ArrowUp')) my += 1
     if (this.keys.has('ArrowDown')) my -= 1
     if (this.edgeScroll && this.mouse.inside) {
-      const m = 6
-      if (this.mouse.x <= m) mx -= 1
-      if (this.mouse.x >= viewW - m) mx += 1
-      if (this.mouse.y <= m) my += 1
-      if (this.mouse.y >= viewH - m) my -= 1
+      // 邊緣 22px 內開始捲動，越靠邊越快（瀏覽器視窗邊緣很容易滑出去，判定區不能太窄）
+      const m = 22
+      const ramp = (d: number) => this.edgeSpeed * (0.45 + 0.55 * (1 - Math.max(0, Math.min(m, d)) / m))
+      const { x, y } = this.mouse
+      if (x <= m) mx -= ramp(x)
+      if (x >= viewW - m) mx += ramp(viewW - x)
+      if (y <= m) my += ramp(y)
+      if (y >= viewH - m) my -= ramp(viewH - y)
     }
     if (mx || my) {
       this.tx += mx * speed * dt

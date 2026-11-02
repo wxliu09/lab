@@ -20,7 +20,7 @@ export interface AudioPrefs {
 }
 
 const PREF_KEY = 'xc.audio'
-const DEFAULT_PREFS: AudioPrefs = { master: 0.8, sfx: 0.8, music: 0.55, ambient: 0.6, muted: false }
+const DEFAULT_PREFS: AudioPrefs = { master: 0.9, sfx: 0.9, music: 0.45, ambient: 0.6, muted: false }
 
 function loadPrefs(): AudioPrefs {
   try {
@@ -75,10 +75,22 @@ function ac(): AudioContext | null {
   try {
     ctx = new AudioContext()
     master = ctx.createGain()
+    // 母線：壓縮 → 補償增益 → 限幅（整體更大聲但不爆音）
     const comp = ctx.createDynamicsCompressor()
-    comp.threshold.value = -14
-    comp.ratio.value = 4
-    master.connect(comp).connect(ctx.destination)
+    comp.threshold.value = -16
+    comp.knee.value = 12
+    comp.ratio.value = 3.5
+    comp.attack.value = 0.005
+    comp.release.value = 0.2
+    const makeup = ctx.createGain()
+    makeup.gain.value = 1.5
+    const limit = ctx.createDynamicsCompressor()
+    limit.threshold.value = -3
+    limit.knee.value = 0
+    limit.ratio.value = 20
+    limit.attack.value = 0.002
+    limit.release.value = 0.1
+    master.connect(comp).connect(makeup).connect(limit).connect(ctx.destination)
     for (const b of ['sfx', 'ui', 'music', 'ambient'] as Bus[]) {
       const g = ctx.createGain()
       g.connect(master)
@@ -182,7 +194,7 @@ function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null
     const dx = x - listener.x
     const dy = y - listener.y
     const d = Math.hypot(dx, dy)
-    vol *= Math.max(0, 1 - d / 30) ** 1.5
+    vol *= Math.max(0, 1 - d / 32) ** 1.2
     pan = Math.max(-1, Math.min(1, dx / 14))
   }
   if (vol < 0.01) return null
@@ -481,6 +493,8 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
 }
 
 const last = new Map<string, number>()
+/** 音效的基準增益（玩家回饋：原本 0.5 太小聲）*/
+const SFX_BASE = 0.75
 
 // ───────── 外掛音效表（戰鬥、叫聲等模組在載入時註冊，避免循環 import）─────────
 
@@ -502,7 +516,7 @@ export function playSynth(key: string, x: number | undefined, y: number | undefi
   if (!c || c.state !== 'running') return false
   const now = c.currentTime
   if ((last.get(key) ?? -1) > now - minGap) return false
-  const d = out(x, y, 0.5 * gain, b)
+  const d = out(x, y, SFX_BASE * gain, b)
   if (!d) return false
   last.set(key, now)
   fn(d, now)
@@ -518,7 +532,7 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
   if ((last.get(name) ?? 0) > now - minGap) return
   last.set(name, now)
   const ui = UI_SOUNDS.has(name)
-  const k = 0.5 * (GAIN[name] ?? 1)
+  const k = SFX_BASE * (GAIN[name] ?? 1)
   const d = ui ? out(undefined, undefined, k, 'ui') : out(x, y, k, b ?? 'sfx')
   if (!d) return
   if (ui && uiSound(name, d, now)) return

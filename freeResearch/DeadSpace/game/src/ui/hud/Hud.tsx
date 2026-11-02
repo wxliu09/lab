@@ -4,6 +4,7 @@ import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
+import { entDefName } from '../names'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, world, connLost } from '../../client/session'
@@ -11,6 +12,8 @@ import { chatOpen, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
+import { tipProps, type TipData } from '../tooltip'
+import { Settings } from '../screens/Settings'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -29,24 +32,44 @@ export function TopBar() {
   void snapTick.value
   const me = world.me
   const w = world.w
+  const fs = !!document.fullscreenElement
+  const [showSettings, setShowSettings] = useState(false)
   return (
     <div class="panel hud-top" data-testid="game">
-      <span>
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      <span {...tipProps(() => ({ title: t('tip.time.title'), body: t('tip.time.body') }))}>
         {t('game.time')} <b>{fmtTime(w.t ?? 0)}</b>
       </span>
-      <Stability />
-      <span data-testid="role" style={{ color: ROLE_COLOR[me.role ?? 'human'], fontFamily: 'var(--title)', letterSpacing: '0.1em' }}>
+      <span {...tipProps(() => ({ title: t('tip.stab.title'), body: t('tip.stab.body') }))}>
+        <Stability />
+      </span>
+      <span
+        data-testid="role"
+        style={{ color: ROLE_COLOR[me.role ?? 'human'], fontFamily: 'var(--title)', letterSpacing: '0.1em' }}
+        {...tipProps(() => (me.role ? { title: t('tip.role.title'), body: t('tip.role.body'), color: ROLE_COLOR[me.role] } : null))}
+      >
         {me.role ? t('role.' + me.role) + (me.spawn ? ' spawn' : '') : ''}
       </span>
       {(me.role === 'xeno' || me.role === 'mutant' || me.role === 'android' || me.spawn) && (
-        <span>
+        <span {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body') }))}>
           {t('hud.ep')} <b>{me.ep ?? 0}</b>
           {me.epNext ? <span class="dim">/{me.epNext}</span> : null}
         </span>
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
-      <button class="small ghost" title={t('hud.mute')} data-testid="mute" style={{ padding: '1px 6px' }} onClick={() => setAudioPref('muted', !audioPrefs.value.muted)}>
-        <Icon name={audioPrefs.value.muted ? 'muted' : 'sound'} size={16} color={audioPrefs.value.muted ? '#8b9aa8' : '#9fe7ff'} />
+      <button class="small ghost icon-btn" data-testid="mute" onClick={() => setAudioPref('muted', !audioPrefs.value.muted)} {...tipProps(() => ({ title: t('hud.mute') }))}>
+        <Icon name={audioPrefs.value.muted ? 'muted' : 'sound'} size={18} color={audioPrefs.value.muted ? '#8b9aa8' : '#9fe7ff'} />
+      </button>
+      <button
+        class="small ghost icon-btn"
+        data-testid="fullscreen"
+        onClick={() => (fs ? document.exitFullscreen() : document.documentElement.requestFullscreen?.())?.catch?.(() => {})}
+        {...tipProps(() => ({ title: fs ? t('hud.exitFullscreen') : t('hud.fullscreen') }))}
+      >
+        <Icon name={fs ? 'shrink' : 'expand'} size={18} color="#9fe7ff" />
+      </button>
+      <button class="small ghost icon-btn" data-testid="settings-open" onClick={() => setShowSettings(true)} {...tipProps(() => ({ title: t('menu.settings') }))}>
+        <Icon name="gear" size={18} color="#9fe7ff" />
       </button>
     </div>
   )
@@ -209,6 +232,7 @@ export function Portrait() {
   if (!e) return <div class="panel portrait" />
   const s = e.s
   const def = UNITS.get(s.d ?? '')
+  const defName = entDefName(s.d)
   const hp = s.hp ?? 0
   const mhp = s.mhp ?? 1
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!].hex : '#cfd8df'
@@ -218,9 +242,9 @@ export function Portrait() {
         <Icon name={def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'} color={color} size={56} />
       </div>
       <div class="bars">
-        <div style={{ fontWeight: 700, fontSize: '15px', color }}>{s.n || loc(def?.name)}</div>
-        <div class="dim" style={{ fontSize: '12px', marginTop: '-4px' }}>
-          {loc(def?.name)}
+        <div style={{ fontWeight: 700, fontSize: '18px', color }}>{s.n || loc(defName)}</div>
+        <div class="dim" style={{ fontSize: '14px', marginTop: '-4px' }}>
+          {loc(defName)}
         </div>
         <div class="bar">
           <i style={{ transform: `scaleX(${Math.max(0, hp / mhp)})` }} />
@@ -240,14 +264,14 @@ export function Portrait() {
           {(s.b ?? []).map((b) => {
             const bd = buffDef(b)
             return (
-              <span key={b} class="tag" title={loc(bd?.name)} style={{ color: bd?.good ? 'var(--good)' : 'var(--alarm)' }}>
+              <span key={b} class="tag" style={{ color: bd?.good ? 'var(--good)' : 'var(--alarm)' }} {...tipProps(() => (bd ? { title: loc(bd.name), sub: bd.good ? t('tip.buff.good') : t('tip.buff.bad'), body: loc((bd as { desc?: { zh: string; en: string } }).desc), color: bd.good ? '#5cf2a5' : '#ff5a4a' } : null))}>
                 {loc(bd?.name) || b}
               </span>
             )
           })}
         </div>
         {def && (
-          <div class="dim mono" style={{ fontSize: '11px' }}>
+          <div class="dim mono" style={{ fontSize: '13px' }}>
             {def.attack ? `ATK ${def.attack.dmg[0]}–${def.attack.dmg[1]} · ${def.attack.range}m · ` : ''}SPD {def.speed}
           </div>
         )}
@@ -256,42 +280,55 @@ export function Portrait() {
   )
 }
 
-function Tip({ title, body, x, y }: { title: string; body: string; x: number; y: number }) {
-  return (
-    <div class="panel tooltip" style={{ left: `${Math.min(x, window.innerWidth - 320)}px`, top: `${y - 110}px` }}>
-      <b>{title}</b>
-      <div class="dim" style={{ marginTop: '4px', whiteSpace: 'pre-line' }}>
-        {body}
-      </div>
-    </div>
-  )
+const TARGET_HINT: Record<string, string> = {
+  none: 'tip.target.none',
+  self: 'tip.target.self',
+  unit: 'tip.target.unit',
+  point: 'tip.target.point',
+  unitOrPoint: 'tip.target.unitOrPoint',
+  toggle: 'tip.target.toggle',
+  passive: 'tip.target.passive',
+}
+
+function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boolean }): TipData | null {
+  const ab = abilityDef(id)
+  if (!ab) return null
+  const rows: [string, string][] = []
+  if (ab.cd) rows.push([t('tip.cd'), `${ab.cd}s`])
+  if (ab.mana) rows.push([t('tip.mana'), String(ab.mana)])
+  if (ab.range) rows.push([t('tip.range'), `${ab.range}m`])
+  const passive = ab.target === 'passive'
+  const hints = [t(TARGET_HINT[ab.target] ?? 'tip.target.none')]
+  if (!passive) hints.push(t('tip.ability.use', { k: key }))
+  if (ab.autocast) hints.push(t('tip.ability.auto'))
+  if (st?.disabled) hints.unshift(t('tip.ability.disabled'))
+  return { title: loc(ab.name), tag: key || undefined, body: loc(ab.desc), rows, hint: hints.join('\n'), color: '#9fe7ff' }
 }
 
 export function CommandCard({ input }: { input: Input | null }) {
   void snapTick.value
-  const [tip, setTip] = useState<{ title: string; body: string; x: number; y: number } | null>(null)
   const abs = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
   const passives = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target === 'passive')
   const keys = ['Q', 'W', 'E', 'R', 'D', 'F']
   const basic = [
-    { key: 'A', icon: 'attack', name: t('cmd.attack'), run: () => (targetMode.value = { kind: 'attack' }) },
-    { key: 'S', icon: 'stop', name: t('cmd.stop'), run: () => sendCmd({ k: 'stop' }) },
-    { key: 'H', icon: 'hold', name: t('cmd.hold'), run: () => sendCmd({ k: 'hold' }) },
+    { key: 'A', icon: 'attack', name: t('cmd.attack'), desc: t('cmd.attack.desc'), run: () => (targetMode.value = { kind: 'attack' }) },
+    { key: 'S', icon: 'stop', name: t('cmd.stop'), desc: t('cmd.stop.desc'), run: () => sendCmd({ k: 'stop' }) },
+    { key: 'H', icon: 'hold', name: t('cmd.hold'), desc: t('cmd.hold.desc'), run: () => sendCmd({ k: 'hold' }) },
   ]
   return (
     <div class="panel cmdcard">
       <div class="cmdgrid">
         {basic.map((b) => (
-          <div class="cmd" key={b.key} onClick={b.run} title={b.name}>
+          <div class="cmd" key={b.key} onClick={b.run} {...tipProps(() => ({ title: b.name, tag: b.key, body: b.desc }))}>
             <span class="key">{b.key}</span>
-            <Icon name={b.icon} size={24} />
+            <Icon name={b.icon} size={28} />
           </div>
         ))}
         {passives.slice(0, 1).map((p) => {
           const ab = abilityDef(p.id)!
           return (
-            <div class="cmd" key={p.id} style={{ opacity: 0.6 }} onMouseEnter={(e) => setTip({ title: loc(ab.name), body: loc(ab.desc), x: e.clientX, y: e.clientY })} onMouseLeave={() => setTip(null)}>
-              <Icon name={ab.icon} size={24} color="#8b9aa8" />
+            <div class="cmd" key={p.id} style={{ opacity: 0.6 }} {...tipProps(() => abilityTip(p.id, ''))}>
+              <Icon name={ab.icon} size={28} color="#8b9aa8" />
             </div>
           )
         })}
@@ -313,18 +350,10 @@ export function CommandCard({ input }: { input: Input | null }) {
                 e.preventDefault()
                 if (ab.autocast) sendCmd({ k: 'autocast', a: ab.id })
               }}
-              onMouseEnter={(e) =>
-                setTip({
-                  title: `${loc(ab.name)} (${keys[i] ?? ''})`,
-                  body: `${loc(ab.desc)}\n${ab.cd ? `${t('tip.cd')} ${ab.cd}s · ` : ''}${ab.mana ? `${t('tip.mana')} ${ab.mana} · ` : ''}${ab.range ? `${t('tip.range')} ${ab.range}m` : ''}`,
-                  x: e.clientX,
-                  y: e.clientY,
-                })
-              }
-              onMouseLeave={() => setTip(null)}
+              {...tipProps(() => abilityTip(st.id, keys[i] ?? '', st))}
             >
               <span class="key">{keys[i] ?? ''}</span>
-              <Icon name={ab.icon} size={26} color={st.disabled ? '#666' : '#9fe7ff'} />
+              <Icon name={ab.icon} size={30} color={st.disabled ? '#666' : '#9fe7ff'} />
               {st.cd > 0 && (
                 <>
                   <div class="cdmask" style={{ transform: `scaleY(${Math.min(1, st.cd / Math.max(0.1, st.maxCd))})` }} />
@@ -335,14 +364,12 @@ export function CommandCard({ input }: { input: Input | null }) {
           )
         })}
       </div>
-      {tip && <Tip {...tip} />}
     </div>
   )
 }
 
 export function Inventory({ input }: { input: Input | null }) {
   void snapTick.value
-  const [tip, setTip] = useState<{ title: string; body: string; x: number; y: number } | null>(null)
   const inv = world.me.inv ?? []
   return (
     <div class="panel inv" data-testid="inventory">
@@ -359,17 +386,21 @@ export function Inventory({ input }: { input: Input | null }) {
               e.preventDefault()
               if (it) sendCmd({ k: 'drop', s: i })
             }}
-            onMouseEnter={(e) => def && setTip({ title: loc(def.name), body: loc(def.desc) + (it && it.charges ? `\n${t('tip.charges')} ${it.charges}` : ''), x: e.clientX, y: e.clientY })}
-            onMouseLeave={() => setTip(null)}
+            {...tipProps(() => {
+              if (!def || !it) return { title: t('hud.inventory') + ` ${i + 1}`, body: t('tip.empty') }
+              const rows: [string, string][] = []
+              if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
+              const hints = [def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 }), it.cd > 0 ? t('tip.item.cd') : ''].filter(Boolean)
+              return { title: loc(def.name), tag: String(i + 1), sub: t('tip.cat.' + def.cat), body: loc(def.desc), rows, hint: hints.join('\n'), color: def.suit ? '#ffc23d' : '#9fe7ff' }
+            })}
           >
             <span class="key">{i + 1}</span>
-            {def && <Icon name={def.icon} size={24} color={def.suit ? '#ffc23d' : '#9fe7ff'} />}
-            {it && it.charges > 0 && <span class="cdtxt" style={{ right: '3px', bottom: '1px', fontSize: '10px', position: 'absolute' }}>{it.charges}</span>}
+            {def && <Icon name={def.icon} size={30} color={def.suit ? '#ffc23d' : '#9fe7ff'} />}
+            {it && it.charges > 0 && <span class="cdtxt charges">{it.charges}</span>}
             {it && it.cd > 0 && <div class="cdmask" style={{ transform: 'scaleY(1)', opacity: 0.6 }} />}
           </div>
         )
       })}
-      {tip && <Tip {...tip} />}
     </div>
   )
 }

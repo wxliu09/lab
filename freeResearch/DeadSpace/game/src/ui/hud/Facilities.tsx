@@ -8,10 +8,24 @@ import type { FacilityView } from '../../shared/protocol/messages'
 import { sfx } from '../../audio/sfx'
 import { loc, t } from '../i18n'
 import { Icon } from '../icons'
+import { tipProps } from '../tooltip'
+import { OpenSound } from './OpenSound'
 
 const POWER_ICONS: Record<string, string> = { normal: 'stop', ambient: 'battery', explorer: 'ship', station: 'bolt', lab: 'dna' }
 
-const box = { position: 'absolute', right: '12px', bottom: '210px', width: '320px', padding: '12px' } as const
+/** 面板標頭：圖示＋名稱＋「靠近時開啟」*/
+function Head({ icon, title }: { icon: string; title: string }) {
+  return (
+    <div class="ip-head">
+      <OpenSound />
+      <Icon name={icon} size={26} color="#ffc23d" />
+      <div>
+        <h3>{title}</h3>
+        <div class="ip-sub">{t('panel.nearby')}</div>
+      </div>
+    </div>
+  )
+}
 
 function act(e: number, a: string, s?: number): void {
   sfx('ui')
@@ -24,9 +38,9 @@ function Offline({ off }: { off: number }) {
 
 function PowerPanel({ v }: { v: Extract<FacilityView, { k: 'power' }> }) {
   return (
-    <div class="panel" data-testid="fac-power" style={box}>
-      <h3>{t('fac.power.title')}</h3>
-      <div class="dim" style={{ fontSize: '12px', marginBottom: '8px' }}>
+    <div class="panel interact-panel" data-testid="fac-power">
+      <Head icon="bolt" title={t('fac.power.title')} />
+      <div class="dim ip-hint">
         {t('fac.power.hint')}
       </div>
       <Offline off={v.off} />
@@ -38,11 +52,11 @@ function PowerPanel({ v }: { v: Extract<FacilityView, { k: 'power' }> }) {
             <button key={m} data-testid={'power-' + m} class="row" style={{ gap: '10px', justifyContent: 'flex-start', textAlign: 'left' }} disabled={cur || cd > 0 || v.off > 0} onClick={() => act(v.e, 'power', i)}>
               <Icon name={POWER_ICONS[m] ?? 'bolt'} size={20} color={cur ? '#ffc23d' : '#9fe7ff'} />
               <span class="grow">
-                <div style={{ fontSize: '13px' }}>
+                <div class="ip-name">
                   {t('fac.power.mode.' + m)}
                   {cur ? ' · ' + t('fac.current') : cd > 0 ? ' · ' + t('fac.cd', { s: cd }) : ''}
                 </div>
-                <div class="dim" style={{ fontSize: '11px' }}>
+                <div class="dim ip-meta">
                   {t('fac.power.desc.' + m)}
                 </div>
               </span>
@@ -57,13 +71,13 @@ function PowerPanel({ v }: { v: Extract<FacilityView, { k: 'power' }> }) {
 function FactoryPanel({ v }: { v: Extract<FacilityView, { k: 'factory' }> }) {
   const cur = v.cur ? itemDef(v.cur) : undefined
   return (
-    <div class="panel" data-testid="fac-factory" style={box}>
-      <h3>{t('fac.factory.title')}</h3>
-      <div class="dim" style={{ fontSize: '12px', marginBottom: '8px' }}>
+    <div class="panel interact-panel" data-testid="fac-factory">
+      <Head icon="module" title={t('fac.factory.title')} />
+      <div class="dim ip-hint">
         {t('fac.factory.hint')}
       </div>
       <Offline off={v.off} />
-      <div class="mono" style={{ fontSize: '12px', marginBottom: '8px' }}>
+      <div class="mono ip-status">
         {cur ? t('fac.factory.building', { item: loc(cur.name), s: v.left }) : t('fac.factory.idle')}
       </div>
       <div class="col" style={{ gap: '6px' }}>
@@ -72,10 +86,10 @@ function FactoryPanel({ v }: { v: Extract<FacilityView, { k: 'factory' }> }) {
           return (
             <button key={id} data-testid={'factory-' + id} class="row" style={{ gap: '8px', justifyContent: 'flex-start', textAlign: 'left' }} disabled={v.off > 0 || v.cur === id} onClick={() => act(v.e, id)}>
               <Icon name={it?.icon ?? 'module'} size={20} />
-              <span class="grow" title={loc(it?.desc)} style={{ fontSize: '13px' }}>
+              <span class="grow ip-name" {...tipProps(() => (it ? { title: loc(it.name), body: loc(it.desc) } : null))}>
                 {loc(it?.name) || id}
               </span>
-              <span class="dim mono" style={{ fontSize: '11px' }}>
+              <span class="dim mono ip-meta">
                 {t('fac.factory.time', { s })}
               </span>
             </button>
@@ -99,9 +113,9 @@ function cellName(i: number): string {
 
 function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
   return (
-    <div class="panel" data-testid="fac-cells" style={box}>
-      <h3>{t('fac.cells.title')}</h3>
-      <div class="dim" style={{ fontSize: '12px', marginBottom: '8px' }}>
+    <div class="panel interact-panel" data-testid="fac-cells">
+      <Head icon="key" title={t('fac.cells.title')} />
+      <div class="dim ip-hint">
         {t('fac.cells.hint')}
       </div>
       <Offline off={v.off} />
@@ -109,10 +123,10 @@ function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
         {v.open.map((open, i) => (
           <button key={i} data-testid={'cell-' + (i + 1)} class="row" style={{ gap: '8px', justifyContent: 'flex-start' }} disabled={v.off > 0} onClick={() => act(v.e, 'cell', i)}>
             <Icon name={open ? 'door' : 'key'} size={20} color={open ? '#ff5a4a' : '#5cf2a5'} />
-            <span class="grow" style={{ fontSize: '13px' }}>
+            <span class="grow ip-name">
               {cellName(i)}
             </span>
-            <span class="dim mono" style={{ fontSize: '11px' }}>
+            <span class="dim mono ip-meta">
               {open ? t('fac.cells.open') : t('fac.cells.closed')}
             </span>
           </button>
@@ -124,13 +138,13 @@ function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
 
 function CagePanel({ v }: { v: Extract<FacilityView, { k: 'cage' }> }) {
   return (
-    <div class="panel" data-testid="fac-cage" style={box}>
-      <h3>{t('fac.cage.title')}</h3>
-      <div class="dim" style={{ fontSize: '12px', marginBottom: '8px' }}>
+    <div class="panel interact-panel" data-testid="fac-cage">
+      <Head icon="key" title={t('fac.cage.title')} />
+      <div class="dim ip-hint">
         {t('fac.cage.hint')}
       </div>
       <Offline off={v.off} />
-      <div class="mono" style={{ fontSize: '12px', marginBottom: '8px' }}>
+      <div class="mono ip-status">
         {t('fac.cage.pad', { n: v.pad })}
       </div>
       <button data-testid="cage-build" disabled={v.busy > 0 || v.off > 0} onClick={() => act(v.e, 'cage')}>

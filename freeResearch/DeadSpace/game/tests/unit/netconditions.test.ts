@@ -58,10 +58,15 @@ describe('網路條件', () => {
         server.tick()
       }
     }
-    // hello 的 token 要先用 crypto.subtle 計算（真的非同步），讓事件迴圈轉幾圈
-    for (let i = 0; i < 60 && slot < 0; i++) {
-      run(100)
-      await new Promise((r) => setImmediate(r))
+    // hello 的 token 要先用 crypto.subtle 計算（真的非同步，在執行緒池算）：機器忙的時候要多等一下真實時間。
+    // 虛擬時間上限維持 6 秒（120 × 50 ms），真實時間最多約 1 秒。
+    const realWait = async (ms: number) => {
+      const end = process.hrtime.bigint() + BigInt(ms * 1e6)
+      while (process.hrtime.bigint() < end) await new Promise((r) => setImmediate(r))
+    }
+    for (let i = 0; i < 120 && slot < 0; i++) {
+      run(50)
+      await realWait(8)
     }
     run(1000)
     expect(slot).toBeGreaterThanOrEqual(0)

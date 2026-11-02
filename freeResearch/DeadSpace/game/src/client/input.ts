@@ -1,5 +1,6 @@
 // 輸入：致敬 WC3 的操作（右鍵移動／攻擊／互動、A 攻擊、S 停止、H 原地、QWERDF 技能、1–6 背包、空白鍵回鏡頭）
-import { signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
+import { edgeScrollOn, edgeSpeed } from './controlPrefs'
 import { audioPrefs, setAudioPref } from '../audio/sfx'
 import { abilityDef, itemDef, UNITS } from '../shared/content/registry'
 import { EntFlag } from '../shared/protocol/messages'
@@ -16,6 +17,8 @@ export const targetMode = signal<TargetMode>(null)
 export const selected = signal(0)
 export const chatOpen = signal(false)
 export const cursorWorld = signal<{ x: number; y: number } | null>(null)
+/** 游標的螢幕座標（場景懸停說明用）*/
+export const cursorScreen = { x: 0, y: 0, overView: false }
 export const evolveOpen = signal(false)
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
@@ -31,6 +34,7 @@ export class Input {
   private dragging = false
   private dragX = 0
   private dragY = 0
+  private last = { x: -1, y: -1 }
   private disposers: (() => void)[] = []
 
   constructor(
@@ -47,7 +51,47 @@ export class Input {
       if (e.button === 1) this.dragging = false
     })
     on('mousemove', (e) => this.move(e))
-    on('mouseleave', () => this.scene.rts.mouseAt(-1, -1, false))
+    // 邊緣捲動用整個視窗的滑鼠位置：滑鼠在 HUD 上（例如底部面板）也要能捲；
+    // 滑鼠從邊緣滑出瀏覽器視窗時，視為停在那個邊緣，繼續捲動直到回來或視窗失焦。
+    const wmove = (e: PointerEvent) => {
+      const r = this.el.getBoundingClientRect()
+      this.last = { x: e.clientX - r.left, y: e.clientY - r.top }
+      this.scene.rts.mouseAt(this.last.x, this.last.y, true)
+      cursorScreen.x = e.clientX
+      cursorScreen.y = e.clientY
+      cursorScreen.overView = e.target === this.el
+      if (e.target !== this.el) {
+        // 在 HUD 上：不要留著上一次的懸停目標
+        this.scene.units.hovered = 0
+        cursorWorld.value = null
+      }
+    }
+    const wout = (e: MouseEvent) => {
+      if (e.relatedTarget) return
+      const r = this.el.getBoundingClientRect()
+      const near = 56
+      let { x, y } = this.last
+      const atEdge = x <= near || y <= near || x >= r.width - near || y >= r.height - near
+      if (!atEdge) return this.scene.rts.mouseAt(-1, -1, false)
+      if (x <= near) x = 0
+      else if (x >= r.width - near) x = r.width
+      if (y <= near) y = 0
+      else if (y >= r.height - near) y = r.height
+      this.scene.rts.mouseAt(x, y, true)
+    }
+    const stop = () => this.scene.rts.mouseAt(-1, -1, false)
+    on('pointermove', wmove, window)
+    on('mouseout', wout, window)
+    on('blur', stop, window)
+    const vis = () => document.hidden && stop()
+    document.addEventListener('visibilitychange', vis)
+    this.disposers.push(() => document.removeEventListener('visibilitychange', vis))
+    this.disposers.push(
+      effect(() => {
+        this.scene.rts.edgeScroll = edgeScrollOn.value
+        this.scene.rts.edgeSpeed = edgeSpeed.value
+      }),
+    )
     on('wheel', (e) => {
       e.preventDefault()
       this.scene.rts.wheel(e.deltaY)

@@ -6,6 +6,7 @@ import { ITEM_STRINGS } from '../shared/content/items'
 import { EVENT_EN, EVENT_ZH } from './strings/events'
 import { CODEX_EN, CODEX_ZH } from './strings/codex'
 import { FAC_EN, FAC_ZH } from './strings/facilities'
+import { UX_EN, UX_ZH } from './strings/ux'
 import { ITEMS } from '../shared/content/registry'
 
 export type Lang = 'zh' | 'en'
@@ -17,7 +18,8 @@ function initialLang(): Lang {
   } catch {
     /* ignore */
   }
-  return navigator.language?.startsWith('zh') || !navigator.language ? 'zh' : 'en'
+  // 繁體中文為主：沒有手動選過語言就一律用中文（設定頁可切英文）
+  return 'zh'
 }
 
 export const lang = signal<Lang>(initialLang())
@@ -274,8 +276,8 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH)
-Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN)
 
 /** 測試用：某語言是否有這個 key */
 export function hasString(l: Lang, key: string): boolean {

@@ -3,6 +3,21 @@ import { lang, setLang, t, type Lang } from '../i18n'
 import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net/trystero'
 import { quality, setQuality, type Quality } from '../../render/quality'
 import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
+import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
+import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
+
+/** 0–100 之類的滑桿＋數值 */
+function Slider({ id, min, max, value, onInput, onChange, unit = '' }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string }) {
+  return (
+    <div class="row" style={{ gap: '8px' }}>
+      <input type="range" min={min} max={max} value={value} style={{ width: '160px' }} data-testid={id} onInput={(e) => onInput(Number((e.target as HTMLInputElement).value))} onChange={onChange} />
+      <span class="mono dim" style={{ width: '48px', textAlign: 'right' }}>
+        {value}
+        {unit}
+      </span>
+    </div>
+  )
+}
 
 const VOL_KEYS: (keyof Omit<AudioPrefs, 'muted'>)[] = ['master', 'music', 'sfx', 'ambient']
 
@@ -48,25 +63,37 @@ export function Settings({ onClose }: { onClose: () => void }) {
               ))}
             </select>
           </div>
+          <h3 style={{ margin: '8px 0 2px' }}>{t('settings.ui')}</h3>
+          <div class="setrow">
+            <label>
+              {t('settings.uiScale')}
+              <div class="dim" style={{ fontSize: '12px' }}>
+                {t('settings.uiScaleAuto')} · {Math.round(uiZoom.value * 100)}%
+              </div>
+            </label>
+            <Slider id="ui-scale" min={70} max={160} value={Math.round(uiScalePref.value * 100)} unit="%" onInput={(v) => setUiScale(v / 100)} />
+          </div>
+          <h3 style={{ margin: '8px 0 2px' }}>{t('settings.controls')}</h3>
+          <div class="setrow">
+            <label>{t('settings.edgeScroll')}</label>
+            <input type="checkbox" data-testid="edge-scroll" checked={edgeScrollOn.value} onChange={(e) => setEdgeScroll((e.target as HTMLInputElement).checked)} />
+          </div>
+          <div class="setrow">
+            <label>{t('settings.edgeSpeed')}</label>
+            <Slider id="edge-speed" min={40} max={250} value={Math.round(edgeSpeed.value * 100)} unit="%" onInput={(v) => setEdgeSpeed(v / 100)} />
+          </div>
           <h3 style={{ margin: '8px 0 2px' }}>{t('settings.audio')}</h3>
           {VOL_KEYS.map((k) => (
             <div class="setrow" key={k}>
               <label>{t('settings.vol.' + k)}</label>
-              <div class="row" style={{ gap: '8px' }}>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(audioPrefs.value[k] * 100)}
-                  style={{ width: '160px' }}
-                  data-testid={'vol-' + k}
-                  onInput={(e) => setAudioPref(k, Number((e.target as HTMLInputElement).value) / 100)}
-                  onChange={() => sfx(k === 'music' || k === 'ambient' ? 'notify' : 'pickup')}
-                />
-                <span class="mono dim" style={{ width: '32px', textAlign: 'right' }}>
-                  {Math.round(audioPrefs.value[k] * 100)}
-                </span>
-              </div>
+              <Slider
+                id={'vol-' + k}
+                min={0}
+                max={100}
+                value={Math.round(audioPrefs.value[k] * 100)}
+                onInput={(v) => setAudioPref(k, v / 100)}
+                onChange={() => sfx(k === 'music' || k === 'ambient' ? 'notify' : 'pickup')}
+              />
             </div>
           ))}
           <div class="setrow">

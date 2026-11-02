@@ -16,6 +16,8 @@ import { DoorLog, FeedsPanel, NotesPanel, feedView } from '../hud/Investigation'
 import { EnhancerPanel, FakeEnd } from '../hud/Events'
 import { ReplayPanel } from '../hud/Replay'
 import { FacilityPanel } from '../hud/Facilities'
+import { Announcements, CastBar } from '../hud/Announce'
+import { WorldHover } from '../hud/WorldHover'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -76,6 +78,9 @@ export function GameScreen() {
       <EvolveMenu />
       <EnhancerPanel />
       <FacilityPanel />
+      <Announcements />
+      <CastBar />
+      {scene && <WorldHover scene={scene} />}
       <FakeEnd />
       <EndScreen />
       <RoleReveal />

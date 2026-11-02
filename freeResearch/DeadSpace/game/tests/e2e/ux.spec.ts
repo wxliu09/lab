@@ -1,0 +1,123 @@
+// 介面體驗：tooltip 在畫面內、離開就收起；邊緣捲動（HUD 上、滑出視窗）；公告橫幅；販賣機面板標題；預設繁中
+import { expect, test, type Page } from '@playwright/test'
+
+test.use({ viewport: { width: 1600, height: 900 }, launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } })
+
+type W = {
+  __xcScene: { rts: { tx: number; ty: number; jump: (x: number, y: number) => void }; myUnit: () => { x: number; y: number } | null }
+  __xcState: { chatLog: { value: unknown[] }; world: { me: { unit?: number; control?: number }; ents: Map<number, { x: number; y: number; s: { i: number; z?: number; x2?: { s?: unknown } } }> } }
+  __xcTest: { hook: (op: string, a: unknown[]) => unknown; sendCmd: (c: unknown) => void }
+}
+
+async function startGame(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('xc.quality', 'low')
+      // 情境提示會蓋住左上角，測試時關掉
+      localStorage.setItem('xc.hints', '0')
+    } catch {
+      /* ignore */
+    }
+  })
+  await page.goto('./?net=bc', { waitUntil: 'domcontentloaded' })
+  await page.getByTestId('name').fill('Alice')
+  await page.getByTestId('create').click()
+  await expect(page.getByTestId('lobby')).toBeVisible({ timeout: 30000 })
+  await page.getByTestId('start').click()
+  await expect(page.getByTestId('game')).toBeVisible({ timeout: 90000 })
+  await page.waitForTimeout(3000)
+  // 揭露畫面可能剛好自己關掉：點不到就算了
+  if (await page.getByTestId('reveal').isVisible()) await page.getByTestId('reveal').click({ timeout: 5000 }).catch(() => {})
+}
+
+const cam = (page: Page) => page.evaluate(() => ({ x: (window as unknown as W).__xcScene.rts.tx, y: (window as unknown as W).__xcScene.rts.ty }))
+
+test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板', async ({ page }) => {
+  test.setTimeout(300000)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await startGame(page)
+
+  // 預設繁體中文
+  await expect(page.getByTestId('game')).toContainText('星區穩定度')
+
+  // tooltip：在畫面內，移開就收起
+  await page.getByTestId('inv-0').hover()
+  const tip = page.getByTestId('tooltip')
+  await expect(tip).toBeVisible()
+  const box = (await tip.boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(1600)
+  expect(box.y + box.height).toBeLessThanOrEqual(900)
+  await page.mouse.move(800, 300)
+  await page.waitForTimeout(400)
+  await expect(tip).toHaveCount(0)
+
+  // 邊緣捲動：滑鼠停在底部（HUD 上）也會往下捲
+  await page.evaluate(() => {
+    const s = (window as unknown as W).__xcScene
+    const u = s.myUnit()
+    if (u) s.rts.jump(u.x, u.y + 6)
+  })
+  let a = await cam(page)
+  await page.mouse.move(800, 897)
+  await page.waitForTimeout(900)
+  let b = await cam(page)
+  expect(b.y).toBeLessThan(a.y - 0.5)
+
+  // 從右邊緣滑出視窗：繼續往右捲，直到視窗失焦（先把鏡頭放到地圖中央，免得卡在邊界）
+  await page.mouse.move(800, 450)
+  await page.evaluate(() => {
+    const r = (window as unknown as { __xcScene: { rts: { bounds: { minX: number; maxX: number; minY: number; maxY: number }; jump: (x: number, y: number) => void } } }).__xcScene.rts
+    r.jump((r.bounds.minX + r.bounds.maxX) / 2 - 8, (r.bounds.minY + r.bounds.maxY) / 2)
+  })
+  await page.mouse.move(1590, 450)
+  a = await cam(page)
+  await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseout', { relatedTarget: null, bubbles: true })))
+  await page.waitForTimeout(900)
+  b = await cam(page)
+  expect(b.x).toBeGreaterThan(a.x + 0.5)
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await page.waitForTimeout(200)
+  a = await cam(page)
+  await page.waitForTimeout(600)
+  b = await cam(page)
+  expect(Math.abs(b.x - a.x)).toBeLessThan(0.05)
+  await page.mouse.move(800, 300)
+
+  // 公告：全場事件放大顯示在上方中央
+  await page.evaluate(() => {
+    const s = (window as unknown as W).__xcState
+    s.chatLog.value = [...s.chatLog.value, { from: '', color: -1, ch: 'sys', text: '@event.pirate', time: 0 }]
+  })
+  await expect(page.getByTestId('announce')).toBeVisible()
+  await expect(page.getByTestId('announce')).toContainText('事件')
+
+  // 販賣機面板：有標題
+  await page.evaluate(() => (window as unknown as W).__xcTest.hook('vision', [0, true]))
+  await page.evaluate(() => (window as unknown as W).__xcTest.hook('run', [0, 'we', ['nyx']]))
+  await page.waitForTimeout(2500)
+  const vid = await page.evaluate(() => {
+    const w = (window as unknown as W).__xcState.world
+    const me = w.ents.get((w.me.control ?? w.me.unit)!)
+    let best = 0
+    let bd = 1e9
+    for (const e of w.ents.values()) {
+      if (!me || e.s.z !== me.s.z || typeof e.s.x2?.s !== 'string') continue
+      const d = Math.hypot(e.x - me.x, e.y - me.y)
+      if (d < bd) {
+        bd = d
+        best = e.s.i
+      }
+    }
+    return best
+  })
+  expect(vid).toBeTruthy()
+  await page.evaluate((id) => (window as unknown as W).__xcTest.sendCmd({ k: 'interact', e: id }), vid)
+  await expect(page.getByTestId('vendor')).toBeVisible({ timeout: 60000 })
+  const title = await page.getByTestId('vendor').locator('h3').innerText()
+  expect(title.trim().length).toBeGreaterThan(0)
+  expect(title).not.toContain('vendor.')
+  expect(errors).toEqual([])
+})

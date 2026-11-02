@@ -1,9 +1,12 @@
 // 販賣機面板：自己的單位走到販賣機旁就出現，顯示庫存與補貨倒數（本作改良：庫存可見）
-import { UNITS, itemDef } from '../../shared/content/registry'
+import { itemDef } from '../../shared/content/registry'
+import { entDefName } from '../names'
 import { send, sendCmd, snapTick, world } from '../../client/session'
 import { loc, t } from '../i18n'
 import { Icon } from '../icons'
 import { sfx } from '../../audio/sfx'
+import { tipProps } from '../tooltip'
+import { OpenSound } from './OpenSound'
 
 const RANGE = 2.9
 
@@ -22,7 +25,7 @@ export function VendorPanel() {
     }
   }
   if (!vendor) return null
-  const def = UNITS.get(vendor.s.d ?? '')
+  const vname = entDefName(vendor.s.d)
   const off = Number(vendor.s.x2?.off ?? 0)
   const noPow = !!vendor.s.x2?.nopow
   const rows = String(vendor.s.x2!.s)
@@ -34,8 +37,15 @@ export function VendorPanel() {
     })
   void send
   return (
-    <div class="panel" data-testid="vendor" style={{ position: 'absolute', right: '12px', bottom: '210px', width: '300px', padding: '12px' }}>
-      <h3>{loc(def?.name)}</h3>
+    <div class="panel interact-panel" data-testid="vendor" key={vendor.s.i}>
+      <OpenSound />
+      <div class="ip-head">
+        <Icon name="vendor" size={26} color="#5cf2a5" />
+        <div>
+          <h3>{loc(vname)}</h3>
+          <div class="ip-sub">{t('panel.nearby')}</div>
+        </div>
+      </div>
       {off > 0 && <div class="notice">{t('vendor.offlineFor', { s: off })}</div>}
       {noPow && <div class="notice">{t('vendor.noPower')}</div>}
       <div class="col" style={{ gap: '6px' }}>
@@ -43,11 +53,15 @@ export function VendorPanel() {
           const it = itemDef(r.item)
           const can = r.count > 0 && off <= 0 && !noPow
           return (
-            <div class="row" key={r.item} style={{ gap: '8px' }}>
-              <Icon name={it?.icon ?? 'unknown'} size={22} color={it?.cat === 'suit' ? '#ffc23d' : '#9fe7ff'} />
-              <div class="grow" title={loc(it?.desc)}>
-                <div style={{ fontSize: '13px' }}>{loc(it?.name) || r.item}</div>
-                <div class="dim mono" style={{ fontSize: '11px' }}>
+            <div
+              class="row ip-row"
+              key={r.item}
+              {...tipProps(() => (it ? { title: loc(it.name), sub: t('tip.cat.' + it.cat), body: loc(it.desc), color: it.cat === 'suit' ? '#ffc23d' : '#9fe7ff' } : null))}
+            >
+              <Icon name={it?.icon ?? 'unknown'} size={28} color={it?.cat === 'suit' ? '#ffc23d' : '#9fe7ff'} />
+              <div class="grow">
+                <div class="ip-name">{loc(it?.name) || r.item}</div>
+                <div class="dim mono ip-meta">
                   {t('vendor.stock', { n: r.count })}
                   {r.wait > 0 ? ' · ' + t('vendor.restock', { s: r.wait }) : ''}
                 </div>

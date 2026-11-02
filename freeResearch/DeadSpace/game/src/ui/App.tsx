@@ -4,6 +4,7 @@ import { Lobby } from './screens/Lobby'
 import { GameScreen } from './screens/GameScreen'
 import { MenuBackdrop } from './MenuBackdrop'
 import { Codex } from './hud/Codex'
+import { TooltipLayer } from './tooltip'
 
 export function App() {
   const s = screen.value
@@ -14,6 +15,7 @@ export function App() {
       {s === 'lobby' && <Lobby />}
       {s === 'game' && <GameScreen />}
       <Codex />
+      <TooltipLayer />
     </>
   )
 }
