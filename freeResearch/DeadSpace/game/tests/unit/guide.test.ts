@@ -26,7 +26,7 @@ vi.mock('../../src/client/session', async () => {
 })
 vi.mock('../../src/client/input', async () => {
   const { signal } = await import('@preact/signals')
-  return { typingInField: () => false, chatOpen: signal(false), evolveOpen: signal(false), targetMode: signal(null), selected: signal(0) }
+  return { typingInField: () => false, chatOpen: signal(false), evolveOpen: signal(false), targetMode: signal(null), selected: signal(0), modalChecks: [] }
 })
 
 const G = await import('../../src/ui/hud/Guide')

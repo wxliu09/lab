@@ -3,8 +3,8 @@ import * as THREE from 'three'
 import { Cell, cellCenter, type ParsedLayout } from '../shared/layout'
 import type { StationDef } from '../shared/content/stations/types'
 import { Batcher, box, rbox } from './batch'
-import { Mat } from './materials'
-import { decalTex } from './tex'
+import { Mat, isSharedMaterial } from './materials'
+import { decalTex, isSharedTexture } from './tex'
 import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
 import { buildRockWalls, classifyOutdoor, groundTone } from './rockWalls'
@@ -440,10 +440,24 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     anim,
     pois,
     dispose() {
+      // 幾何＋這座站自己建的材質與貼圖（房間標籤 CanvasTexture、警示條、箭頭、光圈…）；共用的快取不動
+      const mats = new Set<THREE.Material>()
       group.traverse((o) => {
         const m = o as THREE.Mesh
         if (m.geometry && !m.geometry.userData.shared) m.geometry.dispose()
+        const mm = m.material as THREE.Material | THREE.Material[] | undefined
+        if (Array.isArray(mm)) mm.forEach((x) => mats.add(x))
+        else if (mm) mats.add(mm)
       })
+      for (const mat of mats) {
+        if (isSharedMaterial(mat)) continue
+        const rec = mat as unknown as Record<string, unknown>
+        for (const key of ['map', 'roughnessMap', 'normalMap', 'emissiveMap', 'alphaMap', 'metalnessMap', 'aoMap']) {
+          const tx = rec[key]
+          if (tx instanceof THREE.Texture && !isSharedTexture(tx)) tx.dispose()
+        }
+        mat.dispose()
+      }
     },
   }
 }

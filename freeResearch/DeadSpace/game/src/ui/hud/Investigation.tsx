@@ -4,11 +4,12 @@ import { signal } from '@preact/signals'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { NoteMark } from '../../shared/protocol/messages'
 import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
-import { typingInField } from '../../client/input'
+import { modalChecks, typingInField } from '../../client/input'
 import { t } from '../i18n'
 import { Icon } from '../icons'
 
 export const notesOpen = signal(false)
+modalChecks.push(() => notesOpen.value)
 /** 正在看的監視器畫面（覆寫鏡頭所在 zone）*/
 export const feedView = signal<{ id: number; zone: number; x: number; y: number } | null>(null)
 
@@ -27,10 +28,13 @@ export function NotesPanel() {
       if (e.code === 'Tab' && !typingInField()) {
         e.preventDefault()
         notesOpen.value = !notesOpen.value
+      } else if (e.code === 'Escape' && notesOpen.value && !typingInField()) {
+        e.stopImmediatePropagation()
+        notesOpen.value = false
       }
     }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
+    window.addEventListener('keydown', k, true)
+    return () => window.removeEventListener('keydown', k, true)
   }, [])
   const [edit, setEdit] = useState<number | null>(null)
   const [text, setText] = useState('')

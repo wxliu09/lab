@@ -5,7 +5,7 @@ test.use({ viewport: { width: 1600, height: 900 }, launchOptions: { args: ['--us
 
 type W = {
   __xcScene: { rts: { tx: number; ty: number; jump: (x: number, y: number) => void }; myUnit: () => { x: number; y: number } | null }
-  __xcState: { chatLog: { value: unknown[] }; world: { me: { unit?: number; control?: number }; ents: Map<number, { x: number; y: number; s: { i: number; z?: number; x2?: { s?: unknown } } }> } }
+  __xcState: { chatLog: { value: unknown[] }; receiveChat: (l: unknown[]) => void; world: { me: { unit?: number; control?: number }; ents: Map<number, { x: number; y: number; s: { i: number; z?: number; x2?: { s?: unknown } } }> } }
   __xcTest: { hook: (op: string, a: unknown[]) => unknown; sendCmd: (c: unknown) => void }
 }
 
@@ -89,7 +89,9 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   // 公告：全場事件放大顯示在上方中央
   await page.evaluate(() => {
     const s = (window as unknown as W).__xcState
-    s.chatLog.value = [...s.chatLog.value, { from: '', color: -1, ch: 'sys', text: '@event.pirate', time: 0 }]
+    // 先塞滿 200 行（聊天紀錄的上限），確認之後的公告照樣出現
+    s.receiveChat(Array.from({ length: 210 }, (_, i) => ({ from: 'Bob', color: 1, ch: 'all', text: 'x' + i, time: 0 })))
+    s.receiveChat([{ from: '', color: -1, ch: 'sys', text: '@event.pirate', time: 0 }])
   })
   await expect(page.getByTestId('announce')).toBeVisible()
   await expect(page.getByTestId('announce')).toContainText('事件')

@@ -61,6 +61,13 @@ export function withFog<T extends THREE.Material>(m: T): T {
 
 const cache = new Map<string, THREE.Material>()
 
+/** 共用材質（材質庫快取、或標記 keep／shared／pool 的）：釋放站點時不能 dispose */
+export function isSharedMaterial(m: THREE.Material): boolean {
+  if (m.userData.keep || m.userData.shared || m.userData.pool) return true
+  for (const v of cache.values()) if (v === m) return true
+  return false
+}
+
 function std(key: string, f: () => THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial): THREE.MeshStandardMaterial {
   let m = cache.get(key) as THREE.MeshStandardMaterial | undefined
   if (!m) {

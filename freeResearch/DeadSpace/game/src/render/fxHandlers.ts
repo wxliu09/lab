@@ -640,8 +640,12 @@ regFx('castStart', (gs, _w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.8 }
   const dur = Math.min(4, Math.max(0.4, f.v ?? 0.5))
   sfx('castCharge', p.x, p.y)
-  // 長詠唱：每 0.6 秒再充一次能，最後一下在施放前
-  for (let t = 0.6; t < dur - 0.3; t += 0.6) gs.fx.after(t, () => sfx('castCharge', p.x, p.y))
+  // 長詠唱：每 0.6 秒再充一次能，最後一下在施放前；詠唱被打斷（快照的動作狀態不再是施法／引導）就停
+  const casting = () => {
+    const st = f.e ? _w.ents.get(f.e)?.s.st : undefined
+    return st === 3 || st === 5
+  }
+  for (let t = 0.6; t < dur - 0.3; t += 0.6) gs.fx.after(t, () => casting() && sfx('castCharge', p.x, p.y))
   gs.fx.ring(f.z, p.x, p.y, 1.1, 0.4, '#b28cff', dur, { tex: 'ring', k: 1.8, ease: 'linear' })
 })
 

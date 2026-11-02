@@ -197,6 +197,8 @@ export function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
     vehicle.owner = NEUTRAL
     vehicle.anon = false
     vehicle.pilot = 0
+    // 不要留著上一位駕駛的顏色（小地圖、頭像會以為他還在駕駛）
+    vehicle.color = -1
     return
   }
   const p = g.players[pilot.owner]

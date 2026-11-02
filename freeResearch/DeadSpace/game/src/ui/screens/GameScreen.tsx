@@ -19,6 +19,7 @@ import { ReplayPanel } from '../hud/Replay'
 import { FacilityPanel } from '../hud/Facilities'
 import { Announcements, CastBar } from '../hud/Announce'
 import { WorldHover } from '../hud/WorldHover'
+import { InGameSettings } from './Settings'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -80,6 +81,7 @@ export function GameScreen() {
       <EnhancerPanel />
       <FacilityPanel />
       <Announcements />
+      <InGameSettings />
       <CastBar />
       {scene && <WorldHover scene={scene} />}
       <FakeEnd />

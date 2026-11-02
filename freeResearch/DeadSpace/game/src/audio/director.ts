@@ -3,7 +3,7 @@
 import { effect } from '@preact/signals'
 import { EntFlag, type ChatLine, type FxEvent } from '../shared/protocol/messages'
 import { STATION_BY_ID } from '../shared/content/stations/index'
-import { chatLog, cmdTaps, endResult, lobby, screen, snapTick, startInfo, world } from '../client/session'
+import { chatTaps, cmdTaps, endResult, lobby, screen, snapTick, startInfo, world } from '../client/session'
 import { chatOpen, evolveOpen } from '../client/input'
 import type { GameScene } from '../render/gameScene'
 import { setAmbient, type AmbientKind } from './ambient'
@@ -29,6 +29,9 @@ const st = {
   tenseUntil: 0,
   alarmUntil: 0,
   lastHp: -1,
+  /** 上一個快照操控的是哪個單位、最大生命多少（換操控對象或脫防護服不能當成受傷）*/
+  lastHpId: 0,
+  lastMhp: 0,
   lastAlive: true,
   lastInv: [] as (string | null)[],
   lastEp: -1,
@@ -40,7 +43,6 @@ const st = {
   nextIdle: 0,
   heartbeatAt: 0,
   revealedFor: null as unknown,
-  chatSeen: 0,
   lobbyN: -1,
   lobbyReady: -1,
   inGame: false,
@@ -125,6 +127,11 @@ function onSnap(): void {
   if (u && alive) {
     const hp = u.s.hp ?? 0
     const mhp = Math.max(1, u.s.mhp ?? 1)
+    if (u.s.i !== st.lastHpId || mhp !== st.lastMhp) {
+      st.lastHpId = u.s.i
+      st.lastMhp = mhp
+      st.lastHp = -1
+    }
     if (st.lastHp >= 0 && hp < st.lastHp - 2) {
       st.hurtAt = t
       sfx(st.lastHp - hp > mhp * 0.12 ? 'hurtBig' : 'hurt')
@@ -332,7 +339,6 @@ export function installAudioDirector(): void {
       st.lastDoors.clear()
       st.steps.clear()
       st.ents.clear()
-      st.chatSeen = chatLog.value.length
     }
     if (s !== 'game') setAmbient(null)
     prevScreen = s
@@ -358,12 +364,9 @@ export function installAudioDirector(): void {
     void snapTick.value
     onSnap()
   })
-  // 聊天
-  effect(() => {
-    const log = chatLog.value
-    if (log.length < st.chatSeen) st.chatSeen = 0
-    if (screen.value === 'game' && log.length > st.chatSeen) onChat(log.slice(st.chatSeen))
-    st.chatSeen = log.length
+  // 聊天（用 tap：chatLog 到 200 行就不再變長，不能用長度判斷新訊息）
+  chatTaps.push((lines) => {
+    if (screen.value === 'game') onChat(lines)
   })
   // 結算
   effect(() => {

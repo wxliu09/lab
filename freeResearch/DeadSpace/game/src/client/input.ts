@@ -23,10 +23,22 @@ export const evolveOpen = signal(false)
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 
-/** 正在駕駛站點／船艇／無人機（指令送給載具，不是自己的角色）*/
+/** 各個對話框登記「我現在開著嗎」：開著時不做邊緣捲動（避免 client → ui 的循環 import）*/
+export const modalChecks: (() => boolean)[] = [() => evolveOpen.value]
+
+function modalOpen(): boolean {
+  return modalChecks.some((f) => f())
+}
+
+/**
+ * 正在駕駛站點／船艇／防禦無人機（指令送給載具，不是自己的角色），可以用 unpilot 離開。
+ * 逃生艙、變種人化蟲、重力校正指揮點等也會換操控對象，但不能「離開控制台」，不算。
+ */
 export function isPiloting(): boolean {
   const c = world.me.control
-  return !!c && !!world.me.unit && c !== world.me.unit && world.me.alive !== false
+  if (!c || !world.me.unit || c === world.me.unit || world.me.alive === false) return false
+  const d = world.ents.get(c)?.s.d ?? ''
+  return d.startsWith('station.') || (d.startsWith('ship.') && d !== 'ship.pod') || d === 'npc.defenseDrone'
 }
 
 /** 輸入框聚焦時不處理遊戲按鍵 */
@@ -62,7 +74,8 @@ export class Input {
     const wmove = (e: PointerEvent) => {
       const r = this.el.getBoundingClientRect()
       this.last = { x: e.clientX - r.left, y: e.clientY - r.top }
-      this.scene.rts.mouseAt(this.last.x, this.last.y, true)
+      // 對話框開著時（設定、圖鑑、說明、筆記、進化）不要邊緣捲動
+      this.scene.rts.mouseAt(this.last.x, this.last.y, !modalOpen())
       cursorScreen.x = e.clientX
       cursorScreen.y = e.clientY
       cursorScreen.overView = e.target === this.el
@@ -78,7 +91,7 @@ export class Input {
       const near = 56
       let { x, y } = this.last
       const atEdge = x <= near || y <= near || x >= r.width - near || y >= r.height - near
-      if (!atEdge) return this.scene.rts.mouseAt(-1, -1, false)
+      if (!atEdge || modalOpen()) return this.scene.rts.mouseAt(-1, -1, false)
       if (x <= near) x = 0
       else if (x >= r.width - near) x = r.width
       if (y <= near) y = 0

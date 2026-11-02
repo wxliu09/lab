@@ -7,7 +7,7 @@ import type { PrivateState, WorldPublic } from '../../shared/protocol/messages'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { snapTick, startInfo, world } from '../../client/session'
-import { chatOpen, evolveOpen, typingInField } from '../../client/input'
+import { chatOpen, evolveOpen, modalChecks, typingInField } from '../../client/input'
 import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { addStrings, hasString, lang, loc, t } from '../i18n'
@@ -46,6 +46,7 @@ effect(() => lsSet(K_ON, hintsEnabled.value ? '1' : '0'))
 
 /** 說明面板（G）是否開著 */
 export const guideOpen = signal(false)
+modalChecks.push(() => guideOpen.value)
 
 /** 已看過的提示（每台瀏覽器每種只出現一次）*/
 export interface HintStore {

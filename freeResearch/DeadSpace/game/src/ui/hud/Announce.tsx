@@ -1,8 +1,8 @@
 // 公告：全場系統訊息（事件、末日、身分公告、站點被毀…）在畫面上方中央放大顯示；
 // 給自己的私人訊息（互動結果、錯誤）在 HUD 上方中央短暫顯示，不必盯著左下角的聊天紀錄。
 import { useEffect, useState } from 'preact/hooks'
-import { chatLog, screen, world } from '../../client/session'
-import type { ChatLine, FxEvent } from '../../shared/protocol/messages'
+import { chatTaps, screen, snapTick, world } from '../../client/session'
+import type { ChatLine } from '../../shared/protocol/messages'
 import { abilityDef } from '../../shared/content/registry'
 import { loc, sysText, t } from '../i18n'
 
@@ -32,22 +32,24 @@ function classify(l: ChatLine): Item['kind'] | null {
 
 export function Announcements() {
   const [items, setItems] = useState<Item[]>([])
-  const [seen, setSeen] = useState(chatLog.value.length)
-  const log = chatLog.value
   useEffect(() => {
-    if (log.length < seen) return setSeen(log.length)
-    if (log.length === seen) return
-    const now = performance.now()
-    const add: Item[] = []
-    for (const l of log.slice(seen)) {
-      const kind = classify(l)
-      if (!kind) continue
-      const life = kind === 'apoc' ? 10000 : kind === 'event' || kind === 'sys' ? 7000 : 4200
-      add.push({ id: ++seq, text: sysText(l.text), kind, until: now + life, life })
+    const tap = (lines: ChatLine[]) => {
+      const now = performance.now()
+      const add: Item[] = []
+      for (const l of lines) {
+        const kind = classify(l)
+        if (!kind) continue
+        const life = kind === 'apoc' ? 10000 : kind === 'event' || kind === 'sys' ? 7000 : 4200
+        add.push({ id: ++seq, text: sysText(l.text), kind, until: now + life, life })
+      }
+      if (add.length) setItems((xs) => [...xs, ...add].slice(-12))
     }
-    setSeen(log.length)
-    if (add.length) setItems((xs) => [...xs, ...add])
-  }, [log, seen])
+    chatTaps.push(tap)
+    return () => {
+      const i = chatTaps.indexOf(tap)
+      if (i >= 0) chatTaps.splice(i, 1)
+    }
+  }, [])
   useEffect(() => {
     if (!items.length) return
     const h = setInterval(() => {
@@ -84,42 +86,19 @@ export function Announcements() {
   )
 }
 
-/** 自己的詠唱／引導進度條（castStart 特效帶持續時間）：放在 HUD 上方中央 */
+/** 自己的詠唱／引導進度條：直接用 sim 送來的私有狀態 me.cast（[技能, 進度 0–1]），被打斷就會消失 */
 export function CastBar() {
-  const [cast, setCast] = useState<{ name: string; start: number; dur: number } | null>(null)
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const tap = (f: FxEvent) => {
-      if (f.k !== 'castStart') return
-      const me = world.me.control ?? world.me.unit
-      if (!me || f.e !== me) return
-      const ab = f.s ? abilityDef(f.s) : undefined
-      setCast({ name: loc(ab?.name) || '', start: performance.now(), dur: Math.max(0.2, f.v ?? 0.5) * 1000 })
-    }
-    world.fxTaps.push(tap)
-    return () => {
-      const i = world.fxTaps.indexOf(tap)
-      if (i >= 0) world.fxTaps.splice(i, 1)
-    }
-  }, [])
-  useEffect(() => {
-    if (!cast) return
-    let raf = 0
-    const step = () => {
-      if (performance.now() - cast.start >= cast.dur) return setCast(null)
-      setTick((x) => x + 1)
-      raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [cast])
-  if (!cast || screen.value !== 'game') return null
-  const k = Math.min(1, (performance.now() - cast.start) / cast.dur)
+  void snapTick.value
+  const c = world.me.cast
+  if (!c || screen.value !== 'game') return null
+  const ab = abilityDef(c[0])
+  const k = Math.max(0, Math.min(1, c[1]))
+  const left = (ab?.cast ?? 0) * (1 - k)
   return (
     <div class="castbar" data-testid="castbar">
       <div class="castbar-label">
-        {t('cast.casting')} {cast.name}
-        <span class="mono dim"> {((cast.dur * (1 - k)) / 1000).toFixed(1)}s</span>
+        {t('cast.casting')} {loc(ab?.name)}
+        {left > 0 && <span class="mono dim"> {left.toFixed(1)}s</span>}
       </div>
       <div class="castbar-track">
         <i style={{ transform: `scaleX(${k})` }} />

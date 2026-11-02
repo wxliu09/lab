@@ -33,14 +33,30 @@ export function RoleReveal() {
   }, [n, open, text])
   useEffect(() => {
     if (!open) return
+    // capture 階段攔下：不然同一個 Esc／Enter 會再觸發遊戲快捷鍵（打開進化選單、聊天框）
     const close = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter') setOpen(false)
+      if (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        setOpen(false)
+      }
     }
-    window.addEventListener('keydown', close)
-    const auto = setTimeout(() => setOpen(false), 30000)
+    window.addEventListener('keydown', close, true)
+    // 30 秒自動關閉：只計算真的在畫面上的時間（每幀最多算 0.1 秒）。
+    // 慢機器建場景時主執行緒會卡很久，用 setTimeout 會在玩家還沒看到時就關掉。
+    let shownFor = 0
+    let prev = performance.now()
+    let raf = 0
+    const step = (now: number) => {
+      shownFor += Math.min(0.1, Math.max(0, (now - prev) / 1000))
+      prev = now
+      if (shownFor >= 30) return setOpen(false)
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
     return () => {
-      window.removeEventListener('keydown', close)
-      clearTimeout(auto)
+      window.removeEventListener('keydown', close, true)
+      cancelAnimationFrame(raf)
     }
   }, [open])
   if (!open || !role || role === 'spectator') return null

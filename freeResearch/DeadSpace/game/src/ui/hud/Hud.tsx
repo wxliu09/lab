@@ -13,7 +13,7 @@ import type { GameScene } from '../../render/gameScene'
 import { loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
 import { tipProps, type TipData } from '../tooltip'
-import { Settings } from '../screens/Settings'
+import { settingsOpen } from '../screens/Settings'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -33,10 +33,8 @@ export function TopBar() {
   const me = world.me
   const w = world.w
   const fs = !!document.fullscreenElement
-  const [showSettings, setShowSettings] = useState(false)
   return (
     <div class="panel hud-top" data-testid="game">
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       <span {...tipProps(() => ({ title: t('tip.time.title'), body: t('tip.time.body') }))}>
         {t('game.time')} <b>{fmtTime(w.t ?? 0)}</b>
       </span>
@@ -68,7 +66,7 @@ export function TopBar() {
       >
         <Icon name={fs ? 'shrink' : 'expand'} size={18} color="#9fe7ff" />
       </button>
-      <button class="small ghost icon-btn" data-testid="settings-open" onClick={() => setShowSettings(true)} {...tipProps(() => ({ title: t('menu.settings') }))}>
+      <button class="small ghost icon-btn" data-testid="settings-open" onClick={() => (settingsOpen.value = true)} {...tipProps(() => ({ title: t('menu.settings') }))}>
         <Icon name="gear" size={18} color="#9fe7ff" />
       </button>
     </div>

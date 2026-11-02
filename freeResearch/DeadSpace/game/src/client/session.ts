@@ -27,6 +27,14 @@ export const mySlot = signal(-1)
 export const isHost = signal(false)
 export const startInfo = signal<StartInfo | null>(null)
 export const chatLog = signal<ChatLine[]>([])
+/** 每收到一批聊天／系統訊息就呼叫（公告、音效用；不要用 chatLog 的長度判斷新訊息，它到 200 行就不再變長）*/
+export const chatTaps: ((lines: ChatLine[]) => void)[] = []
+
+function receiveChat(lines: ChatLine[]): void {
+  world.addChat(lines)
+  chatLog.value = [...chatLog.value, ...lines].slice(-200)
+  for (const tap of chatTaps) tap(lines)
+}
 export const endResult = signal<EndResult | null>(null)
 export const notice = signal('')
 export const hostConflict = signal(false)
@@ -148,8 +156,7 @@ function onHostMsg(m: HostMsg): void {
       snapTick.value++
       break
     case 'chat':
-      world.addChat(m.lines)
-      chatLog.value = [...chatLog.value, ...m.lines].slice(-200)
+      receiveChat(m.lines)
       break
     case 'end':
       endResult.value = m.result
@@ -275,5 +282,5 @@ function exposeTestHooks(): void {
 }
 
 if (__TEST_HOOKS__) {
-  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog }
+  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat }
 }

@@ -2,7 +2,7 @@
 // 只有一個 TooltipLayer（App 最外層），用 position: fixed 依錨點元素定位、夾在視窗內。
 // 介面套了 CSS zoom，所以螢幕座標要除以 uiZoom 才是 tooltip 自己的座標。
 import { signal } from '@preact/signals'
-import { useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { uiZoom } from './uiScale'
 
@@ -32,10 +32,13 @@ export const tipState = signal<TipState | null>(null)
 const ELEMENT = {}
 const CURSOR = {}
 let owner: unknown = null
+/** 元素型 tooltip 的錨點：元素被移除（例如按鈕消失、面板關閉）時要收起 */
+let anchorEl: Element | null = null
 
 export function hideTip(who?: unknown): void {
   if (who !== undefined && who !== owner) return
   owner = null
+  anchorEl = null
   tipState.value = null
 }
 
@@ -52,6 +55,7 @@ export function tipProps(get: () => TipData | null | undefined): {
       const d = get()
       if (!d) return
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      anchorEl = e.currentTarget as Element
       owner = ELEMENT
       tipState.value = { d, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, x: e.clientX, y: e.clientY }
     },
@@ -73,6 +77,22 @@ export function TooltipLayer(): JSX.Element | null {
   const s = tipState.value
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  // 錨點元素不見了、或游標已經不在它上面（mouseleave 不一定會觸發），就收起元素型 tooltip
+  useEffect(() => {
+    const stale = (target?: EventTarget | null) =>
+      owner === ELEMENT && (!anchorEl || !anchorEl.isConnected || (target instanceof Node && !anchorEl.contains(target)))
+    const move = (e: PointerEvent) => {
+      if (stale(e.target)) hideTip(ELEMENT)
+    }
+    const h = setInterval(() => {
+      if (stale()) hideTip(ELEMENT)
+    }, 250)
+    window.addEventListener('pointermove', move, true)
+    return () => {
+      clearInterval(h)
+      window.removeEventListener('pointermove', move, true)
+    }
+  }, [])
   useLayoutEffect(() => {
     const el = ref.current
     if (!s || !el) return setPos(null)

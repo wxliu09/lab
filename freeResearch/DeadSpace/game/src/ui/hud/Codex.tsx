@@ -5,12 +5,13 @@ import { ABILITIES, CLASSES, FORMS, ITEMS, UNITS } from '../../shared/content/re
 import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { parseLayout } from '../../shared/layout'
 import type { UnitDef } from '../../shared/content/types'
-import { typingInField } from '../../client/input'
+import { modalChecks, typingInField } from '../../client/input'
 import { loc, t } from '../i18n'
 import { Icon } from '../icons'
 import '../../shared/content/index'
 
 export const codexOpen = signal(false)
+modalChecks.push(() => codexOpen.value)
 
 type Tab = 'rules' | 'classes' | 'xeno' | 'mutant' | 'android' | 'suits' | 'items' | 'creatures' | 'places'
 const TABS: Tab[] = ['rules', 'classes', 'xeno', 'mutant', 'android', 'suits', 'items', 'creatures', 'places']
@@ -122,10 +123,14 @@ export function Codex() {
       if (e.code === 'F1' && !typingInField()) {
         e.preventDefault()
         codexOpen.value = !codexOpen.value
-      } else if (e.code === 'Escape' && codexOpen.value) codexOpen.value = false
+      } else if (e.code === 'Escape' && codexOpen.value) {
+        // capture 階段攔下，免得同一個 Esc 又打開進化選單
+        e.stopImmediatePropagation()
+        codexOpen.value = false
+      }
     }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
+    window.addEventListener('keydown', k, true)
+    return () => window.removeEventListener('keydown', k, true)
   }, [])
   const list = useMemo(() => (codexOpen.value ? entries(tab) : []), [tab, codexOpen.value])
   if (!codexOpen.value) return null

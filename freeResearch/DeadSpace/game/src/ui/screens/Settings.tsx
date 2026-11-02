@@ -1,10 +1,12 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
+import { signal } from '@preact/signals'
 import { lang, setLang, t, type Lang } from '../i18n'
 import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net/trystero'
 import { quality, setQuality, type Quality } from '../../render/quality'
 import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
 import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
 import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
+import { modalChecks } from '../../client/input'
 import { hintsEnabled, resetHints } from '../hud/Guide'
 
 /** 0–100 之類的滑桿＋數值 */
@@ -22,7 +24,26 @@ function Slider({ id, min, max, value, onInput, onChange, unit = '' }: { id: str
 
 const VOL_KEYS: (keyof Omit<AudioPrefs, 'muted'>)[] = ['master', 'music', 'sfx', 'ambient']
 
+/** 對局中的設定視窗（頂列齒輪）：掛在 GameScreen 的根層，不能放在頂列裡面（會被頂列的定位困住）*/
+export const settingsOpen = signal(false)
+modalChecks.push(() => settingsOpen.value)
+
+export function InGameSettings() {
+  if (!settingsOpen.value) return null
+  return <Settings onClose={() => (settingsOpen.value = false)} />
+}
+
 export function Settings({ onClose }: { onClose: () => void }) {
+  // Esc 關閉；capture 階段攔下，免得同一個 Esc 又打開進化選單
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.code !== 'Escape') return
+      e.stopImmediatePropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', k, true)
+    return () => window.removeEventListener('keydown', k, true)
+  }, [onClose])
   const ns = loadNetSettings()
   const [strategy, setStrategy] = useState<string>(ns.strategy)
   const [turn, setTurn] = useState(ns.turn.length ? JSON.stringify(ns.turn, null, 1) : '')

@@ -38,6 +38,10 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
   const ally = own || (knows && sameFaction(g, viewer, e.owner))
   const disguised = !knows && e.data.fake
   const fake = disguised ? (e.data.fake as { def: string; owner: number; name: string; color: number; cls: string }) : null
+  // 載具（站點、船艇、無人機）跟著駕駛者「目前呈現的樣子」：駕駛者偽裝成別人時，載具也顯示成那個人在駕駛，
+  // 否則「控制台上站著某人、載具卻是匿名」會直接揭穿偽裝
+  const pe = e.pilot ? g.world.get(e.pilot) : undefined
+  const pilotFake = pe && pe.data.fake && !knowsOwner(g, viewer, pe) ? (pe.data.fake as { owner: number; color: number }) : null
   let fl = 0
   const st = e.stats
   if (st.invuln) fl |= EntFlag.Invuln
@@ -61,9 +65,9 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
     f: Math.round(e.facing * 100),
     hp: Math.ceil(Math.max(0, e.hp)),
     mhp: Math.round(e.maxHp),
-    o: fake ? fake.owner : knows ? e.owner : e.owner < 0 ? e.owner : -1,
-    n: fake ? fake.name : knows ? (e.data.muteName ? '' : e.name) : '',
-    c: fake ? fake.color : knows ? e.color : -1,
+    o: fake ? fake.owner : pilotFake ? pilotFake.owner : knows ? e.owner : e.owner < 0 ? e.owner : -1,
+    n: fake ? fake.name : knows || pilotFake ? (e.data.muteName ? '' : e.name) : '',
+    c: fake ? fake.color : pilotFake ? pilotFake.color : knows ? e.color : -1,
     cl: fake ? fake.cls : knows ? e.classId : '',
     st: e.anim,
     fl,

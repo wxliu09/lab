@@ -3,6 +3,13 @@ import * as THREE from 'three'
 
 const cache = new Map<string, THREE.Texture>()
 
+/** 貼圖庫快取的共用貼圖：釋放站點時不能 dispose */
+export function isSharedTexture(t: THREE.Texture): boolean {
+  if (t.userData.shared || t.userData.keep) return true
+  for (const v of cache.values()) if (v === t) return true
+  return false
+}
+
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas')
   c.width = w

@@ -493,6 +493,22 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
 }
 
 const last = new Map<string, number>()
+
+// ───────── zone 閘門 ─────────
+// 特效發生在別的 zone（例如在太空駕駛站點時，站內的槍戰）：定位音效不播，否則會用不相干的座標算距離，聽起來像在身邊。
+let gateMuted = false
+
+/** 設定閘門，回傳原本的值（呼叫端負責還原）*/
+export function setSfxGate(muted: boolean): boolean {
+  const prev = gateMuted
+  gateMuted = muted
+  return prev
+}
+
+export function sfxGate(): boolean {
+  return gateMuted
+}
+
 /** 音效的基準增益（玩家回饋：原本 0.5 太小聲）*/
 const SFX_BASE = 0.75
 
@@ -512,6 +528,7 @@ export function regSound(name: string, fn: SoundFn, gain = 1): void {
  * 沿用節流（以 key 計）、距離衰減與分軌。
  */
 export function playSynth(key: string, x: number | undefined, y: number | undefined, gain: number, fn: SoundFn, minGap = 0.03, b: Bus = 'sfx'): boolean {
+  if (gateMuted && x !== undefined) return false
   const c = ac()
   if (!c || c.state !== 'running') return false
   const now = c.currentTime
@@ -524,17 +541,19 @@ export function playSynth(key: string, x: number | undefined, y: number | undefi
 }
 
 export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
+  const ui = UI_SOUNDS.has(name)
+  if (gateMuted && !ui && x !== undefined) return
   const c = ac()
   if (!c || c.state !== 'running') return
   const now = c.currentTime
   // 同一音效節流，避免機槍一秒 20 發把耳朵打爆
   const minGap = name === 'gatling' ? 0.06 : 0.03
   if ((last.get(name) ?? 0) > now - minGap) return
-  last.set(name, now)
-  const ui = UI_SOUNDS.has(name)
   const k = SFX_BASE * (GAIN[name] ?? 1)
   const d = ui ? out(undefined, undefined, k, 'ui') : out(x, y, k, b ?? 'sfx')
+  // 遠到聽不見的不記節流時間，免得擋掉緊接著的近處同名音效
   if (!d) return
+  last.set(name, now)
   if (ui && uiSound(name, d, now)) return
   if (!ui && worldSound(name, d, now)) return
   const ex = EXTRA.get(name)

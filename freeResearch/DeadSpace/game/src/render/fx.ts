@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { preset, quality } from './quality'
 import { W } from './stationBuilder'
 import { fxTex, type FxTexName } from './fx/tex'
+import { setSfxGate, sfxGate } from '../audio/sfx'
 
 // ───────── 共用 geometry（userData.shared：transient 結束時不 dispose）─────────
 
@@ -508,7 +509,7 @@ export class Fx {
   private decals: Decal[] = []
   private decalI = 0
   private debrisPools = new Map<DebrisKind, DebrisPool>()
-  private timers: { at: number; fn: () => void }[] = []
+  private timers: { at: number; fn: () => void; muted: boolean }[] = []
 
   constructor(private scene: THREE.Scene) {
     const P = preset().particles
@@ -697,7 +698,8 @@ export class Fx {
 
   /** delay 秒後執行（特效時鐘）*/
   after(delay: number, fn: () => void): void {
-    this.timers.push({ at: this.now + delay, fn })
+    // 記下排程當下的音效閘門（別的 zone 的特效排出來的後續音效也要保持靜音）
+    this.timers.push({ at: this.now + delay, fn, muted: sfxGate() })
   }
 
   // ───── 光源池 ─────
@@ -934,10 +936,15 @@ export class Fx {
       if (due.length) {
         this.timers = this.timers.filter((x) => x.at > t)
         for (const x of due) {
+          // 分頁在背景時 rAF 停住，回來會一口氣到期：過期太久的直接丟掉，不要爆量補播
+          if (t - x.at > 1.5) continue
+          const prev = setSfxGate(x.muted)
           try {
             x.fn()
           } catch (e) {
             if (__DEV__) console.error(e)
+          } finally {
+            setSfxGate(prev)
           }
         }
       }
@@ -977,11 +984,14 @@ export class Fx {
       const tr = this.trans[i]
       tr.obj.visible = tr.zone === zone
       const k = Math.min(1, (t - tr.born) / Math.max(0.001, tr.until - tr.born))
+      const prevGate = setSfxGate(tr.zone !== zone)
       try {
         tr.tick?.(k, t)
       } catch (e) {
         if (__DEV__) console.error(e)
         tr.until = t
+      } finally {
+        setSfxGate(prevGate)
       }
       if (t >= tr.until) {
         this.free(tr.obj)
