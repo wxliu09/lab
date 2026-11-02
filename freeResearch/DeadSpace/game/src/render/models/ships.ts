@@ -157,21 +157,105 @@ function shipModel(id: string): ModelView {
 
 for (const id of Object.keys(LOOKS)) regModel('ship.' + id, () => shipModel(id))
 
-regModel('space.asteroid', (_d, s) => {
-  const root = new THREE.Group()
-  const geo = new THREE.IcosahedronGeometry(0.9, 2)
-  const pos = geo.attributes.position
+/**
+ * 小行星幾何：icosphere 以位置為函數做 fbm 起伏＋十來個隕石坑（碗狀凹陷＋隆起的坑緣），
+ * 跨三角形共用位置的平滑法線、依坑底／坑緣與起伏算頂點色、依面法線選投影軸的方塊 UV（配岩石 PBR 貼圖）。
+ * 4 種形狀快取共用（不隨單位 dispose）。
+ */
+const asteroidGeo = new Map<number, THREE.BufferGeometry>()
+function asteroidGeometry(seed: number): THREE.BufferGeometry {
+  const have = asteroidGeo.get(seed)
+  if (have) return have
+  const g = new THREE.IcosahedronGeometry(1, 3)
+  const pos = g.attributes.position
+  let st = seed * 2654435761 + 12345
+  const rnd = () => {
+    st = (Math.imul(st ^ (st >>> 15), 0x2c1b3c6d) + 0x6d2b79f5) | 0
+    return ((st ^ (st >>> 14)) >>> 0) / 4294967296
+  }
+  const craters: { c: THREE.Vector3; r: number; d: number }[] = []
+  for (let i = 0; i < 13; i++) {
+    const c = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize()
+    craters.push({ c, r: 0.16 + rnd() * rnd() * 0.42, d: 0.6 + rnd() * 0.5 })
+  }
+  const ph = [rnd() * 9, rnd() * 9, rnd() * 9]
+  const n3 = (x: number, y: number, z: number) =>
+    Math.sin(x * 2.1 + ph[0]) * Math.cos(y * 1.7 + ph[1]) * Math.sin(z * 2.3 + ph[2]) * 0.6 +
+    Math.sin(x * 4.7 + y * 3.1 + ph[1]) * Math.sin(z * 5.3 - x * 2.2 + ph[2]) * 0.25 +
+    Math.sin(x * 11 + z * 9 + ph[0]) * Math.sin(y * 10 - z * 7) * 0.08
+  const squash = new THREE.Vector3(1.18, 0.82, 1 + (rnd() - 0.5) * 0.3)
+  const v = new THREE.Vector3()
+  const tone = new Float32Array(pos.count)
   for (let i = 0; i < pos.count; i++) {
-    const v = new THREE.Vector3().fromBufferAttribute(pos, i)
-    const n = 0.75 + 0.35 * Math.abs(Math.sin(v.x * 3.1 + s.i) * Math.cos(v.y * 2.7) + Math.sin(v.z * 4.3))
-    v.multiplyScalar(n)
+    v.fromBufferAttribute(pos, i).normalize()
+    let d = n3(v.x, v.y, v.z) * 0.2
+    let t = 0.92 + n3(v.z * 1.3, v.x * 1.3, v.y * 1.3) * 0.12
+    for (const k of craters) {
+      const a = Math.acos(Math.max(-1, Math.min(1, v.dot(k.c)))) / k.r
+      if (a > 1.5) continue
+      // 碗狀凹陷＋坑緣：深度跟坑半徑成正比
+      const bowl = a < 1 ? -(1 - a * a) * k.r * 0.32 * k.d : 0
+      const rim = Math.exp(-((a - 1) ** 2) * 14) * k.r * 0.12
+      d += bowl + rim
+      t *= a < 0.95 ? 0.72 + a * 0.2 : 1 + rim * 1.6
+    }
+    tone[i] = t
+    v.multiplyScalar(1 + d).multiply(squash)
     pos.setXYZ(i, v.x, v.y, v.z)
   }
-  geo.computeVertexNormals()
-  const rock = new THREE.Mesh(geo, Mat.metal('#4a4642', 0.2, false))
+  // 平滑法線：同位置頂點共用（icosphere 非索引）
+  g.computeVertexNormals()
+  const nrm = g.attributes.normal
+  const acc = new Map<string, THREE.Vector3>()
+  const keyOf = (i: number) => `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`
+  for (let i = 0; i < pos.count; i++) {
+    const k = keyOf(i)
+    const a = acc.get(k) ?? acc.set(k, new THREE.Vector3()).get(k)!
+    a.x += nrm.getX(i)
+    a.y += nrm.getY(i)
+    a.z += nrm.getZ(i)
+  }
+  const uv = g.attributes.uv
+  const col = new Float32Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i += 3) {
+    // 方塊投影：依面法線的主軸選平面
+    const fx = Math.abs(nrm.getX(i))
+    const fy = Math.abs(nrm.getY(i))
+    const fz = Math.abs(nrm.getZ(i))
+    for (let j = i; j < i + 3; j++) {
+      const x = pos.getX(j)
+      const y = pos.getY(j)
+      const z = pos.getZ(j)
+      if (fy >= fx && fy >= fz) uv.setXY(j, x * 0.55, z * 0.55)
+      else if (fx >= fz) uv.setXY(j, z * 0.55, y * 0.55)
+      else uv.setXY(j, x * 0.55, y * 0.55)
+      const t = tone[j]
+      col[j * 3] = t * 1.03
+      col[j * 3 + 1] = t
+      col[j * 3 + 2] = t * 0.96
+    }
+  }
+  for (let i = 0; i < pos.count; i++) {
+    const a = acc.get(keyOf(i))!.clone().normalize()
+    nrm.setXYZ(i, a.x, a.y, a.z)
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  g.scale(0.9, 0.9, 0.9)
+  g.computeBoundingSphere()
+  g.userData.shared = true
+  asteroidGeo.set(seed, g)
+  return g
+}
+
+regModel('space.asteroid', (_d, s) => {
+  const root = new THREE.Group()
+  const rock = new THREE.Mesh(asteroidGeometry(s.i % 4), Mat.rock('#7a7068', 'cap', true))
   rock.castShadow = true
+  rock.receiveShadow = true
+  const spin = 0.6 + (s.i % 5) * 0.12
+  rock.rotation.set(s.i * 1.3, s.i * 0.7, 0)
   root.add(rock)
-  return { root, height: 1, update: (t) => ((rock.rotation.x = t * 0.2), (rock.rotation.y = t * 0.13)) }
+  return { root, height: 1, update: (t) => ((rock.rotation.x = s.i * 1.3 + t * 0.2 * spin), (rock.rotation.y = s.i * 0.7 + t * 0.13 * spin)) }
 })
 
 regModel('space.sun', () => {

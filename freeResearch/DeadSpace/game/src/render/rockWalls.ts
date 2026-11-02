@@ -541,6 +541,22 @@ export function buildRockWalls(o: RockWallOpts): void {
     }
   }
   top.smoothNormals()
+  // 苔蘚／礦物斑塊：頂面依低頻雜訊往 accent 色偏一點（乘在貼圖上，只改色相不改亮度太多）
+  {
+    const ac = new THREE.Color(th.wallAccent)
+    const mx = Math.max(ac.r, ac.g, ac.b) || 1
+    const tr = ac.r / mx
+    const tg = ac.g / mx
+    const tb = ac.b / mx
+    for (let i = 0; i < top.keys.length; i++) {
+      const x = top.pos[i * 3]
+      const z = top.pos[i * 3 + 2]
+      const m = 0.3 * smooth01((fbm3(x * 0.23, 7.7, z * 0.23, seed + 31, 3) - 0.1) * 1.6)
+      top.col[i * 3] *= 1 + (tr - 1) * m
+      top.col[i * 3 + 1] *= 1 + (tg - 1) * m
+      top.col[i * 3 + 2] *= 1 + (tb - 1) * m
+    }
+  }
 
   // 岩帽：邊緣格少量、內部格更少但更大；碎石：面向空地的牆腳
   const m4 = new THREE.Matrix4()
@@ -622,12 +638,13 @@ export function buildRockWalls(o: RockWallOpts): void {
     const m = g.build(wallMat, true)
     if (m) group.add(m)
     const cap = new Batcher()
-    const capMat = Mat.metal(bt.cap, 0.6)
-    const trimMat = Mat.metal(bt.trim, 0.5, false)
+    // 室外沒有環境貼圖，高金屬度的牆頂會變全黑：牆頂用深色混凝土板，只有壓條是金屬
+    const capMat = Mat.floor('concrete', bt.cap)
+    const trimMat = Mat.metal(bt.trim, 0.35, false)
     for (let r = 0; r < H; r++) {
       for (let c = 0; c < W; c++) {
         if (!builtAt(c, r)) continue
-        cap.add(box(1, 0.06, 1), capMat, c + 0.5, wallH + 0.03, r + 0.5 - H)
+        cap.add(box(1, 0.08, 1), capMat, c + 0.5, wallH + 0.04, r + 0.5 - H)
         for (const [dc, dr, ox, oz, sx, sz] of [
           [0, -1, 0, -0.47, 1, 0.06],
           [0, 1, 0, 0.47, 1, 0.06],
@@ -635,7 +652,7 @@ export function buildRockWalls(o: RockWallOpts): void {
           [1, 0, 0.47, 0, 0.06, 1],
         ] as const) {
           if (solid(c + dc, r + dr)) continue
-          cap.add(box(sx, 0.08, sz), trimMat, c + 0.5 + ox, wallH + 0.04, r + 0.5 - H + oz)
+          cap.add(box(sx, 0.1, sz), trimMat, c + 0.5 + ox, wallH + 0.05, r + 0.5 - H + oz)
         }
       }
     }

@@ -558,8 +558,22 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     const rust = Mat.paint('#6e4a32', 0.85)
     const steel = Mat.metal('#4a3c32', 0.5)
     const conc = Mat.paint('#5a5048', 0.9)
-    const k = c.seed % 4
-    if (k === 0) {
+    const k = c.seed % 5
+    if (k === 4) {
+      // 緊急照明燈：電池箱＋三腳架＋燈頭，燈頭慢慢明滅（電力不穩），地上留一圈暖光
+      const lamp = pulse(c.anim, '#ffb46b', 3.2, 0.9, 1.3 + rnd01(c.seed, 1) * 0.8, c.seed)
+      const frame = Mat.metal('#2a2420', 0.6)
+      part(c, rbox(0.42, 0.26, 0.3, 0.04), Mat.paint('#c8902a', 0.7), 0.1, 0.13, -0.05, 0.2)
+      part(c, box(0.3, 0.02, 0.04), Mat.paint('#1a1a1a', 0.6), 0.1, 0.27, -0.05, 0.2)
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2
+        part(c, cyl(0.015, 0.015, 1.3, 5), frame, Math.cos(a) * 0.2 - 0.2, 0.6, Math.sin(a) * 0.2 + 0.15, 0, Math.sin(a) * 0.16, -Math.cos(a) * 0.16)
+      }
+      part(c, rbox(0.34, 0.22, 0.12, 0.03), frame, -0.2, 1.3, 0.15, 0, -0.5)
+      part(c, box(0.28, 0.16, 0.02), lamp, -0.2, 1.3, 0.22, 0, -0.5)
+      part(c, cyl(0.012, 0.012, 0.6, 4), Mat.rubber('#111'), -0.05, 0.12, 0.1, 0, 0, ALONG_X)
+      glowDecal(c.group, '#ffb46b', 2.6, ...at(c.cx, c.cz, c.rot, -0.2, 0.7), 0.3)
+    } else if (k === 0) {
       // 倒下的置物櫃
       part(c, rbox(1.7, 0.55, 0.5, 0.04), rust, 0, 0.28, 0, 0.3 + rnd01(c.seed, 1), 0, 0.08)
       part(c, box(0.02, 0.4, 0.4), steel, 0.5, 0.36, 0.26, 0.3 + rnd01(c.seed, 1))

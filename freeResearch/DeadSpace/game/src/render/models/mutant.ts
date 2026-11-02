@@ -959,54 +959,125 @@ function hiveTendril(def: UnitDef | undefined, s: SnapEntity): ModelView {
   })
 }
 
+/**
+ * 腐沼：巨型蛆蟲。8 節蛆身（逐節：雜訊肉瘤＋濕亮腹面＋節間肉色凹環＋背甲片），
+ * 背甲上的骨刺與發光膿包、兩側氣門膿包、腹足（隨蠕動波抬起）、口器（觸鬚、齒、側顎），
+ * 尾端尾鉤與透明的蟲卵囊（可以散成蟲群），腹下滴黏液、地上拖一道黏液足跡。
+ */
 regModel('mut.blightcrawler', (def, s) => {
   const b = base(def, s, 3.5, 0.67)
-  const skin = flesh('#5a5a2a', MUT.acc, 0.2, 0.45)
+  const skin = flesh('#56562a', MUT.acc, 0.22, 0.45)
+  const belly = flesh('#8c7c48', MUT.acc, 0.12, 0.35)
+  const plate = chitin('#3a3418', '#d8f04a', 0.3, 0.42)
   const meat = MUSCLE()
   const bone = BONE()
   const slime = liveLiquid(tone('#a8c83a', b.v), 0.42, 0.45 * b.v.gk)
+  const sac = liveLiquid(tone('#c8e060', b.v), 0.5, 0.7 * b.v.gk)
   const pus = liveGlow(tone('#d8f04a', b.v), 2.4 * b.v.gk)
   const body = grp(b.root)
-  // 分節的蛆身（從頭到尾逐節縮小）
+  const n = 8
   const segs: THREE.Group[] = []
-  const n = 7
+  const segY: number[] = []
+  const legs: { g: THREE.Group; seg: number; side: number }[] = []
+  const pz: THREE.Mesh[] = []
   for (let i = 0; i < n; i++) {
     const u = i / (n - 1)
-    const r0 = 0.5 - u * 0.3 + Math.sin(u * Math.PI) * 0.12
-    const g = grp(body, 0, r0 * 0.85, 0.85 - i * 0.42)
-    ell(g, skin, 0, 0, 0, r0, r0 * 0.85, 0.3)
-    ell(g, slime, 0, 0.02, 0, r0 * 1.06, r0 * 0.9, 0.32)
-    if (i > 0 && i < n - 1) pustules(g, 2, i * 3, (rr) => [(rr() - 0.5) * r0, r0 * 0.75, (rr() - 0.5) * 0.2, 0.05 + rr() * 0.03], meat, pus)
+    // 頭略小、第 2–3 節最粗、尾端收細
+    const r = 0.42 + Math.sin(Math.min(1, u * 1.6) * Math.PI * 0.5) * 0.1 - u * u * 0.3
+    const y = r * 0.82
+    const g = grp(body, 0, y, 0.98 - i * 0.36)
+    segY.push(y)
+    part(g, lumpGeo(1, 300 + i, 0.07, 14, 10), skin, 0, 0, 0, r, r * 0.8, 0.25)
+    ell(g, belly, 0, -r * 0.36, 0.01, r * 0.88, r * 0.5, 0.23, 12, 6)
+    // 節間凹環（往後一點，跟下一節銜接）
+    part(g, torus(1, 0.13, 6, 18), meat, 0, -r * 0.04, -0.18, r * 0.9, r * 0.76, 1)
+    if (i > 0) {
+      // 背甲：往後翹的圓頂片，像瓦片疊在下一節上
+      part(g, dome(1, 12, 5, Math.PI * 0.42), plate, 0, r * 0.22, -0.03, r * 1.04, r * 0.66, 0.29, -0.16)
+      if (i < n - 1 && i % 2 === 1) for (const sd of [-1, 1]) spike(g, 0.03, 0.1 + r * 0.12, bone, sd * r * 0.38, r * 0.72, -0.06, -0.5, -sd * 0.55, 5)
+      // 背中線的發光膿包（中段）、兩側氣門（交錯）
+      if (i >= 2 && i <= 5) pz.push(...pustules(g, 1, 40 + i, () => [0, r * 0.86, -0.14, 0.065], skin, pus))
+      if (i < n - 1) {
+        const sd = i % 2 ? 1 : -1
+        pz.push(...pustules(g, 1, 60 + i, (rr) => [sd * r * 0.8, r * 0.12, (rr() - 0.5) * 0.1, 0.045 + rr() * 0.02], skin, pus, [0, 0, 0]))
+      }
+    }
+    // 腹足：中段每節一對短肉足，尖端有骨鉤
+    if (i >= 2 && i <= 6) {
+      for (const sd of [-1, 1]) {
+        const lg = grp(g, sd * r * 0.6, -r * 0.5, 0)
+        ell(lg, belly, sd * 0.03, -0.07, 0, 0.065, 0.11, 0.075, 8, 5)
+        spike(lg, 0.022, 0.07, bone, sd * 0.04, -0.15, 0.02, Math.PI * 0.55, 0, 4)
+        legs.push({ g: lg, seg: i, side: sd })
+      }
+    }
+    // 腹下垂滴的黏液
+    if (i % 2 === 1 && i < n - 1) {
+      const d = ell(g, slime, (i % 4 === 1 ? 0.12 : -0.1) * r, -r * 0.82, 0, 0.045, 0.11, 0.045, 8, 5)
+      d.castShadow = false
+    }
     segs.push(g)
   }
-  // 口器：一圈觸鬚與牙
-  const mouth = grp(segs[0], 0, 0.05, 0.28)
+  // 頭：頭甲、側顎、口器（一圈觸鬚與齒）、喉嚨發光
+  const head = segs[0]
+  part(head, dome(1, 12, 5, Math.PI * 0.45), plate, 0, 0.1, 0.02, 0.46, 0.3, 0.3, -0.35)
+  for (let k = 0; k < 4; k++) pz.push(...pustules(head, 1, 90 + k, () => [(k - 1.5) * 0.12, 0.3, 0.1 - Math.abs(k - 1.5) * 0.04, 0.03], skin, pus))
+  const mouth = grp(head, 0, 0.03, 0.27)
   part(mouth, torus(0.22, 0.06, 6, 14), meat, 0, 0, 0)
-  ell(mouth, pus, 0, 0, -0.02, 0.17, 0.17, 0.05, 10, 6)
+  ell(mouth, pus, 0, 0, -0.03, 0.16, 0.16, 0.05, 10, 6)
   const tendr: Tentacle[] = []
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2
     tendr.push(new Tentacle(grp(mouth, Math.cos(a) * 0.22, Math.sin(a) * 0.22, 0.02, Math.PI / 2 - Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5), { len: 0.4, r0: 0.035, r1: 0.008, bones: 4, tub: 8, rad: 5 }, meat))
     spike(mouth, 0.02, 0.1, bone, Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0.03, Math.PI / 2, -a * 0.1, 4)
   }
+  const jaws: THREE.Group[] = []
+  for (const sd of [-1, 1]) {
+    const j = grp(mouth, sd * 0.25, -0.06, -0.02, 0, sd * 0.5, 0)
+    part(j, hornGeo(0.32, 0.055, -0.5, 6, 5), plate, 0, 0, 0, 1, 1, 1, Math.PI / 2, 0, sd * 0.25)
+    jaws.push(j)
+  }
+  // 尾：一對尾鉤＋背上三顆半透明卵囊（裡面是暗色幼蟲）
+  const tail = segs[n - 1]
+  for (const sd of [-1, 1]) part(tail, hornGeo(0.34, 0.05, 0.6, 6, 5), bone, sd * 0.08, 0.05, -0.18, 1, 1, 1, -Math.PI * 0.62, 0, sd * 0.35)
+  const sacs: THREE.Mesh[] = []
+  const rear = segs[n - 2]
+  for (let k = 0; k < 3; k++) {
+    const a = (k - 1) * 0.9
+    const m = ell(rear, sac, Math.sin(a) * 0.17, 0.28 + Math.cos(a) * 0.05, -0.05 + (k === 1 ? -0.08 : 0), 0.13, 0.11, 0.14, 10, 7)
+    m.castShadow = false
+    ell(m, meat, 0, -0.1, 0, 0.45, 0.4, 0.55, 6, 4)
+    sacs.push(m)
+  }
   // 地上的黏液足跡
-  const trail = part(body, sphereGeo(16, 5), slime, 0, 0.01, -0.6, 0.75, 0.025, 2.1)
+  const trail = part(body, sphereGeo(16, 5), slime, 0, 0.01, -0.8, 0.75, 0.025, 2.2)
   trail.castShadow = false
   return view(b, 1.1, 1.2, (t) => {
     const L = b.L
     const k = L.move
-    // 蠕動：一節一節的波
+    // 蠕動：一節一節的波，抬起的那節腹足往前划
     segs.forEach((g, i) => {
       const w = Math.sin(t * (1.6 + k * 4) - i * 0.9 + L.ph)
       g.scale.set(1 + w * 0.05, 1 + w * 0.07, 1 - w * 0.1)
       g.position.x = Math.sin(t * 0.9 - i * 0.6 + L.ph) * 0.06 * (i / n)
+      g.position.y = segY[i] + Math.max(0, w) * 0.035 * (0.4 + k)
     })
+    for (const lg of legs) {
+      const w = Math.sin(t * (1.6 + k * 4) - lg.seg * 0.9 + L.ph)
+      lg.g.rotation.x = -w * (0.25 + k * 0.35)
+      lg.g.rotation.z = lg.side * (0.15 + Math.max(0, w) * 0.25)
+    }
     const st = L.strike * L.atk
     segs[0].rotation.x = -0.15 - Math.max(0, st) * 0.4 + Math.min(0, st) * -0.2
+    jaws.forEach((j, i) => (j.rotation.y = (i ? 1 : -1) * (0.5 + Math.max(0, st) * 0.5 + Math.sin(t * 3 + i) * 0.06)))
     tendr.forEach((T, i) => T.bend(t, 0.3, 0.3, 3, i, 0.1 + Math.max(0, st) * 0.3, 0))
     beat(pus, 2.4 * b.v.gk, t, L, 2)
+    pz.forEach((m, i) => scaleBy(m, 1 + 0.12 * Math.sin(t * 2.6 + i * 1.7)))
+    sacs.forEach((m, i) => scaleBy(m, 1 + 0.07 * Math.sin(t * 1.8 + i * 2.1 + L.ph)))
+    sac.opacity = 0.45 + 0.08 * Math.sin(t * 1.8 + L.ph)
     if (L.dead > 0) {
       segs.forEach((g, i) => g.scale.set(1 + L.dead * 0.15, 1 - L.dead * 0.45, 1 + L.dead * 0.05 * i))
+      for (const lg of legs) lg.g.rotation.x = L.dead * 1.1
       body.rotation.z = L.dead * 0.25
     }
   })

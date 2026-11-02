@@ -1,6 +1,7 @@
 // 單位視圖：依快照實體建立／更新模型、動畫、腳下光圈
 import * as THREE from 'three'
 import { UNITS } from '../shared/content/registry'
+import type { UnitDef } from '../shared/content/types'
 import { EntFlag } from '../shared/protocol/messages'
 import { PLAYER_COLORS } from '../shared/constants'
 import type { CEnt } from '../client/world'
@@ -30,6 +31,16 @@ export interface UnitView {
 }
 
 const ringGeo = new THREE.RingGeometry(0.48, 0.62, 36)
+
+/**
+ * 區域物件：技能放出的雷暴、火海、酸池、毒雲、污染區、電漿球、熵渦、奇點、腐沼黏液…
+ * 不能被選取、不會移動（noTarget＋不動，或標成 hazard），腳下不畫選取圈與光暈。
+ * 「未知存在」這類 noTarget 但會移動的生物仍保留光圈（它是個實體，只是打不到）。
+ */
+export function isZoneObject(def: UnitDef | undefined): boolean {
+  if (!def) return false
+  return def.tags.includes('hazard') || (def.tags.includes('noTarget') && def.speed <= 0)
+}
 
 function colorOf(c: number | undefined): string {
   return c !== undefined && c >= 0 ? (PLAYER_COLORS[c]?.hex ?? '#ffffff') : '#ffffff'
@@ -71,7 +82,7 @@ export class UnitLayer {
       height *= def.scale
     }
     let ring: THREE.Mesh | null = null
-    const isUnit = !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse)
+    const isUnit = !def?.tags.includes('structure') && !((s.fl ?? 0) & EntFlag.Corpse) && !isZoneObject(def)
     if (isUnit) {
       const col = s.o !== undefined && s.o >= 0 ? colorOf(s.c) : (s.fl ?? 0) & EntFlag.Hostile ? '#ff3b3b' : '#9fb3c2'
       ring = new THREE.Mesh(
@@ -144,8 +155,12 @@ export class UnitLayer {
           }
         })
       }
-      if (v.rig) animateRig(v.rig, dt, t, v.speed, st, v.deadAt >= 0 ? t - v.deadAt : 0)
-      if (v.model) v.model.update(t, dt, v.speed, st)
+      // 石化：凍結在當下的姿勢（待機呼吸、步態、脈動都停）；死亡時照常播倒地動畫
+      const frozen = (fl & EntFlag.Petrified) !== 0 && st !== 4
+      if (!frozen) {
+        if (v.rig) animateRig(v.rig, dt, t, v.speed, st, v.deadAt >= 0 ? t - v.deadAt : 0)
+        if (v.model) v.model.update(t, dt, v.speed, st)
+      }
       if (v.ring) {
         const m = v.ring.material as THREE.MeshBasicMaterial
         const sel = e.s.i === this.selected
