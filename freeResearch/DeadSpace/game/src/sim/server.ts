@@ -1,6 +1,6 @@
 // 主機端的權威 server：大廳、連線管理、訊息路由。跑在 Sim Worker 裡（測試時直接在 Node 裡跑）。
 // peer 'local' 永遠是主機自己的本機 client（由主機的主執行緒指定，遠端 peer 無法冒充）。
-import { DEFAULT_SETTINGS, type ClientMsg, type HostMsg, type LobbyPlayerInfo, type LobbySettings } from '../shared/protocol/messages'
+import { DEFAULT_SETTINGS, PRACTICE_ROOM, type ClientMsg, type HostMsg, type LobbyPlayerInfo, type LobbySettings, type PracticeRole } from '../shared/protocol/messages'
 import { encode } from '../shared/protocol/codec'
 import { parseClientBytes, sanitizeName, sanitizeText } from '../shared/protocol/validate'
 import { MAX_PLAYERS, PLAYER_COLORS, PROTOCOL_VERSION, RECONNECT_GRACE_S, TICK_DT } from '../shared/constants'
@@ -156,7 +156,7 @@ export class GameServer {
         break
       case 'start':
         if (!isHost || this.phase !== 'lobby') return
-        this.startGame()
+        this.startGame(msg.role)
         break
       case 'kick': {
         if (!isHost || msg.slot === slot) return
@@ -281,7 +281,8 @@ export class GameServer {
 
   // ───────── 開局 ─────────
 
-  startGame(): void {
+  /** practiceRole：單機練習指定的主機身分（只在練習房、而且除了主機都是 AI 時才生效）*/
+  startGame(practiceRole?: PracticeRole): void {
     if (this.phase !== 'lobby') return
     // 填 bots
     let bots = this.settings.bots
@@ -302,6 +303,8 @@ export class GameServer {
     }
     const roster = this.players.filter((p): p is LobbyPlayer => p !== null)
     if (roster.length === 0) return
+    const host = roster.find((p) => p.host)
+    const practice = this.code === PRACTICE_ROOM && !!host && !this.settings.hostSpectate && roster.every((p) => p.bot || p.host)
     const init: GameInit = {
       seed: this.settings.seed || this.rng.id31(),
       secret: this.secret !== undefined ? this.secret + this.games : undefined,
@@ -318,6 +321,7 @@ export class GameServer {
         const p = this.players[slot]
         if (p?.peer) this.sendTo(p.peer, msg)
       },
+      forceRole: practice && practiceRole && practiceRole !== 'random' ? { slot: host!.slot, role: practiceRole } : undefined,
     }
     this.phase = 'game'
     this.game = new Game(init)

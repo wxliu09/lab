@@ -1,5 +1,5 @@
 // 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
 import { snapTick, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
@@ -31,7 +31,7 @@ export function RoleReveal() {
     const h = setTimeout(() => setN((x) => Math.min(text.length, x + 2)), 28)
     return () => clearTimeout(h)
   }, [n, open, text])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return
     // capture 階段攔下：不然同一個 Esc／Enter 會再觸發遊戲快捷鍵（打開進化選單、聊天框）
     const close = (e: KeyboardEvent) => {

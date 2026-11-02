@@ -12,3 +12,12 @@ export function entDefName(d: string | undefined): Loc | undefined {
   if (d.startsWith('station.')) return STATION_BY_ID.get(d.slice(8))?.name
   return undefined
 }
+
+import { SUIT_IDS } from '../shared/content/suits'
+
+/** 每套防護服一個色調（18 套原本共用同一個圖示，背包裡分不出來）*/
+export function suitColor(id: string): string {
+  const i = SUIT_IDS.indexOf(id)
+  if (i < 0) return '#ffc23d'
+  return `hsl(${Math.round((i * 47) % 360)} 85% 66%)`
+}

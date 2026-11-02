@@ -59,6 +59,8 @@ export class GameScene implements SceneLike {
   grade = { hue: 0, sat: 0.02, bright: 0, contrast: 0.06 }
   onZoneChange: ((z: ZoneInfo) => void) | null = null
   centeredOnce = false
+  /** 上次對準時的操控對象與 zone（變了就重新對準）*/
+  private lastCtlKey = ''
   /** 本幀受到的傷害脈衝（0..1）*/
   damage = 0
 
@@ -217,11 +219,13 @@ export class GameScene implements SceneLike {
     this.ensureZone(zid)
     const view = this.views.get(zid)
     const fog = this.fogs.get(zid)
-    // 第一次進場：鏡頭對準自己
+    // 第一次進場、或換了操控對象／所在 zone（開始或離開駕駛、登艇、逃生艙、轉觀戰）：鏡頭對準自己
     const mine = this.myUnit()
-    if (!this.centeredOnce && mine) {
+    const ctlKey = `${this.world.me.control || this.world.me.unit || 0}@${zid}`
+    if (mine && (!this.centeredOnce || ctlKey !== this.lastCtlKey) && mine.s.z === zid) {
       this.rts.jump(mine.x, mine.y)
       this.centeredOnce = true
+      this.lastCtlKey = ctlKey
     }
     // 門
     if (view) {

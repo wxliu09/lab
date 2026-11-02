@@ -1,6 +1,8 @@
 // 販賣機面板：自己的單位走到販賣機旁就出現，顯示庫存與補貨倒數（本作改良：庫存可見）
 import { itemDef } from '../../shared/content/registry'
-import { entDefName } from '../names'
+import { entDefName, suitColor } from '../names'
+import { itemTip } from '../itemTip'
+import { lastInteract } from '../../client/input'
 import { send, sendCmd, snapTick, world } from '../../client/session'
 import { loc, t } from '../i18n'
 import { Icon } from '../icons'
@@ -24,10 +26,14 @@ export function VendorPanel() {
       vendor = e
     }
   }
+  // 幾台販賣機挨在一起時，優先顯示玩家剛右鍵的那台
+  const picked = lastInteract.value ? world.ents.get(lastInteract.value) : undefined
+  if (picked && picked.s.z === me.s.z && typeof picked.s.x2?.s === 'string' && Math.hypot(picked.x - me.x, picked.y - me.y) < RANGE) vendor = picked
   if (!vendor) return null
   const vname = entDefName(vendor.s.d)
   const off = Number(vendor.s.x2?.off ?? 0)
   const noPow = !!vendor.s.x2?.nopow
+  const have = new Set((world.me.inv ?? []).map((x) => x?.item).filter(Boolean) as string[])
   const rows = String(vendor.s.x2!.s)
     .split('|')
     .filter(Boolean)
@@ -56,13 +62,14 @@ export function VendorPanel() {
             <div
               class="row ip-row"
               key={r.item}
-              {...tipProps(() => (it ? { title: loc(it.name), sub: t('tip.cat.' + it.cat), body: loc(it.desc), color: it.cat === 'suit' ? '#ffc23d' : '#9fe7ff' } : null))}
+              {...tipProps(() => itemTip(r.item))}
             >
-              <Icon name={it?.icon ?? 'unknown'} size={28} color={it?.cat === 'suit' ? '#ffc23d' : '#9fe7ff'} />
+              <Icon name={it?.icon ?? 'unknown'} size={28} color={it?.suit ? suitColor(it.id) : '#9fe7ff'} />
               <div class="grow">
                 <div class="ip-name">{loc(it?.name) || r.item}</div>
                 <div class="dim mono ip-meta">
                   {t('vendor.stock', { n: r.count })}
+                  {have.has(r.item) ? ' · ' + t('vendor.have') : ''}
                   {r.wait > 0 ? ' · ' + t('vendor.restock', { s: r.wait }) : ''}
                 </div>
               </div>

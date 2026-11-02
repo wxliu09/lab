@@ -9,9 +9,14 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
   const main = g.mainOf(p)
   const ctl = g.controlOf(p)
   const t = g.time
-  const inv: (InvSlot | null)[] = (main?.inv ?? []).map((it) =>
-    it ? { item: it.id, charges: it.charges, cd: Math.max(0, Math.round((it.cdUntil - t) * 10) / 10) } : null,
-  )
+  const inv: (InvSlot | null)[] = (main?.inv ?? []).map((it) => {
+    if (!it) return null
+    const slot: InvSlot = { item: it.id, charges: it.charges, cd: Math.max(0, Math.round((it.cdUntil - t) * 10) / 10) }
+    // 抽血進度：樣本上的名字（抽血時看到的樣子），只在持有者自己的私有狀態裡
+    const names = (it.data as { sample?: { names?: string[] } } | undefined)?.sample?.names
+    if ((it.id === 'geneSampler' || it.id === 'gitResolver') && names?.length) slot.samples = [...names]
+    return slot
+  })
   const abilities: AbilityState[] = []
   if (ctl) {
     for (const id of ctl.abilities) {

@@ -28,7 +28,9 @@ export class Overlay {
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'view'
     this.canvas.style.pointerEvents = 'none'
-    parent.appendChild(this.canvas)
+    // 插在 3D 畫面正後面、所有 HUD 之前：名字與提示不能畫到面板上面
+    const view = parent.querySelector('canvas.view')
+    parent.insertBefore(this.canvas, view ? view.nextSibling : parent.firstChild)
     this.ctx = this.canvas.getContext('2d')!
   }
 
@@ -51,6 +53,7 @@ export class Overlay {
     const cam = scene.camera
     const now = world.now()
     const z = Math.min(1.6, uiZoom.value)
+    const labels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
     const bubbles = new Map<number, { text: string; color: number }>()
     world.bubbles = world.bubbles.filter((b) => b.until > now)
     for (const b of world.bubbles) bubbles.set(b.e, b)
@@ -86,29 +89,62 @@ export class Overlay {
           x.fillRect(sx - bw / 2, sy + 6, (bw * e.s.mp) / Math.max(1, e.s.mmp), 2)
         }
       }
-      // 名稱
+      // 名稱：先收集，最後統一做避讓再畫
       const name = e.s.n || (hot ? loc(def?.name) : '')
-      if (name && (hot || (e.s.o ?? -1) >= 0)) {
-        ensureGlyphs(name)
-        x.font = `600 ${Math.round(13 * z)}px "Noto Sans TC", sans-serif`
-        x.textAlign = 'center'
-        x.lineWidth = 3
-        x.strokeStyle = 'rgba(0,0,0,0.8)'
-        x.strokeText(name, sx, sy - 5)
-        x.fillStyle = e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#cfd8df'
-        x.fillText(name, sx, sy - 5)
-      }
+      if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#cfd8df', pri: hot ? 2 : mine ? 1 : 0 })
       const b = bubbles.get(id)
       if (b) this.bubble(x, sx, sy - 24 * z, b.text, z)
     }
-    this.prompt(scene, world, x, w, h, z, now)
+    const placed: { l: number; r: number; t: number; b: number }[] = []
+    const pr = this.prompt(scene, world, x, w, h, z, now)
+    if (pr) placed.push(pr)
+    this.drawLabels(x, labels, placed, z)
+  }
+
+  /**
+   * 名字避讓：懸停／選取的優先、其次自己，其餘依畫面由上到下。
+   * 跟已放好的重疊就往上錯開一行（最多兩次）；還是放不下就只畫名字顏色的小點，懸停時才顯示全名。
+   */
+  private drawLabels(x: CanvasRenderingContext2D, labels: { name: string; sx: number; sy: number; color: string; pri: number }[], placed: { l: number; r: number; t: number; b: number }[], z: number): void {
+    const fs = Math.round(13 * z)
+    x.font = `600 ${fs}px "Noto Sans TC", sans-serif`
+    x.textAlign = 'center'
+    labels.sort((a, b) => b.pri - a.pri || a.sy - b.sy)
+    const hit = (r: { l: number; r: number; t: number; b: number }) => placed.some((p) => r.l < p.r && r.r > p.l && r.t < p.b && r.b > p.t)
+    for (const lb of labels) {
+      ensureGlyphs(lb.name)
+      const w2 = x.measureText(lb.name).width / 2 + 3
+      let rect = null as null | { l: number; r: number; t: number; b: number }
+      for (let k = 0; k < 3; k++) {
+        const y = lb.sy - k * (fs + 3)
+        const r = { l: lb.sx - w2, r: lb.sx + w2, t: y - fs, b: y + 3 }
+        if (!hit(r) || lb.pri >= 2) {
+          rect = r
+          break
+        }
+      }
+      if (!rect) {
+        x.fillStyle = lb.color
+        x.beginPath()
+        x.arc(lb.sx, lb.sy - fs * 0.4, 3 * z, 0, Math.PI * 2)
+        x.fill()
+        continue
+      }
+      placed.push(rect)
+      const y = rect.b - 3
+      x.lineWidth = 3
+      x.strokeStyle = 'rgba(0,0,0,0.8)'
+      x.strokeText(lb.name, lb.sx, y)
+      x.fillStyle = lb.color
+      x.fillText(lb.name, lb.sx, y)
+    }
   }
 
   /** 互動提示：自己附近最近的可互動物件（販賣機、設施、地上物品）上方標出名稱與操作 */
-  private prompt(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, now: number): void {
+  private prompt(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, now: number): { l: number; r: number; t: number; b: number } | null {
     const meId = world.me.control ?? world.me.unit
     const me = meId ? world.ents.get(meId) : undefined
-    if (!me || world.me.alive === false) return
+    if (!me || world.me.alive === false) return null
     let best: { id: number; d: number } | null = null
     for (const e of world.ents.values()) {
       if (e.s.z !== me.s.z || e.s.i === meId) continue
@@ -120,21 +156,21 @@ export class Overlay {
       const d = Math.hypot(e.x - me.x, e.y - me.y)
       if (d < 4.5 && (!best || d < best.d)) best = { id: e.s.i, d }
     }
-    if (!best) return
+    if (!best) return null
     const e = world.ents.get(best.id)!
     const uv = scene.units.views.get(best.id)
     if (uv) this.v.copy(uv.root.position)
     else this.v.set(e.x, 0, -e.y)
     this.v.y += (uv?.height ?? 1) + 0.45
     this.v.project(scene.camera)
-    if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return
+    if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return null
     const sx = (this.v.x * 0.5 + 0.5) * w
     const sy = (-this.v.y * 0.5 + 0.5) * h
     const d = e.s.d ?? ''
     const item = d.startsWith('item:')
     const name = item ? loc(entDefName(d)) : e.s.n || loc(entDefName(d))
     const panel = typeof e.s.x2?.s === 'string' || PANEL_DEFS.has(d)
-    const act = item ? t('prompt.pickup') : panel && best.d < 2.9 ? t('prompt.panelOpen') : t('prompt.use')
+    const act = item ? t('prompt.pickup') : panel && best.d < 2.9 ? t('prompt.panelOpen') : d === 'struct.console' ? t('prompt.pilot') : t('prompt.use')
     ensureGlyphs(name + act)
     const pulse = 0.65 + 0.35 * Math.sin(now * 5)
     // 菱形標記
@@ -153,17 +189,21 @@ export class Overlay {
     x.stroke()
     x.globalAlpha = 1
     x.textAlign = 'center'
-    x.font = `700 ${Math.round(14 * z)}px "Noto Sans TC", sans-serif`
+    // 名稱在上、操作在下（靠近標記）
+    x.font = `600 ${Math.round(13 * z)}px "Noto Sans TC", sans-serif`
     x.lineWidth = 4
     x.strokeStyle = 'rgba(0,0,0,0.85)'
-    x.strokeText(name, 0, -r - 8 * z)
-    x.fillStyle = '#ffe2a0'
-    x.fillText(name, 0, -r - 8 * z)
-    x.font = `600 ${Math.round(12 * z)}px "Noto Sans TC", sans-serif`
-    x.strokeText(act, 0, -r - 24 * z)
+    x.strokeText(act, 0, -r - 8 * z)
     x.fillStyle = '#9fe7ff'
-    x.fillText(act, 0, -r - 24 * z)
+    x.fillText(act, 0, -r - 8 * z)
+    const aw = x.measureText(act).width
+    x.font = `700 ${Math.round(14 * z)}px "Noto Sans TC", sans-serif`
+    x.strokeText(name, 0, -r - 25 * z)
+    x.fillStyle = '#ffe2a0'
+    x.fillText(name, 0, -r - 25 * z)
+    const half = Math.max(aw, x.measureText(name).width) / 2 + 4
     x.restore()
+    return { l: sx - half, r: sx + half, t: sy - r - 42 * z, b: sy + r }
   }
 
   private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, text: string, z = 1): void {

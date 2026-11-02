@@ -6,7 +6,7 @@ import { UNITS, itemDef } from '../../shared/content/registry'
 import { entDefName } from '../names'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { world } from '../../client/session'
-import { cursorScreen, targetMode } from '../../client/input'
+import { cursorScreen, modalOpen, targetMode } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { loc, t } from '../i18n'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
@@ -40,7 +40,7 @@ export function hoverTip(id: number): TipData | null {
   if (tags.includes('hazard')) return { title: name, sub: t('hover.cat.hazard'), body: desc(d), hint: t('hover.hint.hazard'), color: '#ff5a4a' }
   if (tags.includes('ship') && tags.includes('structure')) return { title: name, sub: t('hover.cat.ship'), hint: t('hover.hint.board'), color: '#9fe7ff' }
   if (tags.includes('structure')) {
-    return { title: name, sub: t(tags.includes('device') ? 'hover.cat.device' : 'hover.cat.structure'), body: desc(d), rows: tags.includes('invuln') ? [] : hpRow, hint: t(PANEL_FAC.has(d) ? 'hover.hint.panel' : 'hover.hint.interact'), color: '#ffc23d' }
+    return { title: name, sub: t(tags.includes('device') ? 'hover.cat.device' : 'hover.cat.structure'), body: desc(d), rows: tags.includes('invuln') ? [] : hpRow, hint: t(PANEL_FAC.has(d) ? 'hover.hint.panel' : d === 'struct.console' ? 'hover.hint.console' : 'hover.hint.interact'), color: '#ffc23d' }
   }
   if (tags.includes('device')) return { title: name, sub: t('hover.cat.device'), body: desc(d), rows: hpRow, color: '#ffc23d' }
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!]?.hex : undefined
@@ -56,7 +56,8 @@ export function WorldHover({ scene }: { scene: GameScene }) {
     let cur = 0
     let since = 0
     const h = setInterval(() => {
-      const id = cursorScreen.overView && !targetMode.value ? scene.units.hovered : 0
+      // 瞄準中、或有對話框（選單、設定、說明…）開著時不顯示
+      const id = cursorScreen.overView && !targetMode.value && !modalOpen() ? scene.units.hovered : 0
       const now = performance.now()
       if (id !== cur) {
         cur = id

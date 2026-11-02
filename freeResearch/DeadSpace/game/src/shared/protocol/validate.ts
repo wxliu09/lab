@@ -1,6 +1,6 @@
 // peer 訊息白名單：型別、長度、數值範圍都要合法，否則整則丟棄。
 // 這裡是不信任邊界：任何 peer 都可能送出任意位元組。
-import type { ChatChannel, ClientMsg, Command, CommandKind, LobbySettings, NoteMark } from './messages'
+import { PRACTICE_ROLES, type ChatChannel, type ClientMsg, type Command, type CommandKind, type LobbySettings, type NoteMark, type PracticeRole } from './messages'
 import { MAX_CLIENT_MSG_BYTES, decode } from './codec'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../constants'
 
@@ -148,7 +148,8 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
       return s ? { t: 'settings', s } : null
     }
     case 'start':
-      return { t: 'start' }
+      if (raw.role === undefined) return { t: 'start' }
+      return PRACTICE_ROLES.includes(raw.role as PracticeRole) ? { t: 'start', role: raw.role as PracticeRole } : null
     case 'kick':
       return isInt(raw.slot, 0, MAX_PLAYERS - 1) ? { t: 'kick', slot: raw.slot } : null
     case 'cmd': {

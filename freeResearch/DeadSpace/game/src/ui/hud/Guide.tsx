@@ -220,6 +220,19 @@ function keyText(k: string): string {
 }
 
 /** 背包裡第一個符合的格子（0 起算；-1 = 沒有）*/
+/** 看得到的販賣機裡，有沒有已經上架的基因檢測器（補給事件會提早上架）*/
+function samplerInStock(): boolean {
+  for (const e of world.ents.values()) {
+    const s = e.s.x2?.s
+    if (typeof s !== 'string') continue
+    for (const row of s.split('|')) {
+      const [id, n] = row.split(':')
+      if (id === 'geneSampler' && Number(n) > 0) return true
+    }
+  }
+  return false
+}
+
 export function invSlot(me: Partial<PrivateState>, pred: (item: string) => boolean): number {
   return (me.inv ?? []).findIndex((s) => !!s && pred(s.item))
 }
@@ -285,8 +298,12 @@ export function objectiveFor(v: GuideView): Objective | null {
       const res = invSlot(me, (i) => i === 'gitResolver')
       const smp = invSlot(me, (i) => i === 'geneSampler')
       if (res >= 0) add('guide.s.resolverUse', { k: res + 1 })
-      else if (smp >= 0) add('guide.s.samplerUse', { k: smp + 1 })
-      else if (time < SAMPLER_AT) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
+      else if (smp >= 0) {
+        // 抽血進度：已抽的人（自己的資訊）
+        const names = me.inv?.[smp]?.samples ?? []
+        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: names.join('、') })
+        else add('guide.s.samplerUse', { k: smp + 1 })
+      } else if (time < SAMPLER_AT && !samplerInStock()) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
       else add('guide.s.samplerGet')
       add('guide.s.attack')
       if (steps.length < 3) add('guide.s.notes')
@@ -458,7 +475,8 @@ export function detectHints(v: GuideView): Hint[] {
   // 狀態
   const hp = v.self?.hp ?? 0
   const mhp = v.self?.mhp ?? 0
-  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add('lowHp', 1)
+  // 低血量：背包有醫療品才叫他用背包裡的，沒有就指向醫療補給／醫護兵
+  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add(invSlot(me, (i) => itemDef(i)?.cat === 'medical') >= 0 ? 'lowHp' : 'lowHpNoKit', 1)
   if (me.zone === 0) add('space', 23)
   else if (v.zoneStation?.startsWith('ship:')) add('shipInside', 23)
   if (me.fac) add('facility', 26)
@@ -568,6 +586,7 @@ const HINT_ICON: Record<string, string> = {
   pod: 'pod',
   rummage: 'gear',
   lowHp: 'heal',
+  lowHpNoKit: 'heal',
   death: 'skull',
   deathAndroid: 'core',
   notes: 'info',
@@ -597,6 +616,8 @@ const MAP_LEGEND: [color: string, key: string, dot: boolean][] = [
   ['#cfd8df', 'other', true],
   ['#ffc23d', 'door', false],
   ['#7fd8ff', 'console', false],
+  ['#ff7fa0', 'medical', false],
+  ['#ff9a3d', 'suit', false],
   ['#5cf2a5', 'vendor', false],
   ['#33ffd1', 'git', false],
   ['#8a9aa8', 'fac', false],

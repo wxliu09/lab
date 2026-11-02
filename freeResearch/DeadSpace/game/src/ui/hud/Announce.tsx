@@ -1,9 +1,10 @@
 // 公告：全場系統訊息（事件、末日、身分公告、站點被毀…）在畫面上方中央放大顯示；
 // 給自己的私人訊息（互動結果、錯誤）在 HUD 上方中央短暫顯示，不必盯著左下角的聊天紀錄。
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { chatTaps, screen, snapTick, world } from '../../client/session'
+import { localNotice } from '../../client/input'
 import type { ChatLine } from '../../shared/protocol/messages'
-import { abilityDef } from '../../shared/content/registry'
+import { abilityDef, itemDef } from '../../shared/content/registry'
 import { loc, sysText, t } from '../i18n'
 
 interface Item {
@@ -50,6 +51,29 @@ export function Announcements() {
       if (i >= 0) chatTaps.splice(i, 1)
     }
   }, [])
+  // 背包多了東西（販賣機取用、撿起來、別人給的）：提示放在哪一格
+  void snapTick.value
+  const inv = (world.me.inv ?? []).map((x) => x?.item ?? '')
+  const invKey = inv.join('|')
+  const lastInv = useRef<string[] | null>(null)
+  useEffect(() => {
+    const prev = lastInv.current
+    lastInv.current = inv
+    if (!prev || prev.length !== inv.length || screen.value !== 'game') return
+    const now = performance.now()
+    const add: Item[] = []
+    inv.forEach((id, i) => {
+      if (id && id !== prev[i] && !prev.includes(id)) add.push({ id: ++seq, text: t('inv.got', { item: loc(itemDef(id)?.name) || id, n: i + 1 }), kind: 'ok', until: now + 3000, life: 3000 })
+    })
+    if (add.length) setItems((xs) => [...xs, ...add].slice(-12))
+  }, [invKey])
+  // 本機提示（不經網路）
+  const ln = localNotice.value
+  useEffect(() => {
+    if (!ln) return
+    const now = performance.now()
+    setItems((xs) => [...xs, { id: ++seq, text: t(ln.text), kind: 'err' as const, until: now + 1800, life: 1800 }].slice(-12))
+  }, [ln])
   useEffect(() => {
     if (!items.length) return
     const h = setInterval(() => {

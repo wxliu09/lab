@@ -1,4 +1,5 @@
 // 進化選單、旁觀列、死亡模式投票、結算畫面
+import { useState } from 'preact/hooks'
 import { FORMS, UNITS } from '../../shared/content/registry'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { endResult, leave, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
@@ -11,6 +12,8 @@ const FACTION_COLOR: Record<string, string> = { xeno: '#7a3cff', mutant: '#c8323
 
 export function EvolveMenu() {
   void snapTick.value
+  // 進化不可逆（原地結繭、可能自曝）：先選，再按確認
+  const [pick, setPick] = useState<string | null>(null)
   if (!evolveOpen.value) return null
   const me = world.me
   const opts = me.canEvolve ?? []
@@ -46,26 +49,47 @@ export function EvolveMenu() {
             const f = FORMS.get(id)
             const u = f ? UNITS.get(f.unit) : undefined
             return (
-              <div key={id} class="pcard" style={{ '--pc': col, cursor: 'pointer' }} data-testid={'evo-' + id} onClick={() => {
-                sendCmd({ k: 'evolve', a: id })
-                evolveOpen.value = false
-              }}>
+              <div
+                key={id}
+                class={'pcard' + (pick === id ? ' picked' : '')}
+                style={{ '--pc': col, cursor: 'pointer', outline: pick === id ? `2px solid ${col}` : undefined }}
+                data-testid={'evo-' + id}
+                onClick={() => setPick(id)}
+              >
                 <div class="row">
                   <Icon name="evolve" color={col} />
                   <div class="pname">{loc(u?.name) || id}</div>
                 </div>
-                <div class="dim" style={{ fontSize: '12px', marginTop: '6px', lineHeight: 1.5 }}>
+                <div class="dim" style={{ fontSize: '14px', marginTop: '6px', lineHeight: 1.55 }}>
                   {loc(f?.desc)}
                 </div>
                 {u && (
-                  <div class="mono dim" style={{ fontSize: '11px', marginTop: '6px' }}>
-                    HP {u.hp} · ATK {u.attack?.dmg[0] ?? 0} · SPD {u.speed}
+                  <div class="mono dim" style={{ fontSize: '13px', marginTop: '6px' }}>
+                    {t('tip.hp')} {u.hp} · {t('tip.atk')} {u.attack?.dmg[0] ?? 0} · {t('tip.speed')} {u.speed}
                   </div>
                 )}
               </div>
             )
           })}
         </div>
+        {pick && opts.includes(pick) && (
+          <div class="row" style={{ marginTop: '12px', gap: '10px', alignItems: 'center' }}>
+            <button
+              class="primary"
+              data-testid="evo-confirm"
+              onClick={() => {
+                sendCmd({ k: 'evolve', a: pick })
+                setPick(null)
+                evolveOpen.value = false
+              }}
+            >
+              {t('evo.confirm', { name: loc(UNITS.get(FORMS.get(pick)?.unit ?? '')?.name) || pick })}
+            </button>
+            <span class="dim" style={{ fontSize: '13px' }}>
+              {t('evo.confirmHint')}
+            </span>
+          </div>
+        )}
         <div class="dim" style={{ marginTop: '12px', fontSize: '12px' }}>
           {role === 'xeno' ? t('evo.xenoHint') : role === 'mutant' ? t('evo.mutantHint') : t('evo.androidHint')}
         </div>
@@ -141,8 +165,8 @@ export function EndScreen() {
                 <span class="grow" />
                 <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
               </div>
-              <div class="mono dim" style={{ fontSize: '11px', marginTop: '4px' }}>
-                K {p.kills} · INF {p.infections} · GIT {p.tests}
+              <div class="mono dim" style={{ fontSize: '13px', marginTop: '4px' }}>
+                {t('end.kills')} {p.kills} · {t('end.infections')} {p.infections} · {t('end.tests')} {p.tests}
               </div>
             </div>
           ))}

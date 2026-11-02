@@ -64,6 +64,8 @@ export interface GameInit {
   settings: LobbySettings
   players: { slot: number; name: string; color: number; bot: boolean; connected: boolean; spectator: boolean }[]
   send: (slot: number, msg: HostMsg) => void
+  /** 單機練習：指定某位玩家的身分（server 只在練習房、只有主機一位真人時才會給）*/
+  forceRole?: { slot: number; role: Role }
 }
 
 /** 每位玩家各自的資訊放寬旗標（除錯工具用；只影響本人的快照與聊天）*/
@@ -128,6 +130,7 @@ export class Game {
   readonly players: GamePlayer[] = []
   readonly settings: LobbySettings
   readonly send: GameInit['send']
+  readonly forceRole: GameInit['forceRole']
   tick = 0
   hostHidden = false
   paused = false
@@ -170,6 +173,7 @@ export class Game {
   constructor(init: GameInit) {
     this.settings = init.settings
     this.send = init.send
+    this.forceRole = init.forceRole
     const secret = init.secret ?? secretSeed()
     this.secret = new Rng(secret)
     this.world = new World(init.seed, (secret * 2654435761) >>> 1 || 7)

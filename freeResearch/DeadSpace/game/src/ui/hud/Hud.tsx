@@ -3,16 +3,18 @@ import { useEffect, useRef, useState, useLayoutEffect } from 'preact/hooks'
 import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
-import { ABILITIES, ITEMS, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
-import { entDefName } from '../names'
+import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
+import { entDefName, suitColor } from '../names'
+import { itemTip } from '../itemTip'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, world, connLost } from '../../client/session'
-import { chatOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
+import { chatOpen, evolveOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
-import { tipProps, type TipData } from '../tooltip'
+import { showCursorTip, tipProps, type TipData } from '../tooltip'
+import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
 
 function fmtTime(s: number): string {
@@ -49,7 +51,7 @@ export function TopBar() {
         {me.role ? t('role.' + me.role) + (me.spawn ? ' spawn' : '') : ''}
       </span>
       {(me.role === 'xeno' || me.role === 'mutant' || me.role === 'android' || me.spawn) && (
-        <span {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body') }))}>
+        <span style={{ cursor: 'pointer' }} data-testid="ep" onClick={() => (evolveOpen.value = !evolveOpen.value)} {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body'), tag: 'V' }))}>
           {t('hud.ep')} <b>{me.ep ?? 0}</b>
           {me.epNext ? <span class="dim">/{me.epNext}</span> : null}
         </span>
@@ -120,8 +122,15 @@ export function Minimap({ scene }: { scene: GameScene }) {
             bx.fillRect(ox + col * k, oy + row * k, Math.ceil(k), Math.ceil(k))
           }
         for (const p of l.pois) {
-          bx.fillStyle = p.def.kind === 'vendor' ? '#5cf2a5' : p.def.kind === 'git' ? '#33ffd1' : p.def.kind === 'console' ? '#7fd8ff' : '#8a9aa8'
-          bx.fillRect(ox + p.col * k - 1, oy + p.row * k - 1, k + 2, k + 2)
+          const c = poiColor(p.def.kind, p.def.ref)
+          if (!c) continue
+          bx.fillStyle = c
+          const big = p.def.kind === 'vendor' || p.def.kind === 'git' || p.def.kind === 'console'
+          const r = big ? k * 0.9 + 1.5 : k * 0.5 + 1
+          bx.beginPath()
+          if (p.def.kind === 'console') bx.arc(ox + (p.col + 0.5) * k, oy + (p.row + 0.5) * k, r, 0, Math.PI * 2)
+          else bx.rect(ox + (p.col + 0.5) * k - r, oy + (p.row + 0.5) * k - r, r * 2, r * 2)
+          bx.fill()
         }
         base.current = { zone: scene.zone, img: b }
       }
@@ -173,6 +182,21 @@ export function Minimap({ scene }: { scene: GameScene }) {
       <canvas
         ref={ref}
         onContextMenu={(e) => e.preventDefault()}
+        onMouseMove={(e) => {
+          // 懸停：顯示房間名稱與裡面的設施
+          if (scene.zone === 0) return showCursorTip(null, 0, 0)
+          const p = toWorld(e)
+          const info = scene.zones.get(scene.zone)
+          if (!p || !info) return showCursorTip(null, 0, 0)
+          const room = roomAt(info.layout, p.x, p.y)
+          if (!room) return showCursorTip(null, 0, 0)
+          const things = info.layout.pois
+            .filter((q) => info.layout.roomOf[q.row * info.layout.w + q.col] === room.index)
+            .map((q) => poiName(q.def.kind, q.def.ref))
+            .filter(Boolean)
+          showCursorTip({ title: loc(room.spec.name), body: [...new Set(things)].join('、') || undefined, hint: t('minimap.hint') }, e.clientX, e.clientY)
+        }}
+        onMouseLeave={() => showCursorTip(null, 0, 0)}
         onMouseDown={(e) => {
           const p = toWorld(e)
           if (!p) return
@@ -182,6 +206,28 @@ export function Minimap({ scene }: { scene: GameScene }) {
       />
     </div>
   )
+}
+
+/** 小地圖上設施的顏色：醫療粉紅、防護服橘、GIT 青、控制台藍（圓點）、其他販賣機綠；不重要的不畫。改色時同步 Guide.tsx 的 MAP_LEGEND */
+export function poiColor(kind: string, ref?: string): string | null {
+  if (kind === 'vendor') {
+    if (ref === 'medical') return '#ff7fa0'
+    if (ref?.startsWith('suit')) return '#ff9a3d'
+    if (ref === 'gitTester' || ref === 'gitResolver') return '#33ffd1'
+    return '#5cf2a5'
+  }
+  if (kind === 'git') return '#33ffd1'
+  if (kind === 'console' || kind === 'powerConsole') return '#7fd8ff'
+  if (kind === 'regenerator' || kind === 'moduleFactory' || kind === 'moduleSocket' || kind === 'rummageBox') return '#8a9aa8'
+  return null
+}
+
+function poiName(kind: string, ref?: string): string {
+  if (kind === 'vendor') return loc(VENDORS.get(ref ?? '')?.name)
+  if (kind === 'console') return t('minimap.console')
+  if (kind === 'powerConsole') return t('minimap.power')
+  if (kind === 'git') return t('minimap.git')
+  return ''
 }
 
 /** 太空層小地圖：所有太空物件 */
@@ -303,8 +349,15 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   return { title: loc(ab.name), tag: key || undefined, body: loc(ab.desc), rows, hint: hints.join('\n'), color: '#9fe7ff' }
 }
 
+/** 觀戰中、沒有操控任何東西（死者附身蛞蝓仔時例外）：指令卡、背包沒有作用，不顯示 */
+function spectating(): boolean {
+  const me = world.me
+  return me.alive === false && (!me.control || me.control === me.unit)
+}
+
 export function CommandCard({ input }: { input: Input | null }) {
   void snapTick.value
+  if (spectating()) return null
   const abs = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
   const passives = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target === 'passive')
   const keys = ['Q', 'W', 'E', 'R', 'D', 'F']
@@ -373,6 +426,7 @@ export function CommandCard({ input }: { input: Input | null }) {
 
 export function Inventory({ input }: { input: Input | null }) {
   void snapTick.value
+  if (spectating()) return null
   const inv = world.me.inv ?? []
   return (
     <div class="panel inv" data-testid="inventory">
@@ -393,13 +447,15 @@ export function Inventory({ input }: { input: Input | null }) {
               if (!def || !it) return { title: t('hud.inventory') + ` ${i + 1}`, body: t('tip.empty') }
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
+              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + it.samples.join('、') : '')])
               const hints = [def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 }), it.cd > 0 ? t('tip.item.cd') : ''].filter(Boolean)
-              return { title: loc(def.name), tag: String(i + 1), sub: t('tip.cat.' + def.cat), body: loc(def.desc), rows, hint: hints.join('\n'), color: def.suit ? '#ffc23d' : '#9fe7ff' }
+              return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
             })}
           >
             <span class="key">{i + 1}</span>
-            {def && <Icon name={def.icon} size={30} color={def.suit ? '#ffc23d' : '#9fe7ff'} />}
+            {def && <Icon name={def.icon} size={30} color={def.suit ? suitColor(def.id) : '#9fe7ff'} />}
             {it && it.charges > 0 && <span class="cdtxt charges">{it.charges}</span>}
+            {it?.item === 'geneSampler' && <span class="cdtxt charges">{it.samples?.length ?? 0}/3</span>}
             {it && it.cd > 0 && <div class="cdmask" style={{ transform: 'scaleY(1)', opacity: 0.6 }} />}
           </div>
         )
@@ -438,7 +494,7 @@ export function Chat() {
   }
   return (
     <>
-      <div class="chat" data-testid="chatlog">
+      <div class={'chat' + (chatOpen.value ? ' typing' : '')} data-testid="chatlog">
         {lines.map((l, i) => (
           <div key={i} class={'line ' + (l.ch === 'sys' || l.ch === 'private' ? 'sys' : l.ch)}>
             {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
@@ -457,7 +513,7 @@ export function Chat() {
             data-testid="chatinput"
             value={text}
             maxLength={200}
-            placeholder={t('chat.placeholder')}
+            placeholder={world.me.alive === false ? t('chat.placeholderDead') : t('chat.placeholder')}
             onInput={(e) => setText((e.target as HTMLInputElement).value)}
             onKeyDown={(e) => {
               e.stopPropagation()

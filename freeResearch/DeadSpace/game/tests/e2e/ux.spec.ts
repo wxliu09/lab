@@ -86,6 +86,39 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   expect(Math.abs(b.x - a.x)).toBeLessThan(0.05)
   await page.mouse.move(800, 300)
 
+  // Esc：遊戲選單（不再直接打開進化選單）；再按 Esc 關閉
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('game-menu')).toBeVisible()
+  await expect(page.getByTestId('leave-game')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('game-menu')).toHaveCount(0)
+  await expect(page.locator('.modal-back')).toHaveCount(0)
+  // 設定視窗整個在畫面內，Esc 關得掉
+  await page.getByTestId('settings-open').click()
+  const mb = (await page.locator('.modal').boundingBox())!
+  expect(mb.y).toBeGreaterThanOrEqual(0)
+  expect(mb.y + mb.height).toBeLessThanOrEqual(900)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.modal')).toHaveCount(0)
+  // V：進化選單
+  await page.keyboard.press('KeyV')
+  await expect(page.locator('.modal-back')).toHaveCount(1)
+  await page.keyboard.press('KeyV')
+  await expect(page.locator('.modal-back')).toHaveCount(0)
+  // 小地圖懸停：顯示房間名稱
+  const mm = (await page.locator('.minimap canvas').boundingBox())!
+  let roomTip = false
+  for (const [fx, fy] of [[0.3, 0.4], [0.5, 0.5], [0.7, 0.3], [0.2, 0.7], [0.6, 0.7]]) {
+    await page.mouse.move(mm.x + mm.width * fx, mm.y + mm.height * fy)
+    await page.waitForTimeout(250)
+    if (await page.getByTestId('tooltip').count()) {
+      roomTip = true
+      break
+    }
+  }
+  expect(roomTip).toBe(true)
+  await page.mouse.move(800, 300)
+
   // 公告：全場事件放大顯示在上方中央
   await page.evaluate(() => {
     const s = (window as unknown as W).__xcState

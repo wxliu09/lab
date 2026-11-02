@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useLayoutEffect, useState } from 'preact/hooks'
 import { signal } from '@preact/signals'
 import { lang, setLang, t, type Lang } from '../i18n'
 import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net/trystero'
@@ -34,8 +34,9 @@ export function InGameSettings() {
 }
 
 export function Settings({ onClose }: { onClose: () => void }) {
-  // Esc 關閉；capture 階段攔下，免得同一個 Esc 又打開進化選單
-  useEffect(() => {
+  // Esc 關閉；capture 階段攔下，免得同一個 Esc 又打開進化選單。
+  // 用 layout effect：一渲染就掛上（useEffect 要等下一次繪製，畫面很慢時會漏掉緊接著的 Esc）
+  useLayoutEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.code !== 'Escape') return
       e.stopImmediatePropagation()

@@ -329,6 +329,7 @@ export function installRoles(g: Game): void {
           if (am) {
             g.privateLine(andr.slot, 'role.androidShutdown')
             am.data.god = false
+            am.data.deathCause = 'shutdown'
             g.killEnt(am, null, -1)
           }
         }

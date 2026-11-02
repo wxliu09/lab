@@ -7,6 +7,7 @@ import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { modalChecks, typingInField } from '../../client/input'
 import { t } from '../i18n'
 import { Icon } from '../icons'
+import { tipProps } from '../tooltip'
 
 export const notesOpen = signal(false)
 modalChecks.push(() => notesOpen.value)
@@ -57,23 +58,29 @@ export function NotesPanel() {
             return (
               <div key={p.slot} class="row" style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
                 <div class="grow" style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '13px' }}>{p.name}</div>
+                  <div style={{ fontSize: '15px' }}>{p.name}</div>
                   {edit === p.slot ? (
                     <input
                       value={text}
                       maxLength={200}
-                      style={{ width: '100%', fontSize: '12px', padding: '3px 5px' }}
+                      style={{ width: '100%', fontSize: '14px', padding: '3px 5px' }}
                       onInput={(e) => setText((e.target as HTMLInputElement).value)}
                       onKeyDown={(e) => {
                         e.stopPropagation()
                         if (e.key === 'Enter') {
                           send({ t: 'note', target: p.slot, mark: n?.mark ?? 'none', text })
                           setEdit(null)
-                        }
+                        } else if (e.key === 'Escape') setEdit(null)
                       }}
+                      // 點到別處也存（原本只有 Enter 才存，打好的字會不見）
+                      onBlur={() => {
+                        if (text !== (n?.text ?? '')) send({ t: 'note', target: p.slot, mark: n?.mark ?? 'none', text })
+                        setEdit(null)
+                      }}
+                      ref={(el) => el?.focus()}
                     />
                   ) : (
-                    <div class="dim" style={{ fontSize: '11px', cursor: 'text' }} onClick={() => (setEdit(p.slot), setText(n?.text ?? ''))}>
+                    <div class="dim" style={{ fontSize: '13px', cursor: 'text' }} onClick={() => (setEdit(p.slot), setText(n?.text ?? ''))}>
                       {n?.text || t('notes.add')}
                     </div>
                   )}
@@ -90,7 +97,14 @@ export function NotesPanel() {
                 >
                   {t('notes.mark.' + cur.m)}
                 </button>
-                <button class="small ghost" title={t('notes.share')} onClick={() => send({ t: 'shareNotes', to: p.slot })}>
+                <button
+                  class="small ghost"
+                  {...tipProps(() => ({ title: t('notes.share'), body: t('notes.shareBody') }))}
+                  onClick={() => {
+                    // 分享會把你對所有人的標記與筆記都送給對方：先確認
+                    if (window.confirm(t('notes.shareConfirm', { name: p.name }))) send({ t: 'shareNotes', to: p.slot })
+                  }}
+                >
                   ↗
                 </button>
               </div>
@@ -126,7 +140,7 @@ export function NotesPanel() {
           })}
         </>
       )}
-      <div class="dim" style={{ fontSize: '11px', marginTop: '8px' }}>
+      <div class="dim" style={{ fontSize: '13px', marginTop: '8px' }}>
         {t('notes.hint')}
       </div>
     </div>
@@ -173,14 +187,14 @@ export function DoorLog() {
   const now = world.w.t ?? 0
   return (
     <div class="panel" style={{ position: 'absolute', left: '50%', bottom: '204px', transform: 'translateX(-50%)', padding: '6px 10px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-      <span class="dim" style={{ fontSize: '11px' }}>
+      <span class="dim" style={{ fontSize: '13px' }}>
         {t('door.log')}
       </span>
       {d.log
         .slice()
         .reverse()
         .map((l, i) => (
-          <span key={i} title={t('door.sil.' + l.sil)} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px' }} class="mono">
+          <span key={i} title={t('door.sil.' + l.sil)} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '13px' }} class="mono">
             <Icon name={SIL[l.sil] ?? 'unknown'} size={16} color={l.sil === 'creature' ? '#ff7a6a' : '#9fe7ff'} />
             {Math.max(0, Math.round(now - l.t))}s
           </span>

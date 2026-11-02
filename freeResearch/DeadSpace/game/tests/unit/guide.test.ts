@@ -190,8 +190,10 @@ describe('情境提示的觸發條件', () => {
   })
 
   it('狀態：低血量、太空層、船艙、設施面板、進化、穩定度', () => {
-    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 100, mhp: 400 } }))).toContain('lowHp')
-    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 300, mhp: 400 } }))).not.toContain('lowHp')
+    // 背包沒有醫療品：指向醫療補給；有：叫他用背包裡的
+    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 100, mhp: 400 } }))).toContain('lowHpNoKit')
+    expect(hintIds(view({ role: 'human', inv: [{ item: 'traumaKit', charges: 1, cd: 0 }] }, { self: { d: 'personnel', hp: 100, mhp: 400 } }))).toContain('lowHp')
+    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 300, mhp: 400 } }))).not.toContain('lowHpNoKit')
     expect(hintIds(view({ role: 'human', zone: 0 }))).toContain('space')
     expect(hintIds(view({ role: 'human', zone: 5 }, { zoneStation: 'ship:kestrel' }))).toContain('shipInside')
     expect(hintIds(view({ role: 'human', fac: { k: 'power', e: 1, mode: 0, cd: [], off: 0 } }))).toContain('facility')

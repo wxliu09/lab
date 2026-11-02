@@ -20,13 +20,19 @@ export const cursorWorld = signal<{ x: number; y: number } | null>(null)
 /** 游標的螢幕座標（場景懸停說明用）*/
 export const cursorScreen = { x: 0, y: 0, overView: false }
 export const evolveOpen = signal(false)
+/** 遊戲選單（Esc）：繼續、說明、圖鑑、設定、離開對局 */
+export const menuOpen = signal(false)
+/** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示 */
+export const localNotice = signal<{ text: string; at: number } | null>(null)
+/** 最後一次右鍵互動的對象（販賣機挨在一起時，面板優先顯示這台）*/
+export const lastInteract = signal(0)
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 
 /** 各個對話框登記「我現在開著嗎」：開著時不做邊緣捲動（避免 client → ui 的循環 import）*/
-export const modalChecks: (() => boolean)[] = [() => evolveOpen.value]
+export const modalChecks: (() => boolean)[] = [() => evolveOpen.value, () => menuOpen.value]
 
-function modalOpen(): boolean {
+export function modalOpen(): boolean {
   return modalChecks.some((f) => f())
 }
 
@@ -53,6 +59,7 @@ export class Input {
   private dragX = 0
   private dragY = 0
   private last = { x: -1, y: -1 }
+  private dropArmed = 0
   private disposers: (() => void)[] = []
 
   constructor(
@@ -190,7 +197,15 @@ export class Input {
         this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ffc23d')
         return
       }
-      if (def?.tags.includes('structure') || fl & EntFlag.Interactable) {
+      // 控制台、無人機控制圈：要站到正中央才會開始駕駛（interact 只會停在旁邊），直接走到中心
+      const d = e?.s.d ?? ''
+      if (d === 'struct.console' || d === 'struct.droneControl') {
+        sendCmd({ k: 'move', x: e!.x, y: e!.y, q })
+        this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ffc23d')
+        return
+      }
+      if (def?.tags.includes('structure') || fl & EntFlag.Interactable || typeof e?.s.x2?.s === 'string') {
+        lastInteract.value = ent
         sendCmd({ k: 'interact', e: ent, q })
         return
       }
@@ -264,8 +279,13 @@ export class Input {
         if (isPiloting()) sendCmd({ k: 'unpilot' })
         return
       case 'Escape':
+        // 取消瞄準 → 關進化選單 → 開關遊戲選單
         if (targetMode.value) targetMode.value = null
-        else evolveOpen.value = !evolveOpen.value
+        else if (evolveOpen.value) evolveOpen.value = false
+        else menuOpen.value = !menuOpen.value
+        return
+      case 'KeyV':
+        evolveOpen.value = !evolveOpen.value
         return
       case 'KeyA':
         targetMode.value = { kind: 'attack' }
@@ -292,6 +312,16 @@ export class Input {
     if (!st) return
     const ab = abilityDef(st.id)
     if (!ab || st.cd > 0) return
+    // 脫下防護服不可逆、又排在戰鬥技能旁邊：1.5 秒內再按一次才執行
+    if (ab.id === 'suit.drop') {
+      const now = performance.now()
+      if (now - this.dropArmed > 1500) {
+        this.dropArmed = now
+        localNotice.value = { text: 'suit.dropConfirm', at: now }
+        return
+      }
+      this.dropArmed = 0
+    }
     if (ab.target === 'none' || ab.target === 'self' || ab.target === 'toggle') {
       sendCmd({ k: 'cast', a: ab.id })
       return

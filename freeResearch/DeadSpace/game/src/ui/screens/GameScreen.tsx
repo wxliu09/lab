@@ -20,6 +20,7 @@ import { FacilityPanel } from '../hud/Facilities'
 import { Announcements, CastBar } from '../hud/Announce'
 import { WorldHover } from '../hud/WorldHover'
 import { InGameSettings } from './Settings'
+import { GameMenu } from '../hud/GameMenu'
 
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -81,6 +82,7 @@ export function GameScreen() {
       <EnhancerPanel />
       <FacilityPanel />
       <Announcements />
+      <GameMenu />
       <InGameSettings />
       <CastBar />
       {scene && <WorldHover scene={scene} />}

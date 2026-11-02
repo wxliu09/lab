@@ -1,6 +1,6 @@
 // 連線流程與全域 UI 狀態（Preact signals）
 import { signal } from '@preact/signals'
-import type { ChatLine, ClientMsg, Command, EndResult, HostMsg, LobbyPlayerInfo, LobbySettings, StartInfo } from '../shared/protocol/messages'
+import { PRACTICE_ROOM, type ChatLine, type ClientMsg, type Command, type EndResult, type HostMsg, type LobbyPlayerInfo, type LobbySettings, type PracticeRole, type StartInfo } from '../shared/protocol/messages'
 import { PLAYER_COLORS, ROOM_ALPHABET, ROOM_CODE_LEN } from '../shared/constants'
 import { LoopbackHub } from '../net/loopback'
 import { BroadcastChannelTransport } from '../net/broadcast'
@@ -135,7 +135,7 @@ function onHostMsg(m: HostMsg): void {
         const n = practiceBots
         practiceBots = 0
         send({ t: 'settings', s: { bots: n } })
-        send({ t: 'start' })
+        send(practiceRole === 'random' ? { t: 'start' } : { t: 'start', role: practiceRole })
       }
       break
     case 'start':
@@ -202,15 +202,17 @@ export async function createRoom(profile: Profile): Promise<void> {
   exposeTestHooks()
 }
 
-/** 單機練習：不連網，主機分頁自己跑模擬，其餘座位由 AI 填滿 */
+/** 單機練習：不連網，主機分頁自己跑模擬，其餘座位由 AI 填滿；role = 指定自己的身分（random = 照一般規則抽）*/
 let practiceBots = 0
-export async function startPractice(profile: Profile, bots = 5): Promise<void> {
+let practiceRole: PracticeRole = 'random'
+export async function startPractice(profile: Profile, bots = 5, role: PracticeRole = 'random'): Promise<void> {
   saveProfile(profile)
-  roomCode = 'SOLO0'
+  roomCode = PRACTICE_ROOM
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = true
   practiceBots = Math.max(1, Math.min(11, bots))
+  practiceRole = role
   const transport = new LoopbackHub().connect('host')
   const seed = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1
   relay = new HostRelay(roomCode, transport, seed)

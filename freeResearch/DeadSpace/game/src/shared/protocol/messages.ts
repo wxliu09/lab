@@ -45,6 +45,13 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   seed: 0,
 }
 
+/** 單機練習的房號（正式房號字母表沒有 O 和 0，不會撞號）*/
+export const PRACTICE_ROOM = 'SOLO0'
+
+/** 單機練習可指定的身分；只在練習房生效，多人房間一律忽略 */
+export type PracticeRole = 'random' | 'human' | 'xeno' | 'mutant' | 'android'
+export const PRACTICE_ROLES: readonly PracticeRole[] = ['random', 'human', 'xeno', 'mutant', 'android']
+
 export interface LobbyPlayerInfo {
   slot: Slot
   name: string
@@ -102,7 +109,8 @@ export type ClientMsg =
   | { t: 'hello'; name: string; color: number; ver: number; token: string }
   | { t: 'lobby'; name?: string; color?: number; ready?: boolean }
   | { t: 'settings'; s: Partial<LobbySettings> }
-  | { t: 'start' }
+  /** role：單機練習指定自己的身分（server 只在練習房接受）*/
+  | { t: 'start'; role?: PracticeRole }
   | { t: 'kick'; slot: Slot }
   | { t: 'cmd'; seq: number; c: Command }
   | { t: 'chat'; ch: ChatChannel; text: string; to?: string }
@@ -245,6 +253,8 @@ export interface InvSlot {
   item: string
   charges: number
   cd: number
+  /** 基因檢測器／GIT 解析器：已抽血的人（抽血者當時看到的名字，只給持有者）*/
+  samples?: string[]
 }
 
 export interface AbilityState {
