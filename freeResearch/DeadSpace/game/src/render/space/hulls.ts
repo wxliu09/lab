@@ -613,7 +613,9 @@ function hulk7(k: Kit): void {
   }
   // 斷環：主弧涵蓋 a ∈ [-1.93, 1.97]（torus 的 u → a = π/2 - u + ry）
   const RR = 3.1
-  put(b, torus(RR, 0.3, 10, 44, 3.9), rust, 0, 0, 0, Math.PI / 2, 0.4)
+  put(b, torus(RR, 0.36, 10, 44, 3.9), rust, 0, 0, 0, Math.PI / 2, 0.4)
+  // 環頂刮痕帶：較亮的裸金屬，暗背景上也看得出斷環的弧線
+  put(b, torus(RR, 0.1, 4, 44, 3.6), scrape, 0, 0.3, 0, Math.PI / 2, 0.25)
   for (const a of [1.97, -1.93]) {
     put(b, sphere(0.31, 8, 6), char, px(RR, a), 0, pz(RR, a), 0, a, 0, 1, 1, 0.55)
     for (let j = 0; j < 3; j++)
@@ -631,7 +633,7 @@ function hulk7(k: Kit): void {
   }
   for (let i = 0; i < 12; i++) {
     const a = -1.75 + (i / 12) * 3.6
-    const m = i % 4 === 1 ? scrape : i % 3 ? rust2 : char
+    const m = i % 3 === 1 ? scrape : i % 2 ? rust2 : char
     if (R() < 0.6) put(b, box(0.42, 0.2, 0.62), m, px(RR, a), 0.22, pz(RR, a), 0, a + Math.PI / 2, (R() - 0.5) * 0.3)
   }
   // 斷口還在燒：環的兩個斷端各一團餘火
@@ -1254,7 +1256,7 @@ const BUILDERS: Record<string, (k: Kit) => void> = {
 
 /**
  * 站點外觀：依 id 組出各自的剪影。userData.update(t) 跑子結構動畫與閃燈；
- * userData.spin = 建議自轉速度（船艦型為 0，已內建輕微橫搖）；userData.height = 縮放後的頂高。
+ * userData.spin = 建議自轉速度（船艦型為 0，已內建輕微橫搖）；userData.height = 縮放後的頂高；userData.radius = 主體外觀半徑。
  */
 export function buildStationHull(id: string, scale = 1): THREE.Group {
   const sp = SPECS[id] ?? SPECS.nyx
@@ -1302,6 +1304,8 @@ export function buildStationHull(id: string, scale = 1): THREE.Group {
   }
   g.userData.spin = sp.spin
   g.userData.height = k.height * scale
+  /** 主體外觀半徑（世界單位）：名牌等疊加層要避開模型時用，比碰撞半徑略大 */
+  g.userData.radius = sp.size * scale
   g.scale.setScalar(scale)
   return g
 }
