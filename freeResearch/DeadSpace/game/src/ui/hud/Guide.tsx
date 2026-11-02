@@ -102,8 +102,6 @@ export interface Hint {
   /** 數字小的先顯示 */
   pri: number
   args?: Record<string, string | number>
-  /** 條件消失就不再顯示（例如低血量）*/
-  transient?: boolean
 }
 
 export interface ActiveHint extends Hint {
@@ -125,10 +123,14 @@ export class HintQueue {
     private life = HINT_LIFE,
   ) {}
 
-  /** 條件成立：沒看過、也不在畫面或佇列裡就排進去 */
+  /** 條件成立：沒看過、也不在畫面或佇列裡就排進去（已在佇列裡的更新參數，例如快捷鍵）*/
   offer(h: Hint): boolean {
+    const queued = this.queue.find((q) => q.id === h.id)
+    if (queued) {
+      queued.args = h.args
+      return false
+    }
     if (this.mine.has(h.id) || this.store.has(h.id)) return false
-    if (this.queue.some((q) => q.id === h.id)) return false
     let i = this.queue.findIndex((q) => q.pri > h.pri)
     if (i < 0) i = this.queue.length
     this.queue.splice(i, 0, h)
@@ -137,11 +139,12 @@ export class HintQueue {
 
   /**
    * 推進時間。blocked（被全螢幕畫面擋住）時不倒數也不補位；hold = 滑鼠停著的那則不倒數；
-   * current = 目前成立的條件，transient 的提示條件消失就從佇列移除。回傳畫面是否有變。
+   * current = 目前成立的條件：還在排隊的提示條件消失就移除（離開了販賣機、血量回來了、身分變了），
+   * 下次條件成立再排；退回佇列的提示已經記為看過，一定會顯示。回傳畫面是否有變。
    */
   tick(dt: number, blocked: boolean, max = MAX_HINTS, hold: string | null = null, current?: Set<string>): boolean {
     let changed = false
-    if (current) this.queue = this.queue.filter((q) => !q.transient || current.has(q.id))
+    if (current) this.queue = this.queue.filter((q) => this.mine.has(q.id) || current.has(q.id))
     if (blocked) return false
     for (const a of this.active) if (a.id !== hold) a.left -= dt
     const n = this.active.length
@@ -167,7 +170,7 @@ export class HintQueue {
   /** 版面放不下：把最後一則退回佇列最前面，稍後再顯示 */
   deferLast(): void {
     const a = this.active.pop()
-    if (a) this.queue.unshift({ id: a.id, pri: a.pri, args: a.args, transient: a.transient })
+    if (a) this.queue.unshift({ id: a.id, pri: a.pri, args: a.args })
   }
 
   /** 清空畫面與佇列（關閉提示）；forget = 連「自己顯示過」的紀錄一起清（重新顯示提示）*/
@@ -403,7 +406,7 @@ export function detectHints(v: GuideView): Hint[] {
   const id = identityOf(me)
   if (!id) return []
   const out: Hint[] = []
-  const add = (hid: string, pri: number, args?: Hint['args'], transient?: boolean) => out.push({ id: hid, pri, args, transient })
+  const add = (hid: string, pri: number, args?: Hint['args']) => out.push({ id: hid, pri, args })
   const time = v.w.t ?? 0
   if (id === 'spectator') add('spectate', 4)
   if (id === 'dead') add('death', 0)
@@ -454,7 +457,7 @@ export function detectHints(v: GuideView): Hint[] {
   // 狀態
   const hp = v.self?.hp ?? 0
   const mhp = v.self?.mhp ?? 0
-  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add('lowHp', 1, undefined, true)
+  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add('lowHp', 1)
   if (me.zone === 0) add('space', 23)
   else if (v.zoneStation?.startsWith('ship:')) add('shipInside', 23)
   if (me.fac) add('facility', 26)
@@ -610,6 +613,7 @@ export function Guide() {
   /** 版面放不下時，目標面板暫時精簡的程度（0 完整 → 3 只剩標題）*/
   const squeeze = useRef(0)
   const layoutKey = useRef('')
+  const measured = useRef(0)
   const hover = useRef<string | null>(null)
   const [maxH, setMaxH] = useState<number | null>(null)
 
@@ -678,7 +682,8 @@ export function Guide() {
     const q = queue.current!
     if (!el) return
     const key = `${q.active.map((a) => a.id).join(',')}|${maxH}|${fold}`
-    if (key !== layoutKey.current) {
+    const fresh = key !== layoutKey.current
+    if (fresh) {
       layoutKey.current = key
       if (squeeze.current) {
         squeeze.current = 0
@@ -686,6 +691,8 @@ export function Guide() {
         return
       }
     }
+    // 每次快照都會重繪：沒有提示、版面也沒變時不必量（量高度會強迫瀏覽器同步排版）
+    if (!fresh && !q.active.length && !squeeze.current && measured.current++ % 20 !== 0) return
     if (el.scrollHeight <= el.clientHeight + 1) return
     if (q.active.length >= 2) {
       q.deferLast()
@@ -753,7 +760,7 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
           {t('guide.id.' + obj.id)}
         </span>
         {obj.sub && <span class="guide-sub">{obj.sub}</span>}
-        {fold && ep && <span class="guide-sub mono">{t('guide.ep', { ep: ep.ep, next: ep.next })}</span>}
+        {(fold || squeeze > 0) && ep && <span class="guide-sub mono">{t('guide.ep', { ep: ep.ep, next: ep.next })}</span>}
         <span class="grow" />
         <button class="small ghost guide-btn" data-testid="guide-help-btn" onClick={() => (guideOpen.value = !guideOpen.value)} {...tipProps(() => ({ title: t('guide.btn.helpTip'), tag: 'G' }))}>
           {t('guide.btn.help')}

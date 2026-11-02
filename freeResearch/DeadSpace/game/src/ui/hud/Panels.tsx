@@ -81,7 +81,7 @@ export function SpectatorBar() {
   if (!dead) return null
   const zones = startInfo.value?.zones ?? []
   return (
-    <div class="panel" style={{ position: 'absolute', top: '54px', right: '12px', padding: '10px', width: '220px' }}>
+    <div class="panel" style={{ position: 'absolute', top: '54px', right: '12px', padding: '10px', width: '220px', maxHeight: 'calc(100vh / var(--ui-zoom, 1) - 290px)', overflowY: 'auto' }}>
       <h3>{t('spec.title')}</h3>
       <div class="col" style={{ gap: '4px' }}>
         <button class={'small' + (me.specZone === 0 ? ' primary' : '')} onClick={() => sendCmd({ k: 'spec', s: 0 })}>

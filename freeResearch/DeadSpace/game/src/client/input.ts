@@ -23,6 +23,12 @@ export const evolveOpen = signal(false)
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 
+/** 正在駕駛站點／船艇／無人機（指令送給載具，不是自己的角色）*/
+export function isPiloting(): boolean {
+  const c = world.me.control
+  return !!c && !!world.me.unit && c !== world.me.unit && world.me.alive !== false
+}
+
 /** 輸入框聚焦時不處理遊戲按鍵 */
 export function typingInField(): boolean {
   const a = document.activeElement as HTMLElement | null
@@ -165,6 +171,12 @@ export class Input {
       const e = world.ents.get(ent)
       const def = UNITS.get(e?.s.d ?? '')
       const fl = e?.s.fl ?? 0
+      // 地上的物品：撿起來（sim 的 interact 只會走過去，不會撿）
+      if ((e?.s.d ?? '').startsWith('item:') || e?.s.d === 'groundItem') {
+        sendCmd({ k: 'pickup', e: ent, q })
+        this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ffc23d')
+        return
+      }
       if (def?.tags.includes('structure') || fl & EntFlag.Interactable) {
         sendCmd({ k: 'interact', e: ent, q })
         return
@@ -233,6 +245,10 @@ export class Input {
         return
       case 'KeyM':
         setAudioPref('muted', !audioPrefs.value.muted)
+        return
+      case 'KeyB':
+        // 駕駛中：離開控制台
+        if (isPiloting()) sendCmd({ k: 'unpilot' })
         return
       case 'Escape':
         if (targetMode.value) targetMode.value = null

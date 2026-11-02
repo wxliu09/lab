@@ -36,7 +36,8 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
   await expect(obj).toBeVisible({ timeout: 20000 })
   await expect(page.getByTestId('guide-role')).not.toHaveText('')
   await expect(obj.locator('.guide-goal')).toBeVisible()
-  await expect(obj.locator('.guide-steps li').first()).toBeVisible()
+  // 「現在該做什麼」至少一條（提示放不下時會暫時隱藏，所以只看 DOM）
+  await expect(obj.locator('.guide-steps li')).not.toHaveCount(0)
   const box = (await obj.boundingBox())!
   expect(box.x).toBeLessThan(20)
   expect(box.y).toBeLessThan(20)
@@ -49,16 +50,22 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
     await page.waitForTimeout(300)
   }
   await closeReveal(page)
-  const toast = page.getByTestId('guide-toast-start')
-  await expect(toast).toBeVisible({ timeout: 10000 })
+  // 開局會排一串提示（基本操作、常用按鍵…）：取第一則。滑鼠停在上面時不倒數，避免剛好到期
+  const first = page.locator('.guide-toast').first()
+  await expect(first).toBeVisible({ timeout: 20000 })
+  await first.hover()
+  const tid = (await first.getAttribute('data-testid'))!
+  const hid = tid.replace('guide-toast-', '')
   // 同時最多 2 則（版面放不下時先顯示 1 則）
   expect(await page.locator('.guide-toast').count()).toBeLessThanOrEqual(2)
   // 點一下就關掉，不會再回來
+  const toast = page.getByTestId(tid)
   await toast.click()
   await expect(toast).toHaveCount(0)
+  await page.mouse.move(800, 400)
   await page.waitForTimeout(1000)
   await expect(toast).toHaveCount(0)
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('xc.hints.seen') ?? '[]'))).toContain('start')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('xc.hints.seen') ?? '[]'))).toContain(hid)
 
   // G 開關說明面板
   const help = page.getByTestId('guide-help')
@@ -96,9 +103,10 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
   await startSolo(page)
   await closeReveal(page)
   await expect(page.getByTestId('guide-objectives')).toHaveClass(/folded/)
-  await page.waitForTimeout(4000)
-  await expect(page.getByTestId('guide-toast-start')).toHaveCount(0)
-  await expect(page.getByTestId('guide-toast-keys')).toHaveCount(0)
+  for (let i = 0; i < 8; i++) {
+    await expect(page.getByTestId(tid)).toHaveCount(0)
+    await page.waitForTimeout(500)
+  }
   // 展開回來
   await page.getByTestId('guide-fold').click()
   await expect(page.getByTestId('guide-objectives')).not.toHaveClass(/folded/)

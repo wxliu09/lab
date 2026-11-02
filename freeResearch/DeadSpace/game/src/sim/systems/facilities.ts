@@ -210,6 +210,16 @@ function releaseDrone(g: Game, c: Ent, d: Ent | undefined): void {
 }
 
 function stepDrones(g: Game): void {
+  // 解除 unpilot 的鎖：已經不在任何控制圈裡
+  for (const p of g.allPlayers()) {
+    const m = g.mainOf(p)
+    if (!m?.data.droneLock) continue
+    const inRing = facOf(g).droneCtl.some((cid) => {
+      const c = g.world.get(cid)
+      return !!c && c.zone === m.zone && dist(m, c) <= DRONE_RING + 0.3
+    })
+    if (!inRing) delete m.data.droneLock
+  }
   for (const cid of facOf(g).droneCtl) {
     const c = g.world.get(cid)
     if (!c) continue
@@ -225,6 +235,8 @@ function stepDrones(g: Game): void {
     if (!d || !d.alive || d.owner !== NEUTRAL) continue
     for (const u of g.world.query(c.zone, c.x, c.y, DRONE_RING)) {
       if (!u.alive || !u.isMain || u.owner < 0 || u.data.frozen || dist(u, c) > DRONE_RING) continue
+      // 主動離開控制圈（unpilot）的人，要先走出圈子才會重新連線
+      if (u.data.droneLock) continue
       const p = g.players[u.owner]
       if (!p || p.main !== u.id || p.control !== u.id) continue
       d.owner = u.owner

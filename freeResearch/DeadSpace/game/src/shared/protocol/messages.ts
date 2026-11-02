@@ -79,6 +79,8 @@ export type CommandKind =
   | 'feedReplay'
   /** 站內設施操作（動力分配台、模組工廠、隔間門、籠子）：e = 設施實體、a = 動作、s = 選項 */
   | 'facility'
+  /** 離開控制台：交還站點／船艇／防禦無人機的駕駛權，回到操控自己的角色 */
+  | 'unpilot'
 
 export interface Command {
   k: CommandKind

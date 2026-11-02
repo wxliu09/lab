@@ -85,9 +85,18 @@ describe('目標面板', () => {
     expect(keysOf({ ...view({ role: 'human', classId: 'ceo' }), w: { t: 500 } })).toContain('guide.s.samplerGet')
   })
 
+  it('職業一句話：研究員顯示抽到的博士專長（自己的 buff）', () => {
+    const o = G.objectiveFor(view({ role: 'human', classId: 'researcher' }, { self: { d: 'personnel', hp: 1, mhp: 1, b: ['cls.phd.optics'] } }))!
+    const cls = o.steps.find((s) => s.key === 'guide.s.class')!
+    expect(String(cls.args?.desc)).toMatch(/Optics|光學/)
+    const plain = G.objectiveFor(view({ role: 'human', classId: 'commissar' }))!.steps.find((s) => s.key === 'guide.s.class')!
+    expect(String(plain.args?.desc)).toMatch(/125/)
+  })
+
   it('異形：人形時教褪去人皮，異形形態時列出寄生、產卵、披回人皮的快捷鍵', () => {
     const human = G.objectiveFor(view({ role: 'xeno', tier: 1, ep: 120, epNext: 660, abilities: ab('cls.mend', 'xeno.form') }))!
     expect(human.steps[0]).toEqual({ key: 'guide.s.shed', args: { k: 'W' } })
+    expect(human.steps[1].key).toBe('guide.s.alienOnly')
     expect(human.ep).toEqual({ ep: 120, next: 660, ready: false })
     expect(human.sub).toBe('T1')
     const alien = G.objectiveFor(view({ role: 'xeno', tier: 1, ep: 700, epNext: 660, canEvolve: ['xeno.brute'], abilities: ab('xeno.parasite', 'xeno.egg', 'xeno.human') }))!
@@ -180,9 +189,9 @@ describe('情境提示的觸發條件', () => {
     expect(G.objectiveFor(view({ role: 'human', classId: 'ceo' }, { near: crowd.map((d) => ({ d, dist: 1 })) }))).toEqual(G.objectiveFor(view({ role: 'human', classId: 'ceo' })))
   })
 
-  it('狀態：低血量（暫時性）、太空層、船艙、設施面板、進化、穩定度', () => {
-    const low = G.detectHints(view({ role: 'human' }, { self: { d: 'personnel', hp: 100, mhp: 400 } })).find((h) => h.id === 'lowHp')
-    expect(low?.transient).toBe(true)
+  it('狀態：低血量、太空層、船艙、設施面板、進化、穩定度', () => {
+    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 100, mhp: 400 } }))).toContain('lowHp')
+    expect(hintIds(view({ role: 'human' }, { self: { d: 'personnel', hp: 300, mhp: 400 } }))).not.toContain('lowHp')
     expect(hintIds(view({ role: 'human', zone: 0 }))).toContain('space')
     expect(hintIds(view({ role: 'human', zone: 5 }, { zoneStation: 'ship:kestrel' }))).toContain('shipInside')
     expect(hintIds(view({ role: 'human', fac: { k: 'power', e: 1, mode: 0, cd: [], off: 0 } }))).toContain('facility')
@@ -246,19 +255,33 @@ describe('提示佇列', () => {
     expect(q.offer({ id: 'a', pri: 0 })).toBe(false)
   })
 
-  it('暫時性的提示條件消失就移出佇列；退回佇列的提示之後仍會顯示', () => {
-    const q = new G.HintQueue(memStore())
+  it('排隊中的提示條件消失就移出佇列（之後條件成立再排）；退回佇列的提示之後仍會顯示', () => {
+    const st = memStore()
+    const q = new G.HintQueue(st)
     q.offer({ id: 'x', pri: 0 })
     q.offer({ id: 'y', pri: 1 })
-    q.offer({ id: 'low', pri: 2, transient: true })
+    q.offer({ id: 'low', pri: 2 })
     q.tick(0.1, false, 2, null, new Set(['x', 'y', 'low']))
     expect(q.active.map((a) => a.id)).toEqual(['x', 'y'])
     q.deferLast()
     expect(q.active.map((a) => a.id)).toEqual(['x'])
-    q.tick(0.1, false, 1, null, new Set(['x', 'y']))
+    // low 的條件消失；y 已經顯示過（被退回），不受影響
+    q.tick(0.1, false, 1, null, new Set(['x']))
     expect(q.queue.map((h) => h.id)).toEqual(['y'])
+    expect(st.has('low')).toBe(false)
     q.tick(12, false, 2, null, new Set())
     expect(q.active.map((a) => a.id)).toEqual(['y'])
+    // 條件再次成立：重新排隊
+    expect(q.offer({ id: 'low', pri: 2 })).toBe(true)
+  })
+
+  it('已在佇列裡的提示會更新參數（例如快捷鍵換了）', () => {
+    const q = new G.HintQueue(memStore())
+    q.offer({ id: 'a', pri: 0 })
+    q.offer({ id: 'b', pri: 1 })
+    q.offer({ id: 's', pri: 2, args: { k: 'Q' } })
+    q.offer({ id: 's', pri: 2, args: { k: 'W' } })
+    expect(q.queue.find((h) => h.id === 's')?.args).toEqual({ k: 'W' })
   })
 
   it('關閉／重設：clear(true) 之後、紀錄清空時可以再顯示', () => {

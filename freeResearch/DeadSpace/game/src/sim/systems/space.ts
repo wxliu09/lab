@@ -8,7 +8,7 @@ import { SPACE_ZONE, type Zone } from '../world'
 import { DEATH_HOOKS, damage } from './damage'
 import { regScript } from './effects'
 import { applyBuff, removeBuff } from './buffs'
-import { issue } from './orders'
+import { EXTRA_COMMANDS, issue } from './orders'
 import { INSTANT_ITEMS } from './vendors'
 
 export interface ShipInst {
@@ -624,3 +624,26 @@ export function pilotOf(g: Game, vehicle: Ent): GamePlayer | undefined {
   const pe = pid ? g.world.get(pid) : undefined
   return pe ? g.players[pe.owner] : undefined
 }
+
+// ───────── 離開控制台 ─────────
+// 駕駛時所有指令都送給載具，角色本身動不了；這個指令把操控權交回角色。
+// 角色還站在控制台上，所以先鎖住（離開控制台範圍才解鎖），免得下一個 tick 又被接上。
+EXTRA_COMMANDS.set('unpilot', (g, p, u) => {
+  if (p.control === p.main) return
+  const main = g.mainOf(p)
+  if (!main) return
+  const sp = spaceOf(g)
+  if (sp.pilots.get(u.id) === main.id) {
+    const z = g.world.zones.find((q) => q.alive && q.spaceEnt === u.id)
+    if (z) z.data.consoleLock = [...((z.data.consoleLock as number[] | undefined) ?? []), main.id]
+    setPilot(g, u, null)
+    p.control = p.main
+    g.privateLine(p.slot, 'space.leftConsole')
+    return
+  }
+  // 防禦無人機：交回控制權，控制圈會在下一個 tick 斷線；在角色離開控制圈前不會重新連線
+  if (u.def.id === 'npc.defenseDrone' && u.pilot === main.id) {
+    main.data.droneLock = true
+    p.control = p.main
+  }
+})

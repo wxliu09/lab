@@ -8,7 +8,7 @@ import { entDefName } from '../names'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, world, connLost } from '../../client/session'
-import { chatOpen, selected, targetMode, type Input } from '../../client/input'
+import { chatOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
@@ -317,6 +317,11 @@ export function CommandCard({ input }: { input: Input | null }) {
   ]
   return (
     <div class="panel cmdcard">
+      {isPiloting() && (
+        <button class="unpilot" data-testid="unpilot" onClick={() => sendCmd({ k: 'unpilot' })} {...tipProps(() => ({ title: t('cmd.unpilot'), tag: 'B', body: t('cmd.unpilot.desc') }))}>
+          {t('cmd.unpilot')} <span class="mono dim">B</span>
+        </button>
+      )}
       <div class="cmdgrid">
         {basic.map((b) => (
           <div class="cmd" key={b.key} onClick={b.run} {...tipProps(() => ({ title: b.name, tag: b.key, body: b.desc }))}>

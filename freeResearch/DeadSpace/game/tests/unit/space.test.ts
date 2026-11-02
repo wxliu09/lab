@@ -102,4 +102,33 @@ describe('太空層', () => {
     h.ticks(3)
     expect(p.control).toBe(u.id)
   })
+
+  it('離開控制台（unpilot）：交回角色操控；還站在控制台上不會立刻被接回，走開再回來才會', () => {
+    const { h, cs } = Harness.started(2, 4)
+    const g = h.server.game!
+    const p = g.players[cs[0].slot]
+    const u = g.mainOf(p)!
+    const con = [...g.world.inZone(nyx(g).id)].find((e) => e.data.poi === 'console')!
+    g.world.relocate(u, con.zone, con.x, con.y - 0.6)
+    h.ticks(3)
+    expect(p.control).toBe(nyx(g).spaceEnt)
+    g.handleCommand(p.slot, { k: 'unpilot' })
+    h.ticks(3)
+    expect(p.control).toBe(u.id)
+    expect(g.world.get(nyx(g).spaceEnt)!.owner).toBe(-1)
+    // 指令回到角色身上（站在控制台上也不會被接回）
+    g.handleCommand(p.slot, { k: 'hold' })
+    h.ticks(10)
+    expect(p.control).toBe(u.id)
+    expect(u.order?.k).toBe('hold')
+    // 走開再回到控制台又能接手
+    g.world.relocate(u, con.zone, con.x, con.y - 4)
+    h.ticks(3)
+    g.world.relocate(u, con.zone, con.x, con.y - 0.6)
+    h.ticks(3)
+    expect(p.control).toBe(nyx(g).spaceEnt)
+    // 沒在駕駛時送 unpilot 不會出錯
+    g.handleCommand(cs[1].slot, { k: 'unpilot' })
+    h.ticks(1)
+  })
 })

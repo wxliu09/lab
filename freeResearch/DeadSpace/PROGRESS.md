@@ -9,10 +9,10 @@
   - 2026-11-02 首次整理 main（commit `598bcfe`）：main 上本專案只剩 `play/`，原本在 main 的研究文件、工具、原圖、PROGRESS／CLAUDE／PROMPT／README 都已移除（仍完整保留在 `deadspace-dev`）。
   - 舊的遠端分支 `ccr-30c0fa50-e9j08w` 無法從雲端 session 刪除（git proxy 回 403）；內容已完整包含在 `deadspace-dev`，可以在 GitHub 的 Branches 頁面手動刪掉。
 - **M0–M11 完成**（見下）；只剩選配的 M12（近距離語音）。
-- 單元測試 316 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）、Playwright 多分頁 e2e、真實 WebRTC e2e（`XC_P2P=1`）、正式 build 冒煙測試（`tests/visual/smoke.mjs`）、線上版雙瀏覽器驗證（`tests/visual/live.mjs`）。
+- 單元測試 343 個（`npm run check`＝tsc＋eslint＋vitest）全過；另有 12 人 × 20 seeds 長時間 headless（`XC_SOAK=1`）、Playwright 多分頁 e2e、真實 WebRTC e2e（`XC_P2P=1`）、正式 build 冒煙測試（`tests/visual/smoke.mjs`）、線上版雙瀏覽器驗證（`tests/visual/live.mjs`）。
 - **2026-11-02 線上版驗證通過**：GitHub Pages 上的 `play/`，兩個獨立瀏覽器經真實 Nostr／WebRTC 建房、加入、開局，客人端持續收到快照、沒有斷線、relay 連線失敗 0 次。
 - **下一步**：
-  1. 收集朋友實際試玩的聽感回饋（音樂／音效／環境音的音量平衡、哪些聲音太吵或太單調），調 `src/audio/` 的 GAIN 與 BARK_GAIN 表。
+  1. 收集朋友試玩回饋：介面大小與字級、指引內容是否足夠、音量平衡（`src/audio/` 的 GAIN、BARK_GAIN、SFX_BASE）。
   2. 真實 GPU 上的效能量測（開局 shader 預熱時間、12 人同屏 FPS），依結果調整畫質預設。
   3. `game/docs/visual-review.md` 11-02 節列出的小問題（岩壁色調單一、疫蟲 mesh 數偏多、補光不隨斷電變化）。
   4. M12（選配）近距離語音。
@@ -94,6 +94,7 @@
 | 2026-10-30 | M7 設施、M9 bots 與練習模式、GIT、遙控器、圖鑑、獨立洩漏審查與修正、網路條件與長時間測試、README／入口卡片 |
 | 2026-11-01 | 修 GitHub Pages 黑畫面（play/ 過舊）、改用明確的 Nostr relay 清單、客人端在主機短暫失聯後自動重新連上；分支改名 `deadspace-dev`，main 只留 play/ |
 | 2026-11-02 | 背景音樂、環境音、回饋音效、打擊與叫聲、技能音效；visual-review 待改項目全部修正（岩壁、偏暗站點補光、疫蟲、選取圈、石化凍結、小行星）；發佈到 main |
+| 2026-11-02 | 介面改善（使用者試玩回饋）：音效加大、邊緣捲動修正、介面自動縮放與字級、全域 tooltip、場景物件懸停說明、互動面板與頭頂提示、公告橫幅、詠唱進度條、遊戲內指引（目標面板、情境提示、G 說明）、預設繁中；修正右鍵撿不起地上物品、新增離開控制台（B） |
 
 ## 待決定（使用者）
 
@@ -109,8 +110,18 @@
   - 女帝號動力台被毀後站內改為「緊急」照明（研究只有四種模式，這是推斷）。
   - 黑洞裝置彩蛋的通關句：原作以雜湊比對無法還原，本作用「願群星記得我們」／“may the stars remember us”＋未識別物體裡的 4 位數啟用碼。
 
+## 介面（2026-11-02）
+
+- **介面大小**：`src/ui/uiScale.ts` 依視窗自動縮放（1280×760 = 1.0、1600×900 ≈ 1.18、1920×1080 ≈ 1.42），透過 CSS `zoom` 套在 `#app` 與 `.layer` 的直接子元素；設定頁「介面大小」再乘倍率。注意：被 zoom 的元素上 `vh` 也會被放大，要用 `calc(…vh / var(--ui-zoom))`。
+- **tooltip**：`src/ui/tooltip.tsx` 全域單一圖層；元素用 `tipProps()`，場景物件用 `showCursorTip()`（`src/ui/hud/WorldHover.tsx`）。
+- **邊緣捲動**：`src/client/input.ts` 追蹤整個視窗的滑鼠；滑出視窗時視為停在邊緣，視窗失焦才停。設定頁可關閉、調速度（`src/client/controlPrefs.ts`）。
+- **指引**：`src/ui/hud/Guide.tsx`（目標面板、一次性情境提示、G 說明面板）；提示紀錄 `xc.hints.seen`，設定頁可關閉或重設。
+- **公告**：`src/ui/hud/Announce.tsx`（全場事件放大、私人訊息在 HUD 上方、自己的詠唱進度條）。
+- **離開控制台**：新指令 `unpilot`（B 鍵或指令卡上方按鈕），站點、船艇、防禦無人機都適用；交回後在離開控制台／控制圈前不會被自動接回。
+
 ## 已知問題
 
+- 介面：說明面板英文版在 1600×900 需要捲動；小地圖圖例的顏色是從 `Hud.tsx` 的 Minimap 抄的，改色時要同步 `src/ui/strings/guide.ts`／`Guide.tsx`。
 - 音訊：沒有屍體的機械單位死亡是用「低血量時在近處消失」推斷的，偶爾會在低血量機械離開視野時誤播死亡聲；只影響音效，不影響資訊。
 - 音訊：雲端容器只能量測音量、沒辦法實際聽，聽感需要真人試玩確認。
 - 通訊病毒事件互換名字與顏色後，畫面上看不出誰是誰，但封包裡的玩家槽位沒有重新編號，改過 client 的人仍能對回原本的人。要完全做到需要每位觀看者各自的槽位映射，暫不處理。

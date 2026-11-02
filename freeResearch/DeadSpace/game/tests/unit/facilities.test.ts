@@ -623,6 +623,29 @@ describe('女帝號動力分配台', () => {
 })
 
 describe('防禦無人機控制圈', () => {
+  it('unpilot：交回角色操控；走出控制圈前不會重新連線', () => {
+    const { h, g, ps } = setup(3)
+    const nz = zone(g, 'nyx')
+    const ring = byDef(g, nz.id, 'struct.droneControl')
+    const drone = g.world.get(ring.data.drone as number)!
+    const r = ps[1]
+    const u = main(g, r)
+    g.world.relocate(u, nz.id, ring.x, ring.y)
+    h.ticks(3)
+    expect(r.control).toBe(drone.id)
+    g.handleCommand(r.slot, { k: 'unpilot' })
+    h.ticks(3)
+    expect(r.control).toBe(u.id)
+    expect(drone.owner).toBe(-1)
+    h.ticks(10)
+    expect(r.control).toBe(u.id)
+    standAt(g, u, nz.id, ring.x, ring.y - 3)
+    h.ticks(3)
+    standAt(g, u, nz.id, ring.x, ring.y)
+    h.ticks(3)
+    expect(r.control).toBe(drone.id)
+  })
+
   it('站上控制圈就操控一架無人機；不能上船、不能駕駛站；離開就斷線', () => {
     const { h, g, ps } = setup(3)
     const nz = zone(g, 'nyx')

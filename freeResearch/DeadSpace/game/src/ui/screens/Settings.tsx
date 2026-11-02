@@ -5,6 +5,7 @@ import { quality, setQuality, type Quality } from '../../render/quality'
 import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
 import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
 import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
+import { hintsEnabled, resetHints } from '../hud/Guide'
 
 /** 0–100 之類的滑桿＋數值 */
 function Slider({ id, min, max, value, onInput, onChange, unit = '' }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string }) {
@@ -26,6 +27,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [strategy, setStrategy] = useState<string>(ns.strategy)
   const [turn, setTurn] = useState(ns.turn.length ? JSON.stringify(ns.turn, null, 1) : '')
   const [err, setErr] = useState('')
+  const [hintMsg, setHintMsg] = useState('')
   const save = () => {
     let parsed: RTCIceServer[] = []
     if (turn.trim()) {
@@ -72,6 +74,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </div>
             </label>
             <Slider id="ui-scale" min={70} max={160} value={Math.round(uiScalePref.value * 100)} unit="%" onInput={(v) => setUiScale(v / 100)} />
+          </div>
+          <div class="setrow">
+            <label>{t('settings.hints')}</label>
+            <div class="row" style={{ gap: '10px' }}>
+              <button class="small ghost" data-testid="hints-reset" onClick={() => (resetHints(), setHintMsg(t('settings.hintsResetDone')))}>
+                {hintMsg || t('settings.hintsReset')}
+              </button>
+              <input type="checkbox" data-testid="hints-on" checked={hintsEnabled.value} onChange={(e) => (hintsEnabled.value = (e.target as HTMLInputElement).checked)} />
+            </div>
           </div>
           <h3 style={{ margin: '8px 0 2px' }}>{t('settings.controls')}</h3>
           <div class="setrow">
