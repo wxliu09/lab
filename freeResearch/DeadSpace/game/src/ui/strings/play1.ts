@@ -4,6 +4,8 @@ export const PLAY1_ZH: Record<string, string> = {
   // ───── AI 在全體頻道公布驗血結果（sim 以 `@key|k=v` 送出）─────
   'play1.bot.gitClean': '驗血結果：{names} 都是乾淨的。',
   'play1.bot.gitInfected': '驗血結果有感染！{names} 裡面藏著異類，大家小心。',
+  'play1.bot.gitError': '驗血結果是「錯誤」：{names} 裡面有人的樣本驗不出來。',
+  'play1.bot.gitOffline': '檢測儀離線，{names} 的樣本沒驗成。',
   'play1.bot.accuse': '我認為 {name} 就是異類，看到就開火！',
 
   // ───── 進化選單：為什麼現在不能進化 ─────
@@ -30,6 +32,8 @@ export const PLAY1_EN: Record<string, string> = {
   // ───── Bots announce blood-test results in all chat ─────
   'play1.bot.gitClean': 'Blood test: {names} came back clean.',
   'play1.bot.gitInfected': 'Blood test came back INFECTED! Something is hiding among {names}. Watch out.',
+  'play1.bot.gitError': 'Blood test returned ERROR: one of the samples from {names} could not be read.',
+  'play1.bot.gitOffline': 'The analyzer was offline; the samples from {names} went untested.',
   'play1.bot.accuse': 'I think {name} is one of them. Shoot on sight!',
 
   // ───── Evolve menu: why you cannot evolve right now ─────

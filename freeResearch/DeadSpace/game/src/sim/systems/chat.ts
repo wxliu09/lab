@@ -36,6 +36,14 @@ function isBooted(p: GamePlayer): boolean {
   return !p.alive && !!p.data.booted
 }
 
+/**
+ * 聽得到死者頻道的人：死了、沒出局，而且不會再回到活人那邊。
+ * 等記憶核心復活的仿生人視野刻意只剩核心附近；若讓他聽死者頻道（死者看得到全場），復活後就把全知情報帶回活人方。
+ */
+export function hearsDead(p: GamePlayer): boolean {
+  return !p.alive && !isBooted(p) && !canStillRevive(p)
+}
+
 export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string, groupName?: string): void {
   if (text.startsWith('-') && text.length > 1) {
     chatCommand(g, p, text.slice(1).trim())
@@ -56,7 +64,7 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
     return
   }
   const everyone = g.allPlayers()
-  const dead = everyone.filter((q) => !q.alive && !isBooted(q))
+  const dead = everyone.filter(hearsDead)
   const eavesdrop = everyone.filter((q) => q.flags.listen)
   const name = p.alive && p.mutedUntil > t ? '' : p.name
   const main = g.mainOf(p)
@@ -132,7 +140,7 @@ function groupChat(g: Game, p: GamePlayer, name: string, text: string): void {
   }
   const line: ChatLine = { from: p.mutedUntil > g.time ? '' : p.name, color: p.color, ch: 'group', text, time: g.time, group: gr.name }
   // 群組＋所有死者（研究 02 §10.3）；出局的人不收
-  const to = g.allPlayers().filter((q) => gr.members.has(q.slot) || (!q.alive && !isBooted(q)) || q.flags.listen)
+  const to = g.allPlayers().filter((q) => gr.members.has(q.slot) || hearsDead(q) || q.flags.listen)
   deliver(g, line, uniq(to))
   g.onGroupChat?.(p, text)
 }

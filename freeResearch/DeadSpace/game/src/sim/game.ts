@@ -22,7 +22,7 @@ import { handleCommand } from './systems/orders'
 import { stepMovement, stepDoors } from './systems/movement'
 import { computeVision } from './systems/vision'
 import { buildSnapshot, type ViewState, newViewState } from './systems/snapshot'
-import { bootIfOut, inLastWords, routeChat } from './systems/chat'
+import { bootIfOut, hearsDead, inLastWords, routeChat } from './systems/chat'
 import { Tuning } from './systems/tuning'
 import { stepCombat } from './systems/combat'
 import { stepBuffs } from './systems/buffs'
@@ -184,8 +184,14 @@ export class Game {
       this.stepErrors++
       this.tickErr = true
       if (__DEV__) console.error('[step]', name, e)
+      else if (!this.warnedSteps.has(name)) {
+        // 正式版每種步驟只記一次，不洗版
+        this.warnedSteps.add(name)
+        console.warn('[step]', name, e)
+      }
     }
   }
+  private readonly warnedSteps = new Set<string>()
 
   constructor(init: GameInit) {
     this.settings = init.settings
@@ -414,8 +420,9 @@ export class Game {
     const p = this.players[slot]
     const q = this.players[to]
     if (!p || !q || slot === to) return
-    // 死者與旁觀者看得到全場：只能分享給其他死者，不能把看到的東西傳給活人（出局的人兩邊都不行）
-    if (!p.alive && (q.alive || p.data.booted || q.data.booted)) return
+    // 死者與旁觀者看得到全場：只能分享給其他死者，不能把看到的東西傳給活人（出局的人兩邊都不行）；
+    // 等記憶核心復活的仿生人之後會回到活人那邊，也不能收
+    if (!p.alive && (p.data.booted || !hearsDead(q))) return
     for (const n of p.notes.values()) {
       if (n.mark === 'none' && !n.text) continue
       q.notes.set(n.slot + 100 * (slot + 1), { ...n, from: slot })

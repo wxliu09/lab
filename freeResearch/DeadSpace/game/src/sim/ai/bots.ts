@@ -269,7 +269,10 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   }
   const sampler = itemSlot(u, 'geneSampler')
   if (sampler >= 0) {
-    const cand = near.filter((e) => e.isMain && e.owner >= 0 && looksHuman(e) && !b.drawn.has(e.owner) && (b.skip.get(e.id) ?? 0) < g.time)
+    // 只用看得到的外觀判斷（全像分身看起來就是本人；同名的人只抽一次），不用 isMain／真正的擁有者這類隱藏資訊
+    const cand = near.filter(
+      (e) => (e.isMain || !!e.data.looksMain) && e.owner >= 0 && looksHuman(e) && !b.drawnNames.has(seenName(g, e)) && (b.skip.get(e.id) ?? 0) < g.time,
+    )
     const who = nearest(u, narrowSuspects(g, b, cand))
     const self = !b.drawn.has(p.slot) ? u : null
     const t = who ?? self
@@ -359,7 +362,11 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
         p.data.botRetestDone = true
         p.data.botRetestAt = g.time + 20
       }
-    } else continue
+    } else {
+      // 錯誤、離線也照樣說出來：只有部分結果會公布的話，「沒說話」本身就是線索
+      say(g, p, r.result === 'error' ? 'play1.bot.gitError' : 'play1.bot.gitOffline', { names: list })
+      continue
+    }
     const top = topSuspect(b)
     if (top && top !== b.accused) {
       b.accused = top

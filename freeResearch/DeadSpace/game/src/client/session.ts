@@ -37,6 +37,8 @@ function receiveChat(lines: ChatLine[]): void {
 }
 export const endResult = signal<EndResult | null>(null)
 export const notice = signal('')
+/** 最近一則主機 notice 的 key（畫面判斷用 key，不用翻譯後的字串：切換語言後仍認得出來）*/
+export const noticeKey = signal('')
 export const hostConflict = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
@@ -198,6 +200,7 @@ function onHostMsg(m: HostMsg): void {
       endResult.value = m.result
       break
     case 'notice':
+      noticeKey.value = m.key
       notice.value = t(m.key, m.args)
       break
     default:
@@ -226,11 +229,26 @@ function attach(client: NetClient): void {
 
 export async function createRoom(profile: Profile): Promise<void> {
   saveProfile(profile)
+  const seq = ++joinSeq
   roomCode = genRoomCode()
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = true
-  const transport = await makeTransport(roomCode)
+  let transport: Awaited<ReturnType<typeof makeTransport>>
+  try {
+    transport = await makeTransport(roomCode)
+  } catch {
+    if (seq === joinSeq) {
+      leave(false)
+      notice.value = t('menu.noHost')
+    }
+    return
+  }
+  if (seq !== joinSeq || screen.value !== 'connecting') {
+    // 等 signaling 的期間按了取消（或改去加入別的房間）：不要在背景建起看不見的房間
+    transport.close()
+    return
+  }
   const seed = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1
   relay = new HostRelay(roomCode, transport, seed)
   const client = new NetClient(relay.local, { ...profile, token: sessionToken(roomCode) })
@@ -247,6 +265,8 @@ export async function startPractice(profile: Profile, bots = 5, role: PracticeRo
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = true
+  // 還在建立中的加入／建房連線作廢
+  joinSeq++
   practiceBots = Math.max(1, Math.min(11, bots))
   practiceRole = role
   const transport = new LoopbackHub().connect('host')
@@ -269,20 +289,33 @@ export async function joinRoom(code: string, profile: Profile): Promise<void> {
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = false
-  const transport = await makeTransport(roomCode)
+  // 逾時從按下加入就開始算（signaling 本身卡住也會逾時）
+  let client: NetClient | null = null
+  setTimeout(() => {
+    if (seq !== joinSeq || screen.value !== 'connecting' || net !== client) return
+    const msg = client?.hostPeer ? t('menu.joinTimeout', { s: JOIN_TIMEOUT_S }) : t('menu.noHost')
+    joinSeq++
+    leave(false)
+    notice.value = msg
+  }, JOIN_TIMEOUT_S * 1000)
+  let transport: Awaited<ReturnType<typeof makeTransport>>
+  try {
+    transport = await makeTransport(roomCode)
+  } catch {
+    if (seq === joinSeq) {
+      joinSeq++
+      leave(false)
+      notice.value = t('menu.noHost')
+    }
+    return
+  }
   if (seq !== joinSeq || screen.value !== 'connecting') {
     // 等 signaling 的期間按了取消（或改去建立房間）
     transport.close()
     return
   }
-  const client = new NetClient(transport, { ...profile, token: sessionToken(roomCode) })
+  client = new NetClient(transport, { ...profile, token: sessionToken(roomCode) })
   attach(client)
-  setTimeout(() => {
-    if (seq !== joinSeq || screen.value !== 'connecting' || net !== client) return
-    const msg = client.hostPeer ? t('menu.joinTimeout', { s: JOIN_TIMEOUT_S }) : t('menu.noHost')
-    leave(false)
-    notice.value = msg
-  }, JOIN_TIMEOUT_S * 1000)
 }
 
 /** 取消加入房間：關掉連線、回到主選單 */

@@ -20,6 +20,7 @@ import { dropOnGround, giveItem, makeItem } from './items'
 import { EXTRA_COMMANDS, canSee, issue } from './orders'
 import { setPilot, spaceOf } from './space'
 import { sendTo, stationsOf, transportable, unitsOnPads } from './stations'
+import { coreLost } from './vision'
 
 // ───────── 數值 ─────────
 
@@ -321,8 +322,11 @@ regScript('android.memoryCore', (g, ctx) => {
         if (z.alive) {
           const core = dropOnGround(g, z.id, t.x, t.y - 1, { ...it, data: { android: p.slot } })
           p.data.core = core.id
+          g.privateLine(p.slot, 'fab.failed')
+        } else {
+          // 整座站都沒了：核心跟著消失
+          coreLost(g, p)
         }
-        g.privateLine(p.slot, 'fab.failed')
         return
       }
       // 選過底盤（2000 EP 升級）就用上次的底盤，否則是一般人員外觀（研究 02 §5.3）

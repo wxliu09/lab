@@ -252,7 +252,13 @@ export function stepSpace(g: Game): void {
             const followers = u.isMain ? followersOf(g, u) : []
             enterShip(g, u, inst)
             // 跟著主人的召喚物（變種人眷屬、異形幼體…）一起上船：它們沒辦法另外下指令
-            for (const f of followers) if (canTravel(g, f) && (f.data.boardCd ?? 0) <= t) enterShip(g, f, inst)
+            for (const f of followers) {
+              if (!canTravel(g, f) || (f.data.boardCd ?? 0) > t) continue
+              const ord = f.order
+              enterShip(g, f, inst)
+              // enterShip 會清掉指令：恢復跟隨，下船時才認得出是誰的召喚物
+              f.order = ord
+            }
           }
         }
       }
@@ -383,23 +389,35 @@ function enterShip(g: Game, u: Ent, inst: ShipInst): void {
 
 function exitShip(g: Game, u: Ent, inst: ShipInst): void {
   const sp = spaceOf(g)
+  let to: { zone: number; x: number; y: number }
   if (inst.docked) {
     const de = g.world.get(inst.dockedEnt)
     if (!de) return
     const sz = g.world.zones[de.zone]
     const n = sz.nav!.nearestOpen(de.x, de.y - de.radius - 0.9) ?? { x: de.x, y: de.y }
-    g.world.relocate(u, de.zone, n.x, n.y)
+    to = { zone: de.zone, x: n.x, y: n.y }
   } else if (inst.link) {
     const other = sp.ships.get(inst.link)
     if (!other) return
     const oz = g.world.zones[other.zone]
     const ex = oz.layout!.exits[0]
     const n = oz.nav!.nearestOpen(ex.x + 1.6, ex.y) ?? ex
-    g.world.relocate(u, other.zone, n.x, n.y)
+    to = { zone: other.zone, x: n.x, y: n.y }
   } else return
+  // 跟著主人上船的召喚物也跟著下船（否則留在船艙、被船一起載走）
+  const followers = u.isMain ? followersOf(g, u) : []
+  g.world.relocate(u, to.zone, to.x, to.y)
   u.data.boardCd = g.time + BOARD_CD
   u.data.offPad = false
   issue(u, null)
+  const nav = g.world.zones[to.zone].nav
+  for (const f of followers) {
+    if (!canTravel(g, f)) continue
+    const n = nav?.nearestOpen(to.x + g.world.rng.range(-0.8, 0.8), to.y + g.world.rng.range(-0.8, 0.8)) ?? to
+    g.world.relocate(f, to.zone, n.x, n.y)
+    f.data.boardCd = g.time + BOARD_CD
+    f.data.offPad = false
+  }
 }
 
 // ───────── 毀滅 ─────────

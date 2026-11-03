@@ -57,6 +57,7 @@ export const FAC_ZH: Record<string, string> = {
   'fab.rebuilding': '鑄造台開始重建機體（{s} 秒）。你拿到了一個與它綁定的遙控器。',
   'fab.youRebuild': '有人把你的記憶核心插進了鑄造台：{s} 秒後你會在鑄造平台上重新開機。',
   'fab.failed': '重建中斷：鑄造台失去了電力。',
+  'fab.coreLost': '你的記憶核心被摧毀了：無法再復活。你現在是一般的死者。',
   'fab.pacifierTaken': '記憶核心接管了綏靖機器人。你拿到了一個與它綁定的遙控器。',
   'fab.youPacifier': '你的意識被下載進一台綏靖機器人，開機中……',
   // ───── 模組 ─────
@@ -158,6 +159,7 @@ export const FAC_EN: Record<string, string> = {
   'fab.rebuilding': 'The fabricator starts rebuilding a chassis ({s}s). You received a remote bound to it.',
   'fab.youRebuild': 'Someone slotted your memory core into the fabricator: you reboot on the fabrication pad in {s}s.',
   'fab.failed': 'Rebuild interrupted: the fabricator lost power.',
+  'fab.coreLost': 'Your memory core was destroyed: you can no longer be revived. You are now an ordinary ghost.',
   'fab.pacifierTaken': 'The memory core took over the pacification bot. You received a remote bound to it.',
   'fab.youPacifier': 'Your mind is downloading into a pacification bot. Booting…',
   'mod.needDockedKestrel': 'The Kestrel upgrade fits a docked Kestrel.',

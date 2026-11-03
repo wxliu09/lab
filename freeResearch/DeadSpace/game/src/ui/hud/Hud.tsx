@@ -9,7 +9,7 @@ import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, leave, notice } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, leave, notice, noticeKey } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
@@ -85,10 +85,10 @@ export function Banner() {
   void snapTick.value
   const me = world.me
   // 主機模擬不可恢復的錯誤：主機以 notice 通知所有人（含自己）。這兩種提示放在對話框（z-index 50）之上，按鈕隨時按得到
-  if (notice.value && notice.value === t(SIM_ERROR_KEY))
+  if (notice.value && noticeKey.value === SIM_ERROR_KEY)
     return (
       <div class="panel banner" data-testid="sim-error" style={{ zIndex: 60 }}>
-        {notice.value}{' '}
+        {t(SIM_ERROR_KEY)}{' '}
         <button class="small" onClick={() => leave(false)}>
           {t('net.simErrorBack')}
         </button>

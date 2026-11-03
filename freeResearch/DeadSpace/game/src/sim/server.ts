@@ -175,8 +175,10 @@ export class GameServer {
       }
       case 'chat': {
         if (!ps.chat.take(this.now)) return
-        const text = sanitizeText(msg.text).trim()
-        if (!text) return
+        const raw = sanitizeText(msg.text).trim()
+        if (!raw) return
+        // 「@」開頭是系統訊息 key 的格式（client 會翻譯）：玩家打的字前面加零寬空白，照原樣顯示、不被當成系統訊息
+        const text = raw.startsWith('@') ? '\u200b' + raw : raw
         if (this.phase === 'lobby') {
           this.broadcastLobby({
             t: 'chat',

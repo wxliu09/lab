@@ -20,6 +20,7 @@ describe('sim 錯誤韌性', () => {
   it('系統持續丟例外：整局照常推進、計數，停止後連續錯誤歸零', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { h, cs } = Harness.started(1, 77, { bots: 3 })
+    h.allowStepErrors = true
     const g = h.server.game!
     let broken = true
     g.systems.push({
@@ -43,6 +44,7 @@ describe('sim 錯誤韌性', () => {
   it('核心步驟（移動、戰鬥…）內部的例外被攔下，不會從 server.tick 丟出去', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { h, cs } = Harness.started(1, 99, { bots: 5 })
+    h.allowStepErrors = true
     const g = h.server.game!
     h.ticks(20)
     // 仿照 R4 的注入方式：讓所有用到 Math.hypot 的步驟丟例外 10 個 tick

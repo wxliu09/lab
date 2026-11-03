@@ -65,10 +65,15 @@ export class Harness {
     return c
   }
 
+  /** 韌性測試才打開：允許 sim 步驟丟例外（game.ts 的 guard 會吞掉，否則回歸會靜靜通過）*/
+  allowStepErrors = false
+
   ticks(n: number): void {
     for (let i = 0; i < n; i++) {
       this.server.tick()
       if (this.leakWatch) this.drainLeaks()
+      const g = this.server.game
+      if (!this.allowStepErrors && g && g.stepErrors > 0) throw new Error(`sim 步驟丟出例外 ${g.stepErrors} 次（見 console）`)
     }
   }
 

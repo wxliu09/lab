@@ -4,6 +4,7 @@
 import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
 import { SPACE_ZONE } from '../world'
+import { bootIfOut } from './chat'
 
 export interface VisionSource {
   zone: number
@@ -78,16 +79,21 @@ export function computeVision(g: Game): Map<number, VisionResult> {
     // 死去的仿生人只能透過記憶核心觀看
     if (!p.alive && p.data.coreOnly && !p.stayDead) {
       const core = findCore(g, p)
-      if (core) {
-        r.sources = [{ zone: core.zone, x: core.x, y: core.y, r: 6.5 }]
-        near.length = 0
-        g.world.query(core.zone, core.x, core.y, 6.5, near)
-        const z = g.world.zones[core.zone]
-        for (const e of near) if (!z.nav || z.nav.los(core.x, core.y, e.x, e.y, true)) r.ents.add(e)
-        r.ents.add(core)
+      // 核心不見了（站被毀、被摧毀）而且不是正在鑄造台重建（重建中 core = 0）：改走一般的死亡流程
+      if (!core && p.data.core !== 0) {
+        coreLost(g, p)
+      } else {
+        if (core) {
+          r.sources = [{ zone: core.zone, x: core.x, y: core.y, r: 6.5 }]
+          near.length = 0
+          g.world.query(core.zone, core.x, core.y, 6.5, near)
+          const z = g.world.zones[core.zone]
+          for (const e of near) if (!z.nav || z.nav.los(core.x, core.y, e.x, e.y, true)) r.ents.add(e)
+          r.ents.add(core)
+        }
+        p.view.visible = new Set([...r.ents].map((e) => e.id))
+        continue
       }
-      p.view.visible = new Set([...r.ents].map((e) => e.id))
-      continue
     }
     // 死亡即退出：出局的死者不再觀戰，什麼都看不到（連太空層也不給）
     if (!p.alive && p.data.booted && !p.flags.wide) {
@@ -152,15 +158,33 @@ export function computeVision(g: Game): Map<number, VisionResult> {
   return res
 }
 
-/** 記憶核心可能在地上，也可能在某人的背包裡 */
+/** 這件道具是不是這位仿生人的記憶核心 */
+function isCoreOf(it: { id: string; data?: unknown } | null | undefined, slot: number): boolean {
+  return !!it && it.id === 'memoryCore' && (it.data as { android?: number } | undefined)?.android === slot
+}
+
+/** 記憶核心可能在地上，也可能在某人的背包裡（被撿起、帶著的人死掉再掉出來時是新的地面物件，順便更新 id）*/
 function findCore(g: Game, p: GamePlayer): Ent | undefined {
   const id = p.data.core as number | undefined
   const onGround = id ? g.world.get(id) : undefined
-  if (onGround) return onGround
+  if (onGround && isCoreOf(onGround.data.item as { id: string } | undefined, p.slot)) return onGround
   for (const e of g.world.ents.values()) {
-    if (e.inv?.some((it) => it?.id === 'memoryCore' && (it.data as { android?: number } | undefined)?.android === p.slot)) return e
+    if (e.inv?.some((it) => isCoreOf(it, p.slot))) return e
+    if (e.alive && isCoreOf(e.data.item as { id: string } | undefined, p.slot)) {
+      if (id) p.data.core = e.id
+      return e
+    }
   }
   return undefined
+}
+
+/** 記憶核心沒了：不能再復活，改成一般死者（可觀戰；死亡即退出模式下出局），並告訴本人 */
+export function coreLost(g: Game, p: GamePlayer): void {
+  if (!p.data.coreOnly) return
+  p.data.coreOnly = false
+  p.data.core = undefined
+  g.privateLine(p.slot, 'fab.coreLost')
+  bootIfOut(g, p)
 }
 
 export function canSeeStealth(g: Game, viewer: GamePlayer, e: Ent): boolean {
