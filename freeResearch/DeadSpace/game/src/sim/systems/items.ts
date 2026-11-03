@@ -234,6 +234,9 @@ export function stepItemOrders(g: Game): void {
         t.data.lastGiver = u.id
         giveItem(g, t, it)
         g.onItemLost?.(u, it)
+      } else if (u.owner >= 0) {
+        // 對方背包滿了：告訴給的人為什麼沒給出去（只有給的人收到，不透露其他資訊）
+        g.privateLine(u.owner, 'item.giveFull')
       }
     }
     u.order = u.queue.shift() ?? null

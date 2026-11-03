@@ -1,4 +1,4 @@
-// 火口號 Caldera：採礦工程艦（GDD §6.2）。精煉爐房、礦石輸送帶、工程師艙；不可停靠，從出口登艦。
+// 火口號 Caldera：採礦工程艦（GDD §6.2）。精煉爐房、礦石輸送帶、工程師艙；不可停靠，只能強行登艦（連結期間登艦氣閘的出入口通往對方船艙）。
 // 版面由 tools/stations_gen.py 產生（改版面請改產生器再重跑，不要手改 rows）。
 import type { StationDef } from './types'
 
@@ -17,7 +17,8 @@ export const CALDERA: StationDef = {
     pos: [27.7, 3.1],
     speed: 0.7,
     attack: { dmg: [185, 185], cd: 0.5, range: 9, kind: 'hitscan', fx: 'lightning' },
-    abilities: ['st.sweep', 'st.repair', 'st.cordon'],
+    // 原作 Calipea：外部維修、強行登艦、封鎖信標（沒有站內監控掃描）
+    abilities: ['st.repair', 'ship.board', 'st.cordon'],
     pilotable: true,
     model: 'station.caldera',
   },

@@ -44,7 +44,7 @@ export function announceLife(text: string, kind: Item['kind']): number {
   return Math.min(14000, Math.max(kind === 'apoc' ? 8000 : 0, ms))
 }
 
-const ERR = /^@(cast\.|vendor\.(soldOut|tooFar|offline|noPower)|item\.(full|uniqueOnly|cantSuit|notYet|deployFail)|role\.cant|chat\.(no|nameTaken)|git\.msg\.already|fac\.(tooFar|offline))/
+const ERR = /^@(cast\.|vendor\.(soldOut|tooFar|offline|noPower)|item\.(full|giveFull|uniqueOnly|cantSuit|notYet|deployFail)|role\.cant|chat\.(no|nameTaken)|git\.msg\.already|fac\.(tooFar|offline))/
 
 let seq = 0
 

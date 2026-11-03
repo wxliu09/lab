@@ -27,15 +27,15 @@ const F = (id: string, zh: string, en: string, hp: number, model: string, extra:
 const PAD_TAGS: UnitDef['tags'] = ['structure', 'invuln', 'noTarget']
 
 regUnits([
-  // 裁決者號：仿生人鑄造台（研究 02 §5.3、§5.5）。HP 為自訂值
-  F('fac.fabricator', '金屬鑄造台', 'Metallic Fabricator', 6000, 'fabricator', { radius: 0.9, tags: ['structure', 'mechanical'] }),
+  // 裁決者號：仿生人鑄造台（研究 02 §5.3、§5.5）。原作 h03Z 無敵
+  F('fac.fabricator', '金屬鑄造台', 'Metallic Fabricator', 6000, 'fabricator', { radius: 0.9, tags: ['structure', 'mechanical', 'invuln'] }),
   // 模組安裝座：空著時無敵；裝上模組後變成 600 HP 的介面（研究 03 §3.2 ASAD Interface）
   F('fac.moduleSocket', '模組安裝座', 'Module Socket', 600, 'moduleSocket', { radius: 0.55 }),
-  // 餘燼衛星模組工廠控制台（HP 自訂）
-  F('fac.moduleFactory', '模組工廠', 'Module Works', 8000, 'moduleFactory', { radius: 0.9, tags: ['structure', 'mechanical', 'console'] }),
-  // 活體庫號：隔間門控制台、籠子控制台（HP 自訂）
-  F('fac.cellConsole', '隔間門控制台', 'Pen Control Console', 3000, 'cellConsole', { tags: ['structure', 'mechanical', 'console'] }),
-  F('fac.cageConsole', '籠子控制台', 'Cage Control Console', 3000, 'cageConsole', { tags: ['structure', 'mechanical', 'console'] }),
+  // 餘燼衛星模組工廠控制台（原作 h04B 3000 HP）
+  F('fac.moduleFactory', '模組工廠', 'Module Works', 3000, 'moduleFactory', { radius: 0.9, tags: ['structure', 'mechanical', 'console'] }),
+  // 活體庫號：隔間門控制台、籠子控制台（原作 h04I／h04R 無敵）
+  F('fac.cellConsole', '隔間門控制台', 'Pen Control Console', 3000, 'cellConsole', { tags: ['structure', 'mechanical', 'console', 'invuln'] }),
+  F('fac.cageConsole', '籠子控制台', 'Cage Control Console', 3000, 'cageConsole', { tags: ['structure', 'mechanical', 'console', 'invuln'] }),
   // 未識別物體：啟用碼面板
   F('fac.codePanel', '符文面板', 'Glyph Panel', 1, 'codePanel', { tags: ['structure', 'invuln'] }),
   // 翠原星：企鵝雕像（原作 B005 可破壞物；HP 自訂）

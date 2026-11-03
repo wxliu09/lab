@@ -195,7 +195,9 @@ describe('各事件效果', () => {
     expect(count(g, 'pirate.captain', z.id)).toBe(1)
     expect(count(g, 'pirate.crew', z.id)).toBeGreaterThanOrEqual(3)
     expect(count(g, 'pirate.sentry', z.id)).toBeGreaterThanOrEqual(3)
-    const console0 = g.world.inZone(z.id).find((e) => e.def.id === 'struct.console')!
+    // 海盜船主控台是專用定義（struct.consolePirate：屬敵方、不可駕駛）
+    const console0 = g.world.inZone(z.id).find((e) => e.data.poi === 'console')!
+    expect(console0.def.id).toBe('struct.consolePirate')
     g.killEnt(console0, null, -1)
     sec(h, 39)
     expect(z.alive).toBe(true)

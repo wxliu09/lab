@@ -9,6 +9,8 @@ export const PIRATE: StationDef = {
   enable: 'event',
   scanTime: 0.22,
   dockable: true,
+  // 主控台：屬敵方、2000 HP、不可駕駛；打爆後 40 秒自爆（原作 h02A，Player 12）
+  console: { def: 'struct.consolePirate', hostile: true },
   space: {
     hp: 300000,
     hpRegen: 0,
@@ -17,8 +19,9 @@ export const PIRATE: StationDef = {
     pos: [5.3, -3.5],
     speed: 1.4,
     attack: { dmg: [360, 360], cd: 2.5, range: 13, kind: 'projectile', projSpeed: 26, fx: 'stationGun' },
-    abilities: ['st.sweep'],
-    pilotable: true,
+    // 原作只有純視覺的護盾附件，沒有可施放的技能；主控台不可駕駛
+    abilities: [],
+    pilotable: false,
     model: 'station.pirate',
   },
   docked: [],

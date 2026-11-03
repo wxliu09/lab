@@ -1,4 +1,4 @@
-// 擺渡號 Portage：人員轉運站（GDD §6.2）。八角傳送大廳（9 格傳送台）、隔窗調度室、候車室；不可停靠，從出口登艦。
+// 擺渡號 Portage：人員轉運站（GDD §6.2）。八角傳送大廳（9 格傳送台）、隔窗調度室、候車室；不可停靠，只能強行登艦（連結期間登艦氣閘的出入口通往對方船艙）。
 // 版面由 tools/stations_gen.py 產生（改版面請改產生器再重跑，不要手改 rows）。
 import type { StationDef } from './types'
 
@@ -10,6 +10,8 @@ export const PORTAGE: StationDef = {
   scanTime: 0.31,
   podLanding: 'l',
   dockable: false,
+  // 主控台無敵（原作 h04U 帶 Avul）
+  console: { invuln: true },
   space: {
     hp: 180000,
     hpRegen: 0,
@@ -17,7 +19,8 @@ export const PORTAGE: StationDef = {
     pos: [-0.2, -36.1],
     speed: 0,
     attack: { dmg: [51, 51], cd: 0.2, range: 16, kind: 'projectile', projSpeed: 30, fx: 'stationGun' },
-    abilities: ['st.sweep', 'st.portTarget', 'st.portActivate'],
+    // 原作 Pown：強制停靠、強行登艦（沒有站內監控掃描）；強制停靠原作一律拖回女帝號（推斷是 bug），不做
+    abilities: ['st.portTarget', 'st.portActivate', 'ship.board'],
     pilotable: true,
     model: 'station.portage',
   },

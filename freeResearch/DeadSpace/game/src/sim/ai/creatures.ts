@@ -50,6 +50,19 @@ function humanLooking(u: Ent): boolean {
   return u.tags.has('personnel') || u.tags.has('suit')
 }
 
+/**
+ * 綏靖機器人在實驗室動力期間的目標（研究 03 §4.4 A06F：600 內穿著防護服或機械類的玩家單位）。
+ * 一律照目標「看起來的樣子」判斷，偽裝才不會被它的反應揭穿：
+ * - 防護服看 suit tag（化身成著裝人員的異形也有，和真的著裝人員一樣挨打）
+ * - 機械類看 mechanical tag＋看起來的擁有者：偽裝成無主機械（綏靖機器人、防禦無人機）的單位不打，和真的無主機械一樣
+ */
+export function pacifierTarget(b: Ent): boolean {
+  if (b.tags.has('invuln') || b.stats.invuln) return false
+  if (b.tags.has('suit') || b.suit) return true
+  const fake = b.data.fake as { owner: number } | undefined
+  return b.tags.has('mechanical') && (fake ? fake.owner : b.owner) >= 0
+}
+
 /** 玩家操控的怪物形態（船員一看到正在傷人就開火）*/
 function monstrous(u: Ent): boolean {
   return u.owner >= 0 && !humanLooking(u) && !u.tags.has('structure') && !u.tags.has('ship') && !u.tags.has('station') && !u.tags.has('drone')
@@ -461,12 +474,12 @@ export function installCreatureAi(g: Game): void {
   for (const z of g.world.zones) if (z.alive && z.layout && z.station?.enable !== 'event') populateZone(g, z)
   spawnCrew(g)
 
-  // 自訂敵意：綏靖機器人（實驗室動力期間攻擊穿防護服的人）、蛞蝓特工、船員的仇人
+  // 自訂敵意：綏靖機器人（實驗室動力期間攻擊穿防護服的人與機械類的玩家單位）、蛞蝓特工、船員的仇人
   const prev = g.customHostile
   g.customHostile = (a, b) => {
     const ai = a.def.ai
     if (a.owner === NEUTRAL && ai) {
-      if (ai === 'pacifier') return !!g.world.zones[a.zone].data.labPower && !!b.suit
+      if (ai === 'pacifier') return !!g.world.zones[a.zone].data.labPower && pacifierTarget(b)
       if (ai === 'operative') return hasItem(b, 'singularity')
       if (ai === 'crew' || ai === 'drone') {
         const until = stateOf(g).aggro.get(b.id)

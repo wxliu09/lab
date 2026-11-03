@@ -1,6 +1,7 @@
 // AI bots（M9）：填人數、練習模式、headless 對局測試。
 // 只透過 handleCommand 下指令（和真人走同一條驗證路徑），只用自己的視野（p.view.visible）挑目標。
-// 人類：買防護服（各有各的習慣：有人一直穿、有人在宿舍休息時脫下、有人拖到後期才穿）、驗血並在全體頻道公布結果、
+// 人類：買防護服（各有各的習慣：有人一直穿、有人在宿舍休息時脫下、有人拖到後期才穿）、驗血並在全體頻道公布結果
+// （拿到檢測器就主動找人抽血；有感染但認不出是誰就再驗一次縮小範圍；只剩一個可疑的人就公開指認）、
 // 遇到怪物開火、受傷逃跑；異類：落單時感染、湊夠 EP 就躲起來進化、變身後獵殺。
 // AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。
 import type { Command } from '../../shared/protocol/messages'
@@ -17,8 +18,6 @@ import { consolePos, spaceOf } from '../systems/space'
 interface Brain {
   next: number
   goal: Goal | null
-  /** 這台檢測器已抽過的目標 */
-  drawn: Set<number>
   /** 不能再試的目標（指令失敗）*/
   skip: Map<number, number>
   evolveAt: number
@@ -26,8 +25,23 @@ interface Brain {
   suspects: Map<string, number>
   /** 出現在乾淨報告裡的名字 */
   cleared: Set<string>
-  /** 這台檢測器已抽過的人（抽血時看到的名字）*/
-  drawnNames: Set<string>
+  /** 每份有感染報告的名單（扣掉自己與匿名形態標記）：指認用 */
+  infected: string[][]
+  /** 出現在自己任何一份報告裡的名字（沒有嫌疑人時，下一支檢測器先抽還沒驗過的人）*/
+  tested: Set<string>
+  /** 自己用過的名字（晉升會改名；樣本上記的是抽血當時的名字）*/
+  selfNames: Set<string>
+  /** 看到過的人（抽血時會看到的名字）最後出現的位置：拿著檢測器時去那裡找人 */
+  seen: Map<string, { zone: number; x: number; y: number; t: number }>
+  /** 拿到過幾支檢測器（開局帶著的也算）*/
+  samplers: number
+  /** 上一輪手上有沒有檢測器（用來數「拿到」幾支）*/
+  hadSampler: boolean
+  /** 樣本上次有進展（拿到檢測器、多抽到一份）的時間與份數：找不到理想的人太久就放寬 */
+  drawAt: number
+  drawCount: number
+  /** 下次可以去買檢測器的時間（買不到就晚點再試）；有感染報告後的複驗也從這裡排 */
+  buyAt: number
   /** 已經處理過幾份自己的驗血報告 */
   reported: number
   /** 已經取過報告的解析器（每台只取一次：庫存補到 3 份、每 30 秒補貨，一直取會一直公告同一份結果）*/
@@ -36,10 +50,16 @@ interface Brain {
   seenReports: Set<string>
   /** 已經公開指認的對象（名字）*/
   accused: string
+  /** 公開指認過的所有名字（同一個人只指認一次）*/
+  accusedAll: Set<string>
   /** 最近一次察覺威脅（看到玩家的怪物形態、被攻擊）的時間 */
   alarmAt: number
   /** 上次穿脫防護服的時間（避免來回切換）*/
   suitAt: number
+  /** 卡住偵測：有移動命令時最後一次有前進的位置與時間 */
+  px: number
+  py: number
+  pt: number
 }
 
 /**
@@ -48,13 +68,14 @@ interface Brain {
  */
 type SuitPlan = 'always' | 'casual' | 'late'
 
+// sent = 這個目標的移動命令已經下過（之前留下來的舊移動命令不算：要改走向這個目標）
 type Goal =
-  | { k: 'buy'; vendor: number; item: string; until: number }
-  | { k: 'goto'; x: number; y: number; until: number }
+  | { k: 'buy'; vendor: number; item: string; until: number; sent?: boolean }
+  | { k: 'goto'; x: number; y: number; until: number; sent?: boolean }
   | { k: 'hunt'; e: number; until: number }
-  | { k: 'flee'; x: number; y: number; until: number }
+  | { k: 'flee'; x: number; y: number; until: number; sent?: boolean }
   | { k: 'cast'; a: string; e: number; until: number; slot?: number }
-  | { k: 'results'; vendor: number; until: number }
+  | { k: 'results'; vendor: number; until: number; sent?: boolean }
 
 const SUIT_VENDORS = new Set(['suitA', 'suitB', 'suitC', 'suitD'])
 
@@ -62,18 +83,29 @@ function brainOf(g: Game, p: GamePlayer): Brain {
   return (p.data.brain ??= {
     next: g.time + g.world.rng.range(1, 3),
     goal: null,
-    drawn: new Set(),
     skip: new Map(),
     evolveAt: 0,
     suspects: new Map(),
     cleared: new Set(),
-    drawnNames: new Set(),
+    infected: [],
+    tested: new Set(),
+    selfNames: new Set(),
+    seen: new Map(),
+    samplers: 0,
+    hadSampler: false,
+    drawAt: 0,
+    drawCount: 0,
+    buyAt: 0,
     reported: 0,
     boughtFrom: new Set(),
     seenReports: new Set(),
     accused: '',
+    accusedAll: new Set(),
     alarmAt: -1e9,
     suitAt: -1e9,
+    px: 0,
+    py: 0,
+    pt: 0,
   }) as Brain
 }
 
@@ -192,7 +224,10 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
       if (!v || !v.alive || v.zone !== u.zone) return (b.goal = null), false
       const r = VENDOR_RANGE + v.radius - 0.3
       if (dist2(u, v) > r * r) {
-        if (u.order?.k !== 'move') cmd(g, p, { k: 'move', x: v.x, y: v.y })
+        if (!goal.sent || u.order?.k !== 'move') {
+          cmd(g, p, { k: 'move', x: v.x, y: v.y })
+          goal.sent = true
+        }
         return true
       }
       cmd(g, p, { k: 'buy', e: v.id, a: goal.k === 'buy' ? goal.item : 'testResults' })
@@ -203,7 +238,10 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
     case 'goto':
     case 'flee': {
       if (Math.hypot(u.x - goal.x, u.y - goal.y) < 1.2) return (b.goal = null), false
-      if (!u.order || u.order.k !== 'move') cmd(g, p, { k: 'move', x: goal.x, y: goal.y })
+      if (!goal.sent || !u.order || u.order.k !== 'move') {
+        cmd(g, p, { k: 'move', x: goal.x, y: goal.y })
+        goal.sent = true
+      }
       return true
     }
     case 'hunt': {
@@ -235,6 +273,12 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
 
 function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   const near = visibleEnts(g, p, u, 10)
+  // 記下看到的人在哪裡（自己的視野）：拿著檢測器時去找
+  for (const e of visibleEnts(g, p, u, 18)) {
+    if (!looksPerson(e)) continue
+    const n = seenName(g, e)
+    if (n) b.seen.set(n, { zone: e.zone, x: e.x, y: e.y, t: g.time })
+  }
   // 察覺威脅：看到玩家的怪物形態，或剛被攻擊
   if (near.some((e) => e.owner >= 0 && (isFoe(g, p, e) || e.tags.has('mutantForm'))) || g.time - u.lastDamageTime < 3) b.alarmAt = g.time
   // 受傷過重：逃
@@ -265,44 +309,8 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     }
   }
   // 驗血
-  const res = itemSlot(u, 'gitResolver')
-  if (res >= 0) {
-    cmd(g, p, { k: 'use', s: res, x: u.x + 0.8, y: u.y })
-    return
-  }
-  const mine = g.world
-    .inZone(u.zone)
-    .find((e) => e.alive && e.data.vendor === 'gitResolver' && e.owner === p.slot && !b.boughtFrom.has(e.id) && p.view.visible.has(e.id))
-  if (mine && ((mine.data.stock as StockState[] | undefined)?.some((s) => s.count > 0 && g.time >= s.availAt) ?? false)) {
-    b.goal = { k: 'results', vendor: mine.id, until: g.time + 20 }
-    return
-  }
-  const sampler = itemSlot(u, 'geneSampler')
-  if (sampler >= 0) {
-    // 只用看得到的外觀判斷（全像分身看起來就是本人；同名的人只抽一次），不用 isMain／真正的擁有者這類隱藏資訊
-    const cand = near.filter(
-      (e) => (e.isMain || !!e.data.looksMain) && e.owner >= 0 && looksHuman(e) && !b.drawnNames.has(seenName(g, e)) && (b.skip.get(e.id) ?? 0) < g.time,
-    )
-    const who = nearest(u, narrowSuspects(g, b, cand))
-    const self = !b.drawn.has(p.slot) ? u : null
-    const t = who ?? self
-    if (t) {
-      b.drawn.add(t.owner)
-      b.drawnNames.add(seenName(g, t))
-      b.goal = { k: 'cast', a: 'ab.item.geneSampler', e: t.id, slot: sampler, until: g.time + 15 }
-      return
-    }
-  } else if (g.time > 420 && (!p.data.botTested || (p.data.botRetest && !b.accused && g.time >= (p.data.botRetestAt as number)))) {
-    const v = vendorWith(g, p, u, (_ref, s) => s.item === 'geneSampler')
-    if (v) {
-      b.drawn.clear()
-      b.drawnNames.clear()
-      if (p.data.botTested) p.data.botRetest = false
-      p.data.botTested = true
-      b.goal = { k: 'buy', vendor: v.v.id, item: v.item, until: g.time + 30 }
-      return
-    }
-  }
+  const sampling = gitStep(g, p, u, b)
+  if (sampling === true) return
   // 防護服（依各自的習慣）
   const plan = suitPlanOf(g, p)
   const calm = g.time - b.alarmAt > 60 && u.hp >= u.maxHp * 0.6
@@ -335,7 +343,156 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
       }
     }
   }
+  // 拿著檢測器還差人：去找人（最後看到某人的地方，或一間一間房間找），不是隨便晃
+  if (sampling && seekPeople(g, u, b, sampling)) return
   wander(g, p, u, b, plan === 'casual' ? REST_ROOMS : undefined)
+}
+
+/** 檢測器樣本上已經記下的名字（抽血者看到的樣子，和介面上顯示的一樣）*/
+function sampleNames(u: Ent, slot: number): string[] {
+  const d = u.inv?.[slot]?.data as { sample?: { names?: string[] } } | undefined
+  return d?.sample?.names ?? []
+}
+
+/** 看起來是一名玩家本人（主單位，或看起來就是主單位的分身）：只看外觀，不用 isMain／真正的擁有者這類隱藏資訊 */
+function looksPerson(e: Ent): boolean {
+  if (!(e.isMain || !!e.data.looksMain) || !looksHuman(e)) return false
+  const fake = e.data.fake as { owner: number } | undefined
+  return (fake ? fake.owner : e.anon ? -1 : e.owner) >= 0
+}
+
+/** 每多抽一份樣本最多等多久（秒）：找不到理想的人（複驗時要的嫌疑人／非嫌疑人）就放寬，誰都抽 */
+const DRAW_PATIENCE = 90
+/** 一局最多拿幾支檢測器（開局帶的也算）*/
+const MAX_SAMPLERS = 3
+/** 看到某人之後多久內還會去那裡找他（秒）*/
+const SEEN_TTL = 120
+
+/** 抽血要不要這個人：2 = 優先、1 = 可以、0 = 不要（已抽過，或複驗時會讓樣本裡不只一名嫌疑人）*/
+type Want = (name: string) => 0 | 1 | 2
+
+function sampleWant(g: Game, b: Brain, drawn: string[]): Want {
+  const relaxed = g.time - b.drawAt > DRAW_PATIENCE
+  const sus = (n: string) => (b.suspects.get(n) ?? 0) > 0 && !b.cleared.has(n)
+  const anySus = [...b.suspects.keys()].some(sus)
+  if (!anySus) return (n) => (drawn.includes(n) ? 0 : b.tested.has(n) && !relaxed ? 1 : 2)
+  // 複驗縮小範圍：一份樣本只放一名嫌疑人，其餘是自己、驗過乾淨的人或其他人
+  const susDrawn = drawn.filter(sus).length
+  const otherDrawn = drawn.length - susDrawn
+  return (n) => {
+    if (drawn.includes(n)) return 0
+    if (relaxed) return 1
+    if (sus(n)) return susDrawn ? 0 : 2
+    if (susDrawn) return 2
+    return otherDrawn < 2 ? 1 : 0
+  }
+}
+
+/**
+ * 驗血流程：放解析器 → 領報告 → 拿著檢測器就抽看得到的人（沒有就抽自己）→ 需要時去買檢測器。
+ * 回傳 true = 這一輪已經下了指令；Want = 手上的檢測器還差人（交給 seekPeople 去找）；false = 沒事
+ */
+function gitStep(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean | Want {
+  const res = itemSlot(u, 'gitResolver')
+  if (res >= 0) {
+    cmd(g, p, { k: 'use', s: res, x: u.x + 0.8, y: u.y })
+    return true
+  }
+  // 自己放的解析器一定看得到（自己的東西）；開機好了就去領報告
+  const mine = g.world
+    .inZone(u.zone)
+    .find((e) => e.alive && e.data.vendor === 'gitResolver' && e.owner === p.slot && !b.boughtFrom.has(e.id) && p.view.visible.has(e.id))
+  if (mine && ((mine.data.stock as StockState[] | undefined)?.some((s) => s.count > 0 && g.time >= s.availAt) ?? false)) {
+    b.goal = { k: 'results', vendor: mine.id, until: g.time + 30 }
+    return true
+  }
+  const sampler = itemSlot(u, 'geneSampler')
+  if (sampler < 0) {
+    b.hadSampler = false
+    // 解析器還在開機：等報告，不急著買下一支
+    if (mine) return false
+    if (!wantSampler(g, b)) return false
+    const v = vendorWith(g, p, u, (_ref, s) => s.item === 'geneSampler')
+    if (!v) return false
+    // 沒買到（走不到、被搶光）就晚點再試
+    b.buyAt = g.time + 45
+    b.goal = { k: 'buy', vendor: v.v.id, item: v.item, until: g.time + 60 }
+    return true
+  }
+  // 抽血的冷卻（3 秒）還沒好：等一下，現在下指令會被直接丟掉
+  const ab = abilityDef('ab.item.geneSampler')
+  if ((ab && !cdReady(g, u, ab)) || (u.inv![sampler]!.cdUntil ?? 0) > g.time) return true
+  const drawn = sampleNames(u, sampler)
+  if (!b.hadSampler) {
+    b.hadSampler = true
+    b.samplers++
+    b.drawAt = g.time
+    b.drawCount = drawn.length
+  }
+  if (drawn.length !== b.drawCount) {
+    b.drawCount = drawn.length
+    b.drawAt = g.time
+  }
+  const want = sampleWant(g, b, drawn)
+  // 看得到、還沒抽過的人（同名的人只抽一次）：先抽優先的，再抽可以的；都沒有就抽自己
+  let best: Ent | null = null
+  let bestW = 0
+  let bestD = Infinity
+  for (const e of visibleEnts(g, p, u, 18)) {
+    if (!looksPerson(e) || (b.skip.get(e.id) ?? 0) >= g.time) continue
+    const n = seenName(g, e)
+    const w = n ? want(n) : 0
+    const d = dist2(u, e)
+    if (w > bestW || (w === bestW && w > 0 && d < bestD)) {
+      best = e
+      bestW = w
+      bestD = d
+    }
+  }
+  const selfW = want(seenName(g, u) || p.name)
+  const t = bestW === 2 || (best && bestW >= selfW) ? best : selfW > 0 ? u : null
+  if (t) {
+    b.goal = { k: 'cast', a: 'ab.item.geneSampler', e: t.id, slot: sampler, until: g.time + 15 }
+    return true
+  }
+  return want
+}
+
+/**
+ * 要不要（再）拿一支檢測器：第一支一定要；有感染報告但還認不出是誰就複驗縮小範圍；
+ * 沒有嫌疑人時，最近看到還沒驗過的人才再驗（同一批人重驗不會有新消息）；指認了就不用再驗
+ */
+function wantSampler(g: Game, b: Brain): boolean {
+  if (g.time < b.buyAt) return false
+  if (b.samplers === 0) return true
+  if (b.accused || b.samplers >= MAX_SAMPLERS || !b.reported) return false
+  if ([...b.suspects.keys()].some((n) => !b.cleared.has(n))) return true
+  for (const [n, s] of b.seen) if (g.time - s.t <= SEEN_TTL && !b.tested.has(n) && !b.selfNames.has(n)) return true
+  return false
+}
+
+/** 拿著檢測器、附近沒有要抽的人：去最後看到要抽的人的地方；沒有線索就換一間房間找 */
+function seekPeople(g: Game, u: Ent, b: Brain, want: Want): boolean {
+  if (u.order) return true
+  let best: { name: string; x: number; y: number; t: number; w: number } | null = null
+  for (const [name, s] of b.seen) {
+    if (s.zone !== u.zone || g.time - s.t > SEEN_TTL) {
+      if (g.time - s.t > SEEN_TTL) b.seen.delete(name)
+      continue
+    }
+    const w = want(name)
+    if (w && (!best || w > best.w || (w === best.w && s.t > best.t))) best = { name, ...s, w }
+  }
+  if (best) {
+    // 去過就從記憶裡拿掉（人還在的話，到了會再看到）
+    b.seen.delete(best.name)
+    b.goal = { k: 'goto', x: best.x, y: best.y, until: g.time + 20 }
+    return true
+  }
+  const pt = randomRoomPoint(g, u)
+  if (!pt) return false
+  b.goal = { k: 'goto', ...pt, until: g.time + 25 }
+  return true
 }
 
 /** 抽血時看到的名字（git.ts 的 shownName 同一套規則：偽裝就是偽裝對象，匿名形態沒有名字）*/
@@ -359,6 +516,9 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
     const key = r.result + ':' + [...names].sort().join('|')
     if (b.seenReports.has(key)) continue
     b.seenReports.add(key)
+    // 「\u0001形態 id」是匿名形態的樣本標記（不是人名）：AI 指認不了、也追打不了，不列入嫌疑
+    const people = names.filter((n) => !n.startsWith('\u0001') && !b.selfNames.has(n))
+    for (const n of people) b.tested.add(n)
     // 名單兩種語言都送（匿名形態依語言換成形態名）
     const list = sampleListArgs(names)
     if (r.result === 'clean') {
@@ -366,53 +526,71 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
         b.cleared.add(n)
         b.suspects.delete(n)
       }
-      say(g, p, 'play1.bot.gitClean', list)
+      announceResult(g, p, 'play1.bot.gitClean', list, key)
+      // 乾淨：過一陣子再驗別人
+      b.buyAt = Math.max(b.buyAt, g.time + 90)
     } else if (r.result === 'infected') {
-      // 「\u0001形態 id」是匿名形態的樣本標記（不是人名）：AI 指認不了、也追打不了，不列入嫌疑
-      for (const n of names) if (n !== p.name && !n.startsWith('\u0001') && !b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
-      say(g, p, 'play1.bot.gitInfected', list)
-      // 還認不出是誰：之後再驗一次縮小範圍
-      if (!topSuspect(b) && !p.data.botRetestDone) {
-        p.data.botRetest = true
-        p.data.botRetestDone = true
-        p.data.botRetestAt = g.time + 20
-      }
+      b.infected.push(people)
+      for (const n of people) if (!b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
+      announceResult(g, p, 'play1.bot.gitInfected', list, key)
+      // 還認不出是誰：馬上再驗一次縮小範圍
+      b.buyAt = g.time + 20
     } else {
       // 錯誤、離線也照樣說出來：只有部分結果會公布的話，「沒說話」本身就是線索
-      say(g, p, r.result === 'error' ? 'play1.bot.gitError' : 'play1.bot.gitOffline', list)
+      announceResult(g, p, r.result === 'error' ? 'play1.bot.gitError' : 'play1.bot.gitOffline', list, key)
+      b.buyAt = Math.max(b.buyAt, g.time + 90)
       continue
     }
-    const top = topSuspect(b)
-    if (top && top !== b.accused) {
+    const top = accuseTarget(b)
+    if (top && !b.accusedAll.has(top)) {
       b.accused = top
+      b.accusedAll.add(top)
       say(g, p, 'play1.bot.accuse', { name: top })
     }
   }
 }
 
-/** 複驗時縮小範圍：一份樣本只放一名嫌疑人（先挑嫌疑人，抽到一個之後就避開其他嫌疑人）*/
-function narrowSuspects(g: Game, b: Brain, cand: Ent[]): Ent[] {
-  const sus = (e: Ent) => (b.suspects.get(seenName(g, e)) ?? 0) > 0 && !b.cleared.has(seenName(g, e))
-  if (!b.suspects.size) return cand
-  const haveOne = [...b.drawnNames].some((n) => (b.suspects.get(n) ?? 0) > 0)
-  const pick = haveOne ? cand.filter((e) => !sus(e)) : cand.filter(sus)
-  return pick.length ? pick : haveOne ? [] : cand
-}
-
-/** 唯一最可疑的人（出現在最多份有感染報告裡、且沒有並列）*/
-function topSuspect(b: Brain): string {
+/**
+ * 指認對象（只用自己的報告）：
+ * (a) 某份有感染名單扣掉自己與驗過乾淨的人，只剩一人；或
+ * (b) 兩份有感染名單的交集扣掉驗過乾淨的人，只剩一人。
+ * 好幾個人各自成立（例如異形和變種人都被驗到）時，先指認出現在最多份有感染報告裡的人；並列就挑最新那份報告推出來的。
+ */
+function accuseTarget(b: Brain): string {
+  const live = (l: string[]) => l.filter((n) => !b.cleared.has(n) && !b.selfNames.has(n))
+  const hits: string[] = []
+  const lists = b.infected.map(live)
+  for (let i = 0; i < lists.length; i++) {
+    if (lists[i].length === 1) hits.push(lists[i][0])
+    for (let j = 0; j < i; j++) {
+      const both = lists[i].filter((n) => lists[j].includes(n))
+      if (both.length === 1) hits.push(both[0])
+    }
+  }
   let best = ''
   let bestN = 0
-  let tie = false
-  for (const [n, c] of b.suspects) {
-    if (b.cleared.has(n)) continue
-    if (c > bestN) {
+  for (const n of hits) {
+    const c = lists.filter((l) => l.includes(n)).length
+    if (c >= bestN) {
       best = n
       bestN = c
-      tie = false
-    } else if (c === bestN) tie = true
+    }
   }
-  return bestN > 0 && !tie ? best : ''
+  return best
+}
+
+/**
+ * 公布驗血結果。同一份結果（同樣的結果、同樣的名單）只公布一次：自己的由 seenReports 擋掉；
+ * 別的 AI 已經在聽得到的地方公布過一模一樣的結果也不再重複（全體頻道的公開內容，不是隱藏資訊；只限同站聊天時看同一站）。
+ */
+function announceResult(g: Game, p: GamePlayer, key: string, args: Record<string, string>, result: string): void {
+  const said = (g.data.botResultsSaid ??= new Map<string, Set<number>>()) as Map<string, Set<number>>
+  const zone = g.mainOf(p)?.zone ?? -1
+  let zones = said.get(result)
+  if (zones && (!g.settings.localChat || zones.has(zone))) return
+  if (!zones) said.set(result, (zones = new Set()))
+  zones.add(zone)
+  say(g, p, key, args)
 }
 
 /** AI 在全體頻道說話：走一般的聊天路由（名字、偽裝、只限同站等規則照舊），內容是 i18n 的系統 key */
@@ -526,9 +704,14 @@ function stepBots(g: Game): void {
     if (p.alive && g.votes.death && !g.votes.death.ballots.has(p.slot)) g.handleVote(p.slot, 'spectate')
     if (!p.alive) continue
     // 新的驗血報告：馬上公布（不等手上的目標做完）
-    if (g.faction(p) === 'crew') readReports(g, p, b)
+    if (g.faction(p) === 'crew') {
+      b.selfNames.add(p.name)
+      readReports(g, p, b)
+    }
     const u = g.controlOf(p)
     if (!u || !u.alive || u.data.frozen || p.evolvingUntil > t || u.tags.has('cocoon')) continue
+    // 人類方正在施法（抽血 3 秒）：別用新的指令打斷自己，除非正在挨打
+    if (u.cast && !u.cast.channeling && g.faction(p) === 'crew' && t - u.lastDamageTime > 2) continue
     // 誤站上控制台、接手了站點或船艇：交回控制（AI 不會駕駛），之後照常走開
     if (u.id !== p.main && spaceOf(g).pilots.get(u.id) === p.main) {
       cmd(g, p, { k: 'unpilot' })
@@ -545,6 +728,22 @@ function stepBots(g: Game): void {
       continue
     }
     if (u.zone === 0) continue
+    // 卡住了（有移動命令卻好幾秒沒前進，例如目的地被人或東西擋住）：放棄這個命令、重新決定，不會一直站在原地
+    if (u.order?.k === 'move' && !u.cast) {
+      if (Math.hypot(u.x - b.px, u.y - b.py) > 0.3) {
+        b.px = u.x
+        b.py = u.y
+        b.pt = t
+      } else if (t - b.pt > STUCK_S) {
+        cmd(g, p, { k: 'stop' })
+        b.goal = null
+        b.pt = t
+      }
+    } else {
+      b.px = u.x
+      b.py = u.y
+      b.pt = t
+    }
     // 在船艙裡（AI 不會開船）：走回艙門下船
     if (leaveCabin(g, p, u, b)) continue
     if (pursue(g, p, u, b)) {
@@ -569,6 +768,9 @@ function leaveCabin(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
   b.goal = null
   return true
 }
+
+/** 移動命令幾秒沒前進就算卡住 */
+const STUCK_S = 4
 
 const installed = new WeakSet<Game>()
 

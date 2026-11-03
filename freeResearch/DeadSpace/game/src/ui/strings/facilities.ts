@@ -146,7 +146,7 @@ export const FAC_EN: Record<string, string> = {
   'fac.power.desc.ambient': 'Everyone regenerates +0.75 energy/s.',
   'fac.power.desc.explorer': 'Craft in space +20 HP/s, +0.3 speed, +30% fire rate.',
   'fac.power.desc.station': 'Stations +100 HP/s, +40% fire rate; Tenshu gun cooldown 160 s.',
-  'fac.power.desc.lab': 'LQ Storage works; the pacification bot attacks rig wearers; a failed experiment grows every 45 s.',
+  'fac.power.desc.lab': 'LQ Storage works; the pacification bot attacks suit wearers; a failed experiment grows every 45 s.',
   'fac.current': 'Active',
   'fac.cd': 'cooldown {s}s',
   'fac.offlineFor': 'EMP shutdown ({s}s)',

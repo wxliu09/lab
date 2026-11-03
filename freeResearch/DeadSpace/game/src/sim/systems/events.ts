@@ -88,6 +88,18 @@ const NEWS = 12
 /** 強化劑五選一（研究 03 §6.2 #8）*/
 export const ENHANCE = ['speed', 'hp', 'atk', 'mp', 'range'] as const
 
+// ───────── 練習局專屬規則（正式局照原作：末日 30–40 分、每個可抽的事件機會均等）─────────
+
+/** 練習局的末日時間（分鐘）：比正式局早，一局練習不會拖太久（主機明確改過末日設定就照主機的；由 server 開局時寫進 settings）*/
+export const PRACTICE_APOCALYPSE: readonly [number, number] = [20, 25]
+/** 練習局的事件抽中權重：致命的無人戰機、小行星減半（沒列出的 = 1）*/
+export const PRACTICE_EVENT_WEIGHT: Readonly<Record<string, number>> = { wasps: 0.5, asteroids: 0.5 }
+
+/** 某個事件這一局的抽中權重（正式局一律 1）*/
+export function eventWeight(g: Game, id: string): number {
+  return g.practice ? (PRACTICE_EVENT_WEIGHT[id] ?? 1) : 1
+}
+
 // ───────── 事件表 ─────────
 
 const EVENTS: EventDef[] = [
@@ -410,12 +422,30 @@ function candidates(g: Game, inChain: boolean): EventDef[] {
   return EVENTS.filter((d) => !(d.once && ev.used.has(d.id)) && !(inChain && d.id === 'foul') && (!d.ok || d.ok(g)))
 }
 
-function drawAndFire(g: Game, inChain: boolean): EventDef | null {
+/** 抽出下一個隨機事件（只抽、不觸發；測試用來統計權重）。正式局維持原本的均等抽法（亂數用量也一樣），練習局依權重抽 */
+export function pickEvent(g: Game, inChain: boolean): string | null {
   const list = candidates(g, inChain)
   if (!list.length) return null
-  const d = g.world.rng.pick(list)
+  return (g.practice ? weightedPick(g, list) : g.world.rng.pick(list)).id
+}
+
+function drawAndFire(g: Game, inChain: boolean): EventDef | null {
+  const id = pickEvent(g, inChain)
+  const d = id ? BY_ID.get(id) : undefined
+  if (!d) return null
   fire(g, d.id, false)
   return d
+}
+
+function weightedPick(g: Game, list: EventDef[]): EventDef {
+  let sum = 0
+  for (const d of list) sum += eventWeight(g, d.id)
+  let r = g.world.rng.next() * sum
+  for (const d of list) {
+    r -= eventWeight(g, d.id)
+    if (r < 0) return d
+  }
+  return list[list.length - 1]
 }
 
 // ───────── 末日 ─────────
@@ -550,7 +580,7 @@ function stepOngoing(g: Game, ev: EventState): void {
     g.systemAll('event.tenshuFail')
     g.destroyStation?.('tenshu')
   }
-  // 政府強化劑：人員形態走到裝置旁 → 私下提供五選一
+  // 政府強化劑：人員形態（含穿防護服的人員；原作看 point value 220000，著裝人員也是）走到裝置旁 → 私下提供五選一
   if (ev.enhancer && w.tick % 5 === 0) {
     const e = enhancerEnt(g)
     if (!e) ev.enhancer = false
@@ -562,7 +592,7 @@ function stepOngoing(g: Game, ev: EventState): void {
           p.data.enhOffer = false
           continue
         }
-        if (u!.def.id !== 'personnel') {
+        if (!u!.tags.has('personnel')) {
           if (!p.data.enhRefused) g.privateLine(p.slot, 'event.enhNotYou')
           p.data.enhRefused = true
           continue
@@ -765,7 +795,7 @@ export function installEvents(g: Game): void {
   // 海盜船主控台被毀 → 自爆倒數；船被直接打爆也一樣全滅（站點毀滅流程）
   DEATH_HOOKS.push((g2, u) => {
     if (g2 !== g) return
-    if (ev.pirateZone > 0 && u.zone === ev.pirateZone && u.def.id === 'struct.console' && !ev.pirateBoom) {
+    if (ev.pirateZone > 0 && u.zone === ev.pirateZone && u.def.id === 'struct.consolePirate' && !ev.pirateBoom) {
       ev.pirateBoom = g.time + 40
       for (const q of g.world.inZone(u.zone)) if (q.isMain && q.owner >= 0) g.privateLine(q.owner, 'event.pirateSelfDestruct', { s: 40 })
       g.emitFx({ k: 'alarm', z: u.zone, x: u.x, y: u.y, v: 40 })
@@ -776,7 +806,7 @@ export function installEvents(g: Game): void {
     if (g2 !== g) return
     if (!p.data.enhOffer || p.data.enhDone || c.s === undefined) return
     const i = Math.floor(c.s)
-    if (i < 0 || i >= ENHANCE.length || u.def.id !== 'personnel') return
+    if (i < 0 || i >= ENHANCE.length || !u.tags.has('personnel')) return
     const e = enhancerEnt(g)
     if (!e || u.zone !== e.zone || dist2(u, e) > 2.6 * 2.6) return
     applyEnhance(g, p, u, i)

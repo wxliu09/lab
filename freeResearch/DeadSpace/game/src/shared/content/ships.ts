@@ -5,6 +5,9 @@ import type { LayoutSpec } from '../layout'
 
 const L = (zh: string, en: string): Loc => ({ zh, en })
 
+/** 隕擊輻射區半徑（公尺；原作 A04Y 範圍 700）*/
+export const RAD_FIELD_R = 7
+
 export interface ShipDef {
   id: string
   name: Loc
@@ -12,6 +15,8 @@ export interface ShipDef {
   layout: LayoutSpec
   /** 停泊模型半徑（站內）*/
   dockRadius: number
+  /** 停泊模型 HP（原作停泊模型是另一個單位：紅隼 h001／騾 h02K／綿羊 h03K 15000、獵鷹 h02I 20000、槍騎 h02S 25000；研究 03 §3.1）*/
+  dockHp: number
 }
 
 const shipPois: LayoutSpec['pois'] = {
@@ -41,6 +46,7 @@ export const SHIPS: ShipDef[] = [
       '  ############',
     ]),
     dockRadius: 1.9,
+    dockHp: 15000,
   },
   {
     id: 'mule',
@@ -58,6 +64,7 @@ export const SHIPS: ShipDef[] = [
       '  ################',
     ]),
     dockRadius: 2.1,
+    dockHp: 15000,
   },
   {
     id: 'lancer',
@@ -75,6 +82,7 @@ export const SHIPS: ShipDef[] = [
       '  ##################',
     ]),
     dockRadius: 2.0,
+    dockHp: 25000,
   },
   {
     id: 'harrier',
@@ -94,6 +102,7 @@ export const SHIPS: ShipDef[] = [
       '  ##################',
     ]),
     dockRadius: 2.2,
+    dockHp: 20000,
   },
   {
     id: 'woolly',
@@ -111,6 +120,7 @@ export const SHIPS: ShipDef[] = [
       '  #############',
     ]),
     dockRadius: 1.9,
+    dockHp: 15000,
   },
 ]
 
@@ -134,8 +144,9 @@ for (const s of SHIPS) {
     id: 'docked.' + s.id,
     name: s.name,
     model: 'ship.' + s.id,
-    hp: s.space.hp,
-    hpRegen: 0,
+    // 停泊模型自己的 HP（每秒回 5，原作 Amrf 停泊模型）；發射／停靠時以 HP 百分比和太空中的船互換
+    hp: s.dockHp,
+    hpRegen: 5,
     mp: 0,
     mpRegen: 0,
     speed: 0,
@@ -151,6 +162,8 @@ shipUnits.push(
   { id: 'ship.wasp', name: L('胡蜂無人戰機', 'Wasp Drone'), model: 'ship.wasp', hp: 7500, hpRegen: 0, mp: 0, mpRegen: 0, speed: 1.2, radius: 0.5, sight: 14, abilities: [], tags: ['ship', 'space', 'mechanical', 'drone'], layer: 'space', attack: { dmg: [199, 199], cd: 1.2, range: 7, kind: 'projectile', projSpeed: 14, fx: 'shipGun' }, ai: 'spaceHunter' },
   { id: 'space.asteroid', name: L('小行星', 'Asteroid'), model: 'space.asteroid', hp: 20000, hpRegen: 0, mp: 0, mpRegen: 0, speed: 1.0, radius: 0.9, sight: 0, abilities: [], tags: ['space', 'mechanical'], layer: 'space' },
   { id: 'space.sun', name: L('恆星 阿斯特', 'Aster'), model: 'space.sun', hp: 800000, hpRegen: 0, mp: 0, mpRegen: 0, speed: 0, radius: 3.2, sight: 0, abilities: [], tags: ['space', 'invuln', 'noTarget'], layer: 'space' },
+  // 翠原星隕擊留下的輻射區（地面物件，沿用污染區的模型；原作 e014 永久存在）
+  { id: 'hz.radField', name: L('輻射區', 'Fallout Zone'), model: 'radZone', hp: 1, hpRegen: 0, mp: 0, mpRegen: 0, speed: 0, radius: RAD_FIELD_R, sight: 0, abilities: [], tags: ['noTarget', 'invuln'], corpse: false },
 )
 regUnits(shipUnits)
 
@@ -172,12 +185,48 @@ regBuffs([
   { id: 'bf.jumpCharge', name: L('跳躍充能', 'Jump Charging'), icon: 'teleport', vis: 'all', good: true, dur: 20, rooted: true, silence: true, disarm: true },
   // 紅隼升級模組（研究 03 §3.2 RUM：+30 移速、+400 傷害；+30000 HP 由 sim 直接加在最大生命）
   { id: 'bf.kestrelMk2', name: L('紅隼升級', 'Kestrel Refit'), icon: 'module', vis: 'all', good: true, moveAdd: 0.3, dmgMult: 1699 / 1299 },
+  // ───── 主控台、行星／衛星環境（stations.ts）─────
+  // 裁決者號主控台每秒回 100（原作 h000；掛在 data.passives，不進快照）
+  { id: 'bf.consoleRepair', name: L('自我修復', 'Self-Repair'), icon: 'wrench', vis: 'all', good: true, regen: 100 },
+  // 餘燼衛星大氣護盾：先吸收 300000 傷害（原作 A04Z 以 300000 mana 擋傷害；研究 03 §4.3），破了就不會回來
+  { id: 'bf.cinderShield', name: L('大氣護盾', 'Atmospheric Shield'), icon: 'shield', vis: 'all', good: true, shield: 300000 },
+  // 護盾失效後的地表暴風雪：每秒 10（原作每 0.5 秒 5，吃護甲）
+  { id: 'bf.blizzard', name: L('暴風雪', 'Blizzard'), icon: 'storm', vis: 'all', good: false, dur: 0.7, dot: 10, dotKind: 'normal' },
+  // 翠原星隕擊留下的輻射：輻射區內每秒 20（原作 e014 Planet Radiation：700 範圍、20／秒）；
+  // 整片地表的殘留輻射（每次隕擊 +3、每秒 ×0.99）以同一個名稱計算死因
+  { id: 'bf.planetRad', name: L('行星輻射', 'Planetary Radiation'), icon: 'skull', vis: 'all', good: false, dur: 1.2, dot: 20, dotKind: 'energy', fx: 'rad' },
+  {
+    id: 'bf.planetRadField',
+    name: L('隕擊輻射區', 'Impact Fallout'),
+    icon: 'skull',
+    vis: 'all',
+    good: false,
+    every: 1,
+    // 蛞蝓仔不受輻射影響（原作排除 Sluggly n003）
+    tickEffects: [{ k: 'script', fn: 'rig.hazard', p: { buff: 'bf.planetRad', r: RAD_FIELD_R, spare: 'creature.slugling', self: false } }],
+  },
 ])
 
 const A = (a: AbilityDef) => a
 regAbilities([
   A({ id: 'ship.dock', name: L('停靠', 'Dock'), desc: L('停靠到附近的站點，船艇會落在對方的停機坪上。', 'Dock with a nearby station; the craft lands on one of its pads.'), icon: 'ship', target: 'unit', range: 2, cd: 30, mana: 0, filter: { station: true }, effects: [{ k: 'script', fn: 'space.dock' }] }),
-  A({ id: 'ship.board', name: L('強行登艦', 'Board'), desc: L('鎖住另一艘船 20 秒，期間兩艘船的艙門互通：按 B 離開控制台、走到船艙的艙門，就會進入對方的船艙（對方也能過來）。', 'Latch onto another craft for 20 s; both airlocks connect. Press B to leave the console and walk to your cabin airlock to cross into their cabin (they can cross into yours too).'), icon: 'door', target: 'unit', range: 2.5, cd: 0, mana: 0, cast: 3, filter: { ship: true }, effects: [{ k: 'script', fn: 'space.board' }] }),
+  // 強行登艦（原作 A02J）：對象是「探索船」——各艘船艇，以及不能停靠、只能登艦的火口號、擺渡號（研究 03 §2.3）
+  A({
+    id: 'ship.board',
+    name: L('強行登艦', 'Board'),
+    desc: L(
+      '鎖住另一艘船（或火口號、擺渡號）20 秒，期間雙方的艙門互通：按 B 離開控制台、走到船艙的艙門（站上是登艦氣閘的出入口），就會進入對方那裡（對方也能過來）。',
+      'Latch onto another craft (or the Caldera or Portage) for 20 s; the airlocks connect. Press B to leave the console and walk to your cabin airlock (on a station, the boarding airlock exit) to cross over (they can cross to you too).',
+    ),
+    icon: 'door',
+    target: 'unit',
+    range: 2.5,
+    cd: 0,
+    mana: 0,
+    cast: 3,
+    filter: { defs: [...SHIPS.map((s) => 'ship.' + s.id), 'station.caldera', 'station.portage'] },
+    effects: [{ k: 'script', fn: 'space.board' }],
+  }),
   A({ id: 'ship.scan', name: L('生命掃描', 'Lifeform Scan'), desc: L('掃描目標站點或船艦，回報裡面有多少人。', 'Scan a station or craft and report how many people are aboard.'), icon: 'scan', target: 'unit', range: 15, cd: 27, mana: 0, cast: 2, effects: [{ k: 'script', fn: 'space.scan' }] }),
   A({ id: 'ship.payload', name: L('末日酬載', 'Doomsday Payload'), desc: L('投下一枚 3 秒後引爆的重型炸彈，對站點特別有效。', 'Drop a heavy charge that detonates after 3 s; devastating to stations.'), icon: 'bomb', target: 'point', range: 6, cd: 120, mana: 50, aoe: 4, effects: [{ k: 'fx', fx: 'castStart', at: 'point' }, { k: 'delay', t: 3, then: [{ k: 'damage', amount: 30000, to: 'point', aoe: 4 }, { k: 'fx', fx: 'boom', at: 'point' }] }] }),
   A({ id: 'ship.overload', name: L('武器超載', 'Weapon Overload'), desc: L('8 秒內攻擊速度加倍。', 'Double fire rate for 8 s.'), icon: 'bolt', target: 'none', cd: 45, mana: 30, effects: [{ k: 'buff', buff: 'bf.overload', to: 'self' }] }),

@@ -67,6 +67,8 @@ export interface GameInit {
   send: (slot: number, msg: HostMsg) => void
   /** 單機練習：指定某位玩家的身分（server 只在練習房、只有主機一位真人時才會給）*/
   forceRole?: { slot: number; role: Role }
+  /** 單機練習局（練習房、除了主機都是 AI）：練習專屬規則用（事件權重等）；正式局一律 false */
+  practice?: boolean
 }
 
 /** 每位玩家各自的資訊放寬旗標（除錯工具用；只影響本人的快照與聊天）*/
@@ -134,6 +136,8 @@ export class Game {
   readonly settings: LobbySettings
   readonly send: GameInit['send']
   readonly forceRole: GameInit['forceRole']
+  /** 單機練習局：練習專屬規則（末日提前由 server 開局時寫進 settings；致命事件權重減半見 events.ts）*/
+  readonly practice: boolean
   tick = 0
   hostHidden = false
   paused = false
@@ -200,6 +204,7 @@ export class Game {
     this.settings = init.settings
     this.send = init.send
     this.forceRole = init.forceRole
+    this.practice = !!init.practice
     const secret = init.secret ?? secretSeed()
     this.secret = new Rng(secret)
     this.world = new World(init.seed, (secret * 2654435761) >>> 1 || 7)
@@ -483,6 +488,8 @@ export class Game {
         ? { kind: 'death', until: Math.ceil(this.votes.death.until - this.time), boot: [...this.votes.death.ballots.values()].filter((b) => b === 'boot').length, spec: [...this.votes.death.ballots.values()].filter((b) => b === 'spectate').length }
         : null,
       boot: this.settings.bootOnDeath,
+      // 局中改變的天氣（systems/stations.ts：餘燼衛星護盾失效 → 暴風雪）
+      wx: Object.fromEntries(this.world.zones.filter((z) => z.alive && typeof z.data.weather === 'string').map((z) => [z.key, z.data.weather as string])),
     }
   }
 

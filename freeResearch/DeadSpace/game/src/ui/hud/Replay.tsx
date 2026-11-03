@@ -6,6 +6,7 @@ import { UNITS } from '../../shared/content/registry'
 import { replay, startInfo } from '../../client/session'
 import { stationDefOf } from '../../render/gameScene'
 import { loc, t } from '../i18n'
+import { localizeName } from '../names'
 
 const layouts = new Map<string, ParsedLayout>()
 function layoutFor(stationId: string): ParsedLayout | null {
@@ -88,7 +89,7 @@ export function ReplayPanel() {
         ctx.arc(px, py, rad, 0, Math.PI * 2)
         ctx.fill()
         ctx.globalAlpha = 1
-        const label = name || loc(def?.name)
+        const label = localizeName(name) || loc(def?.name)
         if (label) {
           ctx.fillStyle = '#dfe9f1'
           ctx.fillText(label, px, py - rad - 3)

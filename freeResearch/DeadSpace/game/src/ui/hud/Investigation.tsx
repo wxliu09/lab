@@ -9,6 +9,7 @@ import { lang, listJoin, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
+import { localizeName } from '../names'
 
 export const notesOpen = signal(false)
 // 筆記是側邊面板：開著時照樣能用快捷鍵操作，只停用邊緣捲動
@@ -65,7 +66,7 @@ export function NotesPanel() {
             return (
               <div key={p.slot} class="row" style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
                 <div class="grow" style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '15px' }}>{p.name}</div>
+                  <div style={{ fontSize: '15px' }}>{localizeName(p.name)}</div>
                   {edit === p.slot ? (
                     <input
                       value={text}
@@ -110,7 +111,7 @@ export function NotesPanel() {
                     {...tipProps(() => ({ title: t('notes.share'), body: t('notes.shareBody') }))}
                     onClick={() => {
                       // 分享會把你對所有人的標記與筆記都送給對方：先確認
-                      if (window.confirm(t('notes.shareConfirm', { name: p.name }))) send({ t: 'shareNotes', to: p.slot })
+                      if (window.confirm(t('notes.shareConfirm', { name: localizeName(p.name) }))) send({ t: 'shareNotes', to: p.slot })
                     }}
                   >
                     ↗
@@ -129,7 +130,7 @@ export function NotesPanel() {
               <span class="mono dim">
                 {Math.floor(r.time / 60)}:{String(Math.floor(r.time % 60)).padStart(2, '0')}
               </span>{' '}
-              {listJoin(r.names.map((n) => sampleName(n, lang.value)))} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
+              {listJoin(r.names.map((n) => localizeName(sampleName(n, lang.value))))} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
             </div>
           ))}
         </>
@@ -143,9 +144,9 @@ export function NotesPanel() {
             const about = players.find((p) => p.slot === n.slot)
             return (
               <div key={i} style={{ fontSize: '13px' }}>
-                <b>{from?.name}</b>
+                <b>{localizeName(from?.name)}</b>
                 {t('sep.colon')}
-                {about?.name} — {t('notes.mark.' + n.mark)} {n.text}
+                {localizeName(about?.name)} — {t('notes.mark.' + n.mark)} {n.text}
               </div>
             )
           })}

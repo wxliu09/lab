@@ -6,6 +6,7 @@ import { MODULE_BUILD, POWER_CD, POWER_MODES, type PowerMode } from '../../share
 import { MODULE_TARGET } from '../../shared/content/items'
 import { CLASSES, FORMS, itemDef, unitDef } from '../../shared/content/registry'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { roomAt } from '../../shared/layout'
 import { locArgs } from '../../shared/sysArgs'
 import type { Command, FacilityView } from '../../shared/protocol/messages'
 import { HOSTILE, NEUTRAL, dist, type Ent } from '../ent'
@@ -132,6 +133,9 @@ export function setPowerMode(g: Game, mode: PowerMode): void {
     nyx.data.labPower = mode === 'lab'
     // 實驗室模式：45 秒後第一隻失敗實驗體（由生物 AI 的 stepLabPower 生成）
     if (mode === 'lab') nyx.data.labNext = g.time + 45
+    // 實驗室模式期間全站動力集中到實驗室，其他地方只剩紅色緊急照明（自訂、純視覺：快照 w.pw → render）。
+    // 原作動力分配台無敵、沒有斷電；本作的緊急照明改由這個模式觸發，切回其他模式就恢復
+    nyx.power = mode === 'lab' ? 'emergency' : 'normal'
   }
 }
 
@@ -269,6 +273,31 @@ function stepFabricator(g: Game): void {
     // 所有主單位都算（不依身分），只有仿生人的進化選單會讀它
     m.data.atFabricator = !!pads && onPads(m, pads) && g.world.inZone(z.id).some((e) => e.def.id === 'fac.fabricator' && e.alive)
   }
+  autoRebuild(g)
+}
+
+/**
+ * 帶著記憶核心走進鑄造平台就自動開始重建（研究 02 §5.3：任何單位攜帶核心進入 `jn` 且機器人已死）。
+ * 核心裡的人還活著、已出局、離線、正在重建，或鑄造台停機時什麼都不做（手動「對它使用」才會說明原因）
+ */
+function autoRebuild(g: Game): void {
+  for (const z of g.world.zones) {
+    const pads = z.alive ? markersOf(z).fabricatorPad : undefined
+    if (!pads?.length) continue
+    const fab = g.world.inZone(z.id).find((e) => e.def.id === 'fac.fabricator' && e.alive)
+    if (!fab || offFor(g, fab) > 0) continue
+    const c = padCenter(pads)!
+    for (const u of g.world.query(z.id, c.x, c.y, 3)) {
+      if (!u.alive || !u.inv || !onPads(u, pads)) continue
+      for (let slot = 0; slot < u.inv.length; slot++) {
+        const it = u.inv[slot]
+        if (it?.id !== 'memoryCore') continue
+        const p = coreOwner(g, it)
+        if (!p || p.alive || p.stayDead || p.left || facOf(g).rebuilds.has(p.slot)) continue
+        startRebuild(g, u, slot, fab, p, 'fab.autoRebuild')
+      }
+    }
+  }
 }
 
 function giveRemote(g: Game, to: Ent, p: GamePlayer): void {
@@ -279,14 +308,59 @@ function giveRemote(g: Game, to: Ent, p: GamePlayer): void {
   if (itemDef('overrideRemote')) giveItem(g, to, it)
 }
 
+/** 記憶核心綁定的仿生人玩家 */
+function coreOwner(g: Game, it: { data?: unknown }): GamePlayer | undefined {
+  const owner = (it.data as { android?: number } | undefined)?.android
+  return owner !== undefined ? g.players[owner] : undefined
+}
+
+/** 用背包第 slot 格的記憶核心在鑄造台 t 重建 p 的機體（手動使用與走進平台共用）*/
+function startRebuild(g: Game, u: Ent, slot: number, t: Ent, p: GamePlayer, msg: string): void {
+  const fs = facOf(g)
+  const z = g.world.zones[t.zone]
+  const it = u.inv![slot]!
+  u.inv![slot] = null
+  u.statsDirty = true
+  g.onItemLost?.(u, it)
+  giveRemote(g, u, p)
+  p.data.core = 0
+  const pad = padCenter(markersOf(z).fabricatorPad) ?? { x: t.x, y: t.y - 1.5 }
+  fs.rebuilds.set(p.slot, g.time + FAB_REBUILD)
+  say(g, u, msg, { s: FAB_REBUILD })
+  g.privateLine(p.slot, 'fab.youRebuild', { s: FAB_REBUILD })
+  g.emitFx({ k: 'fabricate', z: z.id, x: t.x, y: t.y, x2: pad.x, y2: pad.y, e: t.id, v: FAB_REBUILD })
+  g.after(FAB_REBUILD, () => {
+    fs.rebuilds.delete(p.slot)
+    if (p.alive || p.stayDead || p.left) return
+    if (!z.alive || !t.alive) {
+      // 鑄造台在建造途中被毀（原作無敵，只剩被移除等極端情況）：核心掉回原地，還可以再找別的辦法
+      if (z.alive) {
+        const core = dropOnGround(g, z.id, t.x, t.y - 1, { ...it, data: { android: p.slot } })
+        p.data.core = core.id
+        g.privateLine(p.slot, 'fab.failed')
+      } else {
+        // 整座站都沒了：核心跟著消失
+        coreLost(g, p)
+      }
+      return
+    }
+    // 選過底盤（2000 EP 升級）就用上次的底盤，否則是一般人員外觀（研究 02 §5.3）
+    const form = p.form ? FORMS.get(p.form) : undefined
+    const nu = g.revivePlayer(p.slot, { zone: z.id, x: pad.x, y: pad.y }, form?.unit ?? 'personnel', 1)
+    if (!nu) return
+    p.data.coreOnly = false
+    applyBuff(g, nu, 'bf.fabArrive', 6)
+    g.emitFx({ k: 'fabricated', z: z.id, x: pad.x, y: pad.y, e: nu.id })
+  })
+}
+
 regScript('android.memoryCore', (g, ctx) => {
   const u = ctx.caster
   const t = ctx.target
   const slot = ctx.itemSlot ?? -1
   const it = slot >= 0 ? u.inv?.[slot] : null
   if (!it || it.id !== 'memoryCore') return false
-  const owner = (it.data as { android?: number } | undefined)?.android
-  const p = owner !== undefined ? g.players[owner] : undefined
+  const p = coreOwner(g, it)
   if (!t || !t.alive) {
     say(g, u, 'fab.coreNoTarget')
     return true
@@ -307,37 +381,7 @@ regScript('android.memoryCore', (g, ctx) => {
       say(g, u, 'fab.busy')
       return true
     }
-    takeUsed(g, ctx, 'memoryCore')
-    giveRemote(g, u, p)
-    p.data.core = 0
-    const pad = padCenter(markersOf(z).fabricatorPad) ?? { x: t.x, y: t.y - 1.5 }
-    fs.rebuilds.set(p.slot, g.time + FAB_REBUILD)
-    say(g, u, 'fab.rebuilding', { s: FAB_REBUILD })
-    g.privateLine(p.slot, 'fab.youRebuild', { s: FAB_REBUILD })
-    g.emitFx({ k: 'fabricate', z: z.id, x: t.x, y: t.y, x2: pad.x, y2: pad.y, e: t.id, v: FAB_REBUILD })
-    g.after(FAB_REBUILD, () => {
-      fs.rebuilds.delete(p.slot)
-      if (p.alive || p.stayDead || p.left) return
-      if (!z.alive || !t.alive) {
-        // 鑄造台在建造途中被毀：核心掉回原地，還可以再找別的辦法
-        if (z.alive) {
-          const core = dropOnGround(g, z.id, t.x, t.y - 1, { ...it, data: { android: p.slot } })
-          p.data.core = core.id
-          g.privateLine(p.slot, 'fab.failed')
-        } else {
-          // 整座站都沒了：核心跟著消失
-          coreLost(g, p)
-        }
-        return
-      }
-      // 選過底盤（2000 EP 升級）就用上次的底盤，否則是一般人員外觀（研究 02 §5.3）
-      const form = p.form ? FORMS.get(p.form) : undefined
-      const nu = g.revivePlayer(p.slot, { zone: z.id, x: pad.x, y: pad.y }, form?.unit ?? 'personnel', 1)
-      if (!nu) return
-      p.data.coreOnly = false
-      applyBuff(g, nu, 'bf.fabArrive', 6)
-      g.emitFx({ k: 'fabricated', z: z.id, x: pad.x, y: pad.y, e: nu.id })
-    })
+    startRebuild(g, u, slot, t, p, 'fab.rebuilding')
     return true
   }
   if (t.def.id === 'npc.pacifier' && t.owner === NEUTRAL) {
@@ -602,21 +646,62 @@ function cageCmd(g: Game, p: GamePlayer, con: Ent): void {
   g.emitFx({ k: 'cageBuild', z: z.id, x: c.x, y: c.y, v: CAGE_BUILD })
 }
 
+type CageItem = { def: string; hpK: number }
+
 function finishCage(g: Game, z: Zone): void {
   const by = z.data.cageBy as number
   const mobs = unitsOnPads(g, z, 'cagePad', isSpecimen).slice(0, CAGE_CAP)
-  if (!mobs.length) {
-    g.privateLine(by, 'fac.cageEmpty')
-    return
-  }
   const c = padCenter(markersOf(z).cagePad)!
+  // 平台上原本的籠子先推到平台南邊（原作 e02S：平台上的單位往南推 256），新籠子才不會疊在一起
+  for (const old of unitsOnPads(g, z, 'cagePad', (e) => e.alive && e.def.id === 'fac.cage')) {
+    const to = z.nav?.nearestOpen(old.x, old.y - 2.56) ?? { x: old.x, y: old.y - 2.56 }
+    g.world.relocate(old, z.id, to.x, to.y)
+  }
   const cage = g.world.spawn(unitDef('fac.cage'), z.id, c.x, c.y, NEUTRAL)
   cage.acquire = false
-  cage.data.contents = mobs.map((m) => ({ def: m.def.id, hpK: m.hp / m.maxHp }))
+  cage.data.contents = mobs.map((m) => ({ def: m.def.id, hpK: m.hp / m.maxHp }) satisfies CageItem)
   cage.x2 = { n: mobs.length }
   for (const m of mobs) g.world.remove(m)
-  g.privateLine(by, 'fac.caged', { n: mobs.length })
+  // 平台上沒有標本也照樣做出空籠子（原作 h04Q 一律生成），之後可以用「從第 N 間取標本」裝進來
+  g.privateLine(by, mobs.length ? 'fac.caged' : 'fac.cageMadeEmpty', { n: mobs.length })
   g.emitFx({ k: 'cageDone', z: z.id, x: c.x, y: c.y, e: cage.id })
+}
+
+/** 平台上還裝得下的籠子（原作 Cage_Weight ≤ 2）*/
+function openCage(g: Game, z: Zone): Ent | undefined {
+  return unitsOnPads(g, z, 'cagePad', (e) => e.alive && e.def.id === 'fac.cage' && ((e.data.contents as CageItem[] | undefined) ?? []).length < CAGE_CAP)[0]
+}
+
+/**
+ * 從第 i 間（0 起算）隔間直接取一隻標本放進平台上的籠子（研究 03 §4.5 e02T–e02Y Cage Cell N），不必把危險生物引出來。
+ * 只取真正的無主標本（偽裝成生物的玩家單位不算）；製籠中不能操作（原作製籠時控制台暫停）
+ */
+function cageCellCmd(g: Game, p: GamePlayer, z: Zone, i: number): void {
+  if (((z.data.cageUntil as number | undefined) ?? 0) > g.time) {
+    g.privateLine(p.slot, 'fac.cageBusy')
+    return
+  }
+  const info = cellInfo(z)
+  const room = info.rooms[i]
+  if (room === undefined) return
+  const cage = openCage(g, z)
+  if (!cage) {
+    g.privateLine(p.slot, 'fac.cageNoCage')
+    return
+  }
+  const l = z.layout!
+  const m = g.world.inZone(z.id).find((e) => isSpecimen(e) && roomAt(l, e.x, e.y)?.index === room)
+  if (!m) {
+    g.privateLine(p.slot, 'fac.cageNoSubject', { n: i + 1 })
+    return
+  }
+  const list = ((cage.data.contents as CageItem[] | undefined) ??= [])
+  list.push({ def: m.def.id, hpK: m.hp / m.maxHp })
+  cage.x2 = { n: list.length }
+  g.emitFx({ k: 'cageTransfer', z: z.id, x: m.x, y: m.y, x2: cage.x, y2: cage.y, e: cage.id })
+  g.world.remove(m)
+  g.privateLine(p.slot, 'fac.cageTransferred', { n: i + 1, c: list.length, cap: CAGE_CAP })
+  g.emitFx({ k: 'cageDone', z: z.id, x: cage.x, y: cage.y, e: cage.id })
 }
 
 function stepCages(g: Game): void {
@@ -765,8 +850,21 @@ export function facilityView(g: Game, p: GamePlayer): FacilityView | null {
     }
     case 'fac.cellConsole':
       return { k: 'cells', e: f.id, open: cellOpenStates(z), off }
-    case 'fac.cageConsole':
-      return { k: 'cage', e: f.id, busy: Math.max(0, Math.ceil(((z.data.cageUntil as number | undefined) ?? 0) - g.time)), pad: unitsOnPads(g, z, 'cagePad', isSpecimen).length, off }
+    case 'fac.cageConsole': {
+      const cage = openCage(g, z)
+      return {
+        k: 'cage',
+        e: f.id,
+        busy: Math.max(0, Math.ceil(((z.data.cageUntil as number | undefined) ?? 0) - g.time)),
+        pad: unitsOnPads(g, z, 'cagePad', isSpecimen).length,
+        off,
+        // 「從第 N 間取標本」：隔間數、平台上還裝得下的籠子裝了幾隻（-1 = 沒有，要先製籠）、容量。
+        // 不送各隔間的標本數：偽裝成生物的玩家不算標本，送了會讓人看出哪隻是假的
+        cells: cellInfo(z).rooms.length,
+        cage: cage ? ((cage.data.contents as CageItem[] | undefined) ?? []).length : -1,
+        cap: CAGE_CAP,
+      }
+    }
   }
   return null
 }
@@ -801,6 +899,7 @@ function facilityCmd(g: Game, p: GamePlayer, u: Ent, c: Command): void {
     }
     case 'fac.cageConsole':
       if (c.a === 'cage') cageCmd(g, p, f)
+      else if (c.a === 'cageCell' && c.s !== undefined) cageCellCmd(g, p, z, Math.floor(c.s))
       break
   }
 }
@@ -866,7 +965,7 @@ export function installFacilities(g: Game): void {
         c.data.pilot = 0
       }
     }
-    // 動力分配台被毀（自訂）：女帝號切回一般模式並改用緊急照明
+    // 動力分配台被毀：原作無敵（invuln），正常遊戲不會發生；保留給除錯工具等直接 killEnt 的情況：切回一般模式並改用緊急照明
     if (u.def.id === 'struct.power') {
       const z = g.world.zones[u.zone]
       if (z?.key === 'nyx') {

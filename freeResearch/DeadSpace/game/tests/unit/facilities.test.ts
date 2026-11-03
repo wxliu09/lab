@@ -571,7 +571,7 @@ describe('活體庫號', () => {
 })
 
 describe('女帝號動力分配台', () => {
-  it('切換模式：探索艇／站體加成、冷卻；實驗室模式才讓 LQ 倉儲運作；台子被毀回到一般', () => {
+  it('切換模式：探索艇／站體加成、冷卻；實驗室模式才讓 LQ 倉儲運作並改用緊急照明；台子無敵', () => {
     const { h, g, cs, ps } = setup(3)
     const nz = zone(g, 'nyx')
     const con = byDef(g, nz.id, 'struct.power')
@@ -613,12 +613,15 @@ describe('女帝號動力分配台', () => {
     g.handleCommand(q.slot, { k: 'buy', e: lq.id, a: 'burstGrenade' })
     h.ticks(2)
     expect(main(g, q).inv!.some((i) => i?.id === 'burstGrenade')).toBe(true)
-    // 動力台被毀：回到一般、女帝號緊急照明（自訂）
+    // 實驗室模式：動力集中到實驗室，女帝號改用緊急照明（自訂）
+    expect(nz.power).toBe('emergency')
+    // 動力分配台無敵（原作 h048）：打不壞，模式不變
+    expect(con.stats.invuln).toBe(true)
     damage(g, null, con, 99999, { pure: true })
     h.ticks(2)
-    expect(powerOf(g).mode).toBe('normal')
-    expect(nz.data.labPower).toBe(false)
-    expect(nz.power).toBe('emergency')
+    expect(con.alive).toBe(true)
+    expect(powerOf(g).mode).toBe('lab')
+    expect(nz.data.labPower).toBe(true)
     // 緊急照明是現場資訊：人在女帝號的人（與死者）快照收到（render 依此換成紅色緊急照明），在別站的人收不到
     let inside = 0
     let away = 0
@@ -631,6 +634,12 @@ describe('女帝號動力分配台', () => {
     }
     expect(inside).toBeGreaterThan(0)
     expect(away).toBeGreaterThan(0)
+    // 切回一般：恢復正常照明
+    g.handleCommand(r.slot, { k: 'facility', e: con.id, a: 'power', s: 0 })
+    h.ticks(2)
+    expect(powerOf(g).mode).toBe('normal')
+    expect(nz.power).toBe('normal')
+    expect(nz.data.labPower).toBe(false)
   })
 })
 

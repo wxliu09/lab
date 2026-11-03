@@ -26,8 +26,12 @@ async function startGame(page: Page): Promise<void> {
   await page.getByTestId('start').click()
   await expect(page.getByTestId('game')).toBeVisible({ timeout: 90000 })
   await page.waitForTimeout(3000)
-  // 揭露畫面可能剛好自己關掉：點不到就算了
-  if (await page.getByTestId('reveal').isVisible()) await page.getByTestId('reveal').click({ timeout: 5000 }).catch(() => {})
+  // 揭露畫面會蓋住 HUD；軟體繪圖下可能比上面等的更晚才出現，也可能已經自己關掉：確實關掉再往下
+  const reveal = page.getByTestId('reveal')
+  await reveal.waitFor({ timeout: 10000 }).catch(() => {})
+  if (await reveal.isVisible()) await reveal.click({ timeout: 5000 }).catch(() => {})
+  if (await reveal.isVisible()) await page.keyboard.press('Space')
+  await expect(reveal).toHaveCount(0, { timeout: 35000 })
 }
 
 const cam = (page: Page) => page.evaluate(() => ({ x: (window as unknown as W).__xcScene.rts.tx, y: (window as unknown as W).__xcScene.rts.ty }))
@@ -189,5 +193,128 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   const title = await page.getByTestId('vendor').locator('h3').innerText()
   expect(title.trim().length).toBeGreaterThan(0)
   expect(title).not.toContain('vendor.')
+  expect(errors).toEqual([])
+})
+
+type W4 = {
+  __xcScene: { camera: unknown; pick: (x: number, y: number) => number; units: { views: Map<number, { root: { position: { clone: () => { y: number; project: (c: unknown) => { x: number; y: number } } } }; height: number }> } }
+  __xcState: { world: { me: { unit?: number; control?: number; inv?: ({ item: string } | null)[] }; ents: Map<number, { x: number; y: number; s: { i: number; d?: string; n?: string; z?: number } }> } }
+  __xcTest: { hook: (op: string, a: unknown[]) => unknown }
+}
+
+const invItems = (page: Page) => page.evaluate(() => ((window as unknown as W4).__xcState.world.me.inv ?? []).map((x) => x?.item ?? ''))
+
+/** 按住來源格，分段移動到目標點再放開（超過拖曳門檻）*/
+async function dragTo(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 12, from.y - 12, { steps: 3 })
+  await page.mouse.move(to.x, to.y, { steps: 10 })
+  await page.mouse.up()
+}
+
+const center = async (page: Page, testId: string) => {
+  const b = (await page.getByTestId(testId).boundingBox())!
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+}
+
+test('背包：拖到另一格交換位置、拖到人身上給予；名字依介面語言顯示', async ({ page }) => {
+  test.setTimeout(420000)
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await startGame(page)
+
+  // 準備兩件不同的道具
+  await page.evaluate(() => {
+    const t = (window as unknown as W4).__xcTest
+    t.hook('run', [0, 'xb', ['traumaKit', 'me', 1]])
+    t.hook('run', [0, 'xb', ['phaseCloak', 'me', 1]])
+  })
+  await expect.poll(async () => (await invItems(page)).filter(Boolean).length, { timeout: 15000 }).toBeGreaterThanOrEqual(2)
+  const before = await invItems(page)
+  const a = before.findIndex((x) => x)
+  const b = before.findIndex((x, i) => i !== a && x !== before[a])
+  expect(b).toBeGreaterThanOrEqual(0)
+
+  // 拖到另一格：交換位置（拖曳中顯示提示，來源格、目標格有標記）
+  const pa = await center(page, 'inv-' + a)
+  const pb = await center(page, 'inv-' + b)
+  await page.mouse.move(pa.x, pa.y)
+  await page.mouse.down()
+  await page.mouse.move(pa.x + 12, pa.y - 12, { steps: 3 })
+  await page.mouse.move(pb.x, pb.y, { steps: 8 })
+  await expect(page.getByTestId('inv-ghost')).toBeVisible()
+  await expect(page.getByTestId('target-hint')).toContainText('交換位置')
+  await expect(page.getByTestId('inv-' + b)).toHaveClass(/drag-over/)
+  await page.mouse.up()
+  await expect(page.getByTestId('inv-ghost')).toHaveCount(0)
+  await expect.poll(async () => (await invItems(page))[a], { timeout: 15000 }).toBe(before[b])
+  expect((await invItems(page))[b]).toBe(before[a])
+
+  // 拖到格子以外的 HUD 上放開：取消，什麼都不變
+  const mid = await invItems(page)
+  await dragTo(page, await center(page, 'inv-' + a), await center(page, 'portrait'))
+  await page.waitForTimeout(1500)
+  expect(await invItems(page)).toEqual(mid)
+
+  // 給予：旁邊放一個中立的船員（有 6 格背包、不會動），把道具拖到他身上 → 走過去交給他，自己的格子空了
+  const mine = await page.evaluate(() => {
+    const w = (window as unknown as W4).__xcState.world
+    return w.me.control ?? w.me.unit ?? 0
+  })
+  const others = () =>
+    page.evaluate((me) => {
+      const w = (window as unknown as W4).__xcState.world
+      const z = w.ents.get(me)?.s.z
+      return [...w.ents.values()].filter((e) => e.s.d === 'personnel' && e.s.i !== me && e.s.z === z).map((e) => e.s.i)
+    }, mine)
+  const had = new Set(await others())
+  await page.evaluate(() => (window as unknown as W4).__xcTest.hook('run', [0, 'wj', ['personnel', 1]]))
+  await expect.poll(async () => (await others()).filter((i) => !had.has(i)).length, { timeout: 15000 }).toBeGreaterThan(0)
+  const buddy = (await others()).find((i) => !had.has(i))!
+  await page.keyboard.press('Space')
+  await page.waitForTimeout(1500)
+  const giveSlot = (await invItems(page)).findIndex((x) => x)
+  // 找一個拾取得到這個單位的螢幕位置（腳邊可能和自己或家具重疊；單位模型可能還沒建好）：找不到就把鏡頭拉回來再試
+  const findAt = () =>
+    page.evaluate((id) => {
+      const s = (window as unknown as W4).__xcScene
+      const uv = s.units.views.get(id)
+      if (!uv) return null
+      const r = document.querySelector('canvas.view')!.getBoundingClientRect()
+      for (const k of [0.5, 0.8, 0.3, 1, 0.65])
+        for (const dx of [0, 0.012, -0.012, 0.024, -0.024]) {
+          const v = uv.root.position.clone()
+          v.y += uv.height * k
+          const p = v.project(s.camera)
+          if (s.pick(p.x + dx, p.y) === id) return { x: r.left + ((p.x + dx) * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height }
+        }
+      return null
+    }, buddy)
+  let at = await findAt()
+  for (let i = 0; i < 10 && !at; i++) {
+    await page.keyboard.press('Space')
+    await page.waitForTimeout(1500)
+    at = await findAt()
+  }
+  expect(at).not.toBeNull()
+  await dragTo(page, await center(page, 'inv-' + giveSlot), at!)
+  await expect.poll(async () => (await invItems(page))[giveSlot], { timeout: 30000 }).toBe('')
+
+  // 名字依介面語言：中文介面不出現英文職業前綴；切到英文後照 sim 原本的寫法
+  const raw = await page.evaluate(() => {
+    const w = (window as unknown as W4).__xcState.world
+    return w.ents.get((w.me.control ?? w.me.unit)!)?.s.n ?? ''
+  })
+  expect(raw).toContain('Alice')
+  await page.getByTestId('portrait').waitFor()
+  const zhName = (await page.getByTestId('portrait').locator('.bars > div').first().innerText()).trim()
+  expect(zhName).toContain('Alice')
+  expect(zhName).not.toMatch(/^(Dr\.|Private|Medic|Captain|Janitor|CEO|Commissar|Engineer|Corporal|Ace) /)
+  await page.getByTestId('settings-open').click()
+  await page.locator('.modal select').first().selectOption('en')
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.modal')).toHaveCount(0)
+  await expect(page.getByTestId('portrait').locator('.bars > div').first()).toHaveText(raw)
   expect(errors).toEqual([])
 })

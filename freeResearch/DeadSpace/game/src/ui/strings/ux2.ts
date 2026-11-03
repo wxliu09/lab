@@ -193,7 +193,7 @@ export const UX2_EN: Record<string, string> = {
   'practice.r.random': 'Random',
   'practice.r.random.d': 'Roles are drawn by the normal rules, like a real game.',
   'practice.r.human': 'Human',
-  'practice.r.human.d': "Find the hidden threats among the crew: grab a rig and gear (vendors are free), run blood tests, watch each other's backs.",
+  'practice.r.human.d': "Find the hidden threats among the crew: grab a suit and gear (vendors are free), run blood tests, watch each other's backs.",
   'practice.r.xeno': 'Xeno',
   'practice.r.xeno.d': 'Pose as crew; when alone, switch to your anonymous form to implant, lay eggs and evolve.',
   'practice.r.mutant': 'Mutant',

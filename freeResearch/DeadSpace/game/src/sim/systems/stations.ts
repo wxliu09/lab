@@ -1,6 +1,6 @@
 // 站點技能與太空層天體運動（M7；研究 03 §1.1、§2.3、§3.2、§4.2、§4.3、§4.7）：
 // 天守主砲與反物質傳送、豪勇號降落翠原星與自動駕駛、擺渡號傳送台、火口號維修／封鎖／神經毒素、
-// 女帝號輔助推進跳躍、餘燼衛星重力校正、翠原星與餘燼衛星公轉。
+// 女帝號輔助推進跳躍、餘燼衛星重力校正、翠原星與餘燼衛星公轉；翠原星轟炸與輻射（§4.6）、餘燼衛星大氣護盾與暴風雪（§4.3）。
 // 全站廣播一律不提是誰操作的；給操作者的回饋走 privateLine。
 import { GRAV_ACCEL, GRAV_PV } from '../../shared/content/facilities'
 import { abilityDef, unitDef } from '../../shared/content/registry'
@@ -9,7 +9,7 @@ import { fmtKey, type Game } from '../game'
 import { markersOf } from '../setup'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { applyBuff, hasBuff, removeBuff } from './buffs'
-import { DEATH_HOOKS, damage } from './damage'
+import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from './damage'
 import { regScript } from './effects'
 import { tenshuDischarged } from './events'
 import { moveBy } from './movement'
@@ -46,6 +46,19 @@ export const JUMP_CHARGE = 20
 export const GRAV_UPLINK_LIFE = 30
 /** 火口號自動維修的檢查間隔 */
 const REPAIR_SCAN = 0.1
+/** 翠原星：每累積承受 30000 傷害隕擊一次（研究 03 §4.6）*/
+export const BOMBARD_EVERY = 30000
+/** 隕擊：預警 10 秒、半徑 6 公尺內 4900（探索船 10000），降落中的豪勇號每次 20000 */
+export const IMPACT_WARN = 10
+export const IMPACT_R = 6
+export const IMPACT_DMG = 4900
+export const IMPACT_DMG_SHIP = 10000
+export const IMPACT_DMG_BRAVADO = 20000
+/** 地表殘留輻射：每次隕擊 +3，每秒 ×0.99，每秒對地表所有單位造成這麼多傷害 */
+export const RAD_PER_IMPACT = 3
+export const RAD_DECAY = 0.99
+/** 餘燼衛星護盾失效後的暴風雪：每 0.5 秒刷新一次「暴風雪」（每秒 10）*/
+const STORM_EVERY_TICKS = 10
 
 // ───────── 狀態 ─────────
 
@@ -87,10 +100,16 @@ export interface StationsState {
   landed: Landed | null
   pushes: GravPush[]
   nextRepair: number
+  /** 翠原星累積承受的傷害（滿 30000 隕擊一次）*/
+  bombard: number
+  /** 翠原星地表殘留輻射（每秒傷害）*/
+  rad: number
+  /** 餘燼衛星大氣護盾已失效（暴風雪）*/
+  storm: boolean
 }
 
 export function stationsOf(g: Game): StationsState {
-  return (g.data.stations ??= { orbits: [], orbs: new Map(), landed: null, pushes: [], nextRepair: 0 }) as StationsState
+  return (g.data.stations ??= { orbits: [], orbs: new Map(), landed: null, pushes: [], nextRepair: 0, bombard: 0, rad: 0, storm: false }) as StationsState
 }
 
 const zoneByKey = (g: Game, key: string): Zone | undefined => g.world.zones.find((z) => z.key === key && z.alive)
@@ -685,6 +704,117 @@ function stepOrbits(g: Game, dt: number): void {
   }
 }
 
+// ───────── 翠原星轟炸與輻射（研究 03 §4.6）─────────
+
+/** 地表上會被隕擊／輻射打到的單位（不含地面物件、物品、屍體）*/
+function surfaceUnit(e: Ent): boolean {
+  return e.alive && !e.removed && !e.tags.has('noTarget') && !e.tags.has('corpse') && !e.data.item && !e.data.zoneObj
+}
+
+/** 地表隨機一個走得到的點 */
+function randomSurfacePoint(g: Game, z: Zone): { x: number; y: number } | null {
+  const l = z.layout!
+  const nav = z.nav!
+  const rng = g.world.rng
+  for (let i = 0; i < 40; i++) {
+    const x = rng.range(1, l.w - 1)
+    const y = rng.range(1, l.h - 1)
+    if (!nav.blockedAt(x, y)) return { x, y }
+  }
+  return nav.nearestOpen(l.w / 2, l.h / 2)
+}
+
+/** 累積傷害每滿 30000：地表隨機點預警 10 秒後隕擊（原作每一份 30000 各自倒數）*/
+function bombardHit(g: Game, amount: number): void {
+  const S = stationsOf(g)
+  S.bombard += amount
+  while (S.bombard >= BOMBARD_EVERY) {
+    S.bombard -= BOMBARD_EVERY
+    const z = zoneByKey(g, 'verdance')
+    if (!z?.layout || !z.nav) return
+    const at = randomSurfacePoint(g, z)
+    if (!at) return
+    // 原作在預警時就累加殘留輻射
+    S.rad += RAD_PER_IMPACT
+    // 預警：落點紅圈（看得到地表的人）＋全體小地圖提示（原作 ping 全體玩家 10 秒；落點是公開現象）
+    g.emitFx({ k: 'fusionArm', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN })
+    g.emitFx({ k: 'ping', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN, s: 'event' }, g.allPlayers().map((p) => p.slot))
+    for (const s of mainsIn(g, z.id)) g.privateLine(s, 'st.impactWarn', { s: IMPACT_WARN })
+    g.after(IMPACT_WARN, () => impact(g, z.id, at.x, at.y))
+  }
+}
+
+function impact(g: Game, zid: number, x: number, y: number): void {
+  const z = g.world.zones[zid]
+  if (!z?.alive) return
+  g.emitFx({ k: 'fusion', z: zid, x, y, v: IMPACT_R })
+  // 原作：600 內單位 4900、探索船（A071；本作的停泊船）10000，一般攻擊（吃護甲）；地表設施也會被砸
+  for (const e of g.world.query(zid, x, y, IMPACT_R)) {
+    if (!surfaceUnit(e)) continue
+    damage(g, null, e, e.tags.has('ship') ? IMPACT_DMG_SHIP : IMPACT_DMG, { kind: 'blast' })
+  }
+  // 留下輻射區（原作 e014 Planet Radiation：永久、700 範圍、每秒 20；蛞蝓仔免疫）
+  const f = g.world.spawn(unitDef('hz.radField'), zid, x, y, NEUTRAL)
+  f.data.zoneObj = true
+  applyBuff(g, f, 'bf.planetRadField')
+  // 豪勇號降落在翠原星上：每次撞擊 20000（降落時本來不會被打，這是大氣擾動）
+  const L = stationsOf(g).landed
+  const b = L && L.verdanceZone === zid ? g.world.get(L.bravado) : undefined
+  if (b && b.alive) {
+    damage(g, null, b, IMPACT_DMG_BRAVADO, { kind: 'blast', lethal: true })
+    if (b.alive) g.systemAll('st.bravadoImpact', { n: Math.ceil(b.hp / IMPACT_DMG_BRAVADO) })
+  }
+}
+
+/** 地表殘留輻射：每秒 ×0.99，對地表所有非建築單位造成等量傷害（蛞蝓仔免疫）*/
+function stepRadiation(g: Game): void {
+  const S = stationsOf(g)
+  if (S.rad <= 0 || g.world.tick % 20 !== 0) return
+  S.rad *= RAD_DECAY
+  if (S.rad < 0.05) {
+    S.rad = 0
+    return
+  }
+  const z = zoneByKey(g, 'verdance')
+  if (!z) return
+  for (const e of g.world.inZone(z.id)) {
+    if (!surfaceUnit(e) || e.tags.has('structure') || e.def.id === 'creature.slugling') continue
+    damage(g, null, e, S.rad, { kind: 'energy', dot: true, buff: 'bf.planetRad' })
+  }
+}
+
+// ───────── 餘燼衛星大氣護盾（研究 03 §4.3）─────────
+
+/** 開局：餘燼衛星帶著 300000 的大氣護盾（先吸收對它的傷害）*/
+function setupCinderShield(g: Game): void {
+  const c = spaceEntOf(g, 'cinder')
+  if (c) applyBuff(g, c, 'bf.cinderShield')
+}
+
+/** 護盾被打破 → 全星區公告、地表暴風雪（之後每 0.5 秒刷新「暴風雪」：每秒 10，只對地表上的非建築單位）*/
+function stepCinderStorm(g: Game): void {
+  const S = stationsOf(g)
+  const z = zoneByKey(g, 'cinder')
+  if (!z) return
+  if (!S.storm) {
+    if (g.world.tick % 10 !== 0) return
+    const c = g.world.get(z.spaceEnt)
+    if (!c || !c.alive || hasBuff(c, 'bf.cinderShield')) return
+    S.storm = true
+    // 天氣是公開現象（worldPublic 的 wx）：render 依此換成暴風雪
+    z.data.weather = 'blizzard'
+    g.systemAll('st.cinderShieldDown')
+    // 地表上的人感覺得到護盾崩潰（鏡頭晃動）
+    const here = mainsIn(g, z.id)
+    if (here.length) g.emitFx({ k: 'shake', z: z.id, x: z.layout!.w / 2, y: z.layout!.h / 2, v: 0.6 }, here)
+  }
+  if (g.world.tick % STORM_EVERY_TICKS !== 0) return
+  for (const e of g.world.inZone(z.id)) {
+    if (!surfaceUnit(e) || e.tags.has('structure')) continue
+    applyBuff(g, e, 'bf.blizzard')
+  }
+}
+
 // ───────── 安裝 ─────────
 
 const installed = new WeakSet<Game>()
@@ -693,6 +823,7 @@ export function installStations(g: Game): void {
   if (installed.has(g)) return
   installed.add(g)
   setupOrbits(g)
+  setupCinderShield(g)
   const dt = 1 / 20
   g.systems.push({
     name: 'stations',
@@ -702,7 +833,14 @@ export function installStations(g: Game): void {
       stepOrbs(gg, dt)
       stepPushes(gg, dt)
       stepRepairAutocast(gg)
+      stepRadiation(gg)
+      stepCinderStorm(gg)
     },
+  })
+  // 翠原星承受的傷害累積成隕擊（原作的轟炸進度以 Minertha 的 mana 顯示，本作不顯示）
+  DAMAGE_HOOKS.push((g2, _src, t, amount) => {
+    if (g2 !== g || amount <= 0 || t.zone !== SPACE_ZONE || t.data.station !== 'verdance') return
+    bombardHit(g, amount)
   })
   DEATH_HOOKS.push((g2, u, killer) => {
     if (g2 !== g) return

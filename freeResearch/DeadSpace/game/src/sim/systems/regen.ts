@@ -1,11 +1,15 @@
 // 生命再生器（女帝號醫療艙，原作 h010 ×2、A016 Life Regen Aura 6 hp/s）：被動光環，站在旁邊的單位每秒回復生命，不需要啟動。
 // 每 0.5 秒刷新一次短效 buff（buff 系統的 regen 每秒回復），離開範圍 1 秒內就停；任何人都有效，不透露身分。
+// 原作 h010 帶 Aloc：不可選取、不可攻擊（單位定義 struct.regen 是 invuln＋noTarget）。
 import type { Game } from '../game'
 import type { Ent } from '../ent'
 import { applyBuff } from './buffs'
 
-/** 光環半徑（公尺，從再生器中心算，含對方的身體半徑）*/
-export const REGEN_AURA_R = 4
+/**
+ * 光環半徑（公尺，從再生器中心算，含對方的身體半徑）。原作 aare1 = 100（≈1 m，從中心算、不含身體），
+ * 本作的再生器佔一整格（半徑 0.5）且這裡含對方身體半徑，取 2 m（人員中心距 2.4 m 內）：要站在再生器旁邊才吃得到
+ */
+export const REGEN_AURA_R = 2
 
 export function installRegen(g: Game): void {
   let next = 0

@@ -37,6 +37,9 @@ describe('逃生艙', () => {
     const p = ps[1]
     const u = g.mainOf(p)!
     const pod = launch(h, g, p)
+    // 洩漏 oracle 是拿「現在」的可見範圍比對累積的訊息：起飛前在站內看到的東西（例如出生點旁的雜物箱）
+    // 起飛後已不在視野內，會被誤判；這裡只檢查起飛後的訊息
+    for (const r of h.raw.values()) r.length = 0
     const vis = computeVision(g)
     for (const q of ps) {
       if (q === p) continue

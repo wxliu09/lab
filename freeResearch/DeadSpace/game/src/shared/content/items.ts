@@ -24,6 +24,21 @@ export const GRENADE_SPEED = 9
 
 /** 翻找雜物箱的獎品表：rng.int(1, 28) 的結果 → 道具（其餘無）*/
 export const RUMMAGE_TABLE: Record<number, string> = { 1: 'tetracyne', 2: 'invScanner', 3: 'holoProjector', 4: 'festiveHat' }
+/** 原作的擲骰面數（GetRandomInt(1,28)：四項各 1/28，其餘空箱）*/
+export const RUMMAGE_SIDES = 28
+
+/** 其他翻找表（雜物箱生成時記在 data.loot；沒記的用原作的表）。本作依站點調整 */
+export const RUMMAGE_LOOT: Record<string, { sides: number; items: Record<number, string> }> = {
+  // 七號廢站是預定拆除的空站、值錢的都被搬光了：只剩節慶帽與四聯藥（各 1/56），其餘空箱
+  scrap: { sides: 56, items: { 1: 'festiveHat', 2: 'tetracyne' } },
+}
+
+/** 各站的雜物箱數量（原作 war3map.doo 的 LTcr 共 99 個；版面上的 rummageBox 也算在內，其餘由 sim 開局放置）*/
+export const CRATE_COUNT: Readonly<Record<string, number>> = { nyx: 12, verdance: 11, bravado: 14, tenshu: 8, caldera: 8, vivarium: 6, hulk7: 11, pirate: 29 }
+/** 各站雜物箱用的翻找表（RUMMAGE_LOOT 的 key）*/
+export const CRATE_LOOT: Readonly<Record<string, string>> = { hulk7: 'scrap' }
+/** 版面上的雜物箱被毀（打爆或翻找）必掉的道具：海盜船貨艙的兩個補給箱掉急救包（原作 `Kf`／`lf`）*/
+export const CRATE_POI_DROP: Readonly<Record<string, string>> = { pirate: 'traumaKit' }
 
 // ───────── 裝置單位（玩家放置、屬於放置者）─────────
 
@@ -93,7 +108,7 @@ export const ITEM_BUFFS: BuffDef[] = [
   {
     id: 'bf.containedParasite',
     name: L('受控寄生', 'Contained Parasite'),
-    desc: L('寄生體被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成異形的 spawn。', 'The antibodies have forced the parasite dormant. No more poison, and it clears when the timer runs out, but if you die before then you still rise as a xeno spawn.'),
+    desc: L('寄生體被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成異形的眷屬。', 'The antibodies have forced the parasite dormant. No more poison, and it clears when the timer runs out, but if you die before then you still rise as a xeno spawn.'),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -1112,6 +1127,8 @@ export const ITEM_STRINGS = {
     'item.trackerPing': '定位完成：附近有 {n} 個活動目標。',
     'item.scanResult': '{nz} 攜帶：{lz}',
     'item.scanEmpty': '{nz} 身上什麼都沒帶。',
+    // 匿名形態（無主無名的樣子）：背包內容不列出（否則背包就是身分指紋）
+    'item.scanUnknown': '{nz}：訊號無法辨識，讀不出背包內容。',
     'item.scanned': '你的背包被人掃描了。',
     'item.criticalCare': '重症維生系統啟動，你撿回了一條命。',
     'item.reviveOk': '急救成功，{name} 恢復了心跳。',
@@ -1141,6 +1158,12 @@ export const ITEM_STRINGS = {
     'item.interfaceKitFail': '這東西不需要重建。',
     'item.wormBait': '蟲餌的味道散開了。',
     'item.wrenchLost': '扳手飛了出去，掉在地上。',
+    // ───── 設施（sim 第 4 輪：籠子控制台取標本、鑄造台自動重建）─────
+    'fac.cageMadeEmpty': '平台上沒有標本：做好了一個空籠子，可以從隔間調標本進來。',
+    'fac.cageNoCage': '平台上沒有還裝得下的籠子：先製作一個籠子。',
+    'fac.cageNoSubject': '隔間 {n} 裡找不到標本。',
+    'fac.cageTransferred': '已把隔間 {n} 的一隻標本移進平台上的籠子（{c}／{cap}）。',
+    'fab.autoRebuild': '你帶著記憶核心走上鑄造平台：鑄造台開始重建機體（{s} 秒）。你拿到了一個與它綁定的遙控器。',
   },
   en: {
     'item.notYet': 'This device is of no use right now.',
@@ -1155,6 +1178,7 @@ export const ITEM_STRINGS = {
     'item.trackerPing': 'Sweep complete: {n} moving contact(s) nearby.',
     'item.scanResult': '{ne} is carrying: {le}',
     'item.scanEmpty': '{ne} is carrying nothing.',
+    'item.scanUnknown': '{ne}: unrecognised signature, cannot read what it is carrying.',
     'item.scanned': 'Your inventory has been scanned.',
     'item.criticalCare': 'Critical care engaged — death will have to wait.',
     'item.reviveOk': 'Resuscitation successful: {name} has a pulse again.',
@@ -1184,5 +1208,10 @@ export const ITEM_STRINGS = {
     'item.interfaceKitFail': 'That does not need rebuilding.',
     'item.wormBait': 'The bait\'s smell spreads out.',
     'item.wrenchLost': 'The wrench flies off and clatters to the floor.',
+    'fac.cageMadeEmpty': 'Nothing was on the platform, so the cage is empty. Transfer specimens in from the pens.',
+    'fac.cageNoCage': 'No cage with room on the platform. Build a cage first.',
+    'fac.cageNoSubject': 'No specimen found in pen {n}.',
+    'fac.cageTransferred': 'Moved a specimen from pen {n} into the cage on the platform ({c}/{cap}).',
+    'fab.autoRebuild': 'You stepped onto the fabrication pad carrying a memory core: the fabricator starts rebuilding a chassis ({s}s). You received a remote bound to it.',
   },
 } as const

@@ -3,9 +3,10 @@ import { effect, signal } from '@preact/signals'
 import { edgeScrollOn, edgeSpeed } from './controlPrefs'
 import { audioPrefs, setAudioPref } from '../audio/sfx'
 import { abilityDef, itemDef, UNITS } from '../shared/content/registry'
-import { EntFlag } from '../shared/protocol/messages'
+import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
 import { sendCmd, world } from './session'
+import { giveRefusal } from './give'
 
 export type TargetMode =
   | null
@@ -65,6 +66,12 @@ export function isPiloting(): boolean {
   if (!c || !world.me.unit || c === world.me.unit || world.me.alive === false) return false
   const d = world.ents.get(c)?.s.d ?? ''
   return d.startsWith('station.') || (d.startsWith('ship.') && d !== 'ship.pod') || d === 'npc.defenseDrone'
+}
+
+/** 以目前的自己判斷這個實體能不能收下拖過來的道具（見 give.ts 的 giveRefusal）*/
+export function giveRefusalHere(s: SnapEntity | undefined): string | null {
+  const ctl = world.me.control || world.me.unit
+  return giveRefusal(s, { unit: world.me.unit, control: world.me.control, zone: ctl ? world.ents.get(ctl)?.s.z : undefined })
 }
 
 /** 輸入框聚焦時不處理遊戲按鍵 */
@@ -369,6 +376,25 @@ export class Input {
       return
     }
     targetMode.value = { kind: 'ability', id: ab.id, target: ab.target, aoe: ab.aoe, range: ab.range }
+  }
+
+  /**
+   * 背包格拖到場景上放開（螢幕座標）：放在能收道具的單位身上＝給予（sim 會先走到對方身邊）。
+   * 放在空地或自己身上＝取消；對象不行就顯示現有的錯誤訊息。回傳是否送出了給予。
+   */
+  dropItemOn(slot: number, clientX: number, clientY: number, queue = false): boolean {
+    if (!world.me.inv?.[slot]) return false
+    const r = this.el.getBoundingClientRect()
+    const nx = ((clientX - r.left) / r.width) * 2 - 1
+    const ny = -((clientY - r.top) / r.height) * 2 + 1
+    const id = this.scene.pick(nx, ny)
+    const e = id ? world.ents.get(id) : undefined
+    const why = giveRefusalHere(e?.s)
+    if (why) localNotice.value = { text: why, at: performance.now() }
+    if (why !== null || !e) return false
+    sendCmd({ k: 'give', e: id, s: slot, q: queue })
+    this.scene.fx.clickMarker(this.scene.zone, e.x, e.y, '#5cf2a5')
+    return true
   }
 
   useItem(slot: number): void {

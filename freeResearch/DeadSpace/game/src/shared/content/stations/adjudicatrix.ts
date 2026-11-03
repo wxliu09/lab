@@ -10,6 +10,8 @@ export const ADJUDICATRIX: StationDef = {
   scanTime: 4.27,
   podLanding: 'y',
   dockable: true,
+  // 主控台 6000 HP、每秒回 100（原作 h000）
+  console: { hp: 6000, regen: 100 },
   space: {
     hp: 400000,
     hpRegen: 200,

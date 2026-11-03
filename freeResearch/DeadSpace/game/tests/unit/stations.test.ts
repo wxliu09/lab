@@ -154,7 +154,8 @@ describe('各站特殊設施', () => {
       const c = pois(id, 'console')
       expect(c.length, id).toBe(1)
       expect(c[0].def.ref).toBe(id)
-      expect(spec(id).space.pilotable).toBe(true)
+      // 海盜船主控台屬於海盜、不可駕駛
+      expect(spec(id).space.pilotable, id).toBe(id !== 'pirate')
     }
     for (const id of ['hulk7', 'vivarium', 'verdance', 'cinder', 'uo']) expect(pois(id, 'console').length, id).toBe(0)
   })

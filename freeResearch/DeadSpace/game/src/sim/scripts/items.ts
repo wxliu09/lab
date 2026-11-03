@@ -4,20 +4,21 @@
 // 註冊到 g.systems；所有道具 script、立即生效商品、傷害 hook 與道具相關指令都會先呼叫它，
 // 所以不需要 setup 額外接線（setup 若想提早啟用，可以在開局直接呼叫 itemRuntime(g)）。
 import { regScript, runEffects, SCRIPTS, type EffectCtx, type ScriptFn } from '../systems/effects'
-import { damage, heal, DAMAGE_HOOKS } from '../systems/damage'
+import { damage, heal, DAMAGE_HOOKS, DEATH_HOOKS } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff, removeBuffsWhere } from '../systems/buffs'
 import { dropOnGround, giveItem, makeItem } from '../systems/items'
 import { INSTANT_ITEMS, initVendor, updateVendorView, type StockState } from '../systems/vendors'
 import { EXTRA_COMMANDS, issue } from '../systems/orders'
 import { inAttackRange, isHostile } from '../systems/combat'
-import { canSeeStealth } from '../systems/vision'
+import { canSeeStealth, knowsOwner } from '../systems/vision'
 import { BUFFS, ITEMS, UNITS, itemDef, unitDef } from '../../shared/content/registry'
-import { FRAG_BLAST, GRENADE_FUSE, MODULE_TARGET, RUMMAGE_TABLE } from '../../shared/content/items'
+import { FRAG_BLAST, GRENADE_FUSE, MODULE_TARGET, RUMMAGE_LOOT, RUMMAGE_SIDES, RUMMAGE_TABLE } from '../../shared/content/items'
 import { DOOR_HACK_SECONDS, DOOR_REACH } from '../../shared/content/classAbilities'
 import { listArgs, locArgs } from '../../shared/sysArgs'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
-import type { Game } from '../game'
+import type { Game, GamePlayer } from '../game'
 import { SPACE_ZONE } from '../world'
+import { mannedCraft } from '../systems/space'
 
 // ───────── 數值（公尺／秒；原作 world units ÷ 100）─────────
 
@@ -628,11 +629,21 @@ regScript('cls.rummage', (g, ctx) => {
   if (!t || !t.alive || t.def.id !== 'struct.rummage') return
   g.emitFx({ k: 'rummage', z: t.zone, x: t.x, y: t.y, e: t.id })
   g.killEnt(t, null, -1)
-  const id = RUMMAGE_TABLE[g.world.rng.int(1, 28)]
+  // 翻找表依箱子生成時記下的 data.loot（七號廢站的箱子幾乎是空的）；沒記的用原作的表
+  const loot = RUMMAGE_LOOT[(t.data.loot as string | undefined) ?? '']
+  const id = loot ? loot.items[g.world.rng.int(1, loot.sides)] : RUMMAGE_TABLE[g.world.rng.int(1, RUMMAGE_SIDES)]
   if (id && itemDef(id)) {
     giveItem(g, u, makeItem(id))
     say(g, u, 'item.rummageFound', { item: id })
   } else say(g, u, 'item.rummageEmpty')
+})
+
+// 固定掉落的雜物箱（setup 依 CRATE_POI_DROP 記在 data.dropItem；海盜船貨艙的兩個補給箱掉急救包）：打爆或翻找都算。
+// 站點毀滅時設施是直接移除、不會觸發；destroyInterior 也會先標 noDrops
+DEATH_HOOKS.push((g, u) => {
+  const id = u.def.id === 'struct.rummage' ? (u.data.dropItem as string | undefined) : undefined
+  if (!id || u.data.noDrops || !itemDef(id) || !g.world.zones[u.zone]?.alive) return
+  dropOnGround(g, u.zone, u.x, u.y, makeItem(id))
 })
 
 // ───────── 爆裂物 ─────────
@@ -741,6 +752,11 @@ regScript('item.debris', (g, ctx) => {
 regScript('item.singularity', (g, ctx) => {
   const u = ctx.caster
   const { zone, x, y } = ctx
+  // 放置黑洞裝置會直接摧毀餘燼衛星的重力控制裝置（研究 03 §4.3、§7 `Dz`）
+  for (const z of g.world.zones) {
+    if (!z.alive || !z.layout) continue
+    for (const e of g.world.inZone(z.id)) if (e.alive && e.data.vendor === 'gravity') g.killEnt(e, null, -1)
+  }
   const obj = g.world.spawn(unitDef('dev.singularity'), zone, x, y, u.owner)
   obj.data.zoneObj = true
   obj.lifeEnd = g.time + SING_LIFE
@@ -890,17 +906,49 @@ regScript('item.tracker', (g, ctx) => {
   g.privateLine(slot, 'item.trackerPing', { n })
 })
 
+const packIds = (inv: Ent['inv']): string[] => (inv ?? []).filter((it) => !!it).map((it) => it!.id)
+
+/**
+ * 背包掃描器讀到的內容：照掃描者「看到的樣子」回報。變身時背包整組帶進匿名形態，照實列出就等於身分指紋。
+ * - 自己的東西、同陣營的異類（規則同快照的 ally：看得出是分身）、除錯旗標「看穿匿名單位」：照實回報
+ * - 匿名的樣子（沒在偽裝的匿名形態、繭、蛋、匿名分身，或複製匿名目標的偽裝）：null = 無法辨識
+ * - 偽裝成某位玩家（化身、全像分身、殘影），或看起來就是某人本人的分身（幻影裝的分身等）：
+ *   回報那個人本人現在的背包，和掃描本人得到的一樣。用偽裝者自己的背包會讓「名字對、背包不對」直接揭穿偽裝，
+ *   背包本身也會指認出偽裝者；分身照實回報（空的）也一樣會被看穿。那個人已經不在場上 = 空的
+ * - 偽裝成其他無主的東西（生物等）：生物不帶東西，回報空的
+ */
+function scannedPack(g: Game, viewer: GamePlayer | undefined, t: Ent): string[] | null {
+  if (viewer && (t.owner === viewer.slot || viewer.flags.reveal || (knowsOwner(g, viewer, t) && sameSide(g, viewer, t.owner)))) return packIds(t.inv)
+  const fake = t.data.fake as { owner: number; anon?: boolean } | undefined
+  // 別人眼中這是誰：-1 = 無主的樣子
+  const looks = fake ? fake.owner : t.anon ? -1 : t.owner
+  if (fake ? fake.anon : t.anon) return null
+  if (!fake && !(t.illusion && t.data.looksMain)) return packIds(t.inv)
+  const q = looks >= 0 ? g.players[looks] : undefined
+  const m = q ? g.mainOf(q) : undefined
+  return m && m.alive ? packIds(m.inv) : []
+}
+
+/** 同一個異類陣營（看得出彼此的分身；人類方彼此不算）*/
+function sameSide(g: Game, viewer: GamePlayer, slot: number): boolean {
+  const o = slot >= 0 ? g.players[slot] : undefined
+  const f = o ? g.faction(o) : 'crew'
+  return f !== 'crew' && f === g.faction(viewer)
+}
+
 regScript('item.invScan', (g, ctx) => {
   const u = ctx.caster
   const t = ctx.target
   if (!t || u.owner < 0) return
-  const items = (t.inv ?? []).filter((it) => !!it).map((it) => it!.id)
+  const items = scannedPack(g, g.players[u.owner], t)
   const who = shownName(t)
   // 名字與道具清單兩種語言都送（匿名形態沒有名字：寫看得到的形態名）
   const nm = who.name ? { nz: who.name, ne: who.name } : locArgs(UNITS.get(who.def)?.name, 'nz', 'ne', '???')
-  const names = (l: 'zh' | 'en') => items.map((id) => itemDef(id)?.name[l] ?? id)
-  if (items.length) g.privateLine(u.owner, 'item.scanResult', { ...nm, def: who.def, items: items.join(','), ...listArgs(names('zh'), names('en')), n: items.length })
-  else g.privateLine(u.owner, 'item.scanEmpty', { ...nm, def: who.def })
+  if (!items) g.privateLine(u.owner, 'item.scanUnknown', { ...nm, def: who.def })
+  else if (items.length) {
+    const names = (l: 'zh' | 'en') => items.map((id) => itemDef(id)?.name[l] ?? id)
+    g.privateLine(u.owner, 'item.scanResult', { ...nm, def: who.def, items: items.join(','), ...listArgs(names('zh'), names('en')), n: items.length })
+  } else g.privateLine(u.owner, 'item.scanEmpty', { ...nm, def: who.def })
   g.emitFx({ k: 'scan', z: t.zone, x: t.x, y: t.y }, [u.owner])
   if (t.isMain && t.owner >= 0 && t.owner !== u.owner) g.privateLine(t.owner, 'item.scanned')
 })
@@ -917,12 +965,14 @@ regScript('item.holo', (g, ctx) => {
   const p = openNear(g, t.zone, t.x + Math.cos(side) * 1.2, t.y + Math.sin(side) * 1.2, 0)
   const h = g.world.spawn(t.def, t.zone, p.x, p.y, u.owner)
   // 別人看到的外觀：照目標「在別人眼中」的樣子（匿名就匿名、偽裝就複製偽裝）
-  const fake = (t.data.fake as { def: string; owner: number; name: string; color: number; cls: string } | undefined) ?? {
+  const fake = (t.data.fake as { def: string; owner: number; name: string; color: number; cls: string; anon?: boolean } | undefined) ?? {
     def: (t.data.viewDef as string | undefined) ?? t.def.id,
     owner: t.anon ? -1 : t.owner,
     name: t.anon ? '' : t.name,
     color: t.anon ? -1 : t.color,
     cls: t.anon ? '' : t.classId,
+    // 複製的是匿名的樣子（背包掃描器據此回「無法辨識」，和掃描本尊一樣）
+    ...(t.anon ? { anon: true } : {}),
   }
   h.illusion = true
   h.anon = true
@@ -1087,6 +1137,11 @@ INSTANT_ITEMS.set('radarPing', (g, buyer, vendor) => {
     const m = g.mainOf(p)
     if (!m || !m.alive || m.zone === SPACE_ZONE) continue
     g.emitFx({ k: 'ping', z: m.zone, x: m.x, y: m.y, v: 7, s: 'radar' }, [slot])
+    n++
+  }
+  // 照原作：太空中有人駕駛的船艇（含連結中的只能登艦站點）也標出來
+  for (const v of mannedCraft(g)) {
+    g.emitFx({ k: 'ping', z: v.zone, x: v.x, y: v.y, v: 7, s: 'radar' }, [slot])
     n++
   }
   g.privateLine(slot, 'item.radarSector', { n })

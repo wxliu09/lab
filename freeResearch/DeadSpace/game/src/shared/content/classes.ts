@@ -30,7 +30,7 @@ export const CLASS_LIST: ClassDef[] = [
     items: [],
     abilities: [],
     passives: ['cls.securityRange'],
-    desc: L('開局配發一套戰鬥裝（電漿／火箭／特斯拉／冷凍隨機），攻擊射程增加。', 'Issued a random combat rig; extended weapon range.'),
+    desc: L('開局配發一套戰鬥裝（電漿／火箭／特斯拉／冷凍隨機），攻擊射程增加。', 'Issued a random combat suit; extended weapon range.'),
     bios: bio('security'),
   },
   {
@@ -98,7 +98,7 @@ export const CLASS_LIST: ClassDef[] = [
     abilities: ['cls.doorHack'],
     passives: [],
     spawnAt: 'caldera',
-    desc: L('穿著服務裝，能駭入附近的門將其鎖住 15 秒。', 'Wears a service rig and can hack nearby doors shut for 15 s.'),
+    desc: L('穿著服務裝，能駭入附近的門將其鎖住 15 秒。', 'Wears a service suit and can hack nearby doors shut for 15 s.'),
     bios: bio('engineer'),
   },
   {

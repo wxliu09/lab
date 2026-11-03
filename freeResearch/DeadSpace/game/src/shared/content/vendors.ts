@@ -26,28 +26,32 @@ export const VENDOR_LIST: VendorDef[] = [
     id: 'suitA',
     name: L('防護服販賣機（紅）', 'Suit Vendor (Red)'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作（防護服販賣機 800）
+    hp: 800,
     stock: [st('suit.cryo', 0), st('suit.pyro', 0), st('suit.tesla', 0)],
   },
   {
     id: 'suitB',
     name: L('防護服販賣機（藍）', 'Suit Vendor (Blue)'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作（防護服販賣機 800）
+    hp: 800,
     stock: [st('suit.rad', 0), st('suit.photon', 0), st('suit.plasma', 0), st('suit.pulse', 0)],
   },
   {
     id: 'suitC',
     name: L('防護服販賣機（青）', 'Suit Vendor (Cyan)'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作（防護服販賣機 800）
+    hp: 800,
     stock: [st('suit.rocket', 0), st('suit.service', 0), st('suit.gatling', 0), st('suit.mag', 0)],
   },
   {
     id: 'suitD',
     name: L('防護服販賣機（黃）', 'Suit Vendor (Yellow)'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作（防護服販賣機 800）
+    hp: 800,
     stock: [st('suit.acid', 0), st('suit.guard', 0), st('suit.force', 0), st('suit.void', 0)],
   },
   {
@@ -83,7 +87,8 @@ export const VENDOR_LIST: VendorDef[] = [
     id: 'radar',
     name: L('雷達站', 'Radar Station'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作
+    hp: 8000,
     stock: [st('radarPing', 90)],
   },
   {
@@ -107,7 +112,8 @@ export const VENDOR_LIST: VendorDef[] = [
     id: 'escapePod',
     name: L('救生艙裝置', 'Escape Pod Device'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作
+    hp: 8000,
     stock: [st('escapePass', 4)],
   },
   {
@@ -128,7 +134,8 @@ export const VENDOR_LIST: VendorDef[] = [
     id: 'lq',
     name: L('LQ 倉儲', 'LQ Storage'),
     model: 'vendor',
-    hp: 1600,
+    // HP 照原作
+    hp: 6000,
     // 只在動力分配台切到實驗室模式時運作（研究 03 §4.4）
     needsPower: 'lab',
     stock: [st('interfaceKit', 300), st('burstGrenade', 180), st('concStim', 180)],

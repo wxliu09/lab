@@ -1,4 +1,5 @@
-// 太空層與跨層移動（研究 03 §1.3、§2）：控制台駕駛、探索艇登艇／發射／停靠／強行登艦、站點毀滅連帶全滅、逃生艙
+// 太空層與跨層移動（研究 03 §1.3、§2）：控制台駕駛、探索艇登艇／發射／停靠／強行登艦、站點毀滅連帶全滅、逃生艙、
+// 主控台被毀留下殘骸（站點介面裝置可修）、海盜船主控台（不可駕駛，打爆後自爆）
 import { SHIPS, SHIP_BY_ID, type ShipDef } from '../../shared/content/ships'
 import type { StationDef } from '../../shared/content/stations/types'
 import type { Loc } from '../../shared/content/types'
@@ -6,6 +7,7 @@ import { unitDef } from '../../shared/content/registry'
 import { locArgs } from '../../shared/sysArgs'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import { fmtKey, type Game, type GamePlayer } from '../game'
+import { spawnConsole } from '../setup'
 import { SPACE_ZONE, type Zone } from '../world'
 import { DEATH_HOOKS, damage } from './damage'
 import { regScript } from './effects'
@@ -13,7 +15,18 @@ import { applyBuff, removeBuff } from './buffs'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { INSTANT_ITEMS } from './vendors'
 
-export interface ShipInst {
+/**
+ * 強行登艦的一端（原作 A02J 的對象「探索船」）：船艇（ShipInst），或不能停靠、只能登艦的站（火口號、擺渡號）。
+ * link 是另一端的 key；連結期間這一端的出入口（船艙的艙門、站的登艦氣閘）通往另一端。
+ */
+export interface BoardEnd {
+  key: string
+  zone: number
+  link: string | null
+  linkUntil: number
+}
+
+export interface ShipInst extends BoardEnd {
   key: string
   def: ShipDef
   zone: number
@@ -40,6 +53,8 @@ export interface SpaceState {
   pilots: Map<number, number>
   sunFactor: number
   pods: Map<number, { slot: number; target: number; hpK: number }>
+  /** 只能登艦的站的登艦氣閘（key = 'st:' + 站 key）*/
+  airlocks: Map<string, BoardEnd>
 }
 
 const CONSOLE_R = 1.0
@@ -49,7 +64,76 @@ const LAUNCH_S = 10
 const BOARD_REACH = 1.6
 
 export function spaceOf(g: Game): SpaceState {
-  return (g.data.space ??= { ships: new Map(), pads: new Map(), pilots: new Map(), sunFactor: 1, pods: new Map() }) as SpaceState
+  return (g.data.space ??= { ships: new Map(), pads: new Map(), pilots: new Map(), sunFactor: 1, pods: new Map(), airlocks: new Map() }) as SpaceState
+}
+
+/** 救生艙不能指定的地點（原作排除七號廢站、海盜船、未識別物體；船艇另外排除）*/
+const POD_EXCLUDE = new Set(['hulk7', 'pirate', 'uo'])
+
+// ───────── 強行登艦的兩端 ─────────
+
+/** 只能登艦的站：不能停靠、有出入口（船艙不算）*/
+function boardableStation(z: Zone | undefined): z is Zone {
+  return !!z && z.alive && !!z.station && z.station.dockable === false && !z.data.ship && !!z.layout?.exits.length
+}
+
+/** 太空中的實體 → 強行登艦的一端（船艇或只能登艦的站；其他回 undefined）*/
+export function boardEndOf(g: Game, e: Ent | null | undefined): BoardEnd | undefined {
+  if (!e) return undefined
+  const sp = spaceOf(g)
+  if (e.data.ship) return sp.ships.get(e.data.ship as string)
+  const zid = e.data.interior as number | undefined
+  const z = zid !== undefined ? g.world.zones[zid] : undefined
+  if (!boardableStation(z)) return undefined
+  const key = 'st:' + z.key
+  let end = sp.airlocks.get(key)
+  if (!end) sp.airlocks.set(key, (end = { key, zone: z.id, link: null, linkUntil: 0 }))
+  return end
+}
+
+function endByKey(g: Game, key: string | null): BoardEnd | undefined {
+  if (!key) return undefined
+  const sp = spaceOf(g)
+  return sp.ships.get(key) ?? sp.airlocks.get(key)
+}
+
+const isStationEnd = (end: BoardEnd): boolean => end.key.startsWith('st:')
+
+/** 這一端在太空中的實體（船、站）*/
+function endEnt(g: Game, end: BoardEnd): Ent | undefined {
+  return g.world.get(g.world.zones[end.zone]?.spaceEnt ?? 0)
+}
+
+/** 斷開這一端的連結（對方若還連著這一端也一起斷），拿掉兩邊的登艦連結 buff */
+function breakLink(g: Game, end: BoardEnd): void {
+  const other = endByKey(g, end.link)
+  end.link = null
+  const ae = endEnt(g, end)
+  if (ae) removeBuff(g, ae, 'bf.boarding')
+  if (other && other.link === end.key) {
+    other.link = null
+    const be = endEnt(g, other)
+    if (be) removeBuff(g, be, 'bf.boarding')
+  }
+}
+
+/**
+ * 從連結的另一端過來時出現的位置：出入口往裡面 1.6 公尺。
+ * 船艙的艙門在左牆、站的登艦氣閘在右牆，取第一個走得到的方向。
+ */
+function airlockArrival(z: Zone): { x: number; y: number } {
+  const l = z.layout!
+  const ex = l.exits[0] ?? l.spawns[0] ?? { x: 3, y: 3 }
+  const nav = z.nav!
+  for (const [dx, dy] of [
+    [1.6, 0],
+    [-1.6, 0],
+    [0, 1.6],
+    [0, -1.6],
+  ]) {
+    if (!nav.blockedAt(ex.x + dx, ex.y + dy)) return { x: ex.x + dx, y: ex.y + dy }
+  }
+  return nav.nearestOpen(ex.x, ex.y) ?? ex
 }
 
 function shipStationDef(def: ShipDef): StationDef {
@@ -179,7 +263,8 @@ function undock(g: Game, inst: ShipInst): void {
 
 export function consolePos(g: Game, z: Zone): { x: number; y: number; ent?: Ent } | null {
   if (z.data.console) return z.data.console as { x: number; y: number }
-  if (!z.station || z.station.id.startsWith('ship:')) return null
+  // 不可駕駛的站（海盜船：主控台屬於海盜，站上去也不會駕駛）
+  if (!z.station || z.station.id.startsWith('ship:') || !z.station.space.pilotable) return null
   const c = [...g.world.inZone(z.id)].find((e) => e.data.poi === 'console')
   return c ? { x: c.x, y: c.y, ent: c } : null
 }
@@ -279,6 +364,27 @@ export function stepSpace(g: Game): void {
         for (const p of g.allPlayers()) if (p.alive && g.mainOf(p)?.zone === z.id) g.privateLine(p.slot, 'space.linkEnd')
       }
     }
+    // 只能登艦的站（火口號、擺渡號）：連結期間，站內的出入口（登艦氣閘）通往連結中的船艙
+    for (const end of sp.airlocks.values()) {
+      const z = w.zones[end.zone]
+      if (!z?.alive || !z.layout) continue
+      const exits = z.layout.exits
+      const to = end.link && t <= end.linkUntil ? endByKey(g, end.link) : undefined
+      if (to) {
+        const movers = new Set<Ent>()
+        for (const ex of exits) for (const u of w.query(z.id, ex.x, ex.y, 0.7)) movers.add(u)
+        for (const u of movers) {
+          // offPad === false：剛從連結過來、還沒離開出入口（避免來回彈）
+          if (!canTravel(g, u) || (u.data.boardCd ?? 0) > t || u.data.offPad === false) continue
+          crossLink(g, u, to)
+        }
+      }
+      for (const u of w.inZone(z.id)) if (u.data.offPad === false && exits.every((ex) => Math.hypot(u.x - ex.x, u.y - ex.y) > 1.2)) u.data.offPad = true
+      if (end.link && t > end.linkUntil) {
+        end.link = null
+        for (const p of g.allPlayers()) if (p.alive && g.mainOf(p)?.zone === z.id) g.privateLine(p.slot, 'space.linkEndAirlock')
+      }
+    }
   }
   // 控制台
   for (const z of w.zones) {
@@ -306,7 +412,9 @@ export function stepSpace(g: Game): void {
       pilot = u
       break
     }
-    if (c.ent && (!c.ent.alive || (c.ent.data.disabledUntil ?? 0) > t || c.ent.def.id === 'struct.consoleBroken')) pilot = null
+    // 控制台被毀（損毀的控制台）、電磁停機中：沒人能駕駛，正在駕駛的人也會失去控制
+    const dead = !!c.ent && (!c.ent.alive || (c.ent.data.disabledUntil ?? 0) > t || c.ent.def.id !== 'struct.console')
+    if (dead) pilot = null
     if (ship?.docked) {
       // 停泊中：站上控制台開始發射倒數
       if (pilot && !ship.launching) {
@@ -325,7 +433,7 @@ export function stepSpace(g: Game): void {
     if (!vehicle || !vehicle.alive) continue
     const cur = sp.pilots.get(vehicle.id)
     const curEnt = cur ? w.get(cur) : undefined
-    const stillThere = curEnt && curEnt.alive && curEnt.zone === z.id && Math.hypot(curEnt.x - c.x, curEnt.y - c.y) <= CONSOLE_R + curEnt.radius + 0.2 && curEnt.isMain
+    const stillThere = !dead && curEnt && curEnt.alive && curEnt.zone === z.id && Math.hypot(curEnt.x - c.x, curEnt.y - c.y) <= CONSOLE_R + curEnt.radius + 0.2 && curEnt.isMain
     if (stillThere) continue
     setPilot(g, vehicle, pilot)
   }
@@ -387,8 +495,7 @@ function followersOf(g: Game, leader: Ent): Ent[] {
 
 function enterShip(g: Game, u: Ent, inst: ShipInst): void {
   const z = g.world.zones[inst.zone]
-  const exit = z.layout!.exits[0] ?? z.layout!.spawns[0] ?? { x: 3, y: 3 }
-  const n = z.nav!.nearestOpen(exit.x + 1.6, exit.y) ?? exit
+  const n = airlockArrival(z)
   g.world.relocate(u, inst.zone, n.x, n.y)
   u.data.boardCd = g.time + BOARD_CD
   u.data.offPad = false
@@ -397,22 +504,27 @@ function enterShip(g: Game, u: Ent, inst: ShipInst): void {
 }
 
 function exitShip(g: Game, u: Ent, inst: ShipInst): void {
-  const sp = spaceOf(g)
-  let to: { zone: number; x: number; y: number }
   if (inst.docked) {
     const de = g.world.get(inst.dockedEnt)
     if (!de) return
     const sz = g.world.zones[de.zone]
     const n = sz.nav!.nearestOpen(de.x, de.y - de.radius - 0.9) ?? { x: de.x, y: de.y }
-    to = { zone: de.zone, x: n.x, y: n.y }
+    travel(g, u, { zone: de.zone, x: n.x, y: n.y })
   } else if (inst.link) {
-    const other = sp.ships.get(inst.link)
-    if (!other) return
-    const oz = g.world.zones[other.zone]
-    const ex = oz.layout!.exits[0]
-    const n = oz.nav!.nearestOpen(ex.x + 1.6, ex.y) ?? ex
-    to = { zone: other.zone, x: n.x, y: n.y }
-  } else return
+    const other = endByKey(g, inst.link)
+    if (other) crossLink(g, u, other)
+  }
+}
+
+/** 穿過登艦連結：到另一端（船艙或站的登艦氣閘）的出入口旁 */
+function crossLink(g: Game, u: Ent, to: BoardEnd): void {
+  const oz = g.world.zones[to.zone]
+  if (!oz?.alive || !oz.layout || !oz.nav) return
+  const n = airlockArrival(oz)
+  travel(g, u, { zone: oz.id, x: n.x, y: n.y })
+}
+
+function travel(g: Game, u: Ent, to: { zone: number; x: number; y: number }): void {
   // 跟著主人上船的召喚物也跟著下船（否則留在船艙、被船一起載走）
   const followers = u.isMain ? followersOf(g, u) : []
   g.world.relocate(u, to.zone, to.x, to.y)
@@ -483,6 +595,7 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): vo
 export function installSpace(g: Game): void {
   DEATH_HOOKS.push((g2, u, killer) => {
     if (g2 !== g) return
+    if (u.data.poi === 'console') consoleDestroyed(g, u)
     if (u.zone === SPACE_ZONE && u.data.interior) {
       g.emitFx({ k: 'stationBoom', z: SPACE_ZONE, x: u.x, y: u.y, v: u.radius })
       const sp = spaceOf(g)
@@ -537,6 +650,60 @@ export function installSpace(g: Game): void {
   }
   INSTANT_ITEMS.set('escapePass', (g2, buyer) => startPod(g2, buyer))
 }
+
+// ───────── 主控台被毀 ─────────
+
+/** 原本的 POI 資料（站、ref、模組資料…）搬到新的實體上；暫存欄位、數值類不搬 */
+const CONSOLE_DATA_SKIP = new Set(['passives', 'god', 'disabledUntil', 'noDrops'])
+
+function copyConsoleData(from: Ent, to: Ent): void {
+  for (const [k, v] of Object.entries(from.data)) if (!k.startsWith('_') && !CONSOLE_DATA_SKIP.has(k)) to.data[k] = v
+}
+
+/**
+ * 主控台被打爆：
+ * - 一般站：原地留下「損毀的控制台」（灰色、1 HP、無敵），站點介面裝置修好之前沒人能駕駛（研究 03 §1.3 第 6 點）；
+ * - 海盜船主控台：不留殘骸，40 秒後自爆（研究 03 §6.2 事件 #4）。
+ * 站點毀滅（destroyInterior）是直接移除，不會走到這裡。
+ */
+function consoleDestroyed(g: Game, u: Ent): void {
+  const z = g.world.zones[u.zone]
+  if (!z?.alive || !z.station) return
+  if (u.def.id === 'struct.consolePirate') {
+    pirateSelfDestruct(g, u)
+    return
+  }
+  if (u.def.id !== 'struct.console') return
+  const b = g.world.spawn(unitDef('struct.consoleBroken'), z.id, u.x, u.y, NEUTRAL)
+  b.facing = u.facing
+  copyConsoleData(u, b)
+  // 正在駕駛的人立刻失去控制
+  const v = g.world.get(z.spaceEnt)
+  if (v && spaceOf(g).pilots.has(v.id)) setPilot(g, v, null)
+}
+
+/**
+ * 海盜船主控台被毀 → 40 秒自爆倒數（倒數到了由事件系統的 pirateBoom 解體整艘船）。
+ * events.ts 原本以 struct.console 判斷海盜船主控台；改成專用定義後由這裡觸發，兩邊都先檢查 pirateBoom，不會重複。
+ */
+function pirateSelfDestruct(g: Game, u: Ent): void {
+  const ev = g.data.events as { pirateZone: number; pirateBoom: number } | undefined
+  if (!ev || ev.pirateZone !== u.zone || ev.pirateBoom) return
+  ev.pirateBoom = g.time + 40
+  for (const q of g.world.inZone(u.zone)) if (q.isMain && q.owner >= 0) g.privateLine(q.owner, 'event.pirateSelfDestruct', { s: 40 })
+  g.emitFx({ k: 'alarm', z: u.zone, x: u.x, y: u.y, v: 40 })
+}
+
+/** 站點介面裝置（scripts/items 的 item.interfaceKit 委派）：損毀的控制台換回這座站的正常主控台 */
+regScript('console.rebuild', (g, ctx) => {
+  const t = ctx.target
+  const z = t ? g.world.zones[t.zone] : undefined
+  if (!t || !z?.alive || t.def.id !== 'struct.consoleBroken') return false
+  const c = spawnConsole(g, z, t.x, t.y, t.facing)
+  copyConsoleData(t, c)
+  g.world.remove(t)
+  return true
+})
 
 // ───────── 逃生艙 ─────────
 
@@ -610,7 +777,7 @@ regScript('space.dock', (g, ctx) => {
   const zid = t.data.interior as number
   const z = g.world.zones[zid]
   if (!z.station || z.station.dockable === false) {
-    if (ship.owner >= 0) g.privateLine(ship.owner, 'space.useBoarding')
+    if (ship.owner >= 0) g.privateLine(ship.owner, 'space.boardOnly', locArgs(zoneLabel(g, z)))
     return
   }
   const pad = freePad(g, zid)
@@ -619,6 +786,7 @@ regScript('space.dock', (g, ctx) => {
     return
   }
   const hpK = ship.hp / ship.maxHp
+  if (inst.link) breakLink(g, inst)
   setPilot(g, ship, null)
   inst.spaceEnt = 0
   g.world.zones[inst.zone].spaceEnt = 0
@@ -630,18 +798,24 @@ regScript('space.dock', (g, ctx) => {
 regScript('space.board', (g, ctx) => {
   const a = ctx.caster
   const b = ctx.target
-  const sp = spaceOf(g)
-  const ia = a.data.ship ? sp.ships.get(a.data.ship as string) : undefined
-  const ib = b?.data.ship ? sp.ships.get(b.data.ship as string) : undefined
+  // 兩端都可以是船艇或只能登艦的站（火口號、擺渡號；研究 03 §2.3 A02J）
+  const ia = boardEndOf(g, a)
+  const ib = boardEndOf(g, b)
   if (!ia || !ib || !b || ia === ib) return
+  // 同一端只接一條連結：舊的先斷開
+  if (ia.link) breakLink(g, ia)
+  if (ib.link) breakLink(g, ib)
   ia.link = ib.key
   ib.link = ia.key
   ia.linkUntil = ib.linkUntil = g.time + 20
-  // 連結只是把兩邊的艙門接通：告訴兩艘船艙裡的人怎麼過去（駕駛者還在太空畫面，要先離開控制台）
+  // 連結只是把兩邊的出入口接通：告訴兩邊裡面的人怎麼過去（駕駛者還在太空畫面，要先離開控制台）
   for (const p of g.allPlayers()) {
     const u = g.mainOf(p)
     if (!p.alive || !u) continue
-    if (u.zone === ia.zone || u.zone === ib.zone) g.privateLine(p.slot, 'space.linked', { s: 20 })
+    const here = u.zone === ia.zone ? ia : u.zone === ib.zone ? ib : null
+    if (!here) continue
+    const there = here === ia ? ib : ia
+    g.privateLine(p.slot, isStationEnd(here) ? 'space.linkedAirlock' : isStationEnd(there) ? 'space.linkedSt' : 'space.linked', { s: 20 })
   }
   applyBuff(g, a, 'bf.boarding', 20)
   applyBuff(g, b, 'bf.boarding', 20)
@@ -649,17 +823,9 @@ regScript('space.board', (g, ctx) => {
 })
 
 regScript('space.unboard', (g, ctx) => {
-  const sp = spaceOf(g)
-  const ia = ctx.caster.data.ship ? sp.ships.get(ctx.caster.data.ship as string) : undefined
+  const ia = boardEndOf(g, ctx.caster)
   if (!ia?.link) return
-  const ib = sp.ships.get(ia.link)
-  ia.link = null
-  if (ib) {
-    ib.link = null
-    const be = g.world.get(ib.spaceEnt)
-    if (be) removeBuff(g, be, 'bf.boarding')
-  }
-  removeBuff(g, ctx.caster, 'bf.boarding')
+  breakLink(g, ia)
 })
 
 regScript('space.scan', (g, ctx) => {
@@ -703,9 +869,22 @@ regScript('space.podTarget', (g, ctx) => {
   const t = ctx.target
   if (!pod || !t?.data.interior) return
   const z = g.world.zones[t.data.interior as number]
-  if (z.data.ship || z.station?.id === 'hulk7') return
+  if (z.data.ship || POD_EXCLUDE.has(z.station?.id ?? '')) return
   pod.target = z.id
 })
+
+/**
+ * 太空中有人駕駛的探索船（船艇，以及火口號、擺渡號；原作 A071）：雷達站宙域掃描要一起標出來（研究 03 §4.1 Radar Sweep）。
+ * 只看「有沒有人在駕駛」，不帶駕駛者身分。
+ */
+export function mannedCraft(g: Game): Ent[] {
+  const out: Ent[] = []
+  for (const vid of spaceOf(g).pilots.keys()) {
+    const v = g.world.get(vid)
+    if (v && v.alive && v.zone === SPACE_ZONE && boardEndOf(g, v)) out.push(v)
+  }
+  return out
+}
 
 export function pilotOf(g: Game, vehicle: Ent): GamePlayer | undefined {
   const pid = spaceOf(g).pilots.get(vehicle.id)

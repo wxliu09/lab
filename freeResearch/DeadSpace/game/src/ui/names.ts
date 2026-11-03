@@ -1,7 +1,83 @@
 // 實體外觀 id → 顯示名稱。販賣機與站點的 UnitDef 只在 sim 端動態註冊，client 要從原始定義查。
 import type { Loc } from '../shared/content/types'
-import { UNITS, VENDORS, itemDef } from '../shared/content/registry'
+import { CLASSES, UNITS, VENDORS, itemDef } from '../shared/content/registry'
 import { STATION_BY_ID } from '../shared/content/stations/index'
+// 與 i18n.ts 互相 import：兩邊都只在函式呼叫時才用到對方，模組初始化不依賴彼此
+import { hasString, lang, t } from './i18n'
+
+// ───────── 名字依介面語言顯示 ─────────
+// sim 把固定字樣直接寫進名字字串（改 sim 會影響同名判斷、-rename、通訊病毒等），client 顯示前依語言換掉：
+// 職業前綴（classes.ts 的 prefix.en，例如「Dr. 」）、晉升頭銜「特務·」（events.ts）、管家後綴「 的管家」（roleSystem.ts）、
+// 預設名字「船員 N」（server.ts；同名時 uniqueName 會在後面直接接數字，仍符合這個格式）。
+
+/** sim 端的晉升頭銜 */
+export const SIM_AGENT_TITLE = '特務·'
+/** sim 端的管家後綴：「<主人本名> 的管家」 */
+export const SIM_BUTLER_SUFFIX = ' 的管家'
+const SIM_DEFAULT = /^船員 (\d+)$/
+/** -names、陣營名單裡的死亡標記（sim 兩種語言各送一份清單）*/
+const DEAD_MARKS = ['（死亡）', ' (dead)']
+
+let prefixes: [string, string][] = []
+
+/** [sim 寫進名字的前綴, i18n key]，長的先比對 */
+function prefixTable(): [string, string][] {
+  if (prefixes.length > 1) return prefixes
+  const out: [string, string][] = [[SIM_AGENT_TITLE, 'name.prefix.agent']]
+  for (const c of CLASSES.values()) if (c.prefix.en) out.push([c.prefix.en, 'name.prefix.' + c.id])
+  out.sort((a, b) => b[0].length - a[0].length)
+  prefixes = out
+  return out
+}
+
+function baseName(s: string): string {
+  const m = SIM_DEFAULT.exec(s)
+  return m ? t('name.default', { n: m[1] }) : s
+}
+
+function convert(name: string): string {
+  if (name.length > SIM_BUTLER_SUFFIX.length && name.endsWith(SIM_BUTLER_SUFFIX)) return t('name.butler', { name: convert(name.slice(0, -SIM_BUTLER_SUFFIX.length)) })
+  for (const [raw, key] of prefixTable()) {
+    if (name.length > raw.length && name.startsWith(raw) && hasString(lang.value, key)) return t(key) + baseName(name.slice(raw.length))
+  }
+  return baseName(name)
+}
+
+const nameCache = new Map<string, string>()
+let cacheLang = ''
+
+/**
+ * sim 送來的名字 → 目前介面語言的寫法（職業前綴、晉升頭銜、管家後綴、預設名字）。
+ * 只換固定字樣，玩家自己取的部分照原樣；場景名牌每幀都會呼叫，結果依語言快取。
+ */
+export function localizeName(name: string | undefined): string {
+  if (!name) return ''
+  const l = lang.value
+  if (cacheLang !== l) {
+    nameCache.clear()
+    cacheLang = l
+  }
+  const hit = nameCache.get(name)
+  if (hit !== undefined) return hit
+  const out = convert(name)
+  // 內容還沒註冊（職業表是空的）時不快取
+  if (CLASSES.size > 0) {
+    if (nameCache.size > 512) nameCache.clear()
+    nameCache.set(name, out)
+  }
+  return out
+}
+
+/** 以 sep 串起來的名單（系統訊息的 {lz}／{le}）逐一換；保留死亡標記 */
+export function localizeNameList(list: string, sep: string): string {
+  return list
+    .split(sep)
+    .map((x) => {
+      const d = DEAD_MARKS.find((m) => x.endsWith(m) && x.length > m.length)
+      return d ? localizeName(x.slice(0, -d.length)) + d : localizeName(x)
+    })
+    .join(sep)
+}
 
 export function entDefName(d: string | undefined): Loc | undefined {
   if (!d) return undefined

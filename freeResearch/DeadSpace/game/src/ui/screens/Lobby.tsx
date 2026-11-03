@@ -6,8 +6,9 @@ import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRul
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
-import { textColorOf } from '../names'
+import { localizeName, textColorOf } from '../names'
 import '../lobby2.css'
+import '../ui4.css'
 
 // 身分預覽：規則在 shared/roleRules.ts（與 sim 共用）
 export { roleOutcomes, type RoleMix } from '../../shared/roleRules'
@@ -229,7 +230,7 @@ export function Lobby() {
           <div class="pgrid">
             {L.players.map((p) => (
               <div class="pcard" key={p.slot} data-testid={'pcard-' + p.slot} style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
-                <div class="pname">{p.name}</div>
+                <div class="pname">{localizeName(p.name)}</div>
                 <div class="ptags">
                   {p.host && <span class="tag host">{t('lobby.host')}</span>}
                   {p.bot && <span class="tag">{t('lobby.bot')}</span>}
@@ -271,7 +272,7 @@ export function Lobby() {
             {lines.length === 0 && <div class="dim">{t('lobby2.chatEmpty')}</div>}
             {lines.map((l, i) => (
               <div key={i}>
-                <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{l.from}</b>: {sysText(l.text)}
+                <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{localizeName(l.from)}</b>: {sysText(l.text)}
               </div>
             ))}
           </div>
@@ -329,7 +330,14 @@ export function Lobby() {
         <button class="ghost" onClick={() => leave()}>
           {t('lobby.leave')}
         </button>
-        <div class="grow" />
+        {/* 主機的卡頓會透過快照傳給所有人：提醒用效能較好的電腦當主機 */}
+        {isHost.value ? (
+          <span class="host-hint" data-testid="host-hint">
+            {t('ui4.lobby.hostHint')}
+          </span>
+        ) : (
+          <div class="grow" />
+        )}
         {!isHost.value && <span class="dim">{t('lobby.waiting')}</span>}
         <button data-testid="ready" onClick={() => send({ t: 'lobby', ready: !me?.ready })}>
           {me?.ready ? t('lobby.notReady') : t('lobby.ready')}

@@ -13,6 +13,7 @@ import { spawnCreature } from '../../src/sim/ai/creatures'
 import { NEUTRAL, type Ent } from '../../src/sim/ent'
 import { itemDef } from '../../src/shared/content/registry'
 import { sampleUnitToken } from '../../src/shared/sysArgs'
+import { localizeName } from '../../src/ui/names'
 
 afterEach(() => {
   lang.value = 'zh'
@@ -55,7 +56,8 @@ describe('結算時間軸', () => {
     expect(tl.some((e) => e.text.startsWith('@tl.death.crew|name='))).toBe(true)
     const evo = tl.find((e) => e.text.startsWith('@tl.evolve'))!.text
     const uz = UNITS.get(form.unit)!.name
-    expect(sysText(evo)).toBe(`CEO Bob 進化為${uz.zh}`)
+    // 名字裡 sim 加上的職業前綴依介面語言顯示（ui/names.ts 的 localizeName）
+    expect(sysText(evo)).toBe(`執行長·Bob 進化為${uz.zh}`)
     lang.value = 'en'
     expect(sysText(evo)).toBe(`CEO Bob evolved into ${uz.en}`)
     expect(sysText(evo)).not.toContain(form.id)
@@ -180,7 +182,7 @@ describe('英文介面的系統訊息不夾中文地名／房名／形態名（U
     expect(en('tl.destroyed')).toMatch(/ #2 was destroyed$/)
     lang.value = 'zh'
     const zh = (k: string) => sysText(sys.find((s) => s.startsWith('@' + k + '|'))!)
-    expect(zh('git.report.clean')).toContain(`${ps[1].name}、${form.name.zh}`)
+    expect(zh('git.report.clean')).toContain(`${localizeName(ps[1].name)}、${form.name.zh}`)
     expect(zh('space.destroyed')).toBe(`${dupe[1].station!.name.zh} #2 被摧毀了！`)
     expect(CJK.test(zh('npc.bodyFound'))).toBe(true)
   })

@@ -10,6 +10,8 @@ export const TENSHU: StationDef = {
   scanTime: 1.74,
   podLanding: 'y',
   dockable: true,
+  // 主控台 3000 HP（原作 h006）
+  console: { hp: 3000 },
   space: {
     hp: 200000,
     hpRegen: 100,

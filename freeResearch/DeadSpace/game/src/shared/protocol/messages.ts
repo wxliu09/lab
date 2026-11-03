@@ -336,8 +336,12 @@ export type FacilityView =
   | { k: 'factory'; e: number; cur: string; left: number; off: number }
   /** 活體庫號隔間門：open[i] = 第 i+1 間隔間的門是否開著 */
   | { k: 'cells'; e: number; open: boolean[]; off: number }
-  /** 活體庫號籠子：busy = 製籠剩餘秒數、pad = 平台上的標本數 */
-  | { k: 'cage'; e: number; busy: number; pad: number; off: number }
+  /**
+   * 活體庫號籠子：busy = 製籠剩餘秒數、pad = 平台上的標本數；
+   * cells = 隔間數（「從第 N 間取標本」按鈕：指令 { k: 'facility', e, a: 'cageCell', s: N-1 }）、
+   * cage = 平台上還裝得下的籠子已裝幾隻（-1 = 沒有，要先製籠）、cap = 一個籠子的容量
+   */
+  | { k: 'cage'; e: number; busy: number; pad: number; off: number; cells: number; cage: number; cap: number }
 
 export interface NoteEntry {
   slot: Slot
@@ -373,6 +377,11 @@ export interface WorldPublic {
   vote: { kind: 'death'; until: number; boot: number; spec: number } | null
   /** 死亡模式 */
   boot: boolean
+  /**
+   * 局中改變的天氣：zone key → 天氣（目前只有餘燼衛星大氣護盾失效後的 'blizzard'）。
+   * 開局天氣在 StationDef.weather；這裡只放之後的變化。公開現象（全星區都收到公告），不分觀看者
+   */
+  wx: Record<string, string>
 }
 
 export interface EndResult {

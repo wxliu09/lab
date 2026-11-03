@@ -79,8 +79,8 @@ const HELPERS: UnitDef[] = []
 ABILITIES.push(
   ab(
     'suit.drop',
-    L('脫下防護服', 'Shed Rig'),
-    L('解開扣環、退出外骨骼，變回一般船員；防護服會放回背包（背包滿了就放在腳邊）。', 'Unlatch and step out of the exoskeleton. You return to a regular crew body and the rig goes back into your pack (or at your feet if the pack is full).'),
+    L('脫下防護服', 'Shed Suit'),
+    L('解開扣環、退出外骨骼，變回一般船員；防護服會放回背包（背包滿了就放在腳邊）。', 'Unlatch and step out of the exoskeleton. You return to a regular crew body and the suit goes back into your pack (or at your feet if the pack is full).'),
     'suit',
     'none',
     1,
@@ -171,12 +171,12 @@ HELPERS.push(
 
 suit({
   id: 'suit.tesla',
-  name: L('特斯拉裝', 'Tesla Rig'),
+  name: L('特斯拉裝', 'Tesla Suit'),
   hp: 600,
   speed: 2.8,
   attack: { dmg: atk(44), cd: 1, range: 6, kind: 'hitscan', fx: 'tesla', dmgKind: 'energy', onHit: [S('tesla.discharge', { bonus: 200 })] },
   abilities: ['ab.tesla.charge', 'ab.tesla.storm'],
-  item: L('背負線圈電容的基本戰鬥裝。可以蓄電強化下一擊，或丟出持續電擊的雷暴。', 'A baseline combat rig with coil capacitors on the back. It can bank a charge into its next shot or toss out a lingering lightning storm.'),
+  item: L('背負線圈電容的基本戰鬥裝。可以蓄電強化下一擊，或丟出持續電擊的雷暴。', 'A baseline combat suit with coil capacitors on the back. It can bank a charge into its next shot or toss out a lingering lightning storm.'),
 })
 ABILITIES.push(
   ab(
@@ -193,7 +193,7 @@ ABILITIES.push(
   ab(
     'ab.tesla.storm',
     L('雷暴', 'Lightning Storm'),
-    L('拋出一顆線圈榴彈，落地後形成 8 秒的雷暴，每 0.75 秒電擊離它最近的一個單位（3.5 公尺內）造成 30 傷害。雷暴不認人，只有同為特斯拉裝的絕緣層擋得住。', 'Lob a coil grenade that crackles into an 8-second storm, zapping whichever unit is closest (within 3.5 m) for 30 damage every 0.75 s. It plays no favourites; only another Tesla rig\'s insulation is safe.'),
+    L('拋出一顆線圈榴彈，落地後形成 8 秒的雷暴，每 0.75 秒電擊離它最近的一個單位（3.5 公尺內）造成 30 傷害。雷暴不認人，只有同為特斯拉裝的絕緣層擋得住。', 'Lob a coil grenade that crackles into an 8-second storm, zapping whichever unit is closest (within 3.5 m) for 30 damage every 0.75 s. It plays no favourites; only another Tesla suit\'s insulation is safe.'),
     'storm',
     'point',
     8,
@@ -212,12 +212,12 @@ HELPERS.push(fieldUnit('rig.teslaStorm', '雷暴', 'Lightning Storm', 'teslaStor
 
 suit({
   id: 'suit.rocket',
-  name: L('火箭裝', 'Rocketeer Rig'),
+  name: L('火箭裝', 'Rocketeer Suit'),
   hp: 600,
   speed: 2.55,
   attack: { dmg: atk(50), cd: 1, range: 6, kind: 'artillery', projSpeed: 14, fx: 'rocket', aoe: 1.25, dmgKind: 'blast' },
   abilities: ['ab.rocket.halberd', 'ab.rocket.missile'],
-  item: L('肩扛發射架的重火力裝，普攻就會炸開一小片範圍，連旁邊的人都會遭殃。', 'A heavy-support rig with a shoulder launcher. Even its basic shots burst over a small area, so mind who is standing nearby.'),
+  item: L('肩扛發射架的重火力裝，普攻就會炸開一小片範圍，連旁邊的人都會遭殃。', 'A heavy-support suit with a shoulder launcher. Even its basic shots burst over a small area, so mind who is standing nearby.'),
 })
 ABILITIES.push(
   ab(
@@ -248,12 +248,12 @@ ABILITIES.push(
 
 suit({
   id: 'suit.cryo',
-  name: L('冷凍裝', 'Cryo Rig'),
+  name: L('冷凍裝', 'Cryo Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(11), cd: 0.5, range: 6, kind: 'projectile', projSpeed: 28, fx: 'cryo', dmgKind: 'cold', onHit: [{ k: 'buff', buff: 'bf.cryo.chill', to: 'target' }] },
   abilities: ['ab.cryo.lance', 'ab.cryo.shock'],
-  item: L('以冷媒為武器的支援裝。每一發都會讓目標變慢，還能讓整圈敵人暫時開不了火。', 'A support rig that weaponises coolant. Every hit slows the target, and it can briefly lock up the weapons of everyone around it.'),
+  item: L('以冷媒為武器的支援裝。每一發都會讓目標變慢，還能讓整圈敵人暫時開不了火。', 'A support suit that weaponises coolant. Every hit slows the target, and it can briefly lock up the weapons of everyone around it.'),
 })
 ABILITIES.push(
   ab(
@@ -298,7 +298,7 @@ BUFFS.push(
 
 suit({
   id: 'suit.plasma',
-  name: L('電漿裝', 'Plasma Rig'),
+  name: L('電漿裝', 'Plasma Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(10), cd: 0.5, range: 6, kind: 'projectile', projSpeed: 20, fx: 'plasma', dmgKind: 'energy', onHit: [S('plasma.sear', { bonus: 6 })] },
@@ -348,7 +348,7 @@ HELPERS.push(fieldUnit('rig.plasmaBall', '電漿球', 'Plasma Orb', 'plasmaBall'
 
 suit({
   id: 'suit.pyro',
-  name: L('火焰裝', 'Pyro Rig'),
+  name: L('火焰裝', 'Pyro Suit'),
   hp: 600,
   speed: 2.6,
   attack: { dmg: atk(5), cd: 0.24, range: 3, kind: 'hitscan', fx: 'flame', dmgKind: 'fire', windup: 0 },
@@ -359,7 +359,7 @@ ABILITIES.push(
   ab(
     'ab.pyro.kidot',
     L('熾焰投射', 'Kidot Projection'),
-    L('射出一枚裝滿過熱燃液的小飛彈，落點 2 公尺內受到 80 火焰傷害，並讓地板燃燒 120 秒；站在火裡的人每秒受到 15 火焰傷害（火焰裝耐得住）。', 'Fire a small shell of superheated accelerant. Everything within 2 m takes 80 fire damage and the deck keeps burning for 120 s, scorching anyone standing in it for 15 per second (Pyro rigs shrug it off).'),
+    L('射出一枚裝滿過熱燃液的小飛彈，落點 2 公尺內受到 80 火焰傷害，並讓地板燃燒 120 秒；站在火裡的人每秒受到 15 火焰傷害（火焰裝耐得住）。', 'Fire a small shell of superheated accelerant. Everything within 2 m takes 80 fire damage and the deck keeps burning for 120 s, scorching anyone standing in it for 15 per second (Pyro suits shrug it off).'),
     'fire',
     'point',
     20,
@@ -378,7 +378,7 @@ ABILITIES.push(
   ab(
     'ab.pyro.overheat',
     L('過熱', 'Overheat'),
-    L('拆掉安全限制器：6 秒內攻擊速度大幅提升、移動稍快。時間一到必須緊急排出蒸汽，接下來 4 秒攻擊與移動都會變得極慢。', 'Rip out the safety limiter. For 6 s you fire far faster and move a little quicker. Then the rig must vent steam, crippling your attack and movement speed for 4 s.'),
+    L('拆掉安全限制器：6 秒內攻擊速度大幅提升、移動稍快。時間一到必須緊急排出蒸汽，接下來 4 秒攻擊與移動都會變得極慢。', 'Rip out the safety limiter. For 6 s you fire far faster and move a little quicker. Then the suit must vent steam, crippling your attack and movement speed for 4 s.'),
     'speed',
     'none',
     10,
@@ -398,12 +398,12 @@ HELPERS.push(fieldUnit('rig.fireField', '火海', 'Burning Deck', 'fireField', 2
 
 suit({
   id: 'suit.photon',
-  name: L('光子裝', 'Photon Rig'),
+  name: L('光子裝', 'Photon Suit'),
   hp: 600,
   speed: 2.85,
   attack: { dmg: atk(22), cd: 1, range: 6, kind: 'beam', fx: 'photon', dmgKind: 'energy' },
   abilities: ['ab.photon.blind', 'ab.rig.firefly'],
-  item: L('仰賴技能撐場的支援裝：能用強光讓目標失準，也能放出偵察機替隊伍看路。', 'A support rig that lives on its tricks: it can dazzle a target into missing and send out a scout drone to watch the corridors.'),
+  item: L('仰賴技能撐場的支援裝：能用強光讓目標失準，也能放出偵察機替隊伍看路。', 'A support suit that lives on its tricks: it can dazzle a target into missing and send out a scout drone to watch the corridors.'),
 })
 ABILITIES.push(
   ab(
@@ -424,7 +424,7 @@ BUFFS.push(bf('bf.photon.blind', L('眼前一片白', 'Dazzled'), 'eye', false, 
 
 suit({
   id: 'suit.service',
-  name: L('服務裝', 'Service Rig'),
+  name: L('服務裝', 'Service Suit'),
   hp: 600,
   speed: 2.95,
   attack: { dmg: atk(7), cd: 0.25, range: 1.4, kind: 'melee', fx: 'saw', windup: 0 },
@@ -449,12 +449,12 @@ ABILITIES.push(
 
 suit({
   id: 'suit.void',
-  name: L('暗物質裝', 'Void Rig'),
+  name: L('暗物質裝', 'Void Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(21), cd: 1, range: 6, kind: 'projectile', projSpeed: 16, fx: 'void', dmgKind: 'energy', onHit: [{ k: 'mana', amount: -5, to: 'target' }] },
   abilities: ['ab.void.vortex', 'ab.void.phase'],
-  item: L('擅長閃避與消耗對手能量的支援裝。每一發都會打散目標的能量，危急時會自動相位化。', 'A support rig built to dodge and to starve opponents of energy. Each hit bleeds the target\'s energy, and it phases out on its own when struck.'),
+  item: L('擅長閃避與消耗對手能量的支援裝。每一發都會打散目標的能量，危急時會自動相位化。', 'A support suit built to dodge and to starve opponents of energy. Each hit bleeds the target\'s energy, and it phases out on its own when struck.'),
 })
 ABILITIES.push(
   ab(
@@ -471,7 +471,7 @@ ABILITIES.push(
   ab(
     'ab.void.phase',
     L('相位轉移', 'Phase Shift'),
-    L('被動：受到攻擊時，防護服會自動把自己轉為暗能量 1 秒，期間不受任何傷害。每次消耗 15 能量，冷卻 8 秒。', 'Passive: when struck, the rig automatically shifts into dark energy for 1 s and ignores all damage. Costs 15 energy each time, 8 s cooldown.'),
+    L('被動：受到攻擊時，防護服會自動把自己轉為暗能量 1 秒，期間不受任何傷害。每次消耗 15 能量，冷卻 8 秒。', 'Passive: when struck, the suit automatically shifts into dark energy for 1 s and ignores all damage. Costs 15 energy each time, 8 s cooldown.'),
     'cloak',
     'passive',
     8,
@@ -485,7 +485,7 @@ BUFFS.push(bf('bf.void.phase', L('相位化', 'Phased'), 'cloak', true, { dur: 1
 
 suit({
   id: 'suit.mirage',
-  name: L('幻影裝', 'Mirage Rig'),
+  name: L('幻影裝', 'Mirage Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(39), cd: 1, range: 6, kind: 'hitscan', fx: 'mirage' },
@@ -523,18 +523,18 @@ BUFFS.push({ id: 'bf.mirage.illusion', name: L('光學分身', 'Optical Double')
 
 suit({
   id: 'suit.rad',
-  name: L('輻射裝', 'Rad Rig'),
+  name: L('輻射裝', 'Rad Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(29), cd: 1.1, range: 6, kind: 'projectile', projSpeed: 14, fx: 'rad', dmgKind: 'energy' },
   abilities: ['ab.rad.overload', 'ab.rad.leak'],
-  item: L('以小型反應爐供電的強力戰鬥裝，代價是它會不停輻射周圍所有人——包括隊友。', 'A powerful combat rig driven by a compact reactor. The price: it constantly irradiates everyone nearby, teammates included.'),
+  item: L('以小型反應爐供電的強力戰鬥裝，代價是它會不停輻射周圍所有人——包括隊友。', 'A powerful combat suit driven by a compact reactor. The price: it constantly irradiates everyone nearby, teammates included.'),
 })
 ABILITIES.push(
   ab(
     'ab.rad.overload',
     L('核心過載', 'Core Overload'),
-    L('花 4 秒讓反應爐失控：自己承受 150 傷害，並讓周圍 4 公尺化為重度污染區 60 秒，區內每秒 24 傷害（輻射裝不受影響）。', 'Spend 4 s pushing the reactor past its limits. You take 150 damage and the surrounding 4 m becomes a heavy fallout zone for 60 s, dealing 24 damage per second to anyone inside (Rad rigs are shielded).'),
+    L('花 4 秒讓反應爐失控：自己承受 150 傷害，並讓周圍 4 公尺化為重度污染區 60 秒，區內每秒 24 傷害（輻射裝不受影響）。', 'Spend 4 s pushing the reactor past its limits. You take 150 damage and the surrounding 4 m becomes a heavy fallout zone for 60 s, dealing 24 damage per second to anyone inside (Rad suits are shielded).'),
     'core',
     'none',
     20,
@@ -545,7 +545,7 @@ ABILITIES.push(
   ab(
     'ab.rad.leak',
     L('輻射外洩', 'Radiation Leak'),
-    L('被動：穿著時，5 公尺內的所有其他單位每秒受到 2.5 輻射傷害，不分敵我（輻射裝彼此免疫）。', 'Passive: while worn, every other unit within 5 m takes 2.5 radiation damage per second, friend or foe (Rad rigs are immune to each other).'),
+    L('被動：穿著時，5 公尺內的所有其他單位每秒受到 2.5 輻射傷害，不分敵我（輻射裝彼此免疫）。', 'Passive: while worn, every other unit within 5 m takes 2.5 radiation damage per second, friend or foe (Rad suits are immune to each other).'),
     'skull',
     'passive',
     0,
@@ -564,7 +564,7 @@ HELPERS.push(fieldUnit('rig.radZone', '污染區', 'Fallout Zone', 'radZone', 4)
 
 suit({
   id: 'suit.operative',
-  name: L('特務裝', 'Operative Rig'),
+  name: L('特務裝', 'Operative Suit'),
   hp: 650,
   speed: 2.85,
   attack: { dmg: atk(64), cd: 1, range: 14, kind: 'hitscan', fx: 'operative' },
@@ -581,7 +581,7 @@ suit({
   speed: 2.95,
   attack: { dmg: atk(50), cd: 1, range: 3.5, kind: 'projectile', projSpeed: 9, fx: 'flask', dmgKind: 'poison' },
   abilities: ['ab.labcoat.chemistry', 'ab.labcoat.physics', 'ab.labcoat.biology'],
-  item: L('口袋塞滿試管與燒瓶的白袍——沒錯，它也算防護服。三門學科各有一招。', 'A white coat with every pocket full of vials and flasks. Yes, it counts as a rig. One trick per field of science.'),
+  item: L('口袋塞滿試管與燒瓶的白袍——沒錯，它也算防護服。三門學科各有一招。', 'A white coat with every pocket full of vials and flasks. Yes, it counts as a suit. One trick per field of science.'),
 })
 ABILITIES.push(
   ab(
@@ -642,12 +642,12 @@ HELPERS.push({
 
 suit({
   id: 'suit.guard',
-  name: L('警衛裝', 'Guard Rig'),
+  name: L('警衛裝', 'Guard Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(23), cd: 1, range: 6, kind: 'hitscan', fx: 'rifle' },
   abilities: ['ab.guard.restore', 'ab.guard.transfer', 'ab.guard.absorb'],
-  item: L('以保護他人為設計目標的標準戰鬥裝：能就地治療、用自己的生命替人補血，或張開力場讓身邊的人無敵。', 'A standard combat rig designed to protect others. It can heal in place, trade its own health to patch someone up, or raise a field that makes those beside it invulnerable.'),
+  item: L('以保護他人為設計目標的標準戰鬥裝：能就地治療、用自己的生命替人補血，或張開力場讓身邊的人無敵。', 'A standard combat suit designed to protect others. It can heal in place, trade its own health to patch someone up, or raise a field that makes those beside it invulnerable.'),
 })
 ABILITIES.push(
   ab(
@@ -690,18 +690,18 @@ BUFFS.push(bf('bf.guard.absorbed', L('受力場保護', 'Absorbed'), 'shield', t
 
 suit({
   id: 'suit.acid',
-  name: L('酸蝕裝', 'Acid Rig'),
+  name: L('酸蝕裝', 'Acid Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(24), cd: 1, range: 8.5, kind: 'projectile', projSpeed: 28, fx: 'acid', dmgKind: 'poison', onHit: [{ k: 'buff', buff: 'bf.acid.corrode', to: 'target' }] },
   abilities: ['ab.acid.spray', 'ab.acid.cloud'],
-  item: L('射程比多數防護服更遠的游擊裝。酸液會黏在目標身上慢慢腐蝕，還能噴出酸池與致盲毒雲。', 'A hit-and-run rig that outranges most others. Its acid clings and eats away over time, and it can lay acid pools and blinding vapour.'),
+  item: L('射程比多數防護服更遠的游擊裝。酸液會黏在目標身上慢慢腐蝕，還能噴出酸池與致盲毒雲。', 'A hit-and-run suit that outranges most others. Its acid clings and eats away over time, and it can lay acid pools and blinding vapour.'),
 })
 ABILITIES.push(
   ab(
     'ab.acid.spray',
     L('酸液噴灑', 'Acid Spray'),
-    L('朝地點噴出一大片酸液，形成持續 20 秒、半徑 2.5 公尺的酸池；踏進去的人每秒受到 15 腐蝕傷害（酸蝕裝不受影響）。', 'Hose down an area with acid, leaving a 2.5 m pool for 20 s. Anyone who steps in takes 15 corrosive damage per second (Acid rigs are unaffected).'),
+    L('朝地點噴出一大片酸液，形成持續 20 秒、半徑 2.5 公尺的酸池；踏進去的人每秒受到 15 腐蝕傷害（酸蝕裝不受影響）。', 'Hose down an area with acid, leaving a 2.5 m pool for 20 s. Anyone who steps in takes 15 corrosive damage per second (Acid suits are unaffected).'),
     'infect',
     'point',
     0.5,
@@ -734,12 +734,12 @@ HELPERS.push(fieldUnit('rig.acidPool', '酸池', 'Acid Pool', 'acidPool', 2.5), 
 
 suit({
   id: 'suit.gatling',
-  name: L('機槍裝', 'Gatling Rig'),
+  name: L('機槍裝', 'Gatling Suit'),
   hp: 600,
   speed: 2.55,
   attack: { dmg: atk(2), cd: 0.1, range: 6, kind: 'hitscan', fx: 'gatling', windup: 0, onHit: [S('gatling.round', { bonus: 3 })] },
   abilities: ['ab.gatling.setup', 'ab.rig.rdgToss', 'ab.rig.rdgDetonate'],
-  item: L('維護成本高得離譜的舊式機槍裝，但彈雨依然好用；架設後火力更猛，還附遙控炸藥。', 'An outdated machine-gun rig with absurd upkeep, but a hail of bullets still works. Brace it for extra punch; it also carries remote charges.'),
+  item: L('維護成本高得離譜的舊式機槍裝，但彈雨依然好用；架設後火力更猛，還附遙控炸藥。', 'An outdated machine-gun suit with absurd upkeep, but a hail of bullets still works. Brace it for extra punch; it also carries remote charges.'),
 })
 ABILITIES.push(
   ab(
@@ -760,12 +760,12 @@ BUFFS.push(bf('bf.gatling.setup', L('已架設', 'Braced'), 'gun', true, { every
 
 suit({
   id: 'suit.force',
-  name: L('力場裝', 'Force Rig'),
+  name: L('力場裝', 'Force Suit'),
   hp: 600,
   speed: 2.55,
   attack: { dmg: atk(29), cd: 1.5, range: 18, kind: 'projectile', projSpeed: 20, fx: 'force', pierce: true, dmgKind: 'pierce', onHit: [S('rig.shove', { dist: 1.5, polarity: true })] },
   abilities: ['ab.rig.rush', 'ab.force.vortex', 'ab.force.polarity', 'ab.force.fireAt'],
-  item: L('擅長走位與控場的力場裝。射出的衝擊波會貫穿整條直線並把人推開（或拉近）。', 'A rig for outmanoeuvring and controlling foes. Its shockwave tears through everything in a line and shoves them away, or drags them in.'),
+  item: L('擅長走位與控場的力場裝。射出的衝擊波會貫穿整條直線並把人推開（或拉近）。', 'A suit for outmanoeuvring and controlling foes. Its shockwave tears through everything in a line and shoves them away, or drags them in.'),
 })
 ABILITIES.push(
   ab(
@@ -807,7 +807,7 @@ BUFFS.push(bf('bf.force.pull', L('極性反轉', 'Polarity Reversed'), 'gear', t
 
 suit({
   id: 'suit.mag',
-  name: L('磁力裝', 'Mag Rig'),
+  name: L('磁力裝', 'Mag Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(25), cd: 1.1, range: 6, kind: 'projectile', projSpeed: 34, fx: 'mag', dmgKind: 'pierce', onHit: [{ k: 'buff', buff: 'bf.mag.sliv', to: 'target' }] },
@@ -855,7 +855,7 @@ HELPERS.push(deviceUnit('rig.metal', '金屬塊', 'Lump of Metal', 'metal', 150,
 
 suit({
   id: 'suit.pulse',
-  name: L('脈衝裝', 'Pulse Rig'),
+  name: L('脈衝裝', 'Pulse Suit'),
   hp: 600,
   speed: 2.75,
   attack: { dmg: atk(1), cd: 0.05, range: 5, kind: 'beam', fx: 'pulse', dmgKind: 'pierce', windup: 0, onHit: [S('pulse.beam', { bonus: 2, heat: 3, cool: 1.5, cost: 0.2 })] },

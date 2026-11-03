@@ -6,6 +6,7 @@ import { endResult, leave, send, sendCmd, snapTick, startInfo, world } from '../
 import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
 import { addStrings, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
+import { localizeName } from '../names'
 import { stationDefOf } from '../../render/gameScene'
 import { TopSlot } from './Announce'
 import { evolveBlock } from './evolveWhy'
@@ -216,9 +217,9 @@ export function EndScreen() {
         <div class="pgrid">
           {r.players.map((p) => (
             <div class="pcard" key={p.slot} style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
-              <div class="pname">{p.name}</div>
+              <div class="pname">{localizeName(p.name)}</div>
               <div class="row end-role">
-                <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? ' spawn' : ''}</span>
+                <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
                 <span class="dim">{t('class.' + p.classId)}</span>
                 <span class="grow" />
                 <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>

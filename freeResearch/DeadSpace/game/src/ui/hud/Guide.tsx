@@ -16,6 +16,7 @@ import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
 import { sampleName } from '../../shared/sysArgs'
+import { localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import '../guide.css'
 
@@ -351,7 +352,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
-        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names.map((x) => sampleName(x, lang.value))) })
+        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names.map((x) => localizeName(sampleName(x, lang.value)))) })
         else add('guide.s.samplerUse', { k: smp + 1 })
       } else if (time < SAMPLER_AT && !samplerInStock()) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
       else add('guide.s.samplerGet')

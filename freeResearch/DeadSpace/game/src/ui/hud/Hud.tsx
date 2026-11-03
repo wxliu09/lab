@@ -4,7 +4,7 @@ import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
-import { entDefName, suitColor, textColorOf } from '../names'
+import { entDefName, localizeName, suitColor, textColorOf } from '../names'
 import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
@@ -19,9 +19,13 @@ import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { TopSlot } from './Announce'
-import { showCursorTip, tipProps, type TipData } from '../tooltip'
+import { hideTip, showCursorTip, tipProps, type TipData } from '../tooltip'
+import { uiZoom } from '../uiScale'
+import { createPortal } from 'preact/compat'
+import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
+import '../ui4.css'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -430,7 +434,7 @@ export function Portrait() {
         <Icon name={def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'} color={color} size={56} />
       </div>
       <div class="bars">
-        <div style={{ fontWeight: 700, fontSize: '18px', color: textColorOf(color) }}>{s.n || loc(defName)}</div>
+        <div style={{ fontWeight: 700, fontSize: '18px', color: textColorOf(color) }}>{localizeName(s.n) || loc(defName)}</div>
         <div class="dim" style={{ fontSize: '14px', marginTop: '-4px' }}>
           {loc(defName)}
         </div>
@@ -580,31 +584,118 @@ export function CommandCard({ input }: { input: Input | null }) {
   )
 }
 
+/** 拖曳放開後的那一下 click 不算「使用道具」 */
+let dragEndedAt = -1e9
+/** 按下後移動超過這個距離（px）才算拖曳，小抖動仍是點擊 */
+const DRAG_START = 6
+
+function slotAt(x: number, y: number): number {
+  const el = document.elementFromPoint(x, y)?.closest('[data-inv-slot]')
+  return el ? Number(el.getAttribute('data-inv-slot')) : -1
+}
+
+/** 放開：另一格＝交換位置；場景上的單位＝給予；其他地方＝取消 */
+function finishDrag(input: Input | null, from: number, x: number, y: number, queue: boolean): void {
+  const to = slotAt(x, y)
+  if (to >= 0) {
+    if (to !== from) sendCmd({ k: 'swapItem', s: from, x: to })
+    return
+  }
+  const el = document.elementFromPoint(x, y)
+  if (el instanceof HTMLCanvasElement && el.classList.contains('view')) input?.dropItemOn(from, x, y, queue)
+}
+
+/** 背包格按下：超過門檻才開始拖；放開時決定交換或給予；Esc、視窗失焦取消 */
+function startInvDrag(e: PointerEvent, slot: number, input: Input | null): void {
+  if (e.button !== 0 || !world.me.inv?.[slot]) return
+  const x0 = e.clientX
+  const y0 = e.clientY
+  let dragging = false
+  const cleanup = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', cancel)
+    window.removeEventListener('keydown', key, true)
+    window.removeEventListener('blur', cancel)
+    if (dragging) dragEndedAt = performance.now()
+    invDrag.value = null
+  }
+  const move = (ev: PointerEvent) => {
+    if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_START) return
+    if (!dragging) hideTip()
+    dragging = true
+    invDrag.value = { slot, x: ev.clientX, y: ev.clientY, over: slotAt(ev.clientX, ev.clientY) }
+  }
+  const up = (ev: PointerEvent) => {
+    const was = dragging
+    cleanup()
+    if (was) finishDrag(input, slot, ev.clientX, ev.clientY, ev.shiftKey)
+  }
+  const cancel = () => cleanup()
+  const key = (ev: KeyboardEvent) => {
+    if (ev.key !== 'Escape' || !dragging) return
+    // 只取消拖曳，不要同時打開遊戲選單
+    ev.stopPropagation()
+    ev.preventDefault()
+    cleanup()
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', cancel)
+  window.addEventListener('keydown', key, true)
+  window.addEventListener('blur', cancel)
+}
+
+/** 拖曳中的道具圖示：跟著游標（掛在 body 上，不受介面 zoom 影響）*/
+export function InvDragGhost() {
+  const d = invDrag.value
+  if (!d) return null
+  const it = world.me.inv?.[d.slot]
+  const def = it ? itemDef(it.item) : undefined
+  if (!def) return null
+  const z = uiZoom.value
+  return createPortal(
+    <div class="inv-ghost" data-testid="inv-ghost" style={{ left: `${d.x}px`, top: `${d.y}px`, width: `${44 * z}px`, height: `${44 * z}px` }}>
+      <Icon name={def.icon} size={Math.round(30 * z)} color={def.suit ? suitColor(def.id) : '#9fe7ff'} />
+    </div>,
+    document.body,
+  )
+}
+
 export function Inventory({ input }: { input: Input | null }) {
   void snapTick.value
   if (spectating()) return null
   const inv = world.me.inv ?? []
+  const drag = invDrag.value
   return (
     <div class="panel inv" data-testid="inventory">
       {Array.from({ length: 6 }, (_, i) => {
         const it = inv[i]
         const def = it ? itemDef(it.item) : undefined
+        const cls = 'cmd' + (it && it.cd > 0 ? ' cooling' : '') + (drag?.slot === i ? ' drag-src' : '') + (drag && drag.over === i && drag.slot !== i ? ' drag-over' : '')
         return (
           <div
-            class={'cmd' + (it && it.cd > 0 ? ' cooling' : '')}
+            class={cls}
             key={i}
             data-testid={'inv-' + i}
-            onClick={() => input?.useItem(i)}
+            data-inv-slot={i}
+            onPointerDown={(e) => startInvDrag(e, i, input)}
+            onClick={() => {
+              if (performance.now() - dragEndedAt < 250) return
+              input?.useItem(i)
+            }}
             onContextMenu={(e) => {
               e.preventDefault()
               if (it) sendCmd({ k: 'drop', s: i })
             }}
             {...tipProps(() => {
+              // 拖曳中經過其他格子不跳說明（擋視線）
+              if (invDrag.peek()) return null
               if (!def || !it) return { title: t('hud.inventory') + ` ${i + 1}`, body: t('tip.empty') }
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
-              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples.map((n) => sampleName(n, lang.value))) : '')])
-              const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 })].filter(Boolean)
+              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples.map((n) => localizeName(sampleName(n, lang.value)))) : '')])
+              const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 }), t('ui4.tip.drag')].filter(Boolean)
               return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
             })}
           >
@@ -669,7 +760,7 @@ export function Chat() {
             {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
             {l.ch === 'team' && <span>[{t('chat.team')}] </span>}
             {l.group && <span>[{l.group}] </span>}
-            {l.from && <b style={{ color: textColorOf(l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : undefined) }}>{l.from}: </b>}
+            {l.from && <b style={{ color: textColorOf(l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : undefined) }}>{localizeName(l.from)}: </b>}
             {!l.from && l.ch === 'all' && <b class="dim">???: </b>}
             {sysText(l.text)}
           </div>
@@ -702,9 +793,11 @@ export function Chat() {
 
 export function TargetHint() {
   const tm = targetMode.value
-  if (!tm) return null
+  const drag = invDrag.value
+  if (!tm && !drag) return null
   let name: string
-  if (tm.kind === 'attack') name = t('target.attack')
+  if (!tm) name = loc(ITEMS.get(world.me.inv?.[drag!.slot]?.item ?? '')?.name) + t('sep.colon') + t('ui4.drag.hint')
+  else if (tm.kind === 'attack') name = t('target.attack')
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
   return (

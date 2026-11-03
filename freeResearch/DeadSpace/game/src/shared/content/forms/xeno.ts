@@ -824,7 +824,7 @@ export const XENO_ABILITIES: AbilityDef[] = [
     id: XAB.revive,
     name: L('逆時招魂', 'Undo Death'),
     desc: L(
-      '花 4 秒把一名死去的玩家從他斷氣前的那一刻拉回來，成為你的 spawn；屍體就在身旁 3.5 公尺內的優先。變種人一方與仿生人喚不回來。若沒有可喚回的死者，回應你的會是一頭遠古獸。',
+      '花 4 秒把一名死去的玩家從他斷氣前的那一刻拉回來，成為你的眷屬；屍體就在身旁 3.5 公尺內的優先。變種人一方與仿生人喚不回來。若沒有可喚回的死者，回應你的會是一頭遠古獸。',
       'Spend 4 s dragging a dead player back from the instant before their last breath to serve as your spawn; those whose corpse lies within 3.5 m come first. Mutants and androids cannot be recalled. With no one to recall, an elder beast answers instead.',
     ),
     icon: 'skull',

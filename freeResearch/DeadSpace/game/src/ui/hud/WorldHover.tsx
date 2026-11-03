@@ -3,10 +3,11 @@
 import { useEffect } from 'preact/hooks'
 import { EntFlag } from '../../shared/protocol/messages'
 import { UNITS, itemDef } from '../../shared/content/registry'
-import { entDefName } from '../names'
+import { entDefName, localizeName } from '../names'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { world } from '../../client/session'
-import { cursorScreen, modalOpen, targetMode } from '../../client/input'
+import { cursorScreen, giveRefusalHere, modalOpen, targetMode } from '../../client/input'
+import { invDrag } from '../../client/give'
 import type { GameScene } from '../../render/gameScene'
 import { loc, t } from '../i18n'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
@@ -31,7 +32,7 @@ export function hoverTip(id: number): TipData | null {
     return { title: loc(it.name), sub: `${t('hover.cat.item')} · ${t('tip.cat.' + it.cat)}`, body: loc(it.desc), hint: t('hover.hint.pickup'), color: it.cat === 'suit' ? '#ffc23d' : '#9fe7ff' }
   }
   const def = UNITS.get(d)
-  const name = s.n || loc(entDefName(d)) || d
+  const name = localizeName(s.n) || loc(entDefName(d)) || d
   const hpRow: [string, string][] = s.mhp && !(fl & EntFlag.Corpse) ? [[t('tip.hp'), `${Math.ceil(s.hp ?? 0)} / ${s.mhp}`]] : []
   if (fl & EntFlag.Corpse) return { title: name, sub: t('hover.cat.corpse'), body: desc('corpse'), hint: t('hover.hint.corpse'), color: '#8b9aa8' }
   // 太空層的站點與行星：名稱、用途介紹、有沒有人在駕駛
@@ -90,7 +91,13 @@ export function WorldHover({ scene }: { scene: GameScene }) {
         return
       }
       if (!id || now - since < 250) return
-      showCursorTip(hoverTip(id), cursorScreen.x, cursorScreen.y)
+      const tip = hoverTip(id)
+      // 拖著背包格經過：說明放開會怎樣（交給他，或為什麼不行）
+      if (tip && he && invDrag.value) {
+        const why = giveRefusalHere(he.s)
+        tip.hint = why === null ? t('ui4.drop.give') : why ? t(why) : undefined
+      }
+      showCursorTip(tip, cursorScreen.x, cursorScreen.y)
     }, 100)
     return () => {
       clearInterval(h)

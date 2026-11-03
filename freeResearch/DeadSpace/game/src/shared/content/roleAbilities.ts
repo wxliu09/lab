@@ -12,7 +12,7 @@ regBuffs([
     id: 'bf.parasite',
     name: L('寄生', 'Parasite'),
     desc: L(
-      '異形的寄生體正在體內孵化：每秒中毒，死時會變成異形的 spawn。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。',
+      '異形的寄生體正在體內孵化：每秒中毒，死時會變成異形的眷屬。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。',
       'A xeno parasite is growing inside you: it poisons you every second, and when you die you rise as a xeno spawn. An antibody kit (Medical Supplies) forces it dormant; it clears after 46 s.',
     ),
     icon: 'infect',
@@ -72,7 +72,7 @@ regAbilities([
   {
     id: 'xeno.form',
     name: L('褪去人皮', 'Shed the Skin'),
-    desc: L('花 5 秒脫去人類偽裝，以異形形態行動。異形形態沒有名字也沒有顏色，誰也認不出是你。必須先脫下防護服。', 'Spend 5 s shedding your human disguise. The xeno form has no name or color — no one can tell it is you. Remove any rig first.'),
+    desc: L('花 5 秒脫去人類偽裝，以異形形態行動。異形形態沒有名字也沒有顏色，誰也認不出是你。必須先脫下防護服。', 'Spend 5 s shedding your human disguise. The xeno form has no name or color — no one can tell it is you. Remove any suit first.'),
     icon: 'tentacle',
     target: 'none',
     cd: 3,
@@ -94,7 +94,7 @@ regAbilities([
   {
     id: 'xeno.spawnForm',
     name: L('甦醒', 'Awaken'),
-    desc: L('花 4 秒變回異形形態。spawn 的異形形態仍帶著你的名字與顏色。', 'Spend 4 s returning to xeno form. A spawn’s xeno form still carries your name and color.'),
+    desc: L('花 4 秒變回異形形態。眷屬的異形形態仍帶著你的名字與顏色。', 'Spend 4 s returning to xeno form. A spawn’s xeno form still carries your name and color.'),
     icon: 'tentacle',
     target: 'none',
     cd: 3,
@@ -116,7 +116,7 @@ regAbilities([
   {
     id: 'xeno.parasite',
     name: L('寄生', 'Implant'),
-    desc: L('把幼體植入沒穿防護服的人類。宿主會慢慢失血；只要宿主死時體內還有幼體，無論是誰下的手，都會甦醒成為你的 spawn。', 'Implant a larva in an unsuited human. The host slowly bleeds; if they die with it inside — no matter who kills them — they rise as your spawn.'),
+    desc: L('把幼體植入沒穿防護服的人類。宿主會慢慢失血；只要宿主死時體內還有幼體，無論是誰下的手，都會甦醒成為你的眷屬。', 'Implant a larva in an unsuited human. The host slowly bleeds; if they die with it inside — no matter who kills them — they rise as your spawn.'),
     icon: 'infect',
     target: 'unit',
     range: 1.6,
@@ -181,7 +181,7 @@ regAbilities([
   {
     id: 'mut.prion2',
     name: L('變異株注射', 'Strain Inject'),
-    desc: L('更強的朊毒，連著裝者與異類也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even rigged or xeno targets (only humans convert).'),
+    desc: L('更強的朊毒，連著裝者與異類也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even suited or xeno targets (only humans convert).'),
     icon: 'infect',
     target: 'unit',
     range: 5,
@@ -196,7 +196,7 @@ regAbilities([
   {
     id: 'mut.prion3',
     name: L('繁巢株注射', 'Brood Inject'),
-    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形 spawn 死時都會轉成你的工蟲。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
+    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形眷屬死時都會轉成你的工蟲。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
     icon: 'infect',
     target: 'unit',
     range: 9,

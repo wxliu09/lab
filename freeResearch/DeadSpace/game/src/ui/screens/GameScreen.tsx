@@ -4,7 +4,7 @@ import { Input } from '../../client/input'
 import { getEngine } from '../../render/engine'
 import { GameScene } from '../../render/gameScene'
 import { Overlay } from '../../render/overlay'
-import { Banner, Chat, CommandCard, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
+import { Banner, Chat, CommandCard, InvDragGhost, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
 import { bindFx } from '../../render/fxBinding'
 import '../../render/fxHandlers'
 import { setListener } from '../../audio/sfx'
@@ -160,6 +160,7 @@ export function GameScreen() {
           <CommandCard input={input} />
         </div>
       </div>
+      <InvDragGhost />
     </div>
   )
 }

@@ -5,6 +5,9 @@ import { ITEMS, abilityDef } from '../../src/shared/content/registry'
 import { makeItem } from '../../src/sim/systems/items'
 import { privateState } from '../../src/sim/systems/private'
 import { REGEN_AURA_R } from '../../src/sim/systems/regen'
+import { damage } from '../../src/sim/systems/damage'
+import { entView } from '../../src/sim/systems/snapshot'
+import { EntFlag } from '../../src/shared/protocol/messages'
 
 describe('道具冷卻顯示', () => {
   it('用掉一個有冷卻的自身道具後，背包格帶出剩餘秒數並往下數', () => {
@@ -53,6 +56,17 @@ describe('生命再生器', () => {
     expect(u.buffs.some((b) => b.id === 'bf.regenAura')).toBe(true)
     // 4 秒約 +24（加上本身的自然回復）
     expect(u.hp - h0).toBeGreaterThan(20)
+    // 光環約 2 m（原作 aare1 100）：隔兩三格就吃不到
+    expect(REGEN_AURA_R).toBe(2)
+    let mid = null
+    for (let r = 3.2; r < 5 && !mid; r += 0.25) {
+      const c = z.nav!.nearestOpen(regen.x + r, regen.y)
+      if (c && all.every((q) => Math.hypot(c.x - q.x, c.y - q.y) > REGEN_AURA_R + u.radius + 0.3)) mid = c
+    }
+    expect(mid).toBeTruthy()
+    g.world.relocate(u, regen.zone, mid!.x, mid!.y)
+    h.ticks(20 * 2)
+    expect(u.buffs.some((b) => b.id === 'bf.regenAura')).toBe(false)
     // 走遠（離兩台都遠）：buff 消失、不再額外回血
     let far = null
     for (let r = REGEN_AURA_R + 4; r < 30 && !far; r += 1) {
@@ -62,5 +76,24 @@ describe('生命再生器', () => {
     g.world.relocate(u, regen.zone, far!.x, far!.y)
     h.ticks(20 * 2)
     expect(u.buffs.some((b) => b.id === 'bf.regenAura')).toBe(false)
+  })
+
+  it('不可選取、不可攻擊（原作 Aloc）：無敵、noTarget，打不壞', () => {
+    const { h } = Harness.started(1, 3, { eventMult: 0, bots: 0 })
+    const g = h.server.game!
+    const p = g.allPlayers()[0]
+    const regen = [...g.world.ents.values()].find((e) => e.def.id === 'struct.regen')!
+    expect(regen.tags.has('noTarget')).toBe(true)
+    expect(regen.tags.has('invuln')).toBe(true)
+    const hp = regen.hp
+    damage(g, g.mainOf(p)!, regen, 99999, { pure: true })
+    h.ticks(2)
+    expect(regen.alive).toBe(true)
+    expect(regen.hp).toBe(hp)
+    // 攻擊指令不會鎖定它
+    g.handleCommand(p.slot, { k: 'attack', e: regen.id })
+    h.ticks(2)
+    expect(g.mainOf(p)!.order?.k === 'attack' && g.mainOf(p)!.order?.e === regen.id).toBe(false)
+    expect((entView(g, p, regen).fl ?? 0) & EntFlag.Invuln).toBeTruthy()
   })
 })

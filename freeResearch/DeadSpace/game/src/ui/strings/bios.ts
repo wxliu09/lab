@@ -26,7 +26,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
   // ── 保全 ───────────────────────────────────────────────
   'bio.security.human': {
     zh: '你的工作是站在門口，讓別人覺得安全。上週有三名船員在換班時失聯，報告寫「轉調」，轉調單上卻沒有目的地。今早配發的戰鬥裝還留著前一位使用者的體溫設定，沒人告訴你他去了哪裡。你把保險打開，關上，又打開。',
-    en: 'Your job is standing at doors so other people feel safe. Last week three crew went missing during shift change. The report says "reassigned," but the transfer forms list no destination. The combat rig issued to you this morning still holds the previous wearer\'s temperature presets, and nobody will say where he went. You flick the safety off. On. Off again.',
+    en: 'Your job is standing at doors so other people feel safe. Last week three crew went missing during shift change. The report says "reassigned," but the transfer forms list no destination. The combat suit issued to you this morning still holds the previous wearer\'s temperature presets, and nobody will say where he went. You flick the safety off. On. Off again.',
   },
   'bio.security.xeno': {
     zh: '七號廢站的例行巡邏，你在通風管裡發現一團溫熱、發亮的膜，只是用槍管戳了一下。現在站崗時，你會盯著每個經過的人，默算他們落單的時間。你仍穿著制服、仍會敬禮、仍有權攔下任何人——這是最好的偽裝。肚子裡的東西正在等你點頭。',
@@ -189,7 +189,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
 export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   human: {
     zh: [
-      '找出並消滅所有異類：異形、變種人、他們的 spawn，以及被敵方控制的仿生人。',
+      '找出並消滅所有異類：異形、變種人、他們的眷屬，以及被敵方控制的仿生人。',
       '到醫療補給領基因檢測器（約 7 分鐘後上架），抽 3 個人的血；抽滿後它會變成 GIT 解析器，放在地上等它開機就能拿報告（女帝號的中央檢測儀必須完好）。',
       '守住檢測儀與太空站：站被擊毀，站內所有人一起陪葬。',
       '活下去，在末日降臨之前把局面收拾乾淨。',
@@ -204,7 +204,7 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   xeno: {
     zh: [
       '保持偽裝：人類形態下你與船員無異，落單時再切換成匿名的異形形態。',
-      '對未著裝的人類施放寄生；被寄生者一死，就會轉成你的 spawn。',
+      '對未著裝的人類施放寄生；被寄生者一死，就會轉成你的眷屬。',
       '在隱密處下蛋（最多 3 顆）累積 EP；每殺一名無辜者 +175 EP。',
       '660 EP 進化 T2、1370 EP 進化 T3，殺光或轉化所有非異形。',
     ],
@@ -220,7 +220,7 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
       '保持偽裝：進化之前，你和一般船員毫無差別，驗血是你最大的破綻。',
       '累積 EP：對非變種人造成傷害、吞噬小生物與失敗實驗體（女帝號實驗室、翠原星；NPC 船員也吞得下），也會隨時間增加；完美路線的形態還能啃食人類屍體。',
       '300／900／1800 EP 三段進化；進化的 60 秒內無敵，但所在的站被毀你也會死。',
-      '選擇完美路線（純戰鬥）或感染路線（spawn 軍團），殺光所有非變種人。',
+      '選擇完美路線（純戰鬥）或感染路線（眷屬軍團），殺光所有非變種人。',
     ],
     en: [
       'Stay disguised: until you evolve you are indistinguishable from the crew. A blood test is your biggest weakness.',

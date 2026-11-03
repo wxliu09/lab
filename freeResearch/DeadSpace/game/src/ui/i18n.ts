@@ -11,7 +11,9 @@ import { UX2_EN, UX2_ZH } from './strings/ux2'
 import { UX3_EN, UX3_ZH } from './strings/ux3'
 import { PLAY1_EN, PLAY1_ZH } from './strings/play1'
 import { ART1_EN, ART1_ZH } from './strings/art1'
+import { UI4_EN, UI4_ZH } from './strings/ui4'
 import { ITEMS, UNITS } from '../shared/content/registry'
+import { localizeName, localizeNameList } from './names'
 
 export type Lang = 'zh' | 'en'
 
@@ -267,7 +269,7 @@ const en: Dict = {
   'vendor.soldOut': 'Sold out',
   'item.full': 'Inventory full',
   'item.uniqueOnly': 'You may only carry one of these devices',
-  'item.cantSuit': 'This form cannot wear rigs',
+  'item.cantSuit': 'This form cannot wear suits',
   'cast.stunned': 'Stunned',
   'cast.silenced': 'Silenced',
   'cast.mana': 'Not enough energy',
@@ -280,8 +282,8 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH, UX3_ZH, PLAY1_ZH, ART1_ZH)
-Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN, UX3_EN, PLAY1_EN, ART1_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH, UX3_ZH, PLAY1_ZH, ART1_ZH, UI4_ZH)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN, UX3_EN, PLAY1_EN, ART1_EN, UI4_EN)
 
 /** 測試用：某語言是否有這個 key */
 export function hasString(l: Lang, key: string): boolean {
@@ -328,5 +330,9 @@ export function sysText(raw: string): string {
   // 參數 unit 是單位 id（例如進化後的形態）：換成目前語言的名稱
   const u = args.unit ? UNITS.get(args.unit) : undefined
   if (u) args.unit = loc(u.name)
+  // 玩家名字（職業前綴、晉升頭銜、管家後綴、預設名）依目前語言顯示；名單（{lz}／{le}）逐一換
+  if (args.name) args.name = localizeName(args.name)
+  if (args.lz) args.lz = localizeNameList(args.lz, '、')
+  if (args.le) args.le = localizeNameList(args.le, ', ')
   return t(key, args)
 }

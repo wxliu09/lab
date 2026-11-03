@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasString } from '../../src/ui/i18n'
+// 自己註冊的字串檔（addStrings）：client 端由 UI 模組 import，這裡一起載入才檢查得到
+import '../../src/ui/strings/sim3'
 
 function files(dir: string): string[] {
   const out: string[] = []
