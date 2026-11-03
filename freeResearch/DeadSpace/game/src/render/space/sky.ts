@@ -179,7 +179,7 @@ const PLANET_FRAG = `varying vec3 vN; varying vec3 vP; varying vec3 vW; varying 
     vec3 o = normalize(vO);
     float mu = dot(normalize(vW), uSun);
     float l = max(0.0, mu);
-    float day = smoothstep(-0.06, 0.28, mu);
+    float day = smoothstep(-0.05, 0.24, mu);
     float dark = 1.0 - day;
     float land = n3(o*3.0) * 0.6 + n3(o*7.0) * 0.3 + n3(o*15.0)*0.1;
     float hi = smoothstep(0.4, 0.7, land);
@@ -188,25 +188,30 @@ const PLANET_FRAG = `varying vec3 vN; varying vec3 vP; varying vec3 vW; varying 
       surf = mix(surf, uBase * 0.42, smoothstep(0.48, 0.68, n3(o * 2.3 + 11.0)) * 0.85);
       surf *= 1.0 + crater(o * 6.0, 0.0) + crater(o * 15.0, 5.0) * 0.6;
     }
-    float cloud = smoothstep(0.55, 0.8, n3(o*5.0 + vec3(uTime*0.01,0.0,0.0))) * uClouds;
+    // 用不到的花紋以 uniform 分支跳過（整個 draw call 走同一條路，不影響 fwidth）
+    float cloud = 0.0;
+    if (uClouds > 0.0) cloud = smoothstep(0.55, 0.8, n3(o*5.0 + vec3(uTime*0.01,0.0,0.0))) * uClouds;
     surf = mix(surf, vec3(0.9), cloud * 0.7);
     float ndv = max(0.0, dot(normalize(-vP), normalize(vN)));
     float rim = pow(1.0 - ndv, 3.0);
     vec3 col = surf * (l * 1.4 + 0.02) * day;
-    // 夜面：冷色天光照著地表（陸塊、雲、坑洞的明暗都還在），正對鏡頭處略亮
-    col += surf * uNight * uNightK * (0.6 + 0.4 * ndv) * dark;
+    // 夜面：冷色天光照著地表（陸塊、雲、坑洞的明暗都還在；雲壓暗一點，不要比陸地搶眼），正對鏡頭處略亮
+    col += surf * (1.0 - cloud * 0.35) * uNight * uNightK * (0.6 + 0.4 * ndv) * dark;
     // 晨昏線：大氣散射的一道淡光帶
     col += uAtmo * exp(-mu * mu * 60.0) * 0.04 * (1.0 - uRocky);
     // 人造光：中心周圍照亮地面的光暈＋燈點（只在夜面看得到，雲會遮住）
     float pool = 0.0;
     for (int i = 0; i < 4; i++) pool = max(pool, smoothstep(0.93, 0.997, dot(o, uHubs[i])));
-    vec3 cp = o * 40.0; vec3 ci = floor(cp);
-    float dens = uDots * (pool * 0.85 + 0.3 * smoothstep(0.55, 0.8, n3(o * 6.0 + 4.0)) * hi);
-    vec3 cc = vec3(h(ci + 3.1), h(ci + 7.7), h(ci + 1.9)) * 0.5 + 0.25;
-    float spot = smoothstep(0.24, 0.06, length(fract(cp) - cc)) * step(1.0 - dens, h(ci + 17.0));
-    // 燈點小於兩個像素時改用平均亮度（遠鏡頭不閃爍）
-    float lod = smoothstep(0.3, 0.7, length(fwidth(cp)));
-    float lamps = mix(spot, dens * 0.07, lod) * 3.0 + pool * 0.09 * (0.4 + hi);
+    float lamps = pool * 0.09 * (0.4 + hi);
+    if (uDots > 0.0) {
+      vec3 cp = o * 40.0; vec3 ci = floor(cp);
+      float dens = uDots * (pool * 0.85 + 0.3 * smoothstep(0.55, 0.8, n3(o * 6.0 + 4.0)) * hi);
+      vec3 cc = vec3(h(ci + 3.1), h(ci + 7.7), h(ci + 1.9)) * 0.5 + 0.25;
+      float spot = smoothstep(0.24, 0.06, length(fract(cp) - cc)) * step(1.0 - dens, h(ci + 17.0));
+      // 燈點小於兩個像素時改用平均亮度（遠鏡頭不閃爍）
+      float lod = smoothstep(0.3, 0.7, length(fwidth(cp)));
+      lamps += mix(spot, dens * 0.07, lod) * 3.0;
+    }
     col += uLamp * lamps * dark * (1.0 - cloud * 0.85);
     // 大氣邊緣：日面亮；夜面留一圈天光色，剪影才讀得出來
     col += uAtmo * rim * (0.3 + day * 1.5) + uNight * rim * uNightK * 1.2 * dark;

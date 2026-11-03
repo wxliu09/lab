@@ -2,6 +2,7 @@
 // 用法：/models.html?ids=xeno.*,human&dist=30&pitch=56&state=0&speed=0&cols=6&sp=4.5&yaw=25&q=low
 // 太空層：/models.html?ids=station.*（全部站點與行星）、ids=ship.*,space.*；space=1／0 強制開關太空背景
 // （ids 全是 station.／ship.／space. 時預設開：星空＋跟遊戲一樣的頂光，間距與鏡頭距離也換成太空層的尺度）
+// t=秒：固定動畫時間（閃燈、火光要截到特定一格時用）
 import * as THREE from 'three'
 import '../shared/content'
 import '../render/units'
@@ -59,6 +60,7 @@ const space = q.has('space') ? q.get('space') !== '0' : spaceIds
 const cols = num('cols', space ? 4 : 6)
 const sp = num('sp', space ? 13 : 4.5)
 const yaw = (num('yaw', 25) * Math.PI) / 180
+const tFix = q.has('t') ? num('t', 0) : null
 let state = num('state', 0)
 let speed = num('speed', 0)
 
@@ -103,6 +105,8 @@ if (space) {
 }
 
 const ringGeo = new THREE.RingGeometry(0.48, 0.62, 36)
+/** 站點的碰撞圈：細線（半徑 1） */
+const hitGeo = new THREE.RingGeometry(0.97, 1, 72)
 const labels = document.getElementById('labels')!
 const slots: Slot[] = []
 const summary: string[] = []
@@ -133,12 +137,12 @@ ids.forEach((id, i) => {
     radius = def?.radius ?? 0.4
     if (!MODELS.has(modelId)) console.warn('[gallery] 沒有登錄的模型', modelId)
   }
-  // 站點（UnitDef 只在 sim worker 動態註冊，這裡查站點表）：圈的內緣畫在碰撞半徑上，對照外觀大小
+  // 站點（UnitDef 只在 sim worker 動態註冊，這裡查站點表）：畫一圈細線標出碰撞半徑，對照外觀大小
   const st = id.startsWith('station.') ? STATION_BY_ID.get(id.slice(8)) : undefined
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: st ? '#9fe7ff' : '#ff3b3b', transparent: true, opacity: st ? 0.35 : 0.55, depthWrite: false, blending: THREE.AdditiveBlending }))
+  const ring = new THREE.Mesh(st ? hitGeo : ringGeo, new THREE.MeshBasicMaterial({ color: st ? '#9fe7ff' : '#ff3b3b', transparent: true, opacity: st ? 0.3 : 0.55, depthWrite: false, blending: THREE.AdditiveBlending }))
   ring.rotation.x = -Math.PI / 2
   ring.position.y = 0.03
-  ring.scale.setScalar(st ? st.space.radius / 0.48 : radius * 1.6)
+  ring.scale.setScalar(st ? st.space.radius : radius * 1.6)
   root.add(ring)
   const [t, m] = tris(view?.root ?? rig!.root)
   const label = document.createElement('div')
@@ -162,7 +166,8 @@ let deadAt = -1
 const sl: SceneLike = {
   scene,
   camera: cam,
-  update(dt, t) {
+  update(dt, t0) {
+    const t = tFix ?? t0
     sky?.update(t)
     if (state === 4 && deadAt < 0) deadAt = t
     if (state !== 4) deadAt = -1

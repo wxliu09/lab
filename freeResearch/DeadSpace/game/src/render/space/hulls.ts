@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { Batcher, box, cyl, rbox, sphere, torus } from '../batch'
 import { Mat } from '../materials'
 import { decalTex } from '../tex'
+import { fxTex } from '../fx/tex'
 
 interface HullSpec {
   hull: string
@@ -15,13 +16,17 @@ interface HullSpec {
   size: number
   /** 自轉速度（rad/s）；船艦型（有船頭、會開動）為 0，改成輕微橫搖 */
   spin: number
+  /** 外觀放大倍率（預設 1）：碰撞圈特別小的站，遠鏡頭下剪影要撐到跟其他小站差不多大 */
+  vis?: number
 }
 
 const SPECS: Record<string, HullSpec> = {
   nyx: { hull: '#c4ccd3', accent: '#33ffd1', glow: '#7fd8ff', size: 4.0, spin: 0.02 },
   adjudicatrix: { hull: '#2b3a5a', accent: '#ffc23d', glow: '#ffc23d', size: 3.1, spin: 0.02 },
   tenshu: { hull: '#26282c', accent: '#ff7a2a', glow: '#ff9a4a', size: 3.0, spin: 0.02 },
-  hulk7: { hull: '#5a4a3a', accent: '#8a5a3a', glow: '#ffb46b', size: 3.3, spin: 0.02 },
+  // 碰撞半徑只有 1（全星區最小）：外觀放大 1.25 倍，主體約 1.9 m，跟火口號、海盜船同一級；
+  // 斷環與碎片帶本來就是殘骸往外散，超出碰撞圈不違和
+  hulk7: { hull: '#5a4a3a', accent: '#8a5a3a', glow: '#ffb46b', size: 3.3, spin: 0.02, vis: 1.25 },
   bravado: { hull: '#4a5058', accent: '#ff3b3b', glow: '#ff5a4a', size: 4.4, spin: 0 },
   caldera: { hull: '#7a6a2a', accent: '#ffc23d', glow: '#ff9a3a', size: 3.4, spin: 0 },
   vivarium: { hull: '#3a5a4a', accent: '#5cf2a5', glow: '#5cf2a5', size: 4.2, spin: 0.02 },
@@ -30,11 +35,12 @@ const SPECS: Record<string, HullSpec> = {
 }
 
 /**
- * 碰撞半徑 → 模型縮放：主體外觀略大於碰撞圈（×1.15＋0.35 m），
- * 太空鏡頭最遠 95 m 時最小的站（半徑 1）也有約 45 px 寬，剪影讀得出來。
+ * 碰撞半徑 → 模型縮放：主體外觀略大於碰撞圈（×1.15＋0.35 m），再乘上 SPECS.vis；
+ * 太空鏡頭最遠 95 m 時最小的站（七號廢站，半徑 1）主體也有約 60 px 寬，剪影讀得出來。
  */
 export function stationHullScale(id: string, radius: number): number {
-  return (radius * 1.15 + 0.35) / (SPECS[id] ?? SPECS.nyx).size
+  const sp = SPECS[id] ?? SPECS.nyx
+  return ((radius * 1.15 + 0.35) / sp.size) * (sp.vis ?? 1)
 }
 
 // ───────── 組裝工具 ─────────
@@ -194,6 +200,12 @@ const hash = (n: number) => {
 
 type Blink = 'nav' | 'fast' | 'slow' | 'flicker' | 'spark'
 
+/** 求救信標的雙閃：每 2.8 秒閃兩下 */
+const beaconOn = (t: number) => {
+  const p = t % 2.8
+  return p < 0.16 || (p > 0.38 && p < 0.54)
+}
+
 interface Kit {
   sp: HullSpec
   b: Batcher
@@ -235,6 +247,45 @@ function light(
   m.position.set(x, y, z).applyMatrix4(FRAME)
   parent.add(m)
   k.lights.push({ m, mode, ph: k.lights.length * 2.1 })
+}
+
+/** 柔光 sprite 的材質（soft = 圓形光暈、smoke = 不規則的一團）：依貼圖＋顏色＋強度快取共用（標記 shared，釋放模型時不 dispose）*/
+const glowMats = new Map<string, THREE.SpriteMaterial>()
+function glowMat(color: string, k: number, tex: 'soft' | 'smoke'): THREE.SpriteMaterial {
+  const key = `${tex}:${color}:${k}`
+  let m = glowMats.get(key)
+  if (!m) {
+    m = new THREE.SpriteMaterial({
+      map: fxTex(tex),
+      color: new THREE.Color(color).multiplyScalar(k),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+    m.userData.shared = true
+    glowMats.set(key, m)
+  }
+  return m
+}
+
+/** 面向鏡頭的柔光（直徑 size，設計座標）：遠鏡頭下也讀得出亮點；不參與點選 */
+function glowAt(
+  k: Kit,
+  x: number,
+  y: number,
+  z: number,
+  color: string,
+  size: number,
+  bright = 1.5,
+  parent: THREE.Object3D = k.body,
+  tex: 'soft' | 'smoke' = 'soft',
+): THREE.Sprite {
+  const s = new THREE.Sprite(glowMat(color, bright, tex))
+  s.position.set(x, y, z).applyMatrix4(FRAME)
+  s.scale.setScalar(size)
+  s.raycast = () => {}
+  parent.add(s)
+  return s
 }
 
 /** 噴口尾焰（半透明發光錐，朝 -z）：回傳群組，閃動由 anims 處理 */
@@ -572,9 +623,9 @@ function hulk7(k: Kit): void {
   k.body.rotation.set(0.3, 0, -0.2)
   const rust2 = Mat.metal('#6e4a30', 0.5)
   const scrape = Mat.metal('#9a7a58', 0.55)
-  const fire = Mat.emissive('#ff8a3a', 3.2)
+  const fire = Mat.emissive('#ff8a3a', 5)
   const char = Mat.metal('#1c1816', 0.35)
-  const ember = Mat.emissive('#ff6a2a', 2.4)
+  const ember = Mat.emissive('#ff6a2a', 3.4)
   const dim = Mat.emissive('#ffb46b', 1.5)
   const solar = Mat.metal('#1d2a4a', 0.9, false)
   // 中央艙：頂部撕裂、側面破口
@@ -636,8 +687,14 @@ function hulk7(k: Kit): void {
     const m = i % 3 === 1 ? scrape : i % 2 ? rust2 : char
     if (R() < 0.6) put(b, box(0.42, 0.2, 0.62), m, px(RR, a), 0.22, pz(RR, a), 0, a + Math.PI / 2, (R() - 0.5) * 0.3)
   }
-  // 斷口還在燒：環的兩個斷端各一團餘火
-  for (const a of [1.97, -1.93]) put(b, sphere(0.2, 8, 6), fire, px(RR - 0.05, a), 0.05, pz(RR - 0.05, a), 0, 0, 0, 1, 0.7, 1)
+  // 斷口還在燒：環的兩個斷端各一團餘火（核心＋面向鏡頭的火光，遠鏡頭也看得到兩個橘點標出斷環）
+  for (const a of [1.97, -1.93]) put(b, sphere(0.28, 8, 6), fire, px(RR - 0.05, a), 0.05, pz(RR - 0.05, a), 0, 0, 0, 1, 0.7, 1)
+  const fires = [
+    glowAt(k, px(RR, 1.97), 0.15, pz(RR, 1.97), '#ff7a2a', 2.2, 1.6),
+    glowAt(k, px(RR, -1.93), 0.1, pz(RR, -1.93), '#ff7a2a', 1.9, 1.6),
+    glowAt(k, px(1.45, 1.2), 0.15, pz(1.45, 1.2), '#ff6a2a', 2.6, 1.4),
+  ]
+  const fireSize = fires.map((f) => f.scale.x)
   // 輻條：完整、斷半截、只剩殘根、彎折
   put(b, box(0.2, 0.2, 2.1), rust, px(2.05, 0), 0, pz(2.05, 0), 0, 0)
   put(b, box(0.2, 0.2, 0.9), rust, px(1.45, -1.2), 0, pz(1.45, -1.2), 0, -1.2)
@@ -690,16 +747,34 @@ function hulk7(k: Kit): void {
       )
     else put(deb.b, pebble(i % 4), char, x, y, z, R() * 3, R() * 3, 0, 0.12 + R() * 0.15)
   }
+  // 碎片帶的塵埃：幾團很淡、形狀不規則的暖色微光（被餘火照亮的鏽屑），暗背景上撐出殘骸的範圍；跟著碎片帶漂
+  const dust = (
+    [
+      [2.3, 3.0, -0.3, 7.5],
+      [3.8, 2.3, 0.2, 5.5],
+      [1.2, 0.8, -0.2, 6.5],
+    ] as const
+  ).map(([r, a, y, d]) => glowAt(k, px(r, a), y, pz(r, a), '#b07a5a', d, 0.13, deb.g, 'smoke'))
+  const dustSize = dust.map((d) => d.scale.x)
+  // 求救信標：中央艙頂那盞接觸不良的紅燈，每 2.8 秒爆出一次雙閃的大光暈；遠鏡頭下全星區只有它這樣閃
+  const beacon = glowAt(k, 0, 1.8, 0, '#ff3b3b', 3.4, 2.2)
   k.anims.push((t) => {
     deb.g.rotation.y = t * 0.035
     deb.g.position.y = Math.sin(t * 0.4) * 0.1
     k.body.rotation.x = 0.3 + Math.sin(t * 0.07) * 0.06
+    // 火光：兩組不同頻率的起伏＋偶爾竄高
+    fires.forEach((f, i) => {
+      const n = 0.82 + Math.sin(t * 9.3 + i * 2.1) * Math.sin(t * 13.7 + i) * 0.14 + (hash(Math.floor(t * 11) + i * 7) > 0.8 ? 0.12 : 0)
+      f.scale.setScalar(fireSize[i] * n)
+    })
+    dust.forEach((d, i) => d.scale.setScalar(dustSize[i] * (0.95 + Math.sin(t * 0.5 + i * 2) * 0.05)))
+    beacon.visible = beaconOn(t)
   })
-  // 壞掉的燈：餘火閃爍、火花、不規則的紅色警示
+  // 壞掉的燈：餘火閃爍、火花、不規則的紅色警示（信標燈本體）
   light(k, px(1.05, 1.2), 0.15, pz(1.05, 1.2), '#ff8a3a', 'flicker', k.body, 1.6)
   light(k, px(RR, 1.97), 0.25, pz(RR, 1.97), '#bfe6ff', 'spark', k.body, 1.2)
   light(k, px(RR, -1.93), -0.2, pz(RR, -1.93), '#bfe6ff', 'spark', k.body, 1)
-  light(k, 0, 1.75, 0, '#ff3b3b', 'flicker')
+  light(k, 0, 1.8, 0, '#ff3b3b', 'flicker', k.body, 1.3)
   k.height = 2.2
 }
 

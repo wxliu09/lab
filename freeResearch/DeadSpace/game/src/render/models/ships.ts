@@ -366,8 +366,8 @@ regModel('station.verdance', (def) => {
   const r = planetR('verdance', def, 1.12)
   // 夜面：淡紫的天光（美術聖經 §3.3）＋基地周圍的鈉燈光暈與聚落燈點
   const look: PlanetLook = {
-    night: '#8c9cff',
-    nightK: 0.34,
+    night: '#9aa0ff',
+    nightK: 0.18,
     nightRim: 0.22,
     lights: '#ffb46b',
     dots: 1,
@@ -428,8 +428,8 @@ regModel('station.cinder', (def) => {
   const r = planetR('cinder', def, 1.2)
   // 無大氣的岩石衛星：沒有雲、改成月海＋撞擊坑；夜面由重力環的青光照著，高塔周圍一圈青色光暈
   const look: PlanetLook = {
-    night: '#8fd6f0',
-    nightK: 0.3,
+    night: '#9cc8e0',
+    nightK: 0.24,
     nightRim: 0,
     clouds: 0,
     rocky: true,
