@@ -2,11 +2,12 @@
 // 只看 client 本來就看得到的資料（快照、自己的私有狀態、聊天），不會因為音樂而洩漏看不到的東西。
 import { effect } from '@preact/signals'
 import { EntFlag, type ChatLine, type FxEvent } from '../shared/protocol/messages'
-import { STATION_BY_ID } from '../shared/content/stations/index'
 import { chatTaps, cmdTaps, endResult, lobby, screen, snapTick, startInfo, world } from '../client/session'
 import { chatOpen, evolveOpen } from '../client/input'
 import type { GameScene } from '../render/gameScene'
-import { setAmbient, type AmbientKind } from './ambient'
+import { currentAmbient, setAmbient, type AmbientKind } from './ambient'
+import { ENGINE_FULL_SPEED, countdownTick, vehicleSpeed, zoneAmbient } from './cues'
+import { engineState, setEngine } from './engine'
 import { currentMood, setMood, type Mood } from './music'
 import { audioContext, debugLevel, debugPeak, listenerPos, sfx } from './sfx'
 import { FAMILIES, combatStats, familyOf, playBark, playHit, voicePitch, type BarkKind, type Family, type Hit, type Mat } from './combat'
@@ -46,6 +47,15 @@ const st = {
   lobbyN: -1,
   lobbyReady: -1,
   inGame: false,
+  /** 剛按了丟棄的背包格與期限（快照確認那格空了才播丟棄音，被拒絕的丟棄不出聲）*/
+  dropSlot: -1,
+  dropUntil: 0,
+  /** 發射倒數：上一次響過的整數秒 */
+  launchBeep: 0,
+  /** 海盜船自爆：預計爆炸的本地時間、收到通知時所在的 zone、上一次響過的整數秒 */
+  destructAt: 0,
+  destructZone: -1,
+  destructBeep: 0,
 }
 
 const now = () => performance.now() / 1000
@@ -57,16 +67,10 @@ function myUnit() {
   return id ? world.ents.get(id) : undefined
 }
 
-function zoneKind(): AmbientKind {
+function zoneKind(): [AmbientKind, string] {
   const zid = scene?.zone ?? -1
-  if (zid === 0) return 'space'
   const info = startInfo.value?.zones.find((z) => z[0] === zid)
-  const sid = info?.[2] ?? ''
-  if (sid.startsWith('ship:')) return 'ship'
-  if (sid === 'hulk7') return 'derelict'
-  if (sid === 'uo') return 'organic'
-  if (STATION_BY_ID.get(sid)?.outdoor) return 'outdoor'
-  return 'station'
+  return zoneAmbient(info?.[2], zid === 0)
 }
 
 /** 這個實體看起來是不是威脅（只用快照裡看得到的欄位）*/
@@ -142,12 +146,20 @@ function onSnap(): void {
       sfx('heartbeat')
     }
   } else st.lastHp = -1
-  // 背包：拿到新東西
+  // 背包：拿到新東西；剛按丟棄的那格空了 → 丟棄音
   const inv = (me.inv ?? []).map((x) => x?.item ?? null)
   if (st.lastInv.length === inv.length) {
     for (let i = 0; i < inv.length; i++) if (inv[i] && inv[i] !== st.lastInv[i] && !st.lastInv.includes(inv[i])) sfx('pickup')
+    const s = st.dropSlot
+    if (s >= 0 && t < st.dropUntil && st.lastInv[s] && !inv[s]) {
+      sfx('drop')
+      st.dropSlot = -1
+    }
   }
+  if (t >= st.dropUntil) st.dropSlot = -1
   st.lastInv = inv
+  countdowns(t)
+  engine(u)
   // EP 增加（異類）
   const ep = me.ep ?? 0
   if (st.lastEp >= 0 && ep > st.lastEp + 0.5) sfx('epTick')
@@ -241,6 +253,29 @@ function barks(zid: number, t: number): void {
   }
 }
 
+/** 發射倒數（私有狀態 launchIn）與海盜船自爆倒數（私下通知＋本地計時）；只有自己聽得到 */
+function countdowns(t: number): void {
+  const me = world.me
+  st.launchBeep = countdownTick(me.alive === false ? 0 : (me.launchIn ?? 0), st.launchBeep, (n) => sfx(n))
+  if (st.destructAt > 0) {
+    // 已經離開海盜船（搭船逃走、死了）就不再響
+    const left = me.alive !== false && me.zone === st.destructZone ? st.destructAt - t : 0
+    st.destructBeep = countdownTick(left, st.destructBeep, (n) => sfx(n))
+    if (t >= st.destructAt) st.destructAt = 0
+  }
+}
+
+/** 引擎循環音：自己正在駕駛（control ≠ 主單位）的載具在太空層（zone 0）移動時，依速度大小 */
+function engine(u: ReturnType<typeof myUnit>): void {
+  const me = world.me
+  const piloting = !!u && me.alive !== false && !!me.control && me.control !== me.unit && u.s.z === 0
+  if (!piloting || !u) {
+    setEngine(0)
+    return
+  }
+  setEngine(vehicleSpeed(u.samples, world.serverTime) / ENGINE_FULL_SPEED)
+}
+
 function stepSounds(zid: number, myId: number): void {
   const l = listenerPos()
   const near = [...world.ents.values()]
@@ -282,6 +317,13 @@ function onFx(f: FxEvent): void {
 function onChat(lines: ChatLine[]): void {
   for (const ln of lines) {
     const text = ln.text ?? ''
+    if (ln.ch === 'private' && text.startsWith('@event.pirateSelfDestruct')) {
+      // 海盜船自爆：通知帶著秒數（@event.pirateSelfDestruct|s=40），本地計時，最後 5 秒每秒一聲
+      const s = Number(/\|s=(\d+)/.exec(text)?.[1] ?? 40)
+      st.destructAt = now() + s
+      st.destructZone = world.me.zone ?? -1
+      st.destructBeep = 0
+    }
     if (ln.ch === 'private') sfx(ERROR_KEYS.test(text) ? 'error' : 'notify')
     else if (ln.ch === 'sys') {
       if (text.startsWith('@apoc.')) sfx('apocSting')
@@ -325,6 +367,10 @@ export function installAudioDirector(): void {
   cmdTaps.push((c) => {
     if (c.k === 'move' || c.k === 'follow') sfx('cmdMove')
     else if (c.k === 'attack' || c.k === 'amove') sfx('cmdAttack')
+    else if (c.k === 'drop' && c.s !== undefined) {
+      st.dropSlot = c.s
+      st.dropUntil = now() + 2
+    }
   })
   // 畫面切換
   let prevScreen = screen.value
@@ -339,8 +385,15 @@ export function installAudioDirector(): void {
       st.lastDoors.clear()
       st.steps.clear()
       st.ents.clear()
+      st.dropSlot = -1
+      st.launchBeep = 0
+      st.destructAt = 0
+      st.destructBeep = 0
     }
-    if (s !== 'game') setAmbient(null)
+    if (s !== 'game') {
+      setAmbient(null)
+      setEngine(0)
+    }
     prevScreen = s
     setMood(forced ?? pickMood())
   })
@@ -412,11 +465,16 @@ export function installAudioDirector(): void {
         const l = listenerPos()
         playHit(kind, mat, l.x, l.y)
       },
+      /** 測試與混音：直接切環境音（kind = null 關掉）、引擎聲 */
+      ambient: (kind: AmbientKind | null, flavor = '') => setAmbient(kind, flavor),
+      ambientNow: () => currentAmbient(),
+      engine: (k: number) => setEngine(k),
+      engineState: () => engineState(),
     }
   }
   // 局勢：每 0.5 秒重新判定音樂情境與環境音
   setInterval(() => {
     setMood(forced ?? pickMood())
-    if (screen.value === 'game') setAmbient(zoneKind())
+    if (screen.value === 'game') setAmbient(...zoneKind())
   }, 500)
 }

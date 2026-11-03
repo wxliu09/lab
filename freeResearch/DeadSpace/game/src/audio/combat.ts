@@ -4,6 +4,8 @@
 // 資訊隔離：材質與叫聲種類只看快照裡「看起來的外觀」（d、fl），音色只由外觀與顯示顏色（c）決定，
 // 不用實體 id——偽裝會換 id，若音色跟著 id 走，偽裝者一開口就會露餡。
 import { EntFlag } from '../shared/protocol/messages'
+import '../shared/content/index'
+import { UNITS, isZoneObject } from '../shared/content/registry'
 import { audioContext, fm, noise, noiseBuffer, playSynth, regSound, swell, ticks, tone } from './sfx'
 
 // ───────── 分類 ─────────
@@ -18,9 +20,11 @@ const GOO = /slime|prion|egg|cocoon|sludge/
 const SMALL = /slugling|chicken|frog|rabbit|anomaly/
 const MACHINE = /^(android\.|drone\.|rig\.|fleet\.|ship|item:)|sentry|pacifier|defenseDrone|turret/
 
-/** 依外觀 def 判斷叫聲種類；null = 不會叫（物品、建築、無形體）*/
+/** 依外觀 def 判斷叫聲種類；null = 不會叫（物品、建築、無形體、區域物件）*/
 export function familyOf(d: string | undefined): Family | null {
   if (!d || d.startsWith('item:') || d === 'creature.entity') return null
+  // 酸池、火海、雷暴、輻射區、電漿球、毒雲這類區域物件的 id 也是 rig.*，不能當成機械播待機嗶聲
+  if (isZoneObject(UNITS.get(d))) return null
   if (MACHINE.test(d)) return 'machine'
   if (d.startsWith('xeno.')) return d === 'xeno.human' ? 'human' : GOO.test(d) ? 'goo' : BUGS.test(d) ? 'bug' : 'xeno'
   if (d.startsWith('mut.')) return GOO.test(d) ? 'goo' : BUGS.test(d) ? 'bug' : 'mutant'

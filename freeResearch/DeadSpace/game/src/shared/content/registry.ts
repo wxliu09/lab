@@ -38,3 +38,14 @@ export function buffDef(id: string): BuffDef | undefined {
 export function itemDef(id: string): ItemDef | undefined {
   return ITEMS.get(id)
 }
+
+/**
+ * 區域物件：技能放出的雷暴、火海、酸池、毒雲、污染區、電漿球、熵渦、奇點、腐沼黏液…
+ * 不能被選取、不會移動（noTarget＋不動，或標成 hazard）。
+ * 與 render/units.ts 的 isZoneObject 同一條規則（那邊用來決定腳下不畫選取圈）；audio 用它排除叫聲。
+ * 「未知存在」這類 noTarget 但會移動的生物不算。
+ */
+export function isZoneObject(def: UnitDef | undefined): boolean {
+  if (!def) return false
+  return def.tags.includes('hazard') || (def.tags.includes('noTarget') && def.speed <= 0)
+}
