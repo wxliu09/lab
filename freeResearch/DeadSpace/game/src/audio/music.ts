@@ -159,9 +159,22 @@ const MOODS: Record<Exclude<Mood, 'off'>, MoodSpec> = {
 
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12)
 
+/**
+ * 戰鬥時把整條音樂壓低約 4 dB（槍聲、叫聲、命中音更清楚；音效與環境音不受影響）：
+ * 在音樂輸出與 music 分軌之間的一個增益節點，進入戰鬥 0.3 秒壓下、離開戰鬥 1.5 秒放回（setTargetAtTime 約 3 個時間常數到位）。
+ */
+export const MUSIC_DUCK = { db: -4, attack: 0.3, release: 1.5 }
+
+/** 這個情境下音樂該壓多少（線性增益）*/
+export function duckGain(m: Mood): number {
+  return m === 'combat' ? Math.pow(10, MUSIC_DUCK.db / 20) : 1
+}
+
 interface Engine {
   c: AudioContext
   out: GainNode
+  /** 戰鬥壓低（MUSIC_DUCK）*/
+  duck: GainNode
   wet: GainNode
   layers: Record<Layer, GainNode>
   padFilter: BiquadFilterNode
@@ -194,7 +207,9 @@ function build(): Engine | null {
   if (!c || !bus) return null
   const out = c.createGain()
   out.gain.value = 0
-  out.connect(bus)
+  const duck = c.createGain()
+  duck.gain.value = 1
+  out.connect(duck).connect(bus)
   // 空間感：卷積殘響＋一點延遲回音
   const rev = c.createConvolver()
   rev.buffer = impulse(c, 3.2)
@@ -229,7 +244,7 @@ function build(): Engine | null {
   lg.gain.value = 260
   lfo.connect(lg).connect(padFilter.frequency)
   lfo.start()
-  return { c, out, wet, layers, padFilter, drone: null, timer: null, step: 0, nextAt: 0, spec: MOODS.menu, pending: null, chord: 0, arpI: 0 }
+  return { c, out, duck, wet, layers, padFilter, drone: null, timer: null, step: 0, nextAt: 0, spec: MOODS.menu, pending: null, chord: 0, arpI: 0 }
 }
 
 function applyMix(e: Engine, spec: MoodSpec, fade: number): void {
@@ -456,6 +471,9 @@ export function setMood(m: Mood): void {
   const e = eng
   if (!e) return
   const t = e.c.currentTime
+  // 戰鬥壓低：壓下快、放回慢
+  const dg = duckGain(m)
+  e.duck.gain.setTargetAtTime(dg, t, (dg < 1 ? MUSIC_DUCK.attack : MUSIC_DUCK.release) / 3)
   if (m === 'off') {
     e.out.gain.setTargetAtTime(0, t, 0.8)
     return
@@ -476,4 +494,9 @@ export function setMood(m: Mood): void {
 
 export function currentMood(): Mood {
   return mood
+}
+
+/** 測試與量測：目前戰鬥壓低節點的增益（沒建音樂引擎 = 1）*/
+export function musicDuckLevel(): number {
+  return eng?.duck.gain.value ?? 1
 }

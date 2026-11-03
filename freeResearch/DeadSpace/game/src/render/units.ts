@@ -120,11 +120,14 @@ export class UnitLayer {
       const r = (def?.radius ?? 0.4) * 1.6
       ring.scale.setScalar(r)
       root.add(ring)
-      const glow = new THREE.Mesh(glowGeo, glowMat(col))
-      glow.rotation.x = -Math.PI / 2
-      glow.position.y = 0.025
-      glow.scale.setScalar(r * 2.4)
-      root.add(glow)
+      // 腳下光暈：地上道具自己有分類色的光圈（groundItems.ts），不再疊一層灰色光暈（少一個 draw call）
+      if (!isItem) {
+        const glow = new THREE.Mesh(glowGeo, glowMat(col))
+        glow.rotation.x = -Math.PI / 2
+        glow.position.y = 0.025
+        glow.scale.setScalar(r * 2.4)
+        root.add(glow)
+      }
     }
     root.traverse((o) => (o.userData.entId = s.i))
     this.group.add(root)

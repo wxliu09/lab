@@ -8,6 +8,7 @@ import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
 import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
 import { modalChecks } from '../../client/input'
 import { hintsEnabled, resetHints } from '../hud/Guide'
+import '../strings/art2'
 
 /** 0–100 之類的滑桿＋數值 */
 function Slider({ id, min, max, value, onInput, onChange, unit = '' }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string }) {
@@ -71,7 +72,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <h2>{t('settings.title')}</h2>
         <div class="col">
           <div class="setrow">
-            <label>{t('settings.lang')}</label>
+            <label>
+              {t('settings.lang')}
+              <div class="dim" style={{ fontSize: '13px' }} data-testid="lang-note">
+                {t('art2.labelLang')}
+              </div>
+            </label>
             <select value={lang.value} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
               <option value="zh">繁體中文</option>
               <option value="en">English</option>

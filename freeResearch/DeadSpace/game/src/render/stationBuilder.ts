@@ -10,6 +10,7 @@ import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
 import { buildRockWallsSteps, classifyOutdoor, groundTone } from './rockWalls'
 import { runSteps, type Steps } from './steps'
+import { lang, type Lang } from '../ui/i18n'
 
 export const WALL_H = 2.4
 const DOOR_H = 2.15
@@ -63,30 +64,47 @@ function isFloorish(c: Cell): boolean {
   return c === Cell.Floor || c === Cell.Door || c === Cell.Hazard || c === Cell.Crate || c === Cell.Fixture || c === Cell.Window
 }
 
-function roomLabelTex(zh: string, en: string): THREE.CanvasTexture {
+/** 房名地貼的畫布：600×160（約 98 px／m，地貼 6.1 × 1.6 m，剛好是 labelSpot 找的 6×2 格），主名稱一行、副名稱一行 */
+const LABEL_W = 600
+const LABEL_H = 160
+const LABEL_M = [6.1, 1.6]
+
+/**
+ * 房名地貼：主次依建站當下的介面語言（zh＝大字中文＋小字英文；en＝大字英文＋小字中文），切換語言後下一次建站生效。
+ * 字太長時縮小到放得進畫布（「失敗實驗體隔間」、「CONTAINMENT CONTROL」）。
+ */
+function roomLabelTex(name: { zh: string; en: string }, major: Lang): THREE.CanvasTexture {
   const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 160
+  c.width = LABEL_W
+  c.height = LABEL_H
   const x = c.getContext('2d')!
-  x.fillStyle = 'rgba(0,0,0,0)'
-  x.fillRect(0, 0, 512, 160)
-  x.fillStyle = '#ffffff'
-  x.textAlign = 'center'
-  x.font = 'bold 76px "Noto Sans TC", sans-serif'
-  x.fillText(zh, 256, 84)
-  x.font = '600 30px "Chakra Petch", sans-serif'
-  x.fillText(en.toUpperCase(), 256, 134)
+  const en = name.en.toUpperCase()
+  const big = major === 'en' ? { text: en, font: (px: number) => `700 ${px}px "Chakra Petch", sans-serif`, px: 64 } : { text: name.zh, font: (px: number) => `bold ${px}px "Noto Sans TC", sans-serif`, px: 76 }
+  const small = major === 'en' ? { text: name.zh, font: (px: number) => `${px}px "Noto Sans TC", sans-serif`, px: 30 } : { text: en, font: (px: number) => `600 ${px}px "Chakra Petch", sans-serif`, px: 30 }
+  const fit = (f: (px: number) => string, px: number, text: string) => {
+    x.font = f(px)
+    const w = x.measureText(text).width
+    return w > LABEL_W - 16 ? Math.floor((px * (LABEL_W - 16)) / w) : px
+  }
+  const draw = () => {
+    x.clearRect(0, 0, LABEL_W, LABEL_H)
+    x.fillStyle = '#ffffff'
+    x.textAlign = 'center'
+    x.font = big.font(fit(big.font, big.px, big.text))
+    x.fillText(big.text, LABEL_W / 2, 84)
+    x.font = small.font(fit(small.font, small.px, small.text))
+    x.fillText(small.text, LABEL_W / 2, 134)
+  }
+  draw()
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
-  // canvas 文字不會觸發 unicode-range 子集下載：先要求字型載入再重畫
-  void document.fonts?.load(`bold 76px "Noto Sans TC"`, zh).then(() => {
-    x.clearRect(0, 0, 512, 160)
-    x.font = 'bold 76px "Noto Sans TC", sans-serif'
-    x.fillText(zh, 256, 84)
-    x.font = '600 30px "Chakra Petch", sans-serif'
-    x.fillText(en.toUpperCase(), 256, 134)
-    t.needsUpdate = true
-  })
+  // canvas 文字不會觸發 unicode-range 子集下載：先要求字型載入再重畫（字寬也要重新量）
+  const fonts = document.fonts
+  if (fonts)
+    void Promise.all([fonts.load(big.font(big.px), big.text), fonts.load(small.font(small.px), small.text)]).then(() => {
+      draw()
+      t.needsUpdate = true
+    })
   return t
 }
 
@@ -473,6 +491,7 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
   yield* props.buildSteps(group)
 
   // ───── 房間燈與地板標示 ─────
+  const labelLang = lang.value
   for (const r of l.rooms) {
     const color = new THREE.Color(r.spec.light ?? th.light)
     const wdt = r.maxX - r.minX
@@ -493,8 +512,8 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
     // 房名：放在房間中央附近、沒有道具與設施的空地（牆邊會被道具蓋住）
     if (r.cells > 30 && r.spec.type !== 'corridor') {
       const label = new THREE.Mesh(
-        new THREE.PlaneGeometry(5.2, 1.6),
-        new THREE.MeshBasicMaterial({ map: roomLabelTex(r.spec.name.zh, r.spec.name.en), transparent: true, opacity: 0.16, depthWrite: false }),
+        new THREE.PlaneGeometry(LABEL_M[0], LABEL_M[1]),
+        new THREE.MeshBasicMaterial({ map: roomLabelTex(r.spec.name, labelLang), transparent: true, opacity: 0.16, depthWrite: false }),
       )
       label.rotation.x = -Math.PI / 2
       const at = labelSpot(l, r)
@@ -644,44 +663,101 @@ function diagCapTri(l: ParsedLayout, col: number, row: number, d: Diag): [number
   return ccw([C, A, B])
 }
 
+/** 有單位站在那裡的標記（標本、海盜、哨戟、海盜船長、各種生成點）：地貼要離遠一點，不然會被單位蓋住 */
+const UNIT_MARK = /Spawn$|^specimen\d$|^pirateCaptain$/
+
+/** 房名地貼實際有字的範圍（半寬、半高，公尺）：避開停機坪時用 */
+const LABEL_INK = [2.3, 0.7]
+/** 停機坪圓圈（含外圈的燈）半徑 */
+const PAD_R = 2.65
+
 /**
- * 房名地貼的位置：房間格裡找一塊 6×2 m 都是空地板（不是道具、設施、門窗）的地方，取離房間中心最近的；
- * 醫療室中央的十字與停機坪要避開。找不到就退回南牆內側。
+ * 房名地貼的位置：房間格裡每個 6×2 格的位置算一個成本，取成本最低、同成本離房間中心最近的。
+ * 成本（每格取最大的一項，再整塊加總）：
+ * - 道具格（'x'）與設施格本身 10：道具常超出自己的格子（雙層床 1.95 m、倒下的置物櫃 1.7 m、標本籠）；
+ * - 道具與設施周圍一格 2；有單位站崗的標記（標本、海盜、哨戟）周圍一格 10、兩格 6、三格 2；危險地面 3；
+ * - 醫療室中央的十字地貼 4；
+ * - 南邊緊貼牆 12／隔一格 4（每欄）：俯視鏡頭從南往北看，2.4 m 的牆會擋住牆後約 1.6–2 m 的地面（貼牆根等於看不到）；
+ *   左右兩端緊貼牆 2（每列）：鏡頭不在正上方時側牆也會擋住一點。
+ * 停機坪不能放。整間房都放不下 6×2 才退回房間中心。
  */
-function labelSpot(l: ParsedLayout, r: RoomInstance): { x: number; y: number } {
-  const near = new Set<number>()
-  for (const p of l.pois) {
-    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) near.add((p.row + dr) * l.w + p.col + dc)
-  }
-  const free = (col: number, row: number) => {
-    if (col < 0 || row < 0 || col >= l.w || row >= l.h) return false
+export function labelSpot(l: ParsedLayout, r: RoomInstance): { x: number; y: number } {
+  const cost = new Float32Array(l.w * l.h)
+  const mark = (col: number, row: number, v: number) => {
+    if (col < 0 || row < 0 || col >= l.w || row >= l.h) return
     const i = row * l.w + col
-    return l.cells[i] === Cell.Floor && l.roomOf[i] === r.index && !near.has(i)
+    if (cost[i] < v) cost[i] = v
   }
-  let best: { x: number; y: number } | null = null
-  let bestD = Infinity
-  // 只掃房間的外接矩形
-  const r0 = Math.max(0, l.h - Math.ceil(r.maxY))
-  const r1 = Math.min(l.h - 1, l.h - 1 - Math.floor(r.minY))
+  const around = (col: number, row: number, rad: number, v: number) => {
+    for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) mark(col + dc, row + dr, v)
+  }
+  // 只看房間外接矩形外加兩格（房外的道具與標記也可能貼著門口）
+  const c0 = Math.max(0, Math.floor(r.minX) - 3)
+  const c1 = Math.min(l.w - 1, Math.ceil(r.maxX) + 2)
+  const r0 = Math.max(0, l.h - Math.ceil(r.maxY) - 3)
+  const r1 = Math.min(l.h - 1, l.h - 1 - Math.floor(r.minY) + 3)
   for (let row = r0; row <= r1; row++) {
-    for (let col = Math.max(0, Math.floor(r.minX)); col < Math.min(l.w, Math.ceil(r.maxX)); col++) {
-      if (l.roomOf[row * l.w + col] !== r.index) continue
-      const x = col + 0.5
-      const y = l.h - row - 0.5
-      if (r.spec.type === 'medbay' && Math.abs(x - r.cx) < 3.8 && Math.abs(y - r.cy) < 2) continue
-      if (l.pads.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.y - y) < 3.5)) continue
+    for (let col = c0; col <= c1; col++) {
+      const c = l.cells[row * l.w + col] as Cell
+      if (c === Cell.Crate || c === Cell.Fixture) around(col, row, 1, 2)
+      else if (c === Cell.Hazard) mark(col, row, 3)
+    }
+  }
+  for (const p of l.pois) {
+    if (!UNIT_MARK.test(p.def.kind)) around(p.col, p.row, 1, 2)
+    else {
+      around(p.col, p.row, 3, 2)
+      around(p.col, p.row, 2, 6)
+      around(p.col, p.row, 1, 10)
+    }
+  }
+  for (let row = r0; row <= r1; row++) {
+    for (let col = c0; col <= c1; col++) {
+      const c = l.cells[row * l.w + col] as Cell
+      if (c === Cell.Crate || c === Cell.Fixture) mark(col, row, 10)
+    }
+  }
+  for (const p of l.pois) mark(p.col, p.row, 10)
+  // 醫療室中央的十字地貼（2.2 m 見方）：小醫療室放不下時寧可壓到一點十字，也不要被設施擋住
+  if (r.spec.type === 'medbay') {
+    for (let row = r0; row <= r1; row++)
+      for (let col = c0; col <= c1; col++) if (Math.abs(col + 0.5 - r.cx) < 1.6 && Math.abs(l.h - row - 0.5 - r.cy) < 1.6) mark(col, row, 4)
+  }
+  const inRoom = (col: number, row: number) => col >= 0 && row >= 0 && col < l.w && row < l.h && l.roomOf[row * l.w + col] === r.index
+  // 牆、虛空、窗（窗框和牆一樣高）都會擋住後面的地面
+  const solid = (col: number, row: number) => col < 0 || row < 0 || col >= l.w || row >= l.h || isSolidCell(l.cells[row * l.w + col] as Cell) || l.cells[row * l.w + col] === Cell.Window
+  let best: { x: number; y: number } | null = null
+  let bestS = Infinity
+  // 地貼佔 col-3..col+2、row-1..row 這 6×2 格，中心在這格的左上角（sim 座標 x = col、y = l.h - row）
+  for (let row = r0 + 1; row <= r1; row++) {
+    for (let col = c0 + 3; col <= c1 - 2; col++) {
+      const x = col
+      const y = l.h - row
+      if (l.pads.some((p) => Math.hypot(Math.max(0, Math.abs(p.x - x) - LABEL_INK[0]), Math.max(0, Math.abs(p.y - y) - LABEL_INK[1])) < PAD_R)) continue
+      let sum = 0
       let ok = true
-      for (let dc = -3; dc <= 2 && ok; dc++) for (let dr = -1; dr <= 0 && ok; dr++) ok = free(col + dc, row + dr)
+      for (let dc = -3; dc <= 2 && ok; dc++) {
+        for (let dr = -1; dr <= 0 && ok; dr++) {
+          if (!inRoom(col + dc, row + dr)) ok = false
+          else sum += cost[(row + dr) * l.w + col + dc]
+        }
+        if (solid(col + dc, row + 1)) sum += 12
+        else if (solid(col + dc, row + 2)) sum += 4
+      }
+      // 左右兩端緊貼牆：鏡頭不在正上方時，側牆也會擋住一點
+      for (let dr = -1; dr <= 0; dr++) {
+        if (solid(col - 4, row + dr)) sum += 2
+        if (solid(col + 3, row + dr)) sum += 2
+      }
       if (!ok) continue
-      // 標籤中心在這格的左下角（6×2 格的正中）
-      const d = (x - 0.5 - r.cx) ** 2 + (y + 0.5 - r.cy) ** 2
-      if (d < bestD) {
-        bestD = d
-        best = { x: x - 0.5, y: y + 0.5 }
+      const s = sum * 4 + Math.hypot(x - r.cx, y - r.cy)
+      if (s < bestS) {
+        bestS = s
+        best = { x, y }
       }
     }
   }
-  return best ?? { x: r.cx, y: r.minY + 1.6 }
+  return best ?? { x: r.cx, y: r.cy }
 }
 
 /** 漂浮塵埃：站內地板上方 0.3–2.3 m 隨機撒點，vertex shader 依時間緩慢飄移；加成混合、受戰爭迷霧壓暗 */
@@ -871,7 +947,8 @@ function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: n
     }
   }
   const data = new Uint8Array(W * H * 4)
-  const cap = k * 4
+  // 上限：補光強度的 4 倍，但不能超過 8-bit 貼圖能存的 FILL_SCALE（Uint8Array 超過 255 會繞回 0：fill > 1 的站會變成一片暗綠）
+  const cap = Math.min(FILL_SCALE, k * 4)
   for (let i = 0; i < W * H; i++) {
     for (let ch = 0; ch < 3; ch++) data[i * 4 + ch] = Math.round((Math.min(cap, out[i * 3 + ch]) / FILL_SCALE) * 255)
     data[i * 4 + 3] = 255

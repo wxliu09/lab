@@ -11,7 +11,10 @@ import { buildStation, buildStationSteps, updateDoors, type RoomLight, type Stat
 import { FogMap } from './fog'
 import { UnitLayer, unitWarmMeshes } from './units'
 import { fogUniforms, emergencyStripMat } from './materials'
-import { detectQuality, isSoftwareGl, preset, quality } from './quality'
+import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from './quality'
+import { autoDropState, autoDropStep } from './autoDrop'
+import { localNotice, modalChecks } from '../client/input'
+import '../ui/strings/art2'
 import { effect } from '@preact/signals'
 import { runSteps, type Steps } from './steps'
 import { deferTextures, textureSteps } from './tex'
@@ -25,6 +28,7 @@ import './models/ships'
 import './models/devices'
 import { buffWarmMaterials, updateBuffFx } from './buffFx'
 import { MODELS, buildModel } from './models/index'
+import { groundItemWarmMeshes } from './models/groundItems'
 
 /** 預建站點時用到的引擎功能（GameScreen 傳入 Engine）*/
 export interface PrebuildHost {
@@ -43,8 +47,9 @@ const IDLE_MAX_MS = 24
 const COMPILE_BATCH = 4
 
 /**
- * 預建的開關：軟體算繪（建一站要好幾秒）與低階裝置（detectQuality 判定 low：內顯／行動 GPU、≤ 4 核心、deviceMemory ≤ 4 GB；
- * 全部預建會多佔約 300 MB GPU 記憶體與 RSS）不預建，維持第一次進站才建。localStorage `xc.prebuild` = '1'／'0' 可強制開關（量測用）。
+ * 預建的開關（quality.ts canPrebuild）：只有 ≤ 4 核心、deviceMemory ≤ 4 GB、行動裝置、軟體算繪（建一站要好幾秒）不預建，
+ * 維持第一次進站才建；一般內顯筆電要預建（全部預建多佔約 300 MB GPU 記憶體與 RSS）。
+ * localStorage `xc.prebuild` = '1'／'0' 可強制開關（量測用）。
  */
 function prebuildAllowed(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
   let force: string | null = null
@@ -55,7 +60,7 @@ function prebuildAllowed(gl: WebGLRenderingContext | WebGL2RenderingContext): bo
   }
   if (force === '1') return true
   if (force === '0') return false
-  return !isSoftwareGl(gl) && detectQuality(gl) !== 'low'
+  return canPrebuild(gl)
 }
 
 /** 預編譯一批物件：three 的 compile 只用到根物件的 traverse（收材質）與 traverseVisible（收燈光），用一個假的根物件把零散的 mesh 包成一批 */
@@ -191,6 +196,14 @@ export class GameScene implements SceneLike {
   private stopQuality: (() => void) | null = null
   private disposed = false
   prebuildDone = false
+  /** fps 持續過低時自動降畫質（autoDrop.ts）：每局（每個 GameScene）一份狀態；上一幀看的 zone（換站建站的那幾幀不計）*/
+  private autoDrop = autoDropState()
+  private dropZone = -2
+  /** 上一幀之後分頁曾經切到背景（背景時 rAF 停住，回來的第一個間隔不能算成「很慢的一幀」）*/
+  private wasHidden = false
+  private onVisibility = () => {
+    if (document.hidden) this.wasHidden = true
+  }
   /** 每幀重複使用的暫存（避免 GC）*/
   private tmpV = new THREE.Vector3()
 
@@ -226,6 +239,7 @@ export class GameScene implements SceneLike {
     this.flash.target = this.flashTarget
     this.scene.add(this.units.group)
     this.fx = new Fx(this.scene)
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
   }
 
   setZones(list: [number, string, string][]): void {
@@ -441,7 +455,8 @@ export class GameScene implements SceneLike {
         v = this.views.get(id)
         if (!v) return
       }
-      roots = [v.group]
+      // 地上道具的本體／發光材質（道具不屬於站體，第一次有人丟東西才會用到）也一起預編譯
+      roots = [v.group, ...groundItemWarmMeshes()]
       if (v.fill) extraTex.push(v.fill)
       const fog = this.fogs.get(id)
       if (fog) {
@@ -608,11 +623,27 @@ export class GameScene implements SceneLike {
     return false
   }
 
+  /**
+   * fps 持續過低（medium 以上、連續約 10 秒低於 20）且使用者沒選過畫質：降到 low 並顯示本機提示，每局最多一次。
+   * 開局載入（還沒顯示站體、等其他人載入、身分揭露畫面）、換站建站、預建期間、分頁在背景、對話框開著時不計（autoDropStep 會重新開始計）。
+   */
+  private checkAutoDrop(zid: number): void {
+    const hidden = this.wasHidden || (typeof document !== 'undefined' && document.hidden)
+    this.wasHidden = false
+    // 對話框開著（開局的身分揭露、設定、圖鑑、結算）也不計：提示會被蓋住，而且使用者可能正在自己調畫質
+    const paused = hidden || this.zone < 0 || zid !== this.dropZone || Number(this.world.w.ld ?? 0) > 0 || (!!this.prebuildHost && !this.prebuildDone) || modalChecks.some((f) => f())
+    this.dropZone = zid
+    if (!autoDropStep(this.autoDrop, { now: performance.now() / 1000, quality: quality.value, chosen: qualityChosen(), paused })) return
+    autoLowerQuality('low')
+    localNotice.value = { text: 'art2.autoLow', at: performance.now() }
+  }
+
   update(dt: number, t: number): void {
     const w = this.world
     w.interpolate()
     const zid = this.viewZone()
     this.ensureZone(zid)
+    this.checkAutoDrop(zid)
     const view = this.views.get(zid)
     const fog = this.fogs.get(zid)
     // 第一次進場、或換了操控對象／所在 zone（開始或離開駕駛、登艇、逃生艙、轉觀戰）：鏡頭對準自己
@@ -771,6 +802,7 @@ export class GameScene implements SceneLike {
 
   dispose(): void {
     this.disposed = true
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility)
     this.cancelIdle?.()
     this.cancelIdle = null
     this.stopQuality?.()

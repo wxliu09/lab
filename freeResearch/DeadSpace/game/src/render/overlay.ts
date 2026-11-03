@@ -7,7 +7,7 @@ import type { ClientWorld } from '../client/world'
 import type { GameScene } from './gameScene'
 import { loc, sysText, t } from '../ui/i18n'
 import { uiZoom } from '../ui/uiScale'
-import { entDefName } from '../ui/names'
+import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 
 const requested = new Set<string>()
@@ -113,7 +113,7 @@ export class Overlay {
         }
       }
       // 名稱：先收集，最後統一做避讓再畫。中立單位用灰藍（和腳下光圈、太空小地圖同色），和白色玩家（#eff0f3）分得開
-      const name = e.s.n || (hot ? loc(def?.name) : '')
+      const name = localizeName(e.s.n) || (hot ? loc(def?.name) : '')
       if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#9fb3c2', pri: hot ? 2 : mine ? 1 : 0 })
       const b = bubbles.get(id)
       if (b) this.bubble(x, sx, sy - 24 * z, b.text, z)
@@ -204,7 +204,7 @@ export class Overlay {
     const sy = (-this.v.y * 0.5 + 0.5) * h
     const d = e.s.d ?? ''
     const item = d.startsWith('item:')
-    const name = item ? loc(entDefName(d)) : e.s.n || loc(entDefName(d))
+    const name = item ? loc(entDefName(d)) : localizeName(e.s.n) || loc(entDefName(d))
     const panel = typeof e.s.x2?.s === 'string' || PANEL_DEFS.has(d)
     const act = item ? t('prompt.pickup') : panel && best.d < 2.9 ? t('prompt.panelOpen') : d === 'struct.console' ? t('prompt.pilot') : t('prompt.use')
     ensureGlyphs(name + act)

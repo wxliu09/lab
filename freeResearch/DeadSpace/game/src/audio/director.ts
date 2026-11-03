@@ -8,7 +8,7 @@ import type { GameScene } from '../render/gameScene'
 import { currentAmbient, setAmbient, type AmbientKind } from './ambient'
 import { ENGINE_FULL_SPEED, countdownTick, vehicleSpeed, zoneAmbient } from './cues'
 import { engineState, setEngine, stopEngine } from './engine'
-import { currentMood, setMood, type Mood } from './music'
+import { currentMood, musicDuckLevel, setMood, type Mood } from './music'
 import { audioContext, debugLevel, debugPeak, listenerPos, sfx } from './sfx'
 import { FAMILIES, combatStats, familyOf, playBark, playHit, voicePitch, type BarkKind, type Family, type Hit, type Mat } from './combat'
 import { notesOpen } from '../ui/hud/Investigation'
@@ -448,6 +448,8 @@ export function installAudioDirector(): void {
   if (__TEST_HOOKS__) {
     ;(window as unknown as Record<string, unknown>).__xcAudio = {
       mood: () => currentMood(),
+      /** 戰鬥時音樂壓低節點的目前增益（1 = 沒壓）*/
+      duck: () => musicDuckLevel(),
       state: () => audioContext()?.state ?? 'none',
       level: () => debugLevel(),
       peak: () => debugPeak(),

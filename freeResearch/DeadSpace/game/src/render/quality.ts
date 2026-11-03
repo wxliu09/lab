@@ -66,6 +66,49 @@ export function detectQuality(gl: WebGLRenderingContext | WebGL2RenderingContext
   return WEAK_GPU.test(name) ? 'low' : 'medium'
 }
 
+type NavInfo = { hardwareConcurrency?: number; deviceMemory?: number; maxTouchPoints?: number; userAgent?: string; userAgentData?: { mobile?: boolean } }
+
+/** 行動裝置的 GPU（Android 的 Mali／Adreno／PowerVR、樹莓派的 VideoCore）*/
+const MOBILE_GPU = /mali|adreno|powervr|videocore/i
+
+/**
+ * 行動裝置：行動 GPU、UA Client Hints 說是行動裝置、UA 是 Android／iPhone／iPad，
+ * 或 Safari 的 'Apple GPU' 有觸控點（iPad 的 Safari 也假裝成 Mac，只能靠 maxTouchPoints 分辨；不知道觸控點時保守當成行動裝置）。
+ */
+function isMobile(name: string, nav: NavInfo): boolean {
+  if (MOBILE_GPU.test(name)) return true
+  if (nav.userAgentData?.mobile === true) return true
+  if (/android|iphone|ipad|ipod|mobile/i.test(nav.userAgent ?? '')) return true
+  return /^apple gpu$/i.test(name.trim()) && nav.maxTouchPoints !== 0
+}
+
+/**
+ * 能不能在開局後預建本局的其他站點（全部預建多佔約 300 MB GPU 記憶體與 RSS，建一站在軟體算繪要好幾秒）：
+ * 只有 ≤ 4 核心、deviceMemory ≤ 4 GB、行動裝置、軟體算繪不預建。
+ * 一般內顯筆電（Intel Iris Xe／UHD、AMD APU，> 4 核心且 > 4 GB）要預建——預設畫質仍可能是 low（detectQuality），兩者分開判斷。
+ */
+export function canPrebuild(gl: WebGLRenderingContext | WebGL2RenderingContext | null, nav: NavInfo = navigator): boolean {
+  const cores = nav.hardwareConcurrency ?? 8
+  const mem = nav.deviceMemory
+  if (cores <= 4 || (mem !== undefined && mem <= 4)) return false
+  const name = glName(gl)
+  if (SOFTWARE_GL.test(name)) return false
+  return !isMobile(name, nav)
+}
+
+/** 使用者自己在設定裡選過畫質（xc.quality 有值；setQuality 會更新）*/
+let chosen = stored() !== null
+
+/** 使用者自己在設定裡選過畫質；自動降畫質只在沒選過時才做（每幀都會問，不讀 localStorage）*/
+export function qualityChosen(): boolean {
+  return chosen
+}
+
+/** 自動降畫質：只改這一次執行的畫質，不寫進設定（之後仍算「沒選過」，使用者改設定就以使用者的為準）*/
+export function autoLowerQuality(q: Quality): void {
+  if (q !== quality.value) quality.value = q
+}
+
 /** 首次啟動（使用者沒選過畫質）：依裝置自動選，不寫入設定；使用者自己選過的設定優先 */
 export function autoQuality(gl: WebGLRenderingContext | WebGL2RenderingContext | null): void {
   if (stored()) return
@@ -75,6 +118,7 @@ export function autoQuality(gl: WebGLRenderingContext | WebGL2RenderingContext |
 
 export function setQuality(q: Quality): void {
   quality.value = q
+  chosen = true
   try {
     localStorage.setItem('xc.quality', q)
   } catch {

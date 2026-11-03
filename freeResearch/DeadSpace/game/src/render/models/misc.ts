@@ -1,49 +1,18 @@
 // 地上道具、瓦礫等雜項模型
 import * as THREE from 'three'
 import { regModel } from './index'
-import { rbox, sphere } from '../batch'
+import { sphere } from '../batch'
 import { Mat } from '../materials'
 import { ITEMS } from '../../shared/content/registry'
+import { ITEM_CAT_COLOR, buildGroundItem } from './groundItems'
+import { itemShape } from './itemShape'
 
-const CAT_COLOR: Record<string, string> = {
-  medical: '#5cf2a5',
-  combat: '#ff7a2a',
-  utility: '#9fe7ff',
-  suit: '#ffc23d',
-  key: '#ffe08a',
-  module: '#b28cff',
-  quest: '#ff7eb6',
-  fun: '#ff7eb6',
-  detect: '#33ffd1',
-}
-
-/** 地上的道具：小型補給箱＋分類色光暈，慢慢浮動 */
+/** 地上的道具：依外型分類（itemShape.ts）有 10 種外型、分類色當強調色，慢慢浮動旋轉（groundItems.ts）*/
 regModel('groundItem', (_def, s) => {
   const id = (s.d ?? '').replace(/^item:/, '') || String(s.x2?.item ?? '')
   const it = ITEMS.get(id)
-  const col = CAT_COLOR[it?.cat ?? 'utility'] ?? '#9fe7ff'
-  const root = new THREE.Group()
-  const g = new THREE.Group()
-  root.add(g)
-  const isSuit = it?.cat === 'suit'
-  const body = new THREE.Mesh(isSuit ? rbox(0.5, 0.18, 0.4, 0.05) : rbox(0.26, 0.2, 0.26, 0.04), Mat.metal(isSuit ? '#5a6068' : '#7a838c', 0.6))
-  body.castShadow = true
-  g.add(body)
-  const band = new THREE.Mesh(rbox(isSuit ? 0.52 : 0.28, 0.04, isSuit ? 0.42 : 0.28, 0.02), Mat.emissive(col, 2.2))
-  g.add(band)
-  const halo = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.36, 24), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }))
-  halo.rotation.x = -Math.PI / 2
-  halo.position.y = 0.02
-  root.add(halo)
-  return {
-    root,
-    height: 0.5,
-    update(t) {
-      g.position.y = 0.2 + Math.sin(t * 2.2 + s.i) * 0.04
-      g.rotation.y = t * 0.8
-      ;(halo.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3) * 0.15
-    },
-  }
+  const v = buildGroundItem(itemShape(it), ITEM_CAT_COLOR[it?.cat ?? 'utility'] ?? ITEM_CAT_COLOR.utility, s.i)
+  return { root: v.root, height: v.height, update: (t) => v.update(t) }
 })
 
 /** 瓦礫：幾塊不規則岩塊／金屬殘骸 */

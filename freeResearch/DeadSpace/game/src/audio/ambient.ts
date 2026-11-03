@@ -118,14 +118,32 @@ function baseLayers(c: AudioContext, g: GainNode, kind: AmbientKind): AudioSched
   return nodes
 }
 
+/**
+ * 特色層的加強（第 4 輪）：女帝、天守、豪勇、擺渡、活體庫的特色層原本只比共用底噪多 0.5–1.8 dBA，聽不出各站差別；
+ * 各自加 4–5 dB（擺渡號是兩個高音的拍頻，只加 4 dB 免得刺耳）。值是線性倍率。
+ */
+const BOOST: Record<string, number> = {
+  nyx: Math.pow(10, 5 / 20),
+  tenshu: Math.pow(10, 5 / 20),
+  bravado: Math.pow(10, 5 / 20),
+  portage: Math.pow(10, 4 / 20),
+  vivarium: Math.pow(10, 5 / 20),
+}
+
+/** 這一站特色層的音量倍率（測試用）*/
+export function flavorBoost(flavor: string): number {
+  return BOOST[flavor] ?? 1
+}
+
 /** 各站的特色層（每站最多 2 條 node 鏈）；flavor = 站點 id */
 function flavorLayers(c: AudioContext, g: GainNode, flavor: string): AudioScheduledSourceNode[] {
+  const k = flavorBoost(flavor)
   const nodes: AudioScheduledSourceNode[] = []
   switch (flavor) {
     case 'nyx': {
       // 女帝號（主研究站）：維生系統的柔和雙音拍頻，一呼一吸
-      nodes.push(...pulsed(c, g, 'triangle', 196, 0.006, 0.22, 0.004))
-      nodes.push(osc(c, g, 'sine', 197.6, 0.004))
+      nodes.push(...pulsed(c, g, 'triangle', 196, 0.006 * k, 0.22, 0.004 * k))
+      nodes.push(osc(c, g, 'sine', 197.6, 0.004 * k))
       break
     }
     case 'adjudicatrix': {
@@ -137,12 +155,12 @@ function flavorLayers(c: AudioContext, g: GainNode, flavor: string): AudioSchedu
     }
     case 'tenshu':
       // 天守砲台：主砲電容組的嗡鳴（100 Hz 電源嗡聲，緩慢充放）
-      nodes.push(...pulsed(c, g, 'sawtooth', 100, 0.012, 0.07, 0.008, 420))
-      nodes.push(osc(c, g, 'sine', 200, 0.006))
+      nodes.push(...pulsed(c, g, 'sawtooth', 100, 0.012 * k, 0.07, 0.008 * k, 420))
+      nodes.push(osc(c, g, 'sine', 200, 0.006 * k))
       break
     case 'bravado':
       // 豪勇號（戰艦）：主引擎的低沉脈動，像心跳一樣一下一下
-      nodes.push(...pulsed(c, g, 'sawtooth', 33, 0.03, 1.4, 0.022, 140))
+      nodes.push(...pulsed(c, g, 'sawtooth', 33, 0.03 * k, 1.4, 0.022 * k, 140))
       break
     case 'caldera': {
       // 火口號（採礦工程艦）：精煉爐的低吼，火焰起伏
@@ -153,11 +171,11 @@ function flavorLayers(c: AudioContext, g: GainNode, flavor: string): AudioSchedu
     }
     case 'vivarium':
       // 活體庫號（標本收容站）：培養槽的過濾泵嗡聲（氣泡由 micro 事件負責）
-      nodes.push(...noiseLayer(c, g, 'bandpass', 620, 3, 0.035, 0.6, 0.015).nodes)
+      nodes.push(...noiseLayer(c, g, 'bandpass', 620, 3, 0.035 * k, 0.6, 0.015 * k).nodes)
       break
     case 'portage':
       // 擺渡號（人員轉運站）：傳送台待機的微光共鳴（兩個略為走音的高音互相拍頻）
-      nodes.push(osc(c, g, 'sine', 440, 0.0035), osc(c, g, 'sine', 443.2, 0.0035))
+      nodes.push(osc(c, g, 'sine', 440, 0.0035 * k), osc(c, g, 'sine', 443.2, 0.0035 * k))
       break
     case 'hulk7': {
       // 七號廢站：沒人維護的結構在應力下低聲呻吟

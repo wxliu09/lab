@@ -1,5 +1,6 @@
 // 模型展示頁（只給 dev server 與 tests/visual/models.mjs 截圖用，不在正式 build 入口）
 // 用法：/models.html?ids=xeno.*,human&dist=30&pitch=56&state=0&speed=0&cols=6&sp=4.5&yaw=25&q=low
+// 地上道具：ids=item:*（全部道具）、item:traumaKit,item:suit.tesla（指定）
 // 太空層：/models.html?ids=station.*（全部站點與行星）、ids=ship.*,space.*；space=1／0 強制開關太空背景
 // （ids 全是 station.／ship.／space. 時預設開：星空＋跟遊戲一樣的頂光，間距與鏡頭距離也換成太空層的尺度）
 // t=秒：固定動畫時間（閃燈、火光要截到特定一格時用）
@@ -9,7 +10,7 @@ import '../render/units'
 import '../render/models/ships'
 import { MODELS, buildModel, type ModelView } from '../render/models/index'
 import { animateRig, buildHuman, type Rig } from '../render/models/human'
-import { UNITS } from '../shared/content/registry'
+import { ITEMS, UNITS } from '../shared/content/registry'
 import { getEngine, type SceneLike } from '../render/engine'
 import { Mat } from '../render/materials'
 import { setQuality, type Quality } from '../render/quality'
@@ -33,7 +34,11 @@ interface Slot {
 function expand(list: string[]): string[] {
   const out: string[] = []
   for (const s of list) {
-    if (s.endsWith('*')) {
+    if (s.endsWith('*') && s.startsWith('item:')) {
+      // 地上道具：item:* = 全部道具（item:suit.* = 某個前綴）
+      const p = s.slice(5, -1)
+      out.push(...[...ITEMS.keys()].filter((k) => k.startsWith(p)).map((k) => 'item:' + k))
+    } else if (s.endsWith('*')) {
       const p = s.slice(0, -1)
       out.push(...[...MODELS.keys()].filter((k) => k.startsWith(p)).sort())
     } else if (s) out.push(s)
@@ -128,7 +133,7 @@ ids.forEach((id, i) => {
     height = rig.height * 1.18
   } else {
     const def = UNITS.get(id)
-    const modelId = def?.model ?? id.replace(/\.spawn$/, '')
+    const modelId = id.startsWith('item:') ? 'groundItem' : (def?.model ?? id.replace(/\.spawn$/, ''))
     const s: SnapEntity = { i: i + 1, d: id, st: state }
     view = buildModel(modelId, def, s)
     root.add(view.root)

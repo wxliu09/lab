@@ -346,7 +346,8 @@ THEMES.pirate = {
   ambientGround: '#080404',
   ambient: 2.6,
   lightScale: 0.95,
-  fill: 0.78,
+  // 補光（第 4 輪：0.78 → 1.0）：low 玩家視角的全黑比例約 61% → 50%；走廊、牆頂、虛空照樣暗，仍是陰暗的海盜船
+  fill: 1.0,
   grade: { hue: 0.02, sat: 0.08, bright: -0.02, contrast: 0.12 },
   dust: '#b07a5a',
 }
