@@ -2,7 +2,7 @@
 import { SHIPS, SHIP_BY_ID, type ShipDef } from '../../shared/content/ships'
 import type { StationDef } from '../../shared/content/stations/types'
 import { unitDef } from '../../shared/content/registry'
-import { NEUTRAL, type Ent } from '../ent'
+import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { SPACE_ZONE, type Zone } from '../world'
 import { DEATH_HOOKS, damage } from './damage'
@@ -193,6 +193,9 @@ export function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
   }
   vehicle.order = null
   vehicle.queue.length = 0
+  // 換手（含交回控制台）時，上一位駕駛進行中的施法一併取消：否則交出去之後技能照樣放出來，算在下一位（或中立）頭上
+  vehicle.cast = null
+  vehicle.anim = 0
   if (!pilot) {
     vehicle.owner = NEUTRAL
     vehicle.anon = false
@@ -255,11 +258,13 @@ export function stepSpace(g: Game): void {
     if (!c) continue
     const vehicle = w.get(z.spaceEnt)
     const ship = z.data.ship ? sp.ships.get(z.data.ship as string) : undefined
-    // 自動駕駛交出控制台的人要先離開控制台才能再接手
+    // 自動駕駛／unpilot 交出控制台的人要先離開控制台才能再接手。鎖記的是玩家 slot：
+    // 變身（replaceMain）會換主單位 id，記 id 的話新的主單位會立刻被接回去
     let locked = z.data.consoleLock as number[] | undefined
     if (locked?.length) {
-      locked = locked.filter((id) => {
-        const u = w.get(id)
+      locked = locked.filter((slot) => {
+        const lp = g.players[slot]
+        const u = lp ? g.mainOf(lp) : undefined
         return !!u && u.alive && u.zone === z.id && Math.hypot(u.x - c.x, u.y - c.y) <= CONSOLE_R + 0.3
       })
       z.data.consoleLock = locked
@@ -267,7 +272,7 @@ export function stepSpace(g: Game): void {
     let pilot: Ent | null = null
     for (const u of w.query(z.id, c.x, c.y, CONSOLE_R)) {
       if (!u.alive || !u.isMain || u.owner < 0) continue
-      if (locked?.includes(u.id)) continue
+      if (locked?.includes(u.owner)) continue
       pilot = u
       break
     }
@@ -298,6 +303,10 @@ export function stepSpace(g: Game): void {
       sp.pods.delete(podId)
       continue
     }
+    // 乘客本體跟著艙走（看不見，但位置要一致：本人的鏡頭、距離判定都以它為準）
+    const pp = g.players[pod.slot]
+    const body = pp ? g.mainOf(pp) : undefined
+    if (body && body.data.inPod === podId && (body.x !== e.x || body.y !== e.y)) w.relocate(body, SPACE_ZONE, e.x, e.y)
     if (pod.target < 0) continue
     const tz = w.zones[pod.target]
     const te = tz?.alive ? w.get(tz.spaceEnt) : undefined
@@ -486,7 +495,8 @@ function startPod(g: Game, u: Ent): boolean {
     const pod = g.world.spawn(unitDef('ship.pod'), SPACE_ZONE, st.x + st.radius + 1, st.y, p.slot)
     pod.global = true
     pod.name = ''
-    pod.anon = u.anon
+    // 匿名就匿名；偽裝中搭的艙看起來是偽裝對象的艙（和真人搭的一樣）
+    inheritLook(pod, u)
     const hpK = u.hp / u.maxHp
     spaceOf(g).pods.set(pod.id, { slot: p.slot, target: -1, hpK })
     // 乘員藏起來（暫時移出世界的可見範圍）
@@ -639,15 +649,15 @@ EXTRA_COMMANDS.set('unpilot', (g, p, u) => {
   const sp = spaceOf(g)
   if (sp.pilots.get(u.id) === main.id) {
     const z = g.world.zones.find((q) => q.alive && q.spaceEnt === u.id)
-    if (z) z.data.consoleLock = [...((z.data.consoleLock as number[] | undefined) ?? []), main.id]
+    if (z) z.data.consoleLock = [...((z.data.consoleLock as number[] | undefined) ?? []), p.slot]
     setPilot(g, u, null)
     p.control = p.main
     g.privateLine(p.slot, 'space.leftConsole')
     return
   }
-  // 防禦無人機：交回控制權，控制圈會在下一個 tick 斷線；在角色離開控制圈前不會重新連線
+  // 防禦無人機：交回控制權，控制圈會在下一個 tick 斷線；在角色離開控制圈前不會重新連線（鎖記在玩家身上，變身換 id 也不會解開）
   if (u.def.id === 'npc.defenseDrone' && u.pilot === main.id) {
-    main.data.droneLock = true
+    p.data.droneLock = true
     p.control = p.main
   }
 })

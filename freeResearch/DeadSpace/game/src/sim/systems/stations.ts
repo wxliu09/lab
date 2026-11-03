@@ -326,7 +326,7 @@ regScript('st.autopilot', (g, ctx) => {
   const pe = pilotEnt(g, b)
   if (pe && zid !== undefined) {
     const z = g.world.zones[zid]
-    z.data.consoleLock = [...((z.data.consoleLock as number[] | undefined) ?? []), pe.id]
+    if (pe.owner >= 0) z.data.consoleLock = [...((z.data.consoleLock as number[] | undefined) ?? []), pe.owner]
     if (pe.owner >= 0) g.privateLine(pe.owner, 'st.autopilotOn', { d: AUTOPILOT_DIST })
   }
   setPilot(g, b, null)

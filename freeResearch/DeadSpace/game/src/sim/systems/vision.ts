@@ -61,6 +61,11 @@ function sourcesOf(g: Game, viewer: GamePlayer): VisionSource[] {
 
 const near: Ent[] = []
 
+/** 逃生艙裡的乘客本體：藏在艙內，太空層上只看得到艙（本人除外）*/
+function inPodHidden(p: GamePlayer, e: Ent): boolean {
+  return !!e.data.inPod && e.owner !== p.slot
+}
+
 export function computeVision(g: Game): Map<number, VisionResult> {
   const w = g.world
   const res = new Map<number, VisionResult>()
@@ -69,7 +74,7 @@ export function computeVision(g: Game): Map<number, VisionResult> {
     const r: VisionResult = { ents: new Set(), sources: [], doors: new Map(), fullZones: new Set() }
     res.set(p.slot, r)
     // 太空層所有人可見（隱形船除外）
-    for (const e of spaceEnts) if (!e.stats.stealth || canSeeStealth(g, p, e)) r.ents.add(e)
+    for (const e of spaceEnts) if ((!e.stats.stealth || canSeeStealth(g, p, e)) && !inPodHidden(p, e)) r.ents.add(e)
     // 死去的仿生人只能透過記憶核心觀看
     if (!p.alive && p.data.coreOnly && !p.stayDead) {
       const core = findCore(g, p)
@@ -103,6 +108,7 @@ export function computeVision(g: Game): Map<number, VisionResult> {
         r.fullZones.add(zid)
         for (const e of w.inZone(zid)) {
           if (e.stats.stealth && !canSeeStealth(g, p, e) && !p.flags.wide) continue
+          if (inPodHidden(p, e)) continue
           r.ents.add(e)
         }
         const z = w.zones[zid]
@@ -122,6 +128,7 @@ export function computeVision(g: Game): Map<number, VisionResult> {
       for (const e of near) {
         if (r.ents.has(e) || !e.alive && !e.tags.has('corpse')) continue
         if (e.stats.stealth && !canSeeStealth(g, p, e)) continue
+        if (inPodHidden(p, e)) continue
         if (z.nav && !z.nav.los(s.x, s.y, e.x, e.y, true)) {
           // 大型單位：邊緣看得到也算
           if (e.radius < 0.8 || !z.nav.los(s.x, s.y, e.x - Math.sign(e.x - s.x) * e.radius, e.y, true)) continue

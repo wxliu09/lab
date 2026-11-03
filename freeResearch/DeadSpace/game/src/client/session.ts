@@ -114,6 +114,14 @@ async function makeTransport(code: string): Promise<Transport> {
 /** 測試 build：記錄收到的訊息型別（e2e 檢查其他分頁沒有多收任何東西）*/
 const recvLog: string[] = []
 
+/**
+ * 收到 start 時要不要保留聊天紀錄：重連或主機短暫失聯後，主機會對同一局（gid 相同）、同一個 slot 重送 start，
+ * 這時保留；新的一局（或換了 slot、舊主機沒有 gid）才清空。
+ */
+export function isRestartOfSameGame(prev: StartInfo | null, next: StartInfo): boolean {
+  return !!prev && prev.gid !== undefined && prev.gid === next.gid && prev.slot === next.slot
+}
+
 function onHostMsg(m: HostMsg): void {
   if (__TEST_HOOKS__) {
     recvLog.push(m.t)
@@ -138,13 +146,15 @@ function onHostMsg(m: HostMsg): void {
         send(practiceRole === 'random' ? { t: 'start' } : { t: 'start', role: practiceRole })
       }
       break
-    case 'start':
+    case 'start': {
+      const keep = isRestartOfSameGame(startInfo.value, m.info)
       world.reset()
       startInfo.value = m.info
       endResult.value = null
-      chatLog.value = []
+      if (!keep) chatLog.value = []
       screen.value = 'game'
       break
+    }
     case 'replay':
       replay.value = m
       break

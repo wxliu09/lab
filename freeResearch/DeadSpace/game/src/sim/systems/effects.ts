@@ -2,7 +2,7 @@
 import type { AbilityDef, Effect, TargetFilter } from '../../shared/content/types'
 import { UNITS, unitDef } from '../../shared/content/registry'
 import type { BuffInst, Ent } from '../ent'
-import { HOSTILE } from '../ent'
+import { HOSTILE, inheritLook } from '../ent'
 import type { Game } from '../game'
 import { damage, heal } from './damage'
 import { applyBuff, removeBuffsWhere } from './buffs'
@@ -200,7 +200,7 @@ function runEffect(g: Game, ctx: EffectCtx, ef: Effect): void {
         }
         const s = g.world.spawn(def, ctx.zone, px, py, ef.owner === 'hostile' ? HOSTILE : caster.owner)
         s.master = caster.id
-        s.anon = caster.anon
+        inheritLook(s, caster)
         s.acquire = true
         if (ef.life) s.lifeEnd = g.time + ef.life
         s.facing = caster.facing
@@ -264,7 +264,7 @@ function runEffect(g: Game, ctx: EffectCtx, ef: Effect): void {
       const p = ef.at === 'self' ? { x: caster.x, y: caster.y } : ef.at === 'target' && ctx.target ? { x: ctx.target.x, y: ctx.target.y } : { x: ctx.x, y: ctx.y }
       const o = g.world.spawn(def, ctx.zone, p.x, p.y, caster.owner)
       o.master = caster.id
-      o.anon = caster.anon
+      inheritLook(o, caster)
       o.lifeEnd = g.time + ef.life
       o.data.zoneObj = true
       break

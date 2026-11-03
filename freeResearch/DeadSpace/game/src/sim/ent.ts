@@ -254,3 +254,16 @@ export function dist2(a: { x: number; y: number }, b: { x: number; y: number }):
 export function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.sqrt(dist2(a, b))
 }
+
+/**
+ * 附屬單位（召喚物、裝置、地面物件）沿用施放者「在別人眼中」的樣子：施放者匿名，子物件就匿名；
+ * 施放者偽裝成別人（data.fake），就記下偽裝對象，快照把它呈現成那個人的東西（entView 的 maskOf）。
+ * 在生成當下定格：之後施放者變身或卸下偽裝，子物件的樣子都不會跟著變（跟著變會把兩種外形對起來）。
+ */
+export function inheritLook(child: Ent, caster: Ent): void {
+  child.anon = caster.anon
+  const f = caster.data.fake as { owner: number } | undefined
+  // 只有屬於施放者的子物件才呈現成偽裝對象的（敵對召喚物等不屬於任何玩家的，照它本來的樣子）
+  if (f && !child.data.fake && child.owner >= 0 && child.owner === caster.owner) child.data.maskOf = f.owner
+  else delete child.data.maskOf
+}

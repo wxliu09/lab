@@ -1,7 +1,7 @@
 // 防護服技能腳本（內容定義在 src/shared/content/suits.ts）。
 // 效果原語表達不了的部分：特斯拉蓄電放電、雷暴電擊、地面危害、汲取器、幻影分身與換位、暗物質相位、
 // 輻射外洩、遙控雷、機槍架設、脈衝連射衰減、力場極性、磁力裝金屬塊與碎片、能量庫。
-import type { Ent } from '../ent'
+import { inheritLook, type Ent } from '../ent'
 import type { Game } from '../game'
 import { UNITS } from '../../shared/content/registry'
 import { regScript, runEffects, type EffectCtx } from '../systems/effects'
@@ -40,7 +40,7 @@ function spawnOwned(g: Game, caster: Ent, defId: string, x: number, y: number, l
   const pt = openPoint(g, caster.zone, x, y)
   const e = g.world.spawn(def, caster.zone, pt.x, pt.y, caster.owner)
   e.master = caster.id
-  e.anon = caster.anon
+  inheritLook(e, caster)
   e.facing = caster.facing
   if (life > 0) e.lifeEnd = g.time + life
   return e
@@ -301,6 +301,7 @@ regScript('mirage.double', (g, ctx, p) => {
   d.data.noDrops = true
   d.data.converted = true
   d.data.illusionOf = u.id
+  d.data.looksMain = u.isMain || !!u.data.looksMain
   applyBuff(g, d, 'bf.mirage.illusion', undefined, u)
   d.order = { k: 'amove', x: ctx.x, y: ctx.y }
   g.emitFx({ k: 'mirage', z: u.zone, x: d.x, y: d.y, e: d.id })

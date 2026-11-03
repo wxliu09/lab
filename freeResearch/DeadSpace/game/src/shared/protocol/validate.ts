@@ -11,6 +11,8 @@ const COMMANDS: ReadonlySet<CommandKind> = new Set<CommandKind>([
 const CHANNELS: ReadonlySet<ChatChannel> = new Set<ChatChannel>(['all', 'team', 'group', 'dead'])
 const MARKS: ReadonlySet<NoteMark> = new Set<NoteMark>(['none', 'trust', 'suspect', 'confirmedEvil', 'confirmedClean'])
 const ID_RE = /^[a-zA-Z0-9_.:-]{1,48}$/
+/** 旁觀切換可接受的最大 zone id */
+const MAX_ZONE_ID = 63
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -24,6 +26,11 @@ const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
 export function sanitizeName(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, '').trim().slice(0, 16)
+}
+
+/** 群組名稱（聊天的 to）：可以是中文等任何文字，但不能有控制字元、前後空白，長度 1–16（和 -creategroup 的上限一致）*/
+function isGroupName(v: unknown): v is string {
+  return isStr(v, 16) && v.length > 0 && sanitizeName(v) === v
 }
 
 export function sanitizeText(s: string, max = 200): string {
@@ -52,7 +59,8 @@ function validCommand(c: unknown): Command | null {
     out.a = c.a
   }
   if (c.s !== undefined) {
-    if (!isInt(c.s, 0, 16)) return null
+    // s 依指令種類意義不同：旁觀切換（spec）是 zone id（事件站、船艙會讓 id 超過 16），其他是背包格／技能格
+    if (!isInt(c.s, 0, c.k === 'spec' ? MAX_ZONE_ID : 16)) return null
     out.s = c.s
   }
   if (c.q !== undefined) {
@@ -159,7 +167,7 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
     }
     case 'chat':
       if (!CHANNELS.has(raw.ch as ChatChannel) || !isStr(raw.text, 400)) return null
-      if (raw.to !== undefined && !(isStr(raw.to, 24) && ID_RE.test(raw.to))) return null
+      if (raw.to !== undefined && !isGroupName(raw.to)) return null
       return { t: 'chat', ch: raw.ch as ChatChannel, text: raw.text, ...(raw.to !== undefined ? { to: raw.to as string } : {}) }
     case 'ping':
       return isNum(raw.n, 0, 1e15) ? { t: 'ping', n: raw.n } : null

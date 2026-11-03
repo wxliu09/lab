@@ -9,7 +9,7 @@ import { DAMAGE_HOOKS, DEATH_HOOKS } from './damage'
 import { applyBuff } from './buffs'
 import { dropOnGround, giveItem, makeItem, morph } from './items'
 import { EXTRA_COMMANDS, issue } from './orders'
-import { LAST_WORDS } from './chat'
+import { LAST_WORDS, bootIfOut } from './chat'
 
 // ───────── 工具 ─────────
 
@@ -178,9 +178,12 @@ function stepButlers(g: Game): void {
 
 function announceDeath(g: Game, p: GamePlayer): void {
   if (p.role === 'mutant' && !p.spawnOf) {
+    // -status 只依公告過的死亡回答（chat.ts）
+    g.data.mutantDeathAnnounced = true
     g.systemAll('death.mutant', { name: p.name })
     g.log(`${p.name}（變種人）死亡`)
   } else if (p.role === 'xeno' && !p.spawnOf) {
+    g.data.xenoDeathAnnounced = true
     g.systemAll('death.xeno')
     g.log(`${p.name}（異形）死亡`)
   } else if (p.spawnOf === 'xeno') {
@@ -217,6 +220,8 @@ export function installRoles(g: Game): void {
       setMain(g, p, u, false)
       p.alive = true
       p.deadAt = -1
+      // 復活了就不再是出局狀態（下次死亡重新判定）
+      delete p.data.booted
       if (u.tags.has('personnel')) {
         u.data.extraAbilities = [...(CLASSES.get(p.classId)?.abilities ?? []), ...(p.role === 'xeno' && !p.spawnOf ? ['xeno.form'] : []), ...(p.role === 'mutant' && !p.spawnOf ? ['mut.devour'] : [])]
         morph(g, u, defId)
@@ -338,7 +343,7 @@ export function installRoles(g: Game): void {
     g.after(LAST_WORDS, () => {
       if (p.alive) return
       g.privateLine(p.slot, p.role === 'android' ? 'death.youAndroid' : 'death.you')
-      if (g.settings.bootOnDeath) p.data.booted = true
+      bootIfOut(g, p)
       g.checkVictory()
     })
   }
@@ -454,7 +459,7 @@ export function installRoles(g: Game): void {
     return opts
   }
   g.evolveOptions = (p) => {
-    if (!p.alive || p.evolvingUntil) return []
+    if (!p.alive || p.evolvingUntil || !mayEvolveNow(g, p)) return []
     if (p.role === 'xeno' && !p.spawnOf && !p.data.lostMaster) return evolveChoices('xeno', p.form || 'xeno.protoform', p.ep).filter((id) => UNITS.has(FORMS.get(id)!.unit))
     if (p.role === 'mutant' && !p.spawnOf) return evolveChoices('mutant', p.form || null, p.ep).filter((id) => UNITS.has(FORMS.get(id)!.unit))
     if (p.role === 'android' && !p.spawnOf && g.mainOf(p)?.data.atFabricator)
@@ -475,12 +480,22 @@ function nextThreshold(_g: Game, p: GamePlayer): number {
 
 // ───────── 進化 ─────────
 
+/**
+ * 現在能不能開始進化：必須親自操控主單位（不是在駕駛載具、附身或操控指揮點），也不在逃生艙裡。
+ * 逃生艙的乘客本體藏在太空層；在那裡結繭／變肉團會讓本體在太空層現形，也會讓艙和異類對起來。
+ */
+function mayEvolveNow(g: Game, p: GamePlayer): boolean {
+  const cur = g.mainOf(p)
+  if (!cur || !cur.alive || cur.data.inPod) return false
+  return !p.control || p.control === p.main
+}
+
 function evolveCmd(g: Game, p: GamePlayer, _u: Ent, c: Command): void {
   if (!c.a) return
   const opts = g.evolveOptions(p)
   if (!opts.includes(c.a)) return
   const cur = g.mainOf(p)
-  if (!cur || !cur.alive || cur.zone === 0 && p.role !== 'mutant') return
+  if (!cur || !cur.alive || !mayEvolveNow(g, p) || (cur.zone === 0 && p.role !== 'mutant')) return
   const form = FORMS.get(c.a)!
   const quick = g.allPlayers().length === 1
   const dur = quick ? 2 : 60

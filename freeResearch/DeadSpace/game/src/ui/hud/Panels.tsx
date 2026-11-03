@@ -110,7 +110,7 @@ export function SpectatorBar() {
         <div class="panel modal" style={{ textAlign: 'center', width: 'min(460px, 92vw)' }}>
           <h2>{t('boot.title')}</h2>
           <p class="dim" style={{ fontSize: '15px', lineHeight: 1.6 }}>
-            {t('boot.body')}
+            {t('boot2.body')}
           </p>
           <button class="primary" onClick={() => leave()}>
             {t('boot.leave')}

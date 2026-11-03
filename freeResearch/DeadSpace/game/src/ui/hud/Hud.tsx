@@ -491,6 +491,25 @@ export function Inventory({ input }: { input: Input | null }) {
   )
 }
 
+/**
+ * 聊天輸入 → 要送出的訊息：「[」開頭＝陣營私頻；「;群組 訊息」＝群組頻道（第一個詞是群組名稱，放進 to）。
+ * 頻道不在這裡依死活改成死者頻道：遺言時間內活人還聽得到，過了之後 server 會自己轉到死者頻道。
+ */
+export function parseChatInput(input: string): { ch: ChatChannel; text: string; to?: string } | null {
+  const raw = input.trim()
+  if (!raw) return null
+  if (raw.startsWith('[')) {
+    const text = raw.slice(1).trim()
+    return text ? { ch: 'team', text } : null
+  }
+  if (raw.startsWith(';')) {
+    const m = /^(\S+)\s*([\s\S]*)$/.exec(raw.slice(1).trim())
+    if (!m || !m[2].trim()) return null
+    return { ch: 'group', text: m[2].trim(), to: m[1].slice(0, 16) }
+  }
+  return { ch: 'all', text: raw }
+}
+
 export function Chat() {
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -506,19 +525,13 @@ export function Chat() {
     const raw = text.trim()
     setText('')
     chatOpen.value = false
-    if (!raw) return
-    let ch: ChatChannel = 'all'
-    let body = raw
-    if (raw.startsWith('[')) {
-      ch = 'team'
-      body = raw.slice(1).trim()
-    } else if (raw.startsWith(';')) {
-      ch = 'group'
-      body = raw.slice(1).trim()
-    }
-    if (world.me.alive === false) ch = 'dead'
-    if (body) send({ t: 'chat', ch, text: body })
+    const msg = parseChatInput(raw)
+    if (msg) send({ t: 'chat', ...msg })
   }
+  // 死後打字時跟著快照更新遺言倒數（只在輸入框開著時訂閱，平常不多重繪）
+  if (chatOpen.value && world.me.alive === false) void snapTick.value
+  const lastWords = world.me.lastWords ?? 0
+  const placeholder = world.me.alive === false ? (lastWords > 0 ? t('chat2.placeholderLastWords', { n: lastWords }) : t('chat.placeholderDead')) : t('chat.placeholder')
   return (
     <>
       <div class={'chat' + (chatOpen.value ? ' typing' : '')} data-testid="chatlog">
@@ -540,7 +553,7 @@ export function Chat() {
             data-testid="chatinput"
             value={text}
             maxLength={200}
-            placeholder={world.me.alive === false ? t('chat.placeholderDead') : t('chat.placeholder')}
+            placeholder={placeholder}
             onInput={(e) => setText((e.target as HTMLInputElement).value)}
             onKeyDown={(e) => {
               e.stopPropagation()

@@ -1,7 +1,7 @@
 // 隱藏資訊洩漏檢查器：獨立於 vision.ts 重新判定「應該看得到什麼」，比對每一則送出的訊息。
 import { decode } from '../../../src/shared/protocol/codec'
-import type { HostMsg } from '../../../src/shared/protocol/messages'
-import type { Game } from '../../../src/sim/game'
+import type { HostMsg, SnapEntity } from '../../../src/shared/protocol/messages'
+import type { Game, GamePlayer } from '../../../src/sim/game'
 import type { Ent } from '../../../src/sim/ent'
 import { SPACE_ZONE } from '../../../src/sim/world'
 
@@ -53,6 +53,27 @@ export function oracleVisible(g: Game, slot: number): Set<number> {
   return out
 }
 
+/**
+ * 較強的 oracle：擁有者目前以匿名形態出現（沒有偽裝）時，他在這個形態下生出來的非主單位子物件（召喚物、裝置、
+ * 地面物件、蟲餌…）也必須匿名；否則子物件會把匿名單位和玩家連起來。
+ * 「這個形態下生出來」以 bornAt 判斷：匿名形態都是新生成的主單位（replaceMain），比它早出現的子物件是人形時放的，
+ * 顯示擁有者不算洩漏（反而在變身時改成匿名才會露餡）。
+ */
+export function anonChildProblems(g: Game, viewer: GamePlayer, ent: Ent, sv: SnapEntity): string[] {
+  if (ent.isMain || ent.owner < 0 || ent.owner === viewer.slot || viewer.flags.reveal) return []
+  const O = g.players[ent.owner]
+  if (!O) return []
+  const fo = g.faction(O)
+  if (fo !== 'crew' && fo === g.faction(viewer) && viewer.alive) return []
+  const main = g.mainOf(O)
+  if (!main || main === ent || !main.anon || main.data.fake || ent.bornAt < main.bornAt) return []
+  const out: string[] = []
+  if (sv.o !== undefined && sv.o === O.slot) out.push(`匿名擁有者的子物件 ${ent.def.id} 洩漏擁有者給 slot${viewer.slot}`)
+  if (sv.c !== undefined && sv.c >= 0 && sv.c === O.color) out.push(`匿名擁有者的子物件 ${ent.def.id} 洩漏顏色給 slot${viewer.slot}`)
+  if (sv.n && sv.n === O.name) out.push(`匿名擁有者的子物件 ${ent.def.id} 洩漏名字給 slot${viewer.slot}`)
+  return out
+}
+
 export interface LeakReport {
   problems: string[]
 }
@@ -78,11 +99,18 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
           const o = ent.owner >= 0 ? g.players[ent.owner] : null
           const allowed = ent.owner === slot || viewer.flags.reveal || (o && fv !== 'crew' && g.faction(o) === fv && viewer.alive)
           if (!allowed) {
-            if (e.o !== undefined && e.o >= 0 && !ent.data.fake) problems.push(`匿名單位 ${ent.def.id} 洩漏擁有者給 slot${slot}`)
-            if (e.n && !ent.data.fake) problems.push(`匿名單位名稱洩漏給 slot${slot}`)
-            if (e.c !== undefined && e.c >= 0 && !ent.data.fake) problems.push(`匿名單位顏色洩漏給 slot${slot}`)
+            // 偽裝（data.fake）或偽裝期間放下的子物件（data.maskOf）會顯示偽裝對象：只要不是真正的擁有者就行
+            const masked = !!ent.data.fake || typeof ent.data.maskOf === 'number'
+            if (masked) {
+              if (e.o !== undefined && e.o >= 0 && e.o === ent.owner) problems.push(`偽裝單位 ${ent.def.id} 洩漏真正的擁有者給 slot${slot}`)
+            } else {
+              if (e.o !== undefined && e.o >= 0) problems.push(`匿名單位 ${ent.def.id} 洩漏擁有者給 slot${slot}`)
+              if (e.n) problems.push(`匿名單位名稱洩漏給 slot${slot}`)
+              if (e.c !== undefined && e.c >= 0) problems.push(`匿名單位顏色洩漏給 slot${slot}`)
+            }
           }
         }
+        if (ent) problems.push(...anonChildProblems(g, viewer, ent, e))
       }
       if (s.me && s.me.slot !== undefined && s.me.slot !== slot) problems.push(`slot${slot} 收到別人的私有狀態`)
       if (s.me?.mates?.length && fv === 'crew') problems.push(`人類 slot${slot} 收到同陣營名單`)

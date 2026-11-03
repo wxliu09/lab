@@ -46,6 +46,8 @@ export function NotesPanel() {
   const mine = new Map(notes.filter((n) => n.from === undefined).map((n) => [n.slot, n]))
   const shared = notes.filter((n) => n.from !== undefined)
   const reports = me.gitReports ?? []
+  // 死者與旁觀者看得到全場：不能把筆記分享出去（server 也會擋給活人的分享），自己的筆記照樣可以編輯
+  const canShare = me.alive !== false
   return (
     <div class="panel" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
       <h2>{t('notes.title')}</h2>
@@ -97,16 +99,18 @@ export function NotesPanel() {
                 >
                   {t('notes.mark.' + cur.m)}
                 </button>
-                <button
-                  class="small ghost"
-                  {...tipProps(() => ({ title: t('notes.share'), body: t('notes.shareBody') }))}
-                  onClick={() => {
-                    // 分享會把你對所有人的標記與筆記都送給對方：先確認
-                    if (window.confirm(t('notes.shareConfirm', { name: p.name }))) send({ t: 'shareNotes', to: p.slot })
-                  }}
-                >
-                  ↗
-                </button>
+                {canShare && (
+                  <button
+                    class="small ghost"
+                    {...tipProps(() => ({ title: t('notes.share'), body: t('notes.shareBody') }))}
+                    onClick={() => {
+                      // 分享會把你對所有人的標記與筆記都送給對方：先確認
+                      if (window.confirm(t('notes.shareConfirm', { name: p.name }))) send({ t: 'shareNotes', to: p.slot })
+                    }}
+                  >
+                    ↗
+                  </button>
+                )}
               </div>
             )
           })}
@@ -141,7 +145,7 @@ export function NotesPanel() {
         </>
       )}
       <div class="dim" style={{ fontSize: '13px', marginTop: '8px' }}>
-        {t('notes.hint')}
+        {canShare ? t('notes.hint') : t('notes2.deadHint')}
       </div>
     </div>
   )

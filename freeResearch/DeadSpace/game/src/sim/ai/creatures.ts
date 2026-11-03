@@ -432,7 +432,8 @@ export function summonWoolly(g: Game): Ent | null {
 /** 死去的玩家附身一隻蛞蝓仔（每人一次）*/
 export function possessSlugling(g: Game, slot: number): boolean {
   const p = g.players[slot]
-  if (!p || p.alive || p.data.slugUsed) return false
+  // 死亡即退出：出局的人不能再回到場上
+  if (!p || p.alive || p.spectator || p.data.slugUsed || p.data.booted) return false
   const list = [...g.world.ents.values()].filter((e) => e.alive && e.def.id === 'creature.slugling' && e.owner === NEUTRAL && e.data.cell === undefined)
   if (!list.length) return false
   const s = g.world.rng.pick(list)

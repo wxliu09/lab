@@ -9,7 +9,7 @@ import { dropOnGround, giveItem, makeItem, morph } from '../systems/items'
 import { UNITS, itemDef, unitDef } from '../../shared/content/registry'
 import type { AbilityDef, UnitDef } from '../../shared/content/types'
 import { XAB, XBF, XUNIT } from '../../shared/content/forms/xeno'
-import { dist, type Ent, type ItemInst } from '../ent'
+import { dist, inheritLook, type Ent, type ItemInst } from '../ent'
 import type { Game } from '../game'
 import { SPACE_HALF, SPACE_ZONE } from '../world'
 
@@ -182,6 +182,7 @@ function spawnMirror(g: Game, master: Ent, of: Ent, pt: { x: number; y: number }
   // 不留屍體（死亡系統以 converted 判斷）
   e.data.converted = true
   e.data.xMinion = { master: master.id, self: !disguise } satisfies MinionState
+  e.data.looksMain = of.isMain || !!of.data.looksMain
   if (disguise) e.data.fake = fakeOf(of)
   else if (of.data.fake) e.data.fake = { ...(of.data.fake as object) }
   e.statsDirty = true
@@ -234,8 +235,8 @@ regScript('xeno.entropy', (g, ctx, p) => {
   const c = ctx.caster
   const r = Number(p.r) || 3
   const f = g.world.spawn(unitDef(XUNIT.entropyField), ctx.zone, ctx.x, ctx.y, c.owner)
-  f.anon = c.anon
   f.master = c.id
+  inheritLook(f, c)
   f.lifeEnd = g.time + (Number(p.life) || 30)
   f.data.zoneObj = true
   f.data.xField = { r, next: g.time + 0.25, master: c.id, pull: {} } satisfies FieldState
@@ -524,8 +525,8 @@ regScript('xeno.webwire', (g, ctx, p) => {
   const max = Number(p.max) || 9
   const pt = openNear(g, ctx.zone, ctx.x, ctx.y)
   const a = g.world.spawn(unitDef(XUNIT.webAnchor), ctx.zone, pt.x, pt.y, u.owner)
-  a.anon = u.anon
   a.master = u.id
+  inheritLook(a, u)
   a.acquire = false
   a.lifeEnd = g.time + (Number(p.life) || 180)
   a.data.noDrops = true
@@ -721,8 +722,8 @@ regScript('xeno.backFromHell', (g, ctx) => {
     }
   }
   const b = g.world.spawn(unitDef(XUNIT.eldritch), at.zone, at.x, at.y, u.owner)
-  b.anon = u.anon
   b.master = u.id
+  inheritLook(b, u)
   b.acquire = true
   b.facing = u.facing
   b.data.xMinion = { master: u.id, self: true } satisfies MinionState

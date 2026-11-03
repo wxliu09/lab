@@ -42,6 +42,9 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
   // 否則「控制台上站著某人、載具卻是匿名」會直接揭穿偽裝
   const pe = e.pilot ? g.world.get(e.pilot) : undefined
   const pilotFake = pe && pe.data.fake && !knowsOwner(g, viewer, pe) ? (pe.data.fake as { owner: number; color: number }) : null
+  // 偽裝期間放下的子物件（裝置、召喚物）：呈現成偽裝對象的東西，和真人放的一模一樣（見 ent.ts inheritLook）
+  const maskOf = !knows && !fake && !pilotFake && typeof e.data.maskOf === 'number' ? (e.data.maskOf as number) : null
+  const looksKnown = knows || maskOf !== null
   let fl = 0
   const st = e.stats
   if (st.invuln) fl |= EntFlag.Invuln
@@ -65,10 +68,10 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
     f: Math.round(e.facing * 100),
     hp: Math.ceil(Math.max(0, e.hp)),
     mhp: Math.round(e.maxHp),
-    o: fake ? fake.owner : pilotFake ? pilotFake.owner : knows ? e.owner : e.owner < 0 ? e.owner : -1,
-    n: fake ? fake.name : knows || pilotFake ? (e.data.muteName ? '' : e.name) : '',
-    c: fake ? fake.color : pilotFake ? pilotFake.color : knows ? e.color : -1,
-    cl: fake ? fake.cls : knows ? e.classId : '',
+    o: fake ? fake.owner : pilotFake ? pilotFake.owner : maskOf !== null ? maskOf : knows ? e.owner : e.owner < 0 ? e.owner : -1,
+    n: fake ? fake.name : looksKnown || pilotFake ? (e.data.muteName ? '' : e.name) : '',
+    c: fake ? fake.color : pilotFake ? pilotFake.color : looksKnown ? e.color : -1,
+    cl: fake ? fake.cls : looksKnown ? e.classId : '',
     st: e.anim,
     fl,
   }

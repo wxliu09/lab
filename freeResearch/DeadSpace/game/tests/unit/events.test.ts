@@ -39,7 +39,7 @@ describe('事件導演', () => {
     // 門故障可重複、假結束 5/6 沒有效果，不計入；900 秒內至少要有 2 個生效
     const fired = ev.used.size + (12 - ev.news.length)
     expect(fired).toBeGreaterThanOrEqual(2)
-  })
+  }, 180000) // 模擬十幾分鐘遊戲時間：機器忙時會超過預設的 60 秒
 
   it('事件倍率 0：不會有隨機事件', () => {
     const { h, g } = setup()

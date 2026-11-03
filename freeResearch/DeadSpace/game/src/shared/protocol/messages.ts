@@ -163,6 +163,8 @@ export interface StartInfo {
   zones: [number, string, string][]
   players: { slot: Slot; name: string; color: number; bot: boolean }[]
   spectator: boolean
+  /** 這一局的識別碼（隨機、與任何秘密無關）：重連時收到同一局的 start 就保留聊天紀錄 */
+  gid?: number
 }
 
 // ───────── 快照 ─────────
@@ -300,6 +302,8 @@ export interface PrivateState {
   cast: [string, number] | null
   /** 死亡即退出模式下已出局（不能觀戰、不能用死者頻道）*/
   booted?: boolean
+  /** 剛死、還在遺言時間內：活人還聽得到的剩餘秒數（無條件進位；0 = 不在遺言時間）*/
+  lastWords?: number
   /** 所在的船正在發射倒數（剩餘秒數；0 = 沒有）*/
   launchIn?: number
   muted: boolean

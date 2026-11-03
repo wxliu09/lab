@@ -4,7 +4,7 @@
 // 主程式也可以在開局直接呼叫 installMutantSystems(g)。
 import { UNITS } from '../../shared/content/registry'
 import type { Effect } from '../../shared/content/types'
-import { HOSTILE, dist, type Ent } from '../ent'
+import { HOSTILE, dist, inheritLook, type Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { SPACE_ZONE } from '../world'
 import { regScript, runEffects, type ScriptFn } from '../systems/effects'
@@ -102,7 +102,7 @@ export function spawnMinion(g: Game, master: Ent, defId: string, x: number, y: n
   if (!p) return null
   const s = g.world.spawn(def, master.zone, p.x, p.y, master.owner)
   s.master = master.id
-  s.anon = master.anon
+  inheritLook(s, master)
   s.acquire = true
   s.facing = master.facing
   if (life) s.lifeEnd = g.time + life
@@ -227,7 +227,7 @@ function dropSlime(g: Game, u: Ent): void {
   if (!def) return
   const s = g.world.spawn(def, u.zone, u.x, u.y, u.owner)
   s.master = u.id
-  s.anon = u.anon
+  inheritLook(s, u)
   s.lifeEnd = g.time + SLIME_LIFE
   s.data.zoneObj = true
   s.facing = g.world.rng.range(0, Math.PI * 2)

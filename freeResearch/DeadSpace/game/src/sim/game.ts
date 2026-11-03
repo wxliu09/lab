@@ -22,7 +22,7 @@ import { handleCommand } from './systems/orders'
 import { stepMovement, stepDoors } from './systems/movement'
 import { computeVision } from './systems/vision'
 import { buildSnapshot, type ViewState, newViewState } from './systems/snapshot'
-import { routeChat } from './systems/chat'
+import { bootIfOut, inLastWords, routeChat } from './systems/chat'
 import { Tuning } from './systems/tuning'
 import { stepCombat } from './systems/combat'
 import { stepBuffs } from './systems/buffs'
@@ -127,6 +127,8 @@ export class Game {
   readonly world: World
   /** 身分、職業、出生點等隱藏資訊專用的亂數流 */
   readonly secret: Rng
+  /** 這一局的識別碼（獨立亂數，不能推回任何秘密）：client 重連時用來判斷是不是同一局 */
+  readonly gid = secretSeed()
   readonly players: GamePlayer[] = []
   readonly settings: LobbySettings
   readonly send: GameInit['send']
@@ -292,6 +294,7 @@ export class Game {
       zones: this.zoneList(),
       players: this.allPlayers().map((q) => ({ slot: q.slot, name: q.baseName, color: q.color, bot: q.bot })),
       spectator: p.spectator,
+      gid: this.gid,
     }
     p.view = newViewState()
     this.send(slot, { t: 'start', info })
@@ -377,6 +380,12 @@ export class Game {
     this.votes.death = null
     this.votes.deathDone = true
     this.settings.bootOnDeath = boot > spec
+    // 投票前就已經死了的人也照新規則：開啟→一併出局（遺言時間內的人等遺言結束再判定）；關閉→回到觀戰
+    for (const p of this.allPlayers()) {
+      if (p.alive) continue
+      if (!this.settings.bootOnDeath) delete p.data.booted
+      else if (!inLastWords(this, p)) bootIfOut(this, p)
+    }
     this.systemAll(boot > spec ? 'vote.bootOn' : 'vote.spectateOn', { boot, spec })
   }
 
@@ -390,6 +399,8 @@ export class Game {
     const p = this.players[slot]
     const q = this.players[to]
     if (!p || !q || slot === to) return
+    // 死者與旁觀者看得到全場：只能分享給其他死者，不能把看到的東西傳給活人（出局的人兩邊都不行）
+    if (!p.alive && (q.alive || p.data.booted || q.data.booted)) return
     for (const n of p.notes.values()) {
       if (n.mark === 'none' && !n.text) continue
       q.notes.set(n.slot + 100 * (slot + 1), { ...n, from: slot })

@@ -94,6 +94,11 @@ export const UX2_ZH: Record<string, string> = {
   'practice.mix.self': '你：{role}',
   'practice.mix.others': '其他 AI：',
   'practice.mix.all': '全場 {n} 人：',
+
+  // ───── 死後（遺言、筆記、出局）─────
+  'chat2.placeholderLastWords': '遺言時間：活人還聽得到（剩 {n} 秒）',
+  'notes2.deadHint': '點標記切換：未標記 → 信任 → 可疑 → 確認異類 → 確認乾淨。你已死亡：筆記仍可編輯，但不能再分享給別人。',
+  'boot2.body': '這局是「死亡即退出」模式：死後不能觀戰，也收不到玩家之間的聊天（系統公告仍會顯示在聊天紀錄）。結果會在對局結束時公布。',
 }
 
 export const UX2_EN: Record<string, string> = {
@@ -190,4 +195,9 @@ export const UX2_EN: Record<string, string> = {
   'practice.mix.self': 'You: {role}',
   'practice.mix.others': 'Other AI: ',
   'practice.mix.all': 'All {n} players: ',
+
+  // ───── After death (last words, notes, boot) ─────
+  'chat2.placeholderLastWords': 'Last words: the living can still hear you ({n} s left)',
+  'notes2.deadHint': 'Click a mark to cycle: none → trust → suspect → confirmed evil → confirmed clean. You are dead: you can still edit your notes, but no longer share them.',
+  'boot2.body': 'This game uses Boot on Death: the dead cannot spectate or receive player chat (system announcements still appear in the chat log). Results are announced when the game ends.',
 }

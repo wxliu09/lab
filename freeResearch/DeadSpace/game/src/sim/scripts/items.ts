@@ -14,7 +14,7 @@ import { canSeeStealth } from '../systems/vision'
 import { BUFFS, ITEMS, UNITS, itemDef, unitDef } from '../../shared/content/registry'
 import { FRAG_BLAST, GRENADE_FUSE, MODULE_TARGET, RUMMAGE_TABLE } from '../../shared/content/items'
 import { DOOR_HACK_SECONDS, DOOR_REACH } from '../../shared/content/classAbilities'
-import { NEUTRAL, type Ent } from '../ent'
+import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import type { Game } from '../game'
 import { SPACE_ZONE } from '../world'
 
@@ -270,7 +270,7 @@ function placeDevice(g: Game, ctx: EffectCtx, defId: string): Ent | null {
   }
   const e = g.world.spawn(unitDef(defId), ctx.zone, px, py, u.owner)
   e.master = u.id
-  e.anon = u.anon
+  inheritLook(e, u)
   e.facing = u.facing
   g.emitFx({ k: 'deploy', z: ctx.zone, x: px, y: py, e: e.id, s: defId })
   return e
@@ -743,7 +743,7 @@ regScript('item.singularity', (g, ctx) => {
   const obj = g.world.spawn(unitDef('dev.singularity'), zone, x, y, u.owner)
   obj.data.zoneObj = true
   obj.lifeEnd = g.time + SING_LIFE
-  obj.anon = u.anon
+  inheritLook(obj, u)
   g.emitFx({ k: 'void', z: zone, x, y, v: SING_LIFE })
   const srcSlot = u.owner
   let n = 0
@@ -935,6 +935,8 @@ regScript('item.holo', (g, ctx) => {
   // 不留屍體（死亡 hook 以 converted 判斷）
   h.data.converted = true
   h.data.holo = true
+  // 複製的是一名玩家本人（或另一個這樣的分身）：驗血時要和真人看起來一樣
+  h.data.looksMain = t.isMain || !!t.data.looksMain
   if (t.inv && h.inv) for (let i = 0; i < h.inv.length; i++) h.inv[i] = t.inv[i] ? makeItem(t.inv[i]!.id, t.inv[i]!.charges) : null
   applyBuff(g, h, 'bf.holo', undefined, u)
   // 公開可見的外觀（帽子）也要一樣，否則一眼就能看穿
@@ -1044,6 +1046,8 @@ regScript('item.remote', (g, ctx) => {
 regScript('item.wormBait', (g, ctx) => {
   const u = ctx.caster
   const bait = g.world.spawn(unitDef('dev.wormBait'), ctx.zone, ctx.x, ctx.y, u.owner)
+  // 匿名形態丟出的蟲餌也必須匿名（否則等於把匿名單位和擁有者連起來）
+  inheritLook(bait, u)
   bait.data.zoneObj = true
   bait.lifeEnd = g.time + 20
   for (const t of g.world.query(ctx.zone, ctx.x, ctx.y, 12)) {

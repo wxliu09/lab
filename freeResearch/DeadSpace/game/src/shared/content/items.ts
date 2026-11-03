@@ -294,7 +294,8 @@ export const ITEM_ABILITIES: AbilityDef[] = [
     range: 1.4,
     cast: 3,
     cd: 3,
-    filter: { self: true, mainUnit: true },
+    // 不限主單位：全像分身也要能施放（被「無效的目標」擋下＝一眼看穿分身）；不是玩家的對象由驗血腳本回「已抽過」（研究 02 §7.2）
+    filter: { self: true },
     effects: [S('item.geneSampler')],
   }),
   A({
