@@ -5,6 +5,7 @@ import { Menu } from './screens/Menu'
 import { Lobby } from './screens/Lobby'
 import { GameScreen } from './screens/GameScreen'
 import { MenuBackdrop } from './MenuBackdrop'
+import { SpaceMascot } from './SpaceMascot'
 import { Codex } from './hud/Codex'
 import { TooltipLayer } from './tooltip'
 import { t } from './i18n'
@@ -42,6 +43,8 @@ export function App() {
   return (
     <>
       {s !== 'game' && <MenuBackdrop />}
+      {/* 背景彩蛋：還沒開始遊戲時在太空背景裡彈來彈去，開局就消失 */}
+      {s !== 'game' && <SpaceMascot />}
       {(s === 'menu' || s === 'connecting') && <Menu />}
       {/* 單機練習會直接開局：不顯示大廳（裡面「人數不足」的提示會誤導），改顯示準備中 */}
       {s === 'lobby' && lobby.value?.code === PRACTICE_ROOM && (
