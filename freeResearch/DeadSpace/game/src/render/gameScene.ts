@@ -229,13 +229,16 @@ export class GameScene implements SceneLike {
   }
 
   setZones(list: [number, string, string][]): void {
+    let added = false
     for (const [id, key, stationId] of list) {
       if (this.zones.has(id)) continue
       const st = stationDefOf(stationId)
       if (!st) continue
       this.zones.set(id, { id, key, station: stationId, layout: parseLayout(st.layout) })
+      added = true
     }
-    if (this.prebuildHost) this.queuePrebuild(false)
+    // 局中出現新的站（事件站）：太空層也重新預熱一次（新船殼的材質組合），第一次進太空才不會再編 shader
+    if (this.prebuildHost) this.queuePrebuild(false, added && !!this.space)
   }
 
   private space: { group: THREE.Group; update: (t: number) => void; sun: THREE.DirectionalLight } | null = null
@@ -345,10 +348,10 @@ export class GameScene implements SceneLike {
   }
 
   /** 排入還沒建的站與太空層；again = 已經建好的也重新上傳／預編譯（context 恢復、改畫質）*/
-  private queuePrebuild(again: boolean): void {
+  private queuePrebuild(again: boolean, spaceAgain = false): void {
     if (!this.prebuildHost || this.disposed) return
     const ids = [...this.zones.keys()].filter((id) => again || !this.views.has(id)).sort((a, b) => a - b)
-    if (again || !this.space) ids.push(0)
+    if (again || spaceAgain || !this.space) ids.push(0)
     for (const id of ids) if (!this.prebuildQ.includes(id)) this.prebuildQ.push(id)
     this.prebuildDone = !this.prebuildQ.length && !this.prebuildIt
     this.scheduleIdle(1500)
@@ -441,7 +444,11 @@ export class GameScene implements SceneLike {
       roots = [v.group]
       if (v.fill) extraTex.push(v.fill)
       const fog = this.fogs.get(id)
-      if (fog) extraTex.push(fog.tex)
+      if (fog) {
+        // DataTexture 建立時 version = 0，initTexture 不會上傳：先標記，預建時就真的上傳（第一次進站不必再傳）
+        fog.tex.needsUpdate = true
+        extraTex.push(fog.tex)
+      }
     }
     // 延後產生的程序化貼圖（這一站與之前留下的）分段做完
     yield* textureSteps()
