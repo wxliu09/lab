@@ -88,10 +88,11 @@ export const ITEM_BUFFS: BuffDef[] = [
   { id: 'bf.hormoneSide', name: L('腦霧', 'Brain Fog'), icon: 'pill', vis: 'self', good: false, mpRegen: -0.2 },
   { id: 'bf.tetraDizzy', name: L('暈眩反胃', 'Vertigo'), icon: 'pill', vis: 'all', good: false, dur: 8, move: 0.6, atkSpeed: 0.7 },
   // 抗體與受控感染（研究 02 §8）：感染相關一律不公開
-  { id: 'bf.antibody', name: L('抗體', 'Antibodies'), icon: 'syringe', vis: 'self', good: true, dur: 46, immuneInfection: true },
+  { id: 'bf.antibody', name: L('抗體', 'Antibodies'), desc: L('46 秒內不會被寄生或感染朊毒。', 'Immune to parasites and prions for 46 s.'), icon: 'syringe', vis: 'self', good: true, dur: 46, immuneInfection: true },
   {
     id: 'bf.containedParasite',
     name: L('受控寄生', 'Contained Parasite'),
+    desc: L('寄生體被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成異形的 spawn。', 'The antibodies have forced the parasite dormant. No more poison, and it clears when the timer runs out, but if you die before then you still rise as a xeno spawn.'),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -101,6 +102,7 @@ export const ITEM_BUFFS: BuffDef[] = [
   {
     id: 'bf.containedPrion',
     name: L('受控朊毒', 'Contained Prion'),
+    desc: L('朊毒被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成變種人的工蟲。', 'The antibodies have forced the prions dormant. No more poison, and they clear when the timer runs out, but if you die before then you still become a mutant drone.'),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,

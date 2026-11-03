@@ -45,9 +45,12 @@ export function GameScreen() {
       gs.damage = 0
       overlay.draw(gs, world)
     }
+    // 換 zone：引擎只換色彩分級，不重建後處理
     gs.onZoneChange = () => engine.setScene(gs)
     engine.setScene(gs)
     engine.start()
+    // 開局後利用空閒時間預建本局其他站點（貼圖上傳、shader 預編譯），第一次進站不卡主執行緒
+    gs.startPrebuild(engine)
     const inp = new Input(c, gs)
     setScene(gs)
     setInput(inp)
@@ -58,6 +61,12 @@ export function GameScreen() {
       unbind()
       bindAudioScene(null)
       engine.setScene(null)
+      gs.onZoneChange = null
+      gs.viewOverride = null
+      // 舊 canvas 的 WebGL context 會被模組層級共用資源（貼圖、幾何）的 dispose listener 留住；
+      // 先把 canvas 從 HUD 的 DOM 樹拿掉，那串已脫離文件的 HUD（以及它的 listener 閉包）才不會跟著被留住
+      c.remove()
+      if (__TEST_HOOKS__ && (window as unknown as Record<string, unknown>).__xcScene === gs) delete (window as unknown as Record<string, unknown>).__xcScene
     }
   }, [])
   // 對局中出現新的地點（事件站）

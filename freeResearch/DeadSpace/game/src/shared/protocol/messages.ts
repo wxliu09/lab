@@ -278,6 +278,8 @@ export interface PrivateState {
   faction: 'crew' | 'xeno' | 'mutant' | 'none'
   spawn: boolean
   classId: string
+  /** 研究員的博士專長 id（content/classes.ts PHDS；只給本人，其他職業沒有這個欄位）*/
+  phd?: string
   ep: number
   epNext: number
   tier: number

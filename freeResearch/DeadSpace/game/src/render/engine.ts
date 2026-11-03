@@ -14,10 +14,11 @@ import {
   BlendFunction,
   HueSaturationEffect,
   BrightnessContrastEffect,
+  type Pass,
 } from 'postprocessing'
 import { N8AOPostPass } from 'n8ao'
-import { effect } from '@preact/signals'
-import { preset, quality } from './quality'
+import { effect, signal } from '@preact/signals'
+import { autoQuality, preset, quality } from './quality'
 import { fogUniforms } from './materials'
 
 export interface SceneLike {
@@ -29,19 +30,37 @@ export interface SceneLike {
   dispose?(): void
 }
 
+type Grade = NonNullable<SceneLike['grade']>
+const DEFAULT_GRADE: Grade = { hue: 0, sat: 0, bright: 0, contrast: 0.05 }
+
+/** WebGL context 遺失中（驅動重置、GPU 被搶走）：HUD 顯示提示，恢復後自動消失 */
+export const gpuLost = signal(false)
+
+/** N8AO 的全螢幕三角形（copyQuad 等）不在 Pass.dispose 的清單裡，另外釋放 */
+function disposeQuads(p: Pass): void {
+  if (!(p instanceof N8AOPostPass)) return
+  for (const v of Object.values(p as unknown as Record<string, unknown>)) {
+    const q = v as { _mesh?: unknown; dispose?: () => void } | null
+    if (q && typeof q === 'object' && q._mesh && typeof q.dispose === 'function') q.dispose()
+  }
+}
+
 export class Engine {
   readonly renderer: THREE.WebGLRenderer
   private composer: EffectComposer
   private renderPass: RenderPass
   private aoPass: N8AOPostPass | null = null
-  private bloom: BloomEffect
-  private ca: ChromaticAberrationEffect
-  private hue: HueSaturationEffect
-  private bc: BrightnessContrastEffect
-  private vignette: VignetteEffect
+  /** renderPass 以外、由引擎建立的 pass；只在建構與畫質變更時重建（換場景、換 zone 不重建）*/
+  private passes: Pass[] = []
+  private ca: ChromaticAberrationEffect | null = null
+  private hue: HueSaturationEffect | null = null
+  private bc: BrightnessContrastEffect | null = null
   private current: SceneLike | null = null
-  private sc: THREE.Scene = new THREE.Scene()
-  private cm: THREE.Camera = new THREE.PerspectiveCamera()
+  /** 沒有場景時讓 pass 指向空場景，舊場景才能被回收 */
+  private readonly blankScene = new THREE.Scene()
+  private readonly blankCam = new THREE.PerspectiveCamera()
+  private sc: THREE.Scene = this.blankScene
+  private cm: THREE.Camera = this.blankCam
   private raf = 0
   private last = performance.now()
   private t0 = performance.now()
@@ -65,44 +84,71 @@ export class Engine {
     this.renderer.shadowMap.type = THREE.PCFShadowMap
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 0 })
     this.renderPass = new RenderPass(this.sc, this.cm)
-    this.bloom = new BloomEffect({ intensity: 1.1, luminanceThreshold: 0.82, luminanceSmoothing: 0.25, mipmapBlur: true, radius: 0.7 })
-    this.ca = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0, 0), radialModulation: true, modulationOffset: 0.3 })
-    this.hue = new HueSaturationEffect({ hue: 0, saturation: 0 })
-    this.bc = new BrightnessContrastEffect({ brightness: 0, contrast: 0.05 })
-    this.vignette = new VignetteEffect({ offset: 0.3, darkness: 0.62 })
+    // 首次啟動（沒選過畫質）：依 GPU／核心數／記憶體自動選 low 或 medium
+    autoQuality(this.renderer.getContext())
     this.stopQ = effect(() => {
       void quality.value
       this.rebuild()
     })
     window.addEventListener('resize', this.onResize)
+    // three 的 lost handler 已經 preventDefault（瀏覽器才會嘗試恢復）；這裡只更新提示
+    canvas.addEventListener('webglcontextlost', this.onLost)
+    canvas.addEventListener('webglcontextrestored', this.onRestored)
   }
 
+  private onLost = () => {
+    gpuLost.value = true
+  }
+
+  private onRestored = () => {
+    gpuLost.value = false
+  }
+
+  /** 依畫質建立整條後處理鏈：先 dispose 舊的 pass（EffectPass 會連同 effect 一起釋放）再重建 */
   private rebuild(): void {
     const q = preset()
     this.composer.removeAllPasses()
+    for (const p of this.passes) {
+      p.dispose()
+      disposeQuads(p)
+    }
+    this.passes = []
     this.composer.addPass(this.renderPass)
     this.aoPass = null
     if (q.ssao > 0) {
-      this.aoPass = new N8AOPostPass(this.sc, this.cm, 1, 1)
-      this.aoPass.configuration.aoRadius = 1.6
-      this.aoPass.configuration.distanceFalloff = 0.6
-      this.aoPass.configuration.intensity = 2.6
-      this.aoPass.configuration.halfRes = q.ssao < 2
-      this.aoPass.configuration.gammaCorrection = false
-      this.aoPass.setQualityMode(q.ssao < 2 ? 'Low' : 'Medium')
-      this.composer.addPass(this.aoPass)
+      const ao = new N8AOPostPass(this.sc, this.cm, 1, 1)
+      ao.configuration.aoRadius = 1.6
+      ao.configuration.distanceFalloff = 0.6
+      ao.configuration.intensity = 2.6
+      ao.configuration.halfRes = q.ssao < 2
+      ao.configuration.gammaCorrection = false
+      ao.setQualityMode(q.ssao < 2 ? 'Low' : 'Medium')
+      this.aoPass = ao
+      this.passes.push(ao)
     }
-    this.bloom.intensity = 1.1 * q.bloom
+    const bloom = new BloomEffect({ intensity: 1.1 * q.bloom, luminanceThreshold: 0.82, luminanceSmoothing: 0.25, mipmapBlur: true, radius: 0.7 })
+    this.ca = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0, 0), radialModulation: true, modulationOffset: 0.3 })
+    this.hue = new HueSaturationEffect({ hue: 0, saturation: 0 })
+    this.bc = new BrightnessContrastEffect({ brightness: 0, contrast: 0.05 })
+    const vignette = new VignetteEffect({ offset: 0.3, darkness: 0.62 })
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.AGX })
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SCREEN })
     noise.blendMode.opacity.value = 0.035
     const smaa = new SMAAEffect()
     // 卷積類效果（色差、SMAA）各自一個 pass
-    this.composer.addPass(new EffectPass(this.cm, this.bloom, tone, this.hue, this.bc, this.vignette, noise))
-    this.composer.addPass(new EffectPass(this.cm, this.ca))
-    this.composer.addPass(new EffectPass(this.cm, smaa))
+    this.passes.push(new EffectPass(this.cm, bloom, tone, this.hue, this.bc, vignette, noise), new EffectPass(this.cm, this.ca), new EffectPass(this.cm, smaa))
+    for (const p of this.passes) this.composer.addPass(p)
+    this.applyGrade(this.current?.grade)
     this.renderer.shadowMap.enabled = q.shadows > 0
     this.onResize()
+  }
+
+  private applyGrade(g: Grade = DEFAULT_GRADE): void {
+    if (!this.hue || !this.bc) return
+    this.hue.hue = g.hue
+    this.hue.saturation = g.sat
+    this.bc.brightness = g.bright
+    this.bc.contrast = g.contrast
   }
 
   private onResize = () => {
@@ -119,20 +165,41 @@ export class Engine {
     }
   }
 
+  /**
+   * 換場景只換 pass 的 mainScene／mainCamera 與色彩分級，不重建後處理（換 zone 也走這裡，只更新色彩分級）。
+   * 換成另一個場景時釋放舊場景。
+   */
   setScene(s: SceneLike | null): void {
-    if (this.current && this.current !== s) this.current.dispose?.()
-    this.current = s
-    if (!s) return
-    this.sc = s.scene
-    this.cm = s.camera
-    this.renderPass.mainScene = s.scene
-    this.renderPass.mainCamera = s.camera
-    this.rebuild()
-    const g = s.grade ?? { hue: 0, sat: 0, bright: 0, contrast: 0.05 }
-    this.hue.hue = g.hue
-    this.hue.saturation = g.sat
-    this.bc.brightness = g.bright
-    this.bc.contrast = g.contrast
+    if (s !== this.current) {
+      if (this.current) this.current.dispose?.()
+      this.current = s
+      this.sc = s?.scene ?? this.blankScene
+      this.cm = s?.camera ?? this.blankCam
+      this.composer.setMainScene(this.sc)
+      this.composer.setMainCamera(this.cm)
+      if (this.aoPass) {
+        this.aoPass.scene = this.sc
+        this.aoPass.camera = this.cm
+      }
+      if (s) this.onResize()
+    }
+    if (s) this.applyGrade(s.grade)
+  }
+
+  /**
+   * 預先編譯 shader：用後處理實際渲染的 render target（線性輸出色彩空間），編出來的 program 才會在正式渲染時命中快取。
+   * obj 可以是隱藏中的群組；target = 提供燈光的場景。
+   */
+  compileAsync(obj: THREE.Object3D, camera: THREE.Camera, target: THREE.Scene): Promise<unknown> {
+    if (gpuLost.value) return Promise.resolve()
+    const r = this.renderer
+    const prev = r.getRenderTarget()
+    r.setRenderTarget(this.composer.inputBuffer)
+    try {
+      return r.compileAsync(obj, camera, target)
+    } finally {
+      r.setRenderTarget(prev)
+    }
   }
 
   start(): void {
@@ -155,7 +222,7 @@ export class Engine {
       // 受傷色差脈衝
       this.damagePulse = Math.max(0, this.damagePulse - dt * 2.5)
       const o = this.damagePulse * 0.006
-      this.ca.offset.set(o, o * 0.6)
+      this.ca?.offset.set(o, o * 0.6)
       this.composer.render(dt)
     }
     this.raf = requestAnimationFrame(loop)
@@ -170,10 +237,15 @@ export class Engine {
     this.stop()
     this.stopQ()
     window.removeEventListener('resize', this.onResize)
+    this.canvas.removeEventListener('webglcontextlost', this.onLost)
+    this.canvas.removeEventListener('webglcontextrestored', this.onRestored)
     this.current?.dispose?.()
+    this.current = null
+    for (const p of this.passes) disposeQuads(p)
     this.composer.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()
+    gpuLost.value = false
   }
 }
 

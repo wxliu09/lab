@@ -3,7 +3,7 @@ import { SHIPS, SHIP_BY_ID, type ShipDef } from '../../shared/content/ships'
 import type { StationDef } from '../../shared/content/stations/types'
 import { unitDef } from '../../shared/content/registry'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
-import type { Game, GamePlayer } from '../game'
+import { fmtKey, type Game, type GamePlayer } from '../game'
 import { SPACE_ZONE, type Zone } from '../world'
 import { DEATH_HOOKS, damage } from './damage'
 import { regScript } from './effects'
@@ -43,6 +43,8 @@ export interface SpaceState {
 const CONSOLE_R = 1.0
 const BOARD_CD = 8
 const LAUNCH_S = 10
+/** 對停泊的船下互動指令時，離船身多近就登船（movement.ts 的互動指令停在船身外 1.4 公尺）*/
+const BOARD_REACH = 1.6
 
 export function spaceOf(g: Game): SpaceState {
   return (g.data.space ??= { ships: new Map(), pads: new Map(), pilots: new Map(), sunFactor: 1, pods: new Map() }) as SpaceState
@@ -196,17 +198,22 @@ export function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
   // 換手（含交回控制台）時，上一位駕駛進行中的施法一併取消：否則交出去之後技能照樣放出來，算在下一位（或中立）頭上
   vehicle.cast = null
   vehicle.anim = 0
+  // 自動索敵：有人駕駛的站點／船艇會自動攻擊射程內的敵對單位（無人戰機、小行星、海盜等 owner -2；
+  // 和 WC3 玩家單位一樣）。isHostile 只把敵對單位當目標，不會自動打中立或其他玩家的站。交還時恢復原本的設定。
+  if (vehicle.data.acquire0 === undefined) vehicle.data.acquire0 = vehicle.acquire
   if (!pilot) {
     vehicle.owner = NEUTRAL
     vehicle.anon = false
     vehicle.pilot = 0
     // 不要留著上一位駕駛的顏色（小地圖、頭像會以為他還在駕駛）
     vehicle.color = -1
+    vehicle.acquire = !!vehicle.data.acquire0
     return
   }
   const p = g.players[pilot.owner]
   if (!p) return
   sp.pilots.set(vehicle.id, pilot.id)
+  vehicle.acquire = true
   vehicle.owner = pilot.owner
   vehicle.anon = pilot.anon
   vehicle.pilot = pilot.id
@@ -228,13 +235,24 @@ export function stepSpace(g: Game): void {
     for (const inst of sp.ships.values()) {
       const z = w.zones[inst.zone]
       if (!z.alive) continue
-      // 從站內走進停泊的船
+      // 從站內登上停泊的船：只有「目前的指令就是對這艘船互動」的單位會登船（右鍵點船＝走過去登船）；
+      // 只是路過、走去旁邊的販賣機不會被吸進去。互動指令停在船身外約 1.4 公尺，所以觸發距離要涵蓋那裡。
+      // 標本籠沒有指令（被推斥器推過來），維持「推到船邊就上船」（研究 03 §4.5）。
       if (inst.docked) {
         const de = w.get(inst.dockedEnt)
         if (de) {
-          for (const u of w.query(de.zone, de.x, de.y, de.radius + 0.8)) {
+          const boarders: Ent[] = []
+          for (const u of w.query(de.zone, de.x, de.y, de.radius + BOARD_REACH)) {
             if (!canTravel(g, u) || (u.data.boardCd ?? 0) > t) continue
+            const ordered = u.order?.k === 'interact' && u.order.e === de.id
+            const pushedCage = u.owner < 0 && u.tags.has('cage') && Math.hypot(u.x - de.x, u.y - de.y) <= de.radius + 0.8 + u.radius
+            if (ordered || pushedCage) boarders.push(u)
+          }
+          for (const u of boarders) {
+            const followers = u.isMain ? followersOf(g, u) : []
             enterShip(g, u, inst)
+            // 跟著主人的召喚物（變種人眷屬、異形幼體…）一起上船：它們沒辦法另外下指令
+            for (const f of followers) if (canTravel(g, f) && (f.data.boardCd ?? 0) <= t) enterShip(g, f, inst)
           }
         }
       }
@@ -342,6 +360,16 @@ function canTravel(g: Game, u: Ent): boolean {
   return u.owner >= 0 || u.tags.has('cage')
 }
 
+/** 正在跟隨這個主單位的自家召喚物（同一區、5 公尺內）*/
+function followersOf(g: Game, leader: Ent): Ent[] {
+  const out: Ent[] = []
+  for (const e of g.world.query(leader.zone, leader.x, leader.y, 5)) {
+    if (e === leader || e.isMain || !e.alive || e.owner !== leader.owner) continue
+    if (e.order?.k === 'follow' && e.order.e === leader.id) out.push(e)
+  }
+  return out
+}
+
 function enterShip(g: Game, u: Ent, inst: ShipInst): void {
   const z = g.world.zones[inst.zone]
   const exit = z.layout!.exits[0] ?? z.layout!.spawns[0] ?? { x: 3, y: 3 }
@@ -385,7 +413,7 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): vo
   const sp = spaceOf(g)
   const name = z.station?.name.zh ?? z.key
   g.systemAll('space.destroyed', { name })
-  g.log(`${name} 被摧毀`)
+  g.log(fmtKey('tl.destroyed', { nz: name, ne: z.station?.name.en ?? z.key }))
   for (const e of g.world.inZone(zoneId)) {
     e.data.noDrops = true
     if (e.inv) e.inv.fill(null)

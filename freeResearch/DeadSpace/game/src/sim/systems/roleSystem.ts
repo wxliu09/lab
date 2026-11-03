@@ -4,7 +4,7 @@ import { PHDS, SECURITY_SUITS } from '../../shared/content/classes'
 import { evolveChoices } from '../../shared/content/forms'
 import type { Command, EndResult } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
-import type { Faction, Game, GamePlayer } from '../game'
+import { fmtKey, type Faction, type Game, type GamePlayer } from '../game'
 import { DAMAGE_HOOKS, DEATH_HOOKS } from './damage'
 import { applyBuff } from './buffs'
 import { dropOnGround, giveItem, makeItem, morph } from './items'
@@ -181,23 +181,23 @@ function announceDeath(g: Game, p: GamePlayer): void {
     // -status 只依公告過的死亡回答（chat.ts）
     g.data.mutantDeathAnnounced = true
     g.systemAll('death.mutant', { name: p.name })
-    g.log(`${p.name}（變種人）死亡`)
+    g.log(fmtKey('tl.death.mutant', { name: p.name }))
   } else if (p.role === 'xeno' && !p.spawnOf) {
     g.data.xenoDeathAnnounced = true
     g.systemAll('death.xeno')
-    g.log(`${p.name}（異形）死亡`)
+    g.log(fmtKey('tl.death.xeno', { name: p.name }))
   } else if (p.spawnOf === 'xeno') {
     g.systemAll('death.xenoSpawn')
-    g.log(`${p.name}（異形 spawn）死亡`)
+    g.log(fmtKey('tl.death.xenoSpawn', { name: p.name }))
   } else if (p.spawnOf === 'mutant') {
     g.systemAll('death.mutantSpawn')
-    g.log(`${p.name}（變種人 spawn）死亡`)
+    g.log(fmtKey('tl.death.mutantSpawn', { name: p.name }))
   } else if (p.role === 'android') {
     g.systemAll('death.android')
-    g.log(`${p.name}（仿生人）損毀`)
+    g.log(fmtKey('tl.death.android', { name: p.name }))
   } else {
     g.systemAll('death.innocent')
-    g.log(`${p.name} 遇害`)
+    g.log(fmtKey('tl.death.crew', { name: p.name }))
   }
 }
 
@@ -258,7 +258,7 @@ export function installRoles(g: Game): void {
       for (const q of g.allPlayers()) {
         if (q.slot !== slot && q.alive && g.faction(q) === f) g.privateLine(q.slot, 'role.gotSpawn', { name: p.name })
       }
-      g.log(`${p.name} 被轉化為${f === 'xeno' ? '異形' : '變種人'} spawn`)
+      g.log(fmtKey(f === 'xeno' ? 'tl.convert.xeno' : 'tl.convert.mutant', { name: p.name }))
       g.emitFx({ k: 'infect', z: pos.zone, x: pos.x, y: pos.y, e: u.id })
       g.checkVictory()
       return u
@@ -342,8 +342,9 @@ export function installRoles(g: Game): void {
     }
     g.after(LAST_WORDS, () => {
       if (p.alive) return
-      g.privateLine(p.slot, p.role === 'android' ? 'death.youAndroid' : 'death.you')
+      // 先判定是否出局：死亡即退出模式下，出局的人不能觀戰，不要再叫他「留下來觀戰」
       bootIfOut(g, p)
+      g.privateLine(p.slot, p.data.booted ? 'death.youBooted' : p.role === 'android' ? 'death.youAndroid' : 'death.you')
       g.checkVictory()
     })
   }
@@ -538,7 +539,7 @@ function finishEvolution(g: Game, p: GamePlayer, cur: Ent, formId: string): void
   g.emitFx({ k: 'evolved', z: u.zone, x: u.x, y: u.y, e: u.id, s: formId })
   if (form.faction === 'xeno') g.systemAll('role.xenoEvolved')
   else if (form.faction === 'mutant') g.systemAll('role.mutantEvolved')
-  g.log(`${p.name} 進化為 ${form.id}`)
+  g.log(fmtKey('tl.evolve', { name: p.name, unit: form.unit }))
   // spawn 跟著換型（異形：正在異形形態的 spawn；變種人：全部）
   const f = form.faction === 'android' ? null : form.faction
   if (f && form.spawnUnit && UNITS.has(form.spawnUnit)) {

@@ -1,8 +1,11 @@
 // 主機主執行緒的轉送層：遠端 peer ⇄ Sim Worker ⇄ 本機 client。只做事件驅動的轉送，不碰遊戲邏輯。
 import { Emitter, type PeerId, type Transport } from './transport'
+import { encode } from '../shared/protocol/codec'
 
 export const LOCAL = 'local'
 export const HOST_PEER = 'host'
+/** 主機模擬出現不可恢復的錯誤時，送給所有人（含主機自己）的 notice key；HUD 的 Banner 據此顯示並提供回主選單 */
+export const SIM_ERROR_KEY = 'net.simError'
 
 /** 本機 client 用的 transport（postMessage 到 worker）*/
 export class LocalTransport implements Transport {
@@ -33,12 +36,17 @@ export class LocalTransport implements Transport {
 type WorkerOut =
   | { t: 'out'; batch: [string, Uint8Array][] }
   | { t: 'hookResult'; id: number; result: unknown }
-  | { t: 'stat'; tickMs: number }
+  | { t: 'stat'; tickMs: number; errs?: number }
+  | { t: 'fatal'; msg: string }
 
 export class HostRelay {
   readonly worker: Worker
   readonly local: LocalTransport
   tickMs = 0
+  /** worker 回報的例外累計（已被吞掉、沒有卡死整局的）*/
+  simErrors = 0
+  /** 已經通知過「主機模擬錯誤」*/
+  failed = false
   private hookWaiters = new Map<number, (r: unknown) => void>()
   private hookSeq = 1
   private closed = false
@@ -51,6 +59,11 @@ export class HostRelay {
   ) {
     this.worker = new Worker(new URL('../sim/worker.ts', import.meta.url), { type: 'module', name: 'sim' })
     this.worker.onmessage = (ev: MessageEvent<WorkerOut>) => this.fromWorker(ev.data)
+    // worker 內未捕捉的例外（載入失敗、初始化失敗…）：模擬已經停了
+    this.worker.onerror = (ev) => {
+      ev.preventDefault()
+      this.fail(ev.message || 'worker error')
+    }
     this.worker.postMessage({ t: 'init', code, seed })
     this.local = new LocalTransport(this)
     this.worker.postMessage({ t: 'join', peer: LOCAL })
@@ -81,7 +94,20 @@ export class HostRelay {
     } else if (m.t === 'hookResult') {
       this.hookWaiters.get(m.id)?.(m.result)
       this.hookWaiters.delete(m.id)
-    } else if (m.t === 'stat') this.tickMs = m.tickMs
+    } else if (m.t === 'stat') {
+      this.tickMs = m.tickMs
+      this.simErrors = m.errs ?? 0
+    } else if (m.t === 'fatal') this.fail(m.msg)
+  }
+
+  /** 不可恢復：告訴所有人（走一般的 notice 訊息，客人端照常由 session 接收）*/
+  private fail(why: string): void {
+    if (this.closed || this.failed) return
+    this.failed = true
+    console.error('[host] 主機模擬錯誤', why)
+    const data = encode({ t: 'notice', key: SIM_ERROR_KEY })
+    this.local.msgEv.emit(HOST_PEER, data)
+    this.net?.broadcast(data)
   }
 
   /** 測試掛勾（Playwright 用；正式 build 不會呼叫）*/

@@ -15,6 +15,8 @@ async function startSolo(page: Page): Promise<void> {
 async function closeReveal(page: Page): Promise<void> {
   const r = page.getByTestId('reveal')
   if (await r.isVisible()) await r.click({ timeout: 5000 }).catch(() => {})
+  // 機器很忙時點擊可能逾時（或揭露畫面在檢查之後才出現）：再用空白鍵關一次（揭露畫面在 capture 階段處理空白鍵）
+  if (await r.isVisible()) await page.keyboard.press('Space')
   await expect(r).toHaveCount(0, { timeout: 35000 })
 }
 

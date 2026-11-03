@@ -4,13 +4,14 @@ import { signal } from '@preact/signals'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { NoteMark } from '../../shared/protocol/messages'
 import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
-import { modalChecks, typingInField } from '../../client/input'
-import { t } from '../i18n'
+import { dialogOpen, panelChecks, typingInField } from '../../client/input'
+import { listJoin, t } from '../i18n'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
 
 export const notesOpen = signal(false)
-modalChecks.push(() => notesOpen.value)
+// 筆記是側邊面板：開著時照樣能用快捷鍵操作，只停用邊緣捲動
+panelChecks.push(() => notesOpen.value)
 /** 正在看的監視器畫面（覆寫鏡頭所在 zone）*/
 export const feedView = signal<{ id: number; zone: number; x: number; y: number } | null>(null)
 
@@ -27,6 +28,8 @@ export function NotesPanel() {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.code === 'Tab' && !typingInField()) {
+        // 設定、圖鑑等對話框開著時，Tab 留給對話框移動焦點，不要開關筆記
+        if (dialogOpen()) return
         e.preventDefault()
         notesOpen.value = !notesOpen.value
       } else if (e.code === 'Escape' && notesOpen.value && !typingInField()) {
@@ -49,7 +52,7 @@ export function NotesPanel() {
   // 死者與旁觀者看得到全場：不能把筆記分享出去（server 也會擋給活人的分享），自己的筆記照樣可以編輯
   const canShare = me.alive !== false
   return (
-    <div class="panel" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
+    <div class="panel solid" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
       <h2>{t('notes.title')}</h2>
       <div class="col" style={{ gap: '5px' }}>
         {players
@@ -120,11 +123,11 @@ export function NotesPanel() {
           <div class="sep" />
           <h3>{t('notes.git')}</h3>
           {reports.map((r, i) => (
-            <div key={i} style={{ fontSize: '12px', padding: '3px 0' }}>
+            <div key={i} style={{ fontSize: '13px', padding: '3px 0' }}>
               <span class="mono dim">
                 {Math.floor(r.time / 60)}:{String(Math.floor(r.time % 60)).padStart(2, '0')}
               </span>{' '}
-              {r.names.join('、')} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
+              {listJoin(r.names)} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
             </div>
           ))}
         </>
@@ -137,8 +140,10 @@ export function NotesPanel() {
             const from = players.find((p) => p.slot === n.from)
             const about = players.find((p) => p.slot === n.slot)
             return (
-              <div key={i} style={{ fontSize: '12px' }}>
-                <b>{from?.name}</b>：{about?.name} — {t('notes.mark.' + n.mark)} {n.text}
+              <div key={i} style={{ fontSize: '13px' }}>
+                <b>{from?.name}</b>
+                {t('sep.colon')}
+                {about?.name} — {t('notes.mark.' + n.mark)} {n.text}
               </div>
             )
           })}

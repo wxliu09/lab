@@ -192,6 +192,8 @@ export interface AbilityDef {
 export interface BuffDef {
   id: string
   name: Loc
+  /** 狀態說明（滑鼠移到狀態圖示上顯示；選填）*/
+  desc?: Loc
   icon: string
   /** 是否對其他玩家可見（感染類 buff 只給本人與施放者陣營）*/
   vis: 'all' | 'self' | 'casterFaction'

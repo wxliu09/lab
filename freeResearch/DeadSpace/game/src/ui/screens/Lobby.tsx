@@ -6,6 +6,7 @@ import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRul
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
+import { textColorOf } from '../names'
 import '../lobby2.css'
 
 // 身分預覽：規則在 shared/roleRules.ts（與 sim 共用）
@@ -201,7 +202,7 @@ export function Lobby() {
             <b>{t('lobby2.roles.title')}</b>
             <span class="dim">
               {t('lobby2.roles.count', { n })}
-              {s.hostSpectate ? `（${t('lobby2.roles.hostOut')}）` : ''}
+              {s.hostSpectate ? t('sep.paren', { s: t('lobby2.roles.hostOut') }) : ''}
             </span>
             <span class="tipmark" aria-hidden="true">
               ?
@@ -270,7 +271,7 @@ export function Lobby() {
             {lines.length === 0 && <div class="dim">{t('lobby2.chatEmpty')}</div>}
             {lines.map((l, i) => (
               <div key={i}>
-                <b style={{ color: PLAYER_COLORS[l.color]?.hex }}>{l.from}</b>: {sysText(l.text)}
+                <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{l.from}</b>: {sysText(l.text)}
               </div>
             ))}
           </div>

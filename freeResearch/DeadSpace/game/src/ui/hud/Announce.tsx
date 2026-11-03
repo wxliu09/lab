@@ -1,6 +1,9 @@
 // 公告：全場系統訊息（事件、末日、身分公告、站點被毀…）在畫面上方中央放大顯示；
 // 給自己的私人訊息（互動結果、錯誤）在 HUD 上方中央短暫顯示，不必盯著左下角的聊天紀錄。
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { createPortal } from 'preact/compat'
+import { signal } from '@preact/signals'
+import type { ComponentChildren } from 'preact'
 import { chatTaps, screen, snapTick, world } from '../../client/session'
 import { localNotice } from '../../client/input'
 import type { ChatLine } from '../../shared/protocol/messages'
@@ -19,6 +22,22 @@ interface Item {
 const ERR = /^@(cast\.|vendor\.(soldOut|tooFar|offline|noPower)|item\.(full|uniqueOnly|cantSuit|notYet|deployFail)|role\.cant|chat\.(no|nameTaken)|git\.msg\.already|fac\.(tooFar|offline))/
 
 let seq = 0
+
+/** 上方中央堆疊容器裡給其他提示（瞄準、投票）用的插槽：由 Announcements 掛上，其他元件用 TopSlot 放進來 */
+const topSlots = signal<HTMLElement | null>(null)
+const setTopSlots = (el: HTMLElement | null) => {
+  if (topSlots.peek() !== el) topSlots.value = el
+}
+
+/**
+ * 放進上方中央的堆疊容器（在公告上面，依 order 由上往下排），不必各自用絕對定位互相閃躲。
+ * GameScreen 照舊各自渲染這些元件；容器還沒掛上時先不顯示。
+ */
+export function TopSlot({ order, children }: { order: number; children: ComponentChildren }) {
+  const el = topSlots.value
+  if (!el) return null
+  return createPortal(<div style={{ order }}>{children}</div>, el)
+}
 
 function classify(l: ChatLine): Item['kind'] | null {
   const raw = l.text ?? ''
@@ -40,7 +59,7 @@ export function Announcements() {
       const add: Item[] = []
       // 死因（最多 3 行：擊殺者＋最近的傷害來源）合併成一則，不要連跳三個提示
       const death = lines.filter((l) => l.ch === 'private' && /^@death\.(cause|hit)\./.test(l.text ?? ''))
-      if (death.length) add.push({ id: ++seq, text: death.map((l) => sysText(l.text)).join('　'), kind: 'sys', until: now + 9000, life: 9000 })
+      if (death.length) add.push({ id: ++seq, text: death.map((l) => sysText(l.text)).join(t('sep.wide')), kind: 'sys', until: now + 9000, life: 9000 })
       for (const l of lines) {
         if (death.includes(l)) continue
         const kind = classify(l)
@@ -92,16 +111,19 @@ export function Announcements() {
   const small = items.filter((x) => x.kind === 'ok' || x.kind === 'err').slice(-3)
   return (
     <>
-      {big.length > 0 && (
-        <div class="announce" data-testid="announce">
-          {big.map((x) => (
-            <div key={x.id} class={'announce-line ' + x.kind} style={{ '--life': `${x.life}ms` }}>
-              <span class="announce-tag">{t(x.kind === 'apoc' ? 'announce.apoc' : x.kind === 'event' ? 'announce.event' : 'announce.sys')}</span>
-              <span>{x.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div class="top-stack">
+        <div class="top-slots" ref={setTopSlots} />
+        {big.length > 0 && (
+          <div class="announce" data-testid="announce">
+            {big.map((x) => (
+              <div key={x.id} class={'announce-line ' + x.kind} style={{ '--life': `${x.life}ms` }}>
+                <span class="announce-tag">{t(x.kind === 'apoc' ? 'announce.apoc' : x.kind === 'event' ? 'announce.event' : 'announce.sys')}</span>
+                <span>{x.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {small.length > 0 && (
         <div class="action-toast" data-testid="action-toast">
           {small.map((x) => (

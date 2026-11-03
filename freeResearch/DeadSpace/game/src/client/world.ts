@@ -20,6 +20,7 @@ export interface CEnt {
 }
 
 export const INTERP_DELAY = 0.1
+const GONE_MAX = 256
 
 export class ClientWorld {
   ents = new Map<number, CEnt>()
@@ -32,11 +33,13 @@ export class ClientWorld {
   offset = 0
   private hasOffset = false
   fxQueue: FxEvent[] = []
-  /** 消失的實體（給 render 淡出／死亡動畫）*/
+  /** 消失的實體（給 render 淡出／死亡動畫）；目前沒有消費者，只保留最近 GONE_MAX 筆 */
   goneQueue: number[] = []
   bubbles: { e: number; text: string; until: number; color: number }[] = []
   tick = 0
   snapCount = 0
+  /** 最近一次收到快照的本地時間（performance.now，ms；0 = 這局還沒收到）：偵測主機卡住 */
+  lastSnapAt = 0
   onFx: ((f: FxEvent) => void) | null = null
   /** 其他模組（音訊導演）旁聽特效事件 */
   readonly fxTaps: ((f: FxEvent) => void)[] = []
@@ -48,10 +51,17 @@ export class ClientWorld {
     this.vs = []
     this.w = {}
     this.hasOffset = false
+    this.goneQueue.length = 0
+    this.lastSnapAt = 0
   }
 
   now(): number {
     return performance.now() / 1000
+  }
+
+  /** 主機是否超過 ms 沒送快照（since = 這局開始等待的時間，還沒收到第一份快照時用）*/
+  snapStale(now: number, since: number, ms: number): boolean {
+    return now - (this.lastSnapAt || since) > ms
   }
 
   /** 目前要顯示的 server 時間 */
@@ -69,9 +79,11 @@ export class ClientWorld {
     this.serverTime = s.time
     this.tick = s.tick
     this.snapCount++
+    this.lastSnapAt = performance.now()
     for (const id of s.g) {
       if (this.ents.delete(id)) this.goneQueue.push(id)
     }
+    if (this.goneQueue.length > GONE_MAX) this.goneQueue.splice(0, this.goneQueue.length - GONE_MAX)
     for (const d of s.e) {
       let c = this.ents.get(d.i)
       if (!c) {

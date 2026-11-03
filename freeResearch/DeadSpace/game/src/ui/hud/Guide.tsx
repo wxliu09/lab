@@ -7,16 +7,27 @@ import type { PrivateState, WorldPublic } from '../../shared/protocol/messages'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { snapTick, startInfo, world } from '../../client/session'
-import { chatOpen, evolveOpen, modalChecks, typingInField } from '../../client/input'
+import { chatOpen, dialogOpen, evolveOpen, modalChecks, typingInField } from '../../client/input'
 import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
-import { addStrings, hasString, lang, loc, t } from '../i18n'
+import { addStrings, hasString, lang, listJoin, loc, t } from '../i18n'
+import { PLAYER_COLORS } from '../../shared/constants'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
+import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import '../guide.css'
 
 addStrings(GUIDE_ZH, GUIDE_EN)
+// 第 1 輪玩法修正的字串（AI 驗血公告、進化原因、感染提示、博士專長）；i18n.ts 也會註冊時重複無妨
+addStrings(PLAY1_ZH, PLAY1_EN)
+
+/** 研究員的博士專長：「名稱（效果）」；不是研究員回傳空字串（只讀自己的私有狀態）*/
+export function phdText(me: Partial<PrivateState>, fmt = 'play1.phd'): string {
+  const bd = me.phd ? buffDef('cls.phd.' + me.phd) : undefined
+  if (!bd) return ''
+  return t(fmt, { name: loc(bd.name), desc: loc(bd.desc) })
+}
 
 // ───────── 偏好（localStorage）─────────
 
@@ -270,10 +281,12 @@ const SAMPLER_AT = 420
 function classStep(me: Partial<PrivateState>, v: GuideView): Step | null {
   const c = CLASSES.get(me.classId ?? '')
   if (!c) return null
-  // 職業特色的短句（標題已經寫了職業名）；沒有短句就用內容表的說明
-  const phd = (v.self?.b ?? []).find((b) => b.startsWith('cls.phd.'))
+  // 職業特色的短句（標題已經寫了職業名）；沒有短句就用內容表的說明。
+  // 博士專長以被動套用、不在自己單位的 buff 清單裡，改讀私有狀態的 phd（只給本人）
+  void v
+  const phd = phdText(me)
   const short = 'guide.cls.' + c.id + (phd ? 'Phd' : '')
-  const desc = hasString(lang.value, short) ? t(short, { phd: phd ? loc(buffDef(phd)?.name) : '' }) : loc(c.desc)
+  const desc = hasString(lang.value, short) ? t(short, { phd }) : loc(c.desc)
   return { key: 'guide.s.class', args: { cls: loc(c.name), desc }, dim: true }
 }
 
@@ -283,8 +296,9 @@ export function objectiveFor(v: GuideView): Objective | null {
   if (!id) return null
   const steps: Step[] = []
   const add = (key: string, args?: Step['args']) => steps.push({ key, args })
-  const ep = (me.epNext ?? 0) > 0 ? { ep: me.ep ?? 0, next: me.epNext!, ready: (me.canEvolve?.length ?? 0) > 0 } : undefined
-  const ready = (me.canEvolve?.length ?? 0) > 0
+  // 正在進化（結繭、肉團）時不再顯示「可以進化」
+  const ready = (me.canEvolve?.length ?? 0) > 0 && !me.evolving
+  const ep = (me.epNext ?? 0) > 0 ? { ep: me.ep ?? 0, next: me.epNext!, ready } : undefined
   const time = v.w.t ?? 0
   let sub: string | undefined
   switch (id) {
@@ -301,7 +315,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
-        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: names.join('、') })
+        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names) })
         else add('guide.s.samplerUse', { k: smp + 1 })
       } else if (time < SAMPLER_AT && !samplerInStock()) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
       else add('guide.s.samplerGet')
@@ -337,7 +351,8 @@ export function objectiveFor(v: GuideView): Objective | null {
       else if (ready) add(tier === 0 ? 'guide.s.evolvePath' : 'guide.s.evolveMutant')
       const kd = abilityKey(me, 'mut.devour')
       if (tier === 0) {
-        add('guide.s.hide')
+        // 肉團（進化中）已經現形，不再叫他保持偽裝
+        if (!me.evolving) add('guide.s.hide')
         if (kd !== null) add('guide.s.devour', { k: keyText(kd) })
         add('guide.s.dmgEp')
       } else {
@@ -377,6 +392,12 @@ export function objectiveFor(v: GuideView): Objective | null {
       break
     }
     case 'dead':
+      // 死亡即退出：已出局，不能觀戰
+      if (me.booted) {
+        add('guide3.s.booted')
+        add('guide3.s.bootedLeave')
+        break
+      }
       add('guide.s.specPick')
       add('guide.s.deadChat')
       add('guide.s.slug')
@@ -394,7 +415,8 @@ export function objectiveFor(v: GuideView): Objective | null {
       break
   }
   const live = id === 'xeno' || id === 'mutant' || id === 'android'
-  return { id, goal: 'guide.goal.' + id, sub, steps: steps.slice(0, 4), ep: live ? ep : undefined }
+  const goal = id === 'dead' && me.booted ? 'guide3.goal.booted' : 'guide.goal.' + id
+  return { id, goal, sub, steps: steps.slice(0, 4), ep: live ? ep : undefined }
 }
 
 // ───────── 情境提示的觸發條件（純函式）─────────
@@ -427,7 +449,7 @@ export function detectHints(v: GuideView): Hint[] {
   const add = (hid: string, pri: number, args?: Hint['args']) => out.push({ id: hid, pri, args })
   const time = v.w.t ?? 0
   if (id === 'spectator') add('spectate', 4)
-  if (id === 'dead') add('death', 0)
+  if (id === 'dead' && !me.booted) add('death', 0)
   if (id === 'deadAndroid') add('deathAndroid', 0)
   const alive = me.alive !== false && id !== 'spectator' && id !== 'dead' && id !== 'deadAndroid'
   if (!alive) return out
@@ -460,7 +482,7 @@ export function detectHints(v: GuideView): Hint[] {
     add('androidFf', 20)
     if ((me.epNext ?? 0) > 0 && (me.ep ?? 0) >= (me.epNext ?? 0) && !me.canEvolve?.length) add('androidFull', 5)
   }
-  if (me.canEvolve?.length && (id === 'xeno' || id === 'mutant' || id === 'android')) add(id === 'xeno' ? 'evolveXeno' : id === 'mutant' ? 'evolveMutant' : 'evolveAndroid', 3)
+  if (me.canEvolve?.length && !me.evolving && (id === 'xeno' || id === 'mutant' || id === 'android')) add(id === 'xeno' ? 'evolveXeno' : id === 'mutant' ? 'evolveMutant' : 'evolveAndroid', 3)
   // 背包
   if ((me.inv ?? []).some(Boolean)) add('item', 25)
   const suitAt = invSlot(me, isSuitItem)
@@ -477,6 +499,11 @@ export function detectHints(v: GuideView): Hint[] {
   const mhp = v.self?.mhp ?? 0
   // 低血量：背包有醫療品才叫他用背包裡的，沒有就指向醫療補給／醫護兵
   if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add(invSlot(me, (i) => itemDef(i)?.cat === 'medical') >= 0 ? 'lowHp' : 'lowHpNoKit', 1)
+  // 被寄生／感染朊毒（自己的狀態清單本來就看得到）：人類死時會被轉化，教他用抗體包
+  if (id === 'human') {
+    const inf = (v.self?.b ?? []).map((b) => buffDef(b)?.infection).find((x) => x === 'parasite' || x === 'prion')
+    if (inf) add(inf === 'parasite' ? 'parasited' : 'prioned', 1)
+  }
   if (me.zone === 0) add('space', 23)
   else if (v.zoneStation?.startsWith('ship:')) add('shipInside', 23)
   if (me.fac) add('facility', 26)
@@ -587,13 +614,15 @@ const HINT_ICON: Record<string, string> = {
   rummage: 'gear',
   lowHp: 'heal',
   lowHpNoKit: 'heal',
+  parasited: 'infect',
+  prioned: 'infect',
   death: 'skull',
   deathAndroid: 'core',
   notes: 'info',
   stab: 'clock',
 }
 
-const WARN_HINTS = new Set(['lowHp', 'death', 'deathAndroid', 'stab', 'androidFf'])
+const WARN_HINTS = new Set(['lowHp', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
 
 /** 說明面板：各身分的玩法要點 */
 export const ROLE_TIPS: Record<Identity, string[]> = {
@@ -608,12 +637,8 @@ export const ROLE_TIPS: Record<Identity, string[]> = {
   spectator: ['spectator.1', 'spectator.2', 'spectator.3'],
 }
 
-/** 小地圖圖例：顏色與 Hud.tsx 的 Minimap 一致 */
+/** 小地圖圖例：單位的畫法見 Hud.tsx 的 drawMinimapUnit，設施顏色見 poiColor（單位四項另外畫，見 MapLegend）*/
 const MAP_LEGEND: [color: string, key: string, dot: boolean][] = [
-  ['#9fe7ff', 'self', true],
-  ['#ffb000', 'players', true],
-  ['#ff3b3b', 'hostile', true],
-  ['#cfd8df', 'other', true],
   ['#ffc23d', 'door', false],
   ['#7fd8ff', 'console', false],
   ['#ff7fa0', 'medical', false],
@@ -650,6 +675,8 @@ export function Guide() {
       }
       if (e.code !== 'KeyG' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
       if (typingInField() || chatOpen.value || codexOpen.value) return
+      // 其他對話框（設定、遊戲選單、進化）開著時不疊開說明
+      if (!guideOpen.value && dialogOpen()) return
       e.preventDefault()
       guideOpen.value = !guideOpen.value
     }
@@ -778,12 +805,13 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
   return (
     <div class={'panel guide-obj' + (fold ? ' folded' : '') + (squeeze && !fold ? ' sq' + squeeze : '')} data-testid="guide-objectives" style={{ '--gc': accent, '--gt': text }}>
       <div class="guide-head">
-        <span class="guide-role" data-testid="guide-role">
-          {t('guide.id.' + obj.id)}
+        <span class="guide-title">
+          <span class="guide-role" data-testid="guide-role">
+            {t('guide.id.' + obj.id)}
+          </span>
+          {obj.sub && <span class="guide-sub">{obj.sub}</span>}
+          {(fold || squeeze > 0) && ep && <span class="guide-sub mono">{t('guide.ep', { ep: ep.ep, next: ep.next })}</span>}
         </span>
-        {obj.sub && <span class="guide-sub">{obj.sub}</span>}
-        {(fold || squeeze > 0) && ep && <span class="guide-sub mono">{t('guide.ep', { ep: ep.ep, next: ep.next })}</span>}
-        <span class="grow" />
         <button class="small ghost guide-btn" data-testid="guide-help-btn" onClick={() => (guideOpen.value = !guideOpen.value)} {...tipProps(() => ({ title: t('guide.btn.helpTip'), tag: 'G' }))}>
           {t('guide.btn.help')}
         </button>
@@ -819,14 +847,76 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
   )
 }
 
+/** 小地圖圖例：單位四項照 drawMinimapUnit 的實際畫法（形狀＋外框），設施照 poiColor */
+function MapLegend() {
+  const me = world.me
+  const mine = startInfo.value?.players.find((p) => p.slot === me.slot)?.color
+  const myColor = mine !== undefined ? (PLAYER_COLORS[mine]?.hex ?? '#cfd8df') : '#cfd8df'
+  return (
+    <div class="guide-legend" data-testid="guide-legend">
+      <div>
+        <i class="guide-sw dot mm-self" style={{ background: myColor }} />
+        {t('guide3.map.selfRing')}
+      </div>
+      <div>
+        <i class="guide-sw dot mm-players" />
+        {t('guide3.map.playersDot')}
+      </div>
+      <div>
+        <i class="guide-sw mm-hostile" />
+        {t('guide3.map.hostileDiamond')}
+      </div>
+      <div>
+        <i class="guide-sw dot mm-other" />
+        {t('guide3.map.otherDot')}
+      </div>
+      {MAP_LEGEND.map(([col, k, dot]) => (
+        <div key={k}>
+          <i class={'guide-sw' + (dot ? ' dot' : '')} style={{ background: col }} />
+          {t('guide.map.' + k)}
+        </div>
+      ))}
+      <div>
+        <i class="guide-sw frame" />
+        {t('guide.map.view')}
+      </div>
+    </div>
+  )
+}
+
 function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
   const close = () => (guideOpen.value = false)
   const me = v.me
-  const tips = id ? ROLE_TIPS[id].map((k) => t('guide.r.' + k)) : []
+  const booted = id === 'dead' && !!me.booted
+  const tips = id ? (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k)) : []
   const c = CLASSES.get(me.classId ?? '')
   if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
     tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc: loc(c.desc) }))
+    const phd = phdText(me, 'play1.help.phd')
+    if (phd) tips.push(phd)
   }
+  // 放不下要捲動時，在底部顯示明顯的捲動提示（捲到底就收起來）
+  const body = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  const check = () => {
+    const el = body.current
+    if (el) setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 4)
+  }
+  useLayoutEffect(check)
+  useEffect(() => {
+    // 視窗或介面縮放改變（--ui-zoom 不會觸發 resize）時重新判斷
+    const el = body.current
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
+    if (el && ro) {
+      ro.observe(el)
+      for (const c of el.children) ro.observe(c)
+    }
+    window.addEventListener('resize', check)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', check)
+    }
+  }, [])
   return (
     <div class="guide-help-back" onClick={(e) => e.target === e.currentTarget && close()}>
       <div class="panel guide-help" data-testid="guide-help" role="dialog" aria-label={t('guide.help.title')}>
@@ -837,7 +927,7 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
             {t('guide.btn.close')} ✕
           </button>
         </div>
-        <div class="guide-help-body">
+        <div class="guide-help-body" ref={body} onScroll={check}>
           <div class="guide-col">
             <section>
               <h3>{t('guide.help.controls')}</h3>
@@ -864,27 +954,8 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
             )}
             <section>
               <h3>{t('guide.help.map')}</h3>
-              <div class="guide-legend">
-                {MAP_LEGEND.map(([col, k, dot]) => (
-                  <div key={k}>
-                    <i class={'guide-sw' + (dot ? ' dot' : '') + (k === 'self' ? ' big' : '')} style={{ background: col }} />
-                    {t('guide.map.' + k)}
-                  </div>
-                ))}
-                <div>
-                  <i class="guide-sw frame" />
-                  {t('guide.map.view')}
-                </div>
-              </div>
+              <MapLegend />
               <p class="dim">{t('guide.map.space')}</p>
-            </section>
-            <section>
-              <h3>{t('guide.help.more')}</h3>
-              <ul class="guide-list">
-                <li>{t('guide.more.codex')}</li>
-                <li>{t('guide.more.chat')}</li>
-                <li>{t('guide.more.tips')}</li>
-              </ul>
             </section>
           </div>
           <div class="guide-col">
@@ -901,7 +972,15 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
             </section>
           </div>
         </div>
-        <div class="dim guide-help-foot">{t('guide.help.foot')}</div>
+        {more && (
+          <div class="guide-help-more" data-testid="guide-help-more" aria-hidden="true">
+            <span>▼ {t('guide3.help.scroll')}</span>
+          </div>
+        )}
+        <div class="dim guide-help-foot">
+          <span>{t('guide3.help.moreLine')}</span>
+          <span>{t('guide.help.foot')}</span>
+        </div>
       </div>
     </div>
   )

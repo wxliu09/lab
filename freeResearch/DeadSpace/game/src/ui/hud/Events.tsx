@@ -18,9 +18,9 @@ export function EnhancerPanel() {
   void snapTick.value
   if (!world.me.enh) return null
   return (
-    <div class="panel" data-testid="enhancer" style={{ position: 'absolute', left: '50%', top: '30%', transform: 'translateX(-50%)', padding: '14px 16px', width: '360px' }}>
+    <div class="panel solid" data-testid="enhancer" style={{ position: 'absolute', left: '50%', top: '30%', transform: 'translateX(-50%)', padding: '14px 16px', width: '360px' }}>
       <h2 style={{ marginTop: 0 }}>{t('enh.title')}</h2>
-      <div class="dim" style={{ fontSize: '12px', marginBottom: '10px' }}>
+      <div class="dim" style={{ fontSize: '13px', marginBottom: '10px' }}>
         {t('enh.hint')}
       </div>
       <div class="col" style={{ gap: '6px' }}>

@@ -5,7 +5,7 @@ import { EntFlag } from '../shared/protocol/messages'
 import { UNITS } from '../shared/content/registry'
 import type { ClientWorld } from '../client/world'
 import type { GameScene } from './gameScene'
-import { loc, t } from '../ui/i18n'
+import { loc, sysText, t } from '../ui/i18n'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
@@ -242,7 +242,9 @@ export class Overlay {
     return { l: sx - half, r: sx + half, t: sy - r - 42 * z, b: sy + r }
   }
 
-  private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, text: string, z = 1): void {
+  private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, raw: string, z = 1): void {
+    // AI 的公告發言是系統 key 形式（`@key|k=v`），依目前語言解碼
+    const text = sysText(raw)
     ensureGlyphs(text)
     x.font = `${Math.round(14 * z)}px "Noto Sans TC", sans-serif`
     const t = text.length > 40 ? text.slice(0, 40) + '…' : text

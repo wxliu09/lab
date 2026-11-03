@@ -1,6 +1,10 @@
 // 程序化貼圖：載入時用 canvas 生成並快取（美術聖經 §6：底色變化、粗糙度變化、邊緣磨損）
 import * as THREE from 'three'
 
+/**
+ * 貼圖快取。albedo 依色調各一張（key 含 tint）；粗糙度與法線跟色調無關，以「種類＋variant＋seed」為 key 共用
+ * （同一組雜訊、同一套接縫，不同色調的地板／牆板／金屬共用同一張法線與粗糙度，GPU 記憶體約省 2/3）。
+ */
 const cache = new Map<string, THREE.Texture>()
 
 /** 貼圖庫快取的共用貼圖：釋放站點時不能 dispose */
@@ -61,6 +65,39 @@ function noiseField(size: number, oct: number, seed: number, base = 4): Float32A
   return f
 }
 
+/**
+ * 站內常用、色調很多的貼圖（地板、牆板、金屬、布料）的雜訊場保留起來：同一組 seed 換色調時不用重算 fbm。
+ * 組合是程式裡寫死的幾種 seed，總量約 6 MB。唯讀使用。
+ */
+const fields = new Map<string, Float32Array>()
+function field(size: number, oct: number, seed: number, base = 4): Float32Array {
+  const k = `${size}:${oct}:${seed}:${base}`
+  let f = fields.get(k)
+  if (!f) {
+    f = noiseField(size, oct, seed, base)
+    fields.set(k, f)
+  }
+  return f
+}
+
+/** 共用的粗糙度＋法線（沒有就回傳 null，由呼叫端產生後 putDetail）*/
+function getDetail(dkey: string): { roughnessMap: THREE.Texture; normalMap: THREE.Texture } | null {
+  const r = cache.get(dkey + ':r')
+  const n = cache.get(dkey + ':n')
+  return r && n ? { roughnessMap: r, normalMap: n } : null
+}
+
+function putDetail(dkey: string, rough: ImageData, height: Float32Array, size: number, strength: number): { roughnessMap: THREE.Texture; normalMap: THREE.Texture } {
+  const [cr, xr] = canvas(size, size)
+  const [cn, xn] = canvas(size, size)
+  xr.putImageData(rough, 0, 0)
+  xn.putImageData(heightToNormal(height, size, strength), 0, 0)
+  const d = { roughnessMap: toTex(cr, false), normalMap: toTex(cn, false) }
+  cache.set(dkey + ':r', d.roughnessMap)
+  cache.set(dkey + ':n', d.normalMap)
+  return d
+}
+
 /** 高度圖 → 法線貼圖 */
 function heightToNormal(h: Float32Array, size: number, strength: number): ImageData {
   const img = new ImageData(size, size)
@@ -119,17 +156,17 @@ export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet 
   if (variant === 'grass') return grassSet(tint, seed)
   if (variant === 'rock') return rockSet(tint, seed, 'floor')
   const key = `floor:${variant}:${tint}:${seed}`
+  const dkey = `floor:${variant}:${seed}`
   const have = cache.get(key + ':map')
-  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
   const S = 512
-  const grime = noiseField(S, 6, seed, 6)
-  const fine = noiseField(S, 3, seed + 9, 32)
+  const grime = field(S, 6, seed, 6)
+  const fine = field(S, 3, seed + 9, 32)
   const height = new Float32Array(S * S)
   const [ca, xa] = canvas(S, S)
-  const [cr, xr] = canvas(S, S)
-  const [cn, xn] = canvas(S, S)
   const albedo = xa.createImageData(S, S)
-  const rough = xr.createImageData(S, S)
+  const rough = new ImageData(S, S)
   const [tr, tg, tb] = hexRgb(tint)
   const panel = variant === 'tile' ? 128 : 256
   for (let y = 0; y < S; y++) {
@@ -214,8 +251,6 @@ export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet 
     }
   }
   xa.putImageData(albedo, 0, 0)
-  xr.putImageData(rough, 0, 0)
-  xn.putImageData(heightToNormal(height, S, 6), 0, 0)
   // 偶爾的油漆標記
   xa.globalAlpha = 0.5
   xa.fillStyle = '#c9a23a'
@@ -223,29 +258,25 @@ export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet 
   xa.fillText(String((seed * 37) % 90 + 10), 30, 60)
   xa.globalAlpha = 1
   const map = toTex(ca, true)
-  const roughnessMap = toTex(cr, false)
-  const normalMap = toTex(cn, false)
   cache.set(key + ':map', map)
-  cache.set(key + ':r', roughnessMap)
-  cache.set(key + ':n', normalMap)
-  return { map, roughnessMap, normalMap }
+  return { map, ...(shared ?? putDetail(dkey, rough, height, S, 6)) }
 }
 
 // ───── 牆板（u = 沿牆 2 m，v = 牆高）─────
 
 export function wallSet(tint: string, accent: string, seed = 5): PbrSet {
   const key = `wall:${tint}:${accent}:${seed}`
+  const dkey = `wall:${seed}`
   const have = cache.get(key + ':map')
-  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
   const W = 512
   const H = 512
-  const grime = noiseField(W, 5, seed, 3)
-  const fine = noiseField(W, 3, seed + 3, 32)
+  const grime = field(W, 5, seed, 3)
+  const fine = field(W, 3, seed + 3, 32)
   const [ca, xa] = canvas(W, H)
-  const [cr, xr] = canvas(W, H)
-  const [cn, xn] = canvas(W, H)
   const albedo = xa.createImageData(W, H)
-  const rough = xr.createImageData(W, H)
+  const rough = new ImageData(W, H)
   const height = new Float32Array(W * H)
   const [tr, tg, tb] = hexRgb(tint)
   const [ar, ag, ab] = hexRgb(accent)
@@ -311,31 +342,25 @@ export function wallSet(tint: string, accent: string, seed = 5): PbrSet {
     xa.font = 'bold 15px monospace'
     xa.fillText(`${String.fromCharCode(65 + ((seed + k) % 26))}-${(seed * 7 + k * 31) % 900 + 100}`, sx + 4, 187)
   }
-  xr.putImageData(rough, 0, 0)
-  xn.putImageData(heightToNormal(height, W, 5), 0, 0)
   const map = toTex(ca, true)
-  const roughnessMap = toTex(cr, false)
-  const normalMap = toTex(cn, false)
   cache.set(key + ':map', map)
-  cache.set(key + ':r', roughnessMap)
-  cache.set(key + ':n', normalMap)
-  return { map, roughnessMap, normalMap }
+  return { map, ...(shared ?? putDetail(dkey, rough, height, W, 5)) }
 }
 
 // ───── 通用金屬（道具、機殼）─────
 
 export function metalSet(tint: string, seed = 11, panels = true): PbrSet {
   const key = `metal:${tint}:${seed}:${panels}`
+  const dkey = `metal:${seed}:${panels}`
   const have = cache.get(key + ':map')
-  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
   const S = 256
-  const grime = noiseField(S, 5, seed, 2)
-  const fine = noiseField(S, 3, seed + 1, 24)
+  const grime = field(S, 5, seed, 2)
+  const fine = field(S, 3, seed + 1, 24)
   const [ca, xa] = canvas(S, S)
-  const [cr, xr] = canvas(S, S)
-  const [cn, xn] = canvas(S, S)
   const a = xa.createImageData(S, S)
-  const r = xr.createImageData(S, S)
+  const r = new ImageData(S, S)
   const h = new Float32Array(S * S)
   const [tr, tg, tb] = hexRgb(tint)
   for (let y = 0; y < S; y++) {
@@ -357,30 +382,24 @@ export function metalSet(tint: string, seed = 11, panels = true): PbrSet {
     }
   }
   xa.putImageData(a, 0, 0)
-  xr.putImageData(r, 0, 0)
-  xn.putImageData(heightToNormal(h, S, 4), 0, 0)
   const map = toTex(ca, true)
-  const roughnessMap = toTex(cr, false)
-  const normalMap = toTex(cn, false)
   cache.set(key + ':map', map)
-  cache.set(key + ':r', roughnessMap)
-  cache.set(key + ':n', normalMap)
-  return { map, roughnessMap, normalMap }
+  return { map, ...(shared ?? putDetail(dkey, r, h, S, 4)) }
 }
 
 // ───── 布料／衣物 ─────
 
 export function fabricSet(tint: string, seed = 21): PbrSet {
   const key = `fabric:${tint}:${seed}`
+  const dkey = `fabric:${seed}`
   const have = cache.get(key + ':map')
-  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
   const S = 128
-  const grime = noiseField(S, 4, seed, 2)
+  const grime = field(S, 4, seed, 2)
   const [ca, xa] = canvas(S, S)
-  const [cr, xr] = canvas(S, S)
-  const [cn, xn] = canvas(S, S)
   const a = xa.createImageData(S, S)
-  const r = xr.createImageData(S, S)
+  const r = new ImageData(S, S)
   const h = new Float32Array(S * S)
   const [tr, tg, tb] = hexRgb(tint)
   for (let y = 0; y < S; y++) {
@@ -401,15 +420,9 @@ export function fabricSet(tint: string, seed = 21): PbrSet {
     }
   }
   xa.putImageData(a, 0, 0)
-  xr.putImageData(r, 0, 0)
-  xn.putImageData(heightToNormal(h, S, 3), 0, 0)
   const map = toTex(ca, true)
-  const roughnessMap = toTex(cr, false)
-  const normalMap = toTex(cn, false)
   cache.set(key + ':map', map)
-  cache.set(key + ':r', roughnessMap)
-  cache.set(key + ':n', normalMap)
-  return { map, roughnessMap, normalMap }
+  return { map, ...(shared ?? putDetail(dkey, r, h, S, 3)) }
 }
 
 // ───── 全像螢幕（emissive）─────
@@ -658,13 +671,13 @@ export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | '
 
 // ───── 室外：草地、岩地、岩壁、有機組織（翠原星、餘燼衛星、未識別物體）─────
 
-function cache3(key: string, make: () => PbrSet): PbrSet {
+/** key = albedo（含色調）；dkey = 粗糙度＋法線（不含色調，跨色調共用；make 收到 dkey 傳給 finishSet）*/
+function cache3(key: string, dkey: string, make: (dkey: string) => PbrSet): PbrSet {
   const have = cache.get(key + ':map')
-  if (have) return { map: have, roughnessMap: cache.get(key + ':r')!, normalMap: cache.get(key + ':n')! }
-  const set = make()
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
+  const set = make(dkey)
   cache.set(key + ':map', set.map)
-  cache.set(key + ':r', set.roughnessMap)
-  cache.set(key + ':n', set.normalMap)
   return set
 }
 
@@ -721,27 +734,26 @@ function worley(size: number, cells: number, seed: number): { f1: Float32Array; 
   return { f1, f2, id }
 }
 
-function finishSet(S: number, albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array, strength: number): PbrSet {
+function finishSet(S: number, albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array, strength: number, dkey: string): PbrSet {
   const [ca, xa] = canvas(S, S)
-  const [cr, xr] = canvas(S, S)
-  const [cn, xn] = canvas(S, S)
   const a = xa.createImageData(S, S)
   a.data.set(albedo)
   xa.putImageData(a, 0, 0)
-  const r = xr.createImageData(S, S)
+  const map = toTex(ca, true)
+  const shared = getDetail(dkey)
+  if (shared) return { map, ...shared }
+  const r = new ImageData(S, S)
   for (let i = 0; i < S * S; i++) {
     const v = Math.max(0, Math.min(1, rough[i])) * 255
     r.data[i * 4] = r.data[i * 4 + 1] = r.data[i * 4 + 2] = v
     r.data[i * 4 + 3] = 255
   }
-  xr.putImageData(r, 0, 0)
-  xn.putImageData(heightToNormal(height, S, strength), 0, 0)
-  return { map: toTex(ca, true), roughnessMap: toTex(cr, false), normalMap: toTex(cn, false) }
+  return { map, ...putDetail(dkey, r, height, S, strength) }
 }
 
 /** 異星草地：底色斑塊＋細草葉筆觸＋泥土塊，草葉高度做法線 */
 export function grassSet(tint: string, seed = 3): PbrSet {
-  return cache3(`grass:${tint}:${seed}`, () => {
+  return cache3(`grass:${tint}:${seed}`, `grass:${seed}`, (dkey) => {
     const S = 512
     const patch = noiseField(S, 5, seed + 40, 3)
     const fine = noiseField(S, 3, seed + 41, 48)
@@ -785,7 +797,7 @@ export function grassSet(tint: string, seed = 3): PbrSet {
         rough[i] = 0.62 + (1 - f) * 0.2
       }
     }
-    return finishSet(S, albedo, rough, height, 5)
+    return finishSet(S, albedo, rough, height, 5, dkey)
   })
 }
 
@@ -801,7 +813,7 @@ const sstep = (a: number, b: number, x: number) => {
  * cap：巨石、岩壁頂、雕像：fbm 明暗＋斷續的細裂紋＋礦物斑點，Worley 面只留很淡的面差。
  */
 export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor'): PbrSet {
-  return cache3(`rock2:${tint}:${seed}:${mode}`, () => {
+  return cache3(`rock2:${tint}:${seed}:${mode}`, `rock2:${seed}:${mode}`, (dkey) => {
     const S = 512
     const floor = mode === 'floor'
     const wv = worley(S, floor ? 6 : 5, seed + 90)
@@ -888,7 +900,7 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
         }
       }
     }
-    return finishSet(S, albedo, rough, height, floor ? 6 : 8)
+    return finishSet(S, albedo, rough, height, floor ? 6 : 8, dkey)
   })
 }
 
@@ -897,7 +909,7 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
  * 突出的層理岩棚、斷續的裂縫、縫隙與岩棚上的苔蘚／礦脈（accent）。Worley 面只留很淡的明暗。
  */
 export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
-  return cache3(`rockwall2:${tint}:${accent}:${seed}`, () => {
+  return cache3(`rockwall2:${tint}:${accent}:${seed}`, `rockwall2:${seed}`, (dkey) => {
     const S = 512
     const big = noiseField(S, 5, seed + 60, 3)
     const fine = noiseField(S, 4, seed + 61, 36)
@@ -931,13 +943,13 @@ export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
         height[i] = 0.5 + layer * 0.16 + ledge * 0.12 + (1 - wv.f1[i]) * 0.06 + (fine[i] - 0.5) * 0.15 - crack * 0.4
       }
     }
-    return finishSet(S, albedo, rough, height, 7)
+    return finishSet(S, albedo, rough, height, 7, dkey)
   })
 }
 
 /** 有機組織：濕潤的肉質表面＋發光血管（未識別物體、標本）*/
 export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
-  return cache3(`organic:${tint}:${vein}:${seed}`, () => {
+  return cache3(`organic:${tint}:${vein}:${seed}`, `organic:${seed}`, (dkey) => {
     const S = 256
     const wv = worley(S, 6, seed + 70)
     const big = noiseField(S, 4, seed + 71, 3)
@@ -958,7 +970,7 @@ export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
       rough[i] = 0.35 + fine[i] * 0.3 - v * 0.15
       height[i] = 0.5 + (wv.f1[i] - 0.4) * 0.3 + v * 0.3 + (fine[i] - 0.5) * 0.1
     }
-    return finishSet(S, albedo, rough, height, 5)
+    return finishSet(S, albedo, rough, height, 5, dkey)
   })
 }
 

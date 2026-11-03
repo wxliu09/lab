@@ -190,13 +190,13 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   human: {
     zh: [
       '找出並消滅所有異類：異形、變種人、他們的 spawn，以及被敵方控制的仿生人。',
-      '取得基因檢測器，抽 3 個人的血，送回女帝號的 GIT 檢測儀驗血。',
+      '到醫療補給領基因檢測器（約 7 分鐘後上架），抽 3 個人的血；抽滿後它會變成 GIT 解析器，放在地上等它開機就能拿報告（女帝號的中央檢測儀必須完好）。',
       '守住檢測儀與太空站：站被擊毀，站內所有人一起陪葬。',
       '活下去，在末日降臨之前把局面收拾乾淨。',
     ],
     en: [
       'Find and eliminate every anomaly: xenos, mutants, their spawn, and any android turned against the crew.',
-      'Get a gene sampler, draw blood from 3 people, and run it through the GIT on the Empress Nyx.',
+      'Pick up a gene sampler from Medical Supplies (stocked after about 7 minutes) and draw blood from 3 people. Once full it becomes a GIT resolver: set it down, wait for it to boot, and collect the report (the central tester on the Empress Nyx must still be intact).',
       'Protect the tester and the stations: when a station is destroyed, everyone aboard dies with it.',
       'Survive, and clean this up before doomsday arrives.',
     ],
@@ -218,13 +218,13 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   mutant: {
     zh: [
       '保持偽裝：進化之前，你和一般船員毫無差別，驗血是你最大的破綻。',
-      '造成傷害、吞食屍體與失敗實驗體來累積 EP。',
+      '累積 EP：對非變種人造成傷害、吞噬小生物與失敗實驗體（女帝號實驗室、翠原星；NPC 船員也吞得下），也會隨時間增加；完美路線的形態還能啃食人類屍體。',
       '300／900／1800 EP 三段進化；進化的 60 秒內無敵，但所在的站被毀你也會死。',
       '選擇完美路線（純戰鬥）或感染路線（spawn 軍團），殺光所有非變種人。',
     ],
     en: [
       'Stay disguised: until you evolve you are indistinguishable from the crew. A blood test is your biggest weakness.',
-      'Earn EP by dealing damage and devouring corpses and failed experiments.',
+      'Earn EP by damaging non-mutants and by devouring critters and failed experiments (the Empress Nyx lab and Verdance; NPC crew go down too). EP also trickles in over time, and Perfect-path forms can gorge on human corpses.',
       'Evolve in three stages at 300 / 900 / 1800 EP. You are invulnerable for the 60 seconds it takes, but you still die if your station is destroyed.',
       'Choose the Perfect path (pure combat) or the Infection path (a spawn army), and kill everyone who is not a mutant.',
     ],

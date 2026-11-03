@@ -41,8 +41,33 @@ export const hostConflict = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
 export const connLost = signal(false)
+/**
+ * 主機超過 1.5 秒沒送快照（多半是主機在建站體、編譯 shader）：客人顯示「主機載入中…」輕提示，恢復後自動消失。
+ * 跟傳輸層的 10 秒失聯偵測無關。
+ */
+export const hostStall = signal(false)
 
 export const world = new ClientWorld()
+
+const STALL_MS = 1500
+let stallTimer: ReturnType<typeof setInterval> | null = null
+function watchStall(on: boolean): void {
+  if (stallTimer) clearInterval(stallTimer)
+  stallTimer = null
+  hostStall.value = false
+  if (!on) return
+  const since = performance.now()
+  let last = since
+  stallTimer = setInterval(() => {
+    const now = performance.now()
+    // 自己的主執行緒剛卡過（計時器遲到）：佇列裡的快照還沒處理，這一輪不判斷
+    const late = now - last > 1000
+    last = now
+    if (late) return
+    const v = screen.value === 'game' && world.snapStale(now, since, STALL_MS)
+    if (v !== hostStall.value) hostStall.value = v
+  }, 250)
+}
 
 let net: NetClient | null = null
 let relay: HostRelay | null = null
@@ -153,6 +178,7 @@ function onHostMsg(m: HostMsg): void {
       endResult.value = null
       if (!keep) chatLog.value = []
       screen.value = 'game'
+      watchStall(true)
       break
     }
     case 'replay':
@@ -231,18 +257,38 @@ export async function startPractice(profile: Profile, bots = 5, role: PracticeRo
   exposeTestHooks()
 }
 
+/** 加入房間的等待上限：超過就放棄、回到主選單（按鈕恢復可用），並說明原因 */
+export const JOIN_TIMEOUT_S = 25
+/** 每次加入／取消都遞增：取消後，還在建立中的連線不會再接上來 */
+let joinSeq = 0
+
 export async function joinRoom(code: string, profile: Profile): Promise<void> {
   saveProfile(profile)
+  const seq = ++joinSeq
   roomCode = code.trim().toUpperCase()
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = false
   const transport = await makeTransport(roomCode)
+  if (seq !== joinSeq || screen.value !== 'connecting') {
+    // 等 signaling 的期間按了取消（或改去建立房間）
+    transport.close()
+    return
+  }
   const client = new NetClient(transport, { ...profile, token: sessionToken(roomCode) })
   attach(client)
   setTimeout(() => {
-    if (screen.value === 'connecting' && net === client && !client.hostPeer) notice.value = t('menu.noHost')
-  }, 25000)
+    if (seq !== joinSeq || screen.value !== 'connecting' || net !== client) return
+    const msg = client.hostPeer ? t('menu.joinTimeout', { s: JOIN_TIMEOUT_S }) : t('menu.noHost')
+    leave(false)
+    notice.value = msg
+  }, JOIN_TIMEOUT_S * 1000)
+}
+
+/** 取消加入房間：關掉連線、回到主選單 */
+export function cancelJoin(): void {
+  joinSeq++
+  leave()
 }
 
 export function leave(clear = true): void {
@@ -256,6 +302,7 @@ export function leave(clear = true): void {
   mySlot.value = -1
   isHost.value = false
   world.reset()
+  watchStall(false)
   if (clear) notice.value = ''
 }
 

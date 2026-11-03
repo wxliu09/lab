@@ -5,7 +5,7 @@
 import { GRAV_ACCEL, GRAV_PV } from '../../shared/content/facilities'
 import { abilityDef, unitDef } from '../../shared/content/registry'
 import { NEUTRAL, dist, type Ent } from '../ent'
-import type { Game } from '../game'
+import { fmtKey, type Game } from '../game'
 import { markersOf } from '../setup'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { applyBuff, hasBuff, removeBuff } from './buffs'
@@ -99,10 +99,10 @@ function spaceEntOf(g: Game, key: string): Ent | undefined {
   return z ? g.world.get(z.spaceEnt) : undefined
 }
 
-function stName(g: Game, e: Ent): string {
+function stName(g: Game, e: Ent, l: 'zh' | 'en' = 'zh'): string {
   const zid = e.data.interior as number | undefined
   const z = zid !== undefined ? g.world.zones[zid] : undefined
-  return z?.station?.name.zh ?? e.def.name.zh
+  return z?.station?.name[l] ?? e.def.name[l]
 }
 
 function clampSpace(v: number, margin = 1): number {
@@ -160,7 +160,7 @@ regScript('st.cannon', (g, ctx) => {
   if ((g.data.power as { mode?: string } | undefined)?.mode === 'station') st.cds.set('st.cannon', g.time + CANNON_CD_POWERED)
   fireOrb(g, st, t)
   g.systemAll('st.cannonFired', { name: stName(g, t) })
-  g.log(`天守主砲向 ${stName(g, t)} 開火`)
+  g.log(fmtKey('tl.cannon', { nz: stName(g, t), ne: stName(g, t, 'en') }))
 })
 
 function stepOrbs(g: Game, dt: number): void {
@@ -266,7 +266,7 @@ regScript('st.land', (g, ctx) => {
   setPortals(g, L, true)
   g.emitFx({ k: 'bravadoLand', z: SPACE_ZONE, x: v.x, y: v.y, e: b.id })
   for (const s of [...mainsIn(g, bz), ...mainsIn(g, vz)]) g.privateLine(s, 'st.bravadoLanded')
-  g.log('豪勇號降落在翠原星')
+  g.log(fmtKey('tl.bravadoLand'))
 })
 
 regScript('st.launch', (g, ctx) => {
@@ -297,7 +297,7 @@ function liftOff(g: Game, L: Landed): void {
     g.world.moved(b)
   }
   g.emitFx({ k: 'bravadoLaunch', z: SPACE_ZONE, x: b.x, y: b.y, e: b.id })
-  g.log('豪勇號從翠原星升空')
+  g.log(fmtKey('tl.bravadoLaunch'))
 }
 
 function stepLanded(g: Game): void {

@@ -29,11 +29,22 @@ export const lastInteract = signal(0)
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 
-/** 各個對話框登記「我現在開著嗎」：開著時不做邊緣捲動（避免 client → ui 的循環 import）*/
+/**
+ * 各個對話框登記「我現在開著嗎」（避免 client → ui 的循環 import）：
+ * 開著時不做邊緣捲動、不顯示場景懸停，遊戲快捷鍵也不處理（免得在設定、圖鑑裡按 Q／1 就放技能、用道具）。
+ */
 export const modalChecks: (() => boolean)[] = [() => evolveOpen.value, () => menuOpen.value]
+/** 不擋快捷鍵的側邊面板（調查筆記：邊看邊操作）：開著時只停用邊緣捲動與場景懸停 */
+export const panelChecks: (() => boolean)[] = []
 
-export function modalOpen(): boolean {
+/** 有對話框開著：遊戲快捷鍵不處理 */
+export function dialogOpen(): boolean {
   return modalChecks.some((f) => f())
+}
+
+/** 有對話框或側邊面板開著：不做邊緣捲動、不顯示場景懸停 */
+export function modalOpen(): boolean {
+  return dialogOpen() || panelChecks.some((f) => f())
 }
 
 /**
@@ -253,6 +264,13 @@ export class Input {
   private key(e: KeyboardEvent, down: boolean): void {
     // 聊天框剛打開、還沒拿到焦點的那一瞬間也不觸發快捷鍵
     if (typingInField() || chatOpen.value) return
+    if (dialogOpen()) {
+      // 對話框開著：遊戲快捷鍵一律不處理。各對話框的 Esc 在 capture 階段自己處理；進化選單在這裡用 Esc／V 關掉。
+      // 方向鍵放開照樣送出，免得在對話框打開前按著的方向鍵卡住、鏡頭一直捲
+      if (!down && e.code.startsWith('Arrow')) this.scene.rts.key(e.code, false)
+      if (down && !e.repeat && evolveOpen.value && (e.code === 'Escape' || e.code === 'KeyV')) evolveOpen.value = false
+      return
+    }
     if (e.code.startsWith('Arrow')) {
       this.scene.rts.key(e.code, down)
       e.preventDefault()

@@ -30,7 +30,7 @@ describe('太空層', () => {
     expect(ships.filter((s) => s.def.id === 'mule').length).toBe(2)
   })
 
-  it('走進停泊的船 → 站上控制台 10 秒發射 → 駕駛 → 停回女帝號', () => {
+  it('右鍵停泊的船（互動）→ 登船 → 站上控制台 10 秒發射 → 駕駛 → 停回女帝號', () => {
     const { h, cs } = Harness.started(3, 2)
     const g = h.server.game!
     const p = g.players[cs[0].slot]
@@ -39,6 +39,10 @@ describe('太空層', () => {
     const de = g.world.get(inst.dockedEnt)!
     scan(h)
     g.world.relocate(u, de.zone, de.x, de.y - de.radius - 0.5)
+    h.ticks(4)
+    // 只是站在船邊不會登船
+    expect(u.zone).toBe(de.zone)
+    g.handleCommand(p.slot, { k: 'interact', e: de.id })
     h.ticks(4)
     expect(u.zone).toBe(inst.zone)
     h.ticks(1)

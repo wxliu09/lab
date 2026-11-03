@@ -4,10 +4,17 @@ import type { Loc } from './types'
 
 const L = (zh: string, en: string): Loc => ({ zh, en })
 
+const PRION_DESC_ZH = '變種人的朊毒正在侵蝕神經：每秒中毒，人類死時會變成變種人的工蟲。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。'
+const PRION_DESC_EN = 'Mutant prions are eating at your nerves: they poison you every second, and a human who dies infected becomes a mutant drone. An antibody kit (Medical Supplies) forces them dormant; they clear after 46 s.'
+
 regBuffs([
   {
     id: 'bf.parasite',
     name: L('寄生', 'Parasite'),
+    desc: L(
+      '異形的寄生體正在體內孵化：每秒中毒，死時會變成異形的 spawn。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。',
+      'A xeno parasite is growing inside you: it poisons you every second, and when you die you rise as a xeno spawn. An antibody kit (Medical Supplies) forces it dormant; it clears after 46 s.',
+    ),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -18,6 +25,7 @@ regBuffs([
   {
     id: 'bf.prion',
     name: L('朊毒', 'Prion'),
+    desc: L(PRION_DESC_ZH, PRION_DESC_EN),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -28,6 +36,7 @@ regBuffs([
   {
     id: 'bf.prionStrong',
     name: L('朊毒（變異株）', 'Prion (strain)'),
+    desc: L(PRION_DESC_ZH, PRION_DESC_EN),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -39,6 +48,7 @@ regBuffs([
   {
     id: 'bf.prionCarrier',
     name: L('朊毒（繁巢株）', 'Prion (brood strain)'),
+    desc: L(PRION_DESC_ZH, PRION_DESC_EN),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,
@@ -52,17 +62,17 @@ regBuffs([
   { id: 'bf.morphing', name: L('變形中', 'Shifting'), icon: 'evolve', vis: 'all', good: true, rooted: true },
   { id: 'bf.butlerHide', name: L('隱匿', 'Hidden'), icon: 'cloak', vis: 'self', good: true, stealth: true },
   // 研究員博士專長（本作四項均等）
-  { id: 'cls.phd.optics', name: L('光學博士', 'PhD: Optics'), icon: 'eye', vis: 'self', good: true, sightAdd: 2.5, flags: { humanOnly: true } },
-  { id: 'cls.phd.gravitics', name: L('重力學博士', 'PhD: Gravitics'), icon: 'ship', vis: 'self', good: true, flags: { shipSpeed: 0.15 } },
-  { id: 'cls.phd.biology', name: L('生物學博士', 'PhD: Biology'), icon: 'dna', vis: 'self', good: true, regen: 2 },
-  { id: 'cls.phd.electronics', name: L('電子學博士', 'PhD: Electronics'), icon: 'gear', vis: 'self', good: true, flags: { deviceHp: 50 } },
+  { id: 'cls.phd.optics', name: L('光學博士', 'PhD: Optics'), desc: L('人形時視野 +2.5 公尺', '+2.5 m sight range in human form'), icon: 'eye', vis: 'self', good: true, sightAdd: 2.5, flags: { humanOnly: true } },
+  { id: 'cls.phd.gravitics', name: L('重力學博士', 'PhD: Gravitics'), desc: L('駕駛的船艇與站點移速 +15%', 'Craft and stations you pilot move 15% faster'), icon: 'ship', vis: 'self', good: true, flags: { shipSpeed: 0.15 } },
+  { id: 'cls.phd.biology', name: L('生物學博士', 'PhD: Biology'), desc: L('每秒回復 2 生命', 'Regenerate 2 health per second'), icon: 'dna', vis: 'self', good: true, regen: 2 },
+  { id: 'cls.phd.electronics', name: L('電子學博士', 'PhD: Electronics'), desc: L('你放置的裝置生命 +50', 'Devices you deploy get +50 health'), icon: 'gear', vis: 'self', good: true, flags: { deviceHp: 50 } },
 ])
 
 regAbilities([
   {
     id: 'xeno.form',
     name: L('褪去人皮', 'Shed the Skin'),
-    desc: L('花 5 秒脫去人類偽裝，以異形形態行動。異形形態沒有名字也沒有顏色，誰也認不出是你。必須先脫下防護服。', 'Spend 5 s shedding your human disguise. The alien form has no name or color — no one can tell it is you. Remove any rig first.'),
+    desc: L('花 5 秒脫去人類偽裝，以異形形態行動。異形形態沒有名字也沒有顏色，誰也認不出是你。必須先脫下防護服。', 'Spend 5 s shedding your human disguise. The xeno form has no name or color — no one can tell it is you. Remove any rig first.'),
     icon: 'tentacle',
     target: 'none',
     cd: 3,
@@ -84,7 +94,7 @@ regAbilities([
   {
     id: 'xeno.spawnForm',
     name: L('甦醒', 'Awaken'),
-    desc: L('花 4 秒變回異形形態。spawn 的異形形態仍帶著你的名字與顏色。', 'Spend 4 s returning to alien form. A spawn’s alien form still carries your name and color.'),
+    desc: L('花 4 秒變回異形形態。spawn 的異形形態仍帶著你的名字與顏色。', 'Spend 4 s returning to xeno form. A spawn’s xeno form still carries your name and color.'),
     icon: 'tentacle',
     target: 'none',
     cd: 3,
@@ -171,7 +181,7 @@ regAbilities([
   {
     id: 'mut.prion2',
     name: L('變異株注射', 'Strain Inject'),
-    desc: L('更強的朊毒，連著裝者與異類也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even rigged or alien targets (only humans convert).'),
+    desc: L('更強的朊毒，連著裝者與異類也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even rigged or xeno targets (only humans convert).'),
     icon: 'infect',
     target: 'unit',
     range: 5,
@@ -186,7 +196,7 @@ regAbilities([
   {
     id: 'mut.prion3',
     name: L('繁巢株注射', 'Brood Inject'),
-    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形 spawn 死時都會轉成你的工蟲。', 'The fiercest prion. Under the Broodmother, even aliens and their spawn convert to your drones on death.'),
+    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形 spawn 死時都會轉成你的工蟲。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
     icon: 'infect',
     target: 'unit',
     range: 9,
@@ -203,7 +213,7 @@ regAbilities([
 regUnits([
   {
     id: 'xeno.cocoon',
-    name: L('異繭', 'Alien Cocoon'),
+    name: L('異繭', 'Xeno Cocoon'),
     model: 'xeno.cocoon',
     hp: 6000,
     hpRegen: 0,
@@ -235,7 +245,7 @@ regUnits([
   },
   {
     id: 'xeno.eggUnit',
-    name: L('異形卵', 'Alien Egg'),
+    name: L('異形卵', 'Xeno Egg'),
     model: 'xeno.egg',
     hp: 125,
     hpRegen: 0,

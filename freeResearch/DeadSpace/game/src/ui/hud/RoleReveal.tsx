@@ -4,13 +4,20 @@ import { snapTick, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
+import { modalChecks } from '../../client/input'
+import { phdText } from './Guide'
 
-const COL: Record<Identity, [string, string]> = {
-  human: ['#9fe7ff', '#ffffff'],
-  xeno: ['#7a3cff', '#33ffd1'],
-  mutant: ['#c8323c', '#e8b04a'],
-  android: ['#ffb000', '#e6e6e6'],
+// [主色（光暈）, 輔色, 文字色]：異形、變種人的主色在深色底上對比不到 4.5:1，文字改用亮色
+const COL: Record<Identity, [string, string, string]> = {
+  human: ['#9fe7ff', '#ffffff', '#9fe7ff'],
+  xeno: ['#7a3cff', '#33ffd1', '#b28cff'],
+  mutant: ['#c8323c', '#e8b04a', '#ff6b72'],
+  android: ['#ffb000', '#e6e6e6', '#ffb000'],
 }
+
+/** 揭露畫面蓋著時，遊戲快捷鍵不處理 */
+let revealShown = false
+modalChecks.push(() => revealShown)
 
 export function RoleReveal() {
   void snapTick.value
@@ -59,33 +66,47 @@ export function RoleReveal() {
       cancelAnimationFrame(raf)
     }
   }, [open])
+  const visible = open && !!role && role !== 'spectator'
+  useLayoutEffect(() => {
+    revealShown = visible
+    return () => {
+      revealShown = false
+    }
+  }, [visible])
   if (!open || !role || role === 'spectator') return null
-  const [c1, c2] = COL[role]
+  const [c1, c2, ct] = COL[role]
   const title = ROLE_TITLES[role]
   const obj = OBJECTIVES[role]
   const L = lang.value === 'en' ? 'en' : 'zh'
+  const phd = phdText(world.me, 'play1.reveal.phd')
   return (
     <div class="modal-back" data-testid="reveal" style={{ background: `radial-gradient(ellipse at 50% 40%, ${c1}22, rgba(0,0,0,0.92) 70%)` }} onClick={() => setOpen(false)}>
       <div style={{ width: 'min(760px, 92vw)', textAlign: 'center' }}>
         <div class="dim" style={{ letterSpacing: '0.4em', fontFamily: 'var(--title)' }}>
           {t('class.' + (world.me.classId ?? ''))}
         </div>
-        <div style={{ fontFamily: 'var(--title)', fontWeight: 700, fontSize: '54px', letterSpacing: '0.12em', color: c1, textShadow: `0 0 30px ${c1}, 0 0 4px ${c2}`, margin: '6px 0' }}>
+        <div style={{ fontFamily: 'var(--title)', fontWeight: 700, fontSize: '54px', letterSpacing: '0.12em', color: ct, textShadow: `0 0 30px ${c1}, 0 0 4px ${c2}`, margin: '6px 0' }}>
           {title[L]}
         </div>
         <div style={{ color: c2, opacity: 0.85, marginBottom: '22px' }}>{title.tagline[L]}</div>
-        <div class="panel" style={{ padding: '18px 22px', textAlign: 'left', lineHeight: 1.85, fontSize: '15px', minHeight: '140px' }}>
+        {/* 研究員：抽到的博士專長（只讀自己的私有狀態）*/}
+        {phd && (
+          <div data-testid="reveal-phd" style={{ color: c2, opacity: 0.85, margin: '-12px 0 18px', fontSize: '14px' }}>
+            {phd}
+          </div>
+        )}
+        <div class="panel solid" style={{ padding: '18px 22px', textAlign: 'left', lineHeight: 1.85, fontSize: '15px', minHeight: '140px' }}>
           {text.slice(0, n)}
           <span style={{ opacity: n < text.length ? 1 : 0, color: c1 }}>▌</span>
         </div>
-        <div class="panel" style={{ padding: '14px 22px', textAlign: 'left', marginTop: '12px' }}>
+        <div class="panel solid" style={{ padding: '14px 22px', textAlign: 'left', marginTop: '12px' }}>
           {obj[L].map((o, i) => (
-            <div key={i} style={{ padding: '3px 0', color: i === 0 ? c1 : undefined }}>
+            <div key={i} style={{ padding: '3px 0', color: i === 0 ? ct : undefined }}>
               › {o}
             </div>
           ))}
         </div>
-        <div class="dim" style={{ marginTop: '14px', fontSize: '12px' }}>
+        <div class="dim" style={{ marginTop: '14px', fontSize: '13px' }}>
           {t('reveal.dismiss')}
         </div>
       </div>

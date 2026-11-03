@@ -91,7 +91,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div class="setrow">
             <label>
               {t('settings.uiScale')}
-              <div class="dim" style={{ fontSize: '12px' }}>
+              <div class="dim" style={{ fontSize: '13px' }}>
                 {t('settings.uiScaleAuto')} · {Math.round(uiZoom.value * 100)}%
               </div>
             </label>
@@ -144,7 +144,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </div>
           <label>{t('settings.turn')}</label>
           <textarea rows={4} value={turn} onInput={(e) => setTurn((e.target as HTMLTextAreaElement).value)} />
-          <div class="dim" style={{ fontSize: '11px' }}>
+          <div class="dim" style={{ fontSize: '13px', wordBreak: 'break-all' }}>
             {t('settings.turnHelp')}
           </div>
           <div class="notice">{err}</div>

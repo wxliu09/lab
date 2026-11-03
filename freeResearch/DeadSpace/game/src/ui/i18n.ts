@@ -8,7 +8,9 @@ import { CODEX_EN, CODEX_ZH } from './strings/codex'
 import { FAC_EN, FAC_ZH } from './strings/facilities'
 import { UX_EN, UX_ZH } from './strings/ux'
 import { UX2_EN, UX2_ZH } from './strings/ux2'
-import { ITEMS } from '../shared/content/registry'
+import { UX3_EN, UX3_ZH } from './strings/ux3'
+import { PLAY1_EN, PLAY1_ZH } from './strings/play1'
+import { ITEMS, UNITS } from '../shared/content/registry'
 
 export type Lang = 'zh' | 'en'
 
@@ -135,7 +137,7 @@ const zh: Dict = {
   'end.crew': '人類存活了下來',
   'end.xeno': '異形取得了勝利',
   'end.mutant': '變種人取得了勝利',
-  'end.draw': '無人生還',
+  'end.draw': '平手：沒有任何一方勝出',
   'end.aborted': '本局中止',
   'end.back': '回到主選單',
   'vendor.stock': '庫存 {n}',
@@ -161,7 +163,7 @@ const zh: Dict = {
 
 const en: Dict = {
   'app.title': 'XENOCYTE',
-  'app.tagline': 'Among the crew hide shapeshifting aliens and evolving mutants.',
+  'app.tagline': 'Among the crew hide shapeshifting xenos and evolving mutants.',
   'menu.name': 'Your name',
   'menu.color': 'Color',
   'menu.create': 'Create room',
@@ -190,7 +192,7 @@ const en: Dict = {
   'lobby.settings': 'Room settings',
   'lobby.players': 'Players {n}/12',
   'lobby.chat': 'Lobby chat',
-  'lobby.set.aliens': 'Alien',
+  'lobby.set.aliens': 'Xeno',
   'lobby.set.mutants': 'Mutant',
   'lobby.set.androids': 'Android',
   'lobby.set.auto': 'Auto',
@@ -236,9 +238,9 @@ const en: Dict = {
   'chat.team': 'Faction',
   'chat.sys': 'System',
   'game.time': 'Time',
-  'game.stability': 'Sector stability',
+  'game.stability': 'Stability',
   'role.human': 'Human',
-  'role.xeno': 'Alien',
+  'role.xeno': 'Xeno',
   'role.mutant': 'Mutant',
   'role.android': 'Android',
   'role.spectator': 'Spectator',
@@ -250,9 +252,9 @@ const en: Dict = {
   'hud.paused': 'Paused',
   'end.title': 'Results',
   'end.crew': 'Humanity prevails',
-  'end.xeno': 'The alien triumphs',
+  'end.xeno': 'The xeno triumphs',
   'end.mutant': 'The mutant triumphs',
-  'end.draw': 'No survivors',
+  'end.draw': 'Draw: no side prevails',
   'end.aborted': 'Game aborted',
   'end.back': 'Back to menu',
   'vendor.stock': 'Stock {n}',
@@ -277,8 +279,8 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH)
-Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH, UX3_ZH, PLAY1_ZH)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN, UX3_EN, PLAY1_EN)
 
 /** 測試用：某語言是否有這個 key */
 export function hasString(l: Lang, key: string): boolean {
@@ -291,11 +293,23 @@ export function addStrings(z: Dict, e: Dict): void {
   Object.assign(en, e)
 }
 
+/** 測試用：某語言的全部 key */
+export function stringKeys(l: Lang): string[] {
+  return Object.keys(dicts[l])
+}
+
 export function t(key: string, args?: Record<string, string | number>): string {
   const d = dicts[lang.value]
-  let s = d[key] ?? dicts.zh[key] ?? key
-  if (args) for (const [k, v] of Object.entries(args)) s = s.replaceAll(`{${k}}`, String(v))
+  // 單複數：n = 1 時，目前語言有 key.one 就用它（中文不分單複數，只有英文需要）
+  const k = args && Number(args.n) === 1 && key + '.one' in d ? key + '.one' : key
+  let s = d[k] ?? dicts.zh[key] ?? key
+  if (args) for (const [a, v] of Object.entries(args)) s = s.replaceAll(`{${a}}`, String(v))
   return s
+}
+
+/** 依目前語言串接清單（中文「、」，英文「, 」）*/
+export function listJoin(parts: string[]): string {
+  return parts.join(t('sep.list'))
 }
 
 /** 解碼 sim 送來的 `@key|k=v` 系統訊息 */
@@ -310,5 +324,8 @@ export function sysText(raw: string): string {
   // 參數 item 是道具 id：換成目前語言的名稱
   const it = args.item ? ITEMS.get(args.item) : undefined
   if (it) args.item = loc(it.name)
+  // 參數 unit 是單位 id（例如進化後的形態）：換成目前語言的名稱
+  const u = args.unit ? UNITS.get(args.unit) : undefined
+  if (u) args.unit = loc(u.name)
   return t(key, args)
 }

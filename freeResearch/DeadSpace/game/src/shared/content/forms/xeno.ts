@@ -539,7 +539,7 @@ export const XENO_ABILITIES: AbilityDef[] = [
     name: L('熵渦', 'Entropic Maw'),
     desc: L(
       '花 2 秒在目標處撕開一道 3 公尺的熵渦，持續 30 秒。待在裡面的人會被慢慢灼傷、減速、吸走能量（一半回流給你），還會被一點一點拖向中心——被拖得越久，牽引越弱。異形形態不受影響。',
-      'After 2 s, tear open a 3 m entropic maw that lasts 30 s. Anyone inside is slowly seared, slowed and drained of energy (half flows back to you), and dragged toward the center — the longer they are held, the weaker the pull. Alien forms are unaffected.',
+      'After 2 s, tear open a 3 m entropic maw that lasts 30 s. Anyone inside is slowly seared, slowed and drained of energy (half flows back to you), and dragged toward the center — the longer they are held, the weaker the pull. Xeno forms are unaffected.',
     ),
     icon: 'void',
     target: 'point',
@@ -648,7 +648,7 @@ export const XENO_ABILITIES: AbilityDef[] = [
     name: L('天殛', 'Skyfall Arc'),
     desc: L(
       '標記一點，1.2 秒後一道重雷劈下，半徑 3 公尺內每個非異形陣營的單位受到 500 點傷害。',
-      'Mark a spot; 1.2 s later a heavy bolt crashes down, dealing 500 damage to every non-alien unit within 3 m.',
+      'Mark a spot; 1.2 s later a heavy bolt crashes down, dealing 500 damage to every non-xeno unit within 3 m.',
     ),
     icon: 'bolt',
     target: 'point',
@@ -763,7 +763,7 @@ export const XENO_ABILITIES: AbilityDef[] = [
     name: L('絆絲', 'Tripline'),
     desc: L(
       '在身邊放下一個絲錨；9 公尺內再放第二個，兩者之間就會拉起絆線。非異形形態的單位跨過時會被絆倒 1.5 秒並受到 40 點傷害。絲錨可以被打掉，3 分鐘後自行崩解。',
-      'Set a silk anchor beside you; set a second within 9 m and a tripline stretches between them. Any non-alien unit crossing it is knocked down for 1.5 s and takes 40 damage. Anchors can be destroyed and unravel after 3 min.',
+      'Set a silk anchor beside you; set a second within 9 m and a tripline stretches between them. Any non-xeno unit crossing it is knocked down for 1.5 s and takes 40 damage. Anchors can be destroyed and unravel after 3 min.',
     ),
     icon: 'web',
     target: 'point',

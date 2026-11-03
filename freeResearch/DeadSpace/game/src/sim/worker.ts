@@ -14,6 +14,24 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope
 let server: GameServer | null = null
 let out: [string, Uint8Array][] = []
 let tickMsAvg = 0
+/** 例外計數：tick（server.tick 丟出來的）與訊息處理；連續出錯的 tick 數用來判斷不可恢復 */
+let errs = 0
+let tickStreak = 0
+let fatalSent = false
+/** 連續 5 秒每個 tick 都丟例外（快照送不出去），或核心步驟連續 10 秒每 tick 出錯：視為不可恢復，通知主執行緒 */
+const FATAL_TICK_STREAK = 100
+const FATAL_STEP_STREAK = 200
+
+function fatal(why: string): void {
+  if (fatalSent) return
+  fatalSent = true
+  ctx.postMessage({ t: 'fatal', msg: why })
+}
+
+function report(where: string, e: unknown): void {
+  errs++
+  if (__DEV__) console.error('[sim]', where, e)
+}
 
 function flush(): void {
   if (!out.length) return
@@ -25,12 +43,28 @@ function flush(): void {
 ctx.onmessage = (ev: MessageEvent<In>) => {
   const m = ev.data
   if (m.t === 'init') {
-    // msgpackr 會重用內部 buffer：每則訊息複製成獨立 buffer 才能安全轉移所有權
-    server = new GameServer(m.code, { send: (peer, data) => out.push([peer, data.slice()]) }, m.seed)
+    try {
+      // msgpackr 會重用內部 buffer：每則訊息複製成獨立 buffer 才能安全轉移所有權
+      server = new GameServer(m.code, { send: (peer, data) => out.push([peer, data.slice()]) }, m.seed)
+    } catch (e) {
+      report('init', e)
+      fatal('init: ' + String(e))
+      return
+    }
     start()
     return
   }
   if (!server) return
+  try {
+    handle(server, m)
+  } catch (e) {
+    // 單一訊息（加入、離開、轉送）的例外不能讓 worker 停擺
+    report(m.t, e)
+  }
+  flush()
+}
+
+function handle(server: GameServer, m: Exclude<In, { t: 'init' }>): void {
   switch (m.t) {
     case 'join':
       server.onJoin(m.peer)
@@ -53,27 +87,39 @@ ctx.onmessage = (ev: MessageEvent<In>) => {
       }
       break
   }
-  flush()
 }
 
 function start(): void {
   const stepMs = TICK_DT * 1000
   let next = performance.now()
   let n = 0
+  // try／finally：任何例外都不能讓計時器鏈斷掉（以前一個未捕捉的例外就會讓整局靜止，畫面上沒有任何提示）
   const loop = () => {
-    const now = performance.now()
-    let steps = 0
-    while (now >= next && steps < 5) {
-      const t0 = performance.now()
-      server!.tick()
-      tickMsAvg = tickMsAvg * 0.95 + (performance.now() - t0) * 0.05
-      next += stepMs
-      steps++
+    try {
+      const now = performance.now()
+      let steps = 0
+      while (now >= next && steps < 5) {
+        const t0 = performance.now()
+        try {
+          server!.tick()
+          tickStreak = 0
+        } catch (e) {
+          report('tick', e)
+          if (++tickStreak >= FATAL_TICK_STREAK) fatal('tick: ' + String(e))
+        }
+        if ((server!.game?.errStreak ?? 0) >= FATAL_STEP_STREAK) fatal('step errors')
+        tickMsAvg = tickMsAvg * 0.95 + (performance.now() - t0) * 0.05
+        next += stepMs
+        steps++
+      }
+      if (now - next > 1000) next = now
+      flush()
+      if (++n % 100 === 0) ctx.postMessage({ t: 'stat', tickMs: tickMsAvg, errs: errs + (server!.game?.stepErrors ?? 0) })
+    } catch (e) {
+      report('loop', e)
+    } finally {
+      setTimeout(loop, Math.max(0, next - performance.now()))
     }
-    if (now - next > 1000) next = now
-    flush()
-    if (++n % 100 === 0) ctx.postMessage({ t: 'stat', tickMs: tickMsAvg })
-    setTimeout(loop, Math.max(0, next - performance.now()))
   }
   loop()
 }

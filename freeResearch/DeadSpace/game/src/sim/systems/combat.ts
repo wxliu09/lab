@@ -123,7 +123,8 @@ export function stepCombat(g: Game): void {
         u.anim = 0
         continue
       }
-    } else if (o?.k === 'amove' || o?.k === 'hold' || ((!o || o.k === 'patrol') && u.acquire)) {
+    } else if (o?.k === 'amove' || o?.k === 'hold' || ((!o || o.k === 'patrol') && u.acquire && !(u.pilot && u.stats.stealth))) {
+      // 駕駛中的隱形載具（隱蔽力場）不自動開火：開火會解除隱形，要打請明確下令
       target = acquire(g, u)
       if (target && o?.k === 'hold' && !inAttackRange(g, u, target)) target = null
       if (target && o?.k !== 'hold') {

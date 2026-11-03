@@ -56,7 +56,7 @@ export const UX2_ZH: Record<string, string> = {
   'lobby2.tip.aliens.body':
     '本局有沒有異形。依人數：3–4 人時異形與變種人二選一（各半機率），5 人以上一定有。選「有」或「無」會覆寫人數規則。\n異形能在人形與匿名的異形形態間切換，靠寄生、下蛋與擊殺累積 EP 進化。',
   'lobby2.tip.mutants.body':
-    '本局有沒有變種人。依人數：3–4 人時異形與變種人二選一（各半機率），5 人以上一定有。選「有」或「無」會覆寫人數規則。\n變種人進化前與人類無異，靠造成傷害與吞食屍體累積 EP，進化後不能變回人形。',
+    '本局有沒有變種人。依人數：3–4 人時異形與變種人二選一（各半機率），5 人以上一定有。選「有」或「無」會覆寫人數規則。\n變種人進化前與人類無異，靠造成傷害、吞噬小生物與失敗實驗體累積 EP（完美路線進化後才能啃食屍體），進化後不能變回人形。',
   'lobby2.tip.androids.body':
     '本局有沒有仿生人。依人數：7 人以上才有。選「有」或「無」會覆寫人數規則。\n仿生人屬於人類方，但誤傷船員太多會被強制關機；死後掉出記憶核心，帶到鑄造台就能復活。',
   'lobby2.tip.npc.body':
@@ -84,11 +84,11 @@ export const UX2_ZH: Record<string, string> = {
   'practice.r.random': '隨機',
   'practice.r.random.d': '照正常規則抽身分，和真正的對局一樣。',
   'practice.r.human': '人類',
-  'practice.r.human.d': '找出藏在船員裡的異類：買裝備、驗血、結盟。',
+  'practice.r.human.d': '找出藏在船員裡的異類：領防護服與裝備（販賣機免費）、驗血、和可信的人互相照應。',
   'practice.r.xeno': '異形',
   'practice.r.xeno.d': '偽裝成船員，落單時切換匿名形態寄生、下蛋、進化。',
   'practice.r.mutant': '變種人',
-  'practice.r.mutant.d': '造成傷害、吞食屍體賺 EP，三段進化後正面硬拼。',
+  'practice.r.mutant.d': '造成傷害、吞噬小生物賺 EP，三段進化後正面硬拼。',
   'practice.r.android': '仿生人',
   'practice.r.android.d': '人類方的臥底：幫忙找出異類、別誤傷船員，2000 EP 升級機體。',
   'practice.mix.self': '你：{role}',
@@ -99,6 +99,14 @@ export const UX2_ZH: Record<string, string> = {
   'chat2.placeholderLastWords': '遺言時間：活人還聽得到（剩 {n} 秒）',
   'notes2.deadHint': '點標記切換：未標記 → 信任 → 可疑 → 確認異類 → 確認乾淨。你已死亡：筆記仍可編輯，但不能再分享給別人。',
   'boot2.body': '這局是「死亡即退出」模式：死後不能觀戰，也收不到玩家之間的聊天（系統公告仍會顯示在聊天紀錄）。結果會在對局結束時公布。',
+
+  // ───── 主機狀態與顯示卡 ─────
+  'net.hostLoading': '主機載入中…',
+  'net.simError': '主機模擬錯誤：這一局無法繼續',
+  'net.simErrorBack': '回主選單',
+  'gpu.lost': '顯示卡重置：畫面暫停中，通常幾秒內會自動恢復',
+  'gpu.reload': '重新載入',
+  'gpu.lower': '降低畫質',
 }
 
 export const UX2_EN: Record<string, string> = {
@@ -148,16 +156,16 @@ export const UX2_EN: Record<string, string> = {
   'lobby2.roles.title': 'Role preview',
   'lobby2.roles.count': '{n} combatants at start (incl. AI)',
   'lobby2.roles.hostOut': 'the host only spectates and is not counted',
-  'lobby2.roles.either': 'Alien or Mutant 1',
+  'lobby2.roles.either': 'Xeno or Mutant 1',
   'lobby2.roles.eitherNote': '50/50',
   'lobby2.roles.range': '{name} {a}–{b}',
   'lobby2.roles.note': 'Worked out from the public rules. Who gets which role is secret and revealed privately at the start.',
   'lobby2.roles.none': 'No combatants yet',
   'lobby2.roles.tooFew': 'Not enough players: a normal game needs at least {n} combatants (incl. AI). To play alone, use {practice} on the main menu, or add {bots} in the settings.',
   'lobby2.tip.aliens.body':
-    'Whether this game has an alien. By player count: with 3–4 players there is either an alien or a mutant (50/50); with 5 or more there is always one. Choosing Yes or None overrides the count rule.\nThe alien switches between human form and an anonymous alien form, and earns EP to evolve by implanting larvae, laying eggs and killing.',
+    'Whether this game has a xeno. By player count: with 3–4 players there is either a xeno or a mutant (50/50); with 5 or more there is always one. Choosing Yes or None overrides the count rule.\nThe xeno switches between human form and an anonymous xeno form, and earns EP to evolve by implanting larvae, laying eggs and killing.',
   'lobby2.tip.mutants.body':
-    'Whether this game has a mutant. By player count: with 3–4 players there is either an alien or a mutant (50/50); with 5 or more there is always one. Choosing Yes or None overrides the count rule.\nBefore evolving, the mutant looks like any human. It earns EP by dealing damage and devouring corpses, and cannot turn back once evolved.',
+    'Whether this game has a mutant. By player count: with 3–4 players there is either a xeno or a mutant (50/50); with 5 or more there is always one. Choosing Yes or None overrides the count rule.\nBefore evolving, the mutant looks like any human. It earns EP by dealing damage and devouring critters and failed experiments (only Perfect-path forms can gorge on corpses), and cannot turn back once evolved.',
   'lobby2.tip.androids.body':
     'Whether this game has an android. By player count: only with 7 or more players. Choosing Yes or None overrides the count rule.\nThe android is on the humans’ side, but is shut down if it harms too many crew. When it dies it drops a memory core that can revive it at the fabricator.',
   'lobby2.tip.npc.body':
@@ -185,11 +193,11 @@ export const UX2_EN: Record<string, string> = {
   'practice.r.random': 'Random',
   'practice.r.random.d': 'Roles are drawn by the normal rules, like a real game.',
   'practice.r.human': 'Human',
-  'practice.r.human.d': 'Find the hidden threats among the crew: gear up, run blood tests, form alliances.',
-  'practice.r.xeno': 'Alien',
+  'practice.r.human.d': "Find the hidden threats among the crew: grab a rig and gear (vendors are free), run blood tests, watch each other's backs.",
+  'practice.r.xeno': 'Xeno',
   'practice.r.xeno.d': 'Pose as crew; when alone, switch to your anonymous form to implant, lay eggs and evolve.',
   'practice.r.mutant': 'Mutant',
-  'practice.r.mutant.d': 'Deal damage and devour corpses for EP, evolve three times, then fight head-on.',
+  'practice.r.mutant.d': 'Deal damage and devour critters for EP, evolve three times, then fight head-on.',
   'practice.r.android': 'Android',
   'practice.r.android.d': 'An undercover ally of the humans: help find the threats, avoid hurting crew, upgrade at 2000 EP.',
   'practice.mix.self': 'You: {role}',
@@ -200,4 +208,12 @@ export const UX2_EN: Record<string, string> = {
   'chat2.placeholderLastWords': 'Last words: the living can still hear you ({n} s left)',
   'notes2.deadHint': 'Click a mark to cycle: none → trust → suspect → confirmed evil → confirmed clean. You are dead: you can still edit your notes, but no longer share them.',
   'boot2.body': 'This game uses Boot on Death: the dead cannot spectate or receive player chat (system announcements still appear in the chat log). Results are announced when the game ends.',
+
+  // ───── Host status and graphics ─────
+  'net.hostLoading': 'Host is loading…',
+  'net.simError': 'Host simulation error: this game cannot continue',
+  'net.simErrorBack': 'Back to menu',
+  'gpu.lost': 'Graphics reset: rendering is paused and usually recovers in a few seconds',
+  'gpu.reload': 'Reload',
+  'gpu.lower': 'Lower quality',
 }

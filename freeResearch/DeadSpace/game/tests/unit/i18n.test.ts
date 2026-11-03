@@ -23,6 +23,10 @@ function messageKeys(): Map<string, string> {
     /\bsay\([^,()]+,\s*(?:[^,()]+,\s*)?'([a-zA-Z0-9_.]+)'/g,
     /\bsay\('([a-zA-Z0-9_.]+)'/g,
     /\btell\([^,()]+,\s*[^,()]+,\s*'([a-zA-Z0-9_.]+)'/g,
+    // 結算時間軸：g.log(fmtKey('tl.…'))，含三元運算子裡的 key
+    /\bfmtKey\('([a-zA-Z0-9_.]+)'/g,
+    /'(tl\.[a-zA-Z0-9_.]+)'/g,
+    /'(death\.you[A-Za-z]*)'/g,
   ]
   for (const f of files('src/sim')) {
     const src = readFileSync(f, 'utf8')

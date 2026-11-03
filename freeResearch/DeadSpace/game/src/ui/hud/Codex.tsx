@@ -6,7 +6,7 @@ import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { parseLayout } from '../../shared/layout'
 import type { UnitDef } from '../../shared/content/types'
 import { modalChecks, typingInField } from '../../client/input'
-import { loc, t } from '../i18n'
+import { listJoin, loc, t } from '../i18n'
 import { Icon } from '../icons'
 import '../../shared/content/index'
 
@@ -56,7 +56,7 @@ function entries(tab: Tab): Entry[] {
         id: c.id,
         name: loc(c.name),
         icon: 'human',
-        body: [loc(c.desc), c.items.length ? t('codex.startItems') + '：' + c.items.map((i) => loc(ITEMS.get(i)?.name)).join('、') : ''].filter(Boolean),
+        body: [loc(c.desc), c.items.length ? t('codex.startItems') + t('sep.colon') + listJoin(c.items.map((i) => loc(ITEMS.get(i)?.name))) : ''].filter(Boolean),
         abilities: abilitiesOf(c.abilities),
       }))
     case 'xeno':
@@ -184,7 +184,7 @@ export function Codex() {
                       <Icon name={a.icon} size={20} />
                       <div>
                         <b>{a.name}</b>
-                        <div class="dim" style={{ fontSize: '12px' }}>
+                        <div class="dim" style={{ fontSize: '13px' }}>
                           {a.desc}
                         </div>
                       </div>
@@ -195,7 +195,7 @@ export function Codex() {
             </div>
           )}
         </div>
-        <div class="dim" style={{ fontSize: '11px' }}>
+        <div class="dim" style={{ fontSize: '13px' }}>
           {t('codex.hint')}
         </div>
       </div>

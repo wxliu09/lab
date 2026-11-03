@@ -21,3 +21,12 @@ export function suitColor(id: string): string {
   if (i < 0) return '#ffc23d'
   return `hsl(${Math.round((i * 47) % 360)} 85% 66%)`
 }
+
+/**
+ * 玩家色當文字色用：深色的玩家色（深綠、棕、紅…）在深色底上對比不到 4.5:1，混一點白提亮。
+ * 光圈、色條等非文字的地方照舊用原色。
+ */
+export function textColorOf(hex: string | undefined): string {
+  if (!hex) return '#cfd8df'
+  return `color-mix(in srgb, ${hex} 68%, #ffffff)`
+}

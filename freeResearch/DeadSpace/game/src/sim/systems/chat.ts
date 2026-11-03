@@ -90,6 +90,7 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
   const line: ChatLine = { from: shown, color: shown ? color : -1, ch: 'all', text, time: t }
   // 對話泡泡只掛在「看起來就是說話者」的單位上：匿名形態或被消音時不掛（否則等於公開身分；千面化身例外，泡泡掛在偽裝上），
   // 而且只給當下看得到那個單位的人
+  // 系統 key 形式的發言（AI 公布驗血結果，`@key|k=v`）照樣掛泡泡：client 的泡泡與聊天紀錄都依語言解碼
   const bubble = !lastWords && main && (!main.anon || !!fake) && !!shown ? main.id : 0
   for (const q of to) q.chatOut.push(bubble && q.view.visible.has(bubble) ? { ...line, e: bubble } : line)
 }

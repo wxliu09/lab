@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { MAX_PLAYERS, PLAYER_COLORS, ROOM_ALPHABET } from '../../shared/constants'
 import { DEFAULT_SETTINGS, PRACTICE_ROLES, type PracticeRole } from '../../shared/protocol/messages'
-import { createRoom, joinRoom, loadProfile, notice, screen, startPractice } from '../../client/session'
+import { cancelJoin, createRoom, joinRoom, loadProfile, notice, screen, startPractice } from '../../client/session'
 import { t } from '../i18n'
 import { Settings } from './Settings'
 import { codexOpen } from '../hud/Codex'
@@ -161,11 +161,18 @@ export function Menu() {
           <button class="primary" data-testid="create" disabled={connecting} onClick={() => void createRoom(profile())}>
             {t('menu.create')}
           </button>
+          <label for="room-code" class="code-label">
+            {t('menu.codeLabel')}
+          </label>
           <div class="row">
             <input
+              id="room-code"
               class="code"
               data-testid="code"
               maxLength={5}
+              aria-label={t('menu.codeLabel')}
+              autoComplete="off"
+              spellcheck={false}
               value={code}
               placeholder="XXXXX"
               onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())}
@@ -189,8 +196,15 @@ export function Menu() {
             </button>
           </div>
         </div>
-        <div class="notice" data-testid="notice">
-          {connecting ? t('menu.connecting') : ''} {notice.value}
+        <div class="notice row" data-testid="notice">
+          <span class="grow">
+            {connecting ? t('menu.connecting') : ''} {notice.value}
+          </span>
+          {connecting && (
+            <button class="small ghost" data-testid="cancel-join" onClick={() => cancelJoin()}>
+              {t('menu.cancelJoin')}
+            </button>
+          )}
         </div>
       </div>
       <div class="foot">

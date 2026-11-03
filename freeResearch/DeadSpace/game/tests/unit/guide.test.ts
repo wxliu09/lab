@@ -26,7 +26,7 @@ vi.mock('../../src/client/session', async () => {
 })
 vi.mock('../../src/client/input', async () => {
   const { signal } = await import('@preact/signals')
-  return { typingInField: () => false, chatOpen: signal(false), evolveOpen: signal(false), targetMode: signal(null), selected: signal(0), modalChecks: [] }
+  return { typingInField: () => false, chatOpen: signal(false), evolveOpen: signal(false), targetMode: signal(null), selected: signal(0), modalChecks: [], panelChecks: [], dialogOpen: () => false }
 })
 
 const G = await import('../../src/ui/hud/Guide')
@@ -85,10 +85,13 @@ describe('目標面板', () => {
     expect(keysOf({ ...view({ role: 'human', classId: 'ceo' }), w: { t: 500 } })).toContain('guide.s.samplerGet')
   })
 
-  it('職業一句話：研究員顯示抽到的博士專長（自己的 buff）', () => {
-    const o = G.objectiveFor(view({ role: 'human', classId: 'researcher' }, { self: { d: 'personnel', hp: 1, mhp: 1, b: ['cls.phd.optics'] } }))!
+  it('職業一句話：研究員顯示抽到的博士專長與效果（私有狀態的 phd；專長以被動套用，不在 buff 清單裡）', () => {
+    const o = G.objectiveFor(view({ role: 'human', classId: 'researcher', phd: 'optics' }))!
     const cls = o.steps.find((s) => s.key === 'guide.s.class')!
     expect(String(cls.args?.desc)).toMatch(/Optics|光學/)
+    expect(String(cls.args?.desc)).toContain('2.5')
+    expect(G.phdText({ phd: 'biology' })).toMatch(/2/)
+    expect(G.phdText({})).toBe('')
     const plain = G.objectiveFor(view({ role: 'human', classId: 'commissar' }))!.steps.find((s) => s.key === 'guide.s.class')!
     expect(String(plain.args?.desc)).toMatch(/125/)
   })
@@ -134,6 +137,23 @@ describe('目標面板', () => {
     expect(keysOf(view({ role: 'spectator', alive: false }))).toContain('guide.s.specPick')
     // 死掉的異類不再顯示 EP
     expect(G.objectiveFor(view({ role: 'xeno', alive: false, ep: 10, epNext: 660 }))!.ep).toBeUndefined()
+  })
+
+  it('死亡即退出：已出局的人不會被叫去觀戰', () => {
+    const o = G.objectiveFor(view({ role: 'human', alive: false, booted: true }))!
+    expect(o.goal).toBe('guide3.goal.booted')
+    expect(o.steps.map((s) => s.key)).toEqual(['guide3.s.booted', 'guide3.s.bootedLeave'])
+    expect(hintIds(view({ role: 'human', alive: false, booted: true }))).not.toContain('death')
+    expect(hintIds(view({ role: 'human', alive: false }))).toContain('death')
+  })
+
+  it('進化中（結繭、肉團）不再顯示「可以進化」', () => {
+    const v = view({ role: 'xeno', tier: 1, ep: 900, epNext: 660, canEvolve: ['xeno.brute'], evolving: 40 })
+    const o = G.objectiveFor(v)!
+    expect(o.ep?.ready).toBe(false)
+    expect(o.steps.map((s) => s.key)).not.toContain('guide.s.evolveXeno')
+    expect(hintIds(v)).not.toContain('evolveXeno')
+    expect(G.objectiveFor(view({ role: 'xeno', tier: 1, ep: 900, epNext: 660, canEvolve: ['xeno.brute'] }))!.ep?.ready).toBe(true)
   })
 
   it('最多 4 條，超過 6 個技能時改說「指令卡按鈕」', () => {
@@ -201,6 +221,20 @@ describe('情境提示的觸發條件', () => {
     expect(hintIds(view({ role: 'mutant', canEvolve: ['mut.apex'] }))).toContain('evolveMutant')
     expect(hintIds(view({ role: 'android', ep: 2000, epNext: 2000 }))).toContain('androidFull')
     expect(hintIds({ ...view({ role: 'human' }), w: { t: 200, stab: 0.4 } })).toEqual(expect.arrayContaining(['stab', 'ally', 'notes']))
+  })
+
+  it('被寄生／感染朊毒（自己的狀態）：提示用抗體包；受控（休眠）後不再提示；異類不提示', () => {
+    const sick = (b: string[], role: 'human' | 'xeno' = 'human') => hintIds(view({ role }, { self: { d: 'personnel', hp: 400, mhp: 400, b } }))
+    expect(sick(['bf.parasite'])).toContain('parasited')
+    expect(sick(['bf.prionStrong'])).toContain('prioned')
+    expect(sick(['bf.containedParasite'])).not.toContain('parasited')
+    expect(sick(['bf.parasite'], 'xeno')).not.toContain('parasited')
+    expect(sick([])).not.toEqual(expect.arrayContaining(['parasited']))
+  })
+
+  it('變種人肉團（進化中）不再叫他保持偽裝', () => {
+    expect(keysOf(view({ role: 'mutant', tier: 0, abilities: ab('mut.devour') }))).toContain('guide.s.hide')
+    expect(keysOf(view({ role: 'mutant', tier: 0, evolving: 40, abilities: ab('mut.devour') }))).not.toContain('guide.s.hide')
   })
 
   it('身分技能：異形、變種人、仿生人、spawn', () => {
@@ -334,6 +368,8 @@ describe('指引文字', () => {
       view({ role: 'human', classId: 'researcher', inv: inv('suit.cryo', 'geneSampler', 'gitResolver', 'memoryCore'), gitReports: [{ time: 1, names: [], result: 'clean' }], fac: { k: 'cells', e: 1, open: [], off: 0 }, abilities: ab('cls.rummage') }, { near: ['vendor.medical', 'vendor.escapePod', 'struct.git', 'struct.console', 'docked.mule', 'struct.droneControl', 'fac.fabricator', 'struct.rummage'].map((d) => ({ d, dist: 0.5 })), self: { d: 'personnel', hp: 10, mhp: 400 } }),
       { ...view({ role: 'human', zone: 0 }), w: { t: 999, stab: 0.1 } },
       view({ role: 'human', zone: 3 }, { zoneStation: 'ship:kestrel' }),
+      view({ role: 'human' }, { self: { d: 'personnel', hp: 400, mhp: 400, b: ['bf.parasite'] } }),
+      view({ role: 'human' }, { self: { d: 'personnel', hp: 400, mhp: 400, b: ['bf.prion'] } }),
       view({ role: 'xeno', canEvolve: ['x'], ep: 1, epNext: 660, abilities: ab('xeno.form') }),
       view({ role: 'xeno', evolving: 3, abilities: ab('xeno.parasite', 'xeno.egg', 'xeno.human') }),
       view({ role: 'mutant', tier: 0, canEvolve: ['m'], abilities: ab('mut.devour') }),
@@ -347,6 +383,7 @@ describe('指引文字', () => {
       view({ role: 'human', alive: false }),
       view({ role: 'android', alive: false }),
       view({ role: 'spectator', alive: false }),
+      view({ role: 'human', alive: false, booted: true }),
     ]
     for (const v of states) {
       const o = G.objectiveFor(v)!
@@ -361,7 +398,9 @@ describe('指引文字', () => {
     for (const k of HELP_CONTROLS) need.add('guide.ctl.' + k).add('guide.ctl.' + k + '.k')
     for (const k of HELP_THINGS) need.add('guide.th.' + k).add('guide.th.' + k + '.t')
     for (const list of Object.values(G.ROLE_TIPS)) for (const k of list) need.add('guide.r.' + k)
-    for (const k of ['self', 'players', 'hostile', 'other', 'door', 'console', 'vendor', 'git', 'fac', 'view', 'space']) need.add('guide.map.' + k)
+    for (const k of ['door', 'console', 'medical', 'suit', 'vendor', 'git', 'fac', 'view', 'space']) need.add('guide.map.' + k)
+    for (const k of ['selfRing', 'playersDot', 'hostileDiamond', 'otherDot']) need.add('guide3.map.' + k)
+    for (const k of ['guide3.r.booted.1', 'guide3.r.booted.2', 'guide3.help.moreLine', 'guide3.help.scroll']) need.add(k)
     const missing = [...need].filter((k) => !hasString('zh', k) || !hasString('en', k))
     expect(missing).toEqual([])
     expect(need.size).toBeGreaterThan(100)

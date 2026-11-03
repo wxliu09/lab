@@ -1,13 +1,17 @@
 // AI bots（M9）：填人數、練習模式、headless 對局測試。
 // 只透過 handleCommand 下指令（和真人走同一條驗證路徑），只用自己的視野（p.view.visible）挑目標。
-// 人類：買防護服、驗血、遇到怪物開火、受傷逃跑；異類：落單時感染、湊夠 EP 就躲起來進化、變身後獵殺。
+// 人類：買防護服（各有各的習慣：有人一直穿、有人在宿舍休息時脫下、有人拖到後期才穿）、驗血並在全體頻道公布結果、
+// 遇到怪物開火、受傷逃跑；異類：落單時感染、湊夠 EP 就躲起來進化、變身後獵殺。
+// AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。
 import type { Command } from '../../shared/protocol/messages'
 import { abilityDef, itemDef } from '../../shared/content/registry'
+import { roomAt } from '../../shared/layout'
 import { HOSTILE, dist2, type Ent } from '../ent'
-import type { Game, GamePlayer } from '../game'
+import { fmtKey, type Game, type GamePlayer } from '../game'
 import { handleCommand } from '../systems/orders'
 import { cdReady } from '../systems/abilities'
 import { VENDOR_RANGE, type StockState } from '../systems/vendors'
+import { spaceOf } from '../systems/space'
 
 interface Brain {
   next: number
@@ -17,7 +21,27 @@ interface Brain {
   /** 不能再試的目標（指令失敗）*/
   skip: Map<number, number>
   evolveAt: number
+  /** 驗血「有感染」名單上的人（抽血時看到的名字）→ 出現在幾份有感染的報告裡 */
+  suspects: Map<string, number>
+  /** 出現在乾淨報告裡的名字 */
+  cleared: Set<string>
+  /** 這台檢測器已抽過的人（抽血時看到的名字）*/
+  drawnNames: Set<string>
+  /** 已經處理過幾份自己的驗血報告 */
+  reported: number
+  /** 已經公開指認的對象（名字）*/
+  accused: string
+  /** 最近一次察覺威脅（看到玩家的怪物形態、被攻擊）的時間 */
+  alarmAt: number
+  /** 上次穿脫防護服的時間（避免來回切換）*/
+  suitAt: number
 }
+
+/**
+ * 防護服習慣：always = 一拿到就穿、永不脫；casual = 平常穿著，在宿舍、販賣區等休息處且沒有威脅時脫下；
+ * late = 拖到中後期（或察覺威脅）才穿。讓練習模式裡也有沒穿防護服的人，寄生與朊毒才練得到。
+ */
+type SuitPlan = 'always' | 'casual' | 'late'
 
 type Goal =
   | { k: 'buy'; vendor: number; item: string; until: number }
@@ -30,7 +54,56 @@ type Goal =
 const SUIT_VENDORS = new Set(['suitA', 'suitB', 'suitC', 'suitD'])
 
 function brainOf(g: Game, p: GamePlayer): Brain {
-  return (p.data.brain ??= { next: g.time + g.world.rng.range(1, 3), goal: null, drawn: new Set(), skip: new Map(), evolveAt: 0 }) as Brain
+  return (p.data.brain ??= {
+    next: g.time + g.world.rng.range(1, 3),
+    goal: null,
+    drawn: new Set(),
+    skip: new Map(),
+    evolveAt: 0,
+    suspects: new Map(),
+    cleared: new Set(),
+    drawnNames: new Set(),
+    reported: 0,
+    accused: '',
+    alarmAt: -1e9,
+    suitAt: -1e9,
+  }) as Brain
+}
+
+/**
+ * 每位人類 AI 的防護服習慣：第一次需要時一次分配給當下所有人類方 AI（用 sim 的 rng，可重現）。
+ * 洗牌後依序給 late、casual、always，其餘隨機——只要有人類 AI，就至少有一個晚穿的。
+ */
+function suitPlanOf(g: Game, p: GamePlayer): SuitPlan {
+  const plans = (g.data.botSuitPlans ??= assignSuitPlans(g)) as Map<number, SuitPlan>
+  return plans.get(p.slot) ?? 'always'
+}
+
+function assignSuitPlans(g: Game): Map<number, SuitPlan> {
+  const rng = g.world.rng
+  const crew = g.allPlayers().filter((q) => q.bot && !q.spectator && g.faction(q) === 'crew')
+  for (let i = crew.length - 1; i > 0; i--) {
+    const j = rng.int(0, i)
+    ;[crew[i], crew[j]] = [crew[j], crew[i]]
+  }
+  const out = new Map<number, SuitPlan>()
+  const base: SuitPlan[] = ['late', 'casual', 'always']
+  crew.forEach((q, i) => {
+    const plan = i < base.length ? base[i] : rng.pick(base)
+    out.set(q.slot, plan)
+    // 晚穿的人在 9–15 分鐘之間才去穿
+    if (plan === 'late') q.data.botSuitLateAt = rng.range(540, 900)
+  })
+  return out
+}
+
+/** 休息處：宿舍、販賣區、交誼廳、醫療室 */
+const REST_ROOMS = new Set(['quarters', 'commissary', 'lounge', 'medbay'])
+
+function resting(g: Game, u: Ent): boolean {
+  const l = g.world.zones[u.zone]?.layout
+  const r = l ? roomAt(l, u.x, u.y) : null
+  return !!r && REST_ROOMS.has(r.spec.type)
 }
 
 function cmd(g: Game, p: GamePlayer, c: Command): void {
@@ -56,6 +129,8 @@ function isFoe(g: Game, p: GamePlayer, e: Ent): boolean {
   if (e.owner === HOSTILE) return !e.tags.has('noTarget')
   if (e.owner < 0 || e.owner === p.slot) return false
   const f = g.faction(p)
+  // 打不死的東西（執行長的機器管家等）不算威脅
+  if (e.tags.has('invuln') || e.tags.has('butler')) return false
   if (f === 'crew') return !looksHuman(e) && !e.tags.has('structure') && !e.tags.has('ship') && !e.tags.has('station') && !e.tags.has('drone') && !e.tags.has('corpse')
   // 異類：同陣營不打
   const o = g.players[e.owner]
@@ -84,9 +159,11 @@ function vendorWith(g: Game, p: GamePlayer, u: Ent, pred: (ref: string, s: Stock
   return best
 }
 
-function randomRoomPoint(g: Game, u: Ent): { x: number; y: number } | null {
+function randomRoomPoint(g: Game, u: Ent, types?: Set<string>): { x: number; y: number } | null {
   const z = g.world.zones[u.zone]
-  const rooms = z.layout?.rooms ?? []
+  const all = z.layout?.rooms ?? []
+  const pref = types ? all.filter((r) => types.has(r.spec.type)) : all
+  const rooms = pref.length ? pref : all
   if (!rooms.length || !z.nav) return null
   const r = g.world.rng.pick(rooms)
   return z.nav.nearestOpen(r.cx + g.world.rng.range(-1.5, 1.5), r.cy + g.world.rng.range(-1.5, 1.5))
@@ -150,6 +227,8 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
 
 function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   const near = visibleEnts(g, p, u, 10)
+  // 察覺威脅：看到玩家的怪物形態，或剛被攻擊
+  if (near.some((e) => e.owner >= 0 && (isFoe(g, p, e) || e.tags.has('mutantForm'))) || g.time - u.lastDamageTime < 3) b.alarmAt = g.time
   // 受傷過重：逃
   if (u.hp < u.maxHp * 0.3 && g.time - u.lastDamageTime < 4) {
     const kit = ['traumaKit', 'mediSwarm'].map((id) => itemSlot(u, id)).find((s) => s >= 0)
@@ -169,6 +248,14 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     b.goal = { k: 'hunt', e: foe.id, until: g.time + 10 }
     return
   }
+  // 驗血指認出來的人：看到就開火
+  if (b.accused && u.def.attack) {
+    const t = near.find((e) => e.isMain && e.owner >= 0 && e.owner !== p.slot && seenName(g, e) === b.accused)
+    if (t) {
+      b.goal = { k: 'hunt', e: t.id, until: g.time + 10 }
+      return
+    }
+  }
   // 驗血
   const res = itemSlot(u, 'gitResolver')
   if (res >= 0) {
@@ -182,43 +269,133 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   }
   const sampler = itemSlot(u, 'geneSampler')
   if (sampler >= 0) {
-    const who = nearest(
-      u,
-      near.filter((e) => e.isMain && e.owner >= 0 && looksHuman(e) && !b.drawn.has(e.owner) && (b.skip.get(e.id) ?? 0) < g.time),
-    )
+    const cand = near.filter((e) => e.isMain && e.owner >= 0 && looksHuman(e) && !b.drawn.has(e.owner) && (b.skip.get(e.id) ?? 0) < g.time)
+    const who = nearest(u, narrowSuspects(g, b, cand))
     const self = !b.drawn.has(p.slot) ? u : null
     const t = who ?? self
     if (t) {
       b.drawn.add(t.owner)
+      b.drawnNames.add(seenName(g, t))
       b.goal = { k: 'cast', a: 'ab.item.geneSampler', e: t.id, slot: sampler, until: g.time + 15 }
       return
     }
-  } else if (g.time > 420 && !p.data.botTested) {
+  } else if (g.time > 420 && (!p.data.botTested || (p.data.botRetest && !b.accused && g.time >= (p.data.botRetestAt as number)))) {
     const v = vendorWith(g, p, u, (_ref, s) => s.item === 'geneSampler')
     if (v) {
       b.drawn.clear()
+      b.drawnNames.clear()
+      if (p.data.botTested) p.data.botRetest = false
       p.data.botTested = true
       b.goal = { k: 'buy', vendor: v.v.id, item: v.item, until: g.time + 30 }
       return
     }
   }
-  // 防護服
-  if (!u.suit && u.tags.has('personnel')) {
-    const have = u.inv?.findIndex((x) => !!x && !!itemDef(x.id)?.suit) ?? -1
-    if (have >= 0) {
-      cmd(g, p, { k: 'use', s: have })
+  // 防護服（依各自的習慣）
+  const plan = suitPlanOf(g, p)
+  const calm = g.time - b.alarmAt > 60 && u.hp >= u.maxHp * 0.6
+  if (u.suit) {
+    // 平常穿著的人：在休息處、沒有威脅時脫下來喘口氣
+    if (plan === 'casual' && calm && resting(g, u) && g.time - b.suitAt > 20 && u.abilities.includes('suit.drop')) {
+      b.suitAt = g.time
+      cmd(g, p, { k: 'cast', a: 'suit.drop' })
       return
     }
-    if (!p.data.botSuitTried) {
-      const v = vendorWith(g, p, u, (ref) => SUIT_VENDORS.has(ref))
-      if (v) {
-        p.data.botSuitTried = true
-        b.goal = { k: 'buy', vendor: v.v.id, item: v.item, until: g.time + 40 }
+  } else if (u.tags.has('personnel')) {
+    const wantSuit =
+      plan === 'always' ||
+      (plan === 'casual' && (!calm || !resting(g, u))) ||
+      (plan === 'late' && (g.time >= ((p.data.botSuitLateAt as number | undefined) ?? 0) || g.time - b.alarmAt < 30))
+    if (wantSuit) {
+      const have = u.inv?.findIndex((x) => !!x && !!itemDef(x.id)?.suit) ?? -1
+      if (have >= 0 && (g.time - b.suitAt > 8 || !calm)) {
+        b.suitAt = g.time
+        cmd(g, p, { k: 'use', s: have })
         return
+      }
+      if (have < 0 && !p.data.botSuitTried) {
+        const v = vendorWith(g, p, u, (ref) => SUIT_VENDORS.has(ref))
+        if (v) {
+          p.data.botSuitTried = true
+          b.goal = { k: 'buy', vendor: v.v.id, item: v.item, until: g.time + 40 }
+          return
+        }
       }
     }
   }
-  wander(g, p, u, b)
+  wander(g, p, u, b, plan === 'casual' ? REST_ROOMS : undefined)
+}
+
+/** 抽血時看到的名字（git.ts 的 shownName 同一套規則：偽裝就是偽裝對象，匿名形態沒有名字）*/
+function seenName(g: Game, e: Ent): string {
+  const fake = e.data.fake as { owner: number; name: string } | undefined
+  if (fake) return fake.owner >= 0 ? (g.players[fake.owner]?.name ?? fake.name) : ''
+  if (e.anon) return ''
+  return g.players[e.owner]?.name || e.name
+}
+
+/**
+ * 讀自己新拿到的驗血報告：在全體頻道公布結果（系統 key＋參數，client 依語言顯示），
+ * 有感染時把名單上的其他人記為嫌疑；只剩一個最可疑的人就公開指認、看到就開火。
+ */
+function readReports(g: Game, p: GamePlayer, b: Brain): void {
+  const reports = p.gitReports
+  while (b.reported < reports.length) {
+    const r = reports[b.reported++]
+    const names = r.names.filter((n) => !!n)
+    if (!names.length) continue
+    const list = names.join('、')
+    if (r.result === 'clean') {
+      for (const n of names) {
+        b.cleared.add(n)
+        b.suspects.delete(n)
+      }
+      say(g, p, 'play1.bot.gitClean', { names: list })
+    } else if (r.result === 'infected') {
+      for (const n of names) if (n !== p.name && !b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
+      say(g, p, 'play1.bot.gitInfected', { names: list })
+      // 還認不出是誰：之後再驗一次縮小範圍
+      if (!topSuspect(b) && !p.data.botRetestDone) {
+        p.data.botRetest = true
+        p.data.botRetestDone = true
+        p.data.botRetestAt = g.time + 20
+      }
+    } else continue
+    const top = topSuspect(b)
+    if (top && top !== b.accused) {
+      b.accused = top
+      say(g, p, 'play1.bot.accuse', { name: top })
+    }
+  }
+}
+
+/** 複驗時縮小範圍：一份樣本只放一名嫌疑人（先挑嫌疑人，抽到一個之後就避開其他嫌疑人）*/
+function narrowSuspects(g: Game, b: Brain, cand: Ent[]): Ent[] {
+  const sus = (e: Ent) => (b.suspects.get(seenName(g, e)) ?? 0) > 0 && !b.cleared.has(seenName(g, e))
+  if (!b.suspects.size) return cand
+  const haveOne = [...b.drawnNames].some((n) => (b.suspects.get(n) ?? 0) > 0)
+  const pick = haveOne ? cand.filter((e) => !sus(e)) : cand.filter(sus)
+  return pick.length ? pick : haveOne ? [] : cand
+}
+
+/** 唯一最可疑的人（出現在最多份有感染報告裡、且沒有並列）*/
+function topSuspect(b: Brain): string {
+  let best = ''
+  let bestN = 0
+  let tie = false
+  for (const [n, c] of b.suspects) {
+    if (b.cleared.has(n)) continue
+    if (c > bestN) {
+      best = n
+      bestN = c
+      tie = false
+    } else if (c === bestN) tie = true
+  }
+  return bestN > 0 && !tie ? best : ''
+}
+
+/** AI 在全體頻道說話：走一般的聊天路由（名字、偽裝、只限同站等規則照舊），內容是 i18n 的系統 key */
+function say(g: Game, p: GamePlayer, key: string, args: Record<string, string | number>): void {
+  g.handleChat(p.slot, 'all', fmtKey(key, args))
 }
 
 function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
@@ -307,10 +484,10 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   wander(g, p, u, b)
 }
 
-function wander(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
+function wander(g: Game, p: GamePlayer, u: Ent, b: Brain, prefer?: Set<string>): void {
   if (u.order) return
   if (!g.world.rng.chance(0.4)) return
-  const pt = randomRoomPoint(g, u)
+  const pt = randomRoomPoint(g, u, prefer && g.world.rng.chance(0.5) ? prefer : undefined)
   if (pt) b.goal = { k: 'goto', ...pt, until: g.time + 25 }
   void p
 }
@@ -326,9 +503,19 @@ function stepBots(g: Game): void {
     // 死亡模式投票：bots 一律選觀戰
     if (p.alive && g.votes.death && !g.votes.death.ballots.has(p.slot)) g.handleVote(p.slot, 'spectate')
     if (!p.alive) continue
+    // 新的驗血報告：馬上公布（不等手上的目標做完）
+    if (g.faction(p) === 'crew') readReports(g, p, b)
     const u = g.controlOf(p)
     if (!u || !u.alive || u.data.frozen || p.evolvingUntil > t || u.tags.has('cocoon')) continue
+    // 誤站上控制台、接手了站點或船艇：交回控制（AI 不會駕駛），之後照常走開
+    if (u.id !== p.main && spaceOf(g).pilots.get(u.id) === p.main) {
+      cmd(g, p, { k: 'unpilot' })
+      b.goal = null
+      continue
+    }
     if (u.zone === 0) continue
+    // 在船艙裡（AI 不會開船）：走回艙門下船
+    if (leaveCabin(g, p, u, b)) continue
     if (pursue(g, p, u, b)) {
       // 追擊中仍會優先處理逃跑
       if (b.goal?.k !== 'flee' && u.hp < u.maxHp * 0.25 && g.faction(p) === 'crew') b.goal = null
@@ -337,6 +524,19 @@ function stepBots(g: Game): void {
     if (g.faction(p) === 'crew') thinkCrew(g, p, u, b)
     else thinkEvil(g, p, u, b)
   }
+}
+
+/** 主單位在停泊中的船艙裡：設定走向艙門的目標（exitShip 在艙門上觸發）。回傳 true = 這一輪只做這件事 */
+function leaveCabin(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
+  if (u.id !== p.main) return false
+  const z = g.world.zones[u.zone]
+  const key = z.data.ship as string | undefined
+  const inst = key ? spaceOf(g).ships.get(key) : undefined
+  const exit = z.layout?.exits[0]
+  if (!inst?.docked || !exit) return false
+  if (Math.hypot(u.x - exit.x, u.y - exit.y) > 0.3 && (u.order?.k !== 'move' || u.order.x !== exit.x || u.order.y !== exit.y)) cmd(g, p, { k: 'move', x: exit.x, y: exit.y })
+  b.goal = null
+  return true
 }
 
 const installed = new WeakSet<Game>()

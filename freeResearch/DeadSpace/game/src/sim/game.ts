@@ -171,6 +171,21 @@ export class Game {
   possessSlug?: (slot: number) => boolean
   /** 每 tick 額外執行的系統（AI、事件、太空…）*/
   readonly systems: { name: string; fn: (g: Game) => void }[] = []
+  /** 核心步驟、系統、排程、死亡掛勾丟出的例外：累計次數，與連續出錯的 tick 數（worker 據此判斷是否不可恢復）*/
+  stepErrors = 0
+  errStreak = 0
+  private tickErr = false
+
+  /** 單一步驟的例外不能卡死整局（DEV 印出來）*/
+  private guard(name: string, fn: (g: Game) => void): void {
+    try {
+      fn(this)
+    } catch (e) {
+      this.stepErrors++
+      this.tickErr = true
+      if (__DEV__) console.error('[step]', name, e)
+    }
+  }
 
   constructor(init: GameInit) {
     this.settings = init.settings
@@ -495,6 +510,7 @@ export class Game {
       try {
         h(this, u, killer, killerSlot)
       } catch (e) {
+        this.stepErrors++
         if (__DEV__) console.error('[death hook]', e)
       }
     }
@@ -695,6 +711,7 @@ export class Game {
     w.tick++
     w.time += TICK_DT
     this.tick = w.tick
+    this.tickErr = false
     // 排程
     if (this.timers.length) {
       const due = this.timers.filter((x) => x.at <= w.time)
@@ -704,30 +721,27 @@ export class Game {
           try {
             d.fn()
           } catch (e) {
+            this.stepErrors++
+            this.tickErr = true
             if (__DEV__) console.error('[timer]', e)
           }
         }
       }
     }
-    this.stepVotes()
-    stepDoors(this)
-    stepAutocast(this)
-    stepCasting(this)
-    stepItemOrders(this)
-    for (const s of this.systems) {
-      try {
-        s.fn(this)
-      } catch (e) {
-        if (__DEV__) console.error('[system]', s.name, e)
-      }
-    }
-    stepMovement(this)
-    stepDashes(this, TICK_DT)
-    stepBuffs(this)
-    stepCombat(this)
-    stepProjectiles(this)
-    stepVendors(this)
-    stepLife(this)
+    this.guard('votes', (g) => g.stepVotes())
+    this.guard('doors', stepDoors)
+    this.guard('autocast', stepAutocast)
+    this.guard('casting', stepCasting)
+    this.guard('itemOrders', stepItemOrders)
+    for (const s of this.systems) this.guard(s.name, s.fn)
+    this.guard('movement', stepMovement)
+    this.guard('dashes', (g) => stepDashes(g, TICK_DT))
+    this.guard('buffs', stepBuffs)
+    this.guard('combat', stepCombat)
+    this.guard('projectiles', stepProjectiles)
+    this.guard('vendors', stepVendors)
+    this.guard('life', stepLife)
+    this.errStreak = this.tickErr ? this.errStreak + 1 : 0
   }
 
   /** 每次 server tick 都送快照（暫停時也送，讓畫面維持）*/

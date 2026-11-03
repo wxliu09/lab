@@ -4,7 +4,7 @@
 import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { unitDef } from '../../shared/content/registry'
 import { HOSTILE, NEUTRAL, dist2, type Ent } from '../ent'
-import type { Game, GamePlayer } from '../game'
+import { fmtKey, type Game, type GamePlayer } from '../game'
 import { addStation, markersOf } from '../setup'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { populateZone, spawnCreature } from '../ai/creatures'
@@ -104,7 +104,7 @@ const EVENTS: EventDef[] = [
       g.systemAll('event.promotion', { name: p.baseName })
       p.name = '特務·' + p.baseName
       u.name = p.name
-      g.log(`${p.baseName} 獲得晉升`)
+      g.log(fmtKey('tl.promotion', { name: p.baseName }))
       return true
     },
   },
@@ -124,7 +124,7 @@ const EVENTS: EventDef[] = [
       const se = g.world.get(z.spaceEnt)
       if (se) g.emitFx({ k: 'ping', z: SPACE_ZONE, x: se.x, y: se.y, v: 15, s: 'event' })
       g.systemAll('event.wormhole', { m: 6, s: 37 })
-      g.log('蟲洞物體出現')
+      g.log(fmtKey('tl.wormhole'))
       return true
     },
   },
@@ -156,7 +156,7 @@ const EVENTS: EventDef[] = [
         g.emitFx({ k: 'ping', z: SPACE_ZONE, x: se.x, y: se.y, v: 10, s: 'event' })
       }
       g.systemAll('event.pirate')
-      g.log('海盜船出現')
+      g.log(fmtKey('tl.pirate'))
       return true
     },
   },
@@ -440,7 +440,7 @@ function startApocalypse(g: Game, kind: 'fleet' | 'orbit'): boolean {
     g.systemAll('apoc.orbit')
     g.emitFx({ k: 'orbitFail', z: SPACE_ZONE, x: 6.5, y: -2.9 })
   }
-  g.log(kind === 'fleet' ? '末日：艦隊清場' : '末日：軌道穩定器失效')
+  g.log(fmtKey(kind === 'fleet' ? 'tl.apoc.fleet' : 'tl.apoc.orbit'))
   return true
 }
 
@@ -811,7 +811,7 @@ function blackHoleEgg(g: Game, p: GamePlayer, text: string): void {
     spawnCreature(g, 'npc.slugOperative', z.id, pt.x, pt.y, 1)
     n++
   }
-  g.log('黑洞裝置啟動')
+  g.log(fmtKey('tl.blackhole'))
 }
 
 /** 天守砲台對翠原星放電（M7 主砲腳本呼叫）：解除收容失效 */

@@ -4,16 +4,20 @@ import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
-import { entDefName, suitColor } from '../names'
+import { entDefName, suitColor, textColorOf } from '../names'
 import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, world, connLost } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, leave, notice } from '../../client/session'
+import { SIM_ERROR_KEY } from '../../net/hostRelay'
+import { gpuLost } from '../../render/engine'
+import { quality, setQuality } from '../../render/quality'
 import { chatOpen, evolveOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
-import { loc, sysText, t } from '../i18n'
+import { listJoin, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
+import { TopSlot } from './Announce'
 import { showCursorTip, tipProps, type TipData } from '../tooltip'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
@@ -23,10 +27,11 @@ function fmtTime(s: number): string {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 }
 
+// 文字用的陣營色（主色 #7a3cff／#c8323c 在深色底上對比不到 4.5:1）
 const ROLE_COLOR: Record<string, string> = {
   human: '#9fe7ff',
-  xeno: '#7a3cff',
-  mutant: '#c8323c',
+  xeno: '#b28cff',
+  mutant: '#ff6b72',
   android: '#ffb000',
   spectator: '#a7b0ba',
 }
@@ -79,19 +84,61 @@ export function TopBar() {
 export function Banner() {
   void snapTick.value
   const me = world.me
+  // 主機模擬不可恢復的錯誤：主機以 notice 通知所有人（含自己）。這兩種提示放在對話框（z-index 50）之上，按鈕隨時按得到
+  if (notice.value && notice.value === t(SIM_ERROR_KEY))
+    return (
+      <div class="panel banner" data-testid="sim-error" style={{ zIndex: 60 }}>
+        {notice.value}{' '}
+        <button class="small" onClick={() => leave(false)}>
+          {t('net.simErrorBack')}
+        </button>
+      </div>
+    )
+  if (gpuLost.value)
+    return (
+      <div class="panel banner" data-testid="gpu-lost" style={{ zIndex: 60 }}>
+        {t('gpu.lost')}{' '}
+        <button class="small" onClick={() => location.reload()}>
+          {t('gpu.reload')}
+        </button>{' '}
+        {quality.value !== 'low' && (
+          <button class="small ghost" onClick={() => setQuality('low')}>
+            {t('gpu.lower')}
+          </button>
+        )}
+      </div>
+    )
   if (connLost.value) return <div class="panel banner">{t('net.hostLost')}</div>
   if (world.w.bg && !isHost.value) return <div class="panel banner">{t('net.hostBg')}</div>
-  if (me.alive === false && me.role !== 'spectator') return <div class="panel banner">{t('hud.dead')}</div>
+  if (hostStall.value && !isHost.value)
+    return (
+      <div class="panel banner" data-testid="host-loading">
+        {t('net.hostLoading')}
+      </div>
+    )
+  // 出局者（死亡即退出）不能觀戰、也不能和死者聊天：目標面板已說明「等待結算」，這裡不再顯示觀戰橫幅
+  if (me.alive === false && me.role !== 'spectator' && !me.booted) return <div class="panel banner">{t('hud.dead')}</div>
   return null
 }
 
-export function Minimap({ scene }: { scene: GameScene }) {
+export function Minimap(props: { scene: GameScene }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const base = useRef<{ zone: number; img: HTMLCanvasElement } | null>(null)
+  // 繪圖與事件處理都經由 ref 取場景，卸載時清掉：離開對局後殘留在（已脫離文件的）DOM 上的 listener 不會再留住舊局的整個場景
+  const sceneRef = useRef<GameScene | null>(props.scene)
+  sceneRef.current = props.scene
+  useEffect(
+    () => () => {
+      sceneRef.current = null
+    },
+    [],
+  )
   useEffect(() => {
     let raf = 0
     const draw = () => {
       raf = requestAnimationFrame(draw)
+      const scene = sceneRef.current
+      if (!scene) return
       const c = ref.current
       if (c && scene.zone === 0) {
         drawSpace(c, scene)
@@ -141,12 +188,7 @@ export function Minimap({ scene }: { scene: GameScene }) {
         if (e.s.z !== scene.zone) continue
         const def = UNITS.get(e.s.d ?? '')
         if (def?.tags.includes('structure')) continue
-        const px = ox + e.x * k
-        const py = oy + (l.h - e.y) * k
-        x.fillStyle = (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : (e.s.fl ?? 0) & 64 ? '#ff3b3b' : '#cfd8df'
-        x.beginPath()
-        x.arc(px, py, e.s.i === world.me.unit ? 4 : 3, 0, Math.PI * 2)
-        x.fill()
+        drawMinimapUnit(x, e.s, ox + e.x * k, oy + (l.h - e.y) * k)
       }
       // 視野框
       const tx = scene.rts.tx
@@ -158,8 +200,10 @@ export function Minimap({ scene }: { scene: GameScene }) {
     }
     draw()
     return () => cancelAnimationFrame(raf)
-  }, [scene])
+  }, [props.scene])
   const toWorld = (ev: MouseEvent) => {
+    const scene = sceneRef.current
+    if (!scene) return null
     const c = ref.current!
     const r = c.getBoundingClientRect()
     if (scene.zone === 0) {
@@ -185,7 +229,8 @@ export function Minimap({ scene }: { scene: GameScene }) {
         onContextMenu={(e) => e.preventDefault()}
         onMouseMove={(e) => {
           // 懸停：顯示房間名稱與裡面的設施
-          if (scene.zone === 0) return showCursorTip(null, 0, 0)
+          const scene = sceneRef.current
+          if (!scene || scene.zone === 0) return showCursorTip(null, 0, 0)
           const p = toWorld(e)
           const info = scene.zones.get(scene.zone)
           if (!p || !info) return showCursorTip(null, 0, 0)
@@ -195,18 +240,54 @@ export function Minimap({ scene }: { scene: GameScene }) {
             .filter((q) => info.layout.roomOf[q.row * info.layout.w + q.col] === room.index)
             .map((q) => poiName(q.def.kind, q.def.ref))
             .filter(Boolean)
-          showCursorTip({ title: loc(room.spec.name), body: [...new Set(things)].join('、') || undefined, hint: t('minimap.hint') }, e.clientX, e.clientY)
+          showCursorTip({ title: loc(room.spec.name), body: listJoin([...new Set(things)]) || undefined, hint: t('minimap.hint') }, e.clientX, e.clientY)
         }}
         onMouseLeave={() => showCursorTip(null, 0, 0)}
         onMouseDown={(e) => {
           const p = toWorld(e)
           if (!p) return
           if (e.button === 2) sendCmd({ k: 'move', x: p.x, y: p.y, q: e.shiftKey })
-          else scene.rts.focus(p.x, p.y)
+          else sceneRef.current?.rts.focus(p.x, p.y)
         }}
       />
     </div>
   )
+}
+
+/**
+ * 小地圖上的單位（畫布是 2 倍解析度）。不只靠顏色區分（色盲時紅／棕玩家色與敵對紅點分不出來）：
+ * 玩家＝玩家色圓點＋深色外框；自己＝較大的圓點＋白框；敵對（沒有玩家色）＝紅色菱形＋白框；其他＝小灰點。
+ * 改樣式時同步 Guide.tsx 的小地圖圖例。
+ */
+export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?: number; fl?: number }, px: number, py: number): void {
+  const me = s.i === world.me.unit || (!!world.me.control && s.i === world.me.control)
+  const col = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!]?.hex : undefined
+  x.beginPath()
+  if (col || me) {
+    // 自己沒有玩家色時（異形的匿名形態）照樣畫白框圓點
+    x.arc(px, py, me ? 5 : 3.6, 0, Math.PI * 2)
+    x.fillStyle = col ?? '#cfd8df'
+    x.fill()
+    x.lineWidth = me ? 2.4 : 1.4
+    x.strokeStyle = me ? '#ffffff' : 'rgba(0,0,0,0.85)'
+    x.stroke()
+  } else if ((s.fl ?? 0) & 64) {
+    const r = 4.4
+    x.moveTo(px, py - r)
+    x.lineTo(px + r, py)
+    x.lineTo(px, py + r)
+    x.lineTo(px - r, py)
+    x.closePath()
+    x.fillStyle = '#ff3b3b'
+    x.fill()
+    x.lineWidth = 1.4
+    x.strokeStyle = '#ffffff'
+    x.stroke()
+  } else {
+    x.arc(px, py, 2.4, 0, Math.PI * 2)
+    x.fillStyle = '#cfd8df'
+    x.fill()
+  }
 }
 
 /** 小地圖上設施的顏色：醫療粉紅、防護服橘、GIT 青、控制台藍（圓點）、其他販賣機綠；不重要的不畫。改色時同步 Guide.tsx 的 MAP_LEGEND */
@@ -294,7 +375,20 @@ export function Portrait() {
   void snapTick.value
   const id = selected.value || world.me.control || world.me.unit || 0
   const e = world.ents.get(id)
-  if (!e) return <div class="panel portrait" />
+  if (!e) {
+    // 觀戰中沒有選取任何單位：說明可以點選，而不是留一塊空白
+    const dead = world.me.alive === false || world.me.role === 'spectator'
+    return (
+      <div class="panel portrait portrait-empty">
+        {dead && (
+          <div class="dim">
+            <b>{t('spec3.portraitDead')}</b>
+            <div>{t('spec3.portraitHint')}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
   const s = e.s
   const def = UNITS.get(s.d ?? '')
   const defName = entDefName(s.d)
@@ -307,7 +401,7 @@ export function Portrait() {
         <Icon name={def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'} color={color} size={56} />
       </div>
       <div class="bars">
-        <div style={{ fontWeight: 700, fontSize: '18px', color }}>{s.n || loc(defName)}</div>
+        <div style={{ fontWeight: 700, fontSize: '18px', color: textColorOf(color) }}>{s.n || loc(defName)}</div>
         <div class="dim" style={{ fontSize: '14px', marginTop: '-4px' }}>
           {loc(defName)}
         </div>
@@ -362,8 +456,14 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   if (ab.cd) rows.push([t('tip.cd'), `${ab.cd}s`])
   if (ab.mana) rows.push([t('tip.mana'), String(ab.mana)])
   if (ab.range) rows.push([t('tip.range'), `${ab.range}m`])
+  if (ab.cast) rows.push([t('tip3.castTime'), `${ab.cast}s`])
+  if (ab.channel) rows.push([t('tip3.channel'), `${ab.channel}s`])
   const passive = ab.target === 'passive'
-  const hints = [t(TARGET_HINT[ab.target] ?? 'tip.target.none')]
+  // 有施法／引導時間的「立即」技能不是立即生效
+  const instant = ab.target === 'none' || ab.target === 'self'
+  const hints = [
+    instant && ab.cast ? t('tip3.target.cast', { s: ab.cast }) : instant && ab.channel ? t('tip3.target.channel', { s: ab.channel }) : t(TARGET_HINT[ab.target] ?? 'tip.target.none'),
+  ]
   if (!passive) hints.push(t('tip.ability.use', { k: key }))
   if (ab.autocast) hints.push(t('tip.ability.auto'))
   if (st?.disabled) hints.unshift(t('tip.ability.disabled'))
@@ -408,15 +508,15 @@ export function CommandCard({ input }: { input: Input | null }) {
         {passives.slice(0, 1).map((p) => {
           const ab = abilityDef(p.id)!
           return (
-            <div class="cmd" key={p.id} style={{ opacity: 0.6 }} {...tipProps(() => abilityTip(p.id, ''))}>
+            <div class="cmd passive" key={p.id} {...tipProps(() => abilityTip(p.id, ''))}>
               <Icon name={ab.icon} size={28} color="#8b9aa8" />
             </div>
           )
         })}
-        {passives.length === 0 && <div class="cmd" style={{ opacity: 0.2 }} />}
+        {passives.length === 0 && <div class="cmd empty" />}
         {Array.from({ length: 8 }, (_, i) => {
           const st = abs[i]
-          if (!st) return <div class="cmd" key={'e' + i} style={{ opacity: 0.25 }} />
+          if (!st) return <div class="cmd empty" key={'e' + i} />
           const ab = abilityDef(st.id)!
           const tm = targetMode.value
           const active = tm?.kind === 'ability' && tm.id === st.id
@@ -474,7 +574,7 @@ export function Inventory({ input }: { input: Input | null }) {
               if (!def || !it) return { title: t('hud.inventory') + ` ${i + 1}`, body: t('tip.empty') }
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
-              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + it.samples.join('、') : '')])
+              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples) : '')])
               const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 })].filter(Boolean)
               return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
             })}
@@ -540,7 +640,7 @@ export function Chat() {
             {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
             {l.ch === 'team' && <span>[{t('chat.team')}] </span>}
             {l.group && <span>[{l.group}] </span>}
-            {l.from && <b style={{ color: l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : '#cfd8df' }}>{l.from}: </b>}
+            {l.from && <b style={{ color: textColorOf(l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : undefined) }}>{l.from}: </b>}
             {!l.from && l.ch === 'all' && <b class="dim">???: </b>}
             {sysText(l.text)}
           </div>
@@ -578,5 +678,11 @@ export function TargetHint() {
   if (tm.kind === 'attack') name = t('target.attack')
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
-  return <div class="panel banner" style={{ top: '96px', color: 'var(--xeno2)' }}>{name}</div>
+  return (
+    <TopSlot order={1}>
+      <div class="panel top-hint" data-testid="target-hint">
+        {name}
+      </div>
+    </TopSlot>
+  )
 }
