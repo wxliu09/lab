@@ -192,7 +192,7 @@ const LOOKS: Record<string, ShipLook> = {
     },
   },
   pod: {
-    hull: '#e8e8e8',
+    hull: '#aeb4bb',
     stripe: '#ff3b3b',
     engine: '#ffb46b',
     len: 0.9,

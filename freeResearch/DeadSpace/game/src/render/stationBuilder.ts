@@ -740,8 +740,8 @@ const FILL_RES = 2
 /** 底光（整間房都有）與燈下光暈的比重 */
 const FILL_BASE = 2.2
 const FILL_POOL = 1.2
-/** 牆頂補光相對房間底光的比例 */
-const FILL_CAP = 0.85
+/** 牆頂補光相對房間底光的比例：讀得出船殼、和虛空分得開就好（太亮會把視野邊緣的迷霧光暈放大）*/
+const FILL_CAP = 0.45
 
 /** 平滑的格點值雜訊（0..1），斷電站的補光用來做出明暗不均的破損感 */
 function cellNoise(x: number, y: number, seed: number): number {

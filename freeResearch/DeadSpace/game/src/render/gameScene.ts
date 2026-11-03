@@ -688,17 +688,30 @@ export class GameScene implements SceneLike {
           } else s.next = null
         }
         const add = want.filter((rl) => !keep.has(rl))
+        // 遲滯：出名單的燈若只比名單最後一盞遠不到 2 m，先留著，頂掉最遠的新候選（鏡頭慢慢移動時不要一直換燈）
+        const last = want[want.length - 1]
+        const lim = last ? Math.sqrt(d2(last)) + 2 : 0
+        for (const s of slots) {
+          if (s.next || !s.cur || !add.length) continue
+          if (Math.sqrt(d2(s.cur)) <= lim) {
+            s.next = s.cur
+            add.pop()
+          }
+        }
         for (const s of slots) if (!s.next) s.next = add.shift() ?? null
       }
     }
-    const FADE = 1 / 0.3
+    // 換燈：舊燈很快熄（0.12 秒）、新燈 0.3 秒淡入——鏡頭移動時整體不會暗下來
+    const FADE_OUT = 1 / 0.12
+    const FADE_IN = 1 / 0.3
     const em = this.emK
-    const pulse = 0.78 + 0.22 * Math.sin(t * 1.6)
+    // 緊急照明：慢速、淺的脈動，最暗時仍讀得到房間（燈約 45%、補光約 57%）
+    const pulse = 0.91 + 0.09 * Math.sin(t * 1.6)
     for (const s of this.pool) {
       const l = s.l
       if (s.next !== s.cur) {
         // 換燈：先淡出，熄滅後才搬到新位置再淡入
-        s.w = Math.max(0, s.w - dt * FADE)
+        s.w = Math.max(0, s.w - dt * FADE_OUT)
         if (s.w <= 0) {
           s.cur = s.next
           const rl = s.cur
@@ -711,7 +724,7 @@ export class GameScene implements SceneLike {
             } else l.position.set(rl.x, 2.1, rl.z)
           }
         }
-      } else if (s.cur) s.w = Math.min(1, s.w + dt * FADE)
+      } else if (s.cur) s.w = Math.min(1, s.w + dt * FADE_IN)
       const rl = s.cur
       if (!rl) {
         l.intensity = 0
@@ -722,13 +735,13 @@ export class GameScene implements SceneLike {
       const base = rl.intensity * (l instanceof THREE.SpotLight ? 1 : 0.7)
       l.color.copy(rl.color)
       if (em > 0) l.color.lerp(EMERGENCY, em)
-      l.intensity = base * e * (1 - em * (1 - 0.32 * pulse))
+      l.intensity = base * e * (1 - em * (1 - 0.55 * pulse))
     }
     // 補光圖與環境光跟著轉紅
     const hb = this.hemiBase
     if (hb.k > 0) {
       if (em > 0) {
-        fogUniforms.uFillTint.value.setRGB(1, 1, 1).lerp(EMERGENCY_FILL, em).multiplyScalar(1 - em * (1 - 0.45 * pulse))
+        fogUniforms.uFillTint.value.setRGB(1, 1, 1).lerp(EMERGENCY_FILL, em).multiplyScalar(1 - em * (1 - 0.7 * pulse))
         this.hemi.color.copy(hb.sky).lerp(EMERGENCY_SKY, em)
         this.hemi.groundColor.copy(hb.ground)
         this.hemi.intensity = hb.k * (1 - em * 0.4)
@@ -738,7 +751,7 @@ export class GameScene implements SceneLike {
         this.hemi.intensity = hb.k
       }
     }
-    if (em > 0) emergencyStripMat.emissiveIntensity = 0.6 + 1.6 * pulse
+    if (em > 0) emergencyStripMat.emissiveIntensity = 0.6 + 1.6 * (pulse - 0.82) / 0.18
   }
 
   /** 牆面燈條換成（或換回）緊急照明的紅色材質 */

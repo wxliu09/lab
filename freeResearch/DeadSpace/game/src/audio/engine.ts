@@ -17,8 +17,8 @@ let eng: Engine | null = null
 /** 目前設定的速度比例（測試用）*/
 let level = 0
 
-/** 全速時的音量：很低調（K 加權約 −27，比腳步聲還小）*/
-const MAX_GAIN = 0.06
+/** 全速時的音量：低調但聽得到（K 加權約 −23；原本 −27.8，筆電喇叭上駕駛時幾乎聽不到）*/
+const MAX_GAIN = 0.1
 /** 靜止多久之後把節點停掉（秒）*/
 const RELEASE_AFTER = 4
 
