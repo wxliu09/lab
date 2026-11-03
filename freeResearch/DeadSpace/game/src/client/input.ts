@@ -90,7 +90,17 @@ export class Input {
       target.addEventListener(t, f as EventListener)
       this.disposers.push(() => target.removeEventListener(t, f as EventListener))
     }
-    on('contextmenu', (e) => e.preventDefault())
+    // 右鍵是遊戲操作（移動、互動）：對局中整個視窗都不跳瀏覽器選單（滑鼠在 HUD 面板、聊天、小地圖上也一樣）；
+    // 只有文字輸入框保留原生選單（複製、貼上）
+    on(
+      'contextmenu',
+      (e) => {
+        const t = e.target
+        if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return
+        e.preventDefault()
+      },
+      window,
+    )
     on('mousedown', (e) => this.down(e))
     on('mouseup', (e) => {
       if (e.button === 1) this.dragging = false

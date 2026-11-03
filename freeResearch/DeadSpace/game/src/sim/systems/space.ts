@@ -274,7 +274,10 @@ export function stepSpace(g: Game): void {
         }
         for (const u of w.inZone(z.id)) if (Math.hypot(u.x - exit.x, u.y - exit.y) > 1.2) u.data.offPad = true
       }
-      if (inst.link && t > inst.linkUntil) inst.link = null
+      if (inst.link && t > inst.linkUntil) {
+        inst.link = null
+        for (const p of g.allPlayers()) if (p.alive && g.mainOf(p)?.zone === z.id) g.privateLine(p.slot, 'space.linkEnd')
+      }
     }
   }
   // 控制台
@@ -634,6 +637,12 @@ regScript('space.board', (g, ctx) => {
   ia.link = ib.key
   ib.link = ia.key
   ia.linkUntil = ib.linkUntil = g.time + 20
+  // 連結只是把兩邊的艙門接通：告訴兩艘船艙裡的人怎麼過去（駕駛者還在太空畫面，要先離開控制台）
+  for (const p of g.allPlayers()) {
+    const u = g.mainOf(p)
+    if (!p.alive || !u) continue
+    if (u.zone === ia.zone || u.zone === ib.zone) g.privateLine(p.slot, 'space.linked', { s: 20 })
+  }
   applyBuff(g, a, 'bf.boarding', 20)
   applyBuff(g, b, 'bf.boarding', 20)
   g.emitFx({ k: 'boardLink', z: SPACE_ZONE, x: a.x, y: a.y, x2: b.x, y2: b.y })

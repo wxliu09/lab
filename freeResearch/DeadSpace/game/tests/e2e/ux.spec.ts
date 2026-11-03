@@ -54,6 +54,22 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   await page.waitForTimeout(400)
   await expect(tip).toHaveCount(0)
 
+  // 右鍵在 HUD 上（背包格、小地圖、聊天）不跳瀏覽器選單；文字輸入框保留原生選單
+  const prevented = await page.evaluate(() => {
+    const fire = (el: Element | null) => {
+      if (!el) return null
+      const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+      el.dispatchEvent(ev)
+      return ev.defaultPrevented
+    }
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const r = { inv: fire(document.querySelector('[data-testid="inv-0"]')), minimap: fire(document.querySelector('.minimap')), body: fire(document.body), input: fire(input) }
+    input.remove()
+    return r
+  })
+  expect(prevented).toEqual({ inv: true, minimap: true, body: true, input: false })
+
   // 邊緣捲動：滑鼠停在底部（HUD 上）也會往下捲
   await page.evaluate(() => {
     const s = (window as unknown as W).__xcScene

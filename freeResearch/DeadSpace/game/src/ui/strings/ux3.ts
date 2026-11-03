@@ -8,6 +8,8 @@ export const UX3_ZH: Record<string, string> = {
   'sep.wide': '　',
   'sep.paren': '（{s}）',
   'net.waitLoad': '等待其他玩家載入（還有 {n} 人）…',
+  'space.linked': '登艦連結建立（{s} 秒）：走到船艙的艙門就會進入對方船艙；駕駛者先按 B 離開控制台。',
+  'space.linkEnd': '登艦連結已中斷：艙門恢復通往原本的地方。',
   'load.practice': '準備單機練習…',
   'hud.coreWait': '機體損毀：只能透過記憶核心觀看周圍。有人把核心插進裁決者號的鑄造台（或閒置的綏靖機器人）就能復活。',
 
@@ -98,6 +100,8 @@ export const UX3_EN: Record<string, string> = {
   'sep.wide': ' · ',
   'sep.paren': ' ({s})',
   'net.waitLoad': 'Waiting for other players to load ({n} left)…',
+  'space.linked': 'Boarding link established ({s}s): walk to your cabin airlock to cross into the other craft. Pilots, press B to leave the console first.',
+  'space.linkEnd': 'Boarding link ended: the airlock leads back where it normally does.',
   'load.practice': 'Preparing practice…',
   'hud.coreWait': 'Chassis destroyed: you can only watch through your memory core. Someone must slot it into the Adjudicatrix fabricator (or an idle pacification bot) to bring you back.',
 
