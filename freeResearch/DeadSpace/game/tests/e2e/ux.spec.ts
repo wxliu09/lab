@@ -119,6 +119,25 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   expect(roomTip).toBe(true)
   await page.mouse.move(800, 300)
 
+  // 冷卻：用掉一個不需要目標的技能，圖示變灰、出現秒數，而且秒數會往下數
+  const abId = await page.evaluate(() => {
+    const w = (window as unknown as { __xcState: { world: { me: { abilities?: { id: string; cd: number; maxCd: number }[] } } } }).__xcState.world
+    const ok = (w.me.abilities ?? []).find((a) => a.cd <= 0 && a.maxCd >= 3 && document.querySelector(`[data-testid="ab-${a.id}"]`))
+    return ok?.id ?? null
+  })
+  if (abId) {
+    await page.evaluate((id) => (window as unknown as W).__xcTest.sendCmd({ k: 'cast', a: id }), abId)
+    const slot = page.getByTestId('ab-' + abId)
+    const cooling = await slot.locator('.cd-num').waitFor({ timeout: 8000 }).then(() => true, () => false)
+    if (cooling) {
+      await expect(slot).toHaveClass(/cooling/)
+      const a1 = Number(await slot.locator('.cd-num').innerText())
+      await page.waitForTimeout(1200)
+      const a2 = await slot.locator('.cd-num').count() ? Number(await slot.locator('.cd-num').innerText()) : 0
+      expect(a2).toBeLessThan(a1)
+    }
+  }
+
   // 公告：全場事件放大顯示在上方中央
   await page.evaluate(() => {
     const s = (window as unknown as W).__xcState

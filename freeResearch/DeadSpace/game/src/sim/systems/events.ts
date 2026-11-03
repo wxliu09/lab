@@ -625,12 +625,12 @@ function stepRocks(g: Game, ev: EventState): void {
       if (dist2(e, o) > rr * rr) continue
       g.emitFx({ k: 'asteroidHit', z: SPACE_ZONE, x: e.x, y: e.y, v: e.radius })
       if (o.tags.has('station')) {
-        damage(g, null, o, e.hp * 4, { kind: 'blast', pure: true })
+        damage(g, null, o, e.hp * 4, { kind: 'blast', pure: true, env: 'rock' })
         w.remove(e)
         return false
       }
       // 船：3000 傷害並被撞開
-      damage(g, null, o, 3000, { kind: 'blast', pure: true })
+      damage(g, null, o, 3000, { kind: 'blast', pure: true, env: 'rock' })
       const d = Math.max(0.01, Math.sqrt(dist2(e, o)))
       o.vx += ((o.x - e.x) / d) * 5
       o.vy += ((o.y - e.y) / d) * 5
@@ -663,7 +663,7 @@ function stepDoorMalfunction(g: Game, ev: EventState): void {
       g.emitFx({ k: 'doorSlam', z: z.id, x: inst.x, y: inst.y })
       for (const u of g.world.query(z.id, inst.x, inst.y, 0.9)) {
         if (!u.alive || u.def.speed <= 0 || u.tags.has('structure') || u.tags.has('noTarget')) continue
-        damage(g, null, u, 225, { kind: 'normal', pure: true })
+        damage(g, null, u, 225, { kind: 'normal', pure: true, env: 'door' })
         const p = z.nav.nearestOpen(u.x + (u.x - inst.x) * 2 + 0.01, u.y + (u.y - inst.y) * 2 + 0.01, (i) => i !== d.index)
         if (p && u.alive) g.world.relocate(u, z.id, p.x, p.y)
       }

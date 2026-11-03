@@ -4,7 +4,7 @@ import type { Loc, Tag } from '../../shared/content/types'
 import type { SnapEntity } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
-import { DAMAGE_HOOKS, DEATH_HOOKS, type DmgOpts } from './damage'
+import { DAMAGE_HOOKS, DEATH_HOOKS, type DmgOpts, type EnvKind } from './damage'
 import { dropOnGround } from './items'
 import { entView } from './snapshot'
 
@@ -68,8 +68,15 @@ DEATH_HOOKS.push((g, u, killer, killerSlot) => {
   if (!p || p.main !== u.id || u.data.converted) return
   // 死因要在死者還「活著」時判定：死後就不再共享陣營視野、也不再認得同陣營的匿名單位
   const report = p.bot || p.left ? null : deathReport(g, p, u, killer, killerSlot)
+  const at = g.sysLines.length
   g.onMainDeath(p, u, killer, killerSlot)
-  if (report && !p.alive) sendDeathReport(g, p, report)
+  if (report && !p.alive) {
+    // 死者先看到自己的死因，再看到公開的死亡公告：onMainDeath 已經排進「○○遇害了」等訊息，
+    // 把死因移到它們前面（同一批 chat 訊息；死因只送給死者，別人的訊息順序不變）
+    const end = g.sysLines.length
+    sendDeathReport(g, p, report)
+    g.sysLines.splice(at, 0, ...g.sysLines.splice(end))
+  }
   p.data.hitLog = undefined
   p.data.lastHitSrc = undefined
 })
@@ -79,10 +86,15 @@ DEATH_HOOKS.push((g, u, killer, killerSlot) => {
 // 匿名形態只說是哪一種形態、死者當時看不見的來源只說「看不見的攻擊者」。
 // 描述只由 entView 的結果（名字 n、外觀 d、擁有者 o）與開局公開的玩家名單決定，不讀身分或真正的擁有者；
 // 合併同一來源時也只比對外觀描述，不比對實體 id（否則「偽裝成 Bob」和「匿名異形」會被併成一筆而露餡）。
+//
+// 「看得見」用的是死者上一次收到的快照（p.view.visible，每個 tick 結束時算好、和快照同一份）。不在受傷當下重算：
+// 重算要在這裡複製一份 vision 的規則（視野來源、LOS、大型單位邊緣、隱形、陣營共享視野……），
+// 只要和快照的規則有一點不同就會描述出死者畫面上從沒出現過的東西；而兩者最多只差一個 tick，
+// 差別只在「攻擊者剛走進視野、同一個 tick 就打中」——那種情況死者確實沒看到對方，說看不見才是實話。
 
 /** 一筆傷害來源的外觀描述；k 直接對應私人訊息 key（death.cause.* / death.hit.*）*/
 export interface HitView {
-  k: 'named' | 'namedAs' | 'owned' | 'anon' | 'unit' | 'unseen' | 'dot' | 'boom' | 'fire' | 'blast' | 'env' | 'self' | 'shutdown' | 'purged' | 'unknown'
+  k: 'named' | 'namedAs' | 'owned' | 'anon' | 'unit' | 'unseen' | 'dot' | 'boom' | 'fire' | 'blast' | EnvKind | 'env' | 'self' | 'shutdown' | 'purged' | 'vacuum' | 'unknown'
   /** 看得到的名字，或看得到的擁有者名字 */
   n?: string
   /** 外觀 def id（dot 時是 buff id），只用來查顯示名稱 */
@@ -140,14 +152,22 @@ function entSource(g: Game, p: GamePlayer, victim: Ent, src: Ent): HitView {
   return describeView(g, entView(g, p, src))
 }
 
+/** 呼叫端沒有標 env、但對受害者來說就是環境現象的技能：神經毒素模組（stations.ts，施放者是遠方的站）*/
+const ENV_BY_ABILITY: ReadonlyMap<string, EnvKind> = new Map([['st.neurotox', 'gas']])
+
 function hitView(g: Game, p: GamePlayer, victim: Ent, src: Ent | null, o: DmgOpts): HitView {
   if (o.lethal) return { k: 'boom' }
   if (o.buff) return { k: 'dot', d: o.buff }
+  // 事件／環境傷害：直接說是什麼現象（神經毒素的施放者是遠方的站，說「毒素」比說那座站準）
+  const env = o.env ?? (o.ability ? ENV_BY_ABILITY.get(o.ability) : undefined)
+  if (env) return { k: env }
   if (src) return entSource(g, p, victim, src)
   // 來源實體已不在：srcSlot 是真正的擁有者，只能用來判斷「是不是自己」，不能拿來描述別人
   if (o.srcSlot === p.slot) return { k: 'self' }
   if (o.kind === 'fire') return { k: 'fire' }
   if (o.kind === 'blast') return { k: 'blast' }
+  // 有人造成、但出手的單位已經不在（變身換了 id、場地技能的施放者死了）：說不出是誰，只能說不明
+  if (o.srcSlot !== undefined && o.srcSlot >= 0) return { k: 'unknown' }
   return { k: 'env' }
 }
 
@@ -176,13 +196,12 @@ export function deathReport(g: Game, p: GamePlayer, u: Ent, killer: Ent | null, 
   const last = log[log.length - 1]
   const lh = p.data.lastHitSrc as { id: number; t: number } | undefined
   let cause: HitView
+  // 呼叫端明確標記的死因：shutdown（仿生人被強制關機）、purged（被主腦 -liquidate）、vacuum（救生艙被毀）
   if (u.data.deathCause) cause = { k: u.data.deathCause as HitView['k'] }
   // 致命的那一下剛記錄過（同一 tick、同一個來源）：用當時記下的外觀
   else if (last && last.t === g.time && lh && lh.t === g.time && lh.id === (killer?.id ?? 0)) cause = last.v
   else if (killer) cause = entSource(g, p, u, killer)
   else if (killerSlot === p.slot) cause = { k: 'self' }
-  // spawn 被自己的主腦清除（-liquidate）
-  else if (p.spawnOf && p.stayDead) cause = { k: 'purged' }
   else cause = { k: 'unknown' }
   const ck = hitKey(cause)
   const hits = log

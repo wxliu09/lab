@@ -5,6 +5,7 @@ import { signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { uiZoom } from './uiScale'
+import { snapTick } from '../client/session'
 
 export interface TipData {
   title: string
@@ -22,6 +23,8 @@ export interface TipData {
 
 interface TipState {
   d: TipData
+  /** 元素型：每個快照重算內容（冷卻秒數會變）*/
+  get?: () => TipData | null | undefined
   /** 錨點（螢幕座標）；沒有就跟著游標 */
   rect?: { left: number; top: number; right: number; bottom: number }
   x: number
@@ -57,7 +60,7 @@ export function tipProps(get: () => TipData | null | undefined): {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
       anchorEl = e.currentTarget as Element
       owner = ELEMENT
-      tipState.value = { d, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, x: e.clientX, y: e.clientY }
+      tipState.value = { d, get, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, x: e.clientX, y: e.clientY }
     },
     onMouseLeave: () => hideTip(ELEMENT),
     onMouseDown: () => hideTip(ELEMENT),
@@ -123,7 +126,8 @@ export function TooltipLayer(): JSX.Element | null {
     setPos({ left: Math.max(m, Math.min(vw - w - m, left)), top: Math.max(m, Math.min(vh - h - m, top)) })
   }, [s, uiZoom.value])
   if (!s) return null
-  const d = s.d
+  void snapTick.value
+  const d = (s.get?.() ?? s.d) as TipData
   return (
     <div
       ref={ref}

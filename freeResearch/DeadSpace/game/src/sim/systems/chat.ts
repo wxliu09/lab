@@ -139,6 +139,8 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       const u = g.mainOf(q)
       if (u) {
         q.stayDead = true
+        // 死因明確標記（死者自己知道是誰的 spawn，說「被你的主腦清除」不洩漏任何事）
+        u.data.deathCause = 'purged'
         g.killEnt(u, null, -1)
       }
       break

@@ -6,6 +6,7 @@ import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import { entDefName, suitColor } from '../names'
 import { itemTip } from '../itemTip'
+import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, world, connLost } from '../../client/session'
@@ -354,7 +355,7 @@ const TARGET_HINT: Record<string, string> = {
   passive: 'tip.target.passive',
 }
 
-function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boolean }): TipData | null {
+function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boolean; mana?: number }): TipData | null {
   const ab = abilityDef(id)
   if (!ab) return null
   const rows: [string, string][] = []
@@ -366,6 +367,10 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   if (!passive) hints.push(t('tip.ability.use', { k: key }))
   if (ab.autocast) hints.push(t('tip.ability.auto'))
   if (st?.disabled) hints.unshift(t('tip.ability.disabled'))
+  // 冷卻中、能量不足：直接寫在最上面，不然玩家不知道為什麼按不下去
+  if (st && st.cd > 0) hints.unshift(t('tip.ability.cooling', { s: fmtSecs(st.cd) }))
+  const mp = world.ents.get(world.me.control || world.me.unit || 0)?.s.mp
+  if (st && !st.cd && ab.mana > 0 && mp !== undefined && mp < ab.mana) hints.unshift(t('tip.ability.noMana', { need: ab.mana, have: Math.floor(mp) }))
   return { title: loc(ab.name), tag: key || undefined, body: loc(ab.desc), rows, hint: hints.join('\n'), color: '#9fe7ff' }
 }
 
@@ -415,12 +420,16 @@ export function CommandCard({ input }: { input: Input | null }) {
           const ab = abilityDef(st.id)!
           const tm = targetMode.value
           const active = tm?.kind === 'ability' && tm.id === st.id
+          // 能量不足（只在不是冷卻中時提示，免得兩種狀態疊在一起）
+          const mp = world.ents.get(world.me.control || world.me.unit || 0)?.s.mp
+          const noMana = !st.cd && st.mana > 0 && mp !== undefined && mp < st.mana
+          const cls = 'cmd' + (st.cd > 0 ? ' cooling' : '') + (noMana ? ' nomana' : '') + (st.disabled ? ' locked' : '')
           return (
             <div
-              class="cmd"
+              class={cls}
               key={st.id}
               data-testid={'ab-' + st.id}
-              style={{ borderColor: active ? 'var(--xeno2)' : st.auto ? 'var(--warn)' : undefined, opacity: st.disabled ? 0.35 : 1 }}
+              style={{ borderColor: active ? 'var(--xeno2)' : st.auto ? 'var(--warn)' : undefined }}
               onClick={() => input?.useAbility(i)}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -430,12 +439,10 @@ export function CommandCard({ input }: { input: Input | null }) {
             >
               <span class="key">{keys[i] ?? ''}</span>
               <Icon name={ab.icon} size={30} color={st.disabled ? '#666' : '#9fe7ff'} />
-              {st.cd > 0 && (
-                <>
-                  <div class="cdmask" style={{ transform: `scaleY(${Math.min(1, st.cd / Math.max(0.1, st.maxCd))})` }} />
-                  <span class="cdtxt">{st.cd >= 10 ? Math.ceil(st.cd) : st.cd.toFixed(1)}</span>
-                </>
-              )}
+              <CdFace cd={st.cd} total={st.maxCd} />
+              {noMana && <span class="cd-mana">{st.mana}</span>}
+              {st.charges !== undefined && <span class="cdtxt charges">{st.charges}</span>}
+              {st.disabled && <span class="cd-lock">✕</span>}
             </div>
           )
         })}
@@ -455,7 +462,7 @@ export function Inventory({ input }: { input: Input | null }) {
         const def = it ? itemDef(it.item) : undefined
         return (
           <div
-            class="cmd"
+            class={'cmd' + (it && it.cd > 0 ? ' cooling' : '')}
             key={i}
             data-testid={'inv-' + i}
             onClick={() => input?.useItem(i)}
@@ -468,7 +475,7 @@ export function Inventory({ input }: { input: Input | null }) {
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
               if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + it.samples.join('、') : '')])
-              const hints = [def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 }), it.cd > 0 ? t('tip.item.cd') : ''].filter(Boolean)
+              const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 })].filter(Boolean)
               return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
             })}
           >
@@ -476,7 +483,7 @@ export function Inventory({ input }: { input: Input | null }) {
             {def && <Icon name={def.icon} size={30} color={def.suit ? suitColor(def.id) : '#9fe7ff'} />}
             {it && it.charges > 0 && <span class="cdtxt charges">{it.charges}</span>}
             {it?.item === 'geneSampler' && <span class="cdtxt charges">{it.samples?.length ?? 0}/3</span>}
-            {it && it.cd > 0 && <div class="cdmask" style={{ transform: 'scaleY(1)', opacity: 0.6 }} />}
+            {it && <CdFace cd={it.cd} total={abilityDef(def?.use ?? '')?.cd ?? 0} />}
           </div>
         )
       })}

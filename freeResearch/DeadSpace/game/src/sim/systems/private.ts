@@ -4,6 +4,7 @@ import { abilityDef } from '../../shared/content/registry'
 import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
 import { facilityView } from './facilities'
+import { launchCountdown } from './space'
 
 export function privateState(g: Game, p: GamePlayer): PrivateState {
   const main = g.mainOf(p)
@@ -45,6 +46,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     alive: p.alive,
     dead: !p.alive && !p.spectator,
     booted: !p.alive && !!p.data.booted,
+    launchIn: main ? launchCountdown(g, main.zone) : 0,
     role: p.spectator ? 'spectator' : p.role,
     faction: p.spectator ? 'none' : f,
     spawn: !!p.spawnOf,

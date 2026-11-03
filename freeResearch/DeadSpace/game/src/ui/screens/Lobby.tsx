@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren, JSX } from 'preact'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../../shared/constants'
 import type { LobbySettings } from '../../shared/protocol/messages'
-import { roleOutcomes, type RoleMix } from '../../shared/roleRules'
+import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
@@ -56,6 +56,19 @@ export function RoleMixView({ outcomes, total }: { outcomes: RoleMix[]; total: n
       </Chip>,
     )
   return <span class="rchips">{chips}</span>
+}
+
+/**
+ * 一般多人局的最低參戰人數。伺服器開局只擋「一個人都沒有」（sim/server.ts 的 startGame：roster.length === 0），
+ * 沒有其他人數門檻，所以這裡依共用的身分規則（roleOutcomes，規則本身不動）推算：
+ * 至少 2 人，而且每一種可能的組合都至少留下一名人類的最小人數。
+ * 預設設定是 2；把異形、變種人都設成「有」或強制仿生人時，異類會佔滿名額，最低人數跟著變多。
+ */
+export function minCombatants(s: RoleRules): number {
+  for (let n = 2; n <= MAX_PLAYERS; n++) {
+    if (roleOutcomes(n, s).every((o) => o.xeno + o.mutant + o.android < n)) return n
+  }
+  return MAX_PLAYERS
 }
 
 // ───────── 設定欄位 ─────────
@@ -165,6 +178,7 @@ export function Lobby() {
   const bots = Math.min(s.bots, Math.max(0, MAX_PLAYERS - L.players.length))
   const n = Math.max(0, L.players.length + bots - (s.hostSpectate && L.players.some((p) => p.host) ? 1 : 0))
   const npcAuto = Math.max(0, Math.min(6, 9 - n))
+  const need = minCombatants(s)
   const sendChat = () => {
     if (!msg.trim()) return
     send({ t: 'chat', ch: 'all', text: msg })
@@ -193,7 +207,14 @@ export function Lobby() {
               ?
             </span>
           </div>
-          <RoleMixView outcomes={roleOutcomes(n, s)} total={n} />
+          {n < need ? (
+            // 人數不夠時不列「異形或變種人 1、人類 0」這種組合，改成提示
+            <span class="dim" data-testid="role-min">
+              {t('lobby2.roles.tooFew', { n: need, practice: t('menu.practice'), bots: t('lobby.set.bots') })}
+            </span>
+          ) : (
+            <RoleMixView outcomes={roleOutcomes(n, s)} total={n} />
+          )}
         </div>
         <div class="grow" />
         {hostConflict.value && <div class="notice">{t('lobby.hostConflict')}</div>}

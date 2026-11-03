@@ -1,14 +1,19 @@
 // 模型展示頁（只給 dev server 與 tests/visual/models.mjs 截圖用，不在正式 build 入口）
 // 用法：/models.html?ids=xeno.*,human&dist=30&pitch=56&state=0&speed=0&cols=6&sp=4.5&yaw=25&q=low
+// 太空層：/models.html?ids=station.*（全部站點與行星）、ids=ship.*,space.*；space=1／0 強制開關太空背景
+// （ids 全是 station.／ship.／space. 時預設開：星空＋跟遊戲一樣的頂光，間距與鏡頭距離也換成太空層的尺度）
 import * as THREE from 'three'
 import '../shared/content'
 import '../render/units'
+import '../render/models/ships'
 import { MODELS, buildModel, type ModelView } from '../render/models/index'
 import { animateRig, buildHuman, type Rig } from '../render/models/human'
 import { UNITS } from '../shared/content/registry'
 import { getEngine, type SceneLike } from '../render/engine'
 import { Mat } from '../render/materials'
 import { setQuality, type Quality } from '../render/quality'
+import { makeSky } from '../render/space/sky'
+import { STATION_BY_ID } from '../shared/content/stations/index'
 import type { SnapEntity } from '../shared/protocol/messages'
 
 const q = new URLSearchParams(location.search)
@@ -49,40 +54,53 @@ function tris(o: THREE.Object3D): [number, number] {
 }
 
 const ids = expand((q.get('ids') ?? 'xeno.*').split(','))
-const cols = num('cols', 6)
-const sp = num('sp', 4.5)
+const spaceIds = ids.length > 0 && ids.every((s) => /^(station|ship|space)\./.test(s))
+const space = q.has('space') ? q.get('space') !== '0' : spaceIds
+const cols = num('cols', space ? 4 : 6)
+const sp = num('sp', space ? 13 : 4.5)
 const yaw = (num('yaw', 25) * Math.PI) / 180
 let state = num('state', 0)
 let speed = num('speed', 0)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color('#030507')
-scene.add(new THREE.HemisphereLight('#1b2633', '#0b0d10', 0.9))
 const rows = Math.ceil(ids.length / cols)
 const W = cols * sp
 const H = rows * sp
-// 頂燈：模仿站內房間燈（y 4.2、spot、decay 1.4）
-for (let i = 0; i < Math.max(2, Math.ceil(ids.length / 4)); i++) {
-  const l = new THREE.SpotLight(i % 3 === 2 ? '#ffd2a0' : '#e8f4ff', 26, 16, Math.PI * 0.42, 0.65, 1.4)
-  const c = (i % Math.ceil(cols / 2)) * 2 - cols / 2 + 1
-  const r = Math.floor(i / Math.ceil(cols / 2))
-  l.position.set(c * sp, 4.2, (r * 2 - rows / 2 + 1) * sp)
-  l.target.position.set(l.position.x, 0, l.position.z)
-  scene.add(l, l.target)
-}
-const accent = new THREE.PointLight('#7fd8ff', 8, 12, 1.6)
-accent.position.set(-W / 2, 1.2, H / 2)
-scene.add(accent)
+let sky: ReturnType<typeof makeSky> | null = null
+if (space) {
+  // 太空層的光：跟 gameScene.ensureSpace 一樣（星空＋恆星上方往下打的平行光＋偏藍的半球光）
+  // 行星的日照方向由模型自己依恆星位置 (6.5, 0, 2.9) 算，所以每格的晨昏線角度不同（正好看各種相位）
+  sky = makeSky(260)
+  scene.add(sky.group)
+  const sun = new THREE.DirectionalLight('#fff1d6', 3.2)
+  sun.position.set(6.5, 30, 2.9)
+  scene.add(sun, sun.target, new THREE.HemisphereLight('#22304a', '#05060a', 0.7))
+} else {
+  scene.add(new THREE.HemisphereLight('#1b2633', '#0b0d10', 0.9))
+  // 頂燈：模仿站內房間燈（y 4.2、spot、decay 1.4）
+  for (let i = 0; i < Math.max(2, Math.ceil(ids.length / 4)); i++) {
+    const l = new THREE.SpotLight(i % 3 === 2 ? '#ffd2a0' : '#e8f4ff', 26, 16, Math.PI * 0.42, 0.65, 1.4)
+    const c = (i % Math.ceil(cols / 2)) * 2 - cols / 2 + 1
+    const r = Math.floor(i / Math.ceil(cols / 2))
+    l.position.set(c * sp, 4.2, (r * 2 - rows / 2 + 1) * sp)
+    l.target.position.set(l.position.x, 0, l.position.z)
+    scene.add(l, l.target)
+  }
+  const accent = new THREE.PointLight('#7fd8ff', 8, 12, 1.6)
+  accent.position.set(-W / 2, 1.2, H / 2)
+  scene.add(accent)
 
-// 地板（站內防滑金屬板）
-const fg = new THREE.PlaneGeometry(W + 30, H + 30)
-fg.rotateX(-Math.PI / 2)
-const uv = fg.attributes.uv
-for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * (W + 30)) / 2, (uv.getY(i) * (H + 30)) / 2)
-fg.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(fg.attributes.position.count * 3).fill(1), 3))
-const floor = new THREE.Mesh(fg, Mat.floor('plate', '#3a424b'))
-floor.receiveShadow = true
-scene.add(floor)
+  // 地板（站內防滑金屬板）
+  const fg = new THREE.PlaneGeometry(W + 30, H + 30)
+  fg.rotateX(-Math.PI / 2)
+  const uv = fg.attributes.uv
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * (W + 30)) / 2, (uv.getY(i) * (H + 30)) / 2)
+  fg.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(fg.attributes.position.count * 3).fill(1), 3))
+  const floor = new THREE.Mesh(fg, Mat.floor('plate', '#3a424b'))
+  floor.receiveShadow = true
+  scene.add(floor)
+}
 
 const ringGeo = new THREE.RingGeometry(0.48, 0.62, 36)
 const labels = document.getElementById('labels')!
@@ -115,10 +133,12 @@ ids.forEach((id, i) => {
     radius = def?.radius ?? 0.4
     if (!MODELS.has(modelId)) console.warn('[gallery] 沒有登錄的模型', modelId)
   }
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: '#ff3b3b', transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }))
+  // 站點（UnitDef 只在 sim worker 動態註冊，這裡查站點表）：圈的內緣畫在碰撞半徑上，對照外觀大小
+  const st = id.startsWith('station.') ? STATION_BY_ID.get(id.slice(8)) : undefined
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: st ? '#9fe7ff' : '#ff3b3b', transparent: true, opacity: st ? 0.35 : 0.55, depthWrite: false, blending: THREE.AdditiveBlending }))
   ring.rotation.x = -Math.PI / 2
   ring.position.y = 0.03
-  ring.scale.setScalar(radius * 1.6)
+  ring.scale.setScalar(st ? st.space.radius / 0.48 : radius * 1.6)
   root.add(ring)
   const [t, m] = tris(view?.root ?? rig!.root)
   const label = document.createElement('div')
@@ -130,7 +150,7 @@ ids.forEach((id, i) => {
 })
 console.log('[gallery]\n' + summary.join('\n'))
 
-const dist = num('dist', 30)
+const dist = num('dist', space ? Math.max(40, rows * sp * 1.9) : 30)
 const pitch = (num('pitch', 56) * Math.PI) / 180
 const cam = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.5, 400)
 const cz = num('cz', 0)
@@ -143,12 +163,15 @@ const sl: SceneLike = {
   scene,
   camera: cam,
   update(dt, t) {
+    sky?.update(t)
     if (state === 4 && deadAt < 0) deadAt = t
     if (state !== 4) deadAt = -1
     for (const s of slots) {
       if (s.view) s.view.update(t, dt, speed, state)
       if (s.rig) animateRig(s.rig, dt, t, speed, state, deadAt >= 0 ? t - deadAt : 0)
-      v.set(0, -0.15, 0).applyMatrix4(s.root.matrixWorld)
+      // 太空層的模型大：名字放在格子靠鏡頭那一側，不要壓在模型上
+      if (space) v.set(s.root.position.x, 0, s.root.position.z + sp * 0.42)
+      else v.set(0, -0.15, 0).applyMatrix4(s.root.matrixWorld)
       v.project(cam)
       s.label.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`
       s.label.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight + 6}px`

@@ -8,6 +8,9 @@ import { applyBuff } from '../../src/sim/systems/buffs'
 import { describeView, type HitView } from '../../src/sim/systems/death'
 import { entView } from '../../src/sim/systems/snapshot'
 import { BUFFS, UNITS } from '../../src/shared/content/registry'
+import { spaceOf } from '../../src/sim/systems/space'
+import { INSTANT_ITEMS } from '../../src/sim/systems/vendors'
+import { SPACE_ZONE } from '../../src/sim/world'
 import { hasString, lang, sysText } from '../../src/ui/i18n'
 import type { Game, GamePlayer } from '../../src/sim/game'
 import type { Ent } from '../../src/sim/ent'
@@ -66,6 +69,13 @@ function disguiseAs(g: Game, x: Ent, of: Ent): void {
 
 function clientOf(cs: FakeClient[], p: GamePlayer): FakeClient {
   return cs.find((c) => c.slot === p.slot)!
+}
+
+/** 某位 client 收到的所有聊天／系統訊息（原始文字，依收到的順序）*/
+function allLines(c: FakeClient): string[] {
+  const out: string[] = []
+  for (const m of c.inbox) if (m.t === 'chat') for (const l of m.lines) out.push(l.text)
+  return out
 }
 
 /** 某位 client 收到的死因相關私人訊息（原始 @key|k=v）*/
@@ -184,8 +194,12 @@ describe('死因說明', () => {
   })
 
   it('每一種死因與先前傷害的訊息都有 zh-TW 與 en，翻譯後不留未代入的參數', () => {
-    const kinds: HitView['k'][] = ['named', 'namedAs', 'owned', 'anon', 'unit', 'unseen', 'dot', 'boom', 'fire', 'blast', 'env', 'self', 'shutdown', 'purged', 'unknown']
-    const hitKinds = kinds.filter((k) => k !== 'shutdown' && k !== 'purged')
+    const kinds: HitView['k'][] = [
+      'named', 'namedAs', 'owned', 'anon', 'unit', 'unseen', 'dot', 'boom', 'fire', 'blast',
+      'door', 'sun', 'rock', 'gas', 'env', 'self', 'shutdown', 'purged', 'vacuum', 'unknown',
+    ]
+    // 只會是死因、不會是「先前受傷」的種類（死亡當下才標記）
+    const hitKinds = kinds.filter((k) => k !== 'shutdown' && k !== 'purged' && k !== 'vacuum')
     for (const l of ['zh', 'en'] as const) {
       lang.value = l
       for (const k of kinds) {
@@ -198,5 +212,125 @@ describe('死因說明', () => {
       }
     }
     lang.value = 'zh'
+  })
+})
+
+describe('死因：事件與環境、主腦清除、訊息順序、視野時機', () => {
+  it('門控制器故障夾死：說是被門夾死；死因排在公開的死亡公告前面', () => {
+    const { h, cs, g, ps, victim } = setup(1111)
+    const z = g.world.zoneByKey('nyx')!
+    const di = z.doors.findIndex((d) => !d.clearance && !d.security)
+    const inst = z.layout!.doors[di]
+    victim.hp = 100
+    g.triggerEvent!('doors', true)
+    for (let i = 0; i < 60 && ps[2].alive; i++) {
+      g.world.relocate(victim, z.id, inst.x, inst.y)
+      victim.order = null
+      h.ticks(1)
+    }
+    h.ticks(2)
+    expect(ps[2].alive).toBe(false)
+    const all = allLines(clientOf(cs, ps[2]))
+    const ci = all.indexOf('@death.cause.door')
+    expect(ci).toBeGreaterThanOrEqual(0)
+    // 死者自己先看到死因，再看到「一名無辜者遇害了」
+    const ai = all.indexOf('@death.innocent')
+    expect(ai).toBeGreaterThan(ci)
+    // 別人照樣收到公告，但收不到死因
+    expect(allLines(clientOf(cs, ps[1]))).toContain('@death.innocent')
+    expect(deathLines(clientOf(cs, ps[1]))).toEqual([])
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('恆星灼燒致死：說是太靠近恆星（不再只說高溫灼燒）', () => {
+    const { h, cs, g, ps, victim } = setup(2222)
+    const sun = g.world.inZone(SPACE_ZONE).find((e) => e.def.id === 'space.sun')!
+    g.world.relocate(victim, SPACE_ZONE, sun.x + sun.radius + 1, sun.y)
+    victim.order = null
+    victim.hp = 30
+    h.ticks(25)
+    expect(ps[2].alive).toBe(false)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.sun')
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('先前受過的環境傷害各自列出：門夾、小行星、神經毒素', () => {
+    const { h, cs, g, ps, victim, x } = setup(3333)
+    victim.hp = victim.maxHp = 2000
+    damage(g, null, victim, 225, { kind: 'normal', pure: true, env: 'door' })
+    damage(g, null, victim, 300, { kind: 'blast', pure: true, env: 'rock' })
+    h.ticks(2)
+    damage(g, x, victim, 1e6, { kind: 'poison', pure: true, dot: true, ability: 'st.neurotox' })
+    h.ticks(2)
+    // 神經毒素的施放者是遠方的站：說毒素，不說那座站或身邊的人
+    expect(deathLines(clientOf(cs, ps[2]))).toEqual(['@death.cause.gas', '@death.hit.rock|dmg=300', '@death.hit.door|dmg=225'])
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('救生艙被摧毀（沒有擊殺者實體）：乘員的死因是暴露在真空中', () => {
+    const { h, cs, g, ps, victim } = setup(4444)
+    expect(INSTANT_ITEMS.get('escapePass')!(g, victim, victim)).toBe(true)
+    h.ticks(4 * 20 + 2)
+    const podId = [...spaceOf(g).pods.keys()][0]
+    const pod = g.world.get(podId)!
+    expect(pod.def.id).toBe('ship.pod')
+    expect(victim.data.inPod).toBe(pod.id)
+    damage(g, null, pod, 1e9, { kind: 'fire', pure: true, env: 'sun' })
+    h.ticks(2)
+    expect(ps[2].alive).toBe(false)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.vacuum')
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('被主腦用 -liquidate 清除：在清除的程式路徑上標記，死者看到「被你的主腦清除」', () => {
+    const { h, cs, g, ps } = setup(5555)
+    g.rolesApi!.convert(ps[2].slot, 'xeno', undefined, 1)
+    h.ticks(2)
+    expect(ps[2].spawnOf).toBe('xeno')
+    clientOf(cs, ps[0]).send({ t: 'chat', ch: 'all', text: '-l ' + ps[2].baseName })
+    h.ticks(2)
+    expect(ps[2].alive).toBe(false)
+    expect(ps[2].stayDead).toBe(true)
+    const lines = deathLines(clientOf(cs, ps[2]))
+    expect(lines[0]).toBe('@death.cause.purged')
+    // 主腦與其他人都收不到死者的死因
+    expect(deathLines(clientOf(cs, ps[0]))).toEqual([])
+    expect(deathLines(clientOf(cs, ps[1]))).toEqual([])
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('不再用「spawn、永久死亡、沒有擊殺者」推測清除：沒有標記就是不明', () => {
+    const { h, cs, g, ps } = setup(6666)
+    g.rolesApi!.convert(ps[2].slot, 'xeno', undefined, 1)
+    h.ticks(2)
+    const u = g.mainOf(ps[2])!
+    ps[2].stayDead = true
+    g.killEnt(u, null, -1)
+    h.ticks(2)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.unknown')
+  })
+
+  it('別人造成、但出手的單位已經不在：說不明，不說成環境傷害', () => {
+    const { h, cs, g, ps, victim } = setup(7777)
+    damage(g, null, victim, 1e6, { kind: 'energy', pure: true, srcSlot: ps[0].slot })
+    h.ticks(2)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.unknown')
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('攻擊者在同一個 tick 走進視野並出手：死者的畫面上從沒出現過它，說看不見', () => {
+    const { h, cs, g, ps, victim, x } = setup(8888)
+    // 先把異形移到別的站，確定死者看不到
+    const other = g.world.zones.find((z) => z.alive && z.nav && z.id !== victim.zone && z.id !== SPACE_ZONE)!
+    const spot = other.layout!.spawns[0]
+    standAt(g, x, other.id, spot.x, spot.y)
+    h.ticks(2)
+    expect(ps[2].view.visible.has(x.id)).toBe(false)
+    // 同一個 tick：走到死者身邊、出手
+    standAt(g, x, victim.zone, victim.x + 1.2, victim.y)
+    damage(g, x, victim, 1e6, { pure: true })
+    h.ticks(2)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.unseen')
+    expect(scanLeaks(h)).toEqual([])
   })
 })

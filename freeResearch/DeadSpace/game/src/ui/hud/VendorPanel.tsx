@@ -82,7 +82,8 @@ export function VendorPanel() {
                   sendCmd({ k: 'buy', e: vendor!.s.i, a: r.item })
                 }}
               >
-                {t('vendor.take')}
+                {/* 賣完了：按鈕直接顯示補貨倒數 */}
+                {r.count <= 0 && r.wait > 0 ? `${r.wait}s` : t('vendor.take')}
               </button>
             </div>
           )

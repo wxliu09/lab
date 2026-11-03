@@ -318,7 +318,7 @@ export function stepSpace(g: Game): void {
       if (sun.def.id !== 'space.sun') continue
       for (const e of w.query(SPACE_ZONE, sun.x, sun.y, 6)) {
         if (e === sun || !e.alive) continue
-        damage(g, null, e, 750 * sp.sunFactor, { kind: 'fire', pure: true })
+        damage(g, null, e, 750 * sp.sunFactor, { kind: 'fire', pure: true, env: 'sun' })
       }
     }
   }
@@ -430,6 +430,8 @@ export function installSpace(g: Game): void {
       const m = p ? g.mainOf(p) : undefined
       if (m) {
         m.data.god = false
+        // 沒有擊殺者實體（恆星、小行星、來源已消失）：乘員是因為救生艙破裂、暴露在真空中而死
+        if (!killer) m.data.deathCause = 'vacuum'
         g.killEnt(m, killer)
       }
     }
@@ -649,3 +651,11 @@ EXTRA_COMMANDS.set('unpilot', (g, p, u) => {
     p.control = p.main
   }
 })
+
+/** 這個 zone（船艙）的船正在發射倒數：回傳剩餘秒數，沒有就 0（給私有狀態，讓船上的人看到倒數）*/
+export function launchCountdown(g: Game, zoneId: number): number {
+  const z = g.world.zones[zoneId]
+  const ship = z?.data.ship ? spaceOf(g).ships.get(z.data.ship as string) : undefined
+  if (!ship?.docked || !ship.launching) return 0
+  return Math.max(0, Math.round((ship.launchAt - g.time) * 10) / 10)
+}

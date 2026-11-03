@@ -300,6 +300,8 @@ export interface PrivateState {
   cast: [string, number] | null
   /** 死亡即退出模式下已出局（不能觀戰、不能用死者頻道）*/
   booted?: boolean
+  /** 所在的船正在發射倒數（剩餘秒數；0 = 沒有）*/
+  launchIn?: number
   muted: boolean
   groups: string[]
   /** 可以互動的設施提示 */

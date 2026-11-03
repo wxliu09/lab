@@ -4,8 +4,16 @@ import { BUFFS } from '../../shared/content/registry'
 import type { Ent } from '../ent'
 import type { Game } from '../game'
 
+/**
+ * 事件與環境傷害的來源種類（給死因說明用）：door = 門控制器故障夾傷、sun = 恆星灼燒、rock = 小行星撞擊、gas = 神經毒素。
+ * 這些傷害沒有「看得到的攻擊者」，死因直接說是什麼；名稱都是公開的現象，不帶任何人的身分。
+ */
+export type EnvKind = 'door' | 'sun' | 'rock' | 'gas'
+
 export interface DmgOpts {
   kind?: DamageKind
+  /** 事件／環境傷害的來源種類（見 EnvKind）*/
+  env?: EnvKind
   /** 持續傷害（不觸發閃避、不打斷施法）*/
   dot?: boolean
   /** 來源槽位（來源實體已消失時用）*/

@@ -4,7 +4,7 @@ import { regModel, type ModelView } from './index'
 import { Batcher, box, cyl, rbox, sphere } from '../batch'
 import { Mat } from '../materials'
 import { buildStationHull, pebble, stationHullScale } from '../space/hulls'
-import { makePlanet, makeSun } from '../space/sky'
+import { makePlanet, makeSun, type PlanetLook } from '../space/sky'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
 
 interface ShipLook {
@@ -298,14 +298,27 @@ for (const id of ['nyx', 'adjudicatrix', 'tenshu', 'hulk7', 'bravado', 'caldera'
 
 /** 恆星在 three 座標的位置（sim (6.5, -2.9) → three (x, h, -y)）*/
 const SUN_POS = new THREE.Vector3(6.5, 0, 2.9)
+/**
+ * 日照方向的仰角（水平分量 1 對上 y 分量）：太空層的主光（gameScene 的平行光）從恆星上方往下打，站體都是頂光；
+ * 行星的日照也抬高約 24° 跟它一致。全水平的話，行星在恆星南邊時斜俯視鏡頭幾乎只看得到夜面
+ * （正南時可見盤面亮的部分從約 21% 提高到約 40%，晨昏線還是跟著公轉位置走）
+ */
+const SUN_LIFT = 0.45
 const tmpV = new THREE.Vector3()
 
-function planetModel(radius: number, base: string, atmo: string, extra?: (g: THREE.Group) => (t: number) => void): ModelView {
-  const p = makePlanet(radius, base, atmo, new THREE.Vector3(1, 0.3, 0))
+function planetModel(
+  radius: number,
+  base: string,
+  atmo: string,
+  look: PlanetLook,
+  extra?: (g: THREE.Group) => (t: number) => void,
+): ModelView {
+  const p = makePlanet(radius, base, atmo, new THREE.Vector3(1, 0.3, 0), look)
   const root = new THREE.Group()
   root.add(p.mesh)
   const tick = extra?.(root)
   const mats = p.mesh.children.map((c) => (c as THREE.Mesh).material as THREE.ShaderMaterial)
+  const dir = new THREE.Vector3()
   return {
     root,
     height: radius * 2,
@@ -314,7 +327,7 @@ function planetModel(radius: number, base: string, atmo: string, extra?: (g: THR
       tick?.(t)
       // 光照方向跟著恆星走（星體會公轉）
       root.getWorldPosition(tmpV)
-      const dir = SUN_POS.clone().sub(tmpV).normalize()
+      dir.subVectors(SUN_POS, tmpV).setY(0).normalize().setY(SUN_LIFT).normalize()
       for (const m of mats) m.uniforms.uSun?.value.copy(dir)
     },
   }
@@ -336,20 +349,38 @@ function onSphere(r: number, lat: number, lon: number): { p: THREE.Vector3; q: T
 const tmpM = new THREE.Matrix4()
 const ONE = new THREE.Vector3(1, 1, 1)
 
+/** 翠原星的三座軍事基地（lat、lon 弧度）：地表模型與夜面燈群共用 */
+const VERDANCE_BASES = [
+  [0.35, 0.4],
+  [-0.25, 2.6],
+  [0.15, 4.4],
+] as const
+/** 餘燼衛星的重力裝置高塔 */
+const CINDER_TOWERS = [
+  [0.6, 0.3],
+  [-0.2, 2.4],
+  [0.1, 4.3],
+] as const
+
 regModel('station.verdance', (def) => {
   const r = planetR('verdance', def, 1.12)
-  return planetModel(r, '#4f7a58', '#b9a6ff', (g) => {
+  // 夜面：淡紫的天光（美術聖經 §3.3）＋基地周圍的鈉燈光暈與聚落燈點
+  const look: PlanetLook = {
+    night: '#8c9cff',
+    nightK: 0.34,
+    nightRim: 0.22,
+    lights: '#ffb46b',
+    dots: 1,
+    hubs: VERDANCE_BASES.map(([lat, lon]) => onSphere(1, lat, lon).p),
+  }
+  return planetModel(r, '#4f7a58', '#b9a6ff', look, (g) => {
     // 地表的軍事基地：混凝土停機坪＋跑道燈＋塔台燈（貼在球體上，跟著自轉）
     const surf = (g.children[0] as THREE.Group).children[0] as THREE.Mesh
     const b = new Batcher()
     const pad = Mat.paint('#8a8c84', 0.7)
     const lamp = Mat.emissive('#ffc27a', 3)
     const beacon = Mat.emissive('#ff5a4a', 3)
-    for (const [lat, lon] of [
-      [0.35, 0.4],
-      [-0.25, 2.6],
-      [0.15, 4.4],
-    ]) {
+    for (const [lat, lon] of VERDANCE_BASES) {
       const { p, q } = onSphere(r * 0.995, lat, lon)
       tmpM.compose(p, q, ONE)
       b.addMatrix(box(r * 0.22, 0.04, r * 0.14), pad, tmpM)
@@ -395,7 +426,18 @@ regModel('station.verdance', (def) => {
 
 regModel('station.cinder', (def) => {
   const r = planetR('cinder', def, 1.2)
-  return planetModel(r, '#58504a', '#2b2a33', (g) => {
+  // 無大氣的岩石衛星：沒有雲、改成月海＋撞擊坑；夜面由重力環的青光照著，高塔周圍一圈青色光暈
+  const look: PlanetLook = {
+    night: '#8fd6f0',
+    nightK: 0.3,
+    nightRim: 0,
+    clouds: 0,
+    rocky: true,
+    lights: '#9fe7ff',
+    dots: 0,
+    hubs: CINDER_TOWERS.map(([lat, lon]) => onSphere(1, lat, lon).p),
+  }
+  return planetModel(r, '#58504a', '#2b2a33', look, (g) => {
     // 環形光：重力場的指示環
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.45, 0.05, 8, 96), Mat.emissive('#9fe7ff', 2.2))
     ring.rotation.x = Math.PI / 2.3
@@ -405,11 +447,7 @@ regModel('station.cinder', (def) => {
     // 重力裝置：地表三座發青光的塔（跟著星體自轉）
     const surf = (g.children[0] as THREE.Group).children[0] as THREE.Mesh
     const b = new Batcher()
-    for (const [lat, lon] of [
-      [0.6, 0.3],
-      [-0.2, 2.4],
-      [0.1, 4.3],
-    ]) {
+    for (const [lat, lon] of CINDER_TOWERS) {
       const o = onSphere(r * 0.98, lat, lon)
       tmpM.compose(o.p, o.q, ONE)
       b.addMatrix(cyl(0.08, 0.18, 0.5, 8), Mat.metal('#3a3c42', 0.7), tmpM)

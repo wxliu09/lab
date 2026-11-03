@@ -6,6 +6,7 @@ import { localNotice } from '../../client/input'
 import type { ChatLine } from '../../shared/protocol/messages'
 import { abilityDef, itemDef } from '../../shared/content/registry'
 import { loc, sysText, t } from '../i18n'
+import { fmtSecs, useCountdown } from './CdFace'
 
 interface Item {
   id: number
@@ -114,23 +115,43 @@ export function Announcements() {
   )
 }
 
-/** 自己的詠唱／引導進度條：直接用 sim 送來的私有狀態 me.cast（[技能, 進度 0–1]），被打斷就會消失 */
-export function CastBar() {
-  void snapTick.value
-  const c = world.me.cast
-  if (!c || screen.value !== 'game') return null
-  const ab = abilityDef(c[0])
-  const k = Math.max(0, Math.min(1, c[1]))
-  const left = (ab?.cast ?? 0) * (1 - k)
+/** 一條等待進度條（剩餘秒數本地平滑倒數）*/
+function TimerBar({ label, left, total, tone, id }: { label: string; left: number; total: number; tone: 'cast' | 'evolve' | 'launch'; id: string }) {
+  const sm = useCountdown(left)
+  const k = total > 0 ? Math.max(0, Math.min(1, 1 - sm / total)) : 0
   return (
-    <div class="castbar" data-testid="castbar">
+    <div class={'castbar ' + tone} data-testid={id}>
       <div class="castbar-label">
-        {t('cast.casting')} {loc(ab?.name)}
-        {left > 0 && <span class="mono dim"> {left.toFixed(1)}s</span>}
+        {label}
+        {sm > 0 && <span class="mono"> {fmtSecs(sm)}s</span>}
       </div>
       <div class="castbar-track">
         <i style={{ transform: `scaleX(${k})` }} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * 自己正在等的東西，一律在 HUD 上方中央顯示倒數：
+ * 詠唱／引導（私有狀態 me.cast，被打斷就消失）、進化（me.evolving）、船艇發射（me.launchIn）。
+ */
+export function CastBar() {
+  void snapTick.value
+  const me = world.me
+  // 進化的總長：第一次看到的剩餘秒數
+  const evoTotal = useRef(0)
+  if ((me.evolving ?? 0) > evoTotal.current) evoTotal.current = me.evolving ?? 0
+  if (!me.evolving) evoTotal.current = 0
+  if (screen.value !== 'game') return null
+  const c = me.cast
+  const ab = c ? abilityDef(c[0]) : undefined
+  const castTotal = ab?.cast ?? 0
+  return (
+    <div class="timerbars">
+      {c && <TimerBar id="castbar" tone="cast" label={`${t('cast.casting')} ${loc(ab?.name)}`} left={castTotal * (1 - Math.max(0, Math.min(1, c[1])))} total={castTotal} />}
+      {(me.evolving ?? 0) > 0 && <TimerBar id="evobar" tone="evolve" label={t('wait.evolving')} left={me.evolving ?? 0} total={evoTotal.current} />}
+      {(me.launchIn ?? 0) > 0 && <TimerBar id="launchbar" tone="launch" label={t('wait.launch')} left={me.launchIn ?? 0} total={10} />}
     </div>
   )
 }
