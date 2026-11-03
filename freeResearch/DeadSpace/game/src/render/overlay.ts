@@ -9,7 +9,7 @@ import { loc, sysText, t } from '../ui/i18n'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
-import { promptKey } from '../client/interactKind'
+import { meCtx, promptKey } from '../client/interactKind'
 
 const requested = new Set<string>()
 /** 靠近時會開啟操作面板的設施 */
@@ -181,6 +181,8 @@ export class Overlay {
     const meId = world.me.control ?? world.me.unit
     const me = meId ? world.ents.get(meId) : undefined
     if (!me || world.me.alive === false) return null
+    // 雜物箱只對有翻找技能的人標「右鍵 翻找」
+    const mc = meCtx(world)
     let best: { id: number; d: number } | null = null
     for (const e of world.ents.values()) {
       if (e.s.z !== me.s.z || e.s.i === meId) continue
@@ -191,7 +193,7 @@ export class Overlay {
       if (!vend && !item && !(fl & EntFlag.Interactable)) continue
       const d = Math.hypot(e.x - me.x, e.y - me.y)
       // 沒有「使用」可言的東西（瓦礫、雕像、降落場、裝置、損毀的控制台…）不標（interactKind.ts）
-      if (d < 4.5 && (!best || d < best.d) && promptKey(e.s, d < 2.9)) best = { id: e.s.i, d }
+      if (d < 4.5 && (!best || d < best.d) && promptKey(e.s, d < 2.9, mc)) best = { id: e.s.i, d }
     }
     if (!best) return null
     const e = world.ents.get(best.id)!
@@ -207,7 +209,7 @@ export class Overlay {
     const d = e.s.d ?? ''
     const item = d.startsWith('item:')
     const name = item ? loc(entDefName(d)) : localizeName(e.s.n) || loc(entDefName(d))
-    const act = t(promptKey(e.s, best.d < 2.9) ?? 'prompt.use')
+    const act = t(promptKey(e.s, best.d < 2.9, mc) ?? 'prompt.use')
     ensureGlyphs(name + act)
     const pulse = 0.65 + 0.35 * Math.sin(now * 5)
     // 菱形標記

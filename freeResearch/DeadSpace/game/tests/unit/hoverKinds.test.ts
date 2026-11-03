@@ -15,10 +15,11 @@ vi.mock('../../src/client/input', async () => {
 
 const { world } = await import('../../src/client/session')
 const { hoverTip } = await import('../../src/ui/hud/WorldHover')
-const { isStructureId, promptKey, rightClickAction, showHp, structKind } = await import('../../src/client/interactKind')
+const { isStructureId, promptKey, rightClickAction, rummageClick, showHp, structKind } = await import('../../src/client/interactKind')
 const { EntFlag } = await import('../../src/shared/protocol/messages')
 const { lang, t } = await import('../../src/ui/i18n')
 type SnapEntity = import('../../src/shared/protocol/messages').SnapEntity
+type AbilityState = import('../../src/shared/protocol/messages').AbilityState
 
 let nextId = 100
 /** 在 client 世界放一個快照實體（建物一律帶 Interactable，和 sim 的快照一樣）*/
@@ -134,7 +135,6 @@ describe('懸停提示依類別', () => {
     expect(hoverTip(put('struct.console'))!.hint).toBe(t('hover.hint.console'))
     expect(hoverTip(put('struct.power', { fl: EntFlag.Interactable | EntFlag.Invuln }))!.hint).toBe(t('hover.hint.panel'))
     expect(hoverTip(put('struct.git'))!.hint).toBe(t('hover.hint.interact'))
-    expect(hoverTip(put('struct.rummage'))!.hint).toBe(t('hover.hint.interact'))
   })
 
   it('英文也有每個新提示', () => {
@@ -192,5 +192,87 @@ describe('身旁的互動提示', () => {
     expect(promptKey(S('struct.git'), false)).toBe('prompt.use')
     expect(promptKey(S('item:medkit'), false)).toBe('prompt.pickup')
     expect(promptKey(S('vendor.medical', { x2: { s: 'medkit:3:0' } }), true)).toBe('prompt.panelOpen')
+  })
+})
+
+describe('雜物箱（R6：右鍵只會走過去、提示卻寫「右鍵 使用」）', () => {
+  /** 自己是清潔工：有翻找技能（cd = 剩餘冷卻秒數）*/
+  const rummager = (cd = 0, extra: Partial<AbilityState> = {}) => {
+    const me = put('personnel', { o: 0, fl: EntFlag.Mine, mp: 100, mmp: 100 })
+    world.me = { unit: me, control: me, abilities: [{ id: 'cls.rummage', cd, maxCd: 10, mana: 50, ...extra }] }
+    return me
+  }
+  const crew = () => {
+    const me = put('personnel', { o: 0, fl: EntFlag.Mine, mp: 100, mmp: 100 })
+    world.me = { unit: me, control: me, abilities: [] }
+    return me
+  }
+  const meOf = () => ({ abilities: world.me.abilities, mp: world.ents.get(world.me.unit!)?.s.mp })
+
+  it('分類成雜物箱（不是一般的「右鍵使用」設施）', () => {
+    expect(structKind({ i: 1, d: 'struct.rummage', fl: EntFlag.Interactable })).toBe('crate')
+  })
+
+  it('有翻找技能：懸停寫右鍵走過去翻找；冷卻中接著寫還要幾秒；身旁提示「右鍵 翻找」', () => {
+    rummager()
+    const id = put('struct.rummage', { hp: 150, mhp: 150 })
+    const tip = hoverTip(id)!
+    expect(tip.hint).toBe(t('ui4.hover.rummage'))
+    expect(tip.hint).toContain('翻找')
+    expect(tip.hint).not.toBe(t('hover.hint.interact'))
+    expect(tip.body).toBe(t('hover.desc.struct.rummage'))
+    expect(tip.rows).toEqual([[t('tip.hp'), '150 / 150']])
+    expect(promptKey(world.ents.get(id)!.s, false, meOf())).toBe('ui4.prompt.rummage')
+    expect(t('ui4.prompt.rummage')).toBe('右鍵 翻找')
+    // 冷卻中
+    world.me.abilities = [{ id: 'cls.rummage', cd: 6.4, maxCd: 10, mana: 50 }]
+    const cool = hoverTip(id)!
+    expect(cool.hint).toContain(t('ui4.hover.rummage'))
+    expect(cool.hint).toContain(t('tip.ability.cooling', { s: '6.4' }))
+    expect(promptKey(world.ents.get(id)!.s, false, meOf())).toBe('ui4.prompt.rummage')
+  })
+
+  it('沒有翻找技能：懸停說明誰能翻、自己可以打破（按 A）；身旁不顯示「右鍵 使用」', () => {
+    crew()
+    const id = put('struct.rummage', { hp: 150, mhp: 150 })
+    const tip = hoverTip(id)!
+    expect(tip.hint).toBe(t('ui4.hover.crate'))
+    expect(tip.hint).toBe('有翻找技能的職業可以翻找；其他人可以打破（按 A 攻擊）')
+    expect(tip.hint).not.toContain('右鍵')
+    expect(tip.rows?.length).toBe(1)
+    expect(promptKey(world.ents.get(id)!.s, false, meOf())).toBeNull()
+    expect(promptKey(world.ents.get(id)!.s, true, meOf())).toBeNull()
+    // 不知道自己的狀態（例如還沒收到私有狀態）也當作沒有技能
+    expect(promptKey(world.ents.get(id)!.s, false)).toBeNull()
+  })
+
+  it('右鍵：有技能＝對箱子施放翻找；冷卻中／能量不足／被沉默＝走過去並說明；沒技能＝只走過去', () => {
+    rummager()
+    const id = put('struct.rummage')
+    const s = world.ents.get(id)!.s
+    expect(rightClickAction(s, meOf())).toBe('rummage')
+    expect(rummageClick(id, s, meOf(), true)).toEqual({ cmd: { k: 'cast', a: 'cls.rummage', e: id, q: true } })
+    world.me.abilities = [{ id: 'cls.rummage', cd: 12.3, maxCd: 10, mana: 50 }]
+    expect(rightClickAction(s, meOf())).toBe('rummage')
+    const cool = rummageClick(id, s, meOf())
+    expect(cool.cmd).toEqual({ k: 'interact', e: id, q: false })
+    expect(cool.notice).toEqual({ key: 'tip.ability.cooling', args: { s: '13' } })
+    world.me.abilities = [{ id: 'cls.rummage', cd: 0, maxCd: 10, mana: 50 }]
+    world.ents.get(world.me.unit!)!.s.mp = 20
+    expect(rummageClick(id, s, meOf()).notice?.key).toBe('cast.mana')
+    world.me.abilities = [{ id: 'cls.rummage', cd: 0, maxCd: 10, mana: 50, disabled: true }]
+    expect(rummageClick(id, s, meOf()).notice?.key).toBe('cast.silenced')
+    // 沒技能
+    crew()
+    expect(rightClickAction(s, meOf())).toBe('interact')
+    expect(rightClickAction(s)).toBe('interact')
+  })
+
+  it('英文也有雜物箱的提示', () => {
+    lang.value = 'en'
+    for (const k of ['ui4.hover.rummage', 'ui4.hover.crate', 'ui4.prompt.rummage']) {
+      expect(t(k), k).not.toBe(k)
+      expect(t(k), k).not.toMatch(/[一-鿿]/)
+    }
   })
 })

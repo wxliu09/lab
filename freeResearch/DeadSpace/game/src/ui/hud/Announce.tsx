@@ -142,7 +142,7 @@ export function Announcements() {
   useEffect(() => {
     if (!ln) return
     const now = performance.now()
-    const text = t(ln.text)
+    const text = t(ln.text, ln.args)
     const life = ln.life ?? noticeLife(text)
     setItems((xs) => [...xs, { id: ++seq, text, kind: 'err' as const, until: now + life, life }].slice(-12))
   }, [ln])

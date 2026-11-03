@@ -7,7 +7,7 @@ import type { SnapEntity } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
 import { sendCmd, world } from './session'
 import { giveRefusal } from './give'
-import { rightClickAction } from './interactKind'
+import { meCtx, rightClickAction, rummageClick } from './interactKind'
 
 export type TargetMode =
   | null
@@ -24,8 +24,8 @@ export const cursorScreen = { x: 0, y: 0, overView: false }
 export const evolveOpen = signal(false)
 /** 遊戲選單（Esc）：繼續、說明、圖鑑、設定、離開對局 */
 export const menuOpen = signal(false)
-/** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示。text = 字串 key；life = 顯示毫秒（不給就依字數，Announce.tsx noticeLife）*/
-export const localNotice = signal<{ text: string; at: number; life?: number } | null>(null)
+/** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示。text = 字串 key（args = 代入的參數）；life = 顯示毫秒（不給就依字數，Announce.tsx noticeLife）*/
+export const localNotice = signal<{ text: string; at: number; life?: number; args?: Record<string, string | number> } | null>(null)
 /** 最後一次右鍵互動的對象（販賣機挨在一起時，面板優先顯示這台）*/
 export const lastInteract = signal(0)
 
@@ -228,7 +228,8 @@ export class Input {
     const e = ent && ent !== me ? world.ents.get(ent) : undefined
     if (e) {
       // 依類別決定（interactKind.ts）：敵方建物在「可互動」之前判斷，降落場這種大地貼當成點地面
-      switch (rightClickAction(e.s)) {
+      const mc = meCtx(world)
+      switch (rightClickAction(e.s, mc)) {
         case 'pickup':
           // 地上的物品：撿起來（sim 的 interact 只會走過去，不會撿）
           sendCmd({ k: 'pickup', e: ent, q })
@@ -243,6 +244,14 @@ export class Input {
           lastInteract.value = ent
           sendCmd({ k: 'interact', e: ent, q })
           return
+        case 'rummage': {
+          // 雜物箱、自己有翻找技能：走過去翻找；冷卻中／能量不足時照樣走過去，並說明為什麼還不能翻
+          const r = rummageClick(ent, e.s, mc, q)
+          sendCmd(r.cmd)
+          if (r.notice) localNotice.value = { text: r.notice.key, args: r.notice.args, at: performance.now() }
+          this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
+          return
+        }
         case 'corpse':
           sendCmd({ k: 'move', x: (e.s.x ?? 0) / 100, y: (e.s.y ?? 0) / 100, q })
           return

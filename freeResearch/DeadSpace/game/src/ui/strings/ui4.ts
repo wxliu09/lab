@@ -1,4 +1,4 @@
-// 介面文字（第四批）：名字依介面語言顯示、背包拖曳（交換／給予）、大廳主機提示
+// 介面文字（第四批）：名字依介面語言顯示、背包拖曳（交換／給予）、大廳主機提示、雜物箱的右鍵翻找
 // 名字：sim 把職業前綴（classes.ts 的 prefix.en）、晉升頭銜「特務·」、管家後綴「 的管家」、預設名「船員 N」直接寫進名字字串；
 // client 依語言換掉（見 ui/names.ts 的 localizeName）。前綴的 key 是 name.prefix.<職業 id>。
 export const UI4_ZH: Record<string, string> = {
@@ -30,6 +30,11 @@ export const UI4_ZH: Record<string, string> = {
 
   // ───── 大廳 ─────
   'ui4.lobby.hostHint': '你是主機：主機電腦的卡頓會傳給所有人，建議用效能較好的電腦當主機',
+
+  // ───── 雜物箱：右鍵翻找（自己有翻找技能時）、沒有技能的人只能打破 ─────
+  'ui4.hover.rummage': '右鍵：走過去翻找（箱子會報銷）',
+  'ui4.hover.crate': '有翻找技能的職業可以翻找；其他人可以打破（按 A 攻擊）',
+  'ui4.prompt.rummage': '右鍵 翻找',
 }
 
 export const UI4_EN: Record<string, string> = {
@@ -57,4 +62,8 @@ export const UI4_EN: Record<string, string> = {
   'ui4.end.spawn': ' spawn',
 
   'ui4.lobby.hostHint': 'You are the host: any lag on the host computer reaches every player, so host from your fastest machine.',
+
+  'ui4.hover.rummage': 'Right-click: walk over and rummage (the crate is ruined)',
+  'ui4.hover.crate': 'Classes with Rummage can search it; anyone else can break it (press A to attack)',
+  'ui4.prompt.rummage': 'Right-click to rummage',
 }

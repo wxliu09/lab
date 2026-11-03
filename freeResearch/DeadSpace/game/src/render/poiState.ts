@@ -41,6 +41,28 @@ export interface PoiCellInfo {
   y: number
 }
 
+/** 某個 zone 的視野（給 PoiTracker.update／visibleAt 與雜物箱記憶）*/
+export interface ZoneSight {
+  sources: { x: number; y: number; r: number }[]
+  doorClosed: (idx: number) => boolean
+  /** 整個 zone 都看得到（死者、旁觀者）*/
+  full: boolean
+}
+
+/**
+ * 從 client 世界取出某個 zone 的視野：快照的視野來源、門的狀態（沒看過的門當作關著）。
+ * 死者、旁觀者整個 zone 都看得到（sim 不送視野來源）；靠記憶核心觀看的仿生人有來源，照來源算；出局的死者什麼都看不到。
+ */
+export function sightOf(w: { vs: readonly (readonly number[])[]; doors: ReadonlyMap<number, number>; me: { alive?: boolean; role?: string; booted?: boolean } }, zone: number): ZoneSight {
+  const sources = w.vs.filter((s) => s[0] === zone).map((s) => ({ x: s[1] / 10, y: s[2] / 10, r: s[3] / 10 }))
+  const full = (w.me.alive === false || w.me.role === 'spectator') && !w.me.booted && w.vs.length === 0
+  const doorClosed = (idx: number) => {
+    const st = w.doors.get(zone * 10000 + idx)
+    return st === undefined || st === 0 || st === 2
+  }
+  return { sources, doorClosed, full }
+}
+
 /** 依實體定義決定外觀：損毀的控制台換成殘骸外觀，其餘完好 */
 export function lookOfDef(kind: string, def: string): PoiLook {
   return kind === 'console' && def === 'struct.consoleBroken' ? 'broken' : 'ok'

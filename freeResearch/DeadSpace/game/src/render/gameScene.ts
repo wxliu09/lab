@@ -9,9 +9,10 @@ import type { SceneLike } from './engine'
 import { RtsCamera } from './camera'
 import { addPoiRing, buildStation, buildStationSteps, updateDoors, type RoomLight, type StationView } from './stationBuilder'
 import { poiModel, poiWreck, type Animated } from './props'
-import { PoiTracker, type PoiLook, type PoiSeen } from './poiState'
+import { PoiTracker, sightOf, type PoiLook, type PoiSeen } from './poiState'
+import { CrateMemory, type CrateSeen } from './crateMemory'
 import { Blizzard } from './weather'
-import { isStructureId } from '../client/interactKind'
+import { CRATE_DEF, isStructureId } from '../client/interactKind'
 import { FogMap } from './fog'
 import { UnitLayer, unitWarmMeshes } from './units'
 import { fogUniforms, emergencyStripMat, isSharedMaterial } from './materials'
@@ -204,6 +205,13 @@ export class GameScene implements SceneLike {
   private poiAlt = new Map<string, { root: THREE.Object3D; anim: Animated[] }>()
   /** 迷霧更新的那一幀順便更新設施外觀 */
   private poiDue = false
+  /** 程式放置的雜物箱的迷霧記憶（crateMemory.ts；zone → 記憶，換站回來還在）*/
+  private crateMems = new Map<number, CrateMemory>()
+  /** 這一幀在目前 zone 看得到、由單位層畫的雜物箱（版面 POI 格上的由站體畫，不算）*/
+  private cratePresent = new Map<number, CrateSeen>()
+  /** 目前 zone 畫出來的記憶中的雜物箱（id → 模型）；不放進單位層，點不到也不會有懸停說明 */
+  private crateGhosts = new Map<number, THREE.Object3D>()
+  private readonly crateGhostGroup = new THREE.Group()
   /** 天氣（目前只有餘燼衛星大氣護盾破掉後的暴風雪）*/
   private blizzard: Blizzard | null = null
   grade = { hue: 0, sat: 0.02, bright: 0, contrast: 0.06 }
@@ -274,7 +282,7 @@ export class GameScene implements SceneLike {
     this.flash.shadow.bias = -0.0005
     this.scene.add(this.flash, this.flashTarget)
     this.flash.target = this.flashTarget
-    this.scene.add(this.units.group)
+    this.scene.add(this.units.group, this.crateGhostGroup)
     this.fx = new Fx(this.scene)
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
   }
@@ -580,6 +588,7 @@ export class GameScene implements SceneLike {
         this.rts.maxDist = 95
         this.grade = this.gradeBase = { hue: 0, sat: 0.1, bright: 0, contrast: 0.08 }
         this.units.clear()
+        this.clearCrateGhosts()
         this.onZoneChange?.({ id: 0, key: 'space', station: 'space', layout: null as never })
       }
       return
@@ -612,6 +621,7 @@ export class GameScene implements SceneLike {
     this.grade = this.gradeBase = th.grade
     this.rts.setBounds(0, 0, info.layout.w, info.layout.h)
     this.units.clear()
+    this.clearCrateGhosts()
     this.onZoneChange?.(info)
   }
 
@@ -672,17 +682,62 @@ export class GameScene implements SceneLike {
    * 只在那一格看得到時才下判斷（poiState.ts），視野外維持記憶中的樣子。
    */
   private updatePois(view: StationView, info: ZoneInfo): void {
+    const tr = this.poiTracker(info)
+    // 死者、旁觀者整個 zone 都看得到（sim 不送視野來源）；靠記憶核心觀看的仿生人有來源，照來源算（poiState.ts sightOf）
+    const v = sightOf(this.world, info.id)
+    for (const [key, look] of tr.update(performance.now() / 1000, this.poiSeen, v.sources, v.doorClosed, v.full)) this.applyPoiLook(view, info, key, look)
+  }
+
+  private poiTracker(info: ZoneInfo): PoiTracker {
     let tr = this.poiTrackers.get(info.id)
     if (!tr) this.poiTrackers.set(info.id, (tr = new PoiTracker(info.layout)))
-    const w = this.world
-    const srcs = w.vs.filter((s) => s[0] === info.id).map((s) => ({ x: s[1] / 10, y: s[2] / 10, r: s[3] / 10 }))
-    // 死者、旁觀者整個 zone 都看得到（sim 不送視野來源）；靠記憶核心觀看的仿生人有來源，照來源算
-    const full = (w.me.alive === false || w.me.role === 'spectator') && !w.me.booted && w.vs.length === 0
-    const doorClosed = (idx: number) => {
-      const st = w.doors.get(info.id * 10000 + idx)
-      return st === undefined || st === 0 || st === 2
+    return tr
+  }
+
+  /** units.sync 的略過條件：站體畫的固定設施略過；順便記下這一幀看得到、由單位層畫的雜物箱 */
+  private readonly syncSkip = (e: CEnt): boolean => {
+    if (this.isStaticStructure(e)) return true
+    if (e.s.d === CRATE_DEF) this.cratePresent.set(e.s.i, { x: e.x, y: e.y, f: e.f })
+    return false
+  }
+
+  /**
+   * 雜物箱的迷霧記憶（每幀，units.sync 之後）：離開視野的箱子畫成記憶中的模型（同一個模型與擺向，材質經過迷霧 shader
+   * 自然套上記憶色）；那一格看得到而實體不在才拿掉（crateMemory.ts）。回到視野時實體回到快照，單位層接手畫。
+   */
+  private updateCrateGhosts(info: ZoneInfo): void {
+    let mem = this.crateMems.get(info.id)
+    if (!mem) this.crateMems.set(info.id, (mem = new CrateMemory()))
+    const tr = this.poiTracker(info)
+    const v = sightOf(this.world, info.id)
+    mem.update(performance.now() / 1000, this.cratePresent, (x, y) => tr.visibleAt(x, y, v.sources, v.doorClosed), v.full)
+    for (const [id, o] of this.crateGhosts) {
+      if (mem.isGhost(id)) continue
+      this.crateGhostGroup.remove(o)
+      this.crateGhosts.delete(id)
     }
-    for (const [key, look] of tr.update(performance.now() / 1000, this.poiSeen, srcs, doorClosed, full)) this.applyPoiLook(view, info, key, look)
+    const def = UNITS.get(CRATE_DEF)
+    for (const [id, c] of mem.ghosts()) {
+      if (this.crateGhosts.has(id)) continue
+      // 和單位層同一個建模（漆色依 id），幾何與材質都是共用的：拿掉時不必釋放
+      const root = new THREE.Group()
+      root.add(buildModel(def?.model ?? 'crate', def, { i: id, d: CRATE_DEF }).root)
+      if (def?.scale) root.scale.setScalar(def.scale)
+      root.position.set(c.x, 0, -c.y)
+      root.rotation.y = Math.atan2(Math.cos(c.f), -Math.sin(c.f))
+      this.crateGhostGroup.add(root)
+      this.crateGhosts.set(id, root)
+    }
+  }
+
+  private clearCrateGhosts(): void {
+    this.crateGhostGroup.clear()
+    this.crateGhosts.clear()
+  }
+
+  /** 目前 zone 畫成記憶模型的雜物箱 id（測試掛勾與除錯用）*/
+  crateGhostIds(): number[] {
+    return [...this.crateGhosts.keys()]
   }
 
   private applyPoiLook(view: StationView, info: ZoneInfo, key: string, look: PoiLook): void {
@@ -768,12 +823,14 @@ export class GameScene implements SceneLike {
       this.poiDue = true
     }
     this.poiSeen.clear()
-    this.units.sync(w.ents.values(), zid, (e) => this.isStaticStructure(e), dt, t)
+    this.cratePresent.clear()
+    this.units.sync(w.ents.values(), zid, this.syncSkip, dt, t)
     const zinfo = this.zones.get(zid)
     if (view && zinfo && this.poiDue) {
       this.poiDue = false
       this.updatePois(view, zinfo)
     }
+    if (view && zinfo) this.updateCrateGhosts(zinfo)
 
     updateBuffFx(this, dt, t)
     // 燈光池：離鏡頭最近的房間燈；緊急照明（站點斷電）時整站轉暗紅、慢速脈動
@@ -968,6 +1025,8 @@ export class GameScene implements SceneLike {
     this.poiEnt.clear()
     this.poiTrackers.clear()
     this.poiAlt.clear()
+    this.crateMems.clear()
+    this.clearCrateGhosts()
     this.blizzard?.dispose()
     this.blizzard = null
     this.prebuildQ = []
