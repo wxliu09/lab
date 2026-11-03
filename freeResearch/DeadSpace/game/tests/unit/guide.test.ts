@@ -291,7 +291,7 @@ describe('提示佇列', () => {
     expect(q.offer({ id: 'a', pri: 0 })).toBe(false)
   })
 
-  it('排隊中的提示條件消失就移出佇列（之後條件成立再排）；退回佇列的提示之後仍會顯示', () => {
+  it('排隊中的提示條件消失就移出佇列（之後條件成立再排）；退回佇列的提示條件還在就會顯示、條件消失就丟掉', () => {
     const st = memStore()
     const q = new G.HintQueue(st)
     q.offer({ id: 'x', pri: 0 })
@@ -301,14 +301,20 @@ describe('提示佇列', () => {
     expect(q.active.map((a) => a.id)).toEqual(['x', 'y'])
     q.deferLast()
     expect(q.active.map((a) => a.id)).toEqual(['x'])
-    // low 的條件消失；y 已經顯示過（被退回），不受影響
-    q.tick(0.1, false, 1, null, new Set(['x']))
+    // low 的條件消失；y 被退回但條件還在，留在佇列
+    q.tick(0.1, false, 1, null, new Set(['x', 'y']))
     expect(q.queue.map((h) => h.id)).toEqual(['y'])
     expect(st.has('low')).toBe(false)
-    q.tick(12, false, 2, null, new Set())
+    q.tick(12, false, 2, null, new Set(['y']))
     expect(q.active.map((a) => a.id)).toEqual(['y'])
     // 條件再次成立：重新排隊
     expect(q.offer({ id: 'low', pri: 2 })).toBe(true)
+    // 退回佇列的提示，條件消失（例如死了）就丟掉
+    q.offer({ id: 'z', pri: 0 })
+    q.tick(0.1, false, 3, null, new Set(['y', 'z', 'low']))
+    q.deferLast()
+    q.tick(0.1, false, 1, null, new Set(['y']))
+    expect(q.queue.some((h) => h.id === 'z' || h.id === 'low')).toBe(false)
   })
 
   it('已在佇列裡的提示會更新參數（例如快捷鍵換了）', () => {

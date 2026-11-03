@@ -5,7 +5,7 @@ import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
 import { facilityView } from './facilities'
 import { launchCountdown } from './space'
-import { LAST_WORDS, inLastWords } from './chat'
+import { LAST_WORDS, canStillRevive, inLastWords } from './chat'
 
 export function privateState(g: Game, p: GamePlayer): PrivateState {
   const main = g.mainOf(p)
@@ -47,6 +47,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     alive: p.alive,
     dead: !p.alive && !p.spectator,
     booted: !p.alive && !!p.data.booted,
+    coreWait: !p.alive && canStillRevive(p),
     lastWords: inLastWords(g, p) ? Math.max(1, Math.ceil(p.deadAt + LAST_WORDS - t)) : 0,
     launchIn: main ? launchCountdown(g, main.zone) : 0,
     role: p.spectator ? 'spectator' : p.role,

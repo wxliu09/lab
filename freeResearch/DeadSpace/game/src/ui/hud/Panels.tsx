@@ -19,7 +19,8 @@ const FACTION_TEXT: Record<string, string> = { xeno: '#b28cff', mutant: '#ff6b72
 
 // 結算畫面、出局畫面開著時，遊戲快捷鍵不處理；但結算時仍可按 Enter 聊天（賽後聊天），兩者都可以按 M 靜音
 const endOpen = () => !!endResult.value
-const bootedOpen = () => !!world.me.booted
+// 結算後出局畫面讓位給結算卡（才能賽後聊天）
+const bootedOpen = () => !!world.me.booted && !endResult.value
 modalChecks.push(endOpen, bootedOpen)
 chatPassChecks.push(endOpen)
 mutePassChecks.push(endOpen, bootedOpen)
@@ -130,8 +131,10 @@ export function SpectatorBar() {
   const me = world.me
   const dead = me.alive === false || me.role === 'spectator'
   if (!dead) return null
-  // 死亡即退出：出局，不能觀戰
-  if (me.booted)
+  // 等記憶核心復活的仿生人：只能透過核心觀看，不能切換觀戰
+  if (me.coreWait) return null
+  // 死亡即退出：出局，不能觀戰（結算後讓位給結算卡）
+  if (me.booted && !endResult.value)
     return (
       <div class="modal-back" data-testid="booted">
         <div class="panel modal" style={{ textAlign: 'center', width: 'min(460px, 92vw)' }}>

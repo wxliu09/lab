@@ -134,6 +134,7 @@ export function Banner() {
       </div>
     )
   // 出局者（死亡即退出）不能觀戰、也不能和死者聊天：目標面板已說明「等待結算」，這裡不再顯示觀戰橫幅
+  if (me.alive === false && me.coreWait) return <div class="panel banner">{t('hud.coreWait')}</div>
   if (me.alive === false && me.role !== 'spectator' && !me.booted) return <div class="panel banner">{t('hud.dead')}</div>
   return null
 }
@@ -302,7 +303,8 @@ export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?:
     x.stroke()
   } else {
     x.arc(px, py, 2.4, 0, Math.PI * 2)
-    x.fillStyle = '#cfd8df'
+    // 中立：灰藍（和白色玩家 #eff0f3 分得開）
+    x.fillStyle = '#9fb3c2'
     x.fill()
   }
 }
@@ -421,7 +423,7 @@ export function Portrait() {
   const defName = entDefName(s.d)
   const hp = s.hp ?? 0
   const mhp = s.mhp ?? 1
-  const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!].hex : '#cfd8df'
+  const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!].hex : '#9fb3c2'
   return (
     <div class="panel portrait" data-testid="portrait">
       <div style={{ width: '96px', height: '128px', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `radial-gradient(circle at 50% 40%, ${color}33, transparent 70%)` }}>

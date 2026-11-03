@@ -11,6 +11,12 @@ import { dropOnGround, giveItem, makeItem, morph } from './items'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { LAST_WORDS, bootIfOut } from './chat'
 
+/** 結算時間軸用真實身分的名字（職稱＋本名）：通訊病毒換掉的名字只影響對局中，不能讓結算紀錄記錯人 */
+function tlName(p: GamePlayer): string {
+  const cls = CLASSES.get(p.classId)
+  return (cls ? cls.prefix.en : '') + p.baseName
+}
+
 // ───────── 工具 ─────────
 
 export function isSpawn(p: GamePlayer, f?: Faction): boolean {
@@ -181,23 +187,23 @@ function announceDeath(g: Game, p: GamePlayer): void {
     // -status 只依公告過的死亡回答（chat.ts）
     g.data.mutantDeathAnnounced = true
     g.systemAll('death.mutant', { name: p.name })
-    g.log(fmtKey('tl.death.mutant', { name: p.name }))
+    g.log(fmtKey('tl.death.mutant', { name: tlName(p) }))
   } else if (p.role === 'xeno' && !p.spawnOf) {
     g.data.xenoDeathAnnounced = true
     g.systemAll('death.xeno')
-    g.log(fmtKey('tl.death.xeno', { name: p.name }))
+    g.log(fmtKey('tl.death.xeno', { name: tlName(p) }))
   } else if (p.spawnOf === 'xeno') {
     g.systemAll('death.xenoSpawn')
-    g.log(fmtKey('tl.death.xenoSpawn', { name: p.name }))
+    g.log(fmtKey('tl.death.xenoSpawn', { name: tlName(p) }))
   } else if (p.spawnOf === 'mutant') {
     g.systemAll('death.mutantSpawn')
-    g.log(fmtKey('tl.death.mutantSpawn', { name: p.name }))
+    g.log(fmtKey('tl.death.mutantSpawn', { name: tlName(p) }))
   } else if (p.role === 'android') {
     g.systemAll('death.android')
-    g.log(fmtKey('tl.death.android', { name: p.name }))
+    g.log(fmtKey('tl.death.android', { name: tlName(p) }))
   } else {
     g.systemAll('death.innocent')
-    g.log(fmtKey('tl.death.crew', { name: p.name }))
+    g.log(fmtKey('tl.death.crew', { name: tlName(p) }))
   }
 }
 
@@ -258,7 +264,7 @@ export function installRoles(g: Game): void {
       for (const q of g.allPlayers()) {
         if (q.slot !== slot && q.alive && g.faction(q) === f) g.privateLine(q.slot, 'role.gotSpawn', { name: p.name })
       }
-      g.log(fmtKey(f === 'xeno' ? 'tl.convert.xeno' : 'tl.convert.mutant', { name: p.name }))
+      g.log(fmtKey(f === 'xeno' ? 'tl.convert.xeno' : 'tl.convert.mutant', { name: tlName(p) }))
       g.emitFx({ k: 'infect', z: pos.zone, x: pos.x, y: pos.y, e: u.id })
       g.checkVictory()
       return u
@@ -539,7 +545,7 @@ function finishEvolution(g: Game, p: GamePlayer, cur: Ent, formId: string): void
   g.emitFx({ k: 'evolved', z: u.zone, x: u.x, y: u.y, e: u.id, s: formId })
   if (form.faction === 'xeno') g.systemAll('role.xenoEvolved')
   else if (form.faction === 'mutant') g.systemAll('role.mutantEvolved')
-  g.log(fmtKey('tl.evolve', { name: p.name, unit: form.unit }))
+  g.log(fmtKey('tl.evolve', { name: tlName(p), unit: form.unit }))
   // spawn 跟著換型（異形：正在異形形態的 spawn；變種人：全部）
   const f = form.faction === 'android' ? null : form.faction
   if (f && form.spawnUnit && UNITS.has(form.spawnUnit)) {

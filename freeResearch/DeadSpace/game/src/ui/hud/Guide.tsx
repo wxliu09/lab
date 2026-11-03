@@ -162,12 +162,13 @@ export class HintQueue {
   /**
    * 推進時間。blocked（被全螢幕畫面擋住）時不倒數也不補位；hold = 滑鼠停著的那則不倒數；
    * current = 目前成立的條件：還在排隊的提示條件消失就移除（離開了販賣機、血量回來了、身分變了），
-   * 下次條件成立再排；退回佇列的提示已經記為看過，一定會顯示。回傳畫面是否有變。
+   * 下次條件成立再排（退回佇列的提示也一樣：條件消失就丟掉）。回傳畫面是否有變。
    */
   tick(dt: number, blocked: boolean, max = MAX_HINTS, hold: string | null = null, current?: Set<string>): boolean {
     let changed = false
     if (current) {
-      this.queue = this.queue.filter((q) => this.mine.has(q.id) || current.has(q.id))
+      // 被頂掉、退回佇列的提示也要條件仍成立才留著（死了就不該再看到「基本操作」）
+      this.queue = this.queue.filter((q) => current.has(q.id))
       // 有時效的提示條件消失：顯示中的也收回（例如「可以進化」在開始結繭後還掛著）
       const n = this.active.length
       this.active = this.active.filter((a) => !this.transient.has(a.id) || current.has(a.id))

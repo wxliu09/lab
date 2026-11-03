@@ -306,6 +306,8 @@ export interface PrivateState {
   cast: [string, number] | null
   /** 死亡即退出模式下已出局（不能觀戰、不能用死者頻道）*/
   booted?: boolean
+  /** 仿生人機體損毀、等記憶核心復活：只能透過核心觀看，聽不到死者頻道 */
+  coreWait?: boolean
   /** 剛死、還在遺言時間內：活人還聽得到的剩餘秒數（無條件進位；0 = 不在遺言時間）*/
   lastWords?: number
   /** 所在的船正在發射倒數（剩餘秒數；0 = 沒有）*/

@@ -1,5 +1,6 @@
 import { useEffect } from 'preact/hooks'
-import { isHost, screen } from '../client/session'
+import { isHost, lobby, screen } from '../client/session'
+import { PRACTICE_ROOM } from '../shared/protocol/messages'
 import { Menu } from './screens/Menu'
 import { Lobby } from './screens/Lobby'
 import { GameScreen } from './screens/GameScreen'
@@ -42,7 +43,15 @@ export function App() {
     <>
       {s !== 'game' && <MenuBackdrop />}
       {(s === 'menu' || s === 'connecting') && <Menu />}
-      {s === 'lobby' && <Lobby />}
+      {/* 單機練習會直接開局：不顯示大廳（裡面「人數不足」的提示會誤導），改顯示準備中 */}
+      {s === 'lobby' && lobby.value?.code === PRACTICE_ROOM && (
+        <div class="modal-back" data-testid="practice-loading">
+          <div class="panel modal" style={{ textAlign: 'center', width: 'min(420px, 92vw)' }}>
+            {t('load.practice')}
+          </div>
+        </div>
+      )}
+      {s === 'lobby' && lobby.value?.code !== PRACTICE_ROOM && <Lobby />}
       {s === 'game' && <GameScreen />}
       <Codex />
       <TooltipLayer />

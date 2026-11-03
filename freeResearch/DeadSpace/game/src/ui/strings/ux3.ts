@@ -8,6 +8,8 @@ export const UX3_ZH: Record<string, string> = {
   'sep.wide': '　',
   'sep.paren': '（{s}）',
   'net.waitLoad': '等待其他玩家載入（還有 {n} 人）…',
+  'load.practice': '準備單機練習…',
+  'hud.coreWait': '機體損毀：只能透過記憶核心觀看周圍。有人把核心插進裁決者號的鑄造台（或閒置的綏靖機器人）就能復活。',
 
   // ───── 結算時間軸 ─────
   'tl.death.mutant': '{name}（變種人）死亡',
@@ -96,6 +98,8 @@ export const UX3_EN: Record<string, string> = {
   'sep.wide': ' · ',
   'sep.paren': ' ({s})',
   'net.waitLoad': 'Waiting for other players to load ({n} left)…',
+  'load.practice': 'Preparing practice…',
+  'hud.coreWait': 'Chassis destroyed: you can only watch through your memory core. Someone must slot it into the Adjudicatrix fabricator (or an idle pacification bot) to bring you back.',
 
   // ───── Results timeline ─────
   'tl.death.mutant': '{name} (Mutant) died',
