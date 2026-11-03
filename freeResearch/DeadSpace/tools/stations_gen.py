@@ -607,6 +607,8 @@ enable: 'core',
 scanTime: 4.27,
 podLanding: 'y',
 dockable: true,
+// 主控台 6000 HP、每秒回 100（原作 h000）
+console: {{ hp: 6000, regen: 100 }},
 space: {{
   hp: 400000,
   hpRegen: 200,
@@ -728,6 +730,8 @@ enable: 'core',
 scanTime: 1.74,
 podLanding: 'y',
 dockable: true,
+// 主控台 3000 HP（原作 h006）
+console: {{ hp: 3000 }},
 space: {{
   hp: 200000,
   hpRegen: 100,
@@ -1044,13 +1048,14 @@ space: {{
   pos: [{px}, {py}],
   speed: 0.7,
   attack: {{ dmg: [185, 185], cd: 0.5, range: 9, kind: 'hitscan', fx: 'lightning' }},
-  abilities: ['st.sweep', 'st.repair', 'st.cordon'],
+  // 原作 Calipea：外部維修、強行登艦、封鎖信標（沒有站內監控掃描）
+  abilities: ['st.repair', 'ship.board', 'st.cordon'],
   pilotable: true,
   model: 'station.caldera',
 }},
 docked: [],
 """
-    return s, 'CALDERA', '火口號 Caldera：採礦工程艦（GDD §6.2）。精煉爐房、礦石輸送帶、工程師艙；不可停靠，從出口登艦。', meta
+    return s, 'CALDERA', '火口號 Caldera：採礦工程艦（GDD §6.2）。精煉爐房、礦石輸送帶、工程師艙；不可停靠，只能強行登艦（連結期間登艦氣閘的出入口通往對方船艙）。', meta
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1239,6 +1244,8 @@ enable: 'auto',
 scanTime: 0.31,
 podLanding: 'l',
 dockable: false,
+// 主控台無敵（原作 h04U 帶 Avul）
+console: {{ invuln: true }},
 space: {{
   hp: 180000,
   hpRegen: 0,
@@ -1246,13 +1253,14 @@ space: {{
   pos: [{px}, {py}],
   speed: 0,
   attack: {{ dmg: [51, 51], cd: 0.2, range: 16, kind: 'projectile', projSpeed: 30, fx: 'stationGun' }},
-  abilities: ['st.sweep', 'st.portTarget', 'st.portActivate'],
+  // 原作 Pown：強制停靠、強行登艦（沒有站內監控掃描）；強制停靠原作一律拖回女帝號（推斷是 bug），不做
+  abilities: ['st.portTarget', 'st.portActivate', 'ship.board'],
   pilotable: true,
   model: 'station.portage',
 }},
 docked: [],
 """
-    return s, 'PORTAGE', '擺渡號 Portage：人員轉運站（GDD §6.2）。八角傳送大廳（9 格傳送台）、隔窗調度室、候車室；不可停靠，從出口登艦。', meta
+    return s, 'PORTAGE', '擺渡號 Portage：人員轉運站（GDD §6.2）。八角傳送大廳（9 格傳送台）、隔窗調度室、候車室；不可停靠，只能強行登艦（連結期間登艦氣閘的出入口通往對方船艙）。', meta
 
 
 def outdoor_rock_noise(s, seed, n, c0, r0, c1, r1, rmin=1.2, rmax=3.0, keep=()):
@@ -1613,6 +1621,8 @@ theme: 'pirate',
 enable: 'event',
 scanTime: 0.22,
 dockable: true,
+// 主控台：屬敵方、2000 HP、不可駕駛；打爆後 40 秒自爆（原作 h02A，Player 12）
+console: {{ def: 'struct.consolePirate', hostile: true }},
 space: {{
   hp: 300000,
   hpRegen: 0,
@@ -1621,8 +1631,9 @@ space: {{
   pos: [{px}, {py}],
   speed: 1.4,
   attack: {{ dmg: [360, 360], cd: 2.5, range: 13, kind: 'projectile', projSpeed: 26, fx: 'stationGun' }},
-  abilities: ['st.sweep'],
-  pilotable: true,
+  // 原作只有純視覺的護盾附件，沒有可施放的技能；主控台不可駕駛
+  abilities: [],
+  pilotable: false,
   model: 'station.pirate',
 }},
 docked: [],
