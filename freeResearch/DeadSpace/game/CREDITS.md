@@ -11,7 +11,7 @@
 - 3D 模型、貼圖、粒子特效：全部在執行期以程式產生（three.js 幾何與 canvas 程序化貼圖），沒有外部素材檔。
 - 音效與環境音：全部以 Web Audio 即時合成（`src/audio/sfx.ts`），沒有外部音檔。
 - 圖示：手寫 SVG path（`src/ui/icons.tsx`）。
-- 主選單與大廳背景的「布丁cat」：遊戲擁有者手繪的原創角色，提供給本專案使用（`src/ui/assets/pudding-cat.png`，由原圖去背縮放）。
+- 主選單與大廳背景的「布丁cat」：遊戲擁有者手繪的原創角色，提供給本專案使用（`src/ui/assets/pudding-cat.webp`，由原圖去背縮放）。
 
 ## 字型（SIL Open Font License 1.1）
 

@@ -1,10 +1,10 @@
 // 主選單、連線中、大廳的背景彩蛋：「布丁cat」（使用者手繪）像在太空中漂浮的彈力球，碰到畫面邊緣就彈開、慢慢翻滾。
 // 只在還沒開始遊戲時出現（App 只在 screen !== 'game' 時掛上），不攔截滑鼠、不影響任何操作。
 import { useEffect, useRef } from 'preact/hooks'
-import catUrl from './assets/pudding-cat.png'
+import catUrl from './assets/pudding-cat.webp'
 
-/** 圖檔的長寬比（300×305）*/
-const ASPECT = 305 / 300
+/** 圖檔的長寬比（640×652）*/
+export const ASPECT = 652 / 640
 
 /** 彈跳物理：純函式，方便測試。回傳新的狀態（位置是左上角，單位 px）*/
 export interface Bounce {
@@ -20,7 +20,7 @@ export interface Bounce {
   axis: 'x' | 'y'
 }
 
-export function stepBounce(s: Bounce, dt: number, w: number, h: number, size: number, rand: () => number = Math.random): Bounce {
+export function stepBounce(s: Bounce, dt: number, w: number, h: number, size: number, rand: () => number = Math.random, target = 95): Bounce {
   const n = { ...s }
   n.x += n.vx * dt
   n.y += n.vy * dt
@@ -49,7 +49,6 @@ export function stepBounce(s: Bounce, dt: number, w: number, h: number, size: nu
   }
   // 速度維持在一定範圍（不會越彈越快或停下來）
   const sp = Math.hypot(n.vx, n.vy)
-  const target = 95
   if (sp > 0) {
     const k = Math.max(0.6, Math.min(1.4, target / sp))
     const f = 1 + (k - 1) * Math.min(1, dt * 0.8)
@@ -64,7 +63,8 @@ export function SpaceMascot() {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const size = () => Math.round(Math.max(90, Math.min(170, window.innerWidth * 0.1)))
+    // 大小跟著畫面：較短邊的 30%（1280×720 約 216 px、1920×1080 約 324 px），太小看不清楚
+    const size = () => Math.round(Math.max(150, Math.min(380, Math.min(window.innerWidth, window.innerHeight) * 0.3)))
     const a = Math.random() * Math.PI * 2
     let s: Bounce = {
       x: Math.random() * Math.max(1, window.innerWidth - size()),
@@ -84,7 +84,8 @@ export function SpaceMascot() {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       const sz = size()
-      s = stepBounce(s, dt, window.innerWidth, window.innerHeight, sz)
+      // 速度跟著大小（每秒約自身寬度的 0.45 倍），不同解析度看起來一樣快
+      s = stepBounce(s, dt, window.innerWidth, window.innerHeight, sz, Math.random, sz * 0.45)
       // 撞到邊時沿撞擊方向壓扁一下（彈力球）
       const q = Math.sin(Math.min(1, s.squash) * Math.PI) * 0.18
       const sx = s.axis === 'x' ? 1 - q : 1 + q * 0.6

@@ -1,6 +1,6 @@
 // 背景彩蛋的彈跳：永遠留在畫面內、碰到邊會反彈、速度不會越來越快或停下來
 import { describe, expect, it } from 'vitest'
-import { stepBounce, type Bounce } from '../../src/ui/SpaceMascot'
+import { ASPECT, stepBounce, type Bounce } from '../../src/ui/SpaceMascot'
 
 function rng(seed: number): () => number {
   let s = seed >>> 0
@@ -12,7 +12,7 @@ describe('背景彩蛋彈跳', () => {
     const r = rng(7)
     const w = 1280
     const h = 720
-    const size = 128
+    const size = 216
     let s: Bounce = { x: 300, y: 200, vx: 80, vy: -55, rot: 0, spin: 15, squash: 0, axis: 'x' }
     let bounces = 0
     let minSp = Infinity
@@ -24,7 +24,7 @@ describe('背景彩蛋彈跳', () => {
       expect(s.x).toBeGreaterThanOrEqual(0)
       expect(s.y).toBeGreaterThanOrEqual(0)
       expect(s.x).toBeLessThanOrEqual(w - size)
-      expect(s.y).toBeLessThanOrEqual(h - size * (305 / 300) + 1e-6)
+      expect(s.y).toBeLessThanOrEqual(h - size * ASPECT + 1e-6)
       const sp = Math.hypot(s.vx, s.vy)
       if (i > 600) {
         minSp = Math.min(minSp, sp)
