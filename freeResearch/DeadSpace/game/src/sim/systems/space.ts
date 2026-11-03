@@ -1,7 +1,9 @@
 // 太空層與跨層移動（研究 03 §1.3、§2）：控制台駕駛、探索艇登艇／發射／停靠／強行登艦、站點毀滅連帶全滅、逃生艙
 import { SHIPS, SHIP_BY_ID, type ShipDef } from '../../shared/content/ships'
 import type { StationDef } from '../../shared/content/stations/types'
+import type { Loc } from '../../shared/content/types'
 import { unitDef } from '../../shared/content/registry'
+import { locArgs } from '../../shared/sysArgs'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import { fmtKey, type Game, type GamePlayer } from '../game'
 import { SPACE_ZONE, type Zone } from '../world'
@@ -175,7 +177,7 @@ function undock(g: Game, inst: ShipInst): void {
 
 // ───────── 駕駛 ─────────
 
-function consolePos(g: Game, z: Zone): { x: number; y: number; ent?: Ent } | null {
+export function consolePos(g: Game, z: Zone): { x: number; y: number; ent?: Ent } | null {
   if (z.data.console) return z.data.console as { x: number; y: number }
   if (!z.station || z.station.id.startsWith('ship:')) return null
   const c = [...g.world.inZone(z.id)].find((e) => e.data.poi === 'console')
@@ -223,7 +225,7 @@ export function setPilot(g: Game, vehicle: Ent, pilot: Ent | null): void {
   // 王牌飛行員：駕駛的船／站攻速 +15%；重力學博士：船速 +15%（模組帶來的被動保留）
   vehicle.data.passives = [...((vehicle.data.modPassives as string[] | undefined) ?? []), ...(p.classId === 'ace' ? ['bf.acePilot'] : []), ...(p.phd === 'gravitics' ? ['bf.gravPilot'] : [])]
   vehicle.statsDirty = true
-  g.privateLine(p.slot, 'space.accessGranted', { name: vehicle.def.name.zh })
+  g.privateLine(p.slot, 'space.accessGranted', locArgs(vehicle.def.name))
 }
 
 export function stepSpace(g: Game): void {
@@ -289,7 +291,8 @@ export function stepSpace(g: Game): void {
       locked = locked.filter((slot) => {
         const lp = g.players[slot]
         const u = lp ? g.mainOf(lp) : undefined
-        return !!u && u.alive && u.zone === z.id && Math.hypot(u.x - c.x, u.y - c.y) <= CONSOLE_R + 0.3
+        // 和接手的判定（query 含身體半徑）用同一個標準再加一點餘裕：否則停在邊緣的人鎖一解開就被接回去
+        return !!u && u.alive && u.zone === z.id && Math.hypot(u.x - c.x, u.y - c.y) <= CONSOLE_R + u.radius + 0.3
       })
       z.data.consoleLock = locked
     }
@@ -307,16 +310,19 @@ export function stepSpace(g: Game): void {
         ship.launching = true
         ship.launchAt = t + LAUNCH_S
         for (const u of w.inZone(z.id)) if (u.owner >= 0 && u.isMain) g.privateLine(u.owner, 'space.launching', { s: LAUNCH_S })
-        g.emitFx({ k: 'alarm', z: z.id, x: c.x, y: c.y })
+        g.emitFx({ k: 'alarm', z: z.id, x: c.x, y: c.y, v: LAUNCH_S })
       }
-      if (!pilot && ship.launching && t < ship.launchAt - 3) ship.launching = false
+      if (!pilot && ship.launching && t < ship.launchAt - 3) {
+        ship.launching = false
+        g.emitFx({ k: 'alarmEnd', z: z.id, x: c.x, y: c.y })
+      }
       if (ship.launching && t >= ship.launchAt) undock(g, ship)
       continue
     }
     if (!vehicle || !vehicle.alive) continue
     const cur = sp.pilots.get(vehicle.id)
     const curEnt = cur ? w.get(cur) : undefined
-    const stillThere = curEnt && curEnt.alive && curEnt.zone === z.id && Math.hypot(curEnt.x - c.x, curEnt.y - c.y) <= CONSOLE_R + 0.2 && curEnt.isMain
+    const stillThere = curEnt && curEnt.alive && curEnt.zone === z.id && Math.hypot(curEnt.x - c.x, curEnt.y - c.y) <= CONSOLE_R + curEnt.radius + 0.2 && curEnt.isMain
     if (stillThere) continue
     setPilot(g, vehicle, pilot)
   }
@@ -422,6 +428,19 @@ function exitShip(g: Game, u: Ent, inst: ShipInst): void {
 
 // ───────── 毀滅 ─────────
 
+/**
+ * 地點名稱（兩種語言）：同型的船（例如兩艘紅隼級探索艇）名稱一樣，重複的加上編號，
+ * 規則同觀戰列（Game.zoneList 的順序，從 #1 起算）。地點清單開局就公開給所有人，編號不含隱藏資訊。
+ */
+export function zoneLabel(g: Game, z: Zone): Loc {
+  const st = z.station
+  if (!st) return { zh: z.key, en: z.key }
+  const same = g.world.zones.filter((q) => q.station && q.station.name.zh === st.name.zh)
+  if (same.length < 2) return st.name
+  const k = same.indexOf(z) + 1
+  return { zh: `${st.name.zh} #${k}`, en: `${st.name.en} #${k}` }
+}
+
 /** 站點或船艇被擊毀：內部所有單位必死、物品消失，之後 300 秒為致命區 */
 export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): void {
   const z = g.world.zones[zoneId]
@@ -429,9 +448,9 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): vo
   z.alive = false
   z.lethalUntil = g.time + 300
   const sp = spaceOf(g)
-  const name = z.station?.name.zh ?? z.key
-  g.systemAll('space.destroyed', { name })
-  g.log(fmtKey('tl.destroyed', { nz: name, ne: z.station?.name.en ?? z.key }))
+  const label = zoneLabel(g, z)
+  g.systemAll('space.destroyed', locArgs(label))
+  g.log(fmtKey('tl.destroyed', locArgs(label)))
   for (const e of g.world.inZone(zoneId)) {
     e.data.noDrops = true
     if (e.inv) e.inv.fill(null)
@@ -643,7 +662,7 @@ regScript('space.scan', (g, ctx) => {
   g.after(delay, () => {
     let n = 0
     for (const e of g.world.inZone(z.id)) if (e.alive && e.isMain) n++
-    g.privateLine(slot, 'space.scanResult', { name: z.station?.name.zh ?? z.key, n })
+    g.privateLine(slot, 'space.scanResult', { ...locArgs(zoneLabel(g, z)), n })
   })
 })
 
@@ -655,7 +674,7 @@ regScript('space.sweep', (g, ctx) => {
   for (const e of g.world.inZone(zid)) {
     if (!e.alive || !e.isMain) continue
     g.emitFx({ k: 'ping', z: zid, x: e.x, y: e.y }, [st.owner])
-    if (e.owner >= 0) g.privateLine(e.owner, 'space.sweepAnnounce', { name: z.station?.name.zh ?? '' })
+    if (e.owner >= 0) g.privateLine(e.owner, 'space.sweepAnnounce', locArgs(z.station?.name))
   }
   const p = g.players[st.owner]
   if (p) p.view.extraSources.push({ zone: zid, x: z.layout!.w / 2, y: z.layout!.h / 2, r: Math.max(z.layout!.w, z.layout!.h), until: g.time + 7 })

@@ -5,7 +5,7 @@ import type { Loc } from './types'
 const L = (zh: string, en: string): Loc => ({ zh, en })
 
 const PRION_DESC_ZH = '變種人的朊毒正在侵蝕神經：每秒中毒，人類死時會變成變種人的工蟲。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。'
-const PRION_DESC_EN = 'Mutant prions are eating at your nerves: they poison you every second, and a human who dies infected becomes a mutant drone. An antibody kit (Medical Supplies) forces them dormant; they clear after 46 s.'
+const PRION_DESC_EN = 'Mutant prions are eating at your nerves: they poison you every second, and a human who dies infected becomes a mutant spawn. An antibody kit (Medical Supplies) forces them dormant; they clear after 46 s.'
 
 regBuffs([
   {
@@ -62,10 +62,10 @@ regBuffs([
   { id: 'bf.morphing', name: L('變形中', 'Shifting'), icon: 'evolve', vis: 'all', good: true, rooted: true },
   { id: 'bf.butlerHide', name: L('隱匿', 'Hidden'), icon: 'cloak', vis: 'self', good: true, stealth: true },
   // 研究員博士專長（本作四項均等）
-  { id: 'cls.phd.optics', name: L('光學博士', 'PhD: Optics'), desc: L('人形時視野 +2.5 公尺', '+2.5 m sight range in human form'), icon: 'eye', vis: 'self', good: true, sightAdd: 2.5, flags: { humanOnly: true } },
-  { id: 'cls.phd.gravitics', name: L('重力學博士', 'PhD: Gravitics'), desc: L('駕駛的船艇與站點移速 +15%', 'Craft and stations you pilot move 15% faster'), icon: 'ship', vis: 'self', good: true, flags: { shipSpeed: 0.15 } },
-  { id: 'cls.phd.biology', name: L('生物學博士', 'PhD: Biology'), desc: L('每秒回復 2 生命', 'Regenerate 2 health per second'), icon: 'dna', vis: 'self', good: true, regen: 2 },
-  { id: 'cls.phd.electronics', name: L('電子學博士', 'PhD: Electronics'), desc: L('你放置的裝置生命 +50', 'Devices you deploy get +50 health'), icon: 'gear', vis: 'self', good: true, flags: { deviceHp: 50 } },
+  { id: 'cls.phd.optics', name: L('光學博士', 'PhD in Optics'), desc: L('人形時視野 +2.5 公尺', '+2.5 m sight range in human form'), icon: 'eye', vis: 'self', good: true, sightAdd: 2.5, flags: { humanOnly: true } },
+  { id: 'cls.phd.gravitics', name: L('重力學博士', 'PhD in Gravitics'), desc: L('駕駛的船艇與站點移速 +15%', 'Craft and stations you pilot move 15% faster'), icon: 'ship', vis: 'self', good: true, flags: { shipSpeed: 0.15 } },
+  { id: 'cls.phd.biology', name: L('生物學博士', 'PhD in Biology'), desc: L('每秒回復 2 生命', 'Regenerate 2 health per second'), icon: 'dna', vis: 'self', good: true, regen: 2 },
+  { id: 'cls.phd.electronics', name: L('電子學博士', 'PhD in Electronics'), desc: L('你放置的裝置生命 +50', 'Devices you deploy get +50 health'), icon: 'gear', vis: 'self', good: true, flags: { deviceHp: 50 } },
 ])
 
 regAbilities([

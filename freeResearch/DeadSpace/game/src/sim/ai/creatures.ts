@@ -3,6 +3,7 @@
 import { BUFFS, itemDef, unitDef, UNITS } from '../../shared/content/registry'
 import { SHIP_BY_ID } from '../../shared/content/ships'
 import { roomAt } from '../../shared/layout'
+import { locArgs } from '../../shared/sysArgs'
 import { HOSTILE, NEUTRAL, dist, dist2, type Ent } from '../ent'
 import type { Game } from '../game'
 import { markersOf, type Marker } from '../setup'
@@ -333,7 +334,7 @@ function thinkCrew(g: Game, u: Ent): void {
         st.reported.add(c.id)
         const z = g.world.zones[u.zone]
         const r = z.layout ? roomAt(z.layout, c.x, c.y) : null
-        g.systemAll('npc.bodyFound', { st: z.station?.name.zh ?? '', room: r?.spec.name?.zh ?? '' })
+        g.systemAll('npc.bodyFound', { ...locArgs(z.station?.name, 'sz', 'se'), ...locArgs(r?.spec.name, 'rz', 're') })
       }
       u.data.nextPatrol = t + rng.range(4, 8)
     } else if (!u.order) issue(u, { k: 'move', x: inv.x, y: inv.y })

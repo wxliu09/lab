@@ -15,7 +15,8 @@ import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
 import { chatOpen, evolveOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
-import { listJoin, loc, sysText, t } from '../i18n'
+import { lang, listJoin, loc, sysText, t } from '../i18n'
+import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { TopSlot } from './Announce'
 import { showCursorTip, tipProps, type TipData } from '../tooltip'
@@ -36,10 +37,18 @@ const ROLE_COLOR: Record<string, string> = {
   spectator: '#a7b0ba',
 }
 
+/** 頂列的身分：被轉化的人（spawn）role 仍是 human，改看私有狀態的陣營，寫「異形 spawn」／「變種人 spawn」（同目標面板）*/
+function roleLabel(me: typeof world.me): { text: string; color: string } {
+  if (me.spawn && (me.faction === 'xeno' || me.faction === 'mutant'))
+    return { text: t(me.faction === 'xeno' ? 'guide.id.spawnXeno' : 'guide.id.spawnMutant'), color: ROLE_COLOR[me.faction] }
+  return { text: me.role ? t('role.' + me.role) : '', color: ROLE_COLOR[me.role ?? 'human'] }
+}
+
 export function TopBar() {
   void snapTick.value
   const me = world.me
   const w = world.w
+  const rl = roleLabel(me)
   const fs = !!document.fullscreenElement
   return (
     <div class="panel hud-top" data-testid="game">
@@ -51,10 +60,10 @@ export function TopBar() {
       </span>
       <span
         data-testid="role"
-        style={{ color: ROLE_COLOR[me.role ?? 'human'], fontFamily: 'var(--title)', letterSpacing: '0.1em' }}
-        {...tipProps(() => (me.role ? { title: t('tip.role.title'), body: t('tip.role.body'), color: ROLE_COLOR[me.role] } : null))}
+        style={{ color: rl.color, fontFamily: 'var(--title)', letterSpacing: '0.1em' }}
+        {...tipProps(() => (me.role ? { title: t('tip.role.title'), body: t('tip.role.body'), color: roleLabel(me).color } : null))}
       >
-        {me.role ? t('role.' + me.role) + (me.spawn ? ' spawn' : '') : ''}
+        {rl.text}
       </span>
       {(me.role === 'xeno' || me.role === 'mutant' || me.role === 'android' || me.spawn) && (
         <span style={{ cursor: 'pointer' }} data-testid="ep" onClick={() => (evolveOpen.value = !evolveOpen.value)} {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body'), tag: 'V' }))}>
@@ -87,7 +96,7 @@ export function Banner() {
   // 主機模擬不可恢復的錯誤：主機以 notice 通知所有人（含自己）。這兩種提示放在對話框（z-index 50）之上，按鈕隨時按得到
   if (notice.value && noticeKey.value === SIM_ERROR_KEY)
     return (
-      <div class="panel banner" data-testid="sim-error" style={{ zIndex: 60 }}>
+      <div class="panel banner banner-critical" data-testid="sim-error" style={{ zIndex: 60 }}>
         {t(SIM_ERROR_KEY)}{' '}
         <button class="small" onClick={() => leave(false)}>
           {t('net.simErrorBack')}
@@ -96,7 +105,7 @@ export function Banner() {
     )
   if (gpuLost.value)
     return (
-      <div class="panel banner" data-testid="gpu-lost" style={{ zIndex: 60 }}>
+      <div class="panel banner banner-critical" data-testid="gpu-lost" style={{ zIndex: 60 }}>
         {t('gpu.lost')}{' '}
         <button class="small" onClick={() => location.reload()}>
           {t('gpu.reload')}
@@ -255,7 +264,7 @@ export function Minimap(props: { scene: GameScene }) {
 }
 
 /**
- * 小地圖上的單位（畫布是 2 倍解析度）。不只靠顏色區分（色盲時紅／棕玩家色與敵對紅點分不出來）：
+ * 小地圖上的單位（畫布是 2 倍解析度）。不只靠顏色區分（色盲時紅色系玩家色與敵對紅點不好分）：
  * 玩家＝玩家色圓點＋深色外框；自己＝較大的圓點＋白框；敵對（沒有玩家色）＝紅色菱形＋白框；其他＝小灰點。
  * 改樣式時同步 Guide.tsx 的小地圖圖例。
  */
@@ -340,7 +349,8 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
     const py = oy - e.y * k
     // 站點的 UnitDef 只在 sim 端註冊，client 用外觀 id 判斷
     const big = def?.tags.includes('station') || (e.s.d ?? '').startsWith('station.')
-    x.fillStyle = def?.id === 'space.sun' ? '#fff1d6' : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? '#9fe7ff' : '#cfd8df'
+    // 沒有玩家色的單位用和腳下中立光圈同一個灰藍（跟白色玩家分得開）
+    x.fillStyle = def?.id === 'space.sun' ? '#fff1d6' : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? '#9fe7ff' : '#9fb3c2'
     x.beginPath()
     x.arc(px, py, big ? 5 : def?.id === 'space.sun' ? 7 : 3, 0, Math.PI * 2)
     x.fill()
@@ -373,6 +383,15 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
 
 export function Portrait() {
   void snapTick.value
+  // 出局者（死亡即退出）不能觀戰也不能點選單位：只寫「已出局」
+  if (world.me.booted)
+    return (
+      <div class="panel portrait portrait-empty" data-testid="portrait-booted">
+        <div class="dim">
+          <b>{t('f7.portraitBooted')}</b>
+        </div>
+      </div>
+    )
   const id = selected.value || world.me.control || world.me.unit || 0
   const e = world.ents.get(id)
   if (!e) {
@@ -574,7 +593,7 @@ export function Inventory({ input }: { input: Input | null }) {
               if (!def || !it) return { title: t('hud.inventory') + ` ${i + 1}`, body: t('tip.empty') }
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
-              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples) : '')])
+              if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples.map((n) => sampleName(n, lang.value))) : '')])
               const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 })].filter(Boolean)
               return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
             })}

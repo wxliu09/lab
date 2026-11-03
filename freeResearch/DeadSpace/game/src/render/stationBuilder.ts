@@ -1,10 +1,11 @@
 // 站體建構器：ParsedLayout → three.js 場景（architecture §5、美術聖經 §7）
 import * as THREE from 'three'
-import { Cell, cellCenter, type ParsedLayout } from '../shared/layout'
+import { Cell, cellCenter, type ParsedLayout, type RoomInstance } from '../shared/layout'
 import type { StationDef } from '../shared/content/stations/types'
 import { Batcher, box, rbox } from './batch'
-import { Mat, isSharedMaterial } from './materials'
+import { FILL_SCALE, Mat, isSharedMaterial, withFog } from './materials'
 import { decalTex, isSharedTexture } from './tex'
+import { preset } from './quality'
 import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
 import { buildRockWalls, classifyOutdoor, groundTone } from './rockWalls'
@@ -43,6 +44,10 @@ export interface StationView {
   anim: Animated[]
   /** POI 模型：key = `${col},${row}` */
   pois: Map<string, THREE.Group>
+  /** 烘焙補光圖（世界 XZ，2 texel／m；null = 室外站不補）*/
+  fill: THREE.DataTexture | null
+  /** 牆面燈條（緊急照明時換成紅色材質）*/
+  strips: THREE.Mesh[]
   dispose(): void
 }
 
@@ -108,6 +113,9 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   const outdoor = !!st.outdoor
   const ocls = outdoor ? classifyOutdoor(l, th, cellAt, roomType) : null
 
+  // ───── 45° 斜牆：連續的對角階梯牆格只改外觀（sim 的格子不變），切成斜牆片＋露出的三角地板 ─────
+  const diag = outdoor ? new Map<number, Diag>() : findDiagonals(l, cellAt)
+
   // ───── 地板：依房間類型分材質，世界座標 UV，頂點 AO ─────
   const floorGeo = new Map<string, { pos: number[]; uv: number[]; col: number[]; nrm: number[] }>()
   const blockedCorner = (col: number, row: number) => {
@@ -122,6 +130,23 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   for (let row = 0; row < l.h; row++) {
     for (let col = 0; col < l.w; col++) {
       const c = cellAt(col, row)
+      const dg = diag.get(row * l.w + col)
+      if (dg) {
+        // 斜牆格：開口那一半鋪地板（材質跟著鄰接的房間）
+        const f = th.floor[roomType(col + dg.ox, row)] ?? th.defaultFloor
+        const key = `${f.variant}|${f.tint}`
+        let g = floorGeo.get(key)
+        if (!g) floorGeo.set(key, (g = { pos: [], uv: [], col: [], nrm: [] }))
+        const us = f.variant === 'rock' ? 0.25 : 0.5
+        const tri = diagFloorTri(l, col, row, dg)
+        for (const [x, y] of tri) {
+          g.pos.push(x, 0, -y)
+          g.uv.push(x * us, y * us)
+          g.nrm.push(0, 1, 0)
+          g.col.push(0.82, 0.82, 0.82)
+        }
+        continue
+      }
       let rt: string
       if (!isFloorish(c)) {
         // 室外：自然岩壁的邊緣格底下也鋪地板（輪廓平滑後岩壁會往內縮，不能露出底下的黑色背景）
@@ -168,7 +193,6 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       }
     }
   }
-  const fillGeos: THREE.BufferGeometry[] = []
   for (const [key, g] of floorGeo) {
     const [variant, tint] = key.split('|') as ['plate' | 'grate' | 'tile' | 'rubber' | 'concrete', string]
     const geo = new THREE.BufferGeometry()
@@ -177,8 +201,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2))
     geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3))
     geo.computeBoundingSphere()
-    if (th.fill) fillGeos.push(geo)
-    const mesh = new THREE.Mesh(geo, Mat.floor(variant, tint, !!th.fill))
+    const mesh = new THREE.Mesh(geo, Mat.floor(variant, tint))
     mesh.receiveShadow = true
     mesh.matrixAutoUpdate = false
     group.add(mesh)
@@ -194,6 +217,11 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   const cap = new Batcher()
   const trimMat = Mat.metal(th.trim, 0.5, false)
   const strips = new Map<string, Batcher>()
+  // 有機腔壁（未識別物體）不放金屬燈條：改成牆上零星的發光膿泡，牆面本身的血管紋會發光
+  const flesh = th.wall.startsWith('flesh:')
+  const blisters = new Batcher()
+  const blisterGeo = new THREE.IcosahedronGeometry(1, 0)
+  const blisterBase = flesh ? Mat.organic(th.hull.slice(6), th.wallAccent) : null
   const face = (ax: number, az: number, bx: number, bz: number, nx: number, nz: number, uStart: number) => {
     // 由 a 到 b 的垂直牆面（底 0、頂 WALL_H）
     const v = [
@@ -209,6 +237,37 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       wnrm.push(nx, 0, nz)
       wcol.push(a, a, a)
     }
+  }
+  /** 面向房間的牆面裝飾：站內牆每 3 格亮 2 格燈條；有機腔壁改成零星的發光膿泡 */
+  const decorate = (ax: number, az: number, bx: number, bz: number, nx: number, nz: number, ri: number, col: number, row: number, u: number) => {
+    if (ri < 0) return
+    const len = Math.hypot(bx - ax, bz - az)
+    const tx = (bx - ax) / len
+    const tz = (bz - az) / len
+    const rotY = Math.atan2(-tz, tx)
+    const color = l.rooms[ri].spec.light ?? th.light
+    if (flesh) {
+      // 約每 4 面牆一簇 1–3 顆膿泡：底下一團肉、上面一顆發光的囊
+      const hsh = ((col * 73856093) ^ (row * 19349663) ^ (u * 83492791)) >>> 0
+      if (hsh % 4 !== 0) return
+      const glow = Mat.emissive(hsh % 3 === 0 ? th.wallAccent : color, 1.8)
+      const n = 1 + ((hsh >>> 3) % 3)
+      for (let k = 0; k < n; k++) {
+        const f = ((hsh >>> (5 + k * 4)) % 16) / 16
+        const along = (f - 0.5) * 0.7 * len
+        const hy = 0.45 + (((hsh >>> (9 + k * 3)) % 13) / 13) * 1.5
+        const px = (ax + bx) / 2 + tx * along + nx * 0.02
+        const pz = (az + bz) / 2 + tz * along + nz * 0.02
+        const sz = 0.07 + (((hsh >>> (13 + k)) % 5) / 5) * 0.06
+        blisters.add(blisterGeo, blisterBase!, px, hy, pz, f * 6, sz * 1.7, sz * 1.4, sz * 1.7)
+        blisters.add(blisterGeo, glow, px + nx * sz * 0.6, hy + sz * 0.15, pz + nz * sz * 0.6, f * 3, sz, sz * 0.9, sz)
+      }
+      return
+    }
+    if ((col + row) % 3 === 0) return
+    let bt = strips.get(color)
+    if (!bt) strips.set(color, (bt = new Batcher()))
+    bt.add(box(0.86 * len, 0.06, 0.04), Mat.emissive(color, 2.6), (ax + bx) / 2 + nx * 0.03, 1.62, (az + bz) / 2 + nz * 0.03, rotY)
   }
   if (ocls) buildRockWalls({ l, th, group, cls: ocls, cellAt, wallH: WALL_H, seed: hashId(st.id) })
   for (let row = 0; row < l.h && !outdoor; row++) {
@@ -226,23 +285,32 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         [nb(-1, 0), x0, zTop, x0, zBot, -1, 0, row],
         [nb(1, 0), x1, zBot, x1, zTop, 1, 0, row],
       ]
+      const dg = diag.get(row * l.w + col)
+      if (dg) {
+        // 斜牆片：從開口兩側的格角拉一面斜牆，牆頂只蓋封閉的那一半
+        const [[ax, az], [bx, bz]] = diagEnds(l, col, row, dg)
+        const nx = dg.ox * Math.SQRT1_2
+        const nz = dg.oy * Math.SQRT1_2
+        face(ax, az, bx, bz, nx, nz, (col + row) * 0.25)
+        decorate(ax, az, bx, bz, nx, nz, l.roomOf[row * l.w + col + dg.ox], col, row, row * 7)
+        const tri = diagCapTri(l, col, row, dg)
+        const cg = new THREE.BufferGeometry()
+        cg.setAttribute('position', new THREE.Float32BufferAttribute(tri.flatMap(([x, y]) => [x, WALL_H + 0.06, -y]), 3))
+        cg.setAttribute('uv', new THREE.Float32BufferAttribute(tri.flatMap(([x, y]) => [x * 0.5, y * 0.5]), 2))
+        cg.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3))
+        cap.add(cg, capMat, 0, 0, 0)
+        cg.dispose()
+        // 斜邊飾條
+        cap.add(box(Math.SQRT2, 0.08, 0.06), trimMat, (ax + bx) / 2 - nx * 0.03, WALL_H + 0.04, (az + bz) / 2 - nz * 0.03, Math.atan2(-(bz - az), bx - ax))
+        continue
+      }
       for (const [n, ax, az, bx, bz, nx, nz, u] of sides) {
         if (n === Cell.Wall) continue
         face(ax, az, bx, bz, nx, nz, u * 0.5)
         if (n === Cell.Void) continue
-        // 燈條：面向房間的牆，每 3 格亮 2 格
         const nc = col + (nx > 0 ? 1 : nx < 0 ? -1 : 0)
         const nr = row + (nz > 0 ? 1 : nz < 0 ? -1 : 0)
-        const ri = l.roomOf[nr * l.w + nc]
-        if (ri >= 0 && (col + row) % 3 !== 0) {
-          const color = l.rooms[ri].spec.light ?? th.light
-          let bt = strips.get(color)
-          if (!bt) strips.set(color, (bt = new Batcher()))
-          const mx = (ax + bx) / 2 + nx * 0.03
-          const mz = (az + bz) / 2 + nz * 0.03
-          const along = nx !== 0 ? 0 : 0
-          bt.add(box(nx !== 0 ? 0.04 : 0.86, 0.06, nz !== 0 ? 0.04 : 0.86), Mat.emissive(color, 2.6), mx, 1.62, mz, along)
-        }
+        decorate(ax, az, bx, bz, nx, nz, l.roomOf[nr * l.w + nc], col, row, u)
       }
       // 牆頂：暗色船殼板＋亮邊
       cap.add(box(1, 0.06, 1), capMat, col + 0.5, WALL_H + 0.03, -(l.h - row - 0.5))
@@ -273,7 +341,15 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     group.add(walls)
   }
   cap.build(group, { cast: false, receive: true })
-  for (const bt of strips.values()) bt.build(group, { cast: false, receive: false })
+  const stripMeshes: THREE.Mesh[] = []
+  for (const bt of strips.values()) stripMeshes.push(...bt.build(group, { cast: false, receive: false }))
+  if (flesh) {
+    stripMeshes.push(...blisters.build(group, { cast: false, receive: true }).filter((m) => m.material !== blisterBase))
+    // 肉壁血管的光慢慢脈動（像心跳把體液推過去）
+    const fm = Mat.wall(th.wall, th.wallAccent)
+    anim.push({ obj: group, update: (t) => (fm.emissiveIntensity = 0.75 + 0.35 * Math.max(0, Math.sin(t * 1.15)) ** 2) })
+  }
+  blisterGeo.dispose()
 
   // ───── 窗：矮牆＋玻璃＋上樑 ─────
   const props = new Batcher()
@@ -396,14 +472,15 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     if (r.spec.accent) {
       lights.push({ x: r.cx + wdt * 0.3, y: 1.2, z: -(r.cy - hgt * 0.3), color: new THREE.Color(r.spec.accent), intensity: 6, distance: 7, room: r.index })
     }
-    // 房名
+    // 房名：放在房間中央附近、沒有道具與設施的空地（牆邊會被道具蓋住）
     if (r.cells > 30 && r.spec.type !== 'corridor') {
       const label = new THREE.Mesh(
         new THREE.PlaneGeometry(5.2, 1.6),
         new THREE.MeshBasicMaterial({ map: roomLabelTex(r.spec.name.zh, r.spec.name.en), transparent: true, opacity: 0.16, depthWrite: false }),
       )
       label.rotation.x = -Math.PI / 2
-      label.position.set(r.cx, 0.02, -(r.minY + 1.6))
+      const at = labelSpot(l, r)
+      label.position.set(at.x, 0.02, -at.y)
       group.add(label)
     }
     if (r.spec.type === 'medbay') {
@@ -413,8 +490,8 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       group.add(cross)
     }
   }
-  // 地板烘焙補光：每盞房間燈在地板上留一圈暗光（不受燈光池上限影響）
-  if (th.fill) bakeFill(fillGeos, lights, th.fill)
+  // 烘焙補光圖：整間房一層底光＋每盞房間燈一圈光暈（不受燈光池上限影響，所有站內材質都會取樣）
+  const fill = th.fill ? bakeFill(l, lights, th, hashId(st.id), diag) : null
 
   // 走廊箭頭
   const arrowMat = new THREE.MeshBasicMaterial({ map: decalTex('arrow', '#ffc23d'), transparent: true, opacity: 0.4, depthWrite: false })
@@ -431,6 +508,9 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     }
   }
 
+  // 漂浮塵埃（主題有設 dust 才撒；一個 Points、量很少）
+  if (th.dust) buildDust(l, th.dust, group, hashId(st.id))
+
   return {
     group,
     layout: l,
@@ -439,7 +519,10 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     doors,
     anim,
     pois,
+    fill,
+    strips: stripMeshes,
     dispose() {
+      fill?.dispose()
       // 幾何＋這座站自己建的材質與貼圖（房間標籤 CanvasTexture、警示條、箭頭、光圈…）；共用的快取不動
       const mats = new Set<THREE.Material>()
       group.traverse((o) => {
@@ -462,33 +545,321 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   }
 }
 
-/** 依房間燈算地板頂點的補光（線性色），半徑跟燈的照射距離走、平方衰減，各通道封頂避免過曝 */
-function bakeFill(geos: THREE.BufferGeometry[], lights: RoomLight[], k: number): void {
-  for (const geo of geos) {
-    const pos = geo.attributes.position
-    const out = new Float32Array(pos.count * 3)
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i)
-      const z = pos.getZ(i)
+/** 斜牆格：ox／oy = 開口那一側（-1 西／北、+1 東／南；row 向下）*/
+interface Diag {
+  ox: number
+  oy: number
+}
+
+/**
+ * 找出 45° 階梯牆：牆格的兩個相鄰側（含夾角那格）是地板、另外兩側是牆或虛空，
+ * 而且沿著斜線方向至少有一格同樣的牆格（單獨的轉角不切，門框、窗旁也不切）。
+ */
+function findDiagonals(l: ParsedLayout, cellAt: (col: number, row: number) => Cell): Map<number, Diag> {
+  const open = (c: Cell) => c === Cell.Floor || c === Cell.Crate || c === Cell.Hazard || c === Cell.Fixture
+  const corner = new Map<number, Diag>()
+  for (let row = 0; row < l.h; row++) {
+    for (let col = 0; col < l.w; col++) {
+      if (cellAt(col, row) !== Cell.Wall) continue
+      for (const ox of [-1, 1]) {
+        for (const oy of [-1, 1]) {
+          if (!open(cellAt(col + ox, row)) || !open(cellAt(col, row + oy)) || !open(cellAt(col + ox, row + oy))) continue
+          if (!isSolidCell(cellAt(col - ox, row)) || !isSolidCell(cellAt(col, row - oy))) continue
+          corner.set(row * l.w + col, { ox, oy })
+        }
+      }
+    }
+  }
+  const out = new Map<number, Diag>()
+  for (const [i, d] of corner) {
+    const col = i % l.w
+    const row = (i - col) / l.w
+    for (const [dc, dr] of [
+      [-d.ox, d.oy],
+      [d.ox, -d.oy],
+    ]) {
+      const j = corner.get((row + dr) * l.w + col + dc)
+      if (col + dc >= 0 && col + dc < l.w && j && j.ox === d.ox && j.oy === d.oy) {
+        out.set(i, d)
+        break
+      }
+    }
+  }
+  return out
+}
+
+/** 斜牆格的格角（sim 座標，y 向上）：開口角 O、斜線兩端 A（與 O 同 x）、B（與 O 同 y）、封閉角 C */
+function diagCorners(l: ParsedLayout, col: number, row: number, d: Diag): { O: [number, number]; A: [number, number]; B: [number, number]; C: [number, number] } {
+  const yTop = l.h - row
+  const xo = d.ox > 0 ? col + 1 : col
+  const xc = d.ox > 0 ? col : col + 1
+  const yo = d.oy < 0 ? yTop : yTop - 1
+  const yc = d.oy < 0 ? yTop - 1 : yTop
+  return { O: [xo, yo], A: [xo, yc], B: [xc, yo], C: [xc, yc] }
+}
+
+/** 斜牆面兩端（three 座標 x、z），順序讓 face() 的法線朝開口 */
+function diagEnds(l: ParsedLayout, col: number, row: number, d: Diag): [[number, number], [number, number]] {
+  const { A, B } = diagCorners(l, col, row, d)
+  let a: [number, number] = [A[0], -A[1]]
+  let b: [number, number] = [B[0], -B[1]]
+  // face 的法線 = (b-a) × 上 = (-(bz-az), bx-ax)；要朝 (ox, oy)
+  if (-(b[1] - a[1]) * d.ox + (b[0] - a[0]) * d.oy < 0) [a, b] = [b, a]
+  return [a, b]
+}
+
+/** 逆時針（y 向上）排列三角形，法線朝上 */
+function ccw(t: [number, number][]): [number, number][] {
+  const area = (t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[2][0] - t[0][0]) * (t[1][1] - t[0][1])
+  return area >= 0 ? t : [t[0], t[2], t[1]]
+}
+
+function diagFloorTri(l: ParsedLayout, col: number, row: number, d: Diag): [number, number][] {
+  const { O, A, B } = diagCorners(l, col, row, d)
+  return ccw([O, A, B])
+}
+
+function diagCapTri(l: ParsedLayout, col: number, row: number, d: Diag): [number, number][] {
+  const { C, A, B } = diagCorners(l, col, row, d)
+  return ccw([C, A, B])
+}
+
+/**
+ * 房名地貼的位置：房間格裡找一塊 6×2 m 都是空地板（不是道具、設施、門窗）的地方，取離房間中心最近的；
+ * 醫療室中央的十字與停機坪要避開。找不到就退回南牆內側。
+ */
+function labelSpot(l: ParsedLayout, r: RoomInstance): { x: number; y: number } {
+  const near = new Set<number>()
+  for (const p of l.pois) {
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) near.add((p.row + dr) * l.w + p.col + dc)
+  }
+  const free = (col: number, row: number) => {
+    if (col < 0 || row < 0 || col >= l.w || row >= l.h) return false
+    const i = row * l.w + col
+    return l.cells[i] === Cell.Floor && l.roomOf[i] === r.index && !near.has(i)
+  }
+  let best: { x: number; y: number } | null = null
+  let bestD = Infinity
+  // 只掃房間的外接矩形
+  const r0 = Math.max(0, l.h - Math.ceil(r.maxY))
+  const r1 = Math.min(l.h - 1, l.h - 1 - Math.floor(r.minY))
+  for (let row = r0; row <= r1; row++) {
+    for (let col = Math.max(0, Math.floor(r.minX)); col < Math.min(l.w, Math.ceil(r.maxX)); col++) {
+      if (l.roomOf[row * l.w + col] !== r.index) continue
+      const x = col + 0.5
+      const y = l.h - row - 0.5
+      if (r.spec.type === 'medbay' && Math.abs(x - r.cx) < 3.8 && Math.abs(y - r.cy) < 2) continue
+      if (l.pads.some((p) => Math.abs(p.x - x) < 5 && Math.abs(p.y - y) < 3.5)) continue
+      let ok = true
+      for (let dc = -3; dc <= 2 && ok; dc++) for (let dr = -1; dr <= 0 && ok; dr++) ok = free(col + dc, row + dr)
+      if (!ok) continue
+      // 標籤中心在這格的左下角（6×2 格的正中）
+      const d = (x - 0.5 - r.cx) ** 2 + (y + 0.5 - r.cy) ** 2
+      if (d < bestD) {
+        bestD = d
+        best = { x: x - 0.5, y: y + 0.5 }
+      }
+    }
+  }
+  return best ?? { x: r.cx, y: r.minY + 1.6 }
+}
+
+/** 漂浮塵埃：站內地板上方 0.3–2.3 m 隨機撒點，vertex shader 依時間緩慢飄移；加成混合、受戰爭迷霧壓暗 */
+function buildDust(l: ParsedLayout, color: string, group: THREE.Group, seed: number): void {
+  const floors: number[] = []
+  for (let i = 0; i < l.w * l.h; i++) if (l.cells[i] === Cell.Floor || l.cells[i] === Cell.Hazard) floors.push(i)
+  const n = Math.min(Math.round(preset().particles * 0.5), Math.round(floors.length * 0.1))
+  if (n <= 0) return
+  let a = seed * 2654435761 + 1
+  const rnd = () => {
+    a = (Math.imul(a ^ (a >>> 15), 2246822519) + 0x6d2b79f5) | 0
+    return ((a ^ (a >>> 13)) >>> 0) / 4294967296
+  }
+  const pos = new Float32Array(n * 3)
+  const col = new Float32Array(n * 3)
+  const ph = new Float32Array(n * 2)
+  for (let k = 0; k < n; k++) {
+    const i = floors[Math.floor(rnd() * floors.length)]
+    const c = i % l.w
+    const row = (i - c) / l.w
+    pos[k * 3] = c + rnd()
+    pos[k * 3 + 1] = 0.3 + rnd() * 2
+    pos[k * 3 + 2] = -(l.h - row - rnd())
+    const b = 0.35 + rnd() * 0.65
+    col[k * 3] = col[k * 3 + 1] = col[k * 3 + 2] = b
+    ph[k * 2] = rnd()
+    ph[k * 2 + 1] = rnd()
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  geo.setAttribute('aDust', new THREE.BufferAttribute(ph, 2))
+  geo.computeBoundingSphere()
+  const mat = new THREE.PointsMaterial({ color, size: 0.11, map: decalTex('glow', '#ffffff'), vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true })
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aDust;\nuniform float uTime;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        float dT = uTime * (0.12 + aDust.y * 0.1) + aDust.x * 6.2832;
+        transformed += vec3(sin(dT) * 0.45, sin(dT * 1.7 + aDust.y * 4.0) * 0.18, cos(dT * 0.8) * 0.45);`,
+      )
+      .replace('gl_PointSize = size;', 'gl_PointSize = size * (0.6 + aDust.y * 0.9);')
+  }
+  mat.customProgramCacheKey = () => 'xcdust'
+  const pts = new THREE.Points(geo, withFog(mat))
+  pts.frustumCulled = false
+  pts.matrixAutoUpdate = false
+  pts.renderOrder = 2
+  group.add(pts)
+}
+
+/** 補光圖解析度（texel／m）*/
+const FILL_RES = 2
+/** 底光（整間房都有）與燈下光暈的比重 */
+const FILL_BASE = 2.2
+const FILL_POOL = 1.2
+/** 牆頂補光相對房間底光的比例 */
+const FILL_CAP = 0.85
+
+/** 平滑的格點值雜訊（0..1），斷電站的補光用來做出明暗不均的破損感 */
+function cellNoise(x: number, y: number, seed: number): number {
+  const h = (i: number, j: number) => ((((i * 374761393) ^ (j * 668265263) ^ (seed * 2246822519)) >>> 0) % 1000) / 1000
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const fx = x - ix
+  const fy = y - iy
+  const sx = fx * fx * (3 - 2 * fx)
+  const sy = fy * fy * (3 - 2 * fy)
+  const a = h(ix, iy) + (h(ix + 1, iy) - h(ix, iy)) * sx
+  const b = h(ix, iy + 1) + (h(ix + 1, iy + 1) - h(ix, iy + 1)) * sx
+  return a + (b - a) * sy
+}
+
+/**
+ * 烘焙補光圖：世界 XZ 平面上的線性補光色（materials.ts 的 uFillTex）。
+ * 每格只收同一間房的燈（牆擋光、不漏到隔壁）：整間房一層底光（房間燈色混一點環境色）＋每盞燈一圈平方衰減的光暈；
+ * 門與窗格取兩側的平均。牆與虛空格為 0，牆頂因此維持暗色。
+ */
+function bakeFill(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number, diag: Map<number, Diag>): THREE.DataTexture {
+  const W = l.w * FILL_RES
+  const H = l.h * FILL_RES
+  const out = new Float32Array(W * H * 3)
+  const k = th.fill ?? 0
+  const sky = new THREE.Color(th.ambientSky)
+  const sm = Math.max(sky.r, sky.g, sky.b, 1e-4)
+  sky.multiplyScalar(1 / sm)
+  const byRoom = new Map<number, RoomLight[]>()
+  for (const li of lights) {
+    let a = byRoom.get(li.room)
+    if (!a) byRoom.set(li.room, (a = []))
+    a.push(li)
+  }
+  // 底光色：房間燈色正規化到同一個亮度（暖色、飽和色的燈不會讓整站暗一半；最多放大 3 倍），再混一點環境色
+  const baseColor = (hex: string) => {
+    const c = new THREE.Color(hex)
+    const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+    c.multiplyScalar(Math.min(3, 0.7 / Math.max(1e-3, lum)))
+    return c.multiplyScalar(0.7).add(sky.clone().multiplyScalar(0.3 * Math.max(c.r, c.g, c.b)))
+  }
+  const baseOf = new Map<number, THREE.Color>()
+  for (const r of l.rooms) baseOf.set(r.index, baseColor(r.spec.light ?? th.light))
+  const fallback = baseColor(th.light)
+  const pass2: number[] = []
+  for (let ty = 0; ty < H; ty++) {
+    const y = (ty + 0.5) / FILL_RES
+    const row = l.h - 1 - Math.floor(y)
+    for (let tx = 0; tx < W; tx++) {
+      const x = (tx + 0.5) / FILL_RES
+      const col = Math.floor(x)
+      const ci = row * l.w + col
+      const c = l.cells[ci] as Cell
+      const o = (ty * W + tx) * 3
+      const dg = diag.get(ci)
+      // 斜牆格：只有開口那一半（離開口格角 L1 距離 ≤ 1）算地板，房間跟著鄰格
+      const dOpen = dg ? Math.abs(x - col - (dg.ox > 0 ? 1 : 0)) + Math.abs(y - Math.floor(y) - (dg.oy < 0 ? 1 : 0)) : 9
+      if (c === Cell.Void) continue
+      if (c === Cell.Wall && (!dg || dOpen > 1)) {
+        // 牆頂：一層很淡的均勻補光，讀得出是暗色船殼板、和站外的虛空分得開
+        const wk = k * FILL_BASE * FILL_CAP
+        out[o] = fallback.r * wk
+        out[o + 1] = fallback.g * wk
+        out[o + 2] = fallback.b * wk
+        continue
+      }
+      if (c === Cell.Door || c === Cell.Window) {
+        pass2.push(ty * W + tx)
+        continue
+      }
+      const room = dg ? l.roomOf[row * l.w + col + dg.ox] : l.roomOf[ci]
+      // 不屬於任何房間的零碎地板：收附近所有燈、底光打折
+      const src = room >= 0 ? (byRoom.get(room) ?? []) : lights
+      const base = room >= 0 ? baseOf.get(room)! : fallback
+      const bk = room >= 0 ? FILL_BASE : FILL_BASE * 0.6
+      let r = base.r * bk
+      let g = base.g * bk
+      let b = base.b * bk
+      for (const li of src) {
+        const R = Math.min(15, Math.max(5, li.distance * 0.55))
+        const t = ((x - li.x) ** 2 + (y + li.z) ** 2) / (R * R)
+        if (t >= 1) continue
+        const w = (1 - t) * (1 - t) * Math.min(1.4, li.intensity / 30) * FILL_POOL
+        r += li.color.r * w
+        g += li.color.g * w
+        b += li.color.b * w
+      }
+      const n = th.fillNoise ? 1 - th.fillNoise * cellNoise(x / 5, y / 5, seed) : 1
+      out[o] = r * k * n
+      out[o + 1] = g * k * n
+      out[o + 2] = b * k * n
+    }
+  }
+  const isWallTexel = (tx: number, ty: number) => {
+    const col = Math.floor(tx / FILL_RES)
+    const row = l.h - 1 - Math.floor(ty / FILL_RES)
+    const ci = row * l.w + col
+    return l.cells[ci] === Cell.Wall && !diag.has(ci)
+  }
+  // 門、窗：取上下左右已經有值的鄰格平均（2 輪，處理 1 格厚、2 texel 深的門框）
+  for (let it = 0; it < 2; it++) {
+    for (const i of pass2) {
+      const tx = i % W
+      const ty = (i - tx) / W
       let r = 0
       let g = 0
       let b = 0
-      for (const l of lights) {
-        const R = Math.min(15, Math.max(5, l.distance * 0.55))
-        const t = ((x - l.x) ** 2 + (z - l.z) ** 2) / (R * R)
-        if (t >= 1) continue
-        const w = (1 - t) * (1 - t) * Math.min(1.4, l.intensity / 30) * k
-        r += l.color.r * w
-        g += l.color.g * w
-        b += l.color.b * w
+      let n = 0
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x2 = tx + dx
+        const y2 = ty + dy
+        if (x2 < 0 || y2 < 0 || x2 >= W || y2 >= H) continue
+        const j = (y2 * W + x2) * 3
+        if (out[j] + out[j + 1] + out[j + 2] <= 0 || isWallTexel(x2, y2)) continue
+        r += out[j]
+        g += out[j + 1]
+        b += out[j + 2]
+        n++
       }
-      const cap = k * 1.3
-      out[i * 3] = Math.min(cap, r)
-      out[i * 3 + 1] = Math.min(cap, g)
-      out[i * 3 + 2] = Math.min(cap, b)
+      if (n) {
+        out[i * 3] = r / n
+        out[i * 3 + 1] = g / n
+        out[i * 3 + 2] = b / n
+      }
     }
-    geo.setAttribute('xcFill', new THREE.Float32BufferAttribute(out, 3))
   }
+  const data = new Uint8Array(W * H * 4)
+  const cap = k * 4
+  for (let i = 0; i < W * H; i++) {
+    for (let ch = 0; ch < 3; ch++) data[i * 4 + ch] = Math.round((Math.min(cap, out[i * 3 + ch]) / FILL_SCALE) * 255)
+    data[i * 4 + 3] = 255
+  }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat)
+  tex.magFilter = THREE.LinearFilter
+  tex.minFilter = THREE.LinearFilter
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
+  tex.needsUpdate = true
+  return tex
 }
 
 /** 門動畫：state 0 關 1 開 2 鎖 3 毀 */

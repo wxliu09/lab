@@ -78,7 +78,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div class="setrow">
-            <label>{t('settings.quality')}</label>
+            <label>
+              {t('settings.quality')}
+              <div class="dim" style={{ fontSize: '13px' }} data-testid="quality-note">
+                {t('art1.qualityNote')}
+              </div>
+            </label>
             <select value={quality.value} onChange={(e) => setQuality((e.target as HTMLSelectElement).value as Quality)}>
               {(['low', 'medium', 'high', 'ultra'] as const).map((q) => (
                 <option key={q} value={q}>

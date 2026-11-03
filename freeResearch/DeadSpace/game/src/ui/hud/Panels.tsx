@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks'
 import { FORMS, UNITS } from '../../shared/content/registry'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { endResult, leave, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
-import { evolveOpen, modalChecks } from '../../client/input'
+import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
 import { addStrings, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
 import { stationDefOf } from '../../render/gameScene'
@@ -17,11 +17,12 @@ addStrings(PLAY1_ZH, PLAY1_EN)
 const FACTION_COLOR: Record<string, string> = { xeno: '#7a3cff', mutant: '#c8323c', android: '#ffb000' }
 const FACTION_TEXT: Record<string, string> = { xeno: '#b28cff', mutant: '#ff6b72', android: '#ffb000' }
 
-// 結算畫面、出局畫面開著時，遊戲快捷鍵不處理
-modalChecks.push(
-  () => !!endResult.value,
-  () => !!world.me.booted,
-)
+// 結算畫面、出局畫面開著時，遊戲快捷鍵不處理；但結算時仍可按 Enter 聊天（賽後聊天），兩者都可以按 M 靜音
+const endOpen = () => !!endResult.value
+const bootedOpen = () => !!world.me.booted
+modalChecks.push(endOpen, bootedOpen)
+chatPassChecks.push(endOpen)
+mutePassChecks.push(endOpen, bootedOpen)
 
 export function EvolveMenu() {
   void snapTick.value

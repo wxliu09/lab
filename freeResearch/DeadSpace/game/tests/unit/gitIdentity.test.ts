@@ -7,6 +7,7 @@ import { replaceMain } from '../../src/sim/systems/roleSystem'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
 import { XAB } from '../../src/shared/content/forms/xeno'
 import { UNITS } from '../../src/shared/content/registry'
+import { sampleName } from '../../src/shared/sysArgs'
 import type { Ent } from '../../src/sim/ent'
 import type { Game, GamePlayer } from '../../src/sim/game'
 
@@ -88,7 +89,9 @@ describe('GIT 驗血：「已抽過」不洩漏身分', () => {
     expect(drawCmd(h, g, ac, au, form)).toEqual(['@git.msg.extracted|n=2|max=3'])
     // 同一個匿名單位抽第二次才是「已抽過」（和抽同一個真人兩次一樣）
     expect(drawCmd(h, g, ac, au, form)).toEqual(['@git.msg.already'])
-    expect(sampleOf(au)!.names).toEqual([x.name, UNITS.get(form.data.viewDef ?? form.def.id)!.name.zh])
+    // 匿名形態存成標記，顯示時依語言換成形態名（中文和原本一樣）
+    expect(sampleOf(au)!.names.map((n) => sampleName(n, 'zh'))).toEqual([x.name, UNITS.get(form.data.viewDef ?? form.def.id)!.name.zh])
+    expect(sampleName(sampleOf(au)!.names[1], 'en')).toBe(UNITS.get(form.data.viewDef ?? form.def.id)!.name.en)
   })
 
   it('繭和人形分開計算：抽過繭，之後抽他的人形不會說「已抽過」', () => {
@@ -108,7 +111,7 @@ describe('GIT 驗血：「已抽過」不洩漏身分', () => {
     x.evolvingUntil = 0
     const human = replaceMain(g, x, cocoon, 'personnel', { anon: false })
     drawDirect(g, au, human)
-    expect(sampleOf(au)!.names).toEqual([UNITS.get('xeno.cocoon')!.name.zh, x.name])
+    expect(sampleOf(au)!.names.map((n) => sampleName(n, 'zh'))).toEqual([UNITS.get('xeno.cocoon')!.name.zh, x.name])
   })
 })
 

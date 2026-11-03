@@ -67,6 +67,25 @@ export const UX3_ZH: Record<string, string> = {
 
   // ───── 離開頁面確認 ─────
   'leave3.confirm': '離開或重新整理頁面會中斷對局。確定要離開嗎？',
+
+  // ───── 上方大公告的標題句（Announce.tsx：有 key.title 就只顯示標題，對策等完整內容留在聊天紀錄）─────
+  'event.wasps.title': '無人戰機群入侵：太空中的站點與船艇會遭圍攻',
+  'event.asteroids.title': '小行星群從南側飄入：撞上站點或船艇會重創',
+  'event.tenshu.title': '天守收容失效：{s} 秒內主砲要對翠原星放電',
+  'event.pirate.title': '黑鷗旗護盾船入侵：登艦癱瘓它的主控台',
+  'event.enhancer.title': '女帝號投放了性能強化劑（限人員本人領取）',
+  'event.wormhole.title': '星區邊緣出現蟲洞：預估 {m}:{s} 後閉合',
+  'event.promotion.title': '總部來電：{name} 獲得晉升',
+  'apoc.fleet.title': '協和安全理事會子艦隊接近：{s} 秒後抵達',
+  'apoc.orbit.title': '軌道穩定系統全面失效：立刻到翠原星地表避難',
+  'event.doors.title': '門控制器故障：門會毫無預警地猛然關上',
+  'event.woolly.title': '一艘毛茸茸的船出現在星區裡',
+  'event.breeding.title': '翠原星進入繁殖季：蛞蝓仔長成了雪團獸',
+  'event.ad.title': '【廣告】極光牌保暖帽，真空中也風度翩翩！',
+  // 公告的「詳見聊天」小字
+  'f7.announce.more': '詳見聊天',
+  // 出局者的頭像欄
+  'f7.portraitBooted': '已出局',
 }
 
 export const UX3_EN: Record<string, string> = {
@@ -84,7 +103,7 @@ export const UX3_EN: Record<string, string> = {
   'tl.death.android': '{name} (Android) was wrecked',
   'tl.death.crew': '{name} was killed',
   'tl.convert.xeno': '{name} was turned into a xeno spawn',
-  'tl.convert.mutant': '{name} was turned into a mutant drone',
+  'tl.convert.mutant': '{name} was turned into a mutant spawn',
   'tl.evolve': '{name} evolved into {unit}',
   'tl.promotion': '{name} was promoted',
   'tl.wormhole': 'A wormhole object appeared',
@@ -136,12 +155,29 @@ export const UX3_EN: Record<string, string> = {
   // ───── Leave-page confirmation ─────
   'leave3.confirm': 'Leaving or reloading the page will drop you from the game. Leave anyway?',
 
+  // ───── Headline for the big top announcement (full text stays in the chat log) ─────
+  'event.wasps.title': 'Drone swarm inbound: stations and craft besieged',
+  'event.asteroids.title': 'Asteroids drifting in from the south',
+  'event.tenshu.title': 'Tenshu containment failed: fire at Verdance in {s} s',
+  'event.pirate.title': 'Black Gull pirates inbound: disable their console',
+  'event.enhancer.title': 'Performance enhancers dropped on the Empress Nyx',
+  'event.wormhole.title': 'Wormhole at the sector edge: closes in {m}:{s}',
+  'event.promotion.title': 'Headquarters: {name} has been promoted',
+  'apoc.fleet.title': 'Directorate sub-fleet inbound: ETA {s} s',
+  'apoc.orbit.title': 'Orbital stabilizers failed: get to Verdance now',
+  'event.doors.title': 'Door controllers failing: doors may slam shut',
+  'event.woolly.title': 'A very fluffy ship has appeared in the sector',
+  'event.breeding.title': 'Verdance breeding season: beware the snowgles',
+  'event.ad.title': '[AD] Aurora beanies: look sharp, even in vacuum!',
+  'f7.announce.more': 'details in chat',
+  'f7.portraitBooted': 'You are out',
+
   // ───── Singular forms (t() uses key.one when n = 1) ─────
   'lobby2.roles.count.one': '1 combatant at start (incl. AI)',
   'vote.kickLeft.one': '1 more vote needed',
-  'space.scanResult.one': '1 lifeform detected aboard {name}',
+  'space.scanResult.one': '1 lifeform detected aboard {ne}',
   'mut.totalInfection.one': 'Total infection: 1 crew member has been seeded with prions.',
   'fac.caged.one': 'Caged 1 specimen.',
-  'st.cordonOk.one': 'Beacon hit {name}: 1 door locked.',
+  'st.cordonOk.one': 'Beacon hit {ne}: 1 door locked.',
   'mut.intestines.one': 'Inner sight: you have 1 hive heart with {hp} total health.',
 }

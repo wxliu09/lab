@@ -1,7 +1,7 @@
 // 太空層物件：船艇、救生艙、無人機、小行星、恆星、站點外觀（美術聖經 §10）
 import * as THREE from 'three'
 import { regModel, type ModelView } from './index'
-import { Batcher, box, cyl, rbox, sphere } from '../batch'
+import { Batcher, box, cyl, rbox, sphere, torus } from '../batch'
 import { Mat } from '../materials'
 import { buildStationHull, pebble, stationHullScale } from '../space/hulls'
 import { makePlanet, makeSun, type PlanetLook } from '../space/sky'
@@ -13,78 +13,181 @@ interface ShipLook {
   engine: string
   len: number
   wid: number
+  /** 尾焰位置（x, y）；不設 = 寬船兩具、窄船一具 */
+  engines?: [number, number][]
+  /** 尾焰大小倍率 */
+  flame?: number
   build: (b: Batcher, hull: THREE.Material, dark: THREE.Material, stripe: THREE.Material) => void
 }
 
+const HALF_PI = Math.PI / 2
+/** 沿 +z（船頭）的圓柱／圓錐：rt = 前端半徑 */
+const fwdCyl = (b: Batcher, rt: number, rb: number, len: number, m: THREE.Material, x: number, y: number, z: number, seg = 12) => b.add(cyl(rt, rb, len, seg), m, x, y, z, 0, 1, 1, 1, HALF_PI)
+
+/**
+ * 船型（美術聖經 §10「細節化模型、導航閃燈、引擎尾焰」）：每種船一個辨識得出的剪影，
+ * 俯視遠距離（太空層 30–60 px）也分得出：紅隼＝三角翼偵察艇、騾級＝拖著貨櫃的卡車、槍騎＝長矛機頭＋前掠翼、
+ * 獵鷹＝寬機身＋兩具大引擎艙＋背部砲塔、綿羊號＝羊、救生艙＝球＋環、胡蜂＝分節蜂身＋兩對翅。
+ * 船殼用帶面板線的金屬（Mat.hull），再加小零件（天線、散熱片、艙門、燈）。
+ */
 const LOOKS: Record<string, ShipLook> = {
   kestrel: {
     hull: '#c9d1d8',
     stripe: '#ff7a2a',
     engine: '#7fd8ff',
-    len: 1.8,
-    wid: 0.9,
+    len: 1.9,
+    wid: 1.0,
+    engines: [
+      [-0.2, 0.3],
+      [0.2, 0.3],
+    ],
     build: (b, hull, dark, stripe) => {
-      b.add(rbox(0.7, 0.4, 1.8, 0.12), hull, 0, 0.3, 0)
-      b.add(rbox(1.8, 0.08, 0.6, 0.03), hull, 0, 0.25, -0.3)
-      b.add(rbox(0.4, 0.22, 0.5, 0.1), Mat.glass('#7fd8ff', 0.6), 0, 0.5, 0.55)
-      b.add(box(0.72, 0.06, 0.3), stripe, 0, 0.36, 0.1)
-      for (const s of [-1, 1]) b.add(cyl(0.12, 0.14, 0.5, 10), dark, s * 0.75, 0.25, -0.45, 0, 1, 1, 1, Math.PI / 2)
+      b.add(rbox(0.56, 0.36, 1.45, 0.12), hull, 0, 0.32, 0.02)
+      fwdCyl(b, 0.04, 0.27, 0.5, hull, 0, 0.32, 0.98)
+      // 三角翼（後掠）＋翼尖小垂尾
+      for (const s of [-1, 1]) {
+        b.add(rbox(0.85, 0.05, 0.62, 0.02), hull, s * 0.52, 0.26, -0.28, s * 0.42)
+        b.add(box(0.04, 0.2, 0.28), dark, s * 0.9, 0.34, -0.52)
+        b.add(box(0.5, 0.055, 0.08), stripe, s * 0.5, 0.29, -0.18, s * 0.42)
+        // 進氣口
+        b.add(rbox(0.12, 0.16, 0.36, 0.03), dark, s * 0.33, 0.3, 0.25)
+      }
+      b.add(rbox(0.05, 0.38, 0.42, 0.02), hull, 0, 0.6, -0.52)
+      b.add(box(0.06, 0.08, 0.3), stripe, 0, 0.78, -0.55)
+      b.add(rbox(0.34, 0.2, 0.48, 0.09), Mat.glass('#7fd8ff', 0.6), 0, 0.52, 0.42)
+      b.add(box(0.58, 0.05, 0.22), stripe, 0, 0.51, 0.02)
+      for (const s of [-1, 1]) fwdCyl(b, 0.13, 0.15, 0.42, dark, s * 0.2, 0.3, -0.78)
+      // 天線
+      b.add(cyl(0.01, 0.01, 0.3, 4), dark, 0.12, 0.62, 0.1)
     },
   },
   mule: {
-    hull: '#a6a08a',
+    hull: '#c8bf9e',
     stripe: '#ffc23d',
     engine: '#ffb46b',
-    len: 2.2,
-    wid: 1.1,
+    len: 2.4,
+    wid: 1.2,
+    engines: [
+      [-0.3, 0.45],
+      [0.3, 0.45],
+    ],
+    flame: 1.3,
     build: (b, hull, dark, stripe) => {
-      b.add(rbox(1.1, 0.7, 2.2, 0.1), hull, 0, 0.45, 0)
-      b.add(rbox(0.6, 0.3, 0.6, 0.08), Mat.glass('#ffe0a8', 0.5), 0, 0.75, 0.8)
-      b.add(box(1.12, 0.1, 0.2), stripe, 0, 0.55, -0.4)
-      b.add(box(1.12, 0.1, 0.2), stripe, 0, 0.55, 0.2)
-      for (const s of [-1, 1]) b.add(rbox(0.25, 0.25, 0.7, 0.05), dark, s * 0.65, 0.3, -0.8)
+      // 駕駛艙（車頭）＋警示條
+      b.add(rbox(0.86, 0.62, 0.66, 0.1), hull, 0, 0.5, 0.82)
+      b.add(rbox(0.66, 0.24, 0.12, 0.05), Mat.glass('#ffe0a8', 0.55), 0, 0.64, 1.13)
+      b.add(box(0.88, 0.08, 0.08), stripe, 0, 0.3, 1.13)
+      for (const s of [-1, 1]) b.add(box(0.05, 0.3, 0.5), stripe, s * 0.44, 0.5, 0.8)
+      // 骨架＋四個貨櫃（顏色不同，像拖著貨櫃的卡車）
+      b.add(box(0.26, 0.2, 1.7), dark, 0, 0.35, -0.2)
+      const cont = ['#d8743a', '#3f8f88', '#b8a070', '#8a9aa6']
+      for (let i = 0; i < 4; i++) {
+        const sx = i % 2 ? 1 : -1
+        const z = i < 2 ? 0.12 : -0.62
+        b.add(rbox(0.5, 0.5, 0.68, 0.03), Mat.paint(cont[i], 0.6), sx * 0.31, 0.5, z)
+        // 貨櫃的瓦楞
+        for (let k = 0; k < 3; k++) b.add(box(0.52, 0.03, 0.03), dark, sx * 0.31, 0.62, z - 0.22 + k * 0.22)
+      }
+      // 後段引擎座＋兩具大噴口
+      b.add(rbox(0.96, 0.44, 0.34, 0.06), hull, 0, 0.45, -1.1)
+      for (const s of [-1, 1]) fwdCyl(b, 0.16, 0.2, 0.3, dark, s * 0.3, 0.45, -1.3)
+      // 車頂天線、探照燈
+      b.add(cyl(0.012, 0.012, 0.35, 4), dark, -0.3, 0.98, 0.75)
+      b.add(box(0.14, 0.06, 0.06), stripe, 0.25, 0.83, 0.95)
     },
   },
   lancer: {
-    hull: '#3a4452',
+    hull: '#4a5462',
     stripe: '#ff3b3b',
     engine: '#ff7eb6',
-    len: 2.0,
-    wid: 1.2,
+    len: 2.4,
+    wid: 1.3,
+    engines: [[0, 0.3]],
     build: (b, hull, dark, stripe) => {
-      b.add(rbox(0.5, 0.3, 2.0, 0.1), hull, 0, 0.3, 0)
+      b.add(rbox(0.42, 0.28, 1.8, 0.1), hull, 0, 0.3, -0.05)
+      // 長矛機頭
+      fwdCyl(b, 0.015, 0.14, 0.75, hull, 0, 0.3, 1.2)
+      // 前掠翼＋翼尖雙管砲
       for (const s of [-1, 1]) {
-        b.add(rbox(1.0, 0.06, 0.8, 0.02), hull, s * 0.6, 0.25, -0.4, s * 0.2)
-        b.add(cyl(0.05, 0.05, 0.9, 8), dark, s * 1.0, 0.25, 0.0, 0, 1, 1, 1, Math.PI / 2)
+        b.add(rbox(0.95, 0.05, 0.42, 0.02), hull, s * 0.55, 0.27, -0.15, -s * 0.38)
+        b.add(box(0.6, 0.055, 0.07), stripe, s * 0.55, 0.3, -0.08, -s * 0.38)
+        fwdCyl(b, 0.035, 0.035, 0.9, dark, s * 0.98, 0.27, 0.22, 8)
+        b.add(rbox(0.12, 0.12, 0.3, 0.03), dark, s * 0.98, 0.27, -0.12)
+        // 前翼（鴨翼）
+        b.add(box(0.32, 0.04, 0.16), hull, s * 0.3, 0.3, 0.62, -s * 0.5)
+        // 外傾雙垂尾
+        b.add(box(0.04, 0.34, 0.32), hull, s * 0.18, 0.5, -0.75, 0, 1, 1, 1, 0, s * 0.35)
       }
-      b.add(rbox(0.3, 0.18, 0.5, 0.08), Mat.glass('#ff7eb6', 0.55), 0, 0.45, 0.5)
-      b.add(box(0.52, 0.04, 1.2), stripe, 0, 0.46, -0.1)
+      b.add(rbox(0.28, 0.17, 0.5, 0.08), Mat.glass('#ff7eb6', 0.55), 0, 0.45, 0.45)
+      b.add(box(0.44, 0.04, 1.1), stripe, 0, 0.45, -0.25)
+      fwdCyl(b, 0.14, 0.17, 0.35, dark, 0, 0.3, -1.05)
     },
   },
   harrier: {
-    hull: '#59626b',
+    hull: '#7a838c',
     stripe: '#9fe7ff',
     engine: '#9fe7ff',
     len: 2.4,
-    wid: 1.3,
+    wid: 1.6,
+    engines: [
+      [-0.72, 0.35],
+      [0.72, 0.35],
+    ],
+    flame: 1.4,
     build: (b, hull, dark, stripe) => {
-      b.add(rbox(0.9, 0.45, 2.4, 0.12), hull, 0, 0.35, 0)
-      b.add(cyl(0.18, 0.22, 1.2, 12), dark, 0, 0.45, 1.1, 0, 1, 1, 1, Math.PI / 2)
-      for (const s of [-1, 1]) b.add(rbox(0.5, 0.2, 1.4, 0.06), hull, s * 0.75, 0.28, -0.3)
-      b.add(box(0.92, 0.05, 0.3), stripe, 0, 0.58, 0.3)
+      // 寬機身（楔形機頭）
+      b.add(rbox(1.0, 0.45, 1.6, 0.12), hull, 0, 0.36, -0.05)
+      b.add(rbox(0.7, 0.32, 0.6, 0.1), hull, 0, 0.32, 0.9)
+      b.add(rbox(0.5, 0.16, 0.36, 0.07), Mat.glass('#9fe7ff', 0.55), 0, 0.5, 0.95)
+      // 兩具大引擎艙（前端進氣環）
+      for (const s of [-1, 1]) {
+        fwdCyl(b, 0.24, 0.26, 1.5, hull, s * 0.72, 0.35, -0.25, 14)
+        fwdCyl(b, 0.2, 0.2, 0.08, dark, s * 0.72, 0.35, 0.52, 14)
+        b.add(box(0.3, 0.16, 0.5), hull, s * 0.5, 0.33, -0.2)
+        b.add(box(0.05, 0.05, 1.2), stripe, s * 0.72, 0.61, -0.25)
+        // 散熱片
+        for (let k = 0; k < 3; k++) b.add(box(0.02, 0.12, 0.2), dark, s * (0.97 + 0.0), 0.35, -0.55 + k * 0.25)
+      }
+      // 背部雙管砲塔
+      b.add(cyl(0.2, 0.24, 0.14, 14), dark, 0, 0.64, 0.05)
+      b.add(rbox(0.26, 0.12, 0.3, 0.04), hull, 0, 0.74, 0.08)
+      for (const s of [-1, 1]) fwdCyl(b, 0.03, 0.03, 0.62, dark, s * 0.06, 0.75, 0.5, 8)
+      b.add(box(1.02, 0.05, 0.26), stripe, 0, 0.6, -0.55)
     },
   },
   woolly: {
     hull: '#f0ece0',
     stripe: '#ff7eb6',
     engine: '#ff7eb6',
-    len: 1.8,
+    len: 1.9,
     wid: 1.2,
+    engines: [[0, 0.45]],
     build: (b, hull, dark, stripe) => {
-      for (let i = 0; i < 9; i++) b.add(sphere(0.35, 10, 8), Mat.cloth('#f4f0e4', '#ffd6e8'), Math.cos(i) * 0.4, 0.45 + (i % 3) * 0.08, Math.sin(i * 1.7) * 0.6)
-      b.add(sphere(0.25, 12, 10), Mat.skin('#2a2a2a'), 0, 0.5, 0.85)
-      b.add(box(0.5, 0.05, 0.05), stripe, 0, 0.72, 0.6)
-      void dark
+      // 羊毛：一圈圈蓬鬆的毛球
+      const wool = Mat.cloth('#f4f0e4', '#ffd6e8')
+      for (let i = 0; i < 14; i++) {
+        const a = i * 2.4
+        const r = 0.18 + (i % 3) * 0.12
+        b.add(sphere(0.3 - (i % 3) * 0.04, 10, 8), wool, Math.cos(a) * r * 1.2, 0.48 + (i % 2) * 0.1, Math.sin(a) * r * 1.5 - 0.1)
+      }
+      // 羊頭、耳朵、眼睛
+      const face = Mat.skin('#2a2a2a')
+      b.add(sphere(0.24, 12, 10), face, 0, 0.55, 0.78, 0, 1, 0.9, 1.2)
+      for (const s of [-1, 1]) {
+        b.add(sphere(0.1, 8, 6), face, s * 0.25, 0.65, 0.7, s * 0.5, 1.4, 0.45, 0.7)
+        b.add(sphere(0.035, 6, 4), stripe, s * 0.09, 0.62, 0.98)
+      }
+      // 四隻短腿＝姿態推進器
+      for (const [x, z] of [
+        [-0.3, 0.35],
+        [0.3, 0.35],
+        [-0.3, -0.45],
+        [0.3, -0.45],
+      ])
+        b.add(cyl(0.07, 0.09, 0.3, 8), dark, x, 0.15, z)
+      // 項圈
+      b.add(box(0.5, 0.05, 0.05), stripe, 0, 0.6, 0.55)
+      b.add(sphere(0.14, 8, 6), wool, 0, 0.62, -0.72)
       void hull
     },
   },
@@ -92,24 +195,46 @@ const LOOKS: Record<string, ShipLook> = {
     hull: '#e8e8e8',
     stripe: '#ff3b3b',
     engine: '#ffb46b',
-    len: 0.8,
-    wid: 0.5,
+    len: 0.9,
+    wid: 0.6,
+    engines: [[0, 0.35]],
+    flame: 0.8,
     build: (b, hull, dark, stripe) => {
-      b.add(sphere(0.35, 14, 10), hull, 0, 0.35, 0)
-      b.add(cyl(0.2, 0.28, 0.25, 12), dark, 0, 0.35, -0.35, 0, 1, 1, 1, Math.PI / 2)
-      b.add(box(0.72, 0.05, 0.05), stripe, 0, 0.35, 0)
+      b.add(sphere(0.35, 16, 12), hull, 0, 0.35, 0)
+      // 赤道環＋三片尾翼＋舷窗
+      b.add(torus(0.36, 0.035, 6, 24), stripe, 0, 0.35, 0, 0, 1, 1, 1, HALF_PI)
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2
+        b.add(box(0.03, 0.16, 0.22), dark, Math.cos(a) * 0.3, 0.35 + Math.sin(a) * 0.3, -0.25, 0, 1, 1, 1, 0, -a)
+      }
+      b.add(sphere(0.12, 10, 8), Mat.glass('#ffd9a0', 0.6), 0, 0.5, 0.25, 0, 1, 0.7, 0.6)
+      fwdCyl(b, 0.16, 0.22, 0.22, dark, 0, 0.35, -0.38)
     },
   },
   wasp: {
-    hull: '#2a2e33',
-    stripe: '#ff3b3b',
+    hull: '#2e3238',
+    stripe: '#ffb000',
     engine: '#ff5a4a',
-    len: 1.0,
-    wid: 0.9,
+    len: 1.2,
+    wid: 1.1,
+    engines: [[0, 0.32]],
+    flame: 0.8,
     build: (b, hull, dark, stripe) => {
-      b.add(rbox(0.3, 0.2, 1.0, 0.06), hull, 0, 0.3, 0)
-      for (const s of [-1, 1]) b.add(rbox(0.6, 0.04, 0.4, 0.02), dark, s * 0.4, 0.3, -0.1, s * 0.3)
-      b.add(sphere(0.08, 8, 6), stripe, 0, 0.36, 0.45)
+      // 分節蜂身：頭（紅色感測眼）—胸—腹（黃黑環紋）
+      b.add(sphere(0.12, 10, 8), hull, 0, 0.32, 0.45)
+      b.add(sphere(0.05, 8, 6), Mat.emissive('#ff3b3b', 3), 0, 0.36, 0.55)
+      b.add(sphere(0.15, 10, 8), hull, 0, 0.32, 0.22, 0, 1, 0.9, 1.1)
+      b.add(sphere(0.17, 12, 8), hull, 0, 0.3, -0.18, 0, 0.9, 0.8, 1.8)
+      for (let k = 0; k < 3; k++) b.add(cyl(0.155 - k * 0.025, 0.155 - k * 0.025, 0.05, 12), stripe, 0, 0.3, -0.05 - k * 0.15, 0, 1, 0.82, 1, HALF_PI)
+      // 兩對翅（半透明薄片）
+      const wing = Mat.glass('#c8d8e8', 0.35)
+      for (const s of [-1, 1]) {
+        b.add(rbox(0.6, 0.02, 0.2, 0.01), wing, s * 0.38, 0.4, 0.2, s * 0.35)
+        b.add(rbox(0.45, 0.02, 0.16, 0.01), wing, s * 0.32, 0.38, 0.0, s * 0.6)
+        // 腹側小砲
+        fwdCyl(b, 0.02, 0.02, 0.3, dark, s * 0.1, 0.24, 0.42, 6)
+      }
+      void dark
     },
   },
 }
@@ -118,14 +243,15 @@ function shipModel(id: string): ModelView {
   const L = LOOKS[id] ?? LOOKS.kestrel
   const root = new THREE.Group()
   const b = new Batcher()
-  L.build(b, Mat.armor(L.hull, L.engine), Mat.metal('#2a3036', 0.7), Mat.emissive(L.stripe, 1.8))
+  L.build(b, Mat.hull(L.hull, L.engine), Mat.metal('#2a3036', 0.7), Mat.emissive(L.stripe, 1.8))
   b.build(root)
   // 引擎尾焰
   const flames: THREE.Mesh[] = []
-  for (const s of L.wid > 1 ? [-0.35, 0.35] : [0]) {
-    const f = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.6, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(L.engine).multiplyScalar(4), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }))
+  const fk = L.flame ?? 1
+  for (const [x, y] of L.engines ?? (L.wid > 1 ? [[-0.35, 0.3], [0.35, 0.3]] : [[0, 0.3]])) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.12 * fk, 0.6 * fk, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(L.engine).multiplyScalar(4), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }))
     f.rotation.x = -Math.PI / 2
-    f.position.set(s, 0.3, -L.len / 2 - 0.3)
+    f.position.set(x, y, -L.len / 2 - 0.3 * fk)
     root.add(f)
     flames.push(f)
   }

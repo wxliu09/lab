@@ -80,6 +80,43 @@ describe('太空層', () => {
     expect(scan(h)).toEqual([])
   })
 
+  it('發射倒數：警報帶持續秒數；離開控制台中斷倒數時送出警報解除（旋轉警示燈收掉）', () => {
+    const { h, cs } = Harness.started(3, 2)
+    const g = h.server.game!
+    const p = g.players[cs[0].slot]
+    const u = g.mainOf(p)!
+    const inst = [...spaceOf(g).ships.values()].find((s) => s.def.id === 'kestrel')!
+    const de = g.world.get(inst.dockedEnt)!
+    g.world.relocate(u, de.zone, de.x, de.y - de.radius - 0.5)
+    h.ticks(4)
+    g.handleCommand(p.slot, { k: 'interact', e: de.id })
+    h.ticks(4)
+    expect(u.zone).toBe(inst.zone)
+    const cz = g.world.zones[inst.zone]
+    const c = cz.data.console as { x: number; y: number }
+    const fxOf = (k: string) => cs[0].snaps.flatMap((s) => s.fx ?? []).filter((f) => f.k === k)
+    cs[0].snaps.length = 0
+    g.world.relocate(u, inst.zone, c.x, c.y)
+    h.ticks(10)
+    const al = fxOf('alarm')
+    expect(al.length).toBe(1)
+    expect(al[0].v).toBe(10)
+    expect(fxOf('alarmEnd').length).toBe(0)
+    // 走開（走到艙內離控制台最遠的空地）：倒數中斷
+    const L = cz.layout!
+    let far = { x: c.x, y: c.y }
+    for (let row = 0; row < L.h; row++)
+      for (let col = 0; col < L.w; col++) {
+        const n = cz.nav!.nearestOpen(col + 0.5, L.h - row - 0.5)
+        if (n && Math.hypot(n.x - c.x, n.y - c.y) > Math.hypot(far.x - c.x, far.y - c.y)) far = n
+      }
+    expect(Math.hypot(far.x - c.x, far.y - c.y)).toBeGreaterThan(1.5)
+    g.world.relocate(u, inst.zone, far.x, far.y)
+    h.ticks(10)
+    expect(inst.docked).not.toBe(null)
+    expect(fxOf('alarmEnd').length).toBe(1)
+  })
+
   it('站點被摧毀：站內所有人死亡', () => {
     const { h } = Harness.started(4, 3)
     const g = h.server.game!

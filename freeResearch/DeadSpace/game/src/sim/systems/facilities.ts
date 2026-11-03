@@ -6,6 +6,7 @@ import { MODULE_BUILD, POWER_CD, POWER_MODES, type PowerMode } from '../../share
 import { MODULE_TARGET } from '../../shared/content/items'
 import { CLASSES, FORMS, itemDef, unitDef } from '../../shared/content/registry'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { locArgs } from '../../shared/sysArgs'
 import type { Command, FacilityView } from '../../shared/protocol/messages'
 import { HOSTILE, NEUTRAL, dist, type Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
@@ -404,7 +405,7 @@ function installModule(g: Game, ctx: EffectCtx, item: string): boolean {
       z.station?.id === stId &&
       ((t.def.id === 'fac.moduleSocket' && String(t.data.poiData?.module ?? '').split(',').includes(item)) || t.data.poi === 'console' || (item === 'modScanAmp' && t.data.vendor === 'radar'))
     if (!ok) {
-      say(g, u, 'mod.wrongTarget', { st: STATION_BY_ID.get(stId ?? '')?.name.zh ?? '' })
+      say(g, u, 'mod.wrongTarget', locArgs(STATION_BY_ID.get(stId ?? '')?.name, 'sz', 'se'))
       return true
     }
     const se = g.world.get(z.spaceEnt)

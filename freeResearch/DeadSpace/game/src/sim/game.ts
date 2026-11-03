@@ -136,6 +136,8 @@ export class Game {
   tick = 0
   hostHidden = false
   paused = false
+  /** 開局時等玩家載入完：模擬不推進、照常送快照（由 server 設定）*/
+  hold = false
   timeScale = 1
   private acc = 0
   ended: EndResult | null = null
@@ -464,6 +466,7 @@ export class Game {
     return {
       t: Math.floor(this.time),
       st: this.world.zones.filter((z) => z.alive && z.station).map((z) => z.key),
+      pw: this.world.zones.filter((z) => z.alive && z.power !== 'normal').map((z) => z.key),
       stab: this.stability(),
       apo: (this.data.events as EventState | undefined)?.apoc ?? '',
       bg: this.hostHidden,
@@ -621,7 +624,8 @@ export class Game {
         slot: p.slot,
         name: p.baseName,
         color: p.color,
-        role: p.role,
+        // 被轉化的人顯示成轉化者的陣營（「異形 spawn」），不是原本的「人類」
+        role: p.spawnOf ?? p.role,
         classId: p.classId,
         spawn: !!p.spawnOf,
         alive: p.alive,
@@ -696,7 +700,7 @@ export class Game {
 
   /** 由 server 以 20 Hz 呼叫；依 timeScale 推進模擬 */
   step(): void {
-    if (this.paused || this.ended) {
+    if (this.paused || this.ended || this.hold) {
       this.flush()
       return
     }

@@ -239,7 +239,8 @@ describe('練習 AI', () => {
       for (const m of cs[0].inbox) if (m.t === 'chat') more.push(...m.lines.filter((l) => l.from === bot.name).map((l) => l.text))
       cs[0].inbox.length = 0
     }
-    expect(more[0]).toMatch(/^@play1\.bot\.gitClean\|names=甲、乙$/)
+    // 名單兩種語言都送（分隔符號依語言）
+    expect(more[0]).toBe('@play1.bot.gitClean|lz=甲、乙|le=甲, 乙')
   })
 })
 

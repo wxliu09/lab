@@ -3,6 +3,7 @@ import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
 import type { Game, GamePlayer } from '../game'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { sanitizeName } from '../../shared/protocol/validate'
+import { listArgs } from '../../shared/sysArgs'
 
 /** 死後 4 秒內的發言仍讓活人看到（遺言）*/
 export const LAST_WORDS = 4
@@ -156,8 +157,9 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       g.privateLine(p.slot, 'chat.help')
       break
     case 'names': {
-      const list = g.allPlayers().map((q) => `${q.name}${q.alive ? '' : '（DEAD）'}`).join('、')
-      g.privateLine(p.slot, 'chat.names', { list })
+      // 名單兩種語言都送（分隔符號、死亡標記依語言）
+      const ps = g.allPlayers()
+      g.privateLine(p.slot, 'chat.names', listArgs(ps.map((q) => q.name + (q.alive ? '' : '（死亡）')), ps.map((q) => q.name + (q.alive ? '' : ' (dead)'))))
       break
     }
     case 'status': {
@@ -205,7 +207,7 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
     case 'listmutants': {
       if (f === 'crew' || !p.alive) return
       const mates = g.allPlayers().filter((q) => g.faction(q) === f)
-      g.privateLine(p.slot, 'chat.factionList', { list: mates.map((q) => q.name + (q.alive ? '' : '（DEAD）')).join('、') })
+      g.privateLine(p.slot, 'chat.factionList', listArgs(mates.map((q) => q.name + (q.alive ? '' : '（死亡）')), mates.map((q) => q.name + (q.alive ? '' : ' (dead)'))))
       for (const q of mates) {
         const u = g.mainOf(q)
         if (u && q.alive) g.emitFx({ k: 'ping', z: u.zone, x: u.x, y: u.y }, [p.slot])
@@ -236,7 +238,7 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
         else if (q.slot !== p.slot) gr.members.delete(q.slot)
         if (head === 'add' && q.slot !== p.slot) g.privateLine(q.slot, 'chat.addedToGroup', { group: gr.name, name: p.name })
       }
-      g.privateLine(p.slot, 'chat.groupList', { group: gr.name, list: [...gr.members].map((m) => g.players[m]?.name ?? '?').join('、') })
+      g.privateLine(p.slot, 'chat.groupList', { group: gr.name, ...listArgs([...gr.members].map((m) => g.players[m]?.name ?? '?')) })
       break
     }
     case 'rename': {

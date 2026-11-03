@@ -10,6 +10,7 @@ import { UX_EN, UX_ZH } from './strings/ux'
 import { UX2_EN, UX2_ZH } from './strings/ux2'
 import { UX3_EN, UX3_ZH } from './strings/ux3'
 import { PLAY1_EN, PLAY1_ZH } from './strings/play1'
+import { ART1_EN, ART1_ZH } from './strings/art1'
 import { ITEMS, UNITS } from '../shared/content/registry'
 
 export type Lang = 'zh' | 'en'
@@ -279,8 +280,8 @@ const en: Dict = {
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
-Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH, UX3_ZH, PLAY1_ZH)
-Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN, UX3_EN, PLAY1_EN)
+Object.assign(zh, GAME_ZH, ITEM_STRINGS.zh, EVENT_ZH, CODEX_ZH, FAC_ZH, UX_ZH, UX2_ZH, UX3_ZH, PLAY1_ZH, ART1_ZH)
+Object.assign(en, GAME_EN, ITEM_STRINGS.en, EVENT_EN, CODEX_EN, FAC_EN, UX_EN, UX2_EN, UX3_EN, PLAY1_EN, ART1_EN)
 
 /** 測試用：某語言是否有這個 key */
 export function hasString(l: Lang, key: string): boolean {

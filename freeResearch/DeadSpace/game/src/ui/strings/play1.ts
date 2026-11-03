@@ -1,11 +1,11 @@
 // 介面文字（第 1 輪「新手體驗與玩法」修正）：AI 公布驗血結果、進化選單的原因、感染提示、博士專長
-// 參數：names = 驗血名單（抽血時看到的名字，以「、」連接）；name = 單一名字；n = 數字；desc = 效果說明
+// 參數：lz／le = 驗血名單的中文／英文寫法（抽血時看到的名字，分隔符號依語言）；name = 單一名字；n = 數字；desc = 效果說明
 export const PLAY1_ZH: Record<string, string> = {
   // ───── AI 在全體頻道公布驗血結果（sim 以 `@key|k=v` 送出）─────
-  'play1.bot.gitClean': '驗血結果：{names} 都是乾淨的。',
-  'play1.bot.gitInfected': '驗血結果有感染！{names} 裡面藏著異類，大家小心。',
-  'play1.bot.gitError': '驗血結果是「錯誤」：{names} 裡面有人的樣本驗不出來。',
-  'play1.bot.gitOffline': '檢測儀離線，{names} 的樣本沒驗成。',
+  'play1.bot.gitClean': '驗血結果：{lz} 都是乾淨的。',
+  'play1.bot.gitInfected': '驗血結果有感染！{lz} 裡面藏著異類，大家小心。',
+  'play1.bot.gitError': '驗血結果是「錯誤」：{lz} 裡面有人的樣本驗不出來。',
+  'play1.bot.gitOffline': '檢測儀離線，{lz} 的樣本沒驗成。',
   'play1.bot.accuse': '我認為 {name} 就是異類，看到就開火！',
 
   // ───── 進化選單：為什麼現在不能進化 ─────
@@ -24,23 +24,23 @@ export const PLAY1_ZH: Record<string, string> = {
 
   // ───── 博士專長（研究員）─────
   'play1.phd': '{name}（{desc}）',
-  'play1.reveal.phd': '博士專長：{name}——{desc}',
-  'play1.help.phd': '你的博士專長是{name}：{desc}',
+  'play1.reveal.phd': '{name}：{desc}',
+  'play1.help.phd': '你是{name}：{desc}',
 }
 
 export const PLAY1_EN: Record<string, string> = {
   // ───── Bots announce blood-test results in all chat ─────
-  'play1.bot.gitClean': 'Blood test: {names} came back clean.',
-  'play1.bot.gitInfected': 'Blood test came back INFECTED! Something is hiding among {names}. Watch out.',
-  'play1.bot.gitError': 'Blood test returned ERROR: one of the samples from {names} could not be read.',
-  'play1.bot.gitOffline': 'The analyzer was offline; the samples from {names} went untested.',
+  'play1.bot.gitClean': 'Blood test: {le} came back clean.',
+  'play1.bot.gitInfected': 'Blood test came back INFECTED! Something is hiding among {le}. Watch out.',
+  'play1.bot.gitError': 'Blood test returned ERROR: one of the samples from {le} could not be read.',
+  'play1.bot.gitOffline': 'The analyzer was offline; the samples from {le} went untested.',
   'play1.bot.accuse': 'I think {name} is one of them. Shoot on sight!',
 
   // ───── Evolve menu: why you cannot evolve right now ─────
   'play1.evo.dead': 'You are dead and cannot evolve.',
   'play1.evo.notMain': 'You are piloting, possessing, or riding an escape pod. Return to your own body to evolve.',
   'play1.evo.space': 'You cannot evolve in space. Get back inside a station first.',
-  'play1.evo.forge': 'You have enough EP. Step onto the foundry pad beside the Adjudicatrix foundry to take a new chassis.',
+  'play1.evo.forge': 'You have enough EP. Step onto the fabrication pad beside the Adjudicatrix fabricator to take a new chassis.',
   'play1.evo.max': 'You are already in your final form.',
   'play1.evo.need': 'Not enough EP yet: {n} to go.',
 
@@ -48,10 +48,10 @@ export const PLAY1_EN: Record<string, string> = {
   'guide.h.parasited.t': 'You have been implanted',
   'guide.h.parasited': 'A xeno parasite is inside you: it poisons you every second, and when you die you rise as a xeno spawn. Inject an antibody kit (Medical Supplies) to force it dormant; it clears after 46 s. Do not die before then.',
   'guide.h.prioned.t': 'You are infected with prions',
-  'guide.h.prioned': 'Mutant prions are inside you: they poison you every second, and when you die you become a mutant drone. Inject an antibody kit (Medical Supplies) to force them dormant; they clear after 46 s. Do not die before then.',
+  'guide.h.prioned': 'Mutant prions are inside you: they poison you every second, and when you die you become a mutant spawn. Inject an antibody kit (Medical Supplies) to force them dormant; they clear after 46 s. Do not die before then.',
 
   // ───── Researcher PhD ─────
   'play1.phd': '{name} ({desc})',
-  'play1.reveal.phd': 'PhD: {name} — {desc}',
-  'play1.help.phd': 'Your doctorate is {name}: {desc}',
+  'play1.reveal.phd': '{name}: {desc}',
+  'play1.help.phd': 'You hold a {name}: {desc}',
 }

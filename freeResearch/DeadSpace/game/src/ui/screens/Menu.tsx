@@ -126,6 +126,17 @@ export function Menu() {
   const [showSettings, setShowSettings] = useState(false)
   const [showPractice, setShowPractice] = useState(false)
   const connecting = screen.value === 'connecting'
+  // 連線中按 Esc 等同按「取消」（設定、練習對話框、圖鑑開著時 Esc 留給它們關閉自己）
+  useEffect(() => {
+    if (!connecting) return
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || showSettings || showPractice || codexOpen.value) return
+      e.preventDefault()
+      cancelJoin()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [connecting, showSettings, showPractice])
   const profile = () => ({ name: name.trim() || 'Crew', color })
   const validCode = code.length === 5 && [...code.toUpperCase()].every((ch) => ROOM_ALPHABET.includes(ch))
   return (

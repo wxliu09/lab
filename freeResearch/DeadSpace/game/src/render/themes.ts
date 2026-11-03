@@ -16,9 +16,15 @@ export interface Theme {
   ambient: number
   lightScale: number
   grade: { hue: number; sat: number; bright: number; contrast: number }
+  /** 漂浮塵埃色（有設才撒一層低密度的漂浮粒子）*/
   dust?: string
-  /** 地板烘焙補光強度（0 = 不補）：依房間燈位置在地板頂點加一層暗光，暗站在 low 畫質也讀得出地板 */
+  /**
+   * 烘焙補光強度（不設 = 不補，室外站）：站體建構時依房間與房間燈烘一張補光圖，所有站內材質取樣後當成間接光加上去，
+   * 燈光池（low 4 盞）照不到的地方也讀得出地板、牆與單位。
+   */
   fill?: number
+  /** 補光的破損程度 0..1：用低頻雜訊挖暗一部分（斷電的廢站）*/
+  fillNoise?: number
   /** 室外站：圍著這些房間類型的牆是人造的（筆直混凝土牆＋金屬壓條），其餘是自然岩壁 */
   built?: { rooms: string[]; wall: string; cap: string; trim: string }
 }
@@ -27,7 +33,7 @@ export const THEMES: Record<string, Theme> = {
   nyx: {
     wall: '#9aa7b2',
     wallAccent: '#33ffd1',
-    hull: '#20262d',
+    hull: '#2a323a',
     trim: '#c9d3da',
     floor: {
       corridor: { variant: 'grate', tint: '#59626b' },
@@ -47,8 +53,10 @@ export const THEMES: Record<string, Theme> = {
     light: '#e8f6ff',
     ambientSky: '#1b2633',
     ambientGround: '#0b0d10',
-    ambient: 0.9,
+    ambient: 2.6,
     lightScale: 1,
+    // 潔淨的研究站：補光最足（燈色偏白，正規化後本來就亮，數值不必拉高）
+    fill: 0.52,
     grade: { hue: 0, sat: 0.02, bright: 0, contrast: 0.06 },
   },
 }
@@ -59,7 +67,8 @@ THEMES.ship = {
   wallAccent: '#7fd8ff',
   floor: { cabin: { variant: 'grate', tint: '#4a525a' } },
   defaultFloor: { variant: 'grate', tint: '#4a525a' },
-  ambient: 0.8,
+  ambient: 2.4,
+  fill: 0.55,
 }
 
 // ───── 其餘地點（美術聖經 §3.3：每一站都要長得不一樣）─────
@@ -68,7 +77,7 @@ THEMES.ship = {
 THEMES.adjudicatrix = {
   wall: '#56657f',
   wallAccent: '#ffb000',
-  hull: '#121a28',
+  hull: '#1e2a3e',
   trim: '#8ea0bd',
   floor: {
     corridor: { variant: 'grate', tint: '#3b475a' },
@@ -86,10 +95,10 @@ THEMES.adjudicatrix = {
   light: '#dce8ff',
   ambientSky: '#26365a',
   ambientGround: '#07090e',
-  ambient: 1.15,
+  ambient: 3,
   lightScale: 1,
-  // 大房間（鑄造廠 17 m）只配一盞頂燈，聚光燈邊緣以外很暗：補一層地板暗光
-  fill: 0.45,
+  // 大房間（鑄造廠 17 m）只配一盞頂燈，聚光燈邊緣以外很暗：靠補光讀出地板
+  fill: 0.8,
   grade: { hue: -0.02, sat: 0.04, bright: 0, contrast: 0.08 },
 }
 
@@ -97,7 +106,7 @@ THEMES.adjudicatrix = {
 THEMES.tenshu = {
   wall: '#5a524b',
   wallAccent: '#ff7a2a',
-  hull: '#121110',
+  hull: '#262320',
   trim: '#9a6a44',
   floor: {
     cannon: { variant: 'grate', tint: '#4a4540' },
@@ -114,10 +123,10 @@ THEMES.tenshu = {
   light: '#ffd8b8',
   ambientSky: '#4a3626',
   ambientGround: '#0a0806',
-  ambient: 1.2,
+  ambient: 3,
   lightScale: 1.3,
-  // 黑＋橘：橘色暗光讓地板讀得出來，燈與燈之間仍是暗的
-  fill: 0.5,
+  // 黑＋橘：橘色暗光讓地板讀得出來，燈與燈之間仍偏暗
+  fill: 0.7,
   grade: { hue: 0.02, sat: 0.06, bright: -0.01, contrast: 0.12 },
 }
 
@@ -125,7 +134,7 @@ THEMES.tenshu = {
 THEMES.hulk7 = {
   wall: '#6e5444',
   wallAccent: '#ff8a3a',
-  hull: '#1a1410',
+  hull: '#2a221b',
   trim: '#7a5a40',
   floor: {
     derelict: { variant: 'plate', tint: '#4b3d33' },
@@ -134,10 +143,11 @@ THEMES.hulk7 = {
   light: '#d8b890',
   ambientSky: '#30241a',
   ambientGround: '#060504',
-  ambient: 0.9,
+  ambient: 2.2,
   lightScale: 0.7,
-  // 斷電的廢站：只補很淡的一層，保留黑暗感（緊急照明燈道具另外提供光點）
-  fill: 0.5,
+  // 斷電的廢站：全站最暗、補光破碎不均，保留黑暗感（緊急照明燈道具另外提供光點）
+  fill: 0.6,
+  fillNoise: 0.6,
   grade: { hue: 0.03, sat: -0.12, bright: -0.03, contrast: 0.14 },
   dust: '#c8a070',
 }
@@ -146,7 +156,7 @@ THEMES.hulk7 = {
 THEMES.bravado = {
   wall: '#5d646b',
   wallAccent: '#ff3b3b',
-  hull: '#15181c',
+  hull: '#252a30',
   trim: '#9aa2aa',
   floor: {
     corridor: { variant: 'grate', tint: '#3d4248' },
@@ -165,8 +175,9 @@ THEMES.bravado = {
   light: '#e4e8ec',
   ambientSky: '#38282e',
   ambientGround: '#09090b',
-  ambient: 1.1,
+  ambient: 2.8,
   lightScale: 1,
+  fill: 0.72,
   grade: { hue: 0, sat: -0.04, bright: 0, contrast: 0.1 },
 }
 
@@ -174,7 +185,7 @@ THEMES.bravado = {
 THEMES.caldera = {
   wall: '#8c7a46',
   wallAccent: '#ffd23d',
-  hull: '#1b1710',
+  hull: '#2c261b',
   trim: '#c9a23a',
   floor: {
     furnace: { variant: 'grate', tint: '#4a4236' },
@@ -190,8 +201,9 @@ THEMES.caldera = {
   light: '#ffe8c0',
   ambientSky: '#3a2e1c',
   ambientGround: '#080604',
-  ambient: 1.1,
+  ambient: 2.8,
   lightScale: 1,
+  fill: 0.75,
   grade: { hue: 0.03, sat: 0.06, bright: 0, contrast: 0.1 },
   dust: '#d8b070',
 }
@@ -200,7 +212,7 @@ THEMES.caldera = {
 THEMES.vivarium = {
   wall: '#7f9488',
   wallAccent: '#33ffd1',
-  hull: '#121a17',
+  hull: '#1f2c27',
   trim: '#a8c4b6',
   floor: {
     hangar: { variant: 'concrete', tint: '#4b534f' },
@@ -214,8 +226,9 @@ THEMES.vivarium = {
   light: '#e0fff0',
   ambientSky: '#1e3a2c',
   ambientGround: '#050907',
-  ambient: 1.15,
+  ambient: 2.8,
   lightScale: 1,
+  fill: 0.6,
   grade: { hue: 0.02, sat: 0.05, bright: 0, contrast: 0.08 },
 }
 
@@ -223,7 +236,7 @@ THEMES.vivarium = {
 THEMES.portage = {
   wall: '#8a96a4',
   wallAccent: '#6fb8ff',
-  hull: '#141a22',
+  hull: '#222c38',
   trim: '#c6d2de',
   floor: {
     teleport: { variant: 'tile', tint: '#2f3a4a' },
@@ -237,8 +250,9 @@ THEMES.portage = {
   light: '#e8f4ff',
   ambientSky: '#24344e',
   ambientGround: '#07090d',
-  ambient: 1.15,
+  ambient: 2.8,
   lightScale: 1,
+  fill: 0.58,
   grade: { hue: -0.02, sat: 0.05, bright: 0.01, contrast: 0.06 },
 }
 
@@ -304,8 +318,10 @@ THEMES.uo = {
   light: '#c8a0ff',
   ambientSky: '#3a2650',
   ambientGround: '#0a1408',
-  ambient: 1.0,
+  ambient: 2.6,
   lightScale: 0.8,
+  // 有機腔室：紫色底光偏暗，肉壁血管自己發光
+  fill: 0.9,
   grade: { hue: 0.05, sat: 0.1, bright: -0.02, contrast: 0.14 },
 }
 
@@ -313,7 +329,7 @@ THEMES.uo = {
 THEMES.pirate = {
   wall: '#6a4a44',
   wallAccent: '#ff4a3a',
-  hull: '#1a1110',
+  hull: '#2c1e1c',
   trim: '#8a5a4a',
   floor: {
     hangar: { variant: 'concrete', tint: '#4a403c' },
@@ -328,8 +344,9 @@ THEMES.pirate = {
   light: '#ffc0a8',
   ambientSky: '#40201a',
   ambientGround: '#080404',
-  ambient: 1.05,
+  ambient: 2.6,
   lightScale: 0.95,
+  fill: 0.78,
   grade: { hue: 0.02, sat: 0.08, bright: -0.02, contrast: 0.12 },
   dust: '#b07a5a',
 }

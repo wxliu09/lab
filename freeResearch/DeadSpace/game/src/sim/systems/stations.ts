@@ -14,7 +14,8 @@ import { regScript } from './effects'
 import { tenshuDischarged } from './events'
 import { moveBy } from './movement'
 import { issue } from './orders'
-import { setPilot, spaceOf } from './space'
+import { setPilot, spaceOf, zoneLabel } from './space'
+import { locArgs } from '../../shared/sysArgs'
 
 // ───────── 數值（公尺／秒；原作 world units ÷ 100）─────────
 
@@ -99,11 +100,15 @@ function spaceEntOf(g: Game, key: string): Ent | undefined {
   return z ? g.world.get(z.spaceEnt) : undefined
 }
 
-function stName(g: Game, e: Ent, l: 'zh' | 'en' = 'zh'): string {
+/** 太空中的站點／船艇的名稱參數（兩種語言都送；同型船加 #編號，見 space.ts 的 zoneLabel）*/
+function stName(g: Game, e: Ent): Record<string, string> {
   const zid = e.data.interior as number | undefined
   const z = zid !== undefined ? g.world.zones[zid] : undefined
-  return z?.station?.name[l] ?? e.def.name[l]
+  return locArgs(z?.station ? zoneLabel(g, z) : e.def.name)
 }
+
+/** zone 的站名參數（兩種語言都送）*/
+const zName = (z: Zone | undefined): Record<string, string> => locArgs(z?.station?.name)
 
 function clampSpace(v: number, margin = 1): number {
   return Math.max(-SPACE_HALF + margin, Math.min(SPACE_HALF - margin, v))
@@ -159,8 +164,8 @@ regScript('st.cannon', (g, ctx) => {
   // 站體供能：主砲冷卻 220 → 160
   if ((g.data.power as { mode?: string } | undefined)?.mode === 'station') st.cds.set('st.cannon', g.time + CANNON_CD_POWERED)
   fireOrb(g, st, t)
-  g.systemAll('st.cannonFired', { name: stName(g, t) })
-  g.log(fmtKey('tl.cannon', { nz: stName(g, t), ne: stName(g, t, 'en') }))
+  g.systemAll('st.cannonFired', stName(g, t))
+  g.log(fmtKey('tl.cannon', stName(g, t)))
 })
 
 function stepOrbs(g: Game, dt: number): void {
@@ -221,8 +226,7 @@ regScript('st.antimatter', (g, ctx) => {
   const t = ctx.target
   if (!t) return
   st.abilities = st.abilities.filter((a) => a !== 'st.antimatter')
-  const name = stName(g, t)
-  g.systemAll('st.atmLock', { name, s: ATM_DELAY })
+  g.systemAll('st.atmLock', { ...stName(g, t), s: ATM_DELAY })
   g.emitFx({ k: 'atmLock', z: SPACE_ZONE, x: t.x, y: t.y, e: t.id, v: ATM_DELAY })
   g.after(ATM_DELAY, () => {
     if (!t.alive || t.zone !== SPACE_ZONE) return
@@ -369,7 +373,7 @@ regScript('st.portTarget', (g, ctx) => {
     return
   }
   g.world.zones[own].data.portTarget = tz.id
-  sayPilot(g, st, 'st.portTargetSet', { name: tz.station?.name.zh ?? '' })
+  sayPilot(g, st, 'st.portTargetSet', zName(tz))
 })
 
 /** 站在傳送台（9 格）上的單位 */
@@ -431,7 +435,7 @@ regScript('st.portActivate', (g, ctx) => {
       sendTo(g, e, dest, at, i)
       applyBuff(g, e, 'bf.portArrive', 5)
       g.emitFx({ k: 'portArrive', z: dest.id, x: e.x, y: e.y, e: e.id })
-      if (e.isMain && e.owner >= 0) g.privateLine(e.owner, 'st.portArrived', { name: dest.station?.name.zh ?? '' })
+      if (e.isMain && e.owner >= 0) g.privateLine(e.owner, 'st.portArrived', zName(dest))
     })
   })
 })
@@ -486,7 +490,7 @@ regScript('st.cordon', (g, ctx) => {
   }
   g.emitFx({ k: 'cordonBeam', z: SPACE_ZONE, x: c.x, y: c.y, x2: t.x, y2: t.y, e: c.id, e2: t.id })
   for (const s of mainsIn(g, z.id)) g.privateLine(s, 'st.cordoned', { s: CORDON_LOCK })
-  sayPilot(g, c, 'st.cordonOk', { name: z.station?.name.zh ?? '', n })
+  sayPilot(g, c, 'st.cordonOk', { ...zName(z), n })
 })
 
 regScript('st.neurotoxStart', (g, ctx) => {
@@ -499,7 +503,7 @@ regScript('st.neurotoxStart', (g, ctx) => {
   }
   c.data.neuroStart = g.time
   c.data.neuroZone = zid
-  sayPilot(g, c, 'st.neurotoxOn', { name: g.world.zones[zid].station?.name.zh ?? '' })
+  sayPilot(g, c, 'st.neurotoxOn', zName(g.world.zones[zid]))
 })
 
 regScript('st.neurotoxTick', (g, ctx) => {
@@ -584,7 +588,7 @@ regScript('grav.pickTarget', (g, ctx) => {
     return
   }
   d.data.gravTarget = t.id
-  if (d.owner >= 0) g.privateLine(d.owner, 'fac.gravTargetOk', { name: stName(g, t) })
+  if (d.owner >= 0) g.privateLine(d.owner, 'fac.gravTargetOk', stName(g, t))
 })
 
 function endUplink(g: Game, d: Ent): void {
@@ -612,7 +616,7 @@ regScript('grav.push', (g, ctx) => {
   }
   const dur = (4 * gravPv(t)) / 100
   stationsOf(g).pushes.push({ id: t.id, dx, dy, t0: g.time, dur })
-  g.systemAll('fac.gravActivated', { name: stName(g, t) })
+  g.systemAll('fac.gravActivated', stName(g, t))
   g.emitFx({ k: 'gravCorrection', z: SPACE_ZONE, x: t.x, y: t.y, x2: t.x + dx * 4, y2: t.y + dy * 4, e: t.id, v: dur })
   endUplink(g, d)
 })

@@ -6,6 +6,13 @@ import { LAST_WORDS } from '../../src/sim/systems/chat'
 import { FORMS, UNITS } from '../../src/shared/content/registry'
 import { hasString, lang, listJoin, stringKeys, sysText, t } from '../../src/ui/i18n'
 import type { ChatLine, HostMsg } from '../../src/shared/protocol/messages'
+import { fmtKey } from '../../src/sim/game'
+import { destroyInterior, setPilot } from '../../src/sim/systems/space'
+import { giveItem, makeItem } from '../../src/sim/systems/items'
+import { spawnCreature } from '../../src/sim/ai/creatures'
+import { NEUTRAL, type Ent } from '../../src/sim/ent'
+import { itemDef } from '../../src/shared/content/registry'
+import { sampleUnitToken } from '../../src/shared/sysArgs'
 
 afterEach(() => {
   lang.value = 'zh'
@@ -100,5 +107,81 @@ describe('英文用語與格式', () => {
   it('.one 單數字串都有對應的複數原字串', () => {
     const orphans = stringKeys('en').filter((k) => k.endsWith('.one') && !hasString('en', k.slice(0, -4)))
     expect(orphans).toEqual([])
+  })
+})
+
+describe('英文介面的系統訊息不夾中文地名／房名／形態名（UI 審查第 2 輪）', () => {
+  const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/
+
+  it('站點、船艇、房間、驗血名單、清單：兩種語言都送，en 的 sysText 不含 CJK，zh 照舊是中文', () => {
+    const { h, g, ps } = setup()
+    const texts: string[] = []
+    // 攔下 sim 送出的每一則系統訊息、私人訊息、時間軸與 AI 發言（已是 `@key|k=v` 格式）
+    const sa = g.systemAll.bind(g)
+    g.systemAll = (k, a) => (texts.push(fmtKey(k, a)), sa(k, a))
+    const pl = g.privateLine.bind(g)
+    g.privateLine = (s, k, a) => (texts.push(fmtKey(k, a)), pl(s, k, a))
+    const lg = g.log.bind(g)
+    g.log = (t) => (texts.push(t), lg(t))
+    const hc = g.handleChat.bind(g)
+    g.handleChat = (s, ch, t, to) => (texts.push(t), hc(s, ch, t, to))
+    const run = (name: string, caster: Ent, target?: Ent, x = 0, y = 0) => g.script(name)!(g, { caster, target, x, y, zone: caster.zone }, {})
+    const slot = ps[0].slot
+    const me = g.mainOf(ps[0])!
+    // 太空中的站點（人數少時不是每一站都在）：腳本不檢查施放者是哪一站，挑現有的站就好
+    const st = g.world.zones.filter((z) => z.station && !z.data.ship && g.world.get(z.spaceEnt)).map((z) => g.world.get(z.spaceEnt)!)
+    expect(st.length).toBeGreaterThan(3)
+    // 同型船（兩艘以上同名）：時間軸與公告要加 #編號
+    const dupe = g.world.zones.filter((z) => z.station && g.world.zones.filter((q) => q.station?.name.zh === z.station!.name.zh).length > 1)
+    expect(dupe.length).toBeGreaterThan(1)
+    const [a, b, c, d] = st
+    a.owner = slot
+    setPilot(g, a, me)
+    run('st.cannon', a, b)
+    run('st.antimatter', a, c)
+    run('st.portTarget', a, d)
+    run('st.cordon', a, b)
+    run('st.neurotoxStart', a, c)
+    run('grav.pickTarget', a, d)
+    run('space.sweep', a)
+    run('space.scan', a, b)
+    // 驗血報告：玩家名稱＋匿名形態（存成標記，依語言換成形態名）
+    const form = UNITS.get('xeno.cocoon')!
+    const resolver = g.world.spawn(UNITS.get('npc.pacifier')!, me.zone, me.x, me.y, NEUTRAL)
+    resolver.data.sample = { slots: [ps[1].slot], names: [ps[1].name, sampleUnitToken(form.id)], r: 1 }
+    run('git.results', me, resolver)
+    g.world.remove(resolver)
+    // 聊天指令的名單
+    g.handleChat(slot, 'all', '-names')
+    // 背包掃描器：道具名稱依語言
+    const q = g.mainOf(ps[1])!
+    q.inv!.fill(null)
+    giveItem(g, q, makeItem('stim'))
+    run('item.invScan', me, q)
+    // NPC 船員發現屍體：站名＋房名
+    const victim = g.mainOf(ps[2])!
+    const crew = spawnCreature(g, 'npc.crew', victim.zone, victim.x - 1.5, victim.y)!
+    crew.data.crew = true
+    crew.data.nextPatrol = 1e9
+    g.killEnt(victim, null, -1)
+    h.ticks(12 * 20)
+    // 擊毀一艘同型船（全場公告＋時間軸）
+    destroyInterior(g, dupe[1].id, null)
+    h.ticks(2)
+    const keys = new Set(texts.map((s) => s.slice(1).split('|')[0]))
+    for (const k of ['space.accessGranted', 'st.cannonFired', 'tl.cannon', 'st.atmLock', 'st.portTargetSet', 'st.cordonOk', 'st.neurotoxOn', 'fac.gravTargetOk', 'space.sweepAnnounce', 'git.report.clean', 'chat.names', 'item.scanResult', 'npc.bodyFound', 'space.destroyed', 'tl.destroyed']) expect([k, keys.has(k)]).toEqual([k, true])
+    const sys = texts.filter((s) => s.startsWith('@'))
+    lang.value = 'en'
+    const bad = sys.map((s) => [s, sysText(s)]).filter(([, s]) => CJK.test(s) || /\{\w+\}/.test(s))
+    expect(bad).toEqual([])
+    const en = (k: string) => sysText(sys.find((s) => s.startsWith('@' + k + '|'))!)
+    expect(en('git.report.clean')).toContain(`${ps[1].name}, ${form.name.en}`)
+    expect(en('item.scanResult')).toContain(itemDef('stim')!.name.en)
+    expect(en('tl.destroyed')).toMatch(/ #2 was destroyed$/)
+    lang.value = 'zh'
+    const zh = (k: string) => sysText(sys.find((s) => s.startsWith('@' + k + '|'))!)
+    expect(zh('git.report.clean')).toContain(`${ps[1].name}、${form.name.zh}`)
+    expect(zh('space.destroyed')).toBe(`${dupe[1].station!.name.zh} #2 被摧毀了！`)
+    expect(CJK.test(zh('npc.bodyFound'))).toBe(true)
   })
 })

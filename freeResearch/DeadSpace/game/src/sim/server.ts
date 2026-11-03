@@ -8,6 +8,8 @@ import { Rng } from '../shared/rng'
 import { Game, type GameInit } from './game'
 
 export const LOCAL_PEER = 'local'
+/** 開局等玩家載入的上限（秒，server 時間）：有人卡住也不會讓整局停著 */
+export const LOAD_WAIT_S = 25
 
 export interface ServerIO {
   send(peer: string, data: Uint8Array): void
@@ -67,6 +69,11 @@ export class GameServer {
   private games = 0
   private rng: Rng
   hostHidden = false
+  /** 開局時等玩家回報載入完成（正式環境由 worker 打開；單元測試的 Harness 不等）*/
+  waitClients = false
+  /** 還沒回報載入完成的玩家 slot；null = 不在等 */
+  private loading: Set<number> | null = null
+  private loadDeadline = 0
 
   constructor(
     readonly code: string,
@@ -157,6 +164,9 @@ export class GameServer {
       case 'start':
         if (!isHost || this.phase !== 'lobby') return
         this.startGame(msg.role)
+        break
+      case 'loaded':
+        this.loading?.delete(slot)
         break
       case 'kick': {
         if (!isHost || msg.slot === slot) return
@@ -328,6 +338,11 @@ export class GameServer {
     this.phase = 'game'
     this.game = new Game(init)
     this.games++
+    // 等連線中的真人都載入完（建場景、畫出第一個畫面）才開始推進：慢的電腦不會一進場就少掉一兩分鐘
+    if (this.waitClients) {
+      this.loading = new Set(roster.filter((p) => !p.bot && p.peer !== null).map((p) => p.slot))
+      this.loadDeadline = this.now + LOAD_WAIT_S
+    }
     this.lobbyDirty = true
   }
 
@@ -350,6 +365,8 @@ export class GameServer {
     }
     if (this.game) {
       this.game.hostHidden = this.hostHidden
+      if (this.loading && (this.loading.size === 0 || this.now >= this.loadDeadline)) this.loading = null
+      this.game.hold = !!this.loading
       this.game.step()
     }
     if (this.lobbyDirty) {

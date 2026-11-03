@@ -7,10 +7,10 @@ import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 import type { ClientWorld, CEnt } from '../client/world'
 import type { SceneLike } from './engine'
 import { RtsCamera } from './camera'
-import { buildStation, updateDoors, type StationView } from './stationBuilder'
+import { buildStation, updateDoors, type RoomLight, type StationView } from './stationBuilder'
 import { FogMap } from './fog'
 import { UnitLayer } from './units'
-import { fogUniforms } from './materials'
+import { fogUniforms, emergencyStripMat } from './materials'
 import { isSoftwareGl, preset } from './quality'
 import { Fx } from './fx'
 import '../shared/content/index'
@@ -58,6 +58,19 @@ export function stationDefOf(id: string): StationDef | undefined {
   return STATION_BY_ID.get(id)
 }
 
+/** 燈光池的一個槽位：cur = 目前照著的房間燈，next = 要換過去的（不同時先淡出）、w = 淡入程度 */
+interface PoolSlot {
+  l: THREE.SpotLight | THREE.PointLight
+  cur: RoomLight | null
+  next: RoomLight | null
+  w: number
+}
+
+/** 緊急照明：燈光、補光、環境光的目標色 */
+const EMERGENCY = new THREE.Color('#ff2a18')
+const EMERGENCY_FILL = new THREE.Color(1, 0.16, 0.1)
+const EMERGENCY_SKY = new THREE.Color('#3a0806')
+
 export class GameScene implements SceneLike {
   readonly scene = new THREE.Scene()
   readonly rts = new RtsCamera()
@@ -68,8 +81,14 @@ export class GameScene implements SceneLike {
   private views = new Map<number, StationView>()
   private fogs = new Map<number, FogMap>()
   zone = -1
-  private pool: (THREE.SpotLight | THREE.PointLight)[] = []
+  /** 燈光池：固定數量的即時光源，輪流借給離鏡頭最近的房間燈（換燈時約 0.3 秒淡出再淡入）*/
+  private pool: PoolSlot[] = []
   private hemi: THREE.HemisphereLight
+  /** 目前 zone 的主題環境光（緊急照明時改暗紅）*/
+  private hemiBase = { sky: new THREE.Color(), ground: new THREE.Color(), k: 0 }
+  /** 目前 zone 是否在緊急照明（0..1 淡入淡出）*/
+  private emK = 0
+  private emOn = false
   private flash: THREE.SpotLight
   private flashTarget = new THREE.Object3D()
   private fogT = 0
@@ -116,11 +135,11 @@ export class GameScene implements SceneLike {
         l.shadow.camera.near = 0.5
         l.shadow.camera.far = 14
         this.scene.add(l, l.target)
-        this.pool.push(l)
+        this.pool.push({ l, cur: null, next: null, w: 0 })
       } else {
         const l = new THREE.PointLight('#ffffff', 0, 12, 1.6)
         this.scene.add(l)
-        this.pool.push(l)
+        this.pool.push({ l, cur: null, next: null, w: 0 })
       }
     }
     this.flash = new THREE.SpotLight('#fff2dc', 0, 16, Math.PI * 0.16, 0.5, 1.2)
@@ -342,6 +361,8 @@ export class GameScene implements SceneLike {
         this.hemi.color.set('#22304a')
         this.hemi.groundColor.set('#05060a')
         this.hemi.intensity = 0.7
+        this.hemiBase.k = 0
+        fogUniforms.uFillOn.value = 0
         this.rts.setBounds(-49, -49, 49, 49)
         this.rts.minDist = 22
         this.rts.maxDist = 95
@@ -360,6 +381,22 @@ export class GameScene implements SceneLike {
     this.hemi.color.set(th.ambientSky)
     this.hemi.groundColor.set(th.ambientGround)
     this.hemi.intensity = th.ambient
+    this.hemiBase.sky.set(th.ambientSky)
+    this.hemiBase.ground.set(th.ambientGround)
+    this.hemiBase.k = th.ambient
+    fogUniforms.uFillTex.value = v.fill
+    fogUniforms.uFillOn.value = v.fill ? 1 : 0
+    fogUniforms.uFillTint.value.setRGB(1, 1, 1)
+    // 換站：燈光池從暗處淡入，不沿用上一站的燈
+    for (const s of this.pool) {
+      s.cur = s.next = null
+      s.w = 0
+      s.l.intensity = 0
+    }
+    this.lightT = 0
+    this.emK = 0
+    this.emOn = false
+    this.setStrips(v, false)
     this.grade = th.grade
     this.rts.setBounds(0, 0, info.layout.w, info.layout.h)
     this.units.clear()
@@ -448,32 +485,16 @@ export class GameScene implements SceneLike {
     }
     this.units.sync(w.ents.values(), zid, (e) => this.isStaticStructure(e), dt, t)
     updateBuffFx(this, dt, t)
-    // 燈光池：離鏡頭最近的房間燈
-    this.lightT -= dt
-    if (view && this.lightT <= 0) {
-      this.lightT = 0.25
-      const cx = this.rts.tx
-      const cy = this.rts.ty
-      const sorted = [...view.lights].sort((a, b) => (a.x - cx) ** 2 + (-a.z - cy) ** 2 - ((b.x - cx) ** 2 + (-b.z - cy) ** 2))
-      for (let i = 0; i < this.pool.length; i++) {
-        const l = this.pool[i]
-        const rl = sorted[i]
-        if (!rl) {
-          l.intensity = 0
-          continue
-        }
-        l.color.copy(rl.color)
-        l.distance = rl.distance
-        if (l instanceof THREE.SpotLight) {
-          l.position.set(rl.x, rl.y, rl.z)
-          l.target.position.set(rl.x, 0, rl.z)
-          l.intensity = rl.intensity
-          l.angle = Math.min(1.2, Math.atan(rl.distance / rl.y) * 0.95)
-        } else {
-          l.position.set(rl.x, 2.1, rl.z)
-          l.intensity = rl.intensity * 0.7
-        }
+    // 燈光池：離鏡頭最近的房間燈；緊急照明（站點斷電）時整站轉暗紅、慢速脈動
+    if (view) {
+      const info = this.zones.get(zid)
+      const em = !!info && !!w.w.pw?.includes(info.key)
+      if (em !== this.emOn) {
+        this.emOn = em
+        this.setStrips(view, em)
       }
+      this.emK += Math.sign((em ? 1 : 0) - this.emK) * Math.min(Math.abs((em ? 1 : 0) - this.emK), dt * 1.5)
+      this.updatePool(view, dt, t)
     }
     // 手電筒：只有自己的人形單位
     const me = this.units.views.get(mine?.s.i ?? -1)
@@ -489,6 +510,92 @@ export class GameScene implements SceneLike {
     this.rts.update(dt, window.innerWidth, window.innerHeight)
   }
 
+  /** 依鏡頭位置分配燈光池（每 0.25 秒）並做淡入淡出、緊急照明色調（每幀）*/
+  private updatePool(view: StationView, dt: number, t: number): void {
+    this.lightT -= dt
+    if (this.lightT <= 0) {
+      this.lightT = 0.25
+      const cx = this.rts.tx
+      const cy = this.rts.ty
+      const d2 = (a: RoomLight) => (a.x - cx) ** 2 + (-a.z - cy) ** 2
+      const sorted = [...view.lights].sort((a, b) => d2(a) - d2(b))
+      // 前兩盞給投影的 spot、其餘給點光；同一組裡已經在用的燈留在原本的槽位，只替換掉出名單的
+      const nSpot = this.pool.filter((p) => p.l instanceof THREE.SpotLight).length
+      for (const [slots, want] of [
+        [this.pool.slice(0, nSpot), sorted.slice(0, nSpot)],
+        [this.pool.slice(nSpot), sorted.slice(nSpot, this.pool.length)],
+      ] as const) {
+        const keep = new Set<RoomLight>()
+        for (const s of slots) {
+          if (s.next && want.includes(s.next) && !keep.has(s.next)) keep.add(s.next)
+          else if (s.cur && want.includes(s.cur) && !keep.has(s.cur)) {
+            // 還沒熄滅就又進名單：直接淡回來
+            s.next = s.cur
+            keep.add(s.cur)
+          } else s.next = null
+        }
+        const add = want.filter((rl) => !keep.has(rl))
+        for (const s of slots) if (!s.next) s.next = add.shift() ?? null
+      }
+    }
+    const FADE = 1 / 0.3
+    const em = this.emK
+    const pulse = 0.78 + 0.22 * Math.sin(t * 1.6)
+    for (const s of this.pool) {
+      const l = s.l
+      if (s.next !== s.cur) {
+        // 換燈：先淡出，熄滅後才搬到新位置再淡入
+        s.w = Math.max(0, s.w - dt * FADE)
+        if (s.w <= 0) {
+          s.cur = s.next
+          const rl = s.cur
+          if (rl) {
+            l.distance = rl.distance
+            if (l instanceof THREE.SpotLight) {
+              l.position.set(rl.x, rl.y, rl.z)
+              l.target.position.set(rl.x, 0, rl.z)
+              l.angle = Math.min(1.2, Math.atan(rl.distance / rl.y) * 0.95)
+            } else l.position.set(rl.x, 2.1, rl.z)
+          }
+        }
+      } else if (s.cur) s.w = Math.min(1, s.w + dt * FADE)
+      const rl = s.cur
+      if (!rl) {
+        l.intensity = 0
+        continue
+      }
+      // 平滑的淡入淡出曲線
+      const e = s.w * s.w * (3 - 2 * s.w)
+      const base = rl.intensity * (l instanceof THREE.SpotLight ? 1 : 0.7)
+      l.color.copy(rl.color)
+      if (em > 0) l.color.lerp(EMERGENCY, em)
+      l.intensity = base * e * (1 - em * (1 - 0.32 * pulse))
+    }
+    // 補光圖與環境光跟著轉紅
+    const hb = this.hemiBase
+    if (hb.k > 0) {
+      if (em > 0) {
+        fogUniforms.uFillTint.value.setRGB(1, 1, 1).lerp(EMERGENCY_FILL, em).multiplyScalar(1 - em * (1 - 0.45 * pulse))
+        this.hemi.color.copy(hb.sky).lerp(EMERGENCY_SKY, em)
+        this.hemi.groundColor.copy(hb.ground)
+        this.hemi.intensity = hb.k * (1 - em * 0.4)
+      } else {
+        fogUniforms.uFillTint.value.setRGB(1, 1, 1)
+        this.hemi.color.copy(hb.sky)
+        this.hemi.intensity = hb.k
+      }
+    }
+    if (em > 0) emergencyStripMat.emissiveIntensity = 0.6 + 1.6 * pulse
+  }
+
+  /** 牆面燈條換成（或換回）緊急照明的紅色材質 */
+  private setStrips(view: StationView, em: boolean): void {
+    for (const m of view.strips) {
+      if (!m.userData.mat) m.userData.mat = m.material
+      m.material = em ? emergencyStripMat : (m.userData.mat as THREE.Material)
+    }
+  }
+
   dispose(): void {
     this.disposed = true
     this.cancelIdle?.()
@@ -502,9 +609,11 @@ export class GameScene implements SceneLike {
     this.units.clear()
     this.fx.clear()
     if (Fx.active === this.fx) Fx.active = null
-    for (const l of [...this.pool, this.flash]) if (l.castShadow) l.shadow.dispose()
+    for (const l of [...this.pool.map((p) => p.l), this.flash]) if (l.castShadow) l.shadow.dispose()
     fogUniforms.uFogOn.value = 0
     fogUniforms.uFogTex.value = null
+    fogUniforms.uFillOn.value = 0
+    fogUniforms.uFillTex.value = null
     // 放掉場景圖與站點資料：就算 UI 那邊還有東西暫時留住這個物件（例如音效的最後懸停按鈕），整局的模型也能被回收
     this.scene.clear()
     this.space = null

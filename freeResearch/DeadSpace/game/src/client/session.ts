@@ -39,6 +39,8 @@ export const endResult = signal<EndResult | null>(null)
 export const notice = signal('')
 /** 最近一則主機 notice 的 key（畫面判斷用 key，不用翻譯後的字串：切換語言後仍認得出來）*/
 export const noticeKey = signal('')
+/** 收到 start 之後還沒回報 loaded */
+let loadPending = false
 export const hostConflict = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
@@ -177,6 +179,7 @@ function onHostMsg(m: HostMsg): void {
       const keep = isRestartOfSameGame(startInfo.value, m.info)
       world.reset()
       startInfo.value = m.info
+      loadPending = true
       endResult.value = null
       if (!keep) chatLog.value = []
       screen.value = 'game'
@@ -192,6 +195,11 @@ function onHostMsg(m: HostMsg): void {
     case 'snap':
       world.apply(m.s)
       snapTick.value++
+      if (loadPending) {
+        // 開局後第一份快照：等場景建好、畫出畫面（主執行緒忙完、兩個 rAF 之後）再告訴主機可以開始
+        loadPending = false
+        requestAnimationFrame(() => requestAnimationFrame(() => send({ t: 'loaded' })))
+      }
       break
     case 'chat':
       receiveChat(m.lines)

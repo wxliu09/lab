@@ -17,10 +17,14 @@ import { codexOpen } from '../ui/hud/Codex'
 let scene: GameScene | null = null
 let forced: Mood | null = null
 
-/** GameScreen 掛上場景（知道目前看的是哪個 zone、門在哪裡）*/
+/** GameScreen 掛上場景（知道目前看的是哪個 zone、門在哪裡）；離開對局（null）時也放掉最後懸停的元素，不讓它留住上一局的 HUD 與場景 */
 export function bindAudioScene(gs: GameScene | null): void {
   scene = gs
+  if (!gs) lastHover = null
 }
+
+/** 上一個發出懸停音的按鈕（同一顆不重複響）*/
+let lastHover: Element | null = null
 
 // ───────── 局勢判定 ─────────
 
@@ -336,7 +340,6 @@ function onChat(lines: ChatLine[]): void {
 }
 
 function installUiSounds(): void {
-  let lastHover: Element | null = null
   document.addEventListener(
     'pointerover',
     (e) => {

@@ -1,13 +1,21 @@
 // 材質庫：所有場景材質都經過這裡，並注入戰爭迷霧（視野外降飽和、壓暗、細掃描線）
 import * as THREE from 'three'
-import { fabricSet, floorSet, metalSet, organicSet, rockSet, rockWallSet, wallSet, type FloorVariant, type PbrSet } from './tex'
+import { fabricSet, floorSet, metalSet, organicGlowTex, organicSet, rockSet, rockWallSet, skinSet, wallSet, type FloorVariant, type PbrSet } from './tex'
 
 export const fogUniforms = {
   uFogTex: { value: null as THREE.Texture | null },
   uFogRect: { value: new THREE.Vector4(0, 0, 1, 1) },
   uFogOn: { value: 0 },
   uTime: { value: 0 },
+  /** 站內烘焙補光圖（見 stationBuilder bakeFill）：世界 XZ 平面上的線性補光色，範圍同 uFogRect */
+  uFillTex: { value: null as THREE.Texture | null },
+  uFillOn: { value: 0 },
+  /** 補光整體色調（緊急照明時轉紅、脈動）*/
+  uFillTint: { value: new THREE.Color(1, 1, 1) },
 }
+
+/** 補光圖存的是 fill / FILL_SCALE（8-bit 貼圖，shader 再乘回來）*/
+export const FILL_SCALE = 4
 
 const patched = new WeakSet<THREE.Material>()
 
@@ -38,17 +46,34 @@ export function withFog<T extends THREE.Material>(m: T): T {
         uniform sampler2D uFogTex;
         uniform vec4 uFogRect;
         uniform float uFogOn;
-        uniform float uTime;`,
+        uniform float uTime;
+        uniform sampler2D uFillTex;
+        uniform float uFillOn;
+        uniform vec3 uFillTint;`,
       )
       .replace(
         '#include <opaque_fragment>',
+        // 烘焙補光（低成本的「間接光」）：依世界位置查補光圖，沿法線往外 0.45 m 取樣（牆面取到它面向的那間房）；
+        // 朝上的面最亮、側面次之、朝下最暗。反照率先壓縮動態範圍（暗地板相對多拿一點、白色表面不會被補到發亮），
+        // 加在迷霧與 tone mapping 之前，所以視野外照樣壓暗。
+        // 記憶中的地形（視野外）：降飽和、壓到 42%（沒去過）～66%（去過）並加細掃描線（美術聖經 §5「記憶中的地形保留」）。
+        // （GLSL 內只寫 ASCII，部分驅動不接受註解裡的非 ASCII 字元）
         `#include <opaque_fragment>
+        #if defined( STANDARD ) && defined( OPAQUE )
+        if (uFillOn > 0.5) {
+          vec3 xcN = inverseTransformDirection(normal, viewMatrix);
+          vec2 xcP = vec2(vXcWorld.x + xcN.x * 0.45, -vXcWorld.z - xcN.z * 0.45);
+          vec3 xcF = texture2D(uFillTex, (xcP - uFogRect.xy) / uFogRect.zw).rgb * ${FILL_SCALE.toFixed(1)};
+          vec3 xcA = diffuseColor.rgb * (0.1 / (dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) + 0.1));
+          gl_FragColor.rgb += xcA * xcF * uFillTint * (0.72 + 0.28 * xcN.y);
+        }
+        #endif
         if (uFogOn > 0.5) {
           vec2 fuv = vec2((vXcWorld.x - uFogRect.x) / uFogRect.z, (-vXcWorld.z - uFogRect.y) / uFogRect.w);
           vec2 fv = texture2D(uFogTex, fuv).rg;
           float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
           float scan = 0.9 + 0.1 * sin(gl_FragCoord.y * 1.7 + uTime * 2.0);
-          vec3 mem = mix(vec3(lum) * vec3(0.8, 0.9, 1.05), gl_FragColor.rgb, 0.25) * (0.2 + 0.14 * fv.g) * scan;
+          vec3 mem = mix(vec3(lum) * vec3(0.8, 0.9, 1.05), gl_FragColor.rgb, 0.25) * (0.42 + 0.24 * fv.g) * scan;
           gl_FragColor.rgb = mix(mem, gl_FragColor.rgb, smoothstep(0.05, 0.95, fv.r));
         }`,
       )
@@ -60,6 +85,10 @@ export function withFog<T extends THREE.Material>(m: T): T {
 }
 
 const cache = new Map<string, THREE.Material>()
+
+/** 緊急照明的牆面燈條：gameScene 依站點供電狀態替換上去，強度每幀脈動（不 dispose）*/
+export const emergencyStripMat = withFog(new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ff2a18', emissiveIntensity: 1.6, roughness: 0.4 }))
+emergencyStripMat.userData.keep = true
 
 /** 共用材質（材質庫快取、或標記 keep／shared／pool 的）：釋放站點時不能 dispose */
 export function isSharedMaterial(m: THREE.Material): boolean {
@@ -109,41 +138,22 @@ export function withRim<T extends THREE.MeshStandardMaterial>(m: T, color = '#9f
   return m
 }
 
-/**
- * 烘焙補光：幾何帶 `xcFill`（vec3，線性色）時，把 albedo × xcFill 當自發光加上去。
- * 站體建構時依房間燈位置算好每個地板頂點的補光，暗站在 low 畫質（燈光池只有 4 盞）也讀得出地板；
- * 加在自發光，所以戰爭迷霧照樣壓暗。只給一定會帶這個 attribute 的幾何用（缺 attribute 時 WebGL 會沿用該 location 的通用值）。
- */
-function withFill<T extends THREE.MeshStandardMaterial>(m: T): T {
-  const prev = m.onBeforeCompile
-  m.onBeforeCompile = (shader, r) => {
-    prev?.call(m, shader, r)
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 xcFill;\nvarying vec3 vXcFill;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvXcFill = xcFill;')
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vXcFill;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vXcFill;')
-  }
-  const key = m.customProgramCacheKey.bind(m)
-  m.customProgramCacheKey = () => key() + ':fill'
-  return m
-}
-
 export const Mat = {
-  /** 地板；fill = 幾何帶烘焙補光 attribute（見 withFill）*/
-  floor(variant: FloorVariant, tint: string, fill = false): THREE.MeshStandardMaterial {
-    return std(`floor:${variant}:${tint}:${fill}`, () => {
+  /** 地板 */
+  floor(variant: FloorVariant, tint: string): THREE.MeshStandardMaterial {
+    return std(`floor:${variant}:${tint}`, () => {
       const soft = variant === 'concrete' || variant === 'rubber' || variant === 'grass' || variant === 'rock'
       const m = pbr(floorSet(variant, tint), { metalness: soft ? (variant === 'grass' ? 0 : 0.05) : 0.55, vertexColors: true })
       m.normalScale.set(0.8, 0.8)
-      return fill ? withFill(m) : m
+      return m
     })
   },
   /** 站內牆板；tint 以 'rock:' 開頭時改用岩壁（室外地表，accent = 苔蘚／礦脈色），'flesh:' 改用有機組織 */
   wall(tint: string, accent: string): THREE.MeshStandardMaterial {
     if (tint.startsWith('rock:')) return std(`rockwall:${tint}:${accent}`, () => pbr(rockWallSet(tint.slice(5), accent), { metalness: 0, vertexColors: true }))
-    if (tint.startsWith('flesh:')) return std(`fleshwall:${tint}:${accent}`, () => pbr(organicSet(tint.slice(6), accent), { metalness: 0, vertexColors: true }))
+    // 有機腔壁：血管紋自己發光（emissiveMap = 血管遮罩，強度由 stationBuilder 的動畫脈動）
+    if (tint.startsWith('flesh:'))
+      return std(`fleshwall:${tint}:${accent}`, () => pbr(organicSet(tint.slice(6), accent), { metalness: 0, vertexColors: true, emissive: accent, emissiveMap: organicGlowTex(), emissiveIntensity: 0.9 }))
     return std(`wall:${tint}:${accent}`, () => pbr(wallSet(tint, accent), { metalness: 0.5, vertexColors: true }))
   },
   /** 金屬；tint 以 'rock:'／'flesh:' 開頭時改用岩石／有機組織（室外地表、外星腔室的牆頂與邊緣）*/
@@ -191,14 +201,28 @@ export const Mat = {
   cloth(tint: string, rim = '#9fe7ff'): THREE.MeshStandardMaterial {
     return std(`cloth:${tint}:${rim}`, () => withRim(pbr(fabricSet(tint), { metalness: 0 }), rim, 0.45))
   },
+  /** 船殼：帶面板線與磨損的金屬（面板比一般金屬密，小船也看得到接縫）＋邊光；金屬度偏低，太空裡沒有環境反射也不會一片黑 */
+  hull(tint: string, rim = '#9fe7ff'): THREE.MeshStandardMaterial {
+    return std(`hull:${tint}:${rim}`, () => {
+      const set = metalSet(tint, 77, true)
+      for (const t of [set.map, set.roughnessMap, set.normalMap]) t.repeat.set(2.5, 2.5)
+      return withRim(pbr(set, { metalness: 0.35 }), rim, 0.35)
+    })
+  },
   armor(tint: string, rim = '#9fe7ff'): THREE.MeshStandardMaterial {
     return std(`armor:${tint}:${rim}`, () => withRim(pbr(metalSet(tint, 51, false), { metalness: 0.55 }), rim, 0.4))
   },
   rubber(tint = '#1d2024'): THREE.MeshStandardMaterial {
     return std(`rubber:${tint}`, () => pbr(metalSet(tint, 41, false), { metalness: 0, roughness: 1.4 }))
   },
+  /** 皮膚：淡雜斑底色＋粗糙度變化（不是純平色）*/
   skin(tint: string): THREE.MeshStandardMaterial {
-    return std(`skin:${tint}`, () => new THREE.MeshStandardMaterial({ color: tint, roughness: 0.62, metalness: 0 }))
+    return std(`skin:${tint}`, () => {
+      const set = skinSet(tint)
+      const m = new THREE.MeshStandardMaterial({ map: set.map, roughnessMap: set.roughnessMap, normalMap: set.normalMap, roughness: 1, metalness: 0 })
+      m.normalScale.set(0.35, 0.35)
+      return m
+    })
   },
   emissive(color: string, intensity = 3): THREE.MeshStandardMaterial {
     return std(`emi:${color}:${intensity}`, () =>

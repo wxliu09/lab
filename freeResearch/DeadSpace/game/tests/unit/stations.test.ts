@@ -71,6 +71,8 @@ describe.each(ALL_STATIONS.map((s) => [s.id, s] as const))('%s', (id, st) => {
     expect(l.h).toBeGreaterThan(20)
     expect(THEMES[st.theme]).toBeTruthy()
     expect(st.space.model).toBe('station.' + id)
+    // 室內站一律有烘焙補光（low 畫質只有 4 盞即時燈，沒有補光的站會一片黑）
+    if (!st.outdoor) expect(THEMES[st.theme].fill ?? 0).toBeGreaterThan(0.3)
   })
 
   it('所有可走格連通', () => {

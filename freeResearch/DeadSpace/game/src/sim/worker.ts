@@ -46,6 +46,7 @@ ctx.onmessage = (ev: MessageEvent<In>) => {
     try {
       // msgpackr 會重用內部 buffer：每則訊息複製成獨立 buffer 才能安全轉移所有權
       server = new GameServer(m.code, { send: (peer, data) => out.push([peer, data.slice()]) }, m.seed)
+      server.waitClients = true
     } catch (e) {
       report('init', e)
       fatal('init: ' + String(e))

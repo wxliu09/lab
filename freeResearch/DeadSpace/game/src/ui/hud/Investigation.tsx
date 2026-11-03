@@ -4,8 +4,9 @@ import { signal } from '@preact/signals'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { NoteMark } from '../../shared/protocol/messages'
 import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
-import { dialogOpen, panelChecks, typingInField } from '../../client/input'
-import { listJoin, t } from '../i18n'
+import { dialogOpen, panelChecks, targetMode, typingInField } from '../../client/input'
+import { lang, listJoin, t } from '../i18n'
+import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
 
@@ -32,7 +33,8 @@ export function NotesPanel() {
         if (dialogOpen()) return
         e.preventDefault()
         notesOpen.value = !notesOpen.value
-      } else if (e.code === 'Escape' && notesOpen.value && !typingInField()) {
+      } else if (e.code === 'Escape' && notesOpen.value && !typingInField() && !targetMode.value) {
+        // 瞄準中的 Esc 先取消瞄準（交給 Input），下一次 Esc 才關筆記
         e.stopImmediatePropagation()
         notesOpen.value = false
       }
@@ -127,7 +129,7 @@ export function NotesPanel() {
               <span class="mono dim">
                 {Math.floor(r.time / 60)}:{String(Math.floor(r.time % 60)).padStart(2, '0')}
               </span>{' '}
-              {listJoin(r.names)} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
+              {listJoin(r.names.map((n) => sampleName(n, lang.value)))} → <b style={{ color: r.result === 'clean' ? '#5cf2a5' : r.result === 'infected' ? '#ff3b3b' : '#ffc23d' }}>{t('git.' + r.result)}</b>
             </div>
           ))}
         </>

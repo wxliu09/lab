@@ -36,6 +36,15 @@ export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 export const modalChecks: (() => boolean)[] = [() => evolveOpen.value, () => menuOpen.value]
 /** 不擋快捷鍵的側邊面板（調查筆記：邊看邊操作）：開著時只停用邊緣捲動與場景懸停 */
 export const panelChecks: (() => boolean)[] = []
+/** 開著時仍可按 Enter 聊天的對話框（結算畫面：賽後聊天）；要和 modalChecks 登記同一個函式 */
+export const chatPassChecks: (() => boolean)[] = []
+/** 開著時仍可按 M 靜音的對話框（結算、出局畫面）；要和 modalChecks 登記同一個函式 */
+export const mutePassChecks: (() => boolean)[] = []
+
+/** 目前開著的對話框都在 pass 名單裡（至少開著一個）*/
+function onlyPass(pass: (() => boolean)[]): boolean {
+  return modalChecks.every((f) => !f() || pass.includes(f))
+}
 
 /** 有對話框開著：遊戲快捷鍵不處理 */
 export function dialogOpen(): boolean {
@@ -269,6 +278,11 @@ export class Input {
       // 方向鍵放開照樣送出，免得在對話框打開前按著的方向鍵卡住、鏡頭一直捲
       if (!down && e.code.startsWith('Arrow')) this.scene.rts.key(e.code, false)
       if (down && !e.repeat && evolveOpen.value && (e.code === 'Escape' || e.code === 'KeyV')) evolveOpen.value = false
+      if (down && !e.repeat && e.code === 'Enter' && onlyPass(chatPassChecks)) {
+        chatOpen.value = true
+        e.preventDefault()
+      }
+      if (down && !e.repeat && e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey && onlyPass(mutePassChecks)) setAudioPref('muted', !audioPrefs.value.muted)
       return
     }
     if (e.code.startsWith('Arrow')) {

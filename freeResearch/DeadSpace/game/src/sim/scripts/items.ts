@@ -14,6 +14,7 @@ import { canSeeStealth } from '../systems/vision'
 import { BUFFS, ITEMS, UNITS, itemDef, unitDef } from '../../shared/content/registry'
 import { FRAG_BLAST, GRENADE_FUSE, MODULE_TARGET, RUMMAGE_TABLE } from '../../shared/content/items'
 import { DOOR_HACK_SECONDS, DOOR_REACH } from '../../shared/content/classAbilities'
+import { listArgs, locArgs } from '../../shared/sysArgs'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import type { Game } from '../game'
 import { SPACE_ZONE } from '../world'
@@ -895,8 +896,11 @@ regScript('item.invScan', (g, ctx) => {
   if (!t || u.owner < 0) return
   const items = (t.inv ?? []).filter((it) => !!it).map((it) => it!.id)
   const who = shownName(t)
-  if (items.length) g.privateLine(u.owner, 'item.scanResult', { name: who.name, def: who.def, items: items.join(','), n: items.length })
-  else g.privateLine(u.owner, 'item.scanEmpty', { name: who.name, def: who.def })
+  // 名字與道具清單兩種語言都送（匿名形態沒有名字：寫看得到的形態名）
+  const nm = who.name ? { nz: who.name, ne: who.name } : locArgs(UNITS.get(who.def)?.name, 'nz', 'ne', '???')
+  const names = (l: 'zh' | 'en') => items.map((id) => itemDef(id)?.name[l] ?? id)
+  if (items.length) g.privateLine(u.owner, 'item.scanResult', { ...nm, def: who.def, items: items.join(','), ...listArgs(names('zh'), names('en')), n: items.length })
+  else g.privateLine(u.owner, 'item.scanEmpty', { ...nm, def: who.def })
   g.emitFx({ k: 'scan', z: t.zone, x: t.x, y: t.y }, [u.owner])
   if (t.isMain && t.owner >= 0 && t.owner !== u.owner) g.privateLine(t.owner, 'item.scanned')
 })

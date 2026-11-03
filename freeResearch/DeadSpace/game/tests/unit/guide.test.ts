@@ -411,3 +411,38 @@ describe('指引文字', () => {
     for (const w of ['debug', 'hook', '除錯', 'devtool', 'console.log', '測試']) expect(all).not.toContain(w)
   })
 })
+
+describe('提示佇列：警告優先、條件消失就收回（UI 審查第 2 輪）', () => {
+  it('緊急提示（被寄生、低血量、船艙下船…）不等空位：頂掉一般提示，被頂掉的稍後再顯示', () => {
+    const q = new G.HintQueue(memStore())
+    q.offer({ id: 'start', pri: 10 })
+    q.offer({ id: 'keys', pri: 11 })
+    q.tick(0.1, false)
+    expect(q.active.map((a) => a.id)).toEqual(['start', 'keys'])
+    q.offer({ id: 'parasited', pri: 1 })
+    q.offer({ id: 'shipInside', pri: 23 })
+    q.tick(0.1, false)
+    expect(q.active.map((a) => a.id)).toEqual(['shipInside', 'parasited'])
+    expect(q.queue.map((h) => h.id)).toEqual(['start', 'keys'])
+    // 版面放不下時退回最後一則（退回的緊急提示仍排在最前面）
+    q.deferLast()
+    expect(q.active.map((a) => a.id)).toEqual(['shipInside'])
+    q.tick(12, false)
+    expect(q.active.map((a) => a.id)).toEqual(['parasited', 'start'])
+    q.tick(12, false)
+    expect(q.active.map((a) => a.id)).toEqual(['keys'])
+  })
+
+  it('有時效的提示（可以進化、低血量…）條件消失就連顯示中的也收回；一般提示照常倒數', () => {
+    const q = new G.HintQueue(memStore())
+    q.offer({ id: 'evolveXeno', pri: 3 })
+    q.offer({ id: 'start', pri: 10 })
+    q.tick(0.1, false, 2, null, new Set(['evolveXeno', 'start']))
+    expect(q.active.map((a) => a.id)).toEqual(['evolveXeno', 'start'])
+    // 開始結繭：canEvolve 還在但 evolving > 0，條件不成立
+    const v = view({ role: 'xeno', tier: 1, ep: 700, epNext: 660, canEvolve: ['xeno.brute'], evolving: 20 })
+    expect(G.detectHints(v).map((h) => h.id)).not.toContain('evolveXeno')
+    expect(q.tick(0.1, false, 2, null, new Set(G.detectHints(v).map((h) => h.id)))).toBe(true)
+    expect(q.active.map((a) => a.id)).toEqual(['start'])
+  })
+})

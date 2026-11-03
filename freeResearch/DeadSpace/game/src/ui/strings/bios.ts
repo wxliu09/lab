@@ -182,7 +182,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
   },
   'bio.ace.android': {
     zh: '你的反應時間是 4 毫秒，飛行學院說你是百年一見的天才——因為你根本不是人。你是 ICS 級仿生人，偽裝成王牌飛行員，駕駛艙是你最接近家的地方。保護船員、獵殺異類；攢滿 2000 EP，裁決者號的鑄造台會替你換上真正的戰鬥機體。',
-    en: 'Your reaction time is four milliseconds, and the flight academy called you a once-in-a-century talent. That is because you are not human at all. You are an ICS-class android posing as an ace pilot, and the cockpit is the closest thing you have to home. Protect the crew, hunt the anomalies. Bank 2000 EP and the foundry on the Adjudicatrix will fit you with a real combat chassis.',
+    en: 'Your reaction time is four milliseconds, and the flight academy called you a once-in-a-century talent. That is because you are not human at all. You are an ICS-class android posing as an ace pilot, and the cockpit is the closest thing you have to home. Protect the crew, hunt the anomalies. Bank 2000 EP and the fabricator on the Adjudicatrix will fit you with a real combat chassis.',
   },
 }
 
@@ -210,7 +210,7 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
     ],
     en: [
       'Stay disguised: in human form you look like any crew member. Switch to your anonymous xeno form when no one is watching.',
-      'Parasitize unsuited humans. When a host dies, it rises as your spawn.',
+      'Implant unsuited humans. When a host dies, it rises as your spawn.',
       'Lay eggs in hidden places (up to 3) to accumulate EP. Each innocent you kill is worth +175 EP.',
       'Evolve to T2 at 660 EP and T3 at 1370 EP, then kill or convert everyone who is not a xeno.',
     ],
@@ -239,8 +239,8 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
     en: [
       "You are on the crew's side: help expose the anomalies and protect the crew.",
       'Watch your fire: if your friendly-fire score exceeds 2.7, you are forcibly shut down.',
-      'When you die you drop a memory core. Whoever brings it to the foundry on the Adjudicatrix revives you and receives your override remote.',
-      'Reach 2000 EP, then upgrade to a combat chassis at the Adjudicatrix foundry.',
+      'When you die you drop a memory core. Whoever brings it to the fabricator on the Adjudicatrix revives you and receives your override remote.',
+      'Reach 2000 EP, then upgrade to a combat chassis at the Adjudicatrix fabricator.',
     ],
   },
 }

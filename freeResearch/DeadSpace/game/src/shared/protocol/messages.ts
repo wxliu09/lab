@@ -115,6 +115,8 @@ export type ClientMsg =
   | { t: 'cmd'; seq: number; c: Command }
   | { t: 'chat'; ch: ChatChannel; text: string; to?: string }
   | { t: 'ping'; n: number }
+  /** 開局後 client 建好場景、畫出第一個畫面：主機等所有人載入完（或逾時）才開始推進模擬 */
+  | { t: 'loaded' }
   | { t: 'vote'; v: string; arg?: number }
   | { t: 'note'; target: Slot; mark: NoteMark; text?: string }
   | { t: 'shareNotes'; to: Slot }
@@ -355,6 +357,8 @@ export interface WorldPublic {
   stab: number
   /** 存活的站點 id */
   st: string[]
+  /** 供電不正常（緊急照明）的地點 zone key：全站公開的狀態（例如女帝號動力台被毀），client 據此切換紅色緊急照明 */
+  pw: string[]
   /** 主機分頁在背景 */
   bg: boolean
   /** 暫停中 */

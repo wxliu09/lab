@@ -3,7 +3,7 @@
 import { regScript } from '../systems/effects'
 import { DEATH_HOOKS } from '../systems/damage'
 import { makeItem } from '../systems/items'
-import { UNITS } from '../../shared/content/registry'
+import { sampleListArgs, sampleUnitToken } from '../../shared/sysArgs'
 import type { Ent, ItemInst } from '../ent'
 import type { Game } from '../game'
 
@@ -22,9 +22,9 @@ function sampleOf(it: ItemInst): Sample {
   return (d.sample ??= { slots: [], names: [], r: 1 }) as Sample
 }
 
-/** 外觀的形態名（匿名形態只寫形態名；外觀與實際 def 不同時用外觀）*/
+/** 外觀的形態名（匿名形態只寫形態名；外觀與實際 def 不同時用外觀）：存成標記，client 依語言顯示（shared/sysArgs）*/
 function lookName(defId: string): string {
-  return UNITS.get(defId)?.name.zh ?? '???'
+  return sampleUnitToken(defId)
 }
 
 /** 樣本名單上的名字：用抽血者「看到的」樣子（偽裝就是偽裝對象，匿名形態只寫形態名）；偽裝與真人寫法必須一模一樣 */
@@ -122,7 +122,7 @@ regScript('git.results', (g, ctx) => {
     return true
   }
   const result = s.r === 1 ? 'clean' : s.r === 2 ? 'infected' : 'error'
-  g.privateLine(p.slot, 'git.report.' + result, { names: s.names.join('、') })
+  g.privateLine(p.slot, 'git.report.' + result, sampleListArgs(s.names))
   p.gitReports.push({ time: Math.round(g.time), names: [...s.names], result })
   return true
 })

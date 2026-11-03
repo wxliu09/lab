@@ -69,9 +69,19 @@ export function WorldHover({ scene }: { scene: GameScene }) {
   useEffect(() => {
     let cur = 0
     let since = 0
+    let zone = scene.zone
     const h = setInterval(() => {
-      // 瞄準中、或有對話框（選單、設定、說明…）開著時不顯示
-      const id = cursorScreen.overView && !targetMode.value && !modalOpen() ? scene.units.hovered : 0
+      // 換了場景（登船、下船、傳送）而滑鼠沒動：舊場景的懸停卡片收掉
+      if (scene.zone !== zone) {
+        zone = scene.zone
+        cur = 0
+        showCursorTip(null, 0, 0)
+        return
+      }
+      // 瞄準中、或有對話框（選單、設定、說明…）開著時不顯示；不在目前場景裡的單位也不顯示
+      const hov = cursorScreen.overView && !targetMode.value && !modalOpen() ? scene.units.hovered : 0
+      const he = hov ? world.ents.get(hov) : undefined
+      const id = he && (he.s.z ?? zone) === zone ? hov : 0
       const now = performance.now()
       if (id !== cur) {
         cur = id

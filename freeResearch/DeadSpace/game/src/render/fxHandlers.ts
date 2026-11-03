@@ -10,6 +10,7 @@ import { GEO } from './fx'
 import { fxTex } from './fx/tex'
 import { beam, bolt, burst, entPos, hot, muzzleOf, posOf, screenFlash, shake } from './fx/kit'
 import { Mat } from './materials'
+import { decalTex } from './tex'
 import { rockMat } from './fx/mats'
 // 技能、事件、效果原語、太空事件
 import './fx/abilities'
@@ -755,8 +756,70 @@ regFx('boardLink', (gs, _w, f) => beam(gs, f.z, W(f.x, f.y, 0.5), W(f.x2 ?? f.x,
 regFx('alarm', (gs, _w, f) => {
   sfx('alarm', f.x, f.y)
   gs.fx.shock(f.z, f.x, f.y, 4, '#ff3b3b', 1)
-  gs.fx.light(f.z, f.x, f.y, 2, '#ff3b3b', 40, 8, 1.2, { attack: 0.2 })
+  alarmBeacon(gs, f.z, f.x, f.y, f.v ?? 8)
 })
+// 警報解除（例如發射倒數中斷）：該 zone 的警示燈收掉
+regFx('alarmEnd', (_gs, _w, f) => {
+  for (const b of beacons) if (b.zone === f.z) b.stop = true
+})
+
+/** 進行中的旋轉警示燈（alarmEnd 用來提早收掉）*/
+const beacons = new Set<{ zone: number; stop: boolean }>()
+const sweepTex = decalTex('sweep', '#ffffff')
+
+/**
+ * 紅色旋轉警示燈（美術聖經 §11「警報旋轉燈」）：頂上一顆紅燈罩、兩道對向的光束與地上的掃描扇形一起旋轉，
+ * 每轉半圈借一次特效光源打一下（不增加常駐燈數）。dur = 警報持續秒數（自爆、發射倒數）。
+ */
+function alarmBeacon(gs: GameScene, z: number, x: number, y: number, dur: number): void {
+  const rec = { zone: z, stop: false }
+  beacons.add(rec)
+  const g = new THREE.Group()
+  g.position.copy(W(x, y, 0))
+  const H = 2.25
+  const base = gs.fx.mesh(GEO.box, '#20252b', 1, { add: false })
+  base.scale.set(0.3, 0.08, 0.3)
+  base.position.y = H - 0.04
+  const dome = gs.fx.mesh(GEO.hemi, '#ff3b3b', 2.4, { add: false })
+  dome.scale.setScalar(0.14)
+  dome.position.y = H
+  const spin = new THREE.Group()
+  spin.position.y = H + 0.07
+  const beams: THREE.Mesh[] = []
+  for (const side of [0, Math.PI]) {
+    const b = gs.fx.mesh(GEO.beam, '#ff3b3b', 1, { opacity: 0.22 })
+    b.scale.set(0.35, 0.35, 3.2)
+    b.rotation.set(0.32, side, 0)
+    spin.add(b)
+    beams.push(b)
+  }
+  const floor = gs.fx.mesh(GEO.flat, '#ff3b3b', 1, { map: sweepTex, opacity: 0.5 })
+  floor.scale.setScalar(3.4)
+  floor.position.y = 0.03
+  g.add(base, dome, spin, floor)
+  let fade = 1
+  let nextFlash = 0
+  const T = Math.max(1, dur)
+  gs.fx.addTransient(g, T + 0.6, z, (k, t) => {
+    const left = (1 - k) * (T + 0.6)
+    if (rec.stop) fade = Math.max(0, fade - 0.05)
+    else fade = Math.min(1, left / 0.6)
+    const a = t * 5.2
+    spin.rotation.y = a
+    floor.rotation.y = a + Math.PI / 2
+    for (const b of beams) (b.material as THREE.MeshBasicMaterial).opacity = 0.22 * fade
+    ;(floor.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade
+    ;(dome.material as THREE.MeshBasicMaterial).color.setRGB(2.6 * (0.55 + 0.45 * fade), 0.3 * fade, 0.25 * fade)
+    // 光束掃過時借一盞特效光（每半圈一次）；只在正在看的 zone 借，別的 zone 不搶光源
+    if (fade > 0.2 && gs.fx.zone === z && t >= nextFlash) {
+      nextFlash = t + Math.PI / 5.2
+      // 光束沿本地 +Z：世界方向 (sin a, cos a) → sim 座標 (sin a, −cos a)；稍微領先光束一點
+      const ang = a + 0.3
+      gs.fx.light(z, x + Math.sin(ang) * 2.2, y - Math.cos(ang) * 2.2, 1.6, '#ff3b3b', 26 * fade, 7, 0.55, { attack: 0.35 })
+    }
+    if (fade <= 0 || k >= 1) beacons.delete(rec)
+  })
+}
 regFx('xenoShift', (gs, _w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.6 }
   sfx('morph', p.x, p.y)

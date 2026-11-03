@@ -1,7 +1,6 @@
 // 單位視圖：依快照實體建立／更新模型、動畫、腳下光圈
 import * as THREE from 'three'
-import { UNITS } from '../shared/content/registry'
-import type { UnitDef } from '../shared/content/types'
+import { UNITS, isZoneObject } from '../shared/content/registry'
 import { EntFlag } from '../shared/protocol/messages'
 import { PLAYER_COLORS } from '../shared/constants'
 import type { CEnt } from '../client/world'
@@ -61,15 +60,6 @@ function glowMat(col: string): THREE.MeshBasicMaterial {
   return m
 }
 
-/**
- * 區域物件：技能放出的雷暴、火海、酸池、毒雲、污染區、電漿球、熵渦、奇點、腐沼黏液…
- * 不能被選取、不會移動（noTarget＋不動，或標成 hazard），腳下不畫選取圈與光暈。
- * 「未知存在」這類 noTarget 但會移動的生物仍保留光圈（它是個實體，只是打不到）。
- */
-export function isZoneObject(def: UnitDef | undefined): boolean {
-  if (!def) return false
-  return def.tags.includes('hazard') || (def.tags.includes('noTarget') && def.speed <= 0)
-}
 
 function colorOf(c: number | undefined): string {
   return c !== undefined && c >= 0 ? (PLAYER_COLORS[c]?.hex ?? '#ffffff') : '#ffffff'

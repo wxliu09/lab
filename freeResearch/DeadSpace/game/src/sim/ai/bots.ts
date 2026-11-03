@@ -6,12 +6,13 @@
 import type { Command } from '../../shared/protocol/messages'
 import { abilityDef, itemDef } from '../../shared/content/registry'
 import { roomAt } from '../../shared/layout'
+import { sampleListArgs } from '../../shared/sysArgs'
 import { HOSTILE, dist2, type Ent } from '../ent'
 import { fmtKey, type Game, type GamePlayer } from '../game'
 import { handleCommand } from '../systems/orders'
 import { cdReady } from '../systems/abilities'
 import { VENDOR_RANGE, type StockState } from '../systems/vendors'
-import { spaceOf } from '../systems/space'
+import { consolePos, spaceOf } from '../systems/space'
 
 interface Brain {
   next: number
@@ -29,6 +30,10 @@ interface Brain {
   drawnNames: Set<string>
   /** 已經處理過幾份自己的驗血報告 */
   reported: number
+  /** 已經取過報告的解析器（每台只取一次：庫存補到 3 份、每 30 秒補貨，一直取會一直公告同一份結果）*/
+  boughtFrom: Set<number>
+  /** 已經公布過的「結果＋名單」：同一份結果不再公告、也不再重複累加嫌疑 */
+  seenReports: Set<string>
   /** 已經公開指認的對象（名字）*/
   accused: string
   /** 最近一次察覺威脅（看到玩家的怪物形態、被攻擊）的時間 */
@@ -64,6 +69,8 @@ function brainOf(g: Game, p: GamePlayer): Brain {
     cleared: new Set(),
     drawnNames: new Set(),
     reported: 0,
+    boughtFrom: new Set(),
+    seenReports: new Set(),
     accused: '',
     alarmAt: -1e9,
     suitAt: -1e9,
@@ -189,6 +196,7 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
         return true
       }
       cmd(g, p, { k: 'buy', e: v.id, a: goal.k === 'buy' ? goal.item : 'testResults' })
+      if (goal.k === 'results') b.boughtFrom.add(v.id)
       b.goal = null
       return true
     }
@@ -262,7 +270,9 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     cmd(g, p, { k: 'use', s: res, x: u.x + 0.8, y: u.y })
     return
   }
-  const mine = g.world.inZone(u.zone).find((e) => e.alive && e.data.vendor === 'gitResolver' && e.owner === p.slot && p.view.visible.has(e.id))
+  const mine = g.world
+    .inZone(u.zone)
+    .find((e) => e.alive && e.data.vendor === 'gitResolver' && e.owner === p.slot && !b.boughtFrom.has(e.id) && p.view.visible.has(e.id))
   if (mine && ((mine.data.stock as StockState[] | undefined)?.some((s) => s.count > 0 && g.time >= s.availAt) ?? false)) {
     b.goal = { k: 'results', vendor: mine.id, until: g.time + 20 }
     return
@@ -346,16 +356,20 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
     const r = reports[b.reported++]
     const names = r.names.filter((n) => !!n)
     if (!names.length) continue
-    const list = names.join('、')
+    const key = r.result + ':' + [...names].sort().join('|')
+    if (b.seenReports.has(key)) continue
+    b.seenReports.add(key)
+    // 名單兩種語言都送（匿名形態依語言換成形態名）
+    const list = sampleListArgs(names)
     if (r.result === 'clean') {
       for (const n of names) {
         b.cleared.add(n)
         b.suspects.delete(n)
       }
-      say(g, p, 'play1.bot.gitClean', { names: list })
+      say(g, p, 'play1.bot.gitClean', list)
     } else if (r.result === 'infected') {
       for (const n of names) if (n !== p.name && !b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
-      say(g, p, 'play1.bot.gitInfected', { names: list })
+      say(g, p, 'play1.bot.gitInfected', list)
       // 還認不出是誰：之後再驗一次縮小範圍
       if (!topSuspect(b) && !p.data.botRetestDone) {
         p.data.botRetest = true
@@ -364,7 +378,7 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
       }
     } else {
       // 錯誤、離線也照樣說出來：只有部分結果會公布的話，「沒說話」本身就是線索
-      say(g, p, r.result === 'error' ? 'play1.bot.gitError' : 'play1.bot.gitOffline', { names: list })
+      say(g, p, r.result === 'error' ? 'play1.bot.gitError' : 'play1.bot.gitOffline', list)
       continue
     }
     const top = topSuspect(b)
@@ -518,6 +532,15 @@ function stepBots(g: Game): void {
     if (u.id !== p.main && spaceOf(g).pilots.get(u.id) === p.main) {
       cmd(g, p, { k: 'unpilot' })
       b.goal = null
+      // 交還後先走離控制台幾公尺，免得閒晃的目標點又落在控制台旁、被接回去
+      const body = g.world.get(p.main)
+      const c = body ? consolePos(g, g.world.zones[body.zone]) : null
+      if (body && c) {
+        const a = Math.atan2(body.y - c.y, body.x - c.x) + g.world.rng.range(-0.6, 0.6)
+        const nav = g.world.zones[body.zone].nav
+        const pt = nav?.nearestOpen(c.x + Math.cos(a) * 3, c.y + Math.sin(a) * 3)
+        if (pt) b.goal = { k: 'goto', ...pt, until: t + 8 }
+      }
       continue
     }
     if (u.zone === 0) continue

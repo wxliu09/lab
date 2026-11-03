@@ -768,7 +768,7 @@ export function installEvents(g: Game): void {
     if (ev.pirateZone > 0 && u.zone === ev.pirateZone && u.def.id === 'struct.console' && !ev.pirateBoom) {
       ev.pirateBoom = g.time + 40
       for (const q of g.world.inZone(u.zone)) if (q.isMain && q.owner >= 0) g.privateLine(q.owner, 'event.pirateSelfDestruct', { s: 40 })
-      g.emitFx({ k: 'alarm', z: u.zone, x: u.x, y: u.y })
+      g.emitFx({ k: 'alarm', z: u.zone, x: u.x, y: u.y, v: 40 })
     }
   })
 

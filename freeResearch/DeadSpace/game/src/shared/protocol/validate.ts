@@ -171,6 +171,8 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
       return { t: 'chat', ch: raw.ch as ChatChannel, text: raw.text, ...(raw.to !== undefined ? { to: raw.to as string } : {}) }
     case 'ping':
       return isNum(raw.n, 0, 1e15) ? { t: 'ping', n: raw.n } : null
+    case 'loaded':
+      return { t: 'loaded' }
     case 'vote':
       if (!isStr(raw.v, 24) || !ID_RE.test(raw.v)) return null
       if (raw.arg !== undefined && !isInt(raw.arg, 0, 64)) return null

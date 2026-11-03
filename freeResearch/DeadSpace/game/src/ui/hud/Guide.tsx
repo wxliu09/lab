@@ -15,6 +15,7 @@ import { PLAYER_COLORS } from '../../shared/constants'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
+import { sampleName } from '../../shared/sysArgs'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import '../guide.css'
 
@@ -124,6 +125,13 @@ export interface ActiveHint extends Hint {
 export const HINT_LIFE = 12
 export const MAX_HINTS = 2
 
+/** 警告類提示（樣式：黃框）*/
+const WARN_HINTS = new Set(['lowHp', 'lowHpNoKit', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
+/** 不等空位的提示：警告，和「身在哪裡」的提示（船艙裡的下船方法：排在教學提示後面就等於下船之後才出現）*/
+export const URGENT_HINTS = new Set([...WARN_HINTS, 'shipInside'])
+/** 有時效的提示：條件消失（開始結繭／進化、血量回來、感染清除、下了船、死亡）就連顯示中的也收回 */
+export const TRANSIENT_HINTS = new Set(['evolveXeno', 'evolveMutant', 'evolveAndroid', 'androidFull', 'lowHp', 'lowHpNoKit', 'parasited', 'prioned', 'shipInside'])
+
 export class HintQueue {
   active: ActiveHint[] = []
   queue: Hint[] = []
@@ -133,6 +141,8 @@ export class HintQueue {
   constructor(
     private store: HintStore,
     private life = HINT_LIFE,
+    private urgent: Set<string> = URGENT_HINTS,
+    private transient: Set<string> = TRANSIENT_HINTS,
   ) {}
 
   /** 條件成立：沒看過、也不在畫面或佇列裡就排進去（已在佇列裡的更新參數，例如快捷鍵）*/
@@ -156,20 +166,45 @@ export class HintQueue {
    */
   tick(dt: number, blocked: boolean, max = MAX_HINTS, hold: string | null = null, current?: Set<string>): boolean {
     let changed = false
-    if (current) this.queue = this.queue.filter((q) => this.mine.has(q.id) || current.has(q.id))
-    if (blocked) return false
+    if (current) {
+      this.queue = this.queue.filter((q) => this.mine.has(q.id) || current.has(q.id))
+      // 有時效的提示條件消失：顯示中的也收回（例如「可以進化」在開始結繭後還掛著）
+      const n = this.active.length
+      this.active = this.active.filter((a) => !this.transient.has(a.id) || current.has(a.id))
+      if (n !== this.active.length) changed = true
+    }
+    if (blocked) return changed
     for (const a of this.active) if (a.id !== hold) a.left -= dt
     const n = this.active.length
     this.active = this.active.filter((a) => a.left > 0)
     if (this.active.length !== n) changed = true
-    while (this.active.length < max && this.queue.length) {
-      const h = this.queue.shift()!
+    while (this.queue.length) {
+      // 緊急提示優先；滿了就頂掉最後一則一般提示（退回佇列最前面，稍後一定會再顯示）
+      let i = this.queue.findIndex((q) => this.urgent.has(q.id))
+      if (i < 0) {
+        if (this.active.length >= max) break
+        i = 0
+      } else if (this.active.length >= max) {
+        let vi = -1
+        for (let k = this.active.length - 1; k >= 0 && vi < 0; k--) if (!this.urgent.has(this.active[k].id)) vi = k
+        if (vi < 0) break
+        const [v] = this.active.splice(vi, 1)
+        // 依優先順序插回佇列
+        let at = this.queue.findIndex((q) => q.pri > v.pri)
+        if (at < 0) at = this.queue.length
+        this.queue.splice(at, 0, { id: v.id, pri: v.pri, args: v.args })
+        i = this.queue.findIndex((q) => this.urgent.has(q.id))
+      }
+      const [h] = this.queue.splice(i, 1)
       if (!this.mine.has(h.id)) {
         if (this.store.has(h.id)) continue
         this.store.add(h.id)
         this.mine.add(h.id)
       }
-      this.active.push({ ...h, left: this.life, life: this.life })
+      // 緊急提示放最上面（版面放不下時 deferLast 退回的是最後一則，不會是它）
+      const a = { ...h, left: this.life, life: this.life }
+      if (this.urgent.has(h.id)) this.active.unshift(a)
+      else this.active.push(a)
       changed = true
     }
     return changed
@@ -315,7 +350,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
-        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names) })
+        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names.map((x) => sampleName(x, lang.value))) })
         else add('guide.s.samplerUse', { k: smp + 1 })
       } else if (time < SAMPLER_AT && !samplerInStock()) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
       else add('guide.s.samplerGet')
@@ -622,7 +657,6 @@ const HINT_ICON: Record<string, string> = {
   stab: 'clock',
 }
 
-const WARN_HINTS = new Set(['lowHp', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
 
 /** 說明面板：各身分的玩法要點 */
 export const ROLE_TIPS: Record<Identity, string[]> = {
@@ -703,7 +737,8 @@ export function Guide() {
         q.clear(true)
         changed = true
       }
-      if (!hintsEnabled.value) {
+      // 關掉提示、或已出局（死亡即退出：什麼都不能做了）：情境提示全部停止並清掉
+      if (!hintsEnabled.value || world.me.booted) {
         if (q.active.length || q.queue.length) {
           q.clear()
           changed = true

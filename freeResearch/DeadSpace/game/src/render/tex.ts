@@ -405,24 +405,62 @@ export function fabricSet(tint: string, seed = 21): PbrSet {
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const i = y * S + x
-      const weave = ((x + (y % 4 < 2 ? 0 : 2)) % 4 < 2 ? 1 : 0) * 0.06
+      // 細斜紋（1 px 交錯，俯視距離下 mipmap 會融成布面質感、不會看成棋盤格）＋低頻皺褶
+      const weave = ((x + y) & 1) * 0.018 + (((x >> 1) + y) & 1) * 0.01
+      const fold = (grime[(i * 7) % (S * S)] - 0.5) * 0.08
       const dirt = Math.max(0, grime[i] - 0.55) * 1.4
-      const lum = (0.94 + weave) * (1 - dirt * 0.35)
+      const lum = (0.95 + weave + fold) * (1 - dirt * 0.35)
       const o = i * 4
       a.data[o] = Math.min(255, tr * lum)
       a.data[o + 1] = Math.min(255, tg * lum)
       a.data[o + 2] = Math.min(255, tb * lum)
       a.data[o + 3] = 255
-      const rr = Math.min(1, 0.78 + dirt * 0.15 - weave)
+      const rr = Math.min(1, 0.8 + dirt * 0.12 - weave * 0.8 + fold * 0.5)
       r.data[o] = r.data[o + 1] = r.data[o + 2] = rr * 255
       r.data[o + 3] = 255
-      h[i] = 0.5 + weave * 2
+      h[i] = 0.5 + weave * 1.2 + fold * 0.8
     }
   }
   xa.putImageData(a, 0, 0)
   const map = toTex(ca, true)
   cache.set(key + ':map', map)
   return { map, ...(shared ?? putDetail(dkey, r, h, S, 3)) }
+}
+
+/** 皮膚：淡淡的膚色雜斑（雀斑／血色）＋粗糙度變化（額頭鼻樑較亮、其餘霧面）＋極淡的毛孔法線 */
+export function skinSet(tint: string, seed = 61): PbrSet {
+  const key = `skin:${tint}:${seed}`
+  const dkey = `skin:${seed}`
+  const have = cache.get(key + ':map')
+  const shared = getDetail(dkey)
+  if (have && shared) return { map: have, ...shared }
+  const S = 64
+  const blot = field(S, 3, seed, 2)
+  const fine = noiseField(S, 2, seed + 1, 16)
+  const [ca, xa] = canvas(S, S)
+  const a = xa.createImageData(S, S)
+  const r = new ImageData(S, S)
+  const h = new Float32Array(S * S)
+  const [tr, tg, tb] = hexRgb(tint)
+  for (let i = 0; i < S * S; i++) {
+    const b = blot[i] - 0.5
+    const f = fine[i] - 0.5
+    // 血色斑：紅通道略多、藍通道略少
+    const lum = 0.97 + b * 0.08 + f * 0.04
+    const o = i * 4
+    a.data[o] = Math.min(255, tr * (lum + b * 0.03))
+    a.data[o + 1] = Math.min(255, tg * lum)
+    a.data[o + 2] = Math.min(255, tb * (lum - b * 0.03))
+    a.data[o + 3] = 255
+    const rr = Math.max(0, Math.min(1, 0.6 + b * 0.22 + f * 0.08))
+    r.data[o] = r.data[o + 1] = r.data[o + 2] = rr * 255
+    r.data[o + 3] = 255
+    h[i] = 0.5 + f * 0.25
+  }
+  xa.putImageData(a, 0, 0)
+  const map = toTex(ca, true)
+  cache.set(key + ':map', map)
+  return { map, ...(shared ?? putDetail(dkey, r, h, S, 1.2)) }
 }
 
 // ───── 全像螢幕（emissive）─────
@@ -972,6 +1010,33 @@ export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
     }
     return finishSet(S, albedo, rough, height, 5, dkey)
   })
+}
+
+/**
+ * 有機腔壁的發光血管遮罩（與 organicSet 同一組 Worley 邊緣，對得上底色裡的血管）：
+ * 主血管亮、細支微亮，再用低頻雜訊讓一段段明暗不均，像體液在裡面流動。
+ */
+export function organicGlowTex(seed = 9): THREE.Texture {
+  const key = `organicGlow:${seed}`
+  const have = cache.get(key)
+  if (have) return have
+  const S = 256
+  const wv = worley(S, 6, seed + 70)
+  const big = noiseField(S, 4, seed + 73, 3)
+  const [c, x] = canvas(S, S)
+  const img = x.createImageData(S, S)
+  for (let i = 0; i < S * S; i++) {
+    const edge = wv.f2[i] - wv.f1[i]
+    const v = edge < 0.06 ? 1 - edge / 0.06 : 0
+    const k = Math.pow(v, 1.6) * Math.max(0, Math.min(1, (big[i] - 0.3) * 1.8))
+    const o = i * 4
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.round(k * 255)
+    img.data[o + 3] = 255
+  }
+  x.putImageData(img, 0, 0)
+  const t = toTex(c, true)
+  cache.set(key, t)
+  return t
 }
 
 /** 外星文字面板：發光符號格（未識別物體的啟用碼面板）*/
