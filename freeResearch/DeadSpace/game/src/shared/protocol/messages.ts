@@ -341,7 +341,7 @@ export type FacilityView =
    * cells = 隔間數（「從第 N 間取標本」按鈕：指令 { k: 'facility', e, a: 'cageCell', s: N-1 }）、
    * cage = 平台上還裝得下的籠子已裝幾隻（-1 = 沒有，要先製籠）、cap = 一個籠子的容量
    */
-  | { k: 'cage'; e: number; busy: number; pad: number; off: number; cells: number; cage: number; cap: number }
+  | { k: 'cage'; e: number; busy: number; off: number; cells: number; cage: number; cap: number }
 
 export interface NoteEntry {
   slot: Slot

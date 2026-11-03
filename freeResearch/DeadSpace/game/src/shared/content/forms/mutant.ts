@@ -680,7 +680,7 @@ export const MUTANT_ABILITIES: AbilityDef[] = [
   A({
     id: 'ab.mut.breedHarbinger',
     name: L('孕育先驅', 'Breed Harbinger'),
-    desc: L('孕育你最珍貴的子嗣：強壯、聰明的先驅。同時只能有一隻，需要 140 EP（不消耗）。', 'Raises your most prized progeny, the strong and clever Harbinger. Only one at a time; requires 140 EP (not spent).'),
+    desc: L('孕育你最珍貴的眷屬：強壯、聰明的先驅。同時只能有一隻，需要 140 EP（不消耗）。', 'Raises your most prized progeny, the strong and clever Harbinger. Only one at a time; requires 140 EP (not spent).'),
     icon: 'evolve',
     target: 'none',
     cd: 40,

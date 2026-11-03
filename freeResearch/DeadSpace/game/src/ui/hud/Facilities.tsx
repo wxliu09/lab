@@ -151,7 +151,6 @@ function CagePanel({ v }: { v: Extract<FacilityView, { k: 'cage' }> }) {
       </div>
       <Offline off={v.off} />
       <div class="mono ip-status cage-status">
-        <span>{t('fac.cage.pad', { n: v.pad })}</span>
         <span data-testid="cage-status" class={noCage ? 'warn' : ''}>
           {noCage ? t('fac.cage.noCage') : t('fac.cage.cage', { n: v.cage, cap: v.cap })}
         </span>

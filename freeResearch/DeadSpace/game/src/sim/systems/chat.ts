@@ -125,8 +125,24 @@ function groups(g: Game): Map<string, Group> {
   return ((g as unknown as { _groups?: Map<string, Group> })._groups ??= new Map())
 }
 
+/**
+ * 介面依語言顯示的名字（client 的 localizeName：「博士·Bob」「Agent Bob」「Crew 3」）轉回 sim 的寫法再比對，
+ * 照畫面上看到的全名打指令也找得到人
+ */
+export function normalizeNameQuery(q: string): string {
+  let s = q.trim().toLowerCase()
+  // 中文職業前綴（xx·）與英文晉升頭銜（agent ）
+  const dot = s.lastIndexOf('·')
+  if (dot >= 0 && dot < s.length - 1) s = s.slice(dot + 1)
+  s = s.replace(/^agent\s+/, '')
+  // en 介面的預設名「Crew N」＝ sim 的「船員 N」
+  const crew = /^crew\s*(\d+)$/.exec(s)
+  if (crew) s = '船員 ' + crew[1]
+  return s.trim()
+}
+
 function findPlayer(g: Game, q: string): GamePlayer | undefined {
-  const s = q.trim().toLowerCase()
+  const s = normalizeNameQuery(q)
   if (!s) return undefined
   const colorIdx = PLAYER_COLORS.findIndex((c) => c.id === s)
   if (colorIdx >= 0) return g.allPlayers().find((p) => p.color === colorIdx)

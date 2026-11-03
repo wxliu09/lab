@@ -302,7 +302,8 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
   }
   // 驗血指認出來的人：看到就開火
   if (b.accused && u.def.attack) {
-    const t = near.find((e) => e.isMain && e.owner >= 0 && e.owner !== p.slot && seenName(g, e) === b.accused)
+    // 只看外觀（全像分身看起來就是本人；用 isMain 會讓 AI 不打分身，等於幫大家分辨真假）
+    const t = near.find((e) => looksPerson(e) && e.owner >= 0 && e.owner !== p.slot && seenName(g, e) === b.accused)
     if (t) {
       b.goal = { k: 'hunt', e: t.id, until: g.time + 10 }
       return

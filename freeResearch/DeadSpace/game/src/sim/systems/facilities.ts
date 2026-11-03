@@ -856,7 +856,7 @@ export function facilityView(g: Game, p: GamePlayer): FacilityView | null {
         k: 'cage',
         e: f.id,
         busy: Math.max(0, Math.ceil(((z.data.cageUntil as number | undefined) ?? 0) - g.time)),
-        pad: unitsOnPads(g, z, 'cagePad', isSpecimen).length,
+        // 不送平台上的標本數：偽裝成生物的玩家不算標本，數字會比眼睛看到的少，等於揭穿偽裝
         off,
         // 「從第 N 間取標本」：隔間數、平台上還裝得下的籠子裝了幾隻（-1 = 沒有，要先製籠）、容量。
         // 不送各隔間的標本數：偽裝成生物的玩家不算標本，送了會讓人看出哪隻是假的

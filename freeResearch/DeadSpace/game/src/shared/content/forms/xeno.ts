@@ -136,7 +136,7 @@ function pair(key: string, name: Loc, main: FormSpec, spawn: FormSpec): UnitDef[
   const model = 'xeno.' + key
   return [
     xenoUnit('xeno.' + key, name, model, main),
-    xenoUnit('xeno.' + key + '.spawn', L(name.zh + '子嗣', name.en + ' Spawn'), model, spawn),
+    xenoUnit('xeno.' + key + '.spawn', L(name.zh + '眷屬', name.en + ' Spawn'), model, spawn),
   ]
 }
 
@@ -405,7 +405,7 @@ export const XENO_UNITS: UnitDef[] = [
   },
   {
     id: XUNIT.spawnCore,
-    name: L('子嗣裸核', 'Spawn Kernel'),
+    name: L('眷屬裸核', 'Spawn Kernel'),
     model: 'xeno.hydraCore',
     hp: 300,
     hpRegen: 2,
@@ -628,7 +628,7 @@ export const XENO_ABILITIES: AbilityDef[] = [
   },
   // ── 爆燃者 ──
   explosion(XAB.explosion, 4, 45, L('', '')),
-  explosion(XAB.explosionSpawn, 5, 65, L('（子嗣的種子較耗能。）', ' (A spawn’s seed costs more energy.)')),
+  explosion(XAB.explosionSpawn, 5, 65, L('（眷屬的種子較耗能。）', ' (A spawn’s seed costs more energy.)')),
   {
     id: XAB.lordOfFlames,
     name: L('焰主', 'Furnace Heart'),

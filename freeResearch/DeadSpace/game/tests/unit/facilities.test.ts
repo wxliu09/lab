@@ -550,7 +550,9 @@ describe('活體庫號', () => {
     near(g, ps[1], con, 1.6)
     h.ticks(2)
     const view = facilityView(g, ps[1])
-    expect(view && view.k === 'cage' ? view.pad : -1).toBe(1)
+    // 面板不送平台上的標本數（偽裝成生物的玩家不算標本，數字會揭穿偽裝）
+    expect(view?.k).toBe('cage')
+    expect(view && 'pad' in view).toBe(false)
     g.handleCommand(ps[1].slot, { k: 'facility', e: con.id, a: 'cage' })
     sec(h, 10.5)
     expect(rab.removed).toBe(true)
