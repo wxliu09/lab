@@ -186,6 +186,8 @@ const OVERRIDE: Record<string, string> = {
   'bf.pyro.overheat': 'overheat',
   'bf.pyro.burn': 'burn',
   'bf.cloak.phase': 'stealth',
+  // 餘燼衛星的大氣護盾：一層薄薄的大氣外殼，不是個人護盾的泡泡
+  'bf.cinderShield': 'atmo',
 }
 
 function keysOf(e: CEnt, out: Set<string>): void {
@@ -197,7 +199,7 @@ function keysOf(e: CEnt, out: Set<string>): void {
   const fl = e.s.fl ?? 0
   if (fl & EntFlag.Petrified) out.add('petrify')
   if (fl & EntFlag.Stealth && !out.has('void')) out.add('stealth')
-  if (fl & EntFlag.Shielded && !out.has('shield') && !out.has('solace') && !out.has('stasis')) out.add('solace')
+  if (fl & EntFlag.Shielded && !out.has('shield') && !out.has('solace') && !out.has('stasis') && !out.has('atmo')) out.add('solace')
   if (fl & EntFlag.Stunned && !out.has('petrify') && !out.has('tripped') && !out.has('lifeSupport') && !out.has('stasis')) out.add('stun')
   if (out.has('petrify')) {
     // 石像不再顯示其他身上的效果
@@ -337,6 +339,58 @@ function bubble(c: Ctx, color: string, k: number, hex: number, rep: [number, num
   })
 }
 
+const ATMO_VERT = `
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vP;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vP = position;
+  vN = normalize(mat3(modelMatrix) * normal);
+  vV = normalize(cameraPosition - wp.xyz);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`
+const ATMO_FRAG = `
+uniform vec3 uColor;
+uniform vec3 uColor2;
+uniform float uTime;
+uniform float uOpacity;
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vP;
+void main() {
+  float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.2);
+  float band = 0.5 + 0.5 * sin(vP.y * 9.0 + vP.x * 3.0 - uTime * 0.8);
+  vec3 c = mix(uColor, uColor2, band * 0.35);
+  float a = (f * (0.75 + 0.25 * band) + 0.015) * uOpacity;
+  gl_FragColor = vec4(c * a, a);
+}`
+
+/** 行星的大氣外殼：比星體大一點點的 fresnel 薄層（只有邊緣看得到），慢慢流動的淡色帶 */
+function atmoShell(c: Ctx, color: string, color2: string): Att {
+  const mat = own(
+    new THREE.ShaderMaterial({
+      vertexShader: ATMO_VERT,
+      fragmentShader: ATMO_FRAG,
+      uniforms: { uColor: { value: new THREE.Color(color) }, uColor2: { value: new THREE.Color(color2) }, uTime: { value: 0 }, uOpacity: { value: 0 } },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
+  const m = new THREE.Mesh(GEO.sphere, mat)
+  m.renderOrder = 6
+  const s = invScale(c)
+  // 行星模型以根節點為球心，外觀半徑 = 高度的一半
+  m.scale.setScalar(c.h * 0.5 * 1.06 * s)
+  let born = -1
+  return attach(c, m, (cc) => {
+    if (born < 0) born = cc.t
+    mat.uniforms.uTime.value = cc.t
+    mat.uniforms.uOpacity.value = Math.min(1, (cc.t - born) / 0.6)
+  })
+}
+
 /** 腳下的旋轉地面標記 */
 function floorMark(c: Ctx, tex: 'clock' | 'arrows' | 'web' | 'ring' | 'trefoil' | 'swirl' | 'cross', color: string, r: number, k: number, spin: number, opacity = 0.7, pulse = 0): Att {
   const m = new THREE.Mesh(GEO.flat, basic(color, k, { map: fxTex(tex), opacity }))
@@ -428,6 +482,7 @@ const FACTORIES: Record<string, Factory> = {
       emitter(0.12, (cc) => cc.gs.fx.emit(cc.z, cc.x, cc.y, 0.2, 1, { color: '#fff4d0', speed: 0.2, life: 1.2, size: 0.1, up: 1.4, area: 0.5 })),
     ),
   forceWard: (c) => bubble(c, '#e8f6ff', 2.2, 1.2, [12, 6]),
+  atmo: (c) => atmoShell(c, '#8fc8ff', '#ffc89a'),
   forcePull: (c) => floorMark(c, 'arrows', '#e8f6ff', 0.9, 1.4, -1.6, 0.55),
   petrify: (c) => {
     // 整個單位換成石材

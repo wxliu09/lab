@@ -736,8 +736,8 @@ function bombardHit(g: Game, amount: number): void {
     if (!at) return
     // 原作在預警時就累加殘留輻射
     S.rad += RAD_PER_IMPACT
-    // 預警：落點紅圈（看得到地表的人）＋全體小地圖提示（原作 ping 全體玩家 10 秒；落點是公開現象）
-    g.emitFx({ k: 'fusionArm', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN })
+    // 預警：落點紅圈與落下的火球（看得到地表的人；render 的 meteorWarn）＋全體小地圖提示（原作 ping 全體玩家 10 秒；落點是公開現象）
+    g.emitFx({ k: 'meteorWarn', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN })
     g.emitFx({ k: 'ping', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN, s: 'event' }, g.allPlayers().map((p) => p.slot))
     for (const s of mainsIn(g, z.id)) g.privateLine(s, 'st.impactWarn', { s: IMPACT_WARN })
     g.after(IMPACT_WARN, () => impact(g, z.id, at.x, at.y))
@@ -747,7 +747,7 @@ function bombardHit(g: Game, amount: number): void {
 function impact(g: Game, zid: number, x: number, y: number): void {
   const z = g.world.zones[zid]
   if (!z?.alive) return
-  g.emitFx({ k: 'fusion', z: zid, x, y, v: IMPACT_R })
+  g.emitFx({ k: 'meteorImpact', z: zid, x, y, v: IMPACT_R })
   // 原作：600 內單位 4900、探索船（A071；本作的停泊船）10000，一般攻擊（吃護甲）；地表設施也會被砸
   for (const e of g.world.query(zid, x, y, IMPACT_R)) {
     if (!surfaceUnit(e)) continue

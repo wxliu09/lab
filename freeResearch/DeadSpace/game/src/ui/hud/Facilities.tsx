@@ -136,20 +136,48 @@ function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
   )
 }
 
+/**
+ * 籠子控制台：製籠（把平台上的標本關起來，平台上沒有標本也會做出空籠子）＋「從第 N 間取標本」直接把隔間裡的一隻標本移進平台上
+ * 還裝得下的籠子。面板不顯示各隔間有幾隻（偽裝成生物的玩家會被看穿），沒有標本的隔間由 sim 回「找不到標本」。
+ */
 function CagePanel({ v }: { v: Extract<FacilityView, { k: 'cage' }> }) {
+  const noCage = v.cage < 0
+  const stop = v.busy > 0 || v.off > 0
   return (
     <div class="panel interact-panel" data-testid="fac-cage">
       <Head icon="key" title={t('fac.cage.title')} />
       <div class="dim ip-hint">
-        {t('fac.cage.hint')}
+        {t('fac.cage.hint', { cap: v.cap })}
       </div>
       <Offline off={v.off} />
-      <div class="mono ip-status">
-        {t('fac.cage.pad', { n: v.pad })}
+      <div class="mono ip-status cage-status">
+        <span>{t('fac.cage.pad', { n: v.pad })}</span>
+        <span data-testid="cage-status" class={noCage ? 'warn' : ''}>
+          {noCage ? t('fac.cage.noCage') : t('fac.cage.cage', { n: v.cage, cap: v.cap })}
+        </span>
       </div>
-      <button data-testid="cage-build" disabled={v.busy > 0 || v.off > 0} onClick={() => act(v.e, 'cage')}>
+      <button data-testid="cage-build" disabled={stop} onClick={() => act(v.e, 'cage')}>
         {v.busy > 0 ? t('fac.cage.busy', { s: v.busy }) : t('fac.cage.build')}
       </button>
+      <div class="cage-cells">
+        {Array.from({ length: v.cells }, (_, i) => (
+          <button
+            key={i}
+            data-testid={'cage-cell-' + (i + 1)}
+            disabled={stop || noCage}
+            {...tipProps(() => ({ title: t('fac.cage.take', { n: i + 1 }), body: noCage ? t('fac.cage.noCage') : t('fac.cage.takeBody', { cell: cellName(i) }) }))}
+            onClick={() => act(v.e, 'cageCell', i)}
+          >
+            <span class="ip-name">
+              <Icon name="dna" size={16} color={noCage ? '#6b7884' : '#5cf2a5'} />
+              {t('fac.cage.take', { n: i + 1 })}
+            </span>
+            <span class="dim cage-cell-room">
+              {cellName(i)}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -17,6 +17,8 @@ const A = await import('../../src/ui/hud/Announce')
 const { hasString, lang, stringKeys, sysText, t } = await import('../../src/ui/i18n')
 const { contrastRatio, textColorOf } = await import('../../src/ui/names')
 const { PLAYER_COLORS } = await import('../../src/shared/constants')
+// 自動降畫質的提示字串（addStrings 註冊）
+await import('../../src/ui/strings/art2')
 
 afterEach(() => {
   lang.value = 'zh'
@@ -76,6 +78,19 @@ describe('上方大公告', () => {
     expect(A.announceLife('一二三', 'event')).toBe(5300)
     expect(A.announceLife('x'.repeat(1000), 'sys')).toBe(14000)
     expect(A.announceLife('短', 'apoc')).toBe(8000)
+  })
+
+  it('本機提示：短句至少 1.8 秒，長句依字數延長（全形字 130 ms、其他 50 ms），上限 8 秒', () => {
+    expect(A.noticeLife('')).toBe(1800)
+    expect(A.noticeLife('一二')).toBe(1800)
+    lang.value = 'zh'
+    // 自動降畫質的長句：讀得完（舊版固定 1.8 秒）
+    const zh = t('art2.autoLow')
+    expect(A.noticeLife(zh)).toBe(1500 + [...zh].length * 130)
+    expect(A.noticeLife(zh)).toBeGreaterThan(3500)
+    lang.value = 'en'
+    expect(A.noticeLife(t('art2.autoLow'))).toBeGreaterThan(5000)
+    expect(A.noticeLife('x'.repeat(1000))).toBe(8000)
   })
 })
 

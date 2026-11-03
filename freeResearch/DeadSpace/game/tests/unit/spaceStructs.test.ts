@@ -8,7 +8,7 @@ import { UNITS, unitDef } from '../../src/shared/content/registry'
 import type { FxEvent } from '../../src/shared/protocol/messages'
 import { EntFlag } from '../../src/shared/protocol/messages'
 import { createShip, launchTo, mannedCraft, spaceOf } from '../../src/sim/systems/space'
-import { stationsOf, IMPACT_DMG, IMPACT_DMG_BRAVADO, IMPACT_WARN, BOMBARD_EVERY } from '../../src/sim/systems/stations'
+import { stationsOf, IMPACT_DMG, IMPACT_DMG_BRAVADO, IMPACT_R, IMPACT_WARN, BOMBARD_EVERY } from '../../src/sim/systems/stations'
 import { eventsOf } from '../../src/sim/systems/events'
 import { damage } from '../../src/sim/systems/damage'
 import { hasBuff } from '../../src/sim/systems/buffs'
@@ -328,14 +328,14 @@ describe('翠原星轟炸與輻射', () => {
     const fx = recordFx(g)
     damage(g, null, v, BOMBARD_EVERY - 1)
     h.ticks(1)
-    expect(fx.some((f) => f.k === 'fusionArm')).toBe(false)
+    expect(fx.some((f) => f.k === 'meteorWarn')).toBe(false)
     for (const c of cs) c.inbox.length = 0
     // 地表上有人：收到撞擊預警
     const far = main(g, ps[2])
     standAt(g, far, vz.id, 2, 2)
     damage(g, null, v, 2)
     h.ticks(1)
-    const warn = fx.find((f) => f.k === 'fusionArm' && f.z === vz.id)!
+    const warn = fx.find((f) => f.k === 'meteorWarn' && f.z === vz.id)!
     expect(warn).toBeTruthy()
     expect(warn.v).toBe(IMPACT_WARN)
     expect(fx.some((f) => f.k === 'ping' && f.z === vz.id)).toBe(true)
@@ -356,7 +356,7 @@ describe('翠原星轟炸與輻射', () => {
     const before = u.hp
     expect(dock.hp).toBe(dock.maxHp)
     sec(h, 0.5)
-    expect(fx.some((f) => f.k === 'fusion' && f.z === vz.id)).toBe(true)
+    expect(fx.some((f) => f.k === 'meteorImpact' && f.z === vz.id && f.v === IMPACT_R)).toBe(true)
     expect(before - u.hp).toBeGreaterThan(IMPACT_DMG - 10)
     expect(before - u.hp).toBeLessThan(IMPACT_DMG + 30)
     expect(dock.maxHp - dock.hp).toBe(10000)

@@ -143,7 +143,11 @@ export class Engine {
     this.onResize()
   }
 
+  /** 目前套用的色彩分級（場景換了新的分級物件就重新套用，例如天氣淡入）*/
+  private appliedGrade: Grade | undefined
+
   private applyGrade(g: Grade = DEFAULT_GRADE): void {
+    this.appliedGrade = g
     if (!this.hue || !this.bc) return
     this.hue.hue = g.hue
     this.hue.saturation = g.sat
@@ -228,6 +232,7 @@ export class Engine {
     }
     if (!this.current) return
     this.current.update(dt, t)
+    if (this.current.grade && this.current.grade !== this.appliedGrade) this.applyGrade(this.current.grade)
     // 受傷色差脈衝
     this.damagePulse = Math.max(0, this.damagePulse - dt * 2.5)
     const o = this.damagePulse * 0.006

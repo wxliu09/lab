@@ -53,6 +53,15 @@ export interface StationView {
   dispose(): void
 }
 
+/** 設施的地面互動光圈（gameScene 換上損毀外觀時也用）*/
+export function addPoiRing(root: THREE.Object3D, color: string): THREE.Mesh {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }))
+  ring.rotation.x = -Math.PI / 2
+  ring.position.set(0, 0.02, 0)
+  root.add(ring)
+  return ring
+}
+
 /** sim 公尺座標 → three 世界座標 */
 export const W = (x: number, y: number, h = 0) => new THREE.Vector3(x, h, -y)
 
@@ -471,13 +480,11 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
     m.root.rotation.y = facingToRotY(p.facing)
     group.add(m.root)
     anim.push(...m.anim)
-    pois.set(`${p.col},${p.row}`, m.root)
-    if (m.ring) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 40), new THREE.MeshBasicMaterial({ color: m.ring, transparent: true, opacity: 0.35, depthWrite: false }))
-      ring.rotation.x = -Math.PI / 2
-      ring.position.set(0, 0.02, 0)
-      m.root.add(ring)
-    }
+    const key = `${p.col},${p.row}`
+    pois.set(key, m.root)
+    // 拾取時由 poiKey 對回這一格的結構實體（gameScene.pick）
+    m.root.userData.poiKey = key
+    if (m.ring) addPoiRing(m.root, m.ring)
     yield
   }
   // 停機坪

@@ -9,15 +9,29 @@ import { world } from '../../client/session'
 import { cursorScreen, giveRefusalHere, modalOpen, targetMode } from '../../client/input'
 import { invDrag } from '../../client/give'
 import type { GameScene } from '../../render/gameScene'
+import { rightClickAction, showHp, structKind, type StructKind } from '../../client/interactKind'
 import { loc, t } from '../i18n'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
 
-const PANEL_FAC = new Set(['struct.power', 'fac.moduleFactory', 'fac.cellConsole', 'fac.cageConsole'])
-
-function desc(id: string): string | undefined {
+function desc(id: string, args?: Record<string, string | number>): string | undefined {
   const k = 'hover.desc.' + id
-  const v = t(k)
+  const v = t(k, args)
   return v === k ? undefined : v
+}
+
+/** 各類建物懸停時的操作提示（interactKind.ts 的分類）*/
+const STRUCT_HINT: Record<StructKind, string | null> = {
+  console: 'hover.hint.console',
+  portal: 'hover.hint.portalOff',
+  scenery: null,
+  breakable: 'hover.hint.breakable',
+  device: null,
+  bomb: 'hover.hint.bomb',
+  broken: 'hover.hint.repair',
+  panel: 'hover.hint.panel',
+  passive: 'hover.hint.passive',
+  hostile: 'hover.hint.attack',
+  interact: 'hover.hint.interact',
 }
 
 export function hoverTip(id: number): TipData | null {
@@ -33,31 +47,41 @@ export function hoverTip(id: number): TipData | null {
   }
   const def = UNITS.get(d)
   const name = localizeName(s.n) || loc(entDefName(d)) || d
-  const hpRow: [string, string][] = s.mhp && !(fl & EntFlag.Corpse) ? [[t('tip.hp'), `${Math.ceil(s.hp ?? 0)} / ${s.mhp}`]] : []
+  // 無敵的設施、站點（安裝座、擺渡號控制台、生命再生器…）不顯示血量
+  const hpRow: [string, string][] = showHp(s) ? [[t('tip.hp'), `${Math.ceil(s.hp ?? 0)} / ${s.mhp}`]] : []
   if (fl & EntFlag.Corpse) return { title: name, sub: t('hover.cat.corpse'), body: desc('corpse'), hint: t('hover.hint.corpse'), color: '#8b9aa8' }
-  // 太空層的站點與行星：名稱、用途介紹、有沒有人在駕駛
+  // 太空層的站點與行星：名稱、用途介紹、有沒有人在駕駛；自己正在太空中駕駛時右鍵＝飛過去（敵方的海盜船＝攻擊）
   if (d.startsWith('station.')) {
     const sid = d.slice(8)
     const piloted = (s.o ?? -1) >= 0
     const isMine = id === world.me.control
+    const hostile = (fl & EntFlag.Hostile) !== 0
+    const ctl = world.ents.get(world.me.control ?? 0)
+    const flying = !!ctl && ctl.s.z === 0 && (s.z ?? 0) === 0
+    const act = rightClickAction(s)
     return {
       title: name,
-      sub: t(isMine ? 'hover.station.mine' : piloted ? 'hover.station.piloted' : 'hover.cat.station'),
+      sub: t(isMine ? 'hover.station.mine' : hostile ? 'hover.cat.hostile' : piloted ? 'hover.station.piloted' : 'hover.cat.station'),
       body: t('codex.place.' + sid),
       rows: hpRow,
-      hint: t('hover.hint.station'),
-      color: piloted && s.c !== undefined && s.c >= 0 ? PLAYER_COLORS[s.c]?.hex : '#9fe7ff',
+      hint: isMine ? undefined : act === 'attack' ? t('hover.hint.attack') : flying ? t('hover.hint.flyTo') : t('hover.hint.station'),
+      color: hostile ? '#ff5a4a' : piloted && s.c !== undefined && s.c >= 0 ? PLAYER_COLORS[s.c]?.hex : '#9fe7ff',
     }
   }
   if (id === (world.me.control ?? world.me.unit)) return { title: name, sub: t('hover.cat.me'), rows: hpRow }
   const tags = def?.tags ?? []
-  if (typeof s.x2?.s === 'string') return { title: name, sub: t('hover.cat.vendor'), body: desc(d), hint: t('hover.hint.vendor'), color: '#5cf2a5' }
+  if (typeof s.x2?.s === 'string') return { title: name, sub: t('hover.cat.vendor'), body: desc(d), rows: hpRow, hint: t('hover.hint.vendor'), color: '#5cf2a5' }
   if (tags.includes('hazard')) return { title: name, sub: t('hover.cat.hazard'), body: desc(d), hint: t('hover.hint.hazard'), color: '#ff5a4a' }
-  if (tags.includes('ship') && tags.includes('structure')) return { title: name, sub: t('hover.cat.ship'), hint: t('hover.hint.board'), color: '#9fe7ff' }
-  if (tags.includes('structure')) {
-    return { title: name, sub: t(tags.includes('device') ? 'hover.cat.device' : 'hover.cat.structure'), body: desc(d), rows: tags.includes('invuln') ? [] : hpRow, hint: t(PANEL_FAC.has(d) ? 'hover.hint.panel' : d === 'struct.console' ? 'hover.hint.console' : d === 'struct.regen' ? 'hover.hint.passive' : 'hover.hint.interact'), color: '#ffc23d' }
+  if (tags.includes('ship') && tags.includes('structure')) return { title: name, sub: t('hover.cat.ship'), rows: hpRow, hint: t('hover.hint.board'), color: '#9fe7ff' }
+  // 標本籠：不是 NPC，也沒有「跟隨」可言
+  if (tags.includes('cage')) return { title: name, sub: t('hover.cat.cage'), body: desc(d, { n: Number(s.x2?.n ?? 0) }), rows: hpRow, hint: t('hover.hint.cage'), color: '#ffc23d' }
+  const sk = structKind(s)
+  if (sk) {
+    const hintKey = sk === 'portal' && s.x2?.on ? 'hover.hint.portalOn' : STRUCT_HINT[sk]
+    const sub = sk === 'hostile' ? 'hover.cat.hostile' : sk === 'bomb' ? 'hover.cat.bomb' : sk === 'device' ? 'hover.cat.device' : sk === 'scenery' ? 'hover.cat.scenery' : 'hover.cat.structure'
+    const color = sk === 'hostile' ? '#ff5a4a' : sk === 'bomb' ? '#ff3b3b' : '#ffc23d'
+    return { title: name, sub: t(sub), body: desc(d), rows: sk === 'scenery' ? [] : hpRow, hint: hintKey ? t(hintKey) : undefined, hintColor: sk === 'bomb' ? '#ff5a4a' : undefined, color }
   }
-  if (tags.includes('device')) return { title: name, sub: t('hover.cat.device'), body: desc(d), rows: hpRow, color: '#ffc23d' }
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!]?.hex : undefined
   if (fl & EntFlag.Hostile) return { title: name, sub: t('hover.cat.hostile'), rows: hpRow, hint: t('hover.hint.attack'), color: '#ff5a4a' }
   if ((s.o ?? -1) >= 0) return { title: name, sub: t(fl & EntFlag.Ally ? 'hover.cat.ally' : 'hover.cat.player'), rows: hpRow, hint: t('hover.hint.follow'), color }

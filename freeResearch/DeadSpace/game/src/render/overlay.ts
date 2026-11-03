@@ -9,10 +9,10 @@ import { loc, sysText, t } from '../ui/i18n'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
+import { promptKey } from '../client/interactKind'
 
 const requested = new Set<string>()
 /** 靠近時會開啟操作面板的設施 */
-const PANEL_DEFS = new Set(['struct.power', 'fac.moduleFactory', 'fac.cellConsole', 'fac.cageConsole'])
 /** canvas 上的中文字需要先載入對應的字型子集 */
 function ensureGlyphs(text: string): void {
   if (!text || requested.has(text)) return
@@ -190,14 +190,16 @@ export class Overlay {
       const item = (e.s.d ?? '').startsWith('item:')
       if (!vend && !item && !(fl & EntFlag.Interactable)) continue
       const d = Math.hypot(e.x - me.x, e.y - me.y)
-      if (d < 4.5 && (!best || d < best.d)) best = { id: e.s.i, d }
+      // 沒有「使用」可言的東西（瓦礫、雕像、降落場、裝置、損毀的控制台…）不標（interactKind.ts）
+      if (d < 4.5 && (!best || d < best.d) && promptKey(e.s, d < 2.9)) best = { id: e.s.i, d }
     }
     if (!best) return null
     const e = world.ents.get(best.id)!
     const uv = scene.units.views.get(best.id)
     if (uv) this.v.copy(uv.root.position)
     else this.v.set(e.x, 0, -e.y)
-    this.v.y += (uv?.height ?? 1) + 0.45
+    // 沒有單位視圖的是烘焙在站體裡的固定設施（販賣機約 2 m 高）：標在它頭上
+    this.v.y += (uv?.height ?? 2) + 0.45
     this.v.project(scene.camera)
     if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return null
     const sx = (this.v.x * 0.5 + 0.5) * w
@@ -205,8 +207,7 @@ export class Overlay {
     const d = e.s.d ?? ''
     const item = d.startsWith('item:')
     const name = item ? loc(entDefName(d)) : localizeName(e.s.n) || loc(entDefName(d))
-    const panel = typeof e.s.x2?.s === 'string' || PANEL_DEFS.has(d)
-    const act = item ? t('prompt.pickup') : panel && best.d < 2.9 ? t('prompt.panelOpen') : d === 'struct.console' ? t('prompt.pilot') : t('prompt.use')
+    const act = t(promptKey(e.s, best.d < 2.9) ?? 'prompt.use')
     ensureGlyphs(name + act)
     const pulse = 0.65 + 0.35 * Math.sin(now * 5)
     // 菱形標記

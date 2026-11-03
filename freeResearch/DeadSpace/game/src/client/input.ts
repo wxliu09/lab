@@ -2,11 +2,12 @@
 import { effect, signal } from '@preact/signals'
 import { edgeScrollOn, edgeSpeed } from './controlPrefs'
 import { audioPrefs, setAudioPref } from '../audio/sfx'
-import { abilityDef, itemDef, UNITS } from '../shared/content/registry'
-import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
+import { abilityDef, itemDef } from '../shared/content/registry'
+import type { SnapEntity } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
 import { sendCmd, world } from './session'
 import { giveRefusal } from './give'
+import { rightClickAction } from './interactKind'
 
 export type TargetMode =
   | null
@@ -23,8 +24,8 @@ export const cursorScreen = { x: 0, y: 0, overView: false }
 export const evolveOpen = signal(false)
 /** 遊戲選單（Esc）：繼續、說明、圖鑑、設定、離開對局 */
 export const menuOpen = signal(false)
-/** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示 */
-export const localNotice = signal<{ text: string; at: number } | null>(null)
+/** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示。text = 字串 key；life = 顯示毫秒（不給就依字數，Announce.tsx noticeLife）*/
+export const localNotice = signal<{ text: string; at: number; life?: number } | null>(null)
 /** 最後一次右鍵互動的對象（販賣機挨在一起時，面板優先顯示這台）*/
 export const lastInteract = signal(0)
 
@@ -224,41 +225,40 @@ export class Input {
   private rightClick(ent: number, pt: { x: number; y: number } | null, zone: number): void {
     const q = this.shift
     const me = world.me.control ?? world.me.unit
-    if (ent && ent !== me) {
-      const e = world.ents.get(ent)
-      const def = UNITS.get(e?.s.d ?? '')
-      const fl = e?.s.fl ?? 0
-      // 地上的物品：撿起來（sim 的 interact 只會走過去，不會撿）
-      if ((e?.s.d ?? '').startsWith('item:') || e?.s.d === 'groundItem') {
-        sendCmd({ k: 'pickup', e: ent, q })
-        this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ffc23d')
-        return
+    const e = ent && ent !== me ? world.ents.get(ent) : undefined
+    if (e) {
+      // 依類別決定（interactKind.ts）：敵方建物在「可互動」之前判斷，降落場這種大地貼當成點地面
+      switch (rightClickAction(e.s)) {
+        case 'pickup':
+          // 地上的物品：撿起來（sim 的 interact 只會走過去，不會撿）
+          sendCmd({ k: 'pickup', e: ent, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
+          return
+        case 'center':
+          // 控制台、無人機控制圈、降落傳送門：要站到正中央才會觸發（interact 只會停在旁邊），直接走到中心
+          sendCmd({ k: 'move', x: e.x, y: e.y, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
+          return
+        case 'interact':
+          lastInteract.value = ent
+          sendCmd({ k: 'interact', e: ent, q })
+          return
+        case 'corpse':
+          sendCmd({ k: 'move', x: (e.s.x ?? 0) / 100, y: (e.s.y ?? 0) / 100, q })
+          return
+        case 'attack':
+          sendCmd({ k: 'attack', e: ent, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y, '#ff5a4a')
+          return
+        case 'follow':
+          // 盟友（所有玩家彼此結盟）：右鍵 = 跟隨；要攻擊請用 A
+          sendCmd({ k: 'follow', e: ent, q })
+          return
+        case 'ground':
+          break
       }
-      // 控制台、無人機控制圈：要站到正中央才會開始駕駛（interact 只會停在旁邊），直接走到中心
-      const d = e?.s.d ?? ''
-      if (d === 'struct.console' || d === 'struct.droneControl') {
-        sendCmd({ k: 'move', x: e!.x, y: e!.y, q })
-        this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ffc23d')
-        return
-      }
-      if (def?.tags.includes('structure') || fl & EntFlag.Interactable || typeof e?.s.x2?.s === 'string') {
-        lastInteract.value = ent
-        sendCmd({ k: 'interact', e: ent, q })
-        return
-      }
-      if (fl & EntFlag.Corpse) {
-        sendCmd({ k: 'move', x: (e!.s.x ?? 0) / 100, y: (e!.s.y ?? 0) / 100, q })
-        return
-      }
-      if (fl & EntFlag.Hostile) {
-        sendCmd({ k: 'attack', e: ent, q })
-        this.scene.fx.clickMarker(zone, e!.x, e!.y, '#ff5a4a')
-        return
-      }
-      // 盟友（所有玩家彼此結盟）：右鍵 = 跟隨；要攻擊請用 A
-      sendCmd({ k: 'follow', e: ent, q })
-      return
     }
+    // 點地面（或點到自己、只是場景的地貼、剛離開視野的實體）：走過去
     if (pt) {
       sendCmd({ k: 'move', x: pt.x, y: pt.y, q })
       this.scene.fx.clickMarker(zone, pt.x, pt.y)
@@ -366,7 +366,8 @@ export class Input {
       const now = performance.now()
       if (now - this.dropArmed > 1500) {
         this.dropArmed = now
-        localNotice.value = { text: 'suit.dropConfirm', at: now }
+        // 提示只顯示到確認時限為止（再按一次的有效時間）
+        localNotice.value = { text: 'suit.dropConfirm', at: now, life: 1500 }
         return
       }
       this.dropArmed = 0

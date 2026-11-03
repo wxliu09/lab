@@ -1,7 +1,8 @@
 // 地上道具、瓦礫等雜項模型
 import * as THREE from 'three'
 import { regModel } from './index'
-import { sphere } from '../batch'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { box, rbox, sphere } from '../batch'
 import { Mat } from '../materials'
 import { ITEMS } from '../../shared/content/registry'
 import { ITEM_CAT_COLOR, buildGroundItem } from './groundItems'
@@ -36,4 +37,49 @@ regModel('rubble', (_def, s) => {
   ember.position.set(0.1, 0.1, 0.05)
   root.add(ember)
   return { root, height: 0.6, update: () => {} }
+})
+
+// ───────── 雜物箱（程式放置的 struct.rummage；版面上固定的那幾個由站體的 rummageBox POI 畫）─────────
+
+/** 箱身的漆色（同一站裡混著幾種，和 POI 的軍綠色箱子同一家族）*/
+const CRATE_PAINT = ['#5d6a3a', '#5d6a3a', '#6a5236', '#3e5466']
+let crateStrap: THREE.BufferGeometry | null = null
+
+/** 蓋緣框＋兩條束帶＋底座護條合成一份幾何（深色金屬，一個 draw call）*/
+function crateStrapGeo(): THREE.BufferGeometry {
+  if (crateStrap) return crateStrap
+  const parts: THREE.BufferGeometry[] = []
+  const put = (g: THREE.BufferGeometry, x: number, y: number, z: number) => {
+    const c = (g.index ? g.toNonIndexed() : g.clone()).translate(x, y, z)
+    for (const k of Object.keys(c.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') c.deleteAttribute(k)
+    parts.push(c)
+  }
+  // 蓋緣：一圈框（俯視時看得到箱蓋的烤漆，不是一整片深色）
+  put(box(0.92, 0.05, 0.08), 0, 0.705, 0.32)
+  put(box(0.92, 0.05, 0.08), 0, 0.705, -0.32)
+  put(box(0.08, 0.05, 0.58), 0.42, 0.705, 0)
+  put(box(0.08, 0.05, 0.58), -0.42, 0.705, 0)
+  put(box(0.94, 0.05, 0.74), 0, 0.03, 0)
+  // 兩條束帶繞過箱蓋
+  for (const x of [-0.22, 0.22]) put(box(0.07, 0.69, 0.725), x, 0.36, 0)
+  crateStrap = mergeGeometries(parts, false)!
+  crateStrap.userData.shared = true
+  for (const g of parts) g.dispose()
+  return crateStrap
+}
+
+/** 雜物箱：比照站體的 rummageBox（軍綠烤漆箱＋深色蓋緣＋琥珀色扣鎖），多兩條束帶；共用幾何與材質，3 個 draw call */
+regModel('crate', (_def, s) => {
+  const root = new THREE.Group()
+  const body = new THREE.Mesh(rbox(0.9, 0.7, 0.7, 0.05), Mat.paint(CRATE_PAINT[s.i % CRATE_PAINT.length], 0.6))
+  body.position.y = 0.35
+  const strap = new THREE.Mesh(crateStrapGeo(), Mat.metal('#2e343b', 0.75))
+  const latch = new THREE.Mesh(box(0.25, 0.1, 0.02), Mat.emissive('#ffc23d', 1.5))
+  latch.position.set(0, 0.5, 0.36)
+  for (const m of [body, strap]) {
+    m.castShadow = true
+    m.receiveShadow = true
+  }
+  root.add(body, strap, latch)
+  return { root, height: 0.75, update: () => {} }
 })

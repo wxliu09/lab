@@ -7,10 +7,15 @@ import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 import type { ClientWorld, CEnt } from '../client/world'
 import type { SceneLike } from './engine'
 import { RtsCamera } from './camera'
-import { buildStation, buildStationSteps, updateDoors, type RoomLight, type StationView } from './stationBuilder'
+import { addPoiRing, buildStation, buildStationSteps, updateDoors, type RoomLight, type StationView } from './stationBuilder'
+import { poiModel, poiWreck, type Animated } from './props'
+import { PoiTracker, type PoiLook, type PoiSeen } from './poiState'
+import { Blizzard } from './weather'
+import { isStructureId } from '../client/interactKind'
 import { FogMap } from './fog'
 import { UnitLayer, unitWarmMeshes } from './units'
-import { fogUniforms, emergencyStripMat } from './materials'
+import { fogUniforms, emergencyStripMat, isSharedMaterial } from './materials'
+import { sfx } from '../audio/sfx'
 import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from './quality'
 import { autoDropState, autoDropStep } from './autoDrop'
 import { localNotice, modalChecks } from '../client/input'
@@ -148,6 +153,24 @@ interface PoolSlot {
 const EMERGENCY = new THREE.Color('#ff2a18')
 const EMERGENCY_FILL = new THREE.Color(1, 0.16, 0.1)
 const EMERGENCY_SKY = new THREE.Color('#3a0806')
+/** 暴風雪的天光（冷白）*/
+const SNOW_SKY = new THREE.Color('#c9d6ea')
+
+/** 物件與它所有的上層都可見（Raycaster 不看 visible）*/
+function shown(o: THREE.Object3D | null): boolean {
+  for (; o; o = o.parent) if (!o.visible) return false
+  return true
+}
+
+/** 釋放換下來的設施外觀自己建的材質與光圈幾何（共用快取的幾何與材質不動）*/
+function disposeLocal(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (m.geometry instanceof THREE.RingGeometry) m.geometry.dispose()
+    const mm = m.material as THREE.Material | THREE.Material[] | undefined
+    for (const x of Array.isArray(mm) ? mm : mm ? [mm] : []) if (!isSharedMaterial(x)) x.dispose()
+  })
+}
 
 export class GameScene implements SceneLike {
   readonly scene = new THREE.Scene()
@@ -171,9 +194,23 @@ export class GameScene implements SceneLike {
   private flashTarget = new THREE.Object3D()
   private fogT = 0
   private lightT = 0
-  /** 結構實體 id ↔ POI 格 */
+  /** 結構實體 id ↔ POI 格（key = `${zone}:${col},${row}`）*/
   poiEnt = new Map<string, number>()
+  /** 各站固定設施的外觀狀態（完好／損毀的控制台／被摧毀，poiState.ts）*/
+  private poiTrackers = new Map<number, PoiTracker>()
+  /** 這一幀在目前 zone 的 POI 格上看到的結構實體（key = `${col},${row}`）*/
+  private poiSeen = new Map<string, PoiSeen>()
+  /** 換上的損毀外觀／殘骸模型（key 同 poiEnt）與它的動畫 */
+  private poiAlt = new Map<string, { root: THREE.Object3D; anim: Animated[] }>()
+  /** 迷霧更新的那一幀順便更新設施外觀 */
+  private poiDue = false
+  /** 天氣（目前只有餘燼衛星大氣護盾破掉後的暴風雪）*/
+  private blizzard: Blizzard | null = null
   grade = { hue: 0, sat: 0.02, bright: 0, contrast: 0.06 }
+  /** 目前 zone 主題的色彩分級（天氣在它上面調整）*/
+  private gradeBase = this.grade
+  /** 天氣所在的 zone（換站就重建）*/
+  private weatherZone = -1
   onZoneChange: ((z: ZoneInfo) => void) | null = null
   centeredOnce = false
   /** 上次對準時的操控對象與 zone（變了就重新對準）*/
@@ -541,7 +578,7 @@ export class GameScene implements SceneLike {
         this.rts.setBounds(-49, -49, 49, 49)
         this.rts.minDist = 22
         this.rts.maxDist = 95
-        this.grade = { hue: 0, sat: 0.1, bright: 0, contrast: 0.08 }
+        this.grade = this.gradeBase = { hue: 0, sat: 0.1, bright: 0, contrast: 0.08 }
         this.units.clear()
         this.onZoneChange?.({ id: 0, key: 'space', station: 'space', layout: null as never })
       }
@@ -572,7 +609,7 @@ export class GameScene implements SceneLike {
     this.emK = 0
     this.emOn = false
     this.setStrips(v, false)
-    this.grade = th.grade
+    this.grade = this.gradeBase = th.grade
     this.rts.setBounds(0, 0, info.layout.w, info.layout.h)
     this.units.clear()
     this.onZoneChange?.(info)
@@ -609,18 +646,73 @@ export class GameScene implements SceneLike {
     return u?.s.z ?? me.zone ?? 1
   }
 
+  /**
+   * 站在 POI 格上的結構實體由站體裡烘焙的 POI 模型代表，不另外建單位模型。
+   * 玩家放置的裝置（dev.*）與瓦礫剛好落在 POI 格上時照常畫自己的模型（以前會被當成那格的設施藏起來）。
+   */
   private isStaticStructure(e: CEnt): boolean {
-    const def = UNITS.get(e.s.d ?? '')
-    if (!def?.tags.includes('structure')) return false
+    const d = e.s.d ?? ''
+    const def = UNITS.get(d)
+    // 販賣機的定義只在 sim 端註冊（isStructureId 用 id 前綴認）；以前 client 查不到，每台販賣機裡都藏著一個看不見的備用膠囊模型
+    if (!isStructureId(d) || def?.tags.includes('device') || def?.tags.includes('rubble')) return false
     const info = this.zones.get(e.s.z ?? -1)
     if (!info) return false
     const { col, row } = layoutCell(info.layout, (e.s.x ?? 0) / 100, (e.s.y ?? 0) / 100)
     const key = `${col},${row}`
     if (this.views.get(info.id)?.pois.has(key)) {
       this.poiEnt.set(`${info.id}:${key}`, e.s.i)
+      this.poiSeen.set(key, { def: d, invuln: ((e.s.fl ?? 0) & EntFlag.Invuln) !== 0 })
       return true
     }
     return false
+  }
+
+  /**
+   * 固定設施的外觀（約 10 Hz，和迷霧同步）：損毀的控制台換成殘骸外觀、修好換回；被摧毀的設施藏起來換成殘骸。
+   * 只在那一格看得到時才下判斷（poiState.ts），視野外維持記憶中的樣子。
+   */
+  private updatePois(view: StationView, info: ZoneInfo): void {
+    let tr = this.poiTrackers.get(info.id)
+    if (!tr) this.poiTrackers.set(info.id, (tr = new PoiTracker(info.layout)))
+    const w = this.world
+    const srcs = w.vs.filter((s) => s[0] === info.id).map((s) => ({ x: s[1] / 10, y: s[2] / 10, r: s[3] / 10 }))
+    // 死者、旁觀者整個 zone 都看得到（sim 不送視野來源）；靠記憶核心觀看的仿生人有來源，照來源算
+    const full = (w.me.alive === false || w.me.role === 'spectator') && !w.me.booted && w.vs.length === 0
+    const doorClosed = (idx: number) => {
+      const st = w.doors.get(info.id * 10000 + idx)
+      return st === undefined || st === 0 || st === 2
+    }
+    for (const [key, look] of tr.update(performance.now() / 1000, this.poiSeen, srcs, doorClosed, full)) this.applyPoiLook(view, info, key, look)
+  }
+
+  private applyPoiLook(view: StationView, info: ZoneInfo, key: string, look: PoiLook): void {
+    const root = view.pois.get(key)
+    if (!root) return
+    const id = `${info.id}:${key}`
+    const old = this.poiAlt.get(id)
+    if (old) {
+      old.root.removeFromParent()
+      for (const a of old.anim) {
+        const i = view.anim.indexOf(a)
+        if (i >= 0) view.anim.splice(i, 1)
+      }
+      disposeLocal(old.root)
+      this.poiAlt.delete(id)
+    }
+    root.visible = look === 'ok'
+    if (look === 'gone') this.poiEnt.delete(id)
+    if (look === 'ok') return
+    const poi = info.layout.pois.find((p) => `${p.col},${p.row}` === key)
+    if (!poi) return
+    const seed = (poi.col * 73 + poi.row * 31) % 997
+    const m = look === 'broken' ? poiModel('consoleBroken', undefined, seed) : poiWreck(poi.def.kind, poi.def.ref, seed)
+    m.root.position.copy(root.position)
+    m.root.rotation.copy(root.rotation)
+    m.root.userData.poiKey = key
+    if (m.ring) addPoiRing(m.root, m.ring)
+    view.group.add(m.root)
+    view.anim.push(...m.anim)
+    this.poiAlt.set(id, { root: m.root, anim: m.anim })
   }
 
   /**
@@ -673,8 +765,16 @@ export class GameScene implements SceneLike {
         const st = w.doors.get(zid * 10000 + idx)
         return st === undefined || st === 0 || st === 2
       }, full)
+      this.poiDue = true
     }
+    this.poiSeen.clear()
     this.units.sync(w.ents.values(), zid, (e) => this.isStaticStructure(e), dt, t)
+    const zinfo = this.zones.get(zid)
+    if (view && zinfo && this.poiDue) {
+      this.poiDue = false
+      this.updatePois(view, zinfo)
+    }
+
     updateBuffFx(this, dt, t)
     // 燈光池：離鏡頭最近的房間燈；緊急照明（站點斷電）時整站轉暗紅、慢速脈動
     if (view) {
@@ -687,6 +787,8 @@ export class GameScene implements SceneLike {
       this.emK += Math.sign((em ? 1 : 0) - this.emK) * Math.min(Math.abs((em ? 1 : 0) - this.emK), dt * 1.5)
       this.updatePool(view, dt, t)
     }
+    // 天氣（燈光池之後：環境光的調整疊在緊急照明的結果上）
+    this.updateWeather(dt, t, view, zinfo)
     // 手電筒：只有自己的人形單位
     const me = this.units.views.get(mine?.s.i ?? -1)
     if (me?.rig && mine && (mine.s.fl ?? 0) & EntFlag.Mine) {
@@ -792,6 +894,42 @@ export class GameScene implements SceneLike {
     if (em > 0) emergencyStripMat.emissiveIntensity = 0.6 + 1.6 * (pulse - 0.82) / 0.18
   }
 
+  /**
+   * 暴風雪（餘燼衛星大氣護盾破掉後，worldPublic.wx[zone key] = 'blizzard'）：雪、雪霧、積雪，環境光轉冷變亮、色彩分級降飽和。
+   * 進站時已經在下雪就直接滿強度；在站裡看著護盾破掉則約 4 秒淡入、積雪慢慢積起來。換站時釋放。
+   */
+  private updateWeather(dt: number, t: number, view: StationView | undefined, info: ZoneInfo | undefined): void {
+    const zid = info?.id ?? this.zone
+    const on = !!info && !!view && this.world.w.wx?.[info.key] === 'blizzard'
+    if (zid !== this.weatherZone) {
+      this.weatherZone = zid
+      this.blizzard?.dispose()
+      this.blizzard = null
+      if (on) {
+        this.blizzard = new Blizzard(info!.layout, view!.theme.built?.rooms ?? [])
+        this.blizzard.snapTo(true)
+        this.scene.add(this.blizzard.group)
+      }
+    } else if (on && !this.blizzard) {
+      this.blizzard = new Blizzard(info!.layout, view!.theme.built?.rooms ?? [])
+      this.scene.add(this.blizzard.group)
+    }
+    const bz = this.blizzard
+    if (!bz) return
+    bz.target = on ? 1 : 0
+    if (bz.update(dt, t, this.rts.tx, this.rts.ty) && this.zone === zid) sfx('windGust')
+    const k = bz.k
+    const g = this.gradeBase
+    if (k > 0.001) {
+      this.hemi.color.lerp(SNOW_SKY, 0.5 * k)
+      this.hemi.intensity *= 1 + 0.3 * k
+      // 色彩分級換新物件時 engine 才重新套用：強度量化成 1/50，淡入期間不必每幀換
+      const kk = Math.round(k * 50) / 50
+      const sat = g.sat - 0.22 * kk
+      if (this.grade === g || this.grade.sat !== sat) this.grade = { hue: g.hue, sat, bright: g.bright + 0.03 * kk, contrast: g.contrast - 0.03 * kk }
+    } else if (this.grade !== g) this.grade = g
+  }
+
   /** 牆面燈條換成（或換回）緊急照明的紅色材質 */
   private setStrips(view: StationView, em: boolean): void {
     for (const m of view.strips) {
@@ -828,6 +966,10 @@ export class GameScene implements SceneLike {
     this.space = null
     this.zones.clear()
     this.poiEnt.clear()
+    this.poiTrackers.clear()
+    this.poiAlt.clear()
+    this.blizzard?.dispose()
+    this.blizzard = null
     this.prebuildQ = []
   }
 
@@ -837,16 +979,23 @@ export class GameScene implements SceneLike {
     ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera)
     const targets: THREE.Object3D[] = [this.units.group]
     const view = this.views.get(this.zone)
-    if (view) for (const g of view.pois.values()) targets.push(g)
+    if (view) {
+      for (const g of view.pois.values()) if (g.visible) targets.push(g)
+      // 換上的損毀外觀（殘骸沒有對應的實體，下面會略過）
+      for (const [k, a] of this.poiAlt) if (k.startsWith(this.zone + ':')) targets.push(a.root)
+    }
     const hits = ray.intersectObjects(targets, true)
     for (const h of hits) {
+      // Raycaster 不看 visible：藏起來的零件（閃爍的燈、被換掉的模型）不算
+      if (!shown(h.object)) continue
       let o: THREE.Object3D | null = h.object
       while (o) {
         if (o.userData.entId) return o.userData.entId as number
-        if (o.parent && view && [...view.pois.entries()].some(([, g]) => g === o)) {
-          const key = [...view.pois.entries()].find(([, g]) => g === o)![0]
-          const id = this.poiEnt.get(`${this.zone}:${key}`)
-          if (id) return id
+        const pk = o.userData.poiKey as string | undefined
+        if (pk !== undefined) {
+          const id = this.poiEnt.get(`${this.zone}:${pk}`)
+          if (id && this.world.ents.has(id)) return id
+          break
         }
         o = o.parent
       }

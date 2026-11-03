@@ -6,6 +6,7 @@ import { sfx } from '../../audio/sfx'
 import { UNITS } from '../../shared/content/registry'
 import { GEO } from '../fx'
 import { at, beam, burst, entPos, follow3, muzzleOf, pillar, screenFlash, shake, telegraph, W } from './kit'
+import { fxTex } from './tex'
 
 function every(gs: GameScene, z: number, dur: number, dt: number, fn: (k: number, t: number) => void): void {
   let last = -1
@@ -380,4 +381,192 @@ regFx('remote', (gs, _w, f) => {
   sfx('scan', p.x, p.y)
   for (let i = 0; i < 3; i++) gs.fx.after(i * 0.15, () => gs.fx.ring(f.z, p.x, p.y, 0.3, 2.4, '#33ffd1', 0.6, { tex: 'ring', k: 2, h: Math.min(2, p.h), follow: follow3(gs, f.e, 0) }))
   gs.fx.emit(f.z, p.x, p.y, Math.min(2, p.h), 12, { color: '#d8fff8', color2: '#33ffd1', speed: 1.5, life: 0.4, size: 0.1, up: 0.2 })
+})
+
+// ───────── 活體庫號：從隔間把標本傳進籠子（facilities.ts cageCellCmd）─────────
+
+regFx('cageTransfer', (gs, _w, f) => {
+  // x, y = 標本原本的位置；x2, y2 = 籠子（看不到那一端時被快照拿掉，改用籠子實體的位置）
+  const z = f.z
+  const cage = entPos(gs, f.e)
+  const bx = f.x2 ?? cage?.x ?? f.x
+  const by = f.y2 ?? cage?.y ?? f.y
+  sfx('blink', f.x, f.y)
+  sfx('teleChime', bx, by)
+  // 標本這一端：綠色光柱把它收走（縮小的光柱＋往上飄散的光點）
+  pillar(gs, z, f.x, f.y, 0.75, 2.4, '#5cf2a5', 0.7, { shrink: true, k: 1.8 })
+  gs.fx.ring(z, f.x, f.y, 0.2, 1.5, '#5cf2a5', 0.5, { tex: 'ring', k: 2.4 })
+  gs.fx.emit(z, f.x, f.y, 0.6, 26, { color: '#e8fff6', color2: '#5cf2a5', speed: 0.7, life: 0.8, size: 0.18, up: 1.6, area: 0.6, hArea: 1.2 })
+  // 傳送光束：從牆頂上方拱過去（隔間與平台之間隔著牆），光點沿著弧線流向籠子
+  const A = W(f.x, f.y, 0.9)
+  const B = W(bx, by, 0.9)
+  const d = A.distanceTo(B)
+  const top = 3.6 + Math.min(4, d * 0.12)
+  const mid = A.clone().lerp(B, 0.5)
+  mid.y = top
+  const curve = new THREE.QuadraticBezierCurve3(A, mid, B)
+  const tube = gs.fx.mesh(new THREE.TubeGeometry(curve, 40, 0.06, 6, false), '#9fffd8', 3.2)
+  const halo = gs.fx.mesh(new THREE.TubeGeometry(curve, 40, 0.2, 6, false), '#5cf2a5', 1.4, { opacity: 0.35 })
+  const g = new THREE.Group()
+  g.add(tube, halo)
+  const tm = tube.material as THREE.MeshBasicMaterial
+  const hm = halo.material as THREE.MeshBasicMaterial
+  // 光束從標本那端長出去：TubeGeometry 的索引沿著曲線排列，用 drawRange 控制長度
+  const total = (tube.geometry.index?.count ?? 0) || tube.geometry.attributes.position.count
+  const totalH = (halo.geometry.index?.count ?? 0) || halo.geometry.attributes.position.count
+  const pt = new THREE.Vector3()
+  let lastP = 0
+  gs.fx.addTransient(g, 0.9, z, (k, t) => {
+    const grow = Math.min(1, k / 0.35)
+    tube.geometry.setDrawRange(0, Math.ceil((total * grow) / 3) * 3)
+    halo.geometry.setDrawRange(0, Math.ceil((totalH * grow) / 3) * 3)
+    const op = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4
+    tm.opacity = op
+    hm.opacity = 0.35 * op
+    if (t - lastP > 0.03 && k < 0.8) {
+      lastP = t
+      curve.getPoint(Math.min(grow, Math.random()), pt)
+      gs.fx.emit(z, pt.x, -pt.z, pt.y, 2, { color: '#e8fff6', color2: '#5cf2a5', speed: 0.3, life: 0.4, size: 0.16, up: 0 })
+    }
+  })
+  // 籠子這一端：光束抵達時閃一下（籠子模型本身會多出一團蜷縮的影子）
+  gs.fx.after(0.32, () => {
+    gs.fx.flash(z, bx, by, 0.8, '#e8fff6', 1.1, 0.25)
+    gs.fx.glow(z, bx, by, 0.7, '#5cf2a5', 2.6, 0.9, { k: 2 })
+    gs.fx.ring(z, bx, by, 0.3, 1.6, '#5cf2a5', 0.5, { tex: 'ring', k: 2.4 })
+    gs.fx.emit(z, bx, by, 0.7, 18, { color: '#ffffff', color2: '#5cf2a5', speed: 2.2, life: 0.45, size: 1, up: 0.5, grav: 6, layer: 'spark' })
+  })
+})
+
+// ───────── 翠原星隕擊（stations.ts bombardHit／impact）─────────
+
+/** 隕擊半徑（sim stations.ts 的 IMPACT_R；預警事件只帶秒數）*/
+const METEOR_R = 6
+/** 火球從天而降的秒數（預警的最後這段）*/
+const METEOR_FALL = 1.7
+
+/**
+ * 預警：落點紅圈（細亮的外框呼吸、淡淡的內圈隨倒數長滿、裂痕與內圈標線慢慢轉）＋越來越急的提示音；
+ * 最後 1.7 秒火球從斜上方落下。地面標記刻意壓低亮度：10 秒的預警蓋在地上，不能把整片地面染成粉紅。
+ */
+regFx('meteorWarn', (gs, _w, f) => {
+  const z = f.z
+  const dur = f.v ?? 10
+  sfx('alarm', f.x, f.y)
+  meteorMark(gs, z, f.x, f.y, METEOR_R, dur)
+  // 倒數提示音：前段每 2 秒一聲，最後 3 秒加快
+  for (let t = 2; t < dur - 0.3; t += t < dur - 3 ? 2 : 0.5) gs.fx.after(t, () => sfx('beep', f.x, f.y))
+  gs.fx.after(Math.max(0, dur - METEOR_FALL), () => meteorFall(gs, z, f.x, f.y, Math.min(dur, METEOR_FALL)))
+})
+
+function meteorMark(gs: GameScene, z: number, x: number, y: number, r: number, dur: number): void {
+  const g = new THREE.Group()
+  const edge = gs.fx.mesh(GEO.ringThin, '#ff3b1a', 3)
+  edge.position.copy(W(x, y, 0.07))
+  edge.scale.setScalar(r)
+  const inner = gs.fx.mesh(GEO.ringThin, '#ff7a2a', 2)
+  inner.position.copy(W(x, y, 0.07))
+  inner.scale.setScalar(r * 0.45)
+  const fill = gs.fx.mesh(GEO.flat, '#ff2a10', 0.8, { map: fxTex('soft'), opacity: 0.15 })
+  fill.position.copy(W(x, y, 0.05))
+  const crack = gs.fx.mesh(GEO.flat, '#ff5a2a', 1.2, { map: fxTex('crack'), opacity: 0.3 })
+  crack.position.copy(W(x, y, 0.06))
+  crack.scale.setScalar(r * 0.42)
+  const ticks = gs.fx.mesh(GEO.flat, '#ff3b1a', 1.6, { map: fxTex('arrows'), opacity: 0.35 })
+  ticks.position.copy(W(x, y, 0.065))
+  ticks.scale.setScalar(r * 0.8)
+  g.add(edge, inner, fill, crack, ticks)
+  const em = edge.material as THREE.MeshBasicMaterial
+  const im = inner.material as THREE.MeshBasicMaterial
+  const fm = fill.material as THREE.MeshBasicMaterial
+  const tm = ticks.material as THREE.MeshBasicMaterial
+  gs.fx.addTransient(g, dur, z, (k, t) => {
+    // 越接近撞擊呼吸越快
+    const hz = 0.6 * (1 + k * 3)
+    const beat = 0.5 + 0.5 * Math.sin(t * hz * Math.PI * 2)
+    em.opacity = 0.55 + 0.45 * beat
+    im.opacity = 0.35 + 0.35 * beat
+    fill.scale.setScalar(Math.max(0.01, r * k))
+    fm.opacity = 0.1 + 0.1 * beat
+    tm.opacity = 0.25 + 0.2 * beat
+    ticks.rotation.y = -t * 0.6
+    crack.rotation.y = t * 0.15
+  })
+}
+
+/** 落下的火球：白熱核心＋火焰外暈＋拉長的火焰尾＋拖曳的火星與黑煙，跟著一盞移動的橘光 */
+function meteorFall(gs: GameScene, z: number, x: number, y: number, dur: number): void {
+  // 從西南斜上方落下：俯視鏡頭在南邊，這個方向整段都在畫面裡
+  const from = W(x - 7, y - 8, 17)
+  const to = W(x, y, 0.4)
+  sfx('fireball', x, y)
+  const g = new THREE.Group()
+  const core = gs.fx.mesh(GEO.sphere, '#fff4d8', 4)
+  core.scale.setScalar(0.55)
+  const shell = gs.fx.mesh(GEO.sphere, '#ff8a3a', 2.2, { opacity: 0.55 })
+  shell.scale.setScalar(0.95)
+  const glow = gs.fx.sprite('soft', '#ff7a2a', 3)
+  glow.scale.setScalar(4.2)
+  const flare = gs.fx.sprite('star', '#ffd9a0', 2.4)
+  flare.scale.setScalar(3)
+  g.add(core, shell, glow, flare)
+  const dir = to.clone().sub(from).normalize()
+  const tail = gs.fx.mesh(GEO.beam, '#ffb060', 2.4, { opacity: 0.7 })
+  const tail2 = gs.fx.mesh(GEO.beam, '#ff5a1a', 1.6, { opacity: 0.35 })
+  const tails = new THREE.Group()
+  tails.add(tail, tail2)
+  const root = new THREE.Group()
+  root.add(g, tails)
+  const p = new THREE.Vector3()
+  const back = new THREE.Vector3()
+  let last = 0
+  gs.fx.light(z, x, y, 6, '#ff8a3a', 260, 22, dur, { attack: 0.9, track: () => g.position })
+  gs.fx.addTransient(root, dur, z, (k, t) => {
+    // 加速落下
+    const e = k * k * (1.6 - 0.6 * k)
+    p.copy(from).lerp(to, e)
+    g.position.copy(p)
+    flare.material.rotation = t * 4
+    // 火焰尾：從火球往來的方向拉長，越接近地面越長
+    const len = 2.5 + e * 4
+    tails.position.copy(p)
+    back.copy(p).addScaledVector(dir, -1)
+    tails.lookAt(back)
+    tail.scale.set(0.32, 0.32, len)
+    tail2.scale.set(0.7, 0.7, len * 0.8)
+    if (t - last < 0.025) return
+    last = t
+    gs.fx.emit(z, p.x, -p.z, p.y, 3, { color: '#ffe0a0', color2: '#ff3b1a', speed: 1.2, life: 0.45, size: 0.9, grow: 1.6, v3: [-dir.x, -dir.y, -dir.z], jit: 0.35, drag: 1.5 })
+    gs.fx.emit(z, p.x, -p.z, p.y, 1, { color: '#3a3230', speed: 0.6, life: 1.6, size: 1.2, grow: 2, v3: [-dir.x, -dir.y, -dir.z], jit: 0.5, drag: 1.2, layer: 'smoke', alpha: 0.55 })
+  })
+}
+
+/** 撞擊：白閃 → 火球與衝擊波 → 土石與碎片噴飛 → 塵土雲 → 焦黑的隕石坑與餘燼（音效沿用爆炸聲）*/
+regFx('meteorImpact', (gs, _w, f) => {
+  const r = f.v ?? METEOR_R
+  const z = f.z
+  sfx('bigBoom', f.x, f.y)
+  sfx('rumble', f.x, f.y)
+  screenFlash(gs, '#ffe2c0', 2.2, 0.4, f.x, f.y)
+  gs.fx.flash(z, f.x, f.y, 0.8, '#fff0d8', Math.min(3, r * 0.45), 0.4)
+  gs.fx.glow(z, f.x, f.y, 1, '#ff9a4a', r * 2, 1.2, { k: 1.6, grow: 1.3, opacity: 0.8 })
+  gs.fx.light(z, f.x, f.y, 2, '#ffa060', 700, r * 4, 1.4)
+  gs.fx.ring(z, f.x, f.y, 0.5, r * 1.3, '#e8c8a0', 0.7, { tex: 'ring', k: 2.4 })
+  gs.fx.ring(z, f.x, f.y, 0.3, r * 0.85, '#ff7a2a', 1.1, { tex: 'ring', k: 2 })
+  gs.fx.emit(z, f.x, f.y, 0.5, 110, { color: '#fff0c8', color2: '#ff3b1a', speed: r * 1.5, life: 0.8, size: 0.85, grow: 1.7, up: 0.45, drag: 2 })
+  gs.fx.emit(z, f.x, f.y, 0.5, 50, { color: '#ffffff', color2: '#ffb46b', speed: r * 2, life: 0.8, size: 1, up: 0.9, grav: 7, drag: 0.6, layer: 'spark' })
+  // 土石：翠原星的草皮與泥土（偏棕綠），比熱融炸彈多石塊、少金屬
+  gs.fx.debris(z, f.x, f.y, 0.4, 26, 'rock', { speed: r * 1.4, size: 0.16, up: 1.5, colors: ['#6a5a44', '#4a5a38', '#7a6a52'] })
+  gs.fx.debris(z, f.x, f.y, 0.4, 8, 'metal', { speed: r * 1.2, size: 0.1, up: 1.2 })
+  gs.fx.emit(z, f.x, f.y, 0.3, 46, { color: '#7a6a58', speed: r * 0.7, life: 3.2, size: 1.7, grow: 1.6, up: 0.25, drag: 1.1, layer: 'smoke', alpha: 0.7, area: r * 0.35 })
+  for (let i = 0; i < 5; i++) {
+    gs.fx.after(0.08 + i * 0.12, () => {
+      gs.fx.emit(z, f.x, f.y, 0.4 + i * 0.45, 5, { color: i < 2 ? '#6a4a32' : '#857a6c', speed: 0.6 + i * 0.1, life: 2.4, size: 1.3 + i * 0.15, up: 0.9, drag: 1, layer: 'smoke', alpha: 0.6 })
+    })
+  }
+  gs.fx.decal(z, f.x, f.y, r * 1.7, 'scorch', '#ffffff', 45, { opacity: 0.95 })
+  gs.fx.decal(z, f.x, f.y, r * 1.1, 'crack', '#2a2420', 45, { opacity: 0.8, rot: Math.random() * 6 })
+  gs.fx.decal(z, f.x, f.y, r * 0.8, 'embers', '#ff5a1a', 6, { add: true, k: 1.6, opacity: 0.85 })
+  gs.fx.after(0.5, () => gs.fx.emit(z, f.x, f.y, 0.1, 26, { color: '#ffd080', color2: '#ff3b1a', speed: 0.4, life: 2.2, size: 0.12, up: 2, area: r * 0.5, drag: 0.6 }))
+  shake(gs, 1, f.x, f.y)
 })

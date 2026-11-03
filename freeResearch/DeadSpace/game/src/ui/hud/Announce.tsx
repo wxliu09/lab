@@ -44,6 +44,16 @@ export function announceLife(text: string, kind: Item['kind']): number {
   return Math.min(14000, Math.max(kind === 'apoc' ? 8000 : 0, ms))
 }
 
+/**
+ * 本機提示（右上小提示）的顯示時間（毫秒）：1.5 秒＋每字 50 ms（全形字 130 ms），至少 1.8 秒、上限 8 秒。
+ * 「畫面太慢，已自動降低畫質（可在設定改回）」這種長句原本固定 1.8 秒，來不及讀完。
+ */
+export function noticeLife(text: string): number {
+  let ms = 1500
+  for (const ch of text) ms += CJK.test(ch) ? 130 : 50
+  return Math.min(8000, Math.max(1800, ms))
+}
+
 const ERR = /^@(cast\.|vendor\.(soldOut|tooFar|offline|noPower)|item\.(full|giveFull|uniqueOnly|cantSuit|notYet|deployFail)|role\.cant|chat\.(no|nameTaken)|git\.msg\.already|fac\.(tooFar|offline))/
 
 let seq = 0
@@ -132,7 +142,9 @@ export function Announcements() {
   useEffect(() => {
     if (!ln) return
     const now = performance.now()
-    setItems((xs) => [...xs, { id: ++seq, text: t(ln.text), kind: 'err' as const, until: now + 1800, life: 1800 }].slice(-12))
+    const text = t(ln.text)
+    const life = ln.life ?? noticeLife(text)
+    setItems((xs) => [...xs, { id: ++seq, text, kind: 'err' as const, until: now + life, life }].slice(-12))
   }, [ln])
   useEffect(() => {
     if (!items.length) return

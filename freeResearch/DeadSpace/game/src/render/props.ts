@@ -1,8 +1,9 @@
 // 站內道具與設施模型（程序化組裝，正面朝 local +Z）
 import * as THREE from 'three'
-import { Batcher, box, cyl, rbox, sphere, torus } from './batch'
+import { Batcher, box, cyl, plane, rbox, sphere, torus } from './batch'
 import { Mat, withFog } from './materials'
 import { decalTex, glyphTex, screenTex } from './tex'
+import { fxTex } from './fx/tex'
 
 /** sim 朝向（0 = +x，π/2 = +y）→ three 的 rotY（讓 local +Z 對準該方向）*/
 export function facingToRotY(a: number): number {
@@ -226,9 +227,54 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
       return { root, anim, ring: '#7fd8ff' }
     }
     case 'consoleBroken': {
-      add(cyl(0.75, 0.9, 0.85, 28), Mat.metal('#2a2a2a', 0.5), 0, 0.42, 0)
-      add(cyl(0.8, 0.8, 0.06, 28), Mat.metal('#3a3330', 0.5), 0, 0.86, 0, 0.1, 0, 0.08)
-      return { root, anim }
+      // 被打爆的控制台（站點介面裝置修得好）：焦黑的環形工作站、裂開歪掉的台面、熄掉的雷達盤只剩暗紅的故障畫面與裂痕，
+      // 側面掀開的面板、垂下來的電纜，斷掉的全像發射器偶爾冒火花；地上焦痕＋淡紅光圈（還是互動目標，用介面裝置對它使用）
+      const char = Mat.metal('#1f1d1b', 0.35)
+      add(cyl(0.75, 0.9, 0.85, 28), char, 0, 0.42, 0)
+      const top = add(cyl(0.8, 0.8, 0.06, 28), Mat.metal('#3a3330', 0.5), 0, 0.86, 0, 0.1, 0, 0.08)
+      add(torus(0.78, 0.03, 6, 32, Math.PI * 1.3), Mat.metal('#4a423a', 0.6, false), 0, 0.9, 0, Math.PI / 2 + 0.1, 0, 0.6)
+      // 台面上的東西都掛在歪掉的台面底下，跟著它一起傾斜
+      const onTop = (m: THREE.Object3D, x: number, y: number, z: number) => {
+        m.position.set(x, 0.03 + y, z)
+        top.add(m)
+        return m
+      }
+      const disc = onTop(new THREE.Mesh(new THREE.CircleGeometry(0.52, 32), Mat.screen(screenTex('radar', '#ff5a4a', seed + 7), 0.5)), 0, 0.004, 0) as THREE.Mesh
+      disc.rotation.x = -Math.PI / 2
+      const crack = onTop(new THREE.Mesh(new THREE.CircleGeometry(0.52, 32), new THREE.MeshBasicMaterial({ map: fxTex('crack'), color: '#0a0806', transparent: true, opacity: 0.9, depthWrite: false })), 0, 0.008, 0)
+      crack.rotation.x = -Math.PI / 2
+      // 全像發射器的斷樁＋火花
+      const stub = onTop(new THREE.Mesh(cyl(0.09, 0.12, 0.22, 10), Mat.metal('#1c1a18', 0.5, false)), 0.12, 0.1, -0.05)
+      stub.rotation.set(0.25, 0, 0.3)
+      const spark = onTop(new THREE.Mesh(sphere(0.045, 8, 6), Mat.emissive('#ffd9a0', 5)), 0.16, 0.22, -0.02)
+      // 側面掀開的面板（露出裡面的焦黑）與垂下的電纜
+      const a0 = seed * 0.9
+      for (let i = 0; i < 2; i++) {
+        const a = a0 + i * 2.4
+        add(rbox(0.42, 0.5, 0.04, 0.01), Mat.metal('#4a4540', 0.6), Math.cos(a) * 0.95, 0.3, Math.sin(a) * 0.95, 0.9, -a + Math.PI / 2, 0)
+        add(box(0.3, 0.4, 0.02), Mat.metal('#0c0b0a', 0.3, false), Math.cos(a) * 0.86, 0.45, Math.sin(a) * 0.86, 0, -a + Math.PI / 2, 0)
+        for (let j = 0; j < 2; j++) add(cyl(0.018, 0.018, 0.45, 5), Mat.rubber('#14171a'), Math.cos(a + 0.12 * (j - 0.5)) * 0.9, 0.6, Math.sin(a + 0.12 * (j - 0.5)) * 0.9, 0.25 * (j ? 1 : -1), 0, 0.2)
+      }
+      for (let i = 0; i < 4; i++) {
+        const a = seed * 1.7 + i * 1.9
+        add(rbox(0.16 + (i % 2) * 0.1, 0.04, 0.12, 0.015), char, Math.cos(a) * 1.05, 0.02, Math.sin(a) * 1.05, 0, a, (i - 1.5) * 0.15)
+      }
+      const scorch = new THREE.Mesh(plane(1, 1), wreckScorchMat())
+      scorch.rotation.x = -Math.PI / 2
+      scorch.scale.setScalar(3.4)
+      scorch.position.y = 0.012
+      root.add(scorch)
+      const dm = disc.material as THREE.MeshStandardMaterial
+      anim.push({
+        obj: disc,
+        update: (t) => {
+          // 故障閃爍：大部分時間很暗，偶爾跳亮一下
+          const f = Math.sin(t * 13 + seed) * Math.sin(t * 3.1)
+          dm.emissiveIntensity = f > 0.55 ? 1.2 : 0.35
+          spark.visible = Math.sin(t * 7.3 + seed * 2) * Math.sin(t * 2.3) > 0.6
+        },
+      })
+      return { root, anim, ring: '#ff5a4a' }
     }
     case 'powerConsole': {
       add(rbox(1.4, 1.1, 0.8, 0.06), dark, 0, 0.55, 0)
@@ -956,6 +1002,8 @@ function doubleSided(m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial 
   let d = dsCache.get(m)
   if (!d) {
     d = withFog(new THREE.MeshStandardMaterial({ map: m.map, roughnessMap: m.roughnessMap, normalMap: m.normalMap, roughness: m.roughness, metalness: m.metalness, side: THREE.DoubleSide }))
+    // 快取共用：釋放站點或換下殘骸時不 dispose
+    d.userData.keep = true
     dsCache.set(m, d)
   }
   return d
@@ -1296,4 +1344,141 @@ const SPECIAL_VENDORS: Record<string, PoiFn> = {
     k.anim.push({ obj: lamp, update: (t) => (lamp.visible = Math.sin(t * 1.5 + seed) > -0.6) })
     return { root: k.root, anim: k.anim, ring: '#c0c8d0' }
   },
+}
+
+// ───────── 被摧毀的固定設施（gameScene 依 poiState 換上）─────────
+
+let scorchMat: THREE.MeshBasicMaterial | null = null
+let chunkGeo: THREE.BufferGeometry | null = null
+const arcCache = new Map<string, THREE.BufferGeometry>()
+/** 一片弧形的殼（開口圓筒的一段，配雙面材質）*/
+function shellArc(r: number, h: number, len: number): THREE.BufferGeometry {
+  const key = `${r}:${h}:${len}`
+  let g = arcCache.get(key)
+  if (!g) {
+    g = new THREE.CylinderGeometry(r, r * 1.04, h, 12, 1, true, 0, len)
+    g.userData.shared = true
+    arcCache.set(key, g)
+  }
+  return g
+}
+
+/** 碎石塊（共用一份幾何）*/
+function stoneChunk(): THREE.BufferGeometry {
+  if (!chunkGeo) {
+    chunkGeo = new THREE.DodecahedronGeometry(1, 0)
+    chunkGeo.userData.shared = true
+  }
+  return chunkGeo
+}
+/** 地上的焦痕（所有殘骸共用一份材質；不寫深度、蓋在地板上）*/
+function wreckScorchMat(): THREE.MeshBasicMaterial {
+  if (!scorchMat) {
+    scorchMat = withFog(new THREE.MeshBasicMaterial({ map: fxTex('scorch'), color: '#ffffff', transparent: true, opacity: 0.85, depthWrite: false }))
+    scorchMat.userData.keep = true
+  }
+  return scorchMat
+}
+
+/** 殘骸的外形：底座尺寸（圓形 r＞0；方形 w×d）、底座高度、焦痕大小、碎片數 */
+const WRECK_SHAPE: Record<string, { w: number; d: number; r?: number; h: number; scorch: number; bits: number; spread: number }> = {
+  vendor: { w: 1.0, d: 0.8, h: 0.6, scorch: 3.0, bits: 5, spread: 1.1 },
+  console: { w: 0, d: 0, r: 0.85, h: 0.45, scorch: 3.4, bits: 5, spread: 1.2 },
+  git: { w: 0, d: 0, r: 1.15, h: 0.6, scorch: 4.2, bits: 6, spread: 1.6 },
+  moduleFactory: { w: 1.8, d: 1.1, h: 0.5, scorch: 3.6, bits: 6, spread: 1.4 },
+  moduleSocket: { w: 0.95, d: 0.95, h: 0.25, scorch: 2.4, bits: 4, spread: 0.9 },
+}
+
+/**
+ * 被摧毀的固定設施：販賣機、控制台、GIT、模組工廠、安裝座 = 焦黑的底座＋裂開歪倒的殼＋散落的碎片＋地上焦痕，
+ * 幾點餘燼慢慢明滅；雜物箱 = 被撬開的箱底＋掀掉的蓋子與木條；企鵝雕像 = 台座＋碎石。
+ * 幾何與材質都走共用快取（只有焦痕一張平面），一座站被打爛也只多幾個 draw call。
+ */
+export function poiWreck(kind: string, ref: string | undefined, seed: number): PoiModel {
+  const k = poiKit()
+  const r01 = (i: number) => rnd01(seed, i)
+  if (kind === 'rummageBox') {
+    const olive = Mat.paint('#5d6a3a', 0.6)
+    const dark = Mat.metal('#2e343b', 0.75)
+    k.add(rbox(0.9, 0.34, 0.7, 0.04), olive, 0, 0.17, 0)
+    k.add(box(0.86, 0.02, 0.66), Mat.metal('#1a1c1e', 0.4, false), 0, 0.33, 0, 0, 0, 0, false)
+    // 掀掉的蓋子斜靠在旁邊，幾根木條與緩衝料散在地上
+    k.add(rbox(0.92, 0.06, 0.72, 0.02), dark, 0.62, 0.22, 0.1, 0, 0.3, 1.1)
+    for (let i = 0; i < 3; i++) {
+      const a = seed + i * 2.2
+      k.add(box(0.5, 0.035, 0.08), Mat.paint(i % 2 ? '#7a6a3a' : '#8a7a4a', 0.7), Math.cos(a) * 0.7, 0.02, Math.sin(a) * 0.6, 0, a, 0, false)
+    }
+    return { root: k.root, anim: k.anim }
+  }
+  if (kind === 'penguinStatue') {
+    const stone = Mat.rock('#8a8c90')
+    k.add(rbox(1.0, 0.5, 1.0, 0.05), Mat.rock('#5a5c62'), 0, 0.25, 0)
+    for (let i = 0; i < 6; i++) {
+      const a = seed * 0.7 + i * 1.05
+      const d = i < 2 ? 0.15 : 0.7 + r01(i) * 0.4
+      const s = 0.12 + r01(i + 7) * 0.12
+      k.add(stoneChunk(), i < 2 ? Mat.rock('#b8bab8') : stone, Math.cos(a) * d, i < 2 ? 0.55 : s * 0.6, Math.sin(a) * d, r01(i + 3) * 3, r01(i + 4) * 3, 0).scale.setScalar(s)
+    }
+    k.add(cyl(0.0, 0.06, 0.2, 10), Mat.metal('#c9a23a', 0.9, false), 0.75, 0.05, 0.35, Math.PI / 2, 0, 0.6)
+    return { root: k.root, anim: k.anim }
+  }
+  const sh = WRECK_SHAPE[kind] ?? WRECK_SHAPE.vendor
+  const char = Mat.metal('#26231f', 0.55)
+  const burnt = Mat.paint(kind === 'vendor' && ref === 'lq' ? '#45484c' : '#3b3632', 0.75)
+  const raw = Mat.metal('#5a5650', 0.7, false)
+  const round = !!sh.r
+  if (round) {
+    const r = sh.r!
+    k.add(cyl(r * 0.95, r, 0.18, 24), char, 0, 0.09, 0)
+    // 燒穿的內部：焦黑的底＋悶燒的橘光
+    k.add(cyl(r * 0.8, r * 0.8, 0.02, 20), Mat.metal('#141210', 0.4, false), 0, 0.19, 0, 0, 0, 0, false)
+    // 裂成幾片的殼：高低不一、往外歪，一片倒在地上（弧片兩面都要畫）
+    const arcB = doubleSided(burnt)
+    const arcC = doubleSided(char)
+    k.add(shellArc(r * 0.85, sh.h, 1.9), arcB, 0, 0.18 + sh.h / 2, 0, 0.1, seed, -0.12)
+    k.add(shellArc(r * 0.85, sh.h * 0.55, 1.3), arcB, 0, 0.18 + sh.h * 0.27, 0, -0.08, seed + 2.6, 0.18)
+    k.add(shellArc(r * 0.85, sh.h * 0.8, 0.9), arcC, 0, 0.18 + sh.h * 0.4, 0, 0.05, seed + 4.4, 0.1)
+    k.add(shellArc(r * 0.8, sh.h * 0.8, 1.1), arcB, Math.cos(seed) * r * 1.1, 0.12, Math.sin(seed) * r * 1.1, Math.PI / 2 - 0.15, -seed, 0)
+  } else {
+    k.add(rbox(sh.w, 0.16, sh.d, 0.04), char, 0, 0.08, 0)
+    // 炸剩的下半截＋被掀開歪向一側的側板
+    k.add(rbox(sh.w * 0.92, sh.h * 0.7, sh.d * 0.9, 0.04), burnt, 0, 0.16 + sh.h * 0.35 - 0.04, 0, 0.06, 0, -0.08)
+    k.add(rbox(sh.w * 0.9, sh.h * 0.9, 0.05, 0.015), burnt, 0, 0.16 + sh.h * 0.42, -sh.d * 0.5, -0.5, 0.1, 0.05)
+    k.add(box(sh.w * 0.8, 0.02, sh.d * 0.75), Mat.metal('#141210', 0.4, false), 0, 0.17 + sh.h * 0.7 - 0.03, 0, 0.06, 0, -0.08, false)
+    // 炸飛的頂板倒在一旁
+    k.add(rbox(sh.w * 0.85, 0.07, sh.d * 0.75, 0.02), char, sh.w * 0.65, 0.12, sh.d * 0.35, 0, 0.5, 0.35)
+  }
+  const smolder = k.decal(decalTex('glow', '#ff6a2a'), (sh.r ?? Math.min(sh.w, sh.d) / 2) * 1.7, round ? 0.21 : 0.16 + sh.h * 0.7, 0.4, true)
+  // 炸開的破口：裸露的內部骨架
+  k.add(box(0.06, sh.h * 1.3, 0.06), raw, round ? 0.3 : -sh.w * 0.3, 0.2 + sh.h * 0.5, 0.1, 0.4, 0, 0.3)
+  k.add(box(0.05, sh.h * 1.1, 0.05), raw, round ? -0.25 : sh.w * 0.2, 0.2 + sh.h * 0.45, -0.12, -0.3, 0, -0.5)
+  // 碎片
+  for (let i = 0; i < sh.bits; i++) {
+    const a = seed * 1.3 + (i / sh.bits) * Math.PI * 2 + r01(i) * 0.6
+    const d = sh.spread * (0.75 + r01(i + 11) * 0.5)
+    const s = 0.1 + r01(i + 23) * 0.14
+    k.add(rbox(s * 1.6, s * 0.5, s, 0.02), i % 3 ? char : burnt, Math.cos(a) * d, s * 0.25, Math.sin(a) * d, r01(i + 5) * 0.6, a, r01(i + 9) * 0.6, false)
+  }
+  const scorch = new THREE.Mesh(plane(1, 1), wreckScorchMat())
+  scorch.rotation.x = -Math.PI / 2
+  scorch.rotation.z = seed
+  scorch.scale.setScalar(sh.scorch)
+  scorch.position.y = 0.012
+  k.root.add(scorch)
+  // 餘燼：幾點橘光慢慢明滅
+  const embers: THREE.Mesh[] = []
+  const emberMat = Mat.emissive('#ff6a2a', 2.6)
+  for (let i = 0; i < 3; i++) {
+    const a = seed * 2.1 + i * 2.1
+    embers.push(k.add(sphere(0.05, 6, 4), emberMat, Math.cos(a) * 0.35, 0.2 + i * 0.08, Math.sin(a) * 0.3, 0, 0, 0, false))
+  }
+  const sm = smolder.material as THREE.MeshBasicMaterial
+  k.anim.push({
+    obj: k.root,
+    update: (t) => {
+      embers.forEach((m, i) => m.scale.setScalar(0.5 + 0.5 * Math.max(0, Math.sin(t * (1.3 + i * 0.4) + seed + i * 2))))
+      sm.opacity = 0.28 + 0.12 * Math.sin(t * 1.1 + seed) + 0.06 * Math.sin(t * 3.7)
+    },
+  })
+  return { root: k.root, anim: k.anim }
 }

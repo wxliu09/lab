@@ -18,6 +18,8 @@ export interface TipData {
   rows?: [string, string][]
   /** 操作提示（最底下，強調色）*/
   hint?: string
+  /** 操作提示改用的顏色（警告：例如熱融炸彈「快離開」）*/
+  hintColor?: string
   color?: string
 }
 
@@ -151,7 +153,11 @@ export function TooltipLayer(): JSX.Element | null {
           ))}
         </div>
       )}
-      {d.hint && <div class="tip-hint">{d.hint}</div>}
+      {d.hint && (
+        <div class="tip-hint" style={d.hintColor ? { color: d.hintColor } : undefined}>
+          {d.hint}
+        </div>
+      )}
     </div>
   )
 }
