@@ -121,6 +121,13 @@ describe('預設畫質', () => {
     ])
       expect(detectQuality(gl(n), fast), n).toBe('medium')
   })
+  it("Safari 的 'Apple GPU'：Mac（沒有觸控點）→ medium，iPhone／iPad（有觸控點）或不知道 → low", () => {
+    expect(detectQuality(gl('Apple GPU'), { ...fast, maxTouchPoints: 0 })).toBe('medium')
+    expect(detectQuality(gl('Apple GPU'), { ...fast, maxTouchPoints: 5 })).toBe('low')
+    expect(detectQuality(gl('Apple GPU'), fast)).toBe('low')
+    // 核心數少的 Mac 一樣 low
+    expect(detectQuality(gl('Apple GPU'), { hardwareConcurrency: 4, maxTouchPoints: 0 })).toBe('low')
+  })
   it('核心數少或記憶體小 → low；沒有 WebGL 時只看 CPU／記憶體', () => {
     const nv = 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)'
     expect(detectQuality(gl(nv), { hardwareConcurrency: 4, deviceMemory: 8 })).toBe('low')

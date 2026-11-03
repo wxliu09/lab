@@ -55,17 +55,38 @@ function build(c: AudioContext, dest: AudioNode): Engine | null {
   return { g, o, lp, n, bp, liveAt: c.currentTime }
 }
 
-function release(): void {
+/** 停掉並放掉節點；at = 停止時間（AudioContext 時間，預設立刻）*/
+function release(at?: number): void {
   if (!eng) return
   const e = eng
   eng = null
   try {
-    e.o.stop()
-    e.n.stop()
+    e.o.stop(at)
+    e.n.stop(at)
   } catch {
     /* ignore */
   }
-  e.g.disconnect()
+  if (at === undefined) e.g.disconnect()
+  else e.o.onended = () => e.g.disconnect()
+}
+
+/**
+ * 離開對局：引擎聲直接淡出並停掉節點（不等 RELEASE_AFTER——那要靠之後還有 setEngine 呼叫才會檢查，
+ * 離開對局後就不會再有，節點會一直留到下一局）。
+ */
+export function stopEngine(): void {
+  level = 0
+  if (!eng) return
+  const c = audioContext()
+  // 沒在播（暫停中、已關閉）：沒有爆音的問題，直接停
+  if (!c || c.state !== 'running') {
+    release()
+    return
+  }
+  const t = c.currentTime
+  eng.g.gain.cancelScheduledValues(t)
+  eng.g.gain.setTargetAtTime(0, t, 0.04)
+  release(t + 0.25)
 }
 
 /**

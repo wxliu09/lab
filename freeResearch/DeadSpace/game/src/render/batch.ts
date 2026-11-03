@@ -2,6 +2,10 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { runSteps, type Steps } from './steps'
+
+/** 分段合併時一段的零件數 */
+const MERGE_CHUNK = 192
 
 export class Batcher {
   private parts = new Map<THREE.Material, THREE.BufferGeometry[]>()
@@ -36,9 +40,32 @@ export class Batcher {
   }
 
   build(group: THREE.Object3D, opts: { cast?: boolean; receive?: boolean } = {}): THREE.Mesh[] {
+    return runSteps(this.buildSteps(group, opts))
+  }
+
+  /**
+   * 分段合併：零件多的材質先每 MERGE_CHUNK 個合成一段、每段之後 yield，最後再把各段接起來
+   * （mergeGeometries 是依序串接，分段合併的結果和一次合併完全相同）。
+   */
+  *buildSteps(group: THREE.Object3D, opts: { cast?: boolean; receive?: boolean } = {}): Steps<THREE.Mesh[]> {
     const out: THREE.Mesh[] = []
     for (const [mat, geos] of this.parts) {
-      const merged = mergeGeometries(geos, false)
+      let merged: THREE.BufferGeometry | null
+      if (geos.length <= MERGE_CHUNK) merged = mergeGeometries(geos, false)
+      else {
+        const parts: THREE.BufferGeometry[] = []
+        let ok = true
+        for (let i = 0; i < geos.length && ok; i += MERGE_CHUNK) {
+          const m = mergeGeometries(geos.slice(i, i + MERGE_CHUNK), false)
+          if (m) parts.push(m)
+          else ok = false
+          yield
+        }
+        // 任何一段合併失敗（attribute 不一致）就和一次合併一樣整組放棄
+        merged = ok ? mergeGeometries(parts, false) : null
+        for (const g of parts) g.dispose()
+      }
+      yield
       if (!merged) continue
       merged.computeBoundingSphere()
       const mesh = new THREE.Mesh(merged, mat)

@@ -796,13 +796,18 @@ function disposeLink(L: Link): void {
 const keys = new Set<string>()
 const warmed = new WeakSet<GameScene>()
 
+/** 預熱用：buff 視覺會用到的受光材質（殼層、石化／岩化／肉化）*/
+export function buffWarmMaterials(): THREE.Material[] {
+  return [shellMat('rim', '#ffffff'), stoneMat(), rockMat(), fleshMat()]
+}
+
 /** 每幀呼叫一次（GameScene.update，units.sync 之後）*/
 export function updateBuffFx(gs: GameScene, dt: number, t: number): void {
   let states = STATES.get(gs)
   if (!states) STATES.set(gs, (states = new Map()))
   if (!warmed.has(gs) && gs.zone >= 0) {
     warmed.add(gs)
-    prewarm(gs, [shellMat('rim', '#ffffff'), stoneMat(), rockMat(), fleshMat()])
+    prewarm(gs, buffWarmMaterials())
   }
   for (const m of shellCache.values()) (m.userData.fxU as { uFxTime: { value: number } }).uFxTime.value = t
   const alive = new Set<number>()

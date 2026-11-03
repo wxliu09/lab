@@ -12,6 +12,7 @@ import { Cell, type ParsedLayout } from '../shared/layout'
 import { Batcher, box } from './batch'
 import { Mat } from './materials'
 import type { Theme } from './themes'
+import type { Steps } from './steps'
 
 // ───── 雜訊（決定性、三維 value noise）─────
 
@@ -135,6 +136,9 @@ export function classifyOutdoor(l: ParsedLayout, th: Theme, cellAt: (c: number, 
 
 // ───── 幾何累積 ─────
 
+/** smoothNormals 每處理這麼多個頂點 yield 一次 */
+const SMOOTH_CHUNK = 12288
+
 class Geo {
   pos: number[] = []
   nrm: number[] = []
@@ -151,8 +155,8 @@ class Geo {
     this.keys.push(key)
   }
 
-  /** 依共用鍵累積面法線（面積加權），得到跨面平滑的法線 */
-  smoothNormals(from = 0): void {
+  /** 依共用鍵累積面法線（面積加權），得到跨面平滑的法線（分段：每 SMOOTH_CHUNK 個頂點 yield 一次）*/
+  *smoothNormals(from = 0): Steps {
     const acc = new Map<number, [number, number, number]>()
     const p = this.pos
     const tri: number[] = []
@@ -179,6 +183,7 @@ class Geo {
         s[1] += ny
         s[2] += nz
       }
+      if (i % SMOOTH_CHUNK === 0) yield
     }
     for (let i = from; i < this.keys.length; i++) {
       const key = this.keys[i]
@@ -188,6 +193,7 @@ class Geo {
       this.nrm[i * 3] = s[0] / len
       this.nrm[i * 3 + 1] = s[1] / len
       this.nrm[i * 3 + 2] = s[2] / len
+      if (i % SMOOTH_CHUNK === 0) yield
     }
   }
 
@@ -205,13 +211,17 @@ class Geo {
     }
   }
 
-  build(mat: THREE.Material, cast: boolean): THREE.Mesh | null {
+  /** 轉成 Mesh（分段：每個 attribute 之後 yield；大的岩壁幾何一個 attribute 就有上百萬個數）*/
+  *build(mat: THREE.Material, cast: boolean): Steps<THREE.Mesh | null> {
     if (!this.pos.length) return null
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
+    yield
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3))
+    yield
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2))
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3))
+    yield
     g.computeBoundingSphere()
     const mesh = new THREE.Mesh(g, mat)
     mesh.castShadow = cast
@@ -268,7 +278,8 @@ const PROFILE = [0.14, 0.02, -0.06, -0.2]
 /** 半公尺取樣 */
 const SUB = 2
 
-export function buildRockWalls(o: RockWallOpts): void {
+/** 分段建立（每一列格子、每一批面之後 yield；stationBuilder 的 buildStationSteps 用 yield* 接上）*/
+export function* buildRockWallsSteps(o: RockWallOpts): Steps {
   const { l, th, group, cls, cellAt, wallH, seed } = o
   const W = l.w
   const H = l.h
@@ -303,6 +314,7 @@ export function buildRockWalls(o: RockWallOpts): void {
         cq.push(cIdx(c, r))
       }
     }
+    if (r % 8 === 7) yield
   }
   for (let qi = 0; qi < cq.length; qi++) {
     const i = cq[qi]
@@ -323,6 +335,7 @@ export function buildRockWalls(o: RockWallOpts): void {
       }
     }
   }
+  yield
   const bil = (f: Float32Array, gx: number, gr: number, map: (v: number) => number) => {
     const c0 = Math.max(0, Math.min(W, Math.floor(gx)))
     const r0 = Math.max(0, Math.min(H, Math.floor(gr)))
@@ -408,6 +421,7 @@ export function buildRockWalls(o: RockWallOpts): void {
         faces.push({ pts, u0, du: 1, nx, nr, toFloor: nbC !== Cell.Void, col: c, row: r })
       }
     }
+    if (r % 4 === 3) yield
   }
   // 輪廓平滑（Laplacian，硬點不動）
   const verts = [...bv.values()]
@@ -430,6 +444,7 @@ export function buildRockWalls(o: RockWallOpts): void {
       v.x = nxt[i][0]
       v.r = nxt[i][1]
     })
+    yield
   }
   for (const v of verts) {
     const len = Math.hypot(v.nx, v.nr)
@@ -464,7 +479,9 @@ export function buildRockWalls(o: RockWallOpts): void {
 
   // ── 2. 岩壁面 ──
   const side = new Geo()
+  let nf = 0
   for (const f of faces) {
+    if (++nf % 48 === 0) yield
     for (let k = 0; k < SUB; k++) {
       const ka = f.pts[k]
       const kb = f.pts[k + 1]
@@ -488,9 +505,12 @@ export function buildRockWalls(o: RockWallOpts): void {
       }
     }
   }
-  side.smoothNormals()
-  const sideMesh = side.build(Mat.wall(th.wall, th.wallAccent), true)
+  yield
+  yield* side.smoothNormals()
+  yield
+  const sideMesh = yield* side.build(Mat.wall(th.wall, th.wallAccent), true)
   if (sideMesh) group.add(sideMesh)
+  yield
 
   // ── 3. 頂面（高度場，邊緣接到牆面最上層）＋岩帽＋碎石 ──
   const capTint = th.hull.startsWith('rock:') ? th.hull.slice(5) : '#5a5860'
@@ -539,8 +559,11 @@ export function buildRockWalls(o: RockWallOpts): void {
         }
       }
     }
+    if (r % 2 === 1) yield
   }
-  top.smoothNormals()
+  yield
+  yield* top.smoothNormals()
+  yield
   // 苔蘚／礦物斑塊：頂面依低頻雜訊往 accent 色偏一點（乘在貼圖上，只改色相不改亮度太多）
   {
     const ac = new THREE.Color(th.wallAccent)
@@ -555,6 +578,7 @@ export function buildRockWalls(o: RockWallOpts): void {
       top.col[i * 3] *= 1 + (tr - 1) * m
       top.col[i * 3 + 1] *= 1 + (tg - 1) * m
       top.col[i * 3 + 2] *= 1 + (tb - 1) * m
+      if (i % 8192 === 8191) yield
     }
   }
 
@@ -598,8 +622,11 @@ export function buildRockWalls(o: RockWallOpts): void {
       const g = lump(Math.floor(cellRnd(c, r, 6, seed) * 8), 1)
       place(g, x, y, rr - H, rad * (1 + cellRnd(c, r, 7, seed) * 0.3), sy, rad * (0.85 + cellRnd(c, r, 8, seed) * 0.3), cellRnd(c, r, 9, seed) * 6.28, (cellRnd(c, r, 10, seed) - 0.5) * 0.4, 0.55, 0.9 + cellRnd(c, r, 11, seed) * 0.2)
     }
+    yield
   }
+  nf = 0
   for (const f of faces) {
+    if (++nf % 16 === 0) yield
     if (!f.toFloor) continue
     const a = bv.get(f.pts[0])!
     const b = bv.get(f.pts[SUB])!
@@ -615,8 +642,10 @@ export function buildRockWalls(o: RockWallOpts): void {
       place(lump(Math.floor(k(3) * 8) + 8, 0), bx + f.nx * out, s * 0.25, br + f.nr * out - H, s * (1 + k(4) * 0.5), s * (0.55 + k(5) * 0.35), s, k(6) * 6.28, (k(7) - 0.5) * 0.6, 0.5, 0.85 + k(8) * 0.25)
     }
   }
-  const topMesh = top.build(topMat, true)
+  yield
+  const topMesh = yield* top.build(topMat, true)
   if (topMesh) group.add(topMesh)
+  yield
 
   // ── 4. 人造牆：筆直的混凝土牆面＋牆頂板＋面向房間的金屬壓條 ──
   if (builtFaces.length) {
@@ -635,7 +664,7 @@ export function buildRockWalls(o: RockWallOpts): void {
         g.push(x, y, rr - H, u, y * 0.5, a, -1, f.nx, 0, f.nr)
       }
     }
-    const m = g.build(wallMat, true)
+    const m = yield* g.build(wallMat, true)
     if (m) group.add(m)
     const cap = new Batcher()
     // 室外沒有環境貼圖，高金屬度的牆頂會變全黑：牆頂用深色混凝土板，只有壓條是金屬
@@ -655,7 +684,8 @@ export function buildRockWalls(o: RockWallOpts): void {
           cap.add(box(sx, 0.1, sz), trimMat, c + 0.5 + ox, wallH + 0.05, r + 0.5 - H + oz)
         }
       }
+      if (r % 8 === 7) yield
     }
-    cap.build(group, { cast: false, receive: true })
+    yield* cap.buildSteps(group, { cast: false, receive: true })
   }
 }

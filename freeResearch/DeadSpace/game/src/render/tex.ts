@@ -1,5 +1,6 @@
 // 程序化貼圖：載入時用 canvas 生成並快取（美術聖經 §6：底色變化、粗糙度變化、邊緣磨損）
 import * as THREE from 'three'
+import { rowsPer, runSteps, type Steps } from './steps'
 
 /**
  * 貼圖快取。albedo 依色調各一張（key 含 tint）；粗糙度與法線跟色調無關，以「種類＋variant＋seed」為 key 共用
@@ -14,11 +15,121 @@ export function isSharedTexture(t: THREE.Texture): boolean {
   return false
 }
 
+/**
+ * willReadFrequently：canvas 留在 CPU 端（軟體 canvas），putImageData／getImageData 不用在 GPU 與 CPU 間來回複製。
+ * 代價是每張貼圖在 CPU 端留一份像素；這份像素也是跨局共用快取的來源（每一局是新的 WebGL context，要從這裡重新上傳），不能上傳後釋放。
+ */
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas')
   c.width = w
   c.height = h
   return [c, c.getContext('2d', { willReadFrequently: true })!]
+}
+
+// ───── 延後產生（預建用）─────
+
+/** 一份延後產生的貼圖工作：it 填好 texs 的 canvas 像素；state 0 等待、1 正在跑一片、2 完成 */
+interface TexJob {
+  it: Steps
+  state: 0 | 1 | 2
+  /** 完成時把 texs 的 image 換回一般屬性 */
+  restore: (() => void)[]
+}
+
+const jobs: TexJob[] = []
+let deferDepth = 0
+
+/**
+ * f 執行期間第一次用到的程序化 PBR 貼圖改成延後產生：貼圖物件（canvas 還是空的）立刻建立、放進快取，
+ * 像素由 textureSteps() 分段填入（預建時一片幾 ms，不會有好幾百 ms 的長任務）。
+ * 安全網：three 第一次讀 texture.image（要上傳）時如果還沒做完，就地同步做完，所以任何時候拿到的貼圖都不會是空的。
+ */
+export function deferTextures<T>(f: () => T): T {
+  deferDepth++
+  try {
+    return f()
+  } finally {
+    deferDepth--
+  }
+}
+
+/** 還沒做完的延後貼圖工作數 */
+export function pendingTextures(): number {
+  let n = 0
+  for (const j of jobs) if (j.state !== 2) n++
+  return n
+}
+
+function complete(j: TexJob): void {
+  j.state = 2
+  for (const r of j.restore) r()
+  j.restore = []
+}
+
+/** 同步做完一份工作（three 要上傳、或使用者已經走進那一站）*/
+function finish(j: TexJob): void {
+  // state 1 = 這份工作正在跑（重入）：不可能發生（工作只寫自己的 canvas、不讀 texture.image），保險起見不動它
+  if (j.state !== 0) return
+  j.state = 1
+  try {
+    runSteps(j.it)
+  } finally {
+    complete(j)
+  }
+}
+
+/** 延後的貼圖逐片做完：每次 next() 是一小片（約 1–5 ms）；給 GameScene 的預建依空閒時間推進 */
+export function* textureSteps(): Steps {
+  while (jobs.length) {
+    const j = jobs[0]
+    if (j.state === 2) {
+      jobs.shift()
+      continue
+    }
+    j.state = 1
+    let r: IteratorResult<unknown, void>
+    try {
+      r = j.it.next()
+    } catch (e) {
+      complete(j)
+      throw e
+    }
+    j.state = 0
+    if (r.done) complete(j)
+    yield
+  }
+}
+
+/** 立刻做完所有延後的貼圖 */
+export function flushTextures(): void {
+  while (jobs.length) finish(jobs.shift()!)
+}
+
+/** 開始一份貼圖工作：平常同步跑完；deferTextures 期間排進佇列，texs 的 image 換成「讀取時先做完」的 getter */
+function start(texs: THREE.Texture[], it: Steps): void {
+  if (deferDepth === 0) {
+    runSteps(it)
+    return
+  }
+  const j: TexJob = { it, state: 0, restore: [] }
+  for (const t of texs) {
+    const src = t.source as unknown as { data: unknown }
+    const data = src.data
+    const plain = (v: unknown) => Object.defineProperty(src, 'data', { value: v, writable: true, configurable: true, enumerable: true })
+    Object.defineProperty(src, 'data', {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        finish(j)
+        return data
+      },
+      set: plain,
+    })
+    j.restore.push(() => {
+      if (Object.getOwnPropertyDescriptor(src, 'data')?.get) plain(data)
+    })
+  }
+  jobs.push(j)
 }
 
 // ───── 雜訊 ─────
@@ -59,10 +170,23 @@ export function fbm(x: number, y: number, size: number, oct = 5, seed = 1, base 
   return sum / norm
 }
 
-function noiseField(size: number, oct: number, seed: number, base = 4): Float32Array {
+function fillNoise(f: Float32Array, size: number, oct: number, seed: number, base: number, y0: number, y1: number): void {
+  for (let y = y0; y < y1; y++) for (let x = 0; x < size; x++) f[y * size + x] = fbm(x, y, size, oct, seed, base)
+}
+
+/** fbm 雜訊場（分段：一片約 1.6 萬次 vnoise）*/
+function* noiseSteps(size: number, oct: number, seed: number, base = 4): Steps<Float32Array> {
   const f = new Float32Array(size * size)
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) f[y * size + x] = fbm(x, y, size, oct, seed, base)
+  const R = rowsPer(size * oct)
+  for (let y = 0; y < size; y += R) {
+    fillNoise(f, size, oct, seed, base, y, Math.min(size, y + R))
+    yield
+  }
   return f
+}
+
+function noiseField(size: number, oct: number, seed: number, base = 4): Float32Array {
+  return runSteps(noiseSteps(size, oct, seed, base))
 }
 
 /**
@@ -70,56 +194,81 @@ function noiseField(size: number, oct: number, seed: number, base = 4): Float32A
  * 組合是程式裡寫死的幾種 seed，總量約 6 MB。唯讀使用。
  */
 const fields = new Map<string, Float32Array>()
-function field(size: number, oct: number, seed: number, base = 4): Float32Array {
+function* fieldSteps(size: number, oct: number, seed: number, base = 4): Steps<Float32Array> {
   const k = `${size}:${oct}:${seed}:${base}`
   let f = fields.get(k)
   if (!f) {
-    f = noiseField(size, oct, seed, base)
+    f = yield* noiseSteps(size, oct, seed, base)
     fields.set(k, f)
   }
   return f
 }
 
-/** 共用的粗糙度＋法線（沒有就回傳 null，由呼叫端產生後 putDetail）*/
+/** 共用的粗糙度＋法線（沒有就回傳 null，由呼叫端 newDetail 建立）*/
 function getDetail(dkey: string): { roughnessMap: THREE.Texture; normalMap: THREE.Texture } | null {
   const r = cache.get(dkey + ':r')
   const n = cache.get(dkey + ':n')
   return r && n ? { roughnessMap: r, normalMap: n } : null
 }
 
-function putDetail(dkey: string, rough: ImageData, height: Float32Array, size: number, strength: number): { roughnessMap: THREE.Texture; normalMap: THREE.Texture } {
-  const [cr, xr] = canvas(size, size)
-  const [cn, xn] = canvas(size, size)
-  xr.putImageData(rough, 0, 0)
-  xn.putImageData(heightToNormal(height, size, strength), 0, 0)
-  const d = { roughnessMap: toTex(cr, false), normalMap: toTex(cn, false) }
-  cache.set(dkey + ':r', d.roughnessMap)
-  cache.set(dkey + ':n', d.normalMap)
-  return d
+/** 新的共用粗糙度＋法線：貼圖物件先建立、放進快取，像素由 writeDetail 寫入 */
+interface Detail {
+  set: { roughnessMap: THREE.Texture; normalMap: THREE.Texture }
+  xr: CanvasRenderingContext2D
+  xn: CanvasRenderingContext2D
 }
 
-/** 高度圖 → 法線貼圖 */
-function heightToNormal(h: Float32Array, size: number, strength: number): ImageData {
+function newDetail(dkey: string, size: number): Detail {
+  const [cr, xr] = canvas(size, size)
+  const [cn, xn] = canvas(size, size)
+  const set = { roughnessMap: toTex(cr, false), normalMap: toTex(cn, false) }
+  cache.set(dkey + ':r', set.roughnessMap)
+  cache.set(dkey + ':n', set.normalMap)
+  return { set, xr, xn }
+}
+
+function* writeDetail(d: Detail, rough: ImageData, height: Float32Array, size: number, strength: number): Steps {
+  d.xr.putImageData(rough, 0, 0)
+  d.xn.putImageData(yield* normalSteps(height, size, strength), 0, 0)
+}
+
+/** 新的 PBR 組：albedo 一張＋（快取裡沒有時）共用的粗糙度／法線；回傳要交給 start 的貼圖清單 */
+function newSet(key: string, dkey: string, size: number, shared: { roughnessMap: THREE.Texture; normalMap: THREE.Texture } | null) {
+  const [ca, xa] = canvas(size, size)
+  const map = toTex(ca, true)
+  cache.set(key + ':map', map)
+  const det = shared ? null : newDetail(dkey, size)
+  const texs = det ? [map, det.set.roughnessMap, det.set.normalMap] : [map]
+  return { map, xa, det, texs, set: { map, ...(shared ?? det!.set) } as PbrSet }
+}
+
+/** 高度圖 → 法線貼圖（分段）*/
+function* normalSteps(h: Float32Array, size: number, strength: number): Steps<ImageData> {
   const img = new ImageData(size, size)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const l = h[y * size + ((x - 1 + size) % size)]
-      const r = h[y * size + ((x + 1) % size)]
-      const u = h[((y - 1 + size) % size) * size + x]
-      const d = h[((y + 1) % size) * size + x]
-      let nx = (l - r) * strength
-      let ny = (u - d) * strength
-      let nz = 1
-      const len = Math.hypot(nx, ny, nz)
-      nx /= len
-      ny /= len
-      nz /= len
-      const i = (y * size + x) * 4
-      img.data[i] = (nx * 0.5 + 0.5) * 255
-      img.data[i + 1] = (ny * 0.5 + 0.5) * 255
-      img.data[i + 2] = (nz * 0.5 + 0.5) * 255
-      img.data[i + 3] = 255
+  const R = rowsPer(size, 16384)
+  for (let y0 = 0; y0 < size; y0 += R) {
+    const y1 = Math.min(size, y0 + R)
+    for (let y = y0; y < y1; y++) {
+      for (let x = 0; x < size; x++) {
+        const l = h[y * size + ((x - 1 + size) % size)]
+        const r = h[y * size + ((x + 1) % size)]
+        const u = h[((y - 1 + size) % size) * size + x]
+        const d = h[((y + 1) % size) * size + x]
+        let nx = (l - r) * strength
+        let ny = (u - d) * strength
+        let nz = 1
+        const len = Math.hypot(nx, ny, nz)
+        nx /= len
+        ny /= len
+        nz /= len
+        const i = (y * size + x) * 4
+        img.data[i] = (nx * 0.5 + 0.5) * 255
+        img.data[i + 1] = (ny * 0.5 + 0.5) * 255
+        img.data[i + 2] = (nz * 0.5 + 0.5) * 255
+        img.data[i + 3] = 255
+      }
     }
+    yield
   }
   return img
 }
@@ -161,94 +310,103 @@ export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet 
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
   const S = 512
-  const grime = field(S, 6, seed, 6)
-  const fine = field(S, 3, seed + 9, 32)
+  const out = newSet(key, dkey, S, shared)
+  start(out.texs, floorSteps(variant, tint, seed, S, out.xa, out.det))
+  return out.set
+}
+
+function* floorSteps(variant: FloorVariant, tint: string, seed: number, S: number, xa: CanvasRenderingContext2D, det: Detail | null): Steps {
+  const grime = yield* fieldSteps(S, 6, seed, 6)
+  const fine = yield* fieldSteps(S, 3, seed + 9, 32)
   const height = new Float32Array(S * S)
-  const [ca, xa] = canvas(S, S)
   const albedo = xa.createImageData(S, S)
   const rough = new ImageData(S, S)
   const [tr, tg, tb] = hexRgb(tint)
   const panel = variant === 'tile' ? 128 : 256
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const i = y * S + x
-      const px = x % panel
-      const py = y % panel
-      const edge = Math.min(px, py, panel - 1 - px, panel - 1 - py)
-      let hgt = 0.5
-      let base = 1
-      let r = 0.62
-      // 面板接縫
-      if (edge < 2) {
-        hgt = 0.05
-        base = 0.35
-        r = 0.9
-      } else if (edge < 6) {
-        hgt = 0.5 - (6 - edge) * 0.04
-        base = 0.85
-        r = 0.45 // 邊緣被磨亮
-      }
-      // 防滑紋（菱形）
-      if (variant === 'plate' && edge >= 6) {
-        const u = (px + py) % 24
-        const v = (px - py + 240) % 24
-        const dia = (u < 3 && v > 8 && v < 16) || (v < 3 && u > 8 && u < 16)
-        if (dia) {
-          hgt = 0.68
-          base = 1.12
-          r = 0.4
+  const R = rowsPer(S)
+  for (let y0 = 0; y0 < S; y0 += R) {
+    for (let y = y0; y < Math.min(S, y0 + R); y++) {
+      for (let x = 0; x < S; x++) {
+        const i = y * S + x
+        const px = x % panel
+        const py = y % panel
+        const edge = Math.min(px, py, panel - 1 - px, panel - 1 - py)
+        let hgt = 0.5
+        let base = 1
+        let r = 0.62
+        // 面板接縫
+        if (edge < 2) {
+          hgt = 0.05
+          base = 0.35
+          r = 0.9
+        } else if (edge < 6) {
+          hgt = 0.5 - (6 - edge) * 0.04
+          base = 0.85
+          r = 0.45 // 邊緣被磨亮
         }
-      }
-      if (variant === 'grate' && edge >= 4) {
-        const g = (px % 16 < 3 || py % 16 < 3) ? 1 : 0
-        if (!g) {
-          hgt = 0.12
-          base = 0.25
-          r = 0.95
-        } else {
-          hgt = 0.6
-          base = 1.15
-          r = 0.35
+        // 防滑紋（菱形）
+        if (variant === 'plate' && edge >= 6) {
+          const u = (px + py) % 24
+          const v = (px - py + 240) % 24
+          const dia = (u < 3 && v > 8 && v < 16) || (v < 3 && u > 8 && u < 16)
+          if (dia) {
+            hgt = 0.68
+            base = 1.12
+            r = 0.4
+          }
         }
-      }
-      if (variant === 'concrete') {
-        hgt = 0.5 + (fine[i] - 0.5) * 0.3
-        base = 0.85 + fine[i] * 0.3
-        r = 0.85
-      }
-      if (variant === 'rubber') {
-        const dot = ((px % 20) - 10) ** 2 + ((py % 20) - 10) ** 2 < 14
-        if (dot) {
-          hgt = 0.7
-          base = 1.05
+        if (variant === 'grate' && edge >= 4) {
+          const g = (px % 16 < 3 || py % 16 < 3) ? 1 : 0
+          if (!g) {
+            hgt = 0.12
+            base = 0.25
+            r = 0.95
+          } else {
+            hgt = 0.6
+            base = 1.15
+            r = 0.35
+          }
         }
-        r = 0.88
-      }
-      // 鉚釘
-      if (variant !== 'concrete' && variant !== 'rubber') {
-        const rx = px < panel / 2 ? px - 14 : px - (panel - 14)
-        const ry = py < panel / 2 ? py - 14 : py - (panel - 14)
-        if (rx * rx + ry * ry < 16) {
-          hgt = 0.8 - (rx * rx + ry * ry) * 0.02
-          base = 1.25
-          r = 0.3
+        if (variant === 'concrete') {
+          hgt = 0.5 + (fine[i] - 0.5) * 0.3
+          base = 0.85 + fine[i] * 0.3
+          r = 0.85
         }
+        if (variant === 'rubber') {
+          const dot = ((px % 20) - 10) ** 2 + ((py % 20) - 10) ** 2 < 14
+          if (dot) {
+            hgt = 0.7
+            base = 1.05
+          }
+          r = 0.88
+        }
+        // 鉚釘
+        if (variant !== 'concrete' && variant !== 'rubber') {
+          const rx = px < panel / 2 ? px - 14 : px - (panel - 14)
+          const ry = py < panel / 2 ? py - 14 : py - (panel - 14)
+          if (rx * rx + ry * ry < 16) {
+            hgt = 0.8 - (rx * rx + ry * ry) * 0.02
+            base = 1.25
+            r = 0.3
+          }
+        }
+        // 髒污：凹處與隨機區塊
+        const g = grime[i]
+        const dirt = Math.max(0, g - 0.5) * 1.1 + (hgt < 0.3 ? 0.25 : 0)
+        const scratch = fine[i] > 0.86 ? 0.05 : 0
+        const lum = base * (0.93 + fine[i] * 0.14) * (1 - dirt * 0.35) + scratch
+        height[i] = hgt + (fine[i] - 0.5) * 0.04
+        const o = i * 4
+        albedo.data[o] = Math.min(255, tr * lum * (1 - dirt * 0.1))
+        albedo.data[o + 1] = Math.min(255, tg * lum * (1 - dirt * 0.15))
+        albedo.data[o + 2] = Math.min(255, tb * lum * (1 - dirt * 0.25))
+        albedo.data[o + 3] = 255
+        const rr = Math.min(1, r + dirt * 0.25 - scratch * 2 + (fine[i] - 0.5) * 0.12)
+        rough.data[o] = rough.data[o + 1] = rough.data[o + 2] = rr * 255
+        rough.data[o + 3] = 255
       }
-      // 髒污：凹處與隨機區塊
-      const g = grime[i]
-      const dirt = Math.max(0, g - 0.5) * 1.1 + (hgt < 0.3 ? 0.25 : 0)
-      const scratch = fine[i] > 0.86 ? 0.05 : 0
-      const lum = base * (0.93 + fine[i] * 0.14) * (1 - dirt * 0.35) + scratch
-      height[i] = hgt + (fine[i] - 0.5) * 0.04
-      const o = i * 4
-      albedo.data[o] = Math.min(255, tr * lum * (1 - dirt * 0.1))
-      albedo.data[o + 1] = Math.min(255, tg * lum * (1 - dirt * 0.15))
-      albedo.data[o + 2] = Math.min(255, tb * lum * (1 - dirt * 0.25))
-      albedo.data[o + 3] = 255
-      const rr = Math.min(1, r + dirt * 0.25 - scratch * 2 + (fine[i] - 0.5) * 0.12)
-      rough.data[o] = rough.data[o + 1] = rough.data[o + 2] = rr * 255
-      rough.data[o + 3] = 255
     }
+    yield
   }
   xa.putImageData(albedo, 0, 0)
   // 偶爾的油漆標記
@@ -257,9 +415,7 @@ export function floorSet(variant: FloorVariant, tint: string, seed = 3): PbrSet 
   xa.font = 'bold 28px monospace'
   xa.fillText(String((seed * 37) % 90 + 10), 30, 60)
   xa.globalAlpha = 1
-  const map = toTex(ca, true)
-  cache.set(key + ':map', map)
-  return { map, ...(shared ?? putDetail(dkey, rough, height, S, 6)) }
+  if (det) yield* writeDetail(det, rough, height, S, 6)
 }
 
 // ───── 牆板（u = 沿牆 2 m，v = 牆高）─────
@@ -270,67 +426,76 @@ export function wallSet(tint: string, accent: string, seed = 5): PbrSet {
   const have = cache.get(key + ':map')
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
+  const out = newSet(key, dkey, 512, shared)
+  start(out.texs, wallSteps(tint, accent, seed, out.xa, out.det))
+  return out.set
+}
+
+function* wallSteps(tint: string, accent: string, seed: number, xa: CanvasRenderingContext2D, det: Detail | null): Steps {
   const W = 512
   const H = 512
-  const grime = field(W, 5, seed, 3)
-  const fine = field(W, 3, seed + 3, 32)
-  const [ca, xa] = canvas(W, H)
+  const grime = yield* fieldSteps(W, 5, seed, 3)
+  const fine = yield* fieldSteps(W, 3, seed + 3, 32)
   const albedo = xa.createImageData(W, H)
   const rough = new ImageData(W, H)
   const height = new Float32Array(W * H)
   const [tr, tg, tb] = hexRgb(tint)
   const [ar, ag, ab] = hexRgb(accent)
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x
-      // 上下分段：頂部飾條 / 主面板 / 底部踢腳（警示斜紋）
-      const v = y / H
-      let hgt = 0.5
-      let col: [number, number, number] = [tr, tg, tb]
-      let r = 0.55
-      const px = x % 256
-      if (v > 0.9) {
-        // 踢腳板：黃黑斜紋
-        const stripe = Math.floor((x + y) / 22) % 2 === 0
-        col = stripe ? [255, 194, 61] : [26, 26, 26]
-        r = 0.7
-        hgt = 0.6
-      } else if (v < 0.08) {
-        col = [tr * 0.6, tg * 0.6, tb * 0.6]
-        hgt = 0.65
-        r = 0.4
-      } else if (v > 0.3 && v < 0.335) {
-        // 燈條溝槽（emissive 另外做）
-        col = [ar * 0.5, ag * 0.5, ab * 0.5]
-        hgt = 0.3
-        r = 0.3
-      } else {
-        const seam = px < 3 || px > 252 || Math.abs(v - 0.62) < 0.006
-        if (seam) {
-          hgt = 0.1
-          col = [tr * 0.35, tg * 0.35, tb * 0.35]
-          r = 0.9
+  const R = rowsPer(W)
+  for (let y0 = 0; y0 < H; y0 += R) {
+    for (let y = y0; y < Math.min(H, y0 + R); y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x
+        // 上下分段：頂部飾條 / 主面板 / 底部踢腳（警示斜紋）
+        const v = y / H
+        let hgt = 0.5
+        let col: [number, number, number] = [tr, tg, tb]
+        let r = 0.55
+        const px = x % 256
+        if (v > 0.9) {
+          // 踢腳板：黃黑斜紋
+          const stripe = Math.floor((x + y) / 22) % 2 === 0
+          col = stripe ? [255, 194, 61] : [26, 26, 26]
+          r = 0.7
+          hgt = 0.6
+        } else if (v < 0.08) {
+          col = [tr * 0.6, tg * 0.6, tb * 0.6]
+          hgt = 0.65
+          r = 0.4
+        } else if (v > 0.3 && v < 0.335) {
+          // 燈條溝槽（emissive 另外做）
+          col = [ar * 0.5, ag * 0.5, ab * 0.5]
+          hgt = 0.3
+          r = 0.3
+        } else {
+          const seam = px < 3 || px > 252 || Math.abs(v - 0.62) < 0.006
+          if (seam) {
+            hgt = 0.1
+            col = [tr * 0.35, tg * 0.35, tb * 0.35]
+            r = 0.9
+          }
+          // 通風口
+          const vx = (x + 128) % 512
+          if (vx > 60 && vx < 180 && v > 0.68 && v < 0.84 && Math.floor(y / 6) % 2 === 0) {
+            hgt = 0.15
+            col = [18, 20, 23]
+            r = 0.9
+          }
         }
-        // 通風口
-        const vx = (x + 128) % 512
-        if (vx > 60 && vx < 180 && v > 0.68 && v < 0.84 && Math.floor(y / 6) % 2 === 0) {
-          hgt = 0.15
-          col = [18, 20, 23]
-          r = 0.9
-        }
+        const dirt = Math.max(0, grime[i] - 0.5) * 1.6 + (v > 0.8 ? 0.2 : 0)
+        const lum = (0.9 + fine[i] * 0.2) * (1 - dirt * 0.4)
+        const o = i * 4
+        albedo.data[o] = Math.min(255, col[0] * lum)
+        albedo.data[o + 1] = Math.min(255, col[1] * lum)
+        albedo.data[o + 2] = Math.min(255, col[2] * lum * (1 - dirt * 0.1))
+        albedo.data[o + 3] = 255
+        const rr = Math.min(1, r + dirt * 0.25 + (fine[i] - 0.5) * 0.1)
+        rough.data[o] = rough.data[o + 1] = rough.data[o + 2] = rr * 255
+        rough.data[o + 3] = 255
+        height[i] = hgt
       }
-      const dirt = Math.max(0, grime[i] - 0.5) * 1.6 + (v > 0.8 ? 0.2 : 0)
-      const lum = (0.9 + fine[i] * 0.2) * (1 - dirt * 0.4)
-      const o = i * 4
-      albedo.data[o] = Math.min(255, col[0] * lum)
-      albedo.data[o + 1] = Math.min(255, col[1] * lum)
-      albedo.data[o + 2] = Math.min(255, col[2] * lum * (1 - dirt * 0.1))
-      albedo.data[o + 3] = 255
-      const rr = Math.min(1, r + dirt * 0.25 + (fine[i] - 0.5) * 0.1)
-      rough.data[o] = rough.data[o + 1] = rough.data[o + 2] = rr * 255
-      rough.data[o + 3] = 255
-      height[i] = hgt
     }
+    yield
   }
   xa.putImageData(albedo, 0, 0)
   // 編號貼紙
@@ -342,9 +507,7 @@ export function wallSet(tint: string, accent: string, seed = 5): PbrSet {
     xa.font = 'bold 15px monospace'
     xa.fillText(`${String.fromCharCode(65 + ((seed + k) % 26))}-${(seed * 7 + k * 31) % 900 + 100}`, sx + 4, 187)
   }
-  const map = toTex(ca, true)
-  cache.set(key + ':map', map)
-  return { map, ...(shared ?? putDetail(dkey, rough, height, W, 5)) }
+  if (det) yield* writeDetail(det, rough, height, W, 5)
 }
 
 // ───── 通用金屬（道具、機殼）─────
@@ -355,36 +518,43 @@ export function metalSet(tint: string, seed = 11, panels = true): PbrSet {
   const have = cache.get(key + ':map')
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
+  const out = newSet(key, dkey, 256, shared)
+  start(out.texs, metalSteps(tint, seed, panels, out.xa, out.det))
+  return out.set
+}
+
+function* metalSteps(tint: string, seed: number, panels: boolean, xa: CanvasRenderingContext2D, det: Detail | null): Steps {
   const S = 256
-  const grime = field(S, 5, seed, 2)
-  const fine = field(S, 3, seed + 1, 24)
-  const [ca, xa] = canvas(S, S)
+  const grime = yield* fieldSteps(S, 5, seed, 2)
+  const fine = yield* fieldSteps(S, 3, seed + 1, 24)
   const a = xa.createImageData(S, S)
   const r = new ImageData(S, S)
   const h = new Float32Array(S * S)
   const [tr, tg, tb] = hexRgb(tint)
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const i = y * S + x
-      const seam = panels && (x % 128 < 2 || y % 128 < 2)
-      const edgeWear = panels && (x % 128 < 6 || y % 128 < 6) && !seam
-      const dirt = Math.max(0, grime[i] - 0.5) * 1.5
-      const lum = (seam ? 0.4 : 1) * (0.88 + fine[i] * 0.24) * (1 - dirt * 0.35) + (edgeWear ? 0.12 : 0)
-      const o = i * 4
-      a.data[o] = Math.min(255, tr * lum)
-      a.data[o + 1] = Math.min(255, tg * lum)
-      a.data[o + 2] = Math.min(255, tb * lum)
-      a.data[o + 3] = 255
-      const rr = Math.min(1, (seam ? 0.9 : edgeWear ? 0.3 : 0.5) + dirt * 0.3 + (fine[i] - 0.5) * 0.15)
-      r.data[o] = r.data[o + 1] = r.data[o + 2] = rr * 255
-      r.data[o + 3] = 255
-      h[i] = seam ? 0.2 : 0.5 + (fine[i] - 0.5) * 0.05
+  const R = rowsPer(S)
+  for (let y0 = 0; y0 < S; y0 += R) {
+    for (let y = y0; y < Math.min(S, y0 + R); y++) {
+      for (let x = 0; x < S; x++) {
+        const i = y * S + x
+        const seam = panels && (x % 128 < 2 || y % 128 < 2)
+        const edgeWear = panels && (x % 128 < 6 || y % 128 < 6) && !seam
+        const dirt = Math.max(0, grime[i] - 0.5) * 1.5
+        const lum = (seam ? 0.4 : 1) * (0.88 + fine[i] * 0.24) * (1 - dirt * 0.35) + (edgeWear ? 0.12 : 0)
+        const o = i * 4
+        a.data[o] = Math.min(255, tr * lum)
+        a.data[o + 1] = Math.min(255, tg * lum)
+        a.data[o + 2] = Math.min(255, tb * lum)
+        a.data[o + 3] = 255
+        const rr = Math.min(1, (seam ? 0.9 : edgeWear ? 0.3 : 0.5) + dirt * 0.3 + (fine[i] - 0.5) * 0.15)
+        r.data[o] = r.data[o + 1] = r.data[o + 2] = rr * 255
+        r.data[o + 3] = 255
+        h[i] = seam ? 0.2 : 0.5 + (fine[i] - 0.5) * 0.05
+      }
     }
+    yield
   }
   xa.putImageData(a, 0, 0)
-  const map = toTex(ca, true)
-  cache.set(key + ':map', map)
-  return { map, ...(shared ?? putDetail(dkey, r, h, S, 4)) }
+  if (det) yield* writeDetail(det, r, h, S, 4)
 }
 
 // ───── 布料／衣物 ─────
@@ -395,9 +565,14 @@ export function fabricSet(tint: string, seed = 21): PbrSet {
   const have = cache.get(key + ':map')
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
+  const out = newSet(key, dkey, 128, shared)
+  start(out.texs, fabricSteps(tint, seed, out.xa, out.det))
+  return out.set
+}
+
+function* fabricSteps(tint: string, seed: number, xa: CanvasRenderingContext2D, det: Detail | null): Steps {
   const S = 128
-  const grime = field(S, 4, seed, 2)
-  const [ca, xa] = canvas(S, S)
+  const grime = yield* fieldSteps(S, 4, seed, 2)
   const a = xa.createImageData(S, S)
   const r = new ImageData(S, S)
   const h = new Float32Array(S * S)
@@ -421,10 +596,9 @@ export function fabricSet(tint: string, seed = 21): PbrSet {
       h[i] = 0.5 + weave * 1.2 + fold * 0.8
     }
   }
+  yield
   xa.putImageData(a, 0, 0)
-  const map = toTex(ca, true)
-  cache.set(key + ':map', map)
-  return { map, ...(shared ?? putDetail(dkey, r, h, S, 3)) }
+  if (det) yield* writeDetail(det, r, h, S, 3)
 }
 
 /** 皮膚：淡淡的膚色雜斑（雀斑／血色）＋粗糙度變化（額頭鼻樑較亮、其餘霧面）＋極淡的毛孔法線 */
@@ -434,10 +608,15 @@ export function skinSet(tint: string, seed = 61): PbrSet {
   const have = cache.get(key + ':map')
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
+  const out = newSet(key, dkey, 64, shared)
+  start(out.texs, skinSteps(tint, seed, out.xa, out.det))
+  return out.set
+}
+
+function* skinSteps(tint: string, seed: number, xa: CanvasRenderingContext2D, det: Detail | null): Steps {
   const S = 64
-  const blot = field(S, 3, seed, 2)
-  const fine = noiseField(S, 2, seed + 1, 16)
-  const [ca, xa] = canvas(S, S)
+  const blot = yield* fieldSteps(S, 3, seed, 2)
+  const fine = yield* noiseSteps(S, 2, seed + 1, 16)
   const a = xa.createImageData(S, S)
   const r = new ImageData(S, S)
   const h = new Float32Array(S * S)
@@ -458,9 +637,7 @@ export function skinSet(tint: string, seed = 61): PbrSet {
     h[i] = 0.5 + f * 0.25
   }
   xa.putImageData(a, 0, 0)
-  const map = toTex(ca, true)
-  cache.set(key + ':map', map)
-  return { map, ...(shared ?? putDetail(dkey, r, h, S, 1.2)) }
+  if (det) yield* writeDetail(det, r, h, S, 1.2)
 }
 
 // ───── 全像螢幕（emissive）─────
@@ -709,14 +886,39 @@ export function decalTex(kind: 'arrow' | 'hazard' | 'cross' | 'pad' | 'ring' | '
 
 // ───── 室外：草地、岩地、岩壁、有機組織（翠原星、餘燼衛星、未識別物體）─────
 
-/** key = albedo（含色調）；dkey = 粗糙度＋法線（不含色調，跨色調共用；make 收到 dkey 傳給 finishSet）*/
-function cache3(key: string, dkey: string, make: (dkey: string) => PbrSet): PbrSet {
+/**
+ * 室外 PBR 組：key = albedo（含色調）；dkey = 粗糙度＋法線（不含色調，跨色調共用）。
+ * gen 把 albedo（RGBA）、粗糙度、高度寫進給它的陣列（分段）；之後轉成 canvas，快取裡沒有共用的粗糙度／法線時一併寫入。
+ */
+function outdoorSet(key: string, dkey: string, S: number, strength: number, gen: (albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array) => Steps): PbrSet {
   const have = cache.get(key + ':map')
   const shared = getDetail(dkey)
   if (have && shared) return { map: have, ...shared }
-  const set = make(dkey)
-  cache.set(key + ':map', set.map)
-  return set
+  const out = newSet(key, dkey, S, shared)
+  start(out.texs, outdoorSteps(S, strength, out.xa, out.det, gen))
+  return out.set
+}
+
+function* outdoorSteps(S: number, strength: number, xa: CanvasRenderingContext2D, det: Detail | null, gen: (albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array) => Steps): Steps {
+  const albedo = new Uint8ClampedArray(S * S * 4)
+  const rough = new Float32Array(S * S)
+  const height = new Float32Array(S * S)
+  yield* gen(albedo, rough, height)
+  const a = xa.createImageData(S, S)
+  a.data.set(albedo)
+  xa.putImageData(a, 0, 0)
+  if (!det) return
+  const r = new ImageData(S, S)
+  const N = rowsPer(1, 16384)
+  for (let i0 = 0; i0 < S * S; i0 += N) {
+    for (let i = i0; i < Math.min(S * S, i0 + N); i++) {
+      const v = Math.max(0, Math.min(1, rough[i])) * 255
+      r.data[i * 4] = r.data[i * 4 + 1] = r.data[i * 4 + 2] = v
+      r.data[i * 4 + 3] = 255
+    }
+    yield
+  }
+  yield* writeDetail(det, r, height, S, strength)
 }
 
 function rand32(seed: number): () => number {
@@ -730,8 +932,8 @@ function rand32(seed: number): () => number {
   }
 }
 
-/** 可無縫拼接的 Worley（F1、F2）：cells×cells 格、每格一點 */
-function worley(size: number, cells: number, seed: number): { f1: Float32Array; f2: Float32Array; id: Float32Array } {
+/** 可無縫拼接的 Worley（F1、F2）：cells×cells 格、每格一點（分段）*/
+function* worleySteps(size: number, cells: number, seed: number): Steps<{ f1: Float32Array; f2: Float32Array; id: Float32Array }> {
   const rnd = rand32(seed)
   const pts: [number, number][] = []
   for (let i = 0; i < cells * cells; i++) pts.push([rnd(), rnd()])
@@ -739,78 +941,66 @@ function worley(size: number, cells: number, seed: number): { f1: Float32Array; 
   const f2 = new Float32Array(size * size)
   const id = new Float32Array(size * size)
   const cs = size / cells
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const cx = Math.floor(x / cs)
-      const cy = Math.floor(y / cs)
-      let d1 = 1e9
-      let d2 = 1e9
-      let best = 0
-      for (let oy = -1; oy <= 1; oy++) {
-        for (let ox = -1; ox <= 1; ox++) {
-          const gx = cx + ox
-          const gy = cy + oy
-          const wx = ((gx % cells) + cells) % cells
-          const wy = ((gy % cells) + cells) % cells
-          const k = wy * cells + wx
-          const px = (gx + pts[k][0]) * cs
-          const py = (gy + pts[k][1]) * cs
-          const d = Math.hypot(px - x, py - y) / cs
-          if (d < d1) {
-            d2 = d1
-            d1 = d
-            best = k
-          } else if (d < d2) d2 = d
+  const R = rowsPer(size * 4)
+  for (let y0 = 0; y0 < size; y0 += R) {
+    for (let y = y0; y < Math.min(size, y0 + R); y++) {
+      for (let x = 0; x < size; x++) {
+        const cx = Math.floor(x / cs)
+        const cy = Math.floor(y / cs)
+        let d1 = 1e9
+        let d2 = 1e9
+        let best = 0
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const gx = cx + ox
+            const gy = cy + oy
+            const wx = ((gx % cells) + cells) % cells
+            const wy = ((gy % cells) + cells) % cells
+            const k = wy * cells + wx
+            const px = (gx + pts[k][0]) * cs
+            const py = (gy + pts[k][1]) * cs
+            const d = Math.hypot(px - x, py - y) / cs
+            if (d < d1) {
+              d2 = d1
+              d1 = d
+              best = k
+            } else if (d < d2) d2 = d
+          }
         }
+        const i = y * size + x
+        f1[i] = d1
+        f2[i] = d2
+        id[i] = (best * 0.618034) % 1
       }
-      const i = y * size + x
-      f1[i] = d1
-      f2[i] = d2
-      id[i] = (best * 0.618034) % 1
     }
+    yield
   }
   return { f1, f2, id }
 }
 
-function finishSet(S: number, albedo: Uint8ClampedArray, rough: Float32Array, height: Float32Array, strength: number, dkey: string): PbrSet {
-  const [ca, xa] = canvas(S, S)
-  const a = xa.createImageData(S, S)
-  a.data.set(albedo)
-  xa.putImageData(a, 0, 0)
-  const map = toTex(ca, true)
-  const shared = getDetail(dkey)
-  if (shared) return { map, ...shared }
-  const r = new ImageData(S, S)
-  for (let i = 0; i < S * S; i++) {
-    const v = Math.max(0, Math.min(1, rough[i])) * 255
-    r.data[i * 4] = r.data[i * 4 + 1] = r.data[i * 4 + 2] = v
-    r.data[i * 4 + 3] = 255
-  }
-  return { map, ...putDetail(dkey, r, height, S, strength) }
-}
-
 /** 異星草地：底色斑塊＋細草葉筆觸＋泥土塊，草葉高度做法線 */
 export function grassSet(tint: string, seed = 3): PbrSet {
-  return cache3(`grass:${tint}:${seed}`, `grass:${seed}`, (dkey) => {
+  return outdoorSet(`grass:${tint}:${seed}`, `grass:${seed}`, 512, 5, function* (albedo, rough, height) {
     const S = 512
-    const patch = noiseField(S, 5, seed + 40, 3)
-    const fine = noiseField(S, 3, seed + 41, 48)
+    const patch = yield* noiseSteps(S, 5, seed + 40, 3)
+    const fine = yield* noiseSteps(S, 3, seed + 41, 48)
     const [tr, tg, tb] = hexRgb(tint)
-    const albedo = new Uint8ClampedArray(S * S * 4)
-    const rough = new Float32Array(S * S)
-    const height = new Float32Array(S * S)
-    for (let i = 0; i < S * S; i++) {
-      const p = patch[i]
-      const dirt = Math.max(0, 0.36 - p) * 2.2
-      const lum = 0.72 + p * 0.5 + (fine[i] - 0.5) * 0.25
-      // 斑塊：暖黃綠到冷青紫之間偏移
-      const warm = (p - 0.5) * 0.35
-      albedo[i * 4] = (tr * (1 + warm * 0.6) * lum) * (1 - dirt) + 74 * dirt
-      albedo[i * 4 + 1] = (tg * (1 + warm * 0.2) * lum) * (1 - dirt) + 60 * dirt
-      albedo[i * 4 + 2] = (tb * (1 - warm * 0.5) * lum) * (1 - dirt) + 52 * dirt
-      albedo[i * 4 + 3] = 255
-      rough[i] = 0.82 + fine[i] * 0.12 - dirt * 0.1
-      height[i] = 0.35 + fine[i] * 0.1
+    const N = rowsPer(1)
+    for (let i0 = 0; i0 < S * S; i0 += N) {
+      for (let i = i0; i < Math.min(S * S, i0 + N); i++) {
+        const p = patch[i]
+        const dirt = Math.max(0, 0.36 - p) * 2.2
+        const lum = 0.72 + p * 0.5 + (fine[i] - 0.5) * 0.25
+        // 斑塊：暖黃綠到冷青紫之間偏移
+        const warm = (p - 0.5) * 0.35
+        albedo[i * 4] = (tr * (1 + warm * 0.6) * lum) * (1 - dirt) + 74 * dirt
+        albedo[i * 4 + 1] = (tg * (1 + warm * 0.2) * lum) * (1 - dirt) + 60 * dirt
+        albedo[i * 4 + 2] = (tb * (1 - warm * 0.5) * lum) * (1 - dirt) + 52 * dirt
+        albedo[i * 4 + 3] = 255
+        rough[i] = 0.82 + fine[i] * 0.12 - dirt * 0.1
+        height[i] = 0.35 + fine[i] * 0.1
+      }
+      yield
     }
     // 草葉：短筆觸（顏色與高度同時寫入）
     const rnd = rand32(seed + 7)
@@ -834,8 +1024,8 @@ export function grassSet(tint: string, seed = 3): PbrSet {
         height[i] = 0.45 + f * 0.5
         rough[i] = 0.62 + (1 - f) * 0.2
       }
+      if (k % 1000 === 999) yield
     }
-    return finishSet(S, albedo, rough, height, 5, dkey)
   })
 }
 
@@ -851,48 +1041,49 @@ const sstep = (a: number, b: number, x: number) => {
  * cap：巨石、岩壁頂、雕像：fbm 明暗＋斷續的細裂紋＋礦物斑點，Worley 面只留很淡的面差。
  */
 export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor'): PbrSet {
-  return cache3(`rock2:${tint}:${seed}:${mode}`, `rock2:${seed}:${mode}`, (dkey) => {
+  const floor = mode === 'floor'
+  return outdoorSet(`rock2:${tint}:${seed}:${mode}`, `rock2:${seed}:${mode}`, 512, floor ? 6 : 8, function* (albedo, rough, height) {
     const S = 512
-    const floor = mode === 'floor'
-    const wv = worley(S, floor ? 6 : 5, seed + 90)
-    const big = noiseField(S, 5, seed + 91, floor ? 2 : 3)
-    const mid = noiseField(S, 4, seed + 94, floor ? 6 : 10)
-    const fine = noiseField(S, 4, seed + 92, 40)
-    const grain = noiseField(S, 2, seed + 95, 128)
+    const wv = yield* worleySteps(S, floor ? 6 : 5, seed + 90)
+    const big = yield* noiseSteps(S, 5, seed + 91, floor ? 2 : 3)
+    const mid = yield* noiseSteps(S, 4, seed + 94, floor ? 6 : 10)
+    const fine = yield* noiseSteps(S, 4, seed + 92, 40)
+    const grain = yield* noiseSteps(S, 2, seed + 95, 128)
     const [tr, tg, tb] = hexRgb(tint)
-    const albedo = new Uint8ClampedArray(S * S * 4)
-    const rough = new Float32Array(S * S)
-    const height = new Float32Array(S * S)
     const rnd = rand32(seed + 93)
-    for (let i = 0; i < S * S; i++) {
-      const edge = wv.f2[i] - wv.f1[i]
-      let lum: number
-      let h: number
-      let r: number
-      let warm: number
-      if (floor) {
-        const b = big[i] * 0.65 + mid[i] * 0.35
-        const bed = sstep(0.5, 0.6, b)
-        const crack = (edge < 0.03 ? 1 - edge / 0.03 : 0) * bed * sstep(0.42, 0.6, fine[i] * 0.6 + mid[i] * 0.5)
-        const lumBed = 0.8 + (fine[i] - 0.5) * 0.5 + (mid[i] - 0.5) * 0.35 + (wv.id[i] - 0.5) * 0.08 - crack * 0.55
-        const lumReg = 0.98 + (grain[i] - 0.5) * 0.3 + (mid[i] - 0.5) * 0.28 + (fine[i] - 0.5) * 0.12 + (big[i] - 0.5) * 0.2
-        lum = lumReg + (lumBed - lumReg) * bed
-        h = 0.42 + grain[i] * 0.06 + fine[i] * 0.04 + (0.16 + (1 - wv.f1[i]) * 0.05 + (fine[i] - 0.5) * 0.22) * bed - crack * 0.3
-        r = 0.93 + (0.82 + (fine[i] - 0.5) * 0.22 - 0.93) * bed + crack * 0.06
-        warm = 0.03 - bed * 0.06
-      } else {
-        const crack = (edge < 0.025 ? 1 - edge / 0.025 : 0) * sstep(0.45, 0.6, mid[i])
-        lum = (0.76 + (wv.id[i] - 0.5) * 0.1 + (big[i] - 0.5) * 0.5 + (fine[i] - 0.5) * 0.35 + (mid[i] - 0.5) * 0.2) * (1 - crack * 0.45)
-        h = 0.55 + (1 - wv.f1[i]) * 0.1 + (big[i] - 0.5) * 0.25 + (fine[i] - 0.5) * 0.18 - crack * 0.45
-        r = 0.8 + crack * 0.15 + (fine[i] - 0.5) * 0.2
-        warm = (big[i] - 0.5) * 0.06
+    const N = rowsPer(1)
+    for (let i0 = 0; i0 < S * S; i0 += N) {
+      for (let i = i0; i < Math.min(S * S, i0 + N); i++) {
+        const edge = wv.f2[i] - wv.f1[i]
+        let lum: number
+        let h: number
+        let r: number
+        let warm: number
+        if (floor) {
+          const b = big[i] * 0.65 + mid[i] * 0.35
+          const bed = sstep(0.5, 0.6, b)
+          const crack = (edge < 0.03 ? 1 - edge / 0.03 : 0) * bed * sstep(0.42, 0.6, fine[i] * 0.6 + mid[i] * 0.5)
+          const lumBed = 0.8 + (fine[i] - 0.5) * 0.5 + (mid[i] - 0.5) * 0.35 + (wv.id[i] - 0.5) * 0.08 - crack * 0.55
+          const lumReg = 0.98 + (grain[i] - 0.5) * 0.3 + (mid[i] - 0.5) * 0.28 + (fine[i] - 0.5) * 0.12 + (big[i] - 0.5) * 0.2
+          lum = lumReg + (lumBed - lumReg) * bed
+          h = 0.42 + grain[i] * 0.06 + fine[i] * 0.04 + (0.16 + (1 - wv.f1[i]) * 0.05 + (fine[i] - 0.5) * 0.22) * bed - crack * 0.3
+          r = 0.93 + (0.82 + (fine[i] - 0.5) * 0.22 - 0.93) * bed + crack * 0.06
+          warm = 0.03 - bed * 0.06
+        } else {
+          const crack = (edge < 0.025 ? 1 - edge / 0.025 : 0) * sstep(0.45, 0.6, mid[i])
+          lum = (0.76 + (wv.id[i] - 0.5) * 0.1 + (big[i] - 0.5) * 0.5 + (fine[i] - 0.5) * 0.35 + (mid[i] - 0.5) * 0.2) * (1 - crack * 0.45)
+          h = 0.55 + (1 - wv.f1[i]) * 0.1 + (big[i] - 0.5) * 0.25 + (fine[i] - 0.5) * 0.18 - crack * 0.45
+          r = 0.8 + crack * 0.15 + (fine[i] - 0.5) * 0.2
+          warm = (big[i] - 0.5) * 0.06
+        }
+        height[i] = h
+        albedo[i * 4] = tr * lum * (1 + warm)
+        albedo[i * 4 + 1] = tg * lum
+        albedo[i * 4 + 2] = tb * lum * (1 - warm)
+        albedo[i * 4 + 3] = 255
+        rough[i] = r
       }
-      height[i] = h
-      albedo[i * 4] = tr * lum * (1 + warm)
-      albedo[i * 4 + 1] = tg * lum
-      albedo[i * 4 + 2] = tb * lum * (1 - warm)
-      albedo[i * 4 + 3] = 255
-      rough[i] = r
+      yield
     }
     const W = S - 1
     // 小隕石坑（只在岩地）：碗狀凹陷＋隆起的坑緣、坑底略暗
@@ -917,6 +1108,7 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
             if (d < 1) rough[i] = Math.min(1, rough[i] + 0.04)
           }
         }
+        yield
       }
     }
     // 碎石／礦物斑點
@@ -938,7 +1130,7 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
         }
       }
     }
-    return finishSet(S, albedo, rough, height, floor ? 6 : 8, dkey)
+    yield
   })
 }
 
@@ -947,56 +1139,53 @@ export function rockSet(tint: string, seed = 3, mode: 'floor' | 'cap' = 'floor')
  * 突出的層理岩棚、斷續的裂縫、縫隙與岩棚上的苔蘚／礦脈（accent）。Worley 面只留很淡的明暗。
  */
 export function rockWallSet(tint: string, accent: string, seed = 5): PbrSet {
-  return cache3(`rockwall2:${tint}:${accent}:${seed}`, `rockwall2:${seed}`, (dkey) => {
+  return outdoorSet(`rockwall2:${tint}:${accent}:${seed}`, `rockwall2:${seed}`, 512, 7, function* (albedo, rough, height) {
     const S = 512
-    const big = noiseField(S, 5, seed + 60, 3)
-    const fine = noiseField(S, 4, seed + 61, 36)
-    const mid = noiseField(S, 4, seed + 63, 8)
-    const wv = worley(S, 6, seed + 62)
+    const big = yield* noiseSteps(S, 5, seed + 60, 3)
+    const fine = yield* noiseSteps(S, 4, seed + 61, 36)
+    const mid = yield* noiseSteps(S, 4, seed + 63, 8)
+    const wv = yield* worleySteps(S, 6, seed + 62)
     const [tr, tg, tb] = hexRgb(tint)
     const [ar, ag, ab] = hexRgb(accent)
-    const albedo = new Uint8ClampedArray(S * S * 4)
-    const rough = new Float32Array(S * S)
-    const height = new Float32Array(S * S)
-    for (let y = 0; y < S; y++) {
-      for (let x = 0; x < S; x++) {
-        const i = y * S + x
-        const v = y / S
-        // 岩層：sin 的頻率取偶數倍 π，垂直方向無縫；以低頻噪音扭曲成起伏的層理
-        const s1 = Math.sin((v * 8 + big[i] * 1.8) * Math.PI)
-        const s2 = Math.sin((v * 22 + big[i] * 2.6 + mid[i] * 0.8) * Math.PI)
-        const layer = s1 * 0.65 + s2 * 0.3
-        const ledge = s1 > 0.78 ? (s1 - 0.78) / 0.22 : 0
-        const groove = s1 < -0.86 ? (-0.86 - s1) / 0.14 : 0
-        const edge = wv.f2[i] - wv.f1[i]
-        const crack = Math.max(edge < 0.035 ? (1 - edge / 0.035) * sstep(0.44, 0.6, mid[i]) : 0, groove * 0.7)
-        const moss = Math.max(0, (crack * 0.8 + ledge * 0.7) * (fine[i] + big[i] - 0.72) * 2.2)
-        const lum = (0.66 + layer * 0.13 + (wv.id[i] - 0.5) * 0.08 + (big[i] - 0.5) * 0.36 + (fine[i] - 0.5) * 0.26 + ledge * 0.08) * (1 - crack * 0.6)
-        const m = Math.min(1, moss)
-        albedo[i * 4] = tr * lum * (1 - m) + ar * 0.55 * m
-        albedo[i * 4 + 1] = tg * lum * (1 - m) + ag * 0.55 * m
-        albedo[i * 4 + 2] = tb * lum * (1 - m) + ab * 0.55 * m
-        albedo[i * 4 + 3] = 255
-        rough[i] = 0.86 - ledge * 0.12 + crack * 0.1 - m * 0.25
-        height[i] = 0.5 + layer * 0.16 + ledge * 0.12 + (1 - wv.f1[i]) * 0.06 + (fine[i] - 0.5) * 0.15 - crack * 0.4
+    const R = rowsPer(S)
+    for (let y0 = 0; y0 < S; y0 += R) {
+      for (let y = y0; y < Math.min(S, y0 + R); y++) {
+        for (let x = 0; x < S; x++) {
+          const i = y * S + x
+          const v = y / S
+          // 岩層：sin 的頻率取偶數倍 π，垂直方向無縫；以低頻噪音扭曲成起伏的層理
+          const s1 = Math.sin((v * 8 + big[i] * 1.8) * Math.PI)
+          const s2 = Math.sin((v * 22 + big[i] * 2.6 + mid[i] * 0.8) * Math.PI)
+          const layer = s1 * 0.65 + s2 * 0.3
+          const ledge = s1 > 0.78 ? (s1 - 0.78) / 0.22 : 0
+          const groove = s1 < -0.86 ? (-0.86 - s1) / 0.14 : 0
+          const edge = wv.f2[i] - wv.f1[i]
+          const crack = Math.max(edge < 0.035 ? (1 - edge / 0.035) * sstep(0.44, 0.6, mid[i]) : 0, groove * 0.7)
+          const moss = Math.max(0, (crack * 0.8 + ledge * 0.7) * (fine[i] + big[i] - 0.72) * 2.2)
+          const lum = (0.66 + layer * 0.13 + (wv.id[i] - 0.5) * 0.08 + (big[i] - 0.5) * 0.36 + (fine[i] - 0.5) * 0.26 + ledge * 0.08) * (1 - crack * 0.6)
+          const m = Math.min(1, moss)
+          albedo[i * 4] = tr * lum * (1 - m) + ar * 0.55 * m
+          albedo[i * 4 + 1] = tg * lum * (1 - m) + ag * 0.55 * m
+          albedo[i * 4 + 2] = tb * lum * (1 - m) + ab * 0.55 * m
+          albedo[i * 4 + 3] = 255
+          rough[i] = 0.86 - ledge * 0.12 + crack * 0.1 - m * 0.25
+          height[i] = 0.5 + layer * 0.16 + ledge * 0.12 + (1 - wv.f1[i]) * 0.06 + (fine[i] - 0.5) * 0.15 - crack * 0.4
+        }
       }
+      yield
     }
-    return finishSet(S, albedo, rough, height, 7, dkey)
   })
 }
 
 /** 有機組織：濕潤的肉質表面＋發光血管（未識別物體、標本）*/
 export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
-  return cache3(`organic:${tint}:${vein}:${seed}`, `organic:${seed}`, (dkey) => {
+  return outdoorSet(`organic:${tint}:${vein}:${seed}`, `organic:${seed}`, 256, 5, function* (albedo, rough, height) {
     const S = 256
-    const wv = worley(S, 6, seed + 70)
-    const big = noiseField(S, 4, seed + 71, 3)
-    const fine = noiseField(S, 3, seed + 72, 24)
+    const wv = yield* worleySteps(S, 6, seed + 70)
+    const big = yield* noiseSteps(S, 4, seed + 71, 3)
+    const fine = yield* noiseSteps(S, 3, seed + 72, 24)
     const [tr, tg, tb] = hexRgb(tint)
     const [vr, vg, vb] = hexRgb(vein)
-    const albedo = new Uint8ClampedArray(S * S * 4)
-    const rough = new Float32Array(S * S)
-    const height = new Float32Array(S * S)
     for (let i = 0; i < S * S; i++) {
       const edge = wv.f2[i] - wv.f1[i]
       const v = edge < 0.06 ? 1 - edge / 0.06 : 0
@@ -1008,7 +1197,7 @@ export function organicSet(tint: string, vein: string, seed = 9): PbrSet {
       rough[i] = 0.35 + fine[i] * 0.3 - v * 0.15
       height[i] = 0.5 + (wv.f1[i] - 0.4) * 0.3 + v * 0.3 + (fine[i] - 0.5) * 0.1
     }
-    return finishSet(S, albedo, rough, height, 5, dkey)
+    yield
   })
 }
 
@@ -1021,9 +1210,16 @@ export function organicGlowTex(seed = 9): THREE.Texture {
   const have = cache.get(key)
   if (have) return have
   const S = 256
-  const wv = worley(S, 6, seed + 70)
-  const big = noiseField(S, 4, seed + 73, 3)
   const [c, x] = canvas(S, S)
+  const t = toTex(c, true)
+  cache.set(key, t)
+  start([t], organicGlowSteps(S, seed, x))
+  return t
+}
+
+function* organicGlowSteps(S: number, seed: number, x: CanvasRenderingContext2D): Steps {
+  const wv = yield* worleySteps(S, 6, seed + 70)
+  const big = yield* noiseSteps(S, 4, seed + 73, 3)
   const img = x.createImageData(S, S)
   for (let i = 0; i < S * S; i++) {
     const edge = wv.f2[i] - wv.f1[i]
@@ -1034,9 +1230,6 @@ export function organicGlowTex(seed = 9): THREE.Texture {
     img.data[o + 3] = 255
   }
   x.putImageData(img, 0, 0)
-  const t = toTex(c, true)
-  cache.set(key, t)
-  return t
 }
 
 /** 外星文字面板：發光符號格（未識別物體的啟用碼面板）*/

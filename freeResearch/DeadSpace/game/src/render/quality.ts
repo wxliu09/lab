@@ -54,12 +54,16 @@ export function isSoftwareGl(gl: WebGLRenderingContext | WebGL2RenderingContext 
 /**
  * 依裝置推測的預設畫質：GPU 名稱（WEBGL_debug_renderer_info）、邏輯核心數、記憶體（deviceMemory，Chrome 才有）。
  * 低階或內顯 → low，其餘 medium。
+ * Safari 不回報實際型號，Apple Silicon 的 Mac 與 iPhone／iPad 都只回 'Apple GPU'：沒有觸控點（maxTouchPoints = 0）的是 Mac（M 系列），
+ * 和 Chrome 回報的「Apple M…」一樣給 medium；有觸控點（iPad 的 Safari 也假裝成 Mac，但 maxTouchPoints > 0）維持 low。
  */
-export function detectQuality(gl: WebGLRenderingContext | WebGL2RenderingContext | null, nav: { hardwareConcurrency?: number; deviceMemory?: number } = navigator): Quality {
+export function detectQuality(gl: WebGLRenderingContext | WebGL2RenderingContext | null, nav: { hardwareConcurrency?: number; deviceMemory?: number; maxTouchPoints?: number } = navigator): Quality {
   const cores = nav.hardwareConcurrency ?? 8
   const mem = nav.deviceMemory
   if (cores <= 4 || (mem !== undefined && mem <= 4)) return 'low'
-  return WEAK_GPU.test(glName(gl)) ? 'low' : 'medium'
+  const name = glName(gl)
+  if (/^apple gpu$/i.test(name.trim()) && nav.maxTouchPoints === 0) return 'medium'
+  return WEAK_GPU.test(name) ? 'low' : 'medium'
 }
 
 /** 首次啟動（使用者沒選過畫質）：依裝置自動選，不寫入設定；使用者自己選過的設定優先 */

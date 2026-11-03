@@ -187,45 +187,52 @@ export class Engine {
   }
 
   /**
-   * 預先編譯 shader：用後處理實際渲染的 render target（線性輸出色彩空間），編出來的 program 才會在正式渲染時命中快取。
-   * obj 可以是隱藏中的群組；target = 提供燈光的場景。
+   * 預先編譯 shader（不等 GPU 連結完成；預建自己用 program.isReady() 分段輪詢）：用後處理實際渲染的 render target（線性輸出色彩空間），
+   * 編出來的 program 才會在正式渲染時命中快取。obj 可以是隱藏中的群組；target = 提供燈光的場景。
    */
-  compileAsync(obj: THREE.Object3D, camera: THREE.Camera, target: THREE.Scene): Promise<unknown> {
-    if (gpuLost.value) return Promise.resolve()
+  compile(obj: THREE.Object3D, camera: THREE.Camera, target: THREE.Scene): void {
+    if (gpuLost.value) return
     const r = this.renderer
     const prev = r.getRenderTarget()
     r.setRenderTarget(this.composer.inputBuffer)
     try {
-      return r.compileAsync(obj, camera, target)
+      r.compile(obj, camera, target)
     } finally {
       r.setRenderTarget(prev)
     }
   }
 
-  start(): void {
+  /** 開始 rAF 迴圈；immediate = 先同步畫一幀（開局：建場景與第一幀在同一個工作裡做完）*/
+  start(immediate = false): void {
     if (this.raf) return
     const loop = () => {
       this.raf = requestAnimationFrame(loop)
-      const now = performance.now()
-      const dt = Math.min(0.1, (now - this.last) / 1000)
-      this.last = now
-      const t = (now - this.t0) / 1000
-      fogUniforms.uTime.value = t
-      this.frames++
-      if (now - this.fpsT > 1000) {
-        this.fps = (this.frames * 1000) / (now - this.fpsT)
-        this.frames = 0
-        this.fpsT = now
-      }
-      if (!this.current) return
-      this.current.update(dt, t)
-      // 受傷色差脈衝
-      this.damagePulse = Math.max(0, this.damagePulse - dt * 2.5)
-      const o = this.damagePulse * 0.006
-      this.ca?.offset.set(o, o * 0.6)
-      this.composer.render(dt)
+      this.frame()
     }
     this.raf = requestAnimationFrame(loop)
+    if (immediate) this.frame()
+  }
+
+  /** 畫一幀：更新目前場景、後處理輸出 */
+  private frame(): void {
+    const now = performance.now()
+    const dt = Math.min(0.1, (now - this.last) / 1000)
+    this.last = now
+    const t = (now - this.t0) / 1000
+    fogUniforms.uTime.value = t
+    this.frames++
+    if (now - this.fpsT > 1000) {
+      this.fps = (this.frames * 1000) / (now - this.fpsT)
+      this.frames = 0
+      this.fpsT = now
+    }
+    if (!this.current) return
+    this.current.update(dt, t)
+    // 受傷色差脈衝
+    this.damagePulse = Math.max(0, this.damagePulse - dt * 2.5)
+    const o = this.damagePulse * 0.006
+    this.ca?.offset.set(o, o * 0.6)
+    this.composer.render(dt)
   }
 
   stop(): void {

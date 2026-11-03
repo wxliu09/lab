@@ -677,6 +677,20 @@ export class Fx {
     return s
   }
 
+  /**
+   * 預熱用：每個碎片池一個同材質、同 instancing 設定的代理 InstancedMesh（只拿去預編譯，不加進場景、不上傳）。
+   * 碎片池的材質有受光，換到燈光組合不同的場景（太空層有太陽）要另外編一份。
+   */
+  debrisWarm(): THREE.Object3D[] {
+    const out: THREE.Object3D[] = []
+    for (const p of this.debrisPools.values()) {
+      const m = new THREE.InstancedMesh(p.mesh.geometry, p.mesh.material, 1)
+      m.setColorAt(0, new THREE.Color('#ffffff'))
+      out.push(m)
+    }
+    return out
+  }
+
   // ───── 暫存物件 ─────
 
   addTransient(obj: THREE.Object3D, dur: number, zone: number, tick?: (k: number, t: number) => void): void {

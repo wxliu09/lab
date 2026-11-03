@@ -112,9 +112,9 @@ export class Overlay {
           x.fillRect(sx - bw / 2, sy + 6, (bw * e.s.mp) / Math.max(1, e.s.mmp), 2)
         }
       }
-      // 名稱：先收集，最後統一做避讓再畫
+      // 名稱：先收集，最後統一做避讓再畫。中立單位用灰藍（和腳下光圈、太空小地圖同色），和白色玩家（#eff0f3）分得開
       const name = e.s.n || (hot ? loc(def?.name) : '')
-      if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#cfd8df', pri: hot ? 2 : mine ? 1 : 0 })
+      if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#9fb3c2', pri: hot ? 2 : mine ? 1 : 0 })
       const b = bubbles.get(id)
       if (b) this.bubble(x, sx, sy - 24 * z, b.text, z)
     }

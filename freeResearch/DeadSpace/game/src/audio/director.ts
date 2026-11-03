@@ -7,7 +7,7 @@ import { chatOpen, evolveOpen } from '../client/input'
 import type { GameScene } from '../render/gameScene'
 import { currentAmbient, setAmbient, type AmbientKind } from './ambient'
 import { ENGINE_FULL_SPEED, countdownTick, vehicleSpeed, zoneAmbient } from './cues'
-import { engineState, setEngine } from './engine'
+import { engineState, setEngine, stopEngine } from './engine'
 import { currentMood, setMood, type Mood } from './music'
 import { audioContext, debugLevel, debugPeak, listenerPos, sfx } from './sfx'
 import { FAMILIES, combatStats, familyOf, playBark, playHit, voicePitch, type BarkKind, type Family, type Hit, type Mat } from './combat'
@@ -395,7 +395,7 @@ export function installAudioDirector(): void {
     }
     if (s !== 'game') {
       setAmbient(null)
-      setEngine(0)
+      stopEngine()
     }
     prevScreen = s
     setMood(forced ?? pickMood())

@@ -7,11 +7,15 @@ import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 import type { ClientWorld, CEnt } from '../client/world'
 import type { SceneLike } from './engine'
 import { RtsCamera } from './camera'
-import { buildStation, updateDoors, type RoomLight, type StationView } from './stationBuilder'
+import { buildStation, buildStationSteps, updateDoors, type RoomLight, type StationView } from './stationBuilder'
 import { FogMap } from './fog'
-import { UnitLayer } from './units'
+import { UnitLayer, unitWarmMeshes } from './units'
 import { fogUniforms, emergencyStripMat } from './materials'
-import { isSoftwareGl, preset } from './quality'
+import { detectQuality, isSoftwareGl, preset, quality } from './quality'
+import { effect } from '@preact/signals'
+import { runSteps, type Steps } from './steps'
+import { deferTextures, textureSteps } from './tex'
+import { warmSet } from './fx/kit'
 import { Fx } from './fx'
 import '../shared/content/index'
 import { SHIP_BY_ID } from '../shared/content/ships'
@@ -19,16 +23,85 @@ import type { StationDef } from '../shared/content/stations/types'
 import { makeSky } from './space/sky'
 import './models/ships'
 import './models/devices'
-import { updateBuffFx } from './buffFx'
+import { buffWarmMaterials, updateBuffFx } from './buffFx'
 import { MODELS, buildModel } from './models/index'
 
 /** 預建站點時用到的引擎功能（GameScreen 傳入 Engine）*/
 export interface PrebuildHost {
   renderer: THREE.WebGLRenderer
-  compileAsync(obj: THREE.Object3D, camera: THREE.Camera, target: THREE.Scene): Promise<unknown>
+  /** 同步預編譯（KHR_parallel_shader_compile 可用時不等 GPU 連結；連結結果之後用 program.isReady() 輪詢）*/
+  compile(obj: THREE.Object3D, camera: THREE.Camera, target: THREE.Scene): void
 }
 
-type IdleCb = (dl?: { timeRemaining(): number }) => void
+type IdleCb = (dl?: { timeRemaining(): number; didTimeout?: boolean }) => void
+
+/** 預建一片的時間上限（idle callback 逾時觸發、頁面一直忙的時候；有空閒時間就用空閒時間）*/
+const SLICE_MS = 8
+/** 有空閒時間時一片最多做多久 */
+const IDLE_MAX_MS = 24
+/** 一次 compile 呼叫最多送幾個物件（每個新的 program 要組 shader 字串，約 1–3 ms）*/
+const COMPILE_BATCH = 4
+
+/**
+ * 預建的開關：軟體算繪（建一站要好幾秒）與低階裝置（detectQuality 判定 low：內顯／行動 GPU、≤ 4 核心、deviceMemory ≤ 4 GB；
+ * 全部預建會多佔約 300 MB GPU 記憶體與 RSS）不預建，維持第一次進站才建。localStorage `xc.prebuild` = '1'／'0' 可強制開關（量測用）。
+ */
+function prebuildAllowed(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  let force: string | null = null
+  try {
+    force = localStorage.getItem('xc.prebuild')
+  } catch {
+    /* ignore */
+  }
+  if (force === '1') return true
+  if (force === '0') return false
+  return !isSoftwareGl(gl) && detectQuality(gl) !== 'low'
+}
+
+/** 預編譯一批物件：three 的 compile 只用到根物件的 traverse（收材質）與 traverseVisible（收燈光），用一個假的根物件把零散的 mesh 包成一批 */
+function batchRoot(objs: THREE.Object3D[], lights: THREE.Object3D[]): THREE.Object3D {
+  return {
+    traverse: (cb: (o: THREE.Object3D) => void) => {
+      for (const o of objs) cb(o)
+    },
+    traverseVisible: (cb: (o: THREE.Object3D) => void) => {
+      for (const o of lights) cb(o)
+    },
+  } as unknown as THREE.Object3D
+}
+
+/** 要預編譯的物件：每種（材質 × 物件類型 × geometry attribute 組合）取一個；program 只跟這些有關 */
+function compileItems(roots: THREE.Object3D[]): THREE.Object3D[] {
+  const seen = new Set<string>()
+  const out: THREE.Object3D[] = []
+  for (const root of roots) {
+    root.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (!m.material || !(m.isMesh || (o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as THREE.Sprite).isSprite)) return
+      const mats = Array.isArray(m.material) ? m.material : [m.material]
+      const g = m.geometry
+      const im = o as THREE.InstancedMesh
+      const k = `${mats.map((x) => x.uuid).join('+')}|${o.type}|${im.isInstancedMesh ? (im.instanceColor ? 2 : 1) : 0}|${g ? Object.keys(g.attributes).join(',') + ':' + Object.keys(g.morphAttributes).length : ''}`
+      if (seen.has(k)) return
+      seen.add(k)
+      out.push(o)
+    })
+  }
+  return out
+}
+
+/** 物件用到的貼圖（材質上的所有 Texture 欄位）*/
+function texturesOf(roots: THREE.Object3D[], out: Set<THREE.Texture>): void {
+  for (const root of roots) {
+    root.traverse((o) => {
+      const ms = (o as THREE.Mesh).material
+      if (!ms) return
+      for (const m of Array.isArray(ms) ? ms : [ms]) {
+        for (const v of Object.values(m)) if (v instanceof THREE.Texture) out.add(v)
+      }
+    })
+  }
+}
 
 /** requestIdleCallback（沒有就退回 setTimeout）；timeout 讓一直忙碌的頁面也會在幾秒內輪到 */
 function onIdle(cb: IdleCb, timeout: number): () => void {
@@ -102,17 +175,20 @@ export class GameScene implements SceneLike {
   private lastCtlKey = ''
   /** 本幀受到的傷害脈衝（0..1）*/
   damage = 0
-  /** 預建：還沒建的站（zone id；0 = 太空層）、目前這一站還沒上傳的貼圖、是否全部完成 */
+  /**
+   * 預建：待處理的 zone（0 = 太空層；已經建好的站只重新上傳／預編譯）、目前在跑的分段工作、
+   * 正在分段建的站（使用者在它建完之前走進去，就由 buildView 同步把剩下的做完）
+   */
   private prebuildHost: PrebuildHost | null = null
   private prebuildQ: number[] = []
-  private prebuildTex: THREE.Texture[] = []
+  private prebuildIt: Steps | null = null
+  private building: { id: number; it: Steps<StationView> } | null = null
   /** 這一局（這個 WebGL context）已經送去上傳的貼圖；貼圖是模組層級快取、跨局共用，新的一局要重新上傳 */
   private uploaded = new WeakSet<THREE.Texture>()
-  private prebuildBusy = false
-  /** 預編譯完成、還沒「第一次使用」的 program：第一次使用會同步查詢連結結果（沒有 KHR_parallel_shader_compile 時會等 GPU），也在空閒時間先做 */
-  private prebuildWarm = false
+  /** 已經「第一次使用」過的 program：第一次使用會同步查詢連結結果（沒有 KHR_parallel_shader_compile 時會等 GPU），在空閒時間先做 */
   private warmed = new WeakSet<object>()
   private cancelIdle: (() => void) | null = null
+  private stopQuality: (() => void) | null = null
   private disposed = false
   prebuildDone = false
   /** 每幀重複使用的暫存（避免 GC）*/
@@ -159,7 +235,7 @@ export class GameScene implements SceneLike {
       if (!st) continue
       this.zones.set(id, { id, key, station: stationId, layout: parseLayout(st.layout) })
     }
-    if (this.prebuildHost) this.queuePrebuild()
+    if (this.prebuildHost) this.queuePrebuild(false)
   }
 
   private space: { group: THREE.Group; update: (t: number) => void; sun: THREE.DirectionalLight } | null = null
@@ -187,9 +263,11 @@ export class GameScene implements SceneLike {
 
   /**
    * 太空層的單位模型（本局各站的船殼、恆星、小行星、船艦）只在第一次進太空時才建，貼圖與 shader 也是那時才準備：
-   * 預建太空層時先各建一份暫時的模型，只用來預熱貼圖／材質快取與預編譯，之後丟掉（幾何從沒上傳過）。
+   * 預建太空層時先各建一份暫時的模型（一個模型一步），只用來預熱貼圖／材質快取與預編譯，之後丟掉（幾何從沒上傳過）。
+   * 太空層多了太陽這盞平行光，three 的 program key 含燈光數：連不受光的材質（選取圈、腳下光暈、特效）第一次在太空用到也會新編一份，
+   * 所以單位、buff 殼層／石化材質、特效材質與碎片池也各放一個代表物件。
    */
-  private spaceWarmGroup(): THREE.Group {
+  private *spaceWarmSteps(): Steps<{ group: THREE.Group; fx: THREE.Group; disposeMats: THREE.Material[] }> {
     const g = new THREE.Group()
     const ids = new Set(['space.sun', 'space.asteroid'])
     for (const z of this.zones.values()) ids.add('station.' + z.station)
@@ -201,48 +279,78 @@ export class GameScene implements SceneLike {
       } catch {
         /* 預熱失敗不影響正式建立 */
       }
+      yield
     }
-    return g
+    g.add(...unitWarmMeshes())
+    const { group: fx, mats } = warmSet(this, buffWarmMaterials())
+    g.add(fx)
+    g.add(...this.fx.debrisWarm())
+    return { group: g, fx, disposeMats: mats }
   }
 
-  /**
-   * 建立站體（不加進場景）。不在目前 zone 的站體從場景圖移除而不只是隱藏：
-   * 隱藏的物件每幀仍會跑 updateMatrixWorld，整局預建所有站之後這筆成本會變得明顯。
-   */
-  private buildView(id: number): StationView | undefined {
-    let v = this.views.get(id)
-    if (v) return v
-    const info = this.zones.get(id)
-    const def = info && stationDefOf(info.station)
-    if (!info || !def) return undefined
-    v = buildStation(def, info.layout)
+  /** 站體建好之後登記（加迷霧圖）*/
+  private finishView(id: number, v: StationView, info: ZoneInfo): StationView {
     this.views.set(id, v)
     this.fogs.set(id, new FogMap(info.layout))
     return v
   }
 
   /**
-   * 開局後在空閒時間逐站預建本局的站點：建站體、上傳貼圖、預編譯 shader；之後第一次進站不會卡住主執行緒（主機卡住會讓所有客人收不到快照）。
-   * 軟體算繪（SwiftShader 等）建一站要好幾秒，預建會讓開局後一兩分鐘持續卡頓，所以不預建、維持第一次進站才建；
-   * localStorage `xc.prebuild` = '1'／'0' 可強制開關（量測用）。
+   * 建立站體（不加進場景）。不在目前 zone 的站體從場景圖移除而不只是隱藏：
+   * 隱藏的物件每幀仍會跑 updateMatrixWorld，整局預建所有站之後這筆成本會變得明顯。
+   * 預建正在分段建這一站（使用者在它建完前走進去）：同步把剩下的步驟做完；之前延後產生的貼圖在 three 上傳時自動做完。
    */
-  startPrebuild(host: PrebuildHost): void {
-    let force: string | null = null
-    try {
-      force = localStorage.getItem('xc.prebuild')
-    } catch {
-      /* ignore */
+  private buildView(id: number): StationView | undefined {
+    const v = this.views.get(id)
+    if (v) return v
+    const info = this.zones.get(id)
+    const def = info && stationDefOf(info.station)
+    if (!info || !def) return undefined
+    if (this.building?.id === id) {
+      const it = this.building.it
+      this.building = null
+      return this.finishView(id, runSteps(it), info)
     }
-    if (force === '0' || (force !== '1' && isSoftwareGl(host.renderer.getContext()))) return
-    this.prebuildHost = host
-    this.queuePrebuild()
+    return this.finishView(id, buildStation(def, info.layout), info)
   }
 
-  private queuePrebuild(): void {
-    const q = [...this.zones.keys()].filter((id) => !this.views.has(id)).sort((a, b) => a - b)
-    if (!this.space) q.push(0)
-    this.prebuildQ = q
-    this.prebuildDone = q.length === 0 && this.prebuildTex.length === 0 && !this.prebuildBusy && !this.prebuildWarm
+  /**
+   * 開局後在空閒時間逐站預建本局的站點：建站體、產生貼圖、上傳貼圖、預編譯 shader；之後第一次進站不會卡住主執行緒（主機卡住會讓所有客人收不到快照）。
+   * 每一步都切成幾 ms 的小片：buildStationSteps（每列格子、每個道具）、延後產生的程序化貼圖（tex.ts textureSteps，每片幾列像素）、
+   * 一次上傳一張貼圖、一次預編譯幾個物件、一次「第一次使用」一個 program。有空閒時間就做到空閒時間用完；
+   * requestIdleCallback 逾時觸發（頁面一直忙）時也只做 SLICE_MS。哪些裝置不預建見 prebuildAllowed。
+   */
+  startPrebuild(host: PrebuildHost): void {
+    if (this.prebuildHost || !prebuildAllowed(host.renderer.getContext())) return
+    this.prebuildHost = host
+    // WebGL context 恢復後所有貼圖與 program 都沒了：已建好的站重新上傳、預編譯
+    host.renderer.domElement.addEventListener('webglcontextrestored', this.onRestored)
+    // 對局中改畫質（陰影開關會改變 program key）：已建好的站重新預編譯（貼圖不用重傳）
+    let first = true
+    this.stopQuality = effect(() => {
+      void quality.value
+      if (first) {
+        first = false
+        return
+      }
+      this.queuePrebuild(true)
+    })
+    this.queuePrebuild(false)
+  }
+
+  private onRestored = () => {
+    this.uploaded = new WeakSet()
+    this.warmed = new WeakSet()
+    this.queuePrebuild(true)
+  }
+
+  /** 排入還沒建的站與太空層；again = 已經建好的也重新上傳／預編譯（context 恢復、改畫質）*/
+  private queuePrebuild(again: boolean): void {
+    if (!this.prebuildHost || this.disposed) return
+    const ids = [...this.zones.keys()].filter((id) => again || !this.views.has(id)).sort((a, b) => a - b)
+    if (again || !this.space) ids.push(0)
+    for (const id of ids) if (!this.prebuildQ.includes(id)) this.prebuildQ.push(id)
+    this.prebuildDone = !this.prebuildQ.length && !this.prebuildIt
     this.scheduleIdle(1500)
   }
 
@@ -254,96 +362,141 @@ export class GameScene implements SceneLike {
     }, timeout)
   }
 
-  /** 一次 idle callback 做一件事：建一站，或在剩餘時間內上傳幾張貼圖，或送出一次 shader 預編譯 */
-  private prebuildStep(dl?: { timeRemaining(): number }): void {
+  /**
+   * 一次 idle callback 推進預建一小片：有空閒時間就做到剩 1 ms（最多 IDLE_MAX_MS），逾時觸發（timeRemaining() 是 0）只做 SLICE_MS。
+   * 這段時間內第一次用到的程序化貼圖改成延後產生（deferTextures），由 prebuildZone 裡的 textureSteps 分段做完。
+   */
+  private prebuildStep(dl?: { timeRemaining(): number; didTimeout?: boolean }): void {
     const host = this.prebuildHost
     if (!host || this.disposed) return
-    // 開局第一站還沒顯示之前不搶時間
-    if (this.zone < 0 || this.prebuildBusy) return this.scheduleIdle(1000)
-    if (this.prebuildTex.length) {
-      const t0 = performance.now()
-      do {
-        const tex = this.prebuildTex.pop()!
-        if (!this.uploaded.has(tex)) {
-          this.uploaded.add(tex)
-          host.renderer.initTexture(tex)
+    // 開局第一站還沒顯示之前不搶時間；context 遺失中先停
+    if (this.zone < 0) return this.scheduleIdle(1000)
+    if (host.renderer.getContext().isContextLost()) return this.scheduleIdle(2000)
+    const t0 = performance.now()
+    // 空閒時間最多用 IDLE_MAX_MS：主機的 HostRelay 也在主執行緒轉送快照（20 Hz），一片太長會讓轉送延後
+    const idle = dl && !dl.didTimeout ? Math.min(IDLE_MAX_MS, dl.timeRemaining() - 1) : 0
+    const budget = Math.max(SLICE_MS, idle)
+    let wait = false
+    deferTextures(() => {
+      for (;;) {
+        if (!this.prebuildIt) {
+          const id = this.prebuildQ.shift()
+          if (id === undefined) {
+            this.prebuildDone = true
+            return
+          }
+          this.prebuildIt = this.prebuildZone(host, id)
         }
-      } while (this.prebuildTex.length && (dl ? dl.timeRemaining() > 4 : performance.now() - t0 < 6))
-      return this.scheduleIdle(500)
-    }
-    if (this.prebuildWarm) {
-      // 每次至少處理一個（idle callback 逾時觸發時 timeRemaining() 是 0）
-      const t0 = performance.now()
-      let n = 0
-      let left = false
-      for (const p of host.renderer.info.programs ?? []) {
-        if (this.warmed.has(p)) continue
-        if (n > 0 && (dl ? dl.timeRemaining() <= 4 : performance.now() - t0 >= 6)) {
-          left = true
-          break
+        let r: IteratorResult<void | 'wait', void>
+        try {
+          r = this.prebuildIt.next()
+        } catch (e) {
+          // 預建只是背景工作：出錯就放棄這一站（第一次進站時照常同步建立）
+          if (__DEV__) console.error(e)
+          r = { done: true, value: undefined }
+          this.building = null
         }
-        n++
-        this.warmed.add(p)
-        p.getUniforms()
-      }
-      this.prebuildWarm = left
-      return this.scheduleIdle(500)
-    }
-    const id = this.prebuildQ.shift()
-    if (id === undefined) {
-      this.prebuildDone = true
-      return
-    }
-    let obj: THREE.Object3D | null = null
-    let warm: THREE.Group | null = null
-    if (id === 0) {
-      if (!this.space) {
-        obj = this.buildSpace().group
-        warm = this.spaceWarmGroup()
-        obj.add(warm)
-      }
-    } else if (!this.views.has(id)) {
-      obj = this.buildView(id)?.group ?? null
-    }
-    if (!obj) return this.scheduleIdle(200)
-    // 收集這一站的貼圖：下幾次 idle 分批上傳（同一張共用貼圖只上傳一次）
-    const seen = new Set<THREE.Texture>()
-    obj.traverse((o) => {
-      const ms = (o as THREE.Mesh).material
-      if (!ms) return
-      for (const m of Array.isArray(ms) ? ms : [ms]) {
-        for (const v of Object.values(m)) if (v instanceof THREE.Texture && !this.uploaded.has(v)) seen.add(v)
+        if (r.done) this.prebuildIt = null
+        else if (r.value === 'wait') {
+          wait = true
+          return
+        }
+        if (performance.now() - t0 >= budget) return
       }
     })
-    this.prebuildTex = [...seen]
-    // shader 預編譯：KHR_parallel_shader_compile 可用時不阻塞主執行緒。燈光數量是 program key 的一部分，
-    // 要和正式渲染時一致：站內 = 本場景的燈（太空層的太陽不算）；太空層 = 本場景的燈＋太陽。
-    // compile 會分別收集 target 與 obj 的可見燈光，所以太空層先從場景拿下、暫時設為可見，避免太陽算兩次。
-    this.prebuildBusy = true
-    const done = () => {
-      this.prebuildBusy = false
-      this.prebuildWarm = true
-      this.scheduleIdle(500)
-    }
-    const sp = this.space?.group
-    const spVis = sp?.visible ?? false
-    const isSpace = obj === sp
-    if (sp) {
-      if (isSpace) {
-        this.scene.remove(sp)
-        sp.visible = true
-      } else sp.visible = false
-    }
-    try {
-      host.compileAsync(obj, this.camera, this.scene).then(done, done)
-    } catch {
-      done()
-    } finally {
-      if (sp) {
-        sp.visible = spVis
-        if (isSpace) this.scene.add(sp)
+    if (!this.prebuildDone) this.scheduleIdle(wait ? 250 : 100)
+  }
+
+  /** 預建一個 zone：建站（或太空層的代表模型）→ 延後的貼圖 → 上傳貼圖 → 預編譯 → 等連結並第一次使用 */
+  private *prebuildZone(host: PrebuildHost, id: number): Steps {
+    let roots: THREE.Object3D[]
+    let warm: { group: THREE.Group; fx: THREE.Group; disposeMats: THREE.Material[] } | null = null
+    const extraTex: THREE.Texture[] = []
+    if (id === 0) {
+      const sp = this.buildSpace()
+      warm = yield* this.spaceWarmSteps()
+      roots = [sp.group, warm.group]
+    } else {
+      let v = this.views.get(id)
+      if (!v) {
+        const info = this.zones.get(id)
+        const def = info && stationDefOf(info.station)
+        if (!info || !def) return
+        const it = buildStationSteps(def, info.layout)
+        this.building = { id, it }
+        for (;;) {
+          // 使用者在建完前走進這一站：buildView 已經同步做完（building 被清掉）
+          if (this.building?.it !== it) break
+          const r = it.next()
+          if (r.done) {
+            this.building = null
+            this.finishView(id, r.value, info)
+            break
+          }
+          yield
+        }
+        v = this.views.get(id)
+        if (!v) return
       }
-      if (warm) obj.remove(warm)
+      roots = [v.group]
+      if (v.fill) extraTex.push(v.fill)
+      const fog = this.fogs.get(id)
+      if (fog) extraTex.push(fog.tex)
+    }
+    // 延後產生的程序化貼圖（這一站與之前留下的）分段做完
+    yield* textureSteps()
+    // 上傳貼圖：一次一張（同一張共用貼圖只上傳一次）
+    const texs = new Set<THREE.Texture>(extraTex)
+    texturesOf(roots, texs)
+    for (const t of texs) {
+      if (this.uploaded.has(t)) continue
+      this.uploaded.add(t)
+      host.renderer.initTexture(t)
+      yield
+    }
+    // 預編譯：燈光數量是 program key 的一部分，要和正式渲染時一致：站內 = 本場景的燈（太空層的太陽不算）；太空層 = 本場景的燈＋太陽。
+    // 假的根物件只帶太空層的太陽（太空層正在顯示時太陽已經在場景裡，不重複算）；預編譯站內時先把正在顯示的太空層藏起來。
+    const items = compileItems(roots)
+    for (let i = 0; i < items.length; i += COMPILE_BATCH) {
+      const sp = this.space
+      const spVis = sp?.group.visible ?? false
+      const lights = id === 0 && sp && !spVis ? [sp.sun] : []
+      if (sp && id !== 0) sp.group.visible = false
+      try {
+        host.compile(batchRoot(items.slice(i, i + COMPILE_BATCH), lights), this.camera, this.scene)
+      } catch {
+        /* 預編譯失敗不影響正式渲染 */
+      } finally {
+        if (sp) sp.group.visible = spVis
+      }
+      yield
+    }
+    if (warm) {
+      // 代表物件用完：特效的池化材質還回池子、護盾材質 dispose（同 kit.prewarm）
+      warm.fx.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | undefined
+        if (m && !warm!.disposeMats.includes(m)) this.fx.releaseMat(m)
+      })
+      for (const m of warm.disposeMats) m.dispose()
+    }
+    // 等 GPU 連結完成（KHR_parallel_shader_compile；沒有這個擴充時 isReady 一律是 true）再第一次使用，一次一個
+    for (;;) {
+      let pending = false
+      let did = false
+      for (const p of host.renderer.info.programs ?? []) {
+        if (this.warmed.has(p)) continue
+        if (!(p as unknown as { isReady(): boolean }).isReady()) {
+          pending = true
+          continue
+        }
+        this.warmed.add(p)
+        p.getUniforms()
+        did = true
+        break
+      }
+      if (did) yield
+      else if (pending) yield 'wait'
+      else return
     }
   }
 
@@ -600,8 +753,12 @@ export class GameScene implements SceneLike {
     this.disposed = true
     this.cancelIdle?.()
     this.cancelIdle = null
+    this.stopQuality?.()
+    this.stopQuality = null
+    this.prebuildHost?.renderer.domElement.removeEventListener('webglcontextrestored', this.onRestored)
     this.prebuildHost = null
-    this.prebuildTex = []
+    this.prebuildIt = null
+    this.building = null
     for (const v of this.views.values()) v.dispose()
     this.views.clear()
     for (const f of this.fogs.values()) f.tex.dispose()

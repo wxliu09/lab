@@ -60,6 +60,10 @@ function glowMat(col: string): THREE.MeshBasicMaterial {
   return m
 }
 
+/** 預熱用：選取圈與腳下光暈各一個（同色同狀態的材質共用同一支 shader；燈光組合不同的場景要各編一份）*/
+export function unitWarmMeshes(): THREE.Object3D[] {
+  return [new THREE.Mesh(ringGeo, ringMat('#ffffff', 0)), new THREE.Mesh(glowGeo, glowMat('#ffffff'))]
+}
 
 function colorOf(c: number | undefined): string {
   return c !== undefined && c >= 0 ? (PLAYER_COLORS[c]?.hex ?? '#ffffff') : '#ffffff'

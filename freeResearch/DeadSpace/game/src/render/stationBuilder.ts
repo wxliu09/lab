@@ -8,7 +8,8 @@ import { decalTex, isSharedTexture } from './tex'
 import { preset } from './quality'
 import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
-import { buildRockWalls, classifyOutdoor, groundTone } from './rockWalls'
+import { buildRockWallsSteps, classifyOutdoor, groundTone } from './rockWalls'
+import { runSteps, type Steps } from './steps'
 
 export const WALL_H = 2.4
 const DOOR_H = 2.15
@@ -96,6 +97,14 @@ function hashId(id: string): number {
 }
 
 export function buildStation(st: StationDef, l: ParsedLayout): StationView {
+  return runSteps(buildStationSteps(st, l))
+}
+
+/**
+ * 分段建站：每一列格子、每一扇門、每個道具與設施之後 yield 一次（GameScene 的預建依空閒時間推進，一片只有幾 ms）。
+ * 同步呼叫 buildStation 時一路跑完，結果完全相同。
+ */
+export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<StationView> {
   const th = theme(st.theme)
   const group = new THREE.Group()
   group.name = 'station:' + st.id
@@ -192,6 +201,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         g.col.push(a, a, a)
       }
     }
+    yield
   }
   for (const [key, g] of floorGeo) {
     const [variant, tint] = key.split('|') as ['plate' | 'grate' | 'tile' | 'rubber' | 'concrete', string]
@@ -205,6 +215,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     mesh.receiveShadow = true
     mesh.matrixAutoUpdate = false
     group.add(mesh)
+    yield
   }
 
   // ───── 牆面：只畫朝向非牆格的面 ─────
@@ -269,7 +280,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     if (!bt) strips.set(color, (bt = new Batcher()))
     bt.add(box(0.86 * len, 0.06, 0.04), Mat.emissive(color, 2.6), (ax + bx) / 2 + nx * 0.03, 1.62, (az + bz) / 2 + nz * 0.03, rotY)
   }
-  if (ocls) buildRockWalls({ l, th, group, cls: ocls, cellAt, wallH: WALL_H, seed: hashId(st.id) })
+  if (ocls) yield* buildRockWallsSteps({ l, th, group, cls: ocls, cellAt, wallH: WALL_H, seed: hashId(st.id) })
   for (let row = 0; row < l.h && !outdoor; row++) {
     for (let col = 0; col < l.w; col++) {
       if (cellAt(col, row) !== Cell.Wall) continue
@@ -326,6 +337,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
         cap.add(box(sx, 0.08, sz), trimMat, col + 0.5 + ox, WALL_H + 0.04, -(l.h - row - 0.5) + oz)
       }
     }
+    yield
   }
   if (wpos.length) {
     const wg = new THREE.BufferGeometry()
@@ -340,16 +352,17 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     walls.matrixAutoUpdate = false
     group.add(walls)
   }
-  cap.build(group, { cast: false, receive: true })
+  yield* cap.buildSteps(group, { cast: false, receive: true })
   const stripMeshes: THREE.Mesh[] = []
-  for (const bt of strips.values()) stripMeshes.push(...bt.build(group, { cast: false, receive: false }))
+  for (const bt of strips.values()) stripMeshes.push(...(yield* bt.buildSteps(group, { cast: false, receive: false })))
   if (flesh) {
-    stripMeshes.push(...blisters.build(group, { cast: false, receive: true }).filter((m) => m.material !== blisterBase))
+    stripMeshes.push(...(yield* blisters.buildSteps(group, { cast: false, receive: true })).filter((m) => m.material !== blisterBase))
     // 肉壁血管的光慢慢脈動（像心跳把體液推過去）
     const fm = Mat.wall(th.wall, th.wallAccent)
     anim.push({ obj: group, update: (t) => (fm.emissiveIntensity = 0.75 + 0.35 * Math.max(0, Math.sin(t * 1.15)) ** 2) })
   }
   blisterGeo.dispose()
+  yield
 
   // ───── 窗：矮牆＋玻璃＋上樑 ─────
   const props = new Batcher()
@@ -366,6 +379,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       pane.position.set(x, 0.8 + (WALL_H - 1.1) / 2, -y)
       group.add(pane)
     }
+    yield
   }
 
   // ───── 門 ─────
@@ -411,6 +425,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     }
     group.add(g)
     doors.push({ index: d.index, group: g, panels: [left, right], lamp, horizontal: d.horizontal, width: wdt, open: 0, target: 0, state: 0 })
+    yield
   }
 
   // ───── 'x' 道具 ─────
@@ -426,6 +441,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       else if (isSolidCell(cellAt(col - 1, row))) rot = Math.PI / 2
       else if (isSolidCell(cellAt(col + 1, row))) rot = -Math.PI / 2
       roomProp(props, roomType(col, row), x, -y, rot, seed++, anim, group)
+      yield
     }
   }
 
@@ -444,6 +460,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       ring.position.set(0, 0.02, 0)
       m.root.add(ring)
     }
+    yield
   }
   // 停機坪
   for (const pad of l.pads) {
@@ -451,8 +468,9 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
     m.root.position.copy(W(pad.x, pad.y))
     group.add(m.root)
     anim.push(...m.anim)
+    yield
   }
-  props.build(group)
+  yield* props.buildSteps(group)
 
   // ───── 房間燈與地板標示 ─────
   for (const r of l.rooms) {
@@ -489,9 +507,10 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
       cross.position.set(r.cx, 0.02, -r.cy)
       group.add(cross)
     }
+    yield
   }
   // 烘焙補光圖：整間房一層底光＋每盞房間燈一圈光暈（不受燈光池上限影響，所有站內材質都會取樣）
-  const fill = th.fill ? bakeFill(l, lights, th, hashId(st.id), diag) : null
+  const fill = th.fill ? yield* bakeFillSteps(l, lights, th, hashId(st.id), diag) : null
 
   // 走廊箭頭
   const arrowMat = new THREE.MeshBasicMaterial({ map: decalTex('arrow', '#ffc23d'), transparent: true, opacity: 0.4, depthWrite: false })
@@ -509,6 +528,7 @@ export function buildStation(st: StationDef, l: ParsedLayout): StationView {
   }
 
   // 漂浮塵埃（主題有設 dust 才撒；一個 Points、量很少）
+  yield
   if (th.dust) buildDust(l, th.dust, group, hashId(st.id))
 
   return {
@@ -742,7 +762,7 @@ function cellNoise(x: number, y: number, seed: number): number {
  * 每格只收同一間房的燈（牆擋光、不漏到隔壁）：整間房一層底光（房間燈色混一點環境色）＋每盞燈一圈平方衰減的光暈；
  * 門與窗格取兩側的平均。牆與虛空格為 0，牆頂因此維持暗色。
  */
-function bakeFill(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number, diag: Map<number, Diag>): THREE.DataTexture {
+function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number, diag: Map<number, Diag>): Steps<THREE.DataTexture> {
   const W = l.w * FILL_RES
   const H = l.h * FILL_RES
   const out = new Float32Array(W * H * 3)
@@ -814,7 +834,9 @@ function bakeFill(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number,
       out[o + 1] = g * k * n
       out[o + 2] = b * k * n
     }
+    if (ty % 8 === 7) yield
   }
+  yield
   const isWallTexel = (tx: number, ty: number) => {
     const col = Math.floor(tx / FILL_RES)
     const row = l.h - 1 - Math.floor(ty / FILL_RES)
