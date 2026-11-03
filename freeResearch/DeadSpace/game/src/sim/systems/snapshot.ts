@@ -205,7 +205,7 @@ export function buildSnapshot(g: Game, p: GamePlayer, vis: VisionResult): Snapsh
   }
   if (meDiff) snap.me = meDiff
   // 全域公開狀態
-  const wp = g.worldPublic()
+  const wp = g.worldPublic(p)
   let wd: Record<string, unknown> | undefined
   for (const [k, val] of Object.entries(wp)) {
     const j = JSON.stringify(val)

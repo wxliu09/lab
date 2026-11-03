@@ -32,6 +32,8 @@ export class ClientWorld {
   /** server 時間 - 本地時間（秒），平滑後 */
   offset = 0
   private hasOffset = false
+  /** 上一份快照時模擬沒有前進 */
+  private wasStalled = false
   fxQueue: FxEvent[] = []
   /** 消失的實體（給 render 淡出／死亡動畫）；目前沒有消費者，只保留最近 GONE_MAX 筆 */
   goneQueue: number[] = []
@@ -51,6 +53,7 @@ export class ClientWorld {
     this.vs = []
     this.w = {}
     this.hasOffset = false
+    this.wasStalled = false
     this.goneQueue.length = 0
     this.lastSnapAt = 0
   }
@@ -72,10 +75,16 @@ export class ClientWorld {
   apply(s: Snapshot): void {
     const local = this.now()
     const off = s.time - local
-    if (!this.hasOffset || Math.abs(off - this.offset) > 1) {
-      this.offset = off
-      this.hasOffset = true
-    } else this.offset += (off - this.offset) * 0.05
+    // 模擬沒有前進（開局等載入、暫停）：不更新時鐘偏移，否則偏移會一路落後，恢復後好幾秒插值失準；
+    // 恢復前進的第一份快照直接重設
+    const stalled = this.hasOffset && s.time <= this.serverTime
+    if (!stalled) {
+      if (!this.hasOffset || this.wasStalled || Math.abs(off - this.offset) > 1) {
+        this.offset = off
+        this.hasOffset = true
+      } else this.offset += (off - this.offset) * 0.05
+    }
+    this.wasStalled = stalled
     this.serverTime = s.time
     this.tick = s.tick
     this.snapCount++

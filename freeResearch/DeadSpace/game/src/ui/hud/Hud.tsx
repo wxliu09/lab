@@ -118,6 +118,14 @@ export function Banner() {
       </div>
     )
   if (connLost.value) return <div class="panel banner">{t('net.hostLost')}</div>
+  // 開局等所有人載入完才開始：畫面靜止不是當機
+  const waiting = Number(world.w.ld ?? 0)
+  if (waiting > 0)
+    return (
+      <div class="panel banner" data-testid="load-wait">
+        {t('net.waitLoad', { n: waiting })}
+      </div>
+    )
   if (world.w.bg && !isHost.value) return <div class="panel banner">{t('net.hostBg')}</div>
   if (hostStall.value && !isHost.value)
     return (

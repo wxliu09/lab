@@ -10,6 +10,8 @@ import { Game, type GameInit } from './game'
 export const LOCAL_PEER = 'local'
 /** 開局等玩家載入的上限（秒，server 時間）：有人卡住也不會讓整局停著 */
 export const LOAD_WAIT_S = 25
+/** 只有一位真人時的上限 */
+export const LOAD_WAIT_SOLO_S = 120
 
 export interface ServerIO {
   send(peer: string, data: Uint8Array): void
@@ -112,6 +114,8 @@ export class GameServer {
     p.peer = null
     p.droppedAt = this.now
     p.ready = false
+    // 開局等待載入中斷線：不再等他（重連後照常加入）
+    this.loading?.delete(p.slot)
     this.game?.setConnected(p.slot, false)
     this.lobbyDirty = true
   }
@@ -341,7 +345,8 @@ export class GameServer {
     // 等連線中的真人都載入完（建場景、畫出第一個畫面）才開始推進：慢的電腦不會一進場就少掉一兩分鐘
     if (this.waitClients) {
       this.loading = new Set(roster.filter((p) => !p.bot && p.peer !== null).map((p) => p.slot))
-      this.loadDeadline = this.now + LOAD_WAIT_S
+      // 只有一位真人（單機練習）時沒有人會被拖住：等久一點，慢的電腦也能從頭開始
+      this.loadDeadline = this.now + (this.loading.size <= 1 ? LOAD_WAIT_SOLO_S : LOAD_WAIT_S)
     }
     this.lobbyDirty = true
   }
@@ -366,7 +371,7 @@ export class GameServer {
     if (this.game) {
       this.game.hostHidden = this.hostHidden
       if (this.loading && (this.loading.size === 0 || this.now >= this.loadDeadline)) this.loading = null
-      this.game.hold = !!this.loading
+      this.game.hold = this.loading ? this.loading.size : 0
       this.game.step()
     }
     if (this.lobbyDirty) {

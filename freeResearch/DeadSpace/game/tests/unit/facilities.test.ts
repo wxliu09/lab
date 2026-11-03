@@ -619,8 +619,18 @@ describe('女帝號動力分配台', () => {
     expect(powerOf(g).mode).toBe('normal')
     expect(nz.data.labPower).toBe(false)
     expect(nz.power).toBe('emergency')
-    // 緊急照明是全站公開狀態：每個 client 的快照都收到（render 依此把女帝號換成紅色緊急照明）
-    for (const c of cs) expect(c.snaps.some((s) => s.w?.pw?.includes('nyx'))).toBe(true)
+    // 緊急照明是現場資訊：人在女帝號的人（與死者）快照收到（render 依此換成紅色緊急照明），在別站的人收不到
+    let inside = 0
+    let away = 0
+    for (const c of cs) {
+      const pl = g.players[c.slot]!
+      const here = !pl.alive || main(g, pl).zone === nz.id
+      if (here) inside++
+      else away++
+      expect(c.snaps.some((s) => s.w?.pw?.includes('nyx'))).toBe(here)
+    }
+    expect(inside).toBeGreaterThan(0)
+    expect(away).toBeGreaterThan(0)
   })
 })
 

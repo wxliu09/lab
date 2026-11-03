@@ -7,6 +7,7 @@ export const UX3_ZH: Record<string, string> = {
   'sep.colon': '：',
   'sep.wide': '　',
   'sep.paren': '（{s}）',
+  'net.waitLoad': '等待其他玩家載入（還有 {n} 人）…',
 
   // ───── 結算時間軸 ─────
   'tl.death.mutant': '{name}（變種人）死亡',
@@ -94,6 +95,7 @@ export const UX3_EN: Record<string, string> = {
   'sep.colon': ': ',
   'sep.wide': ' · ',
   'sep.paren': ' ({s})',
+  'net.waitLoad': 'Waiting for other players to load ({n} left)…',
 
   // ───── Results timeline ─────
   'tl.death.mutant': '{name} (Mutant) died',

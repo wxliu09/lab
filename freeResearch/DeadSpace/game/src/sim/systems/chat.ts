@@ -58,6 +58,11 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
     groupChat(g, p, groupName ?? '', text)
     return
   }
+  // 賽後：遊戲已經結束、沒有隱藏資訊要保護，所有人（含死者、出局者）都在同一個頻道
+  if (g.ended) {
+    deliver(g, { from: p.baseName, color: p.color, ch: 'all', text, time: g.time }, g.allPlayers())
+    return
+  }
   if (p.data.deadMuted && !p.alive) return
   // 死亡即退出：出局的人只剩遺言時間能說話，也收不到死者頻道
   if (!p.alive && p.data.booted && !lastWords) {

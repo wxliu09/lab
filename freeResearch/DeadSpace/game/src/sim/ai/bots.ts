@@ -368,7 +368,8 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
       }
       say(g, p, 'play1.bot.gitClean', list)
     } else if (r.result === 'infected') {
-      for (const n of names) if (n !== p.name && !b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
+      // 「\u0001形態 id」是匿名形態的樣本標記（不是人名）：AI 指認不了、也追打不了，不列入嫌疑
+      for (const n of names) if (n !== p.name && !n.startsWith('\u0001') && !b.cleared.has(n)) b.suspects.set(n, (b.suspects.get(n) ?? 0) + 1)
       say(g, p, 'play1.bot.gitInfected', list)
       // 還認不出是誰：之後再驗一次縮小範圍
       if (!topSuspect(b) && !p.data.botRetestDone) {

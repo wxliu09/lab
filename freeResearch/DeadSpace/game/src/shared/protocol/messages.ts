@@ -357,8 +357,10 @@ export interface WorldPublic {
   stab: number
   /** 存活的站點 id */
   st: string[]
-  /** 供電不正常（緊急照明）的地點 zone key：全站公開的狀態（例如女帝號動力台被毀），client 據此切換紅色緊急照明 */
+  /** 供電不正常（緊急照明）的地點 zone key：現場資訊，只送給人在那一站的人（死者、旁觀者看全場），client 據此切換紅色緊急照明 */
   pw: string[]
+  /** 開局等玩家載入：還在等幾個人（0 = 不在等）*/
+  ld: number
   /** 主機分頁在背景 */
   bg: boolean
   /** 暫停中 */

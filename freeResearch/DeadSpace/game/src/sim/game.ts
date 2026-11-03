@@ -136,8 +136,8 @@ export class Game {
   tick = 0
   hostHidden = false
   paused = false
-  /** 開局時等玩家載入完：模擬不推進、照常送快照（由 server 設定）*/
-  hold = false
+  /** 開局時等玩家載入完：還在等幾個人（> 0 時模擬不推進、照常送快照；由 server 設定）*/
+  hold = 0
   timeScale = 1
   private acc = 0
   ended: EndResult | null = null
@@ -462,11 +462,17 @@ export class Game {
     p.bio = `bio.${p.classId}.${role}`
   }
 
-  worldPublic(): Record<string, unknown> {
+  /** 每位觀看者的公開世界狀態（快照差量）*/
+  worldPublic(viewer?: GamePlayer): Record<string, unknown> {
+    // 站點供電狀態（緊急照明）是現場資訊：只有人在那一站的人看得到（死者、旁觀者看全場）；
+    // 否則遠處的人從快照就能知道「此刻有人在破壞女帝號的動力台」
+    const here = viewer && viewer.alive && !viewer.spectator ? this.mainOf(viewer)?.zone : undefined
+    const seesAll = !viewer || !viewer.alive || viewer.spectator
     return {
       t: Math.floor(this.time),
       st: this.world.zones.filter((z) => z.alive && z.station).map((z) => z.key),
-      pw: this.world.zones.filter((z) => z.alive && z.power !== 'normal').map((z) => z.key),
+      pw: this.world.zones.filter((z) => z.alive && z.power !== 'normal' && (seesAll || z.id === here)).map((z) => z.key),
+      ld: this.hold,
       stab: this.stability(),
       apo: (this.data.events as EventState | undefined)?.apoc ?? '',
       bg: this.hostHidden,
@@ -700,7 +706,7 @@ export class Game {
 
   /** 由 server 以 20 Hz 呼叫；依 timeScale 推進模擬 */
   step(): void {
-    if (this.paused || this.ended || this.hold) {
+    if (this.paused || this.ended || this.hold > 0) {
       this.flush()
       return
     }
