@@ -47,6 +47,7 @@ import { itemRuntime } from './scripts/items'
 import { installEvents, type EventState } from './systems/events'
 import { installStations } from './systems/stations'
 import { installFacilities } from './systems/facilities'
+import { installRegen } from './systems/regen'
 import { installBots } from './ai/bots'
 import { installRemote } from './scripts/remote'
 import { installFeeds } from './systems/feeds'
@@ -256,6 +257,7 @@ export class Game {
     installEvents(this)
     installStations(this)
     installFacilities(this)
+    installRegen(this)
     installBots(this)
     installRemote(this)
     installFeeds(this)

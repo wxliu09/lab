@@ -82,6 +82,7 @@ export const ITEM_BUFFS: BuffDef[] = [
   { id: 'bf.forceWard', name: L('力場庇護', 'Barrier Ward'), icon: 'shield', vis: 'all', good: true, dur: 0.75, dmgTaken: 0.5, fx: 'forceWard' },
   // 全像分身：只有擁有者看得到這個 buff（否則一眼就知道是假的）
   { id: 'bf.holo', name: L('全像投影', 'Hologram'), icon: 'mask', vis: 'self', good: false, dmgMult: 0, dmgTaken: 25 },
+  { id: 'bf.regenAura', name: L('生命再生', 'Life Regeneration'), desc: L('站在醫療艙的生命再生器旁：每秒回復 6 生命。', 'Standing by a life regenerator: regenerate 6 health per second.'), icon: 'heal', vis: 'all', good: true, regen: 6 },
   { id: 'bf.calming', name: L('鎮定氣味', 'Calming Scent'), icon: 'plush', vis: 'self', good: true, flags: { calming: true, aggro: -100 } },
   { id: 'bf.pirateHat', name: L('海盜帽', 'Pirate Hat'), icon: 'hat', vis: 'all', good: true, fx: 'hatPirate', flags: { cosmetic: true } },
   { id: 'bf.festiveHat', name: L('節慶帽', 'Festive Hat'), icon: 'hat', vis: 'all', good: true, fx: 'hatFestive', flags: { cosmetic: true } },

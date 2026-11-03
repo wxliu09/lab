@@ -54,7 +54,7 @@ export function hoverTip(id: number): TipData | null {
   if (tags.includes('hazard')) return { title: name, sub: t('hover.cat.hazard'), body: desc(d), hint: t('hover.hint.hazard'), color: '#ff5a4a' }
   if (tags.includes('ship') && tags.includes('structure')) return { title: name, sub: t('hover.cat.ship'), hint: t('hover.hint.board'), color: '#9fe7ff' }
   if (tags.includes('structure')) {
-    return { title: name, sub: t(tags.includes('device') ? 'hover.cat.device' : 'hover.cat.structure'), body: desc(d), rows: tags.includes('invuln') ? [] : hpRow, hint: t(PANEL_FAC.has(d) ? 'hover.hint.panel' : d === 'struct.console' ? 'hover.hint.console' : 'hover.hint.interact'), color: '#ffc23d' }
+    return { title: name, sub: t(tags.includes('device') ? 'hover.cat.device' : 'hover.cat.structure'), body: desc(d), rows: tags.includes('invuln') ? [] : hpRow, hint: t(PANEL_FAC.has(d) ? 'hover.hint.panel' : d === 'struct.console' ? 'hover.hint.console' : d === 'struct.regen' ? 'hover.hint.passive' : 'hover.hint.interact'), color: '#ffc23d' }
   }
   if (tags.includes('device')) return { title: name, sub: t('hover.cat.device'), body: desc(d), rows: hpRow, color: '#ffc23d' }
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!]?.hex : undefined

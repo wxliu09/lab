@@ -1,6 +1,6 @@
 // 只給本人的私有狀態（身分、EP、背包、技能冷卻、驗血報告…）
 import type { AbilityState, InvSlot, PrivateState } from '../../shared/protocol/messages'
-import { abilityDef } from '../../shared/content/registry'
+import { abilityDef, itemDef } from '../../shared/content/registry'
 import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
 import { facilityView } from './facilities'
@@ -13,7 +13,10 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
   const t = g.time
   const inv: (InvSlot | null)[] = (main?.inv ?? []).map((it) => {
     if (!it) return null
-    const slot: InvSlot = { item: it.id, charges: it.charges, cd: Math.max(0, Math.round((it.cdUntil - t) * 10) / 10) }
+    // 道具的冷卻記在使用者的技能冷卻表（setCd 依道具的使用技能／sharedCd），不是道具本身的 cdUntil：兩者取較晚的
+    const use = abilityDef(itemDef(it.id)?.use ?? '')
+    const ready = Math.max(it.cdUntil, use ? (main!.cds.get(use.sharedCd ?? use.id) ?? 0) : 0)
+    const slot: InvSlot = { item: it.id, charges: it.charges, cd: Math.max(0, Math.round((ready - t) * 10) / 10) }
     // 抽血進度：樣本上的名字（抽血時看到的樣子），只在持有者自己的私有狀態裡
     const names = (it.data as { sample?: { names?: string[] } } | undefined)?.sample?.names
     if ((it.id === 'geneSampler' || it.id === 'gitResolver') && names?.length) slot.samples = [...names]
