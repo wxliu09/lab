@@ -156,7 +156,11 @@ function isUnit(o: Ent): boolean {
 function fakeOf(t: Ent): { def: string; owner: number; name: string; color: number; cls: string } {
   const f = t.data.fake as { def: string; owner: number; name: string; color: number; cls: string } | undefined
   if (f) return { ...f }
-  return { def: (t.data.viewDef as string) ?? t.def.id, owner: t.owner, name: t.data.muteName ? '' : t.name, color: t.color, cls: t.classId }
+  const def = (t.data.viewDef as string) ?? t.def.id
+  // 匿名的目標（例如沒在偽裝的異形形態）：一般人看到的是無主、無名的樣子，複製出來的外觀也必須一樣，
+  // 否則化身／幻象會把目標的真實擁有者帶進快照
+  if (t.anon) return { def, owner: t.owner < 0 ? t.owner : -1, name: '', color: -1, cls: '' }
+  return { def, owner: t.owner, name: t.data.muteName ? '' : t.name, color: t.color, cls: t.classId }
 }
 
 /** 產生幻象：外觀與 of 相同、屬於 master 的擁有者；沒有背包、不能施法、不留屍體 */
