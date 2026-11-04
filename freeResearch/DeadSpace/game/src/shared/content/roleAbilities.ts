@@ -4,7 +4,7 @@ import type { Loc } from './types'
 
 const L = (zh: string, en: string): Loc => ({ zh, en })
 
-const PRION_DESC_ZH = '變種人的朊毒正在侵蝕神經：每秒中毒，人類死時會變成變種人的工蟲。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。'
+const PRION_DESC_ZH = '變種人的朊毒正在侵蝕神經：每秒中毒，人類死時會變成變種人的眷屬。用抗體包（醫療補給）把它壓成休眠，46 秒後清除。'
 const PRION_DESC_EN = 'Mutant prions are eating at your nerves: they poison you every second, and a human who dies infected becomes a mutant spawn. An antibody kit (Medical Supplies) forces them dormant; they clear after 46 s.'
 
 regBuffs([
@@ -166,7 +166,7 @@ regAbilities([
   {
     id: 'mut.prion',
     name: L('朊毒注射', 'Prion Inject'),
-    desc: L('讓沒穿防護服的人類感染朊毒。帶著朊毒死去的人會變成你的工蟲。', 'Infect an unsuited human with prions. Those who die infected become your drones.'),
+    desc: L('讓沒穿防護服的人類感染朊毒。帶著朊毒死去的人會變成你的眷屬。', 'Infect an unsuited human with prions. Those who die infected become your drones.'),
     icon: 'infect',
     target: 'unit',
     range: 1.6,
@@ -196,7 +196,7 @@ regAbilities([
   {
     id: 'mut.prion3',
     name: L('繁巢株注射', 'Brood Inject'),
-    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形眷屬死時都會轉成你的工蟲。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
+    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形眷屬死時都會轉成你的眷屬。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
     icon: 'infect',
     target: 'unit',
     range: 9,

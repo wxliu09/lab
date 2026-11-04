@@ -361,6 +361,8 @@ export interface WorldPublic {
   t: number
   /** 星區穩定度 0..1 */
   stab: number
+  /** 存活人數／參戰總數（不分身分）*/
+  al: [number, number]
   /** 存活的站點 id */
   st: string[]
   /** 供電不正常（緊急照明）的地點 zone key：現場資訊，只送給人在那一站的人（死者、旁觀者看全場），client 據此切換紅色緊急照明 */

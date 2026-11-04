@@ -27,7 +27,7 @@ export const FORM_LIST: FormDef[] = [
   { id: 'xeno.mimic', faction: 'xeno', tier: 3, unit: 'xeno.mimic', spawnUnit: 'xeno.mimic.spawn', from: 'xeno.puppeteer', ep: XENO_T3_EP, branch: 'manip', desc: L('不定形的假面者，完全化身為他人。', 'A shapeless mimic that becomes someone else entirely.') },
   // ───── 變種人 ─────
   { id: 'mut.apex', faction: 'mutant', tier: 1, unit: 'mut.apex', ep: MUTANT_EP[0], branch: 'perfect', desc: L('完美路線：純粹的人形掠食者，吞食屍體成長。', 'Perfection: a pure humanoid predator that feeds on the dead.') },
-  { id: 'mut.sporemother', faction: 'mutant', tier: 1, unit: 'mut.sporemother', spawnUnit: 'mut.sporemother.spawn', ep: MUTANT_EP[0], branch: 'infect', desc: L('感染路線：散播朊毒，把人變成無心的工蟲。', 'Infection: spreads prions that turn people into mindless drones.') },
+  { id: 'mut.sporemother', faction: 'mutant', tier: 1, unit: 'mut.sporemother', spawnUnit: 'mut.sporemother.spawn', ep: MUTANT_EP[0], branch: 'infect', desc: L('感染路線：散播朊毒，把人變成無心的眷屬。', 'Infection: spreads prions that turn people into mindless drones.') },
   { id: 'mut.blitz', faction: 'mutant', tier: 2, unit: 'mut.blitz', from: 'mut.apex', ep: MUTANT_EP[1], branch: 'perfect', desc: L('迅影：極速獵殺者，眨眼間貼到你身邊。', 'Blitz: a sprinting killer that closes distance in a blink.') },
   { id: 'mut.brawn', faction: 'mutant', tier: 2, unit: 'mut.brawn', from: 'mut.apex', ep: MUTANT_EP[1], branch: 'perfect', desc: L('蠻力：拆門砸牆的肉塊，召喚肉芽。', 'Brawn: a door-smashing hulk that sheds fleshy minions.') },
   { id: 'mut.mimetic', faction: 'mutant', tier: 2, unit: 'mut.mimetic', spawnUnit: 'mut.mimetic.spawn', from: 'mut.sporemother', ep: MUTANT_EP[1], branch: 'infect', desc: L('擬人株：污染販賣機，讓補給變成毒藥。', 'Mimetic Strain: taints vendors so supplies become poison.') },

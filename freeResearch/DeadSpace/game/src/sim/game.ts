@@ -481,6 +481,8 @@ export class Game {
       pw: this.world.zones.filter((z) => z.alive && z.power !== 'normal' && (seesAll || z.id === here)).map((z) => z.key),
       ld: this.hold,
       stab: this.stability(),
+      // 存活人數／參戰總數（不分身分；和 -names 的死亡標記一致，旁觀的主機不算）：每次死亡本來就全場公告，不多洩漏資訊
+      al: [this.allPlayers().filter((p) => !p.spectator && p.alive).length, this.allPlayers().filter((p) => !p.spectator).length],
       apo: (this.data.events as EventState | undefined)?.apoc ?? '',
       bg: this.hostHidden,
       pz: this.paused,

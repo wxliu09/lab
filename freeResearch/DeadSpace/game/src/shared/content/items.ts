@@ -118,7 +118,7 @@ export const ITEM_BUFFS: BuffDef[] = [
   {
     id: 'bf.containedPrion',
     name: L('受控朊毒', 'Contained Prion'),
-    desc: L('朊毒被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成變種人的工蟲。', 'The antibodies have forced the prions dormant. No more poison, and they clear when the timer runs out, but if you die before then you still become a mutant spawn.'),
+    desc: L('朊毒被抗體壓成休眠，不再中毒，時間到就會清除；在那之前死掉仍會變成變種人的眷屬。', 'The antibodies have forced the prions dormant. No more poison, and they clear when the timer runs out, but if you die before then you still become a mutant spawn.'),
     icon: 'infect',
     vis: 'casterFaction',
     good: false,

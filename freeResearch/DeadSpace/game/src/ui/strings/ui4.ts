@@ -22,6 +22,9 @@ export const UI4_ZH: Record<string, string> = {
   'ui4.tip.drag': '拖到另一格交換位置；拖到人身上交給他',
   'ui4.drop.give': '放開：走過去交給他',
   'item.giveFull': '對方的背包已滿',
+  'ui4.alive': '存活',
+  'ui4.alive.title': '存活人數',
+  'ui4.alive.body': '全場還活著的參戰者／總人數，不分身分：被轉化成眷屬的人也算活著，仿生人等記憶核心重建時算死亡。和 -names 名單一致。',
   'guide.ctl.drag.k': '拖曳',
   'guide.ctl.drag': '背包格拖到另一格：交換位置；拖到人身上：走過去交給他',
 
@@ -56,6 +59,9 @@ export const UI4_EN: Record<string, string> = {
   'ui4.tip.drag': 'Drag to another slot to swap; drag onto someone to hand it over',
   'ui4.drop.give': 'Release to walk over and hand it to them',
   'item.giveFull': 'Their inventory is full',
+  'ui4.alive': 'Alive',
+  'ui4.alive.title': 'Players alive',
+  'ui4.alive.body': 'Participants still alive out of the total, regardless of role: converted spawn count as alive, and an android waiting on its memory core counts as dead. Matches the -names list.',
   'guide.ctl.drag.k': 'Drag',
   'guide.ctl.drag': 'Inventory slot onto another slot: swap. Onto a person: walk over and hand it to them.',
 

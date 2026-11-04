@@ -87,9 +87,9 @@ export const MUTANT_UNITS: UnitDef[] = [
   // ── T1 ──
   form('mut.apex', L('掠食者', 'Apex'), 900, 1.0, 3.05, 0.5, melee(37, 1.0, 1.4), ['ab.mut.sludge', 'mut.devour', 'mut.cannibalize']),
   form('mut.sporemother', L('孢母', 'Sporemother'), 725, 1.5, 3.05, 0.5, melee(38, 1.0, 1.4), ['mut.devour', 'mut.prion']),
-  form('mut.sporemother.spawn', L('孢囊工蟲', 'Spore Thrall'), 650, 1.0, 2.95, 0.45, melee(32, 1.0, 1.4), ['mut.prion']),
-  // 主人還在人形（T0）時被轉化者使用的工蟲型
-  form('mut.drone', L('工蟲', 'Drone'), 650, 1.0, 2.95, 0.45, melee(32, 1.0, 1.4), []),
+  form('mut.sporemother.spawn', L('孢囊眷屬', 'Spore Thrall'), 650, 1.0, 2.95, 0.45, melee(32, 1.0, 1.4), ['mut.prion']),
+  // 主人還在人形（T0）時被轉化者使用的眷屬型
+  form('mut.drone', L('變種人眷屬', 'Mutant Spawn'), 650, 1.0, 2.95, 0.45, melee(32, 1.0, 1.4), []),
 
   // ── T2 完美 ──
   form(

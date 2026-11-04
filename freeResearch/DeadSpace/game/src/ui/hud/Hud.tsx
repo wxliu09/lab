@@ -62,6 +62,15 @@ export function TopBar() {
       <span {...tipProps(() => ({ title: t('tip.stab.title'), body: t('tip.stab.body') }))}>
         <Stability />
       </span>
+      {w.al && (
+        <span data-testid="alive" {...tipProps(() => ({ title: t('ui4.alive.title'), body: t('ui4.alive.body') }))}>
+          <span class="alive-ico" aria-label={t('ui4.alive')}>
+            <Icon name="crew" size={15} color="#9fb3c2" />
+          </span>{' '}
+          <b>{w.al[0]}</b>
+          <span class="dim">/{w.al[1]}</span>
+        </span>
+      )}
       <span
         data-testid="role"
         style={{ color: rl.color, fontFamily: 'var(--title)', letterSpacing: '0.1em' }}

@@ -3,6 +3,8 @@ import type { JSX } from 'preact'
 
 const P: Record<string, string> = {
   move: 'M12 3l7 7h-4v8h-6v-8H5z',
+  // 人形（存活人數）
+  crew: 'M12 3a4 4 0 110 8 4 4 0 010-8zM4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z',
   sound: 'M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 010 6M18.5 6.5a7.5 7.5 0 010 11',
   muted: 'M4 9h4l5-4v14l-5-4H4zM16 9l5 6M21 9l-5 6',
   expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
