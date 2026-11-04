@@ -4,6 +4,7 @@
 import { addStrings } from '../i18n'
 
 export const SIM3_ZH: Record<string, string> = {
+  'space.launchGrounded': '豪勇號正降落在翠原星上：停在它上面的船現在不能發射，等它升空再試。',
   // ───── 強行登艦：只能登艦的站 ─────
   'space.boardOnly': '{nz}沒有停機坪，不能停靠：請對它施放「強行登艦」，連結期間走到船艙的艙門就會進入它的登艦氣閘。',
   'space.linkedSt': '登艦連結建立（{s} 秒）：走到船艙的艙門就會進入對方站點的登艦氣閘；駕駛者先按 B 離開控制台。',
@@ -20,6 +21,7 @@ export const SIM3_ZH: Record<string, string> = {
 }
 
 export const SIM3_EN: Record<string, string> = {
+  'space.launchGrounded': 'The Bravado is landed on Verdance: craft docked on it cannot launch until it lifts off again.',
   'space.boardOnly': '{ne} has no landing pads and cannot be docked with. Use Board on it, then walk to your cabin airlock while linked to cross into its boarding airlock.',
   'space.linkedSt': "Boarding link established ({s}s): walk to your cabin airlock to cross into the station's boarding airlock. Pilots, press B to leave the console first.",
   'space.linkedAirlock': 'Boarding link established ({s}s): walk to the boarding airlock exit to cross over. Pilots, press B to leave the console first.',

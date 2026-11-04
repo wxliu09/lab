@@ -416,6 +416,23 @@ export function stepSpace(g: Game): void {
     const dead = !!c.ent && (!c.ent.alive || (c.ent.data.disabledUntil ?? 0) > t || c.ent.def.id !== 'struct.console')
     if (dead) pilot = null
     if (ship?.docked) {
+      // 豪勇號降落在翠原星時，停在它上面的船不能發射（停機坪在行星地表上）；倒數中降落也會取消
+      const landed = (g.data.stations as { landed?: { bravadoZone: number } | null } | undefined)?.landed
+      const grounded = !!landed && ship.docked.zone === landed.bravadoZone
+      const warn = ship as { groundWarned?: boolean }
+      if (grounded) {
+        if (ship.launching) {
+          ship.launching = false
+          g.emitFx({ k: 'alarmEnd', z: z.id, x: c.x, y: c.y })
+        }
+        if (pilot && !warn.groundWarned && pilot.owner >= 0) {
+          warn.groundWarned = true
+          g.privateLine(pilot.owner, 'space.launchGrounded')
+        }
+        if (!pilot) warn.groundWarned = false
+        continue
+      }
+      warn.groundWarned = false
       // 停泊中：站上控制台開始發射倒數
       if (pilot && !ship.launching) {
         ship.launching = true

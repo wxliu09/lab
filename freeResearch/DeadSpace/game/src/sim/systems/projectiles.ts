@@ -40,6 +40,15 @@ export function spawnProjectile(
   g.emitFx({ k: 'proj', z: pr.zone, x: pr.x, y: pr.y, x2: pr.tx, y2: pr.ty, e: pr.casterId, e2: pr.target?.id, v: pr.speed, s: pr.fx })
 }
 
+/** 投射物會撞上的格子：牆、虛空，以及關著的門（開著的門照常穿過）*/
+function solidAt(nav: NonNullable<Game['world']['zones'][number]['nav']>, x: number, y: number): boolean {
+  const i = nav.idx(x, y)
+  if (i < 0) return false
+  if (nav.opaque[i]) return true
+  const d = nav.doorOf[i]
+  return d >= 0 && !!nav.doorClosed[d]
+}
+
 export function stepProjectiles(g: Game): void {
   const dt = TICK_DT
   const out: Projectile[] = []
@@ -66,7 +75,7 @@ export function stepProjectiles(g: Game): void {
       }
       pr.x = nx
       pr.y = ny
-      if (d <= step || (z.nav && z.nav.blockedAt(nx, ny) && z.nav.opaque[z.nav.idx(nx, ny)])) continue
+      if (d <= step || (z.nav && solidAt(z.nav, nx, ny))) continue
       out.push(pr)
       continue
     }
@@ -76,10 +85,9 @@ export function stepProjectiles(g: Game): void {
     }
     pr.x += (dx / d) * step
     pr.y += (dy / d) * step
-    // 撞牆
+    // 撞牆或關著的門：在那裡觸發（範圍傷害照樣爆開，單體傷害落空）
     if (z.nav) {
-      const i = z.nav.idx(pr.x, pr.y)
-      if (i >= 0 && z.nav.opaque[i]) {
+      if (solidAt(z.nav, pr.x, pr.y)) {
         runEffects(g, { caster: pr.caster, x: pr.x, y: pr.y, zone: pr.zone, ability: pr.ability }, pr.onHit.filter((e) => e.k !== 'damage' || !!e.aoe))
         continue
       }

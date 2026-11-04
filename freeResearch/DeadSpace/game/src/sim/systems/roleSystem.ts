@@ -157,12 +157,13 @@ function spawnButler(g: Game, p: GamePlayer, u: Ent): void {
   b.acquire = false
 }
 
-/** 管家跟隨主人（主人隱形時一起隱形；主人死亡就消失）*/
+/** 管家跟隨主人（主人隱形時一起隱形；主人死亡就消失，主人活過來——仿生人重建、快速復活——再補一隻）*/
 function stepButlers(g: Game): void {
   for (const b of g.world.ents.values()) {
     if (!b.tags.has('butler')) continue
     const p = g.players[b.data.butlerOf as number]
     if (!p || !p.alive) {
+      if (p) p.data.butlerLost = true
       g.world.remove(b)
       continue
     }
@@ -444,6 +445,21 @@ export function installRoles(g: Game): void {
   })
 
   g.systems.push({ name: 'butler', fn: stepButlers })
+  // 主人活過來：補生成管家。被轉化成眷屬的不補（外型已是怪物，跟著管家等於揭穿身分）
+  g.systems.push({
+    name: 'butlerRevive',
+    fn: (g) => {
+      if (g.world.tick % 10 !== 0) return
+      for (const p of g.allPlayers()) {
+        if (!p.data.butlerLost || p.classId !== 'ceo' || !p.alive || p.spectator || p.spawnOf) continue
+        const u = g.mainOf(p)
+        if (!u || !u.alive || u.zone === 0) continue
+        if ([...g.world.ents.values()].some((b) => b.tags.has('butler') && b.data.butlerOf === p.slot)) continue
+        p.data.butlerLost = false
+        spawnButler(g, p, u)
+      }
+    },
+  })
 
   // 勝負判定
   let pendingAt = -1
