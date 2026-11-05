@@ -533,6 +533,10 @@ export class Game {
     u.path = null
     u.cast = null
     u.data.dash = undefined
+    // 死亡特效（音效用）：不留屍體的單位（機械、分身、被吞食的）在快照裡只是「消失」，和走出視野分不出來。
+    // 只帶 id、不帶外觀：snapshot.ts 只送給上一份快照就看得到這個單位、也看得到死亡地點的人，
+    // client 用自己最後看到的樣子決定叫聲（偽裝就是偽裝對象的聲音），不會比快照多透露任何東西
+    this.emitFx({ k: 'die', z: u.zone, x: u.x, y: u.y, e: u.id })
     for (const h of DEATH_HOOKS) {
       try {
         h(this, u, killer, killerSlot)

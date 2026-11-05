@@ -137,11 +137,23 @@ export function buildSnapshot(g: Game, p: GamePlayer, vis: VisionResult): Snapsh
   }
   // 特效：只給看得到的人
   const fx = []
+  let gone: Set<number> | undefined
   for (const f of g.fx) {
     if (f.vis) {
       if (!f.vis.includes(p.slot)) continue
       const { vis: _v, ...rest } = f
       fx.push(rest)
+      continue
+    }
+    if (f.k === 'die') {
+      // 死亡：只給上一份快照就看得到這個單位（這次從快照消失）、也看得到死亡地點的人。
+      // 看不見的單位（隱形、在視野外、這個 tick 才走進來）死了不送，否則等於多告訴觀看者「那裡有東西死了」；
+      // 只送位置與 id（觀看者本來就認得這個 id），外觀由 client 用自己最後看到的樣子決定
+      const id = f.e ?? 0
+      gone ??= new Set(snap.g)
+      if (!seen.has(id) && !gone.has(id)) continue
+      if (!seen.has(id) && !pointVisible(g, vis, f.z, f.x, f.y)) continue
+      fx.push({ k: f.k, z: f.z, x: f.x, y: f.y, e: id })
       continue
     }
     const src = f.e ? g.world.get(f.e) : undefined

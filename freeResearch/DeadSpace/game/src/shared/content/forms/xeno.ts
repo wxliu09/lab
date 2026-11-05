@@ -352,7 +352,7 @@ export const XENO_UNITS: UnitDef[] = [
   ),
   // ── 輔助單位 ──
   {
-    // 逆時招魂喚回的死者（之後由 convertToSpawn 換成目前的 spawn 型）
+    // 逆時招魂喚回的死者：convertToSpawn 直接以這個型態、1 HP 成為異形 spawn（原作 n00E），不換成主腦目前的 spawn 型
     id: XUNIT.timeZombie,
     name: L('時滯殭屍', 'Time-Lost Revenant'),
     model: 'xeno.timeZombie',

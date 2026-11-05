@@ -415,6 +415,26 @@ describe('異形技能', () => {
     expect(beast!.anon).toBe(true)
   })
 
+  it('逆時招魂：喚回的是 1 HP 的時滯殭屍本體，之後也不會被換成目前的 spawn 型（研究 02 §Back from Hell：生成 n00E、1 HP）', () => {
+    const { h, g, ps, spot } = setup()
+    const chrono = put(g, 'xeno.chronarch', spot, 0, 0, ps[0].slot)
+    chrono.anon = true
+    const victim = place(g, g.mainOf(ps[1])!, spot, 1.5, 0)
+    g.killEnt(victim, null, -1)
+    cast(chrono, XAB.revive)
+    sec(h, 4.3)
+    const z = g.mainOf(ps[1])!
+    expect(z.def.id).toBe(XUNIT.timeZombie)
+    expect(Math.ceil(z.hp)).toBe(1)
+    expect(ps[1].spawnOf).toBe('xeno')
+    // 不是「目前的 spawn 型」（convertToSpawn 沒指定外觀時會用主腦形態的 spawn）；之後也一直維持殭屍型態
+    sec(h, 5)
+    expect(g.mainOf(ps[1])).toBe(z)
+    expect(z.alive).toBe(true)
+    expect(z.def.id).toBe(XUNIT.timeZombie)
+    expect(leaks(h)).toEqual([])
+  })
+
   it('十秒迴圈：回到 10 秒前的位置、生命，並複製回已交出的道具', () => {
     const { h, g, ps, spot } = setup()
     const chrono = put(g, 'xeno.chronarch', spot, -2, 0, ps[0].slot)
