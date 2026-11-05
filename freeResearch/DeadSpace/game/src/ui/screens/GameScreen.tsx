@@ -29,6 +29,21 @@ interface Boot {
   run: (() => void) | null
 }
 
+/**
+ * 「載入中：建立場景…」覆蓋層（純 DOM，建場景佔住主執行緒時也畫得出來）。
+ * block = 局中分段建站：擋住滑鼠（畫面還停在上一站，點下去的位置是錯的 zone）；開局時不擋（身分揭露等對話框在上層）。
+ */
+function SceneLoading({ block }: { block: boolean }) {
+  return (
+    <div
+      data-testid="scene-loading"
+      style={{ position: 'absolute', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', color: 'var(--dim)', fontFamily: 'var(--title)', letterSpacing: '0.08em', fontSize: '18px', pointerEvents: block ? 'auto' : 'none' }}
+    >
+      {t('load.scene')}
+    </div>
+  )
+}
+
 export function GameScreen() {
   const ref = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -121,14 +136,8 @@ export function GameScreen() {
   return (
     <div class="layer" ref={wrap}>
       <canvas class="view" ref={ref} data-testid="view" />
-      {loading && (
-        <div
-          data-testid="scene-loading"
-          style={{ position: 'absolute', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', color: 'var(--dim)', fontFamily: 'var(--title)', letterSpacing: '0.08em', fontSize: '18px', pointerEvents: 'none' }}
-        >
-          {t('load.scene')}
-        </div>
-      )}
+      {/* 開局建場景、以及局中第一次進某站時的分段建站（GameScene.loading）：同一個「載入中」覆蓋層 */}
+      {(loading || scene?.loading.value) && <SceneLoading block={!loading} />}
       <TopBar />
       <Banner />
       <TargetHint />

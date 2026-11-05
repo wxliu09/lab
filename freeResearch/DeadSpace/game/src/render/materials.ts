@@ -57,6 +57,7 @@ export function withFog<T extends THREE.Material>(m: T): T {
         // 朝上的面最亮、側面次之、朝下最暗。反照率先壓縮動態範圍（暗地板相對多拿一點、白色表面不會被補到發亮），
         // 加在迷霧與 tone mapping 之前，所以視野外照樣壓暗。
         // 記憶中的地形（視野外）：降飽和、壓到 42%（沒去過）～66%（去過）並加細掃描線（美術聖經 §5「記憶中的地形保留」）。
+        // 牆頂（朝上、離地 1.8 m 以上的面）的可見度往內侵蝕約半格（取 0.5 m 外四點的最小值），視野邊緣的光暈不再從牆頂溢出。
         // （GLSL 內只寫 ASCII，部分驅動不接受註解裡的非 ASCII 字元）
         `#include <opaque_fragment>
         #if defined( STANDARD ) && defined( OPAQUE )
@@ -71,6 +72,17 @@ export function withFog<T extends THREE.Material>(m: T): T {
         if (uFogOn > 0.5) {
           vec2 fuv = vec2((vXcWorld.x - uFogRect.x) / uFogRect.z, (-vXcWorld.z - uFogRect.y) / uFogRect.w);
           vec2 fv = texture2D(uFogTex, fuv).rg;
+          #if defined( STANDARD )
+          // wall tops (up-facing, well above the floor): rays mark ~0.75 m into the wall as visible and the 4 texel/m map is
+          // linearly filtered, so the visible tint spills over the top as a ragged halo at the edge of sight.
+          // Erode visibility by about half a cell there: min of 4 samples 0.5 m away.
+          if (vXcWorld.y > 1.8 && inverseTransformDirection(normal, viewMatrix).y > 0.7) {
+            vec2 xcO = vec2(0.5 / uFogRect.z, 0.5 / uFogRect.w);
+            float xcE = min(min(texture2D(uFogTex, fuv + vec2(xcO.x, 0.0)).r, texture2D(uFogTex, fuv - vec2(xcO.x, 0.0)).r),
+                            min(texture2D(uFogTex, fuv + vec2(0.0, xcO.y)).r, texture2D(uFogTex, fuv - vec2(0.0, xcO.y)).r));
+            fv.r = min(fv.r, xcE);
+          }
+          #endif
           float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
           float scan = 0.9 + 0.1 * sin(gl_FragCoord.y * 1.7 + uTime * 2.0);
           vec3 mem = mix(vec3(lum) * vec3(0.8, 0.9, 1.05), gl_FragColor.rgb, 0.25) * (0.42 + 0.24 * fv.g) * scan;

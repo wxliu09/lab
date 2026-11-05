@@ -27,6 +27,8 @@ export interface SceneLike {
   update(dt: number, t: number): void
   /** 場景專屬的色彩分級 */
   grade?: { hue: number; sat: number; bright: number; contrast: number }
+  /** update 之後為 true：這一幀不畫（場景在等分段建站，「載入中」覆蓋層蓋著）*/
+  holdFrame?: boolean
   dispose?(): void
 }
 
@@ -232,6 +234,7 @@ export class Engine {
     }
     if (!this.current) return
     this.current.update(dt, t)
+    if (this.current.holdFrame) return
     if (this.current.grade && this.current.grade !== this.appliedGrade) this.applyGrade(this.current.grade)
     // 受傷色差脈衝
     this.damagePulse = Math.max(0, this.damagePulse - dt * 2.5)

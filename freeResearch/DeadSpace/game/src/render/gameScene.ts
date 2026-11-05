@@ -21,7 +21,7 @@ import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from '.
 import { autoDropState, autoDropStep } from './autoDrop'
 import { localNotice, modalChecks } from '../client/input'
 import '../ui/strings/art2'
-import { effect } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
 import { runSteps, type Steps } from './steps'
 import { deferTextures, textureSteps } from './tex'
 import { warmSet } from './fx/kit'
@@ -51,6 +51,13 @@ const SLICE_MS = 8
 const IDLE_MAX_MS = 24
 /** 一次 compile 呼叫最多送幾個物件（每個新的 program 要組 shader 字串，約 1–3 ms）*/
 const COMPILE_BATCH = 4
+/**
+ * 要顯示的站還沒建好時（不預建的裝置、預建還沒輪到）的分段建站：一片最多做多久。「載入中」覆蓋層蓋著、這段期間不畫 3D，
+ * 所以用預建有空閒時間時的上限；主機的 HostRelay（20 Hz）在兩片之間照常轉送，最多晚這麼久。
+ */
+const LOAD_SLICE_MS = IDLE_MAX_MS
+/** 駕駛中的船離某站多近（太空座標；船速約 1–1.6/秒，約 5–8 秒的航程）就先分段建那一站 */
+const LOOKAHEAD_R = 8
 
 /**
  * 預建的開關（quality.ts canPrebuild）：只有 ≤ 4 核心、deviceMemory ≤ 4 GB、行動裝置、軟體算繪（建一站要好幾秒）不預建，
@@ -150,6 +157,12 @@ interface PoolSlot {
   w: number
 }
 
+/** 燈光池選燈時往鏡頭前方看幾秒（換燈要約 0.2–0.4 秒才亮起來）、最遠幾 m */
+const POOL_LEAD = 0.35
+const POOL_LEAD_MAX = 6
+/** 鏡頭附近（m）：這個範圍內亮著的燈換燈時要錯開 */
+const POOL_NEAR = 14
+
 /** 緊急照明：燈光、補光、環境光的目標色 */
 const EMERGENCY = new THREE.Color('#ff2a18')
 const EMERGENCY_FILL = new THREE.Color(1, 0.16, 0.1)
@@ -195,6 +208,8 @@ export class GameScene implements SceneLike {
   private flashTarget = new THREE.Object3D()
   private fogT = 0
   private lightT = 0
+  /** 燈光池看的鏡頭位置與速度（m/s，平滑過）*/
+  private poolCam = { x: 0, y: 0, vx: 0, vy: 0 }
   /** 結構實體 id ↔ POI 格（key = `${zone}:${col},${row}`）*/
   poiEnt = new Map<string, number>()
   /** 各站固定設施的外觀狀態（完好／損毀的控制台／被摧毀，poiState.ts）*/
@@ -233,6 +248,24 @@ export class GameScene implements SceneLike {
   private prebuildQ: number[] = []
   private prebuildIt: Steps | null = null
   private building: { id: number; it: Steps<StationView> } | null = null
+  /** 引擎（上傳貼圖、預編譯）：不預建的裝置也有，顯示用的分段建站要用 */
+  private host: PrebuildHost | null = null
+  /**
+   * 顯示用的分段建站：要顯示的站還沒建好時，不整站同步建（翠原星在低階裝置約 4–5 秒，主機卡住會讓所有客人停住），
+   * 改成逐片建完（建站體 → 延後的貼圖 → 上傳 → 預編譯，同 prebuildZone）再切過去；期間 loading = true（GameScreen 顯示「載入中」）、
+   * 引擎不畫 3D（holdFrame）。每一幀推進一片，片與片之間再用 MessageChannel 接著做（不必等下一幀）。
+   */
+  private loader: { id: number; it: Steps; wait: boolean; bg: boolean } | null = null
+  /** 預先建（lookahead）的下一個空閒時間 */
+  private cancelBg: (() => void) | null = null
+  /** 預測下一站的計時（每 0.5 秒看一次）*/
+  private lookT = 0
+  /** 正在分段建要顯示的站（GameScreen 顯示和開局一樣的「載入中」覆蓋層）*/
+  readonly loading = signal(false)
+  /** 這一幀不畫（等分段建站；Engine.frame 看到就略過渲染）*/
+  holdFrame = false
+  private pumpCh: MessageChannel | null = null
+  private pumpQueued = false
   /** 這一局（這個 WebGL context）已經送去上傳的貼圖；貼圖是模組層級快取、跨局共用，新的一局要重新上傳 */
   private uploaded = new WeakSet<THREE.Texture>()
   /** 已經「第一次使用」過的 program：第一次使用會同步查詢連結結果（沒有 KHR_parallel_shader_compile 時會等 GPU），在空閒時間先做 */
@@ -383,10 +416,13 @@ export class GameScene implements SceneLike {
    * requestIdleCallback 逾時觸發（頁面一直忙）時也只做 SLICE_MS。哪些裝置不預建見 prebuildAllowed。
    */
   startPrebuild(host: PrebuildHost): void {
-    if (this.prebuildHost || !prebuildAllowed(host.renderer.getContext())) return
-    this.prebuildHost = host
+    if (this.host || this.disposed) return
+    // 不預建的裝置也記下引擎：第一次進站時用它分段建（loadSlice）
+    this.host = host
     // WebGL context 恢復後所有貼圖與 program 都沒了：已建好的站重新上傳、預編譯
     host.renderer.domElement.addEventListener('webglcontextrestored', this.onRestored)
+    if (!prebuildAllowed(host.renderer.getContext())) return
+    this.prebuildHost = host
     // 對局中改畫質（陰影開關會改變 program key）：已建好的站重新預編譯（貼圖不用重傳）
     let first = true
     this.stopQuality = effect(() => {
@@ -433,6 +469,8 @@ export class GameScene implements SceneLike {
     if (!host || this.disposed) return
     // 開局第一站還沒顯示之前不搶時間；context 遺失中先停
     if (this.zone < 0) return this.scheduleIdle(1000)
+    // 正在分段建要顯示的站：讓它先（它會接手預建做到一半的同一站）
+    if (this.loader) return this.scheduleIdle(500)
     if (host.renderer.getContext().isContextLost()) return this.scheduleIdle(2000)
     const t0 = performance.now()
     // 空閒時間最多用 IDLE_MAX_MS：主機的 HostRelay 也在主執行緒轉送快照（20 Hz），一片太長會讓轉送延後
@@ -484,7 +522,8 @@ export class GameScene implements SceneLike {
         const info = this.zones.get(id)
         const def = info && stationDefOf(info.station)
         if (!info || !def) return
-        const it = buildStationSteps(def, info.layout)
+        // 同一站正在被另一份工作分段建（背景預建 ↔ 顯示用的分段建站）：接手它，不從頭建
+        const it = this.building?.id === id ? this.building.it : buildStationSteps(def, info.layout)
         this.building = { id, it }
         for (;;) {
           // 使用者在建完前走進這一站：buildView 已經同步做完（building 被清掉）
@@ -498,7 +537,15 @@ export class GameScene implements SceneLike {
           yield
         }
         v = this.views.get(id)
-        if (!v) return
+        if (!v) {
+          // 被另一站的分段建頂掉（building 換成別站、這一站的進度丟掉）：預建的裝置排回佇列之後再建
+          if (this.prebuildHost && !this.disposed && !this.prebuildQ.includes(id)) {
+            this.prebuildQ.push(id)
+            this.prebuildDone = false
+            this.scheduleIdle(1500)
+          }
+          return
+        }
       }
       // 地上道具的本體／發光材質（道具不屬於站體，第一次有人丟東西才會用到）也一起預編譯
       roots = [v.group, ...groundItemWarmMeshes()]
@@ -567,8 +614,145 @@ export class GameScene implements SceneLike {
     }
   }
 
-  private ensureZone(id: number): void {
-    if (this.zone === id) return
+  /**
+   * 要顯示的 zone 還沒建好（站點、且已經有站顯示過＝不是開局）：交給分段建站，先維持目前的 zone，建好那一幀才切過去。
+   * 開局第一站仍同步建（開局覆蓋層、loaded 回報都等第一幀畫完）；沒有引擎（單元測試）或 context 遺失中也同步建。
+   * 回傳這一幀實際顯示的 zone。
+   */
+  private ensureZone(id: number): number {
+    const ld = this.loader
+    if (this.zone === id) {
+      // 目標換回顯示中的站（例如監視器畫面關掉）：分段建暫停；做到一半的站體留在 building，之後再去那一站時接著做
+      if (ld && !ld.bg) this.stopLoad()
+      return id
+    }
+    // 站體建好之後還有貼圖上傳、預編譯：loader 做完才切
+    if (this.zone >= 0 && this.zones.has(id) && (ld?.id === id || !this.views.has(id)) && this.host && !this.host.renderer.getContext().isContextLost()) {
+      if (ld?.id !== id) this.startLoad(this.host, id, false)
+      else if (ld.bg) {
+        // 預先建的那一站（lookahead）真的要去了：轉成前景，顯示「載入中」、接著做完
+        ld.bg = false
+        this.loading.value = true
+      }
+      this.loadSlice()
+      if (this.loader) return this.zone
+    }
+    // 改去別的地方（太空、已建好的站）或不能分段：放棄前景的這份（預先建的留著）
+    if (this.loader && !this.loader.bg) this.stopLoad()
+    this.switchZone(id)
+    return id
+  }
+
+  /** 開始分段建一站（換了目標就丟掉上一份；做到一半的站體留在 building，之後再去那一站時接著做）；bg = 預先建（不顯示載入中、用空閒時間）*/
+  private startLoad(host: PrebuildHost, id: number, bg: boolean): void {
+    this.stopLoad()
+    this.loader = { id, it: this.prebuildZone(host, id), wait: false, bg }
+    if (bg) this.scheduleBg(1000)
+    else this.loading.value = true
+  }
+
+  private stopLoad(): void {
+    this.loader = null
+    this.loading.value = false
+    this.cancelBg?.()
+    this.cancelBg = null
+  }
+
+  /** 推進分段建站一片（前景最多 LOAD_SLICE_MS；預先建依空閒時間，同 prebuildStep）；做完（或出錯：退回同步建）就清掉 loader。回傳是否還沒做完 */
+  private loadSlice(dl?: { timeRemaining(): number; didTimeout?: boolean }): boolean {
+    const ld = this.loader
+    if (!ld || this.disposed) return false
+    const t0 = performance.now()
+    const budget = ld.bg ? Math.max(SLICE_MS, dl && !dl.didTimeout ? Math.min(IDLE_MAX_MS, dl.timeRemaining() - 1) : 0) : LOAD_SLICE_MS
+    ld.wait = false
+    let done = false
+    deferTextures(() => {
+      for (;;) {
+        let r: IteratorResult<void | 'wait', void>
+        try {
+          r = ld.it.next()
+        } catch (e) {
+          // 出錯：放棄分段，ensureZone 照舊同步建（buildView 會接手 building 剩下的部分或從頭建）
+          if (__DEV__) console.error(e)
+          r = { done: true, value: undefined }
+          if (this.building?.id === ld.id) this.building = null
+        }
+        if (r.done) {
+          done = true
+          return
+        }
+        if (r.value === 'wait') {
+          ld.wait = true
+          return
+        }
+        if (performance.now() - t0 >= budget) return
+      }
+    })
+    if (done) {
+      if (this.loader === ld) this.stopLoad()
+      return false
+    }
+    // 前景：片與片之間讓出主執行緒（HostRelay、輸入），不等下一幀就接著做；等 shader 連結時留給下一幀再看。預先建：下一個空閒時間
+    if (ld.bg) this.scheduleBg(ld.wait ? 250 : 100)
+    else if (!ld.wait) this.queuePump()
+    return true
+  }
+
+  private scheduleBg(timeout: number): void {
+    if (this.cancelBg || this.disposed) return
+    this.cancelBg = onIdle((dl) => {
+      this.cancelBg = null
+      if (this.loader?.bg) this.loadSlice(dl)
+    }, timeout)
+  }
+
+  /**
+   * 預測下一站（不預建的裝置）：駕駛中的船在太空中靠近某站（LOOKAHEAD_R 內最近的一站）就用空閒時間先分段建那一站，
+   * 停靠後走出船艙時多半已經建好。已經有 loader（前景或預先建）時不動；預建的裝置本來就會建完全部。
+   */
+  private lookahead(zid: number): void {
+    if (zid !== 0 || this.loader || this.prebuildHost || !this.host) return
+    const me = this.world.ents.get(this.world.me.control ?? 0)
+    if (!me || me.s.z !== 0) return
+    let best: number | undefined
+    let bestD = LOOKAHEAD_R * LOOKAHEAD_R
+    for (const e of this.world.ents.values()) {
+      const d = e.s.d
+      if (e.s.z !== 0 || !d?.startsWith('station.')) continue
+      const d2 = (e.x - me.x) ** 2 + (e.y - me.y) ** 2
+      if (d2 >= bestD) continue
+      const z = this.zoneOfStation(d.slice(8))
+      if (z === undefined || this.views.has(z)) continue
+      bestD = d2
+      best = z
+    }
+    if (best !== undefined) this.startLoad(this.host, best, true)
+  }
+
+  private zoneOfStation(station: string): number | undefined {
+    for (const z of this.zones.values()) if (z.station === station) return z.id
+    return undefined
+  }
+
+  private queuePump(): void {
+    if (this.pumpQueued || this.disposed) return
+    if (typeof MessageChannel === 'undefined') return
+    if (!this.pumpCh) {
+      this.pumpCh = new MessageChannel()
+      this.pumpCh.port1.onmessage = () => {
+        this.pumpQueued = false
+        // 只推進「目前要顯示」的那一站：目標換了（回到原本的站）就停，下一幀 ensureZone 再決定
+        if (this.loader && !this.loader.bg && this.loader.id === this.wantZone) this.loadSlice()
+      }
+    }
+    this.pumpQueued = true
+    this.pumpCh.port2.postMessage(0)
+  }
+
+  /** 上一幀想顯示的 zone（viewZone）*/
+  private wantZone = -1
+
+  private switchZone(id: number): void {
     const old = this.views.get(this.zone)
     if (old) this.scene.remove(old.group)
     if (this.space) this.space.group.visible = false
@@ -615,6 +799,7 @@ export class GameScene implements SceneLike {
       s.l.intensity = 0
     }
     this.lightT = 0
+    this.poolCam.vx = this.poolCam.vy = 0
     this.emK = 0
     this.emOn = false
     this.setStrips(v, false)
@@ -788,8 +973,12 @@ export class GameScene implements SceneLike {
   update(dt: number, t: number): void {
     const w = this.world
     w.interpolate()
-    const zid = this.viewZone()
-    this.ensureZone(zid)
+    const want = this.viewZone()
+    this.wantZone = want
+    const zid = this.ensureZone(want)
+    // 要去的站還在分段建（loader）：這一幀不畫、其餘也不更新（「載入中」覆蓋層蓋著），建好那一幀才切過去
+    this.holdFrame = zid !== want
+    if (this.holdFrame) return
     this.checkAutoDrop(zid)
     const view = this.views.get(zid)
     const fog = this.fogs.get(zid)
@@ -844,6 +1033,12 @@ export class GameScene implements SceneLike {
       this.emK += Math.sign((em ? 1 : 0) - this.emK) * Math.min(Math.abs((em ? 1 : 0) - this.emK), dt * 1.5)
       this.updatePool(view, dt, t)
     }
+    // 預測下一站（不預建的裝置：駕駛中靠近某站就先用空閒時間建）
+    this.lookT -= dt
+    if (this.lookT <= 0) {
+      this.lookT = 0.5
+      this.lookahead(zid)
+    }
     // 天氣（燈光池之後：環境光的調整疊在緊急照明的結果上）
     this.updateWeather(dt, t, view, zinfo)
     // 手電筒：只有自己的人形單位
@@ -860,17 +1055,43 @@ export class GameScene implements SceneLike {
     this.rts.update(dt, window.innerWidth, window.innerHeight)
   }
 
-  /** 依鏡頭位置分配燈光池（每 0.25 秒）並做淡入淡出、緊急照明色調（每幀）*/
+  /**
+   * 依鏡頭位置分配燈光池（靜止時每 0.25 秒、移動中每 0.1 秒）並做淡入淡出、緊急照明色調（每幀）。
+   * 鏡頭移動中：選燈看「鏡頭前方」（目前位置＋速度 × POOL_LEAD 秒），前方的燈提早淡入、後方的提早放掉；淡入淡出也跟著變快。
+   */
   private updatePool(view: StationView, dt: number, t: number): void {
+    // 鏡頭速度（平滑；一幀跳太遠＝瞬移、對準，不算速度）
+    const pc = this.poolCam
+    const mx = this.rts.tx - pc.x
+    const my = this.rts.ty - pc.y
+    pc.x = this.rts.tx
+    pc.y = this.rts.ty
+    if (dt > 0) {
+      const jump = mx * mx + my * my > 8 * 8
+      const a = 1 - Math.exp(-dt / 0.15)
+      pc.vx = jump ? 0 : pc.vx + (mx / dt - pc.vx) * a
+      pc.vy = jump ? 0 : pc.vy + (my / dt - pc.vy) * a
+    }
+    const speed = Math.hypot(pc.vx, pc.vy)
     this.lightT -= dt
     if (this.lightT <= 0) {
-      this.lightT = 0.25
-      const cx = this.rts.tx
-      const cy = this.rts.ty
+      this.lightT = speed > 2 ? 0.1 : 0.25
+      // 選燈的參考點：鏡頭前方（最多 POOL_LEAD_MAX m）
+      const lead = Math.min(POOL_LEAD, POOL_LEAD_MAX / Math.max(speed, 1e-6))
+      const cx = this.rts.tx + pc.vx * lead
+      const cy = this.rts.ty + pc.vy * lead
       const d2 = (a: RoomLight) => (a.x - cx) ** 2 + (-a.z - cy) ** 2
       const sorted = [...view.lights].sort((a, b) => d2(a) - d2(b))
       // 前兩盞給投影的 spot、其餘給點光；同一組裡已經在用的燈留在原本的槽位，只替換掉出名單的
       const nSpot = this.pool.filter((p) => p.l instanceof THREE.SpotLight).length
+      // 錯開換燈：鏡頭附近（POOL_NEAR 內）亮著的燈同時最多換 maxSwap 盞，其餘先留著亮、下一輪再換（總光量不會一下子少掉一半）；
+      // 遠處的燈（瞬移、對準之後）不受限制
+      const ox = this.rts.tx
+      const oy = this.rts.ty
+      const near = (rl: RoomLight) => (rl.x - ox) ** 2 + (-rl.z - oy) ** 2 < POOL_NEAR * POOL_NEAR
+      const maxSwap = Math.max(1, Math.floor(this.pool.length / 4))
+      let swapping = 0
+      for (const s of this.pool) if (s.cur && near(s.cur) && (s.next !== s.cur || s.w < 0.6)) swapping++
       for (const [slots, want] of [
         [this.pool.slice(0, nSpot), sorted.slice(0, nSpot)],
         [this.pool.slice(nSpot), sorted.slice(nSpot, this.pool.length)],
@@ -895,12 +1116,23 @@ export class GameScene implements SceneLike {
             add.pop()
           }
         }
-        for (const s of slots) if (!s.next) s.next = add.shift() ?? null
+        // 要換的槽位：先換空的與遠處的，鏡頭附近亮著的依上限錯開
+        const free = slots.filter((s) => !s.next).sort((a, b) => (a.cur ? -d2(a.cur) : -Infinity) - (b.cur ? -d2(b.cur) : -Infinity))
+        for (const s of free) {
+          const busy = !!s.cur && s.w > 0 && near(s.cur)
+          if (busy && add.length && swapping >= maxSwap) {
+            s.next = s.cur
+            continue
+          }
+          s.next = add.shift() ?? null
+          if (busy && s.next) swapping++
+        }
       }
     }
-    // 換燈：舊燈很快熄（0.12 秒）、新燈 0.3 秒淡入——鏡頭移動時整體不會暗下來
-    const FADE_OUT = 1 / 0.12
-    const FADE_IN = 1 / 0.3
+    // 換燈：舊燈很快熄（0.12 秒）、新燈 0.3 秒淡入——鏡頭移動時整體不會暗下來；鏡頭快速移動（≥ 10 m/s）時縮短到 0.07／0.15 秒
+    const fk = Math.min(1, speed / 10)
+    const FADE_OUT = 1 / (0.12 - 0.05 * fk)
+    const FADE_IN = 1 / (0.3 - 0.15 * fk)
     const em = this.emK
     // 緊急照明：慢速、淺的脈動，最暗時仍讀得到房間（燈約 45%、補光約 57%）
     const pulse = 0.91 + 0.09 * Math.sin(t * 1.6)
@@ -1002,10 +1234,19 @@ export class GameScene implements SceneLike {
     this.cancelIdle = null
     this.stopQuality?.()
     this.stopQuality = null
-    this.prebuildHost?.renderer.domElement.removeEventListener('webglcontextrestored', this.onRestored)
     this.prebuildHost = null
     this.prebuildIt = null
     this.building = null
+    this.host?.renderer.domElement.removeEventListener('webglcontextrestored', this.onRestored)
+    this.host = null
+    this.stopLoad()
+    this.holdFrame = false
+    if (this.pumpCh) {
+      this.pumpCh.port1.onmessage = null
+      this.pumpCh.port1.close()
+      this.pumpCh.port2.close()
+      this.pumpCh = null
+    }
     for (const v of this.views.values()) v.dispose()
     this.views.clear()
     for (const f of this.fogs.values()) f.tex.dispose()
