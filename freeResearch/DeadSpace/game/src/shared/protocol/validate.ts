@@ -1,6 +1,6 @@
 // peer 訊息白名單：型別、長度、數值範圍都要合法，否則整則丟棄。
 // 這裡是不信任邊界：任何 peer 都可能送出任意位元組。
-import { PRACTICE_ROLES, type ChatChannel, type ClientMsg, type Command, type CommandKind, type LobbySettings, type NoteMark, type PracticeRole } from './messages'
+import { AI_LEVELS, PRACTICE_ROLES, type AiLevel, type ChatChannel, type ClientMsg, type Command, type CommandKind, type LobbySettings, type NoteMark, type PracticeRole } from './messages'
 import { MAX_CLIENT_MSG_BYTES, decode } from './codec'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../constants'
 
@@ -119,6 +119,10 @@ function validSettings(s: unknown): Partial<LobbySettings> | null {
       case 'seed':
         if (!isInt(v, 0, 0x7fffffff)) return null
         out.seed = v
+        break
+      case 'aiLevel':
+        if (!AI_LEVELS.includes(v as AiLevel)) return null
+        out.aiLevel = v as AiLevel
         break
       default:
         return null

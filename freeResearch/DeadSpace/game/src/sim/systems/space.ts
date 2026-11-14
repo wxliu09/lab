@@ -9,7 +9,7 @@ import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import { fmtKey, type Game, type GamePlayer } from '../game'
 import { spawnConsole } from '../setup'
 import { SPACE_ZONE, type Zone } from '../world'
-import { DEATH_HOOKS, damage } from './damage'
+import { DEATH_HOOKS, damage, type EnvKind } from './damage'
 import { regScript } from './effects'
 import { applyBuff, removeBuff } from './buffs'
 import { EXTRA_COMMANDS, issue } from './orders'
@@ -573,8 +573,11 @@ export function zoneLabel(g: Game, z: Zone): Loc {
   return { zh: `${st.name.zh} #${k}`, en: `${st.name.en} #${k}` }
 }
 
-/** 站點或船艇被擊毀：內部所有單位必死、物品消失，之後 300 秒為致命區 */
-export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): void {
+/**
+ * 站點或船艇被擊毀：內部所有單位必死、物品消失，之後 300 秒為致命區。
+ * env：毀滅的原因有明確的現象時（反物質打擊）帶給死因說明；沒有就說「站點爆炸」
+ */
+export function destroyInterior(g: Game, zoneId: number, killer: Ent | null, env?: EnvKind): void {
   const z = g.world.zones[zoneId]
   if (!z || !z.alive) return
   z.alive = false
@@ -595,7 +598,7 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): vo
     e.data.god = false
     e.buffs = e.buffs.filter((b) => !b.id.startsWith('bf.core'))
     e.statsDirty = true
-    damage(g, killer, e, 421337, { lethal: true, pure: true })
+    damage(g, killer, e, 421337, { lethal: true, pure: true, ...(env ? { env } : {}) })
     if (e.alive) g.killEnt(e, killer)
   }
   for (const e of g.world.inZone(zoneId)) if (e.data.item || e.tags.has('corpse')) g.world.remove(e)
@@ -603,7 +606,7 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null): vo
   for (const inst of sp.ships.values()) {
     if (inst.docked?.zone === zoneId) {
       inst.docked = null
-      destroyInterior(g, inst.zone, killer)
+      destroyInterior(g, inst.zone, killer, env)
     }
   }
   sp.pads.set(zoneId, [])
@@ -617,7 +620,7 @@ export function installSpace(g: Game): void {
       g.emitFx({ k: 'stationBoom', z: SPACE_ZONE, x: u.x, y: u.y, v: u.radius })
       const sp = spaceOf(g)
       sp.pilots.delete(u.id)
-      destroyInterior(g, u.data.interior as number, killer)
+      destroyInterior(g, u.data.interior as number, killer, u.data.destroyCause as EnvKind | undefined)
     }
     // 停泊模型被打爆 → 船毀
     if (u.data.ship && u.zone !== SPACE_ZONE) {
@@ -804,6 +807,12 @@ regScript('space.dock', (g, ctx) => {
   }
   const hpK = ship.hp / ship.maxHp
   if (inst.link) breakLink(g, inst)
+  // 駕駛者還站在船艙的控制台上：先鎖住（離開控制台才解鎖），否則一停好就又開始發射倒數
+  const pilotEnt = g.world.get(spaceOf(g).pilots.get(ship.id) ?? 0)
+  if (pilotEnt && pilotEnt.owner >= 0 && pilotEnt.zone === inst.zone) {
+    const cz = g.world.zones[inst.zone]
+    cz.data.consoleLock = [...((cz.data.consoleLock as number[] | undefined) ?? []), pilotEnt.owner]
+  }
   setPilot(g, ship, null)
   inst.spaceEnt = 0
   g.world.zones[inst.zone].spaceEnt = 0

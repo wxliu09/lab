@@ -5,10 +5,12 @@ import type { Ent } from '../ent'
 import type { Game } from '../game'
 
 /**
- * 事件與環境傷害的來源種類（給死因說明用）：door = 門控制器故障夾傷、sun = 恆星灼燒、rock = 小行星撞擊、gas = 神經毒素。
+ * 事件與環境傷害的來源種類（給死因說明用）：door = 門控制器故障夾傷、sun = 恆星灼燒、rock = 小行星撞擊、gas = 神經毒素、
+ * atm = 天守的反物質打擊（所在的站被打爆；施放的站在命中前被毀也一樣）。
  * 這些傷害沒有「看得到的攻擊者」，死因直接說是什麼；名稱都是公開的現象，不帶任何人的身分。
+ * 由造成傷害的程式在傷害來源上明確標記（DmgOpts.env），死因判定不再依技能 id 對應。
  */
-export type EnvKind = 'door' | 'sun' | 'rock' | 'gas'
+export type EnvKind = 'door' | 'sun' | 'rock' | 'gas' | 'atm'
 
 export interface DmgOpts {
   kind?: DamageKind

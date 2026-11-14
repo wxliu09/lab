@@ -234,7 +234,8 @@ export function stepDoors(g: Game): void {
           if (d.clearance && !hasClearance(u, d.clearance)) continue
           want = true
           if (!d.open) {
-            d.log.push({ t: Math.round(g.time), sil: silhouette(u) })
+            // 隱形中的單位照樣會讓門打開（物理上合理），但門禁只記「未識別」：剪影會說出看不見的是人、生物還是機械
+            d.log.push({ t: Math.round(g.time), sil: doorSilhouette(g, u) })
             if (d.log.length > 5) d.log.shift()
           }
           break
@@ -246,6 +247,12 @@ export function stepDoors(g: Game): void {
       }
     }
   }
+}
+
+/** 門禁紀錄記下的剪影：隱形中（沒被揭露）的單位記成「未識別」，其他照體型 */
+export function doorSilhouette(g: Game, u: Ent): string {
+  const hidden = u.stats.stealth && !((u.data.revealedUntil as number | undefined) && u.data.revealedUntil > g.time)
+  return hidden ? 'unknown' : silhouette(u)
 }
 
 /** 門禁紀錄的剪影：只記大致體型，不含身分（GDD §9）*/

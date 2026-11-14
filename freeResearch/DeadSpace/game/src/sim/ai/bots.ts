@@ -3,7 +3,9 @@
 // 人類：買防護服（各有各的習慣：有人一直穿、有人在宿舍休息時脫下、有人拖到後期才穿）、驗血並在全體頻道公布結果
 // （拿到檢測器就主動找人抽血；有感染但認不出是誰就再驗一次縮小範圍；只剩一個可疑的人就公開指認）、
 // 遇到怪物開火、受傷逃跑；異類：落單時感染、湊夠 EP 就躲起來進化、變身後獵殺。
-// AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。
+// 換站：人類方 AI 拿著檢測器、附近好一陣子沒有可以抽的人時，會開停泊的船去別的站找人（走到船邊登船→站上控制台發射→
+// 駕駛前往目標站→停靠→下船）；目標只用 AI 自己看過的（最後看到某人的地方）或公開的資訊（地圖上的出生點多寡）。
+// 除此之外 AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。
 import type { Command } from '../../shared/protocol/messages'
 import { abilityDef, itemDef } from '../../shared/content/registry'
 import { roomAt } from '../../shared/layout'
@@ -13,7 +15,9 @@ import { fmtKey, type Game, type GamePlayer } from '../game'
 import { handleCommand } from '../systems/orders'
 import { cdReady } from '../systems/abilities'
 import { VENDOR_RANGE, type StockState } from '../systems/vendors'
-import { consolePos, spaceOf } from '../systems/space'
+import { consolePos, spaceOf, type ShipInst } from '../systems/space'
+import { stationsOf } from '../systems/stations'
+import { SPACE_ZONE, type Zone } from '../world'
 
 interface Brain {
   next: number
@@ -60,6 +64,42 @@ interface Brain {
   px: number
   py: number
   pt: number
+  /** 換站中（開船去別的站找人）*/
+  trip: Trip | null
+  /** 上次看到可以抽血的別人（18 公尺內、還沒抽過）的時間：太久沒看到就換站 */
+  peopleAt: number
+  /** 換過幾次站、下次可以再考慮換站的時間 */
+  trips: number
+  tripAt: number
+  /** 最近找過人的站（zone id → 離開的時間）：剛找過沒人的站先不回去 */
+  visited: Map<number, number>
+  /** 簡單難度：下一次可以抽血的時間（抽血之間停比較久）；異類下一次可以出手的時間 */
+  drawNext: number
+  strikeAt: number
+}
+
+/**
+ * 換站的進度：walk = 在原本的站走到停泊的船邊登船；cabin = 在船艙裡（停泊中就走到控制台等發射、到站了就下船）；
+ * fly = 駕駛中（前往目標站、停靠）。at = 這個階段開始的時間（逾時用）。
+ */
+interface Trip {
+  from: number
+  to: number
+  ship: string
+  stage: 'walk' | 'cabin' | 'fly'
+  at: number
+  start: number
+  /** 已經發射、駕駛過了（之後停在哪裡都要下船）*/
+  flown?: boolean
+  /** 接近目標站時的生命掃描（船上的技能）：at = 結果出來的時間；改過幾次目標 */
+  scan?: { at: number; done?: boolean }
+  rescans?: number
+  /** 太空中繞過障礙（恆星、其他站）的中繼點 */
+  via?: { x: number; y: number }
+  /** 太空中卡住偵測 */
+  sx: number
+  sy: number
+  st: number
 }
 
 /**
@@ -78,6 +118,23 @@ type Goal =
   | { k: 'results'; vendor: number; until: number; sent?: boolean }
 
 const SUIT_VENDORS = new Set(['suitA', 'suitB', 'suitC', 'suitD'])
+
+// ───────── 練習難度（g.settings.aiLevel）─────────
+// easy：讓練習當異形不會太難。AI 船員驗血較慢（開局晚一點才去買檢測器、抽血之間停比較久、只抽身邊的人、不複驗）、
+// 不公開指認、看到玩家的怪物形態不主動開火（被打才還手，其他時候躲開）；AI 異類偽裝更久才動手、出手之間隔比較久、怪物形態比較保守。
+// normal：原本的行為。
+
+const easy = (g: Game): boolean => g.settings.aiLevel === 'easy'
+/** 簡單難度：開局多久之後才去買第一支檢測器（秒）*/
+const EASY_FIRST_SAMPLER = 180
+/** 簡單難度：兩次抽血之間至少隔多久（秒）、只抽多近的人（公尺；一般 18）*/
+const EASY_DRAW_GAP = 12
+const EASY_DRAW_R = 10
+/** 簡單難度：AI 異類開局多久之後才會感染、攻擊（秒），兩次出手之間隔多久 */
+const EASY_EVIL_START = 420
+const EASY_STRIKE_GAP = 90
+/** 簡單難度：換站前要找不到人多久（秒；一般 LONELY_S）*/
+const EASY_LONELY_S = 150
 
 function brainOf(g: Game, p: GamePlayer): Brain {
   return (p.data.brain ??= {
@@ -106,6 +163,13 @@ function brainOf(g: Game, p: GamePlayer): Brain {
     px: 0,
     py: 0,
     pt: 0,
+    trip: null,
+    peopleAt: g.time,
+    trips: 0,
+    tripAt: 0,
+    visited: new Map(),
+    drawNext: 0,
+    strikeAt: 0,
   }) as Brain
 }
 
@@ -295,12 +359,22 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     b.goal = { k: 'hunt', e: attacker.id, until: g.time + 10 }
     return
   }
-  const foe = nearest(u, near.filter((e) => isFoe(g, p, e)))
+  // 簡單難度：玩家的怪物形態不主動開火（被打才還手，上面處理），太近就躲開；無主的怪物照打
+  const foes = near.filter((e) => isFoe(g, p, e) && !(easy(g) && e.owner >= 0))
+  if (easy(g) && !foes.length) {
+    const scary = nearest(u, near.filter((e) => e.owner >= 0 && isFoe(g, p, e) && dist2(u, e) < 6 * 6))
+    if (scary) {
+      const pt = randomRoomPoint(g, u)
+      if (pt) b.goal = { k: 'flee', ...pt, until: g.time + 8 }
+      return
+    }
+  }
+  const foe = nearest(u, foes)
   if (foe && u.def.attack) {
     b.goal = { k: 'hunt', e: foe.id, until: g.time + 10 }
     return
   }
-  // 驗血指認出來的人：看到就開火
+  // 驗血指認出來的人：看到就開火（簡單難度不指認，b.accused 一直是空的）
   if (b.accused && u.def.attack) {
     // 只看外觀（全像分身看起來就是本人；用 isMain 會讓 AI 不打分身，等於幫大家分辨真假）
     const t = near.find((e) => looksPerson(e) && e.owner >= 0 && e.owner !== p.slot && seenName(g, e) === b.accused)
@@ -344,7 +418,8 @@ function thinkCrew(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
       }
     }
   }
-  // 拿著檢測器還差人：去找人（最後看到某人的地方，或一間一間房間找），不是隨便晃
+  // 拿著檢測器還差人：這個站好一陣子都找不到人就開船換站；否則去找人（最後看到某人的地方，或一間一間房間找），不是隨便晃
+  if (sampling && wantTrip(g, p, u, b) && startTrip(g, p, u, b, sampling)) return
   if (sampling && seekPeople(g, u, b, sampling)) return
   wander(g, p, u, b, plan === 'casual' ? REST_ROOMS : undefined)
 }
@@ -429,17 +504,21 @@ function gitStep(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean | Want {
     b.samplers++
     b.drawAt = g.time
     b.drawCount = drawn.length
+    // 換站的計時從拿到檢測器開始算
+    b.peopleAt = Math.max(b.peopleAt, g.time)
   }
   if (drawn.length !== b.drawCount) {
     b.drawCount = drawn.length
     b.drawAt = g.time
   }
   const want = sampleWant(g, b, drawn)
+  // 簡單難度：抽完一份要停一陣子才抽下一份
+  if (g.time < b.drawNext) return want
   // 看得到、還沒抽過的人（同名的人只抽一次）：先抽優先的，再抽可以的；都沒有就抽自己
   let best: Ent | null = null
   let bestW = 0
   let bestD = Infinity
-  for (const e of visibleEnts(g, p, u, 18)) {
+  for (const e of visibleEnts(g, p, u, easy(g) ? EASY_DRAW_R : 18)) {
     if (!looksPerson(e) || (b.skip.get(e.id) ?? 0) >= g.time) continue
     const n = seenName(g, e)
     const w = n ? want(n) : 0
@@ -450,10 +529,13 @@ function gitStep(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean | Want {
       bestD = d
     }
   }
+  // 附近還有可以抽的別人：不用換站
+  if (best && bestW > 0) b.peopleAt = g.time
   const selfW = want(seenName(g, u) || p.name)
   const t = bestW === 2 || (best && bestW >= selfW) ? best : selfW > 0 ? u : null
   if (t) {
     b.goal = { k: 'cast', a: 'ab.item.geneSampler', e: t.id, slot: sampler, until: g.time + 15 }
+    if (easy(g)) b.drawNext = g.time + EASY_DRAW_GAP
     return true
   }
   return want
@@ -465,6 +547,8 @@ function gitStep(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean | Want {
  */
 function wantSampler(g: Game, b: Brain): boolean {
   if (g.time < b.buyAt) return false
+  // 簡單難度：開局晚一點才去買第一支，之後不複驗
+  if (easy(g)) return b.samplers === 0 && g.time >= EASY_FIRST_SAMPLER
   if (b.samplers === 0) return true
   if (b.accused || b.samplers >= MAX_SAMPLERS || !b.reported) return false
   if ([...b.suspects.keys()].some((n) => !b.cleared.has(n))) return true
@@ -542,7 +626,8 @@ function readReports(g: Game, p: GamePlayer, b: Brain): void {
       b.buyAt = Math.max(b.buyAt, g.time + 90)
       continue
     }
-    const top = accuseTarget(b)
+    // 簡單難度：不公開指認（也就不會追著指認的人開火）
+    const top = easy(g) ? '' : accuseTarget(b)
     if (top && !b.accusedAll.has(top)) {
       b.accused = top
       b.accusedAll.add(top)
@@ -623,12 +708,18 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
       return
     }
   }
-  const infect = ['xeno.parasite', 'mut.prion3', 'mut.prion2', 'mut.prion'].find((a) => ready(a))
+  // 簡單難度：偽裝更久才動手（開局一段時間內、兩次出手之間不感染、不主動變身攻擊）
+  const holdOff = easy(g) && (g.time < EASY_EVIL_START || g.time < b.strikeAt)
+  const strike = () => {
+    if (easy(g)) b.strikeAt = g.time + EASY_STRIKE_GAP
+  }
+  const infect = holdOff ? undefined : ['xeno.parasite', 'mut.prion3', 'mut.prion2', 'mut.prion'].find((a) => ready(a))
   if (humanForm) {
     // 落單的人類就在眼前：異形先變身再寄生；變種人人形沒有感染技能，只能先進化
-    if (close.length === 1 && crew.length === 1 && (b.skip.get(close[0].id) ?? 0) < g.time) {
+    if (!holdOff && close.length === 1 && crew.length === 1 && (b.skip.get(close[0].id) ?? 0) < g.time) {
       if (infect) {
         b.goal = { k: 'cast', a: infect, e: close[0].id, until: g.time + 12 }
+        strike()
         return
       }
       const form = ['xeno.form', 'xeno.spawnForm'].find((a) => ready(a))
@@ -655,6 +746,7 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     const t = nearest(u, close.filter((e) => (b.skip.get(e.id) ?? 0) < g.time))
     if (t) {
       b.goal = { k: 'cast', a: infect, e: t.id, until: g.time + 8 }
+      strike()
       return
     }
   }
@@ -670,7 +762,9 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     return
   }
   const foe = nearest(u, near.filter((e) => isFoe(g, p, e)))
-  if (foe && (crew.length <= 2 || p.tier >= 2)) {
+  // 簡單難度：怪物形態只在對方落單、而且沒在等下一次出手時才主動攻擊（被打照樣還手）
+  const bold = easy(g) ? (!holdOff && crew.length <= 1) || g.time - u.lastDamageTime < 3 : crew.length <= 2 || p.tier >= 2
+  if (foe && bold) {
     for (const a of u.abilities) {
       const ab = abilityDef(a)
       if (!ab || ab.target !== 'unit' || !ready(a) || ab.passiveBuff || a.startsWith('xeno.') || a.startsWith('mut.')) continue
@@ -680,6 +774,7 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
       }
     }
     b.goal = { k: 'hunt', e: foe.id, until: g.time + 12 }
+    if (g.time - u.lastDamageTime >= 3) strike()
     return
   }
   wander(g, p, u, b)
@@ -713,7 +808,9 @@ function stepBots(g: Game): void {
     if (!u || !u.alive || u.data.frozen || p.evolvingUntil > t || u.tags.has('cocoon')) continue
     // 人類方正在施法（抽血 3 秒）：別用新的指令打斷自己，除非正在挨打
     if (u.cast && !u.cast.channeling && g.faction(p) === 'crew' && t - u.lastDamageTime > 2) continue
-    // 誤站上控制台、接手了站點或船艇：交回控制（AI 不會駕駛），之後照常走開
+    // 換站途中駕駛的船：開往目標站
+    if (b.trip && u.id !== p.main && flyTrip(g, p, u, b)) continue
+    // 誤站上控制台、接手了站點或船艇：交回控制（AI 只會在換站時駕駛自己搭的船），之後照常走開
     if (u.id !== p.main && spaceOf(g).pilots.get(u.id) === p.main) {
       cmd(g, p, { k: 'unpilot' })
       b.goal = null
@@ -745,7 +842,9 @@ function stepBots(g: Game): void {
       b.py = u.y
       b.pt = t
     }
-    // 在船艙裡（AI 不會開船）：走回艙門下船
+    // 換站途中（走去登船、在船艙裡等發射、到站下船）
+    if (b.trip && stepTrip(g, p, u, b)) continue
+    // 在停泊的船艙裡（不是換站）：走回艙門下船
     if (leaveCabin(g, p, u, b)) continue
     if (pursue(g, p, u, b)) {
       // 追擊中仍會優先處理逃跑
@@ -772,6 +871,325 @@ function leaveCabin(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
 
 /** 移動命令幾秒沒前進就算卡住 */
 const STUCK_S = 4
+
+// ───────── 換站（開船去別的站找人）─────────
+
+/** 拿著檢測器、附近多久沒看到可以抽的別人就換站（秒）*/
+const LONELY_S = 75
+/** 一局最多換幾次站、兩次之間至少隔多久（秒）*/
+const MAX_TRIPS = 3
+const TRIP_GAP = 150
+/** 剛找過、沒找到人的站多久內不回去（秒）*/
+const VISIT_TTL = 300
+/** 換站時「最後看到某人的地方」可以多舊（秒）*/
+const SEEN_TRIP_TTL = 300
+/** 各階段逾時（秒）：走到船邊、在船艙等發射、太空中飛多久就改去最近的站 */
+const WALK_MAX = 45
+const CABIN_MAX = 30
+const FLY_MAX = 150
+/** 不去的站：七號廢站（廢棄、有危險）、事件站（海盜船、未識別物體）*/
+const TRIP_EXCLUDE = new Set(['hulk7', 'pirate', 'uo'])
+
+/** 可以停靠、還有空停機坪的站（火口號、擺渡號只能強行登艦，不去；船艙不算）*/
+function dockableZone(g: Game, z: Zone | undefined): z is Zone {
+  if (!z || !z.alive || !z.station || z.station.dockable === false || z.data.ship || !z.layout) return false
+  const se = g.world.get(z.spaceEnt)
+  if (!se || !se.alive || se.zone !== SPACE_ZONE || se.data.landed) return false
+  return !!spaceOf(g).pads.get(z.id)?.some((x) => !x)
+}
+
+/** 停在這個站、現在可以搭的船：沒在發射、沒有別人在艙裡、沒有別的 AI 要搭、不是停在降落中的豪勇號上 */
+function freeShipAt(g: Game, p: GamePlayer, u: Ent): ShipInst | null {
+  const sp = spaceOf(g)
+  const landed = stationsOf(g).landed
+  const taken = new Set<string>()
+  for (const q of g.allPlayers()) {
+    const tb = q.bot && q !== p ? (q.data.brain as Brain | undefined) : undefined
+    if (tb?.trip) taken.add(tb.trip.ship)
+  }
+  let best: ShipInst | null = null
+  let bd = Infinity
+  for (const inst of sp.ships.values()) {
+    if (!inst.docked || inst.docked.zone !== u.zone || inst.launching || inst.hidden || taken.has(inst.key)) continue
+    if (landed && inst.docked.zone === landed.bravadoZone) continue
+    const cz = g.world.zones[inst.zone]
+    if (!cz?.alive || !consolePos(g, cz)) continue
+    if (g.world.inZone(inst.zone).some((e) => e.alive && e.isMain && e.owner >= 0)) continue
+    const de = g.world.get(inst.dockedEnt)
+    if (!de) continue
+    const d = dist2(u, de)
+    if (d < bd) {
+      bd = d
+      best = inst
+    }
+  }
+  return best
+}
+
+/**
+ * 換站的目標：先去最近看到還沒抽過的人的站（自己的視野記下的）；沒有線索就照地圖上的出生點多寡（公開資訊）隨機挑一個，
+ * 剛找過的站不去。只挑可以停靠、還有空停機坪的站。
+ */
+function tripTarget(g: Game, b: Brain, from: number, want: Want): number {
+  let best = -1
+  let bt = -Infinity
+  for (const [name, s] of b.seen) {
+    if (s.zone === from || g.time - s.t > SEEN_TRIP_TTL || !want(name) || s.t <= bt) continue
+    // 剛找過（或掃描過沒人）的站：線索已經過時
+    if (g.time - (b.visited.get(s.zone) ?? -1e9) < VISIT_TTL && (b.visited.get(s.zone) ?? 0) > s.t) continue
+    if (!dockableZone(g, g.world.zones[s.zone]) || TRIP_EXCLUDE.has(g.world.zones[s.zone].key)) continue
+    best = s.zone
+    bt = s.t
+  }
+  if (best >= 0) return best
+  const opts: { z: number; w: number }[] = []
+  for (const z of g.world.zones) {
+    if (z.id === from || TRIP_EXCLUDE.has(z.key) || !dockableZone(g, z)) continue
+    if (g.time - (b.visited.get(z.id) ?? -1e9) < VISIT_TTL) continue
+    const w = z.layout!.spawns.length
+    if (w > 0) opts.push({ z: z.id, w })
+  }
+  let sum = 0
+  for (const o of opts) sum += o.w
+  if (!sum) return -1
+  let r = g.world.rng.range(0, sum)
+  for (const o of opts) {
+    r -= o.w
+    if (r <= 0) return o.z
+  }
+  return opts[opts.length - 1].z
+}
+
+/** 要不要換站：人類方本人在站裡、拿著還沒抽滿的檢測器、附近好一陣子沒有可以抽的別人、沒有威脅 */
+function wantTrip(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
+  if (b.trip || u.id !== p.main || b.trips >= MAX_TRIPS || g.time < b.tripAt) return false
+  if (g.time - b.peopleAt < (easy(g) ? EASY_LONELY_S : LONELY_S) || g.time - b.alarmAt < 30 || u.hp < u.maxHp * 0.5) return false
+  const z = g.world.zones[u.zone]
+  return !!z?.alive && !!z.station && !z.data.ship
+}
+
+function startTrip(g: Game, p: GamePlayer, u: Ent, b: Brain, want: Want): boolean {
+  const inst = freeShipAt(g, p, u)
+  const to = inst ? tripTarget(g, b, u.zone, want) : -1
+  if (!inst || to < 0) {
+    // 沒船可搭、沒有可去的站：晚點再看
+    b.tripAt = g.time + 60
+    return false
+  }
+  b.trip = { from: u.zone, to, ship: inst.key, stage: 'walk', at: g.time, start: g.time, sx: 0, sy: 0, st: g.time }
+  b.goal = null
+  b.visited.set(u.zone, g.time)
+  return stepTrip(g, p, u, b)
+}
+
+/** 放棄換站（還在原本的站或停泊的船艙裡）：晚點再考慮；在船艙裡的由 leaveCabin 走回艙門 */
+function abortTrip(g: Game, b: Brain): void {
+  b.trip = null
+  b.tripAt = g.time + 60
+}
+
+/** 到站下船：換站結束 */
+function endTrip(g: Game, b: Brain): void {
+  b.trip = null
+  b.trips++
+  b.tripAt = g.time + TRIP_GAP
+  // 到了新的站：重新計算多久沒看到人
+  b.peopleAt = g.time
+}
+
+/** 換站途中、主單位自己在行動（還在原本的站、在船艙裡）。回傳 true = 這一輪只做這件事 */
+function stepTrip(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
+  const trip = b.trip!
+  const inst = spaceOf(g).ships.get(trip.ship)
+  if (u.id !== p.main || !inst) return abortTrip(g, b), false
+  const z = g.world.zones[u.zone]
+  if (trip.stage === 'walk') {
+    // 還在原本的站：走到船邊、對船互動（stepSpace 會讓有互動指令的人登船）
+    if (u.zone === inst.zone) {
+      trip.stage = 'cabin'
+      trip.at = g.time
+    } else {
+      const de = inst.docked?.zone === u.zone ? g.world.get(inst.dockedEnt) : undefined
+      // 船被開走了、挨打了、看到怪物、走太久、路上遇到可以抽的人（或檢測器沒了）：放棄（照常反擊、逃跑、抽血）
+      const threat = g.time - u.lastDamageTime < 3 || visibleEnts(g, p, u, 10).some((e) => isFoe(g, p, e))
+      const sl = itemSlot(u, 'geneSampler')
+      const want = sl >= 0 ? sampleWant(g, b, sampleNames(u, sl)) : null
+      const met = !want || visibleEnts(g, p, u, 18).some((e) => looksPerson(e) && want(seenName(g, e)) > 0)
+      if (!de || inst.launching || g.time - trip.at > WALK_MAX || threat || met) return abortTrip(g, b), false
+      if (p.view.visible.has(de.id)) {
+        if (u.order?.k !== 'interact' || u.order.e !== de.id) cmd(g, p, { k: 'interact', e: de.id })
+      } else if (u.order?.k !== 'move') {
+        // 還看不到船（停機坪在別的房間）：先走到船邊（艙門那一側，和下船的位置一樣）
+        const n = z.nav?.nearestOpen(de.x, de.y - de.radius - 0.9) ?? { x: de.x, y: de.y }
+        cmd(g, p, { k: 'move', x: n.x, y: n.y })
+      }
+      return true
+    }
+  }
+  if (trip.stage === 'fly') {
+    // 停靠後操控權交回主單位（space.dock）：船艙裡繼續處理
+    trip.stage = 'cabin'
+    trip.at = g.time
+  }
+  if (u.zone !== inst.zone) {
+    // 已經下船（不在船艙了）：到了別的站就算換站完成，否則（例如被弄下船）放棄
+    if (z?.station && !z.data.ship && u.zone !== trip.from) endTrip(g, b)
+    else abortTrip(g, b)
+    return false
+  }
+  if (inst.docked && (trip.flown || inst.docked.zone !== trip.from)) {
+    // 到站了：走回艙門下船（leaveCabin）；繞了一圈又停回原本的站就算沒換成
+    if (inst.docked.zone !== trip.from) endTrip(g, b)
+    else abortTrip(g, b)
+    return leaveCabin(g, p, u, b)
+  }
+  // 停泊在原本的站：走到控制台、站著等發射倒數；等太久（控制台壞了、豪勇號降落中…）就放棄、下船
+  if (inst.docked && g.time - trip.at > CABIN_MAX) return abortTrip(g, b), false
+  const c = consolePos(g, g.world.zones[inst.zone])
+  if (!c) return inst.docked ? (abortTrip(g, b), false) : true
+  if (Math.hypot(u.x - c.x, u.y - c.y) > 0.4) {
+    if (u.order?.k !== 'move' || u.order.x !== c.x || u.order.y !== c.y) cmd(g, p, { k: 'move', x: c.x, y: c.y })
+  } else if (u.order) cmd(g, p, { k: 'stop' })
+  b.goal = null
+  return true
+}
+
+/** 太空中擋路的東西：恆星（離遠一點，會灼燒）與目標以外的站 */
+function spaceObstacles(g: Game, target: Ent, ship: Ent): { x: number; y: number; r: number }[] {
+  const out: { x: number; y: number; r: number }[] = []
+  for (const e of g.world.inZone(SPACE_ZONE)) {
+    if (e === target || e === ship || !e.alive) continue
+    if (e.def.id === 'space.sun') out.push({ x: e.x, y: e.y, r: 6 + ship.radius + 2.5 })
+    else if (e.tags.has('station') && !e.data.ship && !e.data.landed) out.push({ x: e.x, y: e.y, r: e.radius + ship.radius + 1.5 })
+  }
+  return out
+}
+
+/** 從 (ax, ay) 直線到 (bx, by) 會撞到的第一個障礙：回傳繞過它的中繼點，沒有就 null */
+function detour(obs: { x: number; y: number; r: number }[], ax: number, ay: number, bx: number, by: number): { x: number; y: number } | null {
+  const dx = bx - ax
+  const dy = by - ay
+  const len2 = dx * dx + dy * dy || 1
+  let hit: { o: { x: number; y: number; r: number }; t: number; cx: number; cy: number } | null = null
+  for (const o of obs) {
+    const t = Math.max(0, Math.min(1, ((o.x - ax) * dx + (o.y - ay) * dy) / len2))
+    const cx = ax + dx * t
+    const cy = ay + dy * t
+    if (Math.hypot(cx - o.x, cy - o.y) >= o.r || (hit && t >= hit.t)) continue
+    // 起點已經在障礙範圍裡（例如剛從站旁發射）：不算擋路
+    if (Math.hypot(ax - o.x, ay - o.y) < o.r) continue
+    hit = { o, t, cx, cy }
+  }
+  if (!hit) return null
+  let nx = hit.cx - hit.o.x
+  let ny = hit.cy - hit.o.y
+  let n = Math.hypot(nx, ny)
+  if (n < 1e-3) {
+    nx = -dy
+    ny = dx
+    n = Math.hypot(nx, ny) || 1
+  }
+  const k = (hit.o.r + 1.5) / n
+  return { x: hit.o.x + nx * k, y: hit.o.y + ny * k }
+}
+
+/** 生命掃描最多改幾次目標（之後停在哪就是哪）*/
+const MAX_RESCANS = 1
+
+/**
+ * 接近目標站時先用船上的生命掃描看看裡面有沒有人（和真人駕駛一樣：掃描結果只有人數）；沒人就改去別的站。
+ * 回傳 true = 正在掃描、等結果，或剛改了目標（這一輪不下停靠指令）
+ */
+function scanTarget(g: Game, p: GamePlayer, v: Ent, b: Brain, tz: Zone, te: Ent): boolean {
+  const trip = b.trip!
+  const ab = abilityDef('ship.scan')
+  if (!ab || !v.abilities.includes(ab.id) || (trip.rescans ?? 0) >= MAX_RESCANS || trip.scan?.done) return false
+  if (!trip.scan) {
+    const r = (ab.range ?? 15) + te.radius + v.radius - 0.5
+    if (Math.hypot(te.x - v.x, te.y - v.y) > r || !cdReady(g, v, ab)) return false
+    cmd(g, p, { k: 'cast', a: ab.id, e: te.id })
+    // 施法時間＋站的掃描時間之後才有結果
+    trip.scan = { at: g.time + (ab.cast ?? 0) + (tz.station?.scanTime ?? 1) + 0.6 }
+    return true
+  }
+  if (g.time < trip.scan.at) return true
+  trip.scan.done = true
+  // 結果和 space.scan 告訴駕駛的一樣：站裡有幾個人
+  let n = 0
+  for (const e of g.world.inZone(tz.id)) if (e.alive && e.isMain) n++
+  if (n > 0) return false
+  b.visited.set(tz.id, g.time)
+  const alt = tripTarget(g, b, trip.from, () => 1)
+  if (alt < 0 || alt === tz.id) return false
+  trip.to = alt
+  trip.at = g.time
+  trip.via = undefined
+  trip.scan = undefined
+  trip.rescans = (trip.rescans ?? 0) + 1
+  return true
+}
+
+/** 換站途中、駕駛自己搭的船：繞過恆星與其他站、飛到目標站旁停靠。回傳 true = 這一輪只做這件事 */
+function flyTrip(g: Game, p: GamePlayer, v: Ent, b: Brain): boolean {
+  const trip = b.trip!
+  const inst = spaceOf(g).ships.get(trip.ship)
+  if (!inst || inst.spaceEnt !== v.id || spaceOf(g).pilots.get(v.id) !== p.main) return false
+  if (trip.stage !== 'fly') {
+    trip.stage = 'fly'
+    trip.flown = true
+    trip.at = g.time
+    trip.st = g.time
+    trip.sx = v.x
+    trip.sy = v.y
+  }
+  // 目標站沒了、停機坪滿了、飛太久：改去最近還能停靠的站（不會一直漂在太空中）
+  let tz = g.world.zones[trip.to]
+  if (!dockableZone(g, tz) || g.time - trip.at > FLY_MAX) {
+    let best: Zone | null = null
+    let bd = Infinity
+    for (const z of g.world.zones) {
+      if (!dockableZone(g, z)) continue
+      const se = g.world.get(z.spaceEnt)!
+      // 原本的站排在最後（別的站都停不了才回去）
+      const d = Math.hypot(se.x - v.x, se.y - v.y) + (z.id === trip.from ? 1e4 : 0)
+      if (d < bd) {
+        bd = d
+        best = z
+      }
+    }
+    if (best) {
+      trip.to = best.id
+      tz = best
+    }
+    trip.at = g.time
+    trip.via = undefined
+  }
+  const te = g.world.get(tz.spaceEnt)
+  if (!te) return true
+  // 卡住偵測（被站推著、撞在一起）：幾秒沒前進就隨機往旁邊繞
+  if (Math.hypot(v.x - trip.sx, v.y - trip.sy) > 0.5) {
+    trip.sx = v.x
+    trip.sy = v.y
+    trip.st = g.time
+  } else if (g.time - trip.st > 6) {
+    const a = g.world.rng.range(0, Math.PI * 2)
+    trip.via = { x: v.x + Math.cos(a) * 6, y: v.y + Math.sin(a) * 6 }
+    trip.st = g.time
+  }
+  if (trip.via && Math.hypot(v.x - trip.via.x, v.y - trip.via.y) < 1.5) trip.via = undefined
+  if (!trip.via) {
+    const via = detour(spaceObstacles(g, te, v), v.x, v.y, te.x, te.y)
+    if (via) trip.via = via
+  }
+  if (trip.via) {
+    if (v.order?.k !== 'move' || v.order.x !== trip.via.x || v.order.y !== trip.via.y) cmd(g, p, { k: 'move', x: trip.via.x, y: trip.via.y })
+    return true
+  }
+  if (scanTarget(g, p, v, b, tz, te)) return true
+  // 直線過得去：下停靠指令（移動系統會飛到射程內再停靠）
+  if (v.order?.k !== 'cast' || v.order.a !== 'ship.dock' || v.order.e !== te.id) cmd(g, p, { k: 'cast', a: 'ship.dock', e: te.id })
+  return true
+}
 
 const installed = new WeakSet<Game>()
 

@@ -27,7 +27,15 @@ export interface LobbySettings {
   /** 主機只主持不參戰 */
   hostSpectate: boolean
   seed: number
+  /**
+   * 練習 AI 的難度：'normal' = 原本的行為；'easy' = AI 船員驗血較慢（抽血之間停比較久、只抽身邊的人、不複驗）、
+   * 不公開指認、看到可疑的玩家形態不主動開火（被打才還手）；AI 異類偽裝更久才動手、出手比較保守（讓練習當異形不會太難）
+   */
+  aiLevel: AiLevel
 }
+
+export type AiLevel = 'easy' | 'normal'
+export const AI_LEVELS: readonly AiLevel[] = ['easy', 'normal']
 
 export const DEFAULT_SETTINGS: LobbySettings = {
   aliens: 'auto',
@@ -43,6 +51,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   eventMult: 1,
   hostSpectate: false,
   seed: 0,
+  aiLevel: 'normal',
 }
 
 /** 單機練習的房號（正式房號字母表沒有 O 和 0，不會撞號）*/

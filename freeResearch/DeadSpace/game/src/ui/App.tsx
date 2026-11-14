@@ -8,6 +8,7 @@ import { MenuBackdrop } from './MenuBackdrop'
 import { SpaceMascot } from './SpaceMascot'
 // 用 addStrings 自行註冊的字串檔（不能從 i18n.ts import，會循環引用）
 import './strings/sim3'
+import './strings/sim5'
 import { Codex } from './hud/Codex'
 import { TooltipLayer } from './tooltip'
 import { t } from './i18n'

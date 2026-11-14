@@ -5,7 +5,7 @@ import type { SnapEntity } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { DAMAGE_HOOKS, DEATH_HOOKS, type DmgOpts, type EnvKind } from './damage'
-import { dropOnGround } from './items'
+import { dropOnGround, takePackExtra } from './items'
 import { entView } from './snapshot'
 
 /** 屍體保留秒數（玩家屍體永久，供吞食／辨認）*/
@@ -37,6 +37,8 @@ DEATH_HOOKS.push((g, u, _killer) => {
       u.inv[i] = null
     }
   }
+  // 化身中寄放的道具（顯示用背包收下、自己背包滿了的）也一起掉落
+  for (const it of takePackExtra(u)) dropOnGround(g, u.zone, u.x, u.y, it)
   if (u.suit) {
     dropOnGround(g, u.zone, u.x, u.y, u.suit)
     u.suit = null
@@ -152,15 +154,12 @@ function entSource(g: Game, p: GamePlayer, victim: Ent, src: Ent): HitView {
   return describeView(g, entView(g, p, src))
 }
 
-/** 呼叫端沒有標 env、但對受害者來說就是環境現象的技能：神經毒素模組（stations.ts，施放者是遠方的站）*/
-const ENV_BY_ABILITY: ReadonlyMap<string, EnvKind> = new Map([['st.neurotox', 'gas']])
-
 function hitView(g: Game, p: GamePlayer, victim: Ent, src: Ent | null, o: DmgOpts): HitView {
-  if (o.lethal) return { k: 'boom' }
+  // 站點毀滅的必殺：一般說「站點爆炸」；反物質打擊打爆的站照實說（space.ts 的 destroyInterior 帶 env）
+  if (o.lethal) return { k: o.env ?? 'boom' }
   if (o.buff) return { k: 'dot', d: o.buff }
-  // 事件／環境傷害：直接說是什麼現象（神經毒素的施放者是遠方的站，說「毒素」比說那座站準）
-  const env = o.env ?? (o.ability ? ENV_BY_ABILITY.get(o.ability) : undefined)
-  if (env) return { k: env }
+  // 事件／環境傷害：直接說是什麼現象（呼叫端在傷害來源上標 env；神經毒素的施放者是遠方的站，說「毒素」比說那座站準）
+  if (o.env) return { k: o.env }
   if (src) return entSource(g, p, victim, src)
   // 來源實體已不在：srcSlot 是真正的擁有者，只能用來判斷「是不是自己」，不能拿來描述別人
   if (o.srcSlot === p.slot) return { k: 'self' }

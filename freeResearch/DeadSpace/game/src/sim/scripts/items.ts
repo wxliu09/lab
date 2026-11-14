@@ -6,7 +6,7 @@
 import { regScript, runEffects, SCRIPTS, type EffectCtx, type ScriptFn } from '../systems/effects'
 import { damage, heal, DAMAGE_HOOKS, DEATH_HOOKS } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff, removeBuffsWhere } from '../systems/buffs'
-import { dropOnGround, giveItem, makeItem } from '../systems/items'
+import { dropOnGround, giveItem, lookPack, makeItem, shownPack, startPackView } from '../systems/items'
 import { INSTANT_ITEMS, initVendor, updateVendorView, type StockState } from '../systems/vendors'
 import { EXTRA_COMMANDS, issue } from '../systems/orders'
 import { inAttackRange, isHostile } from '../systems/combat'
@@ -911,22 +911,12 @@ const packIds = (inv: Ent['inv']): string[] => (inv ?? []).filter((it) => !!it).
 /**
  * 背包掃描器讀到的內容：照掃描者「看到的樣子」回報。變身時背包整組帶進匿名形態，照實列出就等於身分指紋。
  * - 自己的東西、同陣營的異類（規則同快照的 ally：看得出是分身）、除錯旗標「看穿匿名單位」：照實回報
- * - 匿名的樣子（沒在偽裝的匿名形態、繭、蛋、匿名分身，或複製匿名目標的偽裝）：null = 無法辨識
- * - 偽裝成某位玩家（化身、全像分身、殘影），或看起來就是某人本人的分身（幻影裝的分身等）：
- *   回報那個人本人現在的背包，和掃描本人得到的一樣。用偽裝者自己的背包會讓「名字對、背包不對」直接揭穿偽裝，
- *   背包本身也會指認出偽裝者；分身照實回報（空的）也一樣會被看穿。那個人已經不在場上 = 空的
- * - 偽裝成其他無主的東西（生物等）：生物不帶東西，回報空的
+ * - 其他人：lookPack（systems/items.ts）——匿名的樣子回 null（無法辨識）；化身中的偽裝者回顯示用背包
+ *   （化身當下被化身者的背包，之後隨偽裝者自己收到／給出／用掉的道具增減）；看起來是某人本人的分身回那個人本人的背包
  */
 function scannedPack(g: Game, viewer: GamePlayer | undefined, t: Ent): string[] | null {
   if (viewer && (t.owner === viewer.slot || viewer.flags.reveal || (knowsOwner(g, viewer, t) && sameSide(g, viewer, t.owner)))) return packIds(t.inv)
-  const fake = t.data.fake as { owner: number; anon?: boolean } | undefined
-  // 別人眼中這是誰：-1 = 無主的樣子
-  const looks = fake ? fake.owner : t.anon ? -1 : t.owner
-  if (fake ? fake.anon : t.anon) return null
-  if (!fake && !(t.illusion && t.data.looksMain)) return packIds(t.inv)
-  const q = looks >= 0 ? g.players[looks] : undefined
-  const m = q ? g.mainOf(q) : undefined
-  return m && m.alive ? packIds(m.inv) : []
+  return lookPack(g, t)
 }
 
 /** 同一個異類陣營（看得出彼此的分身；人類方彼此不算）*/
@@ -992,6 +982,9 @@ regScript('item.holo', (g, ctx) => {
   // 複製的是一名玩家本人（或另一個這樣的分身）：驗血時要和真人看起來一樣
   h.data.looksMain = t.isMain || !!t.data.looksMain
   if (t.inv && h.inv) for (let i = 0; i < h.inv.length; i++) h.inv[i] = t.inv[i] ? makeItem(t.inv[i]!.id, t.inv[i]!.charges) : null
+  // 複製的是化身中的偽裝者：背包掃描看到的是他當下的顯示用背包（和掃描本尊一樣，不是偽裝者真正的背包）
+  const shown = shownPack(t)
+  if (shown) startPackView(h, shown)
   applyBuff(g, h, 'bf.holo', undefined, u)
   // 公開可見的外觀（帽子）也要一樣，否則一眼就能看穿
   for (const [, buff] of CARRY_BUFFS) if (BUFFS.get(buff)?.vis === 'all' && hasBuff(t, buff)) applyBuff(g, h, buff, undefined, h)

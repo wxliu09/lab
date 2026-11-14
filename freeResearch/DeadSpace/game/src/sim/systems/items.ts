@@ -71,6 +71,101 @@ export function consumeCharge(g: Game, u: Ent, slot: number): void {
   void g
 }
 
+// ───────── 化身的顯示用背包 ─────────
+
+/**
+ * 化身（假面者的 xeno.masks）期間別人看到的背包：背包掃描器的結果、交東西給他時「背包滿了沒」都用這份，
+ * 不再讀被化身者本人「現在」的背包（否則先交東西給他再掃描、或給予時說滿掃描卻不滿，就能識破；也能遠端看到本人的背包）。
+ * - base：化身當下被化身者的背包（道具 id）
+ * - had：偽裝者化身當下自己身上道具的 [uid, id]
+ * - extra：別人交過來、但偽裝者自己的背包已經滿了的道具（顯示用背包還有空位就照收，先寄放在這裡，有空位時放回背包）
+ * 之後偽裝者實際收到、給出、用掉的道具照樣增減這份：比對 uid，多出來的加上去，少掉的從 base 拿掉同種的一件（base 裡沒有就不動）。
+ */
+interface PackView {
+  base: string[]
+  had: [number, string][]
+  extra: ItemInst[]
+}
+
+/** 化身開始：記下顯示用背包（base = 被化身者當時的背包）*/
+export function startPackView(u: Ent, base: string[]): void {
+  const v: PackView = { base: base.slice(0, packSize(u)), had: [], extra: [] }
+  for (const it of u.inv ?? []) if (it) v.had.push([it.uid, it.id])
+  u.data.packView = v
+}
+
+/** 化身結束：寄放的道具放回背包（滿了掉在腳邊），清掉顯示用背包 */
+export function endPackView(g: Game, u: Ent): void {
+  const v = u.data.packView as PackView | undefined
+  if (!v) return
+  u.data.packView = undefined
+  for (const it of v.extra) giveItem(g, u, it)
+}
+
+/** 化身期間：偽裝者的背包有空位了，就把寄放的道具放回去（之後當成化身後收到的道具，顯示用背包不重複計算）*/
+export function flushPackView(g: Game, u: Ent): void {
+  const v = u.data.packView as PackView | undefined
+  while (v?.extra.length && freeSlot(u) >= 0) giveItem(g, u, v.extra.shift()!)
+}
+
+/** 死亡時一起掉落寄放的道具 */
+export function takePackExtra(u: Ent): ItemInst[] {
+  const v = u.data.packView as PackView | undefined
+  if (!v) return []
+  const out = v.extra
+  v.extra = []
+  return out
+}
+
+const packSize = (u: Ent): number => u.inv?.length ?? 6
+
+/** 顯示用背包現在的內容（道具 id）；沒在化身 = null */
+export function shownPack(u: Ent): string[] | null {
+  const v = u.data.packView as PackView | undefined
+  if (!v) return null
+  const out = [...v.base]
+  const now = (u.inv ?? []).filter((it): it is ItemInst => !!it)
+  const nowUids = new Set(now.map((it) => it.uid))
+  const hadUids = new Set(v.had.map(([uid]) => uid))
+  for (const [uid, id] of v.had) {
+    if (nowUids.has(uid)) continue
+    const i = out.indexOf(id)
+    if (i >= 0) out.splice(i, 1)
+  }
+  for (const it of now) if (!hadUids.has(it.uid)) out.push(it.id)
+  for (const it of v.extra) out.push(it.id)
+  const n = packSize(u)
+  return out.length > n ? out.slice(out.length - n) : out
+}
+
+const packIds = (inv: Ent['inv']): string[] => (inv ?? []).filter((it): it is ItemInst => !!it).map((it) => it.id)
+
+/**
+ * 一般人（不是本人、不是同陣營、沒有看穿旗標）掃描 t 看到的背包：
+ * - 匿名的樣子（沒在偽裝的匿名形態、繭、蛋、匿名分身，或複製匿名目標的偽裝）：null = 無法辨識
+ * - 化身中的偽裝者（或複製他的分身）：顯示用背包
+ * - 其他偽裝成某位玩家的樣子（全像分身、殘影），或看起來就是某人本人的分身：那個人本人現在的背包，
+ *   和掃描本人得到的一樣（分身照實回報空的會被看穿）；那個人已經不在場上 = 空的
+ * - 偽裝成其他無主的東西（生物等）：生物不帶東西，回報空的
+ */
+export function lookPack(g: Game, t: Ent): string[] | null {
+  const fake = t.data.fake as { owner: number; anon?: boolean } | undefined
+  if (fake ? fake.anon : t.anon) return null
+  const shown = shownPack(t)
+  if (shown) return shown
+  if (!fake && !(t.illusion && t.data.looksMain)) return packIds(t.inv)
+  const looks = fake ? fake.owner : t.owner
+  const q = looks >= 0 ? g.players[looks] : undefined
+  const m = q ? g.mainOf(q) : undefined
+  return m && m.alive ? packIds(m.inv) : []
+}
+
+/** 別人交東西給 t 時，t 的背包算不算滿：化身中看顯示用背包，否則看真正的背包 */
+export function packFullFor(t: Ent): boolean {
+  const shown = shownPack(t)
+  return shown ? shown.length >= packSize(t) : freeSlot(t) < 0
+}
+
 // ───────── 防護服 ─────────
 
 export function canWearSuit(u: Ent): boolean {
@@ -228,11 +323,15 @@ export function stepItemOrders(g: Game): void {
       }
     } else if (o.s !== undefined && u.inv?.[o.s] && t.inv) {
       const it = u.inv[o.s]!
-      if (freeSlot(t) >= 0) {
+      // 化身中的對象：「背包滿了沒」看顯示用背包（給的人看到的和掃描結果一致）
+      if (!packFullFor(t)) {
         u.inv[o.s] = null
         u.statsDirty = true
         t.data.lastGiver = u.id
-        giveItem(g, t, it)
+        const view = t.data.packView as PackView | undefined
+        // 顯示用背包還有空位、偽裝者自己的背包卻滿了：照收，先寄放（有空位時放回背包）
+        if (view && freeSlot(t) < 0) view.extra.push(it)
+        else giveItem(g, t, it)
         g.onItemLost?.(u, it)
       } else if (u.owner >= 0) {
         // 對方背包滿了：告訴給的人為什麼沒給出去（只有給的人收到，不透露其他資訊）

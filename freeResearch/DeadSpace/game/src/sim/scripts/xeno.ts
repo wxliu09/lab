@@ -5,7 +5,7 @@
 import { passesFilter, regScript } from '../systems/effects'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff, removeBuffsWhere } from '../systems/buffs'
-import { dropOnGround, giveItem, makeItem, morph } from '../systems/items'
+import { dropOnGround, endPackView, flushPackView, giveItem, lookPack, makeItem, morph, shownPack, startPackView } from '../systems/items'
 import { UNITS, itemDef, unitDef } from '../../shared/content/registry'
 import type { AbilityDef, UnitDef } from '../../shared/content/types'
 import { XAB, XBF, XUNIT } from '../../shared/content/forms/xeno'
@@ -102,6 +102,7 @@ function stepXeno(g: Game): void {
     if (u.data.xMinion && tick % 10 === 0) stepMinion(g, u)
     const mask = u.data.mask as MaskState | undefined
     if (mask && t >= mask.until) endMask(g, u)
+    else if (mask && tick % 10 === 0) flushPackView(g, u)
   }
   stepWires(g)
 }
@@ -189,6 +190,9 @@ function spawnMirror(g: Game, master: Ent, of: Ent, pt: { x: number; y: number }
   e.data.looksMain = of.isMain || !!of.data.looksMain
   if (disguise) e.data.fake = fakeOf(of)
   else if (of.data.fake) e.data.fake = { ...(of.data.fake as object) }
+  // 複製的是化身中的偽裝者：背包掃描看到的是他當下的顯示用背包（和掃描本尊一樣）
+  const shown = shownPack(of)
+  if (shown) startPackView(e, shown)
   e.statsDirty = true
   return e
 }
@@ -836,6 +840,8 @@ regScript('xeno.masks', (g, ctx, p) => {
     until: t.tags.has('personnel') ? Infinity : g.time + limit,
   }
   const look = fakeOf(t)
+  // 顯示用背包：被化身者「當時」的背包（一般人掃描他看到的樣子）；之後只隨偽裝者自己的道具增減
+  const pack = lookPack(g, t) ?? []
   morph(g, u, defId)
   u.hp = Math.max(1, u.maxHp * (t.hp / t.maxHp))
   u.abilities = maskAbilities(u.def)
@@ -845,6 +851,7 @@ regScript('xeno.masks', (g, ctx, p) => {
   // spawn 的異形形態不匿名：化身期間改成匿名，快照才會改用 data.fake
   u.anon = true
   u.data.fake = look
+  startPackView(u, pack)
   u.cast = null
   stopActions(u)
   g.emitFx({ k: 'masks', z: u.zone, x: u.x, y: u.y, e: u.id })
@@ -857,6 +864,7 @@ function endMask(g: Game, u: Ent): void {
   const pct = (m.hpPct + u.hp / u.maxHp) / 2
   u.data.mask = undefined
   u.data.fake = undefined
+  endPackView(g, u)
   if (UNITS.has(m.def)) morph(g, u, m.def)
   u.hp = Math.max(1, u.maxHp * pct)
   u.abilities = [...m.abilities]

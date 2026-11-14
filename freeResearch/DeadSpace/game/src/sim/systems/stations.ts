@@ -250,7 +250,10 @@ regScript('st.antimatter', (g, ctx) => {
   g.after(ATM_DELAY, () => {
     if (!t.alive || t.zone !== SPACE_ZONE) return
     g.emitFx({ k: 'atmStrike', z: SPACE_ZONE, x: t.x, y: t.y, e: t.id, v: t.radius })
-    damage(g, st.alive ? st : null, t, ATM_DMG, { kind: 'chaos', pure: true })
+    // 打爆的話，站內的人死因是反物質打擊（space.ts 的死亡 hook 讀 destroyCause；施放的站已被毀也一樣）
+    t.data.destroyCause = 'atm'
+    damage(g, st.alive ? st : null, t, ATM_DMG, { kind: 'chaos', pure: true, env: 'atm' })
+    if (t.alive) t.data.destroyCause = undefined
   })
 })
 
@@ -539,7 +542,8 @@ regScript('st.neurotoxTick', (g, ctx) => {
       if (!e.alive || e.owner < 0 || e.tags.has('structure') || e.tags.has('noTarget') || e.tags.has('immuneToxin') || e.tags.has('corpse')) continue
       // 仿生人免疫（內容總表模組表；原作排除 android 玩家）
       if (g.players[e.owner]?.role === 'android') continue
-      damage(g, c, e, amount, { kind: 'poison', pure: true, dot: true, ability: 'st.neurotox' })
+      // env：對受害者來說是灌進站內的毒氣（施放者是遠方的站，死因說毒素、不說那座站）
+      damage(g, c, e, amount, { kind: 'poison', pure: true, dot: true, ability: 'st.neurotox', env: 'gas' })
       if (e.isMain) g.emitFx({ k: 'neurotoxin', z: e.zone, x: e.x, y: e.y, e: e.id }, [e.owner])
     }
   }

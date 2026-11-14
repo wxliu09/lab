@@ -12,6 +12,8 @@ import { spaceOf } from '../../src/sim/systems/space'
 import { INSTANT_ITEMS } from '../../src/sim/systems/vendors'
 import { SPACE_ZONE } from '../../src/sim/world'
 import { hasString, lang, sysText } from '../../src/ui/i18n'
+// 自己註冊的字串檔（addStrings）：反物質打擊的死因
+import '../../src/ui/strings/sim5'
 import type { Game, GamePlayer } from '../../src/sim/game'
 import type { Ent } from '../../src/sim/ent'
 
@@ -196,7 +198,7 @@ describe('死因說明', () => {
   it('每一種死因與先前傷害的訊息都有 zh-TW 與 en，翻譯後不留未代入的參數', () => {
     const kinds: HitView['k'][] = [
       'named', 'namedAs', 'owned', 'anon', 'unit', 'unseen', 'dot', 'boom', 'fire', 'blast',
-      'door', 'sun', 'rock', 'gas', 'env', 'self', 'shutdown', 'purged', 'vacuum', 'unknown',
+      'door', 'sun', 'rock', 'gas', 'atm', 'env', 'self', 'shutdown', 'purged', 'vacuum', 'unknown',
     ]
     // 只會是死因、不會是「先前受傷」的種類（死亡當下才標記）
     const hitKinds = kinds.filter((k) => k !== 'shutdown' && k !== 'purged' && k !== 'vacuum')
@@ -260,11 +262,56 @@ describe('死因：事件與環境、主腦清除、訊息順序、視野時機'
     damage(g, null, victim, 225, { kind: 'normal', pure: true, env: 'door' })
     damage(g, null, victim, 300, { kind: 'blast', pure: true, env: 'rock' })
     h.ticks(2)
-    damage(g, x, victim, 1e6, { kind: 'poison', pure: true, dot: true, ability: 'st.neurotox' })
+    // 神經毒素走真正的模組流程（stations.ts 的 st.neurotoxStart／st.neurotoxTick）：施放者是遠方的站，傷害來源上標了 env
+    const far = g.world.get(g.world.zones.find((z) => z.alive && z.station && z.id !== victim.zone && !z.data.ship)!.spaceEnt)!
+    const here = g.world.get(g.world.zones[victim.zone].spaceEnt)!
+    g.script('st.neurotoxStart')!(g, { caster: far, target: here, x: here.x, y: here.y, zone: SPACE_ZONE }, {})
+    far.data.neuroStart = g.time - 1e6
+    void x
+    g.script('st.neurotoxTick')!(g, { caster: far, x: far.x, y: far.y, zone: SPACE_ZONE }, {})
     h.ticks(2)
-    // 神經毒素的施放者是遠方的站：說毒素，不說那座站或身邊的人
+    expect(ps[2].alive).toBe(false)
+    // 說毒素，不說那座站或身邊的人
     expect(deathLines(clientOf(cs, ps[2]))).toEqual(['@death.cause.gas', '@death.hit.rock|dmg=300', '@death.hit.door|dmg=225'])
     expect(scanLeaks(h)).toEqual([])
+  })
+
+  for (const casterGone of [false, true]) {
+    it(`反物質打擊打爆所在的站：死因照實說是反物質打擊${casterGone ? '（施放的天守在命中前已被毀）' : ''}`, () => {
+      const { h, cs, g, ps, victim } = setup(casterGone ? 6262 : 6161)
+      const tz = g.world.zones.find((z) => z.key === 'tenshu')!
+      const ts = g.world.get(tz.spaceEnt)!
+      // 受害者在女帝號；其他人都移到別的站（只看受害者的死因）
+      const vz = g.world.zones.find((z) => z.key === 'nyx')!
+      standAt(g, victim, vz.id, vz.layout!.spawns[0].x, vz.layout!.spawns[0].y)
+      const safe = g.world.zones.find((z) => z.alive && z.station && z.id !== vz.id && z.id !== tz.id && !z.data.ship && z.layout?.spawns.length)!
+      for (const p of ps) if (p !== ps[2]) standAt(g, g.mainOf(p)!, safe.id, safe.layout!.spawns[0].x, safe.layout!.spawns[0].y)
+      h.ticks(2)
+      for (const r of h.raw.values()) r.length = 0
+      const target = g.world.get(vz.spaceEnt)!
+      g.script('st.antimatter')!(g, { caster: ts, target, x: target.x, y: target.y, zone: SPACE_ZONE }, {})
+      h.ticks(20)
+      if (casterGone) {
+        ts.data.god = false
+        g.killEnt(ts, null, -1)
+        expect(ts.alive).toBe(false)
+      }
+      for (let i = 0; i < 61 && ps[2].alive; i++) h.ticks(20)
+      expect(target.alive).toBe(false)
+      expect(ps[2].alive).toBe(false)
+      expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.atm')
+      // 一般的站點毀滅（不是反物質打擊）照舊說站點爆炸
+      expect(scanLeaks(h)).toEqual([])
+    })
+  }
+
+  it('不是反物質打擊的站點毀滅：照舊說被站點爆炸波及', () => {
+    const { h, cs, g, ps, victim } = setup(6363)
+    const vz = g.world.zones[victim.zone]
+    g.destroyStation!(vz.key)
+    h.ticks(2)
+    expect(ps[2].alive).toBe(false)
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.boom')
   })
 
   it('救生艙被摧毀（沒有擊殺者實體）：乘員的死因是暴露在真空中', () => {

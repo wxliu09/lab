@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { hasString } from '../../src/ui/i18n'
 // 自己註冊的字串檔（addStrings）：client 端由 UI 模組 import，這裡一起載入才檢查得到
 import '../../src/ui/strings/sim3'
+import '../../src/ui/strings/sim5'
 
 function files(dir: string): string[] {
   const out: string[] = []
