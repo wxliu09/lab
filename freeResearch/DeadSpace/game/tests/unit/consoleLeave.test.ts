@@ -1,7 +1,10 @@
-// 站上控制台後按 B（unpilot）再走開，一定離得開（交還鎖和接手用同一個距離標準）；AI 驗血報告只公布一次
+// 站上控制台後按 B（unpilot）再走開，一定離得開（交還鎖和接手用同一個距離標準）；停靠時鎖住控制台並提示駕駛；
+// AI 驗血報告只公布一次
 import { describe, expect, it } from 'vitest'
-import { Harness } from './helpers/harness'
+import { Harness, type FakeClient } from './helpers/harness'
 import { makeItem } from '../../src/sim/systems/items'
+import { consolePos, spaceOf } from '../../src/sim/systems/space'
+import { SPACE_ZONE } from '../../src/sim/world'
 
 describe('離開控制台', () => {
   for (const dir of [
@@ -32,6 +35,55 @@ describe('離開控制台', () => {
       expect(Math.hypot(u.x - con.x, u.y - con.y)).toBeGreaterThan(2)
     })
   }
+})
+
+describe('停靠時鎖住控制台', () => {
+  const lines = (c: FakeClient) => c.inbox.flatMap((m) => (m.t === 'chat' ? m.lines.map((l) => l.text) : []))
+
+  it('真人駕駛停靠後：只有駕駛收到「已停靠，離開控制台再站上去才發射」；站著不動不發射，走開再站回去才發射', () => {
+    const { h, cs } = Harness.started(2, 77, { eventMult: 0, npcCrew: 0 })
+    const g = h.server.game!
+    const ps = g.allPlayers()
+    for (const p of ps) g.setRole(p, 'human')
+    const hm = g.mainOf(ps[0])!
+    const nyx = g.world.zones.find((z) => z.key === 'nyx')!
+    const inst = [...spaceOf(g).ships.values()].find((s) => s.docked?.zone === nyx.id)!
+    const cz = g.world.zones[inst.zone]
+    const c = consolePos(g, cz)!
+    // 另一位玩家也在船艙裡（不在控制台上）：收不到停靠的提示
+    const other = g.mainOf(ps[1])!
+    const on = cz.nav!.nearestOpen(c.x, c.y + 1.6) ?? { x: c.x, y: c.y + 1.6 }
+    g.world.relocate(other, cz.id, on.x, on.y)
+    other.data.frozen = true
+    g.world.relocate(hm, cz.id, c.x, c.y)
+    hm.order = null
+    h.ticks(20 * 12)
+    const v = g.controlOf(ps[0])!
+    expect(v.zone).toBe(SPACE_ZONE)
+    const target = g.world.zones.find((z) => z.alive && z.station && !z.data.ship && z.id !== nyx.id && z.station.dockable !== false && spaceOf(g).pads.get(z.id)?.some((x) => !x) && g.world.get(z.spaceEnt))!
+    const te = g.world.get(target.spaceEnt)!
+    g.world.relocate(v, SPACE_ZONE, te.x + te.radius + v.radius + 1, te.y)
+    for (const cl of cs) cl.inbox.length = 0
+    cs[0].send({ t: 'cmd', seq: 1, c: { k: 'cast', a: 'ship.dock', e: te.id } })
+    h.ticks(20 * 6)
+    expect(inst.docked?.zone).toBe(target.id)
+    expect(g.controlOf(ps[0])!.id).toBe(hm.id)
+    const pilotC = cs.find((cl) => cl.slot === ps[0].slot)!
+    const otherC = cs.find((cl) => cl.slot === ps[1].slot)!
+    expect(lines(pilotC).filter((l) => l.startsWith('@space.dockedLocked')).length).toBe(1)
+    expect(lines(otherC).some((l) => l.startsWith('@space.dockedLocked'))).toBe(false)
+    // 還站在控制台上：不發射
+    h.ticks(20 * 15)
+    expect(inst.docked?.zone).toBe(target.id)
+    expect(inst.launching).toBe(false)
+    // 走開再站回去：開始發射倒數
+    const off = cz.nav!.nearestOpen(c.x - 3, c.y)!
+    g.world.relocate(hm, cz.id, off.x, off.y)
+    h.ticks(5)
+    g.world.relocate(hm, cz.id, c.x, c.y)
+    h.ticks(5)
+    expect(inst.launching).toBe(true)
+  }, 120000)
 })
 
 describe('AI 驗血公告', () => {

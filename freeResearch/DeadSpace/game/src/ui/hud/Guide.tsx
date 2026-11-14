@@ -937,6 +937,19 @@ export function stepTab(tabs: readonly HelpTab[], cur: HelpTab, d: 1 | -1): Help
   return tabs[(i + d + tabs.length) % tabs.length]
 }
 
+/**
+ * 說明面板的按鍵要切到哪一頁：← → 循環切換、數字鍵直接跳到第幾頁；不是這些鍵（或沒有那一頁）= undefined。
+ * 按住不放的自動重複（repeat）留在原頁（回傳 cur）：否則按住方向鍵會一路快速循環
+ */
+export function tabForKey(tabs: readonly HelpTab[], cur: HelpTab, code: string, repeat = false): HelpTab | undefined {
+  const n = /^Digit([1-9])$/.exec(code)
+  let next: HelpTab | undefined
+  if (code === 'ArrowLeft' || code === 'ArrowRight') next = stepTab(tabs, cur, code === 'ArrowRight' ? 1 : -1)
+  else if (n) next = tabs[Number(n[1]) - 1]
+  if (!next) return undefined
+  return repeat ? cur : next
+}
+
 function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
   const close = () => (guideOpen.value = false)
   const tabs = helpTabs(id)
@@ -947,13 +960,11 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
       if (e.ctrlKey || e.metaKey || e.altKey || typingInField()) return
       const ts = helpTabs(identityOf(world.me))
       const now = ts.includes(helpTab.value) ? helpTab.value : ts[0]
-      const n = /^Digit([1-9])$/.exec(e.code)
-      let next: HelpTab | undefined
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') next = stepTab(ts, now, e.code === 'ArrowRight' ? 1 : -1)
-      else if (n) next = ts[Number(n[1]) - 1]
+      // 按住不放的自動重複不換頁（仍擋掉預設行為，免得捲動說明內容）
+      const next = tabForKey(ts, now, e.code, e.repeat)
       if (!next) return
       e.preventDefault()
-      helpTab.value = next
+      if (next !== now) helpTab.value = next
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

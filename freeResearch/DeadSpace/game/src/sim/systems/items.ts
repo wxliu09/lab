@@ -5,6 +5,7 @@ import { NEUTRAL, type Ent, type ItemInst } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { EXTRA_COMMANDS, canSee, issue } from './orders'
 import { recomputeStats } from './buffs'
+import { locArgs } from '../../shared/sysArgs'
 
 let uidSeq = 1
 
@@ -13,8 +14,44 @@ export function makeItem(id: string, charges?: number): ItemInst {
   return { id, charges: charges ?? d?.charges ?? 0, cdUntil: 0, uid: uidSeq++ }
 }
 
+/**
+ * 這個單位實際帶著的道具：背包＋化身中寄放的道具（packView.extra：顯示用背包收下、自己背包滿了先替他收著的）。
+ * 「身上有沒有某道具」的判斷（記憶核心在誰身上、門禁卡、每人限帶一個、攜帶道具的被動…）都用這個（或不建立陣列的 carries／hasItem），
+ * 否則寄放中的道具會被當成不存在（例如記憶核心被判定遺失）
+ */
+export function carriedItems(u: Ent): ItemInst[] {
+  const out: ItemInst[] = []
+  for (const it of u.inv ?? []) if (it) out.push(it)
+  const v = u.data.packView as PackView | undefined
+  if (v?.extra.length) out.push(...v.extra)
+  return out
+}
+
+/** 身上（背包或寄放處，同 carriedItems）有沒有符合條件的道具；常在每 tick、逐一單位的迴圈裡叫，不建立陣列 */
+export function carries(u: Ent, pred: (it: ItemInst) => boolean): boolean {
+  if (u.inv) for (const it of u.inv) if (it && pred(it)) return true
+  const v = u.data.packView as PackView | undefined
+  return !!v?.extra.some(pred)
+}
+
 export function hasItem(u: Ent, id: string): boolean {
-  return !!u.inv?.some((it) => it?.id === id)
+  return carries(u, (it) => it.id === id)
+}
+
+/** 從單位身上拿走這件道具（背包或寄放處）；回傳是否找到 */
+export function removeCarried(u: Ent, it: ItemInst): boolean {
+  const i = u.inv ? u.inv.indexOf(it) : -1
+  if (i >= 0) {
+    u.inv![i] = null
+    u.statsDirty = true
+    return true
+  }
+  const v = u.data.packView as PackView | undefined
+  const j = v ? v.extra.indexOf(it) : -1
+  if (j < 0) return false
+  v!.extra.splice(j, 1)
+  u.statsDirty = true
+  return true
 }
 
 export function freeSlot(u: Ent): number {
@@ -108,12 +145,13 @@ export function flushPackView(g: Game, u: Ent): void {
   while (v?.extra.length && freeSlot(u) >= 0) giveItem(g, u, v.extra.shift()!)
 }
 
-/** 死亡時一起掉落寄放的道具 */
+/** 取出寄放的道具（死亡時一起掉落、主單位被替換時搬到新單位、站被毀時跟著消失）*/
 export function takePackExtra(u: Ent): ItemInst[] {
   const v = u.data.packView as PackView | undefined
-  if (!v) return []
+  if (!v?.extra.length) return []
   const out = v.extra
   v.extra = []
+  u.statsDirty = true
   return out
 }
 
@@ -329,9 +367,14 @@ export function stepItemOrders(g: Game): void {
         u.statsDirty = true
         t.data.lastGiver = u.id
         const view = t.data.packView as PackView | undefined
-        // 顯示用背包還有空位、偽裝者自己的背包卻滿了：照收，先寄放（有空位時放回背包）
-        if (view && freeSlot(t) < 0) view.extra.push(it)
-        else giveItem(g, t, it)
+        // 顯示用背包還有空位、偽裝者自己的背包卻滿了：照收，先寄放（有空位時放回背包）。
+        // 已經帶著一個的限帶道具照一般流程（掉在腳邊並提示），和真正的背包一樣
+        if (view && freeSlot(t) < 0 && !(itemDef(it.id)?.unique && hasItem(t, it.id))) {
+          view.extra.push(it)
+          t.statsDirty = true
+          // 只告訴偽裝者本人（全像分身等不是玩家本人的單位不說：分身的擁有者會因此知道複製的是偽裝者）
+          if (t.isMain && t.owner >= 0) g.privateLine(t.owner, 'item.heldForYou', locArgs(itemDef(it.id)?.name, 'nz', 'ne', it.id))
+        } else giveItem(g, t, it)
         g.onItemLost?.(u, it)
       } else if (u.owner >= 0) {
         // 對方背包滿了：告訴給的人為什麼沒給出去（只有給的人收到，不透露其他資訊）

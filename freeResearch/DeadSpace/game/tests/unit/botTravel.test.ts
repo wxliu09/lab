@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { Harness } from './helpers/harness'
 import { giveItem, makeItem } from '../../src/sim/systems/items'
-import { spaceOf } from '../../src/sim/systems/space'
+import { consolePos, spaceOf } from '../../src/sim/systems/space'
+import { damage } from '../../src/sim/systems/damage'
 import { SPACE_ZONE } from '../../src/sim/world'
 import type { Ent } from '../../src/sim/ent'
 import type { Game, GamePlayer } from '../../src/sim/game'
@@ -39,9 +40,10 @@ interface TripView {
   to: number
   ship: string
   stage: string
+  flown?: boolean
 }
 const brain = (p: GamePlayer) =>
-  p.data.brain as { trip: TripView | null; trips: number; peopleAt: number; seen: Map<string, { zone: number; x: number; y: number; t: number }>; visited: Map<number, number> }
+  p.data.brain as { trip: TripView | null; trips: number; tripAt: number; peopleAt: number; seen: Map<string, { zone: number; x: number; y: number; t: number }>; visited: Map<number, number> }
 
 /**
  * 主機（不動）放在豪勇號、一個人類 AI 放在女帝號的停機坪附近，手上有檢測器：女帝號沒有別人可以抽。
@@ -163,6 +165,146 @@ describe('練習 AI 換站', () => {
     const z = g.world.zones[g.mainOf(bot)!.zone]
     expect(z.key).not.toBe(destroyed)
     expect(z.id).not.toBe(nyx.id)
+    expect(bot.control).toBe(bot.main)
+  }, 120000)
+})
+
+/** 跑到 AI 換站進入某個狀態（each 回傳 true）為止；跑不到就失敗 */
+function until(h: Harness, n: number, cond: () => boolean): void {
+  let ok = false
+  run(h, n, () => (ok = cond()))
+  expect(ok).toBe(true)
+}
+
+describe('練習 AI 換站：防卡住（第 5 輪回歸審查）', () => {
+  const tripShip = (g: Game, bot: GamePlayer) => spaceOf(g).ships.get(brain(bot).trip!.ship)!
+
+  it('停泊中的船在發射倒數時有真人上船：AI 不發射（不把人載走），放棄換站、下船', () => {
+    const { h, g, bot, host, nyx } = setup(51)
+    until(h, 20 * 60 * 4, () => {
+      const t = brain(bot).trip
+      return !!t && t.stage === 'cabin' && tripShip(g, bot).launching
+    })
+    const inst = tripShip(g, bot)
+    const cz = g.world.zones[inst.zone]
+    const c = consolePos(g, cz)!
+    // 真人走進船艙（站在控制台旁邊、不在控制台上）
+    const hm = g.mainOf(host)!
+    const n = cz.nav!.nearestOpen(c.x, c.y + 1.8)!
+    g.world.relocate(hm, cz.id, n.x, n.y)
+    let launched = false
+    run(h, 20 * 25, () => {
+      if (!inst.docked) launched = true
+    })
+    expect(launched).toBe(false)
+    expect(inst.docked?.zone).toBe(nyx.id)
+    expect(inst.launching).toBe(false)
+    expect(brain(bot).trip).toBe(null)
+    expect(brain(bot).trips).toBe(0)
+    // AI 下船回到女帝號
+    expect(g.mainOf(bot)!.zone).toBe(nyx.id)
+  }, 120000)
+
+  it('在船艙等發射時挨打：放棄換站', () => {
+    const { h, g, bot } = setup(51)
+    until(h, 20 * 60 * 4, () => brain(bot).trip?.stage === 'cabin')
+    const u = g.mainOf(bot)!
+    damage(g, null, u, 1, { pure: true })
+    run(h, 20 * 2)
+    expect(brain(bot).trip).toBe(null)
+  }, 120000)
+
+  it('太空中別人在開船：AI 不搶控制台、不一直站在控制台旁；停靠後就下船（算換站完成）', () => {
+    const { h, g, bot, host, nyx } = setup(51)
+    const hm = g.mainOf(host)!
+    hm.data.frozen = false
+    const inst = [...spaceOf(g).ships.values()].find((s) => s.docked?.zone === nyx.id)!
+    const cz = g.world.zones[inst.zone]
+    const c = consolePos(g, cz)!
+    // 真人駕駛把船開出去（AI 還在女帝號、還沒開始換站）
+    brain(bot).tripAt = 1e9
+    g.world.relocate(hm, cz.id, c.x, c.y)
+    hm.order = null
+    run(h, 20 * 12)
+    const v = g.controlOf(host)!
+    expect(v.zone).toBe(SPACE_ZONE)
+    // AI 在太空中的船艙裡、換站進行中（船艙階段，不是駕駛）
+    const u = g.mainOf(bot)!
+    const n = cz.nav!.nearestOpen(c.x, c.y + 1.8)!
+    g.world.relocate(u, cz.id, n.x, n.y)
+    u.order = null
+    const target = g.world.zones.find((z) => z.alive && z.station && !z.data.ship && z.id !== nyx.id && z.station.dockable !== false && spaceOf(g).pads.get(z.id)?.some((x) => !x) && g.world.get(z.spaceEnt))!
+    brain(bot).trip = { from: nyx.id, to: target.id, ship: inst.key, stage: 'cabin', at: g.time, start: g.time, side: 'crew', sx: 0, sy: 0, st: g.time } as never
+    brain(bot).tripAt = 0
+    let toConsole = false
+    run(h, 20 * 20, () => {
+      const o = g.mainOf(bot)!.order
+      if (o?.k === 'move' && o.x === c.x && o.y === c.y) toConsole = true
+    })
+    // 修正前：一直往控制台走（站在旁邊等）
+    expect(toConsole).toBe(false)
+    expect(spaceOf(g).pilots.get(v.id)).toBe(hm.id)
+    expect(brain(bot).trip?.flown).toBe(true)
+    // 真人停靠到目標站：AI 下船、換站完成
+    const te = g.world.get(target.spaceEnt)!
+    g.world.relocate(v, SPACE_ZONE, te.x + te.radius + v.radius + 1, te.y)
+    g.handleCommand(host.slot, { k: 'cast', a: 'ship.dock', e: te.id })
+    until(h, 20 * 60, () => g.mainOf(bot)!.zone === target.id)
+    expect(inst.docked?.zone).toBe(target.id)
+    expect(brain(bot).trips).toBe(1)
+    expect(brain(bot).trip).toBe(null)
+  }, 120000)
+
+  it('飛行中所有站都停不了：停下來等，等太久就放棄換站、交回控制台（不會一直開著船漂）', () => {
+    const { h, g, bot } = setup(51)
+    until(h, 20 * 120, () => brain(bot).trip?.stage === 'fly' && g.controlOf(bot)?.zone === SPACE_ZONE)
+    // 所有停機坪都被占住
+    for (const pads of spaceOf(g).pads.values()) pads.fill('blocked')
+    const t0 = g.time
+    until(h, 20 * 60, () => !brain(bot).trip)
+    expect(g.time - t0).toBeGreaterThan(20)
+    run(h, 20 * 3)
+    expect(bot.control).toBe(bot.main)
+    expect(g.controlOf(bot)!.zone).not.toBe(SPACE_ZONE)
+  }, 120000)
+
+  it('停靠一直失敗：同一站重試有上限，改去別的站（不回頭選失敗過的），改太多次就放棄', () => {
+    const { h, g, bot } = setup(51)
+    until(h, 20 * 120, () => brain(bot).trip?.stage === 'fly' && g.controlOf(bot)?.zone === SPACE_ZONE)
+    // 停靠指令一下就被丟掉（模擬停靠一直失敗）
+    const v = g.controlOf(bot)!
+    v.abilities = v.abilities.filter((a) => a !== 'ship.dock')
+    const tos: number[] = []
+    const failed = new Set<number>()
+    let revisit = false
+    until(h, 20 * 120, () => {
+      const t = brain(bot).trip as (TripView & { failed?: number[] }) | null
+      if (!t) return true
+      if (tos[tos.length - 1] !== t.to) {
+        if (failed.has(t.to)) revisit = true
+        tos.push(t.to)
+      }
+      for (const z of t.failed ?? []) failed.add(z)
+      return false
+    })
+    expect(tos.length).toBeGreaterThan(1)
+    expect(failed.size).toBeGreaterThan(1)
+    expect(revisit).toBe(false)
+    // 改目標有上限：一開始的目標＋最多 4 次（另外最多一次生命掃描改目標）
+    expect(tos.length).toBeLessThanOrEqual(6)
+    run(h, 20 * 3)
+    expect(bot.control).toBe(bot.main)
+  }, 120000)
+
+  it('換站途中被轉化（變成異類的 spawn）：放棄換站，交回控制台', () => {
+    const { h, g, bot } = setup(51)
+    until(h, 20 * 120, () => brain(bot).trip?.stage === 'fly' && g.controlOf(bot)?.zone === SPACE_ZONE)
+    g.convertToSpawn(bot.slot, 'xeno')
+    run(h, 20 * 3)
+    expect(brain(bot).trip).toBe(null)
+    expect(bot.control).toBe(bot.main)
+    // 之後也不會再接回控制台繼續飛
+    run(h, 20 * 10)
     expect(bot.control).toBe(bot.main)
   }, 120000)
 })

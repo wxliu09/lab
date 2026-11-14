@@ -6,7 +6,7 @@
 import { regScript, runEffects, SCRIPTS, type EffectCtx, type ScriptFn } from '../systems/effects'
 import { damage, heal, DAMAGE_HOOKS, DEATH_HOOKS } from '../systems/damage'
 import { applyBuff, hasBuff, removeBuff, removeBuffsWhere } from '../systems/buffs'
-import { dropOnGround, giveItem, lookPack, makeItem, shownPack, startPackView } from '../systems/items'
+import { carriedItems, dropOnGround, giveItem, hasItem, lookPack, makeItem, removeCarried, shownPack, startPackView } from '../systems/items'
 import { INSTANT_ITEMS, initVendor, updateVendorView, type StockState } from '../systems/vendors'
 import { EXTRA_COMMANDS, issue } from '../systems/orders'
 import { inAttackRange, isHostile } from '../systems/combat'
@@ -179,7 +179,8 @@ function syncCarried(g: Game): void {
     if (!u.alive) continue
     const had = (u.data.capBonus as number | undefined) ?? 0
     if (!u.inv && !had) continue
-    const want = u.inv?.some((it) => it?.id === 'protoCapacitor') ? CAPACITOR_BONUS : 0
+    // 化身中替人寄放的道具也算帶著（hasItem 含 packView.extra）
+    const want = hasItem(u, 'protoCapacitor') ? CAPACITOR_BONUS : 0
     // morph（換裝、變形）會把 maxMp 重設成 def.mp
     const reset = had > 0 && u.maxMp === u.def.mp
     if (want !== had || (reset && want > 0)) {
@@ -192,7 +193,7 @@ function syncCarried(g: Game): void {
     if (!u.inv || u.data.holo) continue
     for (const [item, buff] of CARRY_BUFFS) {
       // 匿名形態（異形形態等）不顯示：帽子是公開外觀，會讓人認出是誰
-      const has = !u.anon && u.inv.some((it) => it?.id === item)
+      const has = !u.anon && hasItem(u, item)
       const on = hasBuff(u, buff)
       if (has && !on) applyBuff(g, u, buff, undefined, u)
       else if (!has && on) removeBuff(g, u, buff)
@@ -362,18 +363,18 @@ function takeUsedItem(g: Game, ctx: EffectCtx, id: string) {
 /** 致命傷時由重症維生系統搶救；回傳是否救回 */
 export function criticalRescue(g: Game, u: Ent): boolean {
   if (!u.inv) return false
-  let slot = u.inv.findIndex((it) => it?.id === 'criticalCare')
+  // 化身中替人寄放的也算帶著（carriedItems）：真的帶著它的人會被救回，偽裝者也要一樣
+  const carried = carriedItems(u)
+  let it = carried.find((x) => x.id === 'criticalCare')
   let hp = 150
-  if (slot < 0) {
-    slot = u.inv.findIndex((it) => it?.id === 'criticalCareDamaged')
+  if (!it) {
+    it = carried.find((x) => x.id === 'criticalCareDamaged')
     hp = 1
   }
-  if (slot < 0) return false
-  const it = u.inv[slot]!
+  if (!it) return false
   it.charges--
   if (it.charges <= 0) {
-    u.inv[slot] = null
-    u.statsDirty = true
+    removeCarried(u, it)
     g.onItemLost?.(u, it)
   }
   u.hp = Math.min(u.maxHp, hp)
@@ -911,11 +912,20 @@ const packIds = (inv: Ent['inv']): string[] => (inv ?? []).filter((it) => !!it).
 /**
  * 背包掃描器讀到的內容：照掃描者「看到的樣子」回報。變身時背包整組帶進匿名形態，照實列出就等於身分指紋。
  * - 自己的東西、同陣營的異類（規則同快照的 ally：看得出是分身）、除錯旗標「看穿匿名單位」：照實回報
+ * - 全像分身：背包是複製本尊的，「自己的東西／同陣營」改看本尊是誰（srcOwner），不看分身歸誰。
+ *   否則對化身中的偽裝者、匿名形態投影，再掃描自己的分身，就能讀到偽裝者真正的背包（掃描本尊只會看到顯示用背包或無法辨識）
  * - 其他人：lookPack（systems/items.ts）——匿名的樣子回 null（無法辨識）；化身中的偽裝者回顯示用背包
  *   （化身當下被化身者的背包，之後隨偽裝者自己收到／給出／用掉的道具增減）；看起來是某人本人的分身回那個人本人的背包
  */
 function scannedPack(g: Game, viewer: GamePlayer | undefined, t: Ent): string[] | null {
-  if (viewer && (t.owner === viewer.slot || viewer.flags.reveal || (knowsOwner(g, viewer, t) && sameSide(g, viewer, t.owner)))) return packIds(t.inv)
+  if (!viewer) return lookPack(g, t)
+  if (viewer.flags.reveal) return packIds(t.inv)
+  if (t.illusion) {
+    // 沒記本尊的分身（異類的分身沒有背包）一律照別人看到的樣子
+    const src = t.data.srcOwner as number | undefined
+    return src !== undefined && src >= 0 && (src === viewer.slot || sameSide(g, viewer, src)) ? packIds(t.inv) : lookPack(g, t)
+  }
+  if (t.owner === viewer.slot || (knowsOwner(g, viewer, t) && sameSide(g, viewer, t.owner))) return packIds(t.inv)
   return lookPack(g, t)
 }
 
@@ -981,7 +991,9 @@ regScript('item.holo', (g, ctx) => {
   h.data.holo = true
   // 複製的是一名玩家本人（或另一個這樣的分身）：驗血時要和真人看起來一樣
   h.data.looksMain = t.isMain || !!t.data.looksMain
+  // 背包照本尊複製（攜帶道具的被動、速度才會一樣）；背包掃描器看穿與否照本尊是誰判斷（scannedPack 的 srcOwner）
   if (t.inv && h.inv) for (let i = 0; i < h.inv.length; i++) h.inv[i] = t.inv[i] ? makeItem(t.inv[i]!.id, t.inv[i]!.charges) : null
+  h.data.srcOwner = t.illusion ? t.data.srcOwner : t.owner
   // 複製的是化身中的偽裝者：背包掃描看到的是他當下的顯示用背包（和掃描本尊一樣，不是偽裝者真正的背包）
   const shown = shownPack(t)
   if (shown) startPackView(h, shown)

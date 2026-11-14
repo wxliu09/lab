@@ -474,6 +474,24 @@ describe('說明面板分頁（UI 修正 S3）', () => {
     expect(G.stepTab(G.helpTabs(null), 'role', 1)).toBe('things')
   })
 
+  it('按鍵換頁：方向鍵循環、數字鍵跳頁；按住不放的自動重複（repeat）不換頁（回歸：按住方向鍵會一路快速循環）', () => {
+    const ts = G.helpTabs('xeno')
+    expect(G.tabForKey(ts, 'role', 'ArrowRight')).toBe('controls')
+    expect(G.tabForKey(ts, 'role', 'ArrowLeft')).toBe('things')
+    expect(G.tabForKey(ts, 'role', 'Digit3')).toBe('things')
+    // 沒有那一頁、不是換頁的鍵：不處理（不擋預設行為）
+    expect(G.tabForKey(ts, 'role', 'Digit4')).toBeUndefined()
+    expect(G.tabForKey(ts, 'role', 'KeyA')).toBeUndefined()
+    // 自動重複：留在原頁（仍算處理過，擋掉預設的捲動）
+    expect(G.tabForKey(ts, 'controls', 'ArrowRight', true)).toBe('controls')
+    expect(G.tabForKey(ts, 'controls', 'ArrowLeft', true)).toBe('controls')
+    expect(G.tabForKey(ts, 'controls', 'Digit1', true)).toBe('controls')
+    // 模擬按住 → 一連串 keydown（第一下 repeat=false，之後 repeat=true）：只換一頁
+    let cur: (typeof ts)[number] = 'role'
+    for (let i = 0; i < 12; i++) cur = G.tabForKey(ts, cur, 'ArrowRight', i > 0) ?? cur
+    expect(cur).toBe('controls')
+  })
+
   it('「操作」頁分兩欄：拖曳之後從方向鍵開始；兩欄都不是空的', () => {
     const i = HELP_CONTROLS.indexOf('camera')
     expect(i).toBeGreaterThan(0)

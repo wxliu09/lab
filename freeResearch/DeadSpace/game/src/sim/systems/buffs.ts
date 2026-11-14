@@ -6,6 +6,7 @@ import { baseStats, type BuffInst, type Ent } from '../ent'
 import type { Game } from '../game'
 import { damage, heal } from './damage'
 import { runEffects } from './effects'
+import { carriedItems } from './items'
 
 export function hasBuff(u: Ent, id: string): boolean {
   return u.buffs.some((b) => b.id === id)
@@ -98,14 +99,11 @@ export function recomputeStats(u: Ent): void {
     const d = BUFFS.get(b.id)
     if (d) apply(d, b.stacks)
   }
-  // 攜帶道具的被動
-  if (u.inv) {
-    for (const it of u.inv) {
-      if (!it) continue
-      const pid = itemDef(it.id)?.passive
-      const d = pid ? BUFFS.get(pid) : undefined
-      if (d) apply(d)
-    }
+  // 攜帶道具的被動（含化身中替人寄放的道具：carriedItems）
+  for (const it of carriedItems(u)) {
+    const pid = itemDef(it.id)?.passive
+    const d = pid ? BUFFS.get(pid) : undefined
+    if (d) apply(d)
   }
   // 被動技能
   for (const a of u.abilities) {

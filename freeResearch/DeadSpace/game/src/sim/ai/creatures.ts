@@ -4,13 +4,13 @@ import { BUFFS, itemDef, unitDef, UNITS } from '../../shared/content/registry'
 import { SHIP_BY_ID } from '../../shared/content/ships'
 import { roomAt } from '../../shared/layout'
 import { locArgs } from '../../shared/sysArgs'
-import { HOSTILE, NEUTRAL, dist, dist2, type Ent } from '../ent'
+import { HOSTILE, NEUTRAL, dist, dist2, type Ent, type ItemInst } from '../ent'
 import type { Game } from '../game'
 import { markersOf, type Marker } from '../setup'
 import { SPACE_ZONE, type Zone } from '../world'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from '../systems/damage'
 import { issue } from '../systems/orders'
-import { dropOnGround, giveItem, hasItem } from '../systems/items'
+import { carries, dropOnGround, giveItem, hasItem } from '../systems/items'
 import { createShip, launchTo } from '../systems/space'
 
 /** 由 AI 決定敵意、平時中立的類型 */
@@ -30,15 +30,17 @@ function stateOf(g: Game): CrewState {
   return (g.data.creatures ??= { aggro: new Map(), reported: new Set(), slugKills: 0, wardenDone: false }) as CrewState
 }
 
+/** 這件道具的攜帶被動會降低仇恨（鎮定薰香等）*/
+function calmItem(it: ItemInst): boolean {
+  const pid = itemDef(it.id)?.passive
+  const d = pid ? BUFFS.get(pid) : undefined
+  return !!(d?.flags?.calming || d?.flags?.calm)
+}
+
 /** 攜帶鎮定薰香等「降低仇恨」的被動或 buff */
 export function isCalm(u: Ent): boolean {
-  if (u.inv) {
-    for (const it of u.inv) {
-      const pid = it ? itemDef(it.id)?.passive : undefined
-      const d = pid ? BUFFS.get(pid) : undefined
-      if (d?.flags?.calming || d?.flags?.calm) return true
-    }
-  }
+  // 化身中替人寄放的道具也算帶著（carries 含 packView.extra；敵意判定很常叫，不建立陣列）
+  if (carries(u, calmItem)) return true
   return u.buffs.some((b) => {
     const f = BUFFS.get(b.id)?.flags
     return !!(f?.calming || f?.calm)

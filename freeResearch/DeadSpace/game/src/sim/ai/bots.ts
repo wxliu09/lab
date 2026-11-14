@@ -11,7 +11,7 @@ import { abilityDef, itemDef } from '../../shared/content/registry'
 import { roomAt } from '../../shared/layout'
 import { sampleListArgs } from '../../shared/sysArgs'
 import { HOSTILE, dist2, type Ent } from '../ent'
-import { fmtKey, type Game, type GamePlayer } from '../game'
+import { fmtKey, type Faction, type Game, type GamePlayer } from '../game'
 import { handleCommand } from '../systems/orders'
 import { cdReady } from '../systems/abilities'
 import { VENDOR_RANGE, type StockState } from '../systems/vendors'
@@ -89,8 +89,17 @@ interface Trip {
   stage: 'walk' | 'cabin' | 'fly'
   at: number
   start: number
-  /** 已經發射、駕駛過了（之後停在哪裡都要下船）*/
+  /** 出發時的陣營：途中被轉化（變成異類的 spawn）就放棄換站 */
+  side: Faction
+  /** 已經發射、駕駛過了，或在太空中搭別人開的船（之後停在哪裡都要下船）*/
   flown?: boolean
+  /** 在太空中的船艙裡、自己不是駕駛（控制台沒人）開始等的時間：等太久（控制台壞了…）就放棄 */
+  idleAt?: number
+  /** 對目前的目標站下過幾次停靠指令；停靠失敗過（或飛太久到不了）的站；改過幾次目標；找不到可停靠的站開始等的時間 */
+  tries?: number
+  failed?: number[]
+  retargets?: number
+  noDock?: number
   /** 接近目標站時的生命掃描（船上的技能）：at = 結果出來的時間；改過幾次目標 */
   scan?: { at: number; done?: boolean }
   rescans?: number
@@ -804,6 +813,8 @@ function stepBots(g: Game): void {
       b.selfNames.add(p.name)
       readReports(g, p, b)
     }
+    // 換站途中陣營變了（被轉化成異類的 spawn）：放棄換站（駕駛中的話下面會交回控制台）
+    if (b.trip && g.faction(p) !== b.trip.side) abortTrip(g, b)
     const u = g.controlOf(p)
     if (!u || !u.alive || u.data.frozen || p.evolvingUntil > t || u.tags.has('cocoon')) continue
     // 人類方正在施法（抽血 3 秒）：別用新的指令打斷自己，除非正在挨打
@@ -872,6 +883,11 @@ function leaveCabin(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
 /** 移動命令幾秒沒前進就算卡住 */
 const STUCK_S = 4
 
+/** 船艙裡有沒有真人玩家（不是 AI）：有的話 AI 不站在控制台上發射，免得把人載走 */
+function humanAboard(g: Game, p: GamePlayer, inst: ShipInst): boolean {
+  return g.world.inZone(inst.zone).some((e) => e.alive && e.isMain && e.owner >= 0 && e.owner !== p.slot && !g.players[e.owner]?.bot)
+}
+
 // ───────── 換站（開船去別的站找人）─────────
 
 /** 拿著檢測器、附近多久沒看到可以抽的別人就換站（秒）*/
@@ -883,10 +899,14 @@ const TRIP_GAP = 150
 const VISIT_TTL = 300
 /** 換站時「最後看到某人的地方」可以多舊（秒）*/
 const SEEN_TRIP_TTL = 300
-/** 各階段逾時（秒）：走到船邊、在船艙等發射、太空中飛多久就改去最近的站 */
+/** 各階段逾時（秒）：走到船邊、在船艙等發射（太空中沒人駕駛時等著接手也算）、太空中飛多久就改去最近的站 */
 const WALK_MAX = 45
 const CABIN_MAX = 30
 const FLY_MAX = 150
+/** 對同一站下幾次停靠指令還沒停進去就換一站；最多換幾次目標；完全找不到可以停靠的站時等多久（秒）就放棄換站 */
+const DOCK_TRIES = 8
+const MAX_RETARGETS = 4
+const NO_DOCK_WAIT = 30
 /** 不去的站：七號廢站（廢棄、有危險）、事件站（海盜船、未識別物體）*/
 const TRIP_EXCLUDE = new Set(['hulk7', 'pirate', 'uo'])
 
@@ -976,7 +996,7 @@ function startTrip(g: Game, p: GamePlayer, u: Ent, b: Brain, want: Want): boolea
     b.tripAt = g.time + 60
     return false
   }
-  b.trip = { from: u.zone, to, ship: inst.key, stage: 'walk', at: g.time, start: g.time, sx: 0, sy: 0, st: g.time }
+  b.trip = { from: u.zone, to, ship: inst.key, stage: 'walk', at: g.time, start: g.time, side: g.faction(p), sx: 0, sy: 0, st: g.time }
   b.goal = null
   b.visited.set(u.zone, g.time)
   return stepTrip(g, p, u, b)
@@ -1043,10 +1063,31 @@ function stepTrip(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
     else abortTrip(g, b)
     return leaveCabin(g, p, u, b)
   }
-  // 停泊在原本的站：走到控制台、站著等發射倒數；等太久（控制台壞了、豪勇號降落中…）就放棄、下船
-  if (inst.docked && g.time - trip.at > CABIN_MAX) return abortTrip(g, b), false
+  // 挨打、看到怪物：放棄換站，照常反擊、逃跑（停泊中的由 leaveCabin 走回艙門下船）
+  if (g.time - u.lastDamageTime < 3 || visibleEnts(g, p, u, 10).some((e) => isFoe(g, p, e))) return abortTrip(g, b), false
+  if (inst.docked) {
+    // 停泊在原本的站：走到控制台、站著等發射倒數；等太久（控制台壞了、豪勇號降落中…）就放棄、下船。
+    // 有真人上了船：不發射（免得把人載走），放棄換站、離開控制台下船（倒數剩不到 3 秒時照樣會發射，和真人駕駛走開一樣）
+    if (g.time - trip.at > CABIN_MAX || humanAboard(g, p, inst)) return abortTrip(g, b), false
+  } else {
+    // 太空中、在船艙裡（不是駕駛）：之後停在哪裡都要下船（上面的到站處理）
+    trip.flown = true
+    const pid = spaceOf(g).pilots.get(inst.spaceEnt)
+    // 別人在開船，或船上有真人（他離開控制台可能只是暫時的）：不去搶控制台，照常行動
+    //（可以抽身邊的人、遇到怪物照常反應），停靠後就下船
+    if ((pid && pid !== p.main) || humanAboard(g, p, inst)) {
+      trip.idleAt = undefined
+      return false
+    }
+    // 沒人駕駛：走去控制台接手、繼續開往目標站；控制台一直接不上（壞了、電磁停機）就放棄，照常行動
+    trip.idleAt ??= g.time
+    if (g.time - trip.idleAt > CABIN_MAX) return abortTrip(g, b), false
+  }
   const c = consolePos(g, g.world.zones[inst.zone])
-  if (!c) return inst.docked ? (abortTrip(g, b), false) : true
+  if (!c) {
+    if (inst.docked) abortTrip(g, b)
+    return false
+  }
   if (Math.hypot(u.x - c.x, u.y - c.y) > 0.4) {
     if (u.order?.k !== 'move' || u.order.x !== c.x || u.order.y !== c.y) cmd(g, p, { k: 'move', x: c.x, y: c.y })
   } else if (u.order) cmd(g, p, { k: 'stop' })
@@ -1120,9 +1161,11 @@ function scanTarget(g: Game, p: GamePlayer, v: Ent, b: Brain, tz: Zone, te: Ent)
   if (n > 0) return false
   b.visited.set(tz.id, g.time)
   const alt = tripTarget(g, b, trip.from, () => 1)
-  if (alt < 0 || alt === tz.id) return false
+  // 停靠失敗過的站不回頭
+  if (alt < 0 || alt === tz.id || trip.failed?.includes(alt)) return false
   trip.to = alt
   trip.at = g.time
+  trip.tries = 0
   trip.via = undefined
   trip.scan = undefined
   trip.rescans = (trip.rescans ?? 0) + 1
@@ -1142,30 +1185,31 @@ function flyTrip(g: Game, p: GamePlayer, v: Ent, b: Brain): boolean {
     trip.sx = v.x
     trip.sy = v.y
   }
-  // 目標站沒了、停機坪滿了、飛太久：改去最近還能停靠的站（不會一直漂在太空中）
+  // 目標站沒了、停機坪滿了、飛太久、停靠一直沒成功：改去最近還能停靠的站（不會一直漂在太空中）
   let tz = g.world.zones[trip.to]
-  if (!dockableZone(g, tz) || g.time - trip.at > FLY_MAX) {
-    let best: Zone | null = null
-    let bd = Infinity
-    for (const z of g.world.zones) {
-      if (!dockableZone(g, z)) continue
-      const se = g.world.get(z.spaceEnt)!
-      // 原本的站排在最後（別的站都停不了才回去）
-      const d = Math.hypot(se.x - v.x, se.y - v.y) + (z.id === trip.from ? 1e4 : 0)
-      if (d < bd) {
-        bd = d
-        best = z
-      }
+  let te = dockableZone(g, tz) ? g.world.get(tz.spaceEnt) : undefined
+  const slow = g.time - trip.at > FLY_MAX || (trip.tries ?? 0) > DOCK_TRIES
+  if (!te || slow) {
+    // 飛太久到不了、停靠一直失敗的站：之後不再選它
+    if (slow && !trip.failed?.includes(trip.to)) (trip.failed ??= []).push(trip.to)
+    const best = (trip.retargets ?? 0) < MAX_RETARGETS ? nearestDock(g, v, trip) : null
+    if (!best) {
+      // 沒有站可以停（或改了太多次目標）：停下來等一下（停機坪可能會空出來）；等太久就放棄換站
+      //（交回控制台、留在船艙裡；別人可以接手開船）
+      trip.noDock ??= g.time
+      if ((trip.retargets ?? 0) >= MAX_RETARGETS || g.time - trip.noDock > NO_DOCK_WAIT) return abortTrip(g, b), false
+      if (v.order) cmd(g, p, { k: 'stop' })
+      return true
     }
-    if (best) {
-      trip.to = best.id
-      tz = best
-    }
+    trip.noDock = undefined
+    trip.retargets = (trip.retargets ?? 0) + 1
+    trip.to = best.id
+    tz = best
+    te = g.world.get(best.spaceEnt)!
     trip.at = g.time
+    trip.tries = 0
     trip.via = undefined
   }
-  const te = g.world.get(tz.spaceEnt)
-  if (!te) return true
   // 卡住偵測（被站推著、撞在一起）：幾秒沒前進就隨機往旁邊繞
   if (Math.hypot(v.x - trip.sx, v.y - trip.sy) > 0.5) {
     trip.sx = v.x
@@ -1186,9 +1230,31 @@ function flyTrip(g: Game, p: GamePlayer, v: Ent, b: Brain): boolean {
     return true
   }
   if (scanTarget(g, p, v, b, tz, te)) return true
-  // 直線過得去：下停靠指令（移動系統會飛到射程內再停靠）
-  if (v.order?.k !== 'cast' || v.order.a !== 'ship.dock' || v.order.e !== te.id) cmd(g, p, { k: 'cast', a: 'ship.dock', e: te.id })
+  // 直線過得去：下停靠指令（移動系統會飛到射程內再停靠）。重下的次數記下來，一直停不進去就換站（上面）；
+  // 冷卻中下了也會被丟掉，不算一次
+  const dockAb = abilityDef('ship.dock')
+  if (v.order?.k !== 'cast' || v.order.a !== 'ship.dock' || v.order.e !== te.id) {
+    if (dockAb && !cdReady(g, v, dockAb)) return true
+    trip.tries = (trip.tries ?? 0) + 1
+    cmd(g, p, { k: 'cast', a: 'ship.dock', e: te.id })
+  }
   return true
+}
+
+/** 太空中改去的站：最近、還能停靠、沒有停靠失敗過的站；原本的站排在最後（別的站都停不了才回去）。沒有 = null */
+function nearestDock(g: Game, v: Ent, trip: Trip): Zone | null {
+  let best: Zone | null = null
+  let bd = Infinity
+  for (const z of g.world.zones) {
+    if (!dockableZone(g, z) || trip.failed?.includes(z.id)) continue
+    const se = g.world.get(z.spaceEnt)!
+    const d = Math.hypot(se.x - v.x, se.y - v.y) + (z.id === trip.from ? 1e4 : 0)
+    if (d < bd) {
+      bd = d
+      best = z
+    }
+  }
+  return best
 }
 
 const installed = new WeakSet<Game>()

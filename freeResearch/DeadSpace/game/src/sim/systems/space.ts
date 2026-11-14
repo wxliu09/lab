@@ -14,6 +14,7 @@ import { regScript } from './effects'
 import { applyBuff, removeBuff } from './buffs'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { INSTANT_ITEMS } from './vendors'
+import { takePackExtra } from './items'
 
 /**
  * 強行登艦的一端（原作 A02J 的對象「探索船」）：船艇（ShipInst），或不能停靠、只能登艦的站（火口號、擺渡號）。
@@ -589,6 +590,8 @@ export function destroyInterior(g: Game, zoneId: number, killer: Ent | null, env
   for (const e of g.world.inZone(zoneId)) {
     e.data.noDrops = true
     if (e.inv) e.inv.fill(null)
+    // 化身中替人寄放的道具也一起消失（否則記憶核心等還會被當成有人帶著）
+    takePackExtra(e)
     e.suit = null
     if (!e.alive) continue
     if (e.tags.has('structure') || e.data.item) {
@@ -809,15 +812,17 @@ regScript('space.dock', (g, ctx) => {
   if (inst.link) breakLink(g, inst)
   // 駕駛者還站在船艙的控制台上：先鎖住（離開控制台才解鎖），否則一停好就又開始發射倒數
   const pilotEnt = g.world.get(spaceOf(g).pilots.get(ship.id) ?? 0)
-  if (pilotEnt && pilotEnt.owner >= 0 && pilotEnt.zone === inst.zone) {
+  const lockFor = pilotEnt && pilotEnt.owner >= 0 && pilotEnt.zone === inst.zone ? pilotEnt.owner : -1
+  if (lockFor >= 0) {
     const cz = g.world.zones[inst.zone]
-    cz.data.consoleLock = [...((cz.data.consoleLock as number[] | undefined) ?? []), pilotEnt.owner]
+    cz.data.consoleLock = [...((cz.data.consoleLock as number[] | undefined) ?? []), lockFor]
   }
   setPilot(g, ship, null)
   inst.spaceEnt = 0
   g.world.zones[inst.zone].spaceEnt = 0
   g.world.remove(ship)
-  dock(g, inst, zid, pad, hpK)
+  // 告訴駕駛為什麼站在控制台上卻沒有開始發射倒數（同 unpilot 的 space.leftConsole，只有本人收到）
+  if (dock(g, inst, zid, pad, hpK) && lockFor >= 0) g.privateLine(lockFor, 'space.dockedLocked')
   g.emitFx({ k: 'dock', z: SPACE_ZONE, x: t.x, y: t.y })
 })
 

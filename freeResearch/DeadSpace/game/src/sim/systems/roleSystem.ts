@@ -7,7 +7,7 @@ import { NEUTRAL, type Ent } from '../ent'
 import { fmtKey, type Faction, type Game, type GamePlayer } from '../game'
 import { DAMAGE_HOOKS, DEATH_HOOKS } from './damage'
 import { applyBuff } from './buffs'
-import { dropOnGround, giveItem, makeItem, morph } from './items'
+import { dropOnGround, giveItem, makeItem, morph, takePackExtra } from './items'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { LAST_WORDS, bootIfOut } from './chat'
 
@@ -93,6 +93,12 @@ function moveInventory(from: Ent, to: Ent): void {
   to.statsDirty = true
 }
 
+/** 主單位被替換時搬走身上的東西：背包、防護服，再加上化身中替人寄放的道具（放不下就掉在新單位腳邊）*/
+function moveCarried(g: Game, from: Ent, to: Ent): void {
+  moveInventory(from, to)
+  for (const it of takePackExtra(from)) giveItem(g, to, it)
+}
+
 /** 原地把主單位換成另一個單位（變身、進化、轉化）*/
 export function replaceMain(g: Game, p: GamePlayer, old: Ent, defId: string, opts: { anon: boolean; hpPct?: number; keepHpPct?: boolean }): Ent {
   const def = unitDef(defId)
@@ -102,7 +108,7 @@ export function replaceMain(g: Game, p: GamePlayer, old: Ent, defId: string, opt
   const mpK = old.maxMp > 0 ? old.mp / old.maxMp : 1
   u.hp = Math.max(1, u.maxHp * hpK)
   u.mp = u.maxMp * mpK
-  moveInventory(old, u)
+  moveCarried(g, old, u)
   // 保留持續中的負面狀態（寄生不會因變身消失）
   // 只帶走看不見的負面狀態（感染等）：全域可見的減益若跟著變身，旁人就能把兩種外形對起來
   for (const b of old.buffs) {
@@ -247,7 +253,7 @@ export function installRoles(g: Game): void {
       const u = g.world.spawn(def, pos.zone, pos.x, pos.y, slot)
       u.hp = Math.max(1, u.maxHp * hpPct)
       if (old) {
-        moveInventory(old, u)
+        moveCarried(g, old, u)
         u.facing = old.facing
         if (old.alive) {
           old.data.converted = true

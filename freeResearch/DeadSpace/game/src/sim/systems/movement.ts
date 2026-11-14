@@ -4,6 +4,7 @@ import type { Game } from '../game'
 import { dist2, type Ent } from '../ent'
 import type { DoorPass } from '../nav/grid'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
+import { hasItem } from './items'
 
 const REPATH = 0.6
 const ARRIVE = 0.15
@@ -26,7 +27,8 @@ export function doorPassFor(g: Game, u: Ent, z: Zone): DoorPass {
 export function hasClearance(u: Ent, clearance: string): boolean {
   if (u.data.passLocked) return true
   const card = clearance === 'janitor' ? 'janitorCard' : clearance === 'captain' ? 'captainCard' : clearance
-  return !!u.inv?.some((it) => it?.id === card)
+  // 化身中替人寄放的門禁卡也算帶著（hasItem 含 packView.extra）
+  return hasItem(u, card)
 }
 
 /** 單位目前的移動目標點（依命令）*/

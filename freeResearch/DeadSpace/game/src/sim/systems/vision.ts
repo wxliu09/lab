@@ -5,6 +5,7 @@ import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
 import { SPACE_ZONE } from '../world'
 import { bootIfOut } from './chat'
+import { carries } from './items'
 
 export interface VisionSource {
   zone: number
@@ -163,13 +164,17 @@ function isCoreOf(it: { id: string; data?: unknown } | null | undefined, slot: n
   return !!it && it.id === 'memoryCore' && (it.data as { android?: number } | undefined)?.android === slot
 }
 
-/** 記憶核心可能在地上，也可能在某人的背包裡（被撿起、帶著的人死掉再掉出來時是新的地面物件，順便更新 id）*/
+/**
+ * 記憶核心可能在地上，也可能在某人身上（背包，或化身中的偽裝者替人寄放的道具：carriedItems／carries）；
+ * 被撿起、帶著的人死掉再掉出來時是新的地面物件，順便更新 id
+ */
 function findCore(g: Game, p: GamePlayer): Ent | undefined {
   const id = p.data.core as number | undefined
   const onGround = id ? g.world.get(id) : undefined
   if (onGround && isCoreOf(onGround.data.item as { id: string } | undefined, p.slot)) return onGround
+  const mine = (it: { id: string; data?: unknown }): boolean => isCoreOf(it, p.slot)
   for (const e of g.world.ents.values()) {
-    if (e.inv?.some((it) => isCoreOf(it, p.slot))) return e
+    if (carries(e, mine)) return e
     if (e.alive && isCoreOf(e.data.item as { id: string } | undefined, p.slot)) {
       if (id) p.data.core = e.id
       return e

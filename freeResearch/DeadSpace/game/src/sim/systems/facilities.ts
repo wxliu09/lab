@@ -9,7 +9,7 @@ import { STATION_BY_ID } from '../../shared/content/stations/index'
 import { roomAt } from '../../shared/layout'
 import { locArgs } from '../../shared/sysArgs'
 import type { Command, FacilityView } from '../../shared/protocol/messages'
-import { HOSTILE, NEUTRAL, dist, type Ent } from '../ent'
+import { HOSTILE, NEUTRAL, dist, type Ent, type ItemInst } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { markersOf, type Marker } from '../setup'
 import { SPACE_ZONE, type Zone } from '../world'
@@ -18,7 +18,7 @@ import { applyBuff } from './buffs'
 import { DEATH_HOOKS } from './damage'
 import { regScript, type EffectCtx } from './effects'
 import { uoCode } from './events'
-import { dropOnGround, giveItem, makeItem } from './items'
+import { carriedItems, dropOnGround, giveItem, makeItem, removeCarried } from './items'
 import { EXTRA_COMMANDS, canSee, issue } from './orders'
 import { setPilot, spaceOf } from './space'
 import { sendTo, stationsOf, transportable, unitsOnPads } from './stations'
@@ -289,12 +289,12 @@ function autoRebuild(g: Game): void {
     const c = padCenter(pads)!
     for (const u of g.world.query(z.id, c.x, c.y, 3)) {
       if (!u.alive || !u.inv || !onPads(u, pads)) continue
-      for (let slot = 0; slot < u.inv.length; slot++) {
-        const it = u.inv[slot]
-        if (it?.id !== 'memoryCore') continue
+      // 化身中替人寄放的核心也算帶著（carriedItems）
+      for (const it of carriedItems(u)) {
+        if (it.id !== 'memoryCore') continue
         const p = coreOwner(g, it)
         if (!p || p.alive || p.stayDead || p.left || facOf(g).rebuilds.has(p.slot)) continue
-        startRebuild(g, u, slot, fab, p, 'fab.autoRebuild')
+        startRebuild(g, u, it, fab, p, 'fab.autoRebuild')
       }
     }
   }
@@ -314,13 +314,11 @@ function coreOwner(g: Game, it: { data?: unknown }): GamePlayer | undefined {
   return owner !== undefined ? g.players[owner] : undefined
 }
 
-/** 用背包第 slot 格的記憶核心在鑄造台 t 重建 p 的機體（手動使用與走進平台共用）*/
-function startRebuild(g: Game, u: Ent, slot: number, t: Ent, p: GamePlayer, msg: string): void {
+/** 用 u 身上的記憶核心 it（背包或寄放處）在鑄造台 t 重建 p 的機體（手動使用與走進平台共用）*/
+function startRebuild(g: Game, u: Ent, it: ItemInst, t: Ent, p: GamePlayer, msg: string): void {
   const fs = facOf(g)
   const z = g.world.zones[t.zone]
-  const it = u.inv![slot]!
-  u.inv![slot] = null
-  u.statsDirty = true
+  removeCarried(u, it)
   g.onItemLost?.(u, it)
   giveRemote(g, u, p)
   p.data.core = 0
@@ -381,7 +379,7 @@ regScript('android.memoryCore', (g, ctx) => {
       say(g, u, 'fab.busy')
       return true
     }
-    startRebuild(g, u, slot, t, p, 'fab.rebuilding')
+    startRebuild(g, u, it, t, p, 'fab.rebuilding')
     return true
   }
   if (t.def.id === 'npc.pacifier' && t.owner === NEUTRAL) {
