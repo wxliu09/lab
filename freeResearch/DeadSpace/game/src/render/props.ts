@@ -1,6 +1,6 @@
 // 站內道具與設施模型（程序化組裝，正面朝 local +Z）
 import * as THREE from 'three'
-import { Batcher, box, cyl, plane, rbox, sphere, torus } from './batch'
+import { Batcher, box, cyl, mergeStatic, plane, rbox, sphere, torus } from './batch'
 import { Mat, withFog } from './materials'
 import { decalTex, glyphTex, screenTex } from './tex'
 import { fxTex } from './fx/tex'
@@ -41,10 +41,14 @@ function at(cx: number, cz: number, rot: number, lx: number, lz: number): [numbe
 
 // ───────── 房間道具（'x' 格）─────────
 
-export function roomProp(b: Batcher, type: string, cx: number, cz: number, rot: number, seed: number, anim: Animated[], group: THREE.Group): void {
+/**
+ * 一格房間道具：靜態零件併進 b（站體依材質合併）；不投影的貼地平面（光暈、水漬、營養液面）併進 flat；
+ * 要動畫或有獨立貼圖的零件（螢幕、標本、火花）才是 group 底下的獨立 Mesh。
+ */
+export function roomProp(b: Batcher, type: string, cx: number, cz: number, rot: number, seed: number, anim: Animated[], group: THREE.Group, flat: Batcher): void {
   const extra = EXTRA_PROPS[type]
   if (extra) {
-    extra({ b, cx, cz, rot, seed, anim, group })
+    extra({ b, flat, cx, cz, rot, seed, anim, group })
     return
   }
   const dark = Mat.metal('#3a4048', 0.7)
@@ -246,7 +250,7 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
       // 全像發射器的斷樁＋火花
       const stub = onTop(new THREE.Mesh(cyl(0.09, 0.12, 0.22, 10), Mat.metal('#1c1a18', 0.5, false)), 0.12, 0.1, -0.05)
       stub.rotation.set(0.25, 0, 0.3)
-      const spark = onTop(new THREE.Mesh(sphere(0.045, 8, 6), Mat.emissive('#ffd9a0', 5)), 0.16, 0.22, -0.02)
+      const spark = keep(onTop(new THREE.Mesh(sphere(0.045, 8, 6), Mat.emissive('#ffd9a0', 5)), 0.16, 0.22, -0.02))
       // 側面掀開的面板（露出裡面的焦黑）與垂下的電纜
       const a0 = seed * 0.9
       for (let i = 0; i < 2; i++) {
@@ -324,7 +328,7 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
       add(cyl(0.45, 0.55, 0.3, 24), dark, 0, 0.15, 0)
       add(cyl(0.12, 0.12, 1.8, 12), mid, 0, 1.2, 0)
       const rings: THREE.Mesh[] = []
-      for (let i = 0; i < 3; i++) rings.push(add(torus(0.35 - i * 0.05, 0.03, 6, 28), Mat.emissive('#5cf2a5', 3), 0, 0.7 + i * 0.5, 0, Math.PI / 2))
+      for (let i = 0; i < 3; i++) rings.push(keep(add(torus(0.35 - i * 0.05, 0.03, 6, 28), Mat.emissive('#5cf2a5', 3), 0, 0.7 + i * 0.5, 0, Math.PI / 2)))
       anim.push({ obj: root, update: (t) => rings.forEach((r, i) => ((r.position.y = 0.6 + ((t * 0.4 + i / 3) % 1) * 1.6), r.scale.setScalar(1 - ((t * 0.4 + i / 3) % 1) * 0.3))) })
       return { root, anim, ring: '#5cf2a5' }
     }
@@ -352,11 +356,24 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
       decal.rotation.x = -Math.PI / 2
       decal.position.y = 0.015
       root.add(decal)
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2
-        const l = add(sphere(0.06, 8, 6), Mat.emissive('#ffc23d', 3), Math.cos(a) * 2.6, 0.05, Math.sin(a) * 2.6)
-        anim.push({ obj: l, update: (t) => l.scale.setScalar(0.6 + 0.4 * Math.max(0, Math.sin(t * 3 - i * 0.8))) })
+      // 外圈八盞輪流脈動的燈：一個 InstancedMesh（每幀更新八個矩陣），不是八個 draw call
+      const lamps = new THREE.InstancedMesh(sphere(0.06, 8, 6), Mat.emissive('#ffc23d', 3), 8)
+      lamps.castShadow = true
+      lamps.receiveShadow = true
+      const m4 = new THREE.Matrix4()
+      const place = (t: number | null) => {
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2
+          const k = t === null ? 1 : 0.6 + 0.4 * Math.max(0, Math.sin(t * 3 - i * 0.8))
+          lamps.setMatrixAt(i, m4.makeScale(k, k, k).setPosition(Math.cos(a) * 2.6, 0.05, Math.sin(a) * 2.6))
+        }
+        lamps.instanceMatrix.needsUpdate = true
       }
+      // 包圍球用最大的縮放算一次（之後只會變小）
+      place(null)
+      lamps.computeBoundingSphere()
+      root.add(lamps)
+      anim.push({ obj: lamps, update: (t) => place(t) })
       return { root, anim }
     }
     default: {
@@ -373,6 +390,8 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
 
 interface PropCtx {
   b: Batcher
+  /** 不投影、不受陰影的貼地平面（光暈、水漬）：站體另外合併 */
+  flat: Batcher
   cx: number
   cz: number
   /** 背對牆的朝向：local +Z 指向房間內、-Z 靠牆 */
@@ -395,6 +414,15 @@ function part(c: PropCtx, geo: THREE.BufferGeometry, mat: THREE.Material, lx: nu
   _q.setFromEuler(_e)
   _m4.compose(_p.set(x, y, z), _q, _s.set(sx, sy, sz))
   c.b.addMatrix(geo, mat, _m4)
+}
+
+/** 不投影的靜態零件（貼地的水漬、營養液面）：併進 flat */
+function flatPart(c: PropCtx, geo: THREE.BufferGeometry, mat: THREE.Material, lx: number, y: number, lz: number, ry = 0, rx = 0, rz = 0): void {
+  const [x, z] = at(c.cx, c.cz, c.rot, lx, lz)
+  _e.set(rx, c.rot + ry, rz, 'YXZ')
+  _q.setFromEuler(_e)
+  _m4.compose(_p.set(x, y, z), _q, _s.set(1, 1, 1))
+  c.flat.addMatrix(geo, mat, _m4)
 }
 
 /** 動態零件：獨立 Mesh（要做動畫的才用）*/
@@ -457,16 +485,19 @@ function rockGeo(seed: number, r: number, detail = 1, flat = 0.7): THREE.BufferG
   return g
 }
 
-/** 貼地的發光光暈（additive，不寫深度）*/
-function glowDecal(group: THREE.Object3D, color: string, size: number, x: number, z: number, opacity = 0.35, y = 0.02): THREE.Mesh {
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size),
-    new THREE.MeshBasicMaterial({ map: decalTex('glow', color), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }),
-  )
-  m.rotation.x = -Math.PI / 2
-  m.position.set(x, y, z)
-  group.add(m)
-  return m
+/** 光暈貼花的材質（同色同透明度共用，站體才能把它們併成一個 draw call；釋放站點時不 dispose）*/
+const glowMatCache = new Map<string, THREE.MeshBasicMaterial>()
+
+/** 貼地的發光光暈（additive，不寫深度）：併進 flat（加成混合與順序無關）*/
+function glowDecal(c: PropCtx, color: string, size: number, x: number, z: number, opacity = 0.35, y = 0.02): void {
+  const key = `${color}:${opacity}`
+  let m = glowMatCache.get(key)
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ map: decalTex('glow', color), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending })
+    m.userData.keep = true
+    glowMatCache.set(key, m)
+  }
+  c.flat.add(plane(size, size), m, x, y, z, 0, 1, 1, 1, -Math.PI / 2)
 }
 
 const ALONG_X = Math.PI / 2 // rz：把 Y 軸的圓柱放倒成 local X 方向
@@ -530,6 +561,8 @@ const EXTRA_PROPS: Record<string, PropFn> = {
       mk(rbox(0.13, 0.7, 0.13, 0.04), dark, 0, 1.12, 0.62, -0.9)
       mk(box(0.22, 0.06, 0.12), dark, 0, 0.88, 0.95)
       mk(box(0.05, 0.05, 0.05), amber, 0, 1.2, 0.5)
+      // 手臂整支一起轉：零件在手臂底下依材質合併
+      mergeStatic(arm, new Set())
       c.group.add(arm)
       c.anim.push({ obj: arm, update: (t) => (arm.rotation.y = c.rot + Math.sin(t * 0.5 + c.seed) * 1.1) })
     } else {
@@ -620,7 +653,7 @@ const EXTRA_PROPS: Record<string, PropFn> = {
       part(c, rbox(0.34, 0.22, 0.12, 0.03), frame, -0.2, 1.3, 0.15, 0, -0.5)
       part(c, box(0.28, 0.16, 0.02), lamp, -0.2, 1.3, 0.22, 0, -0.5)
       part(c, cyl(0.012, 0.012, 0.6, 4), Mat.rubber('#111'), -0.05, 0.12, 0.1, 0, 0, ALONG_X)
-      glowDecal(c.group, '#ffb46b', 2.6, ...at(c.cx, c.cz, c.rot, -0.2, 0.7), 0.3)
+      glowDecal(c, '#ffb46b', 2.6, ...at(c.cx, c.cz, c.rot, -0.2, 0.7), 0.3)
     } else if (k === 0) {
       // 倒下的置物櫃
       part(c, rbox(1.7, 0.55, 0.5, 0.04), rust, 0, 0.28, 0, 0.3 + rnd01(c.seed, 1), 0, 0.08)
@@ -647,7 +680,7 @@ const EXTRA_PROPS: Record<string, PropFn> = {
           spark.scale.setScalar(0.6 + Math.random() * 0.8)
         },
       })
-      glowDecal(c.group, '#ff9a3a', 0.9, ...at(c.cx, c.cz, c.rot, -0.05, 0.55), 0.18)
+      glowDecal(c, '#ff9a3a', 0.9, ...at(c.cx, c.cz, c.rot, -0.05, 0.55), 0.18)
     } else {
       // 塌落的天花板＋垂下的電纜
       part(c, rbox(0.6, 0.5, 0.6, 0.03), rust, 0.15, 0.25, -0.1)
@@ -711,7 +744,7 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     part(c, sphere(0.12, 10, 8), melt, 0.1, 0.93, -0.08, 0, 0, 0, 1.6, 0.35, 1.2)
     part(c, box(0.16, 0.08, 0.3), iron, 0, 0.9, 0.5)
     part(c, box(0.7, 0.06, 0.06), Mat.paint('#ffd23d', 0.5), 0, 0.3, 0.46)
-    glowDecal(c.group, '#ff7a1a', 2.2, c.cx, c.cz, 0.28)
+    glowDecal(c, '#ff7a1a', 2.2, c.cx, c.cz, 0.28)
   },
   conveyor(c) {
     const frame = Mat.metal('#4a4538', 0.7)
@@ -751,15 +784,15 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     } else if (k === 1) {
       // 飼料槽：綠色營養液
       part(c, rbox(0.9, 0.35, 0.45, 0.04), Mat.metal('#5a6a62', 0.6), 0, 0.18, -0.15)
-      const liq = live(c, box(0.8, 0.02, 0.36), Mat.liquid('#5cf2a5'), 0, 0.33, -0.15)
-      liq.castShadow = false
+      flatPart(c, box(0.8, 0.02, 0.36), Mat.liquid('#5cf2a5'), 0, 0.33, -0.15)
     } else {
       // 長苔的石塊
       part(c, rockGeo(c.seed, 0.42, 1, 0.65), Mat.rock('#4a5a4e'), 0, 0.2, 0, rnd01(c.seed, 3) * 3)
     }
     // 潮濕地面的反光水漬
-    const wet = live(c, new THREE.CircleGeometry(0.55 + rnd01(c.seed, 5) * 0.3, 20), Mat.glass('#2a4a3a', 0.35), 0.2, 0.012, 0.3, 0, -Math.PI / 2)
-    wet.castShadow = false
+    const wg = new THREE.CircleGeometry(0.55 + rnd01(c.seed, 5) * 0.3, 20)
+    flatPart(c, wg, Mat.glass('#2a4a3a', 0.35), 0.2, 0.012, 0.3, 0, -Math.PI / 2)
+    wg.dispose()
   },
   // ───── 擺渡號 ─────
   teleport(c) {
@@ -771,7 +804,7 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     part(c, box(0.03, 1.4, 0.03), glow, 0, 1.0, 0.13)
     part(c, sphere(0.13, 16, 12), glow, 0, 2.1, 0)
     part(c, torus(0.22, 0.02, 6, 24), Mat.emissive('#9fe7ff', 2), 0, 2.1, 0, 0, Math.PI / 2)
-    glowDecal(c.group, '#6fb8ff', 1.6, c.cx, c.cz, 0.3)
+    glowDecal(c, '#6fb8ff', 1.6, c.cx, c.cz, 0.3)
   },
   lounge(c) {
     // 候車長椅
@@ -866,7 +899,7 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     part(c, cyl(0.16, 0.24, 1.0, 12), Mat.metal('#3a3c42', 0.7), 0, 0.5, 0)
     part(c, torus(0.24, 0.04, 8, 24), glow, 0, 1.05, 0, 0, Math.PI / 2)
     part(c, sphere(0.08, 10, 8), glow, 0, 1.12, 0)
-    glowDecal(c.group, col, 1.8, c.cx, c.cz, 0.3)
+    glowDecal(c, col, 1.8, c.cx, c.cz, 0.3)
   },
   factory(c) {
     // 模組組裝台：旋轉的發光模組
@@ -903,14 +936,14 @@ const EXTRA_PROPS: Record<string, PropFn> = {
       for (let i = 0; i < 3; i++) part(c, torus(0.35 + i * 0.08, 0.05, 6, 16, Math.PI * 0.9), flesh, 0, 0.04, 0, i * 1.9 + c.seed, Math.PI / 2)
       for (let i = 0; i < 4; i++) part(c, sphere(0.05, 8, 6), pulse(c.anim, '#9dff5c', 2.4, 1.6, 1.1, i), (rnd01(c.seed, i) - 0.5) * 0.8, 0.06, (rnd01(c.seed, i + 4) - 0.5) * 0.8)
     }
-    glowDecal(c.group, '#6dff9a', 1.4, c.cx, c.cz, 0.14)
+    glowDecal(c, '#6dff9a', 1.4, c.cx, c.cz, 0.14)
   },
   code(c) {
     // 符文石碑
     part(c, rbox(0.62, 2.1, 0.26, 0.05), Mat.rock('#1e2422'), 0, 1.05, -0.2)
     const g = live(c, new THREE.PlaneGeometry(0.5, 1.6), Mat.screen(glyphTex('#9dff5c', c.seed), 1.8), 0, 1.15, -0.065)
     g.castShadow = false
-    glowDecal(c.group, '#9dff5c', 1.4, ...at(c.cx, c.cz, c.rot, 0, 0.2), 0.2)
+    glowDecal(c, '#9dff5c', 1.4, ...at(c.cx, c.cz, c.rot, 0, 0.2), 0.2)
   },
   // ───── 海盜船 ─────
   brig(c) {
@@ -947,6 +980,15 @@ const MARKER_KINDS = new Set([
 ])
 
 type PoiFn = (ref: string | undefined, seed: number) => PoiModel
+
+/**
+ * 動畫閉包會改到位置、旋轉、縮放或顯示的零件（不是 anim 的 obj 本身時）要標記：站體合併設施模型的靜態零件時
+ * （batch.ts mergeStatic）不能把它們併掉。tests/unit/poiMerge.test.ts 會跑動畫確認沒有漏標。
+ */
+function keep<T extends THREE.Object3D>(o: T): T {
+  o.userData.live = true
+  return o
+}
 
 function poiKit() {
   const root = new THREE.Group()
@@ -1064,7 +1106,7 @@ const EXTRA_POIS: Record<string, PoiFn> = {
     k.add(torus(1.15, 0.14, 8, 40), dark, 0, 0.06, 0, Math.PI / 2)
     k.add(torus(0.98, 0.03, 6, 40), Mat.emissive('#ff5a4a', 3), 0, 0.12, 0, Math.PI / 2)
     const disc = k.decal(decalTex('ring', '#ffd0c8'), 2.0, 0.03, 0.8, true)
-    const disc2 = k.decal(decalTex('hex', '#ff5a4a'), 1.9, 0.035, 0.55, true)
+    const disc2 = keep(k.decal(decalTex('hex', '#ff5a4a'), 1.9, 0.035, 0.55, true))
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4
       k.add(cyl(0.07, 0.1, 0.9, 8), dark, Math.cos(a) * 1.35, 0.45, Math.sin(a) * 1.35)
@@ -1162,7 +1204,7 @@ const EXTRA_POIS: Record<string, PoiFn> = {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + Math.PI / 8
       k.add(cyl(0.1, 0.12, 0.08, 10), Mat.metal('#2a2e33', 0.7), Math.cos(a) * 5.6, 0.04, Math.sin(a) * 5.6, 0, 0, 0, false)
-      lamps.push(k.add(sphere(0.07, 10, 8), Mat.emissive('#ff3b3b', 4), Math.cos(a) * 5.6, 0.12, Math.sin(a) * 5.6, 0, 0, 0, false))
+      lamps.push(keep(k.add(sphere(0.07, 10, 8), Mat.emissive('#ff3b3b', 4), Math.cos(a) * 5.6, 0.12, Math.sin(a) * 5.6, 0, 0, 0, false)))
     }
     k.anim.push({ obj: k.root, update: (t) => lamps.forEach((l, i) => (l.visible = Math.sin(t * 3 - i * 0.785) > 0)) })
     return { root: k.root, anim: k.anim }
@@ -1177,7 +1219,7 @@ const EXTRA_POIS: Record<string, PoiFn> = {
     const glow = k.decal(decalTex('glow', '#8fd0ff'), 4.2, 0.03, 0.4, true)
     const sparkMat = Mat.emissive('#dff4ff', 6)
     const sparks: THREE.Mesh[] = []
-    for (let i = 0; i < 7; i++) sparks.push(k.add(sphere(0.035, 6, 4), sparkMat, 0, 0.3, 1, 0, 0, 0, false))
+    for (let i = 0; i < 7; i++) sparks.push(keep(k.add(sphere(0.035, 6, 4), sparkMat, 0, 0.3, 1, 0, 0, 0, false)))
     const pts = new Float32Array(9 * 3)
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pts, 3))
@@ -1245,7 +1287,7 @@ const EXTRA_POIS: Record<string, PoiFn> = {
       const r = 1.15 - (z / L) * 0.2
       const isCoil = Math.round(z / 3) % 2 === 0
       const m = k.add(torus(r + 0.04, isCoil ? 0.06 : 0.09, 6, 32), isCoil ? coil : iron, 0, 1.25, 1.5 + z)
-      if (isCoil) coilP.push(m)
+      if (isCoil) coilP.push(keep(m))
     }
     k.add(box(0.14, 0.05, L - 1), coil, 0, 2.25, 1.5 + L / 2, 0.012)
     k.add(cyl(1.12, 1.12, 1.4, 32), iron, 0, 1.25, 1.5 + L - 0.7, Math.PI / 2)
@@ -1283,14 +1325,14 @@ const SPECIAL_VENDORS: Record<string, PoiFn> = {
     const horn = new THREE.Mesh(sphere(0.06, 10, 8), Mat.emissive('#ffb000', 3))
     horn.position.set(0, -0.2, 0.47)
     head.add(dish, feed, horn)
-    const beacon = k.add(sphere(0.08, 10, 8), Mat.emissive('#ffc23d', 4), 0, 2.95, 0)
+    const beacon = keep(k.add(sphere(0.08, 10, 8), Mat.emissive('#ffc23d', 4), 0, 2.95, 0))
     k.add(rbox(0.6, 1.1, 0.4, 0.04), navy, 0, 0.9, 0.75)
     const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.4), Mat.screen(screenTex('radar', '#ffc23d', seed), 2))
     scr.position.set(0, 1.15, 0.955)
     k.root.add(scr)
-    const pulseRing = k.decal(decalTex('ring', '#ffc23d'), 3.2, 0.02, 0.35, true)
+    const pulseRing = keep(k.decal(decalTex('ring', '#ffc23d'), 3.2, 0.02, 0.35, true))
     // 地面雷達掃描扇形（與碟形天線同步旋轉）
-    const sweep = k.decal(decalTex('sweep', '#ffb000'), 7.5, 0.025, 0.5, true)
+    const sweep = keep(k.decal(decalTex('sweep', '#ffb000'), 7.5, 0.025, 0.5, true))
     k.root.scale.setScalar(1.45)
     k.anim.push({
       obj: head,
@@ -1310,11 +1352,11 @@ const SPECIAL_VENDORS: Record<string, PoiFn> = {
     const dark = Mat.metal('#2a2e38', 0.75)
     k.add(cyl(0.8, 0.95, 0.3, 28), dark, 0, 0.15, 0)
     k.add(cyl(0.2, 0.28, 1.6, 16), Mat.metal('#4a5260', 0.7), 0, 1.0, 0)
-    const core = k.add(sphere(0.22, 18, 12), Mat.emissive('#b28cff', 3.5), 0, 1.9, 0)
+    const core = keep(k.add(sphere(0.22, 18, 12), Mat.emissive('#b28cff', 3.5), 0, 1.9, 0))
     const rings: THREE.Mesh[] = []
     const cols = ['#8fd8ff', '#b28cff', '#8fd8ff']
     for (let i = 0; i < 3; i++) {
-      const r = k.add(torus(0.55 + i * 0.22, 0.035, 8, 48), Mat.emissive(cols[i], 2.8), 0, 1.9, 0)
+      const r = keep(k.add(torus(0.55 + i * 0.22, 0.035, 8, 48), Mat.emissive(cols[i], 2.8), 0, 1.9, 0))
       rings.push(r)
     }
     k.add(rbox(0.5, 1.0, 0.35, 0.04), dark, 0, 0.8, 0.9)
@@ -1470,7 +1512,7 @@ export function poiWreck(kind: string, ref: string | undefined, seed: number): P
   const emberMat = Mat.emissive('#ff6a2a', 2.6)
   for (let i = 0; i < 3; i++) {
     const a = seed * 2.1 + i * 2.1
-    embers.push(k.add(sphere(0.05, 6, 4), emberMat, Math.cos(a) * 0.35, 0.2 + i * 0.08, Math.sin(a) * 0.3, 0, 0, 0, false))
+    embers.push(keep(k.add(sphere(0.05, 6, 4), emberMat, Math.cos(a) * 0.35, 0.2 + i * 0.08, Math.sin(a) * 0.3, 0, 0, 0, false)))
   }
   const sm = smolder.material as THREE.MeshBasicMaterial
   k.anim.push({

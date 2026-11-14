@@ -12,6 +12,11 @@ import './models/xeno'
 import './models/mutant'
 import './models/android'
 import { decalTex } from './tex'
+import { bakeTree } from './batch'
+
+/** 倒地多久之後把人形屍體烘焙成靜態 mesh（倒地動畫約 0.45 秒）；每幀最多烘焙幾具（進站時一次出現很多具屍體）*/
+const BAKE_AFTER = 0.6
+const BAKES_PER_FRAME = 2
 
 export interface UnitView {
   id: number
@@ -28,6 +33,8 @@ export interface UnitView {
   deadAt: number
   height: number
   fade: number
+  /** 人形屍體已經烘焙成靜態 mesh（骨架不再動畫；復活時整個重建）*/
+  baked: boolean
 }
 
 const ringGeo = new THREE.RingGeometry(0.48, 0.62, 36)
@@ -76,13 +83,31 @@ export class UnitLayer {
   hovered = 0
   /** sync 每幀重複使用 */
   private seen = new Set<number>()
+  /**
+   * 預先建好、還沒顯示的單位視圖（第一次進太空的分段載入：各站船殼、船艦一個一片，GameScene.spaceLoadSteps）：
+   * 那個 zone 的 sync 遇到同 id、同外觀 key 的直接拿來用，第一次同步之後沒用到的丟掉
+   */
+  private pending = new Map<number, { v: UnitView; zone: number }>()
 
   private makeKey(e: CEnt): string {
     const s = e.s
     return `${s.d}|${s.cl ?? ''}|${s.c ?? -1}|${(s.fl ?? 0) & EntFlag.Corpse}`
   }
 
-  private create(e: CEnt): UnitView {
+  /** 預先建一個單位的視圖（不加進場景）；已經有了就不做 */
+  prepare(e: CEnt): void {
+    if (this.views.has(e.s.i) || this.pending.has(e.s.i)) return
+    this.pending.set(e.s.i, { v: this.create(e, false), zone: e.s.z ?? -1 })
+  }
+
+  /** 預先建好、還沒顯示的某個 zone 的單位模型（預編譯、上傳貼圖用）*/
+  pendingRoots(zone: number): THREE.Object3D[] {
+    const out: THREE.Object3D[] = []
+    for (const p of this.pending.values()) if (p.zone === zone) out.push(p.v.root)
+    return out
+  }
+
+  private create(e: CEnt, show = true): UnitView {
     const s = e.s
     const isItem = (s.d ?? '').startsWith('item:')
     const def = isItem ? UNITS.get('groundItem') : UNITS.get(s.d ?? '')
@@ -96,6 +121,10 @@ export class UnitLayer {
     if (modelId === 'human') {
       rig = buildHuman(s.cl || 'researcher', colorOf(s.c), s.i % 5)
       if ((s.d ?? '').startsWith('suit.')) attachSuit(rig, s.d!, colorOf(s.c))
+      // 模型本身的零件（之後 buff 掛上的帽子、殼層不算）：倒地之後烘焙用
+      rig.root.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) o.userData.rigPart = true
+      })
       rig.root.scale.setScalar(1.18)
       root.add(rig.root)
       height = rig.height * 1.18
@@ -130,24 +159,31 @@ export class UnitLayer {
       }
     }
     root.traverse((o) => (o.userData.entId = s.i))
-    this.group.add(root)
-    return { id: s.i, root, rig, model, ring, ringCol, key: this.makeKey(e), lastX: e.x, lastY: e.y, speed: 0, deadAt: -1, height, fade: 0 }
+    if (show) this.group.add(root)
+    return { id: s.i, root, rig, model, ring, ringCol, key: this.makeKey(e), lastX: e.x, lastY: e.y, speed: 0, deadAt: -1, height, fade: 0, baked: false }
   }
 
   sync(ents: Iterable<CEnt>, zone: number, skip: (e: CEnt) => boolean, dt: number, t: number): void {
     const seen = this.seen
     seen.clear()
+    let bakes = 0
     for (const e of ents) {
       if (e.s.z !== zone || skip(e)) continue
       seen.add(e.s.i)
       let v = this.views.get(e.s.i)
       const key = this.makeKey(e)
-      if (v && v.key !== key) {
+      // 烘焙過的屍體站起來了（復活）：骨架已經合併，重建
+      if (v && (v.key !== key || (v.baked && (e.s.st ?? 0) !== 4))) {
         this.removeView(v)
         v = undefined
       }
       if (!v) {
-        v = this.create(e)
+        const p = this.pending.get(e.s.i)
+        if (p && p.v.key === key) {
+          v = p.v
+          this.group.add(v.root)
+        } else v = this.create(e)
+        this.pending.delete(e.s.i)
         this.views.set(e.s.i, v)
         v.lastX = e.x
         v.lastY = e.y
@@ -187,8 +223,16 @@ export class UnitLayer {
       // 石化：凍結在當下的姿勢（待機呼吸、步態、脈動都停）；死亡時照常播倒地動畫
       const frozen = (fl & EntFlag.Petrified) !== 0 && st !== 4
       if (!frozen) {
-        if (v.rig) animateRig(v.rig, dt, t, v.speed, st, v.deadAt >= 0 ? t - v.deadAt : 0)
+        if (v.rig && !v.baked) animateRig(v.rig, dt, t, v.speed, st, v.deadAt >= 0 ? t - v.deadAt : 0)
         if (v.model) v.model.update(t, dt, v.speed, st)
+      }
+      // 倒地的人形屍體不會再動：零件依材質烘焙成幾個靜態 mesh（一具約 30 個 draw call → 十幾個）。
+      // 自己的單位（手電筒、槍口跟著骨架）與隱形中（材質是暫時的半透明複本）的不烘焙
+      if (v.rig && !v.baked && st === 4 && v.deadAt >= 0 && t - v.deadAt > BAKE_AFTER && v.fade === 0 && !(fl & EntFlag.Mine) && bakes < BAKES_PER_FRAME) {
+        bakes++
+        animateRig(v.rig, 0, t, 0, 4, 10)
+        for (const m of bakeTree(v.rig.root, (o) => !!o.userData.rigPart)) m.userData.entId = v.id
+        v.baked = true
       }
       if (v.ring) {
         const sel = e.s.i === this.selected
@@ -200,11 +244,18 @@ export class UnitLayer {
       }
     }
     for (const [id, v] of this.views) if (!seen.has(id)) this.removeView(v)
+    for (const [id, p] of this.pending) if (p.zone === zone) this.pending.delete(id)
   }
 
   private removeView(v: UnitView): void {
     this.group.remove(v.root)
     this.views.delete(v.id)
+    // 烘焙出來的屍體幾何是這個單位自己的
+    if (v.baked)
+      v.root.traverse((o) => {
+        const g = (o as THREE.Mesh).geometry
+        if (g?.userData.baked) g.dispose()
+      })
     // 隱形時換上的半透明材質複本（選取圈與光暈的材質依顏色共用，不釋放）
     v.root.traverse((o) => {
       if (!o.userData.prevMat) return

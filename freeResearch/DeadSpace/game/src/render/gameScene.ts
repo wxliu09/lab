@@ -121,6 +121,28 @@ function texturesOf(roots: THREE.Object3D[], out: Set<THREE.Texture>): void {
   }
 }
 
+/** 等 GPU 端追上前最多等幾輪（每輪是一個 'wait'：下一幀或下一個空閒時間）*/
+const DRAIN_MAX = 600
+
+/**
+ * 等 GPU 端（Chrome 的 GPU process）把之前送出的指令做完：插一個 fence，之後每輪用不會卡住的 getSyncParameter 查它，還沒好就 yield 'wait'。
+ * WebGL 指令是排隊送到 GPU process 執行的；預編譯送出的連結、上傳的貼圖都還在排隊時，第一次使用 program 的同步查詢（getProgramInfoLog）
+ * 會讓主執行緒一路等到整串做完（軟體算繪一次可達好幾秒）。先等 fence 再查，主執行緒在等待期間照常轉送快照、處理輸入。
+ * 沒有 WebGL2 fence（單元測試的假 context）就不等。
+ */
+function* gpuDrain(gl: WebGLRenderingContext | WebGL2RenderingContext): Steps {
+  const g = gl as WebGL2RenderingContext
+  if (typeof g.fenceSync !== 'function') return
+  const s = g.fenceSync(g.SYNC_GPU_COMMANDS_COMPLETE, 0)
+  if (!s) return
+  g.flush()
+  try {
+    for (let i = 0; i < DRAIN_MAX && g.getSyncParameter(s, g.SYNC_STATUS) !== g.SIGNALED; i++) yield 'wait'
+  } finally {
+    g.deleteSync(s)
+  }
+}
+
 /** requestIdleCallback（沒有就退回 setTimeout）；timeout 讓一直忙碌的頁面也會在幾秒內輪到 */
 function onIdle(cb: IdleCb, timeout: number): () => void {
   const w = window as unknown as { requestIdleCallback?: (cb: IdleCb, o: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
@@ -329,11 +351,18 @@ export class GameScene implements SceneLike {
       this.zones.set(id, { id, key, station: stationId, layout: parseLayout(st.layout) })
       added = true
     }
-    // 局中出現新的站（事件站）：太空層也重新預熱一次（新船殼的材質組合），第一次進太空才不會再編 shader
+    // 局中出現新的站（事件站）：太空層也重新預熱一次（新船殼的材質組合），第一次進太空才不會再編 shader；
+    // 不預建的裝置下一次進太空時再分段預熱一次（spaceWarm）
+    if (added) this.spaceWarm = false
     if (this.prebuildHost) this.queuePrebuild(false, added && !!this.space)
   }
 
   private space: { group: THREE.Group; update: (t: number) => void; sun: THREE.DirectionalLight } | null = null
+  /**
+   * 太空層的貼圖、材質、program 已經預熱過（prebuildZone(0) 做完）。還沒有時第一次進太空和第一次進站一樣交給分段載入（loader），
+   * 不在切過去的那一幀同步產生所有船殼的貼圖、編譯 shader（軟體算繪約好幾秒，主機卡住會讓所有客人停住）。
+   */
+  private spaceWarm = false
 
   /** 建立太空層（隱藏）*/
   private buildSpace(): NonNullable<GameScene['space']> {
@@ -439,6 +468,7 @@ export class GameScene implements SceneLike {
   private onRestored = () => {
     this.uploaded = new WeakSet()
     this.warmed = new WeakSet()
+    this.spaceWarm = false
     this.queuePrebuild(true)
   }
 
@@ -557,6 +587,24 @@ export class GameScene implements SceneLike {
         extraTex.push(fog.tex)
       }
     }
+    try {
+      yield* this.uploadCompileSteps(host, roots, extraTex, id === 0)
+    } finally {
+      // 代表物件用完（或分段載入中途放棄：stopLoad 呼叫 return()）：特效的池化材質還回池子、護盾材質 dispose（同 kit.prewarm）
+      if (warm) {
+        warm.fx.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.Material | undefined
+          if (m && !warm!.disposeMats.includes(m)) this.fx.releaseMat(m)
+        })
+        for (const m of warm.disposeMats) m.dispose()
+      }
+    }
+    yield* this.firstUseSteps(host)
+    if (id === 0) this.spaceWarm = true
+  }
+
+  /** 延後的貼圖分段做完 → 上傳 roots 用到的貼圖（一次一張）→ 預編譯（一次 COMPILE_BATCH 個）；space = 太空層（多了太陽這盞燈）*/
+  private *uploadCompileSteps(host: PrebuildHost, roots: THREE.Object3D[], extraTex: THREE.Texture[], space: boolean): Steps {
     // 延後產生的程序化貼圖（這一站與之前留下的）分段做完
     yield* textureSteps()
     // 上傳貼圖：一次一張（同一張共用貼圖只上傳一次）
@@ -574,8 +622,8 @@ export class GameScene implements SceneLike {
     for (let i = 0; i < items.length; i += COMPILE_BATCH) {
       const sp = this.space
       const spVis = sp?.group.visible ?? false
-      const lights = id === 0 && sp && !spVis ? [sp.sun] : []
-      if (sp && id !== 0) sp.group.visible = false
+      const lights = space && sp && !spVis ? [sp.sun] : []
+      if (sp && !space) sp.group.visible = false
       try {
         host.compile(batchRoot(items.slice(i, i + COMPILE_BATCH), lights), this.camera, this.scene)
       } catch {
@@ -585,15 +633,12 @@ export class GameScene implements SceneLike {
       }
       yield
     }
-    if (warm) {
-      // 代表物件用完：特效的池化材質還回池子、護盾材質 dispose（同 kit.prewarm）
-      warm.fx.traverse((o) => {
-        const m = (o as THREE.Mesh).material as THREE.Material | undefined
-        if (m && !warm!.disposeMats.includes(m)) this.fx.releaseMat(m)
-      })
-      for (const m of warm.disposeMats) m.dispose()
-    }
-    // 等 GPU 連結完成（KHR_parallel_shader_compile；沒有這個擴充時 isReady 一律是 true）再第一次使用，一次一個
+  }
+
+  /** 等 GPU 端追上（gpuDrain）→ 已經連結好的 program 一次「第一次使用」一個（KHR_parallel_shader_compile；沒有這個擴充時 isReady 一律是 true）*/
+  private *firstUseSteps(host: PrebuildHost): Steps {
+    // 先等 GPU 端把前面送出的上傳與連結做完（沒有 KHR_parallel_shader_compile 的環境，第一次使用的同步查詢會卡到它追上為止）
+    yield* gpuDrain(host.renderer.getContext())
     for (;;) {
       let pending = false
       let did = false
@@ -616,6 +661,7 @@ export class GameScene implements SceneLike {
 
   /**
    * 要顯示的 zone 還沒建好（站點、且已經有站顯示過＝不是開局）：交給分段建站，先維持目前的 zone，建好那一幀才切過去。
+   * 第一次進太空層（還沒預熱：spaceWarm）也一樣分段：星空、太空裡的單位、延後的貼圖、上傳、預編譯、等 GPU 追上（spaceLoadSteps）做完才切過去。
    * 開局第一站仍同步建（開局覆蓋層、loaded 回報都等第一幀畫完）；沒有引擎（單元測試）或 context 遺失中也同步建。
    * 回傳這一幀實際顯示的 zone。
    */
@@ -627,7 +673,8 @@ export class GameScene implements SceneLike {
       return id
     }
     // 站體建好之後還有貼圖上傳、預編譯：loader 做完才切
-    if (this.zone >= 0 && this.zones.has(id) && (ld?.id === id || !this.views.has(id)) && this.host && !this.host.renderer.getContext().isContextLost()) {
+    const need = this.zones.has(id) ? ld?.id === id || !this.views.has(id) : id === 0 && (ld?.id === 0 || !this.spaceWarm)
+    if (this.zone >= 0 && need && this.host && !this.host.renderer.getContext().isContextLost()) {
       if (ld?.id !== id) this.startLoad(this.host, id, false)
       else if (ld.bg) {
         // 預先建的那一站（lookahead）真的要去了：轉成前景，顯示「載入中」、接著做完
@@ -643,16 +690,38 @@ export class GameScene implements SceneLike {
     return id
   }
 
+  /**
+   * 第一次進太空層的分段載入（不預建的裝置；預建的裝置在空閒時間做完整的 prebuildZone(0)）：
+   * 星空 → 太空裡現有的單位（各站船殼、船艦、小行星）一個一片先建好（UnitLayer.prepare，切過去那一幀單位層直接拿來用）→
+   * 只為這些東西產生貼圖、上傳、預編譯、等 GPU 追上、第一次使用。不像預建那樣把每一種船殼、特效都編一遍（載入中要等的事少一點）；
+   * 之後才出現的東西第一次用到時再編（和以前一樣）。
+   */
+  private *spaceLoadSteps(host: PrebuildHost): Steps {
+    const sp = this.buildSpace()
+    yield
+    for (const e of [...this.world.ents.values()]) {
+      if (e.s.z !== 0) continue
+      this.units.prepare(e)
+      yield
+    }
+    yield* this.uploadCompileSteps(host, [sp.group, ...this.units.pendingRoots(0), ...unitWarmMeshes()], [], true)
+    yield* this.firstUseSteps(host)
+    this.spaceWarm = true
+  }
+
   /** 開始分段建一站（換了目標就丟掉上一份；做到一半的站體留在 building，之後再去那一站時接著做）；bg = 預先建（不顯示載入中、用空閒時間）*/
   private startLoad(host: PrebuildHost, id: number, bg: boolean): void {
     this.stopLoad()
-    this.loader = { id, it: this.prebuildZone(host, id), wait: false, bg }
+    this.loader = { id, it: id === 0 ? this.spaceLoadSteps(host) : this.prebuildZone(host, id), wait: false, bg }
     if (bg) this.scheduleBg(1000)
     else this.loading.value = true
   }
 
   private stopLoad(): void {
+    // 讓做到一半的工作跑它的 finally（太空層的代表物件把借來的池化材質還回去）；站體本身留在 building，不受影響
+    const it = this.loader?.it
     this.loader = null
+    it?.return(undefined)
     this.loading.value = false
     this.cancelBg?.()
     this.cancelBg = null

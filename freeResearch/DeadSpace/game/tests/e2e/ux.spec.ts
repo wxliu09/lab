@@ -82,9 +82,8 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   })
   let a = await cam(page)
   await page.mouse.move(800, 897)
-  await page.waitForTimeout(900)
-  let b = await cam(page)
-  expect(b.y).toBeLessThan(a.y - 0.5)
+  // 軟體繪圖剛開局時 GPU 還在消化上傳，一幀可能超過 900 ms：輪詢到鏡頭動了為止，不要只等固定時間
+  await expect.poll(async () => (await cam(page)).y, { timeout: 8000 }).toBeLessThan(a.y - 0.5)
 
   // 從右邊緣滑出視窗：繼續往右捲，直到視窗失焦（先把鏡頭放到地圖中央，免得卡在邊界）
   await page.mouse.move(800, 450)
@@ -95,14 +94,12 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   await page.mouse.move(1590, 450)
   a = await cam(page)
   await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseout', { relatedTarget: null, bubbles: true })))
-  await page.waitForTimeout(900)
-  b = await cam(page)
-  expect(b.x).toBeGreaterThan(a.x + 0.5)
+  await expect.poll(async () => (await cam(page)).x, { timeout: 8000 }).toBeGreaterThan(a.x + 0.5)
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
   await page.waitForTimeout(200)
   a = await cam(page)
   await page.waitForTimeout(600)
-  b = await cam(page)
+  const b = await cam(page)
   expect(Math.abs(b.x - a.x)).toBeLessThan(0.05)
   await page.mouse.move(800, 300)
 

@@ -82,6 +82,99 @@ export class Batcher {
   }
 }
 
+/** 可以併進同層合併 mesh 的零件：一般 Mesh、單一材質、不是線框、沒有子物件、看得見、不在 skip 裡、沒標 userData.live */
+function mergeable(o: THREE.Object3D, skip: ReadonlySet<THREE.Object3D>): o is THREE.Mesh {
+  const m = o as THREE.Mesh
+  if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || (m as THREE.SkinnedMesh).isSkinnedMesh) return false
+  if (o.children.length || !o.visible || skip.has(o) || o.userData.live) return false
+  const mat = m.material
+  if (!mat || Array.isArray(mat) || (mat as THREE.MeshBasicMaterial).wireframe) return false
+  const g = m.geometry
+  return !!g?.attributes.position && !Object.keys(g.morphAttributes).length
+}
+
+/**
+ * 把 root 底下（每一層各自）不會動的葉子 Mesh 依材質＋陰影設定＋renderOrder 合併成一個（設施模型：一台販賣機十幾個零件 → 幾個）。
+ * 零件的位置在 root（或所在那一層）的座標系裡烘焙進幾何，所以 root 整個藏起來、換掉、拾取（poiKey 在 root 上）都照舊。
+ * 會被動畫改位置／旋轉／縮放／顯示的零件不能併：動畫的 obj 放進 skip（它的子物件仍可在它底下合併），
+ * 動畫閉包另外改到的零件要標 userData.live（props.ts 的 keep()）。回傳被併掉、已經從場景圖拿掉的零件（測試用來確認沒有動畫零件被併掉）。
+ */
+export function mergeStatic(root: THREE.Object3D, skip: ReadonlySet<THREE.Object3D>): THREE.Mesh[] {
+  const removed: THREE.Mesh[] = []
+  const visit = (node: THREE.Object3D) => {
+    const buckets = new Map<string, THREE.Mesh[]>()
+    for (const c of node.children) {
+      if (c.children.length) {
+        visit(c)
+        continue
+      }
+      if (!mergeable(c, skip)) continue
+      const mat = c.material as THREE.Material
+      const k = `${mat.uuid}|${c.castShadow ? 1 : 0}${c.receiveShadow ? 1 : 0}|${c.renderOrder}|${c.frustumCulled ? 1 : 0}`
+      let arr = buckets.get(k)
+      if (!arr) buckets.set(k, (arr = []))
+      arr.push(c)
+    }
+    for (const list of buckets.values()) {
+      if (list.length < 2) continue
+      const b = new Batcher()
+      const first = list[0]
+      for (const m of list) {
+        m.updateMatrix()
+        b.addMatrix(m.geometry, m.material as THREE.Material, m.matrix)
+      }
+      const out = b.build(node, { cast: first.castShadow, receive: first.receiveShadow })
+      for (const mesh of out) {
+        mesh.renderOrder = first.renderOrder
+        mesh.frustumCulled = first.frustumCulled
+      }
+      for (const m of list) {
+        node.remove(m)
+        removed.push(m)
+      }
+    }
+  }
+  visit(root)
+  return removed
+}
+
+/**
+ * 不會再動的整棵骨架（倒地的人形屍體）：root 底下 pick 選中的 Mesh（任意深度、單一材質、看得見）依材質＋陰影設定
+ * 烘焙成 root 座標系裡的合併 mesh（一具屍體三十個零件 → 十幾個）。骨架節點與其他物件（槍口、手電筒掛點、之後掛上的附件）留著。
+ * 回傳新建的 mesh：幾何是這裡新建的（userData.baked），移除時要 dispose。
+ */
+export function bakeTree(root: THREE.Object3D, pick: (m: THREE.Mesh) => boolean): THREE.Mesh[] {
+  root.updateMatrixWorld(true)
+  const inv = root.matrixWorld.clone().invert()
+  const buckets = new Map<string, { b: Batcher; cast: boolean; receive: boolean; list: THREE.Mesh[] }>()
+  const rel = new THREE.Matrix4()
+  const shownUnder = (o: THREE.Object3D | null) => {
+    for (; o && o !== root; o = o.parent) if (!o.visible) return false
+    return true
+  }
+  root.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || !pick(m) || !shownUnder(m)) return
+    const mat = m.material
+    if (!mat || Array.isArray(mat) || (mat as THREE.MeshBasicMaterial).wireframe || !m.geometry?.attributes.position) return
+    const k = `${mat.uuid}|${m.castShadow ? 1 : 0}${m.receiveShadow ? 1 : 0}|${m.renderOrder}`
+    let bk = buckets.get(k)
+    if (!bk) buckets.set(k, (bk = { b: new Batcher(), cast: m.castShadow, receive: m.receiveShadow, list: [] }))
+    bk.b.addMatrix(m.geometry, mat, rel.multiplyMatrices(inv, m.matrixWorld))
+    bk.list.push(m)
+  })
+  const out: THREE.Mesh[] = []
+  for (const bk of buckets.values()) {
+    for (const mesh of bk.b.build(root, { cast: bk.cast, receive: bk.receive })) {
+      mesh.renderOrder = bk.list[0].renderOrder
+      mesh.geometry.userData.baked = true
+      out.push(mesh)
+    }
+    for (const m of bk.list) m.removeFromParent()
+  }
+  return out
+}
+
 /** mergeGeometries 需要所有幾何有相同的 attribute 組：補上 uv 與 color */
 function normalizeAttrs(g: THREE.BufferGeometry): void {
   const n = g.attributes.position.count
