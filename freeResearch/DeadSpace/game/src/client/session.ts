@@ -1,6 +1,6 @@
 // 連線流程與全域 UI 狀態（Preact signals）
 import { signal } from '@preact/signals'
-import { PRACTICE_ROOM, type ChatLine, type ClientMsg, type Command, type EndResult, type HostMsg, type LobbyPlayerInfo, type LobbySettings, type PracticeRole, type StartInfo } from '../shared/protocol/messages'
+import { PRACTICE_ROOM, type AiLevel, type ChatLine, type ClientMsg, type Command, type EndResult, type HostMsg, type LobbyPlayerInfo, type LobbySettings, type PracticeRole, type StartInfo } from '../shared/protocol/messages'
 import { PLAYER_COLORS, ROOM_ALPHABET, ROOM_CODE_LEN } from '../shared/constants'
 import { LoopbackHub } from '../net/loopback'
 import { BroadcastChannelTransport } from '../net/broadcast'
@@ -172,6 +172,8 @@ function onHostMsg(m: HostMsg): void {
         const n = practiceBots
         practiceBots = 0
         send({ t: 'settings', s: { bots: n } })
+        // AI 難度分開送：主機的驗證遇到不認得的欄位會整則丟掉（例如舊版主機），不要連累 AI 數量
+        send({ t: 'settings', s: { aiLevel: practiceAi } })
         send(practiceRole === 'random' ? { t: 'start' } : { t: 'start', role: practiceRole })
       }
       break
@@ -267,7 +269,9 @@ export async function createRoom(profile: Profile): Promise<void> {
 /** 單機練習：不連網，主機分頁自己跑模擬，其餘座位由 AI 填滿；role = 指定自己的身分（random = 照一般規則抽）*/
 let practiceBots = 0
 let practiceRole: PracticeRole = 'random'
-export async function startPractice(profile: Profile, bots = 5, role: PracticeRole = 'random'): Promise<void> {
+/** AI 難度（LobbySettings.aiLevel）：easy = AI 船員驗血較慢、不公開指認、不主動開火 */
+let practiceAi: AiLevel = 'normal'
+export async function startPractice(profile: Profile, bots = 5, role: PracticeRole = 'random', ai: AiLevel = 'normal'): Promise<void> {
   saveProfile(profile)
   roomCode = PRACTICE_ROOM
   screen.value = 'connecting'
@@ -277,6 +281,7 @@ export async function startPractice(profile: Profile, bots = 5, role: PracticeRo
   joinSeq++
   practiceBots = Math.max(1, Math.min(11, bots))
   practiceRole = role
+  practiceAi = ai
   const transport = new LoopbackHub().connect('host')
   const seed = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1
   relay = new HostRelay(roomCode, transport, seed)

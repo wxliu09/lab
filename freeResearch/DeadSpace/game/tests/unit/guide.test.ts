@@ -32,6 +32,7 @@ vi.mock('../../src/client/input', async () => {
 const G = await import('../../src/ui/hud/Guide')
 const { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } = await import('../../src/ui/strings/guide')
 const { hasString } = await import('../../src/ui/i18n')
+const MM = await import('../../src/ui/minimapColors')
 type View = Parameters<typeof G.objectiveFor>[0]
 
 function ab(...ids: string[]): PrivateState['abilities'] {
@@ -407,6 +408,8 @@ describe('指引文字', () => {
     for (const k of ['door', 'console', 'medical', 'suit', 'vendor', 'git', 'fac', 'view', 'space']) need.add('guide.map.' + k)
     for (const k of ['selfRing', 'playersDot', 'hostileDiamond', 'otherDot']) need.add('guide3.map.' + k)
     for (const k of ['guide3.r.booted.1', 'guide3.r.booted.2', 'guide3.help.moreLine', 'guide3.help.scroll']) need.add(k)
+    for (const k of G.HELP_TABS) need.add('ui4.help.tab.' + k)
+    for (const k of ['tabs', 'now', 'ctl.unit', 'ctl.view', 'foot']) need.add('ui4.help.' + k)
     const missing = [...need].filter((k) => !hasString('zh', k) || !hasString('en', k))
     expect(missing).toEqual([])
     expect(need.size).toBeGreaterThan(100)
@@ -450,5 +453,58 @@ describe('提示佇列：警告優先、條件消失就收回（UI 審查第 2 �
     expect(G.detectHints(v).map((h) => h.id)).not.toContain('evolveXeno')
     expect(q.tick(0.1, false, 2, null, new Set(G.detectHints(v).map((h) => h.id)))).toBe(true)
     expect(q.active.map((a) => a.id)).toEqual(['start'])
+  })
+})
+
+describe('說明面板分頁（UI 修正 S3）', () => {
+  it('三頁：目標與身分、操作、站點與設施；還沒有身分時沒有第一頁', () => {
+    expect(G.HELP_TABS).toEqual(['role', 'controls', 'things'])
+    expect(G.helpTabs('human')).toEqual(['role', 'controls', 'things'])
+    expect(G.helpTabs('spectator')).toEqual(['role', 'controls', 'things'])
+    expect(G.helpTabs(null)).toEqual(['controls', 'things'])
+  })
+
+  it('← → 循環切換', () => {
+    const ts = G.helpTabs('xeno')
+    expect(G.stepTab(ts, 'role', 1)).toBe('controls')
+    expect(G.stepTab(ts, 'things', 1)).toBe('role')
+    expect(G.stepTab(ts, 'role', -1)).toBe('things')
+    expect(G.stepTab(ts, 'controls', -1)).toBe('role')
+    // 目前的頁不在清單裡（沒有身分時記著「目標與身分」）：從第一頁算起
+    expect(G.stepTab(G.helpTabs(null), 'role', 1)).toBe('things')
+  })
+
+  it('「操作」頁分兩欄：拖曳之後從方向鍵開始；兩欄都不是空的', () => {
+    const i = HELP_CONTROLS.indexOf('camera')
+    expect(i).toBeGreaterThan(0)
+    expect(HELP_CONTROLS.indexOf('drag')).toBe(i - 1)
+    expect(HELP_CONTROLS.length - i).toBeGreaterThan(0)
+  })
+})
+
+describe('小地圖顏色：小地圖與圖例共用一份（UI 修正 S3）', () => {
+  it('設施的顏色就是圖例的顏色', () => {
+    expect(MM.poiColor('vendor', 'medical')).toBe(MM.MINIMAP.medical)
+    expect(MM.poiColor('vendor', 'suitBasic')).toBe(MM.MINIMAP.suit)
+    expect(MM.poiColor('vendor', 'gitTester')).toBe(MM.MINIMAP.git)
+    expect(MM.poiColor('git')).toBe(MM.MINIMAP.git)
+    expect(MM.poiColor('vendor', 'weapons')).toBe(MM.MINIMAP.vendor)
+    expect(MM.poiColor('console')).toBe(MM.MINIMAP.console)
+    expect(MM.poiColor('powerConsole')).toBe(MM.MINIMAP.console)
+    expect(MM.poiColor('regenerator')).toBe(MM.MINIMAP.fac)
+    expect(MM.poiColor('rummageBox')).toBe(MM.MINIMAP.fac)
+    expect(MM.poiColor('pod')).toBeNull()
+    // 「窗戶、控制台」合成一列：兩者同色
+    expect(MM.MINIMAP.window).toBe(MM.MINIMAP.console)
+  })
+
+  it('圖例的每一列都有顏色與兩種語言的文字；小地圖會畫的設施顏色都在圖例裡', () => {
+    for (const k of MM.MINIMAP_LEGEND_POIS) {
+      expect(MM.MINIMAP[k], k).toMatch(/^#[0-9a-f]{6}$/)
+      expect(hasString('zh', 'guide.map.' + k) && hasString('en', 'guide.map.' + k), k).toBe(true)
+    }
+    const legend = new Set<string>(MM.MINIMAP_LEGEND_POIS.map((k) => MM.MINIMAP[k]))
+    for (const [kind, ref] of [['vendor', 'medical'], ['vendor', 'suit'], ['vendor', 'x'], ['git'], ['console'], ['powerConsole'], ['regenerator'], ['moduleFactory'], ['moduleSocket'], ['rummageBox']] as [string, string?][])
+      expect(legend.has(MM.poiColor(kind, ref)!), kind + ' ' + ref).toBe(true)
   })
 })

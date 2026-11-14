@@ -1,4 +1,4 @@
-// 介面文字（第四批）：名字依介面語言顯示、背包拖曳（交換／給予）、大廳主機提示、雜物箱的右鍵翻找
+// 介面文字（第四批）：名字依介面語言顯示、背包拖曳（交換／給予）、大廳主機提示、雜物箱的右鍵翻找、說明面板分頁、練習的 AI 難度
 // 名字：sim 把職業前綴（classes.ts 的 prefix.en）、晉升頭銜「特務·」、管家後綴「 的管家」、預設名「船員 N」直接寫進名字字串；
 // client 依語言換掉（見 ui/names.ts 的 localizeName）。前綴的 key 是 name.prefix.<職業 id>。
 export const UI4_ZH: Record<string, string> = {
@@ -38,6 +38,23 @@ export const UI4_ZH: Record<string, string> = {
   'ui4.hover.rummage': '右鍵：走過去翻找（箱子會報銷）',
   'ui4.hover.crate': '有翻找技能的職業可以翻找；其他人可以打破（按 A 攻擊）',
   'ui4.prompt.rummage': '右鍵 翻找',
+
+  // ───── 說明面板（G）分頁：一頁放得下、不用捲動 ─────
+  'ui4.help.tabs': '說明分頁',
+  'ui4.help.tab.role': '目標與身分',
+  'ui4.help.tab.controls': '操作',
+  'ui4.help.tab.things': '站點與設施',
+  'ui4.help.now': '現在該做什麼',
+  'ui4.help.ctl.unit': '指揮單位',
+  'ui4.help.ctl.view': '視野與介面',
+  'ui4.help.foot': '← →／1–3 切換分頁 · G 開關說明 · Esc 關閉',
+
+  // ───── 單機練習：AI 難度 ─────
+  'ui4.practice.ai': 'AI 難度',
+  'ui4.practice.ai.easy': '簡單',
+  'ui4.practice.ai.easy.d': 'AI 船員驗血較慢、不公開指認、不主動開火，AI 異類也較晚動手。適合新手熟悉流程。',
+  'ui4.practice.ai.normal': '一般',
+  'ui4.practice.ai.normal.d': 'AI 船員主動找人驗血，查出可疑的人會公開指認並開火。',
 }
 
 export const UI4_EN: Record<string, string> = {
@@ -72,4 +89,19 @@ export const UI4_EN: Record<string, string> = {
   'ui4.hover.rummage': 'Right-click: walk over and rummage (the crate is ruined)',
   'ui4.hover.crate': 'Classes with Rummage can search it; anyone else can break it (press A to attack)',
   'ui4.prompt.rummage': 'Right-click to rummage',
+
+  'ui4.help.tabs': 'Guide pages',
+  'ui4.help.tab.role': 'Goal & role',
+  'ui4.help.tab.controls': 'Controls',
+  'ui4.help.tab.things': 'Stations & facilities',
+  'ui4.help.now': 'What to do now',
+  'ui4.help.ctl.unit': 'Commanding your unit',
+  'ui4.help.ctl.view': 'View & interface',
+  'ui4.help.foot': '← → or 1–3 switch pages · G toggles this guide · Esc closes',
+
+  'ui4.practice.ai': 'AI difficulty',
+  'ui4.practice.ai.easy': 'Easy',
+  'ui4.practice.ai.easy.d': "AI crew test blood slowly, never accuse publicly and don't shoot first; AI threats also strike later. Good for learning the ropes.",
+  'ui4.practice.ai.normal': 'Normal',
+  'ui4.practice.ai.normal.d': 'AI crew actively blood-test people, then publicly accuse and open fire on anyone they catch.',
 }

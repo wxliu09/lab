@@ -25,6 +25,7 @@ import { createPortal } from 'preact/compat'
 import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
+import { MINIMAP, poiColor } from '../minimapColors'
 import '../ui4.css'
 
 function fmtTime(s: number): string {
@@ -197,7 +198,7 @@ export function Minimap(props: { scene: GameScene }) {
           for (let col = 0; col < l.w; col++) {
             const cell = l.cells[row * l.w + col] as Cell
             if (cell === Cell.Void) continue
-            bx.fillStyle = cell === Cell.Wall ? '#3c4a57' : cell === Cell.Door ? '#ffc23d' : cell === Cell.Window ? '#7fd8ff' : '#16202a'
+            bx.fillStyle = cell === Cell.Wall ? MINIMAP.wall : cell === Cell.Door ? MINIMAP.door : cell === Cell.Window ? MINIMAP.window : MINIMAP.floor
             bx.fillRect(ox + col * k, oy + row * k, Math.ceil(k), Math.ceil(k))
           }
         for (const p of l.pois) {
@@ -224,7 +225,7 @@ export function Minimap(props: { scene: GameScene }) {
       // 視野框
       const tx = scene.rts.tx
       const ty = scene.rts.ty
-      x.strokeStyle = 'rgba(255,255,255,0.6)'
+      x.strokeStyle = MINIMAP.view
       x.lineWidth = 2
       const vw = scene.rts.distance() * 1.1
       x.strokeRect(ox + (tx - vw) * k, oy + (l.h - ty - vw * 0.55) * k, vw * 2 * k, vw * 1.1 * k)
@@ -288,7 +289,7 @@ export function Minimap(props: { scene: GameScene }) {
 /**
  * 小地圖上的單位（畫布是 2 倍解析度）。不只靠顏色區分（色盲時紅色系玩家色與敵對紅點不好分）：
  * 玩家＝玩家色圓點＋深色外框；自己＝較大的圓點＋白框；敵對（沒有玩家色）＝紅色菱形＋白框；其他＝小灰點。
- * 改樣式時同步 Guide.tsx 的小地圖圖例。
+ * 顏色在 minimapColors.ts（圖例共用）；改形狀時同步 Guide.tsx 的 MapLegend 與 guide.css 的 .guide-sw。
  */
 export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?: number; fl?: number }, px: number, py: number): void {
   const me = s.i === world.me.unit || (!!world.me.control && s.i === world.me.control)
@@ -297,10 +298,10 @@ export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?:
   if (col || me) {
     // 自己沒有玩家色時（異形的匿名形態）照樣畫白框圓點
     x.arc(px, py, me ? 5 : 3.6, 0, Math.PI * 2)
-    x.fillStyle = col ?? '#cfd8df'
+    x.fillStyle = col ?? MINIMAP.selfNoColor
     x.fill()
     x.lineWidth = me ? 2.4 : 1.4
-    x.strokeStyle = me ? '#ffffff' : 'rgba(0,0,0,0.85)'
+    x.strokeStyle = me ? MINIMAP.selfRing : MINIMAP.playerRing
     x.stroke()
   } else if ((s.fl ?? 0) & 64) {
     const r = 4.4
@@ -309,31 +310,17 @@ export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?:
     x.lineTo(px, py + r)
     x.lineTo(px - r, py)
     x.closePath()
-    x.fillStyle = '#ff3b3b'
+    x.fillStyle = MINIMAP.hostile
     x.fill()
     x.lineWidth = 1.4
-    x.strokeStyle = '#ffffff'
+    x.strokeStyle = MINIMAP.hostileRing
     x.stroke()
   } else {
     x.arc(px, py, 2.4, 0, Math.PI * 2)
     // 中立：灰藍（和白色玩家 #eff0f3 分得開）
-    x.fillStyle = '#9fb3c2'
+    x.fillStyle = MINIMAP.neutral
     x.fill()
   }
-}
-
-/** 小地圖上設施的顏色：醫療粉紅、防護服橘、GIT 青、控制台藍（圓點）、其他販賣機綠；不重要的不畫。改色時同步 Guide.tsx 的 MAP_LEGEND */
-export function poiColor(kind: string, ref?: string): string | null {
-  if (kind === 'vendor') {
-    if (ref === 'medical') return '#ff7fa0'
-    if (ref?.startsWith('suit')) return '#ff9a3d'
-    if (ref === 'gitTester' || ref === 'gitResolver') return '#33ffd1'
-    return '#5cf2a5'
-  }
-  if (kind === 'git') return '#33ffd1'
-  if (kind === 'console' || kind === 'powerConsole') return '#7fd8ff'
-  if (kind === 'regenerator' || kind === 'moduleFactory' || kind === 'moduleSocket' || kind === 'rummageBox') return '#8a9aa8'
-  return null
 }
 
 function poiName(kind: string, ref?: string): string {
@@ -353,12 +340,12 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
     c.height = H * 2
   }
   const x = c.getContext('2d')!
-  x.fillStyle = '#04060c'
+  x.fillStyle = MINIMAP.spaceBg
   x.fillRect(0, 0, c.width, c.height)
   const k = Math.min(c.width, c.height) / 100
   const ox = c.width / 2
   const oy = c.height / 2
-  x.strokeStyle = 'rgba(159,231,255,0.15)'
+  x.strokeStyle = MINIMAP.spaceRing
   for (let r = 10; r < 50; r += 10) {
     x.beginPath()
     x.arc(ox, oy, r * k, 0, Math.PI * 2)
@@ -373,7 +360,7 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
     // 站點的 UnitDef 只在 sim 端註冊，client 用外觀 id 判斷
     const big = def?.tags.includes('station') || (e.s.d ?? '').startsWith('station.')
     // 沒有玩家色的單位用和腳下中立光圈同一個灰藍（跟白色玩家分得開）
-    x.fillStyle = def?.id === 'space.sun' ? '#fff1d6' : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? '#9fe7ff' : '#9fb3c2'
+    x.fillStyle = def?.id === 'space.sun' ? MINIMAP.spaceSun : (e.s.c ?? -1) >= 0 ? PLAYER_COLORS[e.s.c!].hex : big ? MINIMAP.spaceStation : MINIMAP.neutral
     x.beginPath()
     x.arc(px, py, big ? 5 : def?.id === 'space.sun' ? 7 : 3, 0, Math.PI * 2)
     x.fill()
@@ -399,7 +386,7 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
   const tx = scene.rts.tx
   const ty = scene.rts.ty
   const vw = scene.rts.distance() * 0.8
-  x.strokeStyle = 'rgba(255,255,255,0.6)'
+  x.strokeStyle = MINIMAP.view
   x.lineWidth = 2
   x.strokeRect(ox + (tx - vw) * k, oy - (ty + vw * 0.55) * k, vw * 2 * k, vw * 1.1 * k)
 }

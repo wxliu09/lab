@@ -12,6 +12,7 @@ import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { addStrings, hasString, lang, listJoin, loc, t } from '../i18n'
 import { PLAYER_COLORS } from '../../shared/constants'
+import { MINIMAP, MINIMAP_LEGEND_POIS, MINIMAP_PLAYERS_SWATCH } from '../minimapColors'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
@@ -673,17 +674,6 @@ export const ROLE_TIPS: Record<Identity, string[]> = {
   spectator: ['spectator.1', 'spectator.2', 'spectator.3'],
 }
 
-/** 小地圖圖例：單位的畫法見 Hud.tsx 的 drawMinimapUnit，設施顏色見 poiColor（單位四項另外畫，見 MapLegend）*/
-const MAP_LEGEND: [color: string, key: string, dot: boolean][] = [
-  ['#ffc23d', 'door', false],
-  ['#7fd8ff', 'console', false],
-  ['#ff7fa0', 'medical', false],
-  ['#ff9a3d', 'suit', false],
-  ['#5cf2a5', 'vendor', false],
-  ['#33ffd1', 'git', false],
-  ['#8a9aa8', 'fac', false],
-]
-
 export function Guide() {
   void snapTick.value
   void lang.value
@@ -702,6 +692,8 @@ export function Guide() {
 
   // G 開關說明；說明開著時 Esc 只關說明（不打開進化選單）
   useEffect(() => {
+    // 新的一局（身分可能不同）從「目標與身分」頁開始
+    helpTab.value = 'role'
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Escape' && guideOpen.value) {
         e.preventDefault()
@@ -884,55 +876,89 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
   )
 }
 
-/** 小地圖圖例：單位四項照 drawMinimapUnit 的實際畫法（形狀＋外框），設施照 poiColor */
+/**
+ * 小地圖圖例：顏色全部來自 minimapColors.ts（和 Hud.tsx 的小地圖同一份）；
+ * 形狀照 drawMinimapUnit 的畫法（自己＝白框圓點、玩家＝深框圓點、敵對＝白框菱形、其他＝小點），見 guide.css 的 .guide-sw
+ */
 function MapLegend() {
   const me = world.me
   const mine = startInfo.value?.players.find((p) => p.slot === me.slot)?.color
-  const myColor = mine !== undefined ? (PLAYER_COLORS[mine]?.hex ?? '#cfd8df') : '#cfd8df'
+  const myColor = mine !== undefined ? (PLAYER_COLORS[mine]?.hex ?? MINIMAP.selfNoColor) : MINIMAP.selfNoColor
   return (
     <div class="guide-legend" data-testid="guide-legend">
       <div>
-        <i class="guide-sw dot mm-self" style={{ background: myColor }} />
+        <i class="guide-sw dot mm-self" style={{ background: myColor, boxShadow: `0 0 0 2px ${MINIMAP.selfRing}` }} />
         {t('guide3.map.selfRing')}
       </div>
       <div>
-        <i class="guide-sw dot mm-players" />
+        <i class="guide-sw dot mm-players" style={{ background: MINIMAP_PLAYERS_SWATCH, boxShadow: `0 0 0 1px ${MINIMAP.playerRing}` }} />
         {t('guide3.map.playersDot')}
       </div>
       <div>
-        <i class="guide-sw mm-hostile" />
+        <i class="guide-sw mm-hostile" style={{ background: MINIMAP.hostile, borderColor: MINIMAP.hostileRing }} />
         {t('guide3.map.hostileDiamond')}
       </div>
       <div>
-        <i class="guide-sw dot mm-other" />
+        <i class="guide-sw dot mm-other" style={{ background: MINIMAP.neutral }} />
         {t('guide3.map.otherDot')}
       </div>
-      {MAP_LEGEND.map(([col, k, dot]) => (
+      {MINIMAP_LEGEND_POIS.map((k) => (
         <div key={k}>
-          <i class={'guide-sw' + (dot ? ' dot' : '')} style={{ background: col }} />
+          <i class="guide-sw" style={{ background: MINIMAP[k] }} />
           {t('guide.map.' + k)}
         </div>
       ))}
       <div>
-        <i class="guide-sw frame" />
+        <i class="guide-sw frame" style={{ borderColor: MINIMAP.view }} />
         {t('guide.map.view')}
       </div>
     </div>
   )
 }
 
+// ───────── 說明面板（G）：分頁，每頁一個畫面放得下 ─────────
+
+export type HelpTab = 'role' | 'controls' | 'things'
+export const HELP_TABS: readonly HelpTab[] = ['role', 'controls', 'things']
+/** 「操作」頁分成兩欄：指揮單位（到拖曳為止）、視野與介面（方向鍵起）*/
+const CTL_SPLIT = HELP_CONTROLS.indexOf('camera')
+
+/** 目前的分頁（同一局內記住：再按 G 回到上次看的那頁；每局開始回到第一頁）*/
+export const helpTab = signal<HelpTab>('role')
+
+/** 可用的分頁：還沒有身分（理論上不會在對局中發生）時沒有「目標與身分」頁 */
+export function helpTabs(id: Identity | null): HelpTab[] {
+  return id ? [...HELP_TABS] : HELP_TABS.filter((k) => k !== 'role')
+}
+
+/** 左右方向鍵切換分頁（循環）*/
+export function stepTab(tabs: readonly HelpTab[], cur: HelpTab, d: 1 | -1): HelpTab {
+  const i = Math.max(0, tabs.indexOf(cur))
+  return tabs[(i + d + tabs.length) % tabs.length]
+}
+
 function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
   const close = () => (guideOpen.value = false)
-  const me = v.me
-  const booted = id === 'dead' && !!me.booted
-  const tips = id ? (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k)) : []
-  const c = CLASSES.get(me.classId ?? '')
-  if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
-    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc: loc(c.desc) }))
-    const phd = phdText(me, 'play1.help.phd')
-    if (phd) tips.push(phd)
-  }
-  // 放不下要捲動時，在底部顯示明顯的捲動提示（捲到底就收起來）
+  const tabs = helpTabs(id)
+  const cur = tabs.includes(helpTab.value) ? helpTab.value : tabs[0]
+  // ← → 切換分頁，數字鍵直接跳到第幾頁（說明開著時方向鍵不會移動鏡頭、數字鍵不會用道具：input.ts 在對話框開著時不處理）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || typingInField()) return
+      const ts = helpTabs(identityOf(world.me))
+      const now = ts.includes(helpTab.value) ? helpTab.value : ts[0]
+      const n = /^Digit([1-9])$/.exec(e.code)
+      let next: HelpTab | undefined
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') next = stepTab(ts, now, e.code === 'ArrowRight' ? 1 : -1)
+      else if (n) next = ts[Number(n[1]) - 1]
+      if (!next) return
+      e.preventDefault()
+      helpTab.value = next
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  // 萬一還是放不下（極小視窗、介面放大）：底部顯示明顯的捲動提示（捲到底就收起來）
   const body = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState(false)
   const check = () => {
@@ -941,8 +967,9 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
   }
   useLayoutEffect(check)
   useEffect(() => {
-    // 視窗或介面縮放改變（--ui-zoom 不會觸發 resize）時重新判斷
+    // 換頁回到頂端；視窗或介面縮放改變（--ui-zoom 不會觸發 resize）時重新判斷
     const el = body.current
+    if (el) el.scrollTop = 0
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
     if (el && ro) {
       ro.observe(el)
@@ -953,61 +980,47 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
       ro?.disconnect()
       window.removeEventListener('resize', check)
     }
-  }, [])
+  }, [cur])
   return (
     <div class="guide-help-back" onClick={(e) => e.target === e.currentTarget && close()}>
       <div class="panel guide-help" data-testid="guide-help" role="dialog" aria-label={t('guide.help.title')}>
         <div class="guide-help-head">
           <h2>{t('guide.help.title')}</h2>
+          <div class="guide-help-tabs" role="tablist" aria-label={t('ui4.help.tabs')}>
+            {tabs.map((k, i) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                id={'guide-help-tab-' + k}
+                aria-selected={k === cur}
+                aria-controls="guide-help-page"
+                class={'small guide-help-tab' + (k === cur ? ' primary' : ' ghost')}
+                data-testid={'guide-help-tab-' + k}
+                onClick={() => (helpTab.value = k)}
+              >
+                <span class="guide-help-tab-n">{i + 1}</span>
+                {t('ui4.help.tab.' + k)}
+              </button>
+            ))}
+          </div>
           <span class="grow" />
           <button class="small ghost" data-testid="guide-help-close" onClick={close}>
             {t('guide.btn.close')} ✕
           </button>
         </div>
-        <div class="guide-help-body" ref={body} onScroll={check}>
-          <div class="guide-col">
-            <section>
-              <h3>{t('guide.help.controls')}</h3>
-              <div class="guide-keys">
-                {HELP_CONTROLS.map((k) => (
-                  <div class="guide-key-row" key={k}>
-                    <span class="guide-kbd">{t('guide.ctl.' + k + '.k')}</span>
-                    <span>{t('guide.ctl.' + k)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-          <div class="guide-col">
-            {id && (
-              <section data-testid="guide-help-role">
-                <h3 style={{ color: ID_COLOR[id][1] }}>{t('guide.help.role', { role: t('guide.id.' + id) })}</h3>
-                <ul class="guide-list">
-                  {tips.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            <section>
-              <h3>{t('guide.help.map')}</h3>
-              <MapLegend />
-              <p class="dim">{t('guide.map.space')}</p>
-            </section>
-          </div>
-          <div class="guide-col">
-            <section>
-              <h3>{t('guide.help.things')}</h3>
-              <div class="guide-things">
-                {HELP_THINGS.map((k) => (
-                  <div key={k}>
-                    <b>{t('guide.th.' + k + '.t')}</b>
-                    <span>{t('guide.th.' + k)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+        <div
+          class={'guide-help-body page-' + cur}
+          ref={body}
+          onScroll={check}
+          role="tabpanel"
+          id="guide-help-page"
+          aria-labelledby={'guide-help-tab-' + cur}
+          data-testid={'guide-help-page-' + cur}
+        >
+          {cur === 'role' && id && <RolePage id={id} v={v} />}
+          {cur === 'controls' && <ControlsPage />}
+          {cur === 'things' && <ThingsPage />}
         </div>
         {more && (
           <div class="guide-help-more" data-testid="guide-help-more" aria-hidden="true">
@@ -1016,9 +1029,111 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
         )}
         <div class="dim guide-help-foot">
           <span>{t('guide3.help.moreLine')}</span>
-          <span>{t('guide.help.foot')}</span>
+          <span>{t('ui4.help.foot')}</span>
         </div>
       </div>
     </div>
+  )
+}
+
+/** 「目標與身分」：這個身分的玩法要點（含職業）＋現在該做什麼（同目標面板）*/
+function RolePage({ id, v }: { id: Identity; v: GuideView }) {
+  const me = v.me
+  const booted = id === 'dead' && !!me.booted
+  const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k))
+  const c = CLASSES.get(me.classId ?? '')
+  if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
+    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc: loc(c.desc) }))
+    const phd = phdText(me, 'play1.help.phd')
+    if (phd) tips.push(phd)
+  }
+  const obj = objectiveFor(v)
+  const [accent, color] = ID_COLOR[id]
+  return (
+    <>
+      <div class="guide-col">
+        <section data-testid="guide-help-role">
+          <h3 style={{ color }}>{t('guide.help.role', { role: t('guide.id.' + id) })}</h3>
+          <ul class="guide-list">
+            {tips.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </section>
+      </div>
+      {obj && (
+        <div class="guide-col">
+          <section class="guide-help-now" style={{ '--gc': accent, '--gt': color }}>
+            <h3>{t('ui4.help.now')}</h3>
+            <div class="guide-goal">
+              <span class="guide-goal-l">{t('guide.goalLabel')}</span>
+              <span>{t(obj.goal)}</span>
+            </div>
+            <ul class="guide-list">
+              {obj.steps.map((s) => (
+                <li key={s.key} class={s.dim ? 'dim' : undefined}>
+                  {t(s.key, s.args)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** 「操作」：按鍵表分兩欄 */
+function ControlsPage() {
+  const cols: [string, readonly string[]][] = [
+    ['ui4.help.ctl.unit', HELP_CONTROLS.slice(0, CTL_SPLIT)],
+    ['ui4.help.ctl.view', HELP_CONTROLS.slice(CTL_SPLIT)],
+  ]
+  return (
+    <>
+      {cols.map(([h, keys]) => (
+        <div class="guide-col" key={h}>
+          <section>
+            <h3>{t(h)}</h3>
+            <div class="guide-keys">
+              {keys.map((k) => (
+                <div class="guide-key-row" key={k}>
+                  <span class="guide-kbd">{t('guide.ctl.' + k + '.k')}</span>
+                  <span>{t('guide.ctl.' + k)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ))}
+    </>
+  )
+}
+
+/** 「站點與設施」：設施與物品＋小地圖圖例 */
+function ThingsPage() {
+  return (
+    <>
+      <div class="guide-col">
+        <section>
+          <h3>{t('guide.help.things')}</h3>
+          <div class="guide-things">
+            {HELP_THINGS.map((k) => (
+              <div key={k}>
+                <b>{t('guide.th.' + k + '.t')}</b>
+                <span>{t('guide.th.' + k)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+      <div class="guide-col">
+        <section>
+          <h3>{t('guide.help.map')}</h3>
+          <MapLegend />
+          <p class="dim">{t('guide.map.space')}</p>
+        </section>
+      </div>
+    </>
   )
 }

@@ -1,4 +1,5 @@
-// 遊戲內指引：目標面板、G 開關說明、情境提示可點掉且每台瀏覽器只出現一次、收合狀態記住
+// 遊戲內指引：目標面板、G 開關說明（分頁：滑鼠點、← →、數字鍵；zh／en 在 1280×720 與 1600×900 每頁都不用捲動）、
+// 情境提示可點掉且每台瀏覽器只出現一次、收合狀態記住
 import { expect, test, type Page } from '@playwright/test'
 
 async function startSolo(page: Page): Promise<void> {
@@ -18,6 +19,38 @@ async function closeReveal(page: Page): Promise<void> {
   // 機器很忙時點擊可能逾時（或揭露畫面在檢查之後才出現）：再用空白鍵關一次（揭露畫面在 capture 階段處理空白鍵）
   if (await r.isVisible()) await page.keyboard.press('Space')
   await expect(r).toHaveCount(0, { timeout: 35000 })
+}
+
+const HELP_TABS = ['role', 'controls', 'things'] as const
+
+/** 說明面板每一頁在這些視窗大小都放得下：沒有捲動、沒有捲動提示、面板整個在畫面內 */
+async function expectHelpFits(page: Page, sizes: [number, number][]): Promise<void> {
+  const help = page.getByTestId('guide-help')
+  for (const [w, h] of sizes) {
+    await page.setViewportSize({ width: w, height: h })
+    await page.keyboard.press('KeyG')
+    await expect(help).toBeVisible()
+    for (const k of HELP_TABS) {
+      await page.getByTestId('guide-help-tab-' + k).click()
+      await expect(page.getByTestId('guide-help-page-' + k)).toBeVisible()
+      // 換視窗大小後 --ui-zoom 要等下一次繪製才套用：用 poll 等
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const b = document.querySelector('.guide-help-body')!
+            return b.scrollHeight - b.clientHeight
+          }),
+        )
+        .toBeLessThanOrEqual(1)
+      await expect(page.getByTestId('guide-help-more')).toHaveCount(0)
+      const r = (await help.boundingBox())!
+      expect(r.y, `${w}×${h} ${k}`).toBeGreaterThanOrEqual(0)
+      expect(r.y + r.height, `${w}×${h} ${k}`).toBeLessThanOrEqual(h)
+    }
+    await page.keyboard.press('KeyG')
+    await expect(help).toHaveCount(0)
+  }
+  await page.setViewportSize({ width: 1280, height: 720 })
 }
 
 test('目標面板、說明面板、情境提示', async ({ page }) => {
@@ -83,6 +116,35 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
   await expect(help).toHaveCount(0)
   await page.waitForTimeout(300)
   await expect(page.locator('.modal-back')).toHaveCount(0)
+  // 分頁：預設「目標與身分」；滑鼠點、← → 循環切換、數字鍵直接跳到第幾頁
+  await page.keyboard.press('KeyG')
+  await expect(page.getByTestId('guide-help-tab-role')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('guide-help-page-role')).toBeVisible()
+  await page.getByTestId('guide-help-tab-controls').click()
+  await expect(page.getByTestId('guide-help-tab-controls')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('guide-help-page-controls')).toBeVisible()
+  await expect(page.getByTestId('guide-help-role')).toHaveCount(0)
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByTestId('guide-help-page-things')).toBeVisible()
+  await expect(page.getByTestId('guide-legend')).toBeVisible()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByTestId('guide-help-page-role')).toBeVisible()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByTestId('guide-help-page-things')).toBeVisible()
+  await page.keyboard.press('Digit2')
+  await expect(page.getByTestId('guide-help-page-controls')).toBeVisible()
+  // 關掉再開：回到上次看的那頁
+  await page.keyboard.press('KeyG')
+  await expect(help).toHaveCount(0)
+  await page.keyboard.press('KeyG')
+  await expect(page.getByTestId('guide-help-page-controls')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(help).toHaveCount(0)
+  // 中文：1280×720 與 1600×900 每一頁都不用捲動
+  await expectHelpFits(page, [
+    [1280, 720],
+    [1600, 900],
+  ])
   // 面板上的「說明」按鈕也能開，關閉鈕可以關
   await page.getByTestId('guide-help-btn').click()
   await expect(help).toBeVisible()
@@ -100,11 +162,17 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
   await expect(obj).toHaveClass(/folded/)
   await expect(obj.locator('.guide-steps')).toHaveCount(0)
 
-  // 重整後再開一局：同一則提示不會再出現，收合狀態保留
+  // 重整後（換成英文）再開一局：同一則提示不會再出現，收合狀態保留
+  await page.evaluate(() => localStorage.setItem('xc.lang', 'en'))
   await page.reload({ waitUntil: 'domcontentloaded' })
   await startSolo(page)
   await closeReveal(page)
   await expect(page.getByTestId('guide-objectives')).toHaveClass(/folded/)
+  // 英文：1280×720 與 1600×900 每一頁都不用捲動
+  await expectHelpFits(page, [
+    [1280, 720],
+    [1600, 900],
+  ])
   for (let i = 0; i < 8; i++) {
     await expect(page.getByTestId(tid)).toHaveCount(0)
     await page.waitForTimeout(500)

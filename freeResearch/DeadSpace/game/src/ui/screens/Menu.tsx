@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { MAX_PLAYERS, PLAYER_COLORS, ROOM_ALPHABET } from '../../shared/constants'
-import { DEFAULT_SETTINGS, PRACTICE_ROLES, type PracticeRole } from '../../shared/protocol/messages'
+import { AI_LEVELS, DEFAULT_SETTINGS, PRACTICE_ROLES, type AiLevel, type PracticeRole } from '../../shared/protocol/messages'
 import { cancelJoin, createRoom, joinRoom, loadProfile, notice, screen, startPractice } from '../../client/session'
 import { t } from '../i18n'
 import { Settings } from './Settings'
@@ -33,11 +33,33 @@ function savePracticePrefs(p: { role: PracticeRole; bots: number }): void {
   }
 }
 
-/** 單機練習對話框：選自己的身分與 AI 數量（只有單機練習有這個入口；多人房間的身分一律照規則抽）*/
-function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (role: PracticeRole, bots: number) => void }) {
+/** 練習的 AI 難度（上次的選擇；預設一般）*/
+const PRACTICE_AI_KEY = 'xc.practiceAi'
+
+function loadAiLevel(): AiLevel {
+  try {
+    const v = localStorage.getItem(PRACTICE_AI_KEY)
+    if (AI_LEVELS.includes(v as AiLevel)) return v as AiLevel
+  } catch {
+    /* ignore */
+  }
+  return 'normal'
+}
+
+function saveAiLevel(v: AiLevel): void {
+  try {
+    localStorage.setItem(PRACTICE_AI_KEY, v)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 單機練習對話框：選自己的身分、AI 數量與難度（只有單機練習有這個入口；多人房間的身分一律照規則抽）*/
+function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (role: PracticeRole, bots: number, ai: AiLevel) => void }) {
   const [pref] = useState(loadPracticePrefs)
   const [role, setRole] = useState<PracticeRole>(pref.role)
   const [bots, setBots] = useState(pref.bots)
+  const [ai, setAi] = useState<AiLevel>(loadAiLevel)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -48,7 +70,8 @@ function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (r
   const n = bots + 1
   const go = () => {
     savePracticePrefs({ role, bots })
-    onStart(role, bots)
+    saveAiLevel(ai)
+    onStart(role, bots, ai)
   }
   return (
     <div class="modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -89,6 +112,23 @@ function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (r
             +
           </button>
           <span class="bots-n">{t('practice.botsN', { n: bots })}</span>
+        </div>
+        <h3>{t('ui4.practice.ai')}</h3>
+        <div class="ai-pick" role="radiogroup" aria-label={t('ui4.practice.ai')}>
+          {AI_LEVELS.map((a) => (
+            <button
+              key={a}
+              type="button"
+              role="radio"
+              aria-checked={ai === a}
+              class={'role-opt ai-opt ai-' + a + (ai === a ? ' on' : '')}
+              data-testid={'practice-ai-' + a}
+              onClick={() => setAi(a)}
+            >
+              <b>{t('ui4.practice.ai.' + a)}</b>
+              <span>{t('ui4.practice.ai.' + a + '.d')}</span>
+            </button>
+          ))}
         </div>
         <div class="practice-mix" data-testid="practice-mix">
           {role === 'random' ? (
@@ -225,9 +265,9 @@ export function Menu() {
       {showPractice && (
         <PracticeDialog
           onClose={() => setShowPractice(false)}
-          onStart={(role, bots) => {
+          onStart={(role, bots, ai) => {
             setShowPractice(false)
-            void startPractice(profile(), bots, role)
+            void startPractice(profile(), bots, role, ai)
           }}
         />
       )}
