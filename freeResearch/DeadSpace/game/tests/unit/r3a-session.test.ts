@@ -125,57 +125,28 @@ describe('單機練習暫停（client → host 的 pause 訊息）', () => {
 })
 
 describe('多人局：斷線與重新連線的公告', () => {
-  it('客人斷線：所有人收到「{name} 斷線了」（顯示名字）；寬限內重新連上：「{name} 重新連線了」', () => {
+  // 第 4 輪起寬限期間的公告不點名（匿名形態斷線時身體停在原地，點名就能對回真人）；詳細測試見 r4b-session.test.ts
+  it('客人斷線：所有人收到「有一名玩家斷線了」（不點名）；寬限內重新連上：「斷線的玩家重新連上了」', () => {
     const { h, cs } = Harness.started(3, 4242, { eventMult: 0, npcCrew: 0 })
     const g = h.server.game!
     const p = g.players[cs[1].slot]!
     for (const c of cs) c.inbox.length = 0
     h.server.onLeave(cs[1].peer)
     h.ticks(2)
-    const want = `@sys.dropped|name=${p.name}|s=${RECONNECT_GRACE_S}`
+    const want = `@sys.droppedAnon|s=${RECONNECT_GRACE_S}`
     expect(lines(cs[0])).toContain(want)
     expect(lines(cs[2])).toContain(want)
-    expect(p.name).not.toBe(p.baseName)
+    for (const c of [cs[0], cs[2]]) expect(lines(c).some((x) => x.includes(p.baseName))).toBe(false)
     h.ticks(5 * SEC)
     const again = h.connect('p1')
     h.ticks(2)
-    expect(lines(cs[0])).toContain(`@sys.rejoined|name=${p.name}`)
-    expect(lines(again).some((x) => x.startsWith('@sys.rejoined'))).toBe(true)
+    expect(lines(cs[0])).toContain('@sys.rejoinedAnon')
+    expect(lines(again)).toContain('@sys.rejoinedAnon')
     // 同一個 hello 重送（還連著）不算重新連線
     for (const c of cs) c.inbox.length = 0
     again.send({ t: 'hello', name: 'p1', color: 1, ver: 1, token: 'tokp1xxxxxx' })
     h.ticks(2)
     expect(lines(cs[0]).some((x) => x.startsWith('@sys.rejoined'))).toBe(false)
-  })
-
-  it('通訊病毒：用換過的名字、不用真名；病毒在斷線期間換了名字，回來時用斷線時的名字（不把新舊名字對起來）', () => {
-    const { h, cs } = Harness.started(3, 4242, { eventMult: 0, npcCrew: 0 })
-    const g = h.server.game!
-    const p = g.players[cs[1].slot]!
-    const real = p.baseName
-    // 模擬病毒換過名字（events.ts virus：data.shownBase＋名字）
-    p.data.shownBase = 'Zed'
-    p.name = 'Dr. Zed'
-    for (const c of cs) c.inbox.length = 0
-    h.server.onLeave(cs[1].peer)
-    h.ticks(2)
-    const dropped = lines(cs[0]).find((x) => x.startsWith('@sys.dropped'))!
-    expect(dropped).toContain('name=Dr. Zed')
-    expect(dropped).not.toContain(real)
-    // 斷線期間又換了名字：回來時照樣用「Dr. Zed」
-    p.data.shownBase = 'Kay'
-    p.name = 'Dr. Kay'
-    h.connect('p1')
-    h.ticks(2)
-    const back = lines(cs[0]).find((x) => x.startsWith('@sys.rejoined'))!
-    expect(back).toBe('@sys.rejoined|name=Dr. Zed')
-    // 病毒清空名字的 10 秒內斷線：頭銜＋顯示用本名（這時還沒有人換過名字）
-    const q = g.players[cs[2].slot]!
-    q.data.virusTitle = 'Medic '
-    q.name = ''
-    h.server.onLeave(cs[2].peer)
-    h.ticks(2)
-    expect(lines(cs[0])).toContain(`@sys.dropped|name=Medic ${q.baseName}|s=${RECONNECT_GRACE_S}`)
   })
 
   it('寬限過了才回來（已經算離開）不再公告重新連線；結算後斷線不公告', () => {

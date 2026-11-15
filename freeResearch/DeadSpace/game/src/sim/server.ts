@@ -5,8 +5,9 @@ import { encode } from '../shared/protocol/codec'
 import { parseClientBytes, sanitizeName, sanitizeText } from '../shared/protocol/validate'
 import { MAX_PLAYERS, PLAYER_COLORS, PROTOCOL_VERSION, RECONNECT_GRACE_S, TICK_DT } from '../shared/constants'
 import { Rng } from '../shared/rng'
-import { Game, type GameInit } from './game'
+import { Game, fmtKey, type GameInit } from './game'
 import { PRACTICE_APOCALYPSE } from './systems/events'
+import { nameSkeleton } from './systems/chat'
 
 export const LOCAL_PEER = 'local'
 /** 開局等玩家載入的上限（秒，server 時間）：有人卡住也不會讓整局停著 */
@@ -15,6 +16,14 @@ export const LOAD_WAIT_S = 25
 export const LOAD_WAIT_SOLO_S = 120
 /** 單機練習暫停的上限（秒，server 時鐘）：超過就自動繼續 */
 export const PRACTICE_PAUSE_MAX_S = 600
+/** 聊天限流：持續約 1 行／1.5 秒，短暫連發最多 CHAT_BURST 行（每行 200 字由 sanitizeText 截斷）*/
+export const CHAT_BURST = 4
+export const CHAT_RATE = 1 / 1.5
+/** 同一個人這麼多秒內送出相同的內容（同一頻道）就壓掉，私訊提示 */
+export const CHAT_DUPE_S = 10
+/** 小地圖信號限流：每人約 2 秒 1 次，短暫連發最多 3 次 */
+export const PING_BURST = 3
+export const PING_RATE = 0.5
 
 export interface ServerIO {
   send(peer: string, data: Uint8Array): void
@@ -56,6 +65,7 @@ interface PeerState {
   slot: number | null
   general: Bucket
   chat: Bucket
+  ping: Bucket
   tune: Bucket
   hello: Bucket
   strikes: number
@@ -83,6 +93,8 @@ export class GameServer {
   private apoCustom = false
   /** 單機練習暫停開始的時刻（server 時鐘）；null = 沒有暫停 */
   private pauseAt: number | null = null
+  /** 每個席位上一則聊天（壓掉重複用）：比對用的內容、送出時刻（server 時鐘）、這一串重複是否已經提示過 */
+  private lastChat = new Map<number, { key: string; at: number; hinted: boolean }>()
 
   constructor(
     readonly code: string,
@@ -103,7 +115,8 @@ export class GameServer {
       this.peers.set(peer, {
         slot: null,
         general: new Bucket(60, 40),
-        chat: new Bucket(6, 2),
+        chat: new Bucket(CHAT_BURST, CHAT_RATE),
+        ping: new Bucket(PING_BURST, PING_RATE),
         tune: new Bucket(10, 10),
         hello: new Bucket(3, 0.5),
         strikes: 0,
@@ -127,7 +140,8 @@ export class GameServer {
     this.resumePause()
     this.game?.setConnected(p.slot, false)
     if (this.game && !this.game.ended) this.game.playerDropped(p.slot)
-    this.lobbyDirty = true
+    // 對局中不為了連線狀態廣播大廳名單：名單上有每個席位的連線狀態與大廳名字，廣播出去等於點名是誰斷線
+    if (this.phase === 'lobby') this.lobbyDirty = true
   }
 
   onMessage(peer: string, data: Uint8Array): void {
@@ -200,6 +214,7 @@ export class GameServer {
         if (!ps.chat.take(this.now)) return
         const raw = sanitizeText(msg.text).trim()
         if (!raw) return
+        if (this.isDupeChat(peer, slot, msg.ch, msg.to, raw)) return
         // 「@」開頭是系統訊息 key 的格式（client 會翻譯）：玩家打的字前面加零寬空白，照原樣顯示、不被當成系統訊息
         const text = raw.startsWith('@') ? '\u200b' + raw : raw
         if (this.phase === 'lobby') {
@@ -225,6 +240,10 @@ export class GameServer {
       case 'pause':
         if (msg.on) this.pauseSolo(slot)
         else this.resumePause()
+        break
+      case 'mapPing':
+        if (this.phase !== 'game' || !ps.ping.take(this.now)) return
+        this.game?.handleMapPing(slot, msg.z, msg.x, msg.y)
         break
       case 'Tune':
         if (!ps.tune.take(this.now)) return
@@ -255,17 +274,22 @@ export class GameServer {
         const old = this.peers.get(existing.peer)
         if (old) old.slot = null
       }
-      const back = existing.peer === null && existing.droppedAt !== null
+      const wasOff = existing.peer === null
+      const back = wasOff && existing.droppedAt !== null
       existing.peer = peer
       existing.droppedAt = null
       ps.slot = existing.slot
       this.sendTo(peer, { t: 'welcome', slot: existing.slot, token: existing.token })
-      this.lobbyDirty = true
+      // 對局中只把大廳名單（設定）送給回來的人，不廣播：廣播的時機本身就透露「剛才是誰回來了」
+      if (this.phase === 'lobby') this.lobbyDirty = true
+      else this.sendTo(peer, this.lobbyState())
       if (this.game) {
         this.game.setConnected(existing.slot, true)
         this.game.resendStart(existing.slot)
-        // 斷線後在寬限時間內回來：公開說一聲（同一個連線重送 hello、換分頁接手不算）
+        // 斷線後在寬限時間內回來：公開說一聲（不點名；同一個連線重送 hello、換分頁接手不算）
         if (back && !this.game.ended) this.game.playerRejoined(existing.slot)
+        // 超過寬限才回來（已判定離開）：私訊本人說明現在是觀戰
+        else if (wasOff) this.game.playerReturnedAfterLeave(existing.slot)
       }
       return
     }
@@ -304,11 +328,33 @@ export class GameServer {
     for (let c = 0; c < PLAYER_COLORS.length; c++) if (!this.colorTaken(c, -1)) return c
     return 0
   }
+  /** 大廳名字不能和別人重複：比對正規化後的寫法（大小寫、同形異字、全形、「Crew 3」＝「船員 3」），撞名就在後面加數字 */
   private uniqueName(name: string, slot: number): string {
     let n = name
     let k = 2
-    while (this.players.some((p) => p && p.slot !== slot && p.name === n)) n = `${name}${k++}`
+    const taken = (s: string) => this.players.some((p) => p && p.slot !== slot && nameSkeleton(p.name) === nameSkeleton(s))
+    while (taken(n)) n = `${name}${k++}`
     return n
+  }
+
+  /**
+   * 同一個人 CHAT_DUPE_S 秒內在同一個頻道送出相同的內容：壓掉並私訊提示（同一串重複只提示一次）。
+   * 「-」開頭的指令不算（輸出只給自己，重查名單、狀態不會洗到別人）
+   */
+  private isDupeChat(peer: string, slot: number, ch: string, to: string | undefined, raw: string): boolean {
+    if (this.phase === 'game' && raw.startsWith('-') && raw.length > 1) return false
+    const key = `${ch}|${to ?? ''}|${raw.replace(/\s+/g, ' ').toLowerCase()}`
+    const last = this.lastChat.get(slot)
+    if (last && last.key === key && this.now - last.at < CHAT_DUPE_S) {
+      if (!last.hinted) {
+        last.hinted = true
+        if (this.game) this.game.privateLine(slot, 'chat.dupe', { s: CHAT_DUPE_S })
+        else this.sendTo(peer, { t: 'chat', lines: [{ from: '', color: -1, ch: 'private', text: fmtKey('chat.dupe', { s: CHAT_DUPE_S }), time: this.now }] })
+      }
+      return true
+    }
+    this.lastChat.set(slot, { key, at: this.now, hinted: false })
+    return false
   }
 
   private applySettings(s: Partial<LobbySettings>): void {
@@ -447,7 +493,8 @@ export class GameServer {
         name: p.name,
         color: p.color,
         ready: p.ready,
-        connected: p.bot || p.peer !== null,
+        // 對局中一律回報在線：大廳名單不能變成「誰斷線了」的公開管道（寬限期間的斷線公告刻意不點名）
+        connected: this.phase === 'game' || p.bot || p.peer !== null,
         host: p.host,
         bot: p.bot,
       }))

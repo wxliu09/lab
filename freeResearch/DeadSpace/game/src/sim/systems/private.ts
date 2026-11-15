@@ -53,7 +53,8 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     coreWait: !p.alive && canStillRevive(p),
     lastWords: inLastWords(g, p) ? Math.max(1, Math.ceil(p.deadAt + LAST_WORDS - t)) : 0,
     launchIn: main ? launchCountdown(g, main.zone) : 0,
-    role: p.spectator ? 'spectator' : p.role,
+    // 開局早退、被別人補位的人（systems/replace.ts 把他改成人類）：本人看到的仍是離開前的身分
+    role: p.spectator ? 'spectator' : ((p.data.leftRole as typeof p.role | undefined) ?? p.role),
     faction: p.spectator ? 'none' : f,
     spawn: !!p.spawnOf,
     classId: p.classId,

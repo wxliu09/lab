@@ -22,7 +22,8 @@ import { handleCommand } from './systems/orders'
 import { stepMovement, stepDoors } from './systems/movement'
 import { computeVision } from './systems/vision'
 import { buildSnapshot, type ViewState, newViewState } from './systems/snapshot'
-import { bootIfOut, hearsDead, inLastWords, routeChat } from './systems/chat'
+import { bootIfOut, hearsDead, inLastWords, routeChat, routeMapPing } from './systems/chat'
+import { clearDeparture, earlySeat, noteDeparture, replaceSeat } from './systems/replace'
 import { Tuning } from './systems/tuning'
 import { stepCombat } from './systems/combat'
 import { stepBuffs } from './systems/buffs'
@@ -336,9 +337,15 @@ export class Game {
     if (this.ended) this.send(slot, { t: 'end', result: this.ended })
   }
 
+  /**
+   * 正式判定離開（斷線超過寬限，或主動離開）：照原作點名公告（j6 17046「… has left the game!」），殺死主單位並不得復活；
+   * 開局 90 秒內離開的異類／仿生人由人類補位（systems/replace.ts；離開的時刻以斷線當下計）
+   */
   playerLeft(slot: number): void {
     const p = this.players[slot]
     if (!p || p.left) return
+    // 補不補位要在殺死主單位之前判斷（死了就不再是「活著的主腦」）
+    const seat = earlySeat(this, p)
     p.left = true
     p.connected = false
     this.systemAll('sys.left', { name: shownBase(p) })
@@ -349,27 +356,43 @@ export class Game {
       u.data.deathCause = 'left'
       this.kill(u, null)
     }
+    if (seat && !this.ended) replaceSeat(this, p, seat)
+    clearDeparture(p)
   }
 
   /**
-   * 真人斷線（還在重連寬限內）：公開說一聲，名字用別人眼中的顯示名字（頭銜＋通訊病毒換過的名字，見 shownName）。
-   * 斷線時用的名字記下來，重新連上時用同一個名字公告：病毒在斷線期間換了名字的話，「舊名斷線、新名回來」會把兩個名字對起來
+   * 真人斷線（還在重連寬限內）：公開說一聲，但不點名。
+   * 匿名形態（異形形態、繭、肉團）或化身成別人時斷線，身體會停在原地；公告點名的話，「誰斷線」配上「哪個身體不動了」
+   * 就能把匿名形態對回真人。寬限結束才照原作點名「X 離開了遊戲」（playerLeft）。
+   * 斷線的當下記下遊戲時間：開局補位以這個時刻判斷（systems/replace.ts）
    */
   playerDropped(slot: number): void {
     const p = this.players[slot]
     if (!p || p.bot || p.left || p.spectator) return
-    const name = shownName(p)
-    p.data.dropName = name
-    this.systemAll('sys.dropped', { name, s: RECONNECT_GRACE_S })
+    noteDeparture(this, p)
+    this.systemAll('sys.droppedAnon', { s: RECONNECT_GRACE_S })
   }
 
-  /** 斷線的真人在寬限內重新連上 */
+  /** 斷線的真人在寬限內重新連上：一樣不點名；這次斷線不算離開（不補位）*/
   playerRejoined(slot: number): void {
     const p = this.players[slot]
     if (!p || p.bot || p.left || p.spectator) return
-    const name = (p.data.dropName as string | undefined) ?? shownName(p)
-    p.data.dropName = undefined
-    this.systemAll('sys.rejoined', { name })
+    clearDeparture(p)
+    this.systemAll('sys.rejoinedAnon')
+  }
+
+  /** 超過寬限才重新連上（已經判定離開）：只私訊本人說明，現在是什麼狀態 */
+  playerReturnedAfterLeave(slot: number): void {
+    const p = this.players[slot]
+    if (!p || !p.left || p.bot || this.ended) return
+    this.privateLine(slot, p.data.booted ? 'sys.leftYouBooted' : 'sys.leftYou', { s: RECONNECT_GRACE_S })
+  }
+
+  /** 小地圖信號（server 已限流；驗證與轉送見 systems/chat.ts routeMapPing）*/
+  handleMapPing(slot: number, z: number, x: number, y: number): void {
+    const p = this.players[slot]
+    if (!p || this.ended) return
+    routeMapPing(this, p, z, x, y)
   }
 
   // ───────── 輸入 ─────────
@@ -686,8 +709,9 @@ export class Game {
         slot: p.slot,
         name: p.baseName,
         color: p.color,
-        // 被轉化的人顯示成轉化者的陣營（「異形 spawn」），不是原本的「人類」
-        role: p.spawnOf ?? p.role,
+        // 被轉化的人顯示成轉化者的陣營（「異形 spawn」），不是原本的「人類」；
+        // 開局早退、被別人補位的人顯示離開前的身分（systems/replace.ts 把他改成人類，免得和補位者搶主腦）
+        role: (p.data.leftRole as Role | undefined) ?? p.spawnOf ?? p.role,
         classId: p.classId,
         // 政委晉升成特務（events.ts promotion；職業 classId 仍是 commissar，頭銜改成特務）
         ...(p.data.promoted ? { promoted: true } : {}),
