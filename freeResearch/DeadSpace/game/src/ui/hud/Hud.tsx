@@ -13,7 +13,7 @@ import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, l
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
-import { chatOpen, evolveOpen, isPiloting, selected, targetMode, type Input } from '../../client/input'
+import { chatOpen, evolveOpen, isPiloting, localNotice, selected, targetMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
@@ -25,7 +25,9 @@ import { createPortal } from 'preact/compat'
 import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
-import { MINIMAP, poiColor } from '../minimapColors'
+import { MINIMAP, poiColor, poiShape } from '../minimapColors'
+import { DEFAULT_BODY_R, minimapMoveTarget } from '../../render/moveTargets'
+import '../strings/art3'
 import '../ui4.css'
 
 function fmtTime(s: number): string {
@@ -204,13 +206,24 @@ export function Minimap(props: { scene: GameScene }) {
         for (const p of l.pois) {
           const c = poiColor(p.def.kind, p.def.ref)
           if (!c) continue
+          const px = ox + (p.col + 0.5) * k
+          const py = oy + (p.row + 0.5) * k
+          if (poiShape(p.def.kind) === 'hollowSquare') {
+            // 控制台：空心方框（minimapColors.ts poiShape）。實心圓點是玩家，不要讓人把控制台看成另一個船員
+            const lw = Math.max(2.5, k * 0.3)
+            const r = k * 0.95 + 2.5
+            bx.lineWidth = lw + 2
+            bx.strokeStyle = 'rgba(0,0,0,0.75)'
+            bx.strokeRect(px - r, py - r, r * 2, r * 2)
+            bx.lineWidth = lw
+            bx.strokeStyle = c
+            bx.strokeRect(px - r, py - r, r * 2, r * 2)
+            continue
+          }
           bx.fillStyle = c
-          const big = p.def.kind === 'vendor' || p.def.kind === 'git' || p.def.kind === 'console'
+          const big = p.def.kind === 'vendor' || p.def.kind === 'git'
           const r = big ? k * 0.9 + 1.5 : k * 0.5 + 1
-          bx.beginPath()
-          if (p.def.kind === 'console') bx.arc(ox + (p.col + 0.5) * k, oy + (p.row + 0.5) * k, r, 0, Math.PI * 2)
-          else bx.rect(ox + (p.col + 0.5) * k - r, oy + (p.row + 0.5) * k - r, r * 2, r * 2)
-          bx.fill()
+          bx.fillRect(px - r, py - r, r * 2, r * 2)
         }
         base.current = { zone: scene.zone, img: b }
       }
@@ -278,7 +291,7 @@ export function Minimap(props: { scene: GameScene }) {
         onMouseDown={(e) => {
           const p = toWorld(e)
           if (!p) return
-          if (e.button === 2) sendCmd({ k: 'move', x: p.x, y: p.y, q: e.shiftKey })
+          if (e.button === 2) minimapMove(sceneRef.current, p, e.shiftKey)
           else sceneRef.current?.rts.focus(p.x, p.y)
         }}
       />
@@ -323,9 +336,31 @@ export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?:
   }
 }
 
+/**
+ * 小地圖右鍵移動（站內）：點到牆、實心設施改成同房間最近走得到的格子；落在控制台的控制圈裡就推到圈外
+ * （小地圖上點不出「去駕駛」，要駕駛請在場景裡右鍵控制台）；整個走不到就提示「無法到達」。太空層照原點。
+ */
+function minimapMove(scene: GameScene | null, p: { x: number; y: number }, q: boolean): void {
+  const info = scene && scene.zone !== 0 ? scene.zones.get(scene.zone) : undefined
+  if (!scene || !info) {
+    sendCmd({ k: 'move', x: p.x, y: p.y, q })
+    return
+  }
+  const meId = world.me.control || world.me.unit
+  const me = meId ? world.ents.get(meId) : undefined
+  const here = !!me && me.s.z === scene.zone
+  const to = minimapMoveTarget(info.layout, p, here ? { x: me.x, y: me.y } : null, UNITS.get(me?.s.d ?? '')?.radius ?? DEFAULT_BODY_R)
+  if (!to) {
+    localNotice.value = { text: 'art3.unreachable', at: performance.now() }
+    return
+  }
+  sendCmd({ k: 'move', x: to.x, y: to.y, q })
+  scene.fx.clickMarker(scene.zone, to.x, to.y)
+}
+
 function poiName(kind: string, ref?: string): string {
   if (kind === 'vendor') return loc(VENDORS.get(ref ?? '')?.name)
-  if (kind === 'console') return t('minimap.console')
+  if (kind === 'console' || kind === 'shipConsole') return t('minimap.console')
   if (kind === 'powerConsole') return t('minimap.power')
   if (kind === 'git') return t('minimap.git')
   return ''
@@ -402,7 +437,9 @@ export function Portrait() {
         </div>
       </div>
     )
-  const id = selected.value || world.me.control || world.me.unit || 0
+  // 選取的單位不在了（變身、進化換了主單位，或離開視野）：改顯示自己操控的單位，不要留一塊空白
+  const sel = selected.value && world.ents.has(selected.value) ? selected.value : 0
+  const id = sel || world.me.control || world.me.unit || 0
   const e = world.ents.get(id)
   if (!e) {
     // 觀戰中沒有選取任何單位：說明可以點選，而不是留一塊空白

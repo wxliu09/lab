@@ -2,10 +2,14 @@
 import { effect, signal } from '@preact/signals'
 import { edgeScrollOn, edgeSpeed } from './controlPrefs'
 import { audioPrefs, setAudioPref } from '../audio/sfx'
-import { abilityDef, itemDef } from '../shared/content/registry'
+import { UNITS, abilityDef, itemDef } from '../shared/content/registry'
 import type { SnapEntity } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
-import { sendCmd, world } from './session'
+import { CONSOLE_KINDS, CONSOLE_LOCK_PAD, CONSOLE_R, DEFAULT_BODY_R, consoleApproach, consoleSpots, reachFrom, type Pt } from '../render/moveTargets'
+import { entDefName } from '../ui/names'
+import { loc, t } from '../ui/i18n'
+import { showCursorTip } from '../ui/tooltip'
+import { sendCmd, snapTick, world } from './session'
 import { giveRefusal } from './give'
 import { meCtx, rightClickAction, rummageClick } from './interactKind'
 
@@ -81,8 +85,30 @@ export function typingInField(): boolean {
   return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)
 }
 
+/** 單位的身體半徑（sim 判定站上控制台時要加上它）*/
+function bodyRadius(s: SnapEntity | undefined): number {
+  return UNITS.get(s?.d ?? '')?.radius ?? DEFAULT_BODY_R
+}
+
+/**
+ * 拾取不到實體時改用的點選對象：頭頂提示標籤標的東西（ent = 實體 id），或沒有實體的控制台（船艙控制台、視野外的主控台：ent = 0，
+ * x／y = 控制圈中心）
+ */
+interface AltTarget {
+  x: number
+  y: number
+  ent: number
+}
+
 export class Input {
   private shift = false
+  /**
+   * 剛交出控制台（按 B、或駕駛的船停靠時被鎖住）的那一台：sim 要等人離開控制圈才會讓同一個人重新駕駛，
+   * 站在圈裡右鍵它什麼都不會發生。記下來，右鍵它時先退出圈外再走回來（Input.goPilot）。走遠了就清掉。
+   */
+  private leftConsole: { zone: number; x: number; y: number } | null = null
+  /** 游標下的船艙控制台（沒有實體，WorldHover 不會說明它；由這裡顯示同一張懸停卡片）*/
+  private spotHover: { key: string; since: number; shown: boolean } = { key: '', since: 0, shown: false }
   private dragging = false
   private dragX = 0
   private dragY = 0
@@ -160,6 +186,33 @@ export class Input {
       e.preventDefault()
       this.scene.rts.wheel(e.deltaY)
     })
+    // 每份快照：記下剛交出的控制台；選取跟著換掉的主單位（變身、進化、結繭都會換一個新的實體）
+    let wasPiloting = false
+    let prevUnit = world.me.unit
+    this.disposers.push(
+      effect(() => {
+        void snapTick.value
+        const piloting = isPiloting()
+        if (wasPiloting && !piloting) this.markLeftConsole()
+        wasPiloting = piloting
+        this.forgetLeftConsole()
+        const u = world.me.unit
+        if (u !== prevUnit) {
+          // peek：只跟著快照跑，不訂閱選取本身
+          if (prevUnit && selected.peek() === prevUnit && u) {
+            selected.value = u
+            this.scene.units.selected = u
+          }
+          prevUnit = u
+        }
+      }),
+    )
+    // 船艙控制台的懸停卡片（同 WorldHover：停留 0.25 秒才顯示）
+    const hov = setInterval(() => this.spotTip(), 100)
+    this.disposers.push(() => {
+      clearInterval(hov)
+      if (this.spotHover.shown) showCursorTip(null, 0, 0)
+    })
     const kd = (e: KeyboardEvent) => this.key(e, true)
     const ku = (e: KeyboardEvent) => this.key(e, false)
     window.addEventListener('keydown', kd)
@@ -186,7 +239,105 @@ export class Input {
     }
     const [nx, ny] = this.ndc(e)
     cursorWorld.value = this.scene.rts.groundAt(nx, ny)
-    this.scene.units.hovered = this.scene.pick(nx, ny)
+    let hov = this.scene.pick(nx, ny)
+    let spot: AltTarget | null = null
+    if (!hov) {
+      // 游標在頭頂提示標籤上（底下常常是牆）：當成懸停在它標的對象；船艙控制台沒有實體，另外記
+      const lb = this.labelAt(e)
+      if (lb?.ent) hov = lb.ent
+      else spot = lb ?? (this.zoneHasShipConsole() ? this.consoleSpotAt(nx, ny) : null)
+    }
+    this.scene.units.hovered = hov
+    const key = spot ? `${this.scene.zone}:${spot.x},${spot.y}` : ''
+    if (key !== this.spotHover.key) this.spotHover = { key, since: performance.now(), shown: this.spotHover.shown }
+  }
+
+  /** 滑鼠在頭頂互動提示標籤（overlay.ts）的範圍內：回傳它標的對象 */
+  private labelAt(e: MouseEvent): AltTarget | null {
+    const h = this.scene.promptHit
+    if (!h) return null
+    const r = this.el.getBoundingClientRect()
+    const x = e.clientX - r.left
+    const y = e.clientY - r.top
+    if (x < h.l || x > h.r || y < h.t || y > h.b) return null
+    if (h.poi) return { x: h.poi.x, y: h.poi.y, ent: 0 }
+    const t = world.ents.get(h.ent)
+    return t ? { x: (t.s.x ?? 0) / 100, y: (t.s.y ?? 0) / 100, ent: h.ent } : null
+  }
+
+  /** 目前畫面的 zone 有沒有船艙控制台（只有船艙要在每次移動滑鼠時多拾取一次設施模型）*/
+  private zoneHasShipConsole(): boolean {
+    const info = this.scene.zones.get(this.scene.zone)
+    return !!info && info.layout.pois.some((p) => p.def.kind === 'shipConsole')
+  }
+
+  /** 游標下的船艙控制台模型（sim 沒有實體，pick 拾取不到）*/
+  private consoleSpotAt(nx: number, ny: number): AltTarget | null {
+    const p = this.scene.pickPoi(nx, ny)
+    return p && p.def.kind === 'shipConsole' ? { x: p.x, y: p.y, ent: 0 } : null
+  }
+
+  /** 游標下拾取不到實體的控制台模型：船艙控制台、或在視野外（快照裡沒有實體）的站點主控台 */
+  private consoleModelAt(nx: number, ny: number): AltTarget | null {
+    const p = this.scene.pickPoi(nx, ny)
+    return p && CONSOLE_KINDS.has(p.def.kind) ? { x: p.x, y: p.y, ent: 0 } : null
+  }
+
+  /** 船艙控制台的懸停卡片：內容和站點主控台一樣（WorldHover 的 hoverTip），只是沒有血量 */
+  private spotTip(): void {
+    const h = this.spotHover
+    const want = !!h.key && cursorScreen.overView && !targetMode.value && !modalOpen() && !this.scene.units.hovered && performance.now() - h.since >= 250
+    if (want) {
+      const d = 'struct.console'
+      showCursorTip({ title: loc(entDefName(d)), sub: t('hover.cat.structure'), body: t('hover.desc.' + d), hint: t('hover.hint.console'), color: '#ffc23d' }, cursorScreen.x, cursorScreen.y)
+      h.shown = true
+    } else if (h.shown) {
+      h.shown = false
+      showCursorTip(null, 0, 0)
+    }
+  }
+
+  /** 剛停止駕駛：記下自己主單位旁邊的那一台控制台（交還鎖在它上面）*/
+  private markLeftConsole(): void {
+    const u = world.ents.get(world.me.unit ?? 0)
+    const info = u ? this.scene.zones.get(u.s.z ?? -1) : undefined
+    this.leftConsole = null
+    if (!u || !info) return
+    const lim = CONSOLE_R + bodyRadius(u.s) + CONSOLE_LOCK_PAD + 0.3
+    for (const c of consoleSpots(info.layout)) if (Math.hypot(u.x - c.x, u.y - c.y) <= lim) this.leftConsole = { zone: info.id, x: c.x, y: c.y }
+  }
+
+  /** 已經走出交還鎖的範圍（或換了 zone）：不用再先退出去 */
+  private forgetLeftConsole(): void {
+    const lc = this.leftConsole
+    if (!lc) return
+    const u = world.ents.get(world.me.unit ?? 0)
+    if (!u || u.s.z !== lc.zone || Math.hypot(u.x - lc.x, u.y - lc.y) > CONSOLE_R + bodyRadius(u.s) + CONSOLE_LOCK_PAD + 0.1) this.leftConsole = null
+  }
+
+  /**
+   * 右鍵控制台＝走上去駕駛。控制台本體是實心的：送它的中心點，sim 會改走到最近的可走格，常常是控制台後面的牆邊，
+   * 站不進控制圈。改走到控制圈裡站得到、離自己最近的一點（moveTargets.ts consoleApproach）。
+   * 剛交出這一台、還站在圈裡（sim 的交還鎖還沒解開）：先退到圈外，再排隊走回來。
+   */
+  private goPilot(c: AltTarget, zone: number, q: boolean): void {
+    const ctl = world.ents.get(world.me.control || world.me.unit || 0)
+    const info = this.scene.zones.get(zone)
+    const from: Pt | null = ctl && ctl.s.z === zone ? { x: ctl.x, y: ctl.y } : null
+    const r = bodyRadius(ctl?.s)
+    const ap = info && from ? consoleApproach(info.layout, c, from, r, reachFrom(info.layout, from)) : null
+    if (!ap || !from) {
+      sendCmd({ k: 'move', x: c.x, y: c.y, q })
+      this.scene.fx.clickMarker(zone, c.x, c.y, '#ffc23d')
+      return
+    }
+    const lc = this.leftConsole
+    const locked = !!lc && lc.zone === zone && Math.hypot(lc.x - c.x, lc.y - c.y) < 0.1 && Math.hypot(from.x - c.x, from.y - c.y) <= CONSOLE_R + r + CONSOLE_LOCK_PAD + 0.1
+    if (locked && ap.out) {
+      sendCmd({ k: 'move', x: ap.out.x, y: ap.out.y, q })
+      sendCmd({ k: 'move', x: ap.stand.x, y: ap.stand.y, q: true })
+    } else sendCmd({ k: 'move', x: ap.stand.x, y: ap.stand.y, q })
+    this.scene.fx.clickMarker(zone, ap.stand.x, ap.stand.y, '#ffc23d')
   }
 
   private down(e: MouseEvent): void {
@@ -208,7 +359,8 @@ export class Input {
         targetMode.value = null
         return
       }
-      this.rightClick(ent, pt, zone)
+      // 沒點到實體：游標在頭頂提示標籤上、或在沒有實體的控制台模型上（船艙控制台、視野外的主控台），當成點到它
+      this.rightClick(ent, pt, zone, ent ? null : (this.labelAt(e) ?? this.consoleModelAt(nx, ny)))
       return
     }
     if (e.button === 0) {
@@ -222,7 +374,7 @@ export class Input {
     }
   }
 
-  private rightClick(ent: number, pt: { x: number; y: number } | null, zone: number): void {
+  private rightClick(ent: number, pt: { x: number; y: number } | null, zone: number, alt: AltTarget | null = null): void {
     const q = this.shift
     const me = world.me.control ?? world.me.unit
     const e = ent && ent !== me ? world.ents.get(ent) : undefined
@@ -236,7 +388,12 @@ export class Input {
           this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
           return
         case 'center':
-          // 控制台、無人機控制圈、降落傳送門：要站到正中央才會觸發（interact 只會停在旁邊），直接走到中心
+          // 駕駛控制台：走進控制圈（本體是實心的，見 goPilot）
+          if (e.s.d === 'struct.console') {
+            this.goPilot({ x: (e.s.x ?? 0) / 100, y: (e.s.y ?? 0) / 100, ent }, zone, q)
+            return
+          }
+          // 無人機控制圈、降落傳送門（不佔格）：要站到正中央才會觸發（interact 只會停在旁邊），直接走到中心
           sendCmd({ k: 'move', x: e.x, y: e.y, q })
           this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
           return
@@ -266,6 +423,12 @@ export class Input {
         case 'ground':
           break
       }
+    }
+    // 點在頭頂標籤上＝點它標的對象（販賣機、控制台…）；沒有實體的控制台＝去駕駛
+    if (alt) {
+      if (alt.ent) this.rightClick(alt.ent, pt, zone)
+      else this.goPilot(alt, zone, q)
+      return
     }
     // 點地面（或點到自己、只是場景的地貼、剛離開視野的實體）：走過去
     if (pt) {

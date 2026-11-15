@@ -1,7 +1,7 @@
 // 遊戲場景：一次只渲染玩家所在的 zone；站體快取、迷霧、燈光池、手電筒、單位同步
 import * as THREE from 'three'
 import { STATION_BY_ID } from '../shared/content/stations/index'
-import { parseLayout, cellAt as layoutCell, type ParsedLayout } from '../shared/layout'
+import { parseLayout, cellAt as layoutCell, type ParsedLayout, type PoiInstance } from '../shared/layout'
 import { UNITS } from '../shared/content/registry'
 import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 import type { ClientWorld, CEnt } from '../client/world'
@@ -306,6 +306,13 @@ export class GameScene implements SceneLike {
   }
   /** 每幀重複使用的暫存（避免 GC）*/
   private tmpV = new THREE.Vector3()
+  /**
+   * 頭頂互動提示（overlay.ts 畫的「控制台 · 右鍵 走上去駕駛」）這一幀在畫面上的範圍（CSS px，相對 3D 畫面左上角）與它標的對象：
+   * ent = 實體 id；船艙控制台沒有實體，改給 poi（版面上的格子）。標籤是畫在畫布上的，點在標籤上時 input.ts 當成點到它標的對象。
+   */
+  promptHit: { l: number; r: number; t: number; b: number; ent: number; poi?: { x: number; y: number; kind: string } } | null = null
+  /** 量底部 HUD 的計時（鏡頭的投影偏移，RtsCamera.bottomInset）*/
+  private insetT = 0
 
   constructor(readonly world: ClientWorld) {
     this.camera = this.rts.cam
@@ -1121,7 +1128,23 @@ export class GameScene implements SceneLike {
     } else this.flash.intensity = 0
     this.space?.update(t)
     this.fx.update(dt, t, zid)
+    this.measureHud(dt)
     this.rts.update(dt, window.innerWidth, window.innerHeight)
+  }
+
+  /**
+   * 底部 HUD 擋住多高（每 0.25 秒量一次；介面縮放、視窗大小改變都會變）：量正中央的頭像面板（角色正下方就是它），
+   * 交給鏡頭做投影偏移（camera.ts bottomInset）。沒有 HUD（測試、選單）時是 0。
+   */
+  private measureHud(dt: number): void {
+    this.insetT -= dt
+    if (this.insetT > 0) return
+    this.insetT = 0.25
+    // 單元測試的假 document 沒有 querySelector
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function' || typeof window === 'undefined') return
+    const el = document.querySelector('.hud-bottom .portrait')
+    const r = el?.getBoundingClientRect()
+    this.rts.bottomInset = r && r.height > 0 ? Math.max(0, window.innerHeight - r.top) : 0
   }
 
   /**
@@ -1340,6 +1363,29 @@ export class GameScene implements SceneLike {
     this.blizzard?.dispose()
     this.blizzard = null
     this.prebuildQ = []
+  }
+
+  /**
+   * 螢幕拾取站體裡的固定設施模型（不論有沒有對應的實體）：回傳版面上的那個 POI。
+   * 船艙控制台在 sim 沒有實體（pick 拾取不到），右鍵、懸停靠這個認出來。
+   */
+  pickPoi(ndcX: number, ndcY: number): PoiInstance | null {
+    const view = this.views.get(this.zone)
+    const info = this.zones.get(this.zone)
+    if (!view || !info) return null
+    const ray = new THREE.Raycaster()
+    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera)
+    const targets: THREE.Object3D[] = []
+    for (const g of view.pois.values()) if (g.visible) targets.push(g)
+    for (const h of ray.intersectObjects(targets, true)) {
+      if (!shown(h.object)) continue
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) {
+        const pk = o.userData.poiKey as string | undefined
+        if (pk === undefined) continue
+        return info.layout.pois.find((p) => `${p.col},${p.row}` === pk) ?? null
+      }
+    }
+    return null
   }
 
   /** 螢幕拾取：回傳實體 id（單位或設施）*/

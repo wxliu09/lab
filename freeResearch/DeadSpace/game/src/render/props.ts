@@ -214,6 +214,8 @@ export function poiModel(kind: string, ref: string | undefined, seed: number): P
       anim.push({ obj: scr, update: (t) => ((scr.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.7 + Math.sin(t * 9 + seed) * 0.08) })
       return { root, anim, ring: col }
     }
+    // 船艙控制台（sim 只記位置、沒有實體）和站點主控台同一套外觀與地面光圈：以前落到 default，是一個灰色箱子，看不出能駕駛
+    case 'shipConsole':
     case 'console': {
       // 駕駛控制台：環形工作站＋全像桌
       add(cyl(0.75, 0.9, 0.85, 28), dark, 0, 0.42, 0)

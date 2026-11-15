@@ -10,6 +10,7 @@ import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 import { meCtx, promptKey } from '../client/interactKind'
+import { consoleSpots, type ConsoleSpot } from './moveTargets'
 
 const requested = new Set<string>()
 /** 靠近時會開啟操作面板的設施 */
@@ -178,12 +179,13 @@ export class Overlay {
 
   /** 互動提示：自己附近最近的可互動物件（販賣機、設施、地上物品）上方標出名稱與操作 */
   private prompt(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, now: number): { l: number; r: number; t: number; b: number } | null {
+    scene.promptHit = null
     const meId = world.me.control ?? world.me.unit
     const me = meId ? world.ents.get(meId) : undefined
     if (!me || world.me.alive === false) return null
     // 雜物箱只對有翻找技能的人標「右鍵 翻找」
     const mc = meCtx(world)
-    let best: { id: number; d: number } | null = null
+    let best: { id: number; d: number; poi?: ConsoleSpot } | null = null
     for (const e of world.ents.values()) {
       if (e.s.z !== me.s.z || e.s.i === meId) continue
       const fl = e.s.fl ?? 0
@@ -195,21 +197,30 @@ export class Overlay {
       // 沒有「使用」可言的東西（瓦礫、雕像、降落場、裝置、損毀的控制台…）不標（interactKind.ts）
       if (d < 4.5 && (!best || d < best.d) && promptKey(e.s, d < 2.9, mc)) best = { id: e.s.i, d }
     }
+    // 船艙控制台：sim 不生成實體（只記位置），照版面標，和站點主控台一樣寫「控制台 · 右鍵 走上去駕駛」
+    const info = me.s.z === scene.zone ? scene.zones.get(scene.zone) : undefined
+    if (info)
+      for (const s of consoleSpots(info.layout)) {
+        if (s.kind !== 'shipConsole') continue
+        const d = Math.hypot(s.x - me.x, s.y - me.y)
+        if (d < 4.5 && (!best || d < best.d)) best = { id: 0, d, poi: s }
+      }
     if (!best) return null
-    const e = world.ents.get(best.id)!
-    const uv = scene.units.views.get(best.id)
+    const e = best.poi ? undefined : world.ents.get(best.id)!
+    const uv = e ? scene.units.views.get(best.id) : undefined
     if (uv) this.v.copy(uv.root.position)
-    else this.v.set(e.x, 0, -e.y)
+    else if (e) this.v.set(e.x, 0, -e.y)
+    else this.v.set(best.poi!.x, 0, -best.poi!.y)
     // 沒有單位視圖的是烘焙在站體裡的固定設施（販賣機約 2 m 高）：標在它頭上
     this.v.y += (uv?.height ?? 2) + 0.45
     this.v.project(scene.camera)
     if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return null
     const sx = (this.v.x * 0.5 + 0.5) * w
     const sy = (-this.v.y * 0.5 + 0.5) * h
-    const d = e.s.d ?? ''
+    const d = e ? (e.s.d ?? '') : 'struct.console'
     const item = d.startsWith('item:')
-    const name = item ? loc(entDefName(d)) : localizeName(e.s.n) || loc(entDefName(d))
-    const act = t(promptKey(e.s, best.d < 2.9, mc) ?? 'prompt.use')
+    const name = item ? loc(entDefName(d)) : localizeName(e?.s.n) || loc(entDefName(d))
+    const act = t(e ? (promptKey(e.s, best.d < 2.9, mc) ?? 'prompt.use') : 'prompt.pilot')
     ensureGlyphs(name + act)
     const pulse = 0.65 + 0.35 * Math.sin(now * 5)
     // 菱形標記
@@ -242,7 +253,10 @@ export class Overlay {
     x.fillText(name, 0, -r - 25 * z)
     const half = Math.max(aw, x.measureText(name).width) / 2 + 4
     x.restore()
-    return { l: sx - half, r: sx + half, t: sy - r - 42 * z, b: sy + r }
+    const rect = { l: sx - half, r: sx + half, t: sy - r - 42 * z, b: sy + r }
+    // 點在標籤上＝點到它標的對象（input.ts）：標籤浮在設施上方，底下常常是牆，以前右鍵會走到牆邊
+    scene.promptHit = { ...rect, ent: best.id, poi: best.poi }
+    return rect
   }
 
   private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, raw: string, z = 1): void {
