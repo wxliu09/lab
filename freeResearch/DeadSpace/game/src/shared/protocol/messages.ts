@@ -393,10 +393,23 @@ export interface WorldPublic {
    * 開局天氣在 StationDef.weather；這裡只放之後的變化。公開現象（全星區都收到公告），不分觀看者
    */
   wx: Record<string, string>
+  /**
+   * 基因檢測器開放（醫療補給、GIT 檢測儀第一次上架）的開局秒數：原作 420；練習簡單難度 240。
+   * 是這一局的固定設定（依難度），補給事件提早補貨不會改變這個值
+   */
+  gitAt: number
+  /**
+   * 進行中的重大事件（目標面板顯示對策用）。只放已經全場公告、所有人都知道的事件：
+   * 'drones' 無人機群、'asteroids' 小行星雨、'tenshu' 天守反物質收容失效倒數、'pirate' 敵對海盜船、'doom' 末日。
+   * 順序固定如上（client 自己排顯示優先順序）
+   */
+  ev: string[]
 }
 
 export interface EndResult {
   winner: 'crew' | 'xeno' | 'mutant' | 'draw' | 'aborted'
+  /** 平手的原因（只有 winner = 'draw' 時才有）：wipe = 各方同歸於盡（沒有人活著）、doom = 末日倒數結束仍未分勝負、other = 其他（除錯指令等）*/
+  drawWhy?: 'wipe' | 'doom' | 'other'
   players: {
     slot: Slot
     name: string

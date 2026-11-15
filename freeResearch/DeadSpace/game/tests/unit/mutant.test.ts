@@ -155,16 +155,18 @@ describe('變種人與仿生人定義', () => {
     expect(UNITS.get('mut.hiveship')!.tags).toEqual(expect.arrayContaining(['space', 'station']))
   })
 
-  it('主形態都有吞噬；完美路線 T1／T2 有啃食；感染類放在主動技能之後', () => {
+  it('主形態都有吞噬（第一格）；完美路線 T1／T2 有啃食；同類相食／朊毒在第二格', () => {
     for (const f of FORMS.values()) {
       if (f.faction !== 'mutant' || f.id === 'mut.hiveship') continue
       const ab = UNITS.get(f.unit)!.abilities
-      expect(ab, f.id).toContain('mut.devour')
+      expect(ab[0], f.id).toBe('mut.devour')
       expect(ab.includes('mut.cannibalize'), f.id).toBe(f.branch === 'perfect' && f.tier <= 2)
       if (f.tier >= 2) expect(ab, f.id).toContain('ab.mut.roar')
     }
-    expect(UNITS.get('mut.sporemother')!.abilities.at(-1)).toBe('mut.prion')
-    expect(UNITS.get('mut.broodmother')!.abilities.at(-1)).toBe('mut.prion3')
+    expect(UNITS.get('mut.sporemother')!.abilities[1]).toBe('mut.prion')
+    expect(UNITS.get('mut.mimetic')!.abilities[1]).toBe('mut.prion2')
+    expect(UNITS.get('mut.broodmother')!.abilities[1]).toBe('mut.prion3')
+    expect(UNITS.get('mut.apex')!.abilities[1]).toBe('mut.cannibalize')
     expect(UNITS.get('mut.carcinid')!.abilities.slice(-2)).toEqual(['ab.mut.crabosity', 'ab.mut.carapace'])
   })
 

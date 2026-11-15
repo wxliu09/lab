@@ -142,12 +142,17 @@ function pair(key: string, name: Loc, main: FormSpec, spawn: FormSpec): UnitDef[
 
 const LORD_FLAGS = { fireImmune: true, blastImmune: true }
 
+// 技能順序＝快捷鍵（client 依非被動技能的 index 對應 Q／W／E／R／D／F）：進化後共用的技能要留在同一個鍵上。
+// 主形態：寄生 Q、變回人形 W、下蛋 E（T3 沒有下蛋，E 起放形態自己的技能）；同名技能（禁聲）在各形態同一格。
+// 眷屬：寄生 Q、變回人形 W，之後才是形態技能。人形時的變身技能固定在 Q（items.ts slotOrder）。被動技能放最後（不佔快捷鍵）。
+// 規則有測試（abilitySlots.test.ts），新增形態時照著排。
+
 export const XENO_UNITS: UnitDef[] = [
   // ── T1 ──
   ...pair(
     'protoform',
     L('原型體', 'Protoform'),
-    { hp: 650, regen: 0.75, speed: 2.85, radius: 0.5, attack: { dmg: 45, cd: 1.5, range: 4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, EGG, HUMAN] },
+    { hp: 650, regen: 0.75, speed: 2.85, radius: 0.5, attack: { dmg: 45, cd: 1.5, range: 4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, HUMAN, EGG] },
     { hp: 600, regen: 0.75, speed: 2.85, radius: 0.45, attack: { dmg: 41, cd: 1.5, range: 4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, SPAWN_HUMAN] },
   ),
   // ── T2 ──
@@ -160,7 +165,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.85,
       radius: 0.5,
       attack: { dmg: 16, cd: 0.5, range: 6, kind: 'projectile', fx: 'xeno', projSpeed: 18 },
-      abilities: [XAB.entropy, PARASITE, EGG, HUMAN, XAB.deflect],
+      abilities: [PARASITE, HUMAN, EGG, XAB.entropy, XAB.deflect],
     },
     {
       hp: 650,
@@ -180,9 +185,9 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 3.3,
       radius: 0.6,
       attack: { dmg: 49, cd: 1.4, range: 1.4, kind: 'melee', fx: 'claw', neuro: true },
-      abilities: [XAB.tentacles, PARASITE, EGG, HUMAN, XAB.neurotoxin],
+      abilities: [PARASITE, HUMAN, EGG, XAB.tentacles, XAB.neurotoxin],
     },
-    { hp: 650, regen: 0.5, speed: 3.2, radius: 0.55, attack: { dmg: 32, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [XAB.tentacles, PARASITE, SPAWN_HUMAN] },
+    { hp: 650, regen: 0.5, speed: 3.2, radius: 0.55, attack: { dmg: 32, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, SPAWN_HUMAN, XAB.tentacles] },
   ),
   ...pair(
     'puppeteer',
@@ -193,7 +198,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.75,
       radius: 0.5,
       attack: { dmg: 44, cd: 1.5, range: 6, kind: 'projectile', fx: 'xeno', projSpeed: 16 },
-      abilities: [XAB.flux, XAB.mute, PARASITE, EGG, HUMAN],
+      abilities: [PARASITE, HUMAN, EGG, XAB.mute, XAB.flux],
     },
     { hp: 650, regen: 0.75, speed: 2.75, radius: 0.45, attack: { dmg: 39, cd: 1.5, range: 6, kind: 'projectile', fx: 'xeno', projSpeed: 16 }, abilities: [PARASITE, SPAWN_HUMAN] },
   ),
@@ -207,7 +212,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.75,
       radius: 0.6,
       attack: { dmg: 24, cd: 0.75, range: 6.5, kind: 'projectile', fx: 'fire', projSpeed: 16, dmgKind: 'fire' },
-      abilities: [XAB.explosion, PARASITE, HUMAN, XAB.lordOfFlames],
+      abilities: [PARASITE, HUMAN, XAB.explosion, XAB.lordOfFlames],
       flags: LORD_FLAGS,
     },
     {
@@ -216,7 +221,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.75,
       radius: 0.55,
       attack: { dmg: 19, cd: 0.75, range: 6.5, kind: 'projectile', fx: 'fire', projSpeed: 16, dmgKind: 'fire' },
-      abilities: [XAB.explosionSpawn, PARASITE, SPAWN_HUMAN, XAB.lordOfFlames],
+      abilities: [PARASITE, SPAWN_HUMAN, XAB.explosionSpawn, XAB.lordOfFlames],
       flags: LORD_FLAGS,
     },
   ),
@@ -229,11 +234,11 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.8,
       radius: 0.65,
       attack: { dmg: 65, cd: 1.5, range: 1.4, kind: 'melee', fx: 'xenoArc', dmgKind: 'energy' },
-      abilities: [XAB.strike, XAB.disrupt, PARASITE, HUMAN],
+      abilities: [PARASITE, HUMAN, XAB.strike, XAB.disrupt],
       // 磁暴封鎖鎖住的門擋不住雷殛者本身
       flags: { passLocked: true },
     },
-    { hp: 800, regen: 0.75, speed: 2.8, radius: 0.6, attack: { dmg: 64, cd: 1.5, range: 1.4, kind: 'melee', fx: 'xenoArc', dmgKind: 'energy' }, abilities: [XAB.strike, PARASITE, SPAWN_HUMAN] },
+    { hp: 800, regen: 0.75, speed: 2.8, radius: 0.6, attack: { dmg: 64, cd: 1.5, range: 1.4, kind: 'melee', fx: 'xenoArc', dmgKind: 'energy' }, abilities: [PARASITE, SPAWN_HUMAN, XAB.strike] },
   ),
   ...pair(
     'phantasm',
@@ -244,7 +249,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.75,
       radius: 0.55,
       attack: { dmg: 38, cd: 1, range: 6.5, kind: 'projectile', fx: 'skyfire', projSpeed: 15 },
-      abilities: [XAB.blackness, XAB.manifold, PARASITE, HUMAN],
+      abilities: [PARASITE, HUMAN, XAB.blackness, XAB.manifold],
     },
     {
       hp: 625,
@@ -252,7 +257,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.75,
       radius: 0.5,
       attack: { dmg: 34, cd: 1, range: 6.5, kind: 'projectile', fx: 'skyfire', projSpeed: 15 },
-      abilities: [XAB.manifoldSpawn, PARASITE, SPAWN_HUMAN],
+      abilities: [PARASITE, SPAWN_HUMAN, XAB.manifoldSpawn],
     },
   ),
   // ── T3：力量 ──
@@ -265,7 +270,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.95,
       radius: 0.75,
       attack: { dmg: 42, cd: 1, range: 1.4, kind: 'melee', fx: 'claw', neuro: true },
-      abilities: [XAB.petrify, PARASITE, HUMAN, XAB.neurotoxin],
+      abilities: [PARASITE, HUMAN, XAB.petrify, XAB.neurotoxin],
     },
     {
       hp: 1300,
@@ -285,7 +290,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.65,
       radius: 0.5,
       attack: { dmg: 70, cd: 1.25, range: 1.4, kind: 'melee', fx: 'claw' },
-      abilities: [XAB.swarmbolt, PARASITE, HUMAN, XAB.coreForm, XAB.regen],
+      abilities: [PARASITE, HUMAN, XAB.swarmbolt, XAB.coreForm, XAB.regen],
     },
     {
       hp: 350,
@@ -305,7 +310,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.65,
       radius: 0.8,
       attack: { dmg: 85, cd: 1.5, range: 2.5, kind: 'projectile', fx: 'silk', projSpeed: 20 },
-      abilities: [XAB.webwire, XAB.fountain, PARASITE, HUMAN],
+      abilities: [PARASITE, HUMAN, XAB.webwire, XAB.fountain],
     },
     {
       hp: 1300,
@@ -313,7 +318,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.5,
       radius: 0.7,
       attack: { dmg: 85, cd: 1.5, range: 2.5, kind: 'projectile', fx: 'silk', projSpeed: 20 },
-      abilities: [XAB.webwire, PARASITE, SPAWN_HUMAN],
+      abilities: [PARASITE, SPAWN_HUMAN, XAB.webwire],
     },
   ),
   // ── T3：操控 ──
@@ -326,7 +331,7 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.8,
       radius: 0.55,
       attack: { dmg: 65, cd: 1.5, range: 6, kind: 'projectile', fx: 'xenoOrb', projSpeed: 14 },
-      abilities: [XAB.relocate, XAB.swap, PARASITE, HUMAN],
+      abilities: [PARASITE, HUMAN, XAB.relocate, XAB.swap],
     },
     {
       hp: 850,
@@ -334,21 +339,21 @@ export const XENO_UNITS: UnitDef[] = [
       speed: 2.6,
       radius: 0.5,
       attack: { dmg: 56, cd: 1.5, range: 6, kind: 'projectile', fx: 'xenoOrb', projSpeed: 14 },
-      abilities: [XAB.relocate, PARASITE, SPAWN_HUMAN],
+      abilities: [PARASITE, SPAWN_HUMAN, XAB.relocate],
     },
   ),
   ...pair(
     'chronarch',
     L('時序者', 'Chronarch'),
     // 原作攻擊間隔為底層單位預設（2 秒）
-    { hp: 850, regen: 0.5, speed: 2.75, radius: 0.55, attack: { dmg: 69, cd: 2, range: 6, kind: 'hitscan', fx: 'chrono' }, abilities: [XAB.revive, XAB.loop, PARASITE, HUMAN] },
+    { hp: 850, regen: 0.5, speed: 2.75, radius: 0.55, attack: { dmg: 69, cd: 2, range: 6, kind: 'hitscan', fx: 'chrono' }, abilities: [PARASITE, HUMAN, XAB.revive, XAB.loop] },
     { hp: 750, regen: 0.5, speed: 2.6, radius: 0.5, attack: { dmg: 59, cd: 2, range: 6, kind: 'hitscan', fx: 'chrono' }, abilities: [PARASITE, SPAWN_HUMAN] },
   ),
   ...pair(
     'mimic',
     L('假面者', 'Mimic'),
-    { hp: 700, regen: 0.75, speed: 2.85, radius: 0.45, attack: { dmg: 38, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [XAB.masks, XAB.mute, PARASITE, HUMAN] },
-    { hp: 600, regen: 0.75, speed: 2.85, radius: 0.45, attack: { dmg: 24, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [XAB.masks, PARASITE, SPAWN_HUMAN] },
+    { hp: 700, regen: 0.75, speed: 2.85, radius: 0.45, attack: { dmg: 38, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, HUMAN, XAB.masks, XAB.mute] },
+    { hp: 600, regen: 0.75, speed: 2.85, radius: 0.45, attack: { dmg: 24, cd: 1, range: 1.4, kind: 'melee', fx: 'claw' }, abilities: [PARASITE, SPAWN_HUMAN, XAB.masks] },
   ),
   // ── 輔助單位 ──
   {

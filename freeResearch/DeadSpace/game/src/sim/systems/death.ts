@@ -101,6 +101,8 @@ export interface HitView {
   n?: string
   /** 外觀 def id（dot 時是 buff id），只用來查顯示名稱 */
   d?: string
+  /** 救生艙被這個來源擊毀（乘員因此喪命）：訊息 key 改用 death.cause.pod.*（只有死因會有）*/
+  pod?: boolean
 }
 
 interface HitRec {
@@ -195,8 +197,13 @@ export function deathReport(g: Game, p: GamePlayer, u: Ent, killer: Ent | null, 
   const last = log[log.length - 1]
   const lh = p.data.lastHitSrc as { id: number; t: number } | undefined
   let cause: HitView
-  // 呼叫端明確標記的死因：shutdown（仿生人被強制關機）、purged（被主腦 -liquidate）、vacuum（救生艙被毀）
+  // 呼叫端明確標記的死因：shutdown（仿生人被強制關機）、purged（被主腦 -liquidate）、vacuum（救生艙被毀、沒有擊殺者）
   if (u.data.deathCause) cause = { k: u.data.deathCause as HitView['k'] }
+  // 救生艙被某個東西擊毀（space.ts 標記）：說是誰打爆了救生艙（一樣用死者當下看到的樣子）；說不出是誰就照舊說救生艙被毀
+  else if (u.data.podKilled && killer) {
+    const v = entSource(g, p, u, killer)
+    cause = v.k === 'self' || v.k === 'unknown' ? { k: 'vacuum' } : { ...v, pod: true }
+  }
   // 致命的那一下剛記錄過（同一 tick、同一個來源）：用當時記下的外觀
   else if (last && last.t === g.time && lh && lh.t === g.time && lh.id === (killer?.id ?? 0)) cause = last.v
   else if (killer) cause = entSource(g, p, u, killer)
@@ -213,7 +220,8 @@ export function deathReport(g: Game, p: GamePlayer, u: Ent, killer: Ent | null, 
 
 function hitArgs(v: HitView): Record<string, string> {
   const a: Record<string, string> = {}
-  if (v.n) a.n = v.n
+  // 名字用 name 參數：client 依介面語言換掉職業前綴、晉升頭銜、管家後綴、預設名字（ui/names.ts localizeName），和其他私訊一致
+  if (v.n) a.name = v.n
   const name = v.d ? (v.k === 'dot' ? BUFFS.get(v.d)?.name : lookName(v.d)) : undefined
   if (name) {
     // client 依語言挑 uz／ue（sim 不知道玩家用哪種語言）
@@ -224,7 +232,7 @@ function hitArgs(v: HitView): Record<string, string> {
 }
 
 export function sendDeathReport(g: Game, p: GamePlayer, r: DeathReport): void {
-  g.privateLine(p.slot, 'death.cause.' + r.cause.k, hitArgs(r.cause))
+  g.privateLine(p.slot, (r.cause.pod ? 'death.cause.pod.' : 'death.cause.') + r.cause.k, hitArgs(r.cause))
   for (const h of r.hits) g.privateLine(p.slot, 'death.hit.' + h.v.k, { ...hitArgs(h.v), dmg: Math.max(1, Math.round(h.dmg)) })
 }
 

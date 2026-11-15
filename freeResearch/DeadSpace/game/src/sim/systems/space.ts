@@ -4,7 +4,8 @@ import { SHIPS, SHIP_BY_ID, type ShipDef } from '../../shared/content/ships'
 import type { StationDef } from '../../shared/content/stations/types'
 import type { Loc } from '../../shared/content/types'
 import { unitDef } from '../../shared/content/registry'
-import { locArgs } from '../../shared/sysArgs'
+import { listArgs, locArgs } from '../../shared/sysArgs'
+import { roomAt } from '../../shared/layout'
 import { NEUTRAL, inheritLook, type Ent } from '../ent'
 import { fmtKey, type Game, type GamePlayer } from '../game'
 import { spawnConsole } from '../setup'
@@ -173,12 +174,21 @@ export function setupShips(g: Game): void {
     const st = w.get(nyx.spaceEnt)
     if (st) launchTo(g, inst, st.x + st.radius + 2.5, st.y - 1.5)
     inst.mother = nyx.id
+    // 戰機不在機庫裡（停在站外的太空中），新手在機庫只看得到別的船：開局私下告訴王牌飛行員去哪裡找、怎麼上去。
+    // 等開局載入完、模擬開始推進幾秒後才送（timer 在等載入時不會走），免得被身分揭露畫面蓋掉
+    const where = locArgs(zoneLabel(g, nyx))
+    g.after(ACE_HINT_S, () => {
+      for (const p of g.allPlayers()) if (p.classId === 'ace' && p.alive && !p.spectator) g.privateLine(p.slot, 'space.aceFighter', where)
+    })
   }
   void SHIPS
   // 恆星
   const sun = w.spawn(unitDef('space.sun'), SPACE_ZONE, 6.5, -2.9, NEUTRAL)
   sun.global = true
 }
+
+/** 開局後幾秒私訊王牌飛行員戰機的位置 */
+const ACE_HINT_S = 3
 
 let shipSeq = 0
 export function createShip(g: Game, def: ShipDef): ShipInst {
@@ -643,8 +653,10 @@ export function installSpace(g: Game): void {
       const m = p ? g.mainOf(p) : undefined
       if (m) {
         m.data.god = false
-        // 沒有擊殺者實體（恆星、小行星、來源已消失）：乘員是因為救生艙破裂、暴露在真空中而死
+        // 沒有擊殺者實體（恆星、小行星、來源已消失）：乘員是因為救生艙破裂、暴露在真空中而死；
+        // 有擊殺者（例如無人戰機）：死因說明寫成「救生艙被○○擊毀」（death.ts）
         if (!killer) m.data.deathCause = 'vacuum'
+        else m.data.podKilled = true
         g.killEnt(m, killer)
       }
     }
@@ -877,14 +889,48 @@ regScript('space.sweep', (g, ctx) => {
   const zid = st.data.interior as number | undefined
   if (zid === undefined || st.owner < 0) return
   const z = g.world.zones[zid]
+  const marks: { x: number; y: number }[] = []
   for (const e of g.world.inZone(zid)) {
     if (!e.alive || !e.isMain) continue
     g.emitFx({ k: 'ping', z: zid, x: e.x, y: e.y }, [st.owner])
+    marks.push({ x: e.x, y: e.y })
     if (e.owner >= 0) g.privateLine(e.owner, 'space.sweepAnnounce', locArgs(z.station?.name))
   }
+  // 駕駛中看的是太空畫面、看不到站內的小地圖：另外私訊施放者文字結果（和上面的掃描標記是同一份名單）
+  sweepReport(g, st.owner, z, marks)
   const p = g.players[st.owner]
   if (p) p.view.extraSources.push({ zone: zid, x: z.layout!.w / 2, y: z.layout!.h / 2, r: Math.max(z.layout!.w, z.layout!.h), until: g.time + 7 })
 })
+
+/** 不在任何房間裡（走廊、通道）的掃描標記 */
+const SWEEP_HALL: Loc = { zh: '走廊', en: 'corridors' }
+
+/**
+ * 監控掃描的文字結果：「控制室 2 人、醫務室 1 人」。內容只是把小地圖上的掃描標記（同一份位置清單）換成所在房間的人數，
+ * 不多給任何資訊（不分身分、形態、名字）；同名的房間合併，依房間在版面裡的順序排、走廊放最後。
+ */
+export function sweepLines(z: Zone, marks: { x: number; y: number }[]): { zh: string[]; en: string[] } {
+  const rooms = new Map<string, { name: Loc; n: number; order: number }>()
+  for (const m of marks) {
+    const r = z.layout ? roomAt(z.layout, m.x, m.y) : null
+    const name = r?.spec.name ?? SWEEP_HALL
+    const cur = rooms.get(name.zh) ?? { name, n: 0, order: r ? r.index : Infinity }
+    cur.n++
+    rooms.set(name.zh, cur)
+  }
+  const list = [...rooms.values()].sort((a, b) => a.order - b.order)
+  return { zh: list.map((r) => `${r.name.zh} ${r.n} 人`), en: list.map((r) => `${r.n} in ${r.name.en}`) }
+}
+
+function sweepReport(g: Game, slot: number, z: Zone, marks: { x: number; y: number }[]): void {
+  const where = locArgs(zoneLabel(g, z), 'sz', 'se')
+  if (!marks.length) {
+    g.privateLine(slot, 'space.sweepNone', where)
+    return
+  }
+  const l = sweepLines(z, marks)
+  g.privateLine(slot, 'space.sweepResult', { ...where, ...listArgs(l.zh, l.en, 'rz', 're') })
+}
 
 regScript('space.forceDock', (g, ctx) => {
   const t = ctx.target

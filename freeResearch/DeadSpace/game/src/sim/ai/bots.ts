@@ -18,6 +18,7 @@ import { VENDOR_RANGE, type StockState } from '../systems/vendors'
 import { consolePos, spaceOf, type ShipInst } from '../systems/space'
 import { stationsOf } from '../systems/stations'
 import { SPACE_ZONE, type Zone } from '../world'
+import { isEasy } from './level'
 
 interface Brain {
   next: number
@@ -131,9 +132,9 @@ const SUIT_VENDORS = new Set(['suitA', 'suitB', 'suitC', 'suitD'])
 // ───────── 練習難度（g.settings.aiLevel）─────────
 // easy：讓練習當異形不會太難。AI 船員驗血較慢（開局晚一點才去買檢測器、抽血之間停比較久、只抽身邊的人、不複驗）、
 // 不公開指認、看到玩家的怪物形態不主動開火（被打才還手，其他時候躲開）；AI 異類偽裝更久才動手、出手之間隔比較久、怪物形態比較保守。
-// normal：原本的行為。
+// normal：原本的行為，只是 AI 異類開局有一小段寬限期（NORMAL_EVIL_START），新手不會一開局就被打死。
 
-const easy = (g: Game): boolean => g.settings.aiLevel === 'easy'
+const easy = isEasy
 /** 簡單難度：開局多久之後才去買第一支檢測器（秒）*/
 const EASY_FIRST_SAMPLER = 180
 /** 簡單難度：兩次抽血之間至少隔多久（秒）、只抽多近的人（公尺；一般 18）*/
@@ -142,6 +143,8 @@ const EASY_DRAW_R = 10
 /** 簡單難度：AI 異類開局多久之後才會感染、攻擊（秒），兩次出手之間隔多久 */
 const EASY_EVIL_START = 420
 const EASY_STRIKE_GAP = 90
+/** 一般難度：AI 異類（異形、變種人）開局多久之後才會感染、主動變身攻擊、主動攻擊玩家（秒）；被打照樣還手 */
+export const NORMAL_EVIL_START = 120
 /** 簡單難度：換站前要找不到人多久（秒；一般 LONELY_S）*/
 const EASY_LONELY_S = 150
 
@@ -717,8 +720,8 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
       return
     }
   }
-  // 簡單難度：偽裝更久才動手（開局一段時間內、兩次出手之間不感染、不主動變身攻擊）
-  const holdOff = easy(g) && (g.time < EASY_EVIL_START || g.time < b.strikeAt)
+  // 開局寬限期（一般 120 秒、簡單 420 秒）內不感染、不主動變身攻擊、不主動攻擊；簡單難度兩次出手之間也一樣。被打照樣還手
+  const holdOff = g.time < (easy(g) ? EASY_EVIL_START : NORMAL_EVIL_START) || (easy(g) && g.time < b.strikeAt)
   const strike = () => {
     if (easy(g)) b.strikeAt = g.time + EASY_STRIKE_GAP
   }
@@ -771,8 +774,9 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     return
   }
   const foe = nearest(u, near.filter((e) => isFoe(g, p, e)))
-  // 簡單難度：怪物形態只在對方落單、而且沒在等下一次出手時才主動攻擊（被打照樣還手）
-  const bold = easy(g) ? (!holdOff && crew.length <= 1) || g.time - u.lastDamageTime < 3 : crew.length <= 2 || p.tier >= 2
+  // 寬限期內（以及簡單難度在等下一次出手時）只有被打才還手；簡單難度平常也只在對方落單時主動攻擊
+  const hit = g.time - u.lastDamageTime < 3
+  const bold = holdOff ? hit : easy(g) ? crew.length <= 1 || hit : crew.length <= 2 || p.tier >= 2
   if (foe && bold) {
     for (const a of u.abilities) {
       const ab = abilityDef(a)
@@ -857,6 +861,8 @@ function stepBots(g: Game): void {
     if (b.trip && stepTrip(g, p, u, b)) continue
     // 在停泊的船艙裡（不是換站）：走回艙門下船
     if (leaveCabin(g, p, u, b)) continue
+    // 異類被打：放下閒晃的目標，馬上決定要不要變身還手（開局寬限期內唯一會出手的情況；不然要等閒晃走完才反應）
+    if (g.faction(p) !== 'crew' && b.goal?.k === 'goto' && t - u.lastDamageTime < 2) b.goal = null
     if (pursue(g, p, u, b)) {
       // 追擊中仍會優先處理逃跑
       if (b.goal?.k !== 'flee' && u.hp < u.maxHp * 0.25 && g.faction(p) === 'crew') b.goal = null

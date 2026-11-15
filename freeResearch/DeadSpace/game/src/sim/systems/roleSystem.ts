@@ -599,7 +599,7 @@ export function checkVictoryNow(g: Game): void {
   else if (xenoDead && mutDead && !anyXenoSpawn && !anyMutSpawn) winner = 'crew'
   else if (xenoDead && alive.every((p) => g.faction(p) === 'mutant')) winner = 'mutant'
   else if (mutDead && alive.every((p) => g.faction(p) === 'xeno')) winner = 'xeno'
-  if (winner) g.endGame(winner)
+  if (winner) g.endGame(winner, winner === 'draw' ? 'wipe' : undefined)
 }
 
 export { NEUTRAL }

@@ -146,10 +146,11 @@ describe('異形形態 def', () => {
       expect(s.abilities).toContain('xeno.spawnHuman')
       expect(s.abilities).not.toContain('xeno.egg')
       expect(u.abilities.includes('xeno.egg')).toBe(f.tier <= 2)
-      // 順序：主動 → 寄生 →（下蛋）→ 人形 → 被動
+      // 順序（＝快捷鍵）：寄生 → 人形 →（下蛋）→ 形態技能 → 被動；進化後共用的技能留在同一格（abilitySlots.test.ts）
       for (const d of [u, s]) {
-        const kinds = d.abilities.map((a) => (ROLE_ABS.includes(a) ? 1 : ABILITIES.get(a)?.target === 'passive' ? 2 : 0))
+        const kinds = d.abilities.map((a) => (ROLE_ABS.includes(a) ? 0 : ABILITIES.get(a)?.target === 'passive' ? 2 : 1))
         expect([...kinds].sort(), d.id).toEqual(kinds)
+        expect(d.abilities.slice(0, 2), d.id).toEqual(['xeno.parasite', d === u ? 'xeno.human' : 'xeno.spawnHuman'])
       }
     }
     expect(UNITS.get(XUNIT.timeZombie)!.tags).toContain('xenoForm')

@@ -82,10 +82,15 @@ function minion(id: string, name: Loc, hp: number, hpRegen: number, speed: numbe
 }
 
 // ───────── 單位 ─────────
+// 技能順序＝快捷鍵（client 依非被動技能的 index 對應 Q／W／E／R／D／F）：進化後共用的技能要留在同一個鍵上。
+// 主形態：吞食 Q（人形時也是 Q，items.ts slotOrder）、W 放這條路線的招牌技能（同類相食／朊毒；路線沒有時放形態自己的第一個技能）、
+// 嘶吼 E，之後才是其餘的形態技能；同名技能（重擊、爆破護盾）在各形態同一格。
+// 眷屬沒有吞食：朊毒或第一個形態技能 Q、嘶吼 W。只有一個技能的眷屬（嘶吼）沒辦法留空格，會落在 Q。被動技能放最後（不佔快捷鍵）。
+// 規則有測試（abilitySlots.test.ts），新增形態時照著排。
 
 export const MUTANT_UNITS: UnitDef[] = [
   // ── T1 ──
-  form('mut.apex', L('掠食者', 'Apex'), 900, 1.0, 3.05, 0.5, melee(37, 1.0, 1.4), ['ab.mut.sludge', 'mut.devour', 'mut.cannibalize']),
+  form('mut.apex', L('掠食者', 'Apex'), 900, 1.0, 3.05, 0.5, melee(37, 1.0, 1.4), ['mut.devour', 'mut.cannibalize', 'ab.mut.sludge']),
   form('mut.sporemother', L('孢母', 'Sporemother'), 725, 1.5, 3.05, 0.5, melee(38, 1.0, 1.4), ['mut.devour', 'mut.prion']),
   form('mut.sporemother.spawn', L('孢囊眷屬', 'Spore Thrall'), 650, 1.0, 2.95, 0.45, melee(32, 1.0, 1.4), ['mut.prion']),
   // 主人還在人形（T0）時被轉化者使用的眷屬型
@@ -100,25 +105,25 @@ export const MUTANT_UNITS: UnitDef[] = [
     3.2,
     0.5,
     melee(32, 1.0, 1.4),
-    ['ab.mut.dontBlink', 'ab.mut.spatialBurst', 'ab.mut.roar', 'mut.devour', 'mut.cannibalize'],
+    ['mut.devour', 'mut.cannibalize', 'ab.mut.roar', 'ab.mut.dontBlink', 'ab.mut.spatialBurst'],
     // 原作此形態動畫播放 160%
     { flags: { animSpeed: 1.6 } },
   ),
-  form('mut.brawn', L('蠻力', 'Brawn'), 1800, 2.0, 2.25, 0.75, melee(100, 1.0, 1.4), ['ab.mut.fleshies', 'ab.mut.smash', 'ab.mut.roar', 'mut.devour', 'mut.cannibalize']),
+  form('mut.brawn', L('蠻力', 'Brawn'), 1800, 2.0, 2.25, 0.75, melee(100, 1.0, 1.4), ['mut.devour', 'mut.cannibalize', 'ab.mut.roar', 'ab.mut.fleshies', 'ab.mut.smash']),
 
   // ── T2 感染 ──
-  form('mut.mimetic', L('擬人株', 'Mimetic Strain'), 1000, 0.75, 2.95, 0.45, ranged(32, 1.0, 5.0, 'acid', 14), ['ab.mut.taintVendor', 'ab.mut.roar', 'mut.devour', 'mut.prion2']),
-  form('mut.mimetic.spawn', L('擬態眷屬', 'Mimic Thrall'), 800, 0.75, 2.8, 0.45, ranged(37, 1.0, 4.0, 'acid', 14), ['ab.mut.taintVendor', 'ab.mut.roar', 'mut.prion2']),
-  form('mut.spinner', L('蛛母', 'Spinner'), 900, 0.75, 3.2, 0.6, melee(19, 0.5, 1.6), ['ab.mut.spiderlings', 'ab.mut.reabsorb', 'ab.mut.roar', 'mut.devour']),
-  form('mut.spinner.spawn', L('絲蛛眷屬', 'Silk Thrall'), 750, 0.75, 3.2, 0.55, melee(15, 0.5, 1.6), ['ab.mut.spiderlings', 'ab.mut.reabsorb', 'ab.mut.roar']),
+  form('mut.mimetic', L('擬人株', 'Mimetic Strain'), 1000, 0.75, 2.95, 0.45, ranged(32, 1.0, 5.0, 'acid', 14), ['mut.devour', 'mut.prion2', 'ab.mut.roar', 'ab.mut.taintVendor']),
+  form('mut.mimetic.spawn', L('擬態眷屬', 'Mimic Thrall'), 800, 0.75, 2.8, 0.45, ranged(37, 1.0, 4.0, 'acid', 14), ['mut.prion2', 'ab.mut.roar', 'ab.mut.taintVendor']),
+  form('mut.spinner', L('蛛母', 'Spinner'), 900, 0.75, 3.2, 0.6, melee(19, 0.5, 1.6), ['mut.devour', 'ab.mut.spiderlings', 'ab.mut.roar', 'ab.mut.reabsorb']),
+  form('mut.spinner.spawn', L('絲蛛眷屬', 'Silk Thrall'), 750, 0.75, 3.2, 0.55, melee(15, 0.5, 1.6), ['ab.mut.spiderlings', 'ab.mut.roar', 'ab.mut.reabsorb']),
 
   // ── T3 迅影系 ──
   form('mut.lurker', L('潛伏者', 'Lurker'), 1250, 2.0, 3.2, 0.55, ranged(124, 2.7, 24, 'mutSpine', 36), [
+    'mut.devour',
     'ab.mut.stalk',
+    'ab.mut.roar',
     'ab.mut.snipe',
     'ab.mut.omniscience',
-    'ab.mut.roar',
-    'mut.devour',
   ]),
   // 原作基礎 700 HP，另有被動「甲殼」+700（A07H）；驚慌時失去這份加成，所以 def 直接寫合計 1400
   form(
@@ -129,7 +134,7 @@ export const MUTANT_UNITS: UnitDef[] = [
     0.2,
     0.8,
     ranged(150, 6.0, 9.0, 'crabSpit', 12, { onHit: [S('mutant.crabSpores')] }),
-    ['ab.mut.panic', 'ab.mut.roar', 'mut.devour', 'ab.mut.crabosity', 'ab.mut.carapace'],
+    ['mut.devour', 'ab.mut.panic', 'ab.mut.roar', 'ab.mut.crabosity', 'ab.mut.carapace'],
     { mp: 400, flags: { crabosity: true, baseHp: 700 } },
   ),
 
@@ -142,28 +147,28 @@ export const MUTANT_UNITS: UnitDef[] = [
     2.05,
     0.95,
     melee(120, 1.0, 1.6),
-    ['ab.mut.rainingRocks', 'ab.mut.rocksFall', 'ab.mut.smash', 'ab.mut.roar', 'mut.devour', 'ab.mut.crush'],
+    ['mut.devour', 'ab.mut.rainingRocks', 'ab.mut.roar', 'ab.mut.rocksFall', 'ab.mut.smash', 'ab.mut.crush'],
     { flags: { crushRubble: true } },
   ),
-  form('mut.taurus', L('牛頭蠻', 'Taurus'), 2400, 0.75, 2.4, 0.85, melee(85, 1.0, 1.6), ['ab.mut.charge', 'ab.mut.rollingThunder', 'ab.mut.roar', 'mut.devour']),
+  form('mut.taurus', L('牛頭蠻', 'Taurus'), 2400, 0.75, 2.4, 0.85, melee(85, 1.0, 1.6), ['mut.devour', 'ab.mut.charge', 'ab.mut.roar', 'ab.mut.rollingThunder']),
 
   // ── T3 擬人株系 ──
   form('mut.plagueQueen', L('瘟后', 'Plague Queen'), 1600, 0.75, 2.9, 0.6, melee(48, 1.0, 1.4), [
+    'mut.devour',
     'ab.mut.totalInfection',
+    'ab.mut.roar',
     'ab.mut.vector',
     'ab.mut.blastShield',
-    'ab.mut.roar',
-    'mut.devour',
   ]),
-  form('mut.plagueQueen.spawn', L('瘟疫使徒', 'Plague Herald'), 900, 0.75, 2.8, 0.55, melee(39, 1.0, 1.4), ['ab.mut.totalInfection', 'ab.mut.blastShield', 'ab.mut.roar']),
+  form('mut.plagueQueen.spawn', L('瘟疫使徒', 'Plague Herald'), 900, 0.75, 2.8, 0.55, melee(39, 1.0, 1.4), ['ab.mut.totalInfection', 'ab.mut.roar', 'ab.mut.blastShield']),
   form('mut.broodmother', L('繁巢', 'Broodmother'), 1050, 0.75, 2.9, 0.65, ranged(34, 1.1, 9.0, 'acid', 14), [
-    'ab.mut.carrier',
-    'ab.mut.blastShield',
-    'ab.mut.roar',
     'mut.devour',
     'mut.prion3',
+    'ab.mut.roar',
+    'ab.mut.carrier',
+    'ab.mut.blastShield',
   ]),
-  form('mut.broodmother.spawn', L('繁巢使徒', 'Brood Herald'), 850, 0.75, 2.9, 0.6, ranged(26, 1.1, 9.0, 'acid', 14), ['ab.mut.blastShield', 'ab.mut.roar', 'mut.prion3']),
+  form('mut.broodmother.spawn', L('繁巢使徒', 'Brood Herald'), 850, 0.75, 2.9, 0.6, ranged(26, 1.1, 9.0, 'acid', 14), ['mut.prion3', 'ab.mut.roar', 'ab.mut.blastShield']),
 
   // ── T3 蛛母系 ──
   // 巢艦（太空）：太空層行為由主程式實作，這裡只提供單位數值與技能
@@ -179,7 +184,7 @@ export const MUTANT_UNITS: UnitDef[] = [
     { tags: ['mechanical', 'mutantForm', 'space', 'station'], layer: 'space', sight: 30, corpse: false },
   ),
   // 巢艦的 spawn ＝ 先驅（能駕駛、能用道具）
-  form('mut.hiveship.spawn', L('先驅', 'Harbinger'), 1100, 1.0, 2.65, 0.6, melee(90, 3.0, 1.2), ['ab.mut.fervor', 'ab.mut.embrace', 'ab.mut.roar'], {
+  form('mut.hiveship.spawn', L('先驅', 'Harbinger'), 1100, 1.0, 2.65, 0.6, melee(90, 3.0, 1.2), ['ab.mut.fervor', 'ab.mut.roar', 'ab.mut.embrace'], {
     model: 'mut.harbinger',
     scale: 1,
     mp: 150,
@@ -192,7 +197,7 @@ export const MUTANT_UNITS: UnitDef[] = [
     0,
     1.2,
     melee(20, 0.5, 1.6),
-    ['ab.mut.breedTentacle', 'ab.mut.breedSwarm', 'ab.mut.breedSack', 'ab.mut.breedHarbinger', 'ab.mut.roar', 'mut.devour'],
+    ['mut.devour', 'ab.mut.breedTentacle', 'ab.mut.roar', 'ab.mut.breedSwarm', 'ab.mut.breedSack', 'ab.mut.breedHarbinger'],
   ),
   form('mut.hiveground.spawn', L('巢觸眷屬', 'Hive Tendril'), 2000, 0.75, 2.5, 0.7, melee(65, 1.5, 1.8), ['ab.mut.roar']),
   form(
@@ -203,7 +208,7 @@ export const MUTANT_UNITS: UnitDef[] = [
     3.1,
     0.7,
     ranged(75, 1.5, 4.2, 'sludge', 12),
-    ['ab.mut.metamorphosis', 'ab.mut.roar', 'mut.devour', 'ab.mut.slimeTrail'],
+    ['mut.devour', 'ab.mut.metamorphosis', 'ab.mut.roar', 'ab.mut.slimeTrail'],
     { flags: { slimeTrail: true } },
   ),
   form('mut.blightcrawler.spawn', L('腐沼爬行者', 'Blight Thrall'), 950, 0.75, 3.1, 0.65, ranged(55, 1.5, 4.2, 'sludge', 12), ['ab.mut.roar']),

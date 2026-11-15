@@ -44,10 +44,11 @@ import { placePoi } from './setup'
 import { installCreatureAi } from './ai/creatures'
 import { installXenoSystems } from './scripts/xeno'
 import { itemRuntime } from './scripts/items'
-import { installEvents, type EventState } from './systems/events'
+import { installEvents, publicEvents, type EventState } from './systems/events'
 import { installStations } from './systems/stations'
 import { installFacilities } from './systems/facilities'
 import { installRegen } from './systems/regen'
+import { samplerOpenAt } from './systems/vendors'
 import { installBots } from './ai/bots'
 import { installRemote } from './scripts/remote'
 import { installFeeds } from './systems/feeds'
@@ -492,7 +493,19 @@ export class Game {
       boot: this.settings.bootOnDeath,
       // 局中改變的天氣（systems/stations.ts：餘燼衛星護盾失效 → 暴風雪）
       wx: Object.fromEntries(this.world.zones.filter((z) => z.alive && typeof z.data.weather === 'string').map((z) => [z.key, z.data.weather as string])),
+      // 基因檢測器開放（醫療補給、GIT 檢測儀上架）的秒數：依難度決定的固定設定，不含任何隱藏資訊
+      gitAt: samplerOpenAt(this),
+      // 進行中的重大事件（events.ts publicEvents：都是全場公告過、所有人本來就看得到的事）
+      ev: this.publicEventsNow(),
     }
+  }
+
+  private evCache: { tick: number; list: string[] } = { tick: -1, list: [] }
+
+  /** 每位觀看者每個 tick 都會要 worldPublic：進行中事件同一個 tick 只算一次（要掃太空層的單位）*/
+  private publicEventsNow(): string[] {
+    if (this.evCache.tick !== this.world.tick) this.evCache = { tick: this.world.tick, list: publicEvents(this) }
+    return this.evCache.list
   }
 
   /** 星區穩定度 0..1：末日的軟計時（GDD §7.8），觸發時歸零 */
@@ -631,8 +644,8 @@ export class Game {
   }
   onReassign?: (oldId: number, newId: number) => void
 
-  /** 結束本局：送出結算 */
-  endGame(winner: EndResult['winner']): void {
+  /** 結束本局：送出結算。平手時 why = 平手的原因（同歸於盡、末日倒數結束；沒給就是其他原因）*/
+  endGame(winner: EndResult['winner'], why?: EndResult['drawWhy']): void {
     if (this.ended) return
     const key = winner === 'crew' ? 'end.crew' : winner === 'xeno' ? 'end.xeno' : winner === 'mutant' ? 'end.mutant' : winner === 'draw' ? 'end.draw' : 'end.aborted'
     this.systemAll(key)
@@ -641,6 +654,7 @@ export class Game {
       winner,
       duration: Math.round(this.time),
       timeline: this.timeline.slice(-200),
+      ...(winner === 'draw' ? { drawWhy: why ?? 'other' } : {}),
       players: this.allPlayers().map((p) => ({
         slot: p.slot,
         name: p.baseName,

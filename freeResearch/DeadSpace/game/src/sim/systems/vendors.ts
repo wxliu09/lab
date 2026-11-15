@@ -5,6 +5,8 @@ import type { Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { EXTRA_COMMANDS, canSee } from './orders'
 import { freeSlot, giveItem, hasItem, makeItem } from './items'
+import { isEasy } from '../ai/level'
+import type { VendorStock } from '../../shared/content/types'
 
 export interface StockState {
   item: string
@@ -22,18 +24,41 @@ export const VENDOR_RANGE = 2.6
 /** 立即生效的商品（雷達掃描、逃生艙、檢測報告…）：買到就使用 */
 export const INSTANT_ITEMS = new Map<string, (g: Game, buyer: Ent, vendor: Ent) => boolean>()
 
+// ───────── 基因檢測器的開放時間 ─────────
+// 醫療補給與 GIT 檢測儀的基因檢測器開局延遲：原作 420 秒（content/vendors.ts）；練習簡單難度提早到 240 秒，
+// 讓新手當人類時不用乾等七分鐘。worldPublic.gitAt 也讀這裡，介面顯示的時間和實際上架一致。
+
+const SAMPLER = 'geneSampler'
+/** 簡單難度的基因檢測器開局延遲（秒）*/
+export const EASY_SAMPLER_DELAY = 240
+
+/** 某項商品這一局的開局延遲（秒；0 / undefined = 開局就有）*/
+function stockDelay(g: Game, s: VendorStock): number | undefined {
+  if (s.item === SAMPLER && s.delay && isEasy(g)) return EASY_SAMPLER_DELAY
+  return s.delay
+}
+
+/** 這一局基因檢測器第一次上架的秒數（依難度的固定設定）*/
+export function samplerOpenAt(g: Game): number {
+  for (const v of VENDORS.values()) for (const s of v.stock) if (s.item === SAMPLER && s.delay) return stockDelay(g, s) ?? 0
+  return 0
+}
+
 export function initVendor(g: Game, e: Ent): void {
   const v = VENDORS.get(e.data.vendor as string)
   if (!v) return
-  e.data.stock = v.stock.map<StockState>((s) => ({
-    item: s.item,
-    count: s.delay ? 0 : s.max,
-    max: s.max,
-    restock: s.restock,
-    availAt: s.delay ?? 0,
-    nextAt: s.delay ?? 0,
-    started: !s.delay,
-  }))
+  e.data.stock = v.stock.map<StockState>((s) => {
+    const delay = stockDelay(g, s)
+    return {
+      item: s.item,
+      count: delay ? 0 : s.max,
+      max: s.max,
+      restock: s.restock,
+      availAt: delay ?? 0,
+      nextAt: delay ?? 0,
+      started: !delay,
+    }
+  })
   updateVendorView(g, e)
 }
 

@@ -3,6 +3,7 @@ import { regScript } from '../systems/effects'
 import { FORMS, unitDef } from '../../shared/content/registry'
 import { replaceMain } from '../systems/roleSystem'
 import { applyBuff } from '../systems/buffs'
+import { slotOrder } from '../systems/items'
 
 /** 人形 → 異形形態（主腦匿名、spawn 不匿名）*/
 regScript('xeno.toForm', (g, ctx) => {
@@ -39,7 +40,7 @@ regScript('xeno.toHuman', (g, ctx) => {
   const isMaster = p.role === 'xeno' && !p.spawnOf
   const nu = replaceMain(g, p, u, 'personnel', { anon: false, keepHpPct: true })
   nu.data.extraAbilities = [...((nu.data.extraAbilities as string[]) ?? []).filter((a) => a !== 'xeno.form' && a !== 'xeno.spawnForm'), isMaster ? 'xeno.form' : 'xeno.spawnForm']
-  nu.abilities = [...nu.def.abilities, ...(nu.data.extraAbilities as string[])]
+  nu.abilities = slotOrder([...nu.def.abilities, ...(nu.data.extraAbilities as string[])])
   nu.classId = p.classId
   g.emitFx({ k: 'xenoShift', z: nu.zone, x: nu.x, y: nu.y, e: nu.id })
 })

@@ -11,9 +11,11 @@ import { BUFFS, UNITS } from '../../src/shared/content/registry'
 import { spaceOf } from '../../src/sim/systems/space'
 import { INSTANT_ITEMS } from '../../src/sim/systems/vendors'
 import { SPACE_ZONE } from '../../src/sim/world'
+import { spawnCreature } from '../../src/sim/ai/creatures'
 import { hasString, lang, sysText } from '../../src/ui/i18n'
-// 自己註冊的字串檔（addStrings）：反物質打擊的死因
+// 自己註冊的字串檔（addStrings）：反物質打擊的死因；sim6 覆寫名字參數（{name}）、救生艙被擊毀的死因
 import '../../src/ui/strings/sim5'
+import '../../src/ui/strings/sim6'
 import type { Game, GamePlayer } from '../../src/sim/game'
 import type { Ent } from '../../src/sim/ent'
 
@@ -110,7 +112,7 @@ describe('死因說明', () => {
     h.ticks(2)
     expect(ps[2].alive).toBe(false)
     const lines = deathLines(clientOf(cs, ps[2]))
-    expect(lines[0]).toBe(`@death.cause.named|n=${bob.name}`)
+    expect(lines[0]).toBe(`@death.cause.named|name=${bob.name}`)
     const all = lines.join('\n')
     // 不能出現異形的真名、玩家名，也不能出現異形形態的外觀
     expect(all).not.toContain(ps[0].name)
@@ -148,7 +150,7 @@ describe('死因說明', () => {
     h.ticks(2)
     const lines = deathLines(clientOf(cs, ps[2]))
     const nm = UNITS.get('xeno.protoform')!.name
-    expect(lines).toEqual([`@death.cause.named|n=${bob.name}`, `@death.hit.anon|uz=${nm.zh}|ue=${nm.en}|dmg=40`])
+    expect(lines).toEqual([`@death.cause.named|name=${bob.name}`, `@death.hit.anon|uz=${nm.zh}|ue=${nm.en}|dmg=40`])
     expect(scanLeaks(h)).toEqual([])
   })
 
@@ -206,13 +208,28 @@ describe('死因說明', () => {
       lang.value = l
       for (const k of kinds) {
         expect(hasString(l, 'death.cause.' + k)).toBe(true)
-        expect(sysText(`@death.cause.${k}|n=Bob|uz=形態|ue=Form`)).not.toMatch(/\{\w+\}/)
+        expect(sysText(`@death.cause.${k}|name=Bob|uz=形態|ue=Form`)).not.toMatch(/\{\w+\}/)
       }
       for (const k of hitKinds) {
         expect(hasString(l, 'death.hit.' + k)).toBe(true)
-        expect(sysText(`@death.hit.${k}|n=Bob|uz=形態|ue=Form|dmg=12`)).not.toMatch(/\{\w+\}/)
+        expect(sysText(`@death.hit.${k}|name=Bob|uz=形態|ue=Form|dmg=12`)).not.toMatch(/\{\w+\}/)
+      }
+      // 救生艙被某個東西擊毀（有擊殺者時）
+      for (const k of ['named', 'namedAs', 'owned', 'anon', 'unit', 'unseen']) {
+        expect(hasString(l, 'death.cause.pod.' + k)).toBe(true)
+        expect(sysText(`@death.cause.pod.${k}|name=Bob|uz=形態|ue=Form`)).not.toMatch(/\{\w+\}/)
       }
     }
+    lang.value = 'zh'
+  })
+
+  it('名字依介面語言顯示：職業前綴跟著換（和其他私訊一樣走 name 參數）', () => {
+    lang.value = 'zh'
+    expect(sysText('@death.hit.named|name=Captain BOT-B|dmg=550')).toBe('先前受傷：艦長·BOT-B（550 點）')
+    expect(sysText('@death.cause.owned|name=船員 3|uz=形態|ue=Form')).toBe('死因：被 船員 3 的形態擊殺')
+    lang.value = 'en'
+    expect(sysText('@death.hit.named|name=Captain BOT-B|dmg=550')).toBe('Earlier damage: Captain BOT-B (550)')
+    expect(sysText('@death.cause.owned|name=船員 3|uz=形態|ue=Form')).toBe("Cause of death: killed by Crew 3's Form")
     lang.value = 'zh'
   })
 })
@@ -326,6 +343,25 @@ describe('死因：事件與環境、主腦清除、訊息順序、視野時機'
     h.ticks(2)
     expect(ps[2].alive).toBe(false)
     expect(deathLines(clientOf(cs, ps[2]))[0]).toBe('@death.cause.vacuum')
+    expect(scanLeaks(h)).toEqual([])
+  })
+
+  it('救生艙被無人戰機擊毀：寫出是誰打爆了救生艙（用死者看到的樣子）', () => {
+    const { h, cs, g, ps, victim } = setup(4444)
+    expect(INSTANT_ITEMS.get('escapePass')!(g, victim, victim)).toBe(true)
+    h.ticks(4 * 20 + 2)
+    const pod = g.world.get([...spaceOf(g).pods.keys()][0])!
+    const wasp = spawnCreature(g, 'ship.wasp', SPACE_ZONE, pod.x + 3, pod.y)!
+    wasp.acquire = false
+    h.ticks(2)
+    expect(ps[2].view.visible.has(wasp.id)).toBe(true)
+    damage(g, wasp, pod, 1e9, { pure: true })
+    h.ticks(2)
+    expect(ps[2].alive).toBe(false)
+    const nm = UNITS.get('ship.wasp')!.name
+    expect(deathLines(clientOf(cs, ps[2]))[0]).toBe(`@death.cause.pod.unit|uz=${nm.zh}|ue=${nm.en}`)
+    lang.value = 'zh'
+    expect(sysText(deathLines(clientOf(cs, ps[2]))[0])).toBe(`死因：救生艙被${nm.zh}擊毀`)
     expect(scanLeaks(h)).toEqual([])
   })
 

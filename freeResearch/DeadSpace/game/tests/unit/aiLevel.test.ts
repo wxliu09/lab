@@ -10,6 +10,7 @@ import { giveItem, makeItem, morph } from '../../src/sim/systems/items'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
 import type { Ent } from '../../src/sim/ent'
 import type { Game } from '../../src/sim/game'
+import { NORMAL_EVIL_START } from '../../src/sim/ai/bots'
 
 function run(h: Harness, n: number, each?: () => boolean | void): void {
   for (let i = 0; i < n; i++) {
@@ -156,8 +157,8 @@ describe('練習難度：easy 的 AI 船員', () => {
   })
 })
 
-describe('練習難度：easy 的 AI 異類', () => {
-  it('落單的人就在眼前：normal 開局不久就動手，easy 要過一段時間才動手', () => {
+describe('練習難度：AI 異類的開局寬限期', () => {
+  it('落單的人就在眼前：normal 開局 120 秒後才動手，easy 要過 420 秒才動手', () => {
     const first: Record<string, number> = {}
     for (const lv of ['normal', 'easy'] as const) {
       const { h, g, bot, people, u, zone, spot } = setup(lv, 3030, 2)
@@ -172,17 +173,52 @@ describe('練習難度：easy 的 AI 異類', () => {
       const other = g.world.zones.find((z) => z.alive && z.station && z.id !== zone && !z.data.ship && z.layout?.spawns.length)!
       place(g, g.mainOf(people[1])!, other.id, other.layout!.spawns[0].x, other.layout!.spawns[0].y)
       let at = -1
-      run(h, 20 * 60 * 7.5, () => {
+      const struck = () => {
         const c = u.cast?.ability ?? (u.order?.k === 'cast' ? u.order.a : '')
         const self = g.mainOf(bot)!
         if (at < 0 && (c?.startsWith('xeno.') || !self.tags.has('personnel'))) at = g.time
         return at >= 0
-      })
+      }
+      // normal：寬限期內都不動手；寬限期一過，把落單的人再放到牠身邊（AI 可能已經閒晃走了），很快就動手
+      if (lv === 'normal') {
+        run(h, 20 * (NORMAL_EVIL_START - 1), struck)
+        if (at < 0) place(g, m, zone, u.x + 3, u.y)
+        run(h, 20 * 60, struck)
+      } else run(h, 20 * 60 * 7.5, struck)
       first[lv] = at
     }
-    expect(first.normal).toBeGreaterThan(0)
-    expect(first.normal).toBeLessThan(120)
+    // normal：寬限期 120 秒（NORMAL_EVIL_START）一過就動手
+    expect(NORMAL_EVIL_START).toBe(120)
+    expect(first.normal).toBeGreaterThanOrEqual(120)
+    expect(first.normal).toBeLessThan(180)
     // easy：開局 7 分鐘內都不動手（之後走開了沒遇到也算）
     expect(first.easy < 0 || first.easy >= 420).toBe(true)
   }, 120000)
+
+  it('normal 寬限期內被打照樣還手：人形異形被打就變身', () => {
+    const { h, g, bot, people, u, zone, spot } = setup('normal', 3131, 2)
+    installXenoSystems(g)
+    g.setRole(bot, 'xeno')
+    u.data.extraAbilities = [...((u.data.extraAbilities as string[]) ?? []), 'xeno.form']
+    morph(g, u, u.def.id)
+    const m = g.mainOf(people[0])!
+    place(g, m, zone, spot.x + 2, spot.y)
+    // 先確定沒被打時不動手
+    let shifted = false
+    run(h, 20 * 20, () => {
+      shifted = !g.mainOf(bot)!.tags.has('personnel') || (u.cast?.ability ?? '').startsWith('xeno.')
+      return shifted
+    })
+    expect(g.time).toBeLessThan(NORMAL_EVIL_START)
+    expect(shifted).toBe(false)
+    // 被打：變身還手
+    u.lastHitBy = m.id
+    u.lastDamageTime = g.time
+    run(h, 20 * 4, () => {
+      shifted = !g.mainOf(bot)!.tags.has('personnel') || (u.cast?.ability ?? '').startsWith('xeno.form')
+      return shifted
+    })
+    expect(g.time).toBeLessThan(NORMAL_EVIL_START)
+    expect(shifted).toBe(true)
+  })
 })

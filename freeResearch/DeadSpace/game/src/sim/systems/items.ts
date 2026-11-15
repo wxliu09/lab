@@ -239,6 +239,14 @@ export function removeSuit(g: Game, u: Ent): boolean {
   return true
 }
 
+/** 異類人形時的變身／吞食技能：固定放第一格（Q），和異形、變種人各形態的第一格一致（content/forms），穿脫防護服、職業技能都不會讓它移位 */
+const ROLE_FIRST: ReadonlySet<string> = new Set(['xeno.form', 'xeno.spawnForm', 'mut.devour'])
+
+/** 技能清單的快捷鍵順序：異類的變身／吞食技能排到最前面，其餘照原本的順序 */
+export function slotOrder(list: string[]): string[] {
+  return [...list.filter((a) => ROLE_FIRST.has(a)), ...list.filter((a) => !ROLE_FIRST.has(a))]
+}
+
 /** 原地變形：換 def、保留 HP% 與 MP%，重建技能清單 */
 export function morph(g: Game, u: Ent, defId: string): void {
   const def = unitDef(defId)
@@ -251,7 +259,7 @@ export function morph(g: Game, u: Ent, defId: string): void {
   u.maxMp = def.mp + (u.data.mpAdd ?? 0)
   u.mp = def.mp * mpK
   u.radius = def.radius
-  u.abilities = [...def.abilities, ...((u.data.extraAbilities as string[]) ?? [])]
+  u.abilities = slotOrder([...def.abilities, ...((u.data.extraAbilities as string[]) ?? [])])
   if (u.suit && !u.abilities.includes('suit.drop')) u.abilities.push('suit.drop')
   u.autocast = new Set([...u.autocast].filter((a) => u.abilities.includes(a)))
   u.atkReady = g.time + 0.3

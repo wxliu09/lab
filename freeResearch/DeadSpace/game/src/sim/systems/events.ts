@@ -14,6 +14,7 @@ import { dropOnGround, giveItem, makeItem } from './items'
 import { restockAll } from './vendors'
 import { destroyInterior, spaceOf } from './space'
 import { recomputeStats } from './buffs'
+import { isEasy } from '../ai/level'
 
 type Range = [number, number]
 
@@ -98,6 +99,19 @@ export const PRACTICE_EVENT_WEIGHT: Readonly<Record<string, number>> = { wasps: 
 /** 某個事件這一局的抽中權重（正式局一律 1）*/
 export function eventWeight(g: Game, id: string): number {
   return g.practice ? (PRACTICE_EVENT_WEIGHT[id] ?? 1) : 1
+}
+
+/**
+ * 練習局簡單難度：會摧毀站點的大型事件在開局這麼多秒之前不會被抽到（一般難度、正式局照舊）。
+ * 無人機群（50 架胡蜂戰機圍攻站點）、小行星雨（撞站傷害 = 岩石 HP×4）、天守反物質收容失效（180 秒內沒放電就毀掉天守）、
+ * 海盜船（敵對戰艦在太空遊蕩、會砲擊路過的站與船）。測試或除錯強制觸發（forced）不受影響。
+ */
+export const EASY_SAFE_UNTIL = 900
+export const STATION_KILLERS: ReadonlySet<string> = new Set(['wasps', 'asteroids', 'tenshu', 'pirate'])
+
+/** 這個事件現在能不能被隨機抽到（簡單練習局的開局保護）*/
+function drawable(g: Game, id: string): boolean {
+  return !(g.practice && isEasy(g) && g.time < EASY_SAFE_UNTIL && STATION_KILLERS.has(id))
 }
 
 // ───────── 事件表 ─────────
@@ -419,7 +433,7 @@ function fire(g: Game, id: string, forced: boolean): boolean {
 
 function candidates(g: Game, inChain: boolean): EventDef[] {
   const ev = eventsOf(g)
-  return EVENTS.filter((d) => !(d.once && ev.used.has(d.id)) && !(inChain && d.id === 'foul') && (!d.ok || d.ok(g)))
+  return EVENTS.filter((d) => !(d.once && ev.used.has(d.id)) && !(inChain && d.id === 'foul') && drawable(g, d.id) && (!d.ok || d.ok(g)))
 }
 
 /** 抽出下一個隨機事件（只抽、不觸發；測試用來統計權重）。正式局維持原本的均等抽法（亂數用量也一樣），練習局依權重抽 */
@@ -522,7 +536,33 @@ function stepApocalypse(g: Game, ev: EventState): void {
     }
   }
   // 末日後 10 分鐘仍未分出勝負：平手收尾（原作兩位主腦都活著時永不結束）
-  if (t >= ev.apocStart + 600 && !g.ended) g.endGame('draw')
+  if (t >= ev.apocStart + 600 && !g.ended) g.endGame('draw', 'doom')
+}
+
+// ───────── 公開的進行中事件（worldPublic.ev）─────────
+
+/**
+ * 進行中的重大事件（給目標面板顯示對策）。只放全場都已經知道的事：每一項開始時都有全場公告，
+ * 判斷依據也都是所有人本來就看得到的東西（太空層的單位對所有人可見、末日類型本來就在 w.apo、天守倒數與解除都有全場公告）。
+ * - drones：無人機群（還在一架架飛進來，或太空中還有胡蜂戰機）
+ * - asteroids：小行星雨（還有下一波，或太空中還有沒飛出邊界的岩石）
+ * - tenshu：天守反物質收容失效倒數中
+ * - pirate：敵對的海盜船還在（末日艦隊抵達後海盜改為中立就不算）
+ * - doom：末日已經開始
+ */
+export function publicEvents(g: Game): string[] {
+  const ev = g.data.events as EventState | undefined
+  if (!ev) return []
+  const out: string[] = []
+  const space = g.world.inZone(SPACE_ZONE)
+  if (ev.used.has('wasps') && (ev.waspLeft > 0 || space.some((e) => e.alive && e.def.id === 'ship.wasp'))) out.push('drones')
+  if (ev.waves.length > 0 || ev.rocks.length > 0) out.push('asteroids')
+  if (ev.tenshuUntil > 0) out.push('tenshu')
+  const pz = ev.pirateZone > 0 ? g.world.zones[ev.pirateZone] : undefined
+  const ps = pz?.alive ? g.world.get(pz.spaceEnt) : undefined
+  if (ps && ps.alive && ps.owner === HOSTILE) out.push('pirate')
+  if (ev.apoc) out.push('doom')
+  return out
 }
 
 // ───────── 持續中的事件 ─────────
