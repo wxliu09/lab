@@ -131,10 +131,63 @@ function NpcSelect({ s, auto }: { s: LobbySettings; auto: number }) {
   )
 }
 
-function Check({ k, s }: { k: keyof LobbySettings; s: LobbySettings }) {
+/**
+ * 末日時間的兩種節奏（[最早, 最晚] 分鐘）：
+ * fast＝本作的預設（DEFAULT_SETTINGS.apocalypse）；classic＝原作（研究 03 §6.3：末日計時器 GetRandomReal(3300, 4200) 秒）。
+ */
+export const APO_PRESETS = {
+  fast: [30, 40],
+  classic: [55, 70],
+} as const satisfies Record<string, readonly [number, number]>
+export type ApoPreset = keyof typeof APO_PRESETS
+const APO_KEYS = Object.keys(APO_PRESETS) as ApoPreset[]
+
+/** 目前的末日設定是哪一種節奏；兩種都不是（例如舊版主機留下的數字）回傳 null */
+export function apoPresetOf(a: readonly [number, number]): ApoPreset | null {
+  return APO_KEYS.find((k) => APO_PRESETS[k][0] === a[0] && APO_PRESETS[k][1] === a[1]) ?? null
+}
+
+/** 末日時間的說明：數字跟著 APO_PRESETS，不在字串裡寫死 */
+export function apoTip(): string {
+  const [fa, fb] = APO_PRESETS.fast
+  const [ca, cb] = APO_PRESETS.classic
+  return t('ui5.lobby.tip.apo', { fa, fb, ca, cb })
+}
+
+/** 末日時間：二選一（主機可改，客人唯讀）*/
+function ApoSelect({ s }: { s: LobbySettings }) {
+  const cur = apoPresetOf(s.apocalypse)
+  return (
+    <select
+      data-testid="set-apo"
+      disabled={!isHost.value}
+      value={cur ?? 'custom'}
+      onChange={(e) => {
+        const k = (e.target as HTMLSelectElement).value as ApoPreset
+        const a = APO_PRESETS[k]
+        if (a) send({ t: 'settings', s: { apocalypse: [a[0], a[1]] } })
+      }}
+    >
+      {APO_KEYS.map((k) => (
+        <option key={k} value={k}>
+          {t('ui5.lobby.apo.' + k, { a: APO_PRESETS[k][0], b: APO_PRESETS[k][1] })}
+        </option>
+      ))}
+      {/* 不是兩種節奏之一時照實顯示目前的數字（選不到，只能改成上面兩種）*/}
+      {!cur && (
+        <option value="custom" disabled>
+          {t('ui5.lobby.apo.custom', { a: s.apocalypse[0], b: s.apocalypse[1] })}
+        </option>
+      )}
+    </select>
+  )
+}
+
+function Check({ k, s, testId }: { k: keyof LobbySettings; s: LobbySettings; testId?: string }) {
   return (
     <input
       type="checkbox"
+      data-testid={testId}
       disabled={!isHost.value}
       checked={!!s[k]}
       onChange={(e) => send({ t: 'settings', s: { [k]: (e.target as HTMLInputElement).checked } as Partial<LobbySettings> })}
@@ -142,10 +195,10 @@ function Check({ k, s }: { k: keyof LobbySettings; s: LobbySettings }) {
   )
 }
 
-/** 一列設定：標籤＋控制項；整列懸停顯示說明 */
-function Row({ label, tip, children }: { label: string; tip: string; children: ComponentChildren }) {
+/** 一列設定：標籤＋控制項；整列懸停顯示說明（tip 是字串 key，或回傳說明文字的函式）*/
+function Row({ label, tip, children }: { label: string; tip: string | (() => string); children: ComponentChildren }) {
   return (
-    <div class="setrow" {...tipProps(() => ({ title: label, body: t(tip) }))}>
+    <div class="setrow" {...tipProps(() => ({ title: label, body: typeof tip === 'function' ? tip() : t(tip) }))}>
       <label class="tiplabel">
         {label}
         <span class="tipmark" aria-hidden="true">
@@ -319,10 +372,12 @@ export function Lobby() {
         <Row label={t('lobby.set.events')} tip="lobby2.tip.events.body">
           <Num k="eventMult" s={s} min={0.25} max={4} step={0.25} />
         </Row>
-        <Row label={t('lobby.set.apo')} tip="lobby2.tip.apo.body">
-          <span class="mono">
-            {s.apocalypse[0]}–{s.apocalypse[1]}
-          </span>
+        {/* 第 4 輪：原作沒有的事件可關掉（給想玩原汁原味的老玩家）；末日時間二選一：快節奏（預設）或原作 */}
+        <Row label={t('ui5.lobby.extra')} tip="ui5.lobby.tip.extra">
+          <Check k="extraEvents" s={s} testId="set-extra" />
+        </Row>
+        <Row label={t('ui5.lobby.apo')} tip={apoTip}>
+          <ApoSelect s={s} />
         </Row>
         <Row label={t('lobby.set.localChat')} tip="lobby2.tip.localChat.body">
           <Check k="localChat" s={s} />

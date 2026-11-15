@@ -38,7 +38,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
   },
   'bio.security.android': {
     zh: '你的槍法準到教官在評語上寫「像機器」，他不知道自己說對了。你是 ICS 級仿生人，序號刻在左肩胛骨下方，表皮能逼真地模擬瘀青。命令很簡單：保護船員、清除異類。至於誤判——你的友傷計數器一直在背景默默運轉。',
-    en: 'Your aim is so clean the instructor wrote "machine-like" on your evaluation. He had no idea he was right. You are an ICS-class android, serial number etched beneath the left shoulder blade, skin that bruises convincingly on demand. Your orders are simple: protect the crew, purge the anomalies. As for mistakes, your friendly-fire counter is always running quietly in the background.',
+    en: 'Your aim is so clean the instructor wrote "machine-like" on your evaluation. He had no idea he was right. You are an ICS-class android, serial number etched beneath the left shoulder blade, skin that bruises convincingly on demand. Your orders are simple: protect the crew, purge the infiltrators. As for mistakes, your friendly-fire counter is always running quietly in the background.',
   },
 
   // ── 醫護兵 ─────────────────────────────────────────────
@@ -110,7 +110,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
   },
   'bio.ceo.android': {
     zh: '你是執行長，也是公司資產清冊上的一個編號。董事會買下一具 ICS 級仿生人，讓它頂著你的頭銜進駐星區，確保這筆投資不會被怪物吃掉。機器管家算是你的同類，只是笨得多。保護人員，揪出異類；誤殺太多員工，董事會會在你開口解釋前把你關機。',
-    en: 'You are the CEO, and also a line item on the asset register. The board bought an ICS-class android, gave it your title and sent it into the sector to make sure the investment does not get eaten. Your robo-butler is a fellow machine, if a much dimmer one. Protect the staff, root out the anomalies. Kill too many employees and the board will shut you down before you can explain.',
+    en: 'You are the CEO, and also a line item on the asset register. The board bought an ICS-class android, gave it your title and sent it into the sector to make sure the investment does not get eaten. Your robo-butler is a fellow machine, if a much dimmer one. Protect the staff, root out the infiltrators. Kill too many employees and the board will shut you down before you can explain.',
   },
 
   // ── 政委 ───────────────────────────────────────────────
@@ -182,7 +182,7 @@ export const BIOS: Record<string, { zh: string; en: string }> = {
   },
   'bio.ace.android': {
     zh: '你的反應時間是 4 毫秒，飛行學院說你是百年一見的天才——因為你根本不是人。你是 ICS 級仿生人，偽裝成王牌飛行員，駕駛艙是你最接近家的地方。保護船員、獵殺異類；攢滿 2000 EP，裁決者號的鑄造台會替你換上真正的戰鬥機體。',
-    en: 'Your reaction time is four milliseconds, and the flight academy called you a once-in-a-century talent. That is because you are not human at all. You are an ICS-class android posing as an ace pilot, and the cockpit is the closest thing you have to home. Protect the crew, hunt the anomalies. Bank 2000 EP and the fabricator on the Adjudicatrix will fit you with a real combat chassis.',
+    en: 'Your reaction time is four milliseconds, and the flight academy called you a once-in-a-century talent. That is because you are not human at all. You are an ICS-class android posing as an ace pilot, and the cockpit is the closest thing you have to home. Protect the crew, hunt the infiltrators. Bank 2000 EP and the fabricator on the Adjudicatrix will fit you with a real combat chassis.',
   },
 }
 
@@ -195,7 +195,7 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
       '活下去，在末日降臨之前把局面收拾乾淨。',
     ],
     en: [
-      'Find and eliminate every anomaly: xenos, mutants, their spawn, and any android turned against the crew.',
+      'Find and eliminate every hidden threat: xenos, mutants, their spawn, and any android turned against the crew.',
       'Pick up a gene sampler from Medical Supplies (stocked after about {m} minutes) and draw blood from 3 people. Once full it becomes a GIT resolver: set it down, wait for it to boot, and collect the report (the central tester on the Empress Nyx must still be intact).',
       'Protect the tester and the stations: when a station is destroyed, everyone aboard dies with it.',
       'Survive, and clean this up before doomsday arrives.',
@@ -204,13 +204,13 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   xeno: {
     zh: [
       '保持偽裝：人類形態下你與船員無異，落單時再切換成匿名的異形形態。',
-      '對未著裝的人類施放寄生；被寄生者一死，就會轉成你的眷屬。',
+      '對人類施放寄生（防護服擋不住）；被寄生者一死，就會轉成你的眷屬。',
       '在隱密處下蛋（最多 3 顆）累積 EP；每殺一名無辜者 +175 EP。',
       '660 EP 進化 T2、1370 EP 進化 T3，殺光或轉化所有非異形。',
     ],
     en: [
       'Stay disguised: in human form you look like any crew member. Switch to your anonymous xeno form when no one is watching.',
-      'Implant unsuited humans. When a host dies, it rises as your spawn.',
+      'Implant humans; suits do not stop it. When a host dies, it rises as your spawn.',
       'Lay eggs in hidden places (up to 3) to accumulate EP. Each innocent you kill is worth +175 EP.',
       'Evolve to T2 at 660 EP and T3 at 1370 EP, then kill or convert everyone who is not a xeno.',
     ],
@@ -237,7 +237,7 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
       '累積 2000 EP，到裁決者號鑄造台升級戰鬥機體。',
     ],
     en: [
-      "You are on the crew's side: help expose the anomalies and protect the crew.",
+      "You are on the crew's side: help expose the xenos and mutants, and protect the crew.",
       'Watch your fire: each full health bar of crew damage you deal counts as 1 share of friendly fire (each full bar they take from you counts as -1), counting only crew who die within 5 minutes of your last hit; pass about 2.7 shares and you are forcibly shut down.',
       'When you die you drop a memory core. Whoever brings it to the fabricator on the Adjudicatrix revives you and receives your override remote.',
       'Reach 2000 EP, then upgrade to a combat chassis at the Adjudicatrix fabricator.',

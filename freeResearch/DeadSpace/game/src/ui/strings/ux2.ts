@@ -64,8 +64,6 @@ export const UX2_ZH: Record<string, string> = {
   'lobby2.tip.bots.body': '開局時用 AI 玩家補空位。AI 和真人一樣會被分到任何身分與職業，也算進身分分配的人數。',
   'lobby2.tip.ep.body': '異類與仿生人累積 EP（進化點數）的速度倍率。EP 夠了就能進化成更強的形態；調高會讓對局節奏變快。',
   'lobby2.tip.events.body': '隨機事件（海盜船登船、小行星帶、門控制器故障、異常體出現……）的頻率倍率。',
-  'lobby2.tip.apo.body':
-    '末日事件會在這個時間範圍內（分鐘）隨機觸發：C.S.D. 艦隊來清場，或軌道穩定器失效。HUD 上的「星區穩定度」會逐漸下降，觸發前 60 秒預告。',
   'lobby2.tip.localChat.body': '開啟後，「全體」頻道的訊息只有同一個站（同一個區域）裡的人收得到；死者照樣看得到。關閉時全場都收得到。',
   'lobby2.tip.boot.body':
     '開啟後，死亡的玩家不能留下來觀戰，也不能在死者頻道聊天。關閉時死者可以繼續觀戰、和其他死者交談。開局 180 秒內，玩家也能投票切換這個模式。',
@@ -172,9 +170,7 @@ export const UX2_EN: Record<string, string> = {
     'AI crew patrolling the stations (not players, no roles). They can be infected or devoured and react to gunfire and corpses, so small games do not feel empty.\nAuto: the fewer combatants, the more crew (9 minus the combatant count, at most 6).',
   'lobby2.tip.bots.body': 'Fill empty seats with AI players at the start. AI players can get any role or class, just like people, and count toward role assignment.',
   'lobby2.tip.ep.body': 'How fast the hidden factions and the android earn EP (evolution points). With enough EP they evolve into stronger forms; higher values make games faster.',
-  'lobby2.tip.events.body': 'How often random events happen (pirate boarding, asteroid belts, door controller failures, anomalies…).',
-  'lobby2.tip.apo.body':
-    'The apocalypse triggers at a random time in this range (minutes): either a C.S.D. fleet arrives to sterilise the sector, or the orbital stabilisers fail. The “Sector stability” bar on the HUD drops over time, with a 60-second warning.',
+  'lobby2.tip.events.body': 'How often random events happen (pirate boarding, asteroid belts, door controller failures, Anomalies…).',
   'lobby2.tip.localChat.body': 'When on, messages in the public channel only reach people in the same station (the same area); the dead still see them. When off, everyone receives them.',
   'lobby2.tip.boot.body':
     'When on, players who die cannot stay to spectate or chat in the dead channel. When off, the dead keep watching and can talk with each other. During the first 180 seconds, players can also vote to switch this mode.',

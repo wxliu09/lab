@@ -142,7 +142,7 @@ regAbilities([
   {
     id: 'mut.devour',
     name: L('吞噬', 'Devour'),
-    desc: L('整隻吞下小型生物或失敗實驗體以獲得 EP（異常體 125，其餘 25）。', 'Swallow a small creature or failed experiment whole for EP (125 for anomalies, 25 otherwise).'),
+    desc: L('整隻吞下小型生物或失敗實驗體以獲得 EP（異常體 125，其餘 25）。', 'Swallow a small creature or failed experiment whole for EP (125 for an Anomaly, 25 otherwise).'),
     icon: 'devour',
     target: 'unit',
     range: 1.2,

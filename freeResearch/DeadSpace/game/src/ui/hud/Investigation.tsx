@@ -9,9 +9,43 @@ import { lang, listJoin, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
-import { localizeName } from '../names'
+import { SIM_AGENT_TITLE, localizeName } from '../names'
+import { CLASSES } from '../../shared/content/registry'
+import { isMuted, setMuted } from '../../client/mute'
+import '../ui4.css'
 
 export const notesOpen = signal(false)
+
+// ───────── 本機封鎖（第 4 輪）─────────
+// client/mute.ts 以「完整的顯示名字」比對：公開／陣營／群組頻道與小地圖信號帶的是 sim 的顯示名字（職業前綴＋本名，例如「Dr. Alice」；
+// 晉升後是「特務·Alice」），死者頻道帶的是本名；調查筆記這一列只有開局名單上的本名（startInfo）。
+// 所以封鎖一個本名時，把它的每一種寫法都封起來：通訊病毒換名後頭銜跟著人走、本名換到別人身上，封鎖就跟著這個本名走。
+// 只用公開的內容（職業前綴表），不去查這個名字現在是誰（那會把病毒換名對回真人）。
+
+/** 封鎖本名 base 時要一起封的顯示名字：本名、晉升頭銜＋本名、各職業前綴＋本名 */
+export function muteNames(base: string): string[] {
+  if (!base) return []
+  const out = new Set([base, SIM_AGENT_TITLE + base])
+  for (const c of CLASSES.values()) if (c.prefix.en) out.add(c.prefix.en + base)
+  return [...out]
+}
+
+/** 這個本名有沒有被封鎖（任何一種寫法被封就算；在聊天那邊單獨封了某個寫法，這裡也看得出來）*/
+export function isNameMuted(base: string): boolean {
+  return muteNames(base).some(isMuted)
+}
+
+/** 封鎖／解除封鎖這個本名的所有寫法 */
+export function setNameMuted(base: string, on: boolean): void {
+  for (const n of muteNames(base)) setMuted(n, on)
+}
+
+/** 這個本名是不是「現在的自己」（selfNames：自己目前的顯示名字、開局名單上的本名）：不能封鎖自己 */
+export function isOwnName(base: string, selfNames: readonly string[]): boolean {
+  const all = muteNames(base)
+  return selfNames.some((n) => !!n && all.includes(n))
+}
+
 // 筆記是側邊面板：開著時照樣能用快捷鍵操作，只停用邊緣捲動
 panelChecks.push(() => notesOpen.value)
 /** 正在看的監視器畫面（覆寫鏡頭所在 zone）*/
@@ -54,6 +88,8 @@ export function NotesPanel() {
   const reports = me.gitReports ?? []
   // 死者與旁觀者看得到全場：不能把筆記分享出去（server 也會擋給活人的分享），自己的筆記照樣可以編輯
   const canShare = me.alive !== false
+  // 自己現在的名字：自己的主單位一定看得到真名（通訊病毒換過就是換到的名字）；再加上開局名單上的本名
+  const selfNames = [world.ents.get(me.unit ?? -1)?.s.n ?? '', players.find((p) => p.slot === me.slot)?.name ?? '']
   return (
     <div class="panel solid" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
       <h2>{t('notes.title')}</h2>
@@ -63,10 +99,16 @@ export function NotesPanel() {
           .map((p) => {
             const n = mine.get(p.slot)
             const cur = MARKS.find((x) => x.m === (n?.mark ?? 'none'))!
+            const muted = isNameMuted(p.name)
+            // 名字現在是自己的（通訊病毒換到的）就不能封；已經封了的照樣可以解除
+            const locked = isOwnName(p.name, selfNames) && !muted
             return (
-              <div key={p.slot} class="row" style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
+              <div key={p.slot} class={'row note-row' + (muted ? ' is-muted' : '')} style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
                 <div class="grow" style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '15px' }}>{localizeName(p.name)}</div>
+                  <div class="note-name" style={{ fontSize: '15px' }}>
+                    {localizeName(p.name)}
+                    {muted && <span class="note-muted-tag">{t('ui5.notes.muted')}</span>}
+                  </div>
                   {edit === p.slot ? (
                     <input
                       value={text}
@@ -117,6 +159,20 @@ export function NotesPanel() {
                     ↗
                   </button>
                 )}
+                {/* 本機封鎖：只在自己這端隱藏他的聊天與小地圖信號（不送任何東西給主機）。用 aria-disabled 而不是 disabled，停用時懸停說明照樣出得來 */}
+                <button
+                  class={'small ghost note-mute' + (muted ? ' on' : '')}
+                  data-testid={'note-mute-' + p.slot}
+                  aria-pressed={muted}
+                  aria-disabled={locked}
+                  aria-label={t(muted ? 'ui5.notes.unmute' : 'ui5.notes.mute')}
+                  {...tipProps(() => ({ title: t(muted ? 'ui5.notes.unmute' : 'ui5.notes.mute'), body: t(locked ? 'ui5.notes.muteSelf' : 'ui5.notes.muteBody') }))}
+                  onClick={() => {
+                    if (!locked) setNameMuted(p.name, !muted)
+                  }}
+                >
+                  <Icon name={muted ? 'muted' : 'sound'} size={14} color="currentColor" />
+                </button>
               </div>
             )
           })}

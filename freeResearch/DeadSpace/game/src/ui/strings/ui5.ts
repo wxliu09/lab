@@ -53,6 +53,27 @@ export const UI5_ZH: Record<string, string> = {
   'ui5.codex.where.creature.anomaly': '「空間顫動」事件時，一口氣在玩家身邊冒出 12 隻',
   'ui5.codex.where.creature.anomalyCaged': '{vivarium}第 2 間隔間關著的 5 隻',
   'ui5.codex.where.creature.anomalyRich': '{verdance}地表',
+
+  // ───── 第 4 輪（老手／多人公平視角）：大廳的末日節奏與「原作沒有的事件」、調查筆記的本機封鎖、Esc 選單開筆記 ─────
+  // 末日時間：快節奏是本作的預設；原作的末日計時器是 GetRandomReal(3300, 4200) 秒（研究 03 §6.3）
+  'ui5.lobby.apo': '末日時間',
+  'ui5.lobby.apo.fast': '快節奏 {a}–{b} 分（預設）',
+  'ui5.lobby.apo.classic': '原作 {a}–{b} 分',
+  'ui5.lobby.apo.custom': '{a}–{b} 分',
+  'ui5.lobby.tip.apo':
+    '末日事件會在這段時間內隨機觸發：協和安全理事會的艦隊來清場，或軌道穩定器失效。HUD 上的「星區穩定度」會逐漸下降，觸發前 60 秒預告。\n快節奏 {fa}–{fb} 分（預設）：本作的改良，一局比較緊湊，中後期比較短。\n原作 {ca}–{cb} 分：原作的時間。中後期拉長，異形、變種人比較有機會累積到 T3 的 EP、進化到最強的形態。',
+  // 原作沒有的事件（sim 的 EXTRA_EVENTS：GDD §7.8 原作留下但沒接上的三個事件；研究 03 §6.2 的死碼與無引用的天守收容失效字串）。
+  // 關閉時 windfall（原作 #3，原作在發錢前就 return）照原作沒有效果
+  'ui5.lobby.extra': '原作沒有的事件',
+  'ui5.lobby.tip.extra':
+    '開啟時，隨機事件除了原作有的那些，還可能抽到本作補上的三種（原作留下設計、但沒有接上）：\n・通訊病毒：所有人的名字清空 10 秒，之後名字與顏色在玩家之間隨機互換（職業頭銜跟著人，不換）。\n・蛞蝓仔大量出現：各站室內湧進一大群蛞蝓仔（女帝號 16 隻，其他站各 8 隻）。\n・天守收容失效：180 秒內要駕駛天守砲台、用主砲對翠原星放電，否則砲台自爆，站內的人全部陪葬。\n關閉時只會抽到原作有的事件；「補給船提早抵達」也照原作沒有效果（開啟時會把所有販賣機補滿）。',
+
+  // 調查筆記：本機封鎖（以名字為準，見 client/mute.ts）
+  'ui5.notes.mute': '封鎖此人',
+  'ui5.notes.unmute': '解除封鎖',
+  'ui5.notes.muteBody': '只在你這邊隱藏他的聊天與小地圖信號；通訊病毒換名後，封鎖會跟著名字走。',
+  'ui5.notes.muteSelf': '這個名字現在是你自己的，不能封鎖。',
+  'ui5.notes.muted': '已封鎖',
 }
 
 export const UI5_EN: Record<string, string> = {
@@ -96,4 +117,20 @@ export const UI5_EN: Record<string, string> = {
   'ui5.codex.where.creature.anomaly': 'The spatial tremor event drops 12 of them around the players at once',
   'ui5.codex.where.creature.anomalyRich': 'On the surface of {verdance}',
   'ui5.codex.where.creature.anomalyCaged': 'The 5 kept in cell 2 of the {vivarium}',
+
+  'ui5.lobby.apo': 'Apocalypse',
+  'ui5.lobby.apo.fast': 'Fast {a}–{b} min (default)',
+  'ui5.lobby.apo.classic': 'Classic {a}–{b} min',
+  'ui5.lobby.apo.custom': '{a}–{b} min',
+  'ui5.lobby.tip.apo':
+    'The apocalypse triggers at a random time in this range: either a Directorate fleet arrives to sterilise the sector, or the orbital stabilisers fail. The “Sector stability” bar on the HUD drops over time, with a 60-second warning.\nFast {fa}–{fb} min (default): this game’s change, for tighter rounds with a shorter late game.\nClassic {ca}–{cb} min: the original timing. The late game runs longer, so xenos and mutants have a better shot at earning the EP for T3, their strongest forms.',
+  'ui5.lobby.extra': 'Extra events',
+  'ui5.lobby.tip.extra':
+    'When on, besides the original events the director can also draw three this game added (the original left them unfinished):\n• Comm virus: everyone’s name goes blank for 10 s, then names and colors are shuffled among the players (class titles stay with each person).\n• Slugling swarm: sluglings pour into every station interior (16 on the Empress Nyx, 8 on each other station).\n• Tenshu containment failure: within 180 s someone must pilot Tenshu Battery and discharge its main gun at Verdance, or the battery blows up with everyone aboard.\nWhen off, only events the original had can be drawn, and the early supply run does nothing, as in the original (when on, it restocks every vendor).',
+
+  'ui5.notes.mute': 'Block this player',
+  'ui5.notes.unmute': 'Unblock',
+  'ui5.notes.muteBody': 'Hides their chat and minimap pings on your screen only. If the comm virus swaps names, the block follows the name.',
+  'ui5.notes.muteSelf': 'That name is currently yours, so you cannot block it.',
+  'ui5.notes.muted': 'Blocked',
 }

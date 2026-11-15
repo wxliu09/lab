@@ -1,4 +1,5 @@
-// 遊戲選單（Esc）：繼續、進化、說明、圖鑑、設定、離開對局。原本對局中沒有任何離開的方法，Esc 又被拿去開進化選單。
+// 遊戲選單（Esc）：繼續、進化、調查筆記、說明、圖鑑、設定、離開對局。原本對局中沒有任何離開的方法，Esc 又被拿去開進化選單。
+// 調查筆記（第 4 輪）：只用滑鼠的人也打得開（原本只有 Tab）。
 // 離開對局用遊戲內的確認對話框（不用瀏覽器原生 confirm）：Esc 取消、回到選單；練習局用單機的說法。
 // 關分頁時的 beforeunload 原生確認在 App.tsx，不歸這裡管。
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
@@ -8,6 +9,7 @@ import { PRACTICE_ROOM } from '../../shared/protocol/messages'
 import { t } from '../i18n'
 import { guideOpen } from './Guide'
 import { codexOpen } from './Codex'
+import { notesOpen } from './Investigation'
 import { settingsOpen } from '../screens/Settings'
 import { leaveText } from './textRules'
 
@@ -82,6 +84,9 @@ export function GameMenu() {
             {t('gmenu.resume')}
           </button>
           {canEvolve && me.alive !== false && <button onClick={go(() => (evolveOpen.value = true))}>{t('gmenu.evolve')}</button>}
+          <button data-testid="gmenu-notes" onClick={go(() => (notesOpen.value = true))}>
+            {t('notes.title')}
+          </button>
           <button onClick={go(() => (guideOpen.value = true))}>{t('gmenu.help')}</button>
           <button onClick={go(() => (codexOpen.value = true))}>{t('gmenu.codex')}</button>
           <button onClick={go(() => (settingsOpen.value = true))}>{t('gmenu.settings')}</button>
