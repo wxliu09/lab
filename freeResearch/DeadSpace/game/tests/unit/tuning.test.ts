@@ -34,35 +34,37 @@ describe('除錯指令執行層', () => {
     const { h, cs } = Harness.started(4, 5)
     h.ticks(2)
     const before = cs.map((c) => c.inbox.length)
-    tune(cs[2], 'players')
-    tune(cs[2], 'status', [], 2)
+    tune(cs[0], 'players')
+    tune(cs[0], 'status', [], 2)
     h.ticks(1)
-    expect(results(cs[2]).length).toBe(2)
-    expect(results(cs[2])[0].ok).toBe(true)
-    for (const [i, c] of cs.entries()) if (i !== 2) expect(results(c).length).toBe(0)
+    expect(results(cs[0]).length).toBe(2)
+    expect(results(cs[0])[0].ok).toBe(true)
+    for (const [i, c] of cs.entries()) if (i !== 0) expect(results(c).length).toBe(0)
     // 其他人只收到正常快照
-    for (const [i, c] of cs.entries()) if (i !== 2) expect(c.inbox.slice(before[i]).every((m) => m.t === 'snap' || m.t === 'chat')).toBe(true)
+    for (const [i, c] of cs.entries()) if (i !== 0) expect(c.inbox.slice(before[i]).every((m) => m.t === 'snap' || m.t === 'chat')).toBe(true)
   })
 
-  it('主機與一般玩家都能用；格式錯誤不會讓 server 崩潰', () => {
+  it('只接受本機（主機）送來的；其他 peer 送的一律忽略；格式錯誤不會讓 server 崩潰', () => {
     const { h, cs } = Harness.started(3, 6)
+    const g = h.server.game!
+    const ep1 = g.players[cs[1].slot].ep
     tune(cs[0], 'ep', [100, 'me'])
     tune(cs[1], 'ep', [50, 'me'], 2)
-    cs[1].send({ t: 'Tune', id: 3, op: 'zz', args: [] })
-    cs[1].send({ t: 'Tune', id: 4, op: code('give'), args: [123, 'x', 'y'] })
-    cs[1].send({ t: 'Tune', id: 5, op: code('tp'), args: [null, null] })
+    cs[0].send({ t: 'Tune', id: 3, op: 'zz', args: [] })
+    cs[0].send({ t: 'Tune', id: 4, op: code('give'), args: [123, 'x', 'y'] })
+    cs[0].send({ t: 'Tune', id: 5, op: code('tp'), args: [null, null] })
     h.ticks(1)
-    const g = h.server.game!
     expect(g.players[cs[0].slot].ep).toBeGreaterThanOrEqual(100)
-    expect(g.players[cs[1].slot].ep).toBeGreaterThanOrEqual(50)
-    expect(results(cs[1]).filter((r) => !r.ok).length).toBe(3)
+    expect(g.players[cs[1].slot].ep).toBeLessThan(ep1 + 50)
+    expect(results(cs[1]).length).toBe(0)
+    expect(results(cs[0]).filter((r) => !r.ok).length).toBe(3)
   })
 
-  it('每位 peer 每秒最多 10 次', () => {
+  it('每秒最多 10 次', () => {
     const { h, cs } = Harness.started(2, 7)
-    for (let i = 0; i < 30; i++) tune(cs[1], 'status', [], 100 + i)
+    for (let i = 0; i < 30; i++) tune(cs[0], 'status', [], 100 + i)
     h.ticks(1)
-    expect(results(cs[1]).length).toBeLessThanOrEqual(11)
+    expect(results(cs[0]).length).toBeLessThanOrEqual(11)
   })
 
   it('who 比對到多人時列出候選並中止', () => {
@@ -81,14 +83,14 @@ describe('除錯指令執行層', () => {
 
   it('全域效果：暫停／時間倍率看起來與正常一樣（沒有歸屬）', () => {
     const { h, cs } = Harness.started(3, 9)
-    tune(cs[1], 'pause')
+    tune(cs[0], 'pause')
     h.ticks(2)
     const g = h.server.game!
     expect(g.paused).toBe(true)
     const chats = cs[0].inbox.filter((m) => m.t === 'chat')
     expect(chats.length).toBe(0)
-    tune(cs[1], 'resume', [], 2)
-    tune(cs[1], 'timeScale', [2], 3)
+    tune(cs[0], 'resume', [], 2)
+    tune(cs[0], 'timeScale', [2], 3)
     h.ticks(2)
     expect(g.paused).toBe(false)
     expect(g.timeScale).toBe(2)
@@ -100,7 +102,9 @@ describe('資訊放寬只影響使用者本人', () => {
     const { h, cs } = Harness.started(6, 21)
     const g = h.server.game!
     const x = g.allPlayers().find((p) => p.role === 'xeno')!
-    const user = cs.find((c) => c.slot !== x.slot)!
+    // 只有本機（主機）送的會被接受：使用者是主機，而且這個 seed 的主機不是異形
+    const user = cs[0]
+    expect(user.slot).not.toBe(x.slot)
     tune(user, 'mapHack', [true])
     tune(user, 'hear', [true], 2)
     tune(user, 'xray', [true], 3)

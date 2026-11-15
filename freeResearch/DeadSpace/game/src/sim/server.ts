@@ -246,7 +246,8 @@ export class GameServer {
         this.game?.handleMapPing(slot, msg.z, msg.x, msg.y)
         break
       case 'Tune':
-        if (!ps.tune.take(this.now)) return
+        // 只接受本機（主機分頁自己）送來的；其他 peer 一律忽略
+        if (peer !== LOCAL_PEER || !ps.tune.take(this.now)) return
         if (this.game) this.game.handleTune(slot, msg.id, msg.op, msg.args)
         else this.sendTo(peer, { t: 'TuneResult', id: msg.id, ok: false, msg: 'no game' })
         break
