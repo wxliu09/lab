@@ -104,6 +104,7 @@ function validSettings(s: unknown): Partial<LobbySettings> | null {
       case 'localChat':
       case 'bootOnDeath':
       case 'hostSpectate':
+      case 'extraEvents':
         if (!isBool(v)) return null
         out[k] = v
         break
@@ -189,6 +190,8 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
       return isInt(raw.to, 0, MAX_PLAYERS - 1) ? { t: 'shareNotes', to: raw.to } : null
     case 'pause':
       return isBool(raw.on) ? { t: 'pause', on: raw.on } : null
+    case 'mapPing':
+      return isInt(raw.z, 0, 4095) && isNum(raw.x, -1000, 1000) && isNum(raw.y, -1000, 1000) ? { t: 'mapPing', z: raw.z, x: raw.x, y: raw.y } : null
     case 'Tune':
       if (!isInt(raw.id, 0, 0x7fffffff) || !isStr(raw.op, 24) || !/^[a-zA-Z]{1,24}$/.test(raw.op)) return null
       if (!Array.isArray(raw.args) || raw.args.length > 4) return null

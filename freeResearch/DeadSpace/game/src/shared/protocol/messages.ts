@@ -32,6 +32,11 @@ export interface LobbySettings {
    * 不公開指認、看到可疑的玩家形態不主動開火（被打才還手）；AI 異類偽裝更久才動手、出手比較保守（讓練習當異形不會太難）
    */
   aiLevel: AiLevel
+  /**
+   * 原作沒有的額外事件（天守收容失效、通訊病毒、蛞蝓大量出現等本作新增或把原作死碼做成的事件）。
+   * false = 只出原作有的事件（給想玩原汁原味的老玩家）
+   */
+  extraEvents: boolean
 }
 
 export type AiLevel = 'easy' | 'normal'
@@ -52,6 +57,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   hostSpectate: false,
   seed: 0,
   aiLevel: 'normal',
+  extraEvents: true,
 }
 
 /** 單機練習的房號（正式房號字母表沒有 O 和 0，不會撞號）*/
@@ -136,6 +142,8 @@ export type ClientMsg =
    * 真人離線或暫停滿 10 分鐘自動繼續。多人局一律忽略
    */
   | { t: 'pause'; on: boolean }
+  /** 小地圖信號（原作全員結盟，Alt＋點小地圖大家都看得到）：z 是 zone id，x／y 是該 zone 的座標 */
+  | { t: 'mapPing'; z: number; x: number; y: number }
 
 export type ChatChannel = 'all' | 'team' | 'group' | 'dead'
 export type NoteMark = 'none' | 'trust' | 'suspect' | 'confirmedEvil' | 'confirmedClean'
@@ -170,6 +178,8 @@ export type HostMsg =
   | { t: 'replay'; cam: number; zone: number; x: number; y: number; r: number; frames: { t: number; u: [string, number, number, number, string, number][] }[] }
   /** 對局中出現新的地點（事件站）*/
   | { t: 'zones'; zones: [number, string, string][] }
+  /** 小地圖信號：活人的只給活人、死者的只給死者；name／color 是發送者目前的顯示名字與顏色 */
+  | { t: 'mapPing'; z: number; x: number; y: number; name: string; color: number }
 
 export interface StartInfo {
   slot: Slot

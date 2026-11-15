@@ -7,6 +7,7 @@ import { hasString } from '../../src/ui/i18n'
 import '../../src/ui/strings/sim3'
 import '../../src/ui/strings/sim5'
 import '../../src/ui/strings/sim6'
+import '../../src/ui/strings/sim7'
 
 function files(dir: string): string[] {
   const out: string[] = []
