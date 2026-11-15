@@ -4,10 +4,12 @@
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { PrivateState, WorldPublic } from '../../shared/protocol/messages'
-import { CLASSES, UNITS, buffDef, itemDef } from '../../shared/content/registry'
+import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
-import { snapTick, startInfo, world } from '../../client/session'
-import { chatOpen, dialogOpen, evolveOpen, modalChecks, typingInField } from '../../client/input'
+import { lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import { chatOpen, dialogOpen, evolveOpen, localNotice, modalChecks, typingInField } from '../../client/input'
+import { DEFAULT_BODY_R } from '../../render/moveTargets'
+import { navKindOf, navTarget, stationHas, stationLayout, type NavKind } from './facilityNav'
 import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { addStrings, hasString, lang, listJoin, loc, t } from '../i18n'
@@ -272,6 +274,8 @@ export interface GuideView {
   near: { d: string; dist: number }[]
   /** 目前所在 zone 的站點 id（'ship:…' = 船艙）*/
   zoneStation?: string
+  /** 大廳設定的 EP 倍率（sim 的 settings.epMult；仿生人的 EP 速度要乘上它）；沒有就當 1 */
+  epMult?: number
 }
 
 export function identityOf(me: Partial<PrivateState>): Identity | null {
@@ -323,6 +327,8 @@ export interface Step {
   dim?: boolean
   /** 重大事件的對策（黃色、排最前面）*/
   warn?: boolean
+  /** 攸關自己性命的狀態（被寄生、感染朊毒）：紅色「!」、排在事件對策前面 */
+  danger?: boolean
 }
 
 // ───────── 公開的全域狀態：基因檢測開放時間、進行中的重大事件 ─────────
@@ -423,6 +429,46 @@ function altTask(me: Partial<PrivateState>, time: number): Step {
 /** 「攻擊別人」的步驟在基因檢測開放前只留到這個秒數（之後讓位給空窗任務；情境提示與說明面板仍有）*/
 const ATTACK_STEP_UNTIL = 90
 
+/**
+ * 被寄生／感染朊毒（只看自己主單位的 buff，本人本來就看得到）：紅色「!」待辦。
+ * 只給人類：sim 的 roleSystem.ts 只有船員陣營死時會被寄生轉成異形眷屬；仿生人（chassis）不會被感染。
+ * 對策照 sim：抗體包（醫療補給）把感染壓成休眠（bf.contained*，46 秒後清除），休眠期間死掉仍會被轉化。
+ */
+export function infectionStep(v: GuideView): Step | null {
+  if (identityOf(v.me) !== 'human') return null
+  const kinds = (v.self?.b ?? []).map((b) => buffDef(b)?.infection)
+  const live = kinds.find((k) => k === 'parasite' || k === 'prion')
+  if (live) {
+    const who = live === 'parasite' ? 'Parasite' : 'Prion'
+    const kit = invSlot(v.me, (i) => i === 'antibodyKit')
+    return kit >= 0 ? { key: 'guide.s.infect' + who, args: { k: kit + 1 }, danger: true } : { key: 'guide.s.infect' + who + 'Get', danger: true }
+  }
+  const held = kinds.find((k) => k === 'containedParasite' || k === 'containedPrion')
+  if (held) return { key: held === 'containedParasite' ? 'guide.s.infectHeldParasite' : 'guide.s.infectHeldPrion', danger: true }
+  return null
+}
+
+/** 仿生人每秒自動得到的 EP（sim 的 roleSystem.ts「EP 每秒結算」；大廳的 EP 倍率會再乘上去）*/
+export const ANDROID_EP_PER_SEC = 1.5
+
+/** 仿生人 EP 的速度與還要幾分鐘滿（目標面板、說明面板用）：r = 每秒幾點，m = 分鐘（至少 1）*/
+export function androidEpRate(ep: number, next: number, epMult = 1): { r: string; m: number } {
+  const mult = Number.isFinite(epMult) && epMult > 0 ? epMult : 1
+  const rate = ANDROID_EP_PER_SEC * mult
+  return { r: String(Math.round(rate * 100) / 100), m: Math.max(1, Math.ceil(Math.max(0, next - ep) / rate / 60)) }
+}
+
+/**
+ * 豪勇號開局要不要指路去女帝號：人類、在豪勇號上、還沒湊滿驗血樣本（背包沒有 GIT 解析器）、末日還沒開始（末日改看撤離對策）。
+ * 豪勇號只有 4 個出生點（女帝號 14 個），GIT 檢測儀只在女帝號；站內監控掃描只掃得到自己這座站，豪勇號本身也不能停靠別站。
+ * 救生艙室（救生艙裝置）在豪勇號版面的左側，見 tests/unit/r2c-guideNav.test.ts。
+ */
+export function wantsNyx(v: GuideView): boolean {
+  if (identityOf(v.me) !== 'human' || v.zoneStation !== 'bravado') return false
+  if (invSlot(v.me, (i) => i === 'gitResolver') >= 0) return false
+  return !activeEvents(v.w).includes('doom')
+}
+
 export function objectiveFor(v: GuideView): Objective | null {
   const me = v.me
   const id = identityOf(me)
@@ -445,6 +491,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       const res = invSlot(me, (i) => i === 'gitResolver')
       const smp = invSlot(me, (i) => i === 'geneSampler')
       const gitAt = gitAtOf(v.w)
+      const toNyx = wantsNyx(v)
       let waiting = false
       if (res >= 0) add('guide.s.resolverUse', { k: res + 1 })
       else if (smp >= 0) {
@@ -456,8 +503,10 @@ export function objectiveFor(v: GuideView): Objective | null {
         // 基因檢測開放前：倒數＋一條可以先做的事（不然整段空窗只有「等」）
         waiting = true
         add('guide.s.samplerWait', { t: fmtTime(gitAt - time) })
-        steps.push(altTask(me, time))
+        // 豪勇號上的空窗任務改成指路（下面的 guide.s.bravadoPod）：在這裡用站內監控掃描只會掃到自己
+        if (!toNyx) steps.push(altTask(me, time))
       } else add('guide.s.samplerGet')
+      if (toNyx) add('guide.s.bravadoPod')
       if (!waiting || time < ATTACK_STEP_UNTIL) add('guide.s.attack')
       if (steps.length < 3) add('guide.s.notes')
       const cs = classStep(me, v)
@@ -506,9 +555,15 @@ export function objectiveFor(v: GuideView): Objective | null {
     }
     case 'android': {
       sub = t('class.' + (me.classId ?? ''))
-      add('guide.s.helpCrew')
+      // EP 從哪裡來（每秒自動累積，不用做任何事，順便估還要幾分鐘）排第一：重大事件的對策會佔掉前幾條，
+      // 「協助人類」只是重述目標，放後面
+      if (ep) {
+        if (ready) add('guide.s.androidPick')
+        else if (ep.ep >= ep.next) add('guide.s.androidReady')
+        else add('guide.s.androidEp', androidEpRate(ep.ep, ep.next, v.epMult))
+      }
       add('guide.s.ff')
-      if (ep) add(ready ? 'guide.s.androidPick' : ep.ep >= ep.next ? 'guide.s.androidReady' : 'guide.s.androidEp')
+      add('guide.s.helpCrew')
       add('guide.s.core')
       break
     }
@@ -553,11 +608,16 @@ export function objectiveFor(v: GuideView): Objective | null {
       add('guide.s.endReveal')
       break
   }
+  // 搭救生艙飄在太空中（操控的是救生艙）：要先設定航線才會降落，任何身分都可能搭
+  const kpod = EVENT_IDS.has(id) ? abilityKey(me, 'pod.trajectory') : null
+  if (kpod !== null) steps.unshift({ key: 'guide.s.podAim', args: { k: keyText(kpod), name: loc(abilityDef('pod.trajectory')?.name) } })
   const live = id === 'xeno' || id === 'mutant' || id === 'android'
   const goal = id === 'dead' && me.booted ? 'guide3.goal.booted' : 'guide.goal.' + id
-  // 重大事件（無人機群、小行星、天守、海盜、末日）的對策排最前面；本身的任務最多 4 條（含事件），職業短句另外附在最後
+  // 攸關性命的感染（紅色）最前面，接著是重大事件（無人機群、小行星、天守、海盜、末日）的對策；
+  // 本身的任務最多 4 條（含感染與事件），職業短句另外附在最後
+  const inf = infectionStep(v)
   const ev = EVENT_IDS.has(id) ? eventSteps(v.w) : []
-  const main = [...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
+  const main = [...(inf ? [inf] : []), ...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
   const dim = steps.filter((s) => s.dim).slice(0, 1)
   return { id, goal, sub, steps: [...main, ...dim], ep: live ? ep : undefined }
 }
@@ -680,7 +740,39 @@ function viewFromWorld(): GuideView {
     }
   }
   const zs = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
-  return { me, w: world.w, self: self ? { d: self.s.d, hp: self.s.hp, mhp: self.s.mhp, b: self.s.b } : undefined, near, zoneStation: zs }
+  return { me, w: world.w, self: self ? { d: self.s.d, hp: self.s.hp, mhp: self.s.mhp, b: self.s.b } : undefined, near, zoneStation: zs, epMult: lobby.value?.settings.epMult }
+}
+
+// ───────── 目標面板的「點一下走過去」（facilityNav.ts）─────────
+
+/**
+ * 現在能不能替自己的主單位下移動指令走到某設施：活著、操控的就是主單位（駕駛站點／船艇、搭救生艙時 move 會動到載具）、
+ * 在站內（不是太空），而且 client 有那一站的版面。回傳那一站的 id。
+ */
+function navStation(): string | null {
+  const me = world.me
+  if (me.alive === false || !me.unit || me.control !== me.unit || !me.zone) return null
+  const self = world.ents.get(me.unit)
+  if (!self || self.s.z !== me.zone) return null
+  const st = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
+  return st && stationLayout(st) ? st : null
+}
+
+/**
+ * 走到本區最近的那一台：和小地圖右鍵一樣送 move（Hud.tsx minimapMove），目標點用 consoleApproach／walkableTarget 修正成站得到的位置；
+ * 走不到就顯示「無法到達」。（小地圖沒有 ping 機制；場景的點擊標記要 GameScene，目標面板拿不到，所以不另外標）
+ */
+function goToFacility(kind: NavKind): void {
+  const st = navStation()
+  const l = stationLayout(st ?? undefined)
+  const self = world.ents.get(world.me.unit ?? 0)
+  if (!st || !l || !self) return
+  const to = navTarget(l, kind, { x: self.x, y: self.y }, UNITS.get(self.s.d ?? '')?.radius ?? DEFAULT_BODY_R)
+  if (!to) {
+    localNotice.value = { text: 'art3.unreachable', at: performance.now() }
+    return
+  }
+  sendCmd({ k: 'move', x: to.x, y: to.y })
 }
 
 /** 全螢幕畫面擋住時暫停提示（角色揭露、結算、圖鑑、說明、筆記、進化選單）*/
@@ -934,12 +1026,49 @@ export function Guide() {
 }
 
 function stepClass(s: Step): string | undefined {
-  return s.warn ? 'warn' : s.dim ? 'dim' : undefined
+  // 感染也帶 warn：版面放不下精簡目標面板時（guide.css 的 sq2）和事件對策一樣留著
+  return s.danger ? 'warn danger' : s.warn ? 'warn' : s.dim ? 'dim' : undefined
+}
+
+function stepTestId(s: Step): string | undefined {
+  return s.danger ? 'guide-danger' : s.warn ? 'guide-event' : undefined
+}
+
+/** 目標面板的一條步驟：叫玩家去某設施、而本區有那種設施時，整條可以點（走過去）*/
+function StepItem({ s, station }: { s: Step; station: string | null }) {
+  const text = t(s.key, s.args)
+  const kind = station ? navKindOf(s.key, station) : null
+  return (
+    <li class={stepClass(s)} data-testid={stepTestId(s)}>
+      {kind && stationHas(station ?? undefined, kind) ? (
+        <button
+          type="button"
+          class="guide-nav"
+          data-testid={'guide-nav-' + kind}
+          onClick={(e) => {
+            // 點完把焦點還給遊戲（不然之後按空白鍵、Enter 會再按到這顆）
+            ;(e.currentTarget as HTMLElement).blur()
+            goToFacility(kind)
+          }}
+          {...tipProps(() => ({ title: t('guide.nav.tip'), body: t('guide.nav.body', { name: t('guide.nav.' + kind) }) }))}
+        >
+          {text}
+          <span class="guide-nav-go" aria-hidden="true">
+            <Icon name="move" size={13} color="currentColor" />
+          </span>
+        </button>
+      ) : (
+        text
+      )}
+    </li>
+  )
 }
 
 function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: boolean; squeeze: number; onFold: () => void }) {
   const [accent, text] = ID_COLOR[obj.id]
   const ep = obj.ep
+  // 能不能「點一下走過去」（駕駛中、在太空、死了都不行）
+  const station = navStation()
   return (
     <div class={'panel guide-obj' + (fold ? ' folded' : '') + (squeeze && !fold ? ' sq' + squeeze : '')} data-testid="guide-objectives" style={{ '--gc': accent, '--gt': text }}>
       <div class="guide-head">
@@ -974,9 +1103,7 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
           )}
           <ul class="guide-steps">
             {obj.steps.map((s) => (
-              <li key={s.key} class={stepClass(s)} data-testid={s.warn ? 'guide-event' : undefined}>
-                {t(s.key, s.args)}
-              </li>
+              <StepItem key={s.key} s={s} station={station} />
             ))}
           </ul>
         </>
@@ -1171,7 +1298,9 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
 function RolePage({ id, v }: { id: Identity; v: GuideView }) {
   const me = v.me
   const booted = id === 'dead' && !!me.booted
-  const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k))
+  // 仿生人的 EP 速度依大廳的 EP 倍率（guide.r.android.4 的 {r}）
+  const rate = { r: androidEpRate(0, 0, v.epMult).r }
+  const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k, rate))
   const c = CLASSES.get(me.classId ?? '')
   if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
     // 配發防護服的職業：直接寫出實際拿到的那一套（內容表的說明只說「隨機一套」）
