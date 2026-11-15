@@ -323,7 +323,8 @@ export class Game {
       seed: 0,
       stations: this.stations,
       zones: this.zoneList(),
-      players: this.allPlayers().map((q) => ({ slot: q.slot, name: q.baseName, color: q.color, bot: q.bot })),
+      // 名字用別人眼中的本名：通訊病毒之後重新連線時，名單不能把真名和換過的顏色對起來
+      players: this.allPlayers().map((q) => ({ slot: q.slot, name: shownBase(q), color: q.color, bot: q.bot })),
       spectator: p.spectator,
       gid: this.gid,
     }
@@ -337,7 +338,7 @@ export class Game {
     if (!p || p.left) return
     p.left = true
     p.connected = false
-    this.systemAll('sys.left', { name: p.baseName })
+    this.systemAll('sys.left', { name: shownBase(p) })
     const u = this.mainOf(p)
     if (u && u.alive) {
       p.stayDead = true
@@ -388,7 +389,7 @@ export class Game {
       const alive = this.allPlayers().filter((q) => q.alive && q.connected).length
       if (set.size >= alive / 2) {
         t.data.deadMuted = true
-        this.systemAll('vote.kicked', { name: t.baseName })
+        this.systemAll('vote.kicked', { name: shownBase(t) })
       } else this.privateLine(slot, 'vote.kickLeft', { n: Math.ceil(alive / 2 - set.size) })
     }
   }
@@ -814,6 +815,14 @@ export class Game {
     }
     this.fx.length = 0
   }
+}
+
+/**
+ * 別人眼中這位玩家的「本名」部分：通訊病毒換過名字就是換到的名字（data.shownBase），否則就是 baseName。
+ * 顯示名字一律是「頭銜（職業前綴或晉升頭銜）＋這個名字」；baseName 是真正的本名（結算時間軸等用）。
+ */
+export function shownBase(p: GamePlayer): string {
+  return (p.data.shownBase as string | undefined) ?? p.baseName
 }
 
 /** 系統訊息以 key＋參數傳給 client 翻譯：`@key|k=v|k=v` */

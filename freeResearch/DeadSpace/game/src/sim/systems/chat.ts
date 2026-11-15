@@ -1,6 +1,6 @@
 // 聊天路由（研究 02 §10.3）：在 sim 內依存活狀態、所在 zone、頻道決定誰收得到
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
-import type { Game, GamePlayer } from '../game'
+import { shownBase, type Game, type GamePlayer } from '../game'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { sanitizeName } from '../../shared/protocol/validate'
 import { listArgs } from '../../shared/sysArgs'
@@ -146,7 +146,8 @@ function findPlayer(g: Game, q: string): GamePlayer | undefined {
   if (!s) return undefined
   const colorIdx = PLAYER_COLORS.findIndex((c) => c.id === s)
   if (colorIdx >= 0) return g.allPlayers().find((p) => p.color === colorIdx)
-  return g.allPlayers().find((p) => p.name.toLowerCase().includes(s) || p.baseName.toLowerCase().includes(s))
+  // 比對別人眼中的名字（通訊病毒換過名字後，用真名找不到人：否則能從找到的是誰反推真名）
+  return g.allPlayers().find((p) => p.name.toLowerCase().includes(s) || shownBase(p).toLowerCase().includes(s))
 }
 
 function groupChat(g: Game, p: GamePlayer, name: string, text: string): void {
@@ -263,8 +264,10 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       break
     }
     case 'rename': {
-      if (!p.alive || g.time > 180 || !arg) return
-      const cls = p.name.slice(0, p.name.length - p.baseName.length)
+      // 通訊病毒清空名字的 10 秒內不能改名（名字換好時會蓋掉）
+      if (!p.alive || g.time > 180 || !arg || p.data.virusTitle !== undefined) return
+      // 頭銜＝顯示名字扣掉顯示用本名（通訊病毒換過名字時，本名部分是換到的名字）
+      const cls = p.name.slice(0, Math.max(0, p.name.length - shownBase(p).length))
       const nn = arg.replace(/[^\p{L}\p{N} _-]/gu, '').slice(0, 16)
       if (!nn) return
       // 不能改成別人的名字（冒名發言）
@@ -273,6 +276,7 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
         return
       }
       p.baseName = nn
+      p.data.shownBase = undefined
       p.name = cls + nn
       const u = g.mainOf(p)
       if (u && !u.anon) u.name = p.name

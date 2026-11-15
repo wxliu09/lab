@@ -3,7 +3,7 @@ import { BUFFS, UNITS, VENDORS, itemDef, unitDef } from '../../shared/content/re
 import type { Loc, Tag } from '../../shared/content/types'
 import type { SnapEntity } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
-import type { Game, GamePlayer } from '../game'
+import { shownBase, type Game, type GamePlayer } from '../game'
 import { DAMAGE_HOOKS, DEATH_HOOKS, type DmgOpts, type EnvKind } from './damage'
 import { dropOnGround, takePackExtra } from './items'
 import { entView } from './snapshot'
@@ -144,7 +144,8 @@ export function describeView(g: Game, sv: SnapEntity): HitView {
   if (!known) return { k: 'unknown' }
   const o = sv.o ?? -1
   const owner = o >= 0 ? g.players[o] : undefined
-  if (owner) return { k: 'owned', n: owner.baseName, d }
+  // 別人眼中的本名（通訊病毒換過就是換到的名字：真名不能從死因漏出去）
+  if (owner) return { k: 'owned', n: shownBase(owner), d }
   if (o === -1 && def?.tags.some((t) => FORM_TAGS.has(t))) return { k: 'anon', d }
   return { k: 'unit', d }
 }

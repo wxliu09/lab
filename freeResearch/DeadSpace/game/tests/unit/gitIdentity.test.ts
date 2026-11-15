@@ -7,7 +7,8 @@ import { replaceMain } from '../../src/sim/systems/roleSystem'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
 import { XAB } from '../../src/shared/content/forms/xeno'
 import { UNITS } from '../../src/shared/content/registry'
-import { sampleName } from '../../src/shared/sysArgs'
+import { sampleListArgs, sampleName } from '../../src/shared/sysArgs'
+import { fmtKey } from '../../src/sim/game'
 import type { Ent } from '../../src/sim/ent'
 import type { Game, GamePlayer } from '../../src/sim/game'
 
@@ -44,6 +45,9 @@ function drawDirect(g: Game, u: Ent, t: Ent): void {
   const slot = u.inv!.findIndex((x) => x?.id === 'geneSampler')
   run(g, 'git.draw', { caster: u, target: t, x: t.x, y: t.y, zone: t.zone, itemSlot: slot })
 }
+
+/** 「已經抽過某人」的回答（帶抽血者看到的名字：分身、偽裝和真人一模一樣）*/
+const already = (name: string) => fmtKey('git.msg.already', sampleListArgs([name]))
 
 function sampleOf(u: Ent): { names: string[]; r: number } | undefined {
   const it = u.inv!.find((x) => x?.id === 'geneSampler' || x?.id === 'gitResolver')
@@ -88,7 +92,7 @@ describe('GIT 驗血：「已抽過」不洩漏身分', () => {
     expect(form.anon).toBe(true)
     expect(drawCmd(h, g, ac, au, form)).toEqual(['@git.msg.extracted|n=2|max=3'])
     // 同一個匿名單位抽第二次才是「已抽過」（和抽同一個真人兩次一樣）
-    expect(drawCmd(h, g, ac, au, form)).toEqual(['@git.msg.already'])
+    expect(drawCmd(h, g, ac, au, form)).toEqual([already(sampleOf(au)!.names[1])])
     // 匿名形態存成標記，顯示時依語言換成形態名（中文和原本一樣）
     expect(sampleOf(au)!.names.map((n) => sampleName(n, 'zh'))).toEqual([x.name, UNITS.get(form.data.viewDef ?? form.def.id)!.name.zh])
     expect(sampleName(sampleOf(au)!.names[1], 'en')).toBe(UNITS.get(form.data.viewDef ?? form.def.id)!.name.en)
@@ -141,14 +145,14 @@ describe('GIT 驗血：偽裝', () => {
   it('抽過真的 Bob，再抽偽裝成 Bob 的化身者 →「已抽過」，名單上不會出現兩個 Bob', () => {
     const { h, g, ps, bob, fake, carl, cc } = disguised()
     expect(drawCmd(h, g, cc, carl, bob)).toEqual(['@git.msg.extracted|n=1|max=3'])
-    expect(drawCmd(h, g, cc, carl, fake)).toEqual(['@git.msg.already'])
+    expect(drawCmd(h, g, cc, carl, fake)).toEqual([already(ps[1].name)])
     expect(sampleOf(carl)!.names).toEqual([ps[1].name])
   })
 
   it('反過來（先抽假 Bob 再抽真 Bob）也一樣是「已抽過」', () => {
     const { h, g, ps, bob, fake, carl, cc } = disguised()
     expect(drawCmd(h, g, cc, carl, fake)).toEqual(['@git.msg.extracted|n=1|max=3'])
-    expect(drawCmd(h, g, cc, carl, bob)).toEqual(['@git.msg.already'])
+    expect(drawCmd(h, g, cc, carl, bob)).toEqual([already(ps[1].name)])
     expect(sampleOf(carl)!.names).toEqual([ps[1].name])
   })
 })
@@ -168,7 +172,7 @@ describe('GIT 驗血：全像分身', () => {
     // 走真正的指令：技能篩選不能把分身擋掉（擋掉＝「無效的目標」，一看就知道是假的）
     expect(drawCmd(h, g, cs[2], carl, holo)).toEqual(['@git.msg.extracted|n=1|max=3'])
     // 再抽真的那個人：和抽同一個真人兩次一樣是「已抽過」
-    expect(drawCmd(h, g, cs[2], carl, xu)).toEqual(['@git.msg.already'])
+    expect(drawCmd(h, g, cs[2], carl, xu)).toEqual([already(ps[1].name)])
     drawDirect(g, carl, g.mainOf(ps[3])!)
     drawDirect(g, carl, g.mainOf(ps[4])!)
     const s = sampleOf(carl)!
@@ -209,7 +213,7 @@ describe('GIT 驗血：全像分身', () => {
     expect(names[0]).not.toBe('')
   })
 
-  it('不是玩家的單位（生物、防禦無人機）仍是「已抽過」，不算樣本', () => {
+  it('不是玩家的單位（生物、防禦無人機）抽不到、不算樣本（回「只能對玩家抽血」，見 r2a-git.test.ts）', () => {
     const { g, ps } = setup()
     const a = g.mainOf(ps[0])!
     a.inv!.fill(null)

@@ -761,12 +761,14 @@ function impact(g: Game, zid: number, x: number, y: number): void {
   const f = g.world.spawn(unitDef('hz.radField'), zid, x, y, NEUTRAL)
   f.data.zoneObj = true
   applyBuff(g, f, 'bf.planetRadField')
-  // 豪勇號降落在翠原星上：每次撞擊 20000（降落時本來不會被打，這是大氣擾動）
+  // 豪勇號降落在翠原星上：每次撞擊 20000（降落時本來不會被打，這是大氣擾動）。
+  // 公告的對策：平常可以升空或撤到地表；末日期間太空只會更危險（軌道失效會被拉向恆星、子艦隊在外面），只建議撤到地表
   const L = stationsOf(g).landed
   const b = L && L.verdanceZone === zid ? g.world.get(L.bravado) : undefined
   if (b && b.alive) {
     damage(g, null, b, IMPACT_DMG_BRAVADO, { kind: 'blast', lethal: true })
-    if (b.alive) g.systemAll('st.bravadoImpact', { n: Math.ceil(b.hp / IMPACT_DMG_BRAVADO) })
+    const doom = !!(g.data.events as { apoc?: string } | undefined)?.apoc
+    if (b.alive) g.systemAll(doom ? 'st.bravadoImpactDoom' : 'st.bravadoImpact', { n: Math.ceil(b.hp / IMPACT_DMG_BRAVADO) })
   }
 }
 

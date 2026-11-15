@@ -2,8 +2,10 @@
 import { regScript } from '../systems/effects'
 import { FORMS, unitDef } from '../../shared/content/registry'
 import { replaceMain } from '../systems/roleSystem'
-import { applyBuff } from '../systems/buffs'
+import { applyBuff, getBuff } from '../systems/buffs'
 import { slotOrder } from '../systems/items'
+import type { Ent } from '../ent'
+import type { Game } from '../game'
 
 /** 人形 → 異形形態（主腦匿名、spawn 不匿名）*/
 regScript('xeno.toForm', (g, ctx) => {
@@ -101,8 +103,25 @@ regScript('mut.cannibalize', (g, ctx) => {
   void applyBuff
 })
 
-/** 感染統計（結算用）*/
+/** 感染統計（結算用）；被寄生的玩家本人收到一次說明 */
 regScript('roles.infected', (g, ctx) => {
   const p = g.players[ctx.caster.owner]
   if (p && ctx.target?.isMain) p.stats.infections++
+  if (ctx.target) parasiteNotice(g, ctx.target)
 })
+
+/**
+ * 寄生的說明（只給受害者本人，每次感染只說一次：記在這一份寄生 buff 上，刷新不重講；抗體壓制後再被寄生是新的一次）。
+ * 內容只是他自己身上看得到的「寄生」狀態的後果與解法（不提是誰下的手）；會不會變成眷屬依他自己的身分（DEATH_HOOKS：
+ * 人類方、不是仿生人才會轉化），本人本來就知道自己是什麼。
+ */
+function parasiteNotice(g: Game, t: Ent): void {
+  if (!t.isMain || t.owner < 0) return
+  const q = g.players[t.owner]
+  if (!q || q.main !== t.id) return
+  const b = getBuff(t, 'bf.parasite')
+  if (!b || b.data?.told) return
+  b.data = { ...b.data, told: true }
+  const turns = g.faction(q) === 'crew' && q.role !== 'android'
+  g.privateLine(q.slot, turns ? 'infect.parasite' : 'infect.parasiteNoTurn')
+}

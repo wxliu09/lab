@@ -4,7 +4,7 @@ import { PHDS, SECURITY_SUITS } from '../../shared/content/classes'
 import { XENO_T2_EP, XENO_T3_EP, evolveChoices } from '../../shared/content/forms'
 import type { Command, EndResult } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
-import { fmtKey, type Faction, type Game, type GamePlayer } from '../game'
+import { fmtKey, shownBase, type Faction, type Game, type GamePlayer } from '../game'
 import { DAMAGE_HOOKS, DEATH_HOOKS } from './damage'
 import { applyBuff } from './buffs'
 import { dropOnGround, giveItem, makeItem, morph, takePackExtra } from './items'
@@ -154,10 +154,15 @@ export function setupClass(g: Game, p: GamePlayer, u: Ent): void {
   if (p.classId === 'ceo') spawnButler(g, p, u)
 }
 
+/** 管家的名字：「主人（別人眼中的本名）的管家」；通訊病毒換了主人的名字，管家也跟著換（否則一看管家就知道真名）*/
+export function butlerName(p: GamePlayer): string {
+  return shownBase(p) + ' 的管家'
+}
+
 function spawnButler(g: Game, p: GamePlayer, u: Ent): void {
   const b = g.world.spawn(unitDef('butler'), u.zone, u.x + 0.8, u.y, p.slot)
   b.master = u.id
-  b.name = p.baseName + ' 的管家'
+  b.name = butlerName(p)
   b.color = p.color
   b.data.butlerOf = p.slot
   b.acquire = false

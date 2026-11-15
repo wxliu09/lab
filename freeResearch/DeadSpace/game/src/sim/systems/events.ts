@@ -4,7 +4,7 @@
 import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { unitDef } from '../../shared/content/registry'
 import { HOSTILE, NEUTRAL, dist2, type Ent } from '../ent'
-import { fmtKey, type Game, type GamePlayer } from '../game'
+import { fmtKey, shownBase, type Game, type GamePlayer } from '../game'
 import { addStation, markersOf } from '../setup'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { populateZone, spawnCreature } from '../ai/creatures'
@@ -15,6 +15,7 @@ import { restockAll } from './vendors'
 import { destroyInterior, spaceOf } from './space'
 import { recomputeStats } from './buffs'
 import { isEasy } from '../ai/level'
+import { butlerName } from './roleSystem'
 
 type Range = [number, number]
 
@@ -109,8 +110,12 @@ export function eventWeight(g: Game, id: string): number {
 export const EASY_SAFE_UNTIL = 900
 export const STATION_KILLERS: ReadonlySet<string> = new Set(['wasps', 'asteroids', 'tenshu', 'pirate'])
 
+/** 簡單練習局整局都不會隨機抽到的事件：通訊病毒（名字與顏色互換，新手很難跟上誰是誰；除錯強制觸發不受影響）*/
+export const EASY_NEVER: ReadonlySet<string> = new Set(['virus'])
+
 /** 這個事件現在能不能被隨機抽到（簡單練習局的開局保護）*/
 function drawable(g: Game, id: string): boolean {
+  if (g.practice && isEasy(g) && EASY_NEVER.has(id)) return false
   return !(g.practice && isEasy(g) && g.time < EASY_SAFE_UNTIL && STATION_KILLERS.has(id))
 }
 
@@ -127,9 +132,15 @@ const EVENTS: EventDef[] = [
       const u = p ? g.mainOf(p) : undefined
       if (!p || !u) return false
       giveItem(g, u, makeItem('suit.operative'))
-      g.systemAll('event.promotion', { name: p.baseName })
-      p.name = '特務·' + p.baseName
-      u.name = p.name
+      // 公告與新名字都用別人眼中的本名（通訊病毒換過名字時不能把真名說出來）；時間軸記真名
+      const base = shownBase(p)
+      g.systemAll('event.promotion', { name: base })
+      // 通訊病毒清空名字的 10 秒內：頭銜先記下來，名字換好時一起套上
+      if (p.data.virusTitle !== undefined) p.data.virusTitle = AGENT_TITLE
+      else {
+        p.name = AGENT_TITLE + base
+        u.name = p.name
+      }
       g.log(fmtKey('tl.promotion', { name: p.baseName }))
       return true
     },
@@ -327,19 +338,31 @@ const EVENTS: EventDef[] = [
     },
   },
   {
+    // 通訊病毒：名字清空 10 秒後，「本名」部分與顏色隨機互換。頭銜（職業前綴、晉升頭銜）跟著人走，不跟著名字換：
+    // 換名前後的名字一律是「自己的頭銜＋顯示用本名」（職業本來就看得到），不會出現有前綴、沒前綴的兩個「幾乎同名」的人。
+    // 換好後私訊每個人自己的新名字（name 參數由 client 依語言換掉職業前綴）。
     id: 'virus',
     once: true,
     next: [90, 1200],
     ok: (g) => humans(g).length >= 2,
     run: (g) => {
       const ps = humans(g)
-      for (const p of ps) setShownName(g, p, '', p.color)
+      for (const p of ps) {
+        p.data.virusTitle = nameTitle(p)
+        setShownName(g, p, '', p.color)
+      }
       g.systemAll('event.virus')
       g.after(10, () => {
-        const names = g.world.rng.shuffle(ps.map((p) => p.baseName))
+        const names = g.world.rng.shuffle(ps.map((p) => shownBase(p)))
         const colors = g.world.rng.shuffle(ps.map((p) => p.color))
-        ps.forEach((p, i) => setShownName(g, p, names[i], colors[i]))
+        ps.forEach((p, i) => {
+          const title = (p.data.virusTitle as string | undefined) ?? ''
+          p.data.virusTitle = undefined
+          p.data.shownBase = names[i]
+          setShownName(g, p, title + names[i], colors[i])
+        })
         g.systemAll('event.virusDone')
+        for (const p of ps) g.privateLine(p.slot, 'event.virusYou', { name: p.name })
       })
       return true
     },
@@ -392,7 +415,16 @@ function enhancerEnt(g: Game): Ent | undefined {
   return g.world.inZone(nyx.id).find((e) => e.def.id === 'struct.enhancer' && e.alive)
 }
 
-/** 名字與顏色（通訊病毒）：玩家、主單位、聊天都跟著變 */
+/** 晉升頭銜（client 的 ui/names.ts 依語言換掉）*/
+const AGENT_TITLE = '特務·'
+
+/** 名字前面的頭銜：顯示名字扣掉顯示用本名的部分（職業前綴「Dr. 」、晉升頭銜「特務·」；沒有就是空字串）*/
+function nameTitle(p: GamePlayer): string {
+  const base = shownBase(p)
+  return p.name.length > base.length && p.name.endsWith(base) ? p.name.slice(0, p.name.length - base.length) : ''
+}
+
+/** 名字與顏色（通訊病毒）：玩家、主單位、聊天、執行長的管家都跟著變（name 空字串 = 清空中）*/
 function setShownName(g: Game, p: GamePlayer, name: string, color: number): void {
   p.name = name
   p.color = color
@@ -400,6 +432,11 @@ function setShownName(g: Game, p: GamePlayer, name: string, color: number): void
   if (u) {
     u.name = name
     u.color = color
+  }
+  for (const b of g.world.ents.values()) {
+    if (!b.tags.has('butler') || b.data.butlerOf !== p.slot) continue
+    b.name = name ? butlerName(p) : ''
+    b.color = color
   }
 }
 

@@ -5,7 +5,8 @@
 // 遇到怪物開火、受傷逃跑；異類：落單時感染、湊夠 EP 就躲起來進化、變身後獵殺。
 // 換站：人類方 AI 拿著檢測器、附近好一陣子沒有可以抽的人時，會開停泊的船去別的站找人（走到船邊登船→站上控制台發射→
 // 駕駛前往目標站→停靠→下船）；目標只用 AI 自己看過的（最後看到某人的地方）或公開的資訊（地圖上的出生點多寡）。
-// 除此之外 AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。
+// 除此之外 AI 不會主動登船或駕駛；誤上船、誤站上控制台時會自己離開。豪勇號飛行甲板上的最後一艘停泊船不開走（真人常出生在那裡）。
+// 簡單練習局：拿著檢測器的真人走近時，看起來是人的 AI 會原地停一下讓他抽血（easyPause）。
 import type { Command } from '../../shared/protocol/messages'
 import { abilityDef, itemDef } from '../../shared/content/registry'
 import { roomAt } from '../../shared/layout'
@@ -77,6 +78,9 @@ interface Brain {
   /** 簡單難度：下一次可以抽血的時間（抽血之間停比較久）；異類下一次可以出手的時間 */
   drawNext: number
   strikeAt: number
+  /** 簡單練習局：為了讓拿著檢測器的真人抽血而原地停下（停到什麼時候、下一次最早什麼時候可以再停）*/
+  pauseUntil: number
+  pauseNext: number
 }
 
 /**
@@ -147,6 +151,13 @@ const EASY_STRIKE_GAP = 90
 export const NORMAL_EVIL_START = 120
 /** 簡單難度：換站前要找不到人多久（秒；一般 LONELY_S）*/
 const EASY_LONELY_S = 150
+/**
+ * 簡單練習局：手上有基因檢測器（還沒抽滿）的真人走到這麼近（公尺）時，看起來是人的 AI 原地停下這麼久（秒）讓他抽血；
+ * 同一個 AI 兩次停下之間至少隔這麼久（秒）。已經被這支檢測器抽過的 AI 不停（停了也沒用）。一般難度、多人房不停。
+ */
+export const EASY_PAUSE_R = 3
+export const EASY_PAUSE_S = 3
+export const EASY_PAUSE_GAP = 20
 
 function brainOf(g: Game, p: GamePlayer): Brain {
   return (p.data.brain ??= {
@@ -182,6 +193,8 @@ function brainOf(g: Game, p: GamePlayer): Brain {
     visited: new Map(),
     drawNext: 0,
     strikeAt: 0,
+    pauseUntil: 0,
+    pauseNext: 0,
   }) as Brain
 }
 
@@ -857,6 +870,8 @@ function stepBots(g: Game): void {
       b.py = u.y
       b.pt = t
     }
+    // 簡單練習局：拿著檢測器的真人走近，原地停一下讓他抽血
+    if (easyPause(g, p, u, b)) continue
     // 換站途中（走去登船、在船艙裡等發射、到站下船）
     if (b.trip && stepTrip(g, p, u, b)) continue
     // 在停泊的船艙裡（不是換站）：走回艙門下船
@@ -871,6 +886,41 @@ function stepBots(g: Game): void {
     if (g.faction(p) === 'crew') thinkCrew(g, p, u, b)
     else thinkEvil(g, p, u, b)
   }
+}
+
+/**
+ * 簡單練習局：看得到的真人（主單位）走到 EASY_PAUSE_R 公尺內、手上有還沒抽滿的基因檢測器、樣本裡還沒有這個 AI，
+ * 看起來是人的 AI 就原地停下 EASY_PAUSE_S 秒，讓新手抽得到血（每個 AI 至少隔 EASY_PAUSE_GAP 秒才會再停）。
+ * 停下期間挨打就不等了。只用來配合練習，不分陣營（異類 AI 也一樣停），所以停不停不透露任何身分。回傳 true = 這一輪停著
+ */
+function easyPause(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
+  const t = g.time
+  if (b.pauseUntil > t) {
+    if (t - u.lastDamageTime < 2 || u.id !== p.main) {
+      b.pauseUntil = 0
+      return false
+    }
+    if (u.order) cmd(g, p, { k: 'stop' })
+    return true
+  }
+  if (!g.practice || !easy(g) || t < b.pauseNext || b.trip || u.id !== p.main || u.cast || !looksHuman(u) || t - u.lastDamageTime < 3) return false
+  for (const e of visibleEnts(g, p, u, EASY_PAUSE_R)) {
+    if (!e.isMain || e.owner < 0 || e.owner === p.slot) continue
+    const q = g.players[e.owner]
+    if (!q || q.bot || q.spectator || !q.alive || q.main !== e.id) continue
+    const it = e.inv?.find((x) => x?.id === 'geneSampler')
+    if (!it) continue
+    // 樣本裡已經有這個 AI（抽血者眼中的身分 key，git.ts 的 identityKey）：不用停
+    const sm = (it.data as { sample?: { slots?: number[]; keys?: string[] } } | undefined)?.sample
+    const keys = sm?.keys ?? (sm?.slots ?? []).map((x) => 'p' + x)
+    if (keys.includes('p' + p.slot)) continue
+    b.pauseUntil = t + EASY_PAUSE_S
+    b.pauseNext = t + EASY_PAUSE_GAP
+    b.goal = null
+    cmd(g, p, { k: 'stop' })
+    return true
+  }
+  return false
 }
 
 /** 主單位在停泊中的船艙裡：設定走向艙門的目標（exitShip 在艙門上觸發）。回傳 true = 這一輪只做這件事 */
@@ -913,6 +963,8 @@ const FLY_MAX = 150
 const DOCK_TRIES = 8
 const MAX_RETARGETS = 4
 const NO_DOCK_WAIT = 30
+/** 豪勇號（zone key）：AI 不開走它的最後一艘停泊船 */
+const BRAVADO = 'bravado'
 /** 不去的站：七號廢站（廢棄、有危險）、事件站（海盜船、未識別物體）*/
 const TRIP_EXCLUDE = new Set(['hulk7', 'pirate', 'uo'])
 
@@ -924,7 +976,7 @@ function dockableZone(g: Game, z: Zone | undefined): z is Zone {
   return !!spaceOf(g).pads.get(z.id)?.some((x) => !x)
 }
 
-/** 停在這個站、現在可以搭的船：沒在發射、沒有別人在艙裡、沒有別的 AI 要搭、不是停在降落中的豪勇號上 */
+/** 停在這個站、現在可以搭的船：沒在發射、沒有別人在艙裡、沒有別的 AI 要搭、不是停在降落中的豪勇號上、不是豪勇號上最後一艘 */
 function freeShipAt(g: Game, p: GamePlayer, u: Ent): ShipInst | null {
   const sp = spaceOf(g)
   const landed = stationsOf(g).landed
@@ -932,6 +984,13 @@ function freeShipAt(g: Game, p: GamePlayer, u: Ent): ShipInst | null {
   for (const q of g.allPlayers()) {
     const tb = q.bot && q !== p ? (q.data.brain as Brain | undefined) : undefined
     if (tb?.trip) taken.add(tb.trip.ship)
+  }
+  // 豪勇號飛行甲板上的最後一艘船不開走：真人常出生在豪勇號，船被 AI 開光就只剩救生艙能離開
+  //（別的 AI 已經說好要搭的、正在發射的不算「還在」）
+  if (g.world.zones[u.zone]?.key === BRAVADO) {
+    let left = 0
+    for (const inst of sp.ships.values()) if (inst.docked?.zone === u.zone && !inst.hidden && !inst.launching && !taken.has(inst.key)) left++
+    if (left <= 1) return null
   }
   let best: ShipInst | null = null
   let bd = Infinity

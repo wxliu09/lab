@@ -91,8 +91,34 @@ export function entDefName(d: string | undefined): Loc | undefined {
 
 import { SUIT_IDS } from '../shared/content/suits'
 
-/** 每套防護服一個色調（18 套原本共用同一個圖示，背包裡分不出來）*/
+/**
+ * 每套防護服一個色調（18 套共用同一個圖示，背包裡要分得出來）。
+ * 顏色照主題挑、色相盡量拉開：冷凍＝冰藍、火焰＝橘紅、特斯拉＝電光黃、輻射＝螢光綠…
+ * 以前用 SUIT_IDS 的順序 ×47° 自動排，結果冷凍裝黃綠、火焰裝青色，和名字對不上。
+ */
+const SUIT_TINT: Record<string, string> = {
+  'suit.pyro': '#ff5a2e',
+  'suit.mag': '#ff4a7a',
+  'suit.rocket': '#ff9a3d',
+  'suit.gatling': '#c9a27a',
+  'suit.service': '#ffc23d',
+  'suit.tesla': '#f4ff5c',
+  'suit.rad': '#a6ff4a',
+  'suit.acid': '#4aff8a',
+  'suit.mirage': '#5cf2d6',
+  'suit.cryo': '#9fe7ff',
+  'suit.force': '#4aa8ff',
+  'suit.guard': '#7f9cc8',
+  'suit.void': '#8a6bff',
+  'suit.plasma': '#d86bff',
+  'suit.pulse': '#ff6ad5',
+  'suit.photon': '#fff6c8',
+  'suit.labcoat': '#e8f0f4',
+  'suit.operative': '#8a939c',
+}
 export function suitColor(id: string): string {
+  const c = SUIT_TINT[id]
+  if (c) return c
   const i = SUIT_IDS.indexOf(id)
   if (i < 0) return '#ffc23d'
   return `hsl(${Math.round((i * 47) % 360)} 85% 66%)`

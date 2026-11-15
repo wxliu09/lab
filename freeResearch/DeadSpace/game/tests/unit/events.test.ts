@@ -7,7 +7,7 @@ import { eventsOf } from '../../src/sim/systems/events'
 import { spawnCreature } from '../../src/sim/ai/creatures'
 import { spaceOf } from '../../src/sim/systems/space'
 import { SPACE_ZONE } from '../../src/sim/world'
-import type { Game } from '../../src/sim/game'
+import { shownBase, type Game } from '../../src/sim/game'
 
 const sec = (h: Harness, s: number) => h.ticks(Math.round(s * 20))
 
@@ -234,13 +234,15 @@ describe('各事件效果', () => {
     expect(ps[2].name).not.toBe(ps[2].baseName)
   })
 
-  it('通訊病毒：名字先清空，10 秒後互換', () => {
+  it('通訊病毒：名字先清空，10 秒後本名部分互換（頭銜跟著人走，見 r2a-virus.test.ts）', () => {
     const { h, g, ps } = setup(4)
     const before = ps.map((p) => p.baseName).sort()
+    const titles = ps.map((p) => p.name.slice(0, p.name.length - p.baseName.length))
     g.triggerEvent!('virus', true)
     expect(ps.every((p) => p.name === '')).toBe(true)
     sec(h, 10.2)
-    expect(ps.map((p) => p.name).sort()).toEqual(before)
+    expect(ps.map((p) => shownBase(p)).sort()).toEqual(before)
+    ps.forEach((p, i) => expect(p.name).toBe(titles[i] + shownBase(p)))
   })
 
   it('「有東西要來了」之後連發 3 個事件', () => {

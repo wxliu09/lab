@@ -800,6 +800,7 @@ function landPod(g: Game, pod: Ent, info: { slot: number; hpK: number }, z: Zone
   u.statsDirty = true
   applyBuff(g, u, 'bf.podArrive', 4)
   p.control = u.id
+  g.privateLine(p.slot, 'space.podArrived', locArgs(zoneLabel(g, z)))
 }
 
 // ───────── 技能腳本 ─────────
@@ -898,6 +899,10 @@ regScript('space.sweep', (g, ctx) => {
   }
   // 駕駛中看的是太空畫面、看不到站內的小地圖：另外私訊施放者文字結果（和上面的掃描標記是同一份名單）
   sweepReport(g, st.owner, z, marks)
+  // 掃到的只有施放者自己（標記涵蓋站內每個主單位，施放者本人站在控制台上也在裡面）：告訴他怎麼去女帝號找人
+  const me = g.players[st.owner]
+  const body = me ? g.mainOf(me) : undefined
+  if (me && body && marks.length === 1 && body.alive && body.isMain && body.zone === zid) aloneHint(g, me, z)
   const p = g.players[st.owner]
   if (p) p.view.extraSources.push({ zone: zid, x: z.layout!.w / 2, y: z.layout!.h / 2, r: Math.max(z.layout!.w, z.layout!.h), until: g.time + 7 })
 })
@@ -930,6 +935,38 @@ function sweepReport(g: Game, slot: number, z: Zone, marks: { x: number; y: numb
   }
   const l = sweepLines(z, marks)
   g.privateLine(slot, 'space.sweepResult', { ...where, ...listArgs(l.zh, l.en, 'rz', 're') })
+}
+
+/** 找不到所在房間時的說法（「到站上的救生艙裝置…」）*/
+const ALONE_ROOM: Loc = { zh: '站上', en: 'this station' }
+
+/**
+ * 監控掃描只掃到施放者自己（例如獨自在豪勇號）：私訊一次（每人每站一次）怎麼去女帝號找人、驗血。
+ * 內容只用公開的地圖資訊：女帝號的出生點最多、GIT 檢測儀在女帝號（被毀時全場都有公告）、這座站有沒有救生艙裝置、
+ * 停機坪上現在有沒有停泊的船（看得到的設施）。女帝號不在了就不說。
+ */
+function aloneHint(g: Game, p: GamePlayer, z: Zone): void {
+  if (z.key === 'nyx' || !z.layout) return
+  const told = ((p.data.aloneTold as number[] | undefined) ??= [])
+  if (told.includes(z.id)) return
+  const nyx = g.world.zones.find((q) => q.key === 'nyx' && q.alive)
+  if (!nyx) return
+  told.push(z.id)
+  const git = !g.data.gitDead && g.world.inZone(nyx.id).some((e) => e.def.id === 'struct.git' && e.alive)
+  const roomName = (x: number, y: number): Loc => roomAt(z.layout!, x, y)?.spec.name ?? ALONE_ROOM
+  const pod = g.world.inZone(z.id).find((e) => e.alive && e.data.vendor === 'escapePod')
+  let pad: Ent | undefined
+  for (const inst of spaceOf(g).ships.values()) {
+    if (inst.docked?.zone !== z.id || inst.hidden || inst.launching) continue
+    pad = g.world.get(inst.dockedEnt)
+    if (pad) break
+  }
+  const args = { ...locArgs(zoneLabel(g, z), 'sz', 'se'), ...locArgs(zoneLabel(g, nyx)) }
+  g.privateLine(p.slot, git ? 'space.alone' : 'space.aloneNoGit', args)
+  const pz = pod ? locArgs(roomName(pod.x, pod.y), 'pz', 'pe') : {}
+  const hz = pad ? locArgs(roomName(pad.x, pad.y), 'hz', 'he') : {}
+  const route = pod && pad ? 'space.aloneRoute.both' : pod ? 'space.aloneRoute.pod' : pad ? 'space.aloneRoute.ship' : 'space.aloneRoute.none'
+  g.privateLine(p.slot, route, { ...args, ...pz, ...hz })
 }
 
 regScript('space.forceDock', (g, ctx) => {

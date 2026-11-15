@@ -4,6 +4,7 @@ import { regScript } from '../systems/effects'
 import { DEATH_HOOKS } from '../systems/damage'
 import { makeItem } from '../systems/items'
 import { sampleListArgs, sampleUnitToken } from '../../shared/sysArgs'
+import { UNITS } from '../../shared/content/registry'
 import type { Ent, ItemInst } from '../ent'
 import type { Game } from '../game'
 
@@ -58,6 +59,17 @@ function looksLikePerson(t: Ent): boolean {
   return t.illusion && !!t.data.looksMain
 }
 
+/** 玩家的身體可能有的樣子（人形、防護服、異形／變種形態、仿生人機體、繭）*/
+const BODY_TAGS: ReadonlySet<string> = new Set(['personnel', 'suit', 'xenoForm', 'mutantForm', 'chassis'])
+
+/** 抽血者看到的樣子可能是某位玩家的身體（分身一律算：它就是照著某個東西的樣子做的）*/
+function looksLikeBody(t: Ent): boolean {
+  if (t.illusion) return true
+  const fake = t.data.fake as { def?: string } | undefined
+  const d = UNITS.get(fake?.def ?? (t.data.viewDef as string | undefined) ?? t.def.id)
+  return !!d?.tags.some((x) => BODY_TAGS.has(x))
+}
+
 /** 中央檢測儀（女帝號）還在嗎 */
 export function testerOnline(g: Game): boolean {
   if (g.data.gitDead) return false
@@ -77,8 +89,18 @@ regScript('git.draw', (g, ctx) => {
   // 舊樣本（沒有 keys）：以真正的擁有者補上
   const keys = (s.keys ??= s.slots.map((x) => 'p' + x))
   const key = identityKey(t)
-  if (!looksLikePerson(t) || keys.includes(key)) {
-    say('git.msg.already')
+  // 抽不到的兩種回答，都只依抽血者看得到的樣子（研究 02 §7.2：原作兩種都回「已抽過」）：
+  // - 看起來就是已經抽過的那個人（同一個身分 key，樣子也可能是某人的身體）：「已抽過」——分身、偽裝和真人得到一模一樣的回答；
+  // - 其他抽不到的：「只能對玩家抽血」。這時看起來的身分還沒抽過，真的玩家一定抽得到，所以「抽不到」本身就已經說明
+  //   它不是玩家；換個說法不會多透露任何事（NPC 船員、生物、無人機、設施、地上的東西、別人的裝置都是這種）。
+  const person = looksLikePerson(t)
+  if (keys.includes(key) && (person || looksLikeBody(t))) {
+    if (t === u) say('git.msg.alreadySelf')
+    else say('git.msg.already', sampleListArgs([shownName(g, t)]))
+    return
+  }
+  if (!person) {
+    say('git.msg.notPerson')
     return
   }
   keys.push(key)

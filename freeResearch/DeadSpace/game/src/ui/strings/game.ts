@@ -102,9 +102,9 @@ export const GAME_ZH: Record<string, string> = {
   'space.noPads': '沒有空的停機坪',
   'space.scanResult': '{nz} 內偵測到 {n} 個生命體',
   'space.sweepAnnounce': '{nz} 正在進行監控掃描…',
-  'space.podCooldown': '逃生艙冷卻中（{s} 秒）',
-  'space.podPreparing': '逃生艙準備中，4 秒內不要移動',
-  'space.podFailed': '逃生艙發射失敗',
+  'space.podCooldown': '救生艙冷卻中（{s} 秒）',
+  'space.podPreparing': '救生艙準備中，4 秒內不要移動',
+  'space.podFailed': '救生艙發射失敗',
 }
 
 export const GAME_EN: Record<string, string> = {
