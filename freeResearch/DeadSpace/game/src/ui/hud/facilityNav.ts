@@ -2,14 +2,24 @@
 // 只用 client 本來就有的資料：站體版面（場景、小地圖畫的就是同一份）與自己主單位的位置；
 // 不看視野外的實體（販賣機被打爆了也照樣走過去，到了自然看得到）。
 // 這裡全是純函式（單元測試直接驗）；送指令的那一層在 Guide.tsx（和小地圖右鍵一樣用 sendCmd 的 move）。
+// 第 3 輪：變種人的「吞噬」也能點：走向快照裡看得到的最近一隻可吞噬生物，看不到就去會有生物的地方（生物的出生點）。
 import { parseLayout, walkableCell, type ParsedLayout, type PoiInstance } from '../../shared/layout'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { UNITS } from '../../shared/content/registry'
+import { EntFlag } from '../../shared/protocol/messages'
 import { DEFAULT_BODY_R, consoleApproach, walkableTarget, type Pt } from '../../render/moveTargets'
 
-/** 目標面板會叫玩家去的設施種類 */
-export type NavKind = 'suit' | 'medical' | 'sampler' | 'console' | 'escapePod' | 'fabPad'
+/** 目標面板會叫玩家去的設施種類（prey = 變種人吞噬的生物，見 preyTarget）*/
+export type NavKind = 'suit' | 'medical' | 'sampler' | 'console' | 'escapePod' | 'fabPad' | 'prey'
 
-export const NAV_KINDS: readonly NavKind[] = ['suit', 'medical', 'sampler', 'console', 'escapePod', 'fabPad']
+export const NAV_KINDS: readonly NavKind[] = ['suit', 'medical', 'sampler', 'console', 'escapePod', 'fabPad', 'prey']
+
+/**
+ * 會長出可吞噬、不會主動攻擊的生物的版面標記（sim 的 ai/creatures.ts spawnFromMarkers）：
+ * 女帝號實驗室的失敗實驗體、翠原星的蛞蝓仔／蛞蝓長老／異常體、活體庫號第 2～4 間隔間（異常體、小動物、蛞蝓仔）。
+ * 第 1、5、6 間（吼顎獸、竄蟲、暴走實驗體）是敵對生物，不列。
+ */
+export const PREY_SPAWNS: ReadonlySet<string> = new Set(['experimentSpawn', 'slugSpawn', 'elderSpawn', 'anomalySpawn', 'specimen2', 'specimen3', 'specimen4'])
 
 /** 版面上的這個 POI 算不算這種設施（分類同小地圖 minimapColors.ts 的 poiColor：醫療補給、防護服販賣機、GIT）*/
 export function navMatches(kind: NavKind, p: PoiInstance): boolean {
@@ -31,6 +41,9 @@ export function navMatches(kind: NavKind, p: PoiInstance): boolean {
     // 仿生人升級：站上鑄造台旁的平台（sim 的 facilities.ts onPads）
     case 'fabPad':
       return k === 'fabricatorPad'
+    // 吞噬：看不到生物時要去的生物出生點
+    case 'prey':
+      return PREY_SPAWNS.has(k)
   }
 }
 
@@ -48,6 +61,10 @@ export const STEP_NAV: Readonly<Record<string, NavKind>> = {
   'guide.s.androidReady': 'fabPad',
   'guide.s.infectParasiteGet': 'medical',
   'guide.s.infectPrionGet': 'medical',
+  'guide.s.devour': 'prey',
+  // 仿生人的「先做：」領檢測器（同人類的 samplerGet／samplerWait）
+  'guide.s.androidSampleGet': 'sampler',
+  'guide.s.androidSampleWait': 'sampler',
   'guide.ev.drones': 'console',
   'guide.ev.tenshu': 'console',
   'guide.ev.doom': 'escapePod',
@@ -228,4 +245,81 @@ export function navTarget(l: ParsedLayout, kind: NavKind, from: Pt, bodyR = DEFA
     }
   }
   return best
+}
+
+// ───────── 變種人的吞噬目標（第 3 輪）─────────
+
+/** 快照裡一個實體在 Guide 需要的部分（client 的 CEnt：s 是快照欄位，x、y 是公尺座標）*/
+export interface SeenEnt {
+  id: number
+  d?: string
+  z?: number
+  hp?: number
+  o?: number
+  fl?: number
+  x: number
+  y: number
+}
+
+/**
+ * 這個看得到的實體能不能當變種人的吞噬目標：活著、內容表有吞噬 EP（mut.devour 的 sim 腳本只看 devourEp）、
+ * 是生物但不是 NPC（巡邏船員吞得下，但在大家面前吞人等於自曝，不幫他走過去）、不是會主動攻擊的生物（暴走實驗體）、
+ * 也不是玩家操控的（死者附身的蛞蝓仔）。只看快照本來就有的欄位
+ */
+export function isPrey(s: Omit<SeenEnt, 'id' | 'x' | 'y'>): boolean {
+  const def = UNITS.get(s.d ?? '')
+  if (!def?.devourEp || !def.tags.includes('creature') || def.tags.includes('npc') || def.ai === 'hostile') return false
+  const fl = s.fl ?? 0
+  if (fl & (EntFlag.Corpse | EntFlag.Hostile)) return false
+  if ((s.o ?? -1) >= 0) return false
+  return (s.hp ?? 1) > 0
+}
+
+/** 走到生物旁邊多近才算到（mut.devour 射程 1.2 公尺＋雙方半徑）；最近的可走點離生物比這遠＝隔著牆或籠子 */
+export const PREY_REACH = 1.6
+
+export interface PreyTarget extends Pt {
+  /** 走向的那隻生物（實體 id）；沒有看得到的生物、改去出生點時是 null */
+  prey: number | null
+  /** 去的生物出生點（看不到生物時）*/
+  poi: PoiInstance | null
+  steps: number
+}
+
+/**
+ * 吞噬要往哪走：zone 裡看得到的可吞噬生物中，走路步數最少的那一隻（走到牠旁邊的可走點）；
+ * 一隻都沒有（或都隔著牆、關在籠子裡走不到）就去最近的生物出生點（navTarget 的 'prey'）。都不行回傳 null。
+ * seen = 快照裡同一個 zone 的實體（呼叫端已經濾好 zone）。
+ */
+export function preyTarget(l: ParsedLayout, from: Pt, seen: readonly SeenEnt[], bodyR = DEFAULT_BODY_R): PreyTarget | null {
+  const prey = seen.filter((e) => isPrey(e))
+  if (prey.length) {
+    const dist = pathSteps(l, from)
+    const reach = new Uint8Array(dist.length)
+    let any = false
+    for (let i = 0; i < dist.length; i++)
+      if (dist[i] >= 0) {
+        reach[i] = 1
+        any = true
+      }
+    const r = any ? reach : null
+    let best: PreyTarget | null = null
+    let bestScore = Infinity
+    for (const e of prey) {
+      const t = walkableTarget(l, e, bodyR, r)
+      if (!t || Math.hypot(t.x - e.x, t.y - e.y) > PREY_REACH) continue
+      const i = idxAt(l, t.x, t.y)
+      const steps = r && i >= 0 ? dist[i] : -1
+      if (r && steps < 0) continue
+      const straight = Math.hypot(t.x - from.x, t.y - from.y)
+      const score = (steps >= 0 ? steps : straight) + straight * 1e-3
+      if (score < bestScore) {
+        bestScore = score
+        best = { x: t.x, y: t.y, prey: e.id, poi: null, steps }
+      }
+    }
+    if (best) return best
+  }
+  const spot = navTarget(l, 'prey', from, bodyR)
+  return spot ? { x: spot.x, y: spot.y, prey: null, poi: spot.poi, steps: spot.steps } : null
 }

@@ -319,8 +319,8 @@ describe('仿生人：目標面板說明 EP 怎麼來', () => {
     lang.value = 'zh'
     expect(t(s.key, s.args)).toContain('每秒自動 +1.5')
     expect(G.objectiveFor({ ...view({ role: 'android', ep: 500, epNext: 2000 }), epMult: 2 })!.steps.find((x) => x.key === 'guide.s.androidEp')!.args).toEqual({ r: '3', m: 9 })
-    // EP 那一條排第一；原本的四條都還在
-    expect(o.steps.map((x) => x.key)).toEqual(['guide.s.androidEp', 'guide.s.ff', 'guide.s.helpCrew', 'guide.s.core'])
+    // EP 那一條排第一（第 3 輪：「協助人類」讓位給「先做：」混進船員的做法）
+    expect(o.steps.map((x) => x.key)).toEqual(['guide.s.androidEp', 'guide.s.ff', 'guide.s.androidSampleWait', 'guide.s.core'])
     // 兩個重大事件同時進行時仍看得到 EP 從哪裡來
     const busy = G.objectiveFor({ ...view({ role: 'android', ep: 500, epNext: 2000 }), w: { t: 100, ev: ['doom', 'asteroids'], apo: 'orbit' } as never })!
     expect(busy.steps.map((x) => x.key)).toContain('guide.s.androidEp')

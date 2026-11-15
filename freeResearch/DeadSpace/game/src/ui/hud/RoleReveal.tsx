@@ -6,6 +6,7 @@ import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
 import { modalChecks } from '../../client/input'
 import { gitMinutes, phdText } from './Guide'
+import '../ui4.css'
 
 // [主色（光暈）, 輔色, 文字色]：異形、變種人的主色在深色底上對比不到 4.5:1，文字改用亮色
 const COL: Record<Identity, [string, string, string]> = {
@@ -82,15 +83,24 @@ export function RoleReveal() {
   // 基因檢測開放的分鐘數依這一局的設定（簡單難度較早）
   const gitM = String(gitMinutes(world.w))
   return (
-    <div class="modal-back" data-testid="reveal" style={{ background: `radial-gradient(ellipse at 50% 40%, ${c1}22, rgba(0,0,0,0.92) 70%)` }} onClick={() => setOpen(false)}>
+    // 背景：陣營色暈染＋整片壓暗。原本畫面中央幾乎透明，世界裡自己的名牌（疊加層，畫面正中央）會從副標題後面透出來、
+    // 和副標題疊在一起（第 3 輪審查）；角色揭露是全螢幕的時刻，整片壓暗、標題區再墊一層深色底
+    <div
+      class="modal-back"
+      data-testid="reveal"
+      style={{ background: `radial-gradient(ellipse at 50% 40%, ${c1}2e, transparent 70%), radial-gradient(ellipse at 50% 40%, rgba(2,4,8,0.84), rgba(0,0,0,0.95) 70%)` }}
+      onClick={() => setOpen(false)}
+    >
       <div style={{ width: 'min(760px, 92vw)', textAlign: 'center' }}>
-        <div class="dim" style={{ letterSpacing: '0.4em', fontFamily: 'var(--title)' }}>
-          {t('class.' + (world.me.classId ?? ''))}
+        <div class="reveal-head" data-testid="reveal-head">
+          <div class="dim" style={{ letterSpacing: '0.4em', fontFamily: 'var(--title)' }}>
+            {t('class.' + (world.me.classId ?? ''))}
+          </div>
+          <div style={{ fontFamily: 'var(--title)', fontWeight: 700, fontSize: '54px', letterSpacing: '0.12em', color: ct, textShadow: `0 0 30px ${c1}, 0 0 4px ${c2}`, margin: '6px 0' }}>
+            {title[L]}
+          </div>
+          <div style={{ color: c2, opacity: 0.85 }}>{title.tagline[L]}</div>
         </div>
-        <div style={{ fontFamily: 'var(--title)', fontWeight: 700, fontSize: '54px', letterSpacing: '0.12em', color: ct, textShadow: `0 0 30px ${c1}, 0 0 4px ${c2}`, margin: '6px 0' }}>
-          {title[L]}
-        </div>
-        <div style={{ color: c2, opacity: 0.85, marginBottom: '22px' }}>{title.tagline[L]}</div>
         {/* 研究員：抽到的博士專長（只讀自己的私有狀態）*/}
         {phd && (
           <div data-testid="reveal-phd" style={{ color: c2, opacity: 0.85, margin: '-12px 0 18px', fontSize: '14px' }}>

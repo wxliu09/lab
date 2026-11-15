@@ -3,13 +3,14 @@
 // 不顯示、也不暗示別人的身分。規則細節的出處見 strings/guide.ts 開頭。
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { PrivateState, WorldPublic } from '../../shared/protocol/messages'
+import type { EndResult, PrivateState, WorldPublic } from '../../shared/protocol/messages'
+import type { Effect } from '../../shared/content/types'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { chatOpen, dialogOpen, evolveOpen, localNotice, modalChecks, typingInField } from '../../client/input'
 import { DEFAULT_BODY_R } from '../../render/moveTargets'
-import { navKindOf, navTarget, stationHas, stationLayout, type NavKind } from './facilityNav'
+import { isPrey, navKindOf, navTarget, preyTarget, stationHas, stationLayout, type NavKind, type SeenEnt } from './facilityNav'
 import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { addStrings, hasString, lang, listJoin, loc, t } from '../i18n'
@@ -19,7 +20,7 @@ import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
 import { sampleName } from '../../shared/sysArgs'
-import { localizeName } from '../names'
+import { SIM_AGENT_TITLE, localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import { abilityKey } from './abilityKeys'
 import '../guide.css'
@@ -269,13 +270,15 @@ export type Identity = 'human' | 'xeno' | 'mutant' | 'android' | 'spawnXeno' | '
 export interface GuideView {
   me: Partial<PrivateState>
   w: Partial<WorldPublic>
-  self?: { d?: string; hp?: number; mhp?: number; b?: string[] }
+  self?: { d?: string; hp?: number; mhp?: number; b?: string[]; n?: string }
   /** 同一區、身旁幾公尺內看得到的實體（def id 與距離）*/
   near: { d: string; dist: number }[]
   /** 目前所在 zone 的站點 id（'ship:…' = 船艙）*/
   zoneStation?: string
   /** 大廳設定的 EP 倍率（sim 的 settings.epMult；仿生人的 EP 速度要乘上它）；沒有就當 1 */
   epMult?: number
+  /** 「先做：」輪播用的時間（滑鼠停在目標面板上時凍結，免得要點的那條剛好換掉）；沒有就用 w.t */
+  altT?: number
 }
 
 export function identityOf(me: Partial<PrivateState>): Identity | null {
@@ -348,7 +351,7 @@ export function gitMinutes(w: Partial<WorldPublic>): number {
 }
 
 /** 目標面板有對策的重大事件（sim 的 w.ev）；排列順序＝顯示優先順序（有時限、最致命的在前）*/
-export const WORLD_EVENTS = ['doom', 'tenshu', 'drones', 'asteroids', 'pirate'] as const
+export const WORLD_EVENTS = ['doom', 'tenshu', 'drones', 'asteroids', 'pirate', 'doors'] as const
 export type WorldEvent = (typeof WORLD_EVENTS)[number]
 /** 同時最多幾條事件對策（至少留一條給本身的任務）*/
 export const MAX_EVENT_STEPS = 3
@@ -418,12 +421,92 @@ function classStep(me: Partial<PrivateState>, v: GuideView): Step | null {
 /** 基因檢測開放前的空窗任務：每 20 秒換一條（翻雜物箱只給有翻找技能的人）*/
 export const ALT_PERIOD = 20
 
+/** 輪播清單裡現在輪到哪一條（time = 輪播用的時間，見 GuideView.altT）*/
+export function rotate<T>(list: readonly T[], time: number): T {
+  return list[Math.floor(Math.max(0, time) / ALT_PERIOD) % list.length]
+}
+
 function altTask(me: Partial<PrivateState>, time: number): Step {
   const list: Step[] = []
   const kr = abilityKey(me, 'cls.rummage')
   if (kr !== null) list.push({ key: 'guide.s.altRummage', args: { k: keyText(kr) } })
   list.push({ key: 'guide.s.altScan' }, { key: 'guide.s.altGear' }, { key: 'guide.s.altGroup' })
-  return list[Math.floor(Math.max(0, time) / ALT_PERIOD) % list.length]
+  return rotate(list, time)
+}
+
+// ───────── 職業名稱（晉升）─────────
+
+/** 政委晉升成特務（sim 的 events.ts promotion）：classId 不變，名字前面加上晉升頭銜；看自己主單位快照裡的名字 */
+export function isPromoted(name: string | undefined): boolean {
+  return !!name && name.length > SIM_AGENT_TITLE.length && name.startsWith(SIM_AGENT_TITLE)
+}
+
+/** 目標面板、結算顯示的職業：晉升過就是「特務」，其餘照職業 id（沒有翻譯的 id 用內容表的名稱）*/
+export function classLabel(classId: string | undefined, promoted = false): string {
+  const id = classId ?? ''
+  // sim 若日後改成直接把 classId 換成 agent，也顯示同一個名稱
+  if (promoted || id === 'agent') return t('ui5.class.agent')
+  if (hasString(lang.value, 'class.' + id)) return t('class.' + id)
+  return loc(CLASSES.get(id)?.name) || id
+}
+
+/**
+ * 結算名單裡哪些人晉升過（政委 → 特務）：sim 晉升時不改 classId，只在時間軸記一筆 tl.promotion（名字是本名，和名單的 name 一樣）。
+ * 時間軸是結算時公開給所有人的資料
+ */
+export function promotedSlots(r: Pick<EndResult, 'players' | 'timeline'>): Set<number> {
+  const names = new Set<string>()
+  for (const e of r.timeline) {
+    if (!e.text.startsWith('@tl.promotion')) continue
+    for (const part of e.text.split('|').slice(1)) {
+      const i = part.indexOf('=')
+      if (i > 0 && part.slice(0, i) === 'name') names.add(part.slice(i + 1))
+    }
+  }
+  // fmtKey 會拿掉參數裡的 | 與 =，比對時名單的名字也一樣處理
+  return new Set(r.players.filter((p) => names.has(p.name.replace(/[|=]/g, ''))).map((p) => p.slot))
+}
+
+// ───────── 仿生人：範圍傷害的武器（只看自己的裝備）─────────
+
+/** 效果裡有沒有範圍傷害（直接的 damage＋aoe、投射物命中、延遲爆炸、衝刺沿途，以及帶 aoe 與 dmg 參數的腳本，例如稜鏡火箭）*/
+function aoeDamage(effects: readonly Effect[] | undefined): boolean {
+  for (const ef of effects ?? []) {
+    if (ef.k === 'damage' && (ef.aoe ?? 0) > 0) return true
+    if (ef.k === 'projectile' && aoeDamage(ef.onHit)) return true
+    if (ef.k === 'delay' && aoeDamage(ef.then)) return true
+    if (ef.k === 'dash' && (aoeDamage(ef.onArrive) || aoeDamage(ef.hitAlong))) return true
+    if (ef.k === 'script' && Number(ef.p?.aoe ?? 0) > 0 && Number(ef.p?.dmg ?? 0) > 0) return true
+  }
+  return false
+}
+
+/**
+ * 自己手上的範圍傷害武器：普攻本身會爆炸（火箭裝）就回傳那套裝備與爆炸半徑；
+ * 否則看自己技能列裡第一個範圍傷害的技能（例如稜鏡火箭、特斯拉新星）。範圍傷害不分敵我，旁邊的船員也會被打到
+ */
+export function splashGear(v: GuideView): { key: 'guide.s.androidSplash'; name: string; r: number } | { key: 'guide.s.androidSplashAb'; name: string } | null {
+  const u = UNITS.get(v.self?.d ?? '')
+  const aoe = u?.attack?.aoe ?? 0
+  if (u && aoe > 0) return { key: 'guide.s.androidSplash', name: loc(u.name), r: aoe }
+  for (const a of v.me.abilities ?? []) {
+    const ab = abilityDef(a.id)
+    if (ab && !ab.passiveBuff && (aoeDamage(ab.effects) || aoeDamage(ab.tickEffects))) return { key: 'guide.s.androidSplashAb', name: loc(ab.name) }
+  }
+  return null
+}
+
+/** 仿生人的「先做：」混進船員的做法（每 20 秒換一條；滑鼠停在面板上時暫停）*/
+function androidBlend(v: GuideView, time: number): Step {
+  const me = v.me
+  const smp = invSlot(me, (i) => i === 'geneSampler')
+  const sample: Step =
+    smp >= 0
+      ? { key: 'guide.s.androidSample', args: { k: smp + 1 } }
+      : (v.w.t ?? 0) >= gitAtOf(v.w) || samplerInStock()
+        ? { key: 'guide.s.androidSampleGet' }
+        : { key: 'guide.s.androidSampleWait', args: { t: fmtTime(gitAtOf(v.w) - (v.w.t ?? 0)) } }
+  return rotate([{ key: 'guide.s.androidGroup' }, sample], time)
 }
 
 /** 「攻擊別人」的步驟在基因檢測開放前只留到這個秒數（之後讓位給空窗任務；情境提示與說明面板仍有）*/
@@ -479,10 +562,13 @@ export function objectiveFor(v: GuideView): Objective | null {
   const ready = (me.canEvolve?.length ?? 0) > 0 && !me.evolving
   const ep = (me.epNext ?? 0) > 0 ? { ep: me.ep ?? 0, next: me.epNext!, ready } : undefined
   const time = v.w.t ?? 0
+  // 「先做：」輪播的時間（滑鼠停在面板上時凍結）
+  const altT = v.altT ?? time
+  const promoted = isPromoted(v.self?.n)
   let sub: string | undefined
   switch (id) {
     case 'human': {
-      sub = t('class.' + (me.classId ?? ''))
+      sub = classLabel(me.classId, promoted)
       const suitAt = invSlot(me, isSuitItem)
       if (!suited(v)) {
         if (suitAt >= 0) add('guide.s.suitWear', { k: suitAt + 1 })
@@ -504,7 +590,7 @@ export function objectiveFor(v: GuideView): Objective | null {
         waiting = true
         add('guide.s.samplerWait', { t: fmtTime(gitAt - time) })
         // 豪勇號上的空窗任務改成指路（下面的 guide.s.bravadoPod）：在這裡用站內監控掃描只會掃到自己
-        if (!toNyx) steps.push(altTask(me, time))
+        if (!toNyx) steps.push(altTask(me, altT))
       } else add('guide.s.samplerGet')
       if (toNyx) add('guide.s.bravadoPod')
       if (!waiting || time < ATTACK_STEP_UNTIL) add('guide.s.attack')
@@ -554,17 +640,23 @@ export function objectiveFor(v: GuideView): Objective | null {
       break
     }
     case 'android': {
-      sub = t('class.' + (me.classId ?? ''))
-      // EP 從哪裡來（每秒自動累積，不用做任何事，順便估還要幾分鐘）排第一：重大事件的對策會佔掉前幾條，
-      // 「協助人類」只是重述目標，放後面
+      sub = classLabel(me.classId, promoted)
+      // EP 從哪裡來（每秒自動累積，不用做任何事，順便估還要幾分鐘）排第一：重大事件的對策會佔掉前幾條。
+      // 接著是誤傷的實際規則（roleSystem.ts：打過的船員 5 分鐘內死掉才記點，超過約 2.7 人份滿血就強制關機）、
+      // 手上是範圍傷害武器時的提醒（只看自己的裝備），還是人形時再加一條「先做：」混進船員的做法（第 3 輪審查）。
+      // 「協助人類」只是重述目標，放最後（通常擠不進 4 條）
       if (ep) {
         if (ready) add('guide.s.androidPick')
         else if (ep.ep >= ep.next) add('guide.s.androidReady')
         else add('guide.s.androidEp', androidEpRate(ep.ep, ep.next, v.epMult))
       }
       add('guide.s.ff')
-      add('guide.s.helpCrew')
+      const sp = splashGear(v)
+      if (sp) steps.push(sp.key === 'guide.s.androidSplash' ? { key: sp.key, args: { name: sp.name, r: sp.r } } : { key: sp.key, args: { name: sp.name } })
+      // 換了機體就是一眼看得出的機器人，不用再裝船員
+      if (!UNITS.get(v.self?.d ?? '')?.tags.includes('chassis')) steps.push(androidBlend(v, altT))
       add('guide.s.core')
+      add('guide.s.helpCrew')
       break
     }
     case 'spawnXeno': {
@@ -728,6 +820,9 @@ export function detectHints(v: GuideView): Hint[] {
 
 // ───────── 讀取 client 世界 ─────────
 
+/** 滑鼠停在目標面板上時凍結的「先做：」輪播時間（null = 照常輪播）*/
+const altFreeze = signal<number | null>(null)
+
 function viewFromWorld(): GuideView {
   const me = world.me
   const self = world.ents.get(me.unit ?? 0)
@@ -740,7 +835,16 @@ function viewFromWorld(): GuideView {
     }
   }
   const zs = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
-  return { me, w: world.w, self: self ? { d: self.s.d, hp: self.s.hp, mhp: self.s.mhp, b: self.s.b } : undefined, near, zoneStation: zs, epMult: lobby.value?.settings.epMult }
+  const altT = altFreeze.value
+  return {
+    me,
+    w: world.w,
+    self: self ? { d: self.s.d, hp: self.s.hp, mhp: self.s.mhp, b: self.s.b, n: self.s.n } : undefined,
+    near,
+    zoneStation: zs,
+    epMult: lobby.value?.settings.epMult,
+    ...(altT !== null ? { altT } : {}),
+  }
 }
 
 // ───────── 目標面板的「點一下走過去」（facilityNav.ts）─────────
@@ -767,12 +871,31 @@ function goToFacility(kind: NavKind): void {
   const l = stationLayout(st ?? undefined)
   const self = world.ents.get(world.me.unit ?? 0)
   if (!st || !l || !self) return
-  const to = navTarget(l, kind, { x: self.x, y: self.y }, UNITS.get(self.s.d ?? '')?.radius ?? DEFAULT_BODY_R)
+  const from = { x: self.x, y: self.y }
+  const bodyR = UNITS.get(self.s.d ?? '')?.radius ?? DEFAULT_BODY_R
+  // 吞噬：先找看得到的生物，沒有才去生物出生點（facilityNav.ts preyTarget）
+  const to = kind === 'prey' ? preyTarget(l, from, seenInZone(self.s.z), bodyR) : navTarget(l, kind, from, bodyR)
   if (!to) {
     localNotice.value = { text: 'art3.unreachable', at: performance.now() }
     return
   }
   sendCmd({ k: 'move', x: to.x, y: to.y })
+}
+
+/** 快照裡和自己同一個 zone 的實體（吞噬目標用；只有本來就看得到的）*/
+function seenInZone(z: number | undefined): SeenEnt[] {
+  const out: SeenEnt[] = []
+  if (z === undefined) return out
+  for (const e of world.ents.values()) if (e.s.z === z) out.push({ id: e.s.i, d: e.s.d, z: e.s.z, hp: e.s.hp, o: e.s.o, fl: e.s.fl, x: e.x, y: e.y })
+  return out
+}
+
+/** 這一條「點一下走過去」現在能不能用：本區有那種設施；吞噬另外算看得到的生物 */
+function navAvailable(station: string | null, kind: NavKind): boolean {
+  if (stationHas(station ?? undefined, kind)) return true
+  if (kind !== 'prey' || !station) return false
+  const z = world.ents.get(world.me.unit ?? 0)?.s.z
+  return seenInZone(z).some((e) => isPrey(e))
 }
 
 /** 全螢幕畫面擋住時暫停提示（角色揭露、結算、圖鑑、說明、筆記、進化選單）*/
@@ -909,6 +1032,7 @@ export function Guide() {
     return () => {
       window.removeEventListener('keydown', onKey, true)
       guideOpen.value = false
+      altFreeze.value = null
     }
   }, [])
 
@@ -1040,7 +1164,7 @@ function StepItem({ s, station }: { s: Step; station: string | null }) {
   const kind = station ? navKindOf(s.key, station) : null
   return (
     <li class={stepClass(s)} data-testid={stepTestId(s)}>
-      {kind && stationHas(station ?? undefined, kind) ? (
+      {kind && navAvailable(station, kind) ? (
         <button
           type="button"
           class="guide-nav"
@@ -1050,7 +1174,7 @@ function StepItem({ s, station }: { s: Step; station: string | null }) {
             ;(e.currentTarget as HTMLElement).blur()
             goToFacility(kind)
           }}
-          {...tipProps(() => ({ title: t('guide.nav.tip'), body: t('guide.nav.body', { name: t('guide.nav.' + kind) }) }))}
+          {...tipProps(() => ({ title: t('guide.nav.tip'), body: kind === 'prey' ? t('guide.nav.preyBody') : t('guide.nav.body', { name: t('guide.nav.' + kind) }) }))}
         >
           {text}
           <span class="guide-nav-go" aria-hidden="true">
@@ -1069,8 +1193,17 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
   const ep = obj.ep
   // 能不能「點一下走過去」（駕駛中、在太空、死了都不行）
   const station = navStation()
+  // 面板在滑鼠還停著時被收起來（開筆記、死亡）：不會收到 mouseleave，卸載時解除凍結
+  useEffect(() => () => void (altFreeze.value = null), [])
   return (
-    <div class={'panel guide-obj' + (fold ? ' folded' : '') + (squeeze && !fold ? ' sq' + squeeze : '')} data-testid="guide-objectives" style={{ '--gc': accent, '--gt': text }}>
+    <div
+      class={'panel guide-obj' + (fold ? ' folded' : '') + (squeeze && !fold ? ' sq' + squeeze : '')}
+      data-testid="guide-objectives"
+      style={{ '--gc': accent, '--gt': text }}
+      // 滑鼠停在面板上時「先做：」不換條（要點的那條不會剛好換掉）；離開後照常輪播
+      onMouseEnter={() => (altFreeze.value = world.w.t ?? 0)}
+      onMouseLeave={() => (altFreeze.value = null)}
+    >
       <div class="guide-head">
         <span class="guide-title">
           <span class="guide-role" data-testid="guide-role">
@@ -1306,7 +1439,7 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
     // 配發防護服的職業：直接寫出實際拿到的那一套（內容表的說明只說「隨機一套」）
     const suit = SUIT_CLASSES.has(c.id) ? startSuitName(me, v, c.items) : ''
     const desc = suit && hasString(lang.value, 'guide.cls.' + c.id + 'Suit') ? t('guide.cls.' + c.id + 'Suit', { suit }) + t('guide.r.period') : loc(c.desc)
-    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc }))
+    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: classLabel(c.id, isPromoted(v.self?.n)), desc }))
     const phd = phdText(me, 'play1.help.phd')
     if (phd) tips.push(phd)
   }

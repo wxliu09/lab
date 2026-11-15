@@ -6,6 +6,7 @@ import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRul
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
+import { Icon } from '../icons'
 import { localizeName, textColorOf } from '../names'
 import '../lobby2.css'
 import '../ui4.css'
@@ -288,8 +289,15 @@ export function Lobby() {
           />
         </div>
       </div>
-      <div class="panel settings-panel">
+      {/* 客人看到的設定是唯讀的：降低對比、拿掉下拉箭頭，並說明由主機設定（lobby2.css 的 .readonly）*/}
+      <div class={'panel settings-panel' + (isHost.value ? '' : ' readonly')} data-testid="lobby-settings">
         <h2>{t('lobby.settings')}</h2>
+        {!isHost.value && (
+          <div class="settings-note" data-testid="settings-readonly">
+            <Icon name="key" size={14} color="currentColor" />
+            {t('ui5.lobby.readonly')}
+          </div>
+        )}
         <Row label={t('lobby.set.aliens')} tip="lobby2.tip.aliens.body">
           <Tri k="aliens" s={s} />
         </Row>

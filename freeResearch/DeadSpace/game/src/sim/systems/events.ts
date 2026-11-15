@@ -589,6 +589,7 @@ function stepApocalypse(g: Game, ev: EventState): void {
  * - tenshu：天守反物質收容失效倒數中
  * - pirate：敵對的海盜船還在（末日艦隊抵達後海盜改為中立就不算）
  * - doom：末日已經開始
+ * - doors：門控制器故障中
  */
 export function publicEvents(g: Game): string[] {
   const ev = g.data.events as EventState | undefined
@@ -602,6 +603,8 @@ export function publicEvents(g: Game): string[] {
   const ps = pz?.alive ? g.world.get(pz.spaceEnt) : undefined
   if (ps && ps.alive && ps.owner === HOSTILE) out.push('pirate')
   if (ev.apoc) out.push('doom')
+  // 門控制器故障：全場公告過、修好也會公告
+  if (ev.doorsUntil > 0) out.push('doors')
   return out
 }
 

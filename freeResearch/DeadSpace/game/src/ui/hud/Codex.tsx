@@ -2,11 +2,11 @@
 import { signal } from '@preact/signals'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { ABILITIES, CLASSES, FORMS, ITEMS, UNITS } from '../../shared/content/registry'
-import { ALL_STATIONS } from '../../shared/content/stations/index'
+import { ALL_STATIONS, STATION_BY_ID } from '../../shared/content/stations/index'
 import { parseLayout } from '../../shared/layout'
 import type { UnitDef } from '../../shared/content/types'
 import { modalChecks, typingInField } from '../../client/input'
-import { listJoin, loc, t } from '../i18n'
+import { hasString, lang, listJoin, loc, t } from '../i18n'
 import { Icon } from '../icons'
 import '../../shared/content/index'
 
@@ -41,6 +41,38 @@ function abilitiesOf(ids: string[]): Entry['abilities'] {
     .map((a) => ABILITIES.get(a))
     .filter((a): a is NonNullable<typeof a> => !!a && !a.id.startsWith('suit.drop'))
     .map((a) => ({ name: loc(a.name), desc: loc(a.desc), icon: a.icon }))
+}
+
+/**
+ * 圖鑑的生物清單：名字（兩種語言）一樣、AI 與數值也一樣的單位合併成一組（例如失敗實驗體與帶羊玩偶的那隻、三種異常體）；
+ * 數值不同的同名單位不合併，各自一項。順序照第一次出現的位置
+ */
+export function creatureGroups(units: readonly UnitDef[]): UnitDef[][] {
+  const key = (u: UnitDef) => [u.name.zh, u.name.en, u.ai, u.hp, u.speed, u.armor ?? 0, JSON.stringify(u.attack ?? null)].join('|')
+  const groups = new Map<string, UnitDef[]>()
+  for (const u of units) {
+    const k = key(u)
+    const g = groups.get(k)
+    if (g) g.push(u)
+    else groups.set(k, [u])
+  }
+  return [...groups.values()]
+}
+
+/** 同名生物的一種個體：出現的地方（ui5.codex.where.<id>，沒寫就不列地方）、吞噬 EP、掉落物 */
+export function variantLine(u: UnitDef): string {
+  const st = (id: string) => loc(STATION_BY_ID.get(id)?.name)
+  const whereKey = 'ui5.codex.where.' + u.id
+  const where = hasString(lang.value, whereKey) ? t(whereKey, { nyx: st('nyx'), verdance: st('verdance'), vivarium: st('vivarium') }) : loc(u.name)
+  const drops = u.drops ?? []
+  let drop = ''
+  if (drops.length === 1 && drops[0].p >= 1) drop = t('ui5.codex.var.dropAlways', { item: loc(ITEMS.get(drops[0].item)?.name) })
+  else if (drops.length) {
+    // 機率掉落：列出最常見的兩種
+    const top = [...drops].sort((a, b) => b.p - a.p).slice(0, 2)
+    drop = t('ui5.codex.var.dropMaybe', { n: drops.length, items: listJoin(top.map((d) => loc(ITEMS.get(d.item)?.name))) })
+  }
+  return u.devourEp ? t('ui5.codex.var.line', { where, ep: u.devourEp, drop }) : where + drop
 }
 
 function entries(tab: Tab): Entry[] {
@@ -90,16 +122,22 @@ function entries(tab: Tab): Entry[] {
         .sort((a, b) => a.cat.localeCompare(b.cat))
         .map((i) => ({ id: i.id, name: loc(i.name), sub: t('codex.cat.' + i.cat), icon: i.icon, body: [loc(i.desc)] }))
     case 'creatures':
-      return [...UNITS.values()]
-        .filter((u) => u.tags.includes('creature') && !u.tags.includes('summon') && u.ai)
-        .map((u) => ({
+      return creatureGroups([...UNITS.values()].filter((u) => u.tags.includes('creature') && !u.tags.includes('summon') && u.ai)).map((g) => {
+        const u = g[0]
+        const body = [t('codex.ai.' + u.ai + '.body')]
+        if (g.length > 1) {
+          // 同名的不同單位（例如三種異常體）：合併成一項，逐一列出出現的地方、吞噬 EP 與掉落物（內容表不動）
+          body.push(t('ui5.codex.variants', { n: g.length }), ...g.map((x) => '・' + variantLine(x)))
+        } else if (u.devourEp) body.push(t('codex.devour', { n: u.devourEp }))
+        return {
           id: u.id,
           name: loc(u.name),
-          sub: t('codex.ai.' + u.ai),
+          sub: g.length > 1 ? `${t('codex.ai.' + u.ai)} ×${g.length}` : t('codex.ai.' + u.ai),
           icon: u.tags.includes('mechanical') ? 'gear' : 'claw',
-          body: [t('codex.ai.' + u.ai + '.body'), u.devourEp ? t('codex.devour', { n: u.devourEp }) : ''].filter(Boolean),
+          body,
           stats: unitStats(u),
-        }))
+        }
+      })
     case 'places':
       return ALL_STATIONS.map((s) => ({
         id: s.id,
@@ -132,7 +170,7 @@ export function Codex() {
     window.addEventListener('keydown', k, true)
     return () => window.removeEventListener('keydown', k, true)
   }, [])
-  const list = useMemo(() => (codexOpen.value ? entries(tab) : []), [tab, codexOpen.value])
+  const list = useMemo(() => (codexOpen.value ? entries(tab) : []), [tab, codexOpen.value, lang.value])
   if (!codexOpen.value) return null
   const cur = list[Math.min(sel, list.length - 1)]
   return (

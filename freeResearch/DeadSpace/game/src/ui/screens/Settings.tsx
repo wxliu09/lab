@@ -5,19 +5,19 @@ import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net
 import { quality, setQuality, type Quality } from '../../render/quality'
 import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
 import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
+import { uiScaleTexts } from './uiScaleText'
 import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
 import { modalChecks } from '../../client/input'
 import { hintsEnabled, resetHints } from '../hud/Guide'
 import '../strings/art2'
 
-/** 0–100 之類的滑桿＋數值 */
-function Slider({ id, min, max, value, onInput, onChange, unit = '' }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string }) {
+/** 0–100 之類的滑桿＋數值；fmt = 自訂數值的寫法（預設「數值＋單位」）*/
+function Slider({ id, min, max, value, onInput, onChange, unit = '', fmt }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string; fmt?: (v: number) => string }) {
   return (
     <div class="row" style={{ gap: '8px' }}>
       <input type="range" min={min} max={max} value={value} style={{ width: '160px' }} data-testid={id} onInput={(e) => onInput(Number((e.target as HTMLInputElement).value))} onChange={onChange} />
-      <span class="mono dim" style={{ width: '48px', textAlign: 'right' }}>
-        {value}
-        {unit}
+      <span class="mono dim" style={{ width: '48px', textAlign: 'right' }} data-testid={id + '-value'}>
+        {fmt ? fmt(value) : `${value}${unit}`}
       </span>
     </div>
   )
@@ -103,11 +103,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div class="setrow">
             <label>
               {t('settings.uiScale')}
-              <div class="dim" style={{ fontSize: '13px' }}>
-                {t('settings.uiScaleAuto')} · {Math.round(uiZoom.value * 100)}%
+              <div class="dim" style={{ fontSize: '13px' }} data-testid="ui-scale-note">
+                {t('ui5.settings.uiScaleNote', { pct: uiScaleTexts(uiScalePref.value, uiZoom.value).actual })}
               </div>
             </label>
-            <Slider id="ui-scale" min={70} max={160} value={Math.round(uiScalePref.value * 100)} unit="%" onInput={(v) => setUiScale(v / 100)} />
+            <Slider id="ui-scale" min={70} max={160} value={Math.round(uiScalePref.value * 100)} fmt={(v) => uiScaleTexts(v / 100, 1).mult} onInput={(v) => setUiScale(v / 100)} />
           </div>
           <div class="setrow">
             <label>{t('settings.hints')}</label>

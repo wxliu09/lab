@@ -1,58 +1,14 @@
 import { useEffect, useState } from 'preact/hooks'
 import { MAX_PLAYERS, PLAYER_COLORS, ROOM_ALPHABET } from '../../shared/constants'
 import { AI_LEVELS, DEFAULT_SETTINGS, PRACTICE_ROLES, type AiLevel, type PracticeRole } from '../../shared/protocol/messages'
-import { cancelJoin, createRoom, joinRoom, loadProfile, notice, screen, startPractice } from '../../client/session'
-import { t } from '../i18n'
+import { cancelJoin, createRoom, joinRoom, loadProfile, notice, screen } from '../../client/session'
+import { lang, setLang, t, type Lang } from '../i18n'
+import { loadAiLevel, loadPracticePrefs, runPractice, saveAiLevel, savePracticePrefs } from './practiceRun'
 import { Settings } from './Settings'
 import { codexOpen } from '../hud/Codex'
 import { loadNetSettings } from '../../net/trystero'
 import { RoleMixView, roleOutcomes } from './Lobby'
 import '../lobby2.css'
-
-const PRACTICE_KEY = 'xc.practice'
-
-function loadPracticePrefs(): { role: PracticeRole; bots: number } {
-  try {
-    const raw = JSON.parse(localStorage.getItem(PRACTICE_KEY) ?? 'null') as { role?: unknown; bots?: unknown } | null
-    if (raw) {
-      const role = PRACTICE_ROLES.includes(raw.role as PracticeRole) ? (raw.role as PracticeRole) : 'random'
-      const bots = typeof raw.bots === 'number' && raw.bots >= 1 && raw.bots <= MAX_PLAYERS - 1 ? Math.round(raw.bots) : 5
-      return { role, bots }
-    }
-  } catch {
-    /* ignore */
-  }
-  return { role: 'random', bots: 5 }
-}
-
-function savePracticePrefs(p: { role: PracticeRole; bots: number }): void {
-  try {
-    localStorage.setItem(PRACTICE_KEY, JSON.stringify(p))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** 練習的 AI 難度（上次的選擇；沒選過的新手預設簡單）*/
-const PRACTICE_AI_KEY = 'xc.practiceAi'
-
-function loadAiLevel(): AiLevel {
-  try {
-    const v = localStorage.getItem(PRACTICE_AI_KEY)
-    if (AI_LEVELS.includes(v as AiLevel)) return v as AiLevel
-  } catch {
-    /* ignore */
-  }
-  return 'easy'
-}
-
-function saveAiLevel(v: AiLevel): void {
-  try {
-    localStorage.setItem(PRACTICE_AI_KEY, v)
-  } catch {
-    /* ignore */
-  }
-}
 
 /** 單機練習對話框：選自己的身分、AI 數量與難度（只有單機練習有這個入口；多人房間的身分一律照規則抽）*/
 function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (role: PracticeRole, bots: number, ai: AiLevel) => void }) {
@@ -154,6 +110,24 @@ function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (r
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** 主選單右上角的語言切換（一鍵切換；預設繁中，英文玩家不用先進設定）*/
+function LangToggle() {
+  const cur = lang.value
+  const opts: [Lang, string, string][] = [
+    ['zh', '中文', '繁體中文'],
+    ['en', 'EN', 'English'],
+  ]
+  return (
+    <div class="lang-toggle" role="group" aria-label={t('ui5.menu.lang')} data-testid="lang-toggle">
+      {opts.map(([l, label, full]) => (
+        <button key={l} type="button" class={'small' + (cur === l ? ' primary' : ' ghost')} aria-pressed={cur === l} lang={l === 'zh' ? 'zh-Hant-TW' : 'en'} title={full} data-testid={'lang-' + l} onClick={() => setLang(l)}>
+          {label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -261,13 +235,14 @@ export function Menu() {
       <div class="foot">
         {t('menu.netHint', { strategy: loadNetSettings().strategy })} · {t('menu.homage')}
       </div>
+      <LangToggle />
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showPractice && (
         <PracticeDialog
           onClose={() => setShowPractice(false)}
           onStart={(role, bots, ai) => {
             setShowPractice(false)
-            void startPractice(profile(), bots, role, ai)
+            runPractice(profile(), { role, bots, ai })
           }}
         />
       )}

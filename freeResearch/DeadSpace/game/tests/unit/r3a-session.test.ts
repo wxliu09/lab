@@ -35,7 +35,10 @@ function practice(seed = 6100, humans = 1) {
 
 const lastW = (inbox: HostMsg[], k: string): unknown => {
   let v: unknown
-  for (const m of inbox) if (m.t === 'snap' && (m.s as Snapshot).w && k in (m.s as Snapshot).w!) v = (m.s as Snapshot).w![k]
+  for (const m of inbox) {
+    const w = m.t === 'snap' ? ((m.s as Snapshot).w as Record<string, unknown> | undefined) : undefined
+    if (w && k in w) v = w[k]
+  }
   return v
 }
 const chat = (inbox: HostMsg[]) => inbox.flatMap((m) => (m.t === 'chat' ? m.lines.map((l) => l.text) : []))

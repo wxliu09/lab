@@ -194,7 +194,8 @@ describe('目標面板', () => {
 
   it('仿生人：EP 進度與鑄造台', () => {
     // EP 從哪裡來排第一（重大事件的對策會佔掉前幾條；第 2 輪審查）
-    expect(keysOf(view({ role: 'android', classId: 'ace', ep: 100, epNext: 2000 }))).toEqual(['guide.s.androidEp', 'guide.s.ff', 'guide.s.helpCrew', 'guide.s.core'])
+    // 第 3 輪：誤傷規則之後加一條「先做：」混進船員的做法（t = 100 輪到「等基因檢測開放」），「協助人類」擠到第 5 條
+    expect(keysOf(view({ role: 'android', classId: 'ace', ep: 100, epNext: 2000 }))).toEqual(['guide.s.androidEp', 'guide.s.ff', 'guide.s.androidSampleWait', 'guide.s.core'])
     expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000 }))).toContain('guide.s.androidReady')
     expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000, canEvolve: ['android.gale'] }))).toContain('guide.s.androidPick')
   })

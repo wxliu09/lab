@@ -12,6 +12,9 @@ import { TopSlot } from './Announce'
 import { canPreview, evolveBlock, nextForms } from './evolveWhy'
 import { drawReasonKey } from './textRules'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
+import { classLabel, promotedSlots } from './Guide'
+import { againTip, inPractice, replayPractice } from '../screens/practiceRun'
+import { tipProps } from '../tooltip'
 
 addStrings(PLAY1_ZH, PLAY1_EN)
 
@@ -152,13 +155,37 @@ export function EvolveMenu() {
   )
 }
 
+/** 單機練習的「再來一局」：同樣的設定直接重開（多人局不顯示）*/
+function PracticeAgain({ cls = '', wide = false }: { cls?: string; wide?: boolean }) {
+  if (!inPractice()) return null
+  return (
+    <button
+      class={cls}
+      style={wide ? { width: '100%' } : undefined}
+      data-testid="practice-again"
+      onClick={(e) => {
+        ;(e.currentTarget as HTMLElement).blur()
+        replayPractice()
+      }}
+      {...tipProps(() => ({ title: t('ui5.practice.again'), body: againTip() }))}
+    >
+      {t('ui5.practice.again')}
+    </button>
+  )
+}
+
 export function SpectatorBar() {
   void snapTick.value
   const me = world.me
   const dead = me.alive === false || me.role === 'spectator'
   if (!dead) return null
-  // 等記憶核心復活的仿生人：只能透過核心觀看，不能切換觀戰
-  if (me.coreWait) return null
+  // 等記憶核心復活的仿生人：只能透過核心觀看，不能切換觀戰（練習局仍可直接再來一局）
+  if (me.coreWait)
+    return inPractice() ? (
+      <div class="panel" style={{ position: 'absolute', top: '54px', right: '12px', padding: '10px', width: '220px' }}>
+        <PracticeAgain cls="primary" wide />
+      </div>
+    ) : null
   // 死亡即退出：出局，不能觀戰（結算後讓位給結算卡）
   if (me.booted && !endResult.value)
     return (
@@ -168,9 +195,17 @@ export function SpectatorBar() {
           <p class="dim" style={{ fontSize: '15px', lineHeight: 1.6 }}>
             {t('boot2.body')}
           </p>
-          <button class="primary" onClick={() => leave()}>
-            {t('boot.leave')}
-          </button>
+          {inPractice() && (
+            <p class="dim" style={{ fontSize: '14px', lineHeight: 1.6 }}>
+              {t('ui5.practice.againDead')}
+            </p>
+          )}
+          <div class="row" style={{ justifyContent: 'center', gap: '10px' }}>
+            <PracticeAgain cls="primary" />
+            <button class={inPractice() ? 'ghost' : 'primary'} onClick={() => leave()}>
+              {t('boot.leave')}
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -188,6 +223,13 @@ export function SpectatorBar() {
   })
   return (
     <div class="panel" style={{ position: 'absolute', top: '54px', right: '12px', padding: '10px', width: '220px', maxHeight: 'calc(100vh / var(--ui-zoom, 1) - 290px)', overflowY: 'auto' }}>
+      {/* 單機練習死了：不用回主選單重選，直接用同樣的設定再來一局（放最上面：站點一多，清單會捲動）*/}
+      {inPractice() && me.role !== 'spectator' && (
+        <>
+          <PracticeAgain cls="primary" wide />
+          <div class="sep" style={{ margin: '10px 0 8px' }} />
+        </>
+      )}
       <h3>{t('spec.title')}</h3>
       <div class="col" style={{ gap: '4px' }}>
         <button class={'small' + (me.specZone === 0 ? ' primary' : '')} onClick={() => sendCmd({ k: 'spec', s: 0 })}>
@@ -231,6 +273,8 @@ export function EndScreen() {
   if (!r) return null
   // drawWhy 由 sim 新增；用寬鬆型別讀，舊版結果沒有這個欄位也照常顯示
   const why = drawReasonKey(r as typeof r & { drawWhy?: unknown })
+  // 晉升過的政委顯示「特務」（sim 不改 classId，見 promotedSlots）
+  const promoted = promotedSlots(r)
   return (
     <div class="modal-back" style={{ background: 'rgba(0,0,0,0.75)' }}>
       <div class="panel modal end-card" data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
@@ -252,7 +296,7 @@ export function EndScreen() {
               <div class="pname">{localizeName(p.name)}</div>
               <div class="row end-role">
                 <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
-                <span class="dim">{t('class.' + p.classId)}</span>
+                <span class="dim">{classLabel(p.classId, promoted.has(p.slot))}</span>
                 <span class="grow" />
                 <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
               </div>
@@ -285,7 +329,8 @@ export function EndScreen() {
           ))}
         </div>
         <div class="row" style={{ marginTop: '14px' }}>
-          <button class="primary" onClick={() => leave()}>
+          <PracticeAgain cls="primary" />
+          <button class={inPractice() ? '' : 'primary'} onClick={() => leave()}>
             {t('end.back')}
           </button>
           <button class="ghost" onClick={() => (endResult.value = null)}>
