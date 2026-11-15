@@ -12,6 +12,8 @@ import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 import { meCtx, promptKey } from '../client/interactKind'
+import { lastInteract } from '../client/input'
+import { panelEntries, pickPanel } from '../client/interactPanels'
 import { consoleSpots, type ConsoleSpot } from './moveTargets'
 
 const requested = new Set<string>()
@@ -27,6 +29,24 @@ export function facLabelKey(d: string): string | null {
   if (!d.startsWith('vendor.')) return null
   const v = VENDORS.get(d.slice(7))
   return v && v.model === 'vendor' ? 'art3.fac.' + v.id : null
+}
+
+type Rect = { l: number; r: number; t: number; b: number }
+
+/**
+ * 聊天泡泡的位置（審查 R3：泡泡蓋住名字、互動提示、設施標籤）：從單位頭上的預設位置開始，跟已經放好的東西
+ * （名字、互動提示、設施標籤、先放好的泡泡）重疊就往上錯開一格（泡泡高＋間距），最多 tries 次；都放不下就用最高的那格
+ * （聊天不能不見）。回傳泡泡的矩形（b = 泡泡底邊）。
+ */
+export function placeBubble(sx: number, bottom: number, w: number, h: number, placed: readonly Rect[], tries = 4, gap = 3): Rect {
+  const hit = (q: Rect) => placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t)
+  let rect: Rect = { l: sx - w / 2, r: sx + w / 2, t: bottom - h, b: bottom }
+  for (let k = 0; k <= tries; k++) {
+    const b = bottom - k * (h + gap)
+    rect = { l: sx - w / 2, r: sx + w / 2, t: b - h, b }
+    if (!hit(rect)) return rect
+  }
+  return rect
 }
 
 /** canvas 上的中文字需要先載入對應的字型子集 */
@@ -77,6 +97,8 @@ export class Overlay {
     const bubbles = new Map<number, { text: string; color: number }>()
     world.bubbles = world.bubbles.filter((b) => b.until > now)
     for (const b of world.bubbles) bubbles.set(b.e, b)
+    /** 聊天泡泡最後才畫：要避開名字、互動提示、設施標籤 */
+    const pendingBubbles: { sx: number; bottom: number; text: string }[] = []
     for (const [id, uv] of scene.units.views) {
       const e = world.ents.get(id)
       if (!e) continue
@@ -138,13 +160,16 @@ export class Overlay {
       const name = localizeName(e.s.n) || (hot ? loc(def?.name) : '')
       if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#9fb3c2', pri: hot ? 2 : mine ? 1 : 0 })
       const b = bubbles.get(id)
-      if (b) this.bubble(x, sx, sy - 24 * z, b.text, z)
+      if (b) pendingBubbles.push({ sx, bottom: sy - 24 * z, text: b.text })
     }
     const placed: { l: number; r: number; t: number; b: number }[] = []
     const pr = this.prompt(scene, world, x, w, h, z, now)
     if (pr) placed.push(pr)
     this.drawLabels(x, labels, placed, z)
     this.facilityLabels(scene, world, x, w, h, z, placed, bodies)
+    // 聊天泡泡：由下往上（畫面下方的先放），重疊就往上錯開
+    pendingBubbles.sort((a, b) => b.bottom - a.bottom)
+    for (const pb of pendingBubbles) placed.push(this.bubble(x, pb.sx, pb.bottom, pb.text, z, placed))
     // 站名：字大一點、全部畫（站點彼此距離遠，不做省略）
     x.save()
     x.font = `700 ${Math.round(15 * z)}px "Noto Sans TC", sans-serif`
@@ -227,6 +252,9 @@ export class Overlay {
         const d = Math.hypot(s.x - me.x, s.y - me.y)
         if (d < 4.5 && (!best || d < best.d)) best = { id: 0, d, poi: s }
       }
+    // 右側互動面板正顯示的那一台（範圍內有好幾台時玩家右鍵或點分頁選的）：提示標它，不要標最近的另一台卻寫「面板已在右側開啟」
+    const pick = pickPanel(panelEntries(me, world.ents, world.me.fac), lastInteract.value)
+    if (pick && world.ents.has(pick.id)) best = { id: pick.id, d: pick.dist }
     if (!best) return null
     const e = best.poi ? undefined : world.ents.get(best.id)!
     const uv = e ? scene.units.views.get(best.id) : undefined
@@ -350,7 +378,8 @@ export class Overlay {
     x.restore()
   }
 
-  private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, raw: string, z = 1): void {
+  /** 畫一個聊天泡泡（底邊預設在 bottom，跟 placed 重疊就往上錯開，見 placeBubble）；回傳實際的矩形 */
+  private bubble(x: CanvasRenderingContext2D, sx: number, bottom: number, raw: string, z = 1, placed: readonly Rect[] = []): Rect {
     // AI 的公告發言是系統 key 形式（`@key|k=v`），依目前語言解碼
     const text = sysText(raw)
     ensureGlyphs(text)
@@ -359,15 +388,17 @@ export class Overlay {
     const tw = x.measureText(t).width
     const pw = tw + 16 * z
     const ph = 24 * z
+    const r = placeBubble(sx, bottom, pw, ph, placed, 4, 3 * z)
     x.fillStyle = 'rgba(10,16,22,0.85)'
     x.strokeStyle = 'rgba(159,231,255,0.5)'
     x.lineWidth = 1
     x.beginPath()
-    x.roundRect(sx - pw / 2, sy - ph, pw, ph, 4)
+    x.roundRect(r.l, r.t, pw, ph, 4)
     x.fill()
     x.stroke()
     x.fillStyle = '#e8f6ff'
     x.textAlign = 'center'
-    x.fillText(t, sx, sy - 7 * z)
+    x.fillText(t, sx, r.b - 7 * z)
+    return r
   }
 }

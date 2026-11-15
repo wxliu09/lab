@@ -21,6 +21,19 @@ export interface TipData {
   /** 操作提示改用的顏色（警告：例如熱融炸彈「快離開」）*/
   hintColor?: string
   color?: string
+  /** 圖例（小地圖「?」）：色塊＋說明，形狀照小地圖的畫法 */
+  legend?: LegendRow[]
+}
+
+/**
+ * 圖例的一列。shape：self＝白框圓點、player＝深框圓點、hostile＝白框菱形、other＝小圓點、square＝實心方塊、
+ * hollow＝空心方框、frame＝視野框。color 是填色（hollow、frame 是框的顏色）、ring 是外框顏色。
+ */
+export interface LegendRow {
+  shape: 'self' | 'player' | 'hostile' | 'other' | 'square' | 'hollow' | 'frame'
+  color: string
+  ring?: string
+  label: string
 }
 
 interface TipState {
@@ -39,6 +52,37 @@ const CURSOR = {}
 let owner: unknown = null
 /** 元素型 tooltip 的錨點：元素被移除（例如按鈕消失、面板關閉）時要收起 */
 let anchorEl: Element | null = null
+
+/**
+ * 原生 title 提示改用遊戲的 tooltip（對局畫面裡的元素）：滑鼠移進有 title 的元素時，把 title 收進 data-tip-title
+ * （瀏覽器就不會再跳出原生的小黃框），改顯示遊戲樣式的說明。titleTips 可以替特定的 title 補上說明文字。
+ */
+export const titleTips: ((title: string, el: Element) => Partial<TipData> | null)[] = []
+
+/** 對局畫面（.layer）裡有原生 title 的元素：改成遊戲 tooltip（滑鼠移進時呼叫）*/
+export function upgradeTitle(target: EventTarget | null): void {
+  if (!(target instanceof Element)) return
+  const el = target.closest('[title], [data-tip-title]')
+  if (!el || !el.closest('.layer')) return
+  const raw = el.getAttribute('title')
+  if (raw !== null) {
+    el.removeAttribute('title')
+    el.setAttribute('data-tip-title', raw)
+  }
+  const title = el.getAttribute('data-tip-title') ?? ''
+  if (!title) return
+  // 外層元素已經掛著遊戲 tooltip（例如頂列的星區穩定度）：保留外層的完整說明，只拿掉原生提示
+  if (owner === ELEMENT && anchorEl && anchorEl !== el && anchorEl.contains(el)) return
+  let d: TipData = { title }
+  for (const f of titleTips) {
+    const more = f(title, el)
+    if (more) d = { ...d, ...more }
+  }
+  const r = el.getBoundingClientRect()
+  anchorEl = el
+  owner = ELEMENT
+  tipState.value = { d, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, x: r.left, y: r.top }
+}
 
 export function hideTip(who?: unknown): void {
   if (who !== undefined && who !== owner) return
@@ -89,13 +133,16 @@ export function TooltipLayer(): JSX.Element | null {
     const move = (e: PointerEvent) => {
       if (stale(e.target)) hideTip(ELEMENT)
     }
+    const over = (e: PointerEvent) => upgradeTitle(e.target)
     const h = setInterval(() => {
       if (stale()) hideTip(ELEMENT)
     }, 250)
     window.addEventListener('pointermove', move, true)
+    window.addEventListener('pointerover', over, true)
     return () => {
       clearInterval(h)
       window.removeEventListener('pointermove', move, true)
+      window.removeEventListener('pointerover', over, true)
     }
   }, [])
   useLayoutEffect(() => {
@@ -149,6 +196,16 @@ export function TooltipLayer(): JSX.Element | null {
             <div key={k}>
               <span class="dim">{k}</span>
               <b>{v}</b>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.legend && d.legend.length > 0 && (
+        <div class="tip-legend" data-testid="tip-legend">
+          {d.legend.map((r) => (
+            <div key={r.label}>
+              <i class={'tip-sw ' + r.shape} style={r.shape === 'hollow' || r.shape === 'frame' ? { borderColor: r.color } : { background: r.color, borderColor: r.ring, boxShadow: r.ring && r.shape !== 'hostile' ? `0 0 0 ${r.shape === 'self' ? 2 : 1}px ${r.ring}` : undefined }} />
+              {r.label}
             </div>
           ))}
         </div>

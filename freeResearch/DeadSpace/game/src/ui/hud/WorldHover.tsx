@@ -1,6 +1,7 @@
 // 場景物件懸停說明：滑鼠停在單位、設施、地上物品上時，告訴玩家那是什麼、右鍵會做什麼。
 // 只用快照裡看得到的欄位（外觀、名稱、血量、旗標），不洩漏任何隱藏資訊。
 import { useEffect } from 'preact/hooks'
+import { effect } from '@preact/signals'
 import { EntFlag, type SnapEntity } from '../../shared/protocol/messages'
 import { UNITS, itemDef } from '../../shared/content/registry'
 import { entDefName, localizeName } from '../names'
@@ -13,6 +14,8 @@ import { meCtx, rightClickAction, rummageCheck, showHp, structKind, type StructK
 import { loc, t } from '../i18n'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
 import { abilityKey } from './abilityKeys'
+import { DEVOUR, devourCheck } from '../../client/devourInfo'
+import { fmtSecs } from './CdFace'
 
 function desc(id: string, args?: Record<string, string | number>): string | undefined {
   const k = 'hover.desc.' + id
@@ -49,15 +52,24 @@ function crateTip(s: SnapEntity): { body?: string; hint: string } {
 }
 
 /**
- * 自己有吞噬技能（變種人主腦，各形態同一個鍵位）、看著可以吞的生物時：「Q 吞噬：+25 EP」。
- * EP 照內容表的 devourEp（異常體 125、其他 25）；鍵位照自己指令卡的實際順序
+ * 自己有吞噬技能（變種人主腦，各形態同一個鍵位）、看著生物時的吞噬說明（client/devourInfo.ts）：
+ * 可以吞＝「可以吞噬（+25 EP）：按 Q」（冷卻中、被沉默時接著說明還不能按）；不能吞＝「不能吞噬：原因」。
+ * EP 照內容表的 devourEp（異常體 125、其他 25）；鍵位照自己指令卡的實際順序。不提吞噬時回傳 null。
  */
+export function devourLineFor(s: SnapEntity): string | null {
+  const self = new Set([world.me.unit ?? 0, world.me.control ?? 0].filter(Boolean))
+  const c = devourCheck(world.me, s, self)
+  if (!c) return null
+  if (!c.ok) return t(c.why)
+  if (c.blocked) return t('r3b.devour.blocked', { n: c.n })
+  if (c.cd > 0) return t('r3b.devour.cd', { n: c.n, s: fmtSecs(c.cd) })
+  const k = abilityKey(world.me, DEVOUR)
+  return k ? t('r3b.devour.can', { k, n: c.n }) : t('r3b.devour.canCard', { n: c.n })
+}
+
+/** 只知道外觀 id 時的吞噬說明（舊介面；一般的生物、看得到的狀態）*/
 export function devourLine(d: string): string | null {
-  const ep = UNITS.get(d)?.devourEp
-  if (!ep || world.me.alive === false) return null
-  const k = abilityKey(world.me, 'mut.devour')
-  if (k === null) return null
-  return k ? t('ui5.hover.devour', { k, n: ep }) : t('ui5.hover.devourCard', { n: ep })
+  return devourLineFor({ i: -1, d, o: -1, fl: 0 })
 }
 
 export function hoverTip(id: number): TipData | null {
@@ -65,7 +77,7 @@ export function hoverTip(id: number): TipData | null {
   const s = world.ents.get(id)?.s
   // 屍體、自己操控的單位不算（屍體另有說明）
   if (!tip || !s || ((s.fl ?? 0) & EntFlag.Corpse) !== 0 || id === (world.me.control ?? world.me.unit)) return tip
-  const dv = devourLine(s.d ?? '')
+  const dv = devourLineFor(s)
   if (dv) tip.hint = tip.hint ? `${dv}\n${tip.hint}` : dv
   return tip
 }
@@ -135,7 +147,24 @@ export function WorldHover({ scene }: { scene: GameScene }) {
     let cur = 0
     let since = 0
     let zone = scene.zone
+    // 換區、第一次進太空的「載入中」：上一個場景的懸停卡片（場景、小地圖、船艙控制台）全部收掉，不要留在載入畫面上
+    const stopLoad = effect(() => {
+      if (scene.loading.value) {
+        cur = 0
+        hideTip()
+      }
+    })
+    let ctlZone = myZone()
     const h = setInterval(() => {
+      // 自己操控的單位換了 zone（登船、進太空、傳送）：新場景可能還在建，先把舊場景的卡片收掉
+      const z = myZone()
+      if (z !== ctlZone) {
+        ctlZone = z
+        cur = 0
+        hideTip()
+        return
+      }
+      if (scene.loading.peek()) return
       // 換了場景（登船、下船、傳送）而滑鼠沒動：舊場景的懸停卡片收掉
       if (scene.zone !== zone) {
         zone = scene.zone
@@ -164,9 +193,15 @@ export function WorldHover({ scene }: { scene: GameScene }) {
       showCursorTip(tip, cursorScreen.x, cursorScreen.y)
     }, 100)
     return () => {
+      stopLoad()
       clearInterval(h)
       hideTip()
     }
   }, [scene])
   return null
+}
+
+/** 自己操控的單位所在的 zone（沒有就 undefined）*/
+function myZone(): number | undefined {
+  return world.ents.get(world.me.control || world.me.unit || 0)?.s.z
 }

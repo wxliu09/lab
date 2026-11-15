@@ -16,8 +16,6 @@ export const UI5_ZH: Record<string, string> = {
   'ui5.evo.previewNeed': '需要 {n} EP',
 
   // ───── 變種人：生物懸停說明、EP 回饋 ─────
-  'ui5.hover.devour': '{k} 吞噬：+{n} EP',
-  'ui5.hover.devourCard': '指令卡「吞噬」：+{n} EP',
   'ui5.ep.gain': '+{n} EP',
 
   // ───── 離開對局：遊戲內確認（Esc 取消）─────
@@ -68,8 +66,6 @@ export const UI5_EN: Record<string, string> = {
   'ui5.evo.preview': 'Branches at the next tier (pick one once you have the EP):',
   'ui5.evo.previewNeed': 'Needs {n} EP',
 
-  'ui5.hover.devour': '{k} Devour: +{n} EP',
-  'ui5.hover.devourCard': 'Devour (command card): +{n} EP',
   'ui5.ep.gain': '+{n} EP',
 
   'ui5.leave.title': 'Leave the game?',

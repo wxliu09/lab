@@ -9,6 +9,7 @@ import { HostRelay } from '../net/hostRelay'
 import { TrysteroTransport, loadNetSettings } from '../net/trystero'
 import { randomId, type Transport } from '../net/transport'
 import { ClientWorld } from './world'
+import { deathLines, noteDeath } from './deathNote'
 import { t } from '../ui/i18n'
 
 export type Screen = 'menu' | 'connecting' | 'lobby' | 'game'
@@ -33,6 +34,8 @@ export const chatTaps: ((lines: ChatLine[]) => void)[] = []
 function receiveChat(lines: ChatLine[]): void {
   world.addChat(lines)
   chatLog.value = [...chatLog.value, ...lines].slice(-200)
+  // 死因收給死亡橫幅（只在那裡顯示，見 deathNote.ts）
+  noteDeath(lines)
   for (const tap of chatTaps) tap(lines)
 }
 export const endResult = signal<EndResult | null>(null)
@@ -41,6 +44,17 @@ export const notice = signal('')
 export const noticeKey = signal('')
 /** 收到 start 之後還沒回報 loaded */
 let loadPending = false
+/** 回報 loaded 的本地時間（performance.now，ms；0 = 這局還沒回報）*/
+let loadSentAt = 0
+
+/**
+ * 主機的「還在等幾個人載入」（world.w.ld）裡面算不算自己：還沒回報 loaded、或剛回報、主機那邊可能還沒收到（rtt 內）時算。
+ * 練習局只有自己一個真人時，等的就是自己，不能寫成「等待其他玩家」。
+ */
+export function selfInLoadWait(now = performance.now(), rttMs = rtt()): boolean {
+  if (loadPending || !loadSentAt) return true
+  return now - loadSentAt < Math.max(400, rttMs * 1.5 + 150)
+}
 export const hostConflict = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
@@ -182,8 +196,12 @@ function onHostMsg(m: HostMsg): void {
       world.reset()
       startInfo.value = m.info
       loadPending = true
+      loadSentAt = 0
       endResult.value = null
-      if (!keep) chatLog.value = []
+      if (!keep) {
+        chatLog.value = []
+        deathLines.value = []
+      }
       screen.value = 'game'
       watchStall(true)
       break
@@ -200,7 +218,12 @@ function onHostMsg(m: HostMsg): void {
       if (loadPending) {
         // 開局後第一份快照：等場景建好、畫出畫面（主執行緒忙完、兩個 rAF 之後）再告訴主機可以開始
         loadPending = false
-        requestAnimationFrame(() => requestAnimationFrame(() => send({ t: 'loaded' })))
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            loadSentAt = performance.now()
+            send({ t: 'loaded' })
+          }),
+        )
       }
       break
     case 'chat':

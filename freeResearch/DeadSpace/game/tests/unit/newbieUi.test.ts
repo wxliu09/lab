@@ -110,18 +110,20 @@ describe('變種人看生物：吞噬提示', () => {
   it('有吞噬技能時，小生物、失敗實驗體、異常體的說明加上「鍵位 吞噬：+EP」（數值照內容表）', () => {
     world.me = { role: 'mutant', alive: true, abilities: ab('ab.mut.sludge', 'mut.devour') }
     const slug = hoverTip(put('creature.slugling'))!
-    expect(slug.hint).toContain('W 吞噬：+25 EP')
+    // 第 3 輪：寫成「可以吞噬（+N EP）：按 鍵」（r3b-hud.test.ts、r3b-client.test.ts 有完整的可以／不能吞噬說明）
+    expect(slug.hint).toContain('可以吞噬（+25 EP）：按 W')
     expect(hoverTip(put('creature.failed'))!.hint).toContain('+25 EP')
     expect(hoverTip(put('creature.anomaly'))!.hint).toContain('+125 EP')
     // 敵對的暴走實驗體也吃得下：吞噬提示在前、攻擊提示保留
     const hostile = hoverTip(put('creature.failedHostile', { fl: EntFlag.Hostile }))!
     expect(hostile.hint).toContain('吞噬')
     expect(hostile.hint).toContain(t('hover.hint.attack'))
-    // 屍體、吃不了的東西不提
+    // 屍體不提（屍體另有說明）
     expect(hoverTip(put('creature.slugling', { fl: EntFlag.Corpse }))!.hint ?? '').not.toContain('吞噬')
-    expect(hoverTip(put('creature.snowgle', { fl: EntFlag.Hostile }))!.hint ?? '').not.toContain('吞噬')
+    // 吃不了的生物：說明「不能吞噬：原因」
+    expect(hoverTip(put('creature.snowgle', { fl: EntFlag.Hostile }))!.hint ?? '').toContain('不能吞噬')
     lang.value = 'en'
-    expect(devourLine('creature.slugling')).toBe('W Devour: +25 EP')
+    expect(devourLine('creature.slugling')).toBe('Can devour (+25 EP): press W')
   })
 
   it('沒有吞噬技能（人類、異形）或已經死了：不提', () => {

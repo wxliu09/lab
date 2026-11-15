@@ -230,7 +230,7 @@ export function pushOutOfConsoles(l: ParsedLayout, p: Pt, spots: readonly Consol
  * 小地圖右鍵的目標：點到的格子站得下又走得到就照原點；否則改成同一個房間裡最近的可走格（點到牆上時，在附近 3 格內找任何房間或走廊）。
  * 都找不到（整個房間走不到、點在岩壁深處）回傳 null，呼叫端顯示「無法到達」。
  */
-export function walkableTarget(l: ParsedLayout, p: Pt, bodyR = DEFAULT_BODY_R, reach: Uint8Array | null = null): Pt | null {
+export function walkableTarget(l: ParsedLayout, p: Pt, _bodyR = DEFAULT_BODY_R, reach: Uint8Array | null = null): Pt | null {
   const x = Math.max(0.5, Math.min(l.w - 0.5, p.x))
   const y = Math.max(0.5, Math.min(l.h - 0.5, p.y))
   const i0 = idxAt(l, x, y)

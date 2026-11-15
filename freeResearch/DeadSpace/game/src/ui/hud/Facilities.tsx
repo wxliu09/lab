@@ -10,11 +10,28 @@ import { loc, t } from '../i18n'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
 import { OpenSound } from './OpenSound'
+import { PanelTabs, interactPanels } from './VendorPanel'
+import type { PanelEntry } from '../../client/interactPanels'
 
 const POWER_ICONS: Record<string, string> = { normal: 'stop', ambient: 'battery', explorer: 'ship', station: 'bolt', lab: 'dna' }
 
-/** 面板標頭：圖示＋名稱＋「靠近時開啟」*/
-function Head({ icon, title }: { icon: string; title: string }) {
+/** 範圍內的互動面板（分頁用；販賣機面板 VendorPanel.tsx 同一份清單）*/
+interface Tabs {
+  list: PanelEntry[]
+  cur: PanelEntry | null
+}
+
+/** 面板標頭：圖示＋名稱＋「靠近時開啟」；範圍內有 2 台以上時上方有分頁 */
+function Head({ icon, title, tabs }: { icon: string; title: string; tabs: Tabs }) {
+  return (
+    <>
+      <PanelTabs list={tabs.list} cur={tabs.cur} />
+      <HeadRow icon={icon} title={title} />
+    </>
+  )
+}
+
+function HeadRow({ icon, title }: { icon: string; title: string }) {
   return (
     <div class="ip-head">
       <OpenSound />
@@ -36,10 +53,10 @@ function Offline({ off }: { off: number }) {
   return off > 0 ? <div class="notice">{t('fac.offlineFor', { s: off })}</div> : null
 }
 
-function PowerPanel({ v }: { v: Extract<FacilityView, { k: 'power' }> }) {
+function PowerPanel({ v, tabs }: { v: Extract<FacilityView, { k: 'power' }>; tabs: Tabs }) {
   return (
     <div class="panel interact-panel" data-testid="fac-power">
-      <Head icon="bolt" title={t('fac.power.title')} />
+      <Head icon="bolt" title={t('fac.power.title')} tabs={tabs} />
       <div class="dim ip-hint">
         {t('fac.power.hint')}
       </div>
@@ -68,11 +85,11 @@ function PowerPanel({ v }: { v: Extract<FacilityView, { k: 'power' }> }) {
   )
 }
 
-function FactoryPanel({ v }: { v: Extract<FacilityView, { k: 'factory' }> }) {
+function FactoryPanel({ v, tabs }: { v: Extract<FacilityView, { k: 'factory' }>; tabs: Tabs }) {
   const cur = v.cur ? itemDef(v.cur) : undefined
   return (
     <div class="panel interact-panel" data-testid="fac-factory">
-      <Head icon="module" title={t('fac.factory.title')} />
+      <Head icon="module" title={t('fac.factory.title')} tabs={tabs} />
       <div class="dim ip-hint">
         {t('fac.factory.hint')}
       </div>
@@ -111,10 +128,10 @@ function cellName(i: number): string {
   return room ? loc(room.name) : t('fac.cells.cell', { n: i + 1 })
 }
 
-function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
+function CellsPanel({ v, tabs }: { v: Extract<FacilityView, { k: 'cells' }>; tabs: Tabs }) {
   return (
     <div class="panel interact-panel" data-testid="fac-cells">
-      <Head icon="key" title={t('fac.cells.title')} />
+      <Head icon="key" title={t('fac.cells.title')} tabs={tabs} />
       <div class="dim ip-hint">
         {t('fac.cells.hint')}
       </div>
@@ -140,12 +157,12 @@ function CellsPanel({ v }: { v: Extract<FacilityView, { k: 'cells' }> }) {
  * 籠子控制台：製籠（把平台上的標本關起來，平台上沒有標本也會做出空籠子）＋「從第 N 間取標本」直接把隔間裡的一隻標本移進平台上
  * 還裝得下的籠子。面板不顯示各隔間有幾隻（偽裝成生物的玩家會被看穿），沒有標本的隔間由 sim 回「找不到標本」。
  */
-function CagePanel({ v }: { v: Extract<FacilityView, { k: 'cage' }> }) {
+function CagePanel({ v, tabs }: { v: Extract<FacilityView, { k: 'cage' }>; tabs: Tabs }) {
   const noCage = v.cage < 0
   const stop = v.busy > 0 || v.off > 0
   return (
     <div class="panel interact-panel" data-testid="fac-cage">
-      <Head icon="key" title={t('fac.cage.title')} />
+      <Head icon="key" title={t('fac.cage.title')} tabs={tabs} />
       <div class="dim ip-hint">
         {t('fac.cage.hint', { cap: v.cap })}
       </div>
@@ -185,15 +202,18 @@ export function FacilityPanel() {
   void snapTick.value
   const v = world.me.fac
   if (!v || world.me.alive === false) return null
+  // 旁邊還有販賣機、玩家選了那一台（右鍵或分頁）：讓販賣機面板顯示
+  const tabs = interactPanels()
+  if (tabs.cur && tabs.cur.kind !== 'fac') return null
   switch (v.k) {
     case 'power':
-      return <PowerPanel v={v} />
+      return <PowerPanel v={v} tabs={tabs} />
     case 'factory':
-      return <FactoryPanel v={v} />
+      return <FactoryPanel v={v} tabs={tabs} />
     case 'cells':
-      return <CellsPanel v={v} />
+      return <CellsPanel v={v} tabs={tabs} />
     case 'cage':
-      return <CagePanel v={v} />
+      return <CagePanel v={v} tabs={tabs} />
   }
   return null
 }

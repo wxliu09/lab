@@ -9,23 +9,28 @@ import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, leave, notice, noticeKey } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
-import { aimAbility, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, selected, targetMode, type AimMode, type Input } from '../../client/input'
+import { aimAbility, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { TopSlot } from './Announce'
-import { hideTip, showCursorTip, tipProps, type TipData } from '../tooltip'
+import { hideTip, showCursorTip, tipProps, titleTips, type LegendRow, type TipData } from '../tooltip'
 import { uiZoom } from '../uiScale'
 import { createPortal } from 'preact/compat'
 import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
-import { MINIMAP, poiColor, poiShape } from '../minimapColors'
+import { MINIMAP, MINIMAP_PLAYERS_SWATCH, poiColor, poiShape } from '../minimapColors'
+import { guideOpen, helpTab, legendPois } from './Guide'
+import { codexOpen } from './Codex'
+import { soloPracticeNow, watchPracticePause } from '../../client/practicePause'
+import { deathLines, deathScreenOnly } from '../../client/deathNote'
+import { EXPOSING_ABILITIES, watcherCount } from '../../client/exposure'
 import { DEFAULT_BODY_R, minimapMoveTarget } from '../../render/moveTargets'
 import { chatFade } from '../../client/chatFade'
 import '../strings/art3'
@@ -52,8 +57,44 @@ function roleLabel(me: typeof world.me): { text: string; color: string } {
   return { text: me.role ? t('role.' + me.role) : '', color: ROLE_COLOR[me.role ?? 'human'] }
 }
 
+/** 門禁紀錄的剪影（Investigation.tsx 的 DoorLog 用原生 title 標示）：改成遊戲 tooltip 時補一句說明這是什麼 */
+const DOOR_SILS = ['crew', 'rig', 'creature', 'machine', 'unknown']
+titleTips.push((title) => (DOOR_SILS.some((k) => t('door.sil.' + k) === title) ? { sub: t('door.log'), body: t('r3b.doorLog.body') } : null))
+
+/**
+ * 單機練習暫停中的標示：掛在 body 上、蓋在所有對話框之上（遊戲選單、說明、圖鑑都是全畫面遮罩）。
+ * 看主機回報的 w.pz（主機真的停了才顯示）。pz 不是 signal，要由頂列當成 prop 傳進來：讀了 signal 的元件在 props 沒變時
+ * 不會跟著父元件重繪（@preact/signals 的最佳化），直接讀 world.w.pz 會卡在舊的狀態
+ */
+function PauseBadge({ on }: { on: boolean }) {
+  if (!on || !soloPracticeNow()) return null
+  const z = uiZoom.value
+  return createPortal(
+    <div class="pause-badge" data-testid="practice-paused" role="status" style={{ fontSize: `${Math.round(17 * z)}px`, top: `${Math.round(8 * z)}px` }}>
+      <span class="pause-ico" aria-hidden="true">
+        ❚❚
+      </span>
+      <span>
+        <b>{t('r3b.pause.title')}</b>
+        <span class="pause-sub" style={{ fontSize: `${Math.round(13 * z)}px` }}>
+          {t('r3b.pause.sub')}
+        </span>
+      </span>
+    </div>,
+    document.body,
+  )
+}
+
+/** 會讓單機練習暫停的介面開著：遊戲選單（Esc）、說明（G）、圖鑑（F1）、設定（四個都讀，訂閱它們的 signal）*/
+function pauseUiOpen(): boolean {
+  const open = [menuOpen.value, guideOpen.value, codexOpen.value, settingsOpen.value]
+  return open.some(Boolean)
+}
+
 export function TopBar() {
   void snapTick.value
+  // 單機練習：打開遊戲選單、說明、圖鑑、設定時請主機暫停，全部關掉時繼續（practicePause.ts）
+  useEffect(() => watchPracticePause(pauseUiOpen), [])
   const me = world.me
   const w = world.w
   const rl = roleLabel(me)
@@ -67,7 +108,7 @@ export function TopBar() {
         <Stability />
       </span>
       {w.al && (
-        <span data-testid="alive" {...tipProps(() => ({ title: t('ui4.alive.title'), body: t('ui4.alive.body') }))}>
+        <span data-testid="alive" {...tipProps(() => ({ title: t('ui4.alive.title'), body: t('r3b.alive.body') }))}>
           <span class="alive-ico" aria-label={t('ui4.alive')}>
             <Icon name="crew" size={15} color="#9fb3c2" />
           </span>{' '}
@@ -89,6 +130,7 @@ export function TopBar() {
         </span>
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
+      <PauseBadge on={!!w.pz} />
       <button class="small ghost icon-btn" data-testid="mute" onClick={() => setAudioPref('muted', !audioPrefs.value.muted)} {...tipProps(() => ({ title: t('hud.mute') }))}>
         <Icon name={audioPrefs.value.muted ? 'muted' : 'sound'} size={18} color={audioPrefs.value.muted ? '#8b9aa8' : '#9fe7ff'} />
       </button>
@@ -135,12 +177,13 @@ export function Banner() {
       </div>
     )
   if (connLost.value) return <div class="panel banner">{t('net.hostLost')}</div>
-  // 開局等所有人載入完才開始：畫面靜止不是當機
-  const waiting = Number(world.w.ld ?? 0)
-  if (waiting > 0)
+  // 開局等所有人載入完才開始：畫面靜止不是當機。主機的人數裡可能算著自己（還沒回報、或剛回報主機還沒收到）：
+  // 扣掉自己才是「其他玩家」；單機練習只有自己一個真人，不會有「等待其他玩家」
+  const others = othersLoading(Number(world.w.ld ?? 0))
+  if (others > 0)
     return (
       <div class="panel banner" data-testid="load-wait">
-        {t('net.waitLoad', { n: waiting })}
+        {t('net.waitLoad', { n: others })}
       </div>
     )
   if (world.w.bg && !isHost.value) return <div class="panel banner">{t('net.hostBg')}</div>
@@ -150,10 +193,30 @@ export function Banner() {
         {t('net.hostLoading')}
       </div>
     )
-  // 出局者（死亡即退出）不能觀戰、也不能和死者聊天：目標面板已說明「等待結算」，這裡不再顯示觀戰橫幅
-  if (me.alive === false && me.coreWait) return <div class="panel banner">{t('hud.coreWait')}</div>
-  if (me.alive === false && me.role !== 'spectator' && !me.booted) return <div class="panel banner">{t('hud.dead')}</div>
+  // 死亡畫面：觀戰說明＋死因（死因只在這裡顯示；公告、提示、聊天紀錄都不重複，見 client/deathNote.ts）。
+  // 出局者（死亡即退出）不能觀戰、也不能和死者聊天：出局對話框已經說明，這裡只留死因（浮在對話框遮罩之上）
+  if (me.alive === false && me.role !== 'spectator') {
+    const head = me.booted ? '' : me.coreWait ? t('hud.coreWait') : t('hud.dead')
+    const causes = deathLines.value
+    if (!head && !causes.length) return null
+    return (
+      <div class="panel banner death-banner" data-testid="death-banner" style={me.booted ? { zIndex: 51 } : undefined}>
+        {head && <div>{head}</div>}
+        {causes.map((c, i) => (
+          <div key={i} class={'death-cause' + (i === 0 ? ' first' : '')} data-testid={i === 0 ? 'death-cause' : undefined}>
+            {sysText(c)}
+          </div>
+        ))}
+      </div>
+    )
+  }
   return null
+}
+
+/** 開局等載入：主機回報的人數（ld）扣掉自己之後，還在等幾位其他玩家（單機練習恆為 0）*/
+export function othersLoading(ld: number, humans = (startInfo.value?.players ?? []).filter((p) => !p.bot).length, selfCounted = selfInLoadWait()): number {
+  if (ld <= 0 || humans <= 1) return 0
+  return Math.max(0, ld - (selfCounted ? 1 : 0))
 }
 
 export function Minimap(props: { scene: GameScene }) {
@@ -323,8 +386,36 @@ export function Minimap(props: { scene: GameScene }) {
           else scene.rts.focus(p.x, p.y)
         }}
       />
+      {/* 圖例：滑鼠移上去看顏色與形狀的意思（完整的在 G 說明第 3 頁，點一下直接打開）*/}
+      <button
+        class="minimap-help"
+        data-testid="minimap-help"
+        aria-label={t('r3b.minimap.legend')}
+        onClick={() => {
+          helpTab.value = 'things'
+          guideOpen.value = true
+        }}
+        {...tipProps(() => minimapLegendTip(sceneRef.current?.zone === 0))}
+      >
+        ?
+      </button>
     </div>
   )
+}
+
+/** 小地圖圖例的 tooltip：顏色與形狀全部照 minimapColors.ts（和小地圖、G 說明的圖例同一份）*/
+export function minimapLegendTip(space: boolean): TipData {
+  const mine = startInfo.value?.players.find((p) => p.slot === world.me.slot)?.color
+  const myColor = mine !== undefined ? (PLAYER_COLORS[mine]?.hex ?? MINIMAP.selfNoColor) : MINIMAP.selfNoColor
+  const legend: LegendRow[] = [
+    { shape: 'self', color: myColor, ring: MINIMAP.selfRing, label: t('guide3.map.selfRing') },
+    { shape: 'player', color: MINIMAP_PLAYERS_SWATCH, ring: MINIMAP.playerRing, label: t('guide3.map.playersDot') },
+    { shape: 'hostile', color: MINIMAP.hostile, ring: MINIMAP.hostileRing, label: t('guide3.map.hostileDiamond') },
+    { shape: 'other', color: MINIMAP.neutral, label: t('guide3.map.otherDot') },
+    ...legendPois().map((k): LegendRow => ({ shape: k === 'console' ? 'hollow' : 'square', color: MINIMAP[k], label: t('guide.map.' + k) })),
+    { shape: 'frame', color: MINIMAP.view, label: t('guide.map.view') },
+  ]
+  return { title: t('r3b.minimap.legend'), body: space ? t('guide.map.space') : undefined, legend, hint: t('r3b.minimap.legendHint'), color: '#9fe7ff' }
 }
 
 /**
@@ -590,11 +681,14 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   if (!passive) hints.push(t('tip.ability.use', { k: key }))
   if (ab.autocast) hints.push(t('tip.ability.auto'))
   if (st?.disabled) hints.unshift(t('tip.ability.disabled'))
+  // 變身被看到就曝光：視野裡有其他人形單位時，按下去之前就先警告（exposure.ts）
+  const watchers = EXPOSING_ABILITIES.has(id) ? watcherCount(world) : 0
   // 冷卻中、能量不足：直接寫在最上面，不然玩家不知道為什麼按不下去
   if (st && st.cd > 0) hints.unshift(t('tip.ability.cooling', { s: fmtSecs(st.cd) }))
   const mp = world.ents.get(world.me.control || world.me.unit || 0)?.s.mp
   if (st && !st.cd && ab.mana > 0 && mp !== undefined && mp < ab.mana) hints.unshift(t('tip.ability.noMana', { need: ab.mana, have: Math.floor(mp) }))
-  return { title: loc(ab.name), tag: key || undefined, body: loc(ab.desc), rows, hint: hints.join('\n'), color: '#9fe7ff' }
+  if (watchers > 0) hints.unshift(t('r3b.expose.tip', { n: watchers }))
+  return { title: loc(ab.name), tag: key || undefined, body: loc(ab.desc), rows, hint: hints.join('\n'), hintColor: watchers > 0 ? '#ffb4a8' : undefined, color: '#9fe7ff' }
 }
 
 /** 觀戰中、沒有操控任何東西（死者附身蛞蝓仔時例外）：指令卡、背包沒有作用，不顯示 */
@@ -884,7 +978,8 @@ export function Chat() {
       if (dwell) clearTimeout(dwell)
     }
   }, [])
-  const lines = chatLog.value.slice(-12)
+  // 死因與「你死了…」只在死亡橫幅顯示（deathNote.ts），聊天紀錄不重複列出
+  const lines = chatLog.value.filter((l) => !deathScreenOnly(l)).slice(-12)
   const now = performance.now()
   const stamps = lines.map((l) => chatStamp(l, now))
   const reveal = chatOpen.value || hover

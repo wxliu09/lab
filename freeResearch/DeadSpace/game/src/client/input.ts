@@ -12,7 +12,8 @@ import { CONSOLE_KINDS, CONSOLE_LOCK_PAD, CONSOLE_R, DEFAULT_BODY_R, consoleAppr
 import { entDefName } from '../ui/names'
 import { loc, t } from '../ui/i18n'
 import { showCursorTip } from '../ui/tooltip'
-import { sendCmd, snapTick, world } from './session'
+import { cmdTaps, sendCmd, snapTick, world } from './session'
+import { EXPOSING_ABILITIES, canShapeshift, looksNamed, watcherCount } from './exposure'
 import { giveRefusal } from './give'
 import { meCtx, rightClickAction, rummageClick } from './interactKind'
 import { SNAP_M, SNAP_MIN_PX, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
@@ -34,8 +35,26 @@ export const evolveOpen = signal(false)
 export const menuOpen = signal(false)
 /** 本機提示（不經網路，例如「再按一次脫下防護服」）：Announce 會顯示。text = 字串 key（args = 代入的參數）；life = 顯示毫秒（不給就依字數，Announce.tsx noticeLife）*/
 export const localNotice = signal<{ text: string; at: number; life?: number; args?: Record<string, string | number> } | null>(null)
-/** 最後一次右鍵互動的對象（販賣機挨在一起時，面板優先顯示這台）*/
+/**
+ * 最後一次互動的對象（右鍵、互動指令、或點互動面板上方的分頁）：範圍內有好幾台販賣機／設施時，面板優先顯示這台
+ * （client/interactPanels.ts）
+ */
 export const lastInteract = signal(0)
+
+let exposeAt = 0
+/**
+ * 變身被看到就曝光（exposure.ts）：視野裡有其他人形單位時跳一次本機提示。key = 提示字串；
+ * 連按時 1.5 秒內只提示一次。回傳是否提示了。
+ */
+export function exposeWarn(key: string): boolean {
+  const n = watcherCount(world)
+  if (n <= 0) return false
+  const now = performance.now()
+  if (now - exposeAt < 1500) return false
+  exposeAt = now
+  localNotice.value = { text: key, args: { n }, at: now }
+  return true
+}
 
 export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
 
@@ -291,6 +310,21 @@ export class Input {
           }
           prevUnit = u
         }
+      }),
+    )
+    // 送出互動指令（右鍵、腳本、測試）：記下對象，面板優先顯示那一台
+    const tapInteract = (c: { k: string; e?: number }) => {
+      if (c.k === 'interact' && c.e) lastInteract.value = c.e
+    }
+    cmdTaps.push(tapInteract)
+    this.disposers.push(() => {
+      const i = cmdTaps.indexOf(tapInteract)
+      if (i >= 0) cmdTaps.splice(i, 1)
+    })
+    // 打開進化選單：從認得出是誰的樣子進化（結繭、變肉團、換機體）會被旁邊的人看到，先提醒
+    this.disposers.push(
+      effect(() => {
+        if (evolveOpen.value && canShapeshift(world.me) && looksNamed(world)) exposeWarn('r3b.expose.evolve')
       }),
     )
     // 船艙控制台的懸停卡片（同 WorldHover：停留 0.25 秒才顯示）
@@ -689,6 +723,8 @@ export class Input {
       }
       this.dropArmed = 0
     }
+    // 變身、褪皮、千面…被看到就曝光：視野裡有人時提醒一次（有詠唱時間的，施法條上也會警告，按 S 可以取消）
+    if (EXPOSING_ABILITIES.has(ab.id)) exposeWarn(ab.cast ? 'r3b.expose.press' : 'r3b.expose.pressNow')
     if (ab.target === 'none' || ab.target === 'self' || ab.target === 'toggle') {
       sendCmd({ k: 'cast', a: ab.id })
       return
