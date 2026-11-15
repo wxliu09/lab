@@ -31,7 +31,7 @@ vi.mock('../../src/client/input', async () => {
 
 const G = await import('../../src/ui/hud/Guide')
 const { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } = await import('../../src/ui/strings/guide')
-const { hasString } = await import('../../src/ui/i18n')
+const { hasString, lang } = await import('../../src/ui/i18n')
 const MM = await import('../../src/ui/minimapColors')
 type View = Parameters<typeof G.objectiveFor>[0]
 
@@ -64,13 +64,16 @@ describe('身分判定', () => {
 })
 
 describe('目標面板', () => {
-  it('人類：沒穿防護服、檢測器還沒上架時顯示倒數與職業', () => {
+  it('人類：沒穿防護服、檢測器還沒上架時顯示倒數、空窗任務與職業', () => {
     const o = G.objectiveFor(view({ role: 'human', classId: 'janitor' }))!
     expect(o.goal).toBe('guide.goal.human')
-    expect(o.steps.map((s) => s.key)).toEqual(['guide.s.suitGet', 'guide.s.samplerWait', 'guide.s.attack', 'guide.s.class'])
+    // t = 100：倒數＋一條空窗任務；「攻擊別人」只留在開局前 90 秒
+    expect(o.steps.map((s) => s.key)).toEqual(['guide.s.suitGet', 'guide.s.samplerWait', 'guide.s.altGroup', 'guide.s.class'])
     expect(o.steps[1].args).toEqual({ t: '5:20' })
     expect(o.steps[3].dim).toBe(true)
     expect(o.ep).toBeUndefined()
+    const early = G.objectiveFor({ ...view({ role: 'human', classId: 'ceo' }), w: { t: 30 } })!
+    expect(early.steps.map((s) => s.key)).toEqual(['guide.s.suitGet', 'guide.s.samplerWait', 'guide.s.altGear', 'guide.s.attack', 'guide.s.class'])
   })
 
   it('人類：背包裡的防護服、檢測器、解析器會換成「按幾號」', () => {
@@ -84,6 +87,71 @@ describe('目標面板', () => {
     expect(r.steps.map((s) => s.key)).not.toContain('guide.s.suitGet')
     // 420 秒後改成去領
     expect(keysOf({ ...view({ role: 'human', classId: 'ceo' }), w: { t: 500 } })).toContain('guide.s.samplerGet')
+  })
+
+  it('基因檢測開放時間依 w.gitAt（簡單難度 240）；沒有這個欄位時當 420', () => {
+    expect(G.gitAtOf({})).toBe(420)
+    expect(G.gitAtOf({ gitAt: 240 } as never)).toBe(240)
+    expect(G.gitAtOf({ gitAt: 'x' } as never)).toBe(420)
+    expect(G.gitMinutes({})).toBe(7)
+    expect(G.gitMinutes({ gitAt: 240 } as never)).toBe(4)
+    const at = (t: number, gitAt?: number) => G.objectiveFor({ ...view({ role: 'human', classId: 'ceo' }, { self: { d: 'suit.plasma', hp: 1, mhp: 1 } }), w: { t, ...(gitAt ? { gitAt } : {}) } as never })!
+    expect(at(100, 240).steps.find((s) => s.key === 'guide.s.samplerWait')?.args).toEqual({ t: '2:20' })
+    expect(at(250, 240).steps.map((s) => s.key)).toContain('guide.s.samplerGet')
+    expect(at(250).steps.map((s) => s.key)).toContain('guide.s.samplerWait')
+  })
+
+  it('基因檢測開放前的空窗任務：每 20 秒換一條，翻雜物箱只給有翻找技能的人', () => {
+    const alt = (t: number, abilities: PrivateState['abilities'] = []) =>
+      G.objectiveFor({ ...view({ role: 'human', classId: 'janitor', abilities }, { self: { d: 'suit.plasma', hp: 1, mhp: 1 } }), w: { t } })!.steps.find((s) => s.key.startsWith('guide.s.alt'))!
+    const seen = new Set([0, 20, 40, 60, 80, 100].map((t) => alt(t).key))
+    expect(seen).toEqual(new Set(['guide.s.altScan', 'guide.s.altGear', 'guide.s.altGroup']))
+    const withRummage = new Set([0, 20, 40, 60].map((t) => alt(t, ab('cls.rummage')).key))
+    expect(withRummage).toContain('guide.s.altRummage')
+    expect(alt(0, ab('cls.rummage')).args).toEqual({ k: 'Q' })
+    // 已經在抽血、或檢測已開放：不再出現空窗任務
+    expect(keysOf({ ...view({ role: 'human', inv: inv('geneSampler') }), w: { t: 100 } }).some((k) => k.startsWith('guide.s.alt'))).toBe(false)
+    expect(keysOf({ ...view({ role: 'human' }), w: { t: 500 } }).some((k) => k.startsWith('guide.s.alt'))).toBe(false)
+  })
+
+  it('配發防護服的職業：直接寫出實際拿到的那一套（背包裡的、身上穿的），其他職業的開局物品照實寫', () => {
+    const desc = (me: Partial<PrivateState>, self = 'personnel') => String(G.objectiveFor(view({ role: 'human', ...me }, { self: { d: self, hp: 1, mhp: 1 } }))!.steps.find((s) => s.key === 'guide.s.class')!.args!.desc)
+    expect(desc({ classId: 'security', inv: inv('suit.cryo') })).toContain('冷凍裝')
+    expect(desc({ classId: 'security' }, 'suit.plasma')).toContain('電漿裝')
+    // 都找不到（交給別人了）：說隨機一套，不說「戰鬥裝」這種背包裡看不到的名字
+    expect(desc({ classId: 'security' })).not.toContain('戰鬥裝')
+    expect(desc({ classId: 'ace', inv: inv('suit.rocket') })).toContain('火箭裝')
+    // 工程師的服務裝開局在背包裡（不是穿在身上）
+    expect(desc({ classId: 'engineer', inv: inv('suit.service', 'wrench') })).toContain('服務裝')
+    expect(desc({ classId: 'engineer', inv: inv('suit.service') })).not.toContain('穿著')
+    expect(desc({ classId: 'corporal' })).toContain('0.25')
+    lang.value = 'en'
+    expect(desc({ classId: 'security', inv: inv('suit.cryo') })).toContain('Cryo Suit')
+    lang.value = 'zh'
+  })
+
+  it('重大事件：依 w.ev 在最前面插入對策（警告色），未知的 key 忽略，最多 3 條', () => {
+    const w = (ev: unknown, apo = '') => ({ t: 600, stab: 0.5, ev, apo }) as never
+    const o = G.objectiveFor({ ...view({ role: 'human', classId: 'ceo', inv: inv('geneSampler') }), w: w(['drones', 'bogus']) })!
+    expect(o.steps[0]).toEqual({ key: 'guide.ev.drones', warn: true })
+    expect(o.steps.filter((s) => s.warn).length).toBe(1)
+    // 本身的任務仍在（抽血）
+    expect(o.steps.map((s) => s.key)).toContain('guide.s.samplerUse')
+    // 優先順序：末日 > 天守 > 無人機 > 小行星 > 海盜；最多 3 條
+    const many = G.objectiveFor({ ...view({ role: 'xeno', abilities: ab('xeno.form') }), w: w(['pirate', 'asteroids', 'drones', 'tenshu', 'doom'], 'orbit') })!
+    expect(many.steps.filter((s) => s.warn).map((s) => s.key)).toEqual(['guide.ev.doom.orbit', 'guide.ev.tenshu', 'guide.ev.drones'])
+    expect(many.steps.length).toBeLessThanOrEqual(4)
+    expect(G.eventSteps(w(['doom'], 'fleet'))[0].key).toBe('guide.ev.doom.fleet')
+    expect(G.eventSteps(w(['doom']))[0].key).toBe('guide.ev.doom')
+    // 舊版快照沒有 w.ev：從公開的末日類型認出末日
+    expect(G.activeEvents({ apo: 'orbit' })).toEqual(['doom'])
+    expect(G.activeEvents({})).toEqual([])
+    expect(G.activeEvents({ ev: 'drones' } as never)).toEqual([])
+    // 每種活著的身分都看得到；死者、觀戰不顯示
+    for (const me of [{ role: 'mutant' as const }, { role: 'android' as const }, { role: 'human' as const, spawn: true, faction: 'xeno' as const }])
+      expect(keysOf({ ...view(me), w: w(['asteroids']) })[0]).toBe('guide.ev.asteroids')
+    expect(keysOf({ ...view({ role: 'human', alive: false }), w: w(['asteroids']) })).not.toContain('guide.ev.asteroids')
+    expect(keysOf({ ...view({ role: 'spectator', alive: false }), w: w(['asteroids']) })).not.toContain('guide.ev.asteroids')
   })
 
   it('職業一句話：研究員顯示抽到的博士專長與效果（私有狀態的 phd；專長以被動套用，不在 buff 清單裡）', () => {
@@ -391,6 +459,10 @@ describe('指引文字', () => {
       view({ role: 'android', alive: false }),
       view({ role: 'spectator', alive: false }),
       view({ role: 'human', alive: false, booted: true }),
+      ...[0, 20, 40, 60].map((t) => ({ ...view({ role: 'human', classId: 'janitor', abilities: ab('cls.rummage') }), w: { t } })),
+      ...['security', 'ace', 'engineer'].map((classId) => view({ role: 'human', classId, inv: inv('suit.cryo') })),
+      ...['orbit', 'fleet', ''].map((apo) => ({ ...view({ role: 'human' }), w: { t: 1, ev: [...G.WORLD_EVENTS], apo } as never })),
+      ...G.WORLD_EVENTS.map((k) => ({ ...view({ role: 'human' }), w: { t: 1, ev: [k] } as never })),
     ]
     for (const v of states) {
       const o = G.objectiveFor(v)!
@@ -405,7 +477,8 @@ describe('指引文字', () => {
     for (const k of HELP_CONTROLS) need.add('guide.ctl.' + k).add('guide.ctl.' + k + '.k')
     for (const k of HELP_THINGS) need.add('guide.th.' + k).add('guide.th.' + k + '.t')
     for (const list of Object.values(G.ROLE_TIPS)) for (const k of list) need.add('guide.r.' + k)
-    for (const k of ['door', 'console', 'medical', 'suit', 'vendor', 'git', 'fac', 'view', 'space']) need.add('guide.map.' + k)
+    for (const k of ['door', 'window', 'console', 'medical', 'suit', 'vendor', 'git', 'fac', 'view', 'space']) need.add('guide.map.' + k)
+    for (const k of ['guide.cls.securitySuit', 'guide.cls.aceSuit', 'guide.cls.engineerSuit', 'guide.r.period']) need.add(k)
     for (const k of ['selfRing', 'playersDot', 'hostileDiamond', 'otherDot']) need.add('guide3.map.' + k)
     for (const k of ['guide3.r.booted.1', 'guide3.r.booted.2', 'guide3.help.moreLine', 'guide3.help.scroll']) need.add(k)
     for (const k of G.HELP_TABS) need.add('ui4.help.tab.' + k)
@@ -453,6 +526,63 @@ describe('提示佇列：警告優先、條件消失就收回（UI 審查第 2 �
     expect(G.detectHints(v).map((h) => h.id)).not.toContain('evolveXeno')
     expect(q.tick(0.1, false, 2, null, new Set(G.detectHints(v).map((h) => h.id)))).toBe(true)
     expect(q.active.map((a) => a.id)).toEqual(['start'])
+  })
+})
+
+describe('提示佇列：顯示前再檢查條件、過時的提示收回（新手試玩審查）', () => {
+  it('已經穿上防護服：顯示中的「按 1 穿上」收回；排隊中的不會再跳出來', () => {
+    // 基本操作、常用按鍵、背包都看過了（不然它們先佔滿兩個位置）
+    const st = memStore()
+    for (const id of ['start', 'keys', 'item']) st.add(id)
+    const q = new G.HintQueue(st)
+    const unsuited = view({ role: 'human', inv: inv('suit.cryo') })
+    const suitedV = view({ role: 'human', inv: [] }, { self: { d: 'suit.cryo', hp: 600, mhp: 600 } })
+    const step = (v: View) => {
+      const hs = G.detectHints(v)
+      for (const h of hs) q.offer(h)
+      q.tick(0.25, false, 2, null, new Set(hs.map((h) => h.id)))
+    }
+    step(unsuited)
+    expect(q.active.map((a) => a.id)).toContain('suit')
+    step(suitedV)
+    expect(q.active.map((a) => a.id)).not.toContain('suit')
+    // 排在後面（被擋住）的也一樣：條件消失就不會再顯示
+    const q2 = new G.HintQueue(memStore())
+    q2.offer({ id: 'start', pri: 10 })
+    q2.offer({ id: 'keys', pri: 11 })
+    q2.offer({ id: 'suit', pri: 22, args: { k: 1 } })
+    q2.tick(0.1, false, 2, null, new Set(['start', 'keys', 'suit']))
+    q2.tick(12, false, 2, null, new Set(['start', 'keys']))
+    expect(q2.active.map((a) => a.id)).not.toContain('suit')
+  })
+
+  it('從佇列取出、真正顯示之前再確認一次條件', () => {
+    const st = memStore()
+    const q = new G.HintQueue(st)
+    q.offer({ id: 'suit', pri: 22, args: { k: 1 } })
+    // current 裡沒有 suit：不顯示、也不算看過（之後條件再成立還會出現）
+    q.tick(0.1, false, 2, null, new Set(['start']))
+    expect(q.active).toEqual([])
+    expect(st.has('suit')).toBe(false)
+  })
+
+  it('顯示中的提示參數會更新（防護服換到第 4 格）', () => {
+    const q = new G.HintQueue(memStore())
+    q.offer({ id: 'suit', pri: 22, args: { k: 1 } })
+    q.tick(0.1, false, 2, null, new Set(['suit']))
+    q.offer({ id: 'suit', pri: 22, args: { k: 4 } })
+    expect(q.active.find((a) => a.id === 'suit')?.args).toEqual({ k: 4 })
+  })
+
+  it('換了形態：褪去人皮的提示收回、改顯示異形形態的提示；檢測器用完、交出記憶核心也收回', () => {
+    for (const id of ['xenoShed', 'xenoAlien', 'sampler', 'resolver', 'core', 'suit']) expect(G.TRANSIENT_HINTS.has(id), id).toBe(true)
+    // 內容在條件消失後仍然正確的提示照常倒數
+    for (const id of ['start', 'keys', 'vendor', 'console', 'item']) expect(G.TRANSIENT_HINTS.has(id), id).toBe(false)
+  })
+
+  it('基因檢測器的設施提示寫的是這一局的開放時間', () => {
+    const h = G.detectHints({ ...view({ role: 'human' }, { near: [{ d: 'struct.git', dist: 1 }] }), w: { t: 1, gitAt: 240 } as never }).find((x) => x.id === 'git')!
+    expect(h.args).toEqual({ m: 4 })
   })
 })
 
@@ -512,8 +642,13 @@ describe('小地圖顏色：小地圖與圖例共用一份（UI 修正 S3）', (
     expect(MM.poiColor('regenerator')).toBe(MM.MINIMAP.fac)
     expect(MM.poiColor('rummageBox')).toBe(MM.MINIMAP.fac)
     expect(MM.poiColor('pod')).toBeNull()
-    // 「窗戶、控制台」合成一列：兩者同色
-    expect(MM.MINIMAP.window).toBe(MM.MINIMAP.console)
+  })
+
+  it('圖例：窗戶與控制台分成兩列（控制台是空心方框），控制台緊接在窗戶後面', () => {
+    const list = G.legendPois()
+    expect(list.filter((k) => k === 'window').length).toBe(1)
+    expect(list.indexOf('console')).toBe(list.indexOf('window') + 1)
+    expect(hasString('zh', 'guide.map.window') && hasString('en', 'guide.map.window')).toBe(true)
   })
 
   it('圖例的每一列都有顏色與兩種語言的文字；小地圖會畫的設施顏色都在圖例裡', () => {

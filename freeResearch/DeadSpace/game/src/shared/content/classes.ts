@@ -98,7 +98,7 @@ export const CLASS_LIST: ClassDef[] = [
     abilities: ['cls.doorHack'],
     passives: [],
     spawnAt: 'caldera',
-    desc: L('穿著服務裝，能駭入附近的門將其鎖住 15 秒。', 'Wears a service suit and can hack nearby doors shut for 15 s.'),
+    desc: L('開局帶著一套服務裝，能駭入附近的門將其鎖住 15 秒。', 'Starts with a service suit in the pack and can hack nearby doors shut for 15 s.'),
     bios: bio('engineer'),
   },
   {
@@ -109,7 +109,7 @@ export const CLASS_LIST: ClassDef[] = [
     items: ['servoGreaves'],
     abilities: [],
     passives: ['cls.veteran'],
-    desc: L('老兵：攻擊力 +15%，開局穿著強化護腿。', 'Veteran: +15% damage, starts with servo greaves.'),
+    desc: L('老兵：攻擊力 +15%，開局帶著強化護腿。', 'Veteran: +15% damage, starts carrying servo greaves.'),
     bios: bio('corporal'),
   },
   {
@@ -121,7 +121,7 @@ export const CLASS_LIST: ClassDef[] = [
     abilities: [],
     passives: ['cls.ace'],
     spawnAt: 'hangar',
-    desc: L('駕駛的船艦攻速 +15%，擁有專屬的槍騎級戰機。', 'Piloted vessels fire 15% faster; owns the Lancer fighter.'),
+    desc: L('駕駛的船艦攻速 +15%，開局帶一套隨機防護服；專屬的槍騎級戰機停在站外的太空中（開局會私訊位置）。', 'Piloted vessels fire 15% faster; starts with a random combat suit and owns the Lancer fighter, parked in space outside a station (its location is sent at the start).'),
     bios: bio('ace'),
   },
 ]

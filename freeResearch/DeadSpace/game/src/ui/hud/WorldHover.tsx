@@ -12,6 +12,7 @@ import type { GameScene } from '../../render/gameScene'
 import { meCtx, rightClickAction, rummageCheck, showHp, structKind, type StructKind } from '../../client/interactKind'
 import { loc, t } from '../i18n'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
+import { abilityKey } from './abilityKeys'
 
 function desc(id: string, args?: Record<string, string | number>): string | undefined {
   const k = 'hover.desc.' + id
@@ -47,7 +48,29 @@ function crateTip(s: SnapEntity): { body?: string; hint: string } {
   return { body: desc(s.d ?? ''), hint: r.k === 'cast' ? hint : `${hint} · ${t(r.key, r.args)}` }
 }
 
+/**
+ * 自己有吞噬技能（變種人主腦，各形態同一個鍵位）、看著可以吞的生物時：「Q 吞噬：+25 EP」。
+ * EP 照內容表的 devourEp（異常體 125、其他 25）；鍵位照自己指令卡的實際順序
+ */
+export function devourLine(d: string): string | null {
+  const ep = UNITS.get(d)?.devourEp
+  if (!ep || world.me.alive === false) return null
+  const k = abilityKey(world.me, 'mut.devour')
+  if (k === null) return null
+  return k ? t('ui5.hover.devour', { k, n: ep }) : t('ui5.hover.devourCard', { n: ep })
+}
+
 export function hoverTip(id: number): TipData | null {
+  const tip = baseTip(id)
+  const s = world.ents.get(id)?.s
+  // 屍體、自己操控的單位不算（屍體另有說明）
+  if (!tip || !s || ((s.fl ?? 0) & EntFlag.Corpse) !== 0 || id === (world.me.control ?? world.me.unit)) return tip
+  const dv = devourLine(s.d ?? '')
+  if (dv) tip.hint = tip.hint ? `${dv}\n${tip.hint}` : dv
+  return tip
+}
+
+function baseTip(id: number): TipData | null {
   const e = world.ents.get(id)
   if (!e) return null
   const s = e.s

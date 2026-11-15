@@ -5,7 +5,7 @@ import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
 import { modalChecks } from '../../client/input'
-import { phdText } from './Guide'
+import { gitMinutes, phdText } from './Guide'
 
 // [主色（光暈）, 輔色, 文字色]：異形、變種人的主色在深色底上對比不到 4.5:1，文字改用亮色
 const COL: Record<Identity, [string, string, string]> = {
@@ -79,6 +79,8 @@ export function RoleReveal() {
   const obj = OBJECTIVES[role]
   const L = lang.value === 'en' ? 'en' : 'zh'
   const phd = phdText(world.me, 'play1.reveal.phd')
+  // 基因檢測開放的分鐘數依這一局的設定（簡單難度較早）
+  const gitM = String(gitMinutes(world.w))
   return (
     <div class="modal-back" data-testid="reveal" style={{ background: `radial-gradient(ellipse at 50% 40%, ${c1}22, rgba(0,0,0,0.92) 70%)` }} onClick={() => setOpen(false)}>
       <div style={{ width: 'min(760px, 92vw)', textAlign: 'center' }}>
@@ -102,7 +104,7 @@ export function RoleReveal() {
         <div class="panel solid" style={{ padding: '14px 22px', textAlign: 'left', marginTop: '12px' }}>
           {obj[L].map((o, i) => (
             <div key={i} style={{ padding: '3px 0', color: i === 0 ? ct : undefined }}>
-              › {o}
+              › {o.replaceAll('{m}', gitM)}
             </div>
           ))}
         </div>

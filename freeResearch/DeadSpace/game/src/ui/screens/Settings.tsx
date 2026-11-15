@@ -68,9 +68,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
   return (
     <div class="modal-back" onClick={onClose}>
-      <div class="panel modal" onClick={(e) => e.stopPropagation()}>
+      {/* 內容區可捲動、按鈕列固定在底部：小視窗也一定看得到「儲存」*/}
+      <div class="panel modal settings-modal" data-testid="settings" onClick={(e) => e.stopPropagation()}>
         <h2>{t('settings.title')}</h2>
-        <div class="col">
+        <div class="col settings-body" data-testid="settings-body">
           <div class="setrow">
             <label>
               {t('settings.lang')}
@@ -158,12 +159,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <div class="dim" style={{ fontSize: '13px', wordBreak: 'break-all' }}>
             {t('settings.turnHelp')}
           </div>
-          <div class="notice">{err}</div>
+        </div>
+        <div class="settings-foot">
+          {err && <div class="notice">{err}</div>}
           <div class="row">
-            <button class="primary grow" onClick={save}>
+            <button class="primary grow" data-testid="settings-save" onClick={save}>
               {t('settings.save')}
             </button>
-            <button class="ghost" onClick={onClose}>
+            <button class="ghost" data-testid="settings-close" onClick={onClose}>
               {t('settings.close')}
             </button>
           </div>

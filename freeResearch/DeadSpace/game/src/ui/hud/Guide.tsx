@@ -4,7 +4,7 @@
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { PrivateState, WorldPublic } from '../../shared/protocol/messages'
-import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
+import { CLASSES, UNITS, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { snapTick, startInfo, world } from '../../client/session'
 import { chatOpen, dialogOpen, evolveOpen, modalChecks, typingInField } from '../../client/input'
@@ -19,7 +19,10 @@ import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide
 import { sampleName } from '../../shared/sysArgs'
 import { localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
+import { abilityKey } from './abilityKeys'
 import '../guide.css'
+
+export { abilityKey }
 
 addStrings(GUIDE_ZH, GUIDE_EN)
 // 第 1 輪玩法修正的字串（AI 驗血公告、進化原因、感染提示、博士專長）；i18n.ts 也會註冊時重複無妨
@@ -131,8 +134,31 @@ export const MAX_HINTS = 2
 const WARN_HINTS = new Set(['lowHp', 'lowHpNoKit', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
 /** 不等空位的提示：警告，和「身在哪裡」的提示（船艙裡的下船方法：排在教學提示後面就等於下船之後才出現）*/
 export const URGENT_HINTS = new Set([...WARN_HINTS, 'shipInside'])
-/** 有時效的提示：條件消失（開始結繭／進化、血量回來、感染清除、下了船、死亡）就連顯示中的也收回 */
-export const TRANSIENT_HINTS = new Set(['evolveXeno', 'evolveMutant', 'evolveAndroid', 'androidFull', 'lowHp', 'lowHpNoKit', 'parasited', 'prioned', 'shipInside'])
+/**
+ * 有時效的提示：條件消失就連顯示中的也收回，免得畫面說的已經不是現況
+ * （開始結繭／進化、血量回來、感染清除、下了船、死亡；已經穿上防護服、檢測器用完、交出記憶核心、換了形態、離開設施或太空）。
+ * 其餘提示（基本操作、身旁設施的用法…）條件消失後內容仍然正確，照常倒數
+ */
+export const TRANSIENT_HINTS = new Set([
+  'evolveXeno',
+  'evolveMutant',
+  'evolveAndroid',
+  'androidFull',
+  'lowHp',
+  'lowHpNoKit',
+  'parasited',
+  'prioned',
+  'shipInside',
+  'suit',
+  'sampler',
+  'resolver',
+  'core',
+  'xenoShed',
+  'xenoAlien',
+  'xenoSpawnForm',
+  'facility',
+  'space',
+])
 
 export class HintQueue {
   active: ActiveHint[] = []
@@ -147,9 +173,9 @@ export class HintQueue {
     private transient: Set<string> = TRANSIENT_HINTS,
   ) {}
 
-  /** 條件成立：沒看過、也不在畫面或佇列裡就排進去（已在佇列裡的更新參數，例如快捷鍵）*/
+  /** 條件成立：沒看過、也不在畫面或佇列裡就排進去（已在佇列或畫面上的更新參數，例如快捷鍵、背包格換了位置）*/
   offer(h: Hint): boolean {
-    const queued = this.queue.find((q) => q.id === h.id)
+    const queued = this.queue.find((q) => q.id === h.id) ?? this.active.find((a) => a.id === h.id)
     if (queued) {
       queued.args = h.args
       return false
@@ -199,6 +225,8 @@ export class HintQueue {
         i = this.queue.findIndex((q) => this.urgent.has(q.id))
       }
       const [h] = this.queue.splice(i, 1)
+      // 真正顯示前再確認一次條件（例如已經穿上防護服，就不再跳「按 1 穿上」）
+      if (current && !current.has(h.id)) continue
       if (!this.mine.has(h.id)) {
         if (this.store.has(h.id)) continue
         this.store.add(h.id)
@@ -254,16 +282,6 @@ export function identityOf(me: Partial<PrivateState>): Identity | null {
   return me.role
 }
 
-const HOTKEYS = ['Q', 'W', 'E', 'R', 'D', 'F']
-
-/** 技能的快捷鍵（指令卡順序，同 input.ts）；null = 沒有這個技能，'' = 有但沒有快捷鍵 */
-export function abilityKey(me: Partial<PrivateState>, id: string): string | null {
-  const list = (me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
-  const i = list.findIndex((a) => a.id === id)
-  if (i < 0) return null
-  return HOTKEYS[i] ?? ''
-}
-
 function keyText(k: string): string {
   return k || t('guide.card')
 }
@@ -303,7 +321,55 @@ export interface Step {
   key: string
   args?: Record<string, string | number>
   dim?: boolean
+  /** 重大事件的對策（黃色、排最前面）*/
+  warn?: boolean
 }
+
+// ───────── 公開的全域狀態：基因檢測開放時間、進行中的重大事件 ─────────
+
+/** 基因檢測器開放（醫療補給與 GIT 檢測儀上架）的預設秒數：一般難度與正式局；簡單難度 240（sim 的 w.gitAt）*/
+export const GIT_AT_DEFAULT = 420
+
+/** 這一局基因檢測器開放的秒數：sim 的 w.gitAt；舊版快照沒有這個欄位時當 420 */
+export function gitAtOf(w: Partial<WorldPublic>): number {
+  const v = (w as { gitAt?: unknown }).gitAt
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : GIT_AT_DEFAULT
+}
+
+/** 基因檢測開放的「開局第幾分鐘」（說明文字用；240 秒 → 4、420 秒 → 7）*/
+export function gitMinutes(w: Partial<WorldPublic>): number {
+  return Math.max(1, Math.round(gitAtOf(w) / 60))
+}
+
+/** 目標面板有對策的重大事件（sim 的 w.ev）；排列順序＝顯示優先順序（有時限、最致命的在前）*/
+export const WORLD_EVENTS = ['doom', 'tenshu', 'drones', 'asteroids', 'pirate'] as const
+export type WorldEvent = (typeof WORLD_EVENTS)[number]
+/** 同時最多幾條事件對策（至少留一條給本身的任務）*/
+export const MAX_EVENT_STEPS = 3
+
+/**
+ * 進行中的重大事件：讀 sim 的 w.ev（未知的 key 忽略），依 WORLD_EVENTS 的優先順序排好。
+ * 舊版快照沒有 w.ev 時，至少從公開的末日類型（w.apo）認出末日。
+ */
+export function activeEvents(w: Partial<WorldPublic>): WorldEvent[] {
+  const raw = (w as { ev?: unknown }).ev
+  const have = new Set<string>(Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : [])
+  if (!Array.isArray(raw) && w.apo) have.add('doom')
+  return WORLD_EVENTS.filter((k) => have.has(k))
+}
+
+/** 事件對策行：末日依公開的類型（軌道失效／子艦隊）給不同說法 */
+export function eventSteps(w: Partial<WorldPublic>): Step[] {
+  return activeEvents(w)
+    .slice(0, MAX_EVENT_STEPS)
+    .map((k) => {
+      const key = k === 'doom' && (w.apo === 'orbit' || w.apo === 'fleet') ? 'guide.ev.doom.' + w.apo : 'guide.ev.' + k
+      return { key, warn: true }
+    })
+}
+
+/** 會進入目標面板事件對策的身分（活著、還能行動的）*/
+const EVENT_IDS = new Set<Identity>(['human', 'xeno', 'mutant', 'android', 'spawnXeno', 'spawnMutant'])
 
 export interface Objective {
   id: Identity
@@ -313,20 +379,49 @@ export interface Objective {
   ep?: { ep: number; next: number; ready: boolean }
 }
 
-/** 基因檢測器上架時間（content/vendors.ts：醫療補給與 GIT 檢測儀的 delay）*/
-const SAMPLER_AT = 420
+/**
+ * 開局配發的防護服名稱（保全、王牌飛行員是隨機的一套，工程師固定服務裝）：
+ * 先找背包裡的、再看身上穿的，最後才用職業內容表裡寫死的那件；都沒有回傳空字串
+ */
+function startSuitName(me: Partial<PrivateState>, v: GuideView, classItems: readonly string[]): string {
+  const at = invSlot(me, isSuitItem)
+  const inInv = at >= 0 ? me.inv?.[at]?.item : undefined
+  if (inInv) return loc(itemDef(inInv)?.name)
+  const worn = UNITS.get(v.self?.d ?? '')
+  if (worn?.tags.includes('suit')) return loc(worn.name)
+  const fixed = classItems.find(isSuitItem)
+  return fixed ? loc(itemDef(fixed)?.name) : ''
+}
+
+/** 開局配發防護服的職業（短句用 guide.cls.<id>Suit，帶 {suit}）*/
+const SUIT_CLASSES = new Set(['security', 'ace', 'engineer'])
 
 function classStep(me: Partial<PrivateState>, v: GuideView): Step | null {
   const c = CLASSES.get(me.classId ?? '')
   if (!c) return null
   // 職業特色的短句（標題已經寫了職業名）；沒有短句就用內容表的說明。
   // 博士專長以被動套用、不在自己單位的 buff 清單裡，改讀私有狀態的 phd（只給本人）
-  void v
   const phd = phdText(me)
-  const short = 'guide.cls.' + c.id + (phd ? 'Phd' : '')
-  const desc = hasString(lang.value, short) ? t(short, { phd }) : loc(c.desc)
+  // 配發的防護服直接寫出名稱（以背包、身上的實際資料為準）
+  const suit = SUIT_CLASSES.has(c.id) ? startSuitName(me, v, c.items) : ''
+  const short = 'guide.cls.' + c.id + (phd ? 'Phd' : suit ? 'Suit' : '')
+  const desc = hasString(lang.value, short) ? t(short, { phd, suit }) : loc(c.desc)
   return { key: 'guide.s.class', args: { cls: loc(c.name), desc }, dim: true }
 }
+
+/** 基因檢測開放前的空窗任務：每 20 秒換一條（翻雜物箱只給有翻找技能的人）*/
+export const ALT_PERIOD = 20
+
+function altTask(me: Partial<PrivateState>, time: number): Step {
+  const list: Step[] = []
+  const kr = abilityKey(me, 'cls.rummage')
+  if (kr !== null) list.push({ key: 'guide.s.altRummage', args: { k: keyText(kr) } })
+  list.push({ key: 'guide.s.altScan' }, { key: 'guide.s.altGear' }, { key: 'guide.s.altGroup' })
+  return list[Math.floor(Math.max(0, time) / ALT_PERIOD) % list.length]
+}
+
+/** 「攻擊別人」的步驟在基因檢測開放前只留到這個秒數（之後讓位給空窗任務；情境提示與說明面板仍有）*/
+const ATTACK_STEP_UNTIL = 90
 
 export function objectiveFor(v: GuideView): Objective | null {
   const me = v.me
@@ -349,15 +444,21 @@ export function objectiveFor(v: GuideView): Objective | null {
       }
       const res = invSlot(me, (i) => i === 'gitResolver')
       const smp = invSlot(me, (i) => i === 'geneSampler')
+      const gitAt = gitAtOf(v.w)
+      let waiting = false
       if (res >= 0) add('guide.s.resolverUse', { k: res + 1 })
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
         if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names.map((x) => localizeName(sampleName(x, lang.value)))) })
         else add('guide.s.samplerUse', { k: smp + 1 })
-      } else if (time < SAMPLER_AT && !samplerInStock()) add('guide.s.samplerWait', { t: fmtTime(SAMPLER_AT - time) })
-      else add('guide.s.samplerGet')
-      add('guide.s.attack')
+      } else if (time < gitAt && !samplerInStock()) {
+        // 基因檢測開放前：倒數＋一條可以先做的事（不然整段空窗只有「等」）
+        waiting = true
+        add('guide.s.samplerWait', { t: fmtTime(gitAt - time) })
+        steps.push(altTask(me, time))
+      } else add('guide.s.samplerGet')
+      if (!waiting || time < ATTACK_STEP_UNTIL) add('guide.s.attack')
       if (steps.length < 3) add('guide.s.notes')
       const cs = classStep(me, v)
       if (cs) steps.push(cs)
@@ -454,7 +555,11 @@ export function objectiveFor(v: GuideView): Objective | null {
   }
   const live = id === 'xeno' || id === 'mutant' || id === 'android'
   const goal = id === 'dead' && me.booted ? 'guide3.goal.booted' : 'guide.goal.' + id
-  return { id, goal, sub, steps: steps.slice(0, 4), ep: live ? ep : undefined }
+  // 重大事件（無人機群、小行星、天守、海盜、末日）的對策排最前面；本身的任務最多 4 條（含事件），職業短句另外附在最後
+  const ev = EVENT_IDS.has(id) ? eventSteps(v.w) : []
+  const main = [...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
+  const dim = steps.filter((s) => s.dim).slice(0, 1)
+  return { id, goal, sub, steps: [...main, ...dim], ep: live ? ep : undefined }
 }
 
 // ───────── 情境提示的觸發條件（純函式）─────────
@@ -463,7 +568,7 @@ export function objectiveFor(v: GuideView): Objective | null {
 const NEAR: [test: (d: string) => boolean, r: number, hint: (id: Identity, v: GuideView) => Hint | null][] = [
   [(d) => d === 'vendor.escapePod', 2.9, () => ({ id: 'pod', pri: 26 })],
   [(d) => d.startsWith('vendor.'), 2.9, () => ({ id: 'vendor', pri: 24 })],
-  [(d) => d === 'struct.git', 3.5, () => ({ id: 'git', pri: 24 })],
+  [(d) => d === 'struct.git', 3.5, (_id, v) => ({ id: 'git', pri: 24, args: { m: gitMinutes(v.w) } })],
   [(d) => d === 'struct.console', 3, () => ({ id: 'console', pri: 24 })],
   [(d) => d.startsWith('docked.'), 4.5, () => ({ id: 'ship', pri: 24 })],
   [(d) => d === 'struct.droneControl', 2.5, () => ({ id: 'drone', pri: 26 })],
@@ -828,6 +933,10 @@ export function Guide() {
   )
 }
 
+function stepClass(s: Step): string | undefined {
+  return s.warn ? 'warn' : s.dim ? 'dim' : undefined
+}
+
 function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: boolean; squeeze: number; onFold: () => void }) {
   const [accent, text] = ID_COLOR[obj.id]
   const ep = obj.ep
@@ -865,7 +974,7 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
           )}
           <ul class="guide-steps">
             {obj.steps.map((s) => (
-              <li key={s.key} class={s.dim ? 'dim' : undefined}>
+              <li key={s.key} class={stepClass(s)} data-testid={s.warn ? 'guide-event' : undefined}>
                 {t(s.key, s.args)}
               </li>
             ))}
@@ -874,6 +983,16 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
       )}
     </div>
   )
+}
+
+/** 圖例的設施列：窗戶（實心）與控制台（空心方框）分成兩列；minimapColors 的清單沒列窗戶時補在控制台前面 */
+export function legendPois(): (keyof typeof MINIMAP)[] {
+  const list: (keyof typeof MINIMAP)[] = [...MINIMAP_LEGEND_POIS]
+  if (!list.includes('window')) {
+    const i = list.indexOf('console')
+    list.splice(i < 0 ? list.length : i, 0, 'window')
+  }
+  return list
 }
 
 /**
@@ -902,9 +1021,10 @@ function MapLegend() {
         <i class="guide-sw dot mm-other" style={{ background: MINIMAP.neutral }} />
         {t('guide3.map.otherDot')}
       </div>
-      {MINIMAP_LEGEND_POIS.map((k) => (
-        <div key={k}>
-          <i class="guide-sw" style={{ background: MINIMAP[k] }} />
+      {legendPois().map((k) => (
+        <div key={k} data-testid={'guide-legend-' + k}>
+          {/* 控制台在小地圖上是空心小方框（和窗戶同色、但分得開）*/}
+          {k === 'console' ? <i class="guide-sw hollow" style={{ borderColor: MINIMAP[k] }} /> : <i class="guide-sw" style={{ background: MINIMAP[k] }} />}
           {t('guide.map.' + k)}
         </div>
       ))}
@@ -1054,7 +1174,10 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
   const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k))
   const c = CLASSES.get(me.classId ?? '')
   if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
-    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc: loc(c.desc) }))
+    // 配發防護服的職業：直接寫出實際拿到的那一套（內容表的說明只說「隨機一套」）
+    const suit = SUIT_CLASSES.has(c.id) ? startSuitName(me, v, c.items) : ''
+    const desc = suit && hasString(lang.value, 'guide.cls.' + c.id + 'Suit') ? t('guide.cls.' + c.id + 'Suit', { suit }) + t('guide.r.period') : loc(c.desc)
+    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: loc(c.name), desc }))
     const phd = phdText(me, 'play1.help.phd')
     if (phd) tips.push(phd)
   }
@@ -1082,7 +1205,7 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
             </div>
             <ul class="guide-list">
               {obj.steps.map((s) => (
-                <li key={s.key} class={s.dim ? 'dim' : undefined}>
+                <li key={s.key} class={stepClass(s)}>
                   {t(s.key, s.args)}
                 </li>
               ))}
@@ -1123,6 +1246,8 @@ function ControlsPage() {
 
 /** 「站點與設施」：設施與物品＋小地圖圖例 */
 function ThingsPage() {
+  // 基因檢測開放的分鐘數依這一局的設定（簡單難度較早）
+  const args = { m: gitMinutes(world.w) }
   return (
     <>
       <div class="guide-col">
@@ -1132,7 +1257,7 @@ function ThingsPage() {
             {HELP_THINGS.map((k) => (
               <div key={k}>
                 <b>{t('guide.th.' + k + '.t')}</b>
-                <span>{t('guide.th.' + k)}</span>
+                <span>{t('guide.th.' + k, args)}</span>
               </div>
             ))}
           </div>

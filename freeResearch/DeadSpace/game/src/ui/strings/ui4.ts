@@ -52,9 +52,9 @@ export const UI4_ZH: Record<string, string> = {
   // ───── 單機練習：AI 難度 ─────
   'ui4.practice.ai': 'AI 難度',
   'ui4.practice.ai.easy': '簡單',
-  'ui4.practice.ai.easy.d': 'AI 船員驗血較慢、不公開指認、不主動開火，AI 異類也較晚動手。適合新手熟悉流程。',
+  'ui4.practice.ai.easy.d': 'AI 船員驗血較慢、不公開指認、不主動開火；AI 異類開局 7 分鐘內不動手，毀站事件 15 分鐘後才會來，基因檢測 4 分鐘就開放。適合第一次玩。',
   'ui4.practice.ai.normal': '一般',
-  'ui4.practice.ai.normal.d': 'AI 船員主動找人驗血，查出可疑的人會公開指認並開火。',
+  'ui4.practice.ai.normal.d': 'AI 船員主動找人驗血，查出可疑的人會公開指認並開火；AI 異類開局 2 分鐘後就可能動手，基因檢測 7 分鐘開放。',
 }
 
 export const UI4_EN: Record<string, string> = {
@@ -101,7 +101,7 @@ export const UI4_EN: Record<string, string> = {
 
   'ui4.practice.ai': 'AI difficulty',
   'ui4.practice.ai.easy': 'Easy',
-  'ui4.practice.ai.easy.d': "AI crew test blood slowly, never accuse publicly and don't shoot first; AI threats also strike later. Good for learning the ropes.",
+  'ui4.practice.ai.easy.d': "AI crew test blood slowly, never accuse publicly and don't shoot first. AI threats hold off for 7 minutes, station-killing events wait 15 minutes, and gene testing opens at minute 4. Best for a first game.",
   'ui4.practice.ai.normal': 'Normal',
-  'ui4.practice.ai.normal.d': 'AI crew actively blood-test people, then publicly accuse and open fire on anyone they catch.',
+  'ui4.practice.ai.normal.d': 'AI crew actively blood-test people, then publicly accuse and open fire on anyone they catch. AI threats may strike after 2 minutes; gene testing opens at minute 7.',
 }

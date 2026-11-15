@@ -19,6 +19,7 @@ import { ReplayPanel } from '../hud/Replay'
 import { FacilityPanel } from '../hud/Facilities'
 import { Announcements, CastBar } from '../hud/Announce'
 import { WorldHover } from '../hud/WorldHover'
+import { EpGain } from '../hud/EpGain'
 import { InGameSettings } from './Settings'
 import { GameMenu } from '../hud/GameMenu'
 import { t } from '../i18n'
@@ -156,6 +157,7 @@ export function GameScreen() {
       <InGameSettings />
       <CastBar />
       {scene && <WorldHover scene={scene} />}
+      {scene && <EpGain scene={scene} />}
       <FakeEnd />
       <EndScreen />
       <Guide />

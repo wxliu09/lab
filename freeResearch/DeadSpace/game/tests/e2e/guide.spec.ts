@@ -127,6 +127,9 @@ test('目標面板、說明面板、情境提示', async ({ page }) => {
   await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('guide-help-page-things')).toBeVisible()
   await expect(page.getByTestId('guide-legend')).toBeVisible()
+  // 小地圖圖例：窗戶、控制台分成兩列（控制台是空心方框）
+  await expect(page.getByTestId('guide-legend-window')).toBeVisible()
+  await expect(page.getByTestId('guide-legend-console').locator('.guide-sw.hollow')).toHaveCount(1)
   await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('guide-help-page-role')).toBeVisible()
   await page.keyboard.press('ArrowLeft')

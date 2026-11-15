@@ -190,13 +190,13 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   human: {
     zh: [
       '找出並消滅所有異類：異形、變種人、他們的眷屬，以及被敵方控制的仿生人。',
-      '到醫療補給領基因檢測器（約 7 分鐘後上架），抽 3 個人的血；抽滿後它會變成 GIT 解析器，放在地上等它開機就能拿報告（女帝號的中央檢測儀必須完好）。',
+      '到醫療補給領基因檢測器（約 {m} 分鐘後上架），抽 3 個人的血；抽滿後它會變成 GIT 解析器，放在地上等它開機就能拿報告（女帝號的中央檢測儀必須完好）。',
       '守住檢測儀與太空站：站被擊毀，站內所有人一起陪葬。',
       '活下去，在末日降臨之前把局面收拾乾淨。',
     ],
     en: [
       'Find and eliminate every anomaly: xenos, mutants, their spawn, and any android turned against the crew.',
-      'Pick up a gene sampler from Medical Supplies (stocked after about 7 minutes) and draw blood from 3 people. Once full it becomes a GIT resolver: set it down, wait for it to boot, and collect the report (the central tester on the Empress Nyx must still be intact).',
+      'Pick up a gene sampler from Medical Supplies (stocked after about {m} minutes) and draw blood from 3 people. Once full it becomes a GIT resolver: set it down, wait for it to boot, and collect the report (the central tester on the Empress Nyx must still be intact).',
       'Protect the tester and the stations: when a station is destroyed, everyone aboard dies with it.',
       'Survive, and clean this up before doomsday arrives.',
     ],

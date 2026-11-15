@@ -33,7 +33,7 @@ function savePracticePrefs(p: { role: PracticeRole; bots: number }): void {
   }
 }
 
-/** 練習的 AI 難度（上次的選擇；預設一般）*/
+/** 練習的 AI 難度（上次的選擇；沒選過的新手預設簡單）*/
 const PRACTICE_AI_KEY = 'xc.practiceAi'
 
 function loadAiLevel(): AiLevel {
@@ -43,7 +43,7 @@ function loadAiLevel(): AiLevel {
   } catch {
     /* ignore */
   }
-  return 'normal'
+  return 'easy'
 }
 
 function saveAiLevel(v: AiLevel): void {

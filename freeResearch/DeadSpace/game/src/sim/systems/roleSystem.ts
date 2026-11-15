@@ -1,7 +1,7 @@
 // 身分系統：職業配置、spawn 轉化、死亡公告、EP、進化、仿生人誤殺懲罰、勝負判定（研究 02 §1–§6、§10–§11）
 import { BUFFS, CLASSES, FORMS, UNITS, itemDef, unitDef } from '../../shared/content/registry'
 import { PHDS, SECURITY_SUITS } from '../../shared/content/classes'
-import { evolveChoices } from '../../shared/content/forms'
+import { XENO_T2_EP, XENO_T3_EP, evolveChoices } from '../../shared/content/forms'
 import type { Command, EndResult } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
 import { fmtKey, type Faction, type Game, type GamePlayer } from '../game'
@@ -501,7 +501,8 @@ export function installRoles(g: Game): void {
 
 function nextThreshold(_g: Game, p: GamePlayer): number {
   if (p.spawnOf) return 0
-  if (p.role === 'xeno') return p.tier >= 2 ? 0 : p.tier === 1 ? 1370 : 660
+  // 異形：人形與原型體（tier 0／1）下一階是 T2；T2 形態（tier 2）下一階是 T3；T3 已是最終形態
+  if (p.role === 'xeno') return p.tier >= 3 ? 0 : p.tier === 2 ? XENO_T3_EP : XENO_T2_EP
   if (p.role === 'mutant') return p.tier >= 3 ? 0 : [300, 900, 1800][p.tier]
   if (p.role === 'android') return p.form ? 0 : 2000
   return 0

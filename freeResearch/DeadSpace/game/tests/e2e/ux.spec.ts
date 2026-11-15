@@ -107,14 +107,31 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('game-menu')).toBeVisible()
   await expect(page.getByTestId('leave-game')).toBeVisible()
+  // 離開對局：遊戲內的確認對話框（不是瀏覽器原生 confirm）；Esc 只取消確認、回到選單
+  let nativeDialog = false
+  const onDialog = (d: { dismiss: () => Promise<void> }) => {
+    nativeDialog = true
+    void d.dismiss()
+  }
+  page.on('dialog', onDialog)
+  await page.getByTestId('leave-game').click()
+  await expect(page.getByTestId('leave-confirm')).toBeVisible()
+  // 多人房間的主機：說明離開會讓這局對所有人結束
+  await expect(page.getByTestId('leave-confirm')).toContainText('主機')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('leave-confirm')).toHaveCount(0)
+  await expect(page.getByTestId('leave-game')).toBeVisible()
+  page.off('dialog', onDialog)
+  expect(nativeDialog).toBe(false)
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('game-menu')).toHaveCount(0)
   await expect(page.locator('.modal-back')).toHaveCount(0)
-  // 設定視窗整個在畫面內，Esc 關得掉
+  // 設定視窗整個在畫面內（內容區捲動、按鈕列固定在底部：不用捲就看得到「儲存」），Esc 關得掉
   await page.getByTestId('settings-open').click()
   const mb = (await page.locator('.modal').boundingBox())!
   expect(mb.y).toBeGreaterThanOrEqual(0)
   expect(mb.y + mb.height).toBeLessThanOrEqual(900)
+  await expect(page.getByTestId('settings-save')).toBeInViewport()
   await page.keyboard.press('Escape')
   await expect(page.locator('.modal')).toHaveCount(0)
   // V：進化選單

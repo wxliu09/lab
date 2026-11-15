@@ -9,7 +9,8 @@ import { Icon } from '../icons'
 import { localizeName } from '../names'
 import { stationDefOf } from '../../render/gameScene'
 import { TopSlot } from './Announce'
-import { evolveBlock } from './evolveWhy'
+import { canPreview, evolveBlock, nextForms } from './evolveWhy'
+import { drawReasonKey } from './textRules'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 
 addStrings(PLAY1_ZH, PLAY1_EN)
@@ -54,6 +55,9 @@ export function EvolveMenu() {
   }
   const col = FACTION_COLOR[role] ?? '#9fe7ff'
   const tcol = FACTION_TEXT[role] ?? '#9fe7ff'
+  // 還不能進化（多半是 EP 不足）：用灰色預覽下一階的分支，讓人知道在存什麼（不能選）
+  const preview = canPreview(why) ? nextForms(me, world.ents.get(me.unit ?? 0)?.s.d) : []
+  const confirmHint = role === 'xeno' || role === 'mutant' || role === 'android' ? 'evo.confirmHint.' + role : 'evo.confirmHint'
   return (
     <div class="modal-back" onClick={() => (evolveOpen.value = false)}>
       <div class="panel modal" data-testid="evolve" style={{ width: 'min(760px, 94vw)' }} onClick={(e) => e.stopPropagation()}>
@@ -73,7 +77,28 @@ export function EvolveMenu() {
             {t(why.key, why.args)}
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+        {preview.length > 0 && (
+          <div class="evo-preview" data-testid="evolve-preview">
+            <div class="dim evo-preview-h">{t('ui5.evo.preview')}</div>
+            <div class="evo-grid">
+              {preview.map((f) => {
+                const u = UNITS.get(f.unit)
+                return (
+                  <div key={f.id} class="pcard evo-locked" style={{ '--pc': col }} data-testid={'evo-preview-' + f.id} aria-disabled="true">
+                    <div class="row">
+                      <Icon name="evolve" color="#6f7d89" size={24} />
+                      <div class="pname">{loc(u?.name) || f.id}</div>
+                      <span class="grow" />
+                      <span class="mono evo-need">{t('ui5.evo.previewNeed', { n: f.ep })}</span>
+                    </div>
+                    <div class="evo-desc">{loc(f.desc)}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        <div class="evo-grid">
           {(why ? [] : opts).map((id) => {
             const f = FORMS.get(id)
             const u = f ? UNITS.get(f.unit) : undefined
@@ -114,8 +139,8 @@ export function EvolveMenu() {
             >
               {t('evo.confirm', { name: loc(UNITS.get(FORMS.get(pick)?.unit ?? '')?.name) || pick })}
             </button>
-            <span class="dim" style={{ fontSize: '13px' }}>
-              {t('evo.confirmHint')}
+            <span class="dim" style={{ fontSize: '13px' }} data-testid="evo-confirm-hint">
+              {t(confirmHint)}
             </span>
           </div>
         )}
@@ -204,12 +229,19 @@ const ROLE_COL: Record<string, string> = { human: '#9fe7ff', ...FACTION_TEXT }
 export function EndScreen() {
   const r = endResult.value
   if (!r) return null
+  // drawWhy 由 sim 新增；用寬鬆型別讀，舊版結果沒有這個欄位也照常顯示
+  const why = drawReasonKey(r as typeof r & { drawWhy?: unknown })
   return (
     <div class="modal-back" style={{ background: 'rgba(0,0,0,0.75)' }}>
       <div class="panel modal end-card" data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
         <div class="logo" style={{ fontSize: '30px', marginBottom: '6px' }}>
           {t('end.' + r.winner)}
         </div>
+        {why && (
+          <div class="end-why" data-testid="end-why">
+            {t(why)}
+          </div>
+        )}
         <div class="dim mono">
           {t('end.duration')} {Math.floor(r.duration / 60)}:{String(r.duration % 60).padStart(2, '0')}
         </div>
