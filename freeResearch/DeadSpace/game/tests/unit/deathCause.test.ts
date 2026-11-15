@@ -240,7 +240,8 @@ describe('死因：事件與環境、主腦清除、訊息順序、視野時機'
     const z = g.world.zoneByKey('nyx')!
     const di = z.doors.findIndex((d) => !d.clearance && !d.security)
     const inst = z.layout!.doors[di]
-    victim.hp = 100
+    // 原作：生命 ≤ 175 時門只會把人夾到剩 1 點，175–225 之間才會被夾死
+    victim.hp = 200
     g.triggerEvent!('doors', true)
     for (let i = 0; i < 60 && ps[2].alive; i++) {
       g.world.relocate(victim, z.id, inst.x, inst.y)

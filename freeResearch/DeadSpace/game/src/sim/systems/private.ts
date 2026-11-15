@@ -57,6 +57,7 @@ export function privateState(g: Game, p: GamePlayer): PrivateState {
     faction: p.spectator ? 'none' : f,
     spawn: !!p.spawnOf,
     classId: p.classId,
+    promoted: p.data.promoted ? true : undefined,
     // 博士專長以被動（data.passives）套用、不在 buffs 裡，快照看不到：只在本人的私有狀態送出
     phd: p.phd || undefined,
     ep: Math.floor(p.ep),

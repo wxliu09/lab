@@ -232,13 +232,13 @@ export const OBJECTIVES: Record<Identity, { zh: string[]; en: string[] }> = {
   android: {
     zh: [
       '你屬於人類方：協助找出異類，保護船員。',
-      '小心誤傷：友傷分數超過 2.7，你會被強制關機。',
+      '小心誤傷：打掉船員一整條血算 1 份誤傷（對方打掉你一整條血扣 1 份），只算你最後一次打他之後 5 分鐘內死掉的人；累計超過約 2.7 份就會被強制關機。',
       '死亡時會掉落記憶核心；把它帶到裁決者號鑄造台的人能讓你復活，同時拿到你的遙控器。',
       '累積 2000 EP，到裁決者號鑄造台升級戰鬥機體。',
     ],
     en: [
       "You are on the crew's side: help expose the anomalies and protect the crew.",
-      'Watch your fire: if your friendly-fire score exceeds 2.7, you are forcibly shut down.',
+      'Watch your fire: each full health bar of crew damage you deal counts as 1 share of friendly fire (each full bar they take from you counts as -1), counting only crew who die within 5 minutes of your last hit; pass about 2.7 shares and you are forcibly shut down.',
       'When you die you drop a memory core. Whoever brings it to the fabricator on the Adjudicatrix revives you and receives your override remote.',
       'Reach 2000 EP, then upgrade to a combat chassis at the Adjudicatrix fabricator.',
     ],

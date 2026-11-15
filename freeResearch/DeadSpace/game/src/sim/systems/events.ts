@@ -15,6 +15,7 @@ import { restockAll } from './vendors'
 import { destroyInterior, spaceOf } from './space'
 import { recomputeStats } from './buffs'
 import { isEasy } from '../ai/level'
+import { cycleOpen, doorCycle, inDoorGap, untilOpen } from './movement'
 import { butlerName } from './roleSystem'
 
 type Range = [number, number]
@@ -132,6 +133,8 @@ const EVENTS: EventDef[] = [
       const u = p ? g.mainOf(p) : undefined
       if (!p || !u) return false
       giveItem(g, u, makeItem('suit.operative'))
+      // 職業仍是政委（classId 不變：職業技能、背景都照舊）；client 顯示職業時看 promoted 改寫「特務」
+      p.data.promoted = true
       // 公告與新名字都用別人眼中的本名（通訊病毒換過名字時不能把真名說出來）；時間軸記真名
       const base = shownBase(p)
       g.systemAll('event.promotion', { name: base })
@@ -622,11 +625,11 @@ function stepOngoing(g: Game, ev: EventState): void {
     ev.waveNext = t + R(g, [0.1, 5])
   }
   if (ev.rocks.length) stepRocks(g, ev)
-  // 門故障：沒有權限需求的門每 2.25 秒猛然關上一次，夾到 225 傷害並擊退
+  // 門故障：沒有權限需求的門每 2.25 秒開 1.5 秒、猛關 0.75 秒，夾到 225 傷害並擊退
   if (ev.doorsUntil > 0) {
     if (t >= ev.doorsUntil) {
       ev.doorsUntil = 0
-      ev.doorPhase.clear()
+      endDoorMalfunction(g, ev)
       g.systemAll('event.doorsFixed')
     } else stepDoorMalfunction(g, ev)
   }
@@ -748,32 +751,66 @@ function stepRocks(g: Game, ev: EventState): void {
   })
 }
 
-const DOOR_PERIOD = 2.25
+/** 門猛關的傷害；生命不到 DOOR_SPARE_HP 的單位不扣這麼多，而是被夾到只剩 1 點（原作 eJ：不會被門夾死在低血量）*/
+export const DOOR_DMG = 225
+export const DOOR_SPARE_HP = 175
 
+/**
+ * 門控制器故障（研究 03 事件 #11；時間表照原作 war3map.j 的 cJ／Zj／xJ／eJ，見 movement.ts 的 DOOR_*）：
+ * 沒有權限需求、沒鎖、沒壞的門每 2.25 秒一個週期，開 1.5 秒、猛關後關 0.75 秒；不管旁邊有沒有人都照週期開關。
+ * 猛關的那一下夾到門縫裡（單位中心離門板中線 < 0.55 公尺）的單位：225 傷害並彈開；生命 ≤ 175 的改成只剩 1 點。
+ * 關著的時候門是實心的（forced：到重新打開的時刻為止）；d.cycling 讓移動系統把它當成會週期打開的門來尋路。
+ */
 function stepDoorMalfunction(g: Game, ev: EventState): void {
   const t = g.time
   for (const z of g.world.zones) {
     if (!z.alive || !z.layout || !z.nav) continue
     for (const d of z.doors) {
-      if (d.clearance || d.security || d.locked || d.broken) continue
       const key = z.id + ':' + d.index
-      const phase = (t + d.index * 0.37) % DOOR_PERIOD
-      const closing = phase >= 0.5
-      if (closing) d.forced = t + 0.2
-      const was = ev.doorPhase.get(key) ?? false
-      ev.doorPhase.set(key, closing)
-      if (!closing || was) continue
+      if (d.clearance || d.security || d.locked || d.broken) {
+        // 故障中被鎖上、被打壞：交回一般的門邏輯
+        if (d.cycling) {
+          d.cycling = false
+          d.forced = 0
+        }
+        ev.doorPhase.delete(key)
+        continue
+      }
+      d.cycling = true
+      const ph = doorCycle(t, d.index)
+      const shut = !cycleOpen(ph)
+      d.forced = shut ? t + untilOpen(ph) : 0
+      // 第一次看到這扇門：原本就關著的不算「猛關」
+      const was = ev.doorPhase.get(key) ?? !d.open
+      ev.doorPhase.set(key, shut)
+      if (d.open === shut) {
+        d.open = !shut
+        z.nav.doorClosed[d.index] = shut ? 1 : 0
+      }
+      if (!shut || was) continue
       // 剛猛然關上：夾到門縫裡的單位
-      d.open = false
-      z.nav.doorClosed[d.index] = 1
       const inst = z.layout.doors[d.index]
       g.emitFx({ k: 'doorSlam', z: z.id, x: inst.x, y: inst.y })
-      for (const u of g.world.query(z.id, inst.x, inst.y, 0.9)) {
+      for (const u of g.world.query(z.id, inst.x, inst.y, inst.width / 2 + 1)) {
         if (!u.alive || u.def.speed <= 0 || u.tags.has('structure') || u.tags.has('noTarget')) continue
-        damage(g, null, u, 225, { kind: 'normal', pure: true, env: 'door' })
+        if (!inDoorGap(inst, u.x, u.y, u.radius)) continue
+        if (u.hp <= DOOR_SPARE_HP) damage(g, null, u, u.hp - 1, { kind: 'normal', pure: true, spare: true, env: 'door' })
+        else damage(g, null, u, DOOR_DMG, { kind: 'normal', env: 'door' })
         const p = z.nav.nearestOpen(u.x + (u.x - inst.x) * 2 + 0.01, u.y + (u.y - inst.y) * 2 + 0.01, (i) => i !== d.index)
         if (p && u.alive) g.world.relocate(u, z.id, p.x, p.y)
       }
+    }
+  }
+}
+
+/** 門控制器修好：所有週期開關的門交回一般的自動門邏輯 */
+function endDoorMalfunction(g: Game, ev: EventState): void {
+  ev.doorPhase.clear()
+  for (const z of g.world.zones) {
+    for (const d of z.doors) {
+      if (!d.cycling) continue
+      d.cycling = false
+      d.forced = 0
     }
   }
 }

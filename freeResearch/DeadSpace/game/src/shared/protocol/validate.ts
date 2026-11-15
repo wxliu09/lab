@@ -187,6 +187,8 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
       return { t: 'note', target: raw.target, mark: raw.mark as NoteMark, ...(raw.text !== undefined ? { text: raw.text as string } : {}) }
     case 'shareNotes':
       return isInt(raw.to, 0, MAX_PLAYERS - 1) ? { t: 'shareNotes', to: raw.to } : null
+    case 'pause':
+      return isBool(raw.on) ? { t: 'pause', on: raw.on } : null
     case 'Tune':
       if (!isInt(raw.id, 0, 0x7fffffff) || !isStr(raw.op, 24) || !/^[a-zA-Z]{1,24}$/.test(raw.op)) return null
       if (!Array.isArray(raw.args) || raw.args.length > 4) return null

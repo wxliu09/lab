@@ -20,8 +20,10 @@ export interface DoorState {
   hp: number
   /** 最近通過紀錄（剪影：def id）*/
   log: { t: number; sil: string }[]
-  /** 強制關門（故障事件）*/
+  /** 強制關門（故障事件）：到這個時間之前門是關死的（碰撞擋住）*/
   forced: number
+  /** 門控制器故障中、這扇門正在週期開關（events.ts 設定；移動系統把它當成「會週期打開」的門來尋路）*/
+  cycling: boolean
   clearance?: string
   security?: boolean
 }
@@ -96,6 +98,7 @@ export class World {
             hp: 5000,
             log: [],
             forced: 0,
+            cycling: false,
             clearance: d.spec.clearance,
             security: d.spec.security,
           }))

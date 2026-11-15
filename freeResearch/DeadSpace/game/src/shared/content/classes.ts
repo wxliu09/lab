@@ -30,7 +30,7 @@ export const CLASS_LIST: ClassDef[] = [
     items: [],
     abilities: [],
     passives: ['cls.securityRange'],
-    desc: L('開局配發一套戰鬥裝（電漿／火箭／特斯拉／冷凍隨機），攻擊射程增加。', 'Issued a random combat suit; extended weapon range.'),
+    desc: L('名牌上的頭銜是「列兵」。開局配發一套戰鬥裝（電漿／火箭／特斯拉／冷凍隨機），攻擊射程增加。', 'Name tags show the rank "Private". Issued a random combat suit; extended weapon range.'),
     bios: bio('security'),
   },
   {

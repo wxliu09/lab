@@ -130,6 +130,12 @@ export type ClientMsg =
   | { t: 'note'; target: Slot; mark: NoteMark; text?: string }
   | { t: 'shareNotes'; to: Slot }
   | { t: 'Tune'; id: number; op: string; args: unknown[] }
+  /**
+   * 單機練習暫停：client 打開遊戲選單（Esc）、說明（G）、圖鑑（F1）時送 on: true，全部關掉送 on: false。
+   * 主機只在練習局（Game.practice）、而且連線中的真人只有 1 名時接受；暫停中 sim 不前進（快照照送，world.pz = true），
+   * 真人離線或暫停滿 10 分鐘自動繼續。多人局一律忽略
+   */
+  | { t: 'pause'; on: boolean }
 
 export type ChatChannel = 'all' | 'team' | 'group' | 'dead'
 export type NoteMark = 'none' | 'trust' | 'suspect' | 'confirmedEvil' | 'confirmedClean'
@@ -289,6 +295,8 @@ export interface PrivateState {
   faction: 'crew' | 'xeno' | 'mutant' | 'none'
   spawn: boolean
   classId: string
+  /** 政委晉升成特務（events.ts promotion；classId 仍是 commissar）：顯示自己的職業時寫「特務」。晉升是全場公告過的事 */
+  promoted?: boolean
   /** 研究員的博士專長 id（content/classes.ts PHDS；只給本人，其他職業沒有這個欄位）*/
   phd?: string
   ep: number
@@ -416,6 +424,8 @@ export interface EndResult {
     color: number
     role: string
     classId: string
+    /** 政委晉升成特務（職業 classId 不變、頭銜改成特務）：顯示職業時要寫「特務」*/
+    promoted?: boolean
     spawn: boolean
     alive: boolean
     kills: number

@@ -18,6 +18,7 @@ import { cdReady } from '../systems/abilities'
 import { VENDOR_RANGE, type StockState } from '../systems/vendors'
 import { consolePos, spaceOf, type ShipInst } from '../systems/space'
 import { stationsOf } from '../systems/stations'
+import { doorAxes, inDoorGap } from '../systems/movement'
 import { SPACE_ZONE, type Zone } from '../world'
 import { isEasy } from './level'
 
@@ -870,6 +871,8 @@ function stepBots(g: Game): void {
       b.py = u.y
       b.pt = t
     }
+    // 門控制器故障：停在故障門的門縫裡（被推擠、停下來讓人抽血、追擊時站定…）就先走出門縫，不在門縫裡逗留
+    if (leaveDoorGap(g, p, u)) continue
     // 簡單練習局：拿著檢測器的真人走近，原地停一下讓他抽血
     if (easyPause(g, p, u, b)) continue
     // 換站途中（走去登船、在船艙裡等發射、到站下船）
@@ -918,6 +921,33 @@ function easyPause(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
     b.pauseNext = t + EASY_PAUSE_GAP
     b.goal = null
     cmd(g, p, { k: 'stop' })
+    return true
+  }
+  return false
+}
+
+/**
+ * 門控制器故障期間，沒在走動的 AI 單位站在週期開關的門縫裡：往自己比較靠近的那一側走出門縫（門格外緣再退一點）。
+ * 正在走路的單位交給移動系統的等門邏輯（movement.ts doorGate）。回傳 true = 這一輪只做這件事
+ */
+function leaveDoorGap(g: Game, p: GamePlayer, u: Ent): boolean {
+  if (u.anim === 1) return false
+  const z = g.world.zones[u.zone]
+  const L = z.layout
+  if (!L || !z.nav) return false
+  for (const inst of L.doors) {
+    const d = z.doors[inst.index]
+    if (!d?.cycling || d.locked || d.broken) continue
+    if (Math.abs(inst.x - u.x) > inst.width / 2 + 1.5 || Math.abs(inst.y - u.y) > inst.width / 2 + 1.5) continue
+    if (!inDoorGap(inst, u.x, u.y, u.radius)) continue
+    const a = doorAxes(inst, u.x, u.y)
+    const side = a.n >= 0 ? 1 : -1
+    const back = 0.5 + u.radius + 0.15
+    const half = Math.max(0, inst.width / 2 - 0.5)
+    const lat = Math.max(-half, Math.min(half, a.t))
+    const x = inst.horizontal ? inst.x + lat : inst.x + side * back
+    const y = inst.horizontal ? inst.y + side * back : inst.y + lat
+    cmd(g, p, { k: 'move', x, y })
     return true
   }
   return false

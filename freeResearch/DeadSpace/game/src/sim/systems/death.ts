@@ -1,5 +1,5 @@
 // 死亡：屍體、掉落物、玩家進入旁觀、給死者的死因說明；身分相關的轉化與公告由 roles 系統的 hook 處理
-import { BUFFS, UNITS, VENDORS, itemDef, unitDef } from '../../shared/content/registry'
+import { BUFFS, CLASSES, UNITS, VENDORS, itemDef, unitDef } from '../../shared/content/registry'
 import type { Loc, Tag } from '../../shared/content/types'
 import type { SnapEntity } from '../../shared/protocol/messages'
 import { NEUTRAL, type Ent } from '../ent'
@@ -235,6 +235,74 @@ function hitArgs(v: HitView): Record<string, string> {
 export function sendDeathReport(g: Game, p: GamePlayer, r: DeathReport): void {
   g.privateLine(p.slot, (r.cause.pod ? 'death.cause.pod.' : 'death.cause.') + r.cause.k, hitArgs(r.cause))
   for (const h of r.hits) g.privateLine(p.slot, 'death.hit.' + h.v.k, { ...hitArgs(h.v), dmg: Math.max(1, Math.round(h.dmg)) })
+}
+
+// ───────── 結算時間軸的死因（公開，但只在結算時送出）─────────
+// 時間軸只放在 EndResult 裡、對局結束才送給所有人（對局中沒有任何途徑看得到），而結算本來就公開所有人的身分，
+// 所以這裡寫的是「實際發生了什麼」（真正的擊殺者、形態），不是死者當下看到的樣子；AI 也有。
+
+interface LastDmg {
+  t: number
+  env?: EnvKind
+  buff?: string
+  lethal?: boolean
+  kind?: string
+}
+
+/** 記下每位玩家主單位最後一次受到的傷害種類（AI 也記；只用來寫結算時間軸的死因）*/
+DAMAGE_HOOKS.push((g, _src, t, amount, o) => {
+  if (!t.isMain || t.owner < 0 || amount <= 0) return
+  t.data.lastDmg = { t: g.time, env: o.env, buff: o.buff, lethal: o.lethal, kind: o.kind } satisfies LastDmg
+})
+
+/** 時間軸上的名字（和 roleSystem 的死亡紀錄一樣：職業前綴＋本名）*/
+function tlNameOf(q: GamePlayer): string {
+  const cls = CLASSES.get(q.classId)
+  return (cls ? cls.prefix.en : '') + q.baseName
+}
+
+/**
+ * 單位名稱用 unit 參數（def id，client 的 sysText 換成目前語言的名稱；時間軸不寫死任何語言的文字）。
+ * 只在 sim 動態註冊的 def（站點、販賣機）client 查不到：不帶名稱
+ */
+function unitArgs(d: string): Record<string, string> {
+  if (d.startsWith('station.') || d.startsWith('vendor.') || !UNITS.has(d)) return {}
+  return { unit: d }
+}
+
+/** 擊殺者是誰（實際的擁有者與形態）*/
+function killerCause(g: Game, p: GamePlayer, killer: Ent): { k: string; args: Record<string, string> } {
+  if (killer.owner === p.slot) return { k: 'self', args: {} }
+  const q = killer.owner >= 0 ? g.players[killer.owner] : undefined
+  const ua = unitArgs(killer.def.id)
+  const named = !!ua.unit
+  if (!q) return named ? { k: 'unit', args: ua } : { k: 'unknown', args: {} }
+  // 人形（含偽裝）就只寫名字；異形、變種人、仿生人機體等形態一併寫出來；召喚物、砲塔等寫「某人的…」
+  if (!named || (killer.isMain && killer.tags.has('personnel'))) return { k: 'player', args: { name: tlNameOf(q) } }
+  return { k: killer.isMain ? 'playerAs' : 'playerUnit', args: { name: tlNameOf(q), ...ua } }
+}
+
+/** 結算時間軸的死因：回傳 tl.cause.* 的 key 尾巴與參數 */
+export function timelineCause(g: Game, p: GamePlayer, u: Ent, killer: Ent | null, killerSlot: number): { k: string; args: Record<string, string> } {
+  const dc = u.data.deathCause as string | undefined
+  if (dc) return { k: dc, args: {} }
+  if (u.data.podKilled && killer) {
+    const c = killerCause(g, p, killer)
+    return c.k === 'self' ? { k: 'vacuum', args: {} } : { k: 'pod.' + c.k, args: c.args }
+  }
+  const ld = u.data.lastDmg as LastDmg | undefined
+  const now = !!ld && ld.t === g.time
+  if (now && ld.lethal) return { k: ld.env ?? 'boom', args: {} }
+  if (now && ld.env) return { k: ld.env, args: {} }
+  // 持續傷害：知道是誰下的就寫是誰，否則只說持續傷害
+  if (now && ld.buff && !(killer && killer.owner >= 0 && killer.owner !== p.slot)) return { k: 'dot', args: {} }
+  if (killer) return killerCause(g, p, killer)
+  if (killerSlot === p.slot) return { k: 'self', args: {} }
+  const q = killerSlot >= 0 ? g.players[killerSlot] : undefined
+  if (q) return { k: 'player', args: { name: tlNameOf(q) } }
+  if (now && ld.kind === 'fire') return { k: 'fire', args: {} }
+  if (now && ld.kind === 'blast') return { k: 'blast', args: {} }
+  return { k: 'unknown', args: {} }
 }
 
 /** 召喚物到期、致命區 */

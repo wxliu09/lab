@@ -10,6 +10,7 @@ import { applyBuff } from './buffs'
 import { dropOnGround, giveItem, makeItem, morph, takePackExtra } from './items'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { LAST_WORDS, bootIfOut } from './chat'
+import { timelineCause } from './death'
 
 /** 結算時間軸用真實身分的名字（職稱＋本名）：通訊病毒換掉的名字只影響對局中，不能讓結算紀錄記錯人 */
 function tlName(p: GamePlayer): string {
@@ -326,6 +327,9 @@ export function installRoles(g: Game): void {
     const kp = ks >= 0 ? g.players[ks] : undefined
     if (kp && kp.slot !== p.slot) kp.stats.kills++
     announceDeath(g, p)
+    // 結算時間軸：死亡那一筆後面接一筆死因（時間軸只在結算時送出）
+    const tc = timelineCause(g, p, u, killer, killerSlot)
+    g.log(fmtKey('tl.cause.' + tc.k, tc.args))
     // 異形方殺死無辜者 +175 EP
     if (isInnocent(g, p) && kp && g.faction(kp) === 'xeno') {
       const m = master(g, 'xeno')

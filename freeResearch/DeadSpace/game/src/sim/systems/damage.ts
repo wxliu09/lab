@@ -25,6 +25,8 @@ export interface DmgOpts {
   pure?: boolean
   /** 站點毀滅等必殺：無視無敵 */
   lethal?: boolean
+  /** 不致命：最多扣到剩 1 點（門控制器故障夾到低血量的單位，原作是把生命設成 1）*/
+  spare?: boolean
   /** 不觸發 EP／TK 等統計 */
   quiet?: boolean
   ability?: string
@@ -83,6 +85,10 @@ export function damage(g: Game, src: Ent | null, t: Ent, amount: number, o: DmgO
   }
   if (!o.quiet) for (const h of DAMAGE_HOOKS) h(g, src, t, applied, o)
   if (t.hp <= 0) {
+    if (o.spare && !o.lethal) {
+      t.hp = 1
+      return applied
+    }
     if (t.data.god && !o.lethal) {
       t.hp = 1
       return applied

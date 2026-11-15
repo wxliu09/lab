@@ -12,7 +12,7 @@ import type {
   NoteMark,
   StartInfo,
 } from '../shared/protocol/messages'
-import { TICK_DT } from '../shared/constants'
+import { RECONNECT_GRACE_S, TICK_DT } from '../shared/constants'
 import { World, secretSeed } from './world'
 import { Rng } from '../shared/rng'
 import type { Ent } from './ent'
@@ -141,7 +141,10 @@ export class Game {
   readonly practice: boolean
   tick = 0
   hostHidden = false
+  /** 除錯工具的暫停 */
   paused = false
+  /** 單機練習暫停（server.ts 依 client 的 pause 訊息設定；只在練習局、只有 1 名真人時）*/
+  menuPause = false
   /** 開局時等玩家載入完：還在等幾個人（> 0 時模擬不推進、照常送快照；由 server 設定）*/
   hold = 0
   timeScale = 1
@@ -342,8 +345,31 @@ export class Game {
     const u = this.mainOf(p)
     if (u && u.alive) {
       p.stayDead = true
+      // 結算時間軸的死因：離開遊戲
+      u.data.deathCause = 'left'
       this.kill(u, null)
     }
+  }
+
+  /**
+   * 真人斷線（還在重連寬限內）：公開說一聲，名字用別人眼中的顯示名字（頭銜＋通訊病毒換過的名字，見 shownName）。
+   * 斷線時用的名字記下來，重新連上時用同一個名字公告：病毒在斷線期間換了名字的話，「舊名斷線、新名回來」會把兩個名字對起來
+   */
+  playerDropped(slot: number): void {
+    const p = this.players[slot]
+    if (!p || p.bot || p.left || p.spectator) return
+    const name = shownName(p)
+    p.data.dropName = name
+    this.systemAll('sys.dropped', { name, s: RECONNECT_GRACE_S })
+  }
+
+  /** 斷線的真人在寬限內重新連上 */
+  playerRejoined(slot: number): void {
+    const p = this.players[slot]
+    if (!p || p.bot || p.left || p.spectator) return
+    const name = (p.data.dropName as string | undefined) ?? shownName(p)
+    p.data.dropName = undefined
+    this.systemAll('sys.rejoined', { name })
   }
 
   // ───────── 輸入 ─────────
@@ -487,7 +513,7 @@ export class Game {
       al: [this.allPlayers().filter((p) => !p.spectator && p.alive).length, this.allPlayers().filter((p) => !p.spectator).length],
       apo: (this.data.events as EventState | undefined)?.apoc ?? '',
       bg: this.hostHidden,
-      pz: this.paused,
+      pz: this.paused || this.menuPause,
       vote: this.votes.death
         ? { kind: 'death', until: Math.ceil(this.votes.death.until - this.time), boot: [...this.votes.death.ballots.values()].filter((b) => b === 'boot').length, spec: [...this.votes.death.ballots.values()].filter((b) => b === 'spectate').length }
         : null,
@@ -663,6 +689,8 @@ export class Game {
         // 被轉化的人顯示成轉化者的陣營（「異形 spawn」），不是原本的「人類」
         role: p.spawnOf ?? p.role,
         classId: p.classId,
+        // 政委晉升成特務（events.ts promotion；職業 classId 仍是 commissar，頭銜改成特務）
+        ...(p.data.promoted ? { promoted: true } : {}),
         spawn: !!p.spawnOf,
         alive: p.alive,
         kills: p.stats.kills,
@@ -736,7 +764,8 @@ export class Game {
 
   /** 由 server 以 20 Hz 呼叫；依 timeScale 推進模擬 */
   step(): void {
-    if (this.paused || this.ended || this.hold > 0) {
+    // 暫停中不累積時間（acc 不變）：繼續時從暫停的那一刻接著跑，不會補跑暫停期間的 tick
+    if (this.paused || this.menuPause || this.ended || this.hold > 0) {
       this.flush()
       return
     }
@@ -823,6 +852,14 @@ export class Game {
  */
 export function shownBase(p: GamePlayer): string {
   return (p.data.shownBase as string | undefined) ?? p.baseName
+}
+
+/**
+ * 別人眼中這位玩家此刻的顯示名字（頭銜＋shownBase）；通訊病毒清空名字的那 10 秒內 p.name 是空的，用記下的頭銜補上。
+ * 不會是真名（除非還沒被病毒換過）
+ */
+export function shownName(p: GamePlayer): string {
+  return p.name || ((p.data.virusTitle as string | undefined) ?? '') + shownBase(p)
 }
 
 /** 系統訊息以 key＋參數傳給 client 翻譯：`@key|k=v|k=v` */

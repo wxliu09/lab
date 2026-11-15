@@ -14,6 +14,8 @@ import { NEUTRAL, type Ent } from '../../src/sim/ent'
 import { itemDef } from '../../src/shared/content/registry'
 import { sampleUnitToken } from '../../src/shared/sysArgs'
 import { localizeName } from '../../src/ui/names'
+// 結算時間軸的死因（tl.cause.*）在 sim6 註冊（App.tsx 也會 import）
+import '../../src/ui/strings/sim6'
 
 afterEach(() => {
   lang.value = 'zh'

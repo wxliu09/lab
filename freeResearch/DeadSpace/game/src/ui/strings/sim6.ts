@@ -7,6 +7,7 @@
 // 第 2 輪（人類玩家視角審查，sim 端）：
 // - 監控掃描只掃到自己時怎麼去女帝號（space.alone*：{sz} 這座站、{nz} 女帝號、{pz} 救生艙裝置所在的房間、{hz} 停泊船所在的房間）
 // - 救生艙抵達、被寄生的說明（只給本人）、抽血抽不到的兩種原因、通訊病毒換好後的新名字、末日期間豪勇號挨隕擊
+// 第 3 輪：門控制器故障時等門（move.doorWait）、斷線與重新連線（sys.dropped／sys.rejoined）、練習暫停逾時、結算時間軸的死因（tl.cause.*）
 import { addStrings } from '../i18n'
 
 export const SIM6_ZH: Record<string, string> = {
@@ -56,6 +57,40 @@ export const SIM6_ZH: Record<string, string> = {
   // 末日期間降落中的豪勇號挨隕擊（平常的版本在 sim3.ts 的 st.bravadoImpact）
   'st.bravadoImpactDoom':
     '每次隕擊的大氣擾動都在撕裂降落中的豪勇號船體：估計再撞擊 {n} 次就會解體，艦內的人會全部陪葬。末日期間別升空（太空只會更危險），艦內的人請從降落艙的傳送門撤到地表，避開紅色警戒圈與輻射區。',
+  // ───── 第 3 輪 ─────
+  // 門控制器故障：移動命令要穿過週期開關的門（每位真人 30 秒最多一次）
+  'move.doorWait': '門控制器故障中：門會週期性猛關。你的角色會在門前等開門的空檔再一口氣通過（別停在門縫裡）；修好時會公告。',
+  // 多人局：真人斷線（重連寬限內）與重新連上（名字是別人眼中的顯示名字）
+  'sys.dropped': '{name} 斷線了（{s} 秒內可以重新連線）',
+  'sys.rejoined': '{name} 重新連線了',
+  // 單機練習暫停滿 10 分鐘自動繼續
+  'pause.timeout': '已經暫停 {m} 分鐘，練習自動繼續。',
+  // 結算時間軸：死亡那一筆下面的死因（結算時才公開；擊殺者是實際的玩家與形態）
+  'tl.cause.player': '└ 死因：被 {name} 擊殺',
+  'tl.cause.playerAs': '└ 死因：被 {name}（{unit}）擊殺',
+  'tl.cause.playerUnit': '└ 死因：被 {name} 的{unit}擊殺',
+  'tl.cause.unit': '└ 死因：被{unit}擊殺',
+  'tl.cause.self': '└ 死因：自己造成的傷害',
+  'tl.cause.dot': '└ 死因：持續傷害',
+  'tl.cause.boom': '└ 死因：所在的站被摧毀',
+  'tl.cause.fire': '└ 死因：高溫灼燒',
+  'tl.cause.blast': '└ 死因：爆炸衝擊',
+  'tl.cause.door': '└ 死因：被故障的門夾死',
+  'tl.cause.sun': '└ 死因：太靠近恆星，被灼燒致死',
+  'tl.cause.rock': '└ 死因：被小行星撞擊',
+  'tl.cause.gas': '└ 死因：吸入神經毒素',
+  'tl.cause.atm': '└ 死因：所在的站被反物質打擊摧毀',
+  'tl.cause.env': '└ 死因：環境傷害',
+  'tl.cause.vacuum': '└ 死因：救生艙被摧毀，暴露在真空中',
+  'tl.cause.shutdown': '└ 死因：誤傷船員過多，被強制關機',
+  'tl.cause.purged': '└ 死因：被主腦清除',
+  'tl.cause.left': '└ 離開了遊戲',
+  'tl.cause.unknown': '└ 死因不明',
+  'tl.cause.pod.player': '└ 死因：救生艙被 {name} 擊毀',
+  'tl.cause.pod.playerAs': '└ 死因：救生艙被 {name}（{unit}）擊毀',
+  'tl.cause.pod.playerUnit': '└ 死因：救生艙被 {name} 的{unit}擊毀',
+  'tl.cause.pod.unit': '└ 死因：救生艙被{unit}擊毀',
+  'tl.cause.pod.unknown': '└ 死因：救生艙被擊毀',
 }
 
 export const SIM6_EN: Record<string, string> = {
@@ -100,6 +135,36 @@ export const SIM6_EN: Record<string, string> = {
     "The turbulence from every impact is tearing at the landed Bravado's hull: about {n} more impacts and it breaks apart, killing everyone aboard. Do not lift off during the apocalypse (space is only getting worse); anyone aboard should take the landing portal in the Drop Bay down to the surface, away from red warning circles and fallout zones.",
   'st.bravadoImpactDoom.one':
     "The turbulence from every impact is tearing at the landed Bravado's hull: one more impact and it breaks apart, killing everyone aboard. Do not lift off during the apocalypse (space is only getting worse); anyone aboard should take the landing portal in the Drop Bay down to the surface, away from red warning circles and fallout zones.",
+  // ───── Round 3 ─────
+  'move.doorWait': 'Door controllers are malfunctioning: doors slam shut on a cycle. Your character waits at the door for the next opening, then goes straight through (do not stop in the doorway). You will be told when it is repaired.',
+  'sys.dropped': '{name} disconnected (they have {s} s to reconnect)',
+  'sys.rejoined': '{name} reconnected',
+  'pause.timeout': 'The game was paused for {m} minutes, so practice has resumed.',
+  'tl.cause.player': '└ Cause: killed by {name}',
+  'tl.cause.playerAs': '└ Cause: killed by {name} ({unit})',
+  'tl.cause.playerUnit': "└ Cause: killed by {name}'s {unit}",
+  'tl.cause.unit': '└ Cause: killed by {unit}',
+  'tl.cause.self': '└ Cause: own doing',
+  'tl.cause.dot': '└ Cause: damage over time',
+  'tl.cause.boom': '└ Cause: their station was destroyed',
+  'tl.cause.fire': '└ Cause: burned by intense heat',
+  'tl.cause.blast': '└ Cause: blast',
+  'tl.cause.door': '└ Cause: crushed by a malfunctioning door',
+  'tl.cause.sun': '└ Cause: burned up too close to the star',
+  'tl.cause.rock': '└ Cause: struck by an asteroid',
+  'tl.cause.gas': '└ Cause: neurotoxin',
+  'tl.cause.atm': '└ Cause: their station was destroyed by an antimatter strike',
+  'tl.cause.env': '└ Cause: environmental damage',
+  'tl.cause.vacuum': '└ Cause: escape pod destroyed, exposed to vacuum',
+  'tl.cause.shutdown': '└ Cause: forced shutdown for harming too many crew',
+  'tl.cause.purged': '└ Cause: purged by the mastermind',
+  'tl.cause.left': '└ Left the game',
+  'tl.cause.unknown': '└ Cause unknown',
+  'tl.cause.pod.player': '└ Cause: escape pod destroyed by {name}',
+  'tl.cause.pod.playerAs': '└ Cause: escape pod destroyed by {name} ({unit})',
+  'tl.cause.pod.playerUnit': "└ Cause: escape pod destroyed by {name}'s {unit}",
+  'tl.cause.pod.unit': '└ Cause: escape pod destroyed by {unit}',
+  'tl.cause.pod.unknown': '└ Cause: escape pod destroyed',
 }
 
 addStrings(SIM6_ZH, SIM6_EN)

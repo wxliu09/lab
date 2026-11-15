@@ -13,6 +13,8 @@ export const LOCAL_PEER = 'local'
 export const LOAD_WAIT_S = 25
 /** 只有一位真人時的上限 */
 export const LOAD_WAIT_SOLO_S = 120
+/** 單機練習暫停的上限（秒，server 時鐘）：超過就自動繼續 */
+export const PRACTICE_PAUSE_MAX_S = 600
 
 export interface ServerIO {
   send(peer: string, data: Uint8Array): void
@@ -79,6 +81,8 @@ export class GameServer {
   private loadDeadline = 0
   /** 主機明確改過末日時間（設定訊息帶了 apocalypse）：練習局就照主機的設定，不套用練習的預設範圍 */
   private apoCustom = false
+  /** 單機練習暫停開始的時刻（server 時鐘）；null = 沒有暫停 */
+  private pauseAt: number | null = null
 
   constructor(
     readonly code: string,
@@ -119,7 +123,10 @@ export class GameServer {
     p.ready = false
     // 開局等待載入中斷線：不再等他（重連後照常加入）
     this.loading?.delete(p.slot)
+    // 單機練習暫停中斷線：自動繼續（不讓沒人看著的一局一直停著）
+    this.resumePause()
     this.game?.setConnected(p.slot, false)
+    if (this.game && !this.game.ended) this.game.playerDropped(p.slot)
     this.lobbyDirty = true
   }
 
@@ -215,6 +222,10 @@ export class GameServer {
       case 'shareNotes':
         this.game?.shareNotes(slot, msg.to)
         break
+      case 'pause':
+        if (msg.on) this.pauseSolo(slot)
+        else this.resumePause()
+        break
       case 'Tune':
         if (!ps.tune.take(this.now)) return
         if (this.game) this.game.handleTune(slot, msg.id, msg.op, msg.args)
@@ -244,6 +255,7 @@ export class GameServer {
         const old = this.peers.get(existing.peer)
         if (old) old.slot = null
       }
+      const back = existing.peer === null && existing.droppedAt !== null
       existing.peer = peer
       existing.droppedAt = null
       ps.slot = existing.slot
@@ -252,6 +264,8 @@ export class GameServer {
       if (this.game) {
         this.game.setConnected(existing.slot, true)
         this.game.resendStart(existing.slot)
+        // 斷線後在寬限時間內回來：公開說一聲（同一個連線重送 hello、換分頁接手不算）
+        if (back && !this.game.ended) this.game.playerRejoined(existing.slot)
       }
       return
     }
@@ -382,6 +396,11 @@ export class GameServer {
     }
     if (this.game) {
       this.game.hostHidden = this.hostHidden
+      // 單機練習暫停：滿 10 分鐘、或不再是「只有 1 名真人在線的練習局」就自動繼續
+      if (this.pauseAt !== null) {
+        if (this.now - this.pauseAt >= PRACTICE_PAUSE_MAX_S) this.resumePause(true)
+        else if (this.soloHuman() === null || this.game.ended) this.resumePause()
+      }
       if (this.loading && (this.loading.size === 0 || this.now >= this.loadDeadline)) this.loading = null
       this.game.hold = this.loading ? this.loading.size : 0
       this.game.step()
@@ -390,6 +409,34 @@ export class GameServer {
       this.lobbyDirty = false
       this.broadcastLobby(this.lobbyState())
     }
+  }
+
+  // ───────── 單機練習暫停 ─────────
+
+  /** 練習局裡唯一一名連線中的真人（slot）；不是練習局、沒有或不只一名真人時 null */
+  private soloHuman(): number | null {
+    if (!this.game?.practice) return null
+    const humans = this.players.filter((p): p is LobbyPlayer => !!p && !p.bot && p.peer !== null)
+    return humans.length === 1 ? humans[0].slot : null
+  }
+
+  /** client 打開遊戲選單、說明、圖鑑：只在練習局、只有 1 名真人在線、而且就是他送的時候才暫停 */
+  private pauseSolo(slot: number): void {
+    const g = this.game
+    if (!g || g.ended || this.soloHuman() !== slot) return
+    if (this.pauseAt === null) this.pauseAt = this.now
+    g.menuPause = true
+  }
+
+  /** 繼續（timeout = 暫停滿 10 分鐘自動繼續：私訊本人說明）*/
+  private resumePause(timeout = false): void {
+    if (this.pauseAt === null) return
+    this.pauseAt = null
+    const g = this.game
+    if (!g) return
+    g.menuPause = false
+    const slot = this.soloHuman()
+    if (timeout && slot !== null) g.privateLine(slot, 'pause.timeout', { m: PRACTICE_PAUSE_MAX_S / 60 })
   }
 
   lobbyState(): HostMsg {
