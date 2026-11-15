@@ -75,16 +75,17 @@ describe('懸停提示依類別', () => {
 
   it('太空中的站點：自己在太空駕駛時寫右鍵飛過去；敵方的海盜船寫右鍵攻擊', () => {
     const ship = put('ship.kestrel', { z: 0, o: 0, fl: EntFlag.Mine })
-    world.me = { control: ship, unit: 1 }
+    // 停靠那半句只對有停靠技能的載具說（tests/unit/r2b-hud.test.ts 另測救生艙）
+    world.me = { control: ship, unit: 1, abilities: [{ id: 'ship.dock', cd: 0, maxCd: 30, mana: 0 }] }
     const st = hoverTip(put('station.nyx', { z: 0, mhp: 30000, hp: 30000 }))!
     expect(st.hint).toBe(t('hover.hint.flyTo'))
     expect(st.hint).toContain('右鍵：飛過去')
     const pirate = hoverTip(put('station.pirate', { z: 0, fl: EntFlag.Interactable | EntFlag.Hostile }))!
     expect(pirate.hint).toBe(t('hover.hint.attack'))
     expect(pirate.color).toBe('#ff5a4a')
-    // 沒有在太空駕駛（站內看太空、旁觀）：維持停靠說明
+    // 沒有在太空駕駛（站內看太空、旁觀）、手上也沒有停靠技能：不寫停靠說明
     world.me = { unit: 1 }
-    expect(hoverTip(put('station.nyx', { z: 0 }))!.hint).toBe(t('hover.hint.station'))
+    expect(hoverTip(put('station.nyx', { z: 0 }))!.hint).toBeUndefined()
   })
 
   it('標本籠：不是 NPC／跟隨，說明裝了幾隻與怎麼帶走', () => {

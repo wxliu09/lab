@@ -1,8 +1,11 @@
 // 輸入：致敬 WC3 的操作（右鍵移動／攻擊／互動、A 攻擊、S 停止、H 原地、QWERDF 技能、1–6 背包、空白鍵回鏡頭）
 import { effect, signal } from '@preact/signals'
+import { Vector3 } from 'three'
 import { edgeScrollOn, edgeSpeed } from './controlPrefs'
 import { audioPrefs, setAudioPref } from '../audio/sfx'
 import { UNITS, abilityDef, itemDef } from '../shared/content/registry'
+import type { TargetFilter } from '../shared/content/types'
+import { STATION_BY_ID } from '../shared/content/stations/index'
 import type { SnapEntity } from '../shared/protocol/messages'
 import type { GameScene } from '../render/gameScene'
 import { CONSOLE_KINDS, CONSOLE_LOCK_PAD, CONSOLE_R, DEFAULT_BODY_R, consoleApproach, consoleSpots, reachFrom, type Pt } from '../render/moveTargets'
@@ -12,6 +15,7 @@ import { showCursorTip } from '../ui/tooltip'
 import { sendCmd, snapTick, world } from './session'
 import { giveRefusal } from './give'
 import { meCtx, rightClickAction, rummageClick } from './interactKind'
+import { SNAP_M, SNAP_MIN_PX, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
 
 export type TargetMode =
   | null
@@ -99,6 +103,88 @@ interface AltTarget {
   y: number
   ent: number
 }
+
+/** 技能或道具的瞄準模式（不含 A 攻擊）*/
+export type AimMode = Extract<NonNullable<TargetMode>, { kind: 'ability' | 'item' }>
+
+/** 瞄準模式對應的技能定義（道具＝它的使用技能）*/
+export function aimAbility(tm: AimMode) {
+  return abilityDef(tm.kind === 'ability' ? tm.id : tm.ability)
+}
+
+/** 自己目前操控的單位（sim 施法的 caster）*/
+function casterId(): number {
+  return world.me.control || world.me.unit || 0
+}
+
+/** 實體的身體半徑（公尺）：站點用太空中的外觀半徑；販賣機的定義只在 sim 端 */
+function entRadius(s: SnapEntity): number {
+  const d = s.d ?? ''
+  if (d.startsWith('station.')) return STATION_BY_ID.get(d.slice(8))?.space.radius ?? 3
+  return UNITS.get(d)?.radius ?? (d.startsWith('vendor.') ? 0.6 : DEFAULT_BODY_R)
+}
+
+/** 吸附時排在後面的對象：建物、自己（操控中的載具，以及坐在救生艙裡、跟著艙移動的自己本人）*/
+function lowPri(s: SnapEntity, self: number): boolean {
+  return s.i === self || s.i === world.me.unit || isStructureLike(s)
+}
+
+/** 送出瞄準中的技能／道具：對單位（e）或對地面一點 */
+function sendAim(tm: AimMode, to: { e: number } | Pt, q: boolean): void {
+  if (tm.kind === 'ability') sendCmd({ k: 'cast', a: tm.id, ...to, q })
+  else sendCmd({ k: 'use', s: tm.slot, ...to, q })
+}
+
+let missAt = 0
+/** 瞄準時點空了（附近也沒有可選的目標）：保持瞄準，提示要點在目標身上；連點時 1.2 秒內只提示一次 */
+export function aimMiss(key = 'art3.aim.miss'): void {
+  const now = performance.now()
+  if (now - missAt < 1200) return
+  missAt = now
+  localNotice.value = { text: key, at: now }
+}
+
+/**
+ * 小地圖左鍵（瞄準中）：點的位置附近有符合篩選的目標就對它施放（救生艙「設定航線」選站、天守主砲選站…）；
+ * 技能可以對地面就對那一點施放；都不行就保持瞄準並提示。tolM = 小地圖上的點擊容差（公尺）。
+ * 回傳是否送出了指令（呼叫端決定要不要結束瞄準）。A 攻擊由小地圖自己處理（攻擊移動）。
+ */
+export function mapAim(scene: GameScene, tm: AimMode, p: Pt, tolM: number, q: boolean): boolean {
+  const ab = aimAbility(tm)
+  const wantsUnit = tm.target === 'unit' || tm.target === 'unitOrPoint'
+  const wantsPoint = tm.target === 'point' || tm.target === 'unitOrPoint'
+  if (wantsUnit) {
+    const id = mapPick(scene, p, tolM, ab?.filter)
+    const e = id ? world.ents.get(id) : undefined
+    if (e) {
+      sendAim(tm, { e: id }, q)
+      scene.fx.clickMarker(scene.zone, e.x, e.y, '#b28cff')
+      return true
+    }
+  }
+  if (wantsPoint) {
+    sendAim(tm, { x: p.x, y: p.y }, q)
+    scene.fx.clickMarker(scene.zone, p.x, p.y, '#b28cff')
+    return true
+  }
+  aimMiss('art3.aim.mapMiss')
+  return false
+}
+
+/** 小地圖上 p 附近（tolM 公尺內，加上目標半徑）符合篩選、離 p 最近的實體（0 = 沒有）*/
+export function mapPick(scene: GameScene, p: Pt, tolM: number, f: TargetFilter | undefined): number {
+  const self = casterId()
+  const cands: { id: number; x: number; y: number; r: number; ok: boolean; low: boolean }[] = []
+  for (const e of world.ents.values()) {
+    if (e.s.z !== scene.zone) continue
+    cands.push({ id: e.s.i, x: e.x, y: e.y, r: entRadius(e.s), ok: targetOk(e.s, f, self), low: lowPri(e.s, self) })
+  }
+  return mapPickTarget(p, cands, tolM, wantsStructure(f))
+}
+
+const V_FOOT = new Vector3()
+const V_TMP = new Vector3()
+const V_RIGHT = new Vector3()
 
 export class Input {
   private shift = false
@@ -365,8 +451,10 @@ export class Input {
     }
     if (e.button === 0) {
       if (tm) {
-        this.applyTarget(tm, ent, pt, zone)
-        if (!e.shiftKey) targetMode.value = null
+        // 沒有送出指令（點空了、附近也沒有可選的目標）：保持瞄準，不要無聲取消
+        const r = this.el.getBoundingClientRect()
+        const done = this.applyTarget(tm, ent, pt, zone, e.clientX - r.left, e.clientY - r.top)
+        if (done && !e.shiftKey) targetMode.value = null
         return
       }
       selected.value = ent || (world.me.control ?? 0)
@@ -437,26 +525,83 @@ export class Input {
     }
   }
 
-  private applyTarget(tm: NonNullable<TargetMode>, ent: number, pt: { x: number; y: number } | null, zone: number): void {
+  /**
+   * 瞄準中的左鍵（mx／my = 點擊位置，畫面座標 px）。回傳是否送出了指令。
+   * 只能點單位的技能與道具（抽血、寄生、停靠…）：沒有正好點在模型上時，吸附到附近約 1 格內符合篩選的單位
+   * （targetSnap.ts chooseUnitTarget）；附近也沒有就保持瞄準並提示。可以點地面的照舊。
+   */
+  private applyTarget(tm: NonNullable<TargetMode>, ent: number, pt: { x: number; y: number } | null, zone: number, mx: number, my: number): boolean {
     const q = this.shift
     if (tm.kind === 'attack') {
-      if (ent && ent !== world.me.control) sendCmd({ k: 'attack', e: ent, q })
-      else if (pt) {
-        sendCmd({ k: 'amove', x: pt.x, y: pt.y, q })
-        this.scene.fx.clickMarker(zone, pt.x, pt.y, '#ff5a4a')
+      if (ent && ent !== world.me.control) {
+        sendCmd({ k: 'attack', e: ent, q })
+        return true
       }
-      return
+      if (!pt) return false
+      sendCmd({ k: 'amove', x: pt.x, y: pt.y, q })
+      this.scene.fx.clickMarker(zone, pt.x, pt.y, '#ff5a4a')
+      return true
     }
-    const wantsUnit = tm.target === 'unit' || tm.target === 'unitOrPoint'
+    if (tm.target === 'unit') {
+      const f = aimAbility(tm)?.filter
+      const id = chooseUnitTarget(ent, this.snapCands(mx, my, f, ent), wantsStructure(f))
+      const e = id ? world.ents.get(id) : undefined
+      if (!e) {
+        aimMiss()
+        return false
+      }
+      sendAim(tm, { e: id }, q)
+      this.scene.fx.clickMarker(zone, e.x, e.y, '#b28cff')
+      return true
+    }
+    const wantsUnit = tm.target === 'unitOrPoint'
     const wantsPoint = tm.target === 'point' || tm.target === 'unitOrPoint'
-    if (tm.kind === 'ability') {
-      if (wantsUnit && ent) sendCmd({ k: 'cast', a: tm.id, e: ent, q })
-      else if (wantsPoint && pt) sendCmd({ k: 'cast', a: tm.id, x: pt.x, y: pt.y, q })
-    } else {
-      if (wantsUnit && ent) sendCmd({ k: 'use', s: tm.slot, e: ent, q })
-      else if (wantsPoint && pt) sendCmd({ k: 'use', s: tm.slot, x: pt.x, y: pt.y, q })
-    }
+    if (wantsUnit && ent) sendAim(tm, { e: ent }, q)
+    else if (wantsPoint && pt) sendAim(tm, { x: pt.x, y: pt.y }, q)
+    else return false
     if (pt) this.scene.fx.clickMarker(zone, pt.x, pt.y, '#b28cff')
+    return true
+  }
+
+  /**
+   * 瞄準吸附的候選：目前畫面裡每個實體在螢幕上的身體中軸（腳 → 頭）到點擊位置的距離，與它的吸附範圍
+   * （身體半徑＋約 1 格，依它所在深度換算成 px）。烘焙在站體裡的設施沒有單位視圖，用實體座標、約 2 m 高。
+   */
+  private snapCands(mx: number, my: number, f: TargetFilter | undefined, direct: number): SnapCand[] {
+    const cam = this.scene.camera
+    const r = this.el.getBoundingClientRect()
+    const self = casterId()
+    const zone = this.scene.zone
+    V_RIGHT.setFromMatrixColumn(cam.matrixWorld, 0).normalize()
+    const sx = (v: Vector3) => (v.x * 0.5 + 0.5) * r.width
+    const sy = (v: Vector3) => (-v.y * 0.5 + 0.5) * r.height
+    const out: SnapCand[] = []
+    for (const e of world.ents.values()) {
+      if (e.s.z !== zone) continue
+      const ok = targetOk(e.s, f, self)
+      // 不符合篩選的只有直接點中的那一個需要（chooseUnitTarget 要知道它不符合），其他的不用投影
+      if (!ok && e.s.i !== direct) continue
+      const uv = this.scene.units.views.get(e.s.i)
+      if (uv) V_FOOT.copy(uv.root.position)
+      else V_FOOT.set(e.x, 0, -e.y)
+      const h = uv?.height ?? 2
+      const rad = entRadius(e.s)
+      V_TMP.copy(V_FOOT).addScaledVector(V_RIGHT, 1).project(cam)
+      const sideX = sx(V_TMP)
+      const sideY = sy(V_TMP)
+      V_TMP.copy(V_FOOT)
+      V_TMP.y += h
+      V_TMP.project(cam)
+      const headX = sx(V_TMP)
+      const headY = sy(V_TMP)
+      V_FOOT.project(cam)
+      if (V_FOOT.z > 1) continue
+      const footX = sx(V_FOOT)
+      const footY = sy(V_FOOT)
+      const pxPerM = Math.hypot(sideX - footX, sideY - footY)
+      out.push({ id: e.s.i, dist: segDist(mx, my, footX, footY, headX, headY), tol: Math.max(SNAP_MIN_PX, (rad + SNAP_M) * pxPerM), ok, low: lowPri(e.s, self) })
+    }
+    return out
   }
 
   private key(e: KeyboardEvent, down: boolean): void {

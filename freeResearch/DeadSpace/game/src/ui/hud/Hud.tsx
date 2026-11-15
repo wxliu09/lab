@@ -8,12 +8,12 @@ import { entDefName, localizeName, suitColor, textColorOf } from '../names'
 import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
-import type { ChatChannel } from '../../shared/protocol/messages'
+import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, world, connLost, hostStall, leave, notice, noticeKey } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
-import { chatOpen, evolveOpen, isPiloting, localNotice, selected, targetMode, type Input } from '../../client/input'
+import { aimAbility, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, selected, targetMode, type AimMode, type Input } from '../../client/input'
 import type { GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
@@ -27,6 +27,7 @@ import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
 import { MINIMAP, poiColor, poiShape } from '../minimapColors'
 import { DEFAULT_BODY_R, minimapMoveTarget } from '../../render/moveTargets'
+import { chatFade } from '../../client/chatFade'
 import '../strings/art3'
 import '../ui4.css'
 
@@ -246,7 +247,7 @@ export function Minimap(props: { scene: GameScene }) {
     draw()
     return () => cancelAnimationFrame(raf)
   }, [props.scene])
-  const toWorld = (ev: MouseEvent) => {
+  const toWorld = (ev: { clientX: number; clientY: number }) => {
     const scene = sceneRef.current
     if (!scene) return null
     const c = ref.current!
@@ -267,14 +268,30 @@ export function Minimap(props: { scene: GameScene }) {
     const py = ((ev.clientY - r.top) / r.height) * c.height
     return { x: (px - ox) / k, y: l.h - (py - oy) / k }
   }
+  /** 小地圖上的點擊容差（約 10 px）換算成公尺 */
+  const mapTol = (ev: { clientX: number; clientY: number }, p: { x: number; y: number }) => {
+    const q = toWorld({ clientX: ev.clientX + 10, clientY: ev.clientY })
+    return q ? Math.abs(q.x - p.x) : 2
+  }
+  /** 瞄準單位時的小地圖懸停：左鍵會選到的目標名稱（沒有可選的就不顯示，照常顯示房間）*/
+  const minimapAimTip = (scene: GameScene, tm: AimMode, p: { x: number; y: number } | null, ev: { clientX: number; clientY: number }): TipData | null => {
+    if (!p || (tm.target !== 'unit' && tm.target !== 'unitOrPoint')) return null
+    const id = mapPick(scene, p, mapTol(ev, p), aimAbility(tm)?.filter)
+    const s = id ? world.ents.get(id)?.s : undefined
+    if (!s) return null
+    return { title: localizeName(s.n) || loc(entDefName(s.d)), hint: t('art3.minimap.aimPick') }
+  }
   return (
     <div class="panel minimap">
       <canvas
         ref={ref}
         onContextMenu={(e) => e.preventDefault()}
         onMouseMove={(e) => {
-          // 懸停：顯示房間名稱與裡面的設施
+          // 懸停：顯示房間名稱與裡面的設施；瞄準單位時改說明左鍵會選到誰
           const scene = sceneRef.current
+          const tm = targetMode.value
+          const aimTip = scene && tm && tm.kind !== 'attack' ? minimapAimTip(scene, tm, toWorld(e), e) : null
+          if (aimTip) return showCursorTip(aimTip, e.clientX, e.clientY)
           if (!scene || scene.zone === 0) return showCursorTip(null, 0, 0)
           const p = toWorld(e)
           const info = scene.zones.get(scene.zone)
@@ -285,14 +302,25 @@ export function Minimap(props: { scene: GameScene }) {
             .filter((q) => info.layout.roomOf[q.row * info.layout.w + q.col] === room.index)
             .map((q) => poiName(q.def.kind, q.def.ref))
             .filter(Boolean)
-          showCursorTip({ title: loc(room.spec.name), body: listJoin([...new Set(things)]) || undefined, hint: t('minimap.hint') }, e.clientX, e.clientY)
+          showCursorTip({ title: loc(room.spec.name), body: listJoin([...new Set(things)]) || undefined, hint: t(tm ? 'art3.minimap.aim' : 'minimap.hint') }, e.clientX, e.clientY)
         }}
         onMouseLeave={() => showCursorTip(null, 0, 0)}
         onMouseDown={(e) => {
           const p = toWorld(e)
-          if (!p) return
-          if (e.button === 2) minimapMove(sceneRef.current, p, e.shiftKey)
-          else sceneRef.current?.rts.focus(p.x, p.y)
+          const scene = sceneRef.current
+          if (!p || !scene) return
+          const tm = targetMode.value
+          if (tm) {
+            // 瞄準中：右鍵取消（同場景）；左鍵＝在小地圖上選目標（救生艙設定航線、天守主砲…），A 攻擊＝攻擊移動到那裡
+            if (e.button === 2) targetMode.value = null
+            else if (e.button === 0) {
+              const done = tm.kind === 'attack' ? minimapMove(scene, p, e.shiftKey, 'amove') : mapAim(scene, tm, p, mapTol(e, p), e.shiftKey)
+              if (done && !e.shiftKey) targetMode.value = null
+            }
+            return
+          }
+          if (e.button === 2) minimapMove(scene, p, e.shiftKey)
+          else scene.rts.focus(p.x, p.y)
         }}
       />
     </div>
@@ -340,11 +368,11 @@ export function drawMinimapUnit(x: CanvasRenderingContext2D, s: { i: number; c?:
  * 小地圖右鍵移動（站內）：點到牆、實心設施改成同房間最近走得到的格子；落在控制台的控制圈裡就推到圈外
  * （小地圖上點不出「去駕駛」，要駕駛請在場景裡右鍵控制台）；整個走不到就提示「無法到達」。太空層照原點。
  */
-function minimapMove(scene: GameScene | null, p: { x: number; y: number }, q: boolean): void {
+function minimapMove(scene: GameScene | null, p: { x: number; y: number }, q: boolean, k: 'move' | 'amove' = 'move'): boolean {
   const info = scene && scene.zone !== 0 ? scene.zones.get(scene.zone) : undefined
   if (!scene || !info) {
-    sendCmd({ k: 'move', x: p.x, y: p.y, q })
-    return
+    sendCmd({ k, x: p.x, y: p.y, q })
+    return true
   }
   const meId = world.me.control || world.me.unit
   const me = meId ? world.ents.get(meId) : undefined
@@ -352,10 +380,11 @@ function minimapMove(scene: GameScene | null, p: { x: number; y: number }, q: bo
   const to = minimapMoveTarget(info.layout, p, here ? { x: me.x, y: me.y } : null, UNITS.get(me?.s.d ?? '')?.radius ?? DEFAULT_BODY_R)
   if (!to) {
     localNotice.value = { text: 'art3.unreachable', at: performance.now() }
-    return
+    return false
   }
-  sendCmd({ k: 'move', x: to.x, y: to.y, q })
-  scene.fx.clickMarker(scene.zone, to.x, to.y)
+  sendCmd({ k, x: to.x, y: to.y, q })
+  scene.fx.clickMarker(scene.zone, to.x, to.y, k === 'amove' ? '#ff5a4a' : undefined)
+  return true
 }
 
 function poiName(kind: string, ref?: string): string {
@@ -461,15 +490,24 @@ export function Portrait() {
   const hp = s.hp ?? 0
   const mhp = s.mhp ?? 1
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!].hex : '#9fb3c2'
+  const name = localizeName(s.n) || loc(defName)
   return (
     <div class="panel portrait" data-testid="portrait">
       <div style={{ width: '96px', height: '128px', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `radial-gradient(circle at 50% 40%, ${color}33, transparent 70%)` }}>
         <Icon name={def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'} color={color} size={56} />
       </div>
       <div class="bars">
-        <div style={{ fontWeight: 700, fontSize: '18px', color: textColorOf(color) }}>{localizeName(s.n) || loc(defName)}</div>
-        <div class="dim" style={{ fontSize: '14px', marginTop: '-4px' }}>
-          {loc(defName)}
+        {/* 第一列只放名字（e2e ux.spec 讀 .bars > div 的第一個）*/}
+        <div class="pname" style={{ color: textColorOf(color) }}>
+          {name}
+        </div>
+        <div class="psub dim">
+          {name !== loc(defName) && <span class="psub-def">{loc(defName)}</span>}
+          {def && (
+            <span class="mono psub-stat">
+              {def.attack ? `ATK ${def.attack.dmg[0]}–${def.attack.dmg[1]} · ${def.attack.range}m · ` : ''}SPD {def.speed}
+            </span>
+          )}
         </div>
         <div class="bar">
           <i style={{ transform: `scaleX(${Math.max(0, hp / mhp)})` }} />
@@ -485,22 +523,41 @@ export function Portrait() {
             </span>
           </div>
         ) : null}
-        <div class="row" style={{ gap: '4px', flexWrap: 'wrap' }}>
-          {(s.b ?? []).map((b) => {
-            const bd = buffDef(b)
-            return (
-              <span key={b} class="tag" style={{ color: bd?.good ? 'var(--good)' : 'var(--alarm)' }} {...tipProps(() => (bd ? { title: loc(bd.name), sub: bd.good ? t('tip.buff.good') : t('tip.buff.bad'), body: loc((bd as { desc?: { zh: string; en: string } }).desc), color: bd.good ? '#5cf2a5' : '#ff5a4a' } : null))}>
-                {loc(bd?.name) || b}
-              </span>
-            )
-          })}
-        </div>
-        {def && (
-          <div class="dim mono" style={{ fontSize: '13px' }}>
-            {def.attack ? `ATK ${def.attack.dmg[0]}–${def.attack.dmg[1]} · ${def.attack.range}m · ` : ''}SPD {def.speed}
-          </div>
-        )}
+        <BuffRow ids={s.b ?? []} />
       </div>
+    </div>
+  )
+}
+
+/** 頭像一列最多放幾個狀態標籤（多的收成「+N」，滑鼠移上去列出其餘的）*/
+const BUFF_MAX = 4
+
+/**
+ * 頭像的狀態效果列：固定一行高（不會被生命條、能量條擠成一條線）。負面狀態（寄生、中毒…）排前面、紅底醒目；
+ * 增益綠框。放不下的收成「+N」。
+ */
+function BuffRow({ ids }: { ids: string[] }) {
+  const list = ids.map((id) => ({ id, def: buffDef(id) })).sort((a, b) => Number(!!a.def?.good) - Number(!!b.def?.good))
+  const shown = list.length > BUFF_MAX ? list.slice(0, BUFF_MAX - 1) : list
+  const rest = list.slice(shown.length)
+  return (
+    <div class="pbuffs" data-testid="portrait-buffs">
+      {shown.map(({ id, def: bd }) => (
+        <span
+          key={id}
+          class={'tag ' + (bd?.good ? 'buff-good' : 'buff-bad')}
+          data-testid={'buff-' + id}
+          {...tipProps(() => (bd ? { title: loc(bd.name), sub: bd.good ? t('tip.buff.good') : t('tip.buff.bad'), body: loc(bd.desc), color: bd.good ? '#5cf2a5' : '#ff5a4a' } : null))}
+        >
+          {!bd?.good && <i class="buff-dot" />}
+          {loc(bd?.name) || id}
+        </span>
+      ))}
+      {rest.length > 0 && (
+        <span class={'tag ' + (rest.some((r) => !r.def?.good) ? 'buff-bad' : 'buff-good')} {...tipProps(() => ({ title: listJoin(rest.map((r) => loc(r.def?.name) || r.id)) }))}>
+          +{rest.length}
+        </span>
+      )}
     </div>
   )
 }
@@ -763,9 +820,25 @@ export function parseChatInput(input: string): { ch: ChatChannel; text: string; 
   return { ch: 'all', text: raw }
 }
 
+/** 每一行聊天第一次出現在畫面上的時間與穩定的 key（行物件本身當索引；chatLog 重建陣列時同一行還是同一個物件）*/
+const chatSeen = new WeakMap<ChatLine, { at: number; key: number }>()
+let chatKey = 0
+function chatStamp(l: ChatLine, now: number): { at: number; key: number } {
+  let v = chatSeen.get(l)
+  if (!v) {
+    v = { at: now, key: ++chatKey }
+    chatSeen.set(l, v)
+  }
+  return v
+}
+
 export function Chat() {
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
+  // 滑鼠停在聊天區（聊天紀錄不接滑鼠事件、點擊會穿透到場景，所以用整個視窗的游標位置判斷）
+  const [hover, setHover] = useState(false)
+  const [, setTick] = useState(0)
   useLayoutEffect(() => {
     if (!chatOpen.value) return
     inputRef.current?.focus()
@@ -773,7 +846,55 @@ export function Chat() {
     const id = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(id)
   }, [chatOpen.value])
+  useEffect(() => {
+    let raf = 0
+    let x = -1
+    let y = -1
+    let was = false
+    let dwell: ReturnType<typeof setTimeout> | null = null
+    const check = () => {
+      raf = 0
+      const el = logRef.current
+      const r = el?.getBoundingClientRect()
+      const on = !!r && r.height > 0 && x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 8 && y <= r.bottom + 8
+      if (on === was) return
+      was = on
+      if (dwell) clearTimeout(dwell)
+      dwell = null
+      // 移進去停一下（0.25 秒）才顯示：只是滑過去點場景時不要整片聊天閃出來；移出去立刻收
+      if (on) dwell = setTimeout(() => setHover(true), 250)
+      else setHover(false)
+    }
+    const move = (e: PointerEvent) => {
+      x = e.clientX
+      y = e.clientY
+      if (!raf) raf = requestAnimationFrame(check)
+    }
+    const out = (e: MouseEvent) => {
+      if (e.relatedTarget) return
+      x = y = -1
+      if (!raf) raf = requestAnimationFrame(check)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('mouseout', out)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('mouseout', out)
+      if (raf) cancelAnimationFrame(raf)
+      if (dwell) clearTimeout(dwell)
+    }
+  }, [])
   const lines = chatLog.value.slice(-12)
+  const now = performance.now()
+  const stamps = lines.map((l) => chatStamp(l, now))
+  const reveal = chatOpen.value || hover
+  const { faded, next } = chatFade(stamps.map((v) => v.at), now, reveal)
+  // 下一行到淡出時間時重繪一次（不用每秒輪詢）
+  useEffect(() => {
+    if (!Number.isFinite(next)) return
+    const id = setTimeout(() => setTick((n) => n + 1), Math.max(50, next - performance.now() + 20))
+    return () => clearTimeout(id)
+  }, [next])
   const submit = () => {
     const raw = text.trim()
     setText('')
@@ -787,9 +908,9 @@ export function Chat() {
   const placeholder = world.me.alive === false ? (lastWords > 0 ? t('chat2.placeholderLastWords', { n: lastWords }) : t('chat.placeholderDead')) : t('chat.placeholder')
   return (
     <>
-      <div class={'chat' + (chatOpen.value ? ' typing' : '')} data-testid="chatlog">
+      <div ref={logRef} class={'chat' + (chatOpen.value ? ' typing' : '') + (reveal ? ' reveal' : '')} data-testid="chatlog">
         {lines.map((l, i) => (
-          <div key={i} class={'line ' + (l.ch === 'sys' || l.ch === 'private' ? 'sys' : l.ch)}>
+          <div key={stamps[i].key} class={'line ' + (l.ch === 'sys' || l.ch === 'private' ? 'sys' : l.ch) + (faded[i] ? ' faded' : '')}>
             {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
             {l.ch === 'team' && <span>[{t('chat.team')}] </span>}
             {l.group && <span>[{l.group}] </span>}
@@ -833,6 +954,8 @@ export function TargetHint() {
   else if (tm.kind === 'attack') name = t('target.attack')
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
+  // 在太空中瞄準（設定航線、主砲、停靠…）：目標常常在畫面外，提醒可以直接點小地圖
+  if (tm && tm.kind !== 'attack' && world.ents.get(world.me.control || world.me.unit || 0)?.s.z === 0) name += t('art3.aim.mapHint')
   return (
     <TopSlot order={1}>
       <div class="panel top-hint" data-testid="target-hint">

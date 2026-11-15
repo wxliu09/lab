@@ -2,10 +2,12 @@
 import * as THREE from 'three'
 import { PLAYER_COLORS } from '../shared/constants'
 import { EntFlag } from '../shared/protocol/messages'
-import { UNITS } from '../shared/content/registry'
+import { UNITS, VENDORS } from '../shared/content/registry'
+import { roomAt } from '../shared/layout'
 import type { ClientWorld } from '../client/world'
 import type { GameScene } from './gameScene'
 import { loc, sysText, t } from '../ui/i18n'
+import '../ui/strings/art3'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
@@ -13,7 +15,20 @@ import { meCtx, promptKey } from '../client/interactKind'
 import { consoleSpots, type ConsoleSpot } from './moveTargets'
 
 const requested = new Set<string>()
-/** 靠近時會開啟操作面板的設施 */
+/** 身旁設施的短名稱標籤：同房間、或離自己主單位這麼近（公尺）以內才標 */
+export const FAC_LABEL_R = 6
+
+/**
+ * 長得一樣的設施（外觀都是販賣機的那幾種、生命再生器）的短名稱字串 key；其他東西回傳 null。
+ * 販賣機的外觀 id 是 vendor.<販賣機 id>（定義只在 sim 端註冊，client 查販賣機表）。
+ */
+export function facLabelKey(d: string): string | null {
+  if (d === 'struct.regen') return 'art3.fac.regen'
+  if (!d.startsWith('vendor.')) return null
+  const v = VENDORS.get(d.slice(7))
+  return v && v.model === 'vendor' ? 'art3.fac.' + v.id : null
+}
+
 /** canvas 上的中文字需要先載入對應的字型子集 */
 function ensureGlyphs(text: string): void {
   if (!text || requested.has(text)) return
@@ -57,6 +72,8 @@ export class Overlay {
     const z = Math.min(1.6, uiZoom.value)
     const labels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
     const stationLabels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
+    /** 單位身體在畫面上的範圍：設施標籤不能蓋住人 */
+    const bodies: { l: number; r: number; t: number; b: number }[] = []
     const bubbles = new Map<number, { text: string; color: number }>()
     world.bubbles = world.bubbles.filter((b) => b.until > now)
     for (const b of world.bubbles) bubbles.set(b.e, b)
@@ -94,6 +111,10 @@ export class Overlay {
       if (this.v.z > 1 || Math.abs(this.v.x) > 1.1 || Math.abs(this.v.y) > 1.1) continue
       const sx = (this.v.x * 0.5 + 0.5) * w
       const sy = (-this.v.y * 0.5 + 0.5) * h
+      this.v.copy(uv.root.position).project(cam)
+      const footY = (-this.v.y * 0.5 + 0.5) * h
+      const half = Math.max(10, (footY - sy) * 0.32)
+      bodies.push({ l: sx - half, r: sx + half, t: sy - 14, b: footY + 4 })
       const hp = e.s.hp ?? 0
       const mhp = e.s.mhp ?? 1
       const hot = id === scene.units.selected || id === scene.units.hovered
@@ -123,6 +144,7 @@ export class Overlay {
     const pr = this.prompt(scene, world, x, w, h, z, now)
     if (pr) placed.push(pr)
     this.drawLabels(x, labels, placed, z)
+    this.facilityLabels(scene, world, x, w, h, z, placed, bodies)
     // 站名：字大一點、全部畫（站點彼此距離遠，不做省略）
     x.save()
     x.font = `700 ${Math.round(15 * z)}px "Noto Sans TC", sans-serif`
@@ -257,6 +279,75 @@ export class Overlay {
     // 點在標籤上＝點到它標的對象（input.ts）：標籤浮在設施上方，底下常常是牆，以前右鍵會走到牆邊
     scene.promptHit = { ...rect, ent: best.id, poi: best.poi }
     return rect
+  }
+
+  /**
+   * 身旁設施的短名稱（審查 R2：販賣機、維修站、醫療補給、生命再生器長得一樣，分不出哪台是哪台）：
+   * 自己主單位同房間、或 FAC_LABEL_R 內的這些設施頭上常駐一個小標籤，樣式同互動提示（琥珀色字、黑邊、小菱形），
+   * 但不閃、字小一號。互動提示已經標著的那一台不重複標。跟名字、互動提示重疊就往上錯開一行，
+   * 還是會蓋到名字或人的身體就不畫（不擋單位）。
+   */
+  private facilityLabels(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, placed: { l: number; r: number; t: number; b: number }[], bodies: { l: number; r: number; t: number; b: number }[]): void {
+    const me = world.ents.get(world.me.unit ?? 0)
+    if (!me || world.me.alive === false || me.s.z !== scene.zone) return
+    const info = scene.zones.get(scene.zone)
+    if (!info) return
+    const room = roomAt(info.layout, me.x, me.y)
+    const skip = scene.promptHit?.ent ?? 0
+    const list: { key: string; x: number; y: number; d: number }[] = []
+    for (const e of world.ents.values()) {
+      if (e.s.z !== scene.zone || e.s.i === skip) continue
+      const key = facLabelKey(e.s.d ?? '')
+      if (!key) continue
+      const d = Math.hypot(e.x - me.x, e.y - me.y)
+      if (d > FAC_LABEL_R && !(room && roomAt(info.layout, e.x, e.y)?.index === room.index)) continue
+      list.push({ key, x: e.x, y: e.y, d })
+    }
+    if (!list.length) return
+    list.sort((a, b) => a.d - b.d)
+    const fs = Math.round(12 * z)
+    const r = 3.5 * z
+    const hit = (q: { l: number; r: number; t: number; b: number }) => placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) || bodies.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t)
+    x.save()
+    x.font = `700 ${fs}px "Noto Sans TC", sans-serif`
+    x.textAlign = 'center'
+    for (const f of list) {
+      // 烘焙在站體裡的設施（販賣機約 2 m 高、再生器矮一點）：標在頂上，跟互動提示同一個高度
+      this.v.set(f.x, 2.2, -f.y)
+      this.v.project(scene.camera)
+      if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) continue
+      const sx = (this.v.x * 0.5 + 0.5) * w
+      const sy = (-this.v.y * 0.5 + 0.5) * h
+      const name = t(f.key)
+      ensureGlyphs(name)
+      const half = x.measureText(name).width / 2 + 3
+      let rect = null as null | { l: number; r: number; t: number; b: number }
+      for (let k = 0; k < 2 && !rect; k++) {
+        const ty = sy - r - 5 * z - k * (fs + 3)
+        const q = { l: sx - half, r: sx + half, t: ty - fs, b: ty + 3 }
+        if (!hit(q)) rect = q
+      }
+      if (!rect) continue
+      placed.push(rect)
+      const ty = rect.b - 3
+      x.globalAlpha = 0.9
+      // 小菱形（不閃，跟互動提示的大菱形區分）
+      x.strokeStyle = '#ffc23d'
+      x.lineWidth = 1.5
+      x.beginPath()
+      x.moveTo(sx, sy - r)
+      x.lineTo(sx + r, sy)
+      x.lineTo(sx, sy + r)
+      x.lineTo(sx - r, sy)
+      x.closePath()
+      x.stroke()
+      x.lineWidth = 3.5
+      x.strokeStyle = 'rgba(0,0,0,0.85)'
+      x.strokeText(name, sx, ty)
+      x.fillStyle = '#ffe2a0'
+      x.fillText(name, sx, ty)
+    }
+    x.restore()
   }
 
   private bubble(x: CanvasRenderingContext2D, sx: number, sy: number, raw: string, z = 1): void {

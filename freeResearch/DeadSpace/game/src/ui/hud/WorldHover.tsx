@@ -95,12 +95,15 @@ function baseTip(id: number): TipData | null {
     const ctl = world.ents.get(world.me.control ?? 0)
     const flying = !!ctl && ctl.s.z === 0 && (s.z ?? 0) === 0
     const act = rightClickAction(s)
+    // 「用停靠降落」只對真的有停靠技能的載具說（救生艙、豪勇號沒有，要靠設定航線或降落程序）
+    const canDock = !!world.me.abilities?.some((a) => a.id === 'ship.dock')
+    const travel = flying ? t(canDock ? 'hover.hint.flyTo' : 'hover.hint.flyToOnly') : canDock ? t('hover.hint.station') : undefined
     return {
       title: name,
       sub: t(isMine ? 'hover.station.mine' : hostile ? 'hover.cat.hostile' : piloted ? 'hover.station.piloted' : 'hover.cat.station'),
       body: t('codex.place.' + sid),
       rows: hpRow,
-      hint: isMine ? undefined : act === 'attack' ? t('hover.hint.attack') : flying ? t('hover.hint.flyTo') : t('hover.hint.station'),
+      hint: isMine ? undefined : act === 'attack' ? t('hover.hint.attack') : travel,
       color: hostile ? '#ff5a4a' : piloted && s.c !== undefined && s.c >= 0 ? PLAYER_COLORS[s.c]?.hex : '#9fe7ff',
     }
   }
