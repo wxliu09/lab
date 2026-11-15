@@ -74,7 +74,7 @@
 | Syllus（`zc`, h04T） | 全體玩家數 `>=11`（`ekv` 18672）或 `qr==2` 或 Tr → `jO→WM` 8399 | `JO→zM` 移除 8427 |
 | Pown（`EC`, h04V） | `>=11` 或 `qr==3` 或 Tr → `sO→AP` 8794 | `SO→BP` 移除 8804 |
 
-> 推斷：`ekv` 用的是 `CountPlayersInForceBJ(bj_FORCE_ALL_PLAYERS)`，在標準 Blizzard.j 中這個 force 由 `ForceEnumPlayers(null)` 建立、包含全部 16 個 slot（含空位與中立），因此 `>=11` 可能**恆真**，Syllus 與 Pown 實際上永遠開放。同一個計數也用在死亡投票門檻（§10.1）。
+> 推斷：`ekv` 用的是 `CountPlayersInForceBJ(bj_FORCE_ALL_PLAYERS)`，在標準 Blizzard.j 中這個 force 由 `ForceEnumPlayers(null)` 建立、包含全部 16 個 slot（含空位與中立），因此 `>=11` 可能**恆真**，Syllus 與 Pown 實際上永遠開放。同一個計數也用在死亡投票門檻（§10.1）。旁證：`emv` 18718–18723 從 `bj_FORCE_ALL_PLAYERS` 建參與名單 `Iv` 時還要過濾 `PLAYER_SLOT_STATE_PLAYING`。本作（2026-11-15）照實際效果：Syllus（活體庫號）、Pown（擺渡號）每一局都在；Calipea（火口號）＝ ≥7 人、`qr==1`、有工程師。
 
 ### 1.5 中途離開與角色補位（`j6`，17042–17083；`H6` 17034–17041）
 - 離開者：`yx[]=true`、廣播 "has left the game!"、殺死主單位並加 `A02T` And Stay Dead（17045–17048）。
@@ -548,7 +548,7 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
 |---|---|---|
 | 死者一般發言 | 死者（`ke`，非機器人）說的話以 "\|cffffcc00<原名>\|r: msg" 轉發給所有死者 | `fN` 23335–23348、17094–17108 |
 | Dead Player Chat 看板 | 死者非 "-" 開頭訊息記錄到 40 行 multiboard（只有死者被顯示） | 18534–18580、17312–17314 |
-| 機器人死後發言 | 變成記憶卡位置的浮動文字 | 20649–20672 |
+| 機器人死後發言 | 變成記憶卡位置的浮動文字（`RB`/`aAv`：卡在地上就是那裡，被撿走就是帶著的單位位置；5 秒、只有內容沒有名字；先 `ShowTextTagForceBJ(false, …)` 再只對 `IsLocationVisibleToPlayer` 的玩家顯示，活人死者都一樣）。`RB` 在死後 4 秒（`O7`，遺言時間之後）才啟用；同時把名字補滿空白（一般聊天看不出內容），死者轉發 `k6`/`l6` 也排除 `Cv`；`-shutdown` 後 `Cv` 改成 Player 15 才回到死者頻道 | 20649–20672、17306–17312、17094–17104、20622–20631 |
 | `-creategroup <name>` | 活人限定；名稱已存在則 "This group has already been taken." | 18202–18231 |
 | `-add <group> <color\|all>` / `-remove …` | 只有建立者；`all`=1337 代表全部 | 18232–18313 |
 | `-list <group>` | 必須是成員 | 18314–18343 |

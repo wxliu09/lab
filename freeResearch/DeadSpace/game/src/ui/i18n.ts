@@ -161,7 +161,7 @@ const zh: Dict = {
   'cast.space': '這裡不能使用',
   'cast.once': '每局只能使用一次',
   'cast.dead': '',
-  'death.innocent': '一名無辜者遇害了',
+  'death.innocent': '{name} 遇害了——一名無辜者',
 }
 
 const en: Dict = {
@@ -253,7 +253,7 @@ const en: Dict = {
   'hud.dead': 'You are dead: spectating, you can only talk with the dead',
   'hud.paused': 'Paused',
   'end.title': 'Results',
-  'end.crew': 'Humanity prevails',
+  'end.crew': 'The crew survives',
   'end.xeno': 'The xeno triumphs',
   'end.mutant': 'The mutant triumphs',
   'end.draw': 'Draw: no side prevails',
@@ -267,7 +267,7 @@ const en: Dict = {
   'vendor.offline': 'Vendor is offline',
   'vendor.soldOut': 'Sold out',
   'item.full': 'Inventory full',
-  'item.uniqueOnly': 'You may only carry one of these devices',
+  'item.uniqueOnly': 'You can only hold one device of this kind',
   'item.cantSuit': 'This form cannot wear suits',
   'cast.stunned': 'Stunned',
   'cast.silenced': 'Silenced',
@@ -277,7 +277,7 @@ const en: Dict = {
   'cast.space': 'Cannot use that here',
   'cast.once': 'Only once per game',
   'cast.dead': '',
-  'death.innocent': 'An innocent has been killed',
+  'death.innocent': '{name} is dead: an innocent',
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }

@@ -166,7 +166,7 @@ regAbilities([
   {
     id: 'mut.prion',
     name: L('朊毒注射', 'Prion Inject'),
-    desc: L('讓人類感染朊毒（穿著防護服也擋不住；異類形態與機械體打不到）。帶著朊毒死去的人會變成你的眷屬。', 'Infect a human with prions (a suit does not stop it; xeno forms and machines are immune). Those who die infected become your drones.'),
+    desc: L('讓人類感染朊毒（穿著防護服也擋不住；異類形態與機械體打不到）。帶著朊毒死去的人會變成你的眷屬。', 'Infect a human with prions (a suit does not stop it; xeno forms and machines are immune). Those who die infected become your spawn.'),
     icon: 'infect',
     target: 'unit',
     range: 1.6,
@@ -196,7 +196,7 @@ regAbilities([
   {
     id: 'mut.prion3',
     name: L('繁巢株注射', 'Brood Inject'),
-    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形眷屬死時都會轉成你的眷屬。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn convert to your drones on death.'),
+    desc: L('最兇猛的朊毒。繁巢形態下，連異形與異形眷屬死時都會轉成你的眷屬。', 'The fiercest prion. Under the Broodmother, even xenos and their spawn turn into your spawn when they die.'),
     icon: 'infect',
     target: 'unit',
     range: 9,

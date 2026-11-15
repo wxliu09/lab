@@ -384,7 +384,7 @@ ABILITIES.push(
   ab(
     'ab.pyro.overheat',
     L('過熱', 'Overheat'),
-    L('拆掉安全限制器：6 秒內攻擊速度大幅提升、移動稍快。時間一到必須緊急排出蒸汽，接下來 4 秒攻擊與移動都會變得極慢。', 'Rip out the safety limiter. For 6 s you fire far faster and move a little quicker. Then the suit must vent steam, crippling your attack and movement speed for 4 s.'),
+    L('拆掉安全限制器：6 秒內攻擊速度大幅提升、移動稍快。時間一到防護服得把積熱全部排掉，接下來 4 秒攻擊與移動都會變得極慢。', 'Rip out the safety limiter. For 6 s you fire far faster and move a little quicker. After that the suit has to dump all that heat, and for 4 s you attack and move very slowly.'),
     'speed',
     'none',
     10,
@@ -502,7 +502,7 @@ ABILITIES.push(
   ab(
     'ab.mirage.double',
     L('幻影分身', 'Mirror Double'),
-    L('在身旁投射出一個和你外觀、名字完全相同的分身，它會走向指定地點並攻擊沿路的敵對生物，持續 30 秒。分身受傷與本體相同，但不會造成傷害、不能使用道具或技能。同時只能有一個。', 'Project a double beside you with your exact look and name. It walks to the chosen spot, attacking hostile creatures on the way, for 30 s. It takes damage normally but deals none, and cannot use items or abilities. Only one at a time.'),
+    L('在身旁投射出一個和你外觀、名字完全相同的分身，它會走向指定地點並攻擊沿路的敵對生物，持續 30 秒。打在分身上的傷害和打在你身上一樣，但它傷不了任何東西，也不能用道具或技能。同時只能有一個。', 'Project a double beside you with your exact look and name. It walks to the chosen spot, attacking hostile creatures on the way, for 30 s. Hits on it land as hard as hits on you, yet it cannot harm anything, use items or cast abilities. Only one at a time.'),
     'mask',
     'point',
     5,
@@ -604,7 +604,7 @@ ABILITIES.push(
   ab(
     'ab.labcoat.physics',
     L('物理學', 'Physics'),
-    L('瞬間與目標單位交換位置，目標在接下來 3 秒內無敵。', 'Instantly trade places with the target unit. The target is invulnerable for the next 3 s.'),
+    L('瞬間與目標單位交換位置，目標在接下來 3 秒內無敵。', 'Instantly trade places with the target unit, which then cannot be harmed for 3 s.'),
     'teleport',
     'unit',
     15,

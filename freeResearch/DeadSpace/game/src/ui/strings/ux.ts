@@ -207,6 +207,17 @@ export const UX_ZH: Record<string, string> = {
   'r4c.hostGone.why': '對局是在主機的瀏覽器裡執行的：主機關掉分頁或斷線太久，其他人的畫面就會停住。',
   'r4c.hostGone.leave': '回主選單',
   'r4c.hostLost.wait': '正在等主機回來；主機若已離開，稍後會提示你回主選單',
+
+  // ───── 第 5 輪審查（client：冒充主機、重新整理後回到對局、主機中止、小地圖形狀）─────
+  'r5c.hostConflict': '有其他連線自稱主機，已忽略',
+  'r5c.rejoin.connecting': '正在重新連回房間 {code}…',
+  'r5c.rejoin.cancel': '取消重新連線',
+  'r5c.seatTaken': '你的席位已由另一個分頁接手，這個分頁已中斷連線。',
+  'r5c.leaving': '正在結束這局，讓其他人看到結算…',
+  'r5c.end.hostAborted': '主機中止了這局',
+  'r5c.end.hostAbortedSub': '對局在主機的瀏覽器裡執行，主機一走就沒辦法繼續；所有人的身分已經揭曉。',
+  'r5c.map.medical': '醫療補給（十字）',
+  'r5c.map.git': 'GIT 檢測儀（三角形）',
 }
 
 export const UX_EN: Record<string, string> = {
@@ -416,4 +427,15 @@ export const UX_EN: Record<string, string> = {
   'r4c.hostGone.why': 'The game runs in the host’s browser: when the host closes the tab or stays disconnected for too long, everyone else’s game freezes.',
   'r4c.hostGone.leave': 'Back to main menu',
   'r4c.hostLost.wait': 'Waiting for the host to come back; if the host has left, you will be offered a way back to the main menu',
+
+  // ───── Round 5 review (client: host impersonation, rejoin after reload, host abort, minimap shapes) ─────
+  'r5c.hostConflict': 'Another connection claimed to be the host; ignored',
+  'r5c.rejoin.connecting': 'Reconnecting to room {code}…',
+  'r5c.rejoin.cancel': 'Stop reconnecting',
+  'r5c.seatTaken': 'Your seat was taken over by another tab, so this tab has disconnected.',
+  'r5c.leaving': 'Ending the game so everyone sees the results…',
+  'r5c.end.hostAborted': 'The host ended this game',
+  'r5c.end.hostAbortedSub': 'The game runs in the host’s browser, so it can’t go on without them; everyone’s role has been revealed.',
+  'r5c.map.medical': 'Medical Supplies (cross)',
+  'r5c.map.git': 'GIT tester (triangle)',
 }

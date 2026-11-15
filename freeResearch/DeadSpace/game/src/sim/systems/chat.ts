@@ -5,6 +5,8 @@ import { PLAYER_COLORS } from '../../shared/constants'
 import { sanitizeName } from '../../shared/protocol/validate'
 import { listArgs } from '../../shared/sysArgs'
 import { SPACE_HALF } from '../world'
+import type { Ent, ItemInst } from '../ent'
+import { carries } from './items'
 
 /** 死後 4 秒內的發言仍讓活人看到（遺言）*/
 export const LAST_WORDS = 4
@@ -77,6 +79,11 @@ export function routeChat(g: Game, p: GamePlayer, ch: ChatChannel, text: string,
   const main = g.mainOf(p)
   if (!speakingAlive || ch === 'dead') {
     if (p.alive) return
+    // 等記憶核心復活的仿生人（遺言時間過後）：說的話不進死者頻道，變成記憶核心位置的浮動文字（原作 aAv 20649–20672）
+    if (!lastWords && canStillRevive(p)) {
+      coreChat(g, p, text)
+      return
+    }
     const line: ChatLine = { from: p.baseName, color: p.color, ch: 'dead', text, time: t }
     deliver(g, line, uniq([...dead, ...eavesdrop]))
     return
@@ -114,6 +121,43 @@ function uniq(a: GamePlayer[]): GamePlayer[] {
   return [...new Set(a)]
 }
 
+// ───────── 記憶核心的浮動文字（原作 aAv 20649–20672、RB 23738–23752）─────────
+
+/**
+ * 記憶核心此刻所在的實體：地上的核心本身，或帶著它的單位（背包或寄放處，同 vision.ts 的 findCore）。
+ * 正在鑄造台重建（data.core = 0）或核心不見了：undefined
+ */
+export function coreHolder(g: Game, p: GamePlayer): Ent | undefined {
+  const mine = (it: ItemInst | null | undefined): boolean => !!it && it.id === 'memoryCore' && (it.data as { android?: number } | undefined)?.android === p.slot
+  const id = p.data.core as number | undefined
+  if (!id) return undefined
+  const onGround = g.world.get(id)
+  if (onGround && mine(onGround.data.item as ItemInst | undefined)) return onGround
+  for (const e of g.world.ents.values()) {
+    if (carries(e, mine)) return e
+    if (e.alive && mine(e.data.item as ItemInst | undefined)) return e
+  }
+  return undefined
+}
+
+/**
+ * 等記憶核心復活的仿生人說話：原作把他的名字補滿空白（一般聊天等於沒人看得到）、也不轉給死者（k6／l6 排除 Cv），
+ * 改在記憶卡的位置（被人撿走就是撿的人的位置）建一個 5 秒的浮動文字，只對「此刻看得到那個位置」的玩家顯示（IsLocationVisibleToPlayer）。
+ * 本作：泡泡掛在核心（或帶著它的單位）上，只送給此刻看得到那個實體的人——活人、死者、仿生人自己都一樣依視野判斷
+ * （死者看得到所觀戰的整個站；出局的人什麼都看不到）。帶著核心的單位隱形時，看不見它的人也收不到（不能讓浮動文字替隱形單位標出位置）。
+ * 浮動文字只有內容、沒有名字與顏色（原作同）。核心正在鑄造台重建、或找不到時：原作誰都看不到；本作只回給說話者自己（不掛泡泡），讓他知道沒有人聽得到
+ */
+function coreChat(g: Game, p: GamePlayer, text: string): void {
+  const line: ChatLine = { from: '', color: -1, ch: 'all', text, time: g.time }
+  const src = coreHolder(g, p)
+  if (!src) {
+    deliver(g, line, [p])
+    return
+  }
+  const to = g.allPlayers().filter((q) => q.view.visible.has(src.id) || q.flags.listen)
+  for (const q of uniq([...to, p])) q.chatOut.push(q.view.visible.has(src.id) ? { ...line, e: src.id } : line)
+}
+
 // ───────── 群組（研究 02 §10.3：-creategroup／-add／;group msg）─────────
 
 interface Group {
@@ -142,13 +186,55 @@ export function normalizeNameQuery(q: string): string {
   return s.trim()
 }
 
-function findPlayer(g: Game, q: string): GamePlayer | undefined {
+/** 指令裡的玩家查詢結果：找到一位、符合的人不只一位（不猜）、或找不到 */
+export type PlayerLookup = { one: GamePlayer } | { many: GamePlayer[] } | null
+
+/**
+ * 指令裡的玩家（-add／-remove／-votekick／-liquidate）：顏色名稱優先，再比名字。
+ * 只比對別人眼中的名字（顯示名字、顯示用本名）：通訊病毒換過名字後，用真名找不到人（否則能從找到的是誰反推真名）。
+ * 先找完全相符（正規化後：大小寫、中文職業前綴、英文晉升頭銜、「Crew N」）；沒有才找「包含」查詢字串的人。
+ * 符合的人不只一位時不猜（Hana 與 hana2 都包含「han」），交給呼叫端私訊列出候選人
+ */
+export function lookupPlayer(g: Game, q: string): PlayerLookup {
   const s = normalizeNameQuery(q)
-  if (!s) return undefined
+  if (!s) return null
   const colorIdx = PLAYER_COLORS.findIndex((c) => c.id === s)
-  if (colorIdx >= 0) return g.allPlayers().find((p) => p.color === colorIdx)
-  // 比對別人眼中的名字（通訊病毒換過名字後，用真名找不到人：否則能從找到的是誰反推真名）
-  return g.allPlayers().find((p) => p.name.toLowerCase().includes(s) || shownBase(p).toLowerCase().includes(s))
+  if (colorIdx >= 0) {
+    const p = g.allPlayers().find((x) => x.color === colorIdx)
+    return p ? { one: p } : null
+  }
+  const names = (p: GamePlayer): string[] => [p.name.toLowerCase(), shownBase(p).toLowerCase()].filter((n) => !!n)
+  const exact = g.allPlayers().filter((p) => names(p).some((n) => n === s))
+  const hits = exact.length ? exact : g.allPlayers().filter((p) => names(p).some((n) => n.includes(s)))
+  if (!hits.length) return null
+  return hits.length === 1 ? { one: hits[0] } : { many: hits }
+}
+
+/**
+ * 查詢對到不只一位：私訊列出候選人（只給下指令的人），這次不執行。
+ * 名單用別人眼中的顯示名字、依名字排序（不照席位順序：通訊病毒換名後，照席位排等於告訴你誰換成了誰）
+ */
+function ambiguous(g: Game, p: GamePlayer, q: string, many: GamePlayer[]): void {
+  const rows = many.map((x) => ({ zh: shownName(x) || '???', en: enDefault(shownName(x), shownBase(x)) || '???' }))
+  rows.sort((a, b) => (a.zh < b.zh ? -1 : a.zh > b.zh ? 1 : 0))
+  g.privateLine(p.slot, 'chat.ambiguous', {
+    q: q.trim().slice(0, 16),
+    ...listArgs(
+      rows.map((r) => r.zh),
+      rows.map((r) => r.en),
+    ),
+  })
+}
+
+/** 查一位玩家：找到就回傳；不只一位時私訊候選人、回傳 'many'；找不到回傳 undefined */
+function resolvePlayer(g: Game, p: GamePlayer, q: string): GamePlayer | 'many' | undefined {
+  const r = lookupPlayer(g, q)
+  if (!r) return undefined
+  if ('many' in r) {
+    ambiguous(g, p, q, r.many)
+    return 'many'
+  }
+  return r.one
 }
 
 function groupChat(g: Game, p: GamePlayer, name: string, text: string): void {
@@ -197,7 +283,8 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
     case 'l':
     case 'liquidate': {
       if (f === 'crew' || p.spawnOf || !p.alive) return
-      const q = findPlayer(g, arg)
+      const q = resolvePlayer(g, p, arg)
+      if (q === 'many') return
       if (!q || q.spawnOf !== f) {
         g.privateLine(p.slot, 'chat.noSuchSpawn')
         return
@@ -260,7 +347,10 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       const [gname, ...who] = rest
       const gr = groups(g).get((gname ?? '').toLowerCase())
       if (!gr || gr.owner !== p.slot) return
-      const targets = who.join(' ') === 'all' ? g.allPlayers().filter((q) => q.alive) : [findPlayer(g, who.join(' '))].filter((x): x is GamePlayer => !!x)
+      const one = who.join(' ') === 'all' ? undefined : resolvePlayer(g, p, who.join(' '))
+      // 名字對到不只一位：已經私訊候選人，這次不加也不移除
+      if (one === 'many') return
+      const targets = who.join(' ') === 'all' ? g.allPlayers().filter((q) => q.alive) : one ? [one] : []
       for (const q of targets) {
         if (head === 'add') gr.members.add(q.slot)
         else if (q.slot !== p.slot) gr.members.delete(q.slot)
@@ -306,8 +396,8 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
       if (arg.startsWith('death')) g.handleVote(p.slot, 'deathStart')
       break
     case 'votekick': {
-      const q = findPlayer(g, arg)
-      if (q) g.handleVote(p.slot, 'kick', q.slot)
+      const q = resolvePlayer(g, p, arg)
+      if (q && q !== 'many') g.handleVote(p.slot, 'kick', q.slot)
       break
     }
     case 'shutdown':

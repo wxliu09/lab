@@ -21,8 +21,8 @@ export const UI5_ZH: Record<string, string> = {
   // ───── 離開對局：遊戲內確認（Esc 取消）─────
   'ui5.leave.title': '離開對局？',
   'ui5.leave.practice': '這場練習會直接結束，不會保留進度；之後可以從主選單再開一場。',
-  'ui5.leave.guest': '離開後無法回到這局。',
-  'ui5.leave.host': '離開後無法回到這局。你是主機：離開會讓這局對所有人結束。',
+  'ui5.leave.guest': '離開後 90 秒內還能用房號加入回到原席位；超過就會被判定離開。',
+  'ui5.leave.host': '離開後無法回到這局。你是主機：離開會讓這局對所有人結束，所有人的身分會公開。',
   'ui5.leave.ok': '離開對局',
   'ui5.leave.okPractice': '結束練習',
   'ui5.leave.cancel': '取消（Esc）',
@@ -74,6 +74,34 @@ export const UI5_ZH: Record<string, string> = {
   'ui5.notes.muteBody': '只在你這邊隱藏他的聊天與小地圖信號；通訊病毒換名後，封鎖會跟著名字走。',
   'ui5.notes.muteSelf': '這個名字現在是你自己的，不能封鎖。',
   'ui5.notes.muted': '已封鎖',
+
+  // ───── 第 5 輪：大廳一鍵設定（原作模式／本作預設）、調查筆記名字旁的職業與死亡標記、主機中止的結算 ─────
+  // 一鍵設定只改末日時間、原作沒有的事件、NPC 船員、站點四項；說明裡的值由 Lobby.tsx 依設定表組出來
+  'ui5.lobby.preset': '一鍵設定',
+  'ui5.lobby.preset.modern': '本作預設',
+  'ui5.lobby.preset.classic': '原作模式',
+  'ui5.lobby.preset.modern.intro': '把這幾項還原成本作的預設：',
+  'ui5.lobby.preset.classic.intro': '照原作的節奏開局（給想玩原汁原味的老玩家）。按下會把這幾項改成：',
+  'ui5.lobby.preset.line': '・{k}：{v}',
+  'ui5.lobby.preset.rest': '其他設定（身分、AI 玩家、EP 倍率、事件頻率、聊天與死亡規則）不變。',
+  'ui5.lobby.preset.current': '目前的設定就是這個模式。',
+  'ui5.lobby.preset.hostOnly': '只有主機可以套用。',
+  'ui5.lobby.preset.on': '開啟',
+  'ui5.lobby.preset.off': '關閉',
+  'ui5.lobby.preset.npcAuto': '自動（依人數）',
+  'ui5.lobby.preset.npcNone': '0（原作沒有 NPC 船員）',
+  'ui5.lobby.preset.npcN': '{n} 名',
+  'ui5.lobby.preset.stations': '站點',
+  'ui5.lobby.preset.stationsAuto': '自動決定要開哪些站',
+  'ui5.lobby.preset.stationsN': '指定的 {n} 個站',
+
+  // 調查筆記：職業只在看得到這個名字的人時顯示（頭頂名字的頭銜）；死者來自全場的死亡公告
+  'ui5.notes.classBody': '頭頂名字帶著職業頭銜；只有這個名字的人在你的視野裡時才顯示，看不到就留空。',
+  'ui5.notes.dead': '† 已死亡',
+  'ui5.notes.deadBody': '全場的死亡公告點過這個名字。',
+
+  // 結算：主機中止了這局
+  'ui5.end.aborted': '主機中止了這局：以下是所有人的身分',
 }
 
 export const UI5_EN: Record<string, string> = {
@@ -91,8 +119,8 @@ export const UI5_EN: Record<string, string> = {
 
   'ui5.leave.title': 'Leave the game?',
   'ui5.leave.practice': 'This practice game ends right away and is not saved. You can start another from the main menu.',
-  'ui5.leave.guest': 'You cannot come back to this game.',
-  'ui5.leave.host': 'You cannot come back to this game. You are the host: leaving ends it for everyone.',
+  'ui5.leave.guest': 'Within 90 seconds you can rejoin with the room code and get your seat back; after that you count as having left.',
+  'ui5.leave.host': 'You cannot come back to this game. You are the host: leaving ends it for everyone and reveals every role.',
   'ui5.leave.ok': 'Leave game',
   'ui5.leave.okPractice': 'End practice',
   'ui5.leave.cancel': 'Cancel (Esc)',
@@ -133,4 +161,28 @@ export const UI5_EN: Record<string, string> = {
   'ui5.notes.muteBody': 'Hides their chat and minimap pings on your screen only. If the comm virus swaps names, the block follows the name.',
   'ui5.notes.muteSelf': 'That name is currently yours, so you cannot block it.',
   'ui5.notes.muted': 'Blocked',
+
+  'ui5.lobby.preset': 'Presets',
+  'ui5.lobby.preset.modern': 'Default mode',
+  'ui5.lobby.preset.classic': 'Classic mode',
+  'ui5.lobby.preset.modern.intro': 'Restores this game’s defaults for these settings:',
+  'ui5.lobby.preset.classic.intro': 'Play at the original game’s pace, for veterans who want it as it was. Sets:',
+  'ui5.lobby.preset.line': '• {k}: {v}',
+  'ui5.lobby.preset.rest': 'Everything else (roles, AI players, EP and event rates, chat and death rules) stays as it is.',
+  'ui5.lobby.preset.current': 'The settings match this mode right now.',
+  'ui5.lobby.preset.hostOnly': 'Only the host can apply it.',
+  'ui5.lobby.preset.on': 'On',
+  'ui5.lobby.preset.off': 'Off',
+  'ui5.lobby.preset.npcAuto': 'Auto (by player count)',
+  'ui5.lobby.preset.npcNone': '0 (the original has no NPC crew)',
+  'ui5.lobby.preset.npcN': '{n}',
+  'ui5.lobby.preset.stations': 'Stations',
+  'ui5.lobby.preset.stationsAuto': 'Chosen automatically',
+  'ui5.lobby.preset.stationsN': '{n} picked stations',
+
+  'ui5.notes.classBody': 'Read from the class title over their head. Shown only while someone with this name is in your view; blank otherwise.',
+  'ui5.notes.dead': '† Dead',
+  'ui5.notes.deadBody': 'A death announcement has named this player.',
+
+  'ui5.end.aborted': 'The host aborted this game. Here is everyone’s role:',
 }

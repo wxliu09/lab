@@ -49,8 +49,9 @@ const brain = (p: GamePlayer) =>
  * 主機（不動）放在豪勇號、一個人類 AI 放在女帝號的停機坪附近，手上有檢測器：女帝號沒有別人可以抽。
  * 回傳 AI 與它換站的過程紀錄（每秒一筆：所在 zone）
  */
-function setup(seed: number, stations?: string[]) {
-  const { h } = Harness.started(1, seed, { bots: 1, eventMult: 0, npcCrew: 0, ...(stations ? { stations } : {}) })
+function setup(seed: number, stations: string[] = []) {
+  // 預設只放核心站（這些情境是照 2 人局只有核心站時寫的；auto 規則照原作後 2 人局也有活體庫號、擺渡號，換站路線與時間都會變）
+  const { h } = Harness.started(1, seed, { bots: 1, eventMult: 0, npcCrew: 0, stations })
   const g = h.server.game!
   const ps = g.allPlayers()
   for (const p of ps) g.setRole(p, 'human')

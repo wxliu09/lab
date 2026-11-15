@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { MAX_PLAYERS, PLAYER_COLORS, ROOM_ALPHABET } from '../../shared/constants'
 import { AI_LEVELS, DEFAULT_SETTINGS, PRACTICE_ROLES, type AiLevel, type PracticeRole } from '../../shared/protocol/messages'
-import { cancelJoin, createRoom, joinRoom, loadProfile, notice, screen } from '../../client/session'
+import { autoRejoinOnce, cancelJoin, createRoom, joinRoom, loadProfile, notice, rejoining, screen } from '../../client/session'
 import { lang, setLang, t, type Lang } from '../i18n'
 import { loadAiLevel, loadPracticePrefs, runPractice, saveAiLevel, savePracticePrefs } from './practiceRun'
 import { Settings } from './Settings'
@@ -140,6 +140,12 @@ export function Menu() {
   const [showSettings, setShowSettings] = useState(false)
   const [showPractice, setShowPractice] = useState(false)
   const connecting = screen.value === 'connecting'
+  // 重新整理後：網址 hash 有房號、或 2 分鐘內還在某個房間裡，而且有那個房間的 token，就自動連回原席位（client/rejoin.ts）
+  useEffect(() => {
+    const room = autoRejoinOnce()
+    if (room) setCode(room)
+  }, [])
+  const back = connecting ? rejoining.value : ''
   // 連線中按 Esc 等同按「取消」（設定、練習對話框、圖鑑開著時 Esc 留給它們關閉自己）
   useEffect(() => {
     if (!connecting) return
@@ -221,13 +227,13 @@ export function Menu() {
             </button>
           </div>
         </div>
-        <div class="notice row" data-testid="notice">
-          <span class="grow">
-            {connecting ? t('menu.connecting') : ''} {notice.value}
+        <div class={'notice row' + (back ? ' rejoin-notice' : '')} data-testid="notice" role={back ? 'status' : undefined}>
+          <span class="grow" data-testid={back ? 'rejoin-status' : undefined}>
+            {back ? t('r5c.rejoin.connecting', { code: back }) : connecting ? t('menu.connecting') : ''} {notice.value}
           </span>
           {connecting && (
             <button class="small ghost" data-testid="cancel-join" onClick={() => cancelJoin()}>
-              {t('menu.cancelJoin')}
+              {t(back ? 'r5c.rejoin.cancel' : 'menu.cancelJoin')}
             </button>
           )}
         </div>

@@ -51,9 +51,9 @@
 - Sun 不在軌道圓心（偏 653 u）。
 
 **站點「出現與否」由開局人數/隨機決定**（`eKv` 18675、`e6v` 18839、`xhv` 19065）：
-- 玩家數 ≥7 時 `qr = GetRandomInt(1,3)`；≤6 人時 `qr=0`。
+- 玩家數 ≥7 時 `qr = GetRandomInt(1,3)`（`e6v` 18855–18858）；≤6 人時 `qr=0`。本作照這套規則（`setup.ts` chooseStations、`stations.ts` addCalderaIfEngineer，2026-11-15）。
 - Calipea：僅當 `hr`（`qr==1` 且有人抽到 Engineer 職業，該 Engineer 出生在 (-6016,11980)）或單人測試模式。否則 `RemoveUnit(aC)`（內部房間仍在但無法到達）。
-- Syllus / Pown：條件 `CountPlayersInForceBJ(bj_FORCE_ALL_PLAYERS)>=11` 成立時兩者都啟用；否則 Syllus 需 `qr==2`、Pown 需 `qr==3`，未啟用者以 `zM` 8426 / `BP` 8804 移除站體與內部所有單位。推斷：`bj_FORCE_ALL_PLAYERS` 在 WC3 開局即含全部玩家槽位（含空槽），此條件實際上恆成立 → Syllus 與 Pown 永遠存在；設計意圖應是「≥11 人兩者皆開，否則三選一」。
+- Syllus / Pown：條件 `CountPlayersInForceBJ(bj_FORCE_ALL_PLAYERS)>=11` 成立時兩者都啟用；否則 Syllus 需 `qr==2`、Pown 需 `qr==3`，未啟用者以 `zM` 8426 / `BP` 8804 移除站體與內部所有單位。推斷：`bj_FORCE_ALL_PLAYERS` 在 WC3 開局即含全部玩家槽位（含空槽），此條件實際上恆成立 → Syllus 與 Pown 永遠存在；設計意圖應是「≥11 人兩者皆開，否則三選一」。旁證：原作自己建參與名單 `Iv` 時，從 `bj_FORCE_ALL_PLAYERS` 還要另外過濾 `PLAYER_SLOT_STATE_PLAYING`（`emv`/`eLv` 18718–18723），表示這個 force 本身包含沒有人的槽位。本作照實際效果：活體庫號（Syllus）、擺渡號（Pown）每一局都在。
 
 **玩家出生點**：19 個 `e003` Dummy（位置見附錄 placements；Niffy 10、Swagger 4、Arbitress 3、Minertha 1、Obda#19 內 1）。每位玩家隨機取一個（`e2v` 18801），Engineer 在 `qr==1` 時固定出生於 Calipea。
 
@@ -337,7 +337,7 @@
 
 | # | 觸發器 / 函式 | 名稱與效果 | 一次性 | 下一事件延遲 | 反制 / 互動 |
 |---|---|---|---|---|---|
-| 1 | `PN` / `X8` 17647 | **晉升**：class 8（Commissar）存活且非外星人/突變體 → 全域 "has received a promotion!"、得 Operative Suit I00X、名字前綴改 "Rebarch "。不符 → 1 s 後重抽 | 是 | 180–900 | — |
+| 1 | `PN` / `X8` 17647 | **晉升**：`X8` 一進來就設 `xe[1]=true`（**抽到就用掉**，不論條件成不成立）；`n8` 找 class 8（Commissar，`Dv==8`）的玩家，`V8` 17641 只在「主單位已死、沒有政委、政委是突變體主腦 `cv` 或外星人主腦 `Bv`」時不成立 → 1 s 後抽下一個事件；**眷屬（`lv`/`Lv`）與機器人不在排除之列**（2026-11-15 依 JASS 更正：舊版寫「非外星人/突變體」，那是把眷屬也排除了）。成立 → 全域 "has received a promotion!"、得 Operative Suit I00X、名字前綴改 "Rebarch " | 是 | 180–900 | — |
 | 2 | `qN` / `R8` 17663 | **蟲洞物體**：UO `Mc` 移到 (15920,-7888)，ping 15 s；"Estimated wormhole closure time in 6:37"，計時 **397 s** "LS Disintegration"；到期 `N8` 17691 殺死 UO 與室內 `ha` 所有單位（物品刪除、A02T）。UO 內有啟用碼（§7） | 是 | 90–900 | 停靠 pad 25/26 進入、取得啟用碼、及時撤離 |
 | 3 | `sN` / `c8` 17701 | **+8000 credits**：無效（`return` 在前） | 是 | 90–1200 | — |
 | 4 | `SN` / `D8` 17714 | **外星護盾海盜船**：`Pc` 移到 `ga` 隨機點、歸 Player 12、啟動 AI；全員揭露 `ja` 一次。"Board the ship and disable its main console" → 擊毀 h02A 控制台（2000 hp）→ 訊息 TRIGSTR_1355 "Beginning self destruction sequence."，**40 s** "Pirate Ship Explodes" → 船與室內全滅（`aM` 8124、`XM` 8150）；船被直接擊毀亦同 | 是 | 90–1200 | 停靠 pad 27/28/45/46 登船，殺海盜後打控制台並在 40 s 內撤離 |

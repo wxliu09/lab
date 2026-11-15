@@ -217,6 +217,7 @@ describe('小地圖上的控制台', () => {
       expect(poiShape(k), k).toBe('hollowSquare')
       expect(poiColor(k), k).toBe(MINIMAP.console)
     }
-    for (const k of ['vendor', 'git', 'powerConsole', 'regenerator']) expect(poiShape(k), k).toBe('square')
+    // GIT 檢測儀（第 5 輪）改畫成三角形、醫療補給畫成十字（色盲時不只靠顏色分），見 r5c-minimap.test.ts
+    for (const k of ['vendor', 'powerConsole', 'regenerator']) expect(poiShape(k), k).toBe('square')
   })
 })

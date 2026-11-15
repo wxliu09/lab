@@ -13,8 +13,8 @@ import type {
   StartInfo,
 } from '../shared/protocol/messages'
 import { RECONNECT_GRACE_S, TICK_DT } from '../shared/constants'
-import { World, secretSeed } from './world'
-import { Rng } from '../shared/rng'
+import { World } from './world'
+import { Rng, cryptoId31, cryptoSeed, type RngSeed, type RngSource } from '../shared/rng'
 import type { Ent } from './ent'
 import { setupWorld } from './setup'
 import { assignRoles } from './systems/roles'
@@ -58,12 +58,20 @@ import type { Zone } from './world'
 import type { PoiInstance } from '../shared/layout'
 
 export type Role = 'human' | 'xeno' | 'mutant' | 'android'
+
+/** 分享調查筆記的通知：同一對玩家（分享者 → 收件者）這麼多秒（遊戲時間）內最多私訊一次 */
+export const SHARE_NOTIFY_S = 15
 export type Faction = 'crew' | 'xeno' | 'mutant'
 
 export interface GameInit {
+  /** 公開的地圖種子：只驅動版面亂數流 World.mapRng（雜物箱位置與朝向），推不出任何秘密 */
   seed: number
-  /** 身分分配與實體 id 的種子（不可由 seed 推得；省略 = 密碼學亂數）*/
-  secret?: number
+  /**
+   * 秘密亂數流的明確種子：只給單元測試、除錯重現用（GameServer 建構時給了 secret 才會帶）。
+   * 省略 = 正式對局（worker 一律省略）：三條秘密流各自用密碼學亂數（身分流、遊戲流 128 bit 種子，id 流直接取密碼學亂數），
+   * 與 seed、彼此都無關。見 secretSeeds()
+   */
+  secret?: number | SecretSeeds
   settings: LobbySettings
   players: { slot: number; name: string; color: number; bot: boolean; connected: boolean; spectator: boolean }[]
   send: (slot: number, msg: HostMsg) => void
@@ -128,12 +136,59 @@ export interface GamePlayer {
   data: Record<string, any>
 }
 
+/**
+ * 三條秘密亂數流的種子（測試可以整組指定，例如只固定身分流、讓 id 流用密碼學亂數）。
+ *
+ * ───── sim 亂數流盤點（第 5 輪審查 P0）─────
+ * 規則：秘密流（任何玩家不該預知的東西）的種子一律是 128 bit 密碼學亂數，而且每條流的種子各自獨立抽，
+ * 不由地圖種子、也不由彼此推出；公開流只能用在本來就公開的東西。
+ *
+ * | 亂數流                    | 公開／秘密 | 正式對局的種子                                   | 用途 |
+ * |---------------------------|-----------|--------------------------------------------------|------|
+ * | GameServer.rng（server.ts）| 公開      | worker init 的 seed（主機分頁 crypto 31 bit）     | 只用來產生每局的地圖種子（大廳 settings.seed 為 0 時）|
+ * | World.mapRng（world.ts）   | 公開      | 地圖種子 GameInit.seed（可能公開：主機在大廳指定時 lobbyState 會廣播）| setup.ts placeCrates：雜物箱位置與朝向（開局與事件站出現時；進視野就看得到，翻出什麼由 World.rng 擲）。只放「本來就公開」的版面 |
+ * | Game.secret（本檔）        | 秘密      | cryptoSeed() 128 bit                              | roles.ts：身分（含 ≤4 人時異形／變種人二選一）、職業牌、研究員博士專長、出生點；replace.ts：開局補位人選；events.ts：UO（未知星體）站的啟用碼；本檔 stability()：星區穩定度的隨機偏移 |
+ * | World.rng（world.ts）      | 秘密      | cryptoSeed() 128 bit                              | 其餘所有遊戲亂數：setup.ts 開局的 qr（火口號是否出現：放公開流的話「qr==1 卻沒有火口號」會洩漏沒有工程師）；events.ts 事件間隔與抽選、末日時間 apocAt 與類型、通訊病毒換名換色洗牌、寄生宿主、新聞、事件站與小行星位置；facilities.ts 遙控器（overrideRemote）啟用碼；ai/bots.ts、ai/creatures.ts 的 AI 決策；combat／damage 傷害與閃避；death.ts 掉落；scripts/* 翻箱、技能散佈；space.ts 停機坪與起飛方向；roleSystem.ts 職業配備；tuning.ts（除錯）|
+ * | World.idRng（world.ts）    | 秘密（輸出公開）| 'crypto' 來源：每個 id 直接取 crypto.getRandomValues（沒有種子、沒有可回推的狀態）| 實體 id（每位 client 的快照都帶，含 reassignId 換 id）：輸出全公開，所以和其他流完全無關；不用 sfc32 是因為 id 幾乎把整個輸出公開，sfc32 的狀態理論上回推得出來、預測得到下一個 id |
+ * | Game.gid（本檔）           | 公開      | cryptoId31() 單獨抽一次（不是亂數流）              | 這一局的識別碼：client 重連時判斷是不是同一局 |
+ *
+ * sim 裡沒有其他亂數來源（不用 Math.random；GameServer 預設的 worker seed 只影響地圖種子）。
+ * 測試（GameServer／Game 帶 secret）：秘密流由 secret 決定、可重現（見 secretSeeds）；正式路徑（worker）不帶 secret。
+ * 單機練習在正式環境走同一條 worker 路徑，也是密碼學亂數：遊戲沒有重播功能，練習局不需要可重現（測試另外用固定 secret）。
+ */
+export interface SecretSeeds {
+  /** Game.secret：身分、職業、出生點、補位、UO 啟用碼、穩定度偏移 */
+  roles: RngSeed
+  /**
+   * World.rng：事件、末日、病毒洗牌、遙控器啟用碼、AI 決策、傷害…其他所有遊戲亂數。
+   * 'map' = 不另開一條流，和公開的版面流共用同一個 Rng（= 改版前的單一序列）：只有舊測試的數字 secret 會這樣，
+   * 正式對局（secret 省略）不可能走到
+   */
+  world: RngSeed | 'map'
+  /** World.idRng：實體 id（正式對局 = 'crypto'：每個 id 直接取密碼學亂數）*/
+  ids: RngSource
+}
+
+/**
+ * 秘密流的種子。
+ * - 省略 = 正式對局（worker 一律省略）：身分流、遊戲流各自用 cryptoSeed()（128 bit），id 流用 'crypto' 來源；
+ *   彼此、和地圖種子都無關。
+ * - SecretSeeds 物件 = 測試整組指定（結構和正式對局相同；例如只固定身分流，id 流給 cryptoSeed() 或 'crypto'）。
+ * - 數字 = 舊測試的明確種子（Harness 等）：身分流、id 流沿用改版前的推法，遊戲流和版面流共用（world: 'map'），
+ *   既有測試調好的亂數序列（AI 行為、事件、落點）一個都不變。這只是測試相容，不是正式路徑的行為
+ */
+export function secretSeeds(secret?: number | SecretSeeds): SecretSeeds {
+  if (secret === undefined) return { roles: cryptoSeed(), world: cryptoSeed(), ids: 'crypto' }
+  if (typeof secret !== 'number') return secret
+  return { roles: secret, world: 'map', ids: (secret * 2654435761) >>> 1 || 7 }
+}
+
 export class Game {
   readonly world: World
-  /** 身分、職業、出生點等隱藏資訊專用的亂數流 */
+  /** 身分、職業、出生點等隱藏資訊專用的秘密亂數流（種子見 secretSeeds；盤點表在 SecretSeeds 上方）*/
   readonly secret: Rng
-  /** 這一局的識別碼（獨立亂數，不能推回任何秘密）：client 重連時用來判斷是不是同一局 */
-  readonly gid = secretSeed()
+  /** 這一局的識別碼（獨立的密碼學亂數，不是亂數流，推不出任何秘密）：client 重連時用來判斷是不是同一局 */
+  readonly gid = cryptoId31()
   readonly players: GamePlayer[] = []
   readonly settings: LobbySettings
   readonly send: GameInit['send']
@@ -210,9 +265,10 @@ export class Game {
     this.send = init.send
     this.forceRole = init.forceRole
     this.practice = !!init.practice
-    const secret = init.secret ?? secretSeed()
-    this.secret = new Rng(secret)
-    this.world = new World(init.seed, (secret * 2654435761) >>> 1 || 7)
+    // 地圖種子只進公開的版面流；三條秘密流的種子各自獨立（正式對局是密碼學亂數）
+    const seeds = secretSeeds(init.secret)
+    this.secret = new Rng(seeds.roles)
+    this.world = new World(init.seed, { world: seeds.world, ids: seeds.ids })
     for (const p of init.players) {
       this.players[p.slot] = {
         slot: p.slot,
@@ -476,6 +532,13 @@ export class Game {
     p.notes.set(target, { slot: target, mark, text })
   }
 
+  /**
+   * 分享調查筆記。每次分享都會私訊對方「X 分享了調查筆記給你」，只受一般限流的話 10 秒能洗 400 則、
+   * 把對方的聊天紀錄（含驗血結果）洗掉（第 5 輪審查 P2-7），所以：
+   * - 內容和上次分享給同一個人的完全一樣：什麼都不做（不更新、不通知）；
+   * - 同一對（分享者 → 收件者）SHARE_NOTIFY_S 秒內最多通知一次：視窗內有新內容就照樣更新對方的筆記，
+   *   通知延到視窗結束時補一則（一個視窗只排一次），對方不會漏掉更新
+   */
   shareNotes(slot: number, to: number): void {
     const p = this.players[slot]
     const q = this.players[to]
@@ -483,12 +546,29 @@ export class Game {
     // 死者與旁觀者看得到全場：只能分享給其他死者，不能把看到的東西傳給活人（出局的人兩邊都不行）；
     // 等記憶核心復活的仿生人之後會回到活人那邊，也不能收
     if (!p.alive && (p.data.booted || !hearsDead(q))) return
-    for (const n of p.notes.values()) {
-      if (n.mark === 'none' && !n.text) continue
-      q.notes.set(n.slot + 100 * (slot + 1), { ...n, from: slot })
+    const list = [...p.notes.values()].filter((n) => n.mark !== 'none' || n.text)
+    const sig = JSON.stringify(list.map((n) => [n.slot, n.mark, n.text]))
+    const key = slot * 100 + to
+    const last = this.shares.get(key)
+    if (last && last.sig === sig) return
+    for (const n of list) q.notes.set(n.slot + 100 * (slot + 1), { ...n, from: slot })
+    if (!last || this.time - last.at >= SHARE_NOTIFY_S) {
+      this.shares.set(key, { sig, at: this.time, pending: false, name: p.name })
+      this.privateLine(q.slot, 'sys.notesShared', { name: p.name })
+      return
     }
-    this.privateLine(q.slot, 'sys.notesShared', { name: p.name })
+    last.sig = sig
+    last.name = p.name
+    if (last.pending) return
+    last.pending = true
+    this.after(last.at + SHARE_NOTIFY_S - this.time, () => {
+      last.pending = false
+      last.at = this.time
+      if (this.players[to]) this.privateLine(to, 'sys.notesShared', { name: last.name })
+    })
   }
+  /** 筆記分享的通知紀錄：key = 分享者 slot × 100 + 收件者 slot；sig = 上次分享的內容、at = 上次通知的時刻 */
+  private readonly shares = new Map<number, { sig: string; at: number; pending: boolean; name: string }>()
 
   handleTune(slot: number, id: number, op: string, args: unknown[]): void {
     const r = this.tuning.run(slot, op, args)
@@ -694,17 +774,23 @@ export class Game {
   }
   onReassign?: (oldId: number, newId: number) => void
 
-  /** 結束本局：送出結算。平手時 why = 平手的原因（同歸於盡、末日倒數結束；沒給就是其他原因）*/
-  endGame(winner: EndResult['winner'], why?: EndResult['drawWhy']): void {
+  /**
+   * 結束本局：送出結算。平手時 why = 平手的原因（同歸於盡、末日倒數結束；沒給就是其他原因）；
+   * 中止時 abortWhy = 中止的原因（目前只有主機中止，見 abort()）
+   */
+  endGame(winner: EndResult['winner'], why?: EndResult['drawWhy'], abortWhy?: EndResult['abortWhy']): void {
     if (this.ended) return
     const key = winner === 'crew' ? 'end.crew' : winner === 'xeno' ? 'end.xeno' : winner === 'mutant' ? 'end.mutant' : winner === 'draw' ? 'end.draw' : 'end.aborted'
-    this.systemAll(key)
-    this.log(key)
+    // 中止的聊天與時間軸寫出原因（end.abortWhy.host：主機離開了）
+    const line = winner === 'aborted' && abortWhy ? 'end.abortWhy.' + abortWhy : key
+    this.systemAll(line)
+    this.log(line)
     this.ended = {
       winner,
       duration: Math.round(this.time),
       timeline: this.timeline.slice(-200),
       ...(winner === 'draw' ? { drawWhy: why ?? 'other' } : {}),
+      ...(winner === 'aborted' && abortWhy ? { abortWhy } : {}),
       players: this.allPlayers().map((p) => ({
         slot: p.slot,
         name: p.baseName,
@@ -723,6 +809,18 @@ export class Game {
       })),
     }
     for (const p of this.allPlayers()) if (p.connected && !p.bot) this.send(p.slot, { t: 'end', result: this.ended })
+  }
+
+  /**
+   * 主機中止（ClientMsg abort，server 只接受本機 peer）：主機在對局中離開房間或關閉分頁，worker 接著就會被終止。
+   * 立刻結算（winner = 'aborted'、abortWhy = 'host'），公開所有身分給所有在線的人；結算的系統訊息也當下送出、
+   * 不等下一個 tick。已經結算過就不做事（回傳 false）
+   */
+  abort(): boolean {
+    if (this.ended) return false
+    this.endGame('aborted', undefined, 'host')
+    this.flushChat()
+    return true
   }
 
   /** 主單位死亡（roles 系統會覆寫以處理 spawn 轉化與公告）*/
@@ -856,7 +954,12 @@ export class Game {
       const snap = buildSnapshot(this, p, vis.get(p.slot)!)
       this.send(p.slot, { t: 'snap', s: snap })
     }
-    // 聊天
+    this.flushChat()
+    this.fx.length = 0
+  }
+
+  /** 送出累積的聊天與系統訊息（每個 tick 的 flush；主機中止時當下送出）*/
+  private flushChat(): void {
     for (const { line, to } of this.sysLines) {
       const targets = to === 'all' ? this.allPlayers() : to.map((s) => this.players[s]).filter(Boolean)
       for (const p of targets) p.chatOut.push(line)
@@ -866,7 +969,6 @@ export class Game {
       if (p.chatOut.length && p.connected && !p.bot) this.send(p.slot, { t: 'chat', lines: p.chatOut.splice(0) })
       else p.chatOut.length = 0
     }
-    this.fx.length = 0
   }
 }
 

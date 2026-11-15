@@ -144,6 +144,13 @@ export type ClientMsg =
   | { t: 'pause'; on: boolean }
   /** 小地圖信號（原作全員結盟，Alt＋點小地圖大家都看得到）：z 是 zone id，x／y 是該 zone 的座標 */
   | { t: 'mapPing'; z: number; x: number; y: number }
+  /**
+   * 主機中止對局（主機在對局中離開房間、關閉分頁）：主機的本機 client 在終止 worker 之前送出。
+   * server 只接受本機 peer（LOCAL_PEER）送的，其他 peer 一律忽略；對局中收到就立刻結算（EndResult.winner = 'aborted'、
+   * abortWhy = 'host'），公開所有身分、送給所有在線的人。大廳、已結算時忽略。
+   * 處理完 worker 會再回一則 { t: 'aborted' } 給主執行緒（在結算訊息的 out 批次之後），client 收到再關連線
+   */
+  | { t: 'abort' }
 
 export type ChatChannel = 'all' | 'team' | 'group' | 'dead'
 export type NoteMark = 'none' | 'trust' | 'suspect' | 'confirmedEvil' | 'confirmedClean'
@@ -428,6 +435,8 @@ export interface EndResult {
   winner: 'crew' | 'xeno' | 'mutant' | 'draw' | 'aborted'
   /** 平手的原因（只有 winner = 'draw' 時才有）：wipe = 各方同歸於盡（沒有人活著）、doom = 末日倒數結束仍未分勝負、other = 其他（除錯指令等）*/
   drawWhy?: 'wipe' | 'doom' | 'other'
+  /** 中止的原因（只有 winner = 'aborted' 時才有）：host = 主機在對局中離開或關閉分頁（ClientMsg abort）*/
+  abortWhy?: 'host'
   players: {
     slot: Slot
     name: string

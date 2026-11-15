@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren, JSX } from 'preact'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../../shared/constants'
-import type { LobbySettings } from '../../shared/protocol/messages'
+import { DEFAULT_SETTINGS, type LobbySettings } from '../../shared/protocol/messages'
 import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { hiddenByMute } from '../../client/chatFilter'
@@ -184,6 +184,108 @@ function ApoSelect({ s }: { s: LobbySettings }) {
   )
 }
 
+// ───────── 一鍵設定：原作模式／本作預設（第 5 輪）─────────
+
+/** 一鍵設定會改的幾項；其他設定（身分、AI 玩家、倍率、聊天與死亡規則）一律不動 */
+export const PRESET_KEYS = ['apocalypse', 'extraEvents', 'npcCrew', 'stations'] as const
+export type PresetKey = (typeof PRESET_KEYS)[number]
+export type PresetValues = Pick<LobbySettings, PresetKey>
+export type ModePreset = 'modern' | 'classic'
+/** 按鈕的順序：本作預設在前（和末日時間選單「快節奏（預設）→ 原作」同一個順序）*/
+export const MODE_KEYS: readonly ModePreset[] = ['modern', 'classic']
+
+/**
+ * 兩種模式各自的值：
+ * - classic＝原作模式：末日 55–70 分（原作計時器 3300–4200 秒，研究 03 §6.3）；不出原作沒有的事件；
+ *   NPC 船員 0（原作沒有 NPC 船員：內容總表「NPC 船員（新增）／本作新增」、GDD §8「NPC 船員（改良）」）；
+ *   站點交給自動規則（開哪些站由 sim 照原作的啟用規則決定，不在這裡指定）。
+ * - modern＝本作預設：這幾項還原成 DEFAULT_SETTINGS 的值。
+ * 每次都回傳新的物件（陣列不和設定表共用）。
+ */
+export function presetValues(k: ModePreset): PresetValues {
+  if (k === 'classic') return { apocalypse: [APO_PRESETS.classic[0], APO_PRESETS.classic[1]], extraEvents: false, npcCrew: 0, stations: 'auto' }
+  const d = DEFAULT_SETTINGS
+  return { apocalypse: [d.apocalypse[0], d.apocalypse[1]], extraEvents: d.extraEvents, npcCrew: d.npcCrew, stations: d.stations === 'auto' ? 'auto' : [...d.stations] }
+}
+
+function sameStations(a: LobbySettings['stations'], b: LobbySettings['stations']): boolean {
+  if (a === 'auto' || b === 'auto') return a === b
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
+/** 目前的設定剛好是哪一種模式（四項都一樣才算）；都不是回傳 null */
+export function modePresetOf(s: PresetValues): ModePreset | null {
+  return (
+    MODE_KEYS.find((k) => {
+      const p = presetValues(k)
+      return s.apocalypse[0] === p.apocalypse[0] && s.apocalypse[1] === p.apocalypse[1] && s.extraEvents === p.extraEvents && s.npcCrew === p.npcCrew && sameStations(s.stations, p.stations)
+    }) ?? null
+  )
+}
+
+/** 一項設定在說明裡的寫法：[名稱, 值] */
+function presetRow(k: PresetKey, v: PresetValues): [string, string] {
+  switch (k) {
+    case 'apocalypse': {
+      const [a, b] = v.apocalypse
+      const p = apoPresetOf(v.apocalypse)
+      return [t('ui5.lobby.apo'), t(p ? 'ui5.lobby.apo.' + p : 'ui5.lobby.apo.custom', { a, b })]
+    }
+    case 'extraEvents':
+      return [t('ui5.lobby.extra'), t(v.extraEvents ? 'ui5.lobby.preset.on' : 'ui5.lobby.preset.off')]
+    case 'npcCrew':
+      return [t('lobby.set.npc'), v.npcCrew < 0 ? t('ui5.lobby.preset.npcAuto') : v.npcCrew === 0 ? t('ui5.lobby.preset.npcNone') : t('ui5.lobby.preset.npcN', { n: v.npcCrew })]
+    case 'stations':
+      return [t('ui5.lobby.preset.stations'), v.stations === 'auto' ? t('ui5.lobby.preset.stationsAuto') : t('ui5.lobby.preset.stationsN', { n: v.stations.length })]
+  }
+}
+
+/** 一鍵設定的說明：這個模式會把哪幾項改成什麼（數字跟著 presetValues，不在字串裡寫死），其他設定不變 */
+export function presetTip(k: ModePreset): string {
+  const v = presetValues(k)
+  const lines = PRESET_KEYS.map((key) => {
+    const [name, val] = presetRow(key, v)
+    return t('ui5.lobby.preset.line', { k: name, v: val })
+  })
+  return [t('ui5.lobby.preset.' + k + '.intro'), ...lines, t('ui5.lobby.preset.rest')].join('\n')
+}
+
+/** 送給主機的設定訊息（和其他設定一樣走 settings；四項一起送，主機的驗證全部認得）*/
+export function presetMsg(k: ModePreset): { t: 'settings'; s: Partial<LobbySettings> } {
+  return { t: 'settings', s: presetValues(k) }
+}
+
+/** 房間設定標題列右側的兩個按鈕：只有主機能按；目前的設定剛好是某個模式時，那個按鈕顯示已選取（客人也看得到）*/
+function PresetButtons({ s }: { s: LobbySettings }) {
+  const cur = modePresetOf(s)
+  const host = isHost.value
+  return (
+    <div class="mode-presets" role="group" aria-label={t('ui5.lobby.preset')} data-testid="mode-presets">
+      {MODE_KEYS.map((k) => (
+        <button
+          key={k}
+          type="button"
+          class={'small mode-preset' + (cur === k ? ' on' : '')}
+          data-testid={'preset-' + k}
+          aria-pressed={cur === k}
+          // 客人：用 aria-disabled 而不是 disabled，懸停說明照樣出得來（看得到這個模式會改什麼）
+          aria-disabled={!host}
+          {...tipProps(() => ({
+            title: t('ui5.lobby.preset.' + k),
+            body: presetTip(k),
+            hint: cur === k ? t('ui5.lobby.preset.current') : host ? undefined : t('ui5.lobby.preset.hostOnly'),
+          }))}
+          onClick={() => {
+            if (host && cur !== k) send(presetMsg(k))
+          }}
+        >
+          {t('ui5.lobby.preset.' + k)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function Check({ k, s, testId }: { k: keyof LobbySettings; s: LobbySettings; testId?: string }) {
   return (
     <input
@@ -346,7 +448,10 @@ export function Lobby() {
       </div>
       {/* 客人看到的設定是唯讀的：降低對比、拿掉下拉箭頭，並說明由主機設定（lobby2.css 的 .readonly）*/}
       <div class={'panel settings-panel' + (isHost.value ? '' : ' readonly')} data-testid="lobby-settings">
-        <h2>{t('lobby.settings')}</h2>
+        <div class="settings-head">
+          <h2>{t('lobby.settings')}</h2>
+          <PresetButtons s={s} />
+        </div>
         {!isHost.value && (
           <div class="settings-note" data-testid="settings-readonly">
             <Icon name="key" size={14} color="currentColor" />

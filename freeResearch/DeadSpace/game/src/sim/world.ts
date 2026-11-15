@@ -2,7 +2,7 @@
 import { parseLayout, type ParsedLayout } from '../shared/layout'
 import type { StationDef } from '../shared/content/stations/types'
 import type { UnitDef } from '../shared/content/types'
-import { Rng } from '../shared/rng'
+import { Rng, cryptoSeed, type RngSeed, type RngSource } from '../shared/rng'
 import { NavGrid } from './nav/grid'
 import { makeEnt, type Ent } from './ent'
 
@@ -53,13 +53,6 @@ export interface Zone {
 
 const BUCKET = 4
 
-/** 密碼學亂數種子：身分分配與實體 id 用，不得由任何送出去的資料推回 */
-export function secretSeed(): number {
-  const a = new Uint32Array(1)
-  globalThis.crypto.getRandomValues(a)
-  return (a[0] & 0x7fffffff) || 1
-}
-
 function bkey(x: number, y: number): number {
   return (Math.floor(x / BUCKET) + 512) * 4096 + (Math.floor(y / BUCKET) + 512)
 }
@@ -69,13 +62,31 @@ export class World {
   tick = 0
   readonly zones: Zone[] = []
   readonly ents = new Map<number, Ent>()
+  /**
+   * 公開的版面亂數流：只由地圖種子決定（地圖種子可能公開：主機在大廳指定時 lobbyState 會廣播）。
+   * 只能用在「開局後所有人本來就看得到」的版面：雜物箱的位置與朝向（setup.ts placeCrates）。
+   * **不得**用在任何秘密（身分、事件、末日、啟用碼、AI 決策…）：那些走 rng 或 Game.secret
+   */
+  readonly mapRng: Rng
+  /**
+   * 秘密的遊戲亂數流（事件時間與抽選、末日時間與類型、通訊病毒洗牌、遙控器啟用碼、AI 決策、傷害、掉落…）：
+   * 正式對局用 128 bit 密碼學種子，與地圖種子、身分亂數流、實體 id 流完全獨立。盤點表見 game.ts
+   */
   readonly rng: Rng
-  /** 實體 id 用獨立、不可由地圖種子推得的亂數流（id 會送給 client）*/
+  /**
+   * 實體 id 用的獨立秘密亂數流：id 會送給每位 client，所以不能和任何其他流有關（推回來也得不到別的東西）；
+   * 正式對局用 'crypto' 來源（每個 id 直接取密碼學亂數），連「預測下一個 id」都做不到
+   */
   private readonly idRng: Rng
 
-  constructor(seed: number, idSeed = secretSeed()) {
-    this.rng = new Rng(seed)
-    this.idRng = new Rng(idSeed)
+  /**
+   * mapSeed = 公開的地圖種子；seeds 省略 = 兩條秘密流各自用密碼學亂數（測試由 Game 傳入明確種子，見 game.ts secretSeeds）。
+   * world: 'map' 只給舊測試的數字種子用：遊戲流和版面流共用同一個 Rng（改版前的單一序列），正式對局不會這樣
+   */
+  constructor(mapSeed: number, seeds: { world: RngSeed | 'map'; ids: RngSource } = { world: cryptoSeed(), ids: 'crypto' }) {
+    this.mapRng = new Rng(mapSeed)
+    this.rng = seeds.world === 'map' ? this.mapRng : new Rng(seeds.world)
+    this.idRng = new Rng(seeds.ids)
     this.zones.push(this.newZone('space', 'space', null))
   }
 

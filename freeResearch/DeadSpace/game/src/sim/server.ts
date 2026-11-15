@@ -21,6 +21,8 @@ export const CHAT_BURST = 4
 export const CHAT_RATE = 1 / 1.5
 /** 同一個人這麼多秒內送出相同的內容（同一頻道）就壓掉，私訊提示 */
 export const CHAT_DUPE_S = 10
+/** 聊天超過限流被丟掉時私訊提示發送者；同一個連線這麼多秒內最多提示一次（提示本身不能變成洗版）*/
+export const CHAT_FAST_HINT_S = 5
 /** 小地圖信號限流：每人約 2 秒 1 次，短暫連發最多 3 次 */
 export const PING_BURST = 3
 export const PING_RATE = 0.5
@@ -69,6 +71,8 @@ interface PeerState {
   tune: Bucket
   hello: Bucket
   strikes: number
+  /** 上次提示「訊息送太快」的時刻（server 時鐘）*/
+  fastHintAt: number
 }
 
 export class GameServer {
@@ -99,8 +103,12 @@ export class GameServer {
   constructor(
     readonly code: string,
     private io: ServerIO,
+    /** 公開的亂數流 GameServer.rng 的種子：只用來產生每局的地圖種子（版面），推不出任何秘密 */
     seed = (Math.random() * 0x7fffffff) | 0,
-    /** 身分分配用的種子；省略 = 每局密碼學亂數（測試可固定）*/
+    /**
+     * 秘密亂數流（身分、事件、實體 id…）的明確種子：只給單元測試固定結果用（第 n 局用 secret + n）。
+     * 省略 = 正式對局（worker 一律省略）：每局三條秘密流各自用 128 bit 密碼學亂數（game.ts secretSeeds；盤點表在 SecretSeeds 上方）
+     */
     private secret?: number,
   ) {
     this.rng = new Rng(seed)
@@ -120,6 +128,7 @@ export class GameServer {
         tune: new Bucket(10, 10),
         hello: new Bucket(3, 0.5),
         strikes: 0,
+        fastHintAt: -Infinity,
       })
     }
     this.sendTo(peer, { t: 'host', ver: PROTOCOL_VERSION })
@@ -211,7 +220,11 @@ export class GameServer {
         break
       }
       case 'chat': {
-        if (!ps.chat.take(this.now)) return
+        if (!ps.chat.take(this.now)) {
+          // 以前默默丟掉，發送者不知道自己的話沒送出（第 5 輪審查 P3-4）
+          this.hintTooFast(peer, ps, slot)
+          return
+        }
         const raw = sanitizeText(msg.text).trim()
         if (!raw) return
         if (this.isDupeChat(peer, slot, msg.ch, msg.to, raw)) return
@@ -245,6 +258,13 @@ export class GameServer {
         if (this.phase !== 'game' || !ps.ping.take(this.now)) return
         this.game?.handleMapPing(slot, msg.z, msg.x, msg.y)
         break
+      case 'abort': {
+        // 主機中止對局：只接受本機（主機分頁自己）送來的，其他 peer 一律忽略
+        if (peer !== LOCAL_PEER) return
+        const ended = this.abortGame()
+        this.onAbort?.(ended)
+        break
+      }
       case 'Tune':
         // 只接受本機（主機分頁自己）送來的；其他 peer 一律忽略
         if (peer !== LOCAL_PEER || !ps.tune.take(this.now)) return
@@ -358,6 +378,14 @@ export class GameServer {
     return false
   }
 
+  /** 聊天超過限流被丟掉：私訊發送者「訊息送太快了，有些沒送出」，同一個連線 CHAT_FAST_HINT_S 秒內最多一次 */
+  private hintTooFast(peer: string, ps: PeerState, slot: number): void {
+    if (this.now - ps.fastHintAt < CHAT_FAST_HINT_S) return
+    ps.fastHintAt = this.now
+    if (this.game) this.game.privateLine(slot, 'chat.tooFast')
+    else this.sendTo(peer, { t: 'chat', lines: [{ from: '', color: -1, ch: 'private', text: fmtKey('chat.tooFast'), time: this.now }] })
+  }
+
   private applySettings(s: Partial<LobbySettings>): void {
     if (s.apocalypse !== undefined) this.apoCustom = true
     Object.assign(this.settings, s)
@@ -422,6 +450,21 @@ export class GameServer {
       this.loadDeadline = this.now + (this.loading.size <= 1 ? LOAD_WAIT_SOLO_S : LOAD_WAIT_S)
     }
     this.lobbyDirty = true
+  }
+
+  // ───────── 主機中止 ─────────
+
+  /**
+   * 本機 client 送了 abort（主機在對局中離開、關閉分頁）之後呼叫：ended = 這次有沒有結算（大廳或已結算時 false）。
+   * worker 用它在結算訊息送出之後回報主執行緒（{ t: 'aborted' }），主機分頁收到就可以終止 worker、關連線
+   */
+  onAbort?: (ended: boolean) => void
+
+  /** 主機中止：對局進行中就立刻結算（winner = 'aborted'、abortWhy = 'host'），公開所有身分給所有在線的人 */
+  abortGame(): boolean {
+    const g = this.game
+    if (this.phase !== 'game' || !g || g.ended) return false
+    return g.abort()
   }
 
   // ───────── 迴圈 ─────────

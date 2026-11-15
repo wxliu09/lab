@@ -43,29 +43,58 @@ export const MINIMAP_PLAYERS_SWATCH = `conic-gradient(${PLAYER_COLORS[0].hex} 0 
 export const MINIMAP_LEGEND_POIS = ['door', 'console', 'medical', 'suit', 'vendor', 'git', 'fac'] as const
 
 /**
- * 小地圖上設施的形狀（Hud.tsx 的 Minimap 照這個畫；圖例要跟著畫成同一種）：
+ * 小地圖上設施的形狀（Hud.tsx 的 Minimap 照這個畫；圖例要跟著畫成同一種）。不只靠顏色區分：
+ * 紅色盲時醫療的粉紅和其他設施的灰幾乎一樣、藍色盲時販賣機的綠和 GIT 的青幾乎一樣，所以這兩組用不同形狀。
  * - hollowSquare：空心小方框（只描邊、不填色，約 1.8 格寬）。駕駛用的控制台（站點主控台 console、船艙控制台 shipConsole）用這個——
  *   以前是實心圓點，和玩家的實心圓點太像，會被當成另一個船員，右鍵過去就被切進太空駕駛。
- * - square：實心小方塊（販賣機、GIT 約 1.8 格寬；動力分配台、生命再生器等小設施約 1 格寬）。
+ * - cross：十字（醫療補給）。
+ * - triangle：尖端朝上的三角形（GIT 檢測儀、GIT 相關的販賣機）。
+ * - square：實心小方塊（其他販賣機、防護服販賣機約 1.8 格寬；動力分配台、生命再生器等小設施約 1 格寬）。
  * 單位（玩家圓點、敵對菱形、中立小灰點）的形狀見 Hud.tsx 的 drawMinimapUnit。
  */
-export type MinimapPoiShape = 'hollowSquare' | 'square'
+export type MinimapPoiShape = 'hollowSquare' | 'square' | 'cross' | 'triangle'
 
-/** 這種設施在小地圖上的形狀（見 MinimapPoiShape）*/
-export function poiShape(kind: string): MinimapPoiShape {
-  return kind === 'console' || kind === 'shipConsole' ? 'hollowSquare' : 'square'
+/** 這種設施在小地圖上的形狀（見 MinimapPoiShape）；ref = 販賣機的商品表 id（醫療、GIT 的販賣機另有形狀）*/
+export function poiShape(kind: string, ref?: string): MinimapPoiShape {
+  if (kind === 'console' || kind === 'shipConsole') return 'hollowSquare'
+  const k = poiKey(kind, ref)
+  // 動力分配台用控制台色、但不能駕駛：照舊畫成實心小方塊
+  return k === 'console' ? 'square' : legendShape(k ?? 'fac')
 }
 
-/** 小地圖上設施的顏色：醫療粉紅、防護服橘、GIT 青、控制台藍（空心方框，見 poiShape）、其他販賣機綠；不重要的不畫（null）*/
-export function poiColor(kind: string, ref?: string): string | null {
+/** 圖例每一列的形狀（和小地圖同一份）：門、窗戶是底圖的格子，畫成實心方塊 */
+export function legendShape(key: string): MinimapPoiShape {
+  if (key === 'console') return 'hollowSquare'
+  if (key === 'medical') return 'cross'
+  if (key === 'git') return 'triangle'
+  return 'square'
+}
+
+/**
+ * 圖例色塊的 class（tooltip 的 .tip-sw、G 說明的 .guide-sw 都用這組名字，樣式在 styles.css、guide.css）：
+ * hollow＝空心方框、cross＝十字、tri＝三角形、square＝實心方塊
+ */
+export function legendSwatch(key: string): 'hollow' | 'square' | 'cross' | 'tri' {
+  const s = legendShape(key)
+  return s === 'hollowSquare' ? 'hollow' : s === 'triangle' ? 'tri' : s
+}
+
+/** 設施屬於圖例的哪一列（MINIMAP 的 key）；不重要、不畫的回傳 null */
+export function poiKey(kind: string, ref?: string): 'console' | 'medical' | 'suit' | 'vendor' | 'git' | 'fac' | null {
   if (kind === 'vendor') {
-    if (ref === 'medical') return MINIMAP.medical
-    if (ref?.startsWith('suit')) return MINIMAP.suit
-    if (ref === 'gitTester' || ref === 'gitResolver') return MINIMAP.git
-    return MINIMAP.vendor
+    if (ref === 'medical') return 'medical'
+    if (ref?.startsWith('suit')) return 'suit'
+    if (ref === 'gitTester' || ref === 'gitResolver') return 'git'
+    return 'vendor'
   }
-  if (kind === 'git') return MINIMAP.git
-  if (kind === 'console' || kind === 'shipConsole' || kind === 'powerConsole') return MINIMAP.console
-  if (kind === 'regenerator' || kind === 'moduleFactory' || kind === 'moduleSocket' || kind === 'rummageBox') return MINIMAP.fac
+  if (kind === 'git') return 'git'
+  if (kind === 'console' || kind === 'shipConsole' || kind === 'powerConsole') return 'console'
+  if (kind === 'regenerator' || kind === 'moduleFactory' || kind === 'moduleSocket' || kind === 'rummageBox') return 'fac'
   return null
+}
+
+/** 小地圖上設施的顏色：醫療粉紅（十字）、防護服橘、GIT 青（三角形）、控制台藍（空心方框，見 poiShape）、其他販賣機綠；不重要的不畫（null）*/
+export function poiColor(kind: string, ref?: string): string | null {
+  const k = poiKey(kind, ref)
+  return k ? MINIMAP[k] : null
 }

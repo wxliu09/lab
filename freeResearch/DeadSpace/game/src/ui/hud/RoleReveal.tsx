@@ -1,6 +1,6 @@
 // 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
-import { snapTick, world } from '../../client/session'
+import { endResult, snapTick, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
@@ -74,7 +74,8 @@ export function RoleReveal() {
       revealShown = false
     }
   }, [visible])
-  if (!open || !role || role === 'spectator') return null
+  // 對局已經結算（例如主機中止）：不要蓋住結算畫面
+  if (!open || !role || role === 'spectator' || endResult.value) return null
   const [c1, c2, ct] = COL[role]
   const title = ROLE_TITLES[role]
   const obj = OBJECTIVES[role]

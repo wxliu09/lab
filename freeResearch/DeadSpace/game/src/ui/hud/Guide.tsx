@@ -15,7 +15,7 @@ import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { addStrings, hasString, lang, listJoin, loc, t } from '../i18n'
 import { PLAYER_COLORS } from '../../shared/constants'
-import { MINIMAP, MINIMAP_LEGEND_POIS, MINIMAP_PLAYERS_SWATCH } from '../minimapColors'
+import { MINIMAP, MINIMAP_LEGEND_POIS, MINIMAP_PLAYERS_SWATCH, legendSwatch } from '../minimapColors'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide'
@@ -1255,9 +1255,15 @@ export function legendPois(): (keyof typeof MINIMAP)[] {
   return list
 }
 
+/** 圖例設施列的文字 key：醫療、GIT 在小地圖上另有形狀（十字、三角形），文字也寫出來（色盲時靠形狀認）*/
+export function legendLabelKey(k: string): string {
+  return k === 'medical' || k === 'git' ? 'r5c.map.' + k : 'guide.map.' + k
+}
+
 /**
  * 小地圖圖例：顏色全部來自 minimapColors.ts（和 Hud.tsx 的小地圖同一份）；
- * 形狀照 drawMinimapUnit 的畫法（自己＝白框圓點、玩家＝深框圓點、敵對＝白框菱形、其他＝小點），見 guide.css 的 .guide-sw
+ * 形狀照 drawMinimapUnit 的畫法（自己＝白框圓點、玩家＝深框圓點、敵對＝白框菱形、其他＝小點），見 guide.css 的 .guide-sw；
+ * 設施照 minimapColors.ts 的 legendSwatch（控制台＝空心方框、醫療＝十字、GIT＝三角形、其他＝實心方塊）
  */
 function MapLegend() {
   const me = world.me
@@ -1283,9 +1289,9 @@ function MapLegend() {
       </div>
       {legendPois().map((k) => (
         <div key={k} data-testid={'guide-legend-' + k}>
-          {/* 控制台在小地圖上是空心小方框（和窗戶同色、但分得開）*/}
-          {k === 'console' ? <i class="guide-sw hollow" style={{ borderColor: MINIMAP[k] }} /> : <i class="guide-sw" style={{ background: MINIMAP[k] }} />}
-          {t('guide.map.' + k)}
+          {/* 控制台在小地圖上是空心小方框（和窗戶同色、但分得開）；醫療是十字、GIT 是三角形（不只靠顏色）*/}
+          {legendSwatch(k) === 'hollow' ? <i class="guide-sw hollow" style={{ borderColor: MINIMAP[k] }} /> : <i class={'guide-sw ' + legendSwatch(k)} style={{ background: MINIMAP[k] }} />}
+          {t(legendLabelKey(k))}
         </div>
       ))}
       <div>

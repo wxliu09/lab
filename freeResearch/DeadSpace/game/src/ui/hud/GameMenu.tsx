@@ -2,9 +2,10 @@
 // 調查筆記（第 4 輪）：只用滑鼠的人也打得開（原本只有 Tab）。
 // 離開對局用遊戲內的確認對話框（不用瀏覽器原生 confirm）：Esc 取消、回到選單；練習局用單機的說法。
 // 關分頁時的 beforeunload 原生確認在 App.tsx，不歸這裡管。
+// 主機在多人對局中離開（第 5 輪）：session.ts 的 leaveGame 先叫 worker 中止這局（所有人的身分揭曉、結算送給客人），約 0.3 秒後才關掉。
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { evolveOpen, menuOpen } from '../../client/input'
-import { currentRoom, isHost, leave, world } from '../../client/session'
+import { currentRoom, hostLeaving, isHost, leaveGame, world } from '../../client/session'
 import { PRACTICE_ROOM } from '../../shared/protocol/messages'
 import { t } from '../i18n'
 import { guideOpen } from './Guide'
@@ -62,10 +63,11 @@ export function GameMenu() {
             <button
               class="danger grow"
               data-testid="leave-ok"
+              disabled={hostLeaving.value}
               onClick={() => {
                 setConfirming(false)
                 menuOpen.value = false
-                leave()
+                void leaveGame()
               }}
             >
               {t(txt.ok)}

@@ -168,3 +168,17 @@ export const SIM6_EN: Record<string, string> = {
 }
 
 addStrings(SIM6_ZH, SIM6_EN)
+
+// 第 5 輪（sim 端資安與連線）：聊天被限流丟掉的提示（server.ts，5 秒最多一次）、
+// 主機中止對局的原因（EndResult.abortWhy = 'host'：結算畫面的副標題、聊天與結算時間軸那一行）
+export const SIM6_R5_ZH: Record<string, string> = {
+  'chat.tooFast': '訊息送太快了，有些沒送出。',
+  'end.abortWhy.host': '主機離開了，本局中止，所有人的身分在此公開。',
+}
+
+export const SIM6_R5_EN: Record<string, string> = {
+  'chat.tooFast': 'You are sending messages too fast; some were not sent.',
+  'end.abortWhy.host': "The host left, so the game was aborted. Everyone's role is revealed here.",
+}
+
+addStrings(SIM6_R5_ZH, SIM6_R5_EN)

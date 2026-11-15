@@ -9,7 +9,7 @@ import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult, hostAbortEnd, hostConflictLive, hostLeaving } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
@@ -25,15 +25,15 @@ import { createPortal } from 'preact/compat'
 import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
 import { settingsOpen } from '../screens/Settings'
-import { MINIMAP, MINIMAP_PLAYERS_SWATCH, poiColor, poiShape } from '../minimapColors'
-import { guideOpen, helpTab, legendPois } from './Guide'
+import { MINIMAP, MINIMAP_PLAYERS_SWATCH, legendSwatch, poiColor, poiShape } from '../minimapColors'
+import { guideOpen, helpTab, legendLabelKey, legendPois } from './Guide'
 import { codexOpen } from './Codex'
 import { soloPracticeNow, watchPracticePause } from '../../client/practicePause'
 import { deathLines, deathScreenOnly } from '../../client/deathNote'
 import { EXPOSING_ABILITIES, watcherCount } from '../../client/exposure'
 import { DEFAULT_BODY_R, minimapMoveTarget } from '../../render/moveTargets'
 import { chatFade } from '../../client/chatFade'
-import { hiddenByMute } from '../../client/chatFilter'
+import { bubbleOnly, hiddenByMute } from '../../client/chatFilter'
 import { isMuted, mutedNames } from '../../client/mute'
 import { pingBoard, pingColor, pingLines, pingTaps, sendMapPing } from '../../client/mapPing'
 import { pingLook, type MapPing } from '../../client/pingBoard'
@@ -226,8 +226,21 @@ export function Banner() {
         </button>
       </div>
     )
+  // 主機中止了這局（第 5 輪）：客人收到的結算已經揭曉所有人的身分。結算畫面開著時不跳「主機已離開」對話框蓋住它
+  // （主機接著就會斷線）；關掉結算畫面後改用這裡的橫幅說明，並給「回主選單」
+  const aborted = hostAbortEnd.value && !isHost.value
+  if (aborted && !endResult.value)
+    return (
+      <div class="panel banner banner-critical host-aborted" data-testid="host-aborted" role="status" style={{ zIndex: 60 }}>
+        {t('r5c.end.hostAborted')}{' '}
+        <button class="small" onClick={() => leave()}>
+          {t('r4c.hostGone.leave')}
+        </button>
+        <div class="banner-sub">{t('r5c.end.hostAbortedSub')}</div>
+      </div>
+    )
   // 主機確定離開了（失聯超過寬限時間）：對話框取代「連線中斷」橫幅；短暫失聯照樣只顯示橫幅、自動重連
-  if (hostGone.value && !isHost.value) return <HostGoneDialog />
+  if (hostGone.value && !isHost.value && !aborted) return <HostGoneDialog />
   if (gpuLost.value)
     return (
       <div class="panel banner banner-critical" data-testid="gpu-lost" style={{ zIndex: 60 }}>
@@ -242,12 +255,34 @@ export function Banner() {
         )}
       </div>
     )
-  // 短暫失聯：自動重連中。客人多一行說明：主機真的走了的話，稍後會跳出對話框讓你回主選單（不用一直盯著凍結的畫面）
+  // 主機在多人對局中離開：先中止這局、讓客人收到結算，約 0.3 秒後回主選單（session.ts leaveGame）
+  if (hostLeaving.value && isHost.value)
+    return (
+      <div class="panel banner" data-testid="host-leaving" style={{ zIndex: 60 }}>
+        {t('r5c.leaving')}
+      </div>
+    )
+  // 結算畫面開著（主機中止）：主機斷線是預期的，不顯示「連線中斷、重連中」
+  if (aborted) return null
+  // 短暫失聯：自動重連中。客人多一行說明：主機真的走了的話，稍後會跳出對話框讓你回主選單（不用一直盯著凍結的畫面）。
+  // 失聯期間有別的連線自稱主機（net/client.ts 已經忽略它）：多一行警告
   if (connLost.value)
     return (
       <div class="panel banner" data-testid="host-lost">
         {t('net.hostLost')}
         {!isHost.value && <div class="banner-sub">{t('r4c.hostLost.wait')}</div>}
+        {hostConflictLive.value && (
+          <div class="banner-sub banner-warn" data-testid="host-conflict">
+            {t('r5c.hostConflict')}
+          </div>
+        )}
+      </div>
+    )
+  // 入座後有別的連線自稱主機：已經忽略它的所有訊息（net/client.ts），這裡只提醒一陣子
+  if (hostConflictLive.value && !isHost.value)
+    return (
+      <div class="panel banner" data-testid="host-conflict" role="status">
+        {t('r5c.hostConflict')}
       </div>
     )
   // 開局等所有人載入完才開始：畫面靜止不是當機。主機的人數裡可能算著自己（還沒回報、或剛回報主機還沒收到）：
@@ -357,7 +392,8 @@ export function Minimap(props: { scene: GameScene }) {
           if (!c) continue
           const px = ox + (p.col + 0.5) * k
           const py = oy + (p.row + 0.5) * k
-          if (poiShape(p.def.kind) === 'hollowSquare') {
+          const shape = poiShape(p.def.kind, p.def.ref)
+          if (shape === 'hollowSquare') {
             // 控制台：空心方框（minimapColors.ts poiShape）。實心圓點是玩家，不要讓人把控制台看成另一個船員
             const lw = Math.max(2.5, k * 0.3)
             const r = k * 0.95 + 2.5
@@ -372,6 +408,15 @@ export function Minimap(props: { scene: GameScene }) {
           bx.fillStyle = c
           const big = p.def.kind === 'vendor' || p.def.kind === 'git'
           const r = big ? k * 0.9 + 1.5 : k * 0.5 + 1
+          if (shape === 'cross' || shape === 'triangle') {
+            // 醫療＝十字、GIT＝三角形（minimapColors.ts poiShape）：色盲時和灰色設施、綠色販賣機分得開。深色描邊讓形狀在牆邊也清楚
+            minimapPoiPath(bx, shape, px, py, r * 1.15)
+            bx.lineWidth = 2
+            bx.strokeStyle = 'rgba(0,0,0,0.8)'
+            bx.stroke()
+            bx.fill()
+            continue
+          }
           bx.fillRect(px - r, py - r, r * 2, r * 2)
         }
         base.current = { zone: scene.zone, img: b }
@@ -495,6 +540,31 @@ export function Minimap(props: { scene: GameScene }) {
   )
 }
 
+/** 十字（醫療）與三角形（GIT）的路徑：中心 (px, py)、半寬 r（畫布是 2 倍解析度）*/
+export function minimapPoiPath(x: CanvasRenderingContext2D, shape: 'cross' | 'triangle', px: number, py: number, r: number): void {
+  x.beginPath()
+  if (shape === 'cross') {
+    const a = r * 0.36
+    x.moveTo(px - a, py - r)
+    x.lineTo(px + a, py - r)
+    x.lineTo(px + a, py - a)
+    x.lineTo(px + r, py - a)
+    x.lineTo(px + r, py + a)
+    x.lineTo(px + a, py + a)
+    x.lineTo(px + a, py + r)
+    x.lineTo(px - a, py + r)
+    x.lineTo(px - a, py + a)
+    x.lineTo(px - r, py + a)
+    x.lineTo(px - r, py - a)
+    x.lineTo(px - a, py - a)
+  } else {
+    x.moveTo(px, py - r * 1.05)
+    x.lineTo(px + r * 1.1, py + r * 0.85)
+    x.lineTo(px - r * 1.1, py + r * 0.85)
+  }
+  x.closePath()
+}
+
 /** 小地圖圖例的 tooltip：顏色與形狀全部照 minimapColors.ts（和小地圖、G 說明的圖例同一份）*/
 export function minimapLegendTip(space: boolean): TipData {
   const mine = startInfo.value?.players.find((p) => p.slot === world.me.slot)?.color
@@ -504,7 +574,8 @@ export function minimapLegendTip(space: boolean): TipData {
     { shape: 'player', color: MINIMAP_PLAYERS_SWATCH, ring: MINIMAP.playerRing, label: t('guide3.map.playersDot') },
     { shape: 'hostile', color: MINIMAP.hostile, ring: MINIMAP.hostileRing, label: t('guide3.map.hostileDiamond') },
     { shape: 'other', color: MINIMAP.neutral, label: t('guide3.map.otherDot') },
-    ...legendPois().map((k): LegendRow => ({ shape: k === 'console' ? 'hollow' : 'square', color: MINIMAP[k], label: t('guide.map.' + k) })),
+    // 十字、三角形：tooltip.tsx 的 LegendRow 還沒列這兩種（class 名稱照樣套上，樣式在 styles.css 的 .tip-sw.cross／.tip-sw.tri）
+    ...legendPois().map((k): LegendRow => ({ shape: legendSwatch(k), color: MINIMAP[k], label: t(legendLabelKey(k)) })),
     { shape: 'frame', color: MINIMAP.view, label: t('guide.map.view') },
   ]
   return { title: t('r3b.minimap.legend'), body: space ? t('guide.map.space') : undefined, legend, hint: t('r3b.minimap.legendHint'), color: '#9fe7ff' }
@@ -1119,7 +1190,7 @@ export function Chat() {
   }, [])
   // 死因與「你死了…」只在死亡橫幅顯示（deathNote.ts），聊天紀錄不重複列出；本機封鎖的人說的話不顯示（chatFilter.ts）
   void mutedNames.value
-  const lines = chatLog.value.filter((l) => !deathScreenOnly(l) && !hiddenByMute(l) && !isMuted(pingLines.get(l)?.name ?? '')).slice(-12)
+  const lines = chatLog.value.filter((l) => !deathScreenOnly(l) && !bubbleOnly(l) && !hiddenByMute(l) && !isMuted(pingLines.get(l)?.name ?? '')).slice(-12)
   const now = performance.now()
   const stamps = lines.map((l) => chatStamp(l, now))
   const reveal = chatOpen.value || hover

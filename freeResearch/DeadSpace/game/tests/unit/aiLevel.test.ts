@@ -47,9 +47,12 @@ function openSpot(g: Game, zone: number): { x: number; y: number } {
   throw new Error('找不到空地')
 }
 
-/** 不動的真人 humans 位＋一個人類 AI，全部是人類；AI 站在女帝號的一塊空地上，大家背包清空 */
-function setup(aiLevel: 'easy' | 'normal', seed = 77, humans = 3) {
-  const { h, cs } = Harness.started(humans, seed, { bots: 1, eventMult: 0, npcCrew: 0, aiLevel })
+/**
+ * 不動的真人 humans 位＋一個人類 AI，全部是人類；AI 站在女帝號的一塊空地上，大家背包清空。
+ * stations：固定站點組合（不傳＝auto 規則）。時間差對亂數序列敏感的情境傳 []（只放核心站），站點規則改了也不會跟著變
+ */
+function setup(aiLevel: 'easy' | 'normal', seed = 77, humans = 3, stations?: string[]) {
+  const { h, cs } = Harness.started(humans, seed, { bots: 1, eventMult: 0, npcCrew: 0, aiLevel, ...(stations ? { stations } : {}) })
   const g = h.server.game!
   const ps = g.allPlayers()
   for (const p of ps) g.setRole(p, 'human')
@@ -90,7 +93,7 @@ describe('練習難度：easy 的 AI 船員', () => {
   it('抽血比較慢：兩次抽血之間停比較久（normal 三份很快抽完）', () => {
     const times: Record<string, number> = {}
     for (const lv of ['normal', 'easy'] as const) {
-      const { h, g, people, u, zone, spot } = setup(lv, 91)
+      const { h, g, people, u, zone, spot } = setup(lv, 91, 3, [])
       place(g, g.mainOf(people[0])!, zone, spot.x + 3, spot.y)
       place(g, g.mainOf(people[1])!, zone, spot.x - 3, spot.y)
       giveItem(g, u, makeItem('geneSampler'))
@@ -161,7 +164,7 @@ describe('練習難度：AI 異類的開局寬限期', () => {
   it('落單的人就在眼前：normal 開局 120 秒後才動手，easy 要過 420 秒才動手', () => {
     const first: Record<string, number> = {}
     for (const lv of ['normal', 'easy'] as const) {
-      const { h, g, bot, people, u, zone, spot } = setup(lv, 3030, 2)
+      const { h, g, bot, people, u, zone, spot } = setup(lv, 3030, 2, [])
       installXenoSystems(g)
       // 改成異形（和調整工具一樣補上變身技能）
       g.setRole(bot, 'xeno')

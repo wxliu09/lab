@@ -18,6 +18,11 @@ let tickMsAvg = 0
 let errs = 0
 let tickStreak = 0
 let fatalSent = false
+/**
+ * 主機中止（本機 client 送了 ClientMsg abort）：server 處理完設成「這次有沒有結算」，
+ * 等結算訊息的 out 批次送出之後再回 { t: 'aborted', ended } 給主執行緒（postMessage 保證順序）；null = 沒有待回報的
+ */
+let abortAck: boolean | null = null
 /** 連續 5 秒每個 tick 都丟例外（快照送不出去），或核心步驟連續 10 秒每 tick 出錯：視為不可恢復，通知主執行緒 */
 const FATAL_TICK_STREAK = 100
 const FATAL_STEP_STREAK = 200
@@ -45,8 +50,12 @@ ctx.onmessage = (ev: MessageEvent<In>) => {
   if (m.t === 'init') {
     try {
       // msgpackr 會重用內部 buffer：每則訊息複製成獨立 buffer 才能安全轉移所有權
+      // 正式對局不帶身分種子：GameServer → Game 的秘密亂數流一律用 128 bit 密碼學亂數（m.seed 只決定公開的地圖種子）
       server = new GameServer(m.code, { send: (peer, data) => out.push([peer, data.slice()]) }, m.seed)
       server.waitClients = true
+      server.onAbort = (ended) => {
+        abortAck = ended
+      }
     } catch (e) {
       report('init', e)
       fatal('init: ' + String(e))
@@ -63,6 +72,10 @@ ctx.onmessage = (ev: MessageEvent<In>) => {
     report(m.t, e)
   }
   flush()
+  if (abortAck !== null) {
+    ctx.postMessage({ t: 'aborted', ended: abortAck })
+    abortAck = null
+  }
 }
 
 function handle(server: GameServer, m: Exclude<In, { t: 'init' }>): void {

@@ -16,7 +16,7 @@ import { destroyInterior, spaceOf } from './space'
 import { recomputeStats } from './buffs'
 import { isEasy } from '../ai/level'
 import { cycleOpen, doorCycle, inDoorGap, untilOpen } from './movement'
-import { butlerName } from './roleSystem'
+import { butlerName, master } from './roleSystem'
 
 type Range = [number, number]
 
@@ -30,6 +30,11 @@ interface EventDef {
   ok?: (g: Game) => boolean
   /** 回傳 false = 這次沒有生效（假結束畫面 5/6 的情況）*/
   run: (g: Game, forced: boolean) => boolean
+  /**
+   * 抽到但沒有生效時照樣用掉，下一個事件在這麼多秒後（不乘事件頻率）。
+   * 原作政委晉升 X8 17641–17660：一進來就設 xe[1]=true，條件不成立就 StartTimerBJ(ee, 1.)
+   */
+  failNext?: number
 }
 
 interface Asteroid {
@@ -143,14 +148,16 @@ function drawable(g: Game, id: string): boolean {
 
 const EVENTS: EventDef[] = [
   {
+    // 原作 X8 17647–17660：本局有政委、還活著，而且不是異形或變種人的主腦（V8：Rv==cv／Rv==Bv 才排除；眷屬、仿生人照樣晉升）。
+    // 沒有條件可以擋抽籤：抽到就用掉，條件不成立時 1 秒後再抽下一個事件（failNext）
     id: 'promotion',
     once: true,
     next: [180, 900],
-    ok: (g) => g.allPlayers().some((p) => p.classId === 'commissar' && p.alive && g.faction(p) === 'crew' && !!g.mainOf(p)),
+    failNext: 1,
     run: (g) => {
-      const p = g.allPlayers().find((q) => q.classId === 'commissar' && q.alive && g.faction(q) === 'crew')
+      const p = g.allPlayers().find((q) => q.classId === 'commissar' && q.alive && !q.spectator)
       const u = p ? g.mainOf(p) : undefined
-      if (!p || !u) return false
+      if (!p || !u || !u.alive || p === master(g, 'xeno') || p === master(g, 'mutant')) return false
       giveItem(g, u, makeItem('suit.operative'))
       // 職業仍是政委（classId 不變：職業技能、背景都照舊）；client 顯示職業時看 promoted 改寫「特務」
       p.data.promoted = true
@@ -488,7 +495,8 @@ function fire(g: Game, id: string, forced: boolean): boolean {
   } catch (e) {
     if (__DEV__) console.error('[event]', id, e)
   }
-  if (ran && def.once) ev.used.add(id)
+  // failNext：沒有生效也算用掉（原作政委晉升）
+  if ((ran || def.failNext !== undefined) && def.once) ev.used.add(id)
   return ran
 }
 
@@ -504,12 +512,12 @@ export function pickEvent(g: Game, inChain: boolean): string | null {
   return (g.practice ? weightedPick(g, list) : g.world.rng.pick(list)).id
 }
 
-function drawAndFire(g: Game, inChain: boolean): EventDef | null {
+/** 抽一個事件並觸發；回傳抽到的事件與它有沒有生效 */
+function drawAndFire(g: Game, inChain: boolean): { d: EventDef; ran: boolean } | null {
   const id = pickEvent(g, inChain)
   const d = id ? BY_ID.get(id) : undefined
   if (!d) return null
-  fire(g, d.id, false)
-  return d
+  return { d, ran: fire(g, d.id, false) }
 }
 
 function weightedPick(g: Game, list: EventDef[]): EventDef {
@@ -925,12 +933,18 @@ export function installEvents(g: Game): void {
         if (t >= ev.chainNext) {
           ev.chain--
           ev.chainNext = t + R(gg, [15, 30])
-          drawAndFire(gg, true)
+          const r = drawAndFire(gg, true)
+          // 連發中抽到沒生效的政委晉升：原作的 1 秒計時器會在連發之間多觸發一個事件，這裡把這一發補回來、1 秒後再抽
+          if (r && !r.ran && r.d.failNext !== undefined) {
+            ev.chain++
+            ev.chainNext = t + r.d.failNext
+          }
         }
       } else if (t >= ev.next) {
-        const d = drawAndFire(gg, false)
-        // 沒有可抽的事件時每 60 秒再看一次（例如新聞用完、條件都不成立）
-        ev.next = t + (d ? R(gg, d.next) : 60) / Math.max(0.05, gg.settings.eventMult)
+        const r = drawAndFire(gg, false)
+        const mult = Math.max(0.05, gg.settings.eventMult)
+        // 沒有可抽的事件時每 60 秒再看一次（例如新聞用完、條件都不成立）；抽到沒生效、要馬上再抽的事件照它的 failNext
+        ev.next = t + (!r ? 60 / mult : !r.ran && r.d.failNext !== undefined ? r.d.failNext : R(gg, r.d.next) / mult)
       }
       stepOngoing(gg, ev)
       stepApocalypse(gg, ev)

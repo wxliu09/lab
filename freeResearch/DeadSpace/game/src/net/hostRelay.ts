@@ -38,6 +38,8 @@ type WorkerOut =
   | { t: 'hookResult'; id: number; result: unknown }
   | { t: 'stat'; tickMs: number; errs?: number }
   | { t: 'fatal'; msg: string }
+  /** 主機中止（ClientMsg abort）處理完：結算訊息的 out 批次已經在這則之前送出；ended = 這次有沒有結算 */
+  | { t: 'aborted'; ended: boolean }
 
 export class HostRelay {
   readonly worker: Worker
@@ -48,6 +50,7 @@ export class HostRelay {
   /** 已經通知過「主機模擬錯誤」*/
   failed = false
   private hookWaiters = new Map<number, (r: unknown) => void>()
+  private abortWaiters: ((ended: boolean) => void)[] = []
   private hookSeq = 1
   private closed = false
   private visHandler = () => this.worker.postMessage({ t: 'bg', hidden: document.visibilityState === 'hidden' })
@@ -98,6 +101,29 @@ export class HostRelay {
       this.tickMs = m.tickMs
       this.simErrors = m.errs ?? 0
     } else if (m.t === 'fatal') this.fail(m.msg)
+    else if (m.t === 'aborted') {
+      const ws = this.abortWaiters.splice(0)
+      for (const w of ws) w(m.ended)
+    }
+  }
+
+  /**
+   * 等 worker 回報主機中止處理完（結算已經交給傳輸層送出）；timeoutMs 內沒回報就當作沒有結算（false）。
+   * 先呼叫這個、再送 abort（回報可能很快就來）
+   */
+  waitAborted(timeoutMs: number): Promise<boolean> {
+    return new Promise((res) => {
+      let done = false
+      const fin = (v: boolean) => {
+        if (done) return
+        done = true
+        const i = this.abortWaiters.indexOf(fin)
+        if (i >= 0) this.abortWaiters.splice(i, 1)
+        res(v)
+      }
+      this.abortWaiters.push(fin)
+      setTimeout(() => fin(false), timeoutMs)
+    })
   }
 
   /** 不可恢復：告訴所有人（走一般的 notice 訊息，客人端照常由 session 接收）*/

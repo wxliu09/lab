@@ -1,11 +1,11 @@
 // 推理工具：調查筆記（Tab）、驗血報告、監視器畫面、門禁紀錄（GDD §9）
 import { useEffect, useState } from 'preact/hooks'
-import { signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
 import { PLAYER_COLORS } from '../../shared/constants'
-import type { NoteMark } from '../../shared/protocol/messages'
-import { send, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import type { ChatLine, NoteMark, SnapEntity } from '../../shared/protocol/messages'
+import { chatLog, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { dialogOpen, panelChecks, targetMode, typingInField } from '../../client/input'
-import { lang, listJoin, t } from '../i18n'
+import { hasString, lang, listJoin, loc, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
 import { tipProps } from '../tooltip'
@@ -46,6 +46,122 @@ export function isOwnName(base: string, selfNames: readonly string[]): boolean {
   return selfNames.some((n) => !!n && all.includes(n))
 }
 
+// ───────── 名字旁的職業與死亡標記（第 5 輪，審查 P3-10）─────────
+// 大家口頭都用職業稱呼（頭頂名字就是「頭銜＋本名」），筆記這一列只有本名：在名字旁補上職業，並標出已公告的死者。
+// 只用公開資訊：
+// - 職業：快照裡「現在看得到、不匿名」的人的 cl（cl 只對不匿名的人送出，異形形態、蛋、繭一律是空的；頭頂名字的頭銜、
+//   人物外觀本來就看得出職業）。以顯示名字對上這一列的本名，不用擁有者槽位去對：通訊病毒換名後，用槽位對會把換過的名字
+//   對回真人；用名字對，顯示的就是別人眼中「叫這個名字的人」的頭銜。看不到就留空，不記憶、不推測。
+// - 死亡：client 收到的全場死亡公告（系統訊息 `@death.<種類>|name=<顯示名字>`，sim roleSystem announceDeath；
+//   原作每一種死亡都先點名）。不看快照裡的任何欄位。
+
+/** 這一列本名在場上可能的顯示名字：職業頭銜＋本名、晉升頭銜＋本名。不含沒有頭銜的本名：玩家的顯示名字一定帶頭銜，
+ * 免得有人把本名取成「Medic Bob」而對到醫護兵 Bob */
+export function titledNames(base: string): string[] {
+  return muteNames(base).filter((n) => n !== base)
+}
+
+/** 看得到的職業：職業 id，以及是不是晉升後的頭銜（政委晉升成特務：classId 不變、頭銜改成「特務·」）*/
+export interface SeenClass {
+  id: string
+  agent: boolean
+}
+
+/**
+ * 目前看得到的人：顯示名字 → 職業。只收顯示名字與職業都有、而且職業是已知職業的實體；
+ * 同一個名字出現兩種職業（偽裝之類）記成 null，不猜。
+ */
+export function seenClasses(ents: Iterable<Pick<SnapEntity, 'n' | 'cl'>>): Map<string, SeenClass | null> {
+  const out = new Map<string, SeenClass | null>()
+  for (const s of ents) {
+    if (!s.n || !s.cl || !CLASSES.has(s.cl)) continue
+    const c: SeenClass = { id: s.cl, agent: s.n.startsWith(SIM_AGENT_TITLE) }
+    if (!out.has(s.n)) out.set(s.n, c)
+    else {
+      const prev = out.get(s.n)
+      if (prev && (prev.id !== c.id || prev.agent !== c.agent)) out.set(s.n, null)
+    }
+  }
+  return out
+}
+
+/** 這一列本名現在看得到的職業；看不到、名字清空中（通訊病毒的 10 秒）或對到兩種職業時回傳 null */
+export function classFor(base: string, seen: ReadonlyMap<string, SeenClass | null>): SeenClass | null {
+  let found: SeenClass | null = null
+  for (const n of titledNames(base)) {
+    if (!seen.has(n)) continue
+    const c = seen.get(n) ?? null
+    if (!c || (found && (found.id !== c.id || found.agent !== c.agent))) return null
+    found = c
+  }
+  return found
+}
+
+/** 職業的顯示名稱（晉升過的政委寫「特務」，和結算畫面一樣）*/
+export function classText(c: SeenClass): string {
+  if (c.agent) return t('ui5.class.agent')
+  return hasString(lang.value, 'class.' + c.id) ? t('class.' + c.id) : loc(CLASSES.get(c.id)?.name) || c.id
+}
+
+const DEATH_KEY = /^death\.[A-Za-z]+$/
+
+/** 系統訊息裡死亡公告點到的名字（`@death.<種類>|name=…`；沒有帶名字的不算）*/
+export function deathNamesIn(lines: Iterable<Pick<ChatLine, 'ch' | 'text'>>): string[] {
+  const out: string[] = []
+  for (const l of lines) {
+    if (l.ch !== 'sys' || !l.text.startsWith('@death.')) continue
+    const [key, ...args] = l.text.slice(1).split('|')
+    if (!DEATH_KEY.test(key)) continue
+    for (const a of args) {
+      const i = a.indexOf('=')
+      if (i > 0 && a.slice(0, i) === 'name' && a.length > i + 1) out.push(a.slice(i + 1))
+    }
+  }
+  return out
+}
+
+/** 這一列的本名有沒有被死亡公告點過名（公告帶的是當時的顯示名字；sim 的 fmtKey 會拿掉 | 與 =，比對時一樣處理）*/
+export function announcedDead(base: string, dead: ReadonlySet<string>): boolean {
+  return titledNames(base).some((n) => dead.has(n.replace(/[|=]/g, '')))
+}
+
+/** 這一局聽到的死亡公告（名字）。chatLog 只留最近 200 行，所以開著監看、每批新訊息都收進來 */
+export const heardDead = signal<ReadonlySet<string>>(new Set())
+let watchingDeaths = false
+
+/**
+ * 開始監看死亡公告（只開一次；筆記面板掛上時呼叫，不在模組載入時讀 session）。
+ * 換一局（gid 不同）就清空；換局的當下 chatLog 裡還是上一局的訊息（session 隨後才清空），那些不算。
+ */
+export function watchDeaths(): void {
+  if (watchingDeaths) return
+  watchingDeaths = true
+  const done = new WeakSet<object>()
+  let game: unknown = undefined
+  effect(() => {
+    const lines = chatLog.value
+    const info = startInfo.value
+    const key = info ? (info.gid ?? 'seed:' + info.seed) : null
+    let names = heardDead.peek()
+    let changed = false
+    if (key !== game) {
+      // 第一次（game 還是 undefined）照樣收目前 chatLog 裡的公告：面板可能在這一局中途才掛上
+      if (game !== undefined) for (const l of lines) done.add(l)
+      game = key
+      names = new Set()
+      changed = true
+    }
+    const fresh = lines.filter((l) => !done.has(l))
+    for (const l of fresh) done.add(l)
+    const add = deathNamesIn(fresh).filter((n) => !names.has(n))
+    if (add.length) {
+      names = new Set([...names, ...add])
+      changed = true
+    }
+    if (changed) heardDead.value = names
+  })
+}
+
 // 筆記是側邊面板：開著時照樣能用快捷鍵操作，只停用邊緣捲動
 panelChecks.push(() => notesOpen.value)
 /** 正在看的監視器畫面（覆寫鏡頭所在 zone）*/
@@ -59,8 +175,15 @@ const MARKS: { m: NoteMark; color: string }[] = [
   { m: 'confirmedClean', color: '#9fe7ff' },
 ]
 
+/** 快照裡目前看得到的實體（只取公開欄位：顯示名字、職業）*/
+function* visibleSnaps(): Generator<Pick<SnapEntity, 'n' | 'cl'>> {
+  for (const e of world.ents.values()) yield e.s
+}
+
 export function NotesPanel() {
   void snapTick.value
+  // 死亡公告的監看在面板掛上時就開始（面板關著也照樣收），不必等第一次打開
+  useEffect(() => watchDeaths(), [])
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.code === 'Tab' && !typingInField()) {
@@ -90,8 +213,11 @@ export function NotesPanel() {
   const canShare = me.alive !== false
   // 自己現在的名字：自己的主單位一定看得到真名（通訊病毒換過就是換到的名字）；再加上開局名單上的本名
   const selfNames = [world.ents.get(me.unit ?? -1)?.s.n ?? '', players.find((p) => p.slot === me.slot)?.name ?? '']
+  // 名字旁的職業（現在看得到的人）與死亡標記（死亡公告點過名的人）
+  const seen = seenClasses(visibleSnaps())
+  const dead = heardDead.value
   return (
-    <div class="panel solid" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
+    <div class="panel solid notes-panel" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
       <h2>{t('notes.title')}</h2>
       <div class="col" style={{ gap: '5px' }}>
         {players
@@ -102,11 +228,23 @@ export function NotesPanel() {
             const muted = isNameMuted(p.name)
             // 名字現在是自己的（通訊病毒換到的）就不能封；已經封了的照樣可以解除
             const locked = isOwnName(p.name, selfNames) && !muted
+            const cls = classFor(p.name, seen)
+            const isDead = announcedDead(p.name, dead)
             return (
-              <div key={p.slot} class={'row note-row' + (muted ? ' is-muted' : '')} style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
+              <div key={p.slot} class={'row note-row' + (muted ? ' is-muted' : '') + (isDead ? ' is-dead' : '')} data-testid={'note-row-' + p.slot} style={{ gap: '6px', borderLeft: `3px solid ${PLAYER_COLORS[p.color]?.hex}`, paddingLeft: '6px' }}>
                 <div class="grow" style={{ minWidth: 0 }}>
                   <div class="note-name" style={{ fontSize: '15px' }}>
-                    {localizeName(p.name)}
+                    <span class="note-base">{localizeName(p.name)}</span>
+                    {cls && (
+                      <span class="note-class" data-testid={'note-class-' + p.slot} {...tipProps(() => ({ title: classText(cls), body: t('ui5.notes.classBody') }))}>
+                        {classText(cls)}
+                      </span>
+                    )}
+                    {isDead && (
+                      <span class="note-dead" data-testid={'note-dead-' + p.slot} {...tipProps(() => ({ title: t('ui5.notes.dead'), body: t('ui5.notes.deadBody') }))}>
+                        {t('ui5.notes.dead')}
+                      </span>
+                    )}
                     {muted && <span class="note-muted-tag">{t('ui5.notes.muted')}</span>}
                   </div>
                   {edit === p.slot ? (

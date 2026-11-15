@@ -190,6 +190,9 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
       return isInt(raw.to, 0, MAX_PLAYERS - 1) ? { t: 'shareNotes', to: raw.to } : null
     case 'pause':
       return isBool(raw.on) ? { t: 'pause', on: raw.on } : null
+    case 'abort':
+      // 誰送的由 server 檢查（只接受本機 peer）
+      return { t: 'abort' }
     case 'mapPing':
       return isInt(raw.z, 0, 4095) && isNum(raw.x, -1000, 1000) && isNum(raw.y, -1000, 1000) ? { t: 'mapPing', z: raw.z, x: raw.x, y: raw.y } : null
     case 'Tune':

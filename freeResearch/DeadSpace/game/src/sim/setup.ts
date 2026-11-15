@@ -69,16 +69,31 @@ function ensureVendorDef(ref: string): UnitDef {
   return def
 }
 
+/**
+ * 活體庫號（原作 Syllus）與擺渡號（Pown）：原作 ekv 18672 是 `CountPlayersInForceBJ(bj_FORCE_ALL_PLAYERS) >= 11` 就兩站都開，
+ * 不成立才各看 qr==2／qr==3。bj_FORCE_ALL_PLAYERS 含所有玩家槽位（空位、中立也算；原作自己建參與名單時還要另外過濾
+ * PLAYER_SLOT_STATE_PLAYING，emv 18718–18723），所以這個條件恆成立：兩站每一局都在
+ */
+const ALWAYS_ON_EXTRA: ReadonlySet<string> = new Set(['vivarium', 'portage'])
+
+/** 原作 qr：參與人數 ≥7 時 GetRandomInt(1,3)，否則 0（e6v 18855–18858）*/
+export const QR_MIN_PLAYERS = 7
+
+/**
+ * 開局啟用哪些站（原作 eKv 18691–18713；GDD §6.2）。大廳手動指定：核心站＋指定的站。auto 照原作：
+ * - 核心站永遠在；活體庫號、擺渡號也永遠在（ALWAYS_ON_EXTRA）。
+ * - 火口號（原作 Calipea）：qr==1 而且有人抽到工程師才出現（hr，xhv 19084–19087；這時工程師固定出生在火口號）。
+ *   職業在 setupWorld 之後才發，所以這裡只擲 qr（記在 g.data.qr），火口號由 stations.ts 的 addCalderaIfEngineer 在發完職業後補建。
+ */
 export function chooseStations(g: Game): StationDef[] {
   const s = g.settings.stations
   const pool = ALL_STATIONS.filter((st) => st.enable !== 'event')
   if (s !== 'auto') return pool.filter((st) => st.enable === 'core' || s.includes(st.id))
-  // 依人數啟用：核心站永遠在；人越多開越多額外站（GDD §6.2）
   const n = g.allPlayers().filter((p) => !p.spectator).length
-  const extra = pool.filter((st) => st.enable === 'auto')
-  const want = n >= 9 ? extra.length : n >= 6 ? Math.min(extra.length, 2) : n >= 4 ? Math.min(extra.length, 1) : 0
-  const pick = g.world.rng.shuffle([...extra]).slice(0, want)
-  return pool.filter((st) => st.enable === 'core' || pick.includes(st))
+  // qr 走秘密的遊戲流（World.rng），不走公開的版面流：地圖種子可能公開（主機在大廳指定），qr 若推得出來，
+  // 「qr==1 卻沒有火口號」就等於公開「這局沒有工程師」（職業組成是秘密，第 5 輪 P0 的亂數盤點，見 game.ts）
+  g.data.qr = n >= QR_MIN_PLAYERS ? g.world.rng.int(1, 3) : 0
+  return pool.filter((st) => st.enable === 'core' || ALWAYS_ON_EXTRA.has(st.id))
 }
 
 export function setupWorld(g: Game): void {
@@ -151,7 +166,7 @@ const DIR4: [number, number][] = [
 ]
 
 /**
- * 開局（或事件站出現時）依 CRATE_COUNT 把雜物箱補到原作數量：版面上的 rummageBox 也算在內，其餘用 sim 的 rng
+ * 開局（或事件站出現時）依 CRATE_COUNT 把雜物箱補到原作數量：版面上的 rummageBox 也算在內，其餘用公開的版面流 mapRng
  * 一堆一堆放在房間地板的空格。箱子要靠著牆（或同一堆的箱子），正前方留空地；避開門口、POI、出生點、出入口、
  * 停機坪與走道；每放一個都確認不會把任何地板隔開。箱子佔用的導航格記在 data.navIdx（死亡時由 death 系統釋放）。
  * 回傳放了幾個。
@@ -163,7 +178,8 @@ export function placeCrates(g: Game, z: Zone): number {
   const want = st ? (CRATE_COUNT[st.id] ?? 0) : 0
   if (!st || !l || !nav || want <= 0) return 0
   const w = g.world
-  const rng = w.rng
+  // 公開的版面流（地圖種子）：箱子的位置與朝向進視野就看得到；翻出什麼由秘密的 World.rng 擲（scripts/items.ts）
+  const rng = w.mapRng
   let have = w.inZone(z.id).filter((e) => e.def.id === 'struct.rummage').length
   if (have >= want) return 0
   const W = l.w

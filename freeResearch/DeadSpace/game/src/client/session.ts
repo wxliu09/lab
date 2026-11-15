@@ -13,6 +13,8 @@ import { deathLines, noteDeath } from './deathNote'
 import { clearMuted } from './mute'
 import { hiddenByMute } from './chatFilter'
 import { hostGoneNow } from './hostGone'
+import { beatLease, clearActive, joinWaited, leaveRoom, markActive, markDone, pickToken, rejoinTarget, releaseLease, type KV } from './rejoin'
+import { ABORT_MSG, HOST_ABORT_MAX_MS, HOST_ABORT_WAIT_MS, isHostAbort, shouldAbortOnLeave } from './hostAbort'
 import { t } from '../ui/i18n'
 
 export type Screen = 'menu' | 'connecting' | 'lobby' | 'game'
@@ -60,7 +62,17 @@ export function selfInLoadWait(now = performance.now(), rttMs = rtt()): boolean 
   if (loadPending || !loadSentAt) return true
   return now - loadSentAt < Math.max(400, rttMs * 1.5 + 150)
 }
+/** 這次連線有別的 peer 自稱主機（大廳的提示用；整次連線都留著）*/
 export const hostConflict = signal(false)
+/** 最近 HOST_CONFLICT_SHOW_MS 內又有冒充者送訊息：對局中的 HUD 橫幅「有其他連線自稱主機，已忽略」據此顯示 */
+export const hostConflictLive = signal(false)
+export const HOST_CONFLICT_SHOW_MS = 10000
+/** 自動重新連線中的房號（重新整理後，主選單顯示「正在重新連回房間 XXXXX…」，可以取消；'' = 不是自動重連）*/
+export const rejoining = signal('')
+/** 主機正在中止這局（送出中止、等結算送出去；GameMenu 的離開按鈕暫時停用）*/
+export const hostLeaving = signal(false)
+/** 客人：這局是主機中止的（收過「主機中止」的結算；關掉結算畫面後 HUD 照樣說明、不跳「主機已離開」對話框蓋住結算）*/
+export const hostAbortEnd = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
 export const connLost = signal(false)
@@ -157,6 +169,7 @@ export function saveProfile(p: Profile): void {
   }
 }
 
+/** 主機（建房、練習）用的 token：只在這個分頁（主機一重新整理房間就沒了，用不到跨分頁）*/
 function sessionToken(code: string): string {
   const key = 'xc.tok.' + code
   try {
@@ -168,6 +181,84 @@ function sessionToken(code: string): string {
   } catch {
     return randomId(24)
   }
+}
+
+/** 這次載入頁面的識別碼（重連 token 的租約用，見 rejoin.ts）*/
+const PAGE_INST = randomId(10)
+/** 這個分頁拿著租約的房號（客人；'' = 沒有）*/
+let leaseRoom = ''
+
+function stores(): { ls: KV; tab: KV } | null {
+  try {
+    return { ls: localStorage, tab: sessionStorage }
+  } catch {
+    return null
+  }
+}
+
+/** 分頁之間共用 token：正式連線才共用；同一瀏覽器多分頁的開發／e2e 模式（?net=bc）每個分頁是不同的玩家 */
+function shareTabs(): boolean {
+  return netMode() !== 'bc'
+}
+
+/** 客人加入房間用的 token：依房號存在 localStorage（重新整理、開新分頁都能回到原席位；rejoin.ts）*/
+function guestToken(code: string): string {
+  leaseRoom = ''
+  const st = stores()
+  if (!st) return randomId(24)
+  const r = pickToken(st.ls, st.tab, code, { now: Date.now(), inst: PAGE_INST, share: shareTabs(), gen: () => randomId(24) })
+  if (r.shared) leaseRoom = code
+  return r.tok
+}
+
+/**
+ * 客人在房間裡時每秒一次：租約心跳（被別的分頁接手就中斷連線）、記下「目前在這個房間」（入座後、結算前）。
+ * 重新整理後 rejoin.ts 的 rejoinTarget 據此自動連回去。
+ */
+function roomTick(): void {
+  if (isHost.value || !roomCode || roomCode === PRACTICE_ROOM) return
+  const st = stores()
+  if (!st) return
+  const now = Date.now()
+  if (leaseRoom === roomCode && beatLease(st.ls, roomCode, PAGE_INST, now) === 'lost') return seatTaken()
+  if (mySlot.value >= 0 && (screen.value === 'lobby' || screen.value === 'game') && !endResult.value) markActive(st.ls, st.tab, roomCode, now, shareTabs() && leaseRoom === roomCode)
+}
+
+/** 同一個 token 被另一個分頁接手了（伺服器已經把席位交給它）：這個分頁中斷連線並說明，不再動共用的記錄 */
+function seatTaken(): void {
+  const st = stores()
+  if (st) clearActive(st.ls, st.tab, roomCode, false)
+  leaseRoom = ''
+  joinSeq++
+  leave(false)
+  notice.value = t('r5c.seatTaken')
+}
+
+/** 離開房間（按了離開、被拒絕、逾時、取消…）：放掉租約、之後不再自動連回這個房間（rejoin.ts leaveRoom）*/
+function forgetRoom(): void {
+  const st = stores()
+  const holder = leaseRoom !== '' && leaseRoom === roomCode
+  leaseRoom = ''
+  if (!st || isHost.value || !roomCode || roomCode === PRACTICE_ROOM) return
+  leaveRoom(st.ls, st.tab, roomCode, PAGE_INST, Date.now(), { holder, share: shareTabs() })
+}
+
+let autoTried = false
+/**
+ * 主選單第一次出現時呼叫一次：網址 hash 有房號、或 2 分鐘內還在某個房間裡（重新整理、關掉重開），
+ * 而且這個瀏覽器有那個房間的 token，就自動連回原席位（rejoin.ts rejoinTarget）。回傳房號（'' = 沒有自動連線）。
+ */
+export function autoRejoinOnce(hash = typeof location !== 'undefined' ? location.hash : ''): string {
+  if (autoTried) return ''
+  autoTried = true
+  if (screen.value !== 'menu') return ''
+  const st = stores()
+  if (!st) return ''
+  const code = rejoinTarget(st.ls, st.tab, hash, Date.now(), { share: shareTabs() })
+  if (!code) return ''
+  rejoining.value = code
+  void joinRoom(code, loadProfile())
+  return code
 }
 
 export function genRoomCode(): string {
@@ -214,8 +305,10 @@ function onHostMsg(m: HostMsg): void {
     case 'welcome':
       mySlot.value = m.slot
       connLost.value = false
+      rejoining.value = ''
       watchGone(false)
       if (screen.value === 'connecting') screen.value = 'lobby'
+      roomTick()
       break
     case 'reject':
       notice.value = t('reject.' + m.reason)
@@ -239,6 +332,7 @@ function onHostMsg(m: HostMsg): void {
       loadPending = true
       loadSentAt = 0
       endResult.value = null
+      hostAbortEnd.value = false
       if (!keep) {
         chatLog.value = []
         deathLines.value = []
@@ -272,9 +366,17 @@ function onHostMsg(m: HostMsg): void {
     case 'chat':
       receiveChat(m.lines)
       break
-    case 'end':
+    case 'end': {
       endResult.value = m.result
+      if (!isHost.value && isHostAbort(m.result)) hostAbortEnd.value = true
+      // 這局結束了：之後重新整理不再自動連回這個房間（還連著，照常看結算、賽後聊天）
+      const st = stores()
+      if (st && !isHost.value && roomCode && roomCode !== PRACTICE_ROOM) {
+        if (leaseRoom === roomCode) markDone(st.ls, roomCode, Date.now())
+        clearActive(st.ls, st.tab, roomCode, leaseRoom === roomCode)
+      }
       break
+    }
     case 'notice':
       noticeKey.value = m.key
       notice.value = t(m.key, m.args)
@@ -292,6 +394,8 @@ export function onHost(h: (m: HostMsg) => void): void {
 
 function attach(client: NetClient): void {
   net = client
+  hostConflict.value = false
+  hostConflictLive.value = false
   client.onMsg(onHostMsg)
   client.onHostLost(() => {
     if (net !== client) return
@@ -301,9 +405,13 @@ function attach(client: NetClient): void {
       watchGone(true)
     }
   })
+  // 每秒：冒充主機的警告（入座後別的 peer 自稱主機，net/client.ts 已經忽略它）、客人的房間記錄（rejoin.ts）
   const watchConflict = setInterval(() => {
-    if (!net) clearInterval(watchConflict)
-    else if (net.hostConflict && !hostConflict.value) hostConflict.value = true
+    if (net !== client) return clearInterval(watchConflict)
+    if (client.hostConflict && !hostConflict.value) hostConflict.value = true
+    const live = client.hostConflictAt > 0 && performance.now() - client.hostConflictAt < HOST_CONFLICT_SHOW_MS
+    if (live !== hostConflictLive.value) hostConflictLive.value = live
+    roomTick()
   }, 1000)
 }
 
@@ -372,15 +480,23 @@ export async function joinRoom(code: string, profile: Profile): Promise<void> {
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = false
-  // 逾時從按下加入就開始算（signaling 本身卡住也會逾時）
+  // 逾時從按下加入就開始算（signaling 本身卡住也會逾時）。主執行緒卡住的時間不算（rejoin.ts joinWaited）：
+  // 重新整理後的自動重連是在頁面最忙（載入、編譯 shader）的時候開始的，主機的回應可能還排在佇列裡
   let client: NetClient | null = null
-  setTimeout(() => {
-    if (seq !== joinSeq || screen.value !== 'connecting' || net !== client) return
+  let waited = 0
+  let last = performance.now()
+  const timer = setInterval(() => {
+    if (seq !== joinSeq || screen.value !== 'connecting' || net !== client) return clearInterval(timer)
+    const now = performance.now()
+    waited = joinWaited(waited, now - last)
+    last = now
+    if (waited < JOIN_TIMEOUT_S * 1000) return
+    clearInterval(timer)
     const msg = client?.hostPeer ? t('menu.joinTimeout', { s: JOIN_TIMEOUT_S }) : t('menu.noHost')
     joinSeq++
     leave(false)
     notice.value = msg
-  }, JOIN_TIMEOUT_S * 1000)
+  }, 500)
   let transport: Awaited<ReturnType<typeof makeTransport>>
   try {
     transport = await makeTransport(roomCode)
@@ -397,7 +513,7 @@ export async function joinRoom(code: string, profile: Profile): Promise<void> {
     transport.close()
     return
   }
-  client = new NetClient(transport, { ...profile, token: sessionToken(roomCode) })
+  client = new NetClient(transport, { ...profile, token: guestToken(roomCode) })
   attach(client)
 }
 
@@ -408,6 +524,12 @@ export function cancelJoin(): void {
 }
 
 export function leave(clear = true): void {
+  forgetRoom()
+  rejoining.value = ''
+  hostLeaving.value = false
+  hostAbortEnd.value = false
+  hostConflict.value = false
+  hostConflictLive.value = false
   net?.close()
   relay?.close()
   net = null
@@ -428,6 +550,43 @@ export function leave(clear = true): void {
 
 export function send(m: ClientMsg): void {
   net?.send(m)
+}
+
+/** 現在離開的話要不要先中止這局（主機、多人局、對局中、還沒結算；hostAbort.ts）*/
+function abortNeeded(): boolean {
+  return shouldAbortOnLeave({ isHost: isHost.value, practice: roomCode === PRACTICE_ROOM, inGame: screen.value === 'game' && !!relay, ended: !!endResult.value, simFailed: !!relay?.failed })
+}
+
+/**
+ * 離開對局（GameMenu 的離開確認）：主機在多人對局中離開時，先叫 worker 中止這局（所有人的身分揭曉、結算送給每位客人），
+ * 等 worker 回報處理完（結算已交給傳輸層）、而且至少 HOST_ABORT_WAIT_MS 讓訊息真的送出去，再終止 worker、回主選單。
+ * 其他情況（客人、練習局、已經結算）直接離開。
+ */
+export async function leaveGame(): Promise<void> {
+  const r = relay
+  if (!abortNeeded() || !r) return leave()
+  if (hostLeaving.value) return
+  hostLeaving.value = true
+  const t0 = performance.now()
+  const acked = r.waitAborted(HOST_ABORT_MAX_MS)
+  send(ABORT_MSG)
+  await acked
+  const rest = HOST_ABORT_WAIT_MS - (performance.now() - t0)
+  if (rest > 0) await new Promise((res) => setTimeout(res, rest))
+  // 等的期間已經離開（例如模擬錯誤橫幅的「回主選單」）就不用再關一次
+  if (relay === r) leave()
+  hostLeaving.value = false
+}
+
+// 主機關分頁、重新整理：盡量也送出中止（pagehide 時主執行緒馬上就要停了，worker 的結算不一定來得及轉送出去；
+// 對局中關分頁本來就會先跳 App.tsx 的確認，所以不在 beforeunload 送——按「留下」的話這局就白白結束了）。
+// 客人：放掉 token 的租約（不標記離開：重新整理後要自動連回去）
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => {
+    if (abortNeeded()) send(ABORT_MSG)
+    const st = stores()
+    if (st && leaseRoom) releaseLease(st.ls, leaseRoom, PAGE_INST, Date.now())
+  })
 }
 
 /** 送出指令時的旁聽（音訊回饋）*/
@@ -461,5 +620,5 @@ function exposeTestHooks(): void {
 }
 
 if (__TEST_HOOKS__) {
-  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat, connLost, hostGone }
+  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat, connLost, hostGone, hostConflictLive, rejoining }
 }

@@ -27,10 +27,10 @@ export interface TipData {
 
 /**
  * 圖例的一列。shape：self＝白框圓點、player＝深框圓點、hostile＝白框菱形、other＝小圓點、square＝實心方塊、
- * hollow＝空心方框、frame＝視野框。color 是填色（hollow、frame 是框的顏色）、ring 是外框顏色。
+ * hollow＝空心方框、frame＝視野框、cross＝十字（醫療）、tri＝三角形（GIT）。color 是填色（hollow、frame 是框的顏色）、ring 是外框顏色。
  */
 export interface LegendRow {
-  shape: 'self' | 'player' | 'hostile' | 'other' | 'square' | 'hollow' | 'frame'
+  shape: 'self' | 'player' | 'hostile' | 'other' | 'square' | 'hollow' | 'frame' | 'cross' | 'tri'
   color: string
   ring?: string
   label: string

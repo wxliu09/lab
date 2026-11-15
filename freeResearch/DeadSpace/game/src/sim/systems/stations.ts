@@ -4,9 +4,12 @@
 // 全站廣播一律不提是誰操作的；給操作者的回饋走 privateLine。
 import { GRAV_ACCEL, GRAV_PV } from '../../shared/content/facilities'
 import { abilityDef, unitDef } from '../../shared/content/registry'
+import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { NEUTRAL, dist, type Ent } from '../ent'
 import { fmtKey, type Game } from '../game'
-import { markersOf } from '../setup'
+import { addStation, markersOf } from '../setup'
+import { populateZone } from '../ai/creatures'
+import { classSpawn } from './facilities'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { applyBuff, hasBuff, removeBuff } from './buffs'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from './damage'
@@ -825,9 +828,32 @@ function stepCinderStorm(g: Game): void {
 
 const installed = new WeakSet<Game>()
 
+/**
+ * 火口號（原作 Calipea）：auto 啟用規則下，qr==1 而且有人抽到工程師才出現（原作 eKv 18691–18697、hr 由 xhv 19084–19087 設定）。
+ * qr 由 setup.ts chooseStations 擲；職業在 setupWorld 之後才發，所以等發完職業（installStations 排在 assignRoles、setupShips 之後）
+ * 才補建這座站：走事件站同一套流程（登錄停機坪、生成站內生物），再把工程師移到火口號的工程師出生點（原作 qr==1 時工程師固定出生在那裡）。
+ * 都在開局訊息送出之前完成，client 看到的就是一開始就有火口號
+ */
+export function addCalderaIfEngineer(g: Game): void {
+  if (g.settings.stations !== 'auto' || g.data.qr !== 1) return
+  if (g.world.zones.some((z) => z.key === 'caldera')) return
+  const st = ALL_STATIONS.find((x) => x.id === 'caldera')
+  const engineers = g.allPlayers().filter((p) => !p.spectator && p.classId === 'engineer')
+  if (!st || !engineers.length) return
+  const z = addStation(g, st)
+  spaceOf(g).pads.set(z.id, z.layout!.pads.map(() => null))
+  populateZone(g, z)
+  for (const p of engineers) {
+    const u = g.mainOf(p)
+    const at = classSpawn(g, 'engineer')
+    if (u && at) g.world.relocate(u, at.zone, at.x, at.y)
+  }
+}
+
 export function installStations(g: Game): void {
   if (installed.has(g)) return
   installed.add(g)
+  addCalderaIfEngineer(g)
   setupOrbits(g)
   setupCinderShield(g)
   const dt = 1 / 20

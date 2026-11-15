@@ -31,7 +31,8 @@ function chatTexts(h: Harness, peer = 'local'): string[] {
 
 describe('事件導演', () => {
   it('第一個事件落在 180–720 秒（÷ 事件倍率）；之後持續有事件', () => {
-    const { h, g } = setup(3, { eventMult: 4 })
+    // 只放核心站：這裡測排程，不測誰被小行星打死（站點組合會改變亂數序列，3 人全滅時遊戲結束、事件就停了）
+    const { h, g } = setup(3, { eventMult: 4, stations: [] })
     const ev = eventsOf(g)
     expect(ev.next).toBeGreaterThanOrEqual(45)
     expect(ev.next).toBeLessThanOrEqual(180)

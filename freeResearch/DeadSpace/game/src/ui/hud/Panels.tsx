@@ -2,7 +2,8 @@
 import { useState } from 'preact/hooks'
 import { FORMS, UNITS } from '../../shared/content/registry'
 import { PLAYER_COLORS } from '../../shared/constants'
-import { endResult, leave, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import type { EndResult } from '../../shared/protocol/messages'
+import { endResult, leave, leaveGame, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
 import { addStrings, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
@@ -11,6 +12,7 @@ import { stationDefOf } from '../../render/gameScene'
 import { TopSlot } from './Announce'
 import { canPreview, evolveBlock, nextForms } from './evolveWhy'
 import { drawReasonKey } from './textRules'
+import { isHostAbort } from '../../client/hostAbort'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import { classLabel, promotedSlots } from './Guide'
 import { againTip, inPractice, replayPractice } from '../screens/practiceRun'
@@ -202,7 +204,8 @@ export function SpectatorBar() {
           )}
           <div class="row" style={{ justifyContent: 'center', gap: '10px' }}>
             <PracticeAgain cls="primary" />
-            <button class={inPractice() ? 'ghost' : 'primary'} onClick={() => leave()}>
+            {/* 主機出局後離開也要先中止並揭曉身分（session.leaveGame）*/}
+            <button class={inPractice() ? 'ghost' : 'primary'} onClick={() => void leaveGame()}>
               {t('boot.leave')}
             </button>
           </div>
@@ -268,11 +271,21 @@ export function DeathVote() {
 
 const ROLE_COL: Record<string, string> = { human: '#9fe7ff', ...FACTION_TEXT }
 
+/**
+ * 結算標題下一行的說明 key（第 5 輪）：主機中止了這局（sim 的 winner = 'aborted'、abortWhy = 'host'，判斷與 client/hostAbort.ts 共用）
+ * → 「主機中止了這局：以下是所有人的身分」；平手 → 平手的原因；其他 null。只看結算本身（結算時公開給所有人的資料）。
+ * drawWhy、abortWhy 都由 sim 新增：用寬鬆型別讀，舊版結果沒有這些欄位也照常顯示
+ */
+export function endNoteKey(r: EndResult): string | null {
+  if (isHostAbort(r)) return 'ui5.end.aborted'
+  return drawReasonKey(r as EndResult & { drawWhy?: unknown })
+}
+
 export function EndScreen() {
   const r = endResult.value
   if (!r) return null
-  // drawWhy 由 sim 新增；用寬鬆型別讀，舊版結果沒有這個欄位也照常顯示
-  const why = drawReasonKey(r as typeof r & { drawWhy?: unknown })
+  // 標題下一行：主機中止、平手的原因（見 endNoteKey）
+  const why = endNoteKey(r)
   // 晉升過的政委顯示「特務」（sim 不改 classId，見 promotedSlots）
   const promoted = promotedSlots(r)
   return (
@@ -282,7 +295,7 @@ export function EndScreen() {
           {t('end.' + r.winner)}
         </div>
         {why && (
-          <div class="end-why" data-testid="end-why">
+          <div class="end-why" data-testid={why === 'ui5.end.aborted' ? 'end-aborted' : 'end-why'}>
             {t(why)}
           </div>
         )}
