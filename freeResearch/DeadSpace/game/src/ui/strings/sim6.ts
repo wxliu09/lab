@@ -7,6 +7,7 @@
 import { addStrings } from '../i18n'
 
 export const SIM6_ZH: Record<string, string> = {
+  'move.noPath': '找不到路：被關著的門或障礙擋住了。',
   // 死因（覆寫 ux2.ts：{n} → {name}）
   'death.cause.named': '死因：被 {name} 擊殺',
   'death.cause.namedAs': '死因：被 {name}（{uz}）擊殺',
@@ -29,6 +30,7 @@ export const SIM6_ZH: Record<string, string> = {
 }
 
 export const SIM6_EN: Record<string, string> = {
+  'move.noPath': 'No path there: a closed door or an obstacle is in the way.',
   'death.cause.named': 'Cause of death: killed by {name}',
   'death.cause.namedAs': 'Cause of death: killed by {name} ({ue})',
   'death.cause.owned': "Cause of death: killed by {name}'s {ue}",

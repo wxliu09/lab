@@ -134,7 +134,11 @@ export function stepMovement(g: Game): void {
         u.repathAt = g.time + REPATH
         u.stuckT = 0
         if (!u.path) {
-          // 無路可走：放棄命令
+          // 無路可走：放棄命令。真人下的移動命令要告訴他（例如門控制器故障把門鎖住），不然看起來像點了沒反應；同一單位 4 秒內只說一次
+          if (human && u.order?.k === 'move' && g.time >= ((u.data.noPathAt as number | undefined) ?? -1)) {
+            u.data.noPathAt = g.time + 4
+            g.privateLine(u.owner, 'move.noPath')
+          }
           if (u.order && u.order.k !== 'attack') u.order = u.queue.shift() ?? null
           u.anim = 0
           continue
