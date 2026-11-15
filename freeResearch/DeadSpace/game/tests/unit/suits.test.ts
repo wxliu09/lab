@@ -95,7 +95,8 @@ describe('防護服資料', () => {
     expect(new Set(SUIT_IDS).size).toBe(18)
     for (const id of SUIT_IDS) {
       const d = unitDef(id)
-      expect(d.tags).toEqual(['personnel', 'suit'])
+      // 第 4 輪照原作：著裝人員沿用 hpea、不是 mechanical → organic（寄生、朊毒打得到）
+      expect(d.tags).toEqual(['personnel', 'suit', 'organic'])
       expect(d.model).toBe('human')
       expect(d.inv).toBe(6)
       expect(d.abilities.at(-1)).toBe('suit.drop')

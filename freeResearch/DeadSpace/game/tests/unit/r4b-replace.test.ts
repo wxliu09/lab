@@ -67,7 +67,8 @@ describe('開局早退補位', () => {
     for (const c of others) expect(sysLines(c)).toEqual(ref)
     // 公告順序：離開（點名）→ 異形死亡 → 有人接任
     const i = ref.findIndex((x) => x.startsWith('@sys.left|'))
-    expect(ref.slice(i, i + 3)).toEqual([`@sys.left|name=${leaver.baseName}`, '@death.xeno', '@replace.xeno'])
+    // 死亡公告照原作點名（@death.xeno|name=…），這裡只比對 key
+    expect(ref.slice(i, i + 3).map((x, k) => (k === 1 ? x.split('|')[0] : x))).toEqual([`@sys.left|name=${leaver.baseName}`, '@death.xeno', '@replace.xeno'])
     expect(h.drainLeaks()).toEqual([])
     // -status 跟著公告回到「還活著」；對局沒有因為原本的異形死了就結束
     h.leakWatch = false
@@ -134,7 +135,7 @@ describe('開局早退補位', () => {
     h.ticks((RECONNECT_GRACE_S + 2) * SEC)
     expect(leaver.left).toBe(true)
     expect(masters(g, 'xeno', leaver)).toEqual([])
-    expect(lines(cs[0])).toContain('@death.xeno')
+    expect(lines(cs[0]).some((x) => x.startsWith('@death.xeno|'))).toBe(true)
     for (const c of cs) expect(lines(c).some((x) => x.startsWith('@replace.'))).toBe(false)
   })
 

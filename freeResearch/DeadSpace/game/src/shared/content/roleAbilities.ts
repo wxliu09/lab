@@ -116,7 +116,7 @@ regAbilities([
   {
     id: 'xeno.parasite',
     name: L('寄生', 'Implant'),
-    desc: L('把幼體植入沒穿防護服的人類。宿主會慢慢失血；只要宿主死時體內還有幼體，無論是誰下的手，都會甦醒成為你的眷屬。', 'Implant a larva in an unsuited human. The host slowly bleeds; if they die with it inside — no matter who kills them — they rise as your spawn.'),
+    desc: L('把幼體植入人類體內（穿著防護服也擋不住）。宿主會慢慢失血；只要宿主死時體內還有幼體，無論是誰下的手，都會甦醒成為你的眷屬。', 'Implant a larva in a human (a suit does not stop it). The host slowly bleeds; if they die with it inside — no matter who kills them — they rise as your spawn.'),
     icon: 'infect',
     target: 'unit',
     range: 1.6,
@@ -166,7 +166,7 @@ regAbilities([
   {
     id: 'mut.prion',
     name: L('朊毒注射', 'Prion Inject'),
-    desc: L('讓沒穿防護服的人類感染朊毒。帶著朊毒死去的人會變成你的眷屬。', 'Infect an unsuited human with prions. Those who die infected become your drones.'),
+    desc: L('讓人類感染朊毒（穿著防護服也擋不住；異類形態與機械體打不到）。帶著朊毒死去的人會變成你的眷屬。', 'Infect a human with prions (a suit does not stop it; xeno forms and machines are immune). Those who die infected become your drones.'),
     icon: 'infect',
     target: 'unit',
     range: 1.6,
@@ -181,7 +181,7 @@ regAbilities([
   {
     id: 'mut.prion2',
     name: L('變異株注射', 'Strain Inject'),
-    desc: L('更強的朊毒，連著裝者與異類也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even suited or xeno targets (only humans convert).'),
+    desc: L('更強的朊毒，連異類形態與機械體也會受傷（但只有人類會被轉化）。', 'A stronger strain that harms even xeno forms and machines (only humans convert).'),
     icon: 'infect',
     target: 'unit',
     range: 5,

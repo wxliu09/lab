@@ -8,7 +8,7 @@ export interface Loc {
 }
 
 export type Tag =
-  | 'organic' // 可被寄生／朊毒感染的血肉人形（未著裝人員）
+  | 'organic' // 可被寄生／朊毒感染的血肉人形（人員，含穿防護服的人；原作著裝人員不是 mechanical）
   | 'mechanical' // 非人形態（異形、變種、機體、裝置）
   | 'personnel' // 人類人員（含著裝）
   | 'suit' // 著裝單位
@@ -103,7 +103,7 @@ export type TargetKind = 'none' | 'unit' | 'point' | 'passive' | 'toggle' | 'uni
 
 export interface TargetFilter {
   self?: boolean
-  /** 只能對 organic（未著裝人類形態）*/
+  /** 只能對 organic（人類形態，含穿防護服的人）*/
   organic?: boolean
   /** 排除 organic */
   nonOrganic?: boolean

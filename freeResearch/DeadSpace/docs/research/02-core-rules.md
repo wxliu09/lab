@@ -180,7 +180,9 @@
 - 外星形態單位（`Se`）死亡 → `aB/ilv`：為 Bv 生成 e000 dummy 設為主單位並立刻殺死，等同外星人死亡（20317–20328）。
 
 ### 3.2 感染 → 死亡 → 變 spawn
-1. 外星各形態（含 spawn）都有 A02N **Parasite**：CD 25 s、0 mana、每秒 4.39 傷害、持續無限，只能對 `organic`（= 人類形態 h00H），buff B00H（OD A02N）。
+1. 外星各形態（含 spawn）都有 A02N **Parasite**：CD 25 s、0 mana、每秒 4.39 傷害、持續無限，只能對 `organic`，buff B00H（OD A02N）。
+   - **更正（第 4 輪）**：`organic` 在 WC3 是「不是 mechanical」，不是「只有 h00H」。人類形態 h00H 與**所有著裝人員**（h00I、h00J、h00C…，OD 皆以 hpea 為底、沒有改 `utyp`，只有 h00K 改成 `sapper,peon`，也不是 mechanical）都是 organic → **穿防護服擋不住寄生與朊毒**。JASS 也沒有排除著裝者的腳本：A02N 的施法觸發 `OW/RW`（12931–12935）只做「移除目標身上的 B009（朊毒）」；A013 的 `Ou`（11730）條件不可能成立。穿衣是 S001 原地變形（§9.1），身上的感染 buff 會留著。打不到的是 mechanical 的外星／突變形態、繭、肉團與升級後的機器人底盤。
+   - 附帶發現（本作尚未實作）：`RW` 會在寄生生效時移除目標身上的 B009，也就是**寄生會把一般朊毒（A013/A01S/A01X 的 B009）洗掉**；受控朊毒 B01F 不受影響。
 2. 每次受傷時 `x5` 更新該單位的「感染狀態」（16355–16365）：有 B009/B01F（prion）→ `Ro=true, Io=1`；否則有 B00H/B01G（parasite）→ `Ro=true, Io=2`；否則 `Ro=false`。（prion 優先於 parasite）
 3. 主單位死亡時（`Z6` 17157–17251），若 `Ro` 且非機器人、非突變陣營、非突變體本人（`t6` 17130）：
    - `Io==1`（prion）→ 變突變 spawn（§4.4）
@@ -262,7 +264,7 @@
   - `jv==0 & kx>=300` → e02A {h00U Perfection, h00V Infection}
   - `jv==1 & kx>=900` → 若目前 h00V → e02C {h01O Sustained, h01I Human Development}；否則 e02B {h01B Mobility, h01E Strength}
   - `jv==2 & kx>=1800` → h01B→e02F {h01C Crab, h01D Stalker}；h01I→e02D {h01K Complete Infection, h01L Rapid Gestation}；h01O→e02E {h04G Overlord(station), h04W Overlord(ground), h01V Defiler}；h01E→e02G {h01G Flesh Golem, h01H Minotaur}
-- 開始進化（`Ub→rdv` 19774–19823；條件 `rNv` 19759：主單位不在 `fi`）：`Kv=true`、`jv++`、記錄 HP% `ro`；原單位 Avul/暫停/交中立；生成 **h00T Evolving Mass**（999999 HP、Avul、**可移動 80 速**、mechanical、不可用逃生艙）作為主單位，物品與 suit 移入；**60 秒**（單人 2 秒）。
+- 開始進化（`Ub→rdv` 19774–19823；條件 `rNv` 19759：主單位不在 `fi`）：`Kv=true`、`jv++`、記錄 HP% `ro`；原單位 Avul/暫停/交中立；以 **cv（變種人本人）** 生成 **h00T Evolving Mass**（999999 HP、Avul、**可移動 80 速**、mechanical、不可用逃生艙）作為主單位 `A[cv]`，物品與 suit 移入；肉團**不匿名**（看得到變種人的名字與顏色；驗血 `kZ` 看 owner == cv → 感染），和外星繭屬於 Player14 不同（19789–19792）；**60 秒**（單人 2 秒）。
 - 結束（`wb→ruv` 19890–20022）：生成新形態，HP% 還原為 `ro`（"same percentage HP"），物品移入；廣播 "The mutant has evolved! It has grown more powerful..."；所有突變 spawn（`Lv`、非機器人）替換為新 spawn 型 `zv`（19992–20003）。
 - 路線旗標：選 h00U 時 `Jo=true`（perfection，之後不重置，19894–19896）；選 h01L 時 `wr=true`（可把外星人轉成突變 spawn，20016–20018）；h01G 執行 `lg`、h01V 執行 `KG`（slime trail）、h01C 開啟 `qb`（攻擊產生 Sporeling）、h01B 動畫 160%（20004–20021）。
 - 突變各形態也都是 `mechanical` 且 point value 210000 → 不能穿 suit（`d4` 15967–15969）。
@@ -302,7 +304,7 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
 感染能力（OD）：
 | 能力 | 持有者 | DPS | 目標 | CD | 轉化規則 |
 |---|---|---|---|---|---|
-| A013 Prion Infection | h00V、h00W | 4.39 | organic only（打不到外星/突變形態與已升級機器人） | 35 | 不會轉化外星人 |
+| A013 Prion Infection | h00V、h00W | 4.39 | organic only（打不到外星/突變形態與已升級機器人；穿防護服的人員是 organic，打得到） | 35 | 不會轉化外星人 |
 | A01S | h01I、h01J；也是 Tainted Vendor/Total Infection 的 dummy 用 | 6.53 | 含非 organic | 35 | 可傷外星人/機器人，但不轉化 |
 | A01X | h01L、h01M；Carrier 的 dummy 用 | 10.0 | 含非 organic | 35 | `wr=true` 時可把外星人與外星 spawn 轉為突變 spawn |
 
@@ -345,6 +347,11 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
   - 否則人類使用且機器人目前是 `lv/Lv` → 改回人類。
   - 以上都不成立 → 切換停機：停用時暫停機器人主單位、其在太空的單位交中立；再用一次恢復（含逃生艙）。
 - 機器人本人撿到遙控器會被自動丟掉（20713–20718）。物品 tooltip：「第一次使用更新目標參數，再用停機，再用恢復」。
+- 被改寫成 `lv/Lv` 之後的邊界情況（第 4 輪查證）：
+  - 驗血：`kZ` 先於 `JZ`，判「感染」（§7.4）。
+  - 誤殺懲罰：`Of`（2429–2442）在任一方是 cv/Bv/lv/Lv 時回 0 → 被改寫期間殺人不累積點數；改回人類後才又照算。
+  - 外星人每秒 EP：`oVv/oEv`（19359–19366）數「lv 且不在 ke（死者）」→ 被改寫成外星 spawn 的機器人也算 +0.28/s（突變側 `oXv/oOv` 同理）。
+  - 死亡公告：`Z6` 先判 `W6`（owner == Cv，17210）再判 `w6/U6` → 仍公告 "The android has been destroyed!"，且照樣掉 Memory Card（`z6` 17244）；不會被轉成 spawn（`t6` 排除 Cv）。進化換型時也不換它（`ruv`／`axv` 排除機器人）。
 
 ### 5.5 2000 EP 升級
 - EP：每秒 +1.5（19415），2000 EP ≈ 1333 秒（約 22.2 分）。
@@ -431,7 +438,7 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
 |---|---|
 | 偵測依據？ | **角色旗標**，不是身上的寄生/普里昂 buff；被感染但尚未死亡的人類測起來是乾淨的。 |
 | 偵測到 spawn？ | 是（`lv`/`Lv`）。 |
-| 偵測到機器人？ | 不是「感染」而是讓結果變成 **Error**；`vr=3` 一旦設定就鎖定（之後抽到感染者也不變），且機器人在感染者之後抽也會把 2 蓋成 3。 |
+| 偵測到機器人？ | 不是「感染」而是讓結果變成 **Error**；`vr=3` 一旦設定就鎖定（之後抽到感染者也不變），且機器人在感染者之後抽也會把 2 蓋成 3。**被遙控器改寫成 lv／Lv 的機器人**先符合 `kZ` → 判「感染」，不是 Error（14482–14489）。 |
 | 多個感染者？ | 只顯示 "infected"，無法得知人數/是誰。 |
 | 外星形態的外星人？ | 推斷：外星形態單位屬於 Player14，`GetOwningPlayer` 不是 `Bv` → 判定乾淨，名單顯示 "Alien"。 |
 | Tester 被摧毀？ | `nO→im`：刪除抽血 trigger `BA`（之後抽血不再記錄）、全場 "The blood tester has been destroyed!"（7758–7762）；之後購買結果一律 "Could not contact…"。 |
@@ -461,6 +468,7 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
   - 若已穿著（有 A046 zDrop Suit），舊 suit 物品放回物品欄（16040–16048）。
   - 加 `S001` Personnel Suit Change（Chaos 型永久變形）並設等級 Q → 單位變成對應 Personnel 型別；suit 物品隱藏並存在 `Mx[玩家]`；HP% 保持；0.1 s 暫停＋Avul，0.2 s 後補回職業能力與角色能力（`sH/QH` 5395–5426）。
 - 脫衣 A046 zDrop Suit：物品還原、S001 設回 1（h00H）（16069–16095）。
+- 著裝單位的 OD 都沒有改 `utyp`（沿用 hpea），所以和 h00H 一樣是 organic：寄生、朊毒照樣打得到（§3.2 更正）。S001 是原地變形，身上的 buff（含感染）不會因穿脫而消失。
 - 進化（外星繭/突變 mass）時，已穿的 suit 物品會被移入新單位（19805–19811、20423–20429）。
 
 | S001 等級 | Suit 物品 | 變成 | HP | 攻擊 dmg/cd/射程 | 移速 | 主要能力 | 取得 |
@@ -520,11 +528,12 @@ Failed Experiments：`aO` 每 45 秒在 rect `vn` 生成一隻 n000 或 n001（�
 
 ### 10.2 死亡流程
 1. 主單位死亡（`FN→Z6` 17157–17251）：判斷是否轉 spawn（§3.2/§4.4）→ 否則全場公告（17198–17240）：
-   | 死者 | 公告 |
+   **每一種死亡都先點名**「<玩家名> has been killed!」（`GetPlayerName(GetOwningPlayer(GetDyingUnit()))`，17199、17204、17209、17214、17219、17224），再加一句陣營公告；所以誰死了、是哪一方都是公開資訊。（舊版本表誤寫成只有突變體點名，2026-11-15 依 JASS 更正。）
+   | 死者 | 點名之後的陣營公告 |
    |---|---|
-   | 突變體 | "<name> has been killed!" + "The Mutant has been killed!" |
+   | 突變體 | "The Mutant has been killed!" |
    | 外星人 | "The Alien has been killed!" |
-   | 機器人 | "The android has been destroyed!" |
+   | 機器人 | "The android has been destroyed!"（被遙控改寫的機器人也先判這條，§5.4） |
    | 外星 spawn | "An alien spawn has been killed!" |
    | 突變 spawn | "A mutant-spawn has been killed!" |
    | 其他 | "An innocent has been killed!"（若兇手是外星陣營：外星人 +175 EP） |

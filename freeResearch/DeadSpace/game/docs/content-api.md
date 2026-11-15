@@ -19,7 +19,7 @@
 | `hp/hpRegen/mp/mpRegen/armor/speed/radius/sight` | 基礎數值；人形 radius 0.4 |
 | `attack` | 普攻；`kind`：`hitscan`（槍）、`projectile`（可見飛行物，需 `projSpeed`）、`melee`、`artillery`（拋射落點 AoE）、`beam`；`fx` 是視覺 id；`aoe` 半徑；`onHit` 命中附加效果（例如減速 buff）；`pierce` 直線穿透 |
 | `abilities` | 技能 id 陣列（順序 = 指令卡 Q W E R D F；被動放最後）|
-| `tags` | 見 types.ts。著裝單位必須有 `['personnel', 'suit']`（**不要** `organic`：著裝者不能被寄生）；未著裝人員 `['personnel', 'organic']` |
+| `tags` | 見 types.ts。著裝單位必須有 `['personnel', 'suit', 'organic']`（原作著裝人員沿用 hpea、沒改 `utyp`，一樣是 organic，可以被寄生與朊毒感染）；未著裝人員 `['personnel', 'organic']` |
 | `corpse` | 死亡留下屍體 |
 | `life` | 召喚物存活秒數 |
 | `drops` | 死亡掉落 `[{item, p}]`（擲到第一個成功的就停）|

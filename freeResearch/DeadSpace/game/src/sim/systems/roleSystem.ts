@@ -195,6 +195,14 @@ function stepButlers(g: Game): void {
 
 // ───────── 死亡 ─────────
 
+/**
+ * 全場死亡公告。順序照原作 Z6 17198–17238：變種人 → 外星人 → 仿生人 → 外星 spawn → 突變 spawn → 無辜者；
+ * 仿生人排在 spawn 前面，所以被遙控器改寫成異類 spawn 的仿生人死了仍公告「仿生人被摧毀」，不會因此曝光被改寫過。
+ */
+/**
+ * 全場死亡公告：照原作 Z6（JASS 17198–17229）每一種死亡都先點名「<名字> has been killed!」再說是哪一方，
+ * 所以誰死了、是哪一方都是公開資訊（研究 02 §10.2 先前誤讀成只有變種人點名）。名字用目前的顯示名字（含通訊病毒換過的）。
+ */
 function announceDeath(g: Game, p: GamePlayer): void {
   if (p.role === 'mutant' && !p.spawnOf) {
     // -status 只依公告過的死亡回答（chat.ts）
@@ -203,19 +211,19 @@ function announceDeath(g: Game, p: GamePlayer): void {
     g.log(fmtKey('tl.death.mutant', { name: tlName(p) }))
   } else if (p.role === 'xeno' && !p.spawnOf) {
     g.data.xenoDeathAnnounced = true
-    g.systemAll('death.xeno')
+    g.systemAll('death.xeno', { name: p.name })
     g.log(fmtKey('tl.death.xeno', { name: tlName(p) }))
+  } else if (p.role === 'android') {
+    g.systemAll('death.android', { name: p.name })
+    g.log(fmtKey('tl.death.android', { name: tlName(p) }))
   } else if (p.spawnOf === 'xeno') {
-    g.systemAll('death.xenoSpawn')
+    g.systemAll('death.xenoSpawn', { name: p.name })
     g.log(fmtKey('tl.death.xenoSpawn', { name: tlName(p) }))
   } else if (p.spawnOf === 'mutant') {
-    g.systemAll('death.mutantSpawn')
+    g.systemAll('death.mutantSpawn', { name: p.name })
     g.log(fmtKey('tl.death.mutantSpawn', { name: tlName(p) }))
-  } else if (p.role === 'android') {
-    g.systemAll('death.android')
-    g.log(fmtKey('tl.death.android', { name: tlName(p) }))
   } else {
-    g.systemAll('death.innocent')
+    g.systemAll('death.innocent', { name: p.name })
     g.log(fmtKey('tl.death.crew', { name: tlName(p) }))
   }
 }
@@ -342,8 +350,9 @@ export function installRoles(g: Game): void {
       p.data.core = core.id
       p.data.coreOnly = true
     }
-    // 仿生人誤殺懲罰
-    const andr = g.allPlayers().find((q) => q.role === 'android' && q.alive)
+    // 仿生人誤殺懲罰。原作 Of 2429–2442：仿生人或死者任一方屬於異類陣營（cv、Bv、lv、Lv）就是 0，
+    // 所以被遙控器改寫成異類 spawn 的仿生人殺人不累積誤殺點數（改回人類後才又照算）
+    const andr = g.allPlayers().find((q) => q.role === 'android' && q.alive && g.faction(q) === 'crew')
     if (andr && andr.slot !== p.slot) {
       const fwd = tk.get(`${andr.slot}>${p.slot}`)
       const back = tk.get(`${p.slot}>${andr.slot}`)
@@ -424,7 +433,8 @@ export function installRoles(g: Game): void {
         if (p.spawnOf) continue
         if (p.role === 'android') g.addEp(p.slot, 1.5)
         else if (p.role === 'xeno' && !p.data.lostMaster) {
-          const spawns = players.filter((q) => q.spawnOf === 'xeno' && q.alive && q.role !== 'android').length
+          // 存活的異形 spawn 玩家（原作 oVv／oEv 19359–19366：lv 且不在死者名單 ke），被遙控器改寫成異形 spawn 的仿生人也算
+          const spawns = players.filter((q) => q.spawnOf === 'xeno' && q.alive).length
           let eggs = 0
           for (const e of g.world.ents.values()) if (e.tags.has('egg') && e.owner === p.slot && e.alive) eggs++
           g.addEp(p.slot, 0.4 + 0.28 * spawns + 0.12 * eggs)
@@ -547,11 +557,9 @@ function evolveCmd(g: Game, p: GamePlayer, _u: Ent, c: Command): void {
     g.emitFx({ k: 'cocoon', z: cocoon.zone, x: cocoon.x, y: cocoon.y, e: cocoon.id })
   } else if (form.faction === 'mutant') {
     p.data.massHp = cur.hp / cur.maxHp
+    // 肉團屬於變種人本人（不匿名）：原作 rdv 19789 以 cv（變種人玩家）生成 h00T 並設成主單位 A[cv]，
+    // 所以看得到名字與顏色，驗血（kZ：owner == cv）也是感染。和繭不同：繭屬於匿名的 Player14（研究 02 §3.5）
     const mass = replaceMain(g, p, cur, 'mut.mass', { anon: false, hpPct: 1 })
-    mass.name = ''
-    mass.color = -1
-    mass.classId = ''
-    mass.anon = true
     applyBuff(g, mass, 'bf.evolving', dur + 1)
     g.emitFx({ k: 'cocoon', z: mass.zone, x: mass.x, y: mass.y, e: mass.id, s: 'mutant' })
   } else {

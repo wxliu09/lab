@@ -1,5 +1,6 @@
 // GIT 驗血（研究 02 §7）：基因檢測器抽三人份血 → 轉成 GIT 解析器 → 放下開機後購買檢測報告。
-// 判定依據是「身分」而不是身上的感染 buff：被感染但還沒轉化的人類測起來是乾淨的；仿生人讓結果變成錯誤並鎖定。
+// 判定依據是「身分」而不是身上的感染 buff：被感染但還沒轉化的人類測起來是乾淨的；仿生人讓結果變成錯誤並鎖定
+// （被遙控器改寫成異類 spawn 的仿生人算感染，見 git.draw）。
 import { regScript } from '../systems/effects'
 import { DEATH_HOOKS } from '../systems/damage'
 import { makeItem } from '../systems/items'
@@ -109,9 +110,11 @@ regScript('git.draw', (g, ctx) => {
   const p = t.illusion ? undefined : g.players[t.owner]
   if (p) {
     s.slots.push(p.slot)
+    // 原作 MZ 14482–14489：先看陣營（kZ 14454：外星人、變種人、外星 spawn lv、突變 spawn Lv → 感染），不是才看是不是仿生人（JZ → 錯誤）。
+    // 所以被遙控器改寫成異類 spawn 的仿生人（lv／Lv）測起來是「感染」，不是「錯誤」；錯誤一旦出現就鎖定
     if (s.r !== 3) {
-      if (p.role === 'android') s.r = 3
-      else if (!t.anon && g.faction(p) !== 'crew') s.r = 2
+      if (!t.anon && g.faction(p) !== 'crew') s.r = 2
+      else if (p.role === 'android') s.r = 3
     }
   }
   say('git.msg.extracted', { n: keys.length, max: SAMPLES_PER_DEVICE })

@@ -253,11 +253,11 @@ describe('死因：事件與環境、主腦清除、訊息順序、視野時機'
     const all = allLines(clientOf(cs, ps[2]))
     const ci = all.indexOf('@death.cause.door')
     expect(ci).toBeGreaterThanOrEqual(0)
-    // 死者自己先看到死因，再看到「一名無辜者遇害了」
-    const ai = all.indexOf('@death.innocent')
+    // 死者自己先看到死因，再看到「某某遇害了——一名無辜者」（照原作點名）
+    const ai = all.findIndex((x) => x.startsWith('@death.innocent|name='))
     expect(ai).toBeGreaterThan(ci)
     // 別人照樣收到公告，但收不到死因
-    expect(allLines(clientOf(cs, ps[1]))).toContain('@death.innocent')
+    expect(allLines(clientOf(cs, ps[1])).some((x) => x.startsWith('@death.innocent|name='))).toBe(true)
     expect(deathLines(clientOf(cs, ps[1]))).toEqual([])
     expect(scanLeaks(h)).toEqual([])
   })

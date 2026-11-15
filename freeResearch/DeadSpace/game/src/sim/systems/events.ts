@@ -1,5 +1,5 @@
 // 隨機事件導演與末日（GDD §7.8、研究 03 §6）。
-// 修正原作讓事件鏈永久中斷的 bug（空事件、門故障、新聞用完）；加入原作沒接上的三個事件。
+// 修正原作讓事件鏈永久中斷的 bug（空事件、門故障、新聞用完）；加入原作沒接上的三個事件（EXTRA_EVENTS，大廳 extraEvents 可關掉）。
 // 由測試或除錯觸發的事件（forced）走完全相同的路徑：系統訊息不提觸發者，看起來就像隨機抽到。
 import { ALL_STATIONS } from '../../shared/content/stations/index'
 import { unitDef } from '../../shared/content/registry'
@@ -91,7 +91,25 @@ const NEWS = 12
 /** 強化劑五選一（研究 03 §6.2 #8）*/
 export const ENHANCE = ['speed', 'hp', 'atk', 'mp', 'range'] as const
 
-// ───────── 練習局專屬規則（正式局照原作：末日 30–40 分、每個可抽的事件機會均等）─────────
+// ───────── 原作沒有的事件（大廳 extraEvents = false 時不抽）─────────
+
+/**
+ * 原作 1.8.2 的事件表只有 oe[1..15]（war3map.j e8 17577–17593；抽法 r8 17619 抽 1–16，16 是空的）。
+ * 下面三個事件不在 oe[] 裡、也沒有任何地方 TriggerExecute 它們，是本作接上或新做的：
+ * - virus 通訊病毒：原作死碼 vOv 18037（觸發器 ib 23485–23487 建立後停用，從未加進 oe[]）
+ * - slugSwarm 蛞蝓仔大量出沒：原作死碼 vov 17925（觸發器 rb 23482–23484，同上）
+ * - tenshu 天守砲台收容失效：原作只剩一則沒人引用的字串（研究 03 §6.2 TRIGSTR_2311，J 裡 0 次引用），效果全是本作設計
+ * 另外 windfall（#3，c8 17701）是原作的事件格，但原作在發錢之前就 return，沒有任何效果；本作改成販賣機補滿。
+ * extraEvents = false 時它照原作：照樣會被抽到、照樣佔用 90–1200 秒的間隔，只是什麼都不發生（見 windfall 的 run）。
+ */
+export const EXTRA_EVENTS: ReadonlySet<string> = new Set(['virus', 'slugSwarm', 'tenshu'])
+
+/** 這一局只出原作有的事件（大廳 extraEvents = false）*/
+export function originalEventsOnly(g: Game): boolean {
+  return g.settings.extraEvents === false
+}
+
+// ───────── 練習局專屬規則（正式局：末日照大廳設定（本作預設 30–40 分，原作 55–70 分）、每個可抽的事件機會均等）─────────
 
 /** 練習局的末日時間（分鐘）：比正式局早，一局練習不會拖太久（主機明確改過末日設定就照主機的；由 server 開局時寫進 settings）*/
 export const PRACTICE_APOCALYPSE: readonly [number, number] = [20, 25]
@@ -114,8 +132,9 @@ export const STATION_KILLERS: ReadonlySet<string> = new Set(['wasps', 'asteroids
 /** 簡單練習局整局都不會隨機抽到的事件：通訊病毒（名字與顏色互換，新手很難跟上誰是誰；除錯強制觸發不受影響）*/
 export const EASY_NEVER: ReadonlySet<string> = new Set(['virus'])
 
-/** 這個事件現在能不能被隨機抽到（簡單練習局的開局保護）*/
+/** 這個事件現在能不能被隨機抽到（只出原作事件的大廳設定、簡單練習局的開局保護）*/
 function drawable(g: Game, id: string): boolean {
+  if (originalEventsOnly(g) && EXTRA_EVENTS.has(id)) return false
   if (g.practice && isEasy(g) && EASY_NEVER.has(id)) return false
   return !(g.practice && isEasy(g) && g.time < EASY_SAFE_UNTIL && STATION_KILLERS.has(id))
 }
@@ -173,6 +192,8 @@ const EVENTS: EventDef[] = [
     once: true,
     next: [90, 1200],
     run: (g) => {
+      // 只出原作事件：原作 c8 在發 8000 credits 之前就 return（17701–17708），這一格只佔用事件間隔、什麼都不發生
+      if (originalEventsOnly(g)) return true
       restockAll(g)
       g.systemAll('event.windfall')
       return true
@@ -695,16 +716,27 @@ function removeEventStation(g: Game, zoneId: number): void {
   g.stations = g.stations.filter((s) => s !== z.key)
 }
 
+/** 小行星的生命上限（原作 h04D uhpm 20000）與碰撞半徑（原作 Hh 以 TriggerRegisterUnitInRangeSimple 90 偵測碰撞：90 單位 = 0.9 公尺）*/
+export const ROCK_MAX_HP = 20000
+export const ROCK_RADIUS = 0.9
+
+/**
+ * 一顆小行星（原作 U8 17847–17880、Hh 4826–4840）：ve = rand(0,1)；外觀縮放 50 + 200·ve %；
+ * 生命 = 上限 20000 的 ve × 100%（SetUnitLifePercentBJ），所以撞站傷害（當前生命 ×4）在 0–80000 之間、與外觀大小同步；
+ * 碰撞半徑固定 0.9 公尺，不隨外觀縮放。速度 20–90 單位/秒（0.2–0.9 m/s）。
+ */
 function spawnRock(g: Game, ev: EventState): void {
   const rng = g.world.rng
-  const sc = rng.range(0.5, 2.5)
+  const ve = rng.next()
+  const sc = 0.5 + 2 * ve
   const x = rng.range(-SPACE_HALF + 3, SPACE_HALF - 3)
   const y = -SPACE_HALF + 1.5
   const e = g.world.spawn(unitDef('space.asteroid'), SPACE_ZONE, x, y, HOSTILE)
   e.global = true
   e.acquire = false
-  e.radius = 0.9 * sc
-  e.maxHp = e.hp = Math.round(20000 * sc)
+  e.radius = ROCK_RADIUS
+  e.maxHp = ROCK_MAX_HP
+  e.hp = Math.max(1, Math.round(ROCK_MAX_HP * ve))
   e.x2 = { sc: Math.round(sc * 100) / 100 }
   const sp = rng.range(0.2, 0.9)
   let ang = Math.PI / 2 + rng.range(-0.35, 0.35)
@@ -736,7 +768,8 @@ function stepRocks(g: Game, ev: EventState): void {
       if (o === e || !o.alive || !(o.tags.has('station') || o.tags.has('ship'))) continue
       const rr = e.radius + o.radius
       if (dist2(e, o) > rr * rr) continue
-      g.emitFx({ k: 'asteroidHit', z: SPACE_ZONE, x: e.x, y: e.y, v: e.radius })
+      // 爆炸特效的大小跟著外觀縮放（碰撞半徑固定，見 spawnRock）
+      g.emitFx({ k: 'asteroidHit', z: SPACE_ZONE, x: e.x, y: e.y, v: ROCK_RADIUS * (Number(e.x2?.sc) || 1) })
       if (o.tags.has('station')) {
         damage(g, null, o, e.hp * 4, { kind: 'blast', pure: true, env: 'rock' })
         w.remove(e)

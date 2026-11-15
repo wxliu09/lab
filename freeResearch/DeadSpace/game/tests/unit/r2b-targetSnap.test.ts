@@ -60,11 +60,11 @@ describe('targetOk：只看快照看得到的欄位', () => {
     expect(targetOk(S(5, 'struct.regen'), f, self)).toBe(false)
   })
 
-  it('寄生（只對未著裝的人）：人行；防護服、建物、自己不行', () => {
+  it('寄生（只對人類形態）：人、穿防護服的人行（第 4 輪照原作：著裝者也是 organic）；建物、自己不行', () => {
     const f = filterOf('xeno.parasite')
     expect(targetOk(S(2, 'personnel'), f, self)).toBe(true)
     expect(targetOk(S(1, 'personnel'), f, self)).toBe(false)
-    expect(targetOk(S(3, 'suit.cryo'), f, self)).toBe(false)
+    expect(targetOk(S(3, 'suit.cryo'), f, self)).toBe(true)
     expect(targetOk(S(4, 'vendor.medical', { x2: { s: '' } }), f, self)).toBe(false)
   })
 

@@ -39,7 +39,13 @@ function suit(s: SuitSpec): void {
   SUIT_SPECS.push(s)
 }
 
-/** 著裝單位共用數值（研究 02 §9.1：穿衣後回血 0.75）*/
+/**
+ * 著裝單位共用數值（研究 02 §9.1：穿衣後回血 0.75）。
+ * 著裝單位是 organic：原作著裝人員（h00I、h00J、h00C…，objects.json w3u）都以 hpea 為底且沒有改 utyp，
+ * 不是 mechanical，所以寄生 A02N、朊毒 A013（atar 含 organic）照樣打得到；JASS 也沒有任何腳本排除帶 A070（IsSuit Tag）的單位
+ * （A02N 的施法觸發 OW／RW 12931–12935 只移除目標身上的 B009；A013 的 Ou 11730 條件不可能成立）。
+ * 穿衣是 S001 原地變形（15960–16040），身上的感染 buff 也會跟著留下。
+ */
 function suitUnit(s: SuitSpec): UnitDef {
   return {
     id: s.id,
@@ -54,7 +60,7 @@ function suitUnit(s: SuitSpec): UnitDef {
     sight: 13,
     attack: s.attack,
     abilities: [...s.abilities, 'suit.drop'],
-    tags: ['personnel', 'suit'],
+    tags: ['personnel', 'suit', 'organic'],
     inv: 6,
     corpse: true,
   }
