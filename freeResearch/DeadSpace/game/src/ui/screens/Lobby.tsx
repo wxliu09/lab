@@ -4,6 +4,7 @@ import { MAX_PLAYERS, PLAYER_COLORS } from '../../shared/constants'
 import type { LobbySettings } from '../../shared/protocol/messages'
 import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
+import { hiddenByMute } from '../../client/chatFilter'
 import { sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
@@ -217,7 +218,8 @@ export function Lobby() {
   const [msg, setMsg] = useState('')
   const [copied, setCopied] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
-  const lines = chatLog.value
+  // 本機封鎖（client/mute.ts）也套用到大廳聊天：被封鎖的人說的話不顯示，系統訊息照常
+  const lines = chatLog.value.filter((l) => !hiddenByMute(l))
   useEffect(() => {
     const el = chatRef.current
     if (el) el.scrollTop = el.scrollHeight

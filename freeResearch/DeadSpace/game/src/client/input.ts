@@ -12,7 +12,7 @@ import { CONSOLE_KINDS, CONSOLE_LOCK_PAD, CONSOLE_R, DEFAULT_BODY_R, consoleAppr
 import { entDefName } from '../ui/names'
 import { loc, t } from '../ui/i18n'
 import { showCursorTip } from '../ui/tooltip'
-import { cmdTaps, sendCmd, snapTick, world } from './session'
+import { cmdTaps, hostGone, sendCmd, snapTick, world } from './session'
 import { EXPOSING_ABILITIES, canShapeshift, looksNamed, watcherCount } from './exposure'
 import { giveRefusal } from './give'
 import { meCtx, rightClickAction, rummageClick } from './interactKind'
@@ -62,7 +62,7 @@ export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
  * 各個對話框登記「我現在開著嗎」（避免 client → ui 的循環 import）：
  * 開著時不做邊緣捲動、不顯示場景懸停，遊戲快捷鍵也不處理（免得在設定、圖鑑裡按 Q／1 就放技能、用道具）。
  */
-export const modalChecks: (() => boolean)[] = [() => evolveOpen.value, () => menuOpen.value]
+export const modalChecks: (() => boolean)[] = [() => evolveOpen.value, () => menuOpen.value, () => hostGone.value]
 /** 不擋快捷鍵的側邊面板（調查筆記：邊看邊操作）：開著時只停用邊緣捲動與場景懸停 */
 export const panelChecks: (() => boolean)[] = []
 /** 開著時仍可按 Enter 聊天的對話框（結算畫面：賽後聊天）；要和 modalChecks 登記同一個函式 */
@@ -95,6 +95,12 @@ export function isPiloting(): boolean {
   const d = world.ents.get(c)?.s.d ?? ''
   return d.startsWith('station.') || (d.startsWith('ship.') && d !== 'ship.pod') || d === 'npc.defenseDrone'
 }
+
+/**
+ * Alt＋左鍵發小地圖信號（client/mapPing.ts 註冊）：mapPing 要 import input（本機提示），反過來由它登記，避免循環 import。
+ * 回傳是否處理了這一下（處理了就不再當成選取或瞄準）。
+ */
+export const altClick: { ping: ((zone: number, x: number, y: number, bounds: { w: number; h: number } | null) => boolean) | null } = { ping: null }
 
 /** 以目前的自己判斷這個實體能不能收下拖過來的道具（見 give.ts 的 giveRefusal）*/
 export function giveRefusalHere(s: SnapEntity | undefined): string | null {
@@ -484,6 +490,12 @@ export class Input {
       return
     }
     if (e.button === 0) {
+      // Alt＋左鍵＝在那裡發信號（全員的小地圖與地面都會閃一下）；瞄準中也可以，瞄準照樣保留
+      if (e.altKey && altClick.ping) {
+        e.preventDefault()
+        if (pt) altClick.ping(zone, pt.x, pt.y, this.scene.zones.get(zone)?.layout ?? null)
+        return
+      }
       if (tm) {
         // 沒有送出指令（點空了、附近也沒有可選的目標）：保持瞄準，不要無聲取消
         const r = this.el.getBoundingClientRect()
@@ -641,6 +653,8 @@ export class Input {
   private key(e: KeyboardEvent, down: boolean): void {
     // 聊天框剛打開、還沒拿到焦點的那一瞬間也不觸發快捷鍵
     if (typingInField() || chatOpen.value) return
+    // 單按 Alt（Alt＋點發信號）：不要讓瀏覽器把焦點移到選單列（Windows、Firefox 放開 Alt 會打開選單）
+    if (e.key === 'Alt') e.preventDefault()
     if (dialogOpen()) {
       // 對話框開著：遊戲快捷鍵一律不處理。各對話框的 Esc 在 capture 階段自己處理；進化選單在這裡用 Esc／V 關掉。
       // 方向鍵放開照樣送出，免得在對話框打開前按著的方向鍵卡住、鏡頭一直捲

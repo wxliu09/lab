@@ -191,7 +191,7 @@ describe('調查筆記：本機封鎖', () => {
 })
 
 describe('說明面板：操作表', () => {
-  it('小地圖信號（Alt＋點小地圖）接在小地圖之後、-list 群組接在聊天之後；兩種語言都有', () => {
+  it('小地圖信號（Alt＋左鍵）接在小地圖之後、-list 群組接在聊天之後；兩種語言都有', () => {
     expect(HELP_CONTROLS.indexOf('ping')).toBe(HELP_CONTROLS.indexOf('minimap') + 1)
     expect(HELP_CONTROLS.indexOf('group')).toBe(HELP_CONTROLS.indexOf('chat') + 1)
     for (const k of ['ping', 'group']) {
@@ -201,7 +201,7 @@ describe('說明面板：操作表', () => {
       }
     }
     expect(GUIDE_ZH['guide.ctl.ping.k']).toContain('Alt')
-    expect(GUIDE_ZH['guide.ctl.ping']).toContain('活人給活人、死者給死者')
+    expect(GUIDE_ZH['guide.ctl.ping']).toContain('活人只給活人、死者只給死者')
     expect(GUIDE_EN['guide.ctl.ping.k']).toContain('Alt')
     expect(GUIDE_ZH['guide.ctl.group.k']).toBe('-list 群組')
     expect(GUIDE_ZH['guide.ctl.group']).toContain('只有成員能查')

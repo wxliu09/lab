@@ -13,6 +13,7 @@ import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 import { meCtx, promptKey } from '../client/interactKind'
 import { lastInteract } from '../client/input'
+import { isMuted } from '../client/mute'
 import { panelEntries, pickPanel } from '../client/interactPanels'
 import { consoleSpots, type ConsoleSpot } from './moveTargets'
 
@@ -96,7 +97,8 @@ export class Overlay {
     const bodies: { l: number; r: number; t: number; b: number }[] = []
     const bubbles = new Map<number, { text: string; color: number }>()
     world.bubbles = world.bubbles.filter((b) => b.until > now)
-    for (const b of world.bubbles) bubbles.set(b.e, b)
+    // 本機封鎖的人（client/mute.ts）的泡泡不畫
+    for (const b of world.bubbles) if (!isMuted(b.from)) bubbles.set(b.e, b)
     /** 聊天泡泡最後才畫：要避開名字、互動提示、設施標籤 */
     const pendingBubbles: { sx: number; bottom: number; text: string }[] = []
     for (const [id, uv] of scene.units.views) {

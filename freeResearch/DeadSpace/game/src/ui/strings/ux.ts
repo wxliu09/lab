@@ -194,6 +194,19 @@ export const UX_ZH: Record<string, string> = {
   'r3b.devour.no.person': '不能吞噬：吞不了玩家（不論什麼形態）',
   'r3b.devour.no.kind': '不能吞噬：只吞得下小動物、失敗／暴走實驗體、異常體和 NPC 船員',
   'r3b.panel.tabHint': '範圍內有好幾台：點分頁切換（右鍵點哪台也會切到那台）',
+
+  // ───── 第 4 輪審查（client：小地圖信號、主機離開、筆記按鈕）─────
+  'r4c.ping.chat': '{name} 標記了小地圖',
+  'r4c.ping.at': '（{place}）',
+  'r4c.ping.slow': '信號發太快了，稍等一下再發',
+  'r4c.minimap.hint': '左鍵：看那裡 · 右鍵：走過去 · Alt＋左鍵：發信號給大家',
+  'r4c.notes.body': '替每位玩家標記信任或懷疑、寫筆記，也看得到驗血報告，還能把筆記分享給別人。開著照樣能操作。',
+  'r4c.hostGone.title': '主機已離開',
+  'r4c.hostGone.body': '主機已離開，這局無法繼續。',
+  'r4c.hostGone.bodyEnded': '主機已離開房間，沒辦法再回到大廳。',
+  'r4c.hostGone.why': '對局是在主機的瀏覽器裡執行的：主機關掉分頁或斷線太久，其他人的畫面就會停住。',
+  'r4c.hostGone.leave': '回主選單',
+  'r4c.hostLost.wait': '正在等主機回來；主機若已離開，稍後會提示你回主選單',
 }
 
 export const UX_EN: Record<string, string> = {
@@ -388,6 +401,19 @@ export const UX_EN: Record<string, string> = {
   'r3b.devour.cd': 'Can devour (+{n} EP); Devour is cooling down: {s}s left',
   'r3b.devour.blocked': 'Can devour (+{n} EP), but Devour is blocked right now (silenced)',
   'r3b.devour.no.person': 'Cannot devour: players can’t be devoured, in any form',
-  'r3b.devour.no.kind': 'Cannot devour: only small animals, failed or rampant experiments, anomalies and NPC crew',
+  'r3b.devour.no.kind': 'Cannot devour: only small animals, failed or rampant experiments, Anomalies and NPC crew',
   'r3b.panel.tabHint': 'Several are in range: click a tab to switch (right-clicking one also switches to it)',
+
+  // ───── Round 4 review (client: minimap pings, host left, notes button) ─────
+  'r4c.ping.chat': '{name} pinged the minimap',
+  'r4c.ping.at': ' ({place})',
+  'r4c.ping.slow': 'Pinging too fast: wait a moment',
+  'r4c.minimap.hint': 'Left-click: look there · Right-click: walk there · Alt+left-click: ping for everyone',
+  'r4c.notes.body': 'Mark each player as trusted or suspected, keep notes, read blood-test reports and share your notes. You can keep playing while it is open.',
+  'r4c.hostGone.title': 'The host has left',
+  'r4c.hostGone.body': 'The host has left, so this game can’t continue.',
+  'r4c.hostGone.bodyEnded': 'The host has left the room, so there is no lobby to go back to.',
+  'r4c.hostGone.why': 'The game runs in the host’s browser: when the host closes the tab or stays disconnected for too long, everyone else’s game freezes.',
+  'r4c.hostGone.leave': 'Back to main menu',
+  'r4c.hostLost.wait': 'Waiting for the host to come back; if the host has left, you will be offered a way back to the main menu',
 }

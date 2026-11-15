@@ -10,6 +10,9 @@ import { TrysteroTransport, loadNetSettings } from '../net/trystero'
 import { randomId, type Transport } from '../net/transport'
 import { ClientWorld } from './world'
 import { deathLines, noteDeath } from './deathNote'
+import { clearMuted } from './mute'
+import { hiddenByMute } from './chatFilter'
+import { hostGoneNow } from './hostGone'
 import { t } from '../ui/i18n'
 
 export type Screen = 'menu' | 'connecting' | 'lobby' | 'game'
@@ -36,7 +39,9 @@ function receiveChat(lines: ChatLine[]): void {
   chatLog.value = [...chatLog.value, ...lines].slice(-200)
   // 死因收給死亡橫幅（只在那裡顯示，見 deathNote.ts）
   noteDeath(lines)
-  for (const tap of chatTaps) tap(lines)
+  // 被本機封鎖的人說的話：照樣收進 chatLog（解除封鎖後看得到），但不交給公告與音效（聊天紀錄、頭頂泡泡在顯示時略過）
+  const heard = lines.filter((l) => !hiddenByMute(l))
+  if (heard.length) for (const tap of chatTaps) tap(heard)
 }
 export const endResult = signal<EndResult | null>(null)
 export const notice = signal('')
@@ -59,6 +64,40 @@ export const hostConflict = signal(false)
 /** 每次快照後遞增，讓 HUD 重新讀取 world.me */
 export const snapTick = signal(0)
 export const connLost = signal(false)
+/**
+ * 客人端：主機確定離開了（失聯後過了寬限時間仍沒有重新連上，hostGone.ts）。Banner 改顯示「主機已離開」對話框；
+ * 寬限內維持「與主機的連線中斷」橫幅與自動重連，重連成功（welcome）就清掉。
+ */
+export const hostGone = signal(false)
+/** 最後一次收到主機任何訊息的本地時間（performance.now，ms；0 = 還沒收過）*/
+let lastHostMsgAt = 0
+/** 傳輸層回報主機失聯的時間、與當時最後一次收到主機訊息的時間（0 = 沒有失聯）*/
+let lostAt = 0
+let lostMsgAt = 0
+let goneTimer: ReturnType<typeof setInterval> | null = null
+function watchGone(on: boolean): void {
+  if (goneTimer) clearInterval(goneTimer)
+  goneTimer = null
+  hostGone.value = false
+  lostAt = 0
+  if (!on) return
+  lostAt = performance.now()
+  lostMsgAt = lastHostMsgAt
+  let last = lostAt
+  goneTimer = setInterval(() => {
+    const now = performance.now()
+    // 自己的主執行緒剛卡過（計時器遲到）：佇列裡可能還有主機的訊息沒處理，這一輪不判斷
+    const late = now - last > 1500
+    last = now
+    if (late) return
+    if (!connLost.value || isHost.value) return watchGone(false)
+    if (hostGoneNow(now, lostAt, lostMsgAt, lastHostMsgAt)) {
+      hostGone.value = true
+      if (goneTimer) clearInterval(goneTimer)
+      goneTimer = null
+    }
+  }, 500)
+}
 /**
  * 主機超過 1.5 秒沒送快照（多半是主機在建站體、編譯 shader）：客人顯示「主機載入中…」輕提示，恢復後自動消失。
  * 跟傳輸層的 10 秒失聯偵測無關。
@@ -170,10 +209,12 @@ function onHostMsg(m: HostMsg): void {
     recvLog.push(m.t)
     if (recvLog.length > 5000) recvLog.splice(0, 1000)
   }
+  lastHostMsgAt = performance.now()
   switch (m.t) {
     case 'welcome':
       mySlot.value = m.slot
       connLost.value = false
+      watchGone(false)
       if (screen.value === 'connecting') screen.value = 'lobby'
       break
     case 'reject':
@@ -201,6 +242,8 @@ function onHostMsg(m: HostMsg): void {
       if (!keep) {
         chatLog.value = []
         deathLines.value = []
+        // 本機封鎖只管這一局（換局清空；同一局重連照樣保留）
+        clearMuted()
       }
       screen.value = 'game'
       watchStall(true)
@@ -251,8 +294,12 @@ function attach(client: NetClient): void {
   net = client
   client.onMsg(onHostMsg)
   client.onHostLost(() => {
+    if (net !== client) return
     connLost.value = true
-    if (!isHost.value) notice.value = t('net.hostLost')
+    if (!isHost.value) {
+      notice.value = t('net.hostLost')
+      watchGone(true)
+    }
   })
   const watchConflict = setInterval(() => {
     if (!net) clearInterval(watchConflict)
@@ -372,6 +419,10 @@ export function leave(clear = true): void {
   isHost.value = false
   world.reset()
   watchStall(false)
+  connLost.value = false
+  watchGone(false)
+  lastHostMsgAt = 0
+  clearMuted()
   if (clear) notice.value = ''
 }
 
@@ -410,5 +461,5 @@ function exposeTestHooks(): void {
 }
 
 if (__TEST_HOOKS__) {
-  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat }
+  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat, connLost, hostGone }
 }

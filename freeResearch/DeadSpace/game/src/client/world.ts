@@ -37,7 +37,8 @@ export class ClientWorld {
   fxQueue: FxEvent[] = []
   /** 消失的實體（給 render 淡出／死亡動畫）；目前沒有消費者，只保留最近 GONE_MAX 筆 */
   goneQueue: number[] = []
-  bubbles: { e: number; text: string; until: number; color: number }[] = []
+  /** 頭頂聊天泡泡；from = 發言者顯示名字（本機封鎖的人的泡泡在 overlay 畫的時候略過，事後才封鎖也立刻消失）*/
+  bubbles: { e: number; text: string; until: number; color: number; from: string }[] = []
   tick = 0
   snapCount = 0
   /** 最近一次收到快照的本地時間（performance.now，ms；0 = 這局還沒收到）：偵測主機卡住 */
@@ -166,7 +167,7 @@ export class ClientWorld {
 
   addChat(lines: ChatLine[]): void {
     for (const l of lines) {
-      if (l.e && l.ch === 'all') this.bubbles.push({ e: l.e, text: l.text, until: this.now() + 5, color: l.color })
+      if (l.e && l.ch === 'all') this.bubbles.push({ e: l.e, text: l.text, until: this.now() + 5, color: l.color, from: l.from })
     }
   }
 }

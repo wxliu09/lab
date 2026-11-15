@@ -9,12 +9,12 @@ import { itemTip } from '../itemTip'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
 import { aimAbility, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
-import type { GameScene } from '../../render/gameScene'
+import { stationDefOf, type GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
@@ -33,6 +33,12 @@ import { deathLines, deathScreenOnly } from '../../client/deathNote'
 import { EXPOSING_ABILITIES, watcherCount } from '../../client/exposure'
 import { DEFAULT_BODY_R, minimapMoveTarget } from '../../render/moveTargets'
 import { chatFade } from '../../client/chatFade'
+import { hiddenByMute } from '../../client/chatFilter'
+import { isMuted, mutedNames } from '../../client/mute'
+import { pingBoard, pingColor, pingLines, pingTaps, sendMapPing } from '../../client/mapPing'
+import { pingLook, type MapPing } from '../../client/pingBoard'
+import { pingFx } from '../../render/pingFx'
+import { notesOpen } from './Investigation'
 import '../strings/art3'
 import '../ui4.css'
 
@@ -131,6 +137,21 @@ export function TopBar() {
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
       <PauseBadge on={!!w.pz} />
+      {/* 調查筆記：原本只能按 Tab 開，只用滑鼠的人找不到 */}
+      <button
+        class={'small ghost icon-btn notes-btn' + (notesOpen.value ? ' on' : '')}
+        data-testid="notes-open"
+        aria-label={t('notes.title')}
+        aria-pressed={notesOpen.value}
+        onClick={(e) => {
+          notesOpen.value = !notesOpen.value
+          // 不留焦點：之後按空白鍵（回鏡頭）不會又按到這顆按鈕
+          ;(e.currentTarget as HTMLElement).blur()
+        }}
+        {...tipProps(() => ({ title: t('notes.title'), body: t('r4c.notes.body') }))}
+      >
+        <NotesGlyph on={notesOpen.value} />
+      </button>
       <button class="small ghost icon-btn" data-testid="mute" onClick={() => setAudioPref('muted', !audioPrefs.value.muted)} {...tipProps(() => ({ title: t('hud.mute') }))}>
         <Icon name={audioPrefs.value.muted ? 'muted' : 'sound'} size={18} color={audioPrefs.value.muted ? '#8b9aa8' : '#9fe7ff'} />
       </button>
@@ -149,6 +170,49 @@ export function TopBar() {
   )
 }
 
+/** 調查筆記按鈕的圖示（同 Icon 的線條＋發光風格）：夾板上的清單，開著時填色 */
+function NotesGlyph({ on }: { on: boolean }) {
+  const c = on ? '#5cf2a5' : '#9fe7ff'
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" aria-hidden="true" style={{ filter: `drop-shadow(0 0 3px ${c})` }}>
+      <path
+        d="M9 4H6.5A1.5 1.5 0 005 5.5v14A1.5 1.5 0 006.5 21h11a1.5 1.5 0 001.5-1.5v-14A1.5 1.5 0 0017.5 4H15M9 3h6v3H9zM8.5 10.5l1.2 1.2 2-2.2M13.5 10.8H16M8.5 15.5l1.2 1.2 2-2.2M13.5 15.8H16"
+        fill={on ? 'rgba(92,242,165,0.14)' : 'none'}
+        stroke={c}
+        stroke-width="1.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  )
+}
+
+/**
+ * 主機確定離開了（client/hostGone.ts）：這局沒辦法再繼續，畫面會一直停著。說明原因、給「回主選單」。
+ * 蓋在所有對話框之上（z 60）；主機其實只是卡住、之後又連回來時自動消失。
+ */
+function HostGoneDialog() {
+  const btn = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => btn.current?.focus(), [])
+  const ended = !!endResult.value
+  return (
+    <div class="modal-back host-gone-back" data-testid="host-gone" style={{ zIndex: 60 }}>
+      <div class="panel modal host-gone" role="alertdialog" aria-modal="true" aria-labelledby="host-gone-title" aria-describedby="host-gone-body">
+        <h2 id="host-gone-title">{t('r4c.hostGone.title')}</h2>
+        <p id="host-gone-body" class="host-gone-body">
+          {t(ended ? 'r4c.hostGone.bodyEnded' : 'r4c.hostGone.body')}
+        </p>
+        <p class="dim host-gone-why">{t('r4c.hostGone.why')}</p>
+        <div class="row">
+          <button ref={btn} class="primary grow" data-testid="host-gone-leave" onClick={() => leave()}>
+            {t('r4c.hostGone.leave')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Banner() {
   void snapTick.value
   const me = world.me
@@ -162,6 +226,8 @@ export function Banner() {
         </button>
       </div>
     )
+  // 主機確定離開了（失聯超過寬限時間）：對話框取代「連線中斷」橫幅；短暫失聯照樣只顯示橫幅、自動重連
+  if (hostGone.value && !isHost.value) return <HostGoneDialog />
   if (gpuLost.value)
     return (
       <div class="panel banner banner-critical" data-testid="gpu-lost" style={{ zIndex: 60 }}>
@@ -176,7 +242,14 @@ export function Banner() {
         )}
       </div>
     )
-  if (connLost.value) return <div class="panel banner">{t('net.hostLost')}</div>
+  // 短暫失聯：自動重連中。客人多一行說明：主機真的走了的話，稍後會跳出對話框讓你回主選單（不用一直盯著凍結的畫面）
+  if (connLost.value)
+    return (
+      <div class="panel banner" data-testid="host-lost">
+        {t('net.hostLost')}
+        {!isHost.value && <div class="banner-sub">{t('r4c.hostLost.wait')}</div>}
+      </div>
+    )
   // 開局等所有人載入完才開始：畫面靜止不是當機。主機的人數裡可能算著自己（還沒回報、或剛回報主機還沒收到）：
   // 扣掉自己才是「其他玩家」；單機練習只有自己一個真人，不會有「等待其他玩家」
   const others = othersLoading(Number(world.w.ld ?? 0))
@@ -231,6 +304,18 @@ export function Minimap(props: { scene: GameScene }) {
     },
     [],
   )
+  // 小地圖信號（client/mapPing.ts）：場景地面上也畫一個圈（只在那個 zone 正在顯示時看得到）
+  useEffect(() => {
+    const tap = (p: MapPing) => {
+      const sc = sceneRef.current
+      if (sc) pingFx(sc.fx, p.z, p.x, p.y, pingColor(p.color))
+    }
+    pingTaps.push(tap)
+    return () => {
+      const i = pingTaps.indexOf(tap)
+      if (i >= 0) pingTaps.splice(i, 1)
+    }
+  }, [])
   useEffect(() => {
     let raf = 0
     const draw = () => {
@@ -306,6 +391,7 @@ export function Minimap(props: { scene: GameScene }) {
       x.lineWidth = 2
       const vw = scene.rts.distance() * 1.1
       x.strokeRect(ox + (tx - vw) * k, oy + (l.h - ty - vw * 0.55) * k, vw * 2 * k, vw * 1.1 * k)
+      drawPings(x, scene.zone, (wx, wy) => [ox + wx * k, oy + (l.h - wy) * k])
     }
     draw()
     return () => cancelAnimationFrame(raf)
@@ -365,13 +451,19 @@ export function Minimap(props: { scene: GameScene }) {
             .filter((q) => info.layout.roomOf[q.row * info.layout.w + q.col] === room.index)
             .map((q) => poiName(q.def.kind, q.def.ref))
             .filter(Boolean)
-          showCursorTip({ title: loc(room.spec.name), body: listJoin([...new Set(things)]) || undefined, hint: t(tm ? 'art3.minimap.aim' : 'minimap.hint') }, e.clientX, e.clientY)
+          showCursorTip({ title: loc(room.spec.name), body: listJoin([...new Set(things)]) || undefined, hint: t(tm ? 'art3.minimap.aim' : 'r4c.minimap.hint') }, e.clientX, e.clientY)
         }}
         onMouseLeave={() => showCursorTip(null, 0, 0)}
         onMouseDown={(e) => {
           const p = toWorld(e)
           const scene = sceneRef.current
           if (!p || !scene) return
+          // Alt＋左鍵：在那裡發信號（全員的小地圖與地面都會閃一下）。瞄準中也可以，瞄準照樣保留
+          if (e.button === 0 && e.altKey) {
+            e.preventDefault()
+            sendMapPing(scene.zone, p.x, p.y, scene.zone !== 0 ? scene.zones.get(scene.zone)?.layout : null)
+            return
+          }
           const tm = targetMode.value
           if (tm) {
             // 瞄準中：右鍵取消（同場景）；左鍵＝在小地圖上選目標（救生艙設定航線、天守主砲…），A 攻擊＝攻擊移動到那裡
@@ -544,6 +636,53 @@ function drawSpace(c: HTMLCanvasElement, scene: GameScene): void {
   x.strokeStyle = MINIMAP.view
   x.lineWidth = 2
   x.strokeRect(ox + (tx - vw) * k, oy - (ty + vw * 0.55) * k, vw * 2 * k, vw * 1.1 * k)
+  drawPings(x, 0, (wx, wy) => [ox + wx * k, oy - wy * k])
+}
+
+/**
+ * 小地圖上的信號（client/mapPing.ts，畫布是 2 倍解析度）：發送者顏色的圈＋四個準星刻度＋往外擴散的波紋，約 4 秒。
+ * 圈有深色外框與白色內圈：暗的玩家色、色盲時也看得出來，而且是空心圈＋刻度，不會和實心的玩家圓點搞混。
+ */
+function drawPings(x: CanvasRenderingContext2D, zone: number, at: (wx: number, wy: number) => [number, number]): void {
+  const now = performance.now()
+  for (const p of pingBoard.active(now)) {
+    if (p.z !== zone) continue
+    const look = pingLook(now - p.at)
+    if (!look) continue
+    const [px, py] = at(p.x, p.y)
+    const col = pingColor(p.color)
+    const ring = (r: number, w: number, c: string) => {
+      x.lineWidth = w
+      x.strokeStyle = c
+      x.beginPath()
+      x.arc(px, py, r, 0, Math.PI * 2)
+      x.stroke()
+    }
+    x.save()
+    for (const wv of look.waves) {
+      x.globalAlpha = wv.a
+      ring(10 + wv.r * 30, 5, 'rgba(0,0,0,0.45)')
+      ring(10 + wv.r * 30, 2.6, col)
+    }
+    x.globalAlpha = look.core
+    ring(10, 6.5, 'rgba(0,0,0,0.75)')
+    ring(10, 3.4, col)
+    ring(6, 1.3, 'rgba(255,255,255,0.92)')
+    // 準星刻度（上下左右）
+    x.lineCap = 'round'
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      x.beginPath()
+      x.moveTo(px + dx * 13, py + dy * 13)
+      x.lineTo(px + dx * 19, py + dy * 19)
+      x.lineWidth = 5.5
+      x.strokeStyle = 'rgba(0,0,0,0.75)'
+      x.stroke()
+      x.lineWidth = 2.6
+      x.strokeStyle = col
+      x.stroke()
+    }
+    x.restore()
+  }
 }
 
 export function Portrait() {
@@ -978,8 +1117,9 @@ export function Chat() {
       if (dwell) clearTimeout(dwell)
     }
   }, [])
-  // 死因與「你死了…」只在死亡橫幅顯示（deathNote.ts），聊天紀錄不重複列出
-  const lines = chatLog.value.filter((l) => !deathScreenOnly(l)).slice(-12)
+  // 死因與「你死了…」只在死亡橫幅顯示（deathNote.ts），聊天紀錄不重複列出；本機封鎖的人說的話不顯示（chatFilter.ts）
+  void mutedNames.value
+  const lines = chatLog.value.filter((l) => !deathScreenOnly(l) && !hiddenByMute(l) && !isMuted(pingLines.get(l)?.name ?? '')).slice(-12)
   const now = performance.now()
   const stamps = lines.map((l) => chatStamp(l, now))
   const reveal = chatOpen.value || hover
@@ -1004,16 +1144,20 @@ export function Chat() {
   return (
     <>
       <div ref={logRef} class={'chat' + (chatOpen.value ? ' typing' : '') + (reveal ? ' reveal' : '')} data-testid="chatlog">
-        {lines.map((l, i) => (
-          <div key={stamps[i].key} class={'line ' + (l.ch === 'sys' || l.ch === 'private' ? 'sys' : l.ch) + (faded[i] ? ' faded' : '')}>
-            {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
-            {l.ch === 'team' && <span>[{t('chat.team')}] </span>}
-            {l.group && <span>[{l.group}] </span>}
-            {l.from && <b style={{ color: textColorOf(l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : undefined) }}>{localizeName(l.from)}: </b>}
-            {!l.from && l.ch === 'all' && <b class="dim">???: </b>}
-            {sysText(l.text)}
-          </div>
-        ))}
+        {lines.map((l, i) => {
+          const pg = pingLines.get(l)
+          if (pg) return <PingChatLine key={stamps[i].key} name={pg.name} color={pg.color} z={pg.z} faded={faded[i]} />
+          return (
+            <div key={stamps[i].key} class={'line ' + (l.ch === 'sys' || l.ch === 'private' ? 'sys' : l.ch) + (faded[i] ? ' faded' : '')}>
+              {l.ch === 'dead' && <span class="dim">[{t('chat.dead')}] </span>}
+              {l.ch === 'team' && <span>[{t('chat.team')}] </span>}
+              {l.group && <span>[{l.group}] </span>}
+              {l.from && <b style={{ color: textColorOf(l.color >= 0 ? PLAYER_COLORS[l.color]?.hex : undefined) }}>{localizeName(l.from)}: </b>}
+              {!l.from && l.ch === 'all' && <b class="dim">???: </b>}
+              {sysText(l.text)}
+            </div>
+          )
+        })}
       </div>
       {chatOpen.value && (
         <div class="chatinput">
@@ -1037,6 +1181,32 @@ export function Chat() {
         </div>
       )}
     </>
+  )
+}
+
+/** 信號所在的地點名稱（太空層、站點或船艙；同型的船不加編號）*/
+function pingPlace(z: number): string {
+  if (z === 0) return t('spec.space')
+  const st = startInfo.value?.zones.find(([id]) => id === z)?.[2]
+  return st ? loc(stationDefOf(st)?.name) : ''
+}
+
+/** 聊天紀錄裡的信號行（client/mapPing.ts 加的本機訊息）：「◎ 名字 標記了小地圖（地點）」，名字用發送者的顏色 */
+function PingChatLine({ name, color, z, faded }: { name: string; color: number; z: number; faded: boolean }) {
+  const col = pingColor(color)
+  // 名字放在字串裡的位置依語言不同：用記號切開，中間換成上色的名字
+  const [pre, post = ''] = t('r4c.ping.chat', { name: '\u0001' }).split('\u0001')
+  const place = pingPlace(z)
+  return (
+    <div class={'line ping' + (faded ? ' faded' : '')} data-testid="ping-line" style={{ borderLeftColor: col }}>
+      <span class="ping-ico" aria-hidden="true" style={{ color: col }}>
+        ◎
+      </span>{' '}
+      {pre}
+      <b style={{ color: textColorOf(color >= 0 ? PLAYER_COLORS[color]?.hex : undefined) }}>{localizeName(name) || '???'}</b>
+      {post}
+      {place && <span class="dim">{t('r4c.ping.at', { place })}</span>}
+    </div>
   )
 }
 
