@@ -7,7 +7,8 @@ import { makeItem } from '../systems/items'
 import { sampleListArgs, sampleUnitToken } from '../../shared/sysArgs'
 import { UNITS } from '../../shared/content/registry'
 import type { Ent, ItemInst } from '../ent'
-import type { Game } from '../game'
+import type { Game, GamePlayer } from '../game'
+import { entView } from '../systems/snapshot'
 
 /** 一份樣本：真正提供血液的玩家槽位、抽血者眼中的身分 key（判定「已抽過」用）、顯示名稱、結果（1 乾淨、2 感染、3 錯誤）*/
 export interface Sample {
@@ -118,6 +119,7 @@ regScript('git.draw', (g, ctx) => {
     }
   }
   say('git.msg.extracted', { n: keys.length, max: SAMPLES_PER_DEVICE })
+  if (p) notifyDrawn(g, u, p)
   g.emitFx({ k: 'gitDraw', z: u.zone, x: t.x, y: t.y, e: t.id }, u.owner >= 0 ? [u.owner] : undefined)
   if (u.owner >= 0) g.players[u.owner]!.stats.tests++
   // 抽滿三份：裝置轉成解析器（帶著同一份樣本）
@@ -129,6 +131,18 @@ regScript('git.draw', (g, ctx) => {
     say('git.msg.full')
   }
 })
+
+/**
+ * 被抽血的人私訊一句「X 抽了你的血」（第 6 輪審查 A P3：增加社交互動）。
+ * X 用被抽血者「此刻眼中」的抽血者（和他的快照完全同一套規則 entView：偽裝就是偽裝對象、通訊病毒期間就是換到的名字）；
+ * 抽血要貼身 3 秒，被抽的人本來就看得到是誰。看不到抽血者（隱形）或抽血者沒有名字（匿名形態、蒙面）就不說：
+ * 不能讓這則私訊告訴他附近有一個看不見的人
+ */
+function notifyDrawn(g: Game, u: Ent, victim: GamePlayer): void {
+  if (victim.slot === u.owner || !victim.alive || victim.bot || !victim.view.visible.has(u.id)) return
+  const n = entView(g, victim, u).n
+  if (n) g.privateLine(victim.slot, 'git.msg.drawnBy', { name: n })
+}
 
 regScript('git.results', (g, ctx) => {
   const buyer = ctx.caster

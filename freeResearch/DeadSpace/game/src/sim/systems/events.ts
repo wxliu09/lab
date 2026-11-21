@@ -62,6 +62,8 @@ export interface EventState {
   waspNext: number
   /** 門故障到期 */
   doorsUntil: number
+  /** 門故障開始的時間（剛公告過的這段時間內，等門的私訊不再重複說一次，見 movement.ts）*/
+  doorsAt: number
   doorPhase: Map<string, boolean>
   /** 小行星 */
   waves: number[]
@@ -137,10 +139,22 @@ export const STATION_KILLERS: ReadonlySet<string> = new Set(['wasps', 'asteroids
 /** 簡單練習局整局都不會隨機抽到的事件：通訊病毒（名字與顏色互換，新手很難跟上誰是誰；除錯強制觸發不受影響）*/
 export const EASY_NEVER: ReadonlySet<string> = new Set(['virus'])
 
-/** 這個事件現在能不能被隨機抽到（只出原作事件的大廳設定、簡單練習局的開局保護）*/
+/**
+ * 通訊病毒（本作接上的額外事件，原作 1.8.2 是死碼、從來不會發生）在開局這麼多秒之前不會被隨機抽到：
+ * 開局 3 分鐘就換名字，大家連彼此的真名都還沒認熟，只會一頭霧水（第 6 輪審查 A P2）。
+ * 「只出原作事件」的大廳設定本來就不出這個事件，所以這條只影響本作預設；強制觸發（測試、除錯）不受影響
+ */
+export const VIRUS_EARLIEST = 600
+/** 通訊病毒換掉的名字與顏色維持多久（秒；從換好名字起算），之後全部恢復 */
+export const VIRUS_SWAP_S = 180
+/** 通訊病毒先清空名字多久（秒）才換上別人的名字 */
+const VIRUS_BLANK_S = 10
+
+/** 這個事件現在能不能被隨機抽到（只出原作事件的大廳設定、簡單練習局的開局保護、通訊病毒的開局保護）*/
 function drawable(g: Game, id: string): boolean {
   if (originalEventsOnly(g) && EXTRA_EVENTS.has(id)) return false
   if (g.practice && isEasy(g) && EASY_NEVER.has(id)) return false
+  if (id === 'virus' && g.time < VIRUS_EARLIEST) return false
   return !(g.practice && isEasy(g) && g.time < EASY_SAFE_UNTIL && STATION_KILLERS.has(id))
 }
 
@@ -319,6 +333,7 @@ const EVENTS: EventDef[] = [
     ok: (g) => eventsOf(g).doorsUntil <= g.time,
     run: (g) => {
       eventsOf(g).doorsUntil = g.time + R(g, [300, 600])
+      eventsOf(g).doorsAt = g.time
       g.systemAll('event.doors')
       return true
     },
@@ -369,9 +384,10 @@ const EVENTS: EventDef[] = [
     },
   },
   {
-    // 通訊病毒：名字清空 10 秒後，「本名」部分與顏色隨機互換。頭銜（職業前綴、晉升頭銜）跟著人走，不跟著名字換：
+    // 通訊病毒：名字清空 10 秒後，「本名」部分與顏色隨機互換，VIRUS_SWAP_S 秒後全部恢復。頭銜（職業前綴、晉升頭銜）跟著人走，不跟著名字換：
     // 換名前後的名字一律是「自己的頭銜＋顯示用本名」（職業本來就看得到），不會出現有前綴、沒前綴的兩個「幾乎同名」的人。
-    // 換好後私訊每個人自己的新名字（name 參數由 client 依語言換掉職業前綴）。
+    // 換好時私訊每個人「別人眼中的你現在叫什麼、多久後恢復」，恢復時再私訊一次（name 參數由 client 依語言換掉職業前綴）。
+    // 私訊只說自己的名字，不說別人換成了誰（那正是這個事件要藏的東西）。
     id: 'virus',
     once: true,
     next: [90, 1200],
@@ -380,10 +396,11 @@ const EVENTS: EventDef[] = [
       const ps = humans(g)
       for (const p of ps) {
         p.data.virusTitle = nameTitle(p)
+        p.data.virusColor = p.color
         setShownName(g, p, '', p.color)
       }
       g.systemAll('event.virus')
-      g.after(10, () => {
+      g.after(VIRUS_BLANK_S, () => {
         const names = g.world.rng.shuffle(ps.map((p) => shownBase(p)))
         const colors = g.world.rng.shuffle(ps.map((p) => p.color))
         ps.forEach((p, i) => {
@@ -392,8 +409,9 @@ const EVENTS: EventDef[] = [
           p.data.shownBase = names[i]
           setShownName(g, p, title + names[i], colors[i])
         })
-        g.systemAll('event.virusDone')
-        for (const p of ps) g.privateLine(p.slot, 'event.virusYou', { name: p.name })
+        g.systemAll('event.virusDone', { s: VIRUS_SWAP_S })
+        for (const p of ps) g.privateLine(p.slot, 'event.virusYou', { name: p.name, s: VIRUS_SWAP_S })
+        g.after(VIRUS_SWAP_S, () => endVirus(g, ps))
       })
       return true
     },
@@ -453,6 +471,20 @@ const AGENT_TITLE = '特務·'
 function nameTitle(p: GamePlayer): string {
   const base = shownBase(p)
   return p.name.length > base.length && p.name.endsWith(base) ? p.name.slice(0, p.name.length - base.length) : ''
+}
+
+/** 通訊病毒結束：每個人的名字（頭銜照目前的，例如期間晉升的「特務·」）與顏色恢復原狀，私訊各自恢復後的名字 */
+function endVirus(g: Game, ps: GamePlayer[]): void {
+  if (g.ended) return
+  for (const p of ps) {
+    const title = nameTitle(p)
+    p.data.shownBase = undefined
+    const color = (p.data.virusColor as number | undefined) ?? p.color
+    p.data.virusColor = undefined
+    setShownName(g, p, title + p.baseName, color)
+  }
+  g.systemAll('event.virusEnd')
+  for (const p of ps) g.privateLine(p.slot, 'event.virusRestored', { name: p.name })
 }
 
 /** 名字與顏色（通訊病毒）：玩家、主單位、聊天、執行長的管家都跟著變（name 空字串 = 清空中）*/
@@ -909,6 +941,7 @@ export function installEvents(g: Game): void {
     waspLeft: 0,
     waspNext: 0,
     doorsUntil: 0,
+    doorsAt: -1e9,
     doorPhase: new Map(),
     waves: [],
     waveNext: 0,

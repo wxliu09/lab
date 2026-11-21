@@ -31,6 +31,8 @@ export function issue(u: Ent, o: Order | null, queue = false): void {
   }
   u.order = o
   u.queue.length = 0
+  // 新的命令（含明確下令的攻擊）：不再是 combat 自動索敵轉成的攻擊
+  if (u.data.autoAtk !== undefined) delete u.data.autoAtk
   u.path = null
   u.repathAt = 0
   u.stuckT = 0

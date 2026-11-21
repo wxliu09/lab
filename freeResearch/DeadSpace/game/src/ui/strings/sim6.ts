@@ -50,7 +50,7 @@ export const SIM6_ZH: Record<string, string> = {
   'git.msg.alreadySelf': '你已經抽過自己的血了：同一個人只能抽一次，換一個人抽。',
   'git.msg.notPerson': '抽不到血：只能對玩家角色抽血（NPC 船員、生物、無人機、設施、地上的東西都不行）。',
   // 通訊病毒換好名字後私訊本人（name 由 client 依語言換掉職業前綴）
-  'event.virusYou': '通訊病毒改寫了識別資料：你現在顯示的名字是「{name}」，顏色也可能換了。',
+  'event.virusYou': '通訊病毒：在別人眼中，你現在顯示為「{name}」（顏色也可能換了），約 {s} 秒後恢復。',
   // 上方大公告的標題句（全文較長的公告：大公告只顯示標題，全文在聊天紀錄）
   'st.bravadoImpact.title': '隕擊正在撕裂降落中的豪勇號',
   'st.bravadoImpactDoom.title': '隕擊正在撕裂豪勇號：別升空，撤到地表',
@@ -59,7 +59,7 @@ export const SIM6_ZH: Record<string, string> = {
     '每次隕擊的大氣擾動都在撕裂降落中的豪勇號船體：估計再撞擊 {n} 次就會解體，艦內的人會全部陪葬。末日期間別升空（太空只會更危險），艦內的人請從降落艙的傳送門撤到地表，避開紅色警戒圈與輻射區。',
   // ───── 第 3 輪 ─────
   // 門控制器故障：移動命令要穿過週期開關的門（每位真人 30 秒最多一次）
-  'move.doorWait': '門控制器故障中：門會週期性猛關。你的角色會在門前等開門的空檔再一口氣通過（別停在門縫裡）；修好時會公告。',
+  'move.doorWait': '門控制器故障中：正在門前等開門的空檔。',
   // 多人局：真人斷線（重連寬限內）與重新連上（名字是別人眼中的顯示名字）
   'sys.dropped': '{name} 斷線了（{s} 秒內可以重新連線）',
   'sys.rejoined': '{name} 重新連線了',
@@ -128,7 +128,7 @@ export const SIM6_EN: Record<string, string> = {
     'A xeno has implanted a parasite in you: it drains about 4.4 health per second (faster than you regenerate) and will not go away on its own. Given who you are, dying will not turn you into a xeno spawn, but left alone it keeps draining you. An Antibody Kit (sold at Medical Supplies) forces it dormant; it clears after 46 s.',
   'git.msg.alreadySelf': 'You have already drawn your own blood: each person can only be sampled once. Try someone else.',
   'git.msg.notPerson': "Can't draw blood from that: only player characters can be sampled (not NPC crew, creatures, drones, facilities or items on the floor).",
-  'event.virusYou': 'The comm virus rewrote the identity records: you now appear as "{name}", and your color may have changed too.',
+  'event.virusYou': 'Comm virus: to everyone else you now appear as "{name}" (your color may have changed too). It wears off in about {s} s.',
   'st.bravadoImpact.title': 'Impacts are tearing the landed Bravado apart',
   'st.bravadoImpactDoom.title': 'Bravado breaking up: take the portal to the surface',
   'st.bravadoImpactDoom':
@@ -136,7 +136,7 @@ export const SIM6_EN: Record<string, string> = {
   'st.bravadoImpactDoom.one':
     "The turbulence from every impact is tearing at the landed Bravado's hull: one more impact and it breaks apart, killing everyone aboard. Do not lift off during the apocalypse (space is only getting worse); anyone aboard should take the landing portal in the Drop Bay down to the surface, away from red warning circles and fallout zones.",
   // ───── Round 3 ─────
-  'move.doorWait': 'Door controllers are malfunctioning: doors slam shut on a cycle. Your character waits at the door for the next opening, then goes straight through (do not stop in the doorway). You will be told when it is repaired.',
+  'move.doorWait': 'Doors are malfunctioning: waiting at the door for the next opening.',
   'sys.dropped': '{name} disconnected (they have {s} s to reconnect)',
   'sys.rejoined': '{name} reconnected',
   'pause.timeout': 'The game was paused for {m} minutes, so practice has resumed.',

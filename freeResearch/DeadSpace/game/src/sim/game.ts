@@ -225,6 +225,11 @@ export class Game {
   onBuy?: (u: Ent, vendor: Ent, item: string) => void
   onMorph?: (u: Ent) => void
   customHostile?: (a: Ent, b: Ent) => boolean
+  /**
+   * 這個玩家單位最近被 NPC（船員、無人機…）或敵對生物打過、還在還擊時限內（ai/creatures.ts；給了 by 就只問是不是被 by 打過）：
+   * 閒置時連平常不自動索敵的人員也會還手
+   */
+  npcStruck?: (u: Ent, by?: Ent) => boolean
   /** 鎮定（降低敵對生物仇恨）*/
   isCalm?: (u: Ent) => boolean
   /** 對局中新增了 zone（事件站）：通知所有 client */

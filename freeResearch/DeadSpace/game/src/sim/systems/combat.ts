@@ -33,13 +33,21 @@ function canHit(a: AttackDef, t: Ent): boolean {
   return true
 }
 
-function acquire(g: Game, u: Ent): Ent | null {
+/**
+ * 平常不自動索敵的玩家單位（未著裝的人員）閒置時被 NPC 或敵對生物打：一樣自動還手（只打打他的那一個，見 acquire 的 only；
+ * 不會自動打玩家）。有移動等明確命令時照命令走，不會停下來還手
+ */
+function retaliating(g: Game, u: Ent, o: Ent['order']): boolean {
+  return !o && u.owner >= 0 && !!g.npcStruck?.(u)
+}
+
+function acquire(g: Game, u: Ent, only?: (t: Ent) => boolean): Ent | null {
   const r = Math.max(u.stats.range + 1, Math.min(u.stats.sight, 12))
   let best: Ent | null = null
   let bestD = Infinity
   const z = g.world.zones[u.zone]
   for (const t of g.world.query(u.zone, u.x, u.y, r)) {
-    if (!isHostile(g, u, t) || !canHit(u.def.attack!, t)) continue
+    if ((only && !only(t)) || !isHostile(g, u, t) || !canHit(u.def.attack!, t)) continue
     if (t.stats.stealth) continue
     const d = dist2(u, t)
     if (d >= bestD) continue
@@ -118,19 +126,28 @@ export function stepCombat(g: Game): void {
     let target: Ent | null = null
     if (o?.k === 'attack') {
       target = g.world.get(o.e!) ?? null
-      if (!target || !target.alive || target.zone !== u.zone) {
+      // 自動索敵轉成的攻擊（data.autoAtk）：對方不再是敵人（船員仇恨到期、被打的時限過了…）就放下，回到原本的命令。
+      // 明確下令的攻擊不受影響（玩家之間本來就只能明確下令）
+      const lapsed = !!target && u.data.autoAtk === target.id && !isHostile(g, u, target)
+      if (!target || !target.alive || target.zone !== u.zone || lapsed) {
         u.order = u.queue.shift() ?? null
         u.anim = 0
+        delete u.data.autoAtk
         continue
       }
-    } else if (o?.k === 'amove' || o?.k === 'hold' || ((!o || o.k === 'patrol') && u.acquire && !(u.pilot && u.stats.stealth))) {
+    } else if (
+      (o?.k === 'amove' || o?.k === 'hold' || ((!o || o.k === 'patrol') && (u.acquire || retaliating(g, u, o)) && !(u.pilot && u.stats.stealth))) &&
+      // AI 暫時不開火（範圍武器的目標旁邊有不該波及的人，見 ai/bots.ts splashRisk）
+      !(u.data.holdFire > t)
+    ) {
       // 駕駛中的隱形載具（隱蔽力場）不自動開火：開火會解除隱形，要打請明確下令
-      target = acquire(g, u)
+      target = acquire(g, u, u.acquire || o?.k === 'amove' || o?.k === 'hold' ? undefined : (t) => t.owner < 0 && !!g.npcStruck?.(u, t))
       if (target && o?.k === 'hold' && !inAttackRange(g, u, target)) target = null
       if (target && o?.k !== 'hold') {
         // 暫時轉成攻擊（保留原命令於佇列）
         if (o) u.queue.unshift(o)
         u.order = { k: 'attack', e: target.id }
+        u.data.autoAtk = target.id
       }
     }
     if (!target) {

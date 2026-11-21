@@ -116,7 +116,15 @@ export interface DeathReport {
   cause: HitView
   /** 擊殺者以外、最近的其他傷害來源（新的在前）*/
   hits: { v: HitView; dmg: number }[]
+  /**
+   * 死因的補充說明（私訊 key 的尾巴）：被 NPC 船員、防禦無人機打死時說明它們為什麼開火（ai/creatures.ts 的 NpcWhy：
+   * 你先傷到了船員、打到了無人機、被看到以怪物形態傷人…）。只說死者自己做過、或自己身上發生過的事
+   */
+  note?: string
 }
+
+/** NPC 記仇的原因多久內還算數（秒；比最長的仇恨時間再長一點）*/
+const NPC_WHY_TTL = 45
 
 /** 只統計這麼久以內的傷害來源（秒）*/
 const HIT_WINDOW = 30
@@ -216,7 +224,11 @@ export function deathReport(g: Game, p: GamePlayer, u: Ent, killer: Ent | null, 
     .reverse()
     .slice(0, HIT_LIST)
     .map((r) => ({ v: r.v, dmg: r.dmg }))
-  return { cause, hits }
+  // 被 NPC 船員、無人機打死：說明它們為什麼對你開火（「死得不明不白」第 6 輪審查 B P1）
+  const why = u.data.npcWhy as { why: string; t: number } | undefined
+  const npcKill = !!killer && killer.owner === NEUTRAL && (killer.def.ai === 'crew' || killer.def.ai === 'drone')
+  const note = npcKill && why && g.time - why.t <= NPC_WHY_TTL ? 'npc.' + why.why : undefined
+  return note ? { cause, hits, note } : { cause, hits }
 }
 
 function hitArgs(v: HitView): Record<string, string> {
@@ -234,6 +246,7 @@ function hitArgs(v: HitView): Record<string, string> {
 
 export function sendDeathReport(g: Game, p: GamePlayer, r: DeathReport): void {
   g.privateLine(p.slot, (r.cause.pod ? 'death.cause.pod.' : 'death.cause.') + r.cause.k, hitArgs(r.cause))
+  if (r.note) g.privateLine(p.slot, 'death.note.' + r.note)
   for (const h of r.hits) g.privateLine(p.slot, 'death.hit.' + h.v.k, { ...hitArgs(h.v), dmg: Math.max(1, Math.round(h.dmg)) })
 }
 
@@ -294,8 +307,15 @@ export function timelineCause(g: Game, p: GamePlayer, u: Ent, killer: Ent | null
   const now = !!ld && ld.t === g.time
   if (now && ld.lethal) return { k: ld.env ?? 'boom', args: {} }
   if (now && ld.env) return { k: ld.env, args: {} }
-  // 持續傷害：知道是誰下的就寫是誰，否則只說持續傷害
-  if (now && ld.buff && !(killer && killer.owner >= 0 && killer.owner !== p.slot)) return { k: 'dot', args: {} }
+  // 持續傷害：知道是誰下的單位還在就寫是誰（下面的 killerCause）；否則寫出是哪一種持續傷害（寄生、燃燒、酸蝕、輻射…，buff 名稱），
+  // 下手的人還查得到（施放的單位已經不在，例如變身換了 id）就一起寫
+  if (now && ld.buff && !(killer && killer.owner >= 0 && killer.owner !== p.slot)) {
+    const bn = BUFFS.get(ld.buff)?.name
+    if (!bn) return { k: 'dot', args: {} }
+    const ba = { uz: bn.zh, ue: bn.en }
+    const q = !killer && killerSlot >= 0 && killerSlot !== p.slot ? g.players[killerSlot] : undefined
+    return q ? { k: 'dotBy', args: { name: tlNameOf(q), ...ba } } : { k: 'dotOf', args: ba }
+  }
   if (killer) return killerCause(g, p, killer)
   if (killerSlot === p.slot) return { k: 'self', args: {} }
   const q = killerSlot >= 0 ? g.players[killerSlot] : undefined

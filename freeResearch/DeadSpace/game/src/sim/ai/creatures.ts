@@ -16,9 +16,25 @@ import { createShip, launchTo } from '../systems/space'
 /** 由 AI 決定敵意、平時中立的類型 */
 const HOSTILE_AI = new Set(['hostile', 'fox', 'turret', 'fleet', 'spaceHunter'])
 
+/**
+ * 船員、無人機記仇的原因（死因私訊用）：crew = 他打到了船員、drone = 他打到了防禦無人機、
+ * monster = 船員看到他以怪物形態傷人、helped = 船員看到有人在和他（怪物形態）交戰，出手幫忙
+ */
+export type NpcWhy = 'crew' | 'drone' | 'monster' | 'helped'
+
+/** 船員、無人機記仇多久（秒）：依這個人累積打掉 NPC 的血決定，擦到一下只記 AGGRO_MIN 秒，打掉半條以上記滿 AGGRO_MAX 秒；看到怪物傷人一律 AGGRO_MAX */
+export const AGGRO_MIN = 10
+export const AGGRO_MAX = 30
+/** 玩家單位被 NPC 打到後，這麼多秒內在閒置或原地（H）時會自動還擊那個 NPC（每挨一下重新計時）*/
+export const RETALIATE_S = 6
+
 interface CrewState {
   /** 船員記住的仇人：ent id → 到期時間 */
   aggro: Map<number, number>
+  /** 仇人累積打掉 NPC 的血（相對於被打的 NPC 最大生命；仇恨到期就清掉）：決定記仇多久 */
+  grudge: Map<number, number>
+  /** 玩家單位被哪些 NPC 打過：玩家單位 id → NPC id → 到期時間（閒置或原地時自動還擊，只對 NPC）*/
+  struck: Map<number, Map<number, number>>
   /** 已回報過的屍體 */
   reported: Set<number>
   /** 被玩家擊殺的蛞蝓仔／雪團獸數（第 15 次可能召來守衛）*/
@@ -27,7 +43,7 @@ interface CrewState {
 }
 
 function stateOf(g: Game): CrewState {
-  return (g.data.creatures ??= { aggro: new Map(), reported: new Set(), slugKills: 0, wardenDone: false }) as CrewState
+  return (g.data.creatures ??= { aggro: new Map(), grudge: new Map(), struck: new Map(), reported: new Set(), slugKills: 0, wardenDone: false }) as CrewState
 }
 
 /** 這件道具的攜帶被動會降低仇恨（鎮定薰香等）*/
@@ -68,6 +84,25 @@ export function pacifierTarget(b: Ent): boolean {
 /** 玩家操控的怪物形態（船員一看到正在傷人就開火）*/
 function monstrous(u: Ent): boolean {
   return u.owner >= 0 && !humanLooking(u) && !u.tags.has('structure') && !u.tags.has('ship') && !u.tags.has('station') && !u.tags.has('drone')
+}
+
+/**
+ * 一筆傷害讓船員、無人機記誰的仇（與原因）：打到船員、打到（沒人駕駛的）無人機的玩家單位；
+ * 以怪物形態打人或打船員的；被看起來是人的玩家打的怪物形態（船員出手幫忙）。都不是就 null
+ */
+function culpritOf(src: Ent, t: Ent): [Ent, NpcWhy] | null {
+  if (t.def.ai === 'crew' && src.owner >= 0) return [src, 'crew']
+  if (monstrous(src) && (humanLooking(t) || t.def.ai === 'crew')) return [src, 'monster']
+  if (monstrous(t) && humanLooking(src) && src.owner >= 0) return [t, 'helped']
+  if (t.def.ai === 'drone' && src.owner >= 0 && !t.pilot) return [src, 'drone']
+  return null
+}
+
+/** 玩家單位 a 最近被這個 NPC 或敵對生物（b）打過、還在還擊時限內 */
+function struckBy(g: Game, a: Ent, b: Ent): boolean {
+  if (b.owner >= 0) return false
+  const until = stateOf(g).struck.get(a.id)?.get(b.id)
+  return until !== undefined && until > g.time
 }
 
 function openNear(g: Game, zone: number, x: number, y: number): { x: number; y: number } | null {
@@ -280,6 +315,7 @@ function think(g: Game, u: Ent): void {
     }
     case 'drone': {
       if (u.pilot) return
+      if (dropStaleAttack(g, u)) return
       if (!u.order && rng.chance(0.15)) {
         const p = openNear(g, u.zone, home.x + rng.range(-5, 5), home.y + rng.range(-5, 5))
         if (p) issue(u, { k: 'amove', x: p.x, y: p.y })
@@ -326,10 +362,24 @@ function wander(g: Game, u: Ent, home: { x: number; y: number }, r: number, atta
   if (p) issue(u, { k: attackMove ? 'amove' : 'move', x: p.x, y: p.y })
 }
 
+/**
+ * 船員、無人機的攻擊命令：仇恨到期（或仇人已經不在）就放下，不再追殺；回到巡邏。
+ * 攻擊命令是受傷掛勾下的（只下一次），不會自己結束：沒有這一步，擦到一下就會被追到死（第 6 輪審查 B P1）。回傳 true = 剛放下
+ */
+function dropStaleAttack(g: Game, u: Ent): boolean {
+  if (u.order?.k !== 'attack') return false
+  const until = stateOf(g).aggro.get(u.order.e ?? 0)
+  if (until !== undefined && until > g.time) return false
+  issue(u, null)
+  u.data.nextPatrol = g.time + g.world.rng.range(2, 5)
+  return true
+}
+
 function thinkCrew(g: Game, u: Ent): void {
   const st = stateOf(g)
   const t = g.time
   const rng = g.world.rng
+  if (dropStaleAttack(g, u)) return
   if (u.order?.k === 'attack') return
   // 受傷過重：逃回巡邏點
   if (u.hp < u.maxHp * 0.25 && t - u.lastDamageTime < 3) {
@@ -368,7 +418,19 @@ function thinkCrew(g: Game, u: Ent): void {
 function stepCreatures(g: Game): void {
   const t = g.time
   const st = stateOf(g)
-  for (const [id, until] of st.aggro) if (until <= t || !g.world.get(id)) st.aggro.delete(id)
+  for (const [id, until] of st.aggro) {
+    if (until > t && g.world.get(id)) continue
+    st.aggro.delete(id)
+    // 仇恨到期：累積的冒犯歸零，船員、無人機也不再算是「正在打他」（他的單位跟著停手）
+    st.grudge.delete(id)
+    st.struck.delete(id)
+  }
+  if (g.world.tick % 40 === 0) {
+    for (const [id, m] of st.struck) {
+      for (const [n, until] of m) if (until <= t || !g.world.get(n)?.alive) m.delete(n)
+      if (!m.size || !g.world.get(id)?.alive) st.struck.delete(id)
+    }
+  }
   for (const u of g.world.ents.values()) {
     if (!u.alive || !u.def.ai || u.owner >= 0 || u.data.ai || u.data.frozen) continue
     if ((u.data.thinkAt ?? 0) > t) continue
@@ -476,7 +538,8 @@ export function installCreatureAi(g: Game): void {
   for (const z of g.world.zones) if (z.alive && z.layout && z.station?.enable !== 'event') populateZone(g, z)
   spawnCrew(g)
 
-  // 自訂敵意：綏靖機器人（實驗室動力期間攻擊穿防護服的人與機械類的玩家單位）、蛞蝓特工、船員的仇人
+  // 自訂敵意：綏靖機器人（實驗室動力期間攻擊穿防護服的人與機械類的玩家單位）、蛞蝓特工、船員的仇人；
+  // 反過來，被 NPC 打到的玩家單位對那個 NPC 有敵意（閒置、原地、攻擊移動時自動還擊）。只對 NPC：玩家之間永遠不會自動開火
   const prev = g.customHostile
   g.customHostile = (a, b) => {
     const ai = a.def.ai
@@ -489,27 +552,45 @@ export function installCreatureAi(g: Game): void {
       }
       return false
     }
-    // 被船員打的玩家單位可以自動還手（只限明確攻擊命令之外的反擊：不主動）
+    if (a.owner >= 0 && struckBy(g, a, b)) return true
     return prev?.(a, b) ?? false
   }
+  g.npcStruck = (u, by) => (by ? struckBy(g, u, by) : (stateOf(g).struck.get(u.id)?.size ?? 0) > 0)
 
-  // 受傷：敵對生物記住打牠的人；船員對槍聲與怪物傷人的反應
-  DAMAGE_HOOKS.push((g2, src, t, amount) => {
+  // 受傷：敵對生物記住打牠的人；船員對槍聲與怪物傷人的反應；玩家單位記住打他的 NPC（自動還擊用）
+  DAMAGE_HOOKS.push((g2, src, t, amount, o) => {
     if (g2 !== g || !src || amount <= 0) return
     if (t.owner === HOSTILE) t.data.aggro = src.id
     const st = stateOf(g)
+    // NPC（船員、無人機、綏靖機器人、蛞蝓特工…）或敵對生物打到玩家單位：記下來，這個單位閒置或原地時會自動還擊它
+    //（平常不自動索敵的人員也一樣；只還擊打他的那一個）
+    if (src.owner < 0 && src.def.ai && src.def.attack && !src.pilot && t.owner >= 0) {
+      const m = st.struck.get(t.id) ?? st.struck.set(t.id, new Map()).get(t.id)!
+      m.set(src.id, g.time + RETALIATE_S)
+    }
     const z = g.world.zones[t.zone]
     if (!z?.nav) return
-    let culprit: Ent | null = null
-    if (t.def.ai === 'crew' && src.owner >= 0) culprit = src
-    else if (monstrous(src) && (humanLooking(t) || t.def.ai === 'crew')) culprit = src
-    else if (monstrous(t) && humanLooking(src) && src.owner >= 0) culprit = t
-    else if (t.def.ai === 'drone' && src.owner >= 0) culprit = src
-    if (!culprit) return
+    const blame = culpritOf(src, t)
+    if (!blame) return
+    const [culprit, why] = blame
+    // 打到船員、無人機的持續傷害（輻射裝外洩、燃燒、毒）不算冒犯：那是光環或先前那一下的餘波，記仇的是直接出手的那一下。
+    // 怪物形態傷人照樣算（看得到的就是一隻怪物在傷人，例如寄生的持續傷害）
+    if (o.dot && (why === 'crew' || why === 'drone')) return
+    // 還手不算新的冒犯：被這個 NPC 打、自動還擊（combat 自動索敵的攻擊）打回去的，不延長仇恨（否則一還手就永遠打不完）
+    if (culprit === src && src.data.autoAtk === t.id && struckBy(g, src, t)) return
+    // 記仇多久：看到怪物傷人一律記滿；誤傷依累積打掉的血（擦到一下只記一小段）
+    let dur = AGGRO_MAX
+    if (why === 'crew' || why === 'drone') {
+      const gr = (st.grudge.get(culprit.id) ?? 0) + amount / Math.max(1, t.maxHp)
+      st.grudge.set(culprit.id, gr)
+      dur = AGGRO_MIN + (AGGRO_MAX - AGGRO_MIN) * Math.min(1, gr / 0.5)
+    }
     for (const c of g.world.query(t.zone, t.x, t.y, 12)) {
-      if (!c.alive || (c.def.ai !== 'crew' && c.def.ai !== 'drone') || c.owner !== NEUTRAL) continue
+      if (!c.alive || (c.def.ai !== 'crew' && c.def.ai !== 'drone') || c.owner !== NEUTRAL || c.pilot) continue
       if (c !== t && !z.nav.los(c.x, c.y, t.x, t.y, true)) continue
-      st.aggro.set(culprit.id, g.time + 30)
+      st.aggro.set(culprit.id, Math.max(st.aggro.get(culprit.id) ?? 0, g.time + dur))
+      // 死因私訊用：為什麼 NPC 會對他開火
+      culprit.data.npcWhy = { why, t: g.time }
       if (c.order?.k !== 'attack' && culprit.alive && !culprit.stats.stealth) issue(c, { k: 'attack', e: culprit.id })
     }
   })

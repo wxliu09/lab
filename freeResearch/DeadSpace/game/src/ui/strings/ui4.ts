@@ -52,9 +52,9 @@ export const UI4_ZH: Record<string, string> = {
   // ───── 單機練習：AI 難度 ─────
   'ui4.practice.ai': 'AI 難度',
   'ui4.practice.ai.easy': '簡單',
-  'ui4.practice.ai.easy.d': 'AI 船員較晚才去驗血、只驗一輪；驗血結果照樣會在全體頻道公布（例如「這 3 人裡藏著異類」），但不會點名指認是誰，也不會主動對你開火（被打才還手）。AI 異類開局 7 分鐘內不動手，毀站事件 15 分鐘後才會來，基因檢測 4 分鐘就開放。適合第一次玩。',
+  'ui4.practice.ai.easy.d': 'AI 船員較晚才去驗血、最多複驗一次；驗血結果照樣會在全體頻道公布（例如「這 3 人裡藏著異類」），但不會點名指認你，也不會主動對你開火（被打才還手）。AI 異類開局 7 分鐘內不動手、只進化到第一階，末日時也不會四處找人下手，毀站事件 15 分鐘後才會來，基因檢測 4 分鐘就開放。適合第一次玩。',
   'ui4.practice.ai.normal': '一般',
-  'ui4.practice.ai.normal.d': 'AI 船員主動找人驗血，查出可疑的人會公開指認並開火；AI 異類開局 2 分鐘後就可能動手，基因檢測 7 分鐘開放。',
+  'ui4.practice.ai.normal.d': 'AI 船員主動找人驗血，查出可疑的人會公開指認、跟著監視，有確切證據才開火；AI 異類開局 2 分鐘後就可能動手，基因檢測 7 分鐘開放。',
 }
 
 export const UI4_EN: Record<string, string> = {
@@ -101,7 +101,7 @@ export const UI4_EN: Record<string, string> = {
 
   'ui4.practice.ai': 'AI difficulty',
   'ui4.practice.ai.easy': 'Easy',
-  'ui4.practice.ai.easy.d': 'AI crew test later, only once, and post the result in all chat, but never name a suspect or shoot you first. AI threats wait 7 min, station-killing events 15 min; gene testing opens at minute 4. Best for a first game.',
+  'ui4.practice.ai.easy.d': 'AI crew test later, retest at most once, and post the result in all chat, but never name you or shoot you first. AI threats wait 7 min, only evolve one stage and don’t hunt people down at doom; station-killing events wait 15 min; gene testing opens at minute 4. Best for a first game.',
   'ui4.practice.ai.normal': 'Normal',
-  'ui4.practice.ai.normal.d': 'AI crew actively blood-test people, then publicly accuse and open fire on anyone they catch. AI threats may strike after 2 minutes; gene testing opens at minute 7.',
+  'ui4.practice.ai.normal.d': 'AI crew actively blood-test people, publicly name and shadow anyone suspicious, and open fire only on hard evidence. AI threats may strike after 2 minutes; gene testing opens at minute 7.',
 }

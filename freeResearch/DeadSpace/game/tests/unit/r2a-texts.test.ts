@@ -42,9 +42,11 @@ describe('末日與翠原星的指引一致', () => {
       expect(EVENT_ZH[k]).not.toContain('打不垮')
       expect(EVENT_EN[k]).not.toContain('cannot bring it down')
     }
-    // 會讓豪勇號一直挨隕擊的情況：提醒豪勇號別一直停在地表／人要下到地表
-    expect(EVENT_ZH['event.wasps']).toContain('豪勇號')
-    expect(EVENT_ZH['apoc.orbit']).toContain('降落艙的傳送門')
+    // 第 6 輪：全場公告改成精簡版（發生什麼、怎麼做、剩多少時間），豪勇號挨隕擊的細節交給挨隕擊時的公告（st.bravadoImpact*，下一個測試）
+    for (const k of ['event.wasps', 'event.asteroids', 'apoc.fleet', 'apoc.orbit']) {
+      expect([k, EVENT_ZH[k].length <= 100]).toEqual([k, true])
+      expect([k, EVENT_EN[k].length <= 280]).toEqual([k, true])
+    }
     // 大公告只顯示標題句：標題本身很短，對策在全文（聊天紀錄）
     expect(UX3_ZH['apoc.orbit.title']).toContain('翠原星地表')
     expect(UX3_EN['apoc.orbit.title']).toContain('Verdance')

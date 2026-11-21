@@ -9,7 +9,7 @@ import { Harness, type FakeClient } from './helpers/harness'
 import { GameServer, LOCAL_PEER } from '../../src/sim/server'
 import { encode } from '../../src/shared/protocol/codec'
 import { PRACTICE_ROOM, type LobbySettings } from '../../src/shared/protocol/messages'
-import { EASY_NEVER, pickEvent } from '../../src/sim/systems/events'
+import { EASY_NEVER, VIRUS_EARLIEST, VIRUS_SWAP_S, pickEvent } from '../../src/sim/systems/events'
 import { describeView } from '../../src/sim/systems/death'
 import { giveItem, makeItem } from '../../src/sim/systems/items'
 import { SCRIPTS } from '../../src/sim/systems/effects'
@@ -64,7 +64,9 @@ describe('通訊病毒：練習「簡單」不出', () => {
     expect(draws(easy, 200).has('virus')).toBe(false)
     expect(draws(easy, 1500).has('virus')).toBe(false)
     const normal = practice(51, { aiLevel: 'normal' })
-    expect(draws(normal, 200).has('virus')).toBe(true)
+    // 第 6 輪：開局 10 分鐘（VIRUS_EARLIEST）之後才可能抽到
+    expect(draws(normal, 200).has('virus')).toBe(false)
+    expect(draws(normal, VIRUS_EARLIEST + 60).has('virus')).toBe(true)
     expect(easy.triggerEvent!('virus', true)).toBe(true)
   })
 })
@@ -97,7 +99,7 @@ describe('通訊病毒：命名規則與私訊', () => {
     }
     for (const p of ps.filter((q) => !q.bot)) {
       const mine = chatOf(clientOf(h, p)).filter((l) => l.startsWith('@event.virusYou'))
-      expect(mine).toEqual([fmtKey('event.virusYou', { name: p.name })])
+      expect(mine).toEqual([fmtKey('event.virusYou', { name: p.name, s: VIRUS_SWAP_S })])
     }
     // client 依語言換掉前綴（name 參數由 sysText 在地化）
     const dr = ps.find((p) => prefixOf(p) === 'Dr. ')

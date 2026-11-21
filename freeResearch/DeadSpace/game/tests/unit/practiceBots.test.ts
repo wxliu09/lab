@@ -1,5 +1,5 @@
 // 練習 AI 的驗血：拿到檢測器就主動找看得到的人抽血（抽血不會被自己打斷）、報告後複驗縮小範圍、
-// 指認條件（某份有感染名單扣掉自己與驗過乾淨的人只剩一人，或兩份有感染名單的交集只剩一人）、同一份結果只公布一次；
+// 指認條件（某份有感染名單扣掉自己與驗過乾淨的人只剩一人；兩份有感染名單的交集只剩一人時只公開提醒、不開火）、同一份結果只公布一次；
 // 只看外觀（匿名形態不抽、偽裝成 Bob 的人就當成 Bob）
 import { describe, expect, it } from 'vitest'
 import { Harness } from './helpers/harness'
@@ -179,7 +179,7 @@ describe('練習 AI：指認與複驗', () => {
     expect(said[2]).toBe('@play1.bot.accuse|name=' + a.name)
   })
 
-  it('(b) 兩份有感染名單的交集只剩一人：公開指認；只有一份、還有兩個人可疑時不指認', () => {
+  it('(b) 兩份有感染名單的交集只剩一人：只公開提醒（間接推論，不開火，第 6 輪）；只有一份、還有兩個人可疑時什麼都不說', () => {
     const { h, g, bot, people } = setup()
     const [a, b] = people
     bot.gitReports.push({ time: 1, names: [bot.name, a.name, b.name], result: 'infected' })
@@ -187,8 +187,9 @@ describe('練習 AI：指認與複驗', () => {
     expect(first.map((l) => l.split('|')[0])).toEqual(['@play1.bot.gitInfected'])
     bot.gitReports.push({ time: 2, names: [a.name, '路人乙', '路人丙'], result: 'infected' })
     const second = botSays(h, g, bot, 60, (l) => l.length >= 2)
-    expect(second.map((l) => l.split('|')[0])).toEqual(['@play1.bot.gitInfected', '@play1.bot.accuse'])
-    expect(second[1]).toBe('@play1.bot.accuse|name=' + a.name)
+    expect(second.map((l) => l.split('|')[0])).toEqual(['@play1.bot.gitInfected', '@play1.bot.suspect'])
+    expect(second[1]).toBe('@play1.bot.suspect|name=' + a.name)
+    expect((bot.data.brain as { accused: string }).accused).toBe('')
   })
 
   it('不洗頻：同一份結果只公布一次；同一個人只指認一次', () => {

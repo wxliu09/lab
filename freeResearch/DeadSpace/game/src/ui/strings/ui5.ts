@@ -66,7 +66,7 @@ export const UI5_ZH: Record<string, string> = {
   // 關閉時 windfall（原作 #3，原作在發錢前就 return）照原作沒有效果
   'ui5.lobby.extra': '原作沒有的事件',
   'ui5.lobby.tip.extra':
-    '開啟時，隨機事件除了原作有的那些，還可能抽到本作補上的三種（原作留下設計、但沒有接上）：\n・通訊病毒：所有人的名字清空 10 秒，之後名字與顏色在玩家之間隨機互換（職業頭銜跟著人，不換）。\n・蛞蝓仔大量出現：各站室內湧進一大群蛞蝓仔（女帝號 16 隻，其他站各 8 隻）。\n・天守收容失效：180 秒內要駕駛天守砲台、用主砲對翠原星放電，否則砲台自爆，站內的人全部陪葬。\n關閉時只會抽到原作有的事件；「補給船提早抵達」也照原作沒有效果（開啟時會把所有販賣機補滿）。',
+    '開啟時，隨機事件除了原作有的那些，還可能抽到本作補上的三種（原作留下設計、但沒有接上）：\n・通訊病毒（開局 10 分鐘後才可能出現）：所有人的名字清空 10 秒，之後名字與顏色在玩家之間隨機互換（職業頭銜跟著人，不換），約 3 分鐘後恢復；你會收到私訊，知道自己現在在別人眼中叫什麼。\n・蛞蝓仔大量出現：各站室內湧進一大群蛞蝓仔（女帝號 16 隻，其他站各 8 隻）。\n・天守收容失效：180 秒內要駕駛天守砲台、用主砲對翠原星放電，否則砲台自爆，站內的人全部陪葬。\n關閉時只會抽到原作有的事件；「補給船提早抵達」也照原作沒有效果（開啟時會把所有販賣機補滿）。',
 
   // 調查筆記：本機封鎖（以名字為準，見 client/mute.ts）
   'ui5.notes.mute': '封鎖此人',
@@ -154,7 +154,7 @@ export const UI5_EN: Record<string, string> = {
     'The apocalypse triggers at a random time in this range: either a Directorate fleet arrives to sterilise the sector, or the orbital stabilisers fail. The “Sector stability” bar on the HUD drops over time, with a 60-second warning.\nFast {fa}–{fb} min (default): this game’s change, for tighter rounds with a shorter late game.\nClassic {ca}–{cb} min: the original timing. The late game runs longer, so xenos and mutants have a better shot at earning the EP for T3, their strongest forms.',
   'ui5.lobby.extra': 'Extra events',
   'ui5.lobby.tip.extra':
-    'When on, besides the original events the director can also draw three this game added (the original left them unfinished):\n• Comm virus: everyone’s name goes blank for 10 s, then names and colors are shuffled among the players (class titles stay with each person).\n• Slugling swarm: sluglings pour into every station interior (16 on the Empress Nyx, 8 on each other station).\n• Tenshu containment failure: within 180 s someone must pilot Tenshu Battery and discharge its main gun at Verdance, or the battery blows up with everyone aboard.\nWhen off, only events the original had can be drawn, and the early supply run does nothing, as in the original (when on, it restocks every vendor).',
+    'When on, besides the original events the director can also draw three this game added (the original left them unfinished):\n• Comm virus (never in the first 10 minutes): everyone’s name goes blank for 10 s, then names and colors are shuffled among the players (class titles stay with each person) for about 3 minutes; a private message tells you what others now see you as.\n• Slugling swarm: sluglings pour into every station interior (16 on the Empress Nyx, 8 on each other station).\n• Tenshu containment failure: within 180 s someone must pilot Tenshu Battery and discharge its main gun at Verdance, or the battery blows up with everyone aboard.\nWhen off, only events the original had can be drawn, and the early supply run does nothing, as in the original (when on, it restocks every vendor).',
 
   'ui5.notes.mute': 'Block this player',
   'ui5.notes.unmute': 'Unblock',

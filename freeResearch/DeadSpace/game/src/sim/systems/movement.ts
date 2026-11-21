@@ -217,7 +217,7 @@ export function stepMovement(g: Game): void {
         if (hold) {
           // 等門不算卡住（不重算路徑、不放棄命令）
           u.stuckT = 0
-          if (human && g.controlOf(g.players[u.owner]!) === u && g.time >= ((u.data.doorWaitAt as number | undefined) ?? -1)) {
+          if (human && g.controlOf(g.players[u.owner]!) === u && g.time >= ((u.data.doorWaitAt as number | undefined) ?? -1) && !doorsJustAnnounced(g)) {
             u.data.doorWaitAt = g.time + DOOR_WAIT_NOTICE
             g.privateLine(u.owner, 'move.doorWait')
           }
@@ -250,6 +250,16 @@ export function stepMovement(g: Game): void {
 const DOOR_WAIT_NOTICE = 30
 /** 沿路徑往前看多遠（公尺）找要穿過的故障門 */
 const GATE_LOOK = 2.5
+
+/**
+ * 門控制器故障剛公告過（這麼多秒內）：等門的私訊先不說，免得和全場公告一前一後說同一件事（第 6 輪審查：長短兩則幾乎重複）
+ */
+const DOOR_WAIT_GRACE = 45
+
+function doorsJustAnnounced(g: Game): boolean {
+  const at = (g.data.events as { doorsAt?: number } | undefined)?.doorsAt
+  return at !== undefined && g.time - at < DOOR_WAIT_GRACE
+}
 
 /** 門控制器故障進行中（events.ts 的 doorsUntil）：沒有故障時完全不做額外檢查 */
 function doorsCycling(g: Game): boolean {

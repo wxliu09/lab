@@ -109,6 +109,19 @@ export interface StationsState {
   rad: number
   /** 餘燼衛星大氣護盾已失效（暴風雪）*/
   storm: boolean
+  /**
+   * 預警中的隕擊落點（紅色警戒圈；at = 落下的時間）。落點本來就是公開現象（全體小地圖 ping），
+   * AI 用來躲開，和真人看到紅圈跑開一樣
+   */
+  warns?: { zone: number; x: number; y: number; at: number }[]
+}
+
+/** 預警中、還沒落下的隕擊落點（AI 躲避用；公開資訊）*/
+export function meteorWarnings(g: Game): { zone: number; x: number; y: number; at: number }[] {
+  const S = stationsOf(g)
+  if (!S.warns?.length) return []
+  S.warns = S.warns.filter((w) => w.at > g.time - 0.5)
+  return S.warns
 }
 
 export function stationsOf(g: Game): StationsState {
@@ -747,6 +760,7 @@ function bombardHit(g: Game, amount: number): void {
     g.emitFx({ k: 'meteorWarn', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN })
     g.emitFx({ k: 'ping', z: z.id, x: at.x, y: at.y, v: IMPACT_WARN, s: 'event' }, g.allPlayers().map((p) => p.slot))
     for (const s of mainsIn(g, z.id)) g.privateLine(s, 'st.impactWarn', { s: IMPACT_WARN })
+    ;(S.warns ??= []).push({ zone: z.id, x: at.x, y: at.y, at: g.time + IMPACT_WARN })
     g.after(IMPACT_WARN, () => impact(g, z.id, at.x, at.y))
   }
 }

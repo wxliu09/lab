@@ -160,7 +160,9 @@ describe('練習「簡單」難度的說明和 AI 實際行為一致', () => {
     expect(zh).toContain('不會點名')
     expect(en).not.toMatch(/never accuse publicly/)
     expect(en).toMatch(/post the result in all chat/)
-    expect(en).toMatch(/never name a suspect/)
+    // 第 6 輪：簡單練習局的 AI 有硬證據時會指認 AI 異類，但不會點名真人新手（bots.ts）
+    expect(zh).toContain('不會點名指認你')
+    expect(en).toMatch(/never name you/)
     // AI 公布的那句話（bots.ts readReports → play1.bot.gitInfected）；簡單難度只公布、不說 play1.bot.accuse 的行為
     // 由 aiLevel.test.ts 用真的 sim 驗過
     expect(PLAY1_ZH['play1.bot.gitInfected']).toContain('藏著異類')

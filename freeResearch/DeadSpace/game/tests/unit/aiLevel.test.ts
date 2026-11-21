@@ -7,6 +7,7 @@ import { encode } from '../../src/shared/protocol/codec'
 import { DEFAULT_SETTINGS, PRACTICE_ROOM } from '../../src/shared/protocol/messages'
 import { validateClientMsg } from '../../src/shared/protocol/validate'
 import { giveItem, makeItem, morph } from '../../src/sim/systems/items'
+import { damage } from '../../src/sim/systems/damage'
 import { installXenoSystems } from '../../src/sim/scripts/xeno'
 import type { Ent } from '../../src/sim/ent'
 import type { Game } from '../../src/sim/game'
@@ -147,8 +148,9 @@ describe('練習難度：easy 的 AI 船員', () => {
         // 被那隻怪物打了：還手
         g.world.relocate(x, zone, u.x + 1.5, u.y)
         x.data.frozen = true
-        u.lastHitBy = x.id
-        u.lastDamageTime = g.time
+        // 瞄準 AI 打的一下（第 6 輪：AI 只對「真的在打我」的還手，見 bots.ts realAttacker）
+        x.order = { k: 'attack', e: u.id }
+        damage(g, x, u, 20)
         run(h, 20 * 3, () => {
           if (u.order?.k === 'attack' && u.order.e === x.id) attacked = true
           return attacked
@@ -214,9 +216,9 @@ describe('練習難度：AI 異類的開局寬限期', () => {
     })
     expect(g.time).toBeLessThan(NORMAL_EVIL_START)
     expect(shifted).toBe(false)
-    // 被打：變身還手
-    u.lastHitBy = m.id
-    u.lastDamageTime = g.time
+    // 被打：變身還手（第 6 輪：要瞄準他打、打掉一截血才算「真的在打我」，波及不算）
+    m.order = { k: 'attack', e: u.id }
+    damage(g, m, u, 60)
     run(h, 20 * 4, () => {
       shifted = !g.mainOf(bot)!.tags.has('personnel') || (u.cast?.ability ?? '').startsWith('xeno.form')
       return shifted
