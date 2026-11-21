@@ -296,7 +296,8 @@ describe('情境提示的觸發條件', () => {
 
   it('被寄生／感染朊毒（自己的狀態）：提示用抗體包；受控（休眠）後不再提示；異類不提示', () => {
     const sick = (b: string[], role: 'human' | 'xeno' = 'human') => hintIds(view({ role }, { self: { d: 'personnel', hp: 400, mhp: 400, b } }))
-    expect(sick(['bf.parasite'])).toContain('parasited')
+    // 被寄生不跳情境提示（第 6 輪：sim 的私訊＋目標面板的紅色待辦已經說了，不再重複第三次）
+    expect(sick(['bf.parasite'])).not.toContain('parasited')
     expect(sick(['bf.prionStrong'])).toContain('prioned')
     expect(sick(['bf.containedParasite'])).not.toContain('parasited')
     expect(sick(['bf.parasite'], 'xeno')).not.toContain('parasited')

@@ -162,6 +162,25 @@ export function watchDeaths(): void {
   })
 }
 
+/**
+ * 筆記標題：面板標題（h2）是全大寫的樣式，會把「（Tab）」變成「（TAB）」，和 Esc 選單、頂列按鈕說明寫的「Tab」不一致；
+ * 按鍵的部分另外包起來、不轉大寫（第 6 輪審查）。
+ */
+export function splitKeyHint(title: string): [string, string] {
+  const m = /^(.*?)(\s*[（(]Tab[)）])$/.exec(title)
+  return m ? [m[1], m[2]] : [title, '']
+}
+
+function NotesTitle() {
+  const [name, key] = splitKeyHint(t('notes.title'))
+  return (
+    <h2>
+      {name}
+      {key && <span style={{ textTransform: 'none' }}>{key}</span>}
+    </h2>
+  )
+}
+
 // 筆記是側邊面板：開著時照樣能用快捷鍵操作，只停用邊緣捲動
 panelChecks.push(() => notesOpen.value)
 /** 正在看的監視器畫面（覆寫鏡頭所在 zone）*/
@@ -218,7 +237,7 @@ export function NotesPanel() {
   const dead = heardDead.value
   return (
     <div class="panel solid notes-panel" data-testid="notes" style={{ position: 'absolute', left: '12px', top: '54px', width: '380px', maxHeight: '60vh', overflow: 'auto', padding: '12px' }}>
-      <h2>{t('notes.title')}</h2>
+      <NotesTitle />
       <div class="col" style={{ gap: '5px' }}>
         {players
           .filter((p) => p.slot !== me.slot)

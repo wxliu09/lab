@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { startInfo, world } from '../../client/session'
-import { Input } from '../../client/input'
+import { cmdTaps, startInfo, world } from '../../client/session'
+import { Input, isPiloting, localNotice } from '../../client/input'
+import { sceneBusy } from '../../client/practicePause'
+import { PEEK_S, SWEEP_ID, fitDistance, sweepPeek } from '../../client/sweepPeek'
+import type { FxEvent } from '../../shared/protocol/messages'
 import { getEngine } from '../../render/engine'
 import { GameScene } from '../../render/gameScene'
 import { Overlay } from '../../render/overlay'
@@ -23,6 +26,7 @@ import { EpGain } from '../hud/EpGain'
 import { InGameSettings } from './Settings'
 import { GameMenu } from '../hud/GameMenu'
 import { t } from '../i18n'
+import '../strings/ux6'
 
 /** 開局建場景的時機：先等兩個 rAF（「載入中」覆蓋層畫出來），frames = 已經過的 rAF 數、run = 掛載後要執行的建場景 */
 interface Boot {
@@ -43,6 +47,52 @@ function SceneLoading({ block }: { block: boolean }) {
       {t('load.scene')}
     </div>
   )
+}
+
+/** 監控掃描的站內畫面最多拉到多遠（公尺；站內平常的上限是 60）*/
+const PEEK_MAX_DIST = 110
+
+/**
+ * 駕駛中用「站內監控掃描」（第 6 輪審查 A-P3：畫面在太空層，站內的掃描標記看不到）：送出掃描時記下來，
+ * 收到站內的掃描標記（ping 特效）就暫時把畫面切到站內（sweepPeek.ts），鏡頭拉遠到看得到所有標記，結束後恢復原本的縮放。
+ * frame() 每幀在 GameScene.update 之前呼叫（換 zone 時 GameScene 會重設鏡頭距離上限，要在切過去之後才套用）；dispose() 解除綁定。
+ */
+function bindSweepPeek(gs: GameScene): { frame: () => void; dispose: () => void } {
+  let zoom: number | null = null
+  const tapCmd = (c: { k: string; a?: string }) => {
+    if (c.k === 'cast' && c.a === SWEEP_ID && isPiloting()) sweepPeek.arm(performance.now() / 1000)
+  }
+  const tapFx = (f: FxEvent) => {
+    if (f.k !== 'ping' || f.s || !isPiloting()) return
+    if (sweepPeek.onPing(f.z, f.x, f.y, gs.zone, performance.now() / 1000) !== 'start') return
+    if (zoom === null) zoom = gs.rts.zoom
+    gs.rts.zoom = 1
+    localNotice.value = { text: 'ux6.sweep.peek', args: { s: PEEK_S }, at: performance.now(), life: PEEK_S * 1000 }
+  }
+  const frame = () => {
+    const v = sweepPeek.current(performance.now() / 1000)
+    if (v) {
+      // 已經切到站內（GameScene 換 zone 時把上限設回站內的 60 公尺）：拉遠到看得到所有標記
+      if (gs.zone === v.zone) gs.rts.maxDist = Math.min(PEEK_MAX_DIST, Math.max(gs.rts.maxDist, fitDistance(v.w, v.h, Math.tan((gs.rts.fov * Math.PI) / 360), gs.camera.aspect || 16 / 9)))
+    } else if (zoom !== null) {
+      // 結束（時間到、點畫面、空白鍵、Esc）：恢復縮放；距離上限在換回太空層時由 GameScene 設回
+      gs.rts.zoom = zoom
+      zoom = null
+    }
+  }
+  cmdTaps.push(tapCmd)
+  world.fxTaps.push(tapFx)
+  return {
+    frame,
+    dispose: () => {
+      sweepPeek.end()
+      if (zoom !== null) gs.rts.zoom = zoom
+      const i = cmdTaps.indexOf(tapCmd)
+      if (i >= 0) cmdTaps.splice(i, 1)
+      const j = world.fxTaps.indexOf(tapFx)
+      if (j >= 0) world.fxTaps.splice(j, 1)
+    },
+  }
 }
 
 export function GameScreen() {
@@ -85,7 +135,9 @@ export function GameScreen() {
     if (!c || !wrap.current) return null
     const engine = getEngine(c)
     const gs = new GameScene(world)
-    gs.viewOverride = () => feedView.value
+    // 暫時看別的地方：監視器畫面（調查面板）優先，其次是駕駛中監控掃描的站內畫面（sweepPeek.ts）
+    gs.viewOverride = () => feedView.value ?? sweepPeek.current(performance.now() / 1000)
+    const peek = bindSweepPeek(gs)
     gs.setZones(startInfo.value?.zones ?? [])
     const overlay = new Overlay(wrap.current)
     const unbind = bindFx(gs, world)
@@ -93,6 +145,7 @@ export function GameScreen() {
     bindAudioScene(gs)
     let shown = false
     gs.update = (dt, t) => {
+      peek.frame()
       origUpdate(dt, t)
       // 第一次顯示出 zone（站體已建好）：這一幀畫完後拿掉載入覆蓋層
       if (!shown && gs.zone >= 0) {
@@ -116,6 +169,7 @@ export function GameScreen() {
     setInput(inp)
     if (__TEST_HOOKS__) (window as unknown as Record<string, unknown>).__xcScene = gs
     return () => {
+      peek.dispose()
       inp.dispose()
       overlay.dispose()
       unbind()
@@ -129,6 +183,12 @@ export function GameScreen() {
       if (__TEST_HOOKS__ && (window as unknown as Record<string, unknown>).__xcScene === gs) delete (window as unknown as Record<string, unknown>).__xcScene
     }
   }
+  // 局中分段建站的「載入中」：單機練習自動暫停（practicePause.ts；開局的載入由主機等所有人載入完才開始，不必另外暫停）
+  const busy = !!scene?.loading.value
+  useEffect(() => {
+    sceneBusy.value = busy
+  }, [busy])
+  useEffect(() => () => void (sceneBusy.value = false), [])
   // 對局中出現新的地點（事件站）
   const zones = startInfo.value?.zones
   useEffect(() => {

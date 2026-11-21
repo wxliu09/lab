@@ -10,8 +10,9 @@ import { world } from '../../client/session'
 import { cursorScreen, giveRefusalHere, modalOpen, targetMode } from '../../client/input'
 import { invDrag } from '../../client/give'
 import type { GameScene } from '../../render/gameScene'
-import { meCtx, rightClickAction, rummageCheck, showHp, structKind, type StructKind } from '../../client/interactKind'
+import { meCtx, monsterFoe, rightClickAction, rummageCheck, showHp, structKind, type StructKind } from '../../client/interactKind'
 import { loc, t } from '../i18n'
+import '../strings/ux6'
 import { hideTip, showCursorTip, type TipData } from '../tooltip'
 import { abilityKey } from './abilityKeys'
 import { DEVOUR, devourCheck } from '../../client/devourInfo'
@@ -136,7 +137,12 @@ function baseTip(id: number): TipData | null {
   }
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!]?.hex : undefined
   if (fl & EntFlag.Hostile) return { title: name, sub: t('hover.cat.hostile'), rows: hpRow, hint: t('hover.hint.attack'), color: '#ff5a4a' }
+  // 已現形的異形／變種人（外觀是怪物、不是自己已知的隊友）：右鍵＝攻擊（interactKind.ts monsterFoe），提示跟著改
+  if (monsterFoe(s)) return { title: name, sub: t('ux6.hover.cat.monster'), rows: hpRow, hint: t('hover.hint.attack'), color: '#ff5a4a' }
   if ((s.o ?? -1) >= 0) return { title: name, sub: t(fl & EntFlag.Ally ? 'hover.cat.ally' : 'hover.cat.player'), rows: hpRow, hint: t('hover.hint.follow'), color }
+  // NPC 船員（電腦控制的人形；偽裝成 NPC 船員的人外觀也是這個，結果一致）：以前落在「生物」
+  if (d === 'npc.crew') return { title: name, sub: t('ux6.hover.cat.npcCrew'), rows: hpRow, hint: t('hover.hint.follow') }
+  if (tags.includes('npc')) return { title: name, sub: t('hover.cat.npc'), rows: hpRow, hint: t('hover.hint.follow') }
   if (tags.includes('creature')) return { title: name, sub: t('hover.cat.creature'), rows: hpRow, hint: t('hover.hint.follow') }
   return { title: name, sub: t('hover.cat.npc'), rows: hpRow, hint: t('hover.hint.follow') }
 }

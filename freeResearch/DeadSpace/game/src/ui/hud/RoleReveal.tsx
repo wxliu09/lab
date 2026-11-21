@@ -1,5 +1,6 @@
 // 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
+import { signal } from '@preact/signals'
 import { endResult, snapTick, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
@@ -16,9 +17,9 @@ const COL: Record<Identity, [string, string, string]> = {
   android: ['#ffb000', '#e6e6e6', '#ffb000'],
 }
 
-/** 揭露畫面蓋著時，遊戲快捷鍵不處理 */
-let revealShown = false
-modalChecks.push(() => revealShown)
+/** 揭露畫面蓋著時，遊戲快捷鍵不處理；單機練習也暫停（Hud 的 pauseUiOpen 讀這個 signal：讀背景故事不會被偷走遊戲時間）*/
+export const revealOpen = signal(false)
+modalChecks.push(() => revealOpen.value)
 
 export function RoleReveal() {
   void snapTick.value
@@ -69,9 +70,9 @@ export function RoleReveal() {
   }, [open])
   const visible = open && !!role && role !== 'spectator'
   useLayoutEffect(() => {
-    revealShown = visible
+    revealOpen.value = visible
     return () => {
-      revealShown = false
+      revealOpen.value = false
     }
   }, [visible])
   // 對局已經結算（例如主機中止）：不要蓋住結算畫面

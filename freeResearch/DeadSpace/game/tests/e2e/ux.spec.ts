@@ -126,12 +126,15 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('game-menu')).toHaveCount(0)
   await expect(page.locator('.modal-back')).toHaveCount(0)
-  // 設定視窗整個在畫面內（內容區捲動、按鈕列固定在底部：不用捲就看得到「儲存」），Esc 關得掉
+  // 設定視窗整個在畫面內（內容區捲動、按鈕列固定在底部：不用捲就看得到「關閉」），Esc 關得掉。
+  // 所有設定即時存檔，沒有「儲存」；對局中不顯示網路設定（第 6 輪）
   await page.getByTestId('settings-open').click()
   const mb = (await page.locator('.modal').boundingBox())!
   expect(mb.y).toBeGreaterThanOrEqual(0)
   expect(mb.y + mb.height).toBeLessThanOrEqual(900)
-  await expect(page.getByTestId('settings-save')).toBeInViewport()
+  await expect(page.getByTestId('settings-close')).toBeInViewport()
+  await expect(page.getByTestId('settings-save')).toHaveCount(0)
+  await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(page.locator('.modal')).toHaveCount(0)
   // V：進化選單

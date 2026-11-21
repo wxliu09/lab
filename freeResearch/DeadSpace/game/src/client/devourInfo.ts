@@ -34,8 +34,24 @@ export function devourCheck(me: Partial<PrivateState>, s: SnapEntity, selfIds: R
   const def = UNITS.get(s.d ?? '')
   const n = def?.devourEp ?? 0
   if (n > 0) return { ok: true, n, cd: st.cd > 0 ? st.cd : 0, blocked: !!st.disabled }
-  const tags = def?.tags ?? []
-  // 人形（玩家、異形／變種人形態、仿生人機體）
-  if ((s.o ?? -1) >= 0 || tags.some((t) => t === 'personnel' || t === 'xenoForm' || t === 'mutantForm' || t === 'chassis')) return { ok: false, why: 'r3b.devour.no.person' }
-  return { ok: false, why: 'r3b.devour.no.kind' }
+  return { ok: false, why: devourRefusal(s) }
+}
+
+/**
+ * 吞不下的原因（字串 key）。第 6 輪審查：綏靖機器人（npc.pacifier）帶著仿生人機體同一個 chassis 標籤，
+ * 以前被說成「吞不了玩家」——它不是玩家。玩家看得到的人形（有擁有者、人員、異形／變種人形態、玩家的仿生人機體）才說「玩家」；
+ * NPC 的機器、無人機、砲塔、裝置說「機械吞不下」；其他說明吞得下哪些。
+ */
+export function devourRefusal(s: SnapEntity): string {
+  const tags = UNITS.get(s.d ?? '')?.tags ?? []
+  const npc = tags.includes('npc')
+  const playerBody = tags.some((t) => t === 'personnel' || t === 'xenoForm' || t === 'mutantForm') || (tags.includes('chassis') && !npc)
+  if (((s.o ?? -1) >= 0 && !npc) || (playerBody && !npc)) return 'r3b.devour.no.person'
+  if (tags.some((t) => t === 'chassis' || t === 'drone' || t === 'device') || (npc && tags.includes('mechanical'))) return 'ux6.devour.no.machine'
+  return 'r3b.devour.no.kind'
+}
+
+/** 吞得下（技能篩選＋對象的內容表有 devourEp）：吞噬瞄準時高亮、吸附只看這些（不看自己的冷卻與技能有沒有）*/
+export function devourable(s: SnapEntity): boolean {
+  return isCreatureLike(s) && (UNITS.get(s.d ?? '')?.devourEp ?? 0) > 0
 }

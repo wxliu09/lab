@@ -6,7 +6,6 @@ import { lang, setLang, t, type Lang } from '../i18n'
 import { loadAiLevel, loadPracticePrefs, runPractice, saveAiLevel, savePracticePrefs } from './practiceRun'
 import { Settings } from './Settings'
 import { codexOpen } from '../hud/Codex'
-import { loadNetSettings } from '../../net/trystero'
 import { RoleMixView, roleOutcomes } from './Lobby'
 import '../lobby2.css'
 
@@ -239,7 +238,7 @@ export function Menu() {
         </div>
       </div>
       <div class="foot">
-        {t('menu.netHint', { strategy: loadNetSettings().strategy })} · {t('menu.homage')}
+        {t('menu.netHint')} · {t('menu.homage')}
       </div>
       <LangToggle />
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}

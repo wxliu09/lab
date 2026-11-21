@@ -11,6 +11,17 @@ import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
 export const SNAP_M = 1
 /** 吸附範圍的螢幕下限（px）：鏡頭拉很遠時 1 格只剩幾個像素，至少給這麼多 */
 export const SNAP_MIN_PX = 14
+/**
+ * 吞噬瞄準的吸附範圍（公尺，第 6 輪審查：深藍小團在藍色地板上看不見，點下去常常差一點）：
+ * 只吸附吞得下的目標，範圍放寬到約 1.75 格
+ */
+export const SNAP_M_DEVOUR = 1.75
+/**
+ * 太空層對站點的技能（停靠、設定航線…）的吸附範圍（公尺）與螢幕下限（px）（第 6 輪審查：移動中的站點容易點空）：
+ * 站名畫在模型正下方約 18 px，點在站名上也要算
+ */
+export const SNAP_M_SPACE = 3
+export const SNAP_MIN_PX_SPACE = 30
 
 /** 外觀 id 的標籤（站點、販賣機的 UnitDef 只在 sim 端註冊，client 用 id 前綴補上）*/
 function tagsOf(d: string): Set<string> {
@@ -77,23 +88,33 @@ export interface SnapCand {
   ok: boolean
   /** 建物、或自己：只有附近沒有別的候選時才選 */
   low: boolean
+  /**
+   * 自己（操控中的載具、自己本人）：low 的一種，但直接點中時照樣選它（和懸停一致）；
+   * 點中的是建物時也排在建物前面（站在 GIT 檢測儀上點自己＝自己，不是檢測儀）
+   */
+  self?: boolean
 }
 
 /**
  * 選出左鍵要施放的目標（0 = 沒有可選的，呼叫端保持瞄準並提示）。
- * direct = 射線直接點中的實體（0 = 沒點中）；wantStruct = 技能本來就是要點建物（wantsStructure）。
- * 1. 直接點中、符合篩選：就是它（建物要讓位給附近符合篩選的人；技能要點建物時不讓）。
- * 2. 附近符合篩選的人／生物，選最近的；再來才是直接點中的建物、附近的建物或自己。
- * 3. 直接點中但不符合篩選（例如對自己放只能對別人的技能）：照樣送出，讓 sim 說明為什麼不行。
+ * direct = 射線直接點中的實體（0 = 沒點中，和懸停說明看的是同一個）；wantStruct = 技能本來就是要點建物（wantsStructure）。
+ * 1. 直接點中、符合篩選：就是它——游標下的單位優先，和懸停一致（第 6 輪審查：懸停顯示自己，點下去卻抽到旁邊的人）。
+ *    點中自己也一樣（技能能對自己放才會符合篩選）。建物例外：要讓位給附近符合篩選的人（技能要點建物時不讓）。
+ * 2. 附近符合篩選的人／生物，選最近的。
+ * 3. 點中的是建物、附近只有自己：玩家單位優先於設施，選自己（站在 GIT 檢測儀上點自己）；沒有自己才是那個建物。
+ * 4. 附近的建物或自己。
+ * 5. 直接點中但不符合篩選（例如對自己放只能對別人的技能）：照樣送出，讓 sim 說明為什麼不行。
  */
 export function chooseUnitTarget(direct: number, cands: readonly SnapCand[], wantStruct: boolean): number {
   const dc = direct ? cands.find((c) => c.id === direct) : undefined
   const directOk = !!dc?.ok
-  if (directOk && (!dc.low || wantStruct)) return direct
+  if (directOk && (!dc.low || dc.self || wantStruct)) return direct
   const near = cands.filter((c) => c.ok && c.dist <= c.tol)
   const nearest = (xs: SnapCand[]) => xs.reduce((a, b) => (b.dist < a.dist || (b.dist === a.dist && b.id < a.id) ? b : a)).id
   const high = near.filter((c) => !c.low || wantStruct)
   if (high.length) return nearest(high)
+  const mine = near.filter((c) => c.self)
+  if (directOk && mine.length) return nearest(mine)
   if (directOk) return direct
   if (near.length) return nearest(near)
   return direct

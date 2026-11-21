@@ -16,7 +16,11 @@ import { cmdTaps, hostGone, sendCmd, snapTick, world } from './session'
 import { EXPOSING_ABILITIES, canShapeshift, looksNamed, watcherCount } from './exposure'
 import { giveRefusal } from './give'
 import { meCtx, rightClickAction, rummageClick } from './interactKind'
-import { SNAP_M, SNAP_MIN_PX, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
+import { SNAP_M, SNAP_MIN_PX, SNAP_MIN_PX_SPACE, SNAP_M_DEVOUR, SNAP_M_SPACE, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
+import { DEVOUR, devourable } from './devourInfo'
+import { sweepPeek } from './sweepPeek'
+import { cabinHatch } from './hatch'
+import '../ui/strings/ux6'
 
 export type TargetMode =
   | null
@@ -127,6 +131,8 @@ interface AltTarget {
   x: number
   y: number
   ent: number
+  /** 船艙的艙門（client/hatch.ts；沒有實體）：右鍵＝走過去，懸停顯示艙門的說明 */
+  hatch?: boolean
 }
 
 /** 技能或道具的瞄準模式（不含 A 攻擊）*/
@@ -152,6 +158,19 @@ function entRadius(s: SnapEntity): number {
 /** 吸附時排在後面的對象：建物、自己（操控中的載具，以及坐在救生艙裡、跟著艙移動的自己本人）*/
 function lowPri(s: SnapEntity, self: number): boolean {
   return s.i === self || s.i === world.me.unit || isStructureLike(s)
+}
+
+/**
+ * 瞄準中的技能／道具可以對自己放（篩選有 self：抽血、慰藉護盾、投影分身）時，再按一次同一個鍵就對自己施放（Input.selfCast）：
+ * 回傳那個鍵的顯示名稱（道具 = 背包格號、技能 = 指令卡快捷鍵），不能對自己放回傳 null。overlay 畫在自己腳下提示。
+ */
+export function aimSelfKey(tm: TargetMode): string | null {
+  if (!tm || tm.kind === 'attack' || (tm.target !== 'unit' && tm.target !== 'unitOrPoint')) return null
+  if (!aimAbility(tm)?.filter?.self) return null
+  if (tm.kind === 'item') return String(tm.slot + 1)
+  const list = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
+  const i = list.findIndex((a) => a.id === tm.id)
+  return i >= 0 && i < HOTKEYS.length ? HOTKEYS[i].slice(3) : null
 }
 
 /** 送出瞄準中的技能／道具：對單位（e）或對地面一點 */
@@ -219,7 +238,9 @@ export class Input {
    */
   private leftConsole: { zone: number; x: number; y: number } | null = null
   /** 游標下的船艙控制台（沒有實體，WorldHover 不會說明它；由這裡顯示同一張懸停卡片）*/
-  private spotHover: { key: string; since: number; shown: boolean } = { key: '', since: 0, shown: false }
+  private spotHover: { key: string; since: number; shown: boolean; spot: AltTarget | null } = { key: '', since: 0, shown: false, spot: null }
+  /** 最後一次的游標位置（瞄準中每 0.1 秒重算一次預覽：單位會走動）*/
+  private lastMouse: { x: number; y: number } | null = null
   private dragging = false
   private dragX = 0
   private dragY = 0
@@ -334,7 +355,11 @@ export class Input {
       }),
     )
     // 船艙控制台的懸停卡片（同 WorldHover：停留 0.25 秒才顯示）
-    const hov = setInterval(() => this.spotTip(), 100)
+    const hov = setInterval(() => {
+      this.spotTip()
+      // 瞄準中：游標沒動、單位在走，預覽（會選到誰）也要跟著更新
+      if (targetMode.value && this.lastMouse && cursorScreen.overView) this.hoverAt(this.lastMouse.x, this.lastMouse.y)
+    }, 100)
     this.disposers.push(() => {
       clearInterval(hov)
       if (this.spotHover.shown) showCursorTip(null, 0, 0)
@@ -363,32 +388,67 @@ export class Input {
       this.dragX = e.clientX
       this.dragY = e.clientY
     }
-    const [nx, ny] = this.ndc(e)
-    cursorWorld.value = this.scene.rts.groundAt(nx, ny)
+    this.lastMouse = { x: e.clientX, y: e.clientY }
+    this.hoverAt(e.clientX, e.clientY)
+  }
+
+  /**
+   * 游標下的東西（clientX／Y = 視窗座標）：懸停的實體、沒有實體的控制台與艙門。
+   * 瞄準「點一個單位」的技能時，懸停改成「現在點下去會選到誰」（含吸附，同 applyTarget）：選取圈與名字標在那個單位上，
+   * 點下去就是看到的那個（第 6 輪審查：懸停顯示自己，點下去卻抽到旁邊的人）。
+   */
+  private hoverAt(clientX: number, clientY: number): void {
+    const r = this.el.getBoundingClientRect()
+    const nx = ((clientX - r.left) / r.width) * 2 - 1
+    const ny = -((clientY - r.top) / r.height) * 2 + 1
+    const ground = this.scene.rts.groundAt(nx, ny)
+    cursorWorld.value = ground
     let hov = this.scene.pick(nx, ny)
     let spot: AltTarget | null = null
     if (!hov) {
-      // 游標在頭頂提示標籤上（底下常常是牆）：當成懸停在它標的對象；船艙控制台沒有實體，另外記
-      const lb = this.labelAt(e)
+      // 游標在頭頂提示標籤上（底下常常是牆）：當成懸停在它標的對象；船艙控制台、艙門沒有實體，另外記
+      const lb = this.labelAt(clientX, clientY)
       if (lb?.ent) hov = lb.ent
-      else spot = lb ?? (this.zoneHasShipConsole() ? this.consoleSpotAt(nx, ny) : null)
+      else spot = lb ?? (this.zoneHasShipConsole() ? (this.consoleSpotAt(nx, ny) ?? this.hatchAt(ground)) : null)
     }
+    const tm = targetMode.value
+    if (tm && tm.kind !== 'attack' && tm.target === 'unit') hov = this.aimChoice(tm, hov, clientX - r.left, clientY - r.top)
     this.scene.units.hovered = hov
     const key = spot ? `${this.scene.zone}:${spot.x},${spot.y}` : ''
-    if (key !== this.spotHover.key) this.spotHover = { key, since: performance.now(), shown: this.spotHover.shown }
+    if (key !== this.spotHover.key) this.spotHover = { key, since: performance.now(), shown: this.spotHover.shown, spot }
   }
 
-  /** 滑鼠在頭頂互動提示標籤（overlay.ts）的範圍內：回傳它標的對象 */
-  private labelAt(e: MouseEvent): AltTarget | null {
-    const h = this.scene.promptHit
-    if (!h) return null
+  /**
+   * 滑鼠在 overlay.ts 畫的標籤上：頭頂互動提示（標的對象）、太空層的站名（那座站）、船艙艙門的標籤（艙門）。
+   * clientX／Y = 視窗座標。
+   */
+  private labelAt(clientX: number, clientY: number): AltTarget | null {
     const r = this.el.getBoundingClientRect()
-    const x = e.clientX - r.left
-    const y = e.clientY - r.top
-    if (x < h.l || x > h.r || y < h.t || y > h.b) return null
-    if (h.poi) return { x: h.poi.x, y: h.poi.y, ent: 0 }
-    const t = world.ents.get(h.ent)
-    return t ? { x: (t.s.x ?? 0) / 100, y: (t.s.y ?? 0) / 100, ent: h.ent } : null
+    const x = clientX - r.left
+    const y = clientY - r.top
+    const inside = (h: { l: number; r: number; t: number; b: number }) => x >= h.l && x <= h.r && y >= h.t && y <= h.b
+    const h = this.scene.promptHit
+    if (h && inside(h)) {
+      if (h.poi) return { x: h.poi.x, y: h.poi.y, ent: 0 }
+      const t = world.ents.get(h.ent)
+      if (t) return { x: (t.s.x ?? 0) / 100, y: (t.s.y ?? 0) / 100, ent: h.ent }
+    }
+    // 站名畫在站點模型正下方，點在名字上也算點到那座站（第 6 輪審查：停靠時點移動中的站點容易點空）
+    for (const sh of this.scene.stationHits) {
+      const t = world.ents.get(sh.ent)
+      if (t && inside(sh)) return { x: t.x, y: t.y, ent: sh.ent }
+    }
+    const hh = this.scene.hatchHit
+    if (hh && inside(hh)) return { x: hh.x, y: hh.y, ent: 0, hatch: true }
+    return null
+  }
+
+  /** 游標所在的地面就是船艙艙門那一格（0.75 m 內）：回傳艙門 */
+  private hatchAt(ground: Pt | null): AltTarget | null {
+    if (!ground) return null
+    const hc = cabinHatch(world, this.scene.zones)
+    if (!hc || hc.zone !== this.scene.zone || Math.hypot(ground.x - hc.x, ground.y - hc.y) > 0.75) return null
+    return { x: hc.x, y: hc.y, ent: 0, hatch: true }
   }
 
   /** 目前畫面的 zone 有沒有船艙控制台（只有船艙要在每次移動滑鼠時多拾取一次設施模型）*/
@@ -409,11 +469,15 @@ export class Input {
     return p && CONSOLE_KINDS.has(p.def.kind) ? { x: p.x, y: p.y, ent: 0 } : null
   }
 
-  /** 船艙控制台的懸停卡片：內容和站點主控台一樣（WorldHover 的 hoverTip），只是沒有血量 */
+  /** 船艙控制台的懸停卡片：內容和站點主控台一樣（WorldHover 的 hoverTip），只是沒有血量；艙門另有說明 */
   private spotTip(): void {
     const h = this.spotHover
     const want = !!h.key && cursorScreen.overView && !targetMode.value && !modalOpen() && !this.scene.units.hovered && performance.now() - h.since >= 250
-    if (want) {
+    if (want && h.spot?.hatch) {
+      const docked = cabinHatch(world, this.scene.zones)?.docked
+      showCursorTip({ title: t('ux6.hatch.title'), sub: t('ux6.hatch.cat'), body: t('ux6.hatch.body'), hint: t(docked === false ? 'ux6.hatch.hint.flying' : 'ux6.hatch.hint.docked'), color: '#ffc23d' }, cursorScreen.x, cursorScreen.y)
+      h.shown = true
+    } else if (want) {
       const d = 'struct.console'
       showCursorTip({ title: loc(entDefName(d)), sub: t('hover.cat.structure'), body: t('hover.desc.' + d), hint: t('hover.hint.console'), color: '#ffc23d' }, cursorScreen.x, cursorScreen.y)
       h.shown = true
@@ -475,6 +539,11 @@ export class Input {
       e.preventDefault()
       return
     }
+    // 駕駛中的監控掃描暫時顯示站內（sweepPeek.ts）：點一下畫面就回到駕駛畫面（這一下不當成指令：座標是站內的）
+    if (sweepPeek.active && (e.button === 0 || e.button === 2)) {
+      sweepPeek.end()
+      return
+    }
     const [nx, ny] = this.ndc(e)
     const pt = this.scene.rts.groundAt(nx, ny)
     const ent = this.scene.pick(nx, ny)
@@ -486,7 +555,7 @@ export class Input {
         return
       }
       // 沒點到實體：游標在頭頂提示標籤上、或在沒有實體的控制台模型上（船艙控制台、視野外的主控台），當成點到它
-      this.rightClick(ent, pt, zone, ent ? null : (this.labelAt(e) ?? this.consoleModelAt(nx, ny)))
+      this.rightClick(ent, pt, zone, ent ? null : (this.labelAt(e.clientX, e.clientY) ?? this.consoleModelAt(nx, ny)))
       return
     }
     if (e.button === 0) {
@@ -497,9 +566,10 @@ export class Input {
         return
       }
       if (tm) {
-        // 沒有送出指令（點空了、附近也沒有可選的目標）：保持瞄準，不要無聲取消
+        // 沒有送出指令（點空了、附近也沒有可選的目標）：保持瞄準，不要無聲取消。點在標籤上（站名、互動提示）＝點到它標的對象
         const r = this.el.getBoundingClientRect()
-        const done = this.applyTarget(tm, ent, pt, zone, e.clientX - r.left, e.clientY - r.top)
+        const direct = ent || this.labelAt(e.clientX, e.clientY)?.ent || 0
+        const done = this.applyTarget(tm, direct, pt, zone, e.clientX - r.left, e.clientY - r.top)
         if (done && !e.shiftKey) targetMode.value = null
         return
       }
@@ -558,10 +628,13 @@ export class Input {
           break
       }
     }
-    // 點在頭頂標籤上＝點它標的對象（販賣機、控制台…）；沒有實體的控制台＝去駕駛
+    // 點在頭頂標籤上＝點它標的對象（販賣機、控制台…）；沒有實體的控制台＝去駕駛；艙門＝走過去（停靠中就會下船）
     if (alt) {
       if (alt.ent) this.rightClick(alt.ent, pt, zone)
-      else this.goPilot(alt, zone, q)
+      else if (alt.hatch) {
+        sendCmd({ k: 'move', x: alt.x, y: alt.y, q })
+        this.scene.fx.clickMarker(zone, alt.x, alt.y)
+      } else this.goPilot(alt, zone, q)
       return
     }
     // 點地面（或點到自己、只是場景的地貼、剛離開視野的實體）：走過去
@@ -589,11 +662,12 @@ export class Input {
       return true
     }
     if (tm.target === 'unit') {
-      const f = aimAbility(tm)?.filter
-      const id = chooseUnitTarget(ent, this.snapCands(mx, my, f, ent), wantsStructure(f))
+      const id = this.aimChoice(tm, ent, mx, my)
       const e = id ? world.ents.get(id) : undefined
-      if (!e) {
-        aimMiss()
+      // 只能對站點放的（停靠、設定航線）點到自己的船、恆星：sim 只會回「無效的目標」，改成說明要點在站點上
+      const f = aimAbility(tm)?.filter
+      if (!e || (f?.station && !targetOk(e.s, f, casterId()))) {
+        aimMiss(this.missKey(tm))
         return false
       }
       sendAim(tm, { e: id }, q)
@@ -610,10 +684,31 @@ export class Input {
   }
 
   /**
+   * 「點一個單位」的技能現在點在 (mx, my)（畫面 px）會選到誰（0 = 沒有）。direct = 游標下直接拾取到的實體。
+   * 吞噬只吸附吞得下的目標、範圍放寬（深色小生物在地板上看不清楚）；太空層的對象（站點、船）範圍也放寬（移動中的站點容易點空，
+   * 站名在模型下方）。
+   */
+  private aimChoice(tm: AimMode, direct: number, mx: number, my: number): number {
+    const ab = aimAbility(tm)
+    const f = ab?.filter
+    const opt = ab?.id === DEVOUR ? { ok: devourable, m: SNAP_M_DEVOUR } : this.scene.zone === 0 ? { m: SNAP_M_SPACE, minPx: SNAP_MIN_PX_SPACE } : {}
+    return chooseUnitTarget(direct, this.snapCands(mx, my, f, direct, opt), wantsStructure(f))
+  }
+
+  /** 瞄準點空時的提示：吞噬說明吞得下的有閃爍的圈；對站點的技能說明點在站點或站名附近都算 */
+  private missKey(tm: AimMode): string | undefined {
+    const ab = aimAbility(tm)
+    if (ab?.id === DEVOUR) return 'ux6.aim.devourMiss'
+    if (ab?.filter?.station) return 'ux6.aim.stationMiss'
+    return undefined
+  }
+
+  /**
    * 瞄準吸附的候選：目前畫面裡每個實體在螢幕上的身體中軸（腳 → 頭）到點擊位置的距離，與它的吸附範圍
    * （身體半徑＋約 1 格，依它所在深度換算成 px）。烘焙在站體裡的設施沒有單位視圖，用實體座標、約 2 m 高。
+   * opt.ok = 額外的篩選（吞噬：吞得下）；opt.m／minPx = 吸附範圍（公尺、螢幕下限）。
    */
-  private snapCands(mx: number, my: number, f: TargetFilter | undefined, direct: number): SnapCand[] {
+  private snapCands(mx: number, my: number, f: TargetFilter | undefined, direct: number, opt: { ok?: (s: SnapEntity) => boolean; m?: number; minPx?: number } = {}): SnapCand[] {
     const cam = this.scene.camera
     const r = this.el.getBoundingClientRect()
     const self = casterId()
@@ -624,7 +719,7 @@ export class Input {
     const out: SnapCand[] = []
     for (const e of world.ents.values()) {
       if (e.s.z !== zone) continue
-      const ok = targetOk(e.s, f, self)
+      const ok = targetOk(e.s, f, self) && (!opt.ok || opt.ok(e.s))
       // 不符合篩選的只有直接點中的那一個需要（chooseUnitTarget 要知道它不符合），其他的不用投影
       if (!ok && e.s.i !== direct) continue
       const uv = this.scene.units.views.get(e.s.i)
@@ -645,7 +740,14 @@ export class Input {
       const footX = sx(V_FOOT)
       const footY = sy(V_FOOT)
       const pxPerM = Math.hypot(sideX - footX, sideY - footY)
-      out.push({ id: e.s.i, dist: segDist(mx, my, footX, footY, headX, headY), tol: Math.max(SNAP_MIN_PX, (rad + SNAP_M) * pxPerM), ok, low: lowPri(e.s, self) })
+      out.push({
+        id: e.s.i,
+        dist: segDist(mx, my, footX, footY, headX, headY),
+        tol: Math.max(opt.minPx ?? SNAP_MIN_PX, (rad + (opt.m ?? SNAP_M)) * pxPerM),
+        ok,
+        low: lowPri(e.s, self),
+        self: e.s.i === self || e.s.i === world.me.unit,
+      })
     }
     return out
   }
@@ -676,6 +778,8 @@ export class Input {
     if (e.ctrlKey || e.metaKey || e.altKey) return
     switch (e.code) {
       case 'Space': {
+        // 監控掃描的站內畫面：先回到駕駛畫面（GameScene 結束暫時畫面時會對準自己）
+        if (sweepPeek.active) sweepPeek.end()
         const u = this.scene.myUnit()
         if (u) this.scene.rts.focus(u.x, u.y)
         e.preventDefault()
@@ -693,8 +797,9 @@ export class Input {
         if (isPiloting()) sendCmd({ k: 'unpilot' })
         return
       case 'Escape':
-        // 取消瞄準 → 關進化選單 → 開關遊戲選單
+        // 取消瞄準 → 結束監控掃描的站內畫面 → 關進化選單 → 開關遊戲選單
         if (targetMode.value) targetMode.value = null
+        else if (sweepPeek.active) sweepPeek.end()
         else if (evolveOpen.value) evolveOpen.value = false
         else menuOpen.value = !menuOpen.value
         return
@@ -743,6 +848,9 @@ export class Input {
       sendCmd({ k: 'cast', a: ab.id })
       return
     }
+    // 瞄準中再按一次同一個鍵：能對自己放的就對自己放
+    const cur = targetMode.value
+    if (cur?.kind === 'ability' && cur.id === ab.id && this.selfCast(cur)) return
     targetMode.value = { kind: 'ability', id: ab.id, target: ab.target, aoe: ab.aoe, range: ab.range }
   }
 
@@ -779,6 +887,24 @@ export class Input {
       sendCmd({ k: 'use', s: slot })
       return
     }
+    // 瞄準中再按一次同一格（例如按 3 抽血、再按 3）：能對自己放的就對自己放
+    const cur = targetMode.value
+    if (cur?.kind === 'item' && cur.slot === slot && this.selfCast(cur)) return
     targetMode.value = { kind: 'item', slot, ability: ab.id, target: ab.target, aoe: ab.aoe, range: ab.range }
+  }
+
+  /**
+   * 對自己施放瞄準中的技能／道具（第 6 輪審查：抽自己的捷徑）。只有篩選允許對自己放（aimSelfKey 不是 null）才做，
+   * 回傳是否送出了。和 WC3／Dota 的「連按兩下＝對自己」同一個習慣；瞄準時自己腳下會標「再按 3：對自己」（overlay.ts）。
+   */
+  private selfCast(tm: AimMode): boolean {
+    if (aimSelfKey(tm) === null) return false
+    const id = casterId()
+    const me = world.ents.get(id)
+    if (!me) return false
+    sendAim(tm, { e: id }, false)
+    this.scene.fx.clickMarker(this.scene.zone, me.x, me.y, '#b28cff')
+    targetMode.value = null
+    return true
   }
 }

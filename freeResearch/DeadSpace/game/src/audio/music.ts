@@ -465,7 +465,8 @@ function tick(): void {
 
 /** 切換背景音樂情境（重複呼叫同一個 mood 沒有作用）*/
 export function setMood(m: Mood): void {
-  if (m === mood) return
+  // 音樂引擎還沒建起來（使用者手勢之前沒有 AudioContext，sfx.ts）：同一個情境也要重試，手勢後音訊導演的下一次呼叫就會開始播
+  if (m === mood && eng) return
   mood = m
   if (!eng) eng = build()
   const e = eng

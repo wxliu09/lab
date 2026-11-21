@@ -127,6 +127,29 @@ export type ClickAction =
   | 'corpse'
   | 'follow'
 
+/**
+ * 外觀一看就是異形／變種人的單位（第 6 輪審查：游標停在進化成掠食者的變種人身上，右鍵卻是「跟隨」）：
+ * 異形形態、進化後的變種人形態、繭、卵、肉團，以及牠們放出來的眷屬與產物（xeno.*／mut.* 的召喚物）。
+ * 只看快照裡的外觀 id（UnitDef 的標籤）——偽裝成人的變種人、還沒變身的異形外觀就是人，看不出來，也不會被當成怪物。
+ */
+export function looksMonstrous(s: SnapEntity): boolean {
+  const d = s.d ?? ''
+  const tags = UNITS.get(d)?.tags ?? []
+  if (tags.includes('noTarget') || tags.includes('structure')) return false
+  if (tags.includes('xenoForm') || tags.includes('mutantForm') || tags.includes('egg')) return true
+  return (d.startsWith('xeno.') || d.startsWith('mut.')) && tags.includes('summon')
+}
+
+/**
+ * 右鍵要不要直接攻擊這個已現形的怪物：外觀是怪物（looksMonstrous），而且不是自己的單位、不是已知的隊友（快照的 Mine／Ally 旗標，
+ * sim 只對知情的同陣營送 Ally）。一般人形仍是跟隨。
+ */
+export function monsterFoe(s: SnapEntity): boolean {
+  const fl = s.fl ?? 0
+  if (fl & (EntFlag.Mine | EntFlag.Ally | EntFlag.Corpse)) return false
+  return looksMonstrous(s)
+}
+
 /** 右鍵點到某個實體時要做什麼（me = 自己的技能與能量，只有雜物箱要看；點到自己由呼叫端處理）*/
 export function rightClickAction(s: SnapEntity, me?: MeCtx): ClickAction {
   const d = s.d ?? ''
@@ -142,6 +165,8 @@ export function rightClickAction(s: SnapEntity, me?: MeCtx): ClickAction {
   if (sk || fl & EntFlag.Interactable || typeof s.x2?.s === 'string') return 'interact'
   if (fl & EntFlag.Corpse) return 'corpse'
   if (fl & EntFlag.Hostile) return 'attack'
+  // 已現形的異形／變種人（不是自己已知的隊友）：右鍵攻擊，不必先按 A
+  if (monsterFoe(s)) return 'attack'
   return 'follow'
 }
 

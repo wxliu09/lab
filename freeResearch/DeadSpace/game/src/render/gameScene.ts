@@ -311,6 +311,10 @@ export class GameScene implements SceneLike {
    * ent = 實體 id；船艙控制台沒有實體，改給 poi（版面上的格子）。標籤是畫在畫布上的，點在標籤上時 input.ts 當成點到它標的對象。
    */
   promptHit: { l: number; r: number; t: number; b: number; ent: number; poi?: { x: number; y: number; kind: string } } | null = null
+  /** 太空層站名標籤這一幀的範圍（overlay.ts）：點在站名上＝點到那座站（停靠、設定航線、右鍵飛過去）*/
+  stationHits: { l: number; r: number; t: number; b: number; ent: number }[] = []
+  /** 船艙艙門標籤這一幀的範圍與艙門位置（overlay.ts；艙門沒有實體）：點在標籤上＝點到艙門 */
+  hatchHit: { l: number; r: number; t: number; b: number; x: number; y: number } | null = null
   /** 量底部 HUD 的計時（鏡頭的投影偏移，RtsCamera.bottomInset）*/
   private insetT = 0
 
@@ -1404,16 +1408,25 @@ export class GameScene implements SceneLike {
       // Raycaster 不看 visible：藏起來的零件（閃爍的燈、被換掉的模型）不算
       if (!shown(h.object)) continue
       let o: THREE.Object3D | null = h.object
+      let id = 0
       while (o) {
-        if (o.userData.entId) return o.userData.entId as number
+        if (o.userData.entId) {
+          id = o.userData.entId as number
+          break
+        }
         const pk = o.userData.poiKey as string | undefined
         if (pk !== undefined) {
-          const id = this.poiEnt.get(`${this.zone}:${pk}`)
-          if (id && this.world.ents.has(id)) return id
+          const pid = this.poiEnt.get(`${this.zone}:${pk}`)
+          if (pid && this.world.ents.has(pid)) id = pid
           break
         }
         o = o.parent
       }
+      if (!id) continue
+      // 打到的是設施（站在 GIT 檢測儀前面的人，射線常常從四肢之間穿過去打到後面的設施）：游標其實落在某個人的身形上，
+      // 選那個人——單位優先於設施，懸停與點選一致（第 6 輪審查）
+      if (isStructureId(this.world.ents.get(id)?.s.d ?? '')) return this.bodyAt(ndcX, ndcY, h.distance) || id
+      return id
     }
     // 退而求其次：螢幕距離最近的單位
     let best = 0
@@ -1426,6 +1439,56 @@ export class GameScene implements SceneLike {
       const d = (v3.x - ndcX) ** 2 + (v3.y - ndcY) ** 2
       if (d < bestD) {
         bestD = d
+        best = id
+      }
+    }
+    return best
+  }
+
+  /**
+   * 游標（ndc）落在哪個單位的身形上（腳 → 頭的中軸，寬度＝身體半徑；畫面上至少 6 px）、而且比 maxDist（射線打到設施的距離）
+   * 離鏡頭近：回傳最貼近中軸的那一個（0 = 沒有）。建物、屍體、地上的物品不算。
+   */
+  private bodyAt(ndcX: number, ndcY: number, maxDist: number): number {
+    // 畫面大小（CSS px）：3D 畫面填滿視窗，寬依鏡頭的長寬比
+    const h = typeof window !== 'undefined' ? window.innerHeight : 720
+    const w = h * this.camera.aspect
+    const mx = ((ndcX + 1) / 2) * w
+    const my = ((1 - ndcY) / 2) * h
+    const foot = new THREE.Vector3()
+    const head = new THREE.Vector3()
+    const side = new THREE.Vector3()
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).normalize()
+    let best = 0
+    let bestD = Infinity
+    for (const [id, uv] of this.units.views) {
+      const e = this.world.ents.get(id)
+      const d = e?.s.d ?? ''
+      if (!e || isStructureId(d) || d.startsWith('item:') || (e.s.fl ?? 0) & EntFlag.Corpse) continue
+      // 身體中心比設施的命中點離鏡頭遠（站在設施後面、被擋住）：不算
+      foot.copy(uv.root.position)
+      foot.y += uv.height * 0.5
+      if (foot.distanceTo(this.camera.position) > maxDist + 0.6) continue
+      const rad = UNITS.get(d)?.radius ?? 0.4
+      foot.copy(uv.root.position)
+      side.copy(foot).addScaledVector(right, rad).project(this.camera)
+      head.copy(foot)
+      head.y += uv.height
+      head.project(this.camera)
+      foot.project(this.camera)
+      if (foot.z > 1) continue
+      const fx = ((foot.x + 1) / 2) * w
+      const fy = ((1 - foot.y) / 2) * h
+      const hx = ((head.x + 1) / 2) * w
+      const hy = ((1 - head.y) / 2) * h
+      const r = Math.max(6, Math.hypot(((side.x + 1) / 2) * w - fx, ((1 - side.y) / 2) * h - fy))
+      const vx = hx - fx
+      const vy = hy - fy
+      const l2 = vx * vx + vy * vy
+      const k = l2 > 0 ? Math.max(0, Math.min(1, ((mx - fx) * vx + (my - fy) * vy) / l2)) : 0
+      const dist = Math.hypot(mx - (fx + vx * k), my - (fy + vy * k))
+      if (dist <= r && dist < bestD) {
+        bestD = dist
         best = id
       }
     }

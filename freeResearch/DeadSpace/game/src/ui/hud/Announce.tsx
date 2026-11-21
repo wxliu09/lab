@@ -1,6 +1,8 @@
 // 公告：全場系統訊息（事件、末日、身分公告、站點被毀…）在畫面上方中央放大顯示；
 // 給自己的私人訊息（互動結果、錯誤）在 HUD 上方、聊天紀錄右側短暫顯示，不必盯著左下角的聊天紀錄。
 // 大公告只顯示標題句（字串有 key.title 就用它），對策等完整內容留在聊天紀錄；最多 2 行，整疊不壓到聊天紀錄。
+// 訊息路由（第 6 輪）：每則訊息只在一個主要位置完整出現。中央已完整顯示的，聊天紀錄平常不重複列出（看歷史時才有）；
+// 中央只顯示標題或第一句的（標「詳見聊天」），全文照常列在聊天紀錄。
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { createPortal } from 'preact/compat'
 import { effect, signal } from '@preact/signals'
@@ -15,7 +17,7 @@ import { abilityDef, itemDef } from '../../shared/content/registry'
 import { hasString, lang, loc, sysText, t } from '../i18n'
 import { fmtSecs, useCountdown } from './CdFace'
 
-interface Item {
+export interface Item {
   id: number
   text: string
   kind: 'event' | 'apoc' | 'sys' | 'ok' | 'err'
@@ -60,6 +62,42 @@ export function announceText(raw: string): [string, boolean] {
 }
 
 const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/
+
+/** 文字的「閱讀長度」：全形字算 1、其他算 0.5（英文一個字母比中文一個字快得多）*/
+function readLen(text: string): number {
+  let n = 0
+  for (const ch of text) n += CJK.test(ch) ? 1 : 0.5
+  return n
+}
+
+/** 私人訊息的小提示放得下的閱讀長度（約 2 行；更長就只顯示第一句，全文看聊天紀錄）*/
+export const TOAST_FULL_LEN = 72
+
+/**
+ * 私人訊息（互動結果、錯誤）在小提示裡顯示的文字：有 key.title 就用標題；太長（例如被寄生的完整說明）只顯示第一句
+ * （到第一個「：」「。」或英文的 ": "「. "），全文留在聊天紀錄。回傳 [文字, 是否省略了內容]。
+ */
+export function toastText(raw: string): [string, boolean] {
+  const [titled, more] = announceText(raw)
+  if (more) return [titled, true]
+  const full = sysText(raw)
+  if (readLen(full) <= TOAST_FULL_LEN) return [full, false]
+  const m = /^(.+?)(：|。|: |\. )/.exec(full)
+  const head = m ? m[1] + (m[2] === '。' || m[2] === '. ' ? m[2].trim() : '') : ''
+  return head.length >= 4 && readLen(head) <= 36 ? [head, true] : [full, false]
+}
+
+/**
+ * 在畫面中央（大公告或小提示）已經完整顯示過的訊息：聊天紀錄平常（淡出模式）不再重複列出，
+ * 打字或滑鼠停在聊天區上看歷史時才看得到（第 6 輪審查 P3：同一則訊息同時出現在畫面中央和聊天紀錄）。
+ * 只顯示了標題句、第一句的訊息（「詳見聊天」）照常在聊天紀錄列出全文。
+ */
+const shownInFull = new WeakSet<ChatLine>()
+
+/** 這一行已經在畫面中央完整顯示過（聊天紀錄平常不列出）*/
+export function shownCentrally(l: ChatLine): boolean {
+  return shownInFull.has(l)
+}
 
 /** 大公告的顯示時間（毫秒）：5 秒＋每字 40 ms（全形字算 2.5 字，中文讀得比較慢），上限 14 秒；末日至少 8 秒 */
 export function announceLife(text: string, kind: Item['kind']): number {
@@ -110,6 +148,26 @@ function classify(l: ChatLine): Item['kind'] | null {
   return null
 }
 
+/**
+ * 新收到的聊天／系統訊息 → 要顯示在中央的公告與小提示，並記下哪些已經在中央完整顯示（聊天紀錄平常不再列出）。
+ * 死因與「你死了…」只在死亡橫幅顯示（Hud.tsx 的 Banner、client/deathNote.ts）。
+ */
+export function routeLines(lines: readonly ChatLine[], now: number): Item[] {
+  const add: Item[] = []
+  for (const l of lines) {
+    if (deathScreenOnly(l)) continue
+    const kind = classify(l)
+    if (!kind) continue
+    // 小提示是私人訊息主要的位置：依長度給夠讀完的時間（至少 4.2 秒）；太長的只顯示第一句，全文在聊天紀錄
+    const small = kind === 'ok' || kind === 'err'
+    const [text, more] = small ? toastText(l.text) : announceText(l.text)
+    const life = small ? Math.max(4200, noticeLife(text)) : announceLife(text, kind)
+    if (!more) shownInFull.add(l)
+    add.push({ id: ++seq, text, kind, until: now + life, life, more })
+  }
+  return add
+}
+
 export function Announcements() {
   const [items, setItems] = useState<Item[]>([])
   const stack = useRef<HTMLDivElement>(null)
@@ -117,20 +175,7 @@ export function Announcements() {
   useEffect(() => {
     const tap = (lines: ChatLine[]) => {
       const now = performance.now()
-      const add: Item[] = []
-      for (const l of lines) {
-        // 死因與「你死了…」只在死亡橫幅顯示（Hud.tsx 的 Banner、client/deathNote.ts）
-        if (deathScreenOnly(l)) continue
-        const kind = classify(l)
-        if (!kind) continue
-        if (kind === 'ok' || kind === 'err') {
-          add.push({ id: ++seq, text: sysText(l.text), kind, until: now + 4200, life: 4200 })
-          continue
-        }
-        const [text, more] = announceText(l.text)
-        const life = announceLife(text, kind)
-        add.push({ id: ++seq, text, kind, until: now + life, life, more })
-      }
+      const add = routeLines(lines, now)
       if (add.length) setItems((xs) => addItems(xs, add, now))
     }
     chatTaps.push(tap)
@@ -248,6 +293,7 @@ export function Announcements() {
               <span class="toast-text">
                 {x.text}
                 {(x.count ?? 1) > 1 && <span class="dup-count"> ×{x.count}</span>}
+                {x.more && <span class="toast-more">{t('f7.announce.more')}</span>}
               </span>
             </div>
           ))}

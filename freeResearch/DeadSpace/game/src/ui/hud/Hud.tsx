@@ -1,11 +1,13 @@
 // 遊戲 HUD（致敬 WC3 版面）：上方資訊列、左下小地圖、中下頭像與數值、右下指令卡＋背包、左側聊天
 import { useEffect, useRef, useState, useLayoutEffect } from 'preact/hooks'
+import { effect } from '@preact/signals'
 import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
 import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import { entDefName, localizeName, suitColor, textColorOf } from '../names'
 import { itemTip } from '../itemTip'
+import { hitsBystanders } from '../aoe'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
@@ -13,14 +15,17 @@ import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, h
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
-import { aimAbility, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
+import { revealOpen } from './RoleReveal'
+import { aimAbility, aimSelfKey, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
 import { stationDefOf, type GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
 import { Icon } from '../icons'
-import { TopSlot } from './Announce'
-import { hideTip, showCursorTip, tipProps, titleTips, type LegendRow, type TipData } from '../tooltip'
+import { TopSlot, shownCentrally } from './Announce'
+import { hideTip, resetTips, showCursorTip, tipProps, titleTips, type LegendRow, type TipData } from '../tooltip'
 import { uiZoom } from '../uiScale'
+import { fitTopBar, guideBelow } from './topLayout'
+import { installClickBlur } from './clickBlur'
 import { createPortal } from 'preact/compat'
 import { invDrag } from '../../client/give'
 import { roomAt } from '../../shared/layout'
@@ -38,9 +43,11 @@ import { isMuted, mutedNames } from '../../client/mute'
 import { pingBoard, pingColor, pingLines, pingTaps, sendMapPing } from '../../client/mapPing'
 import { pingLook, type MapPing } from '../../client/pingBoard'
 import { pingFx } from '../../render/pingFx'
-import { notesOpen } from './Investigation'
+import { feedView, notesOpen } from './Investigation'
 import '../strings/art3'
 import '../ui4.css'
+import '../ui6.css'
+import '../strings/ui6'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -91,24 +98,121 @@ function PauseBadge({ on }: { on: boolean }) {
   )
 }
 
-/** 會讓單機練習暫停的介面開著：遊戲選單（Esc）、說明（G）、圖鑑（F1）、設定（四個都讀，訂閱它們的 signal）*/
+/** 會讓單機練習暫停的介面開著：遊戲選單（Esc）、說明（G）、圖鑑（F1）、設定、開局身分揭露（五個都讀，訂閱它們的 signal）*/
 function pauseUiOpen(): boolean {
-  const open = [menuOpen.value, guideOpen.value, codexOpen.value, settingsOpen.value]
+  const open = [menuOpen.value, guideOpen.value, codexOpen.value, settingsOpen.value, revealOpen.value]
   return open.some(Boolean)
+}
+
+interface TopPlace {
+  compact: boolean
+  stack: boolean
+  /** 頂列左緣（CSS px，已除以縮放）；null = 還沒量過，照 CSS 置中 */
+  left: number | null
+}
+
+/**
+ * 頂列避開左上的目標面板（topLayout.ts 的 fitTopBar）：每次重繪（每個快照）、視窗大小改變、頂列或目標面板尺寸改變時量一次。
+ * 回傳頂列的 ref 與目前的版面（精簡版、left）。
+ */
+function useTopPlacement(): [{ current: HTMLDivElement | null }, TopPlace] {
+  const bar = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<TopPlace>({ compact: false, stack: false, left: null })
+  const cur = useRef(place)
+  cur.current = place
+  /** 完整版比精簡版寬多少（CSS px）：切到精簡版時量一次。精簡版時用「目前寬度＋差距」估完整版有多寬，
+   * 內容變了（暫停字樣消失、EP 少一位數）也估得準，不會一直卡在精簡版 */
+  const extra = useRef(140)
+  /** 剛從完整版切到精簡版：完整版的寬度（CSS px），等精簡版畫出來再算差距 */
+  const lastFull = useRef<number | null>(null)
+  const watched = useRef<Element | null>(null)
+  const ro = useRef<ResizeObserver | null>(null)
+  const measure = useRef<() => void>(() => {})
+  measure.current = () => {
+    const el = bar.current
+    if (!el) return
+    const z = uiZoom.peek()
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0) return
+    const p = cur.current
+    if (p.compact && lastFull.current !== null) {
+      extra.current = Math.max(0, lastFull.current - r.width / z)
+      lastFull.current = null
+    }
+    const fullW = p.compact ? r.width + extra.current * z : r.width
+    const dock = el.parentElement?.querySelector(':scope > .guide-dock') ?? null
+    // 目標面板換了一個元素（收起筆記後重新掛上）：改觀察新的
+    if (dock !== watched.current) {
+      if (watched.current) ro.current?.unobserve(watched.current)
+      if (dock) ro.current?.observe(dock)
+      watched.current = dock
+    }
+    const d = dock?.getBoundingClientRect()
+    const f = fitTopBar({ vw: window.innerWidth, z, barW: r.width, compact: p.compact, fullW, guideRight: d && d.width > 0 && d.height > 0 ? d.right : null })
+    if (f.compact && !p.compact) lastFull.current = r.width / z
+    const left = Math.round((f.left / z) * 10) / 10
+    if (f.compact !== p.compact || f.stack !== p.stack || p.left === null || Math.abs(p.left - left) > 0.5) setPlace({ compact: f.compact, stack: f.stack, left })
+    const below = f.stack ? Math.ceil(r.bottom / z + 6) : null
+    if (guideBelow.peek() !== below) guideBelow.value = below
+  }
+  useLayoutEffect(() => measure.current())
+  useEffect(() => {
+    const run = () => measure.current()
+    ro.current = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(run)
+    if (bar.current) ro.current?.observe(bar.current)
+    window.addEventListener('resize', run)
+    return () => {
+      ro.current?.disconnect()
+      ro.current = null
+      watched.current = null
+      window.removeEventListener('resize', run)
+      guideBelow.value = null
+    }
+  }, [])
+  return [bar, place]
+}
+
+/**
+ * 目前畫面的「情境」：自己在哪一區、操控什麼（發射船艇、登船、駕駛、死亡會變）、看哪個監視器，以及哪些對話框／面板開著。
+ * 一變就收起所有 tooltip（tooltip.tsx 的 resetTips）：滑鼠沒動時舊的說明不會自己消失。
+ */
+function tipContext(): string {
+  void snapTick.value
+  const me = world.me
+  const c = me.control ? world.ents.get(me.control) : undefined
+  const fv = feedView.value
+  return [me.zone, me.control, c?.s.z, me.alive, fv ? fv.id : '', menuOpen.value, settingsOpen.value, guideOpen.value, codexOpen.value, notesOpen.value, evolveOpen.value].join('|')
 }
 
 export function TopBar() {
   void snapTick.value
   // 單機練習：打開遊戲選單、說明、圖鑑、設定時請主機暫停，全部關掉時繼續（practicePause.ts）
   useEffect(() => watchPracticePause(pauseUiOpen), [])
+  // 圖示按鈕用滑鼠點完不留焦點（第 6 輪審查：開著說明按 Enter 又打開設定）
+  useEffect(() => installClickBlur(), [])
+  // 換場景、開關對話框：收起留在原地的 tooltip
+  useEffect(() => {
+    let prev: string | null = null
+    return effect(() => {
+      const k = tipContext()
+      if (prev !== null && k !== prev) resetTips()
+      prev = k
+    })
+  }, [])
+  const [bar, place] = useTopPlacement()
   const me = world.me
   const w = world.w
   const rl = roleLabel(me)
   const fs = !!document.fullscreenElement
   return (
-    <div class="panel hud-top" data-testid="game">
-      <span {...tipProps(() => ({ title: t('tip.time.title'), body: t('tip.time.body') }))}>
-        {t('game.time')} <b>{fmtTime(w.t ?? 0)}</b>
+    <div ref={bar} class={'panel hud-top' + (place.compact ? ' compact' : '')} data-testid="game" style={place.left === null ? undefined : { left: `${place.left}px`, transform: 'none' }}>
+      <span data-testid="hud-time" {...tipProps(() => ({ title: t('tip.time.title'), body: t('tip.time.body') }))}>
+        {/* 精簡版（小視窗、介面放大）用時鐘圖示代替「時間」兩字 */}
+        <span class="hud-lbl">{t('game.time')}</span>
+        <span class="hud-ico" aria-label={t('game.time')}>
+          <Icon name="clock" size={15} color="#9fb3c2" />
+        </span>{' '}
+        <b>{fmtTime(w.t ?? 0)}</b>
       </span>
       <span {...tipProps(() => ({ title: t('tip.stab.title'), body: t('tip.stab.body') }))}>
         <Stability />
@@ -890,6 +994,8 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   ]
   if (!passive) hints.push(t('tip.ability.use', { k: key }))
   if (ab.autocast) hints.push(t('tip.ability.auto'))
+  // 範圍傷害不分敵我：會波及身旁的 NPC 船員（被打傷的會反擊）
+  if (hitsBystanders(id)) hints.push(t('ui6.tip.aoeCrew'))
   if (st?.disabled) hints.unshift(t('tip.ability.disabled'))
   // 變身被看到就曝光：視野裡有其他人形單位時，按下去之前就先警告（exposure.ts）
   const watchers = EXPOSING_ABILITIES.has(id) ? watcherCount(world) : 0
@@ -1194,7 +1300,9 @@ export function Chat() {
   const now = performance.now()
   const stamps = lines.map((l) => chatStamp(l, now))
   const reveal = chatOpen.value || hover
-  const { faded, next } = chatFade(stamps.map((v) => v.at), now, reveal)
+  const { faded: aged, next } = chatFade(stamps.map((v) => v.at), now, reveal)
+  // 已經在畫面中央完整顯示過的公告、私人訊息（Announce.tsx）：平常不重複列出，看歷史（打字、滑鼠停在聊天區）時才顯示
+  const faded = aged.map((f, i) => f || (!reveal && shownCentrally(lines[i])))
   // 下一行到淡出時間時重繪一次（不用每秒輪詢）
   useEffect(() => {
     if (!Number.isFinite(next)) return
@@ -1290,6 +1398,9 @@ export function TargetHint() {
   else if (tm.kind === 'attack') name = t('target.attack')
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
+  // 能對自己放的技能／道具（抽血、慰藉護盾、投影分身）：瞄準時再按一次同一個鍵就是對自己（input.ts 的 selfCast）
+  const selfKey = tm ? aimSelfKey(tm) : null
+  if (selfKey) name += ' · ' + t('ux6.aim.self', { k: selfKey })
   // 在太空中瞄準（設定航線、主砲、停靠…）：目標常常在畫面外，提醒可以直接點小地圖
   if (tm && tm.kind !== 'attack' && world.ents.get(world.me.control || world.me.unit || 0)?.s.z === 0) name += t('art3.aim.mapHint')
   return (

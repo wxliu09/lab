@@ -8,11 +8,14 @@ import type { ClientWorld } from '../client/world'
 import type { GameScene } from './gameScene'
 import { loc, sysText, t } from '../ui/i18n'
 import '../ui/strings/art3'
+import '../ui/strings/ux6'
 import { uiZoom } from '../ui/uiScale'
 import { entDefName, localizeName } from '../ui/names'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 import { meCtx, promptKey } from '../client/interactKind'
-import { lastInteract } from '../client/input'
+import { aimSelfKey, lastInteract, targetMode } from '../client/input'
+import { DEVOUR, devourable } from '../client/devourInfo'
+import { cabinHatch } from '../client/hatch'
 import { isMuted } from '../client/mute'
 import { panelEntries, pickPanel } from '../client/interactPanels'
 import { consoleSpots, type ConsoleSpot } from './moveTargets'
@@ -50,6 +53,30 @@ export function placeBubble(sx: number, bottom: number, w: number, h: number, pl
   return rect
 }
 
+/**
+ * 聊天泡泡夾在畫面內（第 6 輪審查：站在畫面左緣的人說話，泡泡被切掉一半）：左右各留 pad，太寬就貼左邊；
+ * 頂端超出畫面就往下移。回傳平移後的矩形（寬高不變）。
+ */
+export function clampRect(r: Rect, w: number, h: number, pad = 4): Rect {
+  const rw = r.r - r.l
+  const rh = r.b - r.t
+  let dx = 0
+  if (r.r > w - pad) dx = w - pad - r.r
+  if (r.l + dx < pad) dx = pad - r.l
+  const dy = r.t < pad ? pad - r.t : 0
+  const l = r.l + dx
+  const t = r.t + dy
+  return { l, r: l + rw, t, b: t + rh }
+}
+
+/**
+ * 畫面上蓋著 overlay 的 HUD 面板（玻璃面板是半透明的，名字、站名直接畫在下面看起來像是畫在面板上面；第 6 輪審查：
+ * 「餘燼衛星」壓到「離開控制台 B」按鈕）：overlay 把這些範圍裁掉，世界標籤一律在 HUD 之下。
+ */
+const HUD_SEL = '.layer .panel, .layer button.unpilot'
+/** HUD 範圍多久量一次（秒）：getBoundingClientRect 要排版，不要每幀做 */
+const HUD_EVERY = 0.25
+
 /** canvas 上的中文字需要先載入對應的字型子集 */
 function ensureGlyphs(text: string): void {
   if (!text || requested.has(text)) return
@@ -61,6 +88,9 @@ export class Overlay {
   readonly canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
   private v = new THREE.Vector3()
+  /** 蓋在 overlay 上的 HUD 面板（CSS px，相對 overlay 左上角）與下次量測的時間（performance.now 秒）*/
+  private hud: Rect[] = []
+  private hudAt = 0
 
   constructor(parent: HTMLElement) {
     this.canvas = document.createElement('canvas')
@@ -88,11 +118,43 @@ export class Overlay {
     const x = this.ctx
     x.setTransform(dpr, 0, 0, dpr, 0, 0)
     x.clearRect(0, 0, w, h)
+    // HUD 面板蓋住的範圍裁掉：世界標籤（名字、站名、泡泡、提示）都畫在 HUD 之下
+    const hud = this.hudRects()
+    x.save()
+    if (hud.length) {
+      x.beginPath()
+      x.rect(0, 0, w, h)
+      for (const r of hud) x.rect(r.l, r.t, r.r - r.l, r.b - r.t)
+      x.clip('evenodd')
+    }
+    this.drawWorld(scene, world, x, w, h)
+    x.restore()
+  }
+
+  /** 量 HUD 面板的範圍（HUD_EVERY 秒一次；測試環境沒有 DOM 時是空的）*/
+  private hudRects(): Rect[] {
+    const now = performance.now() / 1000
+    if (now < this.hudAt) return this.hud
+    this.hudAt = now + HUD_EVERY
+    const host = this.canvas.parentElement
+    if (!host || typeof host.querySelectorAll !== 'function') return (this.hud = [])
+    const base = this.canvas.getBoundingClientRect()
+    const out: Rect[] = []
+    for (const el of host.querySelectorAll(HUD_SEL)) {
+      const r = el.getBoundingClientRect()
+      if (r.width < 1 || r.height < 1) continue
+      out.push({ l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top })
+    }
+    return (this.hud = out)
+  }
+
+  private drawWorld(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number): void {
     const cam = scene.camera
     const now = world.now()
     const z = Math.min(1.6, uiZoom.value)
     const labels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
-    const stationLabels: { name: string; sx: number; sy: number; color: string; pri: number }[] = []
+    const stationLabels: { name: string; sx: number; sy: number; color: string; pri: number; ent: number }[] = []
+    scene.stationHits = []
     /** 單位身體在畫面上的範圍：設施標籤不能蓋住人 */
     const bodies: { l: number; r: number; t: number; b: number }[] = []
     const bubbles = new Map<number, { text: string; color: number }>()
@@ -124,7 +186,7 @@ export class Overlay {
           const by = (-this.v.y * 0.5 + 0.5) * h
           if (Math.abs(cx / w - 0.5) <= 0.55 && cy > -50 && cy < h + 50) {
             const piloted = (e.s.o ?? -1) >= 0 && e.s.c !== undefined && e.s.c >= 0
-            stationLabels.push({ name: nm, sx: cx, sy: Math.max(cy, by) + 18 * z, color: piloted ? PLAYER_COLORS[e.s.c!].hex : '#bfe9ff', pri: 1 })
+            stationLabels.push({ name: nm, sx: cx, sy: Math.max(cy, by) + 18 * z, color: piloted ? PLAYER_COLORS[e.s.c!].hex : '#bfe9ff', pri: 1, ent: id })
           }
         }
         continue
@@ -165,19 +227,39 @@ export class Overlay {
       if (b) pendingBubbles.push({ sx, bottom: sy - 24 * z, text: b.text })
     }
     const placed: { l: number; r: number; t: number; b: number }[] = []
+    // 吞噬瞄準：吞得下的目標腳下畫閃爍的圈（最先畫：圈在地上，名字、提示蓋在上面）
+    this.devourMarks(scene, world, x, w, h, z, now)
     const pr = this.prompt(scene, world, x, w, h, z, now)
     if (pr) placed.push(pr)
+    const sh = this.selfAimHint(scene, world, x, w, h, z)
+    if (sh) placed.push(sh)
     this.drawLabels(x, labels, placed, z)
+    const hl = this.hatchLabel(scene, world, x, w, h, z, now, placed)
+    if (hl) placed.push(hl)
     this.facilityLabels(scene, world, x, w, h, z, placed, bodies)
-    // 聊天泡泡：由下往上（畫面下方的先放），重疊就往上錯開
+    // 聊天泡泡：由下往上（畫面下方的先放），重疊就往上錯開；夾在畫面內
     pendingBubbles.sort((a, b) => b.bottom - a.bottom)
-    for (const pb of pendingBubbles) placed.push(this.bubble(x, pb.sx, pb.bottom, pb.text, z, placed))
+    for (const pb of pendingBubbles) placed.push(this.bubble(x, pb.sx, pb.bottom, pb.text, z, placed, w, h))
     // 站名：字大一點、全部畫（站點彼此距離遠，不做省略）
     x.save()
     x.font = `700 ${Math.round(15 * z)}px "Noto Sans TC", sans-serif`
     x.textAlign = 'center'
     for (const lb of stationLabels) {
       ensureGlyphs(lb.name)
+      // 點在站名上＝點到那座站（input.ts labelAt）：範圍上下各多留幾 px
+      const hw = x.measureText(lb.name).width / 2 + 6
+      const fs = 15 * z
+      scene.stationHits.push({ l: lb.sx - hw, r: lb.sx + hw, t: lb.sy - fs - 4, b: lb.sy + 6, ent: lb.ent })
+      // 游標下（或瞄準中點下去會選到）的那座站：站名加框，看得出點下去是哪一座（停靠、設定航線、右鍵飛過去）
+      if (lb.ent === scene.units.hovered) {
+        x.lineWidth = 1.5
+        x.strokeStyle = targetMode.value ? '#b28cff' : '#ffc23d'
+        x.fillStyle = 'rgba(8,12,18,0.6)'
+        x.beginPath()
+        x.roundRect(lb.sx - hw, lb.sy - fs - 4, hw * 2, fs + 10, 4)
+        x.fill()
+        x.stroke()
+      }
       x.lineWidth = 4
       x.strokeStyle = 'rgba(0,0,0,0.85)'
       x.strokeText(lb.name, lb.sx, lb.sy)
@@ -312,6 +394,154 @@ export class Overlay {
   }
 
   /**
+   * 吞噬瞄準（第 6 輪審查：深藍小團在藍色地板上看不見）：畫面裡每個吞得下的目標，腳下畫一個閃爍的地面圈（照透視投影成橢圓）；
+   * 點下去會選到的那一個（input.ts 的瞄準預覽 = units.hovered）圈畫粗、亮，旁邊標 EP。
+   * 只標快照裡看得到的實體（本來就在視野內），吞不吞得下只看外觀 id（devourInfo.ts devourable）。
+   */
+  private devourMarks(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, now: number): void {
+    const tm = targetMode.value
+    if (!tm || tm.kind !== 'ability' || tm.id !== DEVOUR) return
+    const pick = scene.units.hovered
+    const cam = scene.camera
+    const pulse = 0.5 + 0.5 * Math.sin(now * 6)
+    x.save()
+    for (const e of world.ents.values()) {
+      if (e.s.z !== scene.zone || !devourable(e.s)) continue
+      const uv = scene.units.views.get(e.s.i)
+      const cx = uv ? uv.root.position.x : e.x
+      const cz = uv ? uv.root.position.z : -e.y
+      const hot = e.s.i === pick
+      const r = (UNITS.get(e.s.d ?? '')?.radius ?? 0.35) + (hot ? 0.35 : 0.25) + pulse * 0.12
+      // 地面圈：24 點投影到畫面
+      x.beginPath()
+      let ok = true
+      for (let k = 0; k <= 24; k++) {
+        const a = (k / 24) * Math.PI * 2
+        this.v.set(cx + Math.cos(a) * r, 0.05, cz + Math.sin(a) * r).project(cam)
+        if (this.v.z > 1) {
+          ok = false
+          break
+        }
+        const px = (this.v.x * 0.5 + 0.5) * w
+        const py = (-this.v.y * 0.5 + 0.5) * h
+        if (k === 0) x.moveTo(px, py)
+        else x.lineTo(px, py)
+      }
+      if (!ok) continue
+      x.closePath()
+      // 先畫深色外框再畫亮色：在亮地板、暗地板上都看得到
+      x.globalAlpha = hot ? 0.95 : 0.55 + 0.4 * pulse
+      x.lineWidth = (hot ? 6 : 4.5) * z
+      x.strokeStyle = 'rgba(0,0,0,0.75)'
+      x.stroke()
+      x.lineWidth = (hot ? 3 : 2) * z
+      x.strokeStyle = hot ? '#d8ff7a' : '#9dff6a'
+      x.stroke()
+      if (hot) {
+        const n = UNITS.get(e.s.d ?? '')?.devourEp ?? 0
+        this.v.set(cx + r, 0.05, cz).project(cam)
+        const lx = (this.v.x * 0.5 + 0.5) * w + 6 * z
+        const ly = (-this.v.y * 0.5 + 0.5) * h
+        const label = t('ux6.devour.ep', { n })
+        x.globalAlpha = 1
+        x.font = `700 ${Math.round(13 * z)}px "Noto Sans TC", sans-serif`
+        x.textAlign = 'left'
+        x.lineWidth = 4
+        x.strokeStyle = 'rgba(0,0,0,0.85)'
+        x.strokeText(label, lx, ly)
+        x.fillStyle = '#d8ff7a'
+        x.fillText(label, lx, ly)
+      }
+    }
+    x.restore()
+  }
+
+  /**
+   * 瞄準可以對自己放的技能／道具（抽血、慰藉護盾、投影分身）時，自己腳下標「再按 3：對自己」（input.ts selfCast 的捷徑）。
+   * 標在腳下：頭上已經有名字、血條、互動提示，擠在一起看不清楚。回傳標籤的範圍（泡泡要避開）。
+   */
+  private selfAimHint(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number): Rect | null {
+    const k = aimSelfKey(targetMode.value)
+    if (!k) return null
+    const id = world.me.control || world.me.unit || 0
+    const uv = scene.units.views.get(id)
+    if (!uv) return null
+    this.v.copy(uv.root.position)
+    this.v.project(scene.camera)
+    if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return null
+    const sx = (this.v.x * 0.5 + 0.5) * w
+    const sy = (-this.v.y * 0.5 + 0.5) * h + 30 * z
+    const text = t('ux6.aim.self', { k })
+    ensureGlyphs(text)
+    x.save()
+    x.font = `600 ${Math.round(13 * z)}px "Noto Sans TC", sans-serif`
+    x.textAlign = 'center'
+    const pw = x.measureText(text).width + 14 * z
+    const ph = 20 * z
+    const r = clampRect({ l: sx - pw / 2, r: sx + pw / 2, t: sy - ph, b: sy }, w, h)
+    x.fillStyle = 'rgba(20,10,34,0.85)'
+    x.strokeStyle = 'rgba(178,140,255,0.85)'
+    x.lineWidth = 1
+    x.beginPath()
+    x.roundRect(r.l, r.t, pw, ph, 4)
+    x.fill()
+    x.stroke()
+    x.fillStyle = '#e3d6ff'
+    x.fillText(text, (r.l + r.r) / 2, r.b - 6 * z)
+    x.restore()
+    return r
+  }
+
+  /**
+   * 船艙艙門的標籤（第 6 輪審查：停靠後艙門沒有標示）：自己站在船艙裡（沒在駕駛）時，在艙門上方標「艙門 · 走過去下船」；
+   * 停靠中閃爍、在太空中寫「停靠後才能下船」（client/hatch.ts 從太空層推斷）。點在標籤上＝點到艙門（scene.hatchHit）。
+   */
+  private hatchLabel(scene: GameScene, world: ClientWorld, x: CanvasRenderingContext2D, w: number, h: number, z: number, now: number, placed: readonly Rect[]): Rect | null {
+    scene.hatchHit = null
+    const hc = cabinHatch(world, scene.zones)
+    if (!hc || hc.zone !== scene.zone) return null
+    this.v.set(hc.x, 1.4, -hc.y).project(scene.camera)
+    if (this.v.z > 1 || Math.abs(this.v.x) > 1 || Math.abs(this.v.y) > 1) return null
+    const sx = (this.v.x * 0.5 + 0.5) * w
+    let sy = (-this.v.y * 0.5 + 0.5) * h
+    const text = t(hc.docked === true ? 'ux6.hatch.docked' : hc.docked === false ? 'ux6.hatch.flying' : 'ux6.hatch.any')
+    ensureGlyphs(text)
+    const r = 6 * z
+    const fs = Math.round(13 * z)
+    x.save()
+    x.font = `700 ${fs}px "Noto Sans TC", sans-serif`
+    x.textAlign = 'center'
+    const half = x.measureText(text).width / 2 + 4
+    // 跟互動提示、名字重疊就往上錯開一行
+    const hit = (q: Rect) => placed.some((p) => q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t)
+    for (let k = 0; k < 2 && hit({ l: sx - half, r: sx + half, t: sy - r - fs - 8 * z, b: sy + r }); k++) sy -= fs + 6
+    const live = hc.docked !== false
+    const pulse = live ? 0.65 + 0.35 * Math.sin(now * 5) : 0.6
+    // 菱形標記（同互動提示）：停靠中閃爍
+    x.globalAlpha = pulse
+    x.strokeStyle = '#ffc23d'
+    x.lineWidth = 2
+    x.beginPath()
+    x.moveTo(sx, sy - r)
+    x.lineTo(sx + r, sy)
+    x.lineTo(sx, sy + r)
+    x.lineTo(sx - r, sy)
+    x.closePath()
+    x.stroke()
+    x.globalAlpha = live ? 1 : 0.8
+    x.lineWidth = 4
+    x.strokeStyle = 'rgba(0,0,0,0.85)'
+    const ty = sy - r - 8 * z
+    x.strokeText(text, sx, ty)
+    x.fillStyle = live ? '#ffe2a0' : '#b9c4cf'
+    x.fillText(text, sx, ty)
+    x.restore()
+    const rect = { l: sx - half, r: sx + half, t: ty - fs - 2, b: sy + r }
+    scene.hatchHit = { ...rect, x: hc.x, y: hc.y }
+    return rect
+  }
+
+  /**
    * 身旁設施的短名稱（審查 R2：販賣機、維修站、醫療補給、生命再生器長得一樣，分不出哪台是哪台）：
    * 自己主單位同房間、或 FAC_LABEL_R 內的這些設施頭上常駐一個小標籤，樣式同互動提示（琥珀色字、黑邊、小菱形），
    * 但不閃、字小一號。互動提示已經標著的那一台不重複標。跟名字、互動提示重疊就往上錯開一行，
@@ -380,8 +610,8 @@ export class Overlay {
     x.restore()
   }
 
-  /** 畫一個聊天泡泡（底邊預設在 bottom，跟 placed 重疊就往上錯開，見 placeBubble）；回傳實際的矩形 */
-  private bubble(x: CanvasRenderingContext2D, sx: number, bottom: number, raw: string, z = 1, placed: readonly Rect[] = []): Rect {
+  /** 畫一個聊天泡泡（底邊預設在 bottom，跟 placed 重疊就往上錯開，見 placeBubble；夾在畫面內，見 clampRect）；回傳實際的矩形 */
+  private bubble(x: CanvasRenderingContext2D, sx: number, bottom: number, raw: string, z = 1, placed: readonly Rect[] = [], vw = Infinity, vh = Infinity): Rect {
     // AI 的公告發言是系統 key 形式（`@key|k=v`），依目前語言解碼
     const text = sysText(raw)
     ensureGlyphs(text)
@@ -390,7 +620,8 @@ export class Overlay {
     const tw = x.measureText(t).width
     const pw = tw + 16 * z
     const ph = 24 * z
-    const r = placeBubble(sx, bottom, pw, ph, placed, 4, 3 * z)
+    const r = clampRect(placeBubble(sx, bottom, pw, ph, placed, 4, 3 * z), vw, vh)
+    const cx = (r.l + r.r) / 2
     x.fillStyle = 'rgba(10,16,22,0.85)'
     x.strokeStyle = 'rgba(159,231,255,0.5)'
     x.lineWidth = 1
@@ -400,7 +631,7 @@ export class Overlay {
     x.stroke()
     x.fillStyle = '#e8f6ff'
     x.textAlign = 'center'
-    x.fillText(t, sx, r.b - 7 * z)
+    x.fillText(t, cx, r.b - 7 * z)
     return r
   }
 }

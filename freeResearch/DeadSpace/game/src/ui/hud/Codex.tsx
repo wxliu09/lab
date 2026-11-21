@@ -8,6 +8,8 @@ import type { UnitDef } from '../../shared/content/types'
 import { modalChecks, typingInField } from '../../client/input'
 import { hasString, lang, listJoin, loc, t } from '../i18n'
 import { Icon } from '../icons'
+import { hitsBystanders } from '../aoe'
+import '../strings/ui6'
 import '../../shared/content/index'
 
 export const codexOpen = signal(false)
@@ -40,7 +42,8 @@ function abilitiesOf(ids: string[]): Entry['abilities'] {
   return ids
     .map((a) => ABILITIES.get(a))
     .filter((a): a is NonNullable<typeof a> => !!a && !a.id.startsWith('suit.drop'))
-    .map((a) => ({ name: loc(a.name), desc: loc(a.desc), icon: a.icon }))
+    // 範圍傷害的技能補一句會波及 NPC 船員（第 6 輪審查；同技能 tooltip）
+    .map((a) => ({ name: loc(a.name), desc: loc(a.desc) + (hitsBystanders(a.id) ? t('ui6.codex.aoeCrew') : ''), icon: a.icon }))
 }
 
 /**
@@ -114,13 +117,15 @@ function entries(tab: Tab): Entry[] {
         .filter((i) => i.cat === 'suit')
         .map((i) => {
           const u = i.suit ? UNITS.get(i.suit) : undefined
-          return { id: i.id, name: loc(i.name), icon: 'suit', body: [loc(i.desc)], stats: unitStats(u), abilities: abilitiesOf(u?.abilities ?? []) }
+          // 普攻會爆炸的防護服（火箭裝）：會波及 NPC 船員
+          const body = (u?.attack?.aoe ?? 0) > 0 ? [loc(i.desc), t('ui6.tip.aoeCrew')] : [loc(i.desc)]
+          return { id: i.id, name: loc(i.name), icon: 'suit', body, stats: unitStats(u), abilities: abilitiesOf(u?.abilities ?? []) }
         })
     case 'items':
       return [...ITEMS.values()]
         .filter((i) => i.cat !== 'suit' && i.cat !== 'quest')
         .sort((a, b) => a.cat.localeCompare(b.cat))
-        .map((i) => ({ id: i.id, name: loc(i.name), sub: t('codex.cat.' + i.cat), icon: i.icon, body: [loc(i.desc)] }))
+        .map((i) => ({ id: i.id, name: loc(i.name), sub: t('codex.cat.' + i.cat), icon: i.icon, body: i.use && hitsBystanders(i.use) ? [loc(i.desc), t('ui6.tip.aoeCrew')] : [loc(i.desc)] }))
     case 'creatures':
       return creatureGroups([...UNITS.values()].filter((u) => u.tags.includes('creature') && !u.tags.includes('summon') && u.ai)).map((g) => {
         const u = g[0]
@@ -142,15 +147,26 @@ function entries(tab: Tab): Entry[] {
       return ALL_STATIONS.map((s) => ({
         id: s.id,
         name: loc(s.name),
-        sub: t('codex.enable.' + s.enable),
+        sub: t(placeWhenKey(s.id, s.enable)),
         icon: s.outdoor ? 'radar' : 'ship',
-        body: [t('codex.place.' + s.id)],
+        body: s.id === 'caldera' ? [t('codex.place.' + s.id), t('ui6.codex.place.calderaWhen')] : [t('codex.place.' + s.id)],
         stats: [
           [t('codex.hp'), String(s.space.hp)],
           [t('codex.pads'), String(parseLayout(s.layout).pads.length)],
         ],
       }))
   }
+}
+
+/**
+ * 地點的出現條件（對照 sim：setup.ts 的 chooseStations、stations.ts 的 addCalderaIfEngineer）。站點資料裡標成 auto 的三座站：
+ * 活體庫號、擺渡號照原作其實每局都在（ALWAYS_ON_EXTRA）；火口號只在 7 人以上（QR_MIN_PLAYERS）的局、三分之一機率、
+ * 而且有人抽到工程師時才出現。第 6 輪審查：原本一律寫「人多時開放」，6 人局明明就有活體庫號、擺渡號。
+ */
+export function placeWhenKey(id: string, enable: string): string {
+  if (id === 'caldera') return 'ui6.codex.enable.caldera'
+  if (id === 'vivarium' || id === 'portage') return 'codex.enable.core'
+  return 'codex.enable.' + enable
 }
 
 export function Codex() {

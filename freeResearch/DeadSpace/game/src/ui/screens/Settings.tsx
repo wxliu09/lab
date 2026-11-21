@@ -10,6 +10,8 @@ import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../clie
 import { modalChecks } from '../../client/input'
 import { hintsEnabled, resetHints } from '../hud/Guide'
 import '../strings/art2'
+import '../ui6.css'
+import '../strings/ui6'
 
 /** 0–100 之類的滑桿＋數值；fmt = 自訂數值的寫法（預設「數值＋單位」）*/
 function Slider({ id, min, max, value, onInput, onChange, unit = '', fmt }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string; fmt?: (v: number) => string }) {
@@ -31,10 +33,79 @@ modalChecks.push(() => settingsOpen.value)
 
 export function InGameSettings() {
   if (!settingsOpen.value) return null
-  return <Settings onClose={() => (settingsOpen.value = false)} />
+  // 對局中不顯示網路設定（只在下次建立／加入房間時生效，局中改了也沒用，只會讓人緊張）
+  return <Settings onClose={() => (settingsOpen.value = false)} net={false} />
 }
 
-export function Settings({ onClose }: { onClose: () => void }) {
+/** TURN 輸入框的內容 → 伺服器清單；空白 = 不用 TURN；格式不對回傳 null */
+export function parseTurn(text: string): RTCIceServer[] | null {
+  if (!text.trim()) return []
+  try {
+    const v = JSON.parse(text) as unknown
+    return Array.isArray(v) ? (v as RTCIceServer[]) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 進階連線設定（主選單的設定才有；預設收合）：連線方式與 TURN。和其他設定一樣即時存檔（第 6 輪審查 P2：
+ * 原本只有這兩項要按「儲存」，按「關閉」或點背景就被默默丟掉）。TURN 格式不對時不存，顯示錯誤，保留上一次存好的值。
+ */
+function NetSettings() {
+  const ns = loadNetSettings()
+  const [strategy, setStrategy] = useState<string>(ns.strategy)
+  const [turn, setTurn] = useState(ns.turn.length ? JSON.stringify(ns.turn, null, 1) : '')
+  const [err, setErr] = useState('')
+  const saved = (s: string, tx: string) => saveNetSettings({ strategy: s as SignalStrategy, turn: parseTurn(tx) ?? loadNetSettings().turn })
+  return (
+    <details class="settings-adv" data-testid="settings-advanced">
+      <summary>{t('ui6.settings.advanced')}</summary>
+      <div class="dim settings-adv-note">{t('ui6.settings.advancedNote')}</div>
+      <div class="setrow">
+        <label>{t('settings.net')}</label>
+        <select
+          data-testid="net-strategy"
+          value={strategy}
+          onChange={(e) => {
+            const v = (e.target as HTMLSelectElement).value
+            setStrategy(v)
+            saved(v, turn)
+          }}
+        >
+          <option value="nostr">{t('ui6.settings.netDefault')}</option>
+          <option value="mqtt">MQTT</option>
+          <option value="torrent">BitTorrent</option>
+          {/* 同一瀏覽器多分頁（BroadcastChannel）只給開發與測試 build；正式版不顯示（e2e 用網址 ?net=bc 選這個傳輸）*/}
+          {__TEST_HOOKS__ && <option value="local">{t('settings.local')}</option>}
+        </select>
+      </div>
+      <label>{t('settings.turn')}</label>
+      <textarea
+        rows={4}
+        data-testid="net-turn"
+        value={turn}
+        onInput={(e) => {
+          const v = (e.target as HTMLTextAreaElement).value
+          setTurn(v)
+          const ok = parseTurn(v) !== null
+          setErr(ok ? '' : t('ui6.settings.turnBad'))
+          if (ok) saved(strategy, v)
+        }}
+      />
+      {err && (
+        <div class="notice" data-testid="net-turn-err">
+          {err}
+        </div>
+      )}
+      <div class="dim" style={{ fontSize: '13px', wordBreak: 'break-all' }}>
+        {t('settings.turnHelp')}
+      </div>
+    </details>
+  )
+}
+
+export function Settings({ onClose, net = true }: { onClose: () => void; net?: boolean }) {
   // Esc 關閉；capture 階段攔下，免得同一個 Esc 又打開進化選單。
   // 用 layout effect：一渲染就掛上（useEffect 要等下一次繪製，畫面很慢時會漏掉緊接著的 Esc）
   useLayoutEffect(() => {
@@ -46,29 +117,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', k, true)
     return () => window.removeEventListener('keydown', k, true)
   }, [onClose])
-  const ns = loadNetSettings()
-  const [strategy, setStrategy] = useState<string>(ns.strategy)
-  const [turn, setTurn] = useState(ns.turn.length ? JSON.stringify(ns.turn, null, 1) : '')
-  const [err, setErr] = useState('')
   const [hintMsg, setHintMsg] = useState('')
-  const save = () => {
-    let parsed: RTCIceServer[] = []
-    if (turn.trim()) {
-      try {
-        const v = JSON.parse(turn) as unknown
-        if (!Array.isArray(v)) throw new Error('not array')
-        parsed = v as RTCIceServer[]
-      } catch {
-        setErr(t('settings.badJson'))
-        return
-      }
-    }
-    saveNetSettings({ strategy: strategy as SignalStrategy, turn: parsed })
-    onClose()
-  }
   return (
     <div class="modal-back" onClick={onClose}>
-      {/* 內容區可捲動、按鈕列固定在底部：小視窗也一定看得到「儲存」*/}
+      {/* 內容區可捲動、按鈕列固定在底部：小視窗也一定看得到「關閉」*/}
       <div class="panel modal settings-modal" data-testid="settings" onClick={(e) => e.stopPropagation()}>
         <h2>{t('settings.title')}</h2>
         <div class="col settings-body" data-testid="settings-body">
@@ -145,28 +197,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <label>{t('settings.mute')}</label>
             <input type="checkbox" checked={audioPrefs.value.muted} onChange={(e) => setAudioPref('muted', (e.target as HTMLInputElement).checked)} />
           </div>
-          <div class="setrow">
-            <label>{t('settings.net')}</label>
-            <select value={strategy} onChange={(e) => setStrategy((e.target as HTMLSelectElement).value)}>
-              <option value="nostr">Nostr</option>
-              <option value="mqtt">MQTT</option>
-              <option value="torrent">BitTorrent</option>
-              <option value="local">{t('settings.local')}</option>
-            </select>
-          </div>
-          <label>{t('settings.turn')}</label>
-          <textarea rows={4} value={turn} onInput={(e) => setTurn((e.target as HTMLTextAreaElement).value)} />
-          <div class="dim" style={{ fontSize: '13px', wordBreak: 'break-all' }}>
-            {t('settings.turnHelp')}
-          </div>
+          {net && <NetSettings />}
         </div>
         <div class="settings-foot">
-          {err && <div class="notice">{err}</div>}
-          <div class="row">
-            <button class="primary grow" data-testid="settings-save" onClick={save}>
-              {t('settings.save')}
-            </button>
-            <button class="ghost" data-testid="settings-close" onClick={onClose}>
+          {/* 所有設定都即時生效、自動存檔：只有「關閉」（第 6 輪審查：原本的「儲存」只管網路設定，語意誤導）*/}
+          <div class="row" style={{ alignItems: 'center' }}>
+            <span class="dim grow" style={{ fontSize: '13px' }} data-testid="settings-autosave">
+              {t('ui6.settings.autoSaved')}
+            </span>
+            <button class="primary" data-testid="settings-close" onClick={onClose}>
               {t('settings.close')}
             </button>
           </div>

@@ -70,8 +70,26 @@ export function setVolume(v: number): void {
   setAudioPref('master', v)
 }
 
+/**
+ * 使用者已經跟頁面互動過（第一次 pointerdown／keydown）。在那之前不建立 AudioContext：瀏覽器的自動播放政策下，
+ * 手勢前建立或 resume 都只會得到 suspended 的 context，而且每次都在 console 留一則警告（第 6 輪審查 B-P3：每次載入 4 則）。
+ * 手勢前的音效本來就播不出來，直接略過；背景音樂、環境音由音訊導演每 0.5 秒重試，手勢後自然開始。
+ */
+let gestured = false
+
+/** 這個瀏覽器已經有過使用者手勢（重新整理後 userActivation 不會保留，所以通常是 false；測試環境沒有 navigator）*/
+function hasActivation(): boolean {
+  try {
+    return typeof navigator !== 'undefined' && !!(navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive
+  } catch {
+    return false
+  }
+}
+
 function ac(): AudioContext | null {
   if (ctx) return ctx
+  // 瀏覽器環境：手勢之前不建立（Vitest 等沒有 window 的環境照舊，測試直接用）
+  if (typeof window !== 'undefined' && !gestured && !hasActivation()) return null
   try {
     ctx = new AudioContext()
     master = ctx.createGain()
@@ -148,15 +166,22 @@ export function audioRunning(): boolean {
   return !!ctx && ctx.state === 'running'
 }
 
-/** 第一次使用者互動時解鎖音訊 */
-export function unlockAudio(): void {
+/**
+ * 使用者手勢時解鎖音訊：第一次手勢才建立 AudioContext（在手勢裡建立就是 running，不會有警告）；
+ * 之後若被瀏覽器暫停（例如分頁切回來），下一次手勢再 resume。
+ */
+export function unlockAudio(e?: Event): void {
+  // Esc 不算使用者手勢（瀏覽器不會因為它允許播放）：在它裡面建立 context 一樣會被擋、留下警告
+  if (e instanceof KeyboardEvent && e.key === 'Escape') return
+  gestured = true
   const c = ac()
   if (c && c.state === 'suspended') void c.resume()
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', unlockAudio, { once: true })
-  window.addEventListener('keydown', unlockAudio, { once: true })
+  // capture：比頁面上其他處理先跑（第一下點擊本身的按鈕音效也聽得到）
+  window.addEventListener('pointerdown', unlockAudio, { capture: true })
+  window.addEventListener('keydown', unlockAudio, { capture: true })
 }
 
 export function setListener(x: number, y: number): void {

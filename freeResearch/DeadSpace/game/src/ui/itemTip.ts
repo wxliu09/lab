@@ -3,6 +3,8 @@ import { UNITS, abilityDef, itemDef } from '../shared/content/registry'
 import { listJoin, loc, t } from './i18n'
 import { suitColor } from './names'
 import type { TipData } from './tooltip'
+import { hitsBystanders } from './aoe'
+import './strings/ui6'
 
 export function itemTip(id: string, extra: { rows?: [string, string][]; hint?: string; tag?: string } = {}): TipData | null {
   const def = itemDef(id)
@@ -19,13 +21,17 @@ export function itemTip(id: string, extra: { rows?: [string, string][]; hint?: s
     }
   }
   rows.push(...(extra.rows ?? []))
+  // 範圍傷害的道具（手榴彈、相位砲、熱融炸彈）與普攻會爆炸的防護服（火箭裝）：會波及 NPC 船員
+  const u = def.suit ? UNITS.get(def.suit) : undefined
+  const splash = (def.use && hitsBystanders(def.use)) || (u?.attack?.aoe ?? 0) > 0
+  const hint = [extra.hint, splash ? t('ui6.tip.aoeCrew') : ''].filter(Boolean).join('\n')
   return {
     title: loc(def.name),
     tag: extra.tag,
     sub: t('tip.cat.' + def.cat),
     body: loc(def.desc),
     rows,
-    hint: extra.hint,
+    hint: hint || undefined,
     color: def.suit ? suitColor(def.id) : '#9fe7ff',
   }
 }

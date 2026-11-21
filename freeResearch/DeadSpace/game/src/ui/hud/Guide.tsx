@@ -4,7 +4,6 @@
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { EndResult, PrivateState, WorldPublic } from '../../shared/protocol/messages'
-import type { Effect } from '../../shared/content/types'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
@@ -23,6 +22,10 @@ import { sampleName } from '../../shared/sysArgs'
 import { SIM_AGENT_TITLE, localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import { abilityKey } from './abilityKeys'
+import { aoeDamage } from '../aoe'
+import { guideBelow } from './topLayout'
+import '../strings/ui6'
+import { STATION_BY_ID } from '../../shared/content/stations/index'
 import '../guide.css'
 
 export { abilityKey }
@@ -279,6 +282,8 @@ export interface GuideView {
   epMult?: number
   /** 「先做：」輪播用的時間（滑鼠停在目標面板上時凍結，免得要點的那條剛好換掉）；沒有就用 w.t */
   altT?: number
+  /** 正在操控、不是自己主單位的載具（船艇、站點、救生艙、防禦無人機）的 def id */
+  ctrl?: string
 }
 
 export function identityOf(me: Partial<PrivateState>): Identity | null {
@@ -469,18 +474,6 @@ export function promotedSlots(r: Pick<EndResult, 'players' | 'timeline'>): Set<n
 
 // ───────── 仿生人：範圍傷害的武器（只看自己的裝備）─────────
 
-/** 效果裡有沒有範圍傷害（直接的 damage＋aoe、投射物命中、延遲爆炸、衝刺沿途，以及帶 aoe 與 dmg 參數的腳本，例如稜鏡火箭）*/
-function aoeDamage(effects: readonly Effect[] | undefined): boolean {
-  for (const ef of effects ?? []) {
-    if (ef.k === 'damage' && (ef.aoe ?? 0) > 0) return true
-    if (ef.k === 'projectile' && aoeDamage(ef.onHit)) return true
-    if (ef.k === 'delay' && aoeDamage(ef.then)) return true
-    if (ef.k === 'dash' && (aoeDamage(ef.onArrive) || aoeDamage(ef.hitAlong))) return true
-    if (ef.k === 'script' && Number(ef.p?.aoe ?? 0) > 0 && Number(ef.p?.dmg ?? 0) > 0) return true
-  }
-  return false
-}
-
 /**
  * 自己手上的範圍傷害武器：普攻本身會爆炸（火箭裝）就回傳那套裝備與爆炸半徑；
  * 否則看自己技能列裡第一個範圍傷害的技能（例如稜鏡火箭、特斯拉新星）。範圍傷害不分敵我，旁邊的船員也會被打到
@@ -528,6 +521,24 @@ export function infectionStep(v: GuideView): Step | null {
   }
   const held = kinds.find((k) => k === 'containedParasite' || k === 'containedPrion')
   if (held) return { key: held === 'containedParasite' ? 'guide.s.infectHeldParasite' : 'guide.s.infectHeldPrion', danger: true }
+  return null
+}
+
+/**
+ * 駕駛中的操作（只看自己操控的載具）：右鍵移動、停靠（船艇的「停靠」技能，快捷鍵照指令卡順序，例如紅隼級是 D）、
+ * B 離開控制台（input.ts 的 KeyB → unpilot）。救生艙另有 guide.s.podAim；不能移動的載具不寫「右鍵移動」。
+ */
+export function pilotStep(me: Partial<PrivateState>, ctrl: string | undefined): Step | null {
+  if (!ctrl || ctrl === 'ship.pod') return null
+  // 站點的單位定義由 sim 開局時才登錄（setup.ts 的 ensureStationDef），client 直接看站點資料的太空速度
+  const moves = (ctrl.startsWith('station.') ? STATION_BY_ID.get(ctrl.slice(8))?.space.speed : UNITS.get(ctrl)?.speed) ?? 0
+  if (ctrl.startsWith('ship.')) {
+    const kd = abilityKey(me, 'ship.dock')
+    const name = loc(abilityDef('ship.dock')?.name)
+    return kd !== null ? { key: 'ui6.guide.s.pilotShip', args: { k: keyText(kd), name } } : { key: 'ui6.guide.s.pilotShipNoDock' }
+  }
+  if (ctrl.startsWith('station.')) return { key: moves > 0 ? 'ui6.guide.s.pilotStation' : 'ui6.guide.s.pilotFixed' }
+  if (ctrl === 'npc.defenseDrone') return { key: 'ui6.guide.s.pilotDrone' }
   return null
 }
 
@@ -703,6 +714,9 @@ export function objectiveFor(v: GuideView): Objective | null {
   // 搭救生艙飄在太空中（操控的是救生艙）：要先設定航線才會降落，任何身分都可能搭
   const kpod = EVENT_IDS.has(id) ? abilityKey(me, 'pod.trajectory') : null
   if (kpod !== null) steps.unshift({ key: 'guide.s.podAim', args: { k: keyText(kpod), name: loc(abilityDef('pod.trajectory')?.name) } })
+  // 駕駛船艇／站點／防禦無人機（第 6 輪審查 P2：發射後不知道怎麼開、怎麼停靠、怎麼離開）
+  const pilot = EVENT_IDS.has(id) ? pilotStep(me, v.ctrl) : null
+  if (pilot) steps.unshift(pilot)
   const live = id === 'xeno' || id === 'mutant' || id === 'android'
   const goal = id === 'dead' && me.booted ? 'guide3.goal.booted' : 'guide.goal.' + id
   // 攸關性命的感染（紅色）最前面，接著是重大事件（無人機群、小行星、天守、海盜、末日）的對策；
@@ -794,10 +808,12 @@ export function detectHints(v: GuideView): Hint[] {
   const mhp = v.self?.mhp ?? 0
   // 低血量：背包有醫療品才叫他用背包裡的，沒有就指向醫療補給／醫護兵
   if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add(invSlot(me, (i) => itemDef(i)?.cat === 'medical') >= 0 ? 'lowHp' : 'lowHpNoKit', 1)
-  // 被寄生／感染朊毒（自己的狀態清單本來就看得到）：人類死時會被轉化，教他用抗體包
+  // 感染朊毒（自己的狀態清單本來就看得到）：人類死時會被轉化，教他用抗體包。
+  // 被寄生不再另外跳提示（第 6 輪審查：同一段說明出現在 3 個地方）：sim 每次寄生都私訊完整說明（小提示顯示第一句、
+  // 全文在聊天紀錄），目標面板最上面的紅色待辦（infectionStep）一直留著說怎麼處理；朊毒沒有私訊，照舊提示
   if (id === 'human') {
     const inf = (v.self?.b ?? []).map((b) => buffDef(b)?.infection).find((x) => x === 'parasite' || x === 'prion')
-    if (inf) add(inf === 'parasite' ? 'parasited' : 'prioned', 1)
+    if (inf === 'prion') add('prioned', 1)
   }
   if (me.zone === 0) add('space', 23)
   else if (v.zoneStation?.startsWith('ship:')) add('shipInside', 23)
@@ -836,6 +852,7 @@ function viewFromWorld(): GuideView {
   }
   const zs = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
   const altT = altFreeze.value
+  const ctrl = me.control && me.control !== me.unit && me.alive !== false ? world.ents.get(me.control)?.s.d : undefined
   return {
     me,
     w: world.w,
@@ -844,6 +861,7 @@ function viewFromWorld(): GuideView {
     zoneStation: zs,
     epMult: lobby.value?.settings.epMult,
     ...(altT !== null ? { altT } : {}),
+    ...(ctrl ? { ctrl } : {}),
   }
 }
 
@@ -1104,6 +1122,7 @@ export function Guide() {
   const v = viewFromWorld()
   const obj = objectiveFor(v)
   const q = queue.current
+  const below = guideBelow.value
   const toggleFold = () => {
     setFold(!fold)
     lsSet(K_FOLD, fold ? '0' : '1')
@@ -1111,7 +1130,8 @@ export function Guide() {
   return (
     <>
       {obj && !notesOpen.value && (
-        <div class="guide-dock" ref={dock} style={maxH ? { maxHeight: `${maxH}px` } : undefined}>
+        // 極窄視窗：頂列的精簡版也放不下時，目標面板移到頂列下方（topLayout.ts 的 guideBelow）
+        <div class="guide-dock" ref={dock} style={{ ...(maxH ? { maxHeight: `${maxH}px` } : {}), ...(below !== null ? { top: `${below}px` } : {}) }}>
           <Objectives obj={obj} fold={fold} squeeze={squeeze.current} onFold={toggleFold} />
           {q.active.length > 0 && (
             <div class="guide-toasts" data-testid="guide-toasts">
@@ -1188,6 +1208,17 @@ function StepItem({ s, station }: { s: Step; station: string | null }) {
   )
 }
 
+/**
+ * EP 條右邊的小字：可以進化／還差多少；已經達標但還不能選（正在結繭、肉團、建造中，或還沒走到鑄造台）時
+ * 寫「進化中」「EP 已足夠」，不寫「還差 0」（第 6 輪審查：進化中顯示「EP 512 / 300 還差 0」）
+ */
+export function epLeftText(ep: { ep: number; next: number; ready: boolean }, evolving: boolean): string {
+  if (ep.ready) return t('guide.epReady')
+  if (evolving) return t('ui6.guide.epEvolving')
+  if (ep.ep >= ep.next) return t('ui6.guide.epEnough')
+  return t('guide.epLeft', { n: ep.next - ep.ep })
+}
+
 function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: boolean; squeeze: number; onFold: () => void }) {
   const [accent, text] = ID_COLOR[obj.id]
   const ep = obj.ep
@@ -1231,7 +1262,9 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
               <span class="guide-epbar">
                 <i style={{ transform: `scaleX(${Math.min(1, ep.ep / ep.next)})` }} />
               </span>
-              <span class={ep.ready ? 'guide-ready' : 'dim'}>{ep.ready ? t('guide.epReady') : t('guide.epLeft', { n: Math.max(0, ep.next - ep.ep) })}</span>
+              <span class={ep.ready ? 'guide-ready' : 'dim'} data-testid="guide-ep-left">
+                {epLeftText(ep, (world.me.evolving ?? 0) > 0)}
+              </span>
             </div>
           )}
           <ul class="guide-steps">

@@ -91,6 +91,22 @@ export function hideTip(who?: unknown): void {
   tipState.value = null
 }
 
+/** 版面切換後、滑鼠還沒動過：場景懸停（游標型）的說明先不顯示，見 resetTips */
+let cursorMuted = false
+/** 上一次 pointermove 的位置：瀏覽器在版面變動時會補發位置沒變的 pointermove，那不算滑鼠動過 */
+let lastPtr = { x: NaN, y: NaN }
+
+/**
+ * 版面切換（換場景：發射船艇、登船、傳送、死亡；對話框或面板開關）時收起所有 tooltip（第 6 輪審查 P3）。
+ * 滑鼠沒動的話 mouseleave、pointermove 都不會觸發，舊的說明會留在原地（發射後的「控制台」、關掉設定後的道具說明）。
+ * 收起後到滑鼠真的移動之前，游標型的說明（場景懸停）不再顯示：每 0.1 秒更新懸停的程式只看游標下有什麼，
+ * 換了場景而滑鼠沒動時，它看到的可能還是舊場景留下的狀態。元素型的說明照常在滑鼠移進元素時出現。
+ */
+export function resetTips(): void {
+  hideTip()
+  cursorMuted = true
+}
+
 /** 掛在介面元素上：滑鼠移入時顯示，移出或按下時隱藏 */
 export function tipProps(get: () => TipData | null | undefined): {
   onMouseEnter: (e: MouseEvent) => void
@@ -113,10 +129,10 @@ export function tipProps(get: () => TipData | null | undefined): {
   }
 }
 
-
 /** 跟著游標的 tooltip（場景物件懸停）；d = null 收起 */
 export function showCursorTip(d: TipData | null, x: number, y: number): void {
   if (!d) return hideTip(CURSOR)
+  if (cursorMuted) return
   if (owner !== null && owner !== CURSOR) return
   owner = CURSOR
   tipState.value = { d, x, y }
@@ -131,6 +147,10 @@ export function TooltipLayer(): JSX.Element | null {
     const stale = (target?: EventTarget | null) =>
       owner === ELEMENT && (!anchorEl || !anchorEl.isConnected || (target instanceof Node && !anchorEl.contains(target)))
     const move = (e: PointerEvent) => {
+      if (e.clientX !== lastPtr.x || e.clientY !== lastPtr.y) {
+        lastPtr = { x: e.clientX, y: e.clientY }
+        cursorMuted = false
+      }
       if (stale(e.target)) hideTip(ELEMENT)
     }
     const over = (e: PointerEvent) => upgradeTitle(e.target)

@@ -177,7 +177,7 @@ export const UX_ZH: Record<string, string> = {
   // ───── 第 3 輪審查（client 輸入／HUD）─────
   'r3b.pause.title': '已暫停（單機練習）',
   'r3b.pause.sub': '關掉選單、說明、圖鑑或設定就繼續',
-  'r3b.alive.body': '還活著的參戰者／參戰總人數，不分身分：被轉化成眷屬的人也算活著，仿生人等記憶核心重建時算死亡。有人死了，全場公告只說死的是哪一方，不說是誰（變種人主腦例外）；要知道是誰得自己調查：走近屍體看名字，或在聊天輸入 -names 看名單上誰已死亡。',
+  'r3b.alive.body': '還活著的參戰者／參戰總人數，不分身分：被轉化成眷屬的人也算活著，仿生人等記憶核心重建時算死亡。有人死了，全場公告會說出死者的名字和他屬於哪一方（無辜者、異形、變種人、眷屬或仿生人）；在聊天輸入 -names 可以看名單上誰已死亡。',
   'r3b.doorLog.body': '你身旁這扇門最近 5 次有人通過的紀錄：只記體型剪影（人形、著裝者、生物、機械）和幾秒前經過，不記名字；隱形經過的記成「未識別」。',
   'r3b.minimap.legend': '小地圖圖例',
   'r3b.minimap.legendHint': '點一下打開說明（G）的完整圖例',
@@ -392,7 +392,7 @@ export const UX_EN: Record<string, string> = {
   // ───── Round 3 review (client input / HUD) ─────
   'r3b.pause.title': 'Paused (solo practice)',
   'r3b.pause.sub': 'Close the menu, help, codex or settings to resume',
-  'r3b.alive.body': 'Participants still alive out of the total, regardless of role: converted spawn count as alive, and an android waiting on its memory core counts as dead. When someone dies, the announcement only says which side died, not who (except the mutant mastermind). Finding out who is up to you: check the name on a body, or type -names in chat to see who on the player list has died.',
+  'r3b.alive.body': 'Participants still alive out of the total, regardless of role: converted spawn count as alive, and an android waiting on its memory core counts as dead. When someone dies, the announcement names them and says which side they were on (innocent, xeno, mutant, spawn or android). Type -names in chat to see who on the player list has died.',
   'r3b.doorLog.body': 'The last 5 passages through the door next to you: only a body silhouette (humanoid, suited, creature, machine) and how many seconds ago, never a name. Anyone who passed cloaked is logged as unidentified.',
   'r3b.minimap.legend': 'Minimap legend',
   'r3b.minimap.legendHint': 'Click to open the full legend in Help (G)',
