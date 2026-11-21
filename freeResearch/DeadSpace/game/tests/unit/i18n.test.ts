@@ -8,6 +8,10 @@ import '../../src/ui/strings/sim3'
 import '../../src/ui/strings/sim5'
 import '../../src/ui/strings/sim6'
 import '../../src/ui/strings/sim7'
+import '../../src/ui/strings/sim8'
+import '../../src/ui/strings/ux6'
+import '../../src/ui/strings/ui6'
+import '../../src/ui/strings/room6'
 
 function files(dir: string): string[] {
   const out: string[] = []

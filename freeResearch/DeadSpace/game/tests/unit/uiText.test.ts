@@ -17,6 +17,10 @@ import { localizeName } from '../../src/ui/names'
 // 結算時間軸的死因（tl.cause.*）在 sim6 註冊（App.tsx 也會 import）
 import '../../src/ui/strings/sim6'
 import '../../src/ui/strings/sim7'
+import '../../src/ui/strings/sim8'
+import '../../src/ui/strings/ux6'
+import '../../src/ui/strings/ui6'
+import '../../src/ui/strings/room6'
 
 afterEach(() => {
   lang.value = 'zh'
