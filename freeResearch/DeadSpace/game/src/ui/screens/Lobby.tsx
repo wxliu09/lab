@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren, JSX } from 'preact'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../../shared/constants'
-import { DEFAULT_SETTINGS, type LobbySettings } from '../../shared/protocol/messages'
+import { AI_LEVELS, DEFAULT_SETTINGS, type AiLevel, type ChatLine, type LobbySettings } from '../../shared/protocol/messages'
 import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { hiddenByMute } from '../../client/chatFilter'
@@ -286,6 +286,30 @@ function PresetButtons({ s }: { s: LobbySettings }) {
   )
 }
 
+/**
+ * AI 難度（第 6 輪）：主機可改、客人唯讀；用語沿用練習對話框的「簡單／一般」。
+ * 新開的多人房預設簡單（session.ts ROOM_AI_DEFAULT），練習局照練習對話框的選擇
+ */
+function AiSelect({ s }: { s: LobbySettings }) {
+  return (
+    <select
+      data-testid="set-ai"
+      disabled={!isHost.value}
+      value={s.aiLevel}
+      onChange={(e) => {
+        const v = (e.target as HTMLSelectElement).value as AiLevel
+        if (AI_LEVELS.includes(v)) send({ t: 'settings', s: { aiLevel: v } })
+      }}
+    >
+      {AI_LEVELS.map((a) => (
+        <option key={a} value={a}>
+          {t('ui4.practice.ai.' + a)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function Check({ k, s, testId }: { k: keyof LobbySettings; s: LobbySettings; testId?: string }) {
   return (
     <input
@@ -315,13 +339,33 @@ function Row({ label, tip, children }: { label: string; tip: string | (() => str
 
 // ───────── 大廳 ─────────
 
+/**
+ * 大廳聊天要顯示的行（第 6 輪）：本機封鎖的人說的話不顯示（client/mute.ts）；沒有發話者的系統訊息不顯示
+ * （上一局的死亡、事件、結算公告不屬於大廳；session.ts 換房、回到大廳時也會清空聊天）。
+ * 例外：server 私訊給自己的提示（ch = 'private'：訊息送太快、重複訊息）照常顯示，不然發話的人不知道自己的話沒送出
+ */
+export function lobbyChatLines(lines: readonly ChatLine[]): ChatLine[] {
+  return lines.filter((l) => !hiddenByMute(l) && (l.from !== '' || l.ch === 'private'))
+}
+
+/**
+ * 大廳左欄的版面（第 6 輪：聊天一長就把玩家名單、踢出按鈕、顏色列擠掉）：玩家名單照內容的高度、不被壓縮；
+ * 聊天框只拿剩下的空間（flex-basis 0，不隨聊天內容長高），最高 LOBBY_CHAT_MAX_PX，訊息在框內捲動。
+ * 視窗矮到放不下時整個左欄捲動，玩家名單照樣完整
+ */
+export const LOBBY_CHAT_MAX_PX = 360
+const LEFT_STYLE = { overflowY: 'auto' } as const
+const PLAYERS_STYLE = { flex: '0 0 auto' } as const
+const CHATBOX_STYLE = { flex: '1 1 0px', maxHeight: LOBBY_CHAT_MAX_PX + 'px' } as const
+const CHAT_STYLE = { flex: '1 1 0px', minHeight: '54px' } as const
+
 export function Lobby() {
   const L = lobby.value
   const [msg, setMsg] = useState('')
   const [copied, setCopied] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
-  // 本機封鎖（client/mute.ts）也套用到大廳聊天：被封鎖的人說的話不顯示，系統訊息照常
-  const lines = chatLog.value.filter((l) => !hiddenByMute(l))
+  // 本機封鎖也套用到大廳聊天；沒有發話者的系統訊息不顯示（lobbyChatLines）
+  const lines = lobbyChatLines(chatLog.value)
   useEffect(() => {
     const el = chatRef.current
     if (el) el.scrollTop = el.scrollHeight
@@ -382,8 +426,8 @@ export function Lobby() {
           XENOCYTE
         </div>
       </div>
-      <div class="lobby-left">
-        <div class="panel players">
+      <div class="lobby-left" style={LEFT_STYLE}>
+        <div class="panel players" style={PLAYERS_STYLE}>
           <h2>{t('lobby.players', { n: L.players.length })}</h2>
           <div class="pgrid">
             {L.players.map((p) => (
@@ -424,15 +468,22 @@ export function Lobby() {
             </div>
           </div>
         </div>
-        <div class="panel lobby-chatbox" data-testid="lobby-chatbox">
+        <div class="panel lobby-chatbox" data-testid="lobby-chatbox" style={CHATBOX_STYLE}>
           <h3>{t('lobby.chat')}</h3>
-          <div class="lobby-chat" ref={chatRef}>
+          <div class="lobby-chat" data-testid="lobby-chat" ref={chatRef} style={CHAT_STYLE}>
             {lines.length === 0 && <div class="dim">{t('lobby2.chatEmpty')}</div>}
-            {lines.map((l, i) => (
-              <div key={i}>
-                <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{localizeName(l.from)}</b>: {sysText(l.text)}
-              </div>
-            ))}
+            {lines.map((l, i) =>
+              l.from === '' ? (
+                // 給自己的系統提示（訊息送太快、重複）：沒有發話者，不寫「: 」
+                <div key={i} class="dim">
+                  {sysText(l.text)}
+                </div>
+              ) : (
+                <div key={i}>
+                  <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{localizeName(l.from)}</b>: {sysText(l.text)}
+                </div>
+              ),
+            )}
           </div>
           <input
             data-testid="lobby-chat-input"
@@ -472,6 +523,9 @@ export function Lobby() {
         </Row>
         <Row label={t('lobby.set.bots')} tip="lobby2.tip.bots.body">
           <Num k="bots" s={s} min={0} max={MAX_PLAYERS - 1} />
+        </Row>
+        <Row label={t('ui4.practice.ai')} tip="room6.lobby.ai.tip">
+          <AiSelect s={s} />
         </Row>
         <Row label={t('lobby.set.ep')} tip="lobby2.tip.ep.body">
           <Num k="epMult" s={s} min={0.25} max={4} step={0.25} />

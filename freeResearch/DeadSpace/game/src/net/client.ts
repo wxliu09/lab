@@ -56,6 +56,10 @@ export class NetClient {
     })
     this.pingTimer = setInterval(() => {
       if (this.hostPeer) this.send({ t: 'ping', n: performance.now() })
+      // 已經入座、但傳輸層說主機失聯了（多半是自己或主機的分頁卡了幾秒，心跳逾時）：照樣對原主機送 ping。
+      // 主機其實還在的話會回 pong，下面的 onData 收到原主機的訊息就重新打招呼。以前要等主機自己送東西來才會恢復，
+      // 大廳裡主機沒事不送東西，客人就一直斷著（送出的聊天、準備都被丟掉，第 6 輪多人「再來一局」的 e2e 抓到）
+      else if (this.seatedHost) this.transport.send(this.seatedHost, encode({ t: 'ping', n: performance.now() } satisfies ClientMsg), 'reliable')
     }, 2000)
   }
 
@@ -81,7 +85,9 @@ export class NetClient {
         this.flagConflict(from)
         return
       }
-      if (!this.hostPeer) this.greet(from)
+      // 原主機又對我們送 { t: 'host' }：主機那一端把我們當成新連進來的 peer（主機的傳輸層曾經判定我們離開，
+      // server 已經放掉這個連線的座位綁定），要重新打招呼，不然之後送的東西主機都不認
+      if (!this.hostPeer || this.hostPeer === from) this.greet(from)
       return
     }
     // 失聯的原主機又出現了（送了 host 以外的訊息）：重新連上

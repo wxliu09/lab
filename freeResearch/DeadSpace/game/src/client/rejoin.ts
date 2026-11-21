@@ -223,6 +223,21 @@ export function markDone(ls: KV, code: string, now: number): void {
   if (rec && !rec.done) writeToken(ls, code, { ...rec, done: true })
 }
 
+/**
+ * 主機結算後帶大家回到大廳（同一房號再來一局）：這個房間又「正在裡面」了，取消結算時 markDone 標的離開，
+ * 之後重新整理照樣自動連回原座位（「目前在這個房間」由 session.ts 的 roomTick 接著記）。只動沒有別的頁面在用的、或這個頁面的租約
+ */
+export function reopenRoom(ls: KV, code: string, inst: string, now: number): void {
+  const rec = readToken(ls, code, now)
+  if (!rec || !rec.done || (rec.inst && rec.inst !== inst && leaseLive(rec, now))) return
+  const next: RoomToken = { tok: rec.tok, at: now }
+  if (rec.inst) {
+    next.inst = rec.inst
+    if (rec.beat !== undefined) next.beat = rec.beat
+  }
+  writeToken(ls, code, next)
+}
+
 /** 加入房間的逾時計時：計時器間隔超過這麼久（ms）就當作主執行緒剛卡過，那一段不算進等待時間 */
 export const JOIN_STALL_MS = 1500
 

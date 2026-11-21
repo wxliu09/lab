@@ -1,7 +1,7 @@
 // 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
 import { signal } from '@preact/signals'
-import { endResult, snapTick, world } from '../../client/session'
+import { endResult, lastEnd, snapTick, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
@@ -68,7 +68,9 @@ export function RoleReveal() {
       cancelAnimationFrame(raf)
     }
   }, [open])
-  const visible = open && !!role && role !== 'spectator'
+  // 對局已經結算（含按了「繼續觀看」之後，lastEnd 還留著）：揭露畫面不再出現，不要蓋住結算或上方的「這局已結束」小列
+  const over = !!endResult.value || !!lastEnd.value
+  const visible = open && !!role && role !== 'spectator' && !over
   useLayoutEffect(() => {
     revealOpen.value = visible
     return () => {
@@ -76,7 +78,7 @@ export function RoleReveal() {
     }
   }, [visible])
   // 對局已經結算（例如主機中止）：不要蓋住結算畫面
-  if (!open || !role || role === 'spectator' || endResult.value) return null
+  if (!visible) return null
   const [c1, c2, ct] = COL[role]
   const title = ROLE_TITLES[role]
   const obj = OBJECTIVES[role]

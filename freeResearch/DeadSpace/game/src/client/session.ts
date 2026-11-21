@@ -13,7 +13,7 @@ import { deathLines, noteDeath } from './deathNote'
 import { clearMuted } from './mute'
 import { hiddenByMute } from './chatFilter'
 import { hostGoneNow } from './hostGone'
-import { beatLease, clearActive, joinWaited, leaveRoom, markActive, markDone, pickToken, rejoinTarget, releaseLease, type KV } from './rejoin'
+import { beatLease, clearActive, joinWaited, leaveRoom, markActive, markDone, pickToken, rejoinTarget, releaseLease, reopenRoom, type KV } from './rejoin'
 import { ABORT_MSG, HOST_ABORT_MAX_MS, HOST_ABORT_WAIT_MS, isHostAbort, shouldAbortOnLeave } from './hostAbort'
 import { t } from '../ui/i18n'
 
@@ -46,6 +46,13 @@ function receiveChat(lines: ChatLine[]): void {
   if (heard.length) for (const tap of chatTaps) tap(heard)
 }
 export const endResult = signal<EndResult | null>(null)
+/**
+ * 這一局的結算（收到 end 時記下）：和 endResult 不同，按「繼續觀看」關掉結算畫面後還留著——
+ * 結算後的小列（重新打開結算、主機的「回到大廳」）據此顯示。換局、回到大廳、離開房間時清掉
+ */
+export const lastEnd = signal<EndResult | null>(null)
+/** 新開的多人房的 AI 難度（第 6 輪）：朋友房的 AI 補位不要太兇。練習局照練習對話框的選擇（startPractice 另外送）*/
+export const ROOM_AI_DEFAULT: AiLevel = 'easy'
 export const notice = signal('')
 /** 最近一則主機 notice 的 key（畫面判斷用 key，不用翻譯後的字串：切換語言後仍認得出來）*/
 export const noticeKey = signal('')
@@ -142,6 +149,8 @@ let net: NetClient | null = null
 let relay: HostRelay | null = null
 let cmdSeq = 1
 let roomCode = ''
+/** 新開的多人房還沒套用多人房的預設設定（ROOM_AI_DEFAULT）：createRoom 設定，第一次收到大廳名單時送出 */
+let roomDefaults = false
 
 export interface Profile {
   name: string
@@ -221,7 +230,8 @@ function roomTick(): void {
   if (!st) return
   const now = Date.now()
   if (leaseRoom === roomCode && beatLease(st.ls, roomCode, PAGE_INST, now) === 'lost') return seatTaken()
-  if (mySlot.value >= 0 && (screen.value === 'lobby' || screen.value === 'game') && !endResult.value) markActive(st.ls, st.tab, roomCode, now, shareTabs() && leaseRoom === roomCode)
+  // 結算後（按了「繼續觀看」也一樣）不記：之後重新整理不自動連回；主機帶大家回到大廳時 lastEnd 清掉，又照常記
+  if (mySlot.value >= 0 && (screen.value === 'lobby' || screen.value === 'game') && !endResult.value && !lastEnd.value) markActive(st.ls, st.tab, roomCode, now, shareTabs() && leaseRoom === roomCode)
 }
 
 /** 同一個 token 被另一個分頁接手了（伺服器已經把席位交給它）：這個分頁中斷連線並說明，不再動共用的記錄 */
@@ -295,6 +305,27 @@ export function isRestartOfSameGame(prev: StartInfo | null, next: StartInfo): bo
   return !!prev && prev.gid !== undefined && prev.gid === next.gid && prev.slot === next.slot
 }
 
+/**
+ * 主機結算後帶大家回到大廳（HostMsg backToLobby，server.ts returnToLobby）：清掉上一局的一切（世界、開局資料、結算、
+ * 聊天、死因、本機封鎖、監視器回放），回到大廳畫面，同一個房間、同一個座位。startInfo 清空之後，下一則 start 一定被當成新的一局
+ * （isRestartOfSameGame 回傳 false，聊天照常清空）。客人：結算時標記的「不再自動連回」取消（又在房間裡了，重新整理照樣回座）。
+ * 已經在大廳（回到大廳之後才重新連上的人，主機在 welcome 之後也會送一次）就不做事，大廳聊天照樣留著。回傳有沒有回到大廳
+ */
+export function backToLobby(): boolean {
+  if (screen.value !== 'game' && !startInfo.value && !endResult.value && !lastEnd.value) return false
+  screen.value = 'lobby'
+  clearGameState()
+  const st = stores()
+  if (st && !isHost.value && roomCode && roomCode !== PRACTICE_ROOM && leaseRoom === roomCode) reopenRoom(st.ls, roomCode, PAGE_INST, Date.now())
+  roomTick()
+  return true
+}
+
+/** 主機在結算後按「回到大廳」：叫 server 帶所有人回到同一個房間的大廳（只有主機、多人房、正常結算時 server 才接受）*/
+export function returnToLobby(): void {
+  if (isHost.value && roomCode !== PRACTICE_ROOM) send({ t: 'backToLobby' })
+}
+
 function onHostMsg(m: HostMsg): void {
   if (__TEST_HOOKS__) {
     recvLog.push(m.t)
@@ -316,6 +347,11 @@ function onHostMsg(m: HostMsg): void {
       break
     case 'lobbyState':
       lobby.value = { players: m.players, settings: m.settings, code: m.code }
+      // 新開的多人房：第一次收到大廳名單時套用多人房的預設（AI 難度簡單）；之後主機怎麼改都照主機的，回到大廳也不會再套一次
+      if (roomDefaults && isHost.value) {
+        roomDefaults = false
+        if (m.settings.aiLevel !== ROOM_AI_DEFAULT) send({ t: 'settings', s: { aiLevel: ROOM_AI_DEFAULT } })
+      }
       if (practiceBots && isHost.value) {
         const n = practiceBots
         practiceBots = 0
@@ -332,6 +368,7 @@ function onHostMsg(m: HostMsg): void {
       loadPending = true
       loadSentAt = 0
       endResult.value = null
+      lastEnd.value = null
       hostAbortEnd.value = false
       if (!keep) {
         chatLog.value = []
@@ -368,6 +405,7 @@ function onHostMsg(m: HostMsg): void {
       break
     case 'end': {
       endResult.value = m.result
+      lastEnd.value = m.result
       if (!isHost.value && isHostAbort(m.result)) hostAbortEnd.value = true
       // 這局結束了：之後重新整理不再自動連回這個房間（還連著，照常看結算、賽後聊天）
       const st = stores()
@@ -377,6 +415,9 @@ function onHostMsg(m: HostMsg): void {
       }
       break
     }
+    case 'backToLobby':
+      backToLobby()
+      break
     case 'notice':
       noticeKey.value = m.key
       notice.value = t(m.key, m.args)
@@ -418,10 +459,13 @@ function attach(client: NetClient): void {
 export async function createRoom(profile: Profile): Promise<void> {
   saveProfile(profile)
   const seq = ++joinSeq
+  // 新的房間不帶上一個房間的聊天、結算（第 6 輪：主機的大廳聊天殘留上一局的訊息）
+  clearGameState()
   roomCode = genRoomCode()
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = true
+  roomDefaults = true
   let transport: Awaited<ReturnType<typeof makeTransport>>
   try {
     transport = await makeTransport(roomCode)
@@ -451,10 +495,12 @@ let practiceRole: PracticeRole = 'random'
 let practiceAi: AiLevel = 'normal'
 export async function startPractice(profile: Profile, bots = 5, role: PracticeRole = 'random', ai: AiLevel = 'normal'): Promise<void> {
   saveProfile(profile)
+  clearGameState()
   roomCode = PRACTICE_ROOM
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = true
+  roomDefaults = false
   // 還在建立中的加入／建房連線作廢
   joinSeq++
   practiceBots = Math.max(1, Math.min(11, bots))
@@ -476,10 +522,12 @@ let joinSeq = 0
 export async function joinRoom(code: string, profile: Profile): Promise<void> {
   saveProfile(profile)
   const seq = ++joinSeq
+  clearGameState()
   roomCode = code.trim().toUpperCase()
   screen.value = 'connecting'
   notice.value = ''
   isHost.value = false
+  roomDefaults = false
   // 逾時從按下加入就開始算（signaling 本身卡住也會逾時）。主執行緒卡住的時間不算（rejoin.ts joinWaited）：
   // 重新整理後的自動重連是在頁面最忙（載入、編譯 shader）的時候開始的，主機的回應可能還排在佇列裡
   let client: NetClient | null = null
@@ -523,28 +571,45 @@ export function cancelJoin(): void {
   leave()
 }
 
+/**
+ * 清掉對局（以及房間）留下的狀態：世界、開局資料、結算、聊天紀錄、死因、本機封鎖、監視器回放、載入等待。
+ * 離開房間、建立／加入新房間、主機帶大家回到大廳時呼叫（第 6 輪：以前聊天只在新一局開局時才清，
+ * 離開房間再開新房間時，大廳聊天會殘留上一局的全部系統訊息、把玩家名單擠掉）
+ */
+function clearGameState(): void {
+  world.reset()
+  startInfo.value = null
+  endResult.value = null
+  lastEnd.value = null
+  hostAbortEnd.value = false
+  replay.value = null
+  loadPending = false
+  loadSentAt = 0
+  watchStall(false)
+  chatLog.value = []
+  deathLines.value = []
+  clearMuted()
+}
+
 export function leave(clear = true): void {
   forgetRoom()
   rejoining.value = ''
   hostLeaving.value = false
-  hostAbortEnd.value = false
   hostConflict.value = false
   hostConflictLive.value = false
   net?.close()
   relay?.close()
   net = null
   relay = null
+  roomDefaults = false
   screen.value = 'menu'
   lobby.value = null
-  startInfo.value = null
   mySlot.value = -1
   isHost.value = false
-  world.reset()
-  watchStall(false)
+  clearGameState()
   connLost.value = false
   watchGone(false)
   lastHostMsgAt = 0
-  clearMuted()
   if (clear) notice.value = ''
 }
 
@@ -554,7 +619,8 @@ export function send(m: ClientMsg): void {
 
 /** 現在離開的話要不要先中止這局（主機、多人局、對局中、還沒結算；hostAbort.ts）*/
 function abortNeeded(): boolean {
-  return shouldAbortOnLeave({ isHost: isHost.value, practice: roomCode === PRACTICE_ROOM, inGame: screen.value === 'game' && !!relay, ended: !!endResult.value, simFailed: !!relay?.failed })
+  // ended 也看 lastEnd：按「繼續觀看」關掉結算畫面之後，這局照樣已經結算過了（不用再送中止、等 worker 回報）
+  return shouldAbortOnLeave({ isHost: isHost.value, practice: roomCode === PRACTICE_ROOM, inGame: screen.value === 'game' && !!relay, ended: !!endResult.value || !!lastEnd.value, simFailed: !!relay?.failed })
 }
 
 /**
@@ -620,5 +686,5 @@ function exposeTestHooks(): void {
 }
 
 if (__TEST_HOOKS__) {
-  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, recvLog, receiveChat, connLost, hostGone, hostConflictLive, rejoining }
+  ;(window as unknown as Record<string, unknown>).__xcState = { world, screen, lobby, mySlot, chatLog, endResult, lastEnd, startInfo, recvLog, receiveChat, connLost, hostGone, hostConflictLive, rejoining }
 }

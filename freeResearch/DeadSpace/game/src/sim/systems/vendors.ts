@@ -34,7 +34,8 @@ export const EASY_SAMPLER_DELAY = 240
 
 /** 某項商品這一局的開局延遲（秒；0 / undefined = 開局就有）*/
 function stockDelay(g: Game, s: VendorStock): number | undefined {
-  if (s.item === SAMPLER && s.delay && isEasy(g)) return EASY_SAMPLER_DELAY
+  // 只有單機練習：多人房的簡單只調 AI，不能讓真人的規則（原作 7 分鐘）跟著提早
+  if (s.item === SAMPLER && s.delay && g.practice && isEasy(g)) return EASY_SAMPLER_DELAY
   return s.delay
 }
 

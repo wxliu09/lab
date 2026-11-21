@@ -116,6 +116,13 @@ describe('基因檢測器的開放時間（簡單 240 秒、一般 420 秒）與
     }
   })
 
+  it('多人房選簡單只影響 AI：基因檢測器照原作 420 秒開放', () => {
+    const g = start('ABCDE', 47, { aiLevel: 'easy' })
+    expect(g.practice).toBe(false)
+    expect(samplerOpenAt(g)).toBe(420)
+    expect(g.worldPublic().gitAt).toBe(420)
+  })
+
   it('快照帶 w.gitAt（每個人都一樣、是公開設定）', () => {
     const { h, cs } = Harness.started(3, 5150, { eventMult: 0 })
     h.ticks(2)

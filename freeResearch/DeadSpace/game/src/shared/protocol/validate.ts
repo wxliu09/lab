@@ -193,6 +193,9 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
     case 'abort':
       // 誰送的由 server 檢查（只接受本機 peer）
       return { t: 'abort' }
+    case 'backToLobby':
+      // 同上：誰送的、對局是否已經正常結算由 server 檢查（只接受本機 peer）；多餘的欄位丟掉
+      return { t: 'backToLobby' }
     case 'mapPing':
       return isInt(raw.z, 0, 4095) && isNum(raw.x, -1000, 1000) && isNum(raw.y, -1000, 1000) ? { t: 'mapPing', z: raw.z, x: raw.x, y: raw.y } : null
     case 'Tune':

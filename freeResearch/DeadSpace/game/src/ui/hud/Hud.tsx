@@ -11,7 +11,7 @@ import { hitsBystanders } from '../aoe'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
 import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
-import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult, hostAbortEnd, hostConflictLive, hostLeaving } from '../../client/session'
+import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult, lastEnd, hostAbortEnd, hostConflictLive, hostLeaving } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
@@ -298,7 +298,8 @@ function NotesGlyph({ on }: { on: boolean }) {
 function HostGoneDialog() {
   const btn = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => btn.current?.focus(), [])
-  const ended = !!endResult.value
+  // 按過「繼續觀看」之後 endResult 已清掉，但這局確實結算過了（lastEnd 還留著）
+  const ended = !!endResult.value || !!lastEnd.value
   return (
     <div class="modal-back host-gone-back" data-testid="host-gone" style={{ zIndex: 60 }}>
       <div class="panel modal host-gone" role="alertdialog" aria-modal="true" aria-labelledby="host-gone-title" aria-describedby="host-gone-body">

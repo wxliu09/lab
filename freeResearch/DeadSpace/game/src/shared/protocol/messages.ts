@@ -151,6 +151,13 @@ export type ClientMsg =
    * 處理完 worker 會再回一則 { t: 'aborted' } 給主執行緒（在結算訊息的 out 批次之後），client 收到再關連線
    */
   | { t: 'abort' }
+  /**
+   * 結算後回到大廳（第 6 輪：多人「再來一局」）：主機在結算畫面按「回到大廳」時由主機的本機 client 送出。
+   * server 只接受本機 peer（LOCAL_PEER）送的，而且只在多人房（不是練習房）、對局已經正常結算（不是主機中止 winner = 'aborted'）時接受，
+   * 其他情況一律忽略。處理見 server.ts returnToLobby：同一房號、保留大廳設定與座位，丟掉上一局的模擬，
+   * 再送 HostMsg backToLobby ＋ lobbyState 給每位在線的人
+   */
+  | { t: 'backToLobby' }
 
 export type ChatChannel = 'all' | 'team' | 'group' | 'dead'
 export type NoteMark = 'none' | 'trust' | 'suspect' | 'confirmedEvil' | 'confirmedClean'
@@ -187,6 +194,13 @@ export type HostMsg =
   | { t: 'zones'; zones: [number, string, string][] }
   /** 小地圖信號：活人的只給活人、死者的只給死者；name／color 是發送者目前的顯示名字與顏色 */
   | { t: 'mapPing'; z: number; x: number; y: number; name: string; color: number }
+  /**
+   * 主機帶大家回到大廳（ClientMsg backToLobby，server.ts returnToLobby）：上一局的模擬已經丟掉，這則之後不會再有上一局的任何訊息
+   * （快照、聊天、結算…）。client 清掉對局狀態（世界、開局資料、結算、聊天）回到大廳畫面；緊接著會收到 lobbyState。
+   * 回到大廳之後才重新連上的人也會在 welcome 之後收到一次（他可能還停在上一局的畫面）；client 已經在大廳就不做事。
+   * 不帶任何欄位：大廳名單只在 lobbyState 裡，這則本身不含任何對局資訊
+   */
+  | { t: 'backToLobby' }
 
 export interface StartInfo {
   slot: Slot

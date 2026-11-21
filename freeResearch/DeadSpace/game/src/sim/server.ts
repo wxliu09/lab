@@ -265,6 +265,11 @@ export class GameServer {
         this.onAbort?.(ended)
         break
       }
+      case 'backToLobby':
+        // 結算後回到大廳（同一房號再來一局）：同上，只接受本機送來的；能不能回去由 returnToLobby 判斷
+        if (peer !== LOCAL_PEER) return
+        this.returnToLobby()
+        break
       case 'Tune':
         // 只接受本機（主機分頁自己）送來的；其他 peer 一律忽略
         if (peer !== LOCAL_PEER || !ps.tune.take(this.now)) return
@@ -302,8 +307,12 @@ export class GameServer {
       ps.slot = existing.slot
       this.sendTo(peer, { t: 'welcome', slot: existing.slot, token: existing.token })
       // 對局中只把大廳名單（設定）送給回來的人，不廣播：廣播的時機本身就透露「剛才是誰回來了」
-      if (this.phase === 'lobby') this.lobbyDirty = true
-      else this.sendTo(peer, this.lobbyState())
+      if (this.phase === 'lobby') {
+        this.lobbyDirty = true
+        // 主機帶大家回到大廳（returnToLobby）的那一則，這個人可能剛好在短暫失聯中沒收到（NetClient 失聯期間的訊息會丟掉）、
+        // 還停在上一局的畫面：重新打招呼時再送一次（client 已經在大廳就不做事；一局都還沒開過就不用送）
+        if (this.games > 0) this.sendTo(peer, { t: 'backToLobby' })
+      } else this.sendTo(peer, this.lobbyState())
       if (this.game) {
         this.game.setConnected(existing.slot, true)
         this.game.resendStart(existing.slot)
@@ -339,6 +348,8 @@ export class GameServer {
     }
     ps.slot = slot
     this.sendTo(peer, { t: 'welcome', slot, token: msg.token })
+    // 回到大廳時不在線、座位被讓出的人又連上了：他可能還停在上一局的畫面（client 已經在大廳、或是新加入的人就不做事）
+    if (this.games > 0) this.sendTo(peer, { t: 'backToLobby' })
     this.lobbyDirty = true
   }
 
@@ -465,6 +476,47 @@ export class GameServer {
     const g = this.game
     if (this.phase !== 'game' || !g || g.ended) return false
     return g.abort()
+  }
+
+  // ───────── 回到大廳（同一房號再來一局）─────────
+
+  /** 現在能不能回到大廳：多人房、對局已經正常結算（主機中止的不行：主機接著就會關掉房間）*/
+  canReturnToLobby(): boolean {
+    const r = this.game?.ended
+    return this.phase === 'game' && !!r && r.winner !== 'aborted' && this.code !== PRACTICE_ROOM
+  }
+
+  /**
+   * 結算後回到大廳（第 6 輪：多人「再來一局」，ClientMsg backToLobby）：
+   * - 丟掉上一局的模擬（Game 整個不要了，下一局開局時照常建新的：身分、世界、亂數流都是新的，不沿用上一局的任何狀態）；
+   * - 同一房號，大廳設定（含 AI 數量、AI 難度、主機手動改過的末日時間）原封不動；
+   * - 還連著的真人保留座位（slot 順序、顏色、名字不變），「準備」清掉；AI 玩家拿掉（下一局開局時依設定重新補位）；
+   * - 不在線的真人一律讓出座位：已經判定離開的、還在斷線寬限內的都一樣。結算畫面按「回到主選單」的人在 server 看來
+   *   就是斷線（傳輸層分不出主動離開還是網路斷掉），保留座位的話他會被排進下一局、拿到身分、90 秒後才被判定離開。
+   *   真的只是斷線的人重新連上時照常加入大廳（拿最前面的空位），handleHello 會送 backToLobby 讓他離開上一局的畫面；
+   * - 每位在線的人先收到 backToLobby（client 清掉對局狀態、回到大廳畫面），緊接著收到 lobbyState。
+   * 上一局的訊息都在 backToLobby 之前送完（同一條有序的連線），之後不會再有上一局的快照、聊天或結算。
+   * 練習房不用這條路（練習的「再來一局」是重開一間練習房，practiceRun.ts）。回傳有沒有回到大廳
+   */
+  returnToLobby(): boolean {
+    if (!this.canReturnToLobby()) return false
+    this.game = null
+    this.phase = 'lobby'
+    this.loading = null
+    this.pauseAt = null
+    this.lastChat.clear()
+    for (const p of this.players) {
+      if (!p) continue
+      if (p.bot || p.peer === null) this.players[p.slot] = null
+      else {
+        p.ready = false
+        p.droppedAt = null
+      }
+    }
+    for (const p of this.players) if (p?.peer) this.sendTo(p.peer, { t: 'backToLobby' })
+    this.lobbyDirty = false
+    this.broadcastLobby(this.lobbyState())
+    return true
   }
 
   // ───────── 迴圈 ─────────

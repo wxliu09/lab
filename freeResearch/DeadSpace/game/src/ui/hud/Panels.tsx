@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks'
 import { FORMS, UNITS } from '../../shared/content/registry'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { EndResult } from '../../shared/protocol/messages'
-import { endResult, leave, leaveGame, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import { currentRoom, endResult, isHost, lastEnd, leave, leaveGame, returnToLobby, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
 import { addStrings, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
@@ -281,11 +281,67 @@ export function endNoteKey(r: EndResult): string | null {
   return drawReasonKey(r as EndResult & { drawWhy?: unknown })
 }
 
+/**
+ * 多人局結算後能不能回到大廳（第 6 輪：同一房號再來一局，session.returnToLobby → server.ts returnToLobby）：
+ * 練習局不算（練習用「再來一局」重開一間練習房），主機中止的也不算（主機接著就會關掉房間）
+ */
+export function lobbyAgain(r: EndResult | null, practice: boolean): boolean {
+  return !!r && !practice && !isHostAbort(r)
+}
+
+/** 主機的「回到大廳（同一房號）」按鈕（結算畫面、關掉結算畫面後的小列共用）*/
+function ToLobbyButton({ cls }: { cls: string }) {
+  return (
+    <button
+      class={cls}
+      data-testid="back-to-lobby"
+      onClick={(e) => {
+        ;(e.currentTarget as HTMLElement).blur()
+        returnToLobby()
+      }}
+      {...tipProps(() => ({ title: t('room6.end.toLobby'), body: t('room6.end.toLobbyTip', { code: currentRoom() }) }))}
+    >
+      {t('room6.end.toLobby')}
+    </button>
+  )
+}
+
+/**
+ * 按「繼續觀看」關掉結算畫面之後（多人局）：上方一條小列，可以重新打開結算；主機在這裡也能回到大廳，
+ * 客人看到「主機回到大廳時你會一起回去」。練習局照舊（觀戰列上的「再來一局」）
+ */
+function AfterEndBar() {
+  const r = lastEnd.value
+  if (!lobbyAgain(r, inPractice())) return null
+  const host = isHost.value
+  return (
+    <TopSlot order={3}>
+      <div class="panel top-vote" data-testid="end-after">
+        <b>{t('room6.after.title')}</b>
+        <div class="row" style={{ marginTop: '8px', justifyContent: 'center', gap: '8px' }}>
+          <button class="small" data-testid="end-reopen" onClick={() => (endResult.value = r)}>
+            {t('room6.after.results')}
+          </button>
+          {host && <ToLobbyButton cls="small primary" />}
+        </div>
+        {!host && (
+          <div class="dim" style={{ marginTop: '6px', fontSize: '13px' }}>
+            {t('room6.after.guest')}
+          </div>
+        )}
+      </div>
+    </TopSlot>
+  )
+}
+
 export function EndScreen() {
   const r = endResult.value
-  if (!r) return null
+  if (!r) return <AfterEndBar />
   // 標題下一行：主機中止、平手的原因（見 endNoteKey）
   const why = endNoteKey(r)
+  // 多人局：主機可以帶大家回到同一個房間的大廳；客人看到「主機回到大廳時你會一起回去」
+  const again = lobbyAgain(r, inPractice())
+  const host = isHost.value
   // 晉升過的政委顯示「特務」（sim 不改 classId，見 promotedSlots）
   const promoted = promotedSlots(r)
   return (
@@ -341,9 +397,21 @@ export function EndScreen() {
             </div>
           ))}
         </div>
+        {again && !host && (
+          <div class="end-why" data-testid="end-lobby-hint" style={{ marginTop: '12px', fontSize: '14px' }}>
+            {t('room6.end.guestHint')}
+          </div>
+        )}
         <div class="row" style={{ marginTop: '14px' }}>
           <PracticeAgain cls="primary" />
-          <button class={inPractice() ? '' : 'primary'} onClick={() => leave()}>
+          {again && host && <ToLobbyButton cls="primary" />}
+          {/* 多人局可以回到大廳時，「回到主選單」不再是主要按鈕（主機按了會關掉房間：說明裡提醒）*/}
+          <button
+            class={inPractice() || again ? '' : 'primary'}
+            data-testid="end-back"
+            onClick={() => leave()}
+            {...(again && host ? tipProps(() => ({ title: t('end.back'), body: t('room6.end.hostLeaveTip') })) : {})}
+          >
             {t('end.back')}
           </button>
           <button class="ghost" onClick={() => (endResult.value = null)}>
