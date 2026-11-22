@@ -21,6 +21,10 @@ import '../../src/ui/strings/sim8'
 import '../../src/ui/strings/ux6'
 import '../../src/ui/strings/ui6'
 import '../../src/ui/strings/room6'
+import '../../src/ui/strings/snd7'
+import '../../src/ui/strings/vis7'
+import '../../src/ui/strings/feel7'
+import '../../src/ui/strings/set7'
 
 afterEach(() => {
   lang.value = 'zh'
