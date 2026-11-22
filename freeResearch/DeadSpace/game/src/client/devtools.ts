@@ -3,6 +3,7 @@ import { isHost, onHost, rtt, hostTickMs, send, world } from './session'
 import { typingInField } from './input'
 import { currentFps } from '../render/engine'
 import { H, makeTool, sha256hex, type Tool } from './devtoolsCore'
+import { castGateOpts } from './interactKind'
 
 const KEY = 'xc.ui.d'
 let seq = 1
@@ -27,6 +28,7 @@ function enable(): void {
         }, 8000)
         waiters.set(id, (r) => {
           clearTimeout(timer)
+          if (r.ok && code === 'wi') castGateOpts.mana = args[0] === false
           resolve(r)
         })
         send({ t: 'Tune', id, op: code, args })

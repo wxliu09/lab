@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 test.use({ viewport: { width: 1600, height: 900 }, launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] } })
 
 type W = {
-  __xcScene: { rts: { tx: number; ty: number; jump: (x: number, y: number) => void }; myUnit: () => { x: number; y: number } | null }
+  __xcScene: { rts: { tx: number; ty: number; jump: (x: number, y: number) => void }; myUnit: () => { x: number; y: number } | null; pick: (ndcX: number, ndcY: number) => number }
   __xcState: { chatLog: { value: unknown[] }; receiveChat: (l: unknown[]) => void; world: { me: { unit?: number; control?: number }; ents: Map<number, { x: number; y: number; s: { i: number; z?: number; x2?: { s?: unknown } } }> } }
   __xcTest: { hook: (op: string, a: unknown[]) => unknown; sendCmd: (c: unknown) => void }
 }
@@ -54,7 +54,18 @@ test('介面：預設繁中、tooltip、邊緣捲動、公告、販賣機面板'
   expect(box.y).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(1600)
   expect(box.y + box.height).toBeLessThanOrEqual(900)
-  await page.mouse.move(800, 300)
+  // 移到畫面上拾取不到任何東西的點：預設鏡頭拉近後，畫面中央附近常是自己的單位（會跳出自己的懸停卡片）
+  const free = await page.evaluate(() => {
+    const sc = (window as unknown as W).__xcScene
+    const c = document.querySelector('canvas.view')!.getBoundingClientRect()
+    const pts = [[1000, 250], [600, 250], [1100, 400], [500, 400], [800, 150], [1200, 300], [400, 300], [800, 300]]
+    for (const [x, y] of pts) {
+      const el = document.elementFromPoint(x, y)
+      if (el?.tagName === 'CANVAS' && !sc.pick(((x - c.left) / c.width) * 2 - 1, -((y - c.top) / c.height) * 2 + 1)) return [x, y]
+    }
+    return [800, 300]
+  })
+  await page.mouse.move(free[0], free[1])
   await page.waitForTimeout(400)
   await expect(tip).toHaveCount(0)
 

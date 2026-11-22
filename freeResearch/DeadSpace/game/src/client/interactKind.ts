@@ -78,6 +78,39 @@ export function rummageCheck(s: SnapEntity, me: MeCtx | undefined): RummageCheck
 }
 
 /**
+ * 快照的冷卻秒數是送出那一刻的值（四捨五入到 0.1 秒），按鍵送到主機還要一點時間：剩這麼多以內照樣送出，
+ * 交給 sim 判斷（「不要在本機擋掉 sim 會接受的指令」）
+ */
+export const CD_SLACK = 0.25
+/** 能量（快照四捨五入成整數，加上送達前的回復量）：差超過這麼多才算一定不夠 */
+export const MANA_SLACK = 1
+
+/**
+ * 本機能量檢查的開關：sim 對某個單位不檢查能量時（client 的快照看不到這個狀態）要關掉，
+ * 否則能量不夠的技能會被本機擋下
+ */
+export const castGateOpts = { mana: true }
+
+/** 本機拒絕的原因：kind 給 feedback.deny（HUD 閃格子）、key／args = 顯示的說明 */
+export interface Gate {
+  kind: 'cooldown' | 'noMana' | 'disabled'
+  key: string
+  args?: Record<string, string | number>
+}
+
+/**
+ * 按下技能鍵（或點指令卡）時能不能放：冷卻中、能量一定不夠、被沉默（sim abilities.ts canCast 的 cooldown／mana／silenced）
+ * 回傳原因，本機擋下並播拒絕音；拿不準（冷卻快好了、能量差一點、不知道能量）回傳 null，照樣送出。
+ * fromItem = 道具的使用技能（道具不受沉默影響，冷卻看背包格的 cd）。
+ */
+export function castGate(st: { cd: number; mana: number; disabled?: boolean }, mp: number | undefined, fromItem = false): Gate | null {
+  if (st.cd > CD_SLACK) return { kind: 'cooldown', key: 'tip.ability.cooling', args: { s: secs(st.cd) } }
+  if (st.disabled && !fromItem) return { kind: 'disabled', key: 'cast.silenced' }
+  if (castGateOpts.mana && mp !== undefined && st.mana > 0 && mp + MANA_SLACK < st.mana) return { kind: 'noMana', key: 'tip.ability.noMana', args: { need: st.mana, have: Math.floor(mp) } }
+  return null
+}
+
+/**
  * 右鍵雜物箱（rightClickAction 回傳 'rummage' 時）要送的指令：可以翻找就對它施放翻找（sim 會先走到射程內）；
  * 冷卻中／能量不足／被沉默時照樣走過去，並附上本機提示說明為什麼還不能翻。
  */
@@ -148,6 +181,16 @@ export function monsterFoe(s: SnapEntity): boolean {
   const fl = s.fl ?? 0
   if (fl & (EntFlag.Mine | EntFlag.Ally | EntFlag.Corpse)) return false
   return looksMonstrous(s)
+}
+
+/**
+ * A 攻擊點到這個實體要不要當成「攻擊它」：屍體（sim 的 attack 遇到死掉的目標直接丟掉）、
+ * noTarget 的外觀（生命再生器、降落墊、恆星、特效…；sim 也直接丟掉）改成對那一點攻擊移動，不要送出會被默默丟掉的指令。
+ * 偽裝與幻象只會換成人、生物的外觀，不會變成 noTarget 的外觀，所以這裡看外觀 id 是確定的。
+ */
+export function attackable(s: SnapEntity): boolean {
+  if ((s.fl ?? 0) & EntFlag.Corpse) return false
+  return !UNITS.get(s.d ?? '')?.tags.includes('noTarget')
 }
 
 /** 右鍵點到某個實體時要做什麼（me = 自己的技能與能量，只有雜物箱要看；點到自己由呼叫端處理）*/

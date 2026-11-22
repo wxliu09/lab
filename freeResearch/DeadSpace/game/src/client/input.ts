@@ -1,8 +1,11 @@
-// 輸入：致敬 WC3 的操作（右鍵移動／攻擊／互動、A 攻擊、S 停止、H 原地、QWERDF 技能、1–6 背包、空白鍵回鏡頭）
-import { effect, signal } from '@preact/signals'
+// 輸入：致敬 WC3 的操作（右鍵移動／攻擊／互動、A 攻擊、S 停止、H 原地、QWERDF 技能、1–6 背包、空白鍵回鏡頭）。
+// 第 7 輪：按鍵改讀按鍵設定（keymap.ts，預設同上）；遊戲畫面的游標依懸停對象與模式換圖（cursors.ts）；
+// 本機確定不能做的事（冷卻、能量不足、沉默、空格、點空、sim 一定會拒絕的目標）當下就播拒絕音（feedback.ts deny），
+// 不等 sim 300 ms 後回錯誤；空白鍵連按兩下切換鏡頭跟隨、按住暫時跟隨（viewPrefs.followMode，鏡頭那邊實作跟隨）。
+import { effect, signal, untracked } from '@preact/signals'
 import { Vector3 } from 'three'
-import { edgeScrollOn, edgeSpeed } from './controlPrefs'
-import { audioPrefs, setAudioPref } from '../audio/sfx'
+import { edgeScrollOn, edgeSpeed, keySpeed, wheelInvert, wheelSpeed } from './controlPrefs'
+import { audioPrefs, setAudioPref, sfx } from '../audio/sfx'
 import { UNITS, abilityDef, itemDef } from '../shared/content/registry'
 import type { TargetFilter } from '../shared/content/types'
 import { STATION_BY_ID } from '../shared/content/stations/index'
@@ -15,12 +18,17 @@ import { showCursorTip } from '../ui/tooltip'
 import { cmdTaps, hostGone, sendCmd, snapTick, world } from './session'
 import { EXPOSING_ABILITIES, canShapeshift, looksNamed, watcherCount } from './exposure'
 import { giveRefusal } from './give'
-import { meCtx, rightClickAction, rummageClick } from './interactKind'
-import { SNAP_M, SNAP_MIN_PX, SNAP_MIN_PX_SPACE, SNAP_M_DEVOUR, SNAP_M_SPACE, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
+import { attackable, castGate, meCtx, rightClickAction, rummageClick, type Gate } from './interactKind'
+import { SNAP_M, SNAP_MIN_PX, SNAP_MIN_PX_SPACE, SNAP_M_DEVOUR, SNAP_M_SPACE, certainReject, chooseUnitTarget, isStructureLike, mapPickTarget, segDist, targetOk, wantsStructure, type SnapCand } from './targetSnap'
 import { DEVOUR, devourable } from './devourInfo'
 import { sweepPeek } from './sweepPeek'
 import { cabinHatch } from './hatch'
+import { deny, lastDeny, type DenyKind } from './feedback'
+import { followMode, hudHidden } from './viewPrefs'
+import { ABILITY_ACTIONS, CAM_KEYS, ITEM_ACTIONS, actionFor, actionLabel, keyCapturing, type ActionId } from './keymap'
+import { CursorSetter, cursorState } from './cursors'
 import '../ui/strings/ux6'
+import '../ui/strings/feel7'
 
 export type TargetMode =
   | null
@@ -60,7 +68,46 @@ export function exposeWarn(key: string): boolean {
   return true
 }
 
-export const HOTKEYS = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyD', 'KeyF']
+/** 點擊標記的顏色：移動（預設綠）、互動（黃）、攻擊（紅）、技能（紫）*/
+const MARK = { interact: '#ffc23d', follow: '#5cf2a5', attack: '#ff5a4a', aim: '#b28cff' }
+/** 空白鍵：放開到再按下在這個時間內＝連按兩下（切換鏡頭跟隨）*/
+const DOUBLE_TAP_MS = 300
+/** 空白鍵：按住超過這個時間＝暫時跟隨自己，放開就停 */
+const HOLD_MS = 250
+
+let gateAt = 0
+let gateKey = ''
+/** 本機拒絕的說明（同一種說明 1 秒內只跳一次，連按不洗版）*/
+function gateNotice(key: string, args?: Record<string, string | number>): void {
+  const now = performance.now()
+  if (key === gateKey && now - gateAt < 1000) return
+  gateAt = now
+  gateKey = key
+  localNotice.value = { text: key, args, at: now }
+}
+
+/** 測試 build：記下輸入層播過的回饋音（e2e 驗證確認音、進入瞄準音；deny 另外看 feedback.lastDeny）*/
+export const cueLog: string[] = []
+
+/** 輸入層的回饋音（確認音、進入瞄準）*/
+function cue(name: string): void {
+  sfx(name)
+  if (__TEST_HOOKS__) {
+    cueLog.push(name)
+    if (cueLog.length > 200) cueLog.splice(0, 100)
+  }
+}
+
+/** 本機擋下技能／道具：拒絕音＋HUD 閃格子＋說明 */
+function gateDeny(g: Gate, slot: { ability?: string; inv?: number }): void {
+  deny({ kind: g.kind, ...slot })
+  gateNotice(g.key, g.args)
+}
+
+/** 瞄準中的拒絕（點空、無效目標）：閃那一格 */
+function aimDeny(tm: AimMode, kind: DenyKind): void {
+  deny(tm.kind === 'ability' ? { kind, ability: tm.id } : { kind, inv: tm.slot })
+}
 
 /**
  * 各個對話框登記「我現在開著嗎」（避免 client → ui 的循環 import）：
@@ -165,12 +212,21 @@ function lowPri(s: SnapEntity, self: number): boolean {
  * 回傳那個鍵的顯示名稱（道具 = 背包格號、技能 = 指令卡快捷鍵），不能對自己放回傳 null。overlay 畫在自己腳下提示。
  */
 export function aimSelfKey(tm: TargetMode): string | null {
-  if (!tm || tm.kind === 'attack' || (tm.target !== 'unit' && tm.target !== 'unitOrPoint')) return null
-  if (!aimAbility(tm)?.filter?.self) return null
-  if (tm.kind === 'item') return String(tm.slot + 1)
-  const list = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
-  const i = list.findIndex((a) => a.id === tm.id)
-  return i >= 0 && i < HOTKEYS.length ? HOTKEYS[i].slice(3) : null
+  if (!canSelfCast(tm)) return null
+  let id: ActionId | undefined
+  if (tm.kind === 'item') id = ITEM_ACTIONS[tm.slot]
+  else {
+    const list = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
+    id = ABILITY_ACTIONS[list.findIndex((a) => a.id === tm.id)]
+  }
+  // 按鍵設定裡沒有鍵：沒有「再按一次」可言（點指令卡／背包格那一格照樣可以對自己放）
+  return (id && actionLabel(id)) || null
+}
+
+/** 瞄準中的技能／道具能不能對自己放（篩選有 self）*/
+function canSelfCast(tm: TargetMode): tm is AimMode {
+  if (!tm || tm.kind === 'attack' || (tm.target !== 'unit' && tm.target !== 'unitOrPoint')) return false
+  return !!aimAbility(tm)?.filter?.self
 }
 
 /** 送出瞄準中的技能／道具：對單位（e）或對地面一點 */
@@ -180,11 +236,16 @@ function sendAim(tm: AimMode, to: { e: number } | Pt, q: boolean): void {
 }
 
 let missAt = 0
-/** 瞄準時點空了（附近也沒有可選的目標）：保持瞄準，提示要點在目標身上；連點時 1.2 秒內只提示一次 */
+let missKey = ''
+/**
+ * 瞄準時點空了（附近也沒有可選的目標）或點到 sim 一定會拒絕的對象：保持瞄準，提示原因；
+ * 同一個提示連點時 1.2 秒內只顯示一次（換了原因就立刻顯示）
+ */
 export function aimMiss(key = 'art3.aim.miss'): void {
   const now = performance.now()
-  if (now - missAt < 1200) return
+  if (key === missKey && now - missAt < 1200) return
   missAt = now
+  missKey = key
   localNotice.value = { text: key, at: now }
 }
 
@@ -212,6 +273,7 @@ export function mapAim(scene: GameScene, tm: AimMode, p: Pt, tolM: number, q: bo
     return true
   }
   aimMiss('art3.aim.mapMiss')
+  aimDeny(tm, 'noTarget')
   return false
 }
 
@@ -247,6 +309,10 @@ export class Input {
   private last = { x: -1, y: -1 }
   private dropArmed = 0
   private disposers: (() => void)[] = []
+  /** 遊戲畫面的游標（只有狀態變了才寫 style）*/
+  private cursor = new CursorSetter()
+  /** 空白鍵（回到自己）的按住／連按狀態 */
+  private camKey = { down: false, downAt: 0, upAt: -1e9, held: false, tap: false, timer: 0 as ReturnType<typeof setTimeout> | 0 }
 
   constructor(
     private el: HTMLElement,
@@ -305,6 +371,8 @@ export class Input {
     on('pointermove', wmove, window)
     on('mouseout', wout, window)
     on('blur', stop, window)
+    // 視窗失焦（Alt-Tab）時收不到放開：方向鍵捲動與按住空白鍵的暫時跟隨都要放掉，不然回來時鏡頭一直捲、一直跟
+    on('blur', () => this.releaseKeys(), window)
     const vis = () => document.hidden && stop()
     document.addEventListener('visibilitychange', vis)
     this.disposers.push(() => document.removeEventListener('visibilitychange', vis))
@@ -312,12 +380,34 @@ export class Input {
       effect(() => {
         this.scene.rts.edgeScroll = edgeScrollOn.value
         this.scene.rts.edgeSpeed = edgeSpeed.value
+        this.scene.rts.keySpeed = keySpeed.value
       }),
     )
     on('wheel', (e) => {
       e.preventDefault()
-      this.scene.rts.wheel(e.deltaY)
+      // 先讀 deltaY 再讀 deltaMode（Firefox 先讀 deltaMode 會改回報「行數」）；行／頁換算成像素，滾輪一格在各瀏覽器縮放差不多
+      const dy = e.deltaY
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 600 : 1
+      this.scene.rts.wheel(dy * unit * wheelSpeed.value * (wheelInvert.value ? -1 : 1))
     })
+    // 進入瞄準（A 攻擊、技能、道具）：播一聲「進入瞄準」；游標立刻換（游標沒動也要換）
+    let prevMode: TargetMode = targetMode.peek()
+    this.disposers.push(
+      effect(() => {
+        const tm = targetMode.value
+        if (tm && !sameMode(tm, prevMode)) cue('aimEnter')
+        prevMode = tm
+        untracked(() => {
+          if (this.lastMouse && cursorScreen.overView) this.hoverAt(this.lastMouse.x, this.lastMouse.y)
+          else this.refreshCursor(this.scene.units.hovered, false)
+        })
+      }),
+    )
+    this.disposers.push(() => this.cursor.clear(this.el))
+    if (__TEST_HOOKS__) {
+      // e2e：游標狀態、本機拒絕、回饋音、鏡頭跟隨、按鍵設定
+      ;(window as unknown as Record<string, unknown>).__xcInput = { cues: cueLog, lastDeny, followMode, hudHidden, targetMode, cursor: () => this.cursor.state }
+    }
     // 每份快照：記下剛交出的控制台；選取跟著換掉的主單位（變身、進化、結繭都會換一個新的實體）
     let wasPiloting = false
     let prevUnit = world.me.unit
@@ -416,6 +506,27 @@ export class Input {
     this.scene.units.hovered = hov
     const key = spot ? `${this.scene.zone}:${spot.x},${spot.y}` : ''
     if (key !== this.spotHover.key) this.spotHover = { key, since: performance.now(), shown: this.spotHover.shown, spot }
+    this.refreshCursor(hov, !!spot)
+  }
+
+  /**
+   * 依目前的模式與游標下的東西換游標（cursors.ts cursorState）。hov = 懸停的實體（瞄準「點一個單位」時是吸附後會選到的那個），
+   * spot = 游標下有沒有實體的控制台、艙門。只用自己看得到的資訊（快照、targetOk 的近似篩選）。
+   */
+  private refreshCursor(hov: number, spot: boolean): void {
+    const tm = targetMode.value
+    const e = hov ? world.ents.get(hov) : undefined
+    const self = casterId()
+    let aimOk: boolean | undefined
+    if (tm && tm.kind !== 'attack' && e && (tm.target === 'unit' || tm.target === 'unitOrPoint')) {
+      const ab = aimAbility(tm)
+      const f = ab?.filter
+      // 可以點地面的技能點到 sim 一定拒絕的對象：會改成對那一點施放（applyTarget），不算無效
+      aimOk = tm.target === 'unitOrPoint' && certainReject(e.s, f, self) ? true : targetOk(e.s, f, self) && (ab?.id !== DEVOUR || devourable(e.s))
+    }
+    const mode = !tm ? 'none' : tm.kind === 'attack' ? 'attack' : 'aim'
+    const isSelf = !!e && (e.s.i === self || e.s.i === world.me.unit)
+    this.cursor.apply(this.el, cursorState({ mode, hover: e?.s, self: isSelf, spot, aimOk, me: mode === 'none' && e ? meCtx(world) : undefined }))
   }
 
   /**
@@ -589,7 +700,8 @@ export class Input {
         case 'pickup':
           // 地上的物品：撿起來（sim 的 interact 只會走過去，不會撿）
           sendCmd({ k: 'pickup', e: ent, q })
-          this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
+          this.scene.fx.clickMarker(zone, e.x, e.y, MARK.interact)
+          cue('cmdMove')
           return
         case 'center':
           // 駕駛控制台：走進控制圈（本體是實心的，見 goPilot）
@@ -602,27 +714,33 @@ export class Input {
           this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
           return
         case 'interact':
+          // 販賣機、設施、登艇：走過去使用（第 7 輪：補上點擊標記與確認音，原本按了沒有任何回饋）
           lastInteract.value = ent
           sendCmd({ k: 'interact', e: ent, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y, MARK.interact)
+          cue('cmdMove')
           return
         case 'rummage': {
           // 雜物箱、自己有翻找技能：走過去翻找；冷卻中／能量不足時照樣走過去，並說明為什麼還不能翻
           const r = rummageClick(ent, e.s, mc, q)
           sendCmd(r.cmd)
           if (r.notice) localNotice.value = { text: r.notice.key, args: r.notice.args, at: performance.now() }
-          this.scene.fx.clickMarker(zone, e.x, e.y, '#ffc23d')
+          this.scene.fx.clickMarker(zone, e.x, e.y, MARK.interact)
+          cue('cmdMove')
           return
         }
         case 'corpse':
           sendCmd({ k: 'move', x: (e.s.x ?? 0) / 100, y: (e.s.y ?? 0) / 100, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y)
           return
         case 'attack':
           sendCmd({ k: 'attack', e: ent, q })
-          this.scene.fx.clickMarker(zone, e.x, e.y, '#ff5a4a')
+          this.scene.fx.clickMarker(zone, e.x, e.y, MARK.attack)
           return
         case 'follow':
-          // 盟友（所有玩家彼此結盟）：右鍵 = 跟隨；要攻擊請用 A
+          // 盟友（所有玩家彼此結盟）：右鍵 = 跟隨；要攻擊請用 A（確認音由 audio/director 依指令播）
           sendCmd({ k: 'follow', e: ent, q })
+          this.scene.fx.clickMarker(zone, e.x, e.y, MARK.follow)
           return
         case 'ground':
           break
@@ -652,34 +770,51 @@ export class Input {
   private applyTarget(tm: NonNullable<TargetMode>, ent: number, pt: { x: number; y: number } | null, zone: number, mx: number, my: number): boolean {
     const q = this.shift
     if (tm.kind === 'attack') {
-      if (ent && ent !== world.me.control) {
+      // A 點在單位上＝攻擊它（標記畫在目標腳下）；屍體、noTarget 的東西 sim 會默默丟掉，改成對那一點攻擊移動
+      const t = ent && ent !== world.me.control ? world.ents.get(ent) : undefined
+      if (t && attackable(t.s)) {
         sendCmd({ k: 'attack', e: ent, q })
+        this.scene.fx.clickMarker(zone, t.x, t.y, MARK.attack)
         return true
       }
       if (!pt) return false
       sendCmd({ k: 'amove', x: pt.x, y: pt.y, q })
-      this.scene.fx.clickMarker(zone, pt.x, pt.y, '#ff5a4a')
+      this.scene.fx.clickMarker(zone, pt.x, pt.y, MARK.attack)
       return true
     }
+    const f = aimAbility(tm)?.filter
     if (tm.target === 'unit') {
       const id = this.aimChoice(tm, ent, mx, my)
       const e = id ? world.ents.get(id) : undefined
       // 只能對站點放的（停靠、設定航線）點到自己的船、恆星：sim 只會回「無效的目標」，改成說明要點在站點上
-      const f = aimAbility(tm)?.filter
       if (!e || (f?.station && !targetOk(e.s, f, casterId()))) {
         aimMiss(this.missKey(tm))
+        aimDeny(tm, e ? 'invalidTarget' : 'noTarget')
+        return false
+      }
+      // sim 一定會拒絕的對象（對自己放只能對別人的技能、點屍體、點設施…）：當下說明並保持瞄準，不送出去等 300 ms 後的錯誤
+      const why = certainReject(e.s, f, casterId())
+      if (why) {
+        aimMiss(why)
+        aimDeny(tm, 'invalidTarget')
         return false
       }
       sendAim(tm, { e: id }, q)
-      this.scene.fx.clickMarker(zone, e.x, e.y, '#b28cff')
+      this.scene.fx.clickMarker(zone, e.x, e.y, MARK.aim)
       return true
     }
     const wantsUnit = tm.target === 'unitOrPoint'
     const wantsPoint = tm.target === 'point' || tm.target === 'unitOrPoint'
-    if (wantsUnit && ent) sendAim(tm, { e: ent }, q)
+    // 可以點地面的技能點在 sim 一定會拒絕的對象上（例如點到自己）：改成對那一點施放
+    const t = wantsUnit && ent ? world.ents.get(ent) : undefined
+    const unitOk = !!ent && !(t && certainReject(t.s, f, casterId()))
+    if (wantsUnit && unitOk) sendAim(tm, { e: ent }, q)
     else if (wantsPoint && pt) sendAim(tm, { x: pt.x, y: pt.y }, q)
-    else return false
-    if (pt) this.scene.fx.clickMarker(zone, pt.x, pt.y, '#b28cff')
+    else {
+      aimDeny(tm, 'noTarget')
+      return false
+    }
+    if (pt) this.scene.fx.clickMarker(zone, pt.x, pt.y, MARK.aim)
     return true
   }
 
@@ -753,84 +888,183 @@ export class Input {
   }
 
   private key(e: KeyboardEvent, down: boolean): void {
-    // 聊天框剛打開、還沒拿到焦點的那一瞬間也不觸發快捷鍵
-    if (typingInField() || chatOpen.value) return
+    // 聊天框剛打開、還沒拿到焦點的那一瞬間也不觸發快捷鍵；按鍵設定正在等新鍵時也不處理
+    if (typingInField() || chatOpen.value || keyCapturing.value) return
     // 單按 Alt（Alt＋點發信號）：不要讓瀏覽器把焦點移到選單列（Windows、Firefox 放開 Alt 會打開選單）
     if (e.key === 'Alt') e.preventDefault()
+    // 按鍵設定（keymap.ts）：這個實體鍵對應的動作；鏡頭捲動動作對應到鏡頭認得的方向鍵
+    const act = actionFor(e.code)
+    const cam = act ? CAM_KEYS[act] : undefined
+    const mods = e.ctrlKey || e.metaKey || e.altKey
     if (dialogOpen()) {
       // 對話框開著：遊戲快捷鍵一律不處理。各對話框的 Esc 在 capture 階段自己處理；進化選單在這裡用 Esc／V 關掉。
-      // 方向鍵放開照樣送出，免得在對話框打開前按著的方向鍵卡住、鏡頭一直捲
-      if (!down && e.code.startsWith('Arrow')) this.scene.rts.key(e.code, false)
-      if (down && !e.repeat && evolveOpen.value && (e.code === 'Escape' || e.code === 'KeyV')) evolveOpen.value = false
-      if (down && !e.repeat && e.code === 'Enter' && onlyPass(chatPassChecks)) {
+      // 鏡頭鍵放開照樣送出，免得在對話框打開前按著的方向鍵卡住、鏡頭一直捲（空白鍵的暫時跟隨也一樣）
+      if (!down && cam) this.scene.rts.key(cam, false)
+      if (!down && act === 'camSelf') this.camSelfUp(e.timeStamp)
+      if (down && !e.repeat && evolveOpen.value && (e.code === 'Escape' || act === 'evolve')) evolveOpen.value = false
+      if (down && !e.repeat && act === 'chat' && onlyPass(chatPassChecks)) {
         chatOpen.value = true
         e.preventDefault()
       }
-      if (down && !e.repeat && e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey && onlyPass(mutePassChecks)) setAudioPref('muted', !audioPrefs.value.muted)
+      if (down && !e.repeat && act === 'mute' && !mods && onlyPass(mutePassChecks)) setAudioPref('muted', !audioPrefs.value.muted)
       return
     }
-    if (e.code.startsWith('Arrow')) {
-      this.scene.rts.key(e.code, down)
+    if (cam) {
+      this.scene.rts.key(cam, down)
       e.preventDefault()
       return
     }
-    if (!down || e.repeat) return
-    if (e.ctrlKey || e.metaKey || e.altKey) return
-    switch (e.code) {
-      case 'Space': {
-        // 監控掃描的站內畫面：先回到駕駛畫面（GameScene 結束暫時畫面時會對準自己）
-        if (sweepPeek.active) sweepPeek.end()
-        const u = this.scene.myUnit()
-        if (u) this.scene.rts.focus(u.x, u.y)
-        e.preventDefault()
-        return
-      }
-      case 'Enter':
-        chatOpen.value = true
-        e.preventDefault()
-        return
-      case 'KeyM':
-        setAudioPref('muted', !audioPrefs.value.muted)
-        return
-      case 'KeyB':
-        // 駕駛中：離開控制台
-        if (isPiloting()) sendCmd({ k: 'unpilot' })
-        return
-      case 'Escape':
-        // 取消瞄準 → 結束監控掃描的站內畫面 → 關進化選單 → 開關遊戲選單
-        if (targetMode.value) targetMode.value = null
-        else if (sweepPeek.active) sweepPeek.end()
-        else if (evolveOpen.value) evolveOpen.value = false
-        else menuOpen.value = !menuOpen.value
-        return
-      case 'KeyV':
-        evolveOpen.value = !evolveOpen.value
-        return
-      case 'KeyA':
-        targetMode.value = { kind: 'attack' }
-        return
-      case 'KeyS':
-        sendCmd({ k: 'stop' })
-        return
-      case 'KeyH':
-        sendCmd({ k: 'hold' })
-        return
-    }
-    const hk = HOTKEYS.indexOf(e.code)
-    if (hk >= 0) {
-      this.useAbility(hk)
+    if (act === 'camSelf') {
+      // 不讓空白鍵按到游標下或剛點過的按鈕（瀏覽器預設：空白鍵＝按下有焦點的按鈕）
+      e.preventDefault()
+      if (!down) this.camSelfUp(e.timeStamp)
+      else if (!e.repeat && !mods) this.camSelfDown(e.timeStamp)
       return
     }
-    const digit = /^Digit([1-6])$/.exec(e.code)
-    if (digit) this.useItem(Number(digit[1]) - 1)
+    if (!down || e.repeat) return
+    if (mods) return
+    if (e.code === 'Escape') {
+      // 取消瞄準 → 結束監控掃描的站內畫面 → 關進化選單 → 開關遊戲選單
+      if (targetMode.value) targetMode.value = null
+      else if (sweepPeek.active) sweepPeek.end()
+      else if (evolveOpen.value) evolveOpen.value = false
+      else menuOpen.value = !menuOpen.value
+      return
+    }
+    if (act && this.runAction(act)) e.preventDefault()
+  }
+
+  /** 執行一個按鍵動作（keymap.ts 的動作 id）；回傳是否處理了（處理了就擋掉瀏覽器的預設行為）*/
+  private runAction(act: ActionId): boolean {
+    switch (act) {
+      case 'chat':
+        chatOpen.value = true
+        return true
+      case 'mute':
+        setAudioPref('muted', !audioPrefs.value.muted)
+        return true
+      case 'unpilot':
+        // 駕駛中：離開控制台
+        if (isPiloting()) sendCmd({ k: 'unpilot' })
+        return true
+      case 'evolve':
+        evolveOpen.value = !evolveOpen.value
+        return true
+      case 'attack':
+        targetMode.value = { kind: 'attack' }
+        return true
+      case 'stop':
+        sendCmd({ k: 'stop' })
+        return true
+      case 'hold':
+        sendCmd({ k: 'hold' })
+        return true
+      case 'hideHud':
+        // 隱藏介面（截圖、實況）；HUD 依 hudHidden 收起，再按一次顯示
+        hudHidden.value = !hudHidden.value
+        return true
+      case 'selectSelf': {
+        const id = world.me.control || world.me.unit || 0
+        if (id) {
+          selected.value = id
+          this.scene.units.selected = id
+        }
+        return true
+      }
+    }
+    const hk = ABILITY_ACTIONS.indexOf(act)
+    if (hk >= 0) {
+      this.useAbility(hk)
+      return true
+    }
+    const slot = ITEM_ACTIONS.indexOf(act)
+    if (slot >= 0) {
+      this.useItem(slot)
+      return true
+    }
+    // 固定鍵（Esc、說明 G、筆記 Tab、圖鑑 F1）由各自的模組處理
+    return false
+  }
+
+  /**
+   * 空白鍵（回到自己）按下：單按＝鏡頭跳回自己（同以前）；放開後 0.3 秒內再按＝切換鏡頭跟隨（off ⇄ self）；
+   * 按住超過 0.25 秒＝暫時跟隨自己，放開就停（原本已經在跟隨就不動它）。
+   * t = 按鍵事件的時間戳（KeyboardEvent.timeStamp，和 performance.now 同一個時間軸）：主執行緒卡頓時，
+   * 放開與下一次按下會擠在同一幀處理，用處理時間會把慢慢按的兩下誤判成連按（或反過來）。
+   */
+  private camSelfDown(t: number): void {
+    const c = this.camKey
+    // 監控掃描的站內畫面：先回到駕駛畫面（GameScene 結束暫時畫面時會對準自己）
+    if (sweepPeek.active) sweepPeek.end()
+    const now = t
+    c.down = true
+    c.downAt = t
+    if (c.timer) clearTimeout(c.timer)
+    c.timer = 0
+    if (now - c.upAt <= DOUBLE_TAP_MS) {
+      // 第二下：切換跟隨，這一下不算下一次連按的第一下
+      c.upAt = -1e9
+      c.tap = false
+      this.toggleFollow()
+      return
+    }
+    c.tap = true
+    const u = this.scene.myUnit()
+    if (u) this.scene.rts.focus(u.x, u.y)
+    c.timer = setTimeout(() => {
+      c.timer = 0
+      if (!c.down || followMode.value !== 'off' || !this.scene.myUnit()) return
+      followMode.value = 'self'
+      c.held = true
+    }, HOLD_MS)
+  }
+
+  /** 空白鍵放開：結束按住的暫時跟隨；短按記下放開的時間（連按兩下用；按住過的不算一下）*/
+  private camSelfUp(t: number): void {
+    const c = this.camKey
+    if (!c.down) return
+    c.down = false
+    if (c.timer) clearTimeout(c.timer)
+    c.timer = 0
+    if (c.held) {
+      c.held = false
+      if (followMode.value === 'self') followMode.value = 'off'
+      c.upAt = -1e9
+      return
+    }
+    c.upAt = c.tap && t - c.downAt < HOLD_MS ? t : -1e9
+  }
+
+  /** 連按兩下空白鍵：切換鏡頭跟隨自己（沒有自己的單位時不開）*/
+  private toggleFollow(): void {
+    const on = followMode.value !== 'self'
+    if (on && !this.scene.myUnit()) return
+    followMode.value = on ? 'self' : 'off'
+    localNotice.value = { text: on ? 'feel7.follow.on' : 'feel7.follow.off', args: { k: actionLabel('camSelf') }, at: performance.now(), life: 2400 }
+  }
+
+  /** 視窗失焦：放掉鏡頭捲動鍵與按住空白鍵的暫時跟隨（失焦後收不到放開）*/
+  private releaseKeys(): void {
+    for (const code of Object.values(CAM_KEYS)) if (code) this.scene.rts.key(code, false)
+    this.camSelfUp(performance.now())
   }
 
   useAbility(index: number): void {
     const list = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
     const st = list[index]
-    if (!st) return
+    if (!st) {
+      // 這一格沒有技能：拒絕音（觀戰、沒有任何技能時安靜）
+      if (list.length) deny({ kind: 'empty' })
+      return
+    }
     const ab = abilityDef(st.id)
-    if (!ab || st.cd > 0) return
+    if (!ab) return
+    // 冷卻中、能量一定不夠、被沉默：本機當下拒絕（拒絕音、HUD 閃那一格、說明），不送出去等 sim 回錯誤
+    const g = castGate(st, world.ents.get(casterId())?.s.mp)
+    if (g) {
+      gateDeny(g, { ability: st.id })
+      return
+    }
     // 脫下防護服不可逆、又排在戰鬥技能旁邊：1.5 秒內再按一次才執行
     if (ab.id === 'suit.drop') {
       const now = performance.now()
@@ -874,15 +1108,38 @@ export class Input {
   }
 
   useItem(slot: number): void {
-    const it = world.me.inv?.[slot]
-    if (!it) return
+    const inv = world.me.inv
+    const it = inv?.[slot]
+    if (!it) {
+      // 空的背包格：拒絕音＋HUD 閃那一格（沒有背包的形態、觀戰時安靜）
+      if (inv && slot < inv.length) deny({ kind: 'empty', inv: slot })
+      return
+    }
     const def = itemDef(it.item)
     if (!def) return
+    // 道具冷卻中：sim 直接丟掉（不回任何訊息），本機當下拒絕並說明還要幾秒
+    const cd = castGate({ cd: it.cd, mana: 0 }, undefined, true)
+    if (cd) {
+      gateDeny(cd, { inv: slot })
+      return
+    }
     if (def.suit) {
       sendCmd({ k: 'use', s: slot })
       return
     }
-    const ab = def.use ? abilityDef(def.use) : undefined
+    // 沒有「使用」的道具（帶著就有效果、或給別人／賣掉用的）：sim 直接丟掉，本機說明
+    if (!def.use) {
+      deny({ kind: 'other', inv: slot })
+      gateNotice('feel7.deny.noUse')
+      return
+    }
+    const ab = abilityDef(def.use)
+    // 道具的使用技能要能量（扳手、處決手槍…）：能量一定不夠時本機拒絕
+    const g = ab ? castGate({ cd: 0, mana: ab.mana }, world.ents.get(casterId())?.s.mp, true) : null
+    if (g) {
+      gateDeny(g, { inv: slot })
+      return
+    }
     if (!ab || ab.target === 'none' || ab.target === 'self') {
       sendCmd({ k: 'use', s: slot })
       return
@@ -898,13 +1155,21 @@ export class Input {
    * 回傳是否送出了。和 WC3／Dota 的「連按兩下＝對自己」同一個習慣；瞄準時自己腳下會標「再按 3：對自己」（overlay.ts）。
    */
   private selfCast(tm: AimMode): boolean {
-    if (aimSelfKey(tm) === null) return false
+    if (!canSelfCast(tm)) return false
     const id = casterId()
     const me = world.ents.get(id)
     if (!me) return false
     sendAim(tm, { e: id }, false)
-    this.scene.fx.clickMarker(this.scene.zone, me.x, me.y, '#b28cff')
+    this.scene.fx.clickMarker(this.scene.zone, me.x, me.y, MARK.aim)
     targetMode.value = null
     return true
   }
+}
+
+/** 兩個瞄準模式是不是同一個（同一個技能／同一格道具／都是 A 攻擊）*/
+function sameMode(a: TargetMode, b: TargetMode): boolean {
+  if (!a || !b || a.kind !== b.kind) return false
+  if (a.kind === 'ability') return b.kind === 'ability' && a.id === b.id
+  if (a.kind === 'item') return b.kind === 'item' && a.slot === b.slot
+  return true
 }

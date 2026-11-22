@@ -79,6 +79,32 @@ export function targetOk(s: SnapEntity, f: TargetFilter | undefined, selfId: num
   return true
 }
 
+/**
+ * sim 一定會拒絕的目標（第 7 輪：原本照送，300 ms 後才回「無效的目標」）：回傳說明原因的字串 key；拿不準回傳 null（照樣送出）。
+ * 只看不受偽裝與幻象影響的欄位：實體 id（自己）、快照旗標 Corpse（sim 的 corpse 標籤）、
+ * Interactable 旗標（sim 的 structure 標籤，或地上的物品）。
+ * （只能對站點放的技能點到別的東西：input.ts 原本就用 targetOk 擋下並說明，巢艦這種帶 station 標籤的形態也算站點。）
+ * 外觀 id 推出來的標籤（有機、主單位、指定外觀…）可能被偽裝、幻象改掉，一律不在這裡擋（targetOk 只是吸附用的近似）。
+ * 對照 sim systems/effects.ts passesFilter 與 abilities.ts canCast：
+ * - 沒有篩選時 sim 用 { self: true }（點自己可以）；有篩選而沒有 self：點自己一定失敗
+ * - 屍體：不是對屍體的技能一定失敗（!t.alive）；對屍體的技能點活人一定失敗
+ * - structure／noStructure：Interactable 旗標＝建物或地上的物品（外觀 id 以 item: 開頭）
+ */
+export function certainReject(s: SnapEntity, f: TargetFilter | undefined, selfId: number): string | null {
+  const fl = s.fl ?? 0
+  const d = s.d ?? ''
+  if (f && s.i === selfId && !f.self) return 'feel7.deny.self'
+  const corpse = (fl & EntFlag.Corpse) !== 0
+  if (corpse && !f?.corpse) return 'feel7.deny.corpse'
+  if (!f) return null
+  if (f.corpse && !corpse) return 'feel7.deny.needCorpse'
+  const item = d.startsWith('item:') || d === 'groundItem'
+  const structure = (fl & EntFlag.Interactable) !== 0 && !item
+  if (f.noStructure && structure) return 'feel7.deny.structure'
+  if (f.structure && !(fl & EntFlag.Interactable)) return 'feel7.deny.needStructure'
+  return null
+}
+
 /** 吸附候選：dist = 點擊位置到目標身體中軸的螢幕距離（px）；tol = 這個目標的吸附範圍（px）*/
 export interface SnapCand {
   id: number
