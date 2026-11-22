@@ -25,7 +25,16 @@ function Slider({ id, min, max, value, onInput, onChange, unit = '', fmt }: { id
   )
 }
 
-const VOL_KEYS: (keyof Omit<AudioPrefs, 'muted'>)[] = ['master', 'music', 'sfx', 'ambient']
+const VOL_KEYS: (keyof Omit<AudioPrefs, 'muted' | 'mono'>)[] = ['master', 'music', 'sfx', 'ui', 'ambient']
+
+/** 放開滑桿時的試聽（第 7 輪：音樂、環境音原本都放介面分軌的 notify，聽不出這條滑桿的效果）：[音效, 分軌] */
+const VOL_PREVIEW: Record<(typeof VOL_KEYS)[number], [string, Parameters<typeof sfx>[3]]> = {
+  master: ['pickup', undefined],
+  music: ['previewMusic', 'music'],
+  sfx: ['pistol', 'sfx'],
+  ui: ['notify', undefined],
+  ambient: ['previewAmbient', 'ambient'],
+}
 
 /** 對局中的設定視窗（頂列齒輪）：掛在 GameScreen 的根層，不能放在頂列裡面（會被頂列的定位困住）*/
 export const settingsOpen = signal(false)
@@ -189,13 +198,17 @@ export function Settings({ onClose, net = true }: { onClose: () => void; net?: b
                 max={100}
                 value={Math.round(audioPrefs.value[k] * 100)}
                 onInput={(v) => setAudioPref(k, v / 100)}
-                onChange={() => sfx(k === 'music' || k === 'ambient' ? 'notify' : 'pickup')}
+                onChange={() => sfx(VOL_PREVIEW[k][0], undefined, undefined, VOL_PREVIEW[k][1])}
               />
             </div>
           ))}
           <div class="setrow">
             <label>{t('settings.mute')}</label>
             <input type="checkbox" checked={audioPrefs.value.muted} onChange={(e) => setAudioPref('muted', (e.target as HTMLInputElement).checked)} />
+          </div>
+          <div class="setrow">
+            <label title={t('snd7.monoHint')}>{t('snd7.mono')}</label>
+            <input type="checkbox" data-testid="mono-audio" title={t('snd7.monoHint')} checked={audioPrefs.value.mono} onChange={(e) => setAudioPref('mono', (e.target as HTMLInputElement).checked)} />
           </div>
           {net && <NetSettings />}
         </div>

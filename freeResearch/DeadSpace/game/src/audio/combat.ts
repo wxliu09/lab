@@ -6,7 +6,7 @@
 import { EntFlag } from '../shared/protocol/messages'
 import '../shared/content/index'
 import { UNITS, isZoneObject } from '../shared/content/registry'
-import { audioContext, fm, noise, noiseBuffer, playSynth, regSound, swell, ticks, tone } from './sfx'
+import { audioContext, fm, hiss, noise, noiseBuffer, noteEnd, playSynth, regSound, swell, ticks, tone } from './sfx'
 
 // ───────── 分類 ─────────
 
@@ -168,6 +168,7 @@ function vox(d: AudioNode, t0: number, dur: number, f0: number, f1: number, form
   }
   src.start(t0)
   src.stop(stop)
+  noteEnd(stop)
   if (br) {
     br.start(t0, Math.random() * 0.5)
     br.stop(stop)
@@ -275,15 +276,18 @@ export function playSwing(x: number, y: number, big = false): void {
 export type BarkKind = 'pain' | 'death' | 'idle'
 
 /** 受傷／死亡／待機叫聲。pitch 由 voicePitch() 取得；big = 重傷 */
-/** 各族群叫聲的混音增益 [痛叫, 死亡, 待機]（依實測峰值調整：痛叫約 0.08–0.11、死亡約 0.12–0.17、待機約 0.03–0.04）*/
+/**
+ * 各族群叫聲的混音增益 [痛叫, 死亡, 待機]（依實測峰值調整：痛叫約 0.08–0.11、死亡約 0.12–0.17、待機約 0.03–0.04）。
+ * 第 7 輪：怪物死亡叫聲正規化到 K 加權 100 ms 瞬時約 −14±2（異形原本 −7.4，跟核爆 −6.5 一樣響）
+ */
 const BARK_GAIN: Record<Family, [number, number, number]> = {
   human: [3.6, 2.1, 1.5],
-  xeno: [2.1, 3.6, 3.0],
-  mutant: [2.8, 1.95, 1.5],
-  bug: [3.2, 4.7, 2.7],
+  xeno: [2.1, 1.25, 3.0],
+  mutant: [2.8, 1.38, 1.5],
+  bug: [3.2, 2.4, 2.7],
   goo: [2.1, 3.1, 2.0],
-  critter: [2.1, 2.6, 2.3],
-  beast: [2.7, 2.6, 3.4],
+  critter: [2.1, 1.3, 2.3],
+  beast: [2.7, 1.84, 3.4],
   machine: [3.4, 2.6, 4.0],
 }
 
@@ -420,15 +424,12 @@ regSound('dash', (d, now) => {
   noise(d, now + 0.05, 0.25, 900, 200, 1, 'lowpass', 0.3)
 }, 2.7)
 regSound('suitOff', (d, now) => {
-  noise(d, now, 0.5, 5000, 1500, 1, 'highpass', 0.25)
+  // 洩壓的嘶聲走 hiss（7 kHz 上限；原本 5 kHz 高通，頻譜重心 10 kHz）
+  hiss(d, now, 0.5, 3200, 1500, 0.3, 7000, 0.01)
   fm(d, now + 0.1, 0.25, 260, 2.73, 3, 0.12)
   fm(d, now + 0.3, 0.2, 210, 2.73, 3, 0.1)
 }, 1.1)
-regSound('castCharge', (d, now) => {
-  swell(d, now, 0.6, 300, 900, 'sine', 0.12, 0.7)
-  swell(d, now, 0.6, 450, 1350, 'triangle', 0.05, 0.7)
-  noise(d, now, 0.6, 2000, 6000, 3, 'bandpass', 0.08)
-}, 1.4)
+// castCharge（帶詠唱進度）在 sfx.ts：castCharge(x, y, k)
 regSound('cast', (d, now) => {
   noise(d, now, 0.18, 900, 4200, 2, 'bandpass', 0.22)
   tone(d, now, 0.16, 520, 1040, 'sine', 0.12)
@@ -445,7 +446,8 @@ regSound('dock', (d, now) => {
   tone(d, now + 0.25, 0.12, 120, 60, 'sine', 0.3)
 }, 1.6)
 regSound('gas', (d, now) => {
-  noise(d, now, 0.9, 3800, 2600, 0.8, 'highpass', 0.12)
+  // 噴氣的嘶聲走 hiss（7 kHz 上限；原本 3.8 kHz 高通，頻譜重心 12.6 kHz）
+  hiss(d, now, 0.9, 2600, 2000, 0.16, 7000, 0.04)
 }, 1.2)
 
 /** 測試與混音用：列出可播的叫聲種類 */

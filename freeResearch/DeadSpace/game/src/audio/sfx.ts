@@ -14,22 +14,41 @@ export type Bus = 'sfx' | 'ui' | 'music' | 'ambient'
 export interface AudioPrefs {
   master: number
   sfx: number
+  /** 介面／通知分軌（第 7 輪：原本由 sfx 推算，玩家無法單獨調）*/
+  ui: number
   music: number
   ambient: number
   muted: boolean
+  /** 單聲道（無障礙：單耳聽力、只戴一邊耳機）：不做左右定位，母線混成單聲道 */
+  mono: boolean
 }
 
 const PREF_KEY = 'xc.audio'
-const DEFAULT_PREFS: AudioPrefs = { master: 0.9, sfx: 0.9, music: 0.45, ambient: 0.6, muted: false }
+const DEFAULT_PREFS: AudioPrefs = { master: 0.9, sfx: 0.9, ui: 0.9, music: 0.45, ambient: 0.6, muted: false, mono: false }
+
+/**
+ * 存檔內容 → 設定（壞值用預設）。舊存檔沒有 ui：沿用舊版由 sfx 推算的值（sfx × 0.9 + 0.1），
+ * 升級後聽起來和以前一樣；沒有 mono 就是關。
+ */
+export function parsePrefs(raw: unknown): AudioPrefs {
+  const v = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof AudioPrefs, unknown>>
+  const n = (x: unknown, d: number) => (typeof x === 'number' && x >= 0 && x <= 1 ? x : d)
+  const sfx = n(v.sfx, DEFAULT_PREFS.sfx)
+  return {
+    master: n(v.master, DEFAULT_PREFS.master),
+    sfx,
+    ui: n(v.ui, typeof v.sfx === 'number' ? Math.min(1, sfx * 0.9 + 0.1) : DEFAULT_PREFS.ui),
+    music: n(v.music, DEFAULT_PREFS.music),
+    ambient: n(v.ambient, DEFAULT_PREFS.ambient),
+    muted: v.muted === true,
+    mono: v.mono === true,
+  }
+}
 
 function loadPrefs(): AudioPrefs {
   try {
     const raw = localStorage.getItem(PREF_KEY)
-    if (raw) {
-      const v = JSON.parse(raw) as Partial<AudioPrefs>
-      const n = (x: unknown, d: number) => (typeof x === 'number' && x >= 0 && x <= 1 ? x : d)
-      return { master: n(v.master, DEFAULT_PREFS.master), sfx: n(v.sfx, DEFAULT_PREFS.sfx), music: n(v.music, DEFAULT_PREFS.music), ambient: n(v.ambient, DEFAULT_PREFS.ambient), muted: v.muted === true }
-    }
+    if (raw) return parsePrefs(JSON.parse(raw))
     // 舊版只有一個總音量
     const old = localStorage.getItem('xc.volume')
     if (old !== null && Number.isFinite(Number(old))) return { ...DEFAULT_PREFS, master: Math.max(0, Math.min(1, Number(old))) }
@@ -41,6 +60,8 @@ function loadPrefs(): AudioPrefs {
 
 export const audioPrefs = signal<AudioPrefs>(loadPrefs())
 const buses: Partial<Record<Bus, GainNode>> = {}
+/** 世界音效的入口：bus 壓縮器（大混戰時先在這裡壓，不讓母線壓縮器把音樂、環境音一起壓下去）→ 補償增益 → sfx 分軌 */
+let sfxIn: AudioNode | null = null
 
 function applyPrefs(): void {
   const p = audioPrefs.value
@@ -49,9 +70,12 @@ function applyPrefs(): void {
   const t = c.currentTime
   master.gain.setTargetAtTime(p.muted ? 0 : p.master, t, 0.05)
   buses.sfx?.gain.setTargetAtTime(p.sfx, t, 0.05)
-  buses.ui?.gain.setTargetAtTime(Math.min(1, p.sfx * 0.9 + 0.1), t, 0.05)
+  buses.ui?.gain.setTargetAtTime(p.ui, t, 0.05)
   buses.music?.gain.setTargetAtTime(p.music, t, 0.05)
   buses.ambient?.gain.setTargetAtTime(p.ambient, t, 0.05)
+  // 單聲道：母線強制 1 聲道（瀏覽器依 speakers 規則把左右混成一聲，之後再複製到兩邊）
+  master.channelCount = p.mono ? 1 : 2
+  master.channelCountMode = p.mono ? 'explicit' : 'max'
 }
 
 export function setAudioPref<K extends keyof AudioPrefs>(k: K, v: AudioPrefs[K]): void {
@@ -76,6 +100,12 @@ export function setVolume(v: number): void {
  * 手勢前的音效本來就播不出來，直接略過；背景音樂、環境音由音訊導演每 0.5 秒重試，手勢後自然開始。
  */
 let gestured = false
+
+/**
+ * 世界音效 bus 壓縮器：門檻 −18、3:1、軟膝 6 dB；起音 10 ms 讓單發槍聲的瞬態大致通過，連射與疊加才被壓。
+ * post = 抵銷瀏覽器自動 makeup（+6.13 dB）再加回 1 dB（單發的瞬態也會被壓一點），單發開火聲維持在 −15±2（K 加權 100 ms 瞬時）
+ */
+export const SFX_COMP = { threshold: -18, knee: 6, ratio: 3, attack: 0.01, release: 0.2, post: Math.pow(10, (-6.13 + 1) / 20) }
 
 /** 這個瀏覽器已經有過使用者手勢（重新整理後 userActivation 不會保留，所以通常是 false；測試環境沒有 navigator）*/
 function hasActivation(): boolean {
@@ -114,6 +144,18 @@ function ac(): AudioContext | null {
       g.connect(master)
       buses[b] = g
     }
+    // 世界音效的 bus 壓縮器（第 7 輪：每秒 20 發＋痛叫＋核爆時母線壓縮器壓到 7.6 dB，音樂、環境音跟著被抽掉約 8 dB）。
+    // 瀏覽器的 DynamicsCompressor 會自動加 makeup（這組參數約 +6.1 dB，離線量測）：後面的增益把它抵銷，門檻以下維持原音量
+    const sc = ctx.createDynamicsCompressor()
+    sc.threshold.value = SFX_COMP.threshold
+    sc.knee.value = SFX_COMP.knee
+    sc.ratio.value = SFX_COMP.ratio
+    sc.attack.value = SFX_COMP.attack
+    sc.release.value = SFX_COMP.release
+    const sg = ctx.createGain()
+    sg.gain.value = SFX_COMP.post
+    sc.connect(sg).connect(buses.sfx!)
+    sfxIn = sc
     applyPrefs()
     if (__TEST_HOOKS__) {
       // 測試 build：量測實際輸出音量（e2e 驗證背景音樂有在發聲）
@@ -194,7 +236,7 @@ export function listenerPos(): { x: number; y: number } {
 }
 
 /** 介面與通知類的音效：不做距離衰減、走 ui 分軌 */
-const UI_SOUNDS = new Set(['ui', 'uiHover', 'uiOpen', 'uiClose', 'error', 'notify', 'announce', 'eventSting', 'apocSting', 'chat', 'chatTeam', 'chatDead', 'join', 'leaveLobby', 'readyUp', 'gameStart', 'victory', 'defeat', 'revealHuman', 'revealXeno', 'revealMutant', 'revealAndroid', 'ready', 'cmdMove', 'cmdAttack', 'death', 'hurt', 'hurtBig', 'pickup', 'drop', 'epTick', 'heartbeat', 'countdown', 'countdownLast'])
+const UI_SOUNDS = new Set(['ui', 'uiHover', 'uiOpen', 'uiClose', 'error', 'notify', 'announce', 'eventSting', 'apocSting', 'chat', 'chatTeam', 'chatDead', 'join', 'leaveLobby', 'readyUp', 'gameStart', 'victory', 'defeat', 'revealHuman', 'revealXeno', 'revealMutant', 'revealAndroid', 'ready', 'cmdMove', 'cmdAttack', 'death', 'hurt', 'hurtBig', 'pickup', 'drop', 'epTick', 'heartbeat', 'countdown', 'countdownLast', 'deny', 'aimEnter'])
 
 /** 混音：回饋音相對於背景音樂要聽得清楚（依 e2e 實測的峰值調整，目標：提示音約 0.06–0.1、重大事件約 0.12–0.15）*/
 const GAIN: Record<string, number> = {
@@ -206,20 +248,93 @@ const GAIN: Record<string, number> = {
   join: 2.6, leaveLobby: 2.4, readyUp: 2.6, pickup: 3.6, drop: 2.6, ready: 4.2, epTick: 2.8,
   step: 1.8, stepSoft: 2, stepHeavy: 1.4, scuttle: 1.5, squish: 1.5, doorOpen: 1.7, doorClose: 1.7,
   // ── 開火聲正規化：K 加權 100 ms 瞬時響度集中在 −15±2（R5-art 量測：原本狙擊 −9、鏈鋸 −25、吐酸 −30）──
-  heavy: 0.7, gatling: 1.75, plasma: 2.1, void: 2.2, zap: 1.8, laser: 1.3, flame: 2.5, saw: 3, spit: 2.6,
+  heavy: 0.7, gatling: 2.2, plasma: 2.1, void: 2.2, zap: 1.8, laser: 1.3, flame: 2.5, saw: 3, spit: 2.6,
   force: 1.15, mag: 1.15, rocket: 2, thump: 1.15, sniper: 0.45, arc: 1.4, chrono: 1.2, fireball: 1.9,
   silk: 2.3, spine: 1.7, throw: 5.6, cryo: 1.35, sludge: 2.6, rumble: 0.8, pulseWave: 1.6,
   // 嘶聲（原本 −4.6～−9.6，全遊戲最刺耳）：降約 10 dB、加 7 kHz 低通後的混音增益
   steam: 2.2, freeze: 1.9, weld: 2,
   // 近戰攻擊原本比槍聲小很多
   claw: 3.4, bite: 3,
+  // 第 7 輪：變身原本 −23.8（比開門小聲），提到約 −13
+  morph: 2.8,
+  // 受傷：加了 2–4 kHz 的撕裂層之後約 −15（目標 −16；筆電喇叭上 ≥ −18）
+  hurt: 0.9,
+  // 環境小事件（第 7 輪）：原本比底噪小 10–20 dB（無線電 −51、資料聲 −48、氣泡 −44、電容 −41），再加上距離衰減就聽不到了
+  radioChatter: 5, dataChirp: 4, bubble: 2.5, capWhine: 3.2, pebbles: 3.2, conveyor: 3.2, teleChime: 2.5, electricBuzz: 2.5,
+  furnaceFlare: 2.5, creak: 2, birdcall: 2, sonarPing: 1.6, metalStress: 1.6,
 }
 
-function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null {
-  const c = ac()
-  const dest = buses[b]
-  if (!c || !dest) return null
-  const g = c.createGain()
+// ───────── 同時發聲數上限（第 7 輪）─────────
+// 世界音效（sfx 分軌）同時最多 16 聲、同一種最多 4 聲；超過時比較「距離衰減後的音量」：
+// 新的比現有最小聲的還小 2 dB 以上就不播，否則把最小聲的那個約 15 ms 內淡掉讓位（遠的、小聲的先讓）。
+// 介面、音樂、環境音分軌不受限制。
+
+export const VOICE_LIMIT = { total: 16, perName: 4 }
+
+interface Voice {
+  group: string
+  vol: number
+  end: number
+  g: GainNode
+}
+
+const voices: Voice[] = []
+
+/** 測試用：目前還在響的世界音效數 */
+export function voiceCount(): number {
+  const t = ctx?.currentTime ?? 0
+  return voices.filter((v) => v.end > t).length
+}
+
+/** 同種類的上限以「名稱」計；帶參數的合成（命中、叫聲）以 key 的前兩段計（hit:bullet、bark:human）*/
+function voiceGroup(key: string): string {
+  const i = key.indexOf(':')
+  if (i < 0) return key
+  const j = key.indexOf(':', i + 1)
+  return j < 0 ? key : key.slice(0, j)
+}
+
+function steal(v: Voice, now: number): void {
+  try {
+    v.g.gain.cancelScheduledValues(now)
+    v.g.gain.setTargetAtTime(0, now, 0.005)
+  } catch {
+    /* ignore */
+  }
+  v.end = now
+}
+
+/**
+ * 能不能再發一聲（必要時讓出最小聲的）；回傳 false = 這一聲不播。
+ * 新的比現有最小聲的還小 2 dB 以上才丟掉新的；差不多大聲就讓最小聲（同樣大聲時是最舊）的那個讓位——新的聲音比較重要
+ */
+function admit(group: string, vol: number, now: number): boolean {
+  for (let i = voices.length - 1; i >= 0; i--) if (voices[i].end <= now) voices.splice(i, 1)
+  const quietest = (list: Voice[]) => list.reduce<Voice | null>((m, v) => (!m || v.vol < m.vol ? v : m), null)
+  const make = (list: Voice[], cap: number): boolean => {
+    if (list.length < cap) return true
+    const q = quietest(list)!
+    if (vol < q.vol * 0.8) return false
+    steal(q, now)
+    voices.splice(voices.indexOf(q), 1)
+    return true
+  }
+  return make(voices.filter((v) => v.group === group), VOICE_LIMIT.perName) && make(voices, VOICE_LIMIT.total)
+}
+
+/** 正在合成的這一聲：各合成工具把自己的結束時間記進來（估計這一聲什麼時候結束）*/
+let synthEnd = 0
+/** 正在合成的這一聲的音高倍率與長度倍率（隨機變化；1 = 不變）*/
+let pj = 1
+let dj = 1
+
+/** 自訂合成（combat.ts 的人聲）用：登記這一聲到什麼時候還有聲音 */
+export function noteEnd(t: number): void {
+  if (t > synthEnd) synthEnd = t
+}
+
+/** 這一聲距離衰減後的音量與左右定位；聽不到（< 0.01）回傳 null */
+function place(x: number | undefined, y: number | undefined, gain: number): { vol: number; pan: number; att: number } | null {
   let vol = gain
   let pan = 0
   if (x !== undefined && y !== undefined) {
@@ -227,46 +342,95 @@ function out(x?: number, y?: number, gain = 1, b: Bus = 'sfx'): AudioNode | null
     const dy = y - listener.y
     const d = Math.hypot(dx, dy)
     vol *= Math.max(0, 1 - d / 32) ** 1.2
-    pan = Math.max(-1, Math.min(1, dx / 14))
+    pan = audioPrefs.value.mono ? 0 : Math.max(-1, Math.min(1, dx / 14))
   }
-  if (vol < 0.01) return null
-  g.gain.value = vol
-  const p = c.createStereoPanner()
-  p.pan.value = pan
-  g.connect(p).connect(dest)
-  return g
+  return vol < 0.01 ? null : { vol, pan, att: vol / Math.max(1e-9, gain) }
 }
 
-export function noise(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, q = 1, type: BiquadFilterType = 'bandpass', amp = 1): void {
+/** 建立這一聲的輸出（增益 → 定位 → 分軌）；世界音效先過同時發聲數上限，回傳的 voice 由呼叫端補上結束時間 */
+function out(group: string, x: number | undefined, y: number | undefined, gain: number, b: Bus): { g: GainNode; v: Voice | null; att: number } | null {
+  const c = ac()
+  const dest = b === 'sfx' ? sfxIn : buses[b]
+  if (!c || !dest) return null
+  const pl = place(x, y, gain)
+  if (!pl) return null
+  const now = c.currentTime
+  if (b === 'sfx' && !admit(group, pl.vol, now)) return null
+  const g = c.createGain()
+  g.gain.value = pl.vol
+  const p = c.createStereoPanner()
+  p.pan.value = pl.pan
+  g.connect(p).connect(dest)
+  let v: Voice | null = null
+  if (b === 'sfx') {
+    v = { group, vol: pl.vol, end: now + 2, g }
+    voices.push(v)
+  }
+  return { g, v, att: pl.att }
+}
+
+/** 跑一段合成：期間套用音高、長度倍率，記錄結束時間；回傳這一聲的結束時間 */
+function runSynth(now: number, pitch: number, len: number, fn: () => void): number {
+  synthEnd = now + 0.08
+  pj = pitch
+  dj = len
+  try {
+    fn()
+  } finally {
+    pj = 1
+    dj = 1
+  }
+  return synthEnd
+}
+
+/** 有隨機變化的聲音，每次的長度（衰減時間）也差 ±10%：只變音高的話包絡幾乎一模一樣 */
+const lenJitter = (on: boolean) => (on ? 0.9 + Math.random() * 0.2 : 1)
+
+/** 隨機 ±db 分貝（線性倍率）*/
+const dbJitter = (db: number) => (db > 0 ? Math.pow(10, ((Math.random() * 2 - 1) * db) / 20) : 1)
+
+export function noise(dest: AudioNode, t0: number, len: number, f0: number, f1: number, q = 1, type: BiquadFilterType = 'bandpass', amp = 1): void {
+  const dur = len * dj
   const c = ctx!
   const src = c.createBufferSource()
   src.buffer = noiseBuf
   const f = c.createBiquadFilter()
   f.type = type
   f.Q.value = q
-  f.frequency.setValueAtTime(f0, t0)
-  f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur)
+  f.frequency.setValueAtTime(f0 * pj, t0)
+  f.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * pj), t0 + dur)
   const g = c.createGain()
   g.gain.setValueAtTime(amp, t0)
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur)
   src.connect(f).connect(g).connect(dest)
   src.start(t0, Math.random() * 0.5)
   src.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
+}
+
+/**
+ * 機械瞬態（第 7 輪）：3–8 ms、4–8 kHz 的金屬撞針／槍機聲。原本武器、命中、介面的頻譜重心全擠在 1.2–1.9 kHz，
+ * 4 kHz 以上只有 2–16%；加這一層讓開火聲在混戰裡有自己的位置。不走嘶聲（不是持續的高頻）。
+ */
+export function mech(dest: AudioNode, t0: number, amp = 0.5, f = 5600, dur = 0.006): void {
+  noise(dest, t0, dur, f, f * 0.8, 1.6, 'bandpass', amp)
 }
 
 /**
  * 嘶聲（蒸汽、冷凍、焊接）：高通 → 固定約 7 kHz 低通（拿掉刺耳的極高頻）→ 短起音、指數淡出。
  * 原本這類音只用一個高通濾波器，能量全堆在 8 kHz 以上，是全遊戲最刺耳的聲音。
  */
-export function hiss(dest: AudioNode, t0: number, dur: number, hp0: number, hp1: number, amp: number, lp = 7000, att = 0.015): void {
+export function hiss(dest: AudioNode, t0: number, len: number, hp0: number, hp1: number, amp: number, lp = 7000, att = 0.015): void {
+  const dur = len * dj
   const c = ctx!
   const src = c.createBufferSource()
   src.buffer = noiseBuf
   const h = c.createBiquadFilter()
   h.type = 'highpass'
   h.Q.value = 0.6
-  h.frequency.setValueAtTime(hp0, t0)
-  h.frequency.exponentialRampToValueAtTime(Math.max(20, hp1), t0 + dur)
+  // 音高變化只動高通（低通上限固定，嘶聲不超過 7 kHz）
+  h.frequency.setValueAtTime(hp0 * pj, t0)
+  h.frequency.exponentialRampToValueAtTime(Math.max(20, hp1 * pj), t0 + dur)
   const l = c.createBiquadFilter()
   l.type = 'lowpass'
   l.Q.value = 0.5
@@ -278,14 +442,16 @@ export function hiss(dest: AudioNode, t0: number, dur: number, hp0: number, hp1:
   src.connect(h).connect(l).connect(g).connect(dest)
   src.start(t0, Math.random() * 0.5)
   src.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
 }
 
-export function tone(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.5): void {
+export function tone(dest: AudioNode, t0: number, len: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.5): void {
+  const dur = len * dj
   const c = ctx!
   const o = c.createOscillator()
   o.type = type
-  o.frequency.setValueAtTime(f0, t0)
-  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur)
+  o.frequency.setValueAtTime(f0 * pj, t0)
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * pj), t0 + dur)
   const g = c.createGain()
   g.gain.setValueAtTime(0.0001, t0)
   g.gain.exponentialRampToValueAtTime(amp, t0 + 0.005)
@@ -293,15 +459,17 @@ export function tone(dest: AudioNode, t0: number, dur: number, f0: number, f1: n
   o.connect(g).connect(dest)
   o.start(t0)
   o.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
 }
 
 /** 緩起音的持續音（充能、嗡鳴）*/
-export function swell(dest: AudioNode, t0: number, dur: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.3, att = 0.5): void {
+export function swell(dest: AudioNode, t0: number, len: number, f0: number, f1: number, type: OscillatorType = 'sine', amp = 0.3, att = 0.5): void {
+  const dur = len * dj
   const c = ctx!
   const o = c.createOscillator()
   o.type = type
-  o.frequency.setValueAtTime(f0, t0)
-  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur)
+  o.frequency.setValueAtTime(f0 * pj, t0)
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * pj), t0 + dur)
   const g = c.createGain()
   g.gain.setValueAtTime(0.0001, t0)
   g.gain.exponentialRampToValueAtTime(amp, t0 + Math.max(0.01, dur * att))
@@ -309,19 +477,22 @@ export function swell(dest: AudioNode, t0: number, dur: number, f0: number, f1: 
   o.connect(g).connect(dest)
   o.start(t0)
   o.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
 }
 
 /** FM 合成（金屬撞擊、鐘聲、電子音）*/
-export function fm(dest: AudioNode, t0: number, dur: number, carrier: number, ratio: number, index: number, amp = 0.3, type: OscillatorType = 'sine'): void {
+export function fm(dest: AudioNode, t0: number, len: number, carrier: number, ratio: number, index: number, amp = 0.3, type: OscillatorType = 'sine'): void {
+  const dur = len * dj
   const c = ctx!
   const car = c.createOscillator()
   car.type = type
-  car.frequency.setValueAtTime(carrier, t0)
+  const cf = carrier * pj
+  car.frequency.setValueAtTime(cf, t0)
   const mod = c.createOscillator()
-  mod.frequency.setValueAtTime(carrier * ratio, t0)
+  mod.frequency.setValueAtTime(cf * ratio, t0)
   const mg = c.createGain()
-  mg.gain.setValueAtTime(carrier * index, t0)
-  mg.gain.exponentialRampToValueAtTime(Math.max(1, carrier * index * 0.05), t0 + dur)
+  mg.gain.setValueAtTime(cf * index, t0)
+  mg.gain.exponentialRampToValueAtTime(Math.max(1, cf * index * 0.05), t0 + dur)
   mod.connect(mg).connect(car.frequency)
   const g = c.createGain()
   g.gain.setValueAtTime(0.0001, t0)
@@ -332,6 +503,7 @@ export function fm(dest: AudioNode, t0: number, dur: number, carrier: number, ra
   mod.start(t0)
   car.stop(t0 + dur + 0.05)
   mod.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
 }
 
 /** 一串隨機短促的雜訊爆點（蓋革計數器、電弧劈啪、翻找）*/
@@ -345,11 +517,74 @@ export function rumble(dest: AudioNode, t0: number, dur: number, amp = 1, f = 18
   tone(dest, t0, dur * 0.8, 48, 26, 'sine', amp * 0.6)
 }
 
+/** 濾波的鋸齒波（銅管般的鋪底、下墜音）：起音 att 秒，低通從 lp0 掃到 lp1 */
+export function buzz(dest: AudioNode, t0: number, len: number, f0: number, f1: number, amp: number, lp0: number, lp1: number, att = 0.02, q = 1): void {
+  const dur = len * dj
+  const c = ctx!
+  const o = c.createOscillator()
+  o.type = 'sawtooth'
+  o.frequency.setValueAtTime(f0 * pj, t0)
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * pj), t0 + dur)
+  const f = c.createBiquadFilter()
+  f.type = 'lowpass'
+  f.Q.value = q
+  f.frequency.setValueAtTime(lp0, t0)
+  f.frequency.exponentialRampToValueAtTime(Math.max(40, lp1), t0 + dur)
+  const g = c.createGain()
+  g.gain.setValueAtTime(0.0001, t0)
+  g.gain.exponentialRampToValueAtTime(amp, t0 + Math.max(0.003, att))
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  o.connect(f).connect(g).connect(dest)
+  o.start(t0)
+  o.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
+}
+
+/** 低吼：鋸齒波 → 方波振幅調變（喉音的粗糙感）→ 三個共振峰帶通 → 包絡 */
+export function growl(dest: AudioNode, t0: number, len: number, f0: number, f1: number, amp: number, rough = 23): void {
+  const dur = len * dj
+  const c = ctx!
+  const o = c.createOscillator()
+  o.type = 'sawtooth'
+  o.frequency.setValueAtTime(f0 * pj, t0)
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * pj), t0 + dur)
+  const am = c.createGain()
+  am.gain.value = 0.6
+  const l = c.createOscillator()
+  l.type = 'square'
+  l.frequency.value = rough
+  const lg = c.createGain()
+  lg.gain.value = 0.4
+  l.connect(lg).connect(am.gain)
+  const env = c.createGain()
+  env.gain.setValueAtTime(0.0001, t0)
+  env.gain.exponentialRampToValueAtTime(amp, t0 + 0.06)
+  env.gain.setValueAtTime(amp, t0 + dur * 0.4)
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  o.connect(am)
+  for (const [f, k] of [[480, 1], [1150, 0.6], [2600, 0.25]] as const) {
+    const bp = c.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = f * pj
+    bp.Q.value = 5
+    const fg = c.createGain()
+    fg.gain.value = k
+    am.connect(bp).connect(fg).connect(env)
+  }
+  env.connect(dest)
+  o.start(t0)
+  l.start(t0)
+  o.stop(t0 + dur + 0.05)
+  l.stop(t0 + dur + 0.05)
+  noteEnd(t0 + dur + 0.05)
+}
+
 /** 介面、通知與回饋音（不做空間定位）。回傳 false 表示交給下面的通用音效表 */
 function uiSound(name: string, d: AudioNode, now: number): boolean {
   switch (name) {
     case 'uiHover':
-      tone(d, now, 0.035, 1900, 1750, 'sine', 0.035)
+      // 介面音往 2.5–6 kHz 移（第 7 輪：武器、命中、介面、痛叫的頻譜重心全擠在 1.2–1.9 kHz）
+      tone(d, now, 0.03, 3100, 2900, 'sine', 0.03)
       return true
     case 'uiOpen':
       tone(d, now, 0.14, 380, 920, 'triangle', 0.09)
@@ -362,10 +597,16 @@ function uiSound(name: string, d: AudioNode, now: number): boolean {
     case 'error':
       tone(d, now, 0.075, 185, 175, 'square', 0.09)
       tone(d, now + 0.095, 0.11, 150, 140, 'square', 0.09)
+      // 蜂鳴器的粗糙泛音（1–3.5 kHz）：戰鬥中原本在 2–8 kHz 被蓋過
+      buzz(d, now, 0.075, 370, 350, 0.035, 3500, 2400, 0.004, 0.7)
+      buzz(d, now + 0.095, 0.11, 300, 280, 0.035, 3200, 2200, 0.004, 0.7)
       return true
     case 'notify':
       fm(d, now, 0.45, 1318.5, 2, 1.4, 0.1)
       fm(d, now + 0.085, 0.6, 1760, 2, 1.1, 0.07)
+      // 高八度的泛音：混戰裡不被槍聲蓋掉
+      tone(d, now, 0.3, 2637, 2637, 'sine', 0.025)
+      tone(d, now + 0.085, 0.4, 3520, 3520, 'sine', 0.02)
       return true
     case 'announce':
       // 站內廣播的兩聲提示音（帶一點回音）
@@ -384,6 +625,10 @@ function uiSound(name: string, d: AudioNode, now: number): boolean {
       swell(d, now, 3.4, 82.4, 78, 'sawtooth', 0.08, 0.25)
       swell(d, now + 0.4, 3, 116.5, 110, 'square', 0.03, 0.4)
       rumble(d, now, 3, 0.5)
+      // 中高頻（第 7 輪）：原本 87% 能量在 60 Hz 以下，筆電喇叭上 −20.8。加一組銅管般的小三和弦齊奏（低通慢慢打開）＋金屬鐘響
+      for (const [f, a] of [[220, 0.12], [261.6, 0.08], [329.6, 0.08], [440, 0.05]] as const) buzz(d, now + 0.05, 3, f, f * 0.97, a, 700, 2600, 0.5, 2)
+      fm(d, now, 2.6, 440, 1.41, 3, 0.1)
+      fm(d, now + 0.02, 2.2, 1318.5, 1.41, 1.6, 0.04)
       return true
     case 'chat':
       tone(d, now, 0.05, 1180, 1240, 'sine', 0.05)
@@ -455,30 +700,43 @@ function uiSound(name: string, d: AudioNode, now: number): boolean {
     case 'ready':
       fm(d, now, 0.5, 2093, 3.5, 0.6, 0.045)
       return true
+    // 指令確認音（第 7 輪重做）：原本 −32／−29（比槍聲小 15–17 dB），能量在 1–3 kHz 的窄帶，混戰裡聽不到。
+    // 兩層、40–60 ms，能量在 2.5–5 kHz；每次音高 ±5%（VARY）。移動 = 上行、清脆；攻擊 = 下行、粗糙，一聽就分得出來
     case 'cmdMove':
-      noise(d, now, 0.025, 3200, 2200, 2, 'bandpass', 0.12)
-      tone(d, now, 0.03, 980, 900, 'sine', 0.025)
+      tone(d, now, 0.045, 3000, 3500, 'triangle', 0.1)
+      noise(d, now, 0.01, 4800, 4200, 2.5, 'bandpass', 0.45)
       return true
     case 'cmdAttack':
-      noise(d, now, 0.03, 2600, 1400, 2, 'bandpass', 0.16)
-      tone(d, now, 0.05, 520, 300, 'square', 0.035)
+      tone(d, now, 0.055, 2600, 1750, 'square', 0.05)
+      noise(d, now, 0.02, 3400, 2600, 1.6, 'bandpass', 0.5)
       return true
     case 'death':
       rumble(d, now, 1.6, 0.6)
       tone(d, now, 1.3, 196, 98, 'sawtooth', 0.08)
-      tone(d, now + 0.05, 2.2, 1568, 1550, 'sine', 0.04)
+      // 中高頻（第 7 輪：原本 91% 能量在 60 Hz 以下，筆電喇叭上掉 10.8 dB）：倒地的撞擊、往下墜的共振音、更清楚的耳鳴
+      noise(d, now, 0.4, 1800, 450, 1.1, 'bandpass', 0.5)
+      buzz(d, now, 1.4, 392, 98, 0.09, 2400, 300, 0.01, 3)
+      tone(d, now + 0.05, 2.2, 1568, 1550, 'sine', 0.07)
+      tone(d, now + 0.05, 2, 3136, 3100, 'sine', 0.015)
       return true
     case 'hurt':
-      tone(d, now, 0.16, 150, 60, 'sine', 0.3)
-      noise(d, now, 0.08, 900, 200, 0.8, 'lowpass', 0.25)
+      tone(d, now, 0.16, 150, 60, 'sine', 0.26)
+      noise(d, now, 0.08, 900, 200, 0.8, 'lowpass', 0.22)
+      // 撕裂＋抽氣（第 7 輪）：原本 99% 能量在 60–250 Hz，戰鬥中每個頻帶都被蓋過，筆電喇叭上只剩 −29.6。
+      // 2–4 kHz、約 0.12 秒：幾個不規則的撕裂爆點＋一口短促的氣音
+      ticks(d, now, 0.06, 4, 3000, 0.9, 2.5)
+      hiss(d, now + 0.01, 0.12, 2000, 2600, 0.8, 4200, 0.015)
       return true
     case 'hurtBig':
       tone(d, now, 0.28, 130, 45, 'sine', 0.45)
       noise(d, now, 0.18, 2600, 300, 0.7, 'bandpass', 0.35)
+      ticks(d, now, 0.09, 6, 2800, 0.4, 2.5)
+      hiss(d, now + 0.015, 0.18, 1800, 2400, 0.2, 4000, 0.02)
       return true
     case 'pickup':
       tone(d, now, 0.07, 660, 990, 'triangle', 0.07)
       tone(d, now + 0.06, 0.1, 990, 1320, 'triangle', 0.06)
+      tone(d, now + 0.06, 0.1, 2640, 3960, 'sine', 0.02)
       return true
     case 'drop':
       // 丟棄：pickup 的反向下行音＋落地的輕悶響
@@ -510,11 +768,14 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
     case 'step':
       noise(d, now, 0.05, 1400 + Math.random() * 500, 400, 1.6, 'bandpass', 0.11)
       tone(d, now, 0.04, 110 + Math.random() * 20, 70, 'sine', 0.06)
+      // 鞋底摩擦（2–3 kHz，第 7 輪）：原本 77% 能量在 60–250 Hz，小喇叭上聽不到有人走近
+      noise(d, now + 0.006, 0.035, 2500 + Math.random() * 500, 2000, 2, 'bandpass', 0.07)
       return true
     case 'stepHeavy':
       noise(d, now, 0.08, 700 + Math.random() * 200, 160, 1.2, 'lowpass', 0.2)
       tone(d, now, 0.07, 75, 40, 'sine', 0.14)
       noise(d, now + 0.01, 0.04, 3200, 2000, 3, 'bandpass', 0.05)
+      noise(d, now + 0.006, 0.05, 2300 + Math.random() * 400, 1800, 2, 'bandpass', 0.07)
       return true
     case 'stepSoft':
       noise(d, now, 0.06, 900, 300, 0.8, 'lowpass', 0.08)
@@ -525,9 +786,12 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
     case 'squish':
       noise(d, now, 0.1, 500, 200, 2, 'bandpass', 0.12)
       tone(d, now, 0.08, 160, 110, 'sine', 0.05)
+      // 黏膩的「啪」（2–3 kHz）：異形、突變體走路在小喇叭上也聽得到
+      noise(d, now + 0.01, 0.025, 2400 + Math.random() * 500, 1800, 2, 'bandpass', 0.05)
       return true
     case 'ventHiss':
-      noise(d, now, 1.6, 5200, 3800, 0.9, 'highpass', 0.05)
+      // 原本是 5 kHz 高通（頻譜重心 13 kHz）；改走嘶聲（7 kHz 上限、緩起音）
+      hiss(d, now, 1.6, 2600, 2000, 0.06, 7000, 0.35)
       return true
     case 'creak':
       tone(d, now, 0.9, 72, 64, 'sawtooth', 0.025)
@@ -554,7 +818,10 @@ function worldSound(name: string, d: AudioNode, now: number): boolean {
       swell(d, now, 2.4, 46, 40, 'sawtooth', 0.04, 0.5)
       return true
     case 'radioChatter':
-      for (let i = 0; i < 5; i++) noise(d, now + i * 0.11, 0.08, 1500 + Math.random() * 900, 1300, 6, 'bandpass', 0.05)
+      // 遠處的無線電：開頭、結尾各一聲靜噪（squelch），中間是幾個像音節的窄帶雜訊
+      noise(d, now, 0.03, 3200, 2600, 1.5, 'bandpass', 0.05)
+      for (let i = 0; i < 5; i++) noise(d, now + 0.04 + i * 0.11, 0.08, 1500 + Math.random() * 900, 1300, 6, 'bandpass', 0.05)
+      noise(d, now + 0.62, 0.04, 3000, 2400, 1.5, 'bandpass', 0.05)
       return true
     // ── 各站特色的環境小事件（ambient.ts 的 FLAVOR_EVENTS／MICRO）──
     case 'pebbles':
@@ -624,18 +891,60 @@ const SFX_BASE = 0.75
 
 // ───────── 外掛音效表（戰鬥、叫聲等模組在載入時註冊，避免循環 import）─────────
 
-type SoundFn = (d: AudioNode, now: number) => void
+type SoundFn = (d: AudioNode, now: number, arg?: number) => void
 const EXTRA = new Map<string, SoundFn>()
 
-/** 註冊具名的世界音效；gain 為混音增益（同 GAIN 表）*/
+/** 註冊具名的世界音效；gain 為混音增益（同 GAIN 表）。arg = 帶參數播放時的參數（例如 castCharge 的進度）*/
 export function regSound(name: string, fn: SoundFn, gain = 1): void {
   EXTRA.set(name, fn)
   GAIN[name] = gain
 }
 
+// ───────── 側鏈壓低音樂 ─────────
+
+/** gun = 附近開火、爆炸（k = 距離衰減 0–1）；hurt = 自己被打 */
+export type DuckKind = 'gun' | 'hurt'
+type DuckHook = (kind: DuckKind, k: number) => void
+let duckHook: DuckHook | null = null
+
+/** 背景音樂引擎建立時註冊（sfx 不 import music，避免循環）*/
+export function setDuckHook(fn: DuckHook | null): void {
+  duckHook = fn
+}
+
+/** 開火聲（第 7 輪：每發隨機 ±6% 音高、±1.5 dB；附近開火時壓低音樂）*/
+const WEAPONS = ['pistol', 'rifle', 'heavy', 'sniper', 'gatling', 'plasma', 'void', 'zap', 'laser', 'flame', 'saw', 'spit', 'force', 'mag', 'rocket', 'thump', 'arc', 'chrono', 'fireball', 'silk', 'spine', 'throw', 'cryo', 'sludge', 'rumble', 'pulseWave', 'claw', 'bite', 'spore']
+/** 每次播放的隨機變化 [音高 ±比例, 音量 ±dB]：同一把槍連開 20 發包絡相關 0.996、受傷聲 0.999，聽起來像同一個樣本在重複 */
+const VARY: Record<string, [number, number]> = {}
+for (const n of WEAPONS) VARY[n] = [0.06, 1.5]
+// 機槍自己就有 ±7% 的音高變化（照它的做法，這裡只加音量變化）
+VARY.gatling = [0, 1.5]
+for (const n of ['splat', 'clang', 'glass', 'whiff', 'step', 'stepHeavy', 'stepSoft', 'scuttle', 'squish', 'hurt', 'hurtBig']) VARY[n] = [0.06, 1.5]
+// 指令確認音：只變音高（±5%），音量一致
+VARY.cmdMove = [0.05, 0]
+VARY.cmdAttack = [0.05, 0]
+const NO_VARY: [number, number] = [0, 0]
+/** 帶參數的合成（命中、揮擊）也加變化 */
+const SYNTH_VARY = /^(hit:|swing$)/
+
+/** 機械瞬態 [音量, 中心頻率]：實彈武器是撞針／槍機，能量武器是放電的「啪」*/
+const MECH: Record<string, [number, number]> = {
+  pistol: [0.55, 5600], rifle: [0.6, 5200], heavy: [0.6, 4800], sniper: [0.7, 5000], gatling: [0.4, 5800], thump: [0.45, 4600], rocket: [0.4, 4400], spine: [0.35, 6200],
+  plasma: [0.3, 6800], void: [0.3, 6400], laser: [0.3, 7200], arc: [0.25, 7000], pulseWave: [0.3, 6000], chrono: [0.25, 6600],
+}
+
+/** 實彈武器（加隨機的牆面回聲）*/
+const SLAP = new Set(['pistol', 'rifle', 'heavy', 'sniper', 'thump'])
+
+/** 會壓低音樂的聲音：開火、爆炸 */
+const DUCK_ON = new Set([...WEAPONS, 'boom', 'bigBoom', 'nuke', 'slam', 'smash', 'impact'])
+
+/** 節流（同名音效最短間隔，秒）：機槍 0.06；「不行」連按時不要變成噪音 */
+const MIN_GAP: Record<string, number> = { gatling: 0.06, deny: 0.12, aimEnter: 0.08 }
+
 /**
  * 直接播放一段自訂合成（帶參數的音效，例如每個角色音高不同的叫聲）。
- * 沿用節流（以 key 計）、距離衰減與分軌。
+ * 沿用節流（以 key 計）、距離衰減、分軌與同時發聲數上限。
  */
 export function playSynth(key: string, x: number | undefined, y: number | undefined, gain: number, fn: SoundFn, minGap = 0.03, b: Bus = 'sfx'): boolean {
   if (gateMuted && x !== undefined) return false
@@ -643,34 +952,64 @@ export function playSynth(key: string, x: number | undefined, y: number | undefi
   if (!c || c.state !== 'running') return false
   const now = c.currentTime
   if ((last.get(key) ?? -1) > now - minGap) return false
-  const d = out(x, y, SFX_BASE * gain, b)
-  if (!d) return false
+  const vary = SYNTH_VARY.test(key)
+  const o = out(voiceGroup(key), x, y, SFX_BASE * gain * (vary ? dbJitter(1.5) : 1), b)
+  if (!o) return false
   last.set(key, now)
-  fn(d, now)
+  const end = runSynth(now, vary ? 1 + (Math.random() * 2 - 1) * 0.06 : 1, lenJitter(vary), () => fn(o.g, now))
+  if (o.v) o.v.end = end
   return true
 }
 
-export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
+export function sfx(name: string, x?: number, y?: number, b?: Bus, gain = 1): void {
+  play(name, x, y, b, gain)
+}
+
+/**
+ * 施法充能（帶進度）：k = 詠唱進度 0–1，音高隨進度往上爬（5 秒的引導每 0.6 秒充一次，不會每下都一樣）。
+ * sfx('castCharge') 等於 k = 0。
+ */
+export function castCharge(x: number, y: number, k: number): void {
+  play('castCharge', x, y, undefined, 1, Math.max(0, Math.min(1, Number.isFinite(k) ? k : 0)))
+}
+
+function play(name: string, x: number | undefined, y: number | undefined, b: Bus | undefined, gain: number, arg?: number): boolean {
   const ui = UI_SOUNDS.has(name)
-  if (gateMuted && !ui && x !== undefined) return
+  if (gateMuted && !ui && x !== undefined) return false
   const c = ac()
-  if (!c || c.state !== 'running') return
+  if (!c || c.state !== 'running') return false
   const now = c.currentTime
   // 同一音效節流，避免機槍一秒 20 發把耳朵打爆
-  const minGap = name === 'gatling' ? 0.06 : 0.03
-  if ((last.get(name) ?? 0) > now - minGap) return
-  const k = SFX_BASE * (GAIN[name] ?? 1)
-  const d = ui ? out(undefined, undefined, k, 'ui') : out(x, y, k, b ?? 'sfx')
-  // 遠到聽不見的不記節流時間，免得擋掉緊接著的近處同名音效
-  if (!d) return
+  if ((last.get(name) ?? -1) > now - (MIN_GAP[name] ?? 0.03)) return false
+  const [pv, dv] = VARY[name] ?? NO_VARY
+  const k = SFX_BASE * (GAIN[name] ?? 1) * gain
+  const bus: Bus = ui ? 'ui' : (b ?? 'sfx')
+  const o = ui ? out(name, undefined, undefined, k * dbJitter(dv), 'ui') : out(name, x, y, k * dbJitter(dv), bus)
+  // 遠到聽不見（或被同時發聲數上限擋下）的不記節流時間，免得擋掉緊接著的近處同名音效
+  if (!o) return false
   last.set(name, now)
-  if (ui && uiSound(name, d, now)) return
-  if (!ui && worldSound(name, d, now)) return
-  const ex = EXTRA.get(name)
-  if (ex) {
-    ex(d, now)
-    return
+  const d = o.g
+  const end = runSynth(now, pv > 0 ? 1 + (Math.random() * 2 - 1) * pv : 1, lenJitter(dv > 0), () => {
+    const done = (ui && uiSound(name, d, now)) || (!ui && worldSound(name, d, now))
+    if (!done) {
+      const ex = EXTRA.get(name)
+      if (ex) ex(d, now, arg)
+      else generic(name, d, now)
+    }
+    const m = MECH[name]
+    if (m) mech(d, now, m[0], m[1])
+    // 實彈武器：一個時間、亮度、大小都隨機的牆面回聲，每一發的包絡都不一樣（只變音高的話包絡相關仍有 0.996）
+    if (SLAP.has(name)) noise(d, now + 0.025 + Math.random() * 0.05, 0.09, 1600 + Math.random() * 900, 600, 1.2, 'bandpass', 0.1 + Math.random() * 0.15)
+  })
+  if (o.v) o.v.end = end
+  if (duckHook) {
+    if (bus === 'sfx' && DUCK_ON.has(name)) duckHook('gun', o.att)
+    else if (name === 'hurt' || name === 'hurtBig') duckHook('hurt', 1)
   }
+  return true
+}
+
+function generic(name: string, d: AudioNode, now: number): void {
   switch (name) {
     case 'pistol':
       noise(d, now, 0.12, 3200, 600, 0.8, 'bandpass', 0.9)
@@ -758,7 +1097,10 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
       tone(d, now, 0.5, 1400, 1300, 'sine', 0.3)
       break
     case 'ui':
-      tone(d, now, 0.05, 1200, 1500, 'sine', 0.15)
+      // 按鈕：主體移到 2.4–2.9 kHz，加一個 5 kHz 的點擊；保留一點原本 1.2 kHz 的厚度
+      tone(d, now, 0.04, 2400, 2900, 'sine', 0.12)
+      noise(d, now, 0.006, 5200, 4600, 2, 'bandpass', 0.25)
+      tone(d, now, 0.045, 1200, 1450, 'sine', 0.05)
       break
     case 'alarm':
       tone(d, now, 0.6, 700, 500, 'sawtooth', 0.25)
@@ -878,8 +1220,13 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
       ticks(d, now, 0.4, 12, 5000, 0.4)
       break
     case 'morph':
+      // 變身（第 7 輪：原本 −23.8，比開門還小聲；但「看到有人變身」是社交推理的關鍵時刻）：
+      // 骨頭碎裂（2–5 kHz 的短促爆點）→ 肉體撕扯 → 約 1.2 秒的低吼尾音。只看到變身特效就播，不看身分
       swell(d, now, 0.7, 90, 260, 'sawtooth', 0.12, 0.4)
       noise(d, now, 0.6, 300, 900, 3, 'bandpass', 0.5)
+      for (let i = 0; i < 7; i++) noise(d, now + 0.01 + Math.random() * 0.4, 0.01 + Math.random() * 0.012, 2200 + Math.random() * 2800, 1600, 3.5, 'bandpass', 0.7)
+      noise(d, now + 0.15, 0.35, 1400, 500, 1.5, 'bandpass', 0.35)
+      growl(d, now + 0.3, 1.2, 86, 58, 0.5)
       break
     case 'squelch':
       noise(d, now, 0.3, 700, 150, 4, 'bandpass', 0.8)
@@ -1082,6 +1429,12 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
     case 'heartbeat':
       tone(d, now, 0.12, 70, 45, 'sine', 0.7)
       tone(d, now + 0.16, 0.1, 65, 42, 'sine', 0.5)
+      // 約 1 kHz 的「喀」泛音（第 7 輪：原本只有 70 Hz，筆電喇叭上掉 14.5 dB）
+      noise(d, now, 0.06, 1050, 800, 2, 'bandpass', 1.3)
+      noise(d, now, 0.08, 700, 260, 1, 'lowpass', 0.7)
+      tone(d, now, 0.08, 140, 90, 'triangle', 0.45)
+      noise(d, now + 0.16, 0.05, 950, 750, 2, 'bandpass', 0.9)
+      noise(d, now + 0.16, 0.07, 650, 240, 1, 'lowpass', 0.5)
       break
     case 'phasePulse':
       swell(d, now, 0.3, 1600, 200, 'sawtooth', 0.15, 0.05)
@@ -1114,3 +1467,74 @@ export function sfx(name: string, x?: number, y?: number, b?: Bus): void {
       tone(d, now, 0.08, 600, 400, 'sine', 0.1)
   }
 }
+
+// ───────── 第 7 輪新增的具名音效（render／input 呼叫 sfx(name, x?, y?)）─────────
+
+/**
+ * 「不行」（本地回饋：冷卻中按技能、空格子、瞄準時點在空處、目標不合法）。和伺服器拒絕的 error（兩聲低沉方波）不同：
+ * 一聲短促、往下彎的悶響＋ 2.6 kHz 的小點擊；節流 0.12 秒，連按也不會變成噪音（MIN_GAP）
+ */
+regSound(
+  'deny',
+  (d, now) => {
+    tone(d, now, 0.07, 520, 360, 'triangle', 0.14)
+    tone(d, now, 0.05, 1040, 720, 'sine', 0.04)
+    noise(d, now, 0.012, 2600, 2200, 2, 'bandpass', 0.18)
+  },
+  2.4,
+)
+
+/** 進入瞄準模式：很輕的「喀」（保險打開）＋往上的小滑音 */
+regSound(
+  'aimEnter',
+  (d, now) => {
+    noise(d, now, 0.006, 5200, 4600, 2.5, 'bandpass', 0.25)
+    tone(d, now + 0.004, 0.04, 2400, 3200, 'sine', 0.04)
+    noise(d, now + 0.03, 0.005, 6200, 5600, 2.5, 'bandpass', 0.15)
+  },
+  2.8,
+)
+
+/** 詠唱／引導被打斷：往下掉的斷電聲＋幾下劈啪 */
+regSound(
+  'castBreak',
+  (d, now) => {
+    buzz(d, now, 0.45, 1100, 110, 0.12, 3200, 260, 0.005, 2)
+    tone(d, now, 0.4, 660, 90, 'sine', 0.12)
+    ticks(d, now + 0.05, 0.3, 6, 2600, 0.25, 3)
+  },
+  1.5,
+)
+
+/** 施法充能；arg = 詠唱進度 0–1（castCharge()），音高最多往上 9 個半音 */
+regSound(
+  'castCharge',
+  (d, now, k = 0) => {
+    const p = Math.pow(2, (Math.max(0, Math.min(1, k)) * 9) / 12)
+    swell(d, now, 0.6, 300 * p, 900 * p, 'sine', 0.12, 0.7)
+    swell(d, now, 0.6, 450 * p, 1350 * p, 'triangle', 0.05, 0.7)
+    noise(d, now, 0.6, 2000 * p, Math.min(6500, 6000 * p), 3, 'bandpass', 0.08)
+  },
+  1.4,
+)
+
+/** 設定頁的試聽：音樂滑桿（走 music 分軌）——一個帶低通的小調和弦＋一聲鐘 */
+regSound(
+  'previewMusic',
+  (d, now) => {
+    for (const f of [146.8, 174.6, 220]) buzz(d, now, 1.6, f, f, 0.05, 900, 700, 0.25, 0.7)
+    fm(d, now + 0.1, 1.4, 587.3, 3.5, 1.2, 0.05)
+  },
+  1,
+)
+
+/** 設定頁的試聽：環境音滑桿（走 ambient 分軌）——通風嗡鳴＋遠處的金屬聲 */
+regSound(
+  'previewAmbient',
+  (d, now) => {
+    tone(d, now, 1.4, 55, 55, 'sine', 0.12)
+    hiss(d, now, 1.4, 1400, 1200, 0.05, 4000, 0.3)
+    fm(d, now + 0.3, 0.9, 190, 2.73, 4, 0.08)
+  },
+  1,
+)

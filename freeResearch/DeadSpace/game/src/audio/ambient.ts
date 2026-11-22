@@ -80,6 +80,67 @@ function pulsed(c: AudioContext, dest: AudioNode, type: OscillatorType, f: numbe
   return [o, lfo(c, g.gain, hz, depth)]
 }
 
+/** 窄帶的電氣嗡聲：低頻鋸齒波（有很多諧波）→ 帶通，只留 1–3 kHz 那幾根（日光燈、變壓器、伺服器的「滋——」）*/
+function electric(c: AudioContext, dest: AudioNode, f: number, bp: number, q: number, amp: number): AudioScheduledSourceNode[] {
+  const o = c.createOscillator()
+  o.type = 'sawtooth'
+  o.frequency.value = f
+  const fl = c.createBiquadFilter()
+  fl.type = 'bandpass'
+  fl.frequency.value = bp
+  fl.Q.value = q
+  const g = c.createGain()
+  g.gain.value = amp
+  o.connect(fl).connect(g).connect(dest)
+  o.start()
+  return [o]
+}
+
+/**
+ * 中高頻的存在感（第 7 輪）：原本各地點的底噪 68–98% 能量在 60 Hz 以下，筆電喇叭（約 200 Hz 以下出不來）上
+ * 站內環境音掉 15 dB、太空掉 20 dB，等於沒有環境音。每種地點加一層 1–3 kHz、比本體低約 12 dB 的通風／電氣聲。
+ */
+export const PRESENCE: Record<AmbientKind, number> = { station: 1, ship: 1, outdoor: 0, moon: 0.7, space: 0.6, derelict: 1, organic: 0.8 }
+
+function presenceLayers(c: AudioContext, g: GainNode, kind: AmbientKind): AudioScheduledSourceNode[] {
+  const k = PRESENCE[kind]
+  if (!k) return []
+  const nodes: AudioScheduledSourceNode[] = []
+  switch (kind) {
+    case 'station':
+      // 空調出風（約 1.8 kHz 的寬帶氣流，慢慢起伏）＋日光燈的 120 Hz 諧波嗡聲
+      nodes.push(...noiseLayer(c, g, 'bandpass', 1800, 0.8, 0.02 * k, 0.05, 0.005 * k).nodes)
+      nodes.push(...electric(c, g, 120, 2400, 6, 0.006 * k))
+      break
+    case 'ship':
+      // 船艙：維生系統的氣流＋引擎控制器的高頻嗚聲（兩個略為走音的正弦拍頻）
+      nodes.push(...noiseLayer(c, g, 'bandpass', 1500, 0.9, 0.02 * k, 0.09, 0.006 * k).nodes)
+      nodes.push(osc(c, g, 'sine', 1250, 0.0025 * k), osc(c, g, 'sine', 1257, 0.002 * k))
+      break
+    case 'moon':
+      // 防護服的供氣聲（很淡）
+      nodes.push(...noiseLayer(c, g, 'bandpass', 1600, 0.7, 0.018 * k, 0.04, 0.006 * k).nodes)
+      break
+    case 'space':
+      // 駕駛艙的空氣循環（很淡；太空本身沒有聲音）
+      nodes.push(...noiseLayer(c, g, 'bandpass', 2000, 0.7, 0.016 * k, 0.03, 0.004 * k).nodes)
+      break
+    case 'derelict': {
+      // 廢站：接觸不良的電線，嗡聲忽強忽弱
+      const e = electric(c, g, 60, 1600, 4, 0.01 * k)
+      nodes.push(...e, ...noiseLayer(c, g, 'bandpass', 2600, 1.2, 0.012 * k, 6.3, 0.01 * k).nodes)
+      break
+    }
+    case 'organic':
+      // 有機腔體：濕潤的呼吸聲（跟著 0.5 Hz 起伏）
+      nodes.push(...noiseLayer(c, g, 'bandpass', 1400, 1.1, 0.02 * k, 0.5, 0.012 * k).nodes)
+      break
+    case 'outdoor':
+      break
+  }
+  return nodes
+}
+
 /** 底噪本體（依地點種類）*/
 function baseLayers(c: AudioContext, g: GainNode, kind: AmbientKind): AudioScheduledSourceNode[] {
   const nodes: AudioScheduledSourceNode[] = []
@@ -207,7 +268,7 @@ function build(kind: AmbientKind, flavor: string): Bed | null {
   const g = c.createGain()
   g.gain.value = 0
   g.connect(bus)
-  const nodes = [...baseLayers(c, g, kind), ...flavorLayers(c, g, flavor)]
+  const nodes = [...baseLayers(c, g, kind), ...presenceLayers(c, g, kind), ...flavorLayers(c, g, flavor)]
   return {
     key: kind + '|' + flavor,
     kind,
@@ -269,7 +330,8 @@ function scheduleEvent(): void {
         const name = list[Math.floor(Math.random() * list.length)]
         const l = listenerPos()
         const a = Math.random() * Math.PI * 2
-        const r = 6 + Math.random() * 12
+        // 第 7 輪：6–18 → 4–12 m（遠處的小事件加上距離衰減，原本比底噪小 10–20 dB，根本聽不到）
+        const r = 4 + Math.random() * 8
         sfx(name, l.x + Math.cos(a) * r, l.y + Math.sin(a) * r, 'ambient')
       }
       scheduleEvent()
@@ -288,7 +350,7 @@ function scheduleMicro(): void {
       if (bed && MICRO[bed.flavor]) {
         const l = listenerPos()
         const a = Math.random() * Math.PI * 2
-        const r = 4 + Math.random() * 10
+        const r = 3 + Math.random() * 7
         sfx(m[0], l.x + Math.cos(a) * r, l.y + Math.sin(a) * r, 'ambient')
       }
       scheduleMicro()

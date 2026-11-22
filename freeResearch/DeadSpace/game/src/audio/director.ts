@@ -241,6 +241,9 @@ function engine(u: ReturnType<typeof myUnit>): void {
   setEngine(vehicleSpeed(u.samples, world.serverTime) / ENGINE_FULL_SPEED)
 }
 
+/** 別人腳步的音量倍率（+6 dB）*/
+export const OTHER_STEP_GAIN = 2
+
 function stepSounds(zid: number, myId: number): void {
   const l = listenerPos()
   const near = [...world.ents.values()]
@@ -266,7 +269,8 @@ function stepSounds(zid: number, myId: number): void {
     const stride = heavy ? 1.6 : crawler ? 0.9 : 1.25
     if (prev.acc >= stride) {
       prev.acc = 0
-      sfx(crawler ? 'scuttle' : heavy ? 'stepHeavy' : d.startsWith('xeno.') || d.startsWith('mut.') ? 'squish' : 'step', e.x, e.y)
+      // 別人的腳步 +6 dB（第 7 輪：原本 −32，聽得到有人走近在這類遊戲裡是資訊）；音色只看外觀，不看身分
+      sfx(crawler ? 'scuttle' : heavy ? 'stepHeavy' : d.startsWith('xeno.') || d.startsWith('mut.') ? 'squish' : 'step', e.x, e.y, undefined, e.s.i === myId ? 1 : OTHER_STEP_GAIN)
     }
   }
   for (const id of st.steps.keys()) if (!keep.has(id)) st.steps.delete(id)
