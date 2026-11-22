@@ -21,6 +21,8 @@ export class RtsCamera {
   edgeScroll = true
   /** 邊緣捲動速度倍率（設定頁）*/
   edgeSpeed = 1
+  /** 方向鍵捲動速度倍率（設定頁）*/
+  keySpeed = 1
   follow: (() => { x: number; y: number } | null) | null = null
   /**
    * 畫面底部被 HUD 擋住的高度（CSS px，GameScene 量底部頭像面板）：注視點（tx, ty）改畫在「HUD 以上可見區」的正中央，
@@ -90,10 +92,10 @@ export class RtsCamera {
     const speed = this.distance() * 1.4
     let mx = 0
     let my = 0
-    if (this.keys.has('ArrowLeft')) mx -= 1
-    if (this.keys.has('ArrowRight')) mx += 1
-    if (this.keys.has('ArrowUp')) my += 1
-    if (this.keys.has('ArrowDown')) my -= 1
+    if (this.keys.has('ArrowLeft')) mx -= this.keySpeed
+    if (this.keys.has('ArrowRight')) mx += this.keySpeed
+    if (this.keys.has('ArrowUp')) my += this.keySpeed
+    if (this.keys.has('ArrowDown')) my -= this.keySpeed
     if (this.edgeScroll && this.mouse.inside) {
       // 邊緣 22px 內開始捲動，越靠邊越快（瀏覽器視窗邊緣很容易滑出去，判定區不能太窄）
       const m = 22
