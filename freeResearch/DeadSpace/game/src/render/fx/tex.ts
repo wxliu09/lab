@@ -27,6 +27,9 @@ export type FxTexName =
   | 'flare'
   | 'grad'
   | 'embers'
+  | 'pool'
+  | 'husk'
+  | 'flame'
 
 const cache = new Map<string, THREE.Texture>()
 
@@ -606,6 +609,109 @@ const BUILDERS: Record<FxTexName, () => HTMLCanvasElement> = {
     x.moveTo(18, 112)
     x.lineTo(112, 16)
     x.stroke()
+    return c
+  },
+  pool: () => {
+    // 液體積成的一灘（血、體液、冷卻液）：圓滑的不規則外形＋略深的邊緣（表面張力）＋一點濕潤反光；白色，呼叫端上色
+    const [c, x] = canvas(256)
+    const r = rng(29)
+    const blobs: [number, number, number][] = [[128, 128, 62]]
+    for (let i = 0; i < 7; i++) {
+      const a = r() * Math.PI * 2
+      const d = 30 + r() * 38
+      blobs.push([128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 22 + r() * 26])
+    }
+    // 外形：幾顆柔邊圓疊加（metaball），再取門檻 → 圓滑的聯集（不用 ctx.filter，Safari 舊版不支援）
+    x.globalCompositeOperation = 'lighter'
+    for (const [bx, by, br] of blobs)
+      radial(x, bx, by, br * 1.3, [
+        [0, 'rgba(255,255,255,0.7)'],
+        [0.6, 'rgba(255,255,255,0.35)'],
+        [1, 'rgba(255,255,255,0)'],
+      ])
+    x.globalCompositeOperation = 'source-over'
+    const img = x.getImageData(0, 0, 256, 256)
+    for (let i = 0; i < img.data.length; i += 4) {
+      const a = img.data[i + 3] / 255
+      // 硬一點的邊（液面）＋邊緣深色環（亮度 0.75），中間亮一點
+      const edge = Math.max(0, Math.min(1, (a - 0.35) * 4))
+      const rim = Math.max(0, 1 - Math.abs(a - 0.5) * 5)
+      const v = 255 * (1 - 0.3 * rim)
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v
+      img.data[i + 3] = Math.round(edge * 235)
+    }
+    x.putImageData(img, 0, 0)
+    // 濺開的小滴
+    x.fillStyle = 'rgba(255,255,255,0.9)'
+    for (let i = 0; i < 14; i++) {
+      const a = r() * Math.PI * 2
+      const d = 92 + r() * 30
+      x.beginPath()
+      x.arc(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 1.5 + r() * 3.5, 0, Math.PI * 2)
+      x.fill()
+    }
+    return c
+  },
+  husk: () => {
+    // 蛻下的皮：撕裂的薄膜（不規則外形＋破洞＋皺褶紋）；白色，呼叫端上色
+    const [c, x] = canvas(256)
+    const r = rng(53)
+    x.fillStyle = 'rgba(255,255,255,0.9)'
+    x.beginPath()
+    for (let i = 0; i <= 30; i++) {
+      const a = (i / 30) * Math.PI * 2
+      const rr = 70 + r() * 30 + (i % 4 === 0 ? -r() * 40 : 0) + (i % 7 === 0 ? r() * 30 : 0)
+      const px = 128 + Math.cos(a) * rr * 1.1
+      const py = 128 + Math.sin(a) * rr * 0.85
+      if (i === 0) x.moveTo(px, py)
+      else x.lineTo(px, py)
+    }
+    x.fill()
+    // 撕開的破洞
+    x.globalCompositeOperation = 'destination-out'
+    for (let i = 0; i < 6; i++) {
+      const a = r() * Math.PI * 2
+      const d = r() * 45
+      x.beginPath()
+      x.ellipse(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 6 + r() * 16, 3 + r() * 8, r() * Math.PI, 0, Math.PI * 2)
+      x.fill()
+    }
+    x.globalCompositeOperation = 'source-over'
+    // 皺褶：深色細線（往中心收）
+    x.strokeStyle = 'rgba(90,90,90,0.55)'
+    x.lineCap = 'round'
+    for (let i = 0; i < 26; i++) {
+      const a = r() * Math.PI * 2
+      const d0 = 10 + r() * 30
+      const d1 = 50 + r() * 50
+      x.lineWidth = 0.8 + r() * 2
+      x.beginPath()
+      x.moveTo(128 + Math.cos(a) * d0, 128 + Math.sin(a) * d0)
+      x.quadraticCurveTo(128 + Math.cos(a + 0.3) * (d0 + d1) * 0.5, 128 + Math.sin(a + 0.3) * (d0 + d1) * 0.5, 128 + Math.cos(a) * d1, 128 + Math.sin(a) * d1)
+      x.stroke()
+    }
+    return c
+  },
+  flame: () => {
+    // 火舌（直立）：底部寬而亮、往上收成尖、邊緣捲曲；白色，呼叫端上色（additive）
+    const [c, x] = canvas(64, 128)
+    const img = x.createImageData(64, 128)
+    for (let j = 0; j < 128; j++) {
+      const h = 1 - j / 127
+      const w = 0.42 * Math.pow(Math.sin(Math.min(1, h * 1.08 + 0.02) * Math.PI) * (1 - h * 0.55), 0.9)
+      const sway = Math.sin(h * 7.5) * 0.05 * h
+      for (let i = 0; i < 64; i++) {
+        const u = (i - 31.5) / 63 - sway
+        const d = Math.abs(u) / Math.max(0.001, w)
+        let a = Math.max(0, 1 - d * d)
+        a *= Math.min(1, h * 6) * Math.pow(1 - h, 0.6)
+        const core = Math.max(0, 1 - d * 1.6) * Math.max(0, 1 - h * 1.4)
+        const k = (j * 64 + i) * 4
+        img.data[k] = img.data[k + 1] = img.data[k + 2] = 255
+        img.data[k + 3] = Math.round(Math.min(1, a * 0.85 + core * 0.4) * 255)
+      }
+    }
+    x.putImageData(img, 0, 0)
     return c
   },
   grid: () => {

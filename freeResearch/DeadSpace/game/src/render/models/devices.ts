@@ -615,8 +615,9 @@ reg('fireField', (def) => {
   const root = new THREE.Group()
   flatDisc(root, R * 1.05, new THREE.MeshBasicMaterial({ color: '#ffffff', map: fxTex('scorch'), transparent: true, opacity: 0.9, depthWrite: false }), 0.02)
   const ember = flatDisc(root, R, glowMat('#ff5a1a', 1.6, fxTex('embers'), 0.9), 0.028)
-  const glow = flatDisc(root, R * 1.15, glowMat('#ff8a2a', 1.2, fxTex('soft'), 0.55), 0.032)
-  const heat = sprite(root, 'soft', '#ff8a2a', 1, R * 2.2, 0.6, true, 0.25)
+  // 柔光圓盤與熱暈壓暗（第 7 輪）：火舌、火星由 buffFx 畫；太亮的整片柔光會把地面洗成一團粉橘，也會和炸彈預警撞色
+  const glow = flatDisc(root, R * 1.1, glowMat('#ff6a1a', 0.8, fxTex('soft'), 0.3), 0.032)
+  const heat = sprite(root, 'soft', '#ff6a1a', 1, R * 2, 0.6, true, 0.12)
   let em = 0
   let snd = 0
   return {
@@ -625,8 +626,8 @@ reg('fireField', (def) => {
     update(t, dt) {
       ;(ember.material as THREE.MeshBasicMaterial).opacity = 0.65 + 0.2 * Math.sin(t * 7) * Math.sin(t * 3.1)
       ember.rotation.y = t * 0.05
-      ;(glow.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.1 * Math.sin(t * 9)
-      heat.material.opacity = 0.2 + 0.06 * Math.sin(t * 5)
+      ;(glow.material as THREE.MeshBasicMaterial).opacity = 0.24 + 0.06 * Math.sin(t * 9)
+      heat.material.opacity = 0.1 + 0.03 * Math.sin(t * 5)
       em += dt
       snd -= dt
       if (em > 0.035) {

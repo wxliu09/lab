@@ -6,6 +6,7 @@ import type { FxEvent } from '../../shared/protocol/messages'
 import { W } from '../stationBuilder'
 import { GEO } from '../fx'
 import { fxTex } from './tex'
+import { flashAllowed } from '../../client/viewPrefs'
 
 export { W }
 
@@ -72,8 +73,9 @@ export function shake(gs: GameScene, amt: number, x?: number, y?: number): void 
   gs.rts.shake = Math.max(gs.rts.shake, Math.min(1, amt * k))
 }
 
-/** 全螢幕閃光（核爆、雷擊、日焰）*/
+/** 全螢幕閃光（核爆、雷擊、日焰）：設定關掉閃光、或作業系統要求減少動態時不播 */
 export function screenFlash(gs: GameScene, color: THREE.ColorRepresentation, k: number, dur: number, x?: number, y?: number): void {
+  if (!flashAllowed()) return
   let a = 1
   if (x !== undefined && y !== undefined) {
     const d = Math.hypot(x - gs.rts.tx, y - gs.rts.ty)

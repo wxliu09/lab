@@ -7,6 +7,8 @@ import { sfx } from '../../audio/sfx'
 import { GEO } from '../fx'
 import { fxTex } from './tex'
 import { at, beam, bolt, dome, entPos, follow3, ghost, pillar, shake, shieldMat, telegraph, viewRoot, W } from './kit'
+import { hazard } from './hazard'
+import { noteMirageBreak } from './death'
 
 const XV = '#7a3cff'
 const XC = '#33ffd1'
@@ -56,6 +58,8 @@ regFx('deflect', (gs, _w, f) => {
 })
 
 regFx('mirageBreak', (gs, _w, f) => {
+  // 同一處的死亡特效（die）就不噴血了：遊戲已經公開這是幻象
+  noteMirageBreak(gs, f.z, f.x, f.y)
   sfx('shatter', f.x, f.y)
   gs.fx.flash(f.z, f.x, f.y, 1, '#c9b6ff', 0.5, 0.35)
   gs.fx.ring(f.z, f.x, f.y, 0.3, 1.4, '#c9b6ff', 0.4, { tex: 'ring', k: 2 })
@@ -582,18 +586,19 @@ regFx('enhance', (gs, _w, f) => {
   pillar(gs, f.z, p.x, p.y, 0.5, 2.4, '#ffd27a', 1.1, { k: 1.2 })
 })
 
-regFx('fusionArm', (gs, _w, f) => {
-  // 熱融炸彈倒數：5.5 m 危險圈＋越來越急的嗶聲（模型本身的燈也會加速閃）
+regFx('fusionArm', (gs, w, f) => {
+  // 熱融炸彈倒數：5.5 m 警示圈（黃黑斜紋＋倒數扇形，爆炸那一刻切掉）＋越來越急的嗶聲（模型本身的燈也會加速閃）
   const dur = f.v ?? 3
-  telegraph(gs, f.z, f.x, f.y, 5.5, '#ff3b1a', dur, { hz: 1.5 })
+  hazard(gs, f.z, f.x, f.y, 5.5, dur, { hz: 1.5, ent: f.e, w })
   sfx('arm', f.x, f.y)
   let t = 0
   let gap = 0.5
   while (t < dur - 0.05) {
     const when = t
     gs.fx.after(when, () => {
+      if (f.e && !w.ents.has(f.e)) return
       sfx('beep', f.x, f.y)
-      gs.fx.light(f.z, f.x, f.y, 0.6, '#ff3b1a', 20, 4, 0.12)
+      gs.fx.light(f.z, f.x, f.y, 0.6, '#ffb020', 20, 4, 0.12)
     })
     t += gap
     gap = Math.max(0.08, gap * 0.78)

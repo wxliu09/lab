@@ -6,6 +6,7 @@ import type { GameScene } from '../gameScene'
 import { sfx } from '../../audio/sfx'
 import { GEO } from '../fx'
 import { at, bolt, burst, entPos, follow3, muzzleOf, pillar, screenFlash, shake, telegraph, W } from './kit'
+import { hazard } from './hazard'
 
 function every(gs: GameScene, z: number, dur: number, dt: number, fn: (k: number, t: number) => void): void {
   let last = -1
@@ -238,15 +239,17 @@ regFx('nukeArm', (gs, _w, f) => {
   const R = 7
   const dur = 3
   sfx('alarm', p.x, p.y)
-  telegraph(gs, f.z, p.x, p.y, R, '#ffb000', dur, { tex: 'trefoil', hz: 1.4, follow: follow3(gs, f.e, 0) })
+  hazard(gs, f.z, p.x, p.y, R, dur, { hz: 1.4, follow: follow3(gs, f.e, 0) })
+  // 輻射標誌（警示圈中央，跟著機體走）
+  gs.fx.ring(f.z, p.x, p.y, R * 0.42, R * 0.42, '#ffc23d', dur, { tex: 'trefoil', k: 1.4, opacity: 0.45, fadeIn: 0.08, spin: 0.4, follow: follow3(gs, f.e, 0), h: 0.05 })
   let t = 0
   let gap = 0.45
   while (t < dur - 0.05) {
     gs.fx.after(t, () => {
       const q = entPos(gs, f.e) ?? p
       sfx('beep', q.x, q.y)
-      gs.fx.light(f.z, q.x, q.y, 1.6, '#ff3b1a', 40, 7, 0.14)
-      gs.fx.glow(f.z, q.x, q.y, q.h * 0.9, '#ff3b1a', 1, 0.14, { k: 2.4 })
+      gs.fx.light(f.z, q.x, q.y, 1.6, '#ffb020', 40, 7, 0.14)
+      gs.fx.glow(f.z, q.x, q.y, q.h * 0.9, '#ffb020', 1, 0.14, { k: 2.4 })
     })
     t += gap
     gap = Math.max(0.08, gap * 0.8)
@@ -291,7 +294,7 @@ regFx('xenoBombMark', (gs, _w, f) => {
   // 3 秒後爆開（之後的 fusion 特效負責爆炸）：脈動的熾熱種子＋5.5 m 預警
   const R = 5.5
   const dur = 3
-  telegraph(gs, f.z, f.x, f.y, R, '#ff7a3a', dur, { hz: 1.2 })
+  hazard(gs, f.z, f.x, f.y, R, dur, { hz: 1.2 })
   const seed = gs.fx.mesh(GEO.ico1, '#ffb060', 3)
   seed.position.copy(W(f.x, f.y, 0.35))
   const halo = gs.fx.sprite('soft', '#ff6a2a', 2)

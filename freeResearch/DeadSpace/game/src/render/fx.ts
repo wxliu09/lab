@@ -26,6 +26,10 @@ beamUnit.translate(0, 0, 0.5)
 const planeFlat = new THREE.PlaneGeometry(2, 2)
 planeFlat.rotateX(-Math.PI / 2)
 
+/** 點擊標記：線寬是 GEO.ring 的兩倍的環、中心的小圓點 */
+const markerRing = shared(new THREE.RingGeometry(0.7, 1, 40).rotateX(-Math.PI / 2))
+const markerDot = shared(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2))
+
 export const GEO = {
   sphere: shared(new THREE.SphereGeometry(1, 16, 12)),
   sphereLo: shared(new THREE.SphereGeometry(1, 10, 7)),
@@ -50,9 +54,36 @@ export const GEO = {
   dodeca: shared(new THREE.DodecahedronGeometry(1, 0)),
 }
 
-/** 畫質 → 粒子數量倍率 */
+/** 粒子上限 → 發射數量倍率的對照點（四個預設：low 500、medium 1500、high 3000、ultra 6000）*/
+const PK: [number, number][] = [
+  [500, 0.45],
+  [1500, 0.75],
+  [3000, 1],
+  [6000, 1.25],
+]
+
+/**
+ * 粒子上限（畫質預設或進階畫質的「粒子密度」覆寫）→ 發射數量倍率：對照點之間線性內插，
+ * 四個預設剛好落在原本的 0.45／0.75／1／1.25；低於 500 等比例往下（最少 0.1），高於 6000 沿最後一段斜率往上（最多 1.5）
+ */
+export function particleK(n: number): number {
+  if (!(n > 0)) return 0.1
+  if (n <= PK[0][0]) return Math.max(0.1, (PK[0][1] * n) / PK[0][0])
+  for (let i = 1; i < PK.length; i++) {
+    const [x1, y1] = PK[i]
+    if (n <= x1) {
+      const [x0, y0] = PK[i - 1]
+      return y0 + ((y1 - y0) * (n - x0)) / (x1 - x0)
+    }
+  }
+  const [x0, y0] = PK[PK.length - 2]
+  const [x1, y1] = PK[PK.length - 1]
+  return Math.min(1.5, y1 + ((y1 - y0) * (n - x1)) / (x1 - x0))
+}
+
+/** 畫質 → 粒子數量倍率（跟著 preset().particles，進階畫質的粒子密度覆寫也算）*/
 export function qk(): number {
-  return quality.value === 'low' ? 0.45 : quality.value === 'medium' ? 0.75 : quality.value === 'ultra' ? 1.25 : 1
+  return particleK(preset().particles)
 }
 
 // ───────── 粒子 ─────────
@@ -449,6 +480,9 @@ interface Decal {
   opacity: number
   fadeIn: number
   grow: number
+  /** 長到最大的秒數（預設壽命的 1/4、線性；有指定時用 ease-out，例如慢慢擴散的血泊）*/
+  growT: number
+  easeGrow: boolean
   size: number
 }
 
@@ -745,7 +779,7 @@ export class Fx {
 
   // ───── 地面貼花（環形緩衝）─────
 
-  decal(zone: number, x: number, y: number, size: number, tex: FxTexName, color: THREE.ColorRepresentation, life: number, o: { add?: boolean; rot?: number; opacity?: number; fadeIn?: number; grow?: number; k?: number } = {}): void {
+  decal(zone: number, x: number, y: number, size: number, tex: FxTexName, color: THREE.ColorRepresentation, life: number, o: { add?: boolean; rot?: number; opacity?: number; fadeIn?: number; grow?: number; growT?: number; k?: number } = {}): void {
     if (zone === 0) return
     const cap = quality.value === 'low' ? 16 : quality.value === 'medium' ? 28 : 40
     let d: Decal
@@ -754,7 +788,7 @@ export class Fx {
       mesh.raycast = () => {}
       mesh.renderOrder = 1
       this.scene.add(mesh)
-      d = { mesh, born: 0, until: 0, zone, opacity: 1, fadeIn: 0, grow: 1, size }
+      d = { mesh, born: 0, until: 0, zone, opacity: 1, fadeIn: 0, grow: 1, growT: 1, easeGrow: false, size }
       this.decals.push(d)
     } else d = this.decals[this.decalI % this.decals.length]
     this.decalI++
@@ -772,6 +806,8 @@ export class Fx {
     d.opacity = o.opacity ?? 1
     d.fadeIn = o.fadeIn ?? 0.04
     d.grow = o.grow ?? 1
+    d.growT = Math.max(0.01, o.growT ?? life / 4)
+    d.easeGrow = o.growT !== undefined
     d.size = size
     d.mesh.visible = zone === this.zone
   }
@@ -815,14 +851,24 @@ export class Fx {
 
   // ───── 常用形狀 ─────
 
-  /** 右鍵點擊標記 */
+  /**
+   * 右鍵點擊標記：粗環往外擴散（線寬是舊版的兩倍）＋中心一顆很快收掉的亮點；0.45 秒、最大半徑約 0.6 m，不搶畫面
+   */
   clickMarker(zone: number, x: number, y: number, color = '#5cf2a5'): void {
-    const ring = this.mesh(GEO.ring, color, 1.2)
-    ring.position.copy(W(x, y, 0.05))
-    ring.scale.setScalar(0.3)
-    this.addTransient(ring, 0.5, zone, (k) => {
-      ring.scale.setScalar(0.3 * (1 + k * 1.5))
-      ;(ring.material as THREE.MeshBasicMaterial).opacity = 1 - k
+    const g = new THREE.Group()
+    g.position.copy(W(x, y, 0.05))
+    const ring = this.mesh(markerRing, color, 1.5)
+    const dot = this.mesh(markerDot, new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.55), 2.6)
+    dot.position.y = 0.005
+    g.add(ring, dot)
+    const rm = ring.material as THREE.MeshBasicMaterial
+    const dm = dot.material as THREE.MeshBasicMaterial
+    this.addTransient(g, 0.45, zone, (k) => {
+      const e = 1 - (1 - k) ** 2
+      ring.scale.setScalar(0.28 + e * 0.32)
+      rm.opacity = k < 0.15 ? 1 : (1 - (k - 0.15) / 0.85) ** 1.3
+      dot.scale.setScalar(0.075 * (1 - k * 0.6))
+      dm.opacity = k < 0.5 ? 1 : 1 - (k - 0.5) / 0.5
     })
   }
 
@@ -992,7 +1038,10 @@ export class Fx {
       d.mesh.visible = true
       const k = (t - d.born) / Math.max(0.001, d.until - d.born)
       m.opacity = d.opacity * (k < d.fadeIn ? k / d.fadeIn : k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1)
-      if (d.grow !== 1) d.mesh.scale.setScalar(d.size * 0.5 * (1 + (d.grow - 1) * Math.min(1, k * 4)))
+      if (d.grow !== 1) {
+        const g = Math.min(1, (t - d.born) / d.growT)
+        d.mesh.scale.setScalar(d.size * 0.5 * (1 + (d.grow - 1) * (d.easeGrow ? 1 - (1 - g) ** 2.2 : g)))
+      }
     }
     for (let i = this.trans.length - 1; i >= 0; i--) {
       const tr = this.trans[i]

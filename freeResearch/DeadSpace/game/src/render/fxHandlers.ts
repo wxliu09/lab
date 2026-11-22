@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { regFx } from './fxBinding'
 import { W } from './stationBuilder'
 import type { GameScene } from './gameScene'
-import { sfx } from '../audio/sfx'
+import { castCharge, sfx } from '../audio/sfx'
 import { hitKind, materialOf, playHit, playSwing } from '../audio/combat'
 import { GEO } from './fx'
 import { fxTex } from './fx/tex'
@@ -12,11 +12,16 @@ import { beam, bolt, burst, entPos, hot, muzzleOf, posOf, screenFlash, shake } f
 import { Mat } from './materials'
 import { decalTex } from './tex'
 import { rockMat } from './fx/mats'
-// 技能、事件、效果原語、太空事件
+import { EntFlag } from '../shared/protocol/messages'
+import { flashAllowed } from '../client/viewPrefs'
+import { cutHazards } from './fx/hazard'
+import { castStrain } from './fx/morph'
+// 技能、事件、效果原語、太空事件、死亡、變身過場
 import './fx/abilities'
 import './fx/primitives'
 import './fx/space'
 import './fx/stations'
+import './fx/death'
 
 type Style =
   | 'tracer'
@@ -134,7 +139,7 @@ function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, fr
   const g = new THREE.Group()
   g.quaternion.copy(gs.camera.quaternion)
   g.position.copy(W(x, y, h))
-  const len = 0.95
+  const len = 1.15
   const slashes: THREE.Mesh[] = []
   for (let i = 0; i < n; i++) {
     const pivot = new THREE.Group()
@@ -143,9 +148,9 @@ function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, fr
     const m = gs.fx.mesh(GEO.beam, hot(color, 0.45), 4.5)
     m.rotation.y = Math.PI / 2
     m.position.x = -len / 2
-    m.scale.set(0.04, 0.04, 0.01)
+    m.scale.set(0.055, 0.055, 0.01)
     const halo = gs.fx.mesh(GEO.beam, color, 2.2, { opacity: 0.4 })
-    halo.scale.set(3.2, 3.2, 1)
+    halo.scale.set(3.4, 3.4, 1)
     m.add(halo)
     pivot.add(m)
     g.add(pivot)
@@ -153,9 +158,9 @@ function clawMarks(gs: GameScene, z: number, x: number, y: number, h: number, fr
   }
   const mats = slashes.map((m) => m.material as THREE.MeshBasicMaterial)
   const hmats = slashes.map((m) => (m.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial)
-  gs.fx.addTransient(g, 0.28, z, (k) => {
-    slashes.forEach((m, i) => (m.scale.z = len * Math.max(0.01, Math.min(1, k * 5 - i * 0.35))))
-    const f = k < 0.3 ? 1 : (1 - (k - 0.3) / 0.7) ** 1.3
+  gs.fx.addTransient(g, 0.36, z, (k) => {
+    slashes.forEach((m, i) => (m.scale.z = len * Math.max(0.01, Math.min(1, k * 6 - i * 0.4))))
+    const f = k < 0.35 ? 1 : (1 - (k - 0.35) / 0.65) ** 1.3
     mats.forEach((m) => (m.opacity = f))
     hmats.forEach((m) => (m.opacity = 0.35 * f))
   })
@@ -176,10 +181,25 @@ regFx('atk', (gs, w, f) => {
     const hx = to.x
     const hy = to.y
     const play = () => (L.hitSound ? sfx(L.hitSound, hx, hy) : playHit(hitKind(style, L.shape), materialOf(tgt), hx, hy))
+    // 受擊反應（閃光、後座、近戰頓幀）：只有目標身上沒有護盾、不是無敵時（打在護盾上是護盾在反應）
+    const tid = f.e2
+    const guarded = ((tgt?.fl ?? 0) & (EntFlag.Shielded | EntFlag.Invuln)) !== 0
+    const src = { x: from.x, y: from.y }
     if (style === 'claw') {
       playSwing(from.x, from.y, f.s === 'bite')
-      gs.fx.after(0.07, play)
-    } else gs.fx.after(0.02, play)
+      if (tid && !guarded) gs.units.expectHit(tid, 0.25)
+      gs.fx.after(0.07, () => {
+        play()
+        if (!tid || guarded) return
+        gs.units.hit(tid, { from: src, k: 1, stop: true })
+        gs.units.hitStop(f.e)
+        gs.fx.flash(z, hx, hy, hitH, '#ffd0c0', 0.22, 0.07)
+      })
+    } else {
+      gs.fx.after(0.02, play)
+      // 火焰是持續噴射：每一下只淡淡閃一下、不後座
+      if (tid && !guarded) gs.fx.after(0.03, () => gs.units.hit(tid, style === 'flame' ? { k: 0.3 } : { from: src, k: 0.65 }))
+    }
   }
   switch (style) {
     case 'bolt': {
@@ -254,14 +274,16 @@ regFx('atk', (gs, w, f) => {
     }
     default:
       gs.fx.tracer(z, from.x, from.y, from.h, to.x, to.y, hitH, L.color, L.w ?? 0.03)
-      gs.fx.emit(z, to.x, to.y, hitH, 4, { color: '#fff0c8', color2: L.color, speed: 3.5, life: 0.25, size: 1, up: 0.5, grav: 9, layer: 'spark' })
+      gs.fx.emit(z, to.x, to.y, hitH, 7, { color: '#fff0c8', color2: L.color, speed: 3.8, life: 0.32, size: 1, up: 0.5, grav: 9, layer: 'spark' })
+      if (f.e2) gs.fx.flash(z, to.x, to.y, hitH, L.color, 0.12, 0.06)
   }
   if (L.muzzle) {
     gs.fx.flash(z, from.x, from.y, from.h, L.color, L.muzzle, 0.06)
     gs.fx.emit(z, from.x, from.y, from.h, 1, { color: '#6a6460', speed: 0.3, life: 0.6, size: 0.25, up: 1, layer: 'smoke', alpha: 0.25 })
   }
   if (style !== 'claw') gs.fx.emit(z, to.x, to.y, hitH, 5, { color: L.color, speed: 3, life: 0.25, size: 0.16, up: 0.6, grav: 6 })
-  if (f.e2 === gs.world.me.unit) gs.damage = Math.min(1, gs.damage + 0.25)
+  // 自己被打：受傷色差脈衝（設定關掉閃光與色差、或作業系統要求減少動態時不送）
+  if (f.e2 === gs.world.me.unit && flashAllowed()) gs.damage = Math.min(1, gs.damage + 0.25)
 })
 
 // ───────── 投射物 ─────────
@@ -353,9 +375,11 @@ function projBody(gs: GameScene, L: Look): { g: THREE.Group; spin?: THREE.Object
   return { g, spin: style === 'spore' ? core : undefined, light: (L.size ?? 0) >= 0.12 }
 }
 
-function impact(gs: GameScene, z: number, L: Look, x: number, y: number, h: number, dir: [number, number], tgt?: { d?: string; fl?: number }): void {
+function impact(gs: GameScene, z: number, L: Look, x: number, y: number, h: number, dir: [number, number], tgt?: { d?: string; fl?: number }, tid?: number): void {
   const c = L.color
   const hit = L.hit ?? 0.2
+  // 打中單位：受擊反應（方向 = 飛行方向；護盾、無敵擋下的不算）
+  if (tid && !((tgt?.fl ?? 0) & (EntFlag.Shielded | EntFlag.Invuln))) gs.units.hit(tid, { dx: dir[0], dy: dir[1], k: Math.min(1, 0.55 + hit * 0.6), red: hit >= 0.5 })
   if (L.hitSound) sfx(L.hitSound, x, y)
   else if (L.style !== 'rocket' && L.style !== 'grenade' && L.style !== 'wave') playHit(hitKind(L.style, L.shape), tgt ? materialOf(tgt) : 'stone', x, y)
   switch (L.style) {
@@ -518,7 +542,7 @@ regFx('proj', (gs, w, f) => {
     }
     if (k >= 0.999 && !done) {
       done = true
-      impact(gs, z, L, x, y, h, dir, f.e2 ? w.ents.get(f.e2)?.s : undefined)
+      impact(gs, z, L, x, y, h, dir, f.e2 ? w.ents.get(f.e2)?.s : undefined, f.e2)
     }
   })
 })
@@ -528,6 +552,8 @@ regFx('proj', (gs, w, f) => {
 regFx('boom', (gs, _w, f) => {
   const r = Math.max(0.6, f.v ?? 1.5)
   const z = f.z
+  cutHazards(z, f.x, f.y)
+  gs.units.blast(f.x, f.y, r)
   sfx(r > 3 ? 'bigBoom' : 'boom', f.x, f.y)
   gs.fx.flash(z, f.x, f.y, 0.8, '#ffd9a0', Math.min(2.5, r * 0.5), 0.25)
   gs.fx.glow(z, f.x, f.y, 0.6, '#ff8a3a', r * 2.2, 0.5, { k: 1.2, grow: 1.4, opacity: 0.75 })
@@ -560,6 +586,8 @@ regFx('heal', (gs, _w, f) => {
 })
 
 regFx('miss', (gs, _w, f) => {
+  // 閃開了：同一下排定的受擊反應取消
+  gs.units.missed(f.e)
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.6 }
   sfx('whiff', p.x, p.y)
   gs.fx.emit(f.z, p.x, p.y, Math.min(1.4, p.h * 0.7), 5, { color: '#ffffff', speed: 1.5, life: 0.3, size: 0.12, up: 1 })
@@ -637,17 +665,54 @@ regFx('suitOff', (gs, _w, f) => {
   gs.fx.debris(f.z, p.x, p.y, 1, 5, 'metal', { speed: 2, size: 0.07 })
 })
 
-regFx('castStart', (gs, _w, f) => {
+const castRingTex = fxTex('ring')
+
+regFx('castStart', (gs, w, f) => {
   const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.8 }
-  const dur = Math.min(4, Math.max(0.4, f.v ?? 0.5))
-  sfx('castCharge', p.x, p.y)
-  // 長詠唱：每 0.6 秒再充一次能，最後一下在施放前；詠唱被打斷（快照的動作狀態不再是施法／引導）就停
+  const dur = Math.min(12, Math.max(0.4, f.v ?? 0.5))
+  const z = f.z
+  castCharge(p.x, p.y, 0)
+  // 詠唱中的施法者：快照的動作狀態是施法／引導（沒有附著實體的詠唱，例如太空酬載，就不判斷中斷）
   const casting = () => {
-    const st = f.e ? _w.ents.get(f.e)?.s.st : undefined
+    if (!f.e) return true
+    const st = w.ents.get(f.e)?.s.st
     return st === 3 || st === 5
   }
-  for (let t = 0.6; t < dur - 0.3; t += 0.6) gs.fx.after(t, () => casting() && sfx('castCharge', p.x, p.y))
-  gs.fx.ring(f.z, p.x, p.y, 1.1, 0.4, '#b28cff', dur, { tex: 'ring', k: 1.8, ease: 'linear' })
+  // 長詠唱：每 0.6 秒再充一次能，音高隨進度往上爬（最後一下在施放前）
+  for (let t = 0.6; t < dur - 0.3; t += 0.6) {
+    const k = t / dur
+    gs.fx.after(t, () => {
+      if (!casting()) return
+      const q = entPos(gs, f.e) ?? p
+      castCharge(q.x, q.y, k)
+    })
+  }
+  // 變身詠唱：自己與知情的同陣營才看得到顫抖與裂紋（旁觀者只看到一般的施法圈）
+  castStrain(gs, w, f, dur)
+  // 施法圈由外往內收（進度）；被打斷時「啪」一聲、0.15 秒內快速淡掉＋幾點火花
+  const ring = gs.fx.mesh(GEO.flat, '#b28cff', 1.8, { map: castRingTex })
+  ring.position.copy(W(p.x, p.y, 0.06))
+  ring.renderOrder = 4
+  const rm = ring.material as THREE.MeshBasicMaterial
+  let broke = -1
+  gs.fx.addTransient(ring, dur, z, (k, t) => {
+    const left = (1 - k) * dur
+    if (broke < 0 && left > 0.25 && !casting()) {
+      broke = t
+      // 單位還在（只是動作被打斷）才出聲；整個不見了（死亡、離開視野）就安靜淡掉
+      if (f.e && w.ents.has(f.e)) {
+        const q = entPos(gs, f.e) ?? p
+        sfx('castBreak', q.x, q.y)
+        gs.fx.emit(z, q.x, q.y, Math.min(1.4, q.h * 0.6), 10, { color: '#ffffff', color2: '#b28cff', speed: 2.6, life: 0.3, size: 1, up: 0.5, grav: 6, layer: 'spark' })
+      }
+    }
+    const q = f.e ? entPos(gs, f.e) : null
+    if (q && broke < 0) ring.position.set(q.x, 0.06, -q.y)
+    ring.scale.setScalar(Math.max(0.01, 1.1 + (0.4 - 1.1) * k))
+    const a = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25
+    rm.opacity = broke < 0 ? a : Math.max(0, a * (1 - (t - broke) / 0.15))
+    if (broke >= 0) ring.scale.multiplyScalar(1 + (t - broke) * 1.5)
+  })
 })
 
 regFx('ping', (gs, _w, f) => {
@@ -672,6 +737,9 @@ regFx('fusion', (gs, _w, f) => {
   // 熱融炸彈／戰術核爆：白屏 → 火球 → 衝擊波 → 蕈狀煙柱 → 焦痕
   const r = f.v ?? 5.5
   const z = f.z
+  // 預警圈在爆炸的同一刻消失（不蓋在火球上）
+  cutHazards(z, f.x, f.y)
+  gs.units.blast(f.x, f.y, r)
   sfx('nuke', f.x, f.y)
   screenFlash(gs, '#fff4e0', 3, 0.5, f.x, f.y)
   gs.fx.flash(z, f.x, f.y, 1, '#fff4e0', Math.min(3, r * 0.5), 0.5)
@@ -820,30 +888,7 @@ function alarmBeacon(gs: GameScene, z: number, x: number, y: number, dur: number
     if (fade <= 0 || k >= 1) beacons.delete(rec)
   })
 }
-regFx('xenoShift', (gs, _w, f) => {
-  const p = entPos(gs, f.e) ?? { x: f.x, y: f.y, h: 1.6 }
-  sfx('morph', p.x, p.y)
-  gs.fx.emit(f.z, p.x, p.y, 1, 40, { color: '#7a3cff', speed: 2.5, life: 0.9, size: 0.35, up: 1 })
-  gs.fx.emit(f.z, p.x, p.y, 0.5, 20, { color: '#33ffd1', speed: 1.5, life: 0.7, size: 0.25, up: 0.5 })
-  gs.fx.emit(f.z, p.x, p.y, 0.6, 12, { color: '#1a0a2a', speed: 1.2, life: 1.4, size: 0.9, up: 0.6, layer: 'smoke', alpha: 0.7 })
-  gs.fx.debris(f.z, p.x, p.y, 1, 8, 'flesh', { speed: 3, size: 0.07, colors: ['#3a1a5a', '#7a3cff', '#1a0a2a'] })
-  gs.fx.decal(f.z, p.x, p.y, 1.6, 'splat', '#2a1040', 6, { opacity: 0.8 })
-})
-regFx('cocoon', (gs, _w, f) => {
-  const mut = f.s === 'mutant'
-  sfx('squelch', f.x, f.y)
-  gs.fx.shock(f.z, f.x, f.y, 2.5, mut ? '#c8323c' : '#7a3cff', 1.2)
-  gs.fx.emit(f.z, f.x, f.y, 0.6, 50, { color: mut ? '#e8b04a' : '#33ffd1', speed: 2, life: 1.2, size: 0.4, up: 1.4 })
-  gs.fx.decal(f.z, f.x, f.y, 2.4, 'splat', mut ? '#4a1414' : '#1e0c34', 20, { opacity: 0.8 })
-})
-regFx('evolved', (gs, _w, f) => {
-  sfx('evolve', f.x, f.y)
-  gs.fx.flash(f.z, f.x, f.y, 1.2, '#b28cff', 2.5, 0.6)
-  gs.fx.shock(f.z, f.x, f.y, 5, '#b28cff', 1)
-  gs.fx.emit(f.z, f.x, f.y, 0.8, 100, { color: '#b28cff', color2: '#33ffd1', speed: 5, life: 1, size: 0.5, up: 1 })
-  gs.fx.debris(f.z, f.x, f.y, 1, 14, 'flesh', { speed: 5, size: 0.12, colors: ['#3a1a5a', '#5a2a4a', '#7a3cff'] })
-  shake(gs, 0.5, f.x, f.y)
-})
+// 褪去人皮、披回人皮、結繭、破繭進化：見 ./fx/morph.ts（共用的變身過場）
 regFx('infect', (gs, _w, f) => {
   sfx('infect', f.x, f.y)
   gs.fx.emit(f.z, f.x, f.y, 0.5, 30, { color: '#7a3cff', speed: 1.2, life: 1.2, size: 0.4, up: 0.6 })

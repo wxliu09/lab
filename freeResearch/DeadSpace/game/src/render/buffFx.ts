@@ -9,13 +9,15 @@ import * as THREE from 'three'
 import type { GameScene } from './gameScene'
 import type { CEnt } from '../client/world'
 import type { UnitView } from './units'
-import { BUFFS } from '../shared/content/registry'
+import { BUFFS, UNITS } from '../shared/content/registry'
 import { EntFlag } from '../shared/protocol/messages'
 import { GEO } from './fx'
 import { fxTex } from './fx/tex'
 import { bolt, ghost, prewarm, shieldMat, W } from './fx/kit'
 import { Mat } from './materials'
 import { fleshMat, rockMat, stoneMat } from './fx/mats'
+import { bodyFxWarmMaterials } from './fx/bodyfx'
+import { quality } from './quality'
 
 // ───────── 殼層材質 ─────────
 
@@ -192,6 +194,8 @@ const OVERRIDE: Record<string, string> = {
 
 function keysOf(e: CEnt, out: Set<string>): void {
   out.clear()
+  // 燃燒中的地板（火海區域物件）：火舌、火星、熱浪（依外觀模型判斷，不看 buff）
+  if (UNITS.get(e.s.d ?? '')?.model === 'fireField') out.add('fireFloor')
   for (const id of e.s.b ?? []) {
     const k = OVERRIDE[id] ?? BUFFS.get(id)?.fx
     if (k) out.add(k)
@@ -750,6 +754,172 @@ const FACTORIES: Record<string, Factory> = {
   hatPirate: (c) => hat(c, 'pirate'),
 }
 
+// ───────── 燃燒中的地板 ─────────
+// 火舌：一個 InstancedBufferGeometry（一個 draw call）畫十幾片直立的火舌，每片在圓內隨機位置冒出、竄高、縮回，
+// 在 vertex shader 裡對著鏡頭（只繞世界的上方轉，火舌永遠是直的）；fragment 用火舌貼圖＋隨高度與時間扭動，
+// 底部白熱 → 橘 → 尖端暗紅（橘色系，和炸彈預警的琥珀黃＋黑斜紋分開）。
+// 熱浪：兩片很淡、往上捲的雜訊薄幕（additive，便宜的「空氣在晃」）。火星走共用的粒子池。
+
+const UPRIGHT_VERT = `
+attribute vec3 iPos;
+attribute vec2 iSize;
+attribute float iA;
+attribute float iSeed;
+varying vec2 vUv;
+varying float vA;
+varying float vSeed;
+void main() {
+  vUv = uv;
+  vA = iA;
+  vSeed = iSeed;
+  vec4 c = modelViewMatrix * vec4(iPos, 1.0);
+  vec3 up = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+  vec3 p = c.xyz + vec3(1.0, 0.0, 0.0) * position.x * iSize.x + up * position.y * iSize.y;
+  gl_Position = projectionMatrix * vec4(p, 1.0);
+}`
+
+const FLAME_FRAG = `
+uniform sampler2D uMap;
+uniform float uT;
+varying vec2 vUv;
+varying float vA;
+varying float vSeed;
+void main() {
+  vec2 uv = vUv;
+  uv.x += sin(uv.y * 7.0 - uT * 11.0 + vSeed * 31.0) * 0.07 * uv.y + sin(uv.y * 13.0 - uT * 17.0 + vSeed * 7.0) * 0.025 * uv.y;
+  float m = texture2D(uMap, uv).a;
+  vec3 col = mix(vec3(1.0, 0.72, 0.32), vec3(1.0, 0.36, 0.05), smoothstep(0.05, 0.4, uv.y));
+  col = mix(col, vec3(0.6, 0.08, 0.01), smoothstep(0.4, 1.0, uv.y));
+  float a = m * vA;
+  gl_FragColor = vec4(col * a * 1.55, a);
+}`
+
+const HAZE_FRAG = `
+uniform sampler2D uNoise;
+uniform float uT;
+varying vec2 vUv;
+varying float vA;
+varying float vSeed;
+void main() {
+  vec2 uv = vUv;
+  float n = texture2D(uNoise, vec2(uv.x * 1.3 + sin(uv.y * 9.0 + uT * 3.0) * 0.06 + vSeed, uv.y * 0.8 - uT * 0.45)).r;
+  float band = sin(uv.y * 26.0 - uT * 7.0 + n * 6.0) * 0.5 + 0.5;
+  float edge = smoothstep(0.0, 0.25, uv.x) * smoothstep(1.0, 0.75, uv.x) * smoothstep(0.0, 0.12, uv.y) * smoothstep(1.0, 0.45, uv.y);
+  float a = band * n * edge * vA;
+  gl_FragColor = vec4(vec3(1.0, 0.78, 0.55) * a, a);
+}`
+
+/** 底邊在原點、寬高 1 的直立方片 */
+let uprightGeo: THREE.PlaneGeometry | null = null
+function upright(): THREE.PlaneGeometry {
+  if (!uprightGeo) {
+    uprightGeo = new THREE.PlaneGeometry(1, 1)
+    uprightGeo.translate(0, 0.5, 0)
+  }
+  return uprightGeo
+}
+
+function uprightSet(n: number, mat: THREE.ShaderMaterial): { mesh: THREE.Mesh; pos: THREE.InstancedBufferAttribute; size: THREE.InstancedBufferAttribute; a: THREE.InstancedBufferAttribute; geo: THREE.InstancedBufferGeometry } {
+  // 四個頂點的方片：每組各複製一份（dispose 時不會刪到別組的 GPU buffer）
+  const base = upright()
+  const geo = new THREE.InstancedBufferGeometry()
+  geo.index = base.index!.clone()
+  geo.setAttribute('position', base.attributes.position.clone())
+  geo.setAttribute('uv', base.attributes.uv.clone())
+  const pos = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage)
+  const size = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage)
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage)
+  const seed = new THREE.InstancedBufferAttribute(new Float32Array(n).map(() => Math.random()), 1)
+  geo.setAttribute('iPos', pos)
+  geo.setAttribute('iSize', size)
+  geo.setAttribute('iA', a)
+  geo.setAttribute('iSeed', seed)
+  geo.instanceCount = n
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.frustumCulled = false
+  mesh.renderOrder = 6
+  return { mesh, pos, size, a, geo }
+}
+
+function flameMat(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({ vertexShader: UPRIGHT_VERT, fragmentShader: FLAME_FRAG, uniforms: { uMap: { value: fxTex('flame') }, uT: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+}
+function hazeMat(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({ vertexShader: UPRIGHT_VERT, fragmentShader: HAZE_FRAG, uniforms: { uNoise: { value: fxTex('noise', true) }, uT: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+}
+let fireWarm: THREE.Material[] | null = null
+
+function fireFloor(c: Ctx): Att {
+  const R = (UNITS.get(c.e.s.d ?? '')?.radius ?? 2) * 0.88
+  const s = invScale(c)
+  const q = quality.value
+  const N = q === 'low' ? 12 : q === 'medium' ? 16 : q === 'high' ? 20 : 26
+  const fmat = own(flameMat())
+  const hmat = own(hazeMat())
+  const fl = uprightSet(N, fmat)
+  const hz = uprightSet(2, hmat)
+  const g = new THREE.Group()
+  g.add(fl.mesh, hz.mesh)
+  g.scale.setScalar(s)
+  // 每片火舌：位置、壽命、目前年齡、最高高度、寬度
+  const T = Array.from({ length: N }, () => ({ x: 0, z: 0, life: 1, age: 1 + Math.random(), h: 1, w: 0.4 }))
+  const spawn = (f: (typeof T)[number]) => {
+    const a = Math.random() * Math.PI * 2
+    const d = Math.sqrt(Math.random()) * R
+    f.x = Math.cos(a) * d
+    f.z = Math.sin(a) * d
+    f.life = 0.45 + Math.random() * 0.5
+    f.age = 0
+    // 中間的火高、邊緣的矮
+    f.h = (0.85 + Math.random() * 0.85) * (1 - 0.4 * (d / R))
+    f.w = 0.42 + Math.random() * 0.36
+  }
+  for (const f of T) {
+    spawn(f)
+    f.age = Math.random() * f.life
+  }
+  for (let i = 0; i < 2; i++) {
+    hz.pos.setXYZ(i, (i - 0.5) * R * 0.6, 0.2, (i - 0.5) * 0.3)
+    hz.size.setXY(i, R * 1.5, 2.4)
+    hz.a.setX(i, 0.07)
+  }
+  hz.pos.needsUpdate = hz.size.needsUpdate = hz.a.needsUpdate = true
+  let spark = 0
+  const a = attach(c, g, (cc) => {
+    fmat.uniforms.uT.value = cc.t
+    hmat.uniforms.uT.value = cc.t
+    for (let i = 0; i < N; i++) {
+      const f = T[i]
+      f.age += cc.dt
+      if (f.age >= f.life) spawn(f)
+      const k = f.age / f.life
+      // 竄起快、收得慢；高度與寬度都在抖
+      const env = Math.sin(Math.PI * Math.min(1, k * 1.15)) ** 0.7
+      const flick = 0.85 + 0.3 * Math.random()
+      fl.pos.setXYZ(i, f.x, 0.02 + k * 0.12, f.z)
+      fl.size.setXY(i, f.w * (0.7 + 0.3 * env), f.h * env * flick)
+      fl.a.setX(i, Math.min(1, env * 1.3))
+    }
+    fl.pos.needsUpdate = fl.size.needsUpdate = fl.a.needsUpdate = true
+    // 火星：往上竄、繞圈飄，偶爾一顆大的餘燼
+    spark -= cc.dt
+    if (spark <= 0) {
+      spark = 0.06
+      cc.gs.fx.emit(cc.z, cc.x, cc.y, 0.2, 2, { color: '#fff0b0', color2: '#ff4a0a', speed: 1.6, life: 0.9, size: 1, up: 2.2, grav: -0.6, drag: 0.8, swirl: 1.5, area: R, layer: 'spark' })
+      if (Math.random() < 0.4) cc.gs.fx.emit(cc.z, cc.x, cc.y, 0.3, 1, { color: '#ffd080', color2: '#ff3b0a', speed: 0.4, life: 1.6, size: 0.07, up: 2.5, drag: 0.5, swirl: 1, area: R * 0.9 })
+    }
+  })
+  return {
+    update: a.update,
+    dispose() {
+      a.dispose()
+      fl.geo.dispose()
+      hz.geo.dispose()
+    },
+  }
+}
+FACTORIES.fireFloor = fireFloor
+
 // 同名 fx 的保底（新的 buff 沿用這些 fx 名稱時也有樣子）
 FACTORIES.cloak = FACTORIES.stealth
 FACTORIES.flame = FACTORIES.burn
@@ -853,7 +1023,11 @@ const warmed = new WeakSet<GameScene>()
 
 /** 預熱用：buff 視覺會用到的受光材質（殼層、石化／岩化／肉化）*/
 export function buffWarmMaterials(): THREE.Material[] {
-  return [shellMat('rim', '#ffffff'), stoneMat(), rockMat(), fleshMat()]
+  if (!fireWarm) {
+    fireWarm = [flameMat(), hazeMat()]
+    for (const m of fireWarm) m.userData.keep = true
+  }
+  return [shellMat('rim', '#ffffff'), stoneMat(), rockMat(), fleshMat(), ...bodyFxWarmMaterials(), ...fireWarm]
 }
 
 /** 每幀呼叫一次（GameScene.update，units.sync 之後）*/
