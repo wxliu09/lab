@@ -3,10 +3,10 @@ import * as THREE from 'three'
 import { STATION_BY_ID } from '../shared/content/stations/index'
 import { parseLayout, cellAt as layoutCell, type ParsedLayout, type PoiInstance } from '../shared/layout'
 import { UNITS } from '../shared/content/registry'
-import { EntFlag, type SnapEntity } from '../shared/protocol/messages'
+import { EntFlag, type FxEvent, type SnapEntity } from '../shared/protocol/messages'
 import type { ClientWorld, CEnt } from '../client/world'
 import type { SceneLike } from './engine'
-import { RtsCamera } from './camera'
+import { ActionFollow, RtsCamera } from './camera'
 import { addPoiRing, buildStation, buildStationSteps, updateDoors, type RoomLight, type StationView } from './stationBuilder'
 import { poiModel, poiWreck, type Animated } from './props'
 import { PoiTracker, sightOf, type PoiLook, type PoiSeen } from './poiState'
@@ -15,12 +15,14 @@ import { Blizzard } from './weather'
 import { CRATE_DEF, isStructureId } from '../client/interactKind'
 import { FogMap } from './fog'
 import { UnitLayer, unitWarmMeshes } from './units'
-import { fogUniforms, emergencyStripMat, isSharedMaterial } from './materials'
+import { fogUniforms, emergencyStripMat, isSharedMaterial, unitRimMat } from './materials'
 import { sfx } from '../audio/sfx'
 import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from './quality'
 import { autoDropState, autoDropStep } from './autoDrop'
-import { localNotice, modalChecks } from '../client/input'
+import { isPiloting, localNotice, modalChecks } from '../client/input'
+import { followMode, followPilot, hiContrast } from '../client/viewPrefs'
 import '../ui/strings/art2'
+import '../ui/strings/cam7'
 import { effect, signal } from '@preact/signals'
 import { runSteps, type Steps } from './steps'
 import { deferTextures, textureSteps } from './tex'
@@ -192,6 +194,107 @@ const EMERGENCY_SKY = new THREE.Color('#3a0806')
 /** 暴風雪的天光（冷白）*/
 const SNOW_SKY = new THREE.Color('#c9d6ea')
 
+/** 換 zone、換操控對象（開始／離開駕駛、登艇）時的淡入（秒）：以前是直接切過去 */
+const ZONE_FADE_S = 0.22
+/**
+ * 淡入每幀最多前進幾秒：換 zone 後的第一幀常常很慢（第一次使用的 shader、上傳貼圖），照牆上時間算的話
+ * 慢裝置上淡入在第一幀就結束了（等於硬切）。照幀推進、每幀封頂，至少看得到幾幀的淡入。
+ */
+const FADE_STEP_MAX = 1 / 20
+
+/** 觀戰「戰鬥跟隨」看的特效：攻擊、投射物、光束、爆炸、死亡 */
+const ACTION_FX: ReadonlySet<string> = new Set(['atk', 'proj', 'beam', 'boom', 'blast', 'die', 'stationBoom', 'devour', 'swarmbolt', 'cannonFire'])
+/** 戰鬥跟隨換目標時鏡頭移過去的速率（1/秒）*/
+const ACTION_EASE = 2.2
+
+/** 這次執行（分頁）已經提示過「駕駛時鏡頭跟隨」了：只提示一次 */
+let pilotFollowHinted = false
+
+/**
+ * 平面上（XY，同 RingGeometry；mesh 自己轉成躺平）的分段圓環：n 段、每段佔 duty（0..1）；segs = 每段細分幾格。
+ * ticks > 0：在四個正方位加往內的刻度（從 ticks 半徑到內緣，寬 tickW 公尺），設施圈用（看起來像標記，不像敵我圈）。
+ */
+export function dashRingGeo(inner: number, outer: number, n: number, duty: number, segs = 3, ticks = 0, tickW = 0.07): THREE.BufferGeometry {
+  const pos: number[] = []
+  const quad = (a0: number, a1: number, r0: number, r1: number) => {
+    const c0 = Math.cos(a0)
+    const s0 = Math.sin(a0)
+    const c1 = Math.cos(a1)
+    const s1 = Math.sin(a1)
+    // 從 +Z 看逆時針（正面朝上，同 RingGeometry）
+    pos.push(r0 * c0, r0 * s0, 0, r1 * c0, r1 * s0, 0, r1 * c1, r1 * s1, 0)
+    pos.push(r0 * c0, r0 * s0, 0, r1 * c1, r1 * s1, 0, r0 * c1, r0 * s1, 0)
+  }
+  const step = (Math.PI * 2) / n
+  for (let i = 0; i < n; i++) {
+    // 錯開半段：虛線的缺口不要剛好落在四個正方位（刻度那裡）
+    const a0 = i * step + step * (1 - duty) * 0.5
+    const len = step * duty
+    for (let j = 0; j < segs; j++) quad(a0 + (len * j) / segs, a0 + (len * (j + 1)) / segs, inner, outer)
+  }
+  if (ticks > 0)
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2
+      const da = tickW / inner / 2
+      quad(a - da, a + da, ticks, inner + 0.01)
+    }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  const nrm = new Float32Array(pos.length)
+  for (let i = 2; i < nrm.length; i += 3) nrm[i] = 1
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3))
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((pos.length / 3) * 2), 2))
+  g.userData.shared = true
+  return g
+}
+
+/**
+ * 單位腳下光圈的形狀（units.ts 建的光圈只有一種環；這裡依快照看得到的資訊換 geometry，材質／顏色不動）：
+ * - 玩家的單位（有擁有者）：粗一點（第 7 輪審查：預設距離下人只有約 50 px 高，串流壓縮後只剩名字看得清楚）
+ * - 高對比模式：敵對 NPC 的圈改成分段虛線（不只靠紅色）；隊友、中立維持實線
+ * 只看 s.o（公開的擁有者）與 Hostile 旗標（只有敵對 NPC 有），不碰身分。
+ */
+let ringGeoCache: { player: THREE.BufferGeometry; playerDash: THREE.BufferGeometry; dash: THREE.BufferGeometry; poi: THREE.BufferGeometry } | null = null
+function ringGeos(): NonNullable<typeof ringGeoCache> {
+  if (!ringGeoCache) {
+    const player = new THREE.RingGeometry(0.44, 0.67, 40)
+    player.userData.shared = true
+    ringGeoCache = {
+      player,
+      playerDash: dashRingGeo(0.44, 0.67, 10, 0.62),
+      dash: dashRingGeo(0.47, 0.64, 10, 0.62),
+      // 設施（販賣機、維修站…）的地面圈：16 段虛線＋四個正方位的刻度（第 7 輪審查：防護服販賣機・紅的實線紅圈跟敵對單位一樣）
+      poi: dashRingGeo(0.94, 1.08, 16, 0.55, 2, 0.8, 0.08),
+    }
+  }
+  return ringGeoCache
+}
+
+/** 設施地面圈換成虛線＋刻度（addPoiRing 建的實線環；站體第一次顯示時、換上損毀外觀時）：釋放原本的環；虛線比實線面積小，亮一點 */
+function styleFacilityRing(ring: THREE.Mesh): void {
+  if (ring.geometry === ringGeos().poi) return
+  ring.geometry.dispose()
+  ring.geometry = ringGeos().poi
+  const m = ring.material as THREE.MeshBasicMaterial
+  m.opacity = 0.55
+}
+
+/** 站體裡烘焙的設施（POI 根節點的直接子節點中，addPoiRing 加的那個環：RingGeometry 0.95–1.08）*/
+function styleFacilityRings(v: StationView): void {
+  for (const root of v.pois.values())
+    for (const o of root.children) {
+      const g = (o as THREE.Mesh).geometry as THREE.RingGeometry | undefined
+      if (g instanceof THREE.RingGeometry && g.parameters.innerRadius === 0.95 && g.parameters.outerRadius === 1.08) styleFacilityRing(o as THREE.Mesh)
+    }
+}
+
+/** 單位的材質換成邊光版（materials.ts unitRimMat）：隱形中暫時換上的半透明複本不動 */
+const rimSwap = (o: THREE.Object3D): void => {
+  const m = o as THREE.Mesh
+  if (!m.isMesh || !m.material || Array.isArray(m.material) || o.userData.prevMat) return
+  m.material = unitRimMat(m.material)
+}
+
 /** 物件與它所有的上層都可見（Raycaster 不看 visible）*/
 function shown(o: THREE.Object3D | null): boolean {
   for (; o; o = o.parent) if (!o.visible) return false
@@ -317,9 +420,51 @@ export class GameScene implements SceneLike {
   hatchHit: { l: number; r: number; t: number; b: number; x: number; y: number } | null = null
   /** 量底部 HUD 的計時（鏡頭的投影偏移，RtsCamera.bottomInset）*/
   private insetT = 0
+  /** 已經換成邊光材質的單位視圖（styleUnits）*/
+  private rimmed = new WeakSet<THREE.Object3D>()
+  /**
+   * 設施地面圈已經換成虛線的站體：顯示時才換（第一次顯示的那一幀、畫之前），不在建站時改——
+   * 站體建出來的樣子（同步建、分段建、預建都一樣）維持 stationBuilder 的原樣，這只是顯示層的調整
+   */
+  private styledViews = new WeakSet<StationView>()
+  /** 觀戰的戰鬥跟隨（camera.ts）：旁聽快照帶來的、看得到的戰鬥與死亡特效 */
+  private readonly action = new ActionFollow()
+  private readonly onFxTap = (f: FxEvent): void => {
+    if (!ACTION_FX.has(f.k)) return
+    // 攻擊：鏡頭對準雙方中間（截短過的方向也一樣，只會更靠近攻擊者）
+    const mid = f.k === 'atk' && f.x2 !== undefined && f.y2 !== undefined
+    this.action.note(f.z, mid ? (f.x + f.x2!) / 2 : f.x, mid ? (f.y + f.y2!) / 2 : f.y, performance.now() / 1000)
+  }
+  /** 跟隨模式（viewPrefs.followMode）的目標：每幀呼叫，重複使用同一個物件 */
+  private readonly followPt = { x: 0, y: 0 }
+  private readonly followFn = (): { x: number; y: number } | null => {
+    const m = followMode.peek()
+    if (m === 'self') {
+      // 自己操控的單位：駕駛中就是站點／船艇（myUnit = control）
+      const u = this.myUnit()
+      if (!u || u.s.z !== this.zone) return null
+      this.followPt.x = u.x
+      this.followPt.y = u.y
+      return this.followPt
+    }
+    if (m === 'action') return this.action.pick(this.zone, performance.now() / 1000)
+    return null
+  }
+  /** 上一幀在駕駛（駕駛開始時自動跟隨）；這次的跟隨是自動開的（離開駕駛時自動關）*/
+  private wasPiloting = false
+  private autoFollow = false
+  /** 換 zone／換操控對象的淡入（1 = 全黑 → 0）；fadeFresh = 剛觸發的那一幀（這一幀不推進，先畫一幀全黑）*/
+  private fadeK = 0
+  private fadeFresh = false
 
   constructor(readonly world: ClientWorld) {
     this.camera = this.rts.cam
+    // 手動移動鏡頭（邊緣、方向鍵、拖曳、點小地圖）：關掉跟隨
+    this.rts.onManualPan = () => {
+      this.autoFollow = false
+      if (followMode.peek() !== 'off') followMode.value = 'off'
+    }
+    world.fxTaps.push(this.onFxTap)
     this.scene.background = new THREE.Color('#030507')
     this.hemi = new THREE.HemisphereLight('#1b2633', '#0b0d10', 0.8)
     this.scene.add(this.hemi)
@@ -833,6 +978,8 @@ export class GameScene implements SceneLike {
   private wantZone = -1
 
   private switchZone(id: number): void {
+    // 開局第一次顯示由載入覆蓋層蓋著；之後換 zone 都淡入（以前直接切過去）
+    if (this.zone >= 0) this.startFade()
     const old = this.views.get(this.zone)
     if (old) this.scene.remove(old.group)
     if (this.space) this.space.group.visible = false
@@ -904,6 +1051,7 @@ export class GameScene implements SceneLike {
     const ov = this.viewOverride?.()
     if (ov) {
       if (this.lastOverride !== ov) {
+        if (!this.lastOverride) this.startFade()
         this.lastOverride = ov
         this.rts.jump(ov.x, ov.y)
         this.rts.follow = null
@@ -912,6 +1060,7 @@ export class GameScene implements SceneLike {
     }
     if (this.lastOverride) {
       this.lastOverride = null
+      this.startFade()
       const u = this.myUnit()
       if (u) this.rts.jump(u.x, u.y)
     }
@@ -1029,7 +1178,7 @@ export class GameScene implements SceneLike {
     m.root.position.copy(root.position)
     m.root.rotation.copy(root.rotation)
     m.root.userData.poiKey = key
-    if (m.ring) addPoiRing(m.root, m.ring)
+    if (m.ring) styleFacilityRing(addPoiRing(m.root, m.ring))
     view.group.add(m.root)
     view.anim.push(...m.anim)
     this.poiAlt.set(id, { root: m.root, anim: m.anim })
@@ -1062,10 +1211,17 @@ export class GameScene implements SceneLike {
     this.checkAutoDrop(zid)
     const view = this.views.get(zid)
     const fog = this.fogs.get(zid)
+    if (view && !this.styledViews.has(view)) {
+      this.styledViews.add(view)
+      styleFacilityRings(view)
+    }
     // 第一次進場、或換了操控對象／所在 zone（開始或離開駕駛、登艇、逃生艙、轉觀戰）：鏡頭對準自己
     const mine = this.myUnit()
     const ctlKey = `${this.world.me.control || this.world.me.unit || 0}@${zid}`
     if (mine && (!this.centeredOnce || ctlKey !== this.lastCtlKey) && mine.s.z === zid) {
+      // 換操控對象（開始／離開駕駛、登艇、逃生艙）：鏡頭跳遠時淡入，不要硬切（換 zone 在 switchZone 已經開始淡入；
+      // 原地換實體的變身、進化、結繭鏡頭幾乎不動，不淡）
+      if (this.centeredOnce && Math.hypot(mine.x - this.rts.tx, mine.y - this.rts.ty) > 8) this.startFade()
       this.rts.jump(mine.x, mine.y)
       this.centeredOnce = true
       this.lastCtlKey = ctlKey
@@ -1094,6 +1250,7 @@ export class GameScene implements SceneLike {
     this.poiSeen.clear()
     this.cratePresent.clear()
     this.units.sync(w.ents.values(), zid, this.syncSkip, dt, t)
+    this.styleUnits(zid)
     const zinfo = this.zones.get(zid)
     if (view && zinfo && this.poiDue) {
       this.poiDue = false
@@ -1133,7 +1290,87 @@ export class GameScene implements SceneLike {
     this.space?.update(t)
     this.fx.update(dt, t, zid)
     this.measureHud(dt)
+    this.updateFollow()
     this.rts.update(dt, window.innerWidth, window.innerHeight)
+    this.stepFade(dt)
+  }
+
+  /** 開始淡入（換 zone、換操控對象、監視器等暫時畫面開關）*/
+  private startFade(): void {
+    this.fadeK = 1
+    this.fadeFresh = true
+  }
+
+  /** 推進淡入一幀（每幀最多 FADE_STEP_MAX 秒；觸發的那一幀不推進）*/
+  private stepFade(dt: number): void {
+    if (this.fadeFresh) {
+      this.fadeFresh = false
+      return
+    }
+    if (this.fadeK > 0) this.fadeK = Math.max(0, this.fadeK - Math.min(dt, FADE_STEP_MAX) / ZONE_FADE_S)
+  }
+
+  /**
+   * 換 zone／換操控對象的淡入（overlay.ts 在 3D 畫面上蓋一層黑色）：剛切過去是全黑，約 ZONE_FADE_S 秒（照幀推進，
+   * 慢裝置上至少幾幀）內先快後慢地淡掉。回傳 0..1（0 = 沒有淡入）。
+   */
+  fadeAlpha(): number {
+    return this.fadeK * this.fadeK
+  }
+
+  /**
+   * 單位同步之後（每幀）：腳下光圈換形狀（ringGeos：玩家的粗一點、高對比時敵對 NPC 用虛線）；
+   * 新出現的單位材質換成邊光版（站內才換：太空裡的船殼本來就有邊光，黑底上也不缺輪廓）。
+   */
+  private styleUnits(zid: number): void {
+    const hc = hiContrast.value
+    const rg = ringGeos()
+    for (const v of this.units.views.values()) {
+      if (zid !== 0 && !this.rimmed.has(v.root)) {
+        this.rimmed.add(v.root)
+        v.root.traverse(rimSwap)
+      }
+      const ring = v.ring
+      if (!ring) continue
+      const e = this.world.ents.get(v.id)
+      if (!e) continue
+      let base = ring.userData.xcBase as THREE.BufferGeometry | undefined
+      if (!base) ring.userData.xcBase = base = ring.geometry
+      const player = (e.s.o ?? -1) >= 0
+      const dash = hc && ((e.s.fl ?? 0) & EntFlag.Hostile) !== 0
+      const g = player ? (dash ? rg.playerDash : rg.player) : dash ? rg.dash : base
+      if (ring.geometry !== g) ring.geometry = g
+    }
+  }
+
+  /**
+   * 鏡頭跟隨（viewPrefs.followMode，由輸入的快捷鍵與 HUD 的觀戰按鈕設定）：
+   * - self：跟著自己操控的單位（駕駛中就是站點／船艇）
+   * - action：觀戰用，跟著最近一場看得到的戰鬥或死亡（ActionFollow：至少停 4 秒、換目標時平滑移過去）
+   * 開始駕駛且設定開著「駕駛時鏡頭自動跟隨」（followPilot）：自動切成 self，離開駕駛時自動關回來。
+   * 任何手動移動鏡頭都會關掉跟隨（RtsCamera.onManualPan）。監視器等暫時畫面期間不跟。
+   */
+  private updateFollow(): void {
+    const piloting = isPiloting()
+    if (piloting !== this.wasPiloting) {
+      this.wasPiloting = piloting
+      if (piloting) {
+        if (followPilot.peek() && followMode.peek() === 'off') {
+          followMode.value = 'self'
+          this.autoFollow = true
+          if (!pilotFollowHinted) {
+            pilotFollowHinted = true
+            localNotice.value = { text: 'cam7.follow.pilot', at: performance.now() }
+          }
+        }
+      } else if (this.autoFollow) {
+        this.autoFollow = false
+        if (followMode.peek() === 'self') followMode.value = 'off'
+      }
+    }
+    const m = followMode.peek()
+    this.rts.follow = m !== 'off' && !this.lastOverride ? this.followFn : null
+    this.rts.followEase = m === 'action' ? ACTION_EASE : 0
   }
 
   /**
@@ -1325,6 +1562,10 @@ export class GameScene implements SceneLike {
 
   dispose(): void {
     this.disposed = true
+    const fi = this.world.fxTaps.indexOf(this.onFxTap)
+    if (fi >= 0) this.world.fxTaps.splice(fi, 1)
+    this.rts.onManualPan = null
+    this.rts.follow = null
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility)
     this.cancelIdle?.()
     this.cancelIdle = null

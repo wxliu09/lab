@@ -65,6 +65,25 @@ export function setFpsCap(v: FpsCap): void {
   write('xc.fpsCap', String(v))
 }
 
+/**
+ * FPS 上限的節拍器（engine.ts 每個 rAF 呼叫）：回傳 -1 = 這一幀跳過；否則回傳新的「上次畫的時間」。
+ * frameIv = 螢幕的 rAF 間隔（ms，平滑過）。上限不低於螢幕更新率（60 Hz 螢幕上限 60／120）：每幀都畫，
+ * 不然 60.06 Hz 的螢幕會每一兩秒被擋掉一幀。上限低於更新率：照固定格點走（上次畫的時間每次前進整數個間隔，
+ * 不是直接記 now），144 Hz 螢幕上限 60 時平均仍是 60；容差 = 間隔的 10%（最多 2 ms），吸收 rAF 時間戳的抖動。
+ * cap = 0：不限制（跟著 vsync），每幀都畫。
+ */
+export function fpsGate(now: number, lastDraw: number, cap: number, frameIv = 0): number {
+  if (cap <= 0) return now
+  const iv = 1000 / cap
+  if (frameIv >= iv * 0.9) return now
+  const el = now - lastDraw
+  const tol = Math.min(2, iv * 0.1)
+  if (el < iv - tol) return -1
+  // 分頁在背景很久之後回來：不要追幀，從現在重新對齊
+  if (el > iv * 4) return now
+  return lastDraw + Math.max(1, Math.floor((el + tol) / iv)) * iv
+}
+
 /** 鏡頭震動的實際倍率：關掉、或作業系統要求減少動態時為 0 */
 export function shakeScale(): number {
   return shakeOn.value && !reducedMotion() ? 1 : 0

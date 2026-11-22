@@ -282,3 +282,127 @@ export function minimapMoveTarget(l: ParsedLayout, p: Pt, from: Pt | null, bodyR
   // 推不出圈外（理論上不會：控制台旁都留了走道）也不要走上控制台，當作到不了
   return pushOutOfConsoles(l, t, consoleSpots(l), bodyR, reachOk, from)
 }
+
+// ───── Shift 佇列的路徑點（overlay 畫成細虛線）─────
+
+/** 一個排隊中的目標：地面一點（x／y）或一個實體（e，畫的時候查它目前的位置）；kind = 指令種類（決定顏色）*/
+export interface Waypoint {
+  x: number
+  y: number
+  e: number
+  kind: 'move' | 'amove' | 'cast' | 'act'
+}
+
+/** 送出的指令（client 端只看得到這幾個欄位；同 shared/protocol Command）*/
+interface CmdLike {
+  k: string
+  x?: number
+  y?: number
+  e?: number
+  q?: boolean
+}
+
+/** 最多記幾個點（Shift 連點很多下時不要無限長）*/
+const WP_MAX = 16
+/** 走到離點這麼近（公尺）就當作到了；實體目標（跟隨、互動、攻擊）身體有半徑，放寬一點 */
+const WP_ARRIVE = 0.7
+const WP_ARRIVE_ENT = 1.4
+/** 剛下令的這段時間（秒）單位可能還沒開始動：不因「站著不動」清掉 */
+const WP_GRACE = 0.8
+/** 低 fps 時單位一幀可能走過頭、跳過到點半徑：曾經走到這麼近（公尺）之後又遠離，也算到了 */
+const WP_PASS = 1.6
+
+/**
+ * 自己下過的 Shift 佇列（第 7 輪審查：排了好幾個點看不出來排了什麼）：完全在 client 端推測，只看自己送出的指令與自己單位的位置，
+ * 不加快照欄位。不按 Shift 的移動／攻擊移動／施法／互動會換掉整條佇列；停止、原地、離開控制台、換了操控對象就清空；
+ * 走到第一個點就拿掉它；單位停下來（idle）一陣子就當作佇列做完或被打斷（sim 不回報佇列，寧可早點消失也不要畫錯）。
+ */
+export class WaypointQueue {
+  /** 這條佇列屬於哪個單位（操控對象）*/
+  unit = 0
+  readonly pts: Waypoint[] = []
+  /** 有沒有排過隊（只有一個點的一般移動不畫：點擊標記已經標了）*/
+  queued = false
+  /** 最後一次下令的時間（秒）*/
+  private at = -1e9
+  /** 第一個點與單位離它最近的距離（走過頭的判斷）*/
+  private head: Waypoint | null = null
+  private headMin = Infinity
+
+  clear(): void {
+    this.pts.length = 0
+    this.queued = false
+    this.head = null
+  }
+
+  /** 送出一個指令（unit = 目前操控的單位、now = 秒）*/
+  onCmd(c: CmdLike, unit: number, now: number): void {
+    if (unit !== this.unit) {
+      this.unit = unit
+      this.clear()
+    }
+    const k = c.k
+    if (k === 'stop' || k === 'hold' || k === 'unpilot') return this.clear()
+    let kind: Waypoint['kind']
+    if (k === 'move') kind = 'move'
+    else if (k === 'amove') kind = 'amove'
+    else if (k === 'cast' || k === 'use') kind = 'cast'
+    else if (k === 'attack' || k === 'follow' || k === 'interact' || k === 'pickup' || k === 'give') kind = k === 'attack' ? 'amove' : 'act'
+    else return
+    const hasPt = c.x !== undefined && c.y !== undefined
+    // 對自己放、不用目標的施法（不帶點也不帶實體）不影響移動佇列
+    if (!hasPt && !c.e) return
+    const wp: Waypoint = { x: hasPt ? c.x! : 0, y: hasPt ? c.y! : 0, e: hasPt ? 0 : (c.e ?? 0), kind }
+    this.at = now
+    if (!c.q) {
+      this.pts.length = 0
+      this.queued = false
+    } else this.queued = true
+    if (this.pts.length >= WP_MAX) this.pts.shift()
+    this.pts.push(wp)
+  }
+
+  /**
+   * 每幀：x／y = 單位位置、idle = 單位沒在動（st = 0）、pos = 查實體目前位置（看不到回傳 null）。
+   * 到點的拿掉；停下來超過寬限時間就清空。
+   */
+  update(unit: number, x: number, y: number, idle: boolean, now: number, pos: (e: number) => { x: number; y: number } | null): void {
+    if (unit !== this.unit) {
+      this.unit = unit
+      this.clear()
+      return
+    }
+    while (this.pts.length) {
+      const p = this.pts[0]
+      if (p !== this.head) {
+        this.head = p
+        this.headMin = Infinity
+      }
+      const q = p.e ? pos(p.e) : p
+      // 實體目標看不到了：那一步做不了，拿掉
+      if (!q) {
+        this.pts.shift()
+        continue
+      }
+      const d = Math.hypot(q.x - x, q.y - y)
+      if (d <= (p.e ? WP_ARRIVE_ENT : WP_ARRIVE)) {
+        this.pts.shift()
+        continue
+      }
+      // 地面的點：走近過又遠離（一幀走過頭）也算到了；實體目標自己會動，不這樣判斷
+      if (!p.e && this.headMin < WP_PASS && d > this.headMin + 0.25) {
+        this.pts.shift()
+        continue
+      }
+      this.headMin = Math.min(this.headMin, d)
+      break
+    }
+    if (idle && now - this.at > WP_GRACE) this.clear()
+    if (!this.pts.length) this.queued = false
+  }
+
+  /** 要不要畫（有排過隊、還有點）*/
+  visible(): boolean {
+    return this.queued && this.pts.length > 0
+  }
+}

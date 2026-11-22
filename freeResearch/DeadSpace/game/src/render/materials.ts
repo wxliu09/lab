@@ -19,6 +19,20 @@ export const FILL_SCALE = 4
 
 const patched = new WeakSet<THREE.Material>()
 
+/**
+ * 單位剪影邊光（第 7 輪審查：預設距離下人只有約 50 px 高，暗地板上看不出輪廓）：每支迷霧 shader（STANDARD）都帶一個
+ * uXcRim（顏色 × 強度），一般材質接到 RIM_OFF（0，沒有效果）；單位用 unitRimMat 換成的複本接到 UNIT_RIM。
+ * 複本跟原材質用同一個 program cache key，three 直接共用已經編好的 program：不多編 shader、不多 draw call，
+ * 每個像素多一個 dot／pow。強度由 GameScene 依畫質設定（setUnitRim）。
+ */
+const RIM_OFF = { value: new THREE.Color(0, 0, 0) }
+const UNIT_RIM = { value: new THREE.Color('#cfe6ff').multiplyScalar(0.3) }
+
+/** 單位邊光的強度（0 = 關）：顏色固定冷白，不帶陣營色（不洩漏任何資訊）*/
+export function setUnitRim(k: number): void {
+  UNIT_RIM.value.set('#cfe6ff').multiplyScalar(k)
+}
+
 /** 把戰爭迷霧注入任何 three 內建材質 */
 export function withFog<T extends THREE.Material>(m: T): T {
   if (patched.has(m)) return m
@@ -27,6 +41,7 @@ export function withFog<T extends THREE.Material>(m: T): T {
   m.onBeforeCompile = (shader, r) => {
     prev?.call(m, shader, r)
     Object.assign(shader.uniforms, fogUniforms)
+    shader.uniforms.uXcRim = RIM_OFF
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vXcWorld;')
       .replace(
@@ -49,7 +64,17 @@ export function withFog<T extends THREE.Material>(m: T): T {
         uniform float uTime;
         uniform sampler2D uFillTex;
         uniform float uFillOn;
-        uniform vec3 uFillTint;`,
+        uniform vec3 uFillTint;
+        uniform vec3 uXcRim;`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        // unit silhouette rim (uXcRim = 0 for everything except unit materials, see unitRimMat)
+        `#include <emissivemap_fragment>
+        #if defined( STANDARD )
+        float xcRimF = 1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0);
+        totalEmissiveRadiance += uXcRim * (xcRimF * xcRimF * xcRimF);
+        #endif`,
       )
       .replace(
         '#include <opaque_fragment>',
@@ -98,6 +123,36 @@ export function withFog<T extends THREE.Material>(m: T): T {
 
 const cache = new Map<string, THREE.Material>()
 
+/** 單位用的邊光複本（原材質 → 複本）*/
+const rimVariants = new WeakMap<THREE.Material, THREE.Material>()
+/** 材質庫快取裡的共用材質（std）：只有這些換成邊光複本。模型自己複製、每幀改亮度／透明度的材質（liveGlow 這類）
+ * 換掉的話動畫會改到換下來的那份，不碰 */
+const libShared = new WeakSet<THREE.Material>()
+
+/**
+ * 單位材質的邊光版本（GameScene 在單位第一次出現時把它的材質換成這個）：只對材質庫快取裡（打過迷霧補丁）的 MeshStandard／Physical
+ * 有效，其他（選取圈、光暈、特效的 MeshBasic、模型自己複製來做動畫的材質）原樣回傳。複本共用原材質的貼圖與 program（同一個 customProgramCacheKey），
+ * 只有 uXcRim 接到單位邊光；標記 keep（釋放站點、單位時不 dispose）。
+ */
+export function unitRimMat(m: THREE.Material): THREE.Material {
+  if (!libShared.has(m) || !patched.has(m) || !(m as THREE.MeshStandardMaterial).isMeshStandardMaterial) return m
+  let v = rimVariants.get(m)
+  if (!v) {
+    const c = m.clone()
+    const base = m
+    c.onBeforeCompile = (shader, r) => {
+      base.onBeforeCompile(shader, r)
+      shader.uniforms.uXcRim = UNIT_RIM
+    }
+    c.customProgramCacheKey = () => base.customProgramCacheKey()
+    c.userData.keep = true
+    c.userData.xcRim = true
+    rimVariants.set(m, c)
+    v = c
+  }
+  return v
+}
+
 /** 緊急照明的牆面燈條：gameScene 依站點供電狀態替換上去，強度每幀脈動（不 dispose）*/
 export const emergencyStripMat = withFog(new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ff2a18', emissiveIntensity: 1.6, roughness: 0.4 }))
 emergencyStripMat.userData.keep = true
@@ -114,6 +169,7 @@ function std(key: string, f: () => THREE.MeshStandardMaterial | THREE.MeshPhysic
   if (!m) {
     m = withFog(f())
     cache.set(key, m)
+    libShared.add(m)
   }
   return m
 }

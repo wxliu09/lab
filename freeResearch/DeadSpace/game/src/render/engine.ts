@@ -20,6 +20,7 @@ import { N8AOPostPass } from 'n8ao'
 import { effect, signal } from '@preact/signals'
 import { autoQuality, preset, quality } from './quality'
 import { fogUniforms } from './materials'
+import { fpsCap, fpsGate } from '../client/viewPrefs'
 
 export interface SceneLike {
   scene: THREE.Scene
@@ -70,6 +71,10 @@ export class Engine {
   fps = 60
   private frames = 0
   private fpsT = performance.now()
+  /** FPS 上限：上次真的畫的時間（ms，fpsGate 對齊過）、螢幕的 rAF 間隔（ms，平滑過）、上一個 rAF 的時間 */
+  private lastDraw = 0
+  private frameIv = 16.7
+  private lastRaf = 0
   private stopQ: () => void
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -222,6 +227,12 @@ export class Engine {
   /** 畫一幀：更新目前場景、後處理輸出 */
   private frame(): void {
     const now = performance.now()
+    // FPS 上限（設定頁，0 = 跟著 vsync）：還沒到下一格就整幀跳過（場景更新、2D 疊加層、後處理都不做）
+    if (this.lastRaf > 0) this.frameIv += (Math.max(1, Math.min(100, now - this.lastRaf)) - this.frameIv) * 0.1
+    this.lastRaf = now
+    const gate = fpsGate(now, this.lastDraw, fpsCap.peek(), this.frameIv)
+    if (gate < 0) return
+    this.lastDraw = gate
     const dt = Math.min(0.1, (now - this.last) / 1000)
     this.last = now
     const t = (now - this.t0) / 1000

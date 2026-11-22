@@ -79,6 +79,8 @@ export class ClientWorld {
     // 模擬沒有前進（開局等載入、暫停）：不更新時鐘偏移，否則偏移會一路落後，恢復後好幾秒插值失準；
     // 恢復前進的第一份快照直接重設
     const stalled = this.hasOffset && s.time <= this.serverTime
+    // 上一份快照的 server 時間（這局還沒收到過快照 = -1）：靜止起步的補樣本用（見下方 hold）
+    const prevTime = this.snapCount > 0 && this.hasOffset ? this.serverTime : -1
     if (!stalled) {
       if (!this.hasOffset || this.wasStalled || Math.abs(off - this.offset) > 1) {
         this.offset = off
@@ -110,6 +112,12 @@ export class ClientWorld {
         // 換 zone 或瞬移：清掉舊樣本避免拖影
         const last = c.samples[c.samples.length - 1]
         if (d.z !== undefined || (last && (last.x - smp.x) ** 2 + (last.y - smp.y) ** 2 > 36)) c.samples.length = 0
+        else if (last && prevTime > last.t + 1e-4 && prevTime < smp.t - 1e-4) {
+          // 靜止起步（第 7 輪手感審查）：靜止時快照不帶座標，上一個樣本可能是好幾秒前的；直接接上新樣本，插值會在
+          // 「很久以前 → 現在」這段裡一口氣跳到快到終點（約 0.16 m），然後幾乎停住約 100 ms 才開始正常走。
+          // 上一份快照沒帶這個實體的座標＝那時它還在原地：在上一份快照的時間補一個原地樣本，起步就從原地平順地走出去。
+          c.samples.push({ t: prevTime, x: last.x, y: last.y, f: last.f })
+        }
         c.samples.push(smp)
         if (c.samples.length > 12) c.samples.shift()
         if (c.samples.length === 1) {
