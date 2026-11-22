@@ -2,8 +2,13 @@
 import * as THREE from 'three'
 import { Batcher, box, cyl, mergeStatic, plane, rbox, sphere, torus } from './batch'
 import { Mat, withFog } from './materials'
-import { decalTex, glyphTex, screenTex } from './tex'
+import { decalTex, glyphTex, metalSet, screenTex } from './tex'
 import { fxTex } from './fx/tex'
+import { rimmed } from './rockWalls'
+
+/** 室外岩石的邊光（和 themes 的 rockRim 一致：餘燼衛星冷藍、翠原星淡紫）*/
+const CINDER_RIM = { color: '#9fb4dc', k: 0.38 }
+const VERDANCE_RIM = { color: '#c8b8ff', k: 0.22 }
 
 /** sim 朝向（0 = +x，π/2 = +y）→ three 的 rotY（讓 local +Z 對準該方向）*/
 export function facingToRotY(a: number): number {
@@ -824,8 +829,8 @@ const EXTRA_PROPS: Record<string, PropFn> = {
     if (k <= 1) {
       // 半埋的巨石
       const r = 0.38 + rnd01(c.seed, 1) * 0.25
-      part(c, rockGeo(c.seed, r, 1, 0.75), Mat.rock('#6e6674'), 0, r * 0.35, 0, rnd01(c.seed, 2) * 6)
-      if (k === 1) part(c, rockGeo(c.seed + 3, r * 0.45, 0, 0.8), Mat.rock('#7c7486'), r * 0.9, r * 0.15, r * 0.4)
+      part(c, rockGeo(c.seed, r, 1, 0.75), rimmed(Mat.rock('#6e6674'), VERDANCE_RIM), 0, r * 0.35, 0, rnd01(c.seed, 2) * 6)
+      if (k === 1) part(c, rockGeo(c.seed + 3, r * 0.45, 0, 0.8), rimmed(Mat.rock('#7c7486'), VERDANCE_RIM), r * 0.9, r * 0.15, r * 0.4)
     } else if (k <= 3) {
       // 異星莖叢：發光莖尖
       const stem = Mat.organic('#3f6a4a', '#9fe7ff')
@@ -885,10 +890,10 @@ const EXTRA_PROPS: Record<string, PropFn> = {
   rock(c) {
     // 低重力：岩塊上方漂浮的碎石
     const r = 0.36 + rnd01(c.seed, 1) * 0.22
-    part(c, rockGeo(c.seed, r, 1, 0.7), Mat.rock('#4c4a49'), 0, r * 0.3, 0, rnd01(c.seed, 2) * 6)
+    part(c, rockGeo(c.seed, r, 1, 0.7), rimmed(Mat.rock('#4c4a49'), CINDER_RIM), 0, r * 0.3, 0, rnd01(c.seed, 2) * 6)
     const n = 1 + (c.seed % 3)
     for (let i = 0; i < n; i++) {
-      const peb = live(c, rockGeo(c.seed + i + 1, 0.08 + rnd01(c.seed, i + 3) * 0.08, 0), Mat.rock('#5c5a58'), (rnd01(c.seed, i + 5) - 0.5) * 0.9, 0.9 + i * 0.35, (rnd01(c.seed, i + 6) - 0.5) * 0.9)
+      const peb = live(c, rockGeo(c.seed + i + 1, 0.08 + rnd01(c.seed, i + 3) * 0.08, 0), rimmed(Mat.rock('#5c5a58'), CINDER_RIM), (rnd01(c.seed, i + 5) - 0.5) * 0.9, 0.9 + i * 0.35, (rnd01(c.seed, i + 6) - 0.5) * 0.9)
       const y0 = peb.position.y
       const ph = rnd01(c.seed, i + 8) * 6
       c.anim.push({ obj: peb, update: (t) => ((peb.position.y = y0 + Math.sin(t * 0.6 + ph) * 0.15), (peb.rotation.x = t * 0.2 + ph), (peb.rotation.y = t * 0.13)) })
@@ -1271,37 +1276,203 @@ const EXTRA_POIS: Record<string, PoiFn> = {
     return { root: k.root, anim: k.anim }
   },
   cannonBreech(ref, seed) {
-    // 天守主砲：砲尾在此格、砲管沿 local +Z 延伸 ref 公尺（版面上被 cannonBody 佔住的格）
+    // 天守主砲：砲尾在此格、砲管沿 local +Z 延伸 ref 公尺（版面上被 cannonBody 佔住的格：砲管兩側各 1.5 m、砲尾兩側 2.5 m）。
+    // local +X 是朝鏡頭（南）的一側：電纜束、檢修面板、鉚釘都放這一側與頂面。
+    // 砲管分四節（由粗到細）、節間法蘭＋螺栓；UV 以公尺計（每 1 m 一道面板接縫，不會沿長度拉伸）；
+    // 砲口那一節漸層出回火色（麥稈黃 → 古銅 → 紫 → 藍黑）；三座搖架（鞍座＋側板＋耳軸＋液壓緩衝器）。
     const k = poiKit()
     const L = Number(ref) || 30
+    const Y = 1.4
     const iron = Mat.metal('#3e3a36', 0.8)
     const steel = Mat.metal('#6e6862', 0.75)
+    const dark = Mat.metal('#24211f', 0.7)
+    const bolt = Mat.metal('#8a8178', 0.85, false)
     const coil = Mat.emissive('#ff7a2a', 3)
-    k.add(rbox(4.6, 2.3, 2.8, 0.12), iron, 0, 1.15, 0)
-    for (const x of [-1.9, 1.9]) k.add(cyl(0.32, 0.32, 3.2, 16), steel, x, 1.0, 0.6, Math.PI / 2)
-    for (const z of [-0.8, 0, 0.8]) k.add(torus(1.25, 0.07, 6, 32), coil, 0, 1.25, z)
-    k.add(box(3.2, 0.06, 0.06), coil, 0, 2.31, -1.0)
-    // 砲管：由粗到細
-    const barrel = k.add(cyl(0.95, 1.15, L, 32), steel, 0, 1.25, 1.5 + L / 2, Math.PI / 2)
-    barrel.castShadow = true
-    const coilP: THREE.Mesh[] = []
-    for (let z = 3; z < L - 1; z += 3) {
-      const r = 1.15 - (z / L) * 0.2
-      const isCoil = Math.round(z / 3) % 2 === 0
-      const m = k.add(torus(r + 0.04, isCoil ? 0.06 : 0.09, 6, 32), isCoil ? coil : iron, 0, 1.25, 1.5 + z)
-      if (isCoil) coilP.push(keep(m))
+    const warn = Mat.paint('#c9a23a', 0.6)
+    const rubber = Mat.rubber('#1c1a18')
+    const z0 = 1.35
+    const z1 = 1.5 + L
+    const R0 = 1.08
+    const R1 = 0.86
+    const rAt = (z: number) => R0 + ((R1 - R0) * (z - z0)) / (z1 - z0)
+    // ── 砲尾 ──
+    k.add(rbox(4.6, 2.5, 2.8, 0.14), iron, 0, 1.25, 0)
+    k.add(rbox(3.8, 0.16, 2.3, 0.05), dark, 0, 2.55, -0.05)
+    k.add(cyl(0.42, 0.42, 0.12, 20), steel, -0.6, 2.66, -0.2)
+    k.add(torus(0.36, 0.035, 6, 20), bolt, -0.6, 2.73, -0.2, Math.PI / 2)
+    for (const x of [-2.31, 2.31]) {
+      // 側面檢修板＋通風格柵
+      k.add(rbox(0.04, 1.4, 2.0, 0.02), dark, x, 1.2, -0.1)
+      for (let i = 0; i < 6; i++) k.add(box(0.05, 0.05, 1.6), steel, x + Math.sign(x) * 0.02, 0.7 + i * 0.18, -0.1)
     }
-    k.add(box(0.14, 0.05, L - 1), coil, 0, 2.25, 1.5 + L / 2, 0.012)
-    k.add(cyl(1.12, 1.12, 1.4, 32), iron, 0, 1.25, 1.5 + L - 0.7, Math.PI / 2)
+    // 後座力緩衝筒（兩側）：筒身＋活塞桿，停在砲尾範圍內
+    for (const x of [-1.95, 1.95]) {
+      k.add(cyl(0.3, 0.3, 2.3, 18), steel, x, 1.0, 0.05, Math.PI / 2)
+      k.add(cyl(0.34, 0.34, 0.12, 18), dark, x, 1.0, -1.05, Math.PI / 2)
+      k.add(cyl(0.13, 0.13, 0.5, 12), bolt, x, 1.0, 1.2, Math.PI / 2)
+      k.add(box(0.5, 0.08, 0.5), warn, x, 1.33, -0.6)
+    }
+    for (const z of [-0.8, 0, 0.8]) k.add(torus(1.3, 0.07, 6, 36), coil, 0, Y, z)
+    k.add(box(3.2, 0.06, 0.06), coil, 0, 2.66, -1.0)
+    // 鉚釘列（朝鏡頭的側面上下緣、頂面前後緣）
+    for (let z = -1.25; z <= 1.25; z += 0.25) {
+      k.add(sphere(0.035, 6, 4), bolt, 2.3, 2.3, z, 0, 0, 0, false)
+      k.add(sphere(0.035, 6, 4), bolt, 2.3, 0.25, z, 0, 0, 0, false)
+    }
+    for (let x = -2.1; x <= 2.1; x += 0.3) {
+      k.add(sphere(0.035, 6, 4), bolt, x, 2.5, 1.35, 0, 0, 0, false)
+      k.add(sphere(0.035, 6, 4), bolt, x, 2.5, -1.35, 0, 0, 0, false)
+    }
+    // 砲尾後方的供電導管（貼著後側板往下接進地板；一半埋在砲尾裡，不超出佔住的格子）
+    for (const x of [-1.1, -0.4, 0.4, 1.1]) {
+      k.add(cyl(0.1, 0.1, 2.1, 10), dark, x, 1.05, -1.38)
+      for (const y of [0.5, 1.6]) k.add(cyl(0.12, 0.12, 0.08, 10), bolt, x, y, -1.38)
+    }
+    // 朝鏡頭側的控制面板與狀態燈
+    k.add(rbox(0.06, 0.6, 0.9, 0.02), dark, 2.33, 1.75, 0.6)
+    for (let i = 0; i < 4; i++) k.add(box(0.03, 0.06, 0.1), coil, 2.37, 1.9 - i * 0.12, 0.35)
+    k.add(box(0.03, 0.14, 0.5), warn, 2.37, 1.55, 0.75)
+    // ── 砲管：四節、UV 以公尺計、砲口一節回火色 ──
+    const fr = [0, 0.31, 0.58, 0.81, 1]
+    const joints: number[] = []
+    for (let s = 0; s < 4; s++) {
+      const a = z0 + (z1 - z0) * fr[s]
+      const b = z0 + (z1 - z0) * fr[s + 1]
+      if (s > 0) joints.push(a)
+      k.add(barrelSection(rAt(a), rAt(b), b - a, (z1 - z0) * 0.68 + z0 - a, (z1 - z0) * 0.32), heatMat(), 0, Y, (a + b) / 2, Math.PI / 2)
+    }
+    // 法蘭＋兩面各 16 顆螺栓
+    for (const z of joints) {
+      const r = rAt(z)
+      k.add(cyl(r + 0.13, r + 0.13, 0.3, 40), iron, 0, Y, z, Math.PI / 2)
+      for (const side of [-0.16, 0.16]) {
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2
+          k.add(box(0.08, 0.08, 0.05), bolt, Math.cos(a) * (r + 0.07), Y + Math.sin(a) * (r + 0.07), z + side, 0, 0, a, false)
+        }
+      }
+    }
+    // 加速線圈（脈動）：每節中段兩兩一組，避開法蘭
+    const coilP: THREE.Mesh[] = []
+    let ci = 0
+    for (let z = z0 + 2.4; z < z1 - 2; z += 2.6) {
+      if (joints.some((j) => Math.abs(j - z) < 0.9)) continue
+      const r = rAt(z)
+      const isCoil = ci++ % 2 === 0
+      const m = k.add(torus(r + 0.05, isCoil ? 0.06 : 0.09, 6, 36), isCoil ? coil : iron, 0, Y, z)
+      if (isCoil) coilP.push(keep(m))
+      else k.add(cyl(r + 0.02, r + 0.02, 0.36, 36, true), dark, 0, Y, z, Math.PI / 2)
+    }
+    // 頂面能量導管（沿砲管的一條發光線）
+    k.add(box(0.12, 0.05, L * 0.8), coil, 0, Y + rAt(z0 + L * 0.4) + 0.015, z0 + L * 0.4, (R0 - R1) / (z1 - z0))
+    // 電纜束：朝鏡頭那一側（+X、上方約 50°），每 2.5 m 一道束帶，帶與帶之間微微下垂
+    const cables: { off: number; r: number; m: THREE.Material }[] = [
+      { off: 0, r: 0.07, m: rubber },
+      { off: 0.16, r: 0.055, m: rubber },
+      { off: -0.15, r: 0.05, m: rubber },
+    ]
+    const zEnd = z0 + (z1 - z0) * 0.8
+    for (const c of cables) {
+      const pts: THREE.Vector3[] = [new THREE.Vector3(1.6, 2.3 + c.off * 0.3, 0.9 + c.off), new THREE.Vector3(1.2, 2.25, 1.5 + c.off)]
+      for (let z = z0 + 1.2; z <= zEnd; z += 1.25) {
+        const clampZ = Math.round((z - z0) / 2.5) * 2.5 + z0
+        const sag = 1 - Math.min(1, Math.abs(z - clampZ) / 1.25)
+        const th = 0.9 + c.off * 0.9
+        const rr = rAt(z) + c.r + 0.03 + (1 - sag) * 0.05
+        pts.push(new THREE.Vector3(Math.sin(th) * rr, Y + Math.cos(th) * rr, z))
+      }
+      const th = 0.9 + c.off * 0.9
+      pts.push(new THREE.Vector3(Math.sin(th + 0.6) * (rAt(zEnd) + 0.2), Y + Math.cos(th + 0.6) * (rAt(zEnd) + 0.2), zEnd + 0.4))
+      const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.3)
+      k.add(new THREE.TubeGeometry(curve, Math.round(L * 2), c.r, 6, false), c.m, 0, 0, 0, 0, 0, 0)
+    }
+    for (let z = z0 + 2.5; z < zEnd; z += 2.5) {
+      if (joints.some((j) => Math.abs(j - z) < 0.3)) continue
+      k.add(torus(rAt(z) + 0.04, 0.035, 5, 36, Math.PI * 0.55), dark, 0, Y, z, 0, 0, Math.PI * 0.08)
+    }
+    // 砲口制退器：較粗的一段＋側面排氣槽＋內膛暗盤與殘熱光環
+    const rm = rAt(z1) + 0.14
+    k.add(cyl(rm, rm, 1.5, 36), iron, 0, Y, z1 - 0.75, Math.PI / 2)
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2
-      k.add(box(0.12, 0.5, 0.9), Mat.metal('#141210', 0.6), Math.cos(a) * 1.1, 1.25 + Math.sin(a) * 1.1, 1.5 + L - 0.7, 0, 0, a)
+      k.add(box(0.14, 0.55, 0.95), dark, Math.cos(a) * rm, Y + Math.sin(a) * rm, z1 - 0.75, 0, 0, a)
     }
-    for (let z = 4; z < L - 2; z += 7) k.add(box(2.7, 0.55, 0.6), iron, 0, 0.27, 1.5 + z)
+    k.add(torus(rm - 0.04, 0.05, 6, 36), coil, 0, Y, z1 - 1.52)
+    k.add(new THREE.CircleGeometry(rAt(z1) * 0.62, 32), dark, 0, Y, z1 + 0.002)
+    k.add(torus(rAt(z1) * 0.64, 0.04, 6, 32), coil, 0, Y, z1 + 0.01)
+    // 搖架：底板＋兩片側板（耳軸蓋）＋鞍座（包住砲管下半圈）＋斜撐液壓缸，全部在砲管兩側 1.45 m 以內
+    for (let z = z0 + 4.2; z < z1 - 3; z += 8.6) {
+      const r = rAt(z)
+      k.add(rbox(2.8, 0.12, 1.3, 0.03), dark, 0, 0.06, z)
+      for (const sx of [-1, 1]) {
+        const x = sx * (r + 0.12)
+        k.add(rbox(0.28, Y + 0.1, 0.9, 0.04), iron, x, (Y + 0.1) / 2 + 0.1, z)
+        k.add(cyl(0.22, 0.22, 0.1, 20), steel, x + sx * 0.18, Y, z, 0, 0, Math.PI / 2)
+        k.add(cyl(0.12, 0.12, 0.1, 14), bolt, x + sx * 0.22, Y, z, 0, 0, Math.PI / 2)
+        // 液壓緩衝器：底板斜撐到側板
+        k.add(cyl(0.07, 0.07, 1.1, 10), steel, x - sx * 0.02, 0.55, z + 0.55, -0.55, 0, 0)
+        k.add(cyl(0.045, 0.045, 0.7, 8), bolt, x - sx * 0.02, 0.88, z + 0.78, -0.55, 0, 0)
+        for (const dz of [-0.5, 0.5]) k.add(cyl(0.05, 0.05, 0.05, 8), bolt, sx * 1.25, 0.14, z + dz)
+      }
+      // 鞍座：半圈帶（只包下半）
+      k.add(torus(r + 0.06, 0.1, 8, 28, Math.PI), iron, 0, Y, z, 0, 0, Math.PI)
+      k.add(box(2 * r + 0.3, 0.1, 0.5), warn, 0, 0.17, z)
+    }
     k.anim.push({ obj: k.root, update: (t) => coilP.forEach((m, i) => m.scale.setScalar(1 + Math.max(0, Math.sin(t * 2.4 - i * 0.7)) * 0.04)) })
     void seed
     return { root: k.root, anim: k.anim }
   },
+}
+
+/**
+ * 一節砲管（開口圓筒，軸沿 Y、底端粗）：UV 以公尺計（貼圖 2 m 一張、1 m 一道面板接縫），頂點色是回火漸層。
+ * heatStart = 這一節底端到漸層起點的距離（m，可為負）、heatLen = 漸層長度。
+ */
+function barrelSection(rTop: number, rBot: number, len: number, heatStart: number, heatLen: number): THREE.BufferGeometry {
+  const hs = Math.max(1, Math.ceil(len / 0.8))
+  const g = new THREE.CylinderGeometry(rTop, rBot, len, 40, hs, true)
+  const pos = g.attributes.position
+  const uv = g.attributes.uv
+  const col = new Float32Array(pos.count * 3)
+  const circ = Math.PI * (rTop + rBot)
+  // 回火色（線性色）：鋼 → 麥稈黃 → 古銅 → 紫 → 藍黑 → 砲口煙燻
+  const stops: [number, [number, number, number]][] = [
+    [0, [1, 1, 1]],
+    [0.3, [1.08, 0.95, 0.72]],
+    [0.52, [0.95, 0.66, 0.42]],
+    [0.72, [0.62, 0.42, 0.66]],
+    [0.88, [0.36, 0.42, 0.62]],
+    [1, [0.22, 0.2, 0.22]],
+  ]
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) + len / 2
+    uv.setXY(i, uv.getX(i) * circ * 0.5, (y / len) * len * 0.5)
+    const t = Math.max(0, Math.min(1, (y - heatStart) / heatLen))
+    let c = stops[stops.length - 1][1]
+    for (let k = 1; k < stops.length; k++) {
+      if (t <= stops[k][0]) {
+        const [ta, ca] = stops[k - 1]
+        const [tb, cb] = stops[k]
+        const f = (t - ta) / (tb - ta)
+        c = [ca[0] + (cb[0] - ca[0]) * f, ca[1] + (cb[1] - ca[1]) * f, ca[2] + (cb[2] - ca[2]) * f]
+        break
+      }
+    }
+    col.set(c, i * 3)
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  return g
+}
+
+let heatMatC: THREE.MeshStandardMaterial | null = null
+/** 砲管材質：帶面板線的鋼＋頂點色回火漸層（共用、不 dispose）*/
+function heatMat(): THREE.MeshStandardMaterial {
+  if (!heatMatC) {
+    const set = metalSet('#7a736c', 11, true)
+    heatMatC = withFog(new THREE.MeshStandardMaterial({ map: set.map, roughnessMap: set.roughnessMap, normalMap: set.normalMap, roughness: 1, metalness: 0.72, vertexColors: true }))
+    heatMatC.userData.keep = true
+  }
+  return heatMatC
 }
 
 /** 特殊外型的販賣機（雷達站、重力控制裝置、LQ 倉儲）*/

@@ -409,12 +409,7 @@ function* floorSteps(variant: FloorVariant, tint: string, seed: number, S: numbe
     yield
   }
   xa.putImageData(albedo, 0, 0)
-  // 偶爾的油漆標記
-  xa.globalAlpha = 0.5
-  xa.fillStyle = '#c9a23a'
-  xa.font = 'bold 28px monospace'
-  xa.fillText(String((seed * 37) % 90 + 10), 30, 60)
-  xa.globalAlpha = 1
+  // 油漆編號不畫在地板貼圖裡（每 2 m 重複一次，一眼就看出拼貼）：改由 dressing.ts 依房間稀疏地撒（位置、編號、角度都隨機）
   if (det) yield* writeDetail(det, rough, height, S, 6)
 }
 
@@ -1277,4 +1272,389 @@ export function glyphTex(color: string, seed = 1): THREE.Texture {
   const t = toTex(c, true, false)
   cache.set(key, t)
   return t
+}
+
+// ───── 場景佈置的地面貼花圖集（dressing.ts）─────
+
+/** 圖集格子（4×4，每格 256 px）：同一張貼圖、同一個材質，整座站的地面貼花一個 draw call */
+export const ATLAS = {
+  scuff: 0,
+  grime: 1,
+  tyre: 2,
+  oil: 3,
+  puddle: 4,
+  blob: 5,
+  drain: 6,
+  hatchPlate: 7,
+  stencilA: 8,
+  stencilB: 9,
+  stencilC: 10,
+  keepClear: 11,
+  hazard: 12,
+  line: 13,
+  crack: 14,
+  ao: 15,
+} as const
+export type AtlasCell = (typeof ATLAS)[keyof typeof ATLAS]
+
+const AC = 256
+const AN = 4
+
+/** 圖集格子的 UV 範圍 [u0, v0, u1, v1]（內縮 3 px，mipmap 不會吃到隔壁格）*/
+export function atlasRect(cell: number): [number, number, number, number] {
+  const cx = cell % AN
+  const cy = Math.floor(cell / AN)
+  const e = 3 / (AC * AN)
+  return [cx / AN + e, 1 - (cy + 1) / AN + e, (cx + 1) / AN - e, 1 - cy / AN - e]
+}
+
+/**
+ * 地面貼花圖集：RGB 是遮罩的「顏色」（多半白色，由頂點色染色；警示斜紋與排水蓋自帶黑／灰）、alpha 是形狀。
+ * 污漬類（刮痕、髒污、胎痕、油漬、水漬、接觸陰影、裂縫、牆腳 AO）配深色頂點色；油漆類（編號、警示、標線）配亮色頂點色。
+ * 油漆類另外做斑駁磨損（alpha 挖洞）。
+ */
+export function dressAtlas(): THREE.Texture {
+  const key = 'dressAtlas'
+  const have = cache.get(key)
+  if (have) return have
+  const S = AC * AN
+  const [c, x] = canvas(S, S)
+  const t = toTex(c, true, false)
+  t.anisotropy = 4
+  cache.set(key, t)
+  start([t], dressAtlasSteps(x))
+  return t
+}
+
+/** 圖集內容（分段：每一格之後 yield）*/
+function* dressAtlasSteps(x: CanvasRenderingContext2D): Steps {
+  x.clearRect(0, 0, AC * AN, AC * AN)
+  const rnd = rand32(4242)
+  const cell = (k: number) => [(k % AN) * AC, Math.floor(k / AN) * AC] as const
+  /** 逐像素寫一格：f 回傳 [r, g, b, a]（0..1）*/
+  const perPixel = (k: number, f: (u: number, v: number) => [number, number, number, number]) => {
+    const [ox, oy] = cell(k)
+    const img = x.createImageData(AC, AC)
+    for (let py = 0; py < AC; py++) {
+      for (let px = 0; px < AC; px++) {
+        const [r, g, b, a] = f(px / AC, py / AC)
+        const o = (py * AC + px) * 4
+        img.data[o] = r * 255
+        img.data[o + 1] = g * 255
+        img.data[o + 2] = b * 255
+        img.data[o + 3] = Math.max(0, Math.min(1, a)) * 255
+      }
+    }
+    x.putImageData(img, ox, oy)
+  }
+  /** 格子中心的柔和圓形衰減（邊緣 0）*/
+  const fall = (u: number, v: number, r0 = 0.25, r1 = 0.48) => 1 - sstep(r0, r1, Math.hypot(u - 0.5, v - 0.5))
+  const n = (u: number, v: number, s: number, f = 4) => fbm(u * 256, v * 256, 256, 4, s, f)
+
+  // 0 刮痕：一叢不同半徑的細弧線（拖動貨物、轉身的鞋底）
+  {
+    const [ox, oy] = cell(ATLAS.scuff)
+    x.save()
+    x.beginPath()
+    x.rect(ox + 6, oy + 6, AC - 12, AC - 12)
+    x.clip()
+    x.strokeStyle = '#ffffff'
+    x.lineCap = 'round'
+    // 底下一層淡淡的磨痕霧（鞋底帶來的灰）＋上面一束束較粗的弧線
+    for (let k = 0; k < 26; k++) {
+      x.globalAlpha = 0.05 + rnd() * 0.06
+      x.lineWidth = 10 + rnd() * 18
+      const cx = ox + 128 + (rnd() - 0.5) * 90
+      const cy = oy + 128 + (rnd() - 0.5) * 90
+      const a0 = rnd() * Math.PI * 2
+      x.beginPath()
+      x.arc(cx, cy, 40 + rnd() * 70, a0, a0 + 0.4 + rnd() * 0.8)
+      x.stroke()
+    }
+    for (let k = 0; k < 90; k++) {
+      const cx = ox + 128 + (rnd() - 0.5) * 120
+      const cy = oy + 128 + (rnd() - 0.5) * 120
+      const r = 30 + rnd() * 110
+      const a0 = rnd() * Math.PI * 2
+      x.globalAlpha = 0.12 + rnd() * 0.3
+      x.lineWidth = 1.5 + rnd() * 5
+      x.beginPath()
+      x.arc(cx, cy, r, a0, a0 + 0.15 + rnd() * 0.6)
+      x.stroke()
+    }
+    x.restore()
+    x.globalAlpha = 1
+    // 往邊緣淡出
+    x.save()
+    x.globalCompositeOperation = 'destination-in'
+    const g = x.createRadialGradient(ox + 128, oy + 128, 30, ox + 128, oy + 128, 124)
+    g.addColorStop(0, 'rgba(255,255,255,1)')
+    g.addColorStop(1, 'rgba(255,255,255,0)')
+    x.fillStyle = g
+    x.fillRect(ox, oy, AC, AC)
+    x.restore()
+  }
+  yield
+  // 1 髒污：低頻雜訊的斑塊
+  perPixel(ATLAS.grime, (u, v) => {
+    const k = sstep(0.36, 0.7, n(u, v, 11, 3) * 0.65 + n(u, v, 12, 12) * 0.35)
+    return [1, 1, 1, (0.25 + 0.75 * k) * fall(u, v, 0.12, 0.49)]
+  })
+  yield
+  // 2 胎痕：兩道平行、略彎的胎紋（堆高機、推車），兩端淡出
+  {
+    const [ox, oy] = cell(ATLAS.tyre)
+    x.save()
+    x.beginPath()
+    x.rect(ox + 4, oy + 4, AC - 8, AC - 8)
+    x.clip()
+    x.fillStyle = '#ffffff'
+    const R = 420
+    const cx = ox + 128
+    const cy = oy + 128 + R
+    for (const off of [-38, 38]) {
+      for (let k = 0; k < 64; k++) {
+        const t = k / 63
+        const a = -Math.PI / 2 + (t - 0.5) * 0.62
+        const rr = R + off
+        const px = cx + Math.cos(a) * rr
+        const py = cy + Math.sin(a) * rr
+        x.globalAlpha = Math.sin(t * Math.PI) * (0.45 + rnd() * 0.35)
+        x.save()
+        x.translate(px, py)
+        x.rotate(a + Math.PI / 2)
+        // 胎紋：一塊塊橫向的紋路
+        x.fillRect(-3, -13, 4, 26)
+        x.globalAlpha *= 0.5
+        x.fillRect(-1, -15, 2, 30)
+        x.restore()
+      }
+    }
+    x.restore()
+    x.globalAlpha = 1
+  }
+  yield
+  // 3 油漬：不規則深色斑＋外圈較淡的暈與幾點飛濺
+  perPixel(ATLAS.oil, (u, v) => {
+    const d = Math.hypot(u - 0.5, v - 0.5) * 2
+    const w = n(u, v, 21, 5)
+    const edge = 0.55 + (w - 0.5) * 0.5
+    const core = 1 - sstep(edge - 0.08, edge, d)
+    const halo = (1 - sstep(edge, edge + 0.25, d)) * 0.35
+    return [1, 1, 1, Math.max(core * (0.75 + 0.2 * n(u, v, 22, 16)), halo)]
+  })
+  yield
+  // 4 水漬：雜訊門檻切出的不規則形狀，邊緣柔和
+  perPixel(ATLAS.puddle, (u, v) => {
+    const d = Math.hypot((u - 0.5) * 1.1, v - 0.5) * 2
+    const w = n(u, v, 31, 3) * 0.75 + n(u, v, 32, 10) * 0.25
+    const k = sstep(0.5, 0.58, w + (1 - d) * 0.45 - 0.2)
+    return [1, 1, 1, k * (1 - sstep(0.85, 0.98, d))]
+  })
+  yield
+  // 5 接觸陰影：圓角方形的柔和暗斑（方形道具、圓形設施都適用）
+  perPixel(ATLAS.blob, (u, v) => {
+    const dx = Math.abs(u - 0.5) * 2
+    const dy = Math.abs(v - 0.5) * 2
+    const d = Math.pow(Math.pow(dx, 4) + Math.pow(dy, 4), 0.25)
+    const k = 1 - sstep(0.35, 0.98, d)
+    return [1, 1, 1, k * k]
+  })
+  yield
+  // 6 圓形排水蓋：灰框＋放射狀溝槽（自帶顏色，頂點色只調亮度）
+  perPixel(ATLAS.drain, (u, v) => {
+    const dx = u - 0.5
+    const dy = v - 0.5
+    const d = Math.hypot(dx, dy) * 2
+    if (d > 0.92) return [0, 0, 0, 0]
+    const ring = d > 0.78
+    const a = Math.atan2(dy, dx)
+    const slot = !ring && d > 0.18 && Math.abs(Math.sin(a * 10)) < 0.45
+    const g = ring ? 0.5 : slot ? 0.06 : 0.36 + n(u, v, 41, 16) * 0.12
+    return [g, g, g * 1.04, 1]
+  })
+  yield
+  // 7 方形地板檢修蓋：框＋橫向溝槽＋四角螺栓
+  perPixel(ATLAS.hatchPlate, (u, v) => {
+    const e = Math.min(u, v, 1 - u, 1 - v)
+    if (e < 0.03) return [0, 0, 0, 0]
+    const frame = e < 0.1
+    const bolt = [0.15, 0.85].some((bx) => [0.15, 0.85].some((by) => Math.hypot(u - bx, v - by) < 0.03))
+    const slot = !frame && Math.abs(((v * 9) % 1) - 0.5) < 0.18 && u > 0.18 && u < 0.82
+    const g = bolt ? 0.62 : frame ? 0.42 : slot ? 0.05 : 0.3 + n(u, v, 43, 16) * 0.1
+    return [g, g, g * 1.04, 1]
+  })
+  yield
+  // 8–10 噴漆編號、11 KEEP CLEAR：模版字（筆畫中間切出鏤空橋）
+  const stencil = (k: number, text: string, px: number, box = false) => {
+    const [ox, oy] = cell(k)
+    x.save()
+    x.fillStyle = '#ffffff'
+    x.strokeStyle = '#ffffff'
+    x.textAlign = 'center'
+    x.textBaseline = 'middle'
+    x.font = `bold ${px}px monospace`
+    const w = x.measureText(text).width
+    const fit = w > AC - 36 ? Math.floor((px * (AC - 36)) / w) : px
+    x.font = `bold ${fit}px monospace`
+    x.fillText(text, ox + 128, oy + 132)
+    if (box) {
+      x.lineWidth = 10
+      x.strokeRect(ox + 16, oy + 70, AC - 32, AC - 140)
+    }
+    // 模版橋：每隔一段切一條細縫
+    x.globalCompositeOperation = 'destination-out'
+    for (let bx = ox + 18 + (k % 3) * 7; bx < ox + AC; bx += 26) x.fillRect(bx, oy, 3, AC)
+    x.restore()
+  }
+  stencil(ATLAS.stencilA, '07', 150)
+  stencil(ATLAS.stencilB, 'B-12', 110)
+  stencil(ATLAS.stencilC, 'AUX 3', 90)
+  stencil(ATLAS.keepClear, 'KEEP CLEAR', 46, true)
+  // 12 警示斜紋（白／黑，白色部分由頂點色染黃）：水平方向可接續（週期 64 px）
+  perPixel(ATLAS.hazard, (u, v) => {
+    if (v < 0.04 || v > 0.96) return [0, 0, 0, 0]
+    const s = (((u + v) * 4) % 1 + 1) % 1 < 0.5
+    return s ? [1, 1, 1, 1] : [0.07, 0.07, 0.07, 1]
+  })
+  yield
+  // 13 標線：整格寬的實線（上下留邊）
+  perPixel(ATLAS.line, (_u, v) => [1, 1, 1, v > 0.08 && v < 0.92 ? 1 : 0])
+  // 14 裂縫：分岔的細深線
+  {
+    const [ox, oy] = cell(ATLAS.crack)
+    x.save()
+    x.beginPath()
+    x.rect(ox + 6, oy + 6, AC - 12, AC - 12)
+    x.clip()
+    x.strokeStyle = '#ffffff'
+    x.lineCap = 'round'
+    const branch = (px: number, py: number, a: number, len: number, w: number, depth: number) => {
+      let cx = px
+      let cy = py
+      x.lineWidth = w
+      x.globalAlpha = 0.85
+      x.beginPath()
+      x.moveTo(cx, cy)
+      const steps = Math.ceil(len / 8)
+      for (let i = 0; i < steps; i++) {
+        a += (rnd() - 0.5) * 0.7
+        cx += Math.cos(a) * 8
+        cy += Math.sin(a) * 8
+        x.lineTo(cx, cy)
+        if (depth > 0 && rnd() < 0.12) branch(cx, cy, a + (rnd() < 0.5 ? 0.8 : -0.8), len * 0.45, w * 0.6, depth - 1)
+      }
+      x.stroke()
+    }
+    branch(ox + 30, oy + 128, 0, 200, 3, 2)
+    x.restore()
+    x.globalAlpha = 1
+  }
+  yield
+  // 15 牆腳 AO：由下緣往上二次衰減（整格寬，水平方向可接續）
+  perPixel(ATLAS.ao, (_u, v) => [1, 1, 1, Math.pow(Math.max(0, v - 0.02) / 0.98, 2)])
+  // 油漆類的斑駁磨損
+  for (const k of [ATLAS.stencilA, ATLAS.stencilB, ATLAS.stencilC, ATLAS.keepClear, ATLAS.hazard, ATLAS.line]) {
+    const [ox, oy] = cell(k)
+    const img = x.getImageData(ox, oy, AC, AC)
+    for (let py = 0; py < AC; py++) {
+      for (let px = 0; px < AC; px++) {
+        const w = fbm(px, py, AC, 4, 50 + k, 6) * 0.7 + fbm(px, py, AC, 2, 60 + k, 40) * 0.3
+        const o = (py * AC + px) * 4 + 3
+        if (w > 0.56) img.data[o] *= Math.max(0, 1 - (w - 0.56) * 5)
+        else img.data[o] *= 0.82 + w * 0.3
+      }
+    }
+    x.putImageData(img, ox, oy)
+    yield
+  }
+}
+
+/**
+ * 大房間地面中央的噴漆徽記（dressing.ts）：同心圓環、八向箭形、刻度、中央六角，外加模版字；
+ * 白色遮罩＋斑駁磨損，由頂點色染色、低透明度。和地面貼花圖集分開（512 px，一張共用）。
+ */
+export function emblemTex(): THREE.Texture {
+  const key = 'emblem'
+  const have = cache.get(key)
+  if (have) return have
+  const S = 512
+  const [c, x] = canvas(S, S)
+  const t = toTex(c, true, false)
+  t.anisotropy = 4
+  cache.set(key, t)
+  start([t], emblemSteps(x, S))
+  return t
+}
+
+function* emblemSteps(x: CanvasRenderingContext2D, S: number): Steps {
+  const C = S / 2
+  x.clearRect(0, 0, S, S)
+  x.strokeStyle = '#ffffff'
+  x.fillStyle = '#ffffff'
+  x.lineWidth = 14
+  x.beginPath()
+  x.arc(C, C, 236, 0, Math.PI * 2)
+  x.stroke()
+  x.lineWidth = 5
+  x.beginPath()
+  x.arc(C, C, 212, 0, Math.PI * 2)
+  x.stroke()
+  // 刻度
+  for (let k = 0; k < 72; k++) {
+    const a = (k / 72) * Math.PI * 2
+    const r0 = k % 6 === 0 ? 182 : 196
+    x.lineWidth = k % 6 === 0 ? 6 : 3
+    x.beginPath()
+    x.moveTo(C + Math.cos(a) * r0, C + Math.sin(a) * r0)
+    x.lineTo(C + Math.cos(a) * 208, C + Math.sin(a) * 208)
+    x.stroke()
+  }
+  // 八向箭形
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + Math.PI / 8
+    x.save()
+    x.translate(C, C)
+    x.rotate(a)
+    x.beginPath()
+    x.moveTo(170, 0)
+    x.lineTo(118, -22)
+    x.lineTo(128, 0)
+    x.lineTo(118, 22)
+    x.closePath()
+    x.fill()
+    x.restore()
+  }
+  // 中央六角與內圈
+  x.lineWidth = 10
+  x.beginPath()
+  for (let k = 0; k <= 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + Math.PI / 6
+    const px = C + Math.cos(a) * 92
+    const py = C + Math.sin(a) * 92
+    if (k === 0) x.moveTo(px, py)
+    else x.lineTo(px, py)
+  }
+  x.stroke()
+  x.lineWidth = 4
+  x.beginPath()
+  x.arc(C, C, 60, 0, Math.PI * 2)
+  x.stroke()
+  x.font = 'bold 34px monospace'
+  x.textAlign = 'center'
+  x.textBaseline = 'middle'
+  x.fillText('XC-7', C, C)
+  yield
+  // 斑駁磨損
+  const img = x.getImageData(0, 0, S, S)
+  for (let py = 0; py < S; py++) {
+    for (let px = 0; px < S; px++) {
+      const w = fbm(px, py, S, 4, 77, 6) * 0.7 + fbm(px, py, S, 2, 78, 48) * 0.3
+      const o = (py * S + px) * 4 + 3
+      if (w > 0.55) img.data[o] *= Math.max(0, 1 - (w - 0.55) * 4.5)
+      else img.data[o] *= 0.8 + w * 0.35
+    }
+    if (py % 128 === 127) yield
+  }
+  x.putImageData(img, 0, 0)
 }

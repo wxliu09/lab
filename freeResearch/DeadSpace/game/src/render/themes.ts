@@ -27,6 +27,17 @@ export interface Theme {
   fillNoise?: number
   /** 室外站：圍著這些房間類型的牆是人造的（筆直混凝土牆＋金屬壓條），其餘是自然岩壁 */
   built?: { rooms: string[]; wall: string; cap: string; trim: string }
+  /**
+   * 場景佈置（dressing.ts）：wet = 潮濕地面（水漬、高畫質的濕亮反光）；decay = 鏽蝕廢棄（雜物改鏽色、多裂縫與碎屑）；
+   * paint／paint2 = 置物櫃、箱子的漆色；pipe = 牆頂管線色；line = 地面標線色；off = 不佈置（有機腔室）
+   */
+  dress?: { wet?: boolean; decay?: boolean; paint?: string; paint2?: string; pipe?: string; line?: string; off?: boolean }
+  /** 室外：地面補光的光源（sim 版面的設施 key 或「x:房間類型」→ 光暈色、半徑 m、強度），例如重力裝置的光往外溢 */
+  spill?: Record<string, { color: string; r: number; k: number }>
+  /** 室外岩石（岩壁、巨石）的邊光（暗色岩地在全景鏡頭下讀得出輪廓）*/
+  rockRim?: { color: string; k: number }
+  /** 室外草地：程序化草葉（instanced，vertex shader 隨風擺動）的顏色（根部、葉尖）*/
+  grassBlades?: { base: string; tip: string; flower: string }
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -58,6 +69,7 @@ export const THEMES: Record<string, Theme> = {
     // 潔淨的研究站：補光最足（燈色偏白，正規化後本來就亮，數值不必拉高）
     fill: 0.52,
     grade: { hue: 0, sat: 0.02, bright: 0, contrast: 0.06 },
+    dress: { paint: '#6f8a97', paint2: '#5d6a52', pipe: '#8d979f', line: '#ffc23d' },
   },
 }
 
@@ -100,6 +112,7 @@ THEMES.adjudicatrix = {
   // 大房間（鑄造廠 17 m）只配一盞頂燈，聚光燈邊緣以外很暗：靠補光讀出地板
   fill: 0.8,
   grade: { hue: -0.02, sat: 0.04, bright: 0, contrast: 0.08 },
+  dress: { paint: '#3e4f6c', paint2: '#5a5f68', pipe: '#6a7a92', line: '#ffb000' },
 }
 
 /** 天守砲台：黑＋橘、巨大砲管、能量導管脈動 */
@@ -128,6 +141,7 @@ THEMES.tenshu = {
   // 黑＋橘：橘色暗光讓地板讀得出來，燈與燈之間仍偏暗
   fill: 0.7,
   grade: { hue: 0.02, sat: 0.06, bright: -0.01, contrast: 0.12 },
+  dress: { paint: '#4c433b', paint2: '#4a5238', pipe: '#6e6258', line: '#ffc23d' },
 }
 
 /** 七號廢站：鏽蝕、斷電、火花、閃爍燈、漂浮塵埃 */
@@ -149,6 +163,7 @@ THEMES.hulk7 = {
   fill: 0.6,
   fillNoise: 0.6,
   grade: { hue: 0.03, sat: -0.12, bright: -0.03, contrast: 0.14 },
+  dress: { wet: true, decay: true, paint: '#6e4a32', paint2: '#5a4a36', pipe: '#5a4636', line: '#b08a3a' },
   dust: '#c8a070',
 }
 
@@ -179,6 +194,7 @@ THEMES.bravado = {
   lightScale: 1,
   fill: 0.72,
   grade: { hue: 0, sat: -0.04, bright: 0, contrast: 0.1 },
+  dress: { paint: '#4a5058', paint2: '#4a5238', pipe: '#70777e', line: '#ffc23d' },
 }
 
 /** 火口號：工業黃、粉塵、輸送帶、熔爐橘光 */
@@ -205,6 +221,7 @@ THEMES.caldera = {
   lightScale: 1,
   fill: 0.75,
   grade: { hue: 0.03, sat: 0.06, bright: 0, contrast: 0.1 },
+  dress: { paint: '#8c7a46', paint2: '#5a5f68', pipe: '#6a604a', line: '#ffd23d' },
   dust: '#d8b070',
 }
 
@@ -230,6 +247,7 @@ THEMES.vivarium = {
   lightScale: 1,
   fill: 0.6,
   grade: { hue: 0.02, sat: 0.05, bright: 0, contrast: 0.08 },
+  dress: { wet: true, paint: '#5a7a6a', paint2: '#4a5a52', pipe: '#7a948a', line: '#ffc23d' },
 }
 
 /** 擺渡號：指標標誌、候車座位、傳送門藍光 */
@@ -254,6 +272,7 @@ THEMES.portage = {
   lightScale: 1,
   fill: 0.58,
   grade: { hue: -0.02, sat: 0.05, bright: 0.01, contrast: 0.06 },
+  dress: { paint: '#4d6a8a', paint2: '#5a5f68', pipe: '#8a96a4', line: '#9fe7ff' },
 }
 
 /** 翠原星：異星草原、淡紫天光、軍事基地混凝土（室外：岩壁、草地）*/
@@ -264,22 +283,29 @@ THEMES.verdance = {
   hull: 'rock:#5a5860',
   trim: 'rock:#787480',
   floor: {
-    grass: { variant: 'grass', tint: '#5f8862' },
+    grass: { variant: 'grass', tint: '#6a9660' },
     base: { variant: 'concrete', tint: '#6a6c70' },
     outpost: { variant: 'concrete', tint: '#76726b' },
     quarters: { variant: 'rubber', tint: '#4a4e56' },
     closet: { variant: 'plate', tint: '#4a4c50' },
     radar: { variant: 'concrete', tint: '#5e6066' },
   },
-  defaultFloor: { variant: 'grass', tint: '#5f8862' },
+  defaultFloor: { variant: 'grass', tint: '#6a9660' },
   light: '#6a6488',
-  ambientSky: '#a49ad8',
-  ambientGround: '#33402c',
-  ambient: 1.5,
+  // 淡紫天光（第 7 輪：天空色更亮更紫、地面反光偏暖綠；再加一層紫色的補光圖當作天空的漫射光）
+  ambientSky: '#b6a8f0',
+  ambientGround: '#3c4a30',
+  ambient: 1.9,
   lightScale: 2.2,
-  grade: { hue: 0, sat: 0.06, bright: 0.02, contrast: 0.06 },
+  fill: 0.34,
+  grade: { hue: 0, sat: 0.08, bright: 0.02, contrast: 0.06 },
   // 營舍、前哨商店、補給掩體是軍方蓋的建物
   built: { rooms: ['quarters', 'outpost', 'closet'], wall: '#7c7a76', cap: '#5c5c5a', trim: '#9aa0a6' },
+  dress: { paint: '#5a6a52', paint2: '#6a5a42', pipe: '#7c7a76', line: '#ffc23d' },
+  // 降落傳送門的紅光、雷達站的琥珀光溢到附近地面
+  spill: { landingPortal: { color: '#ff6a5a', r: 4.5, k: 0.7 }, 'vendor:radar': { color: '#ffc23d', r: 5, k: 0.5 } },
+  rockRim: { color: '#c8b8ff', k: 0.22 },
+  grassBlades: { base: '#5a8456', tip: '#c6e08c', flower: '#e2c8ff' },
 }
 
 /** 餘燼衛星：灰黑岩、漂浮碎石、重力裝置環形光（室外：岩壁、岩地）*/
@@ -296,12 +322,17 @@ THEMES.cinder = {
   defaultFloor: { variant: 'rock', tint: '#5a5753' },
   light: '#5a5e6c',
   // 行星反照的冷灰天光：岩地在全景鏡頭下也讀得出起伏（原本 #5a6274×1.1 幾乎全黑）
-  ambientSky: '#707c94',
-  ambientGround: '#141416',
-  ambient: 1.9,
+  // 第 7 輪：工廠外仍接近全黑 → 天光再亮一些，再加一層冷灰的補光圖（月面反照）＋重力裝置的紫藍光往外溢
+  ambientSky: '#7c88a4',
+  ambientGround: '#18181c',
+  ambient: 2.3,
   lightScale: 2.4,
-  grade: { hue: 0, sat: -0.12, bright: 0, contrast: 0.1 },
+  fill: 0.42,
+  grade: { hue: 0, sat: -0.1, bright: 0.01, contrast: 0.1 },
   built: { rooms: ['factory'], wall: '#5e6064', cap: '#48494c', trim: '#8a9096' },
+  dress: { paint: '#5e6064', paint2: '#6a5a42', pipe: '#8a9096', line: '#ffc23d' },
+  spill: { 'vendor:gravity': { color: '#a594ff', r: 13, k: 1.5 }, 'x:crater': { color: '#8fd8ff', r: 3.4, k: 0.55 }, moduleFactory: { color: '#7fd8ff', r: 4, k: 0.4 } },
+  rockRim: { color: '#9fb4dc', k: 0.38 },
 }
 
 /** 未識別物體：不安的紫綠、有機腔壁 */
@@ -323,6 +354,7 @@ THEMES.uo = {
   // 有機腔室：紫色底光偏暗，肉壁血管自己發光
   fill: 0.9,
   grade: { hue: 0.05, sat: 0.1, bright: -0.02, contrast: 0.14 },
+  dress: { off: true },
 }
 
 /** 黑鷗號海盜船：骯髒紅、拼裝鋼板 */
@@ -349,6 +381,7 @@ THEMES.pirate = {
   // 補光（第 4 輪：0.78 → 1.0）：low 玩家視角的全黑比例約 61% → 50%；走廊、牆頂、虛空照樣暗，仍是陰暗的海盜船
   fill: 1.0,
   grade: { hue: 0.02, sat: 0.08, bright: -0.02, contrast: 0.12 },
+  dress: { paint: '#5a3a34', paint2: '#4a4238', pipe: '#6a5048', line: '#c9a23a' },
   dust: '#b07a5a',
 }
 

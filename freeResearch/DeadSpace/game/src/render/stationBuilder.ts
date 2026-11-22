@@ -8,10 +8,12 @@ import { decalTex, isSharedTexture } from './tex'
 import { preset } from './quality'
 import { facingToRotY, poiModel, roomProp, type Animated } from './props'
 import { theme, type Theme } from './themes'
-import { buildRockWallsSteps, classifyOutdoor, groundTone } from './rockWalls'
+import { buildRockWallsSteps, classifyOutdoor } from './rockWalls'
 import { runSteps, type Steps } from './steps'
 import { findChamfers, inOpen, SIDE_E, SIDE_N, SIDE_S, SIDE_W, type Chamfer, type Cut, type Pt } from './chamfer'
 import { lang, type Lang } from '../ui/i18n'
+import { detailTier, dressLights, dressStationSteps, type LampSpot } from './dressing'
+import { buildGrass, grassAvoidMask, groundField } from './outdoor'
 
 export const WALL_H = 2.4
 const DOOR_H = 2.15
@@ -168,6 +170,10 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
 
   // ───── 地板：依房間類型分材質，世界座標 UV，頂點 AO ─────
   const floorGeo = new Map<string, { pos: number[]; uv: number[]; col: number[]; nrm: number[] }>()
+  // 室外：地面斑塊色、淺窪與起伏法線（outdoor.ts；只改外觀）
+  const variantAt = (col: number, row: number): string => (th.floor[roomType(col, row)] ?? th.defaultFloor).variant
+  const gf = outdoor ? groundField(l, variantAt) : null
+  const GW = l.w + 1
   const blockedCorner = (col: number, row: number) => {
     // 頂點在格子 (col,row) 的左上角：周圍四格
     let n = 0
@@ -235,11 +241,18 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
       const tri = [0, 1, 2, 0, 2, 3]
       for (const k of tri) {
         const [x, y] = corners[k]
-        g.pos.push(x, 0, -y)
+        const a = ao[k] * jitter * (c === Cell.Hazard ? 0.8 : 1)
         g.uv.push(x * us, y * us)
-        g.nrm.push(0, 1, 0)
-        const a = ao[k] * jitter * (c === Cell.Hazard ? 0.8 : 1) * (outdoor ? groundTone(x, y) : 1)
-        g.col.push(a, a, a)
+        if (gf) {
+          const gi = (l.h - y) * GW + x
+          g.pos.push(x, gf.y[gi], -y)
+          g.nrm.push(gf.nrm[gi * 3], gf.nrm[gi * 3 + 1], gf.nrm[gi * 3 + 2])
+          g.col.push(a * gf.col[gi * 3], a * gf.col[gi * 3 + 1], a * gf.col[gi * 3 + 2])
+        } else {
+          g.pos.push(x, 0, -y)
+          g.nrm.push(0, 1, 0)
+          g.col.push(a, a, a)
+        }
       }
     }
     yield
@@ -535,10 +548,21 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
     anim.push(...m.anim)
     yield
   }
+  // ───── 場景佈置（dressing.ts）：牆邊雜物、牆頂管線併進 props；地面貼花、電纜、接觸陰影另外合併 ─────
+  // 房名地貼的位置先算好（佈置要避開它）
+  const labels = new Map<number, { x: number; y: number }>()
+  for (const r of l.rooms) if (r.cells > 30 && r.spec.type !== 'corridor') labels.set(r.index, labelSpot(l, r))
+  const tier = detailTier()
+  yield* dressStationSteps({ seed: hashId(st.id), l, th, group, props, anim, cellAt, cut: (i) => ch.cuts.has(i), labels, outdoor, tier })
+  if (outdoor && th.grassBlades) {
+    const avoid = grassAvoidMask(l, labels.values())
+    buildGrass(group, l, th, variantAt, (c, r) => avoid[r * l.w + c] === 1, tier, hashId(st.id))
+  }
   yield* props.buildSteps(group)
 
   // ───── 房間燈與地板標示 ─────
   const labelLang = lang.value
+  const spots: LampSpot[] = []
   for (const r of l.rooms) {
     const color = new THREE.Color(r.spec.light ?? th.light)
     const wdt = r.maxX - r.minX
@@ -551,19 +575,21 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
         const lx = r.minX + (wdt * (i + 0.5)) / nx
         const ly = r.minY + (hgt * (j + 0.5)) / ny
         lights.push({ x: lx, y: 4.2, z: -ly, color, intensity: (12 + Math.min(22, area / (nx * ny) / 5)) * th.lightScale, distance: Math.max(wdt / nx, hgt / ny) * 1.25 + 4, room: r.index })
+        // 燈下光柱（high 起）：底部半徑依房間（這盞燈負責的那一塊）的短邊，走廊窄、光柱也窄
+        spots.push({ x: lx, z: -ly, color, r: Math.max(0.9, Math.min(2.3, Math.min(wdt / nx, hgt / ny) * 0.2)) })
       }
     }
     if (r.spec.accent) {
       lights.push({ x: r.cx + wdt * 0.3, y: 1.2, z: -(r.cy - hgt * 0.3), color: new THREE.Color(r.spec.accent), intensity: 6, distance: 7, room: r.index })
     }
     // 房名：放在房間中央附近、沒有道具與設施的空地（牆邊會被道具蓋住）
-    if (r.cells > 30 && r.spec.type !== 'corridor') {
+    const at = labels.get(r.index)
+    if (at) {
       const label = new THREE.Mesh(
         new THREE.PlaneGeometry(LABEL_M[0], LABEL_M[1]),
         new THREE.MeshBasicMaterial({ map: roomLabelTex(r.spec.name, labelLang), transparent: true, opacity: 0.16, depthWrite: false }),
       )
       label.rotation.x = -Math.PI / 2
-      const at = labelSpot(l, r)
       label.position.set(at.x, 0.02, -at.y)
       group.add(label)
     }
@@ -576,7 +602,22 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
     yield
   }
   // 烘焙補光圖：整間房一層底光＋每盞房間燈一圈光暈（不受燈光池上限影響，所有站內材質都會取樣）
-  const fill = th.fill ? yield* bakeFillSteps(l, lights, th, hashId(st.id), ch.cuts) : null
+  // 室外的光暈溢散（重力裝置、重力坑導光柱…）：主題的 spill 表，key = 設施 kind（或 kind:ref）、或「x:房間類型」的道具格
+  const spill: Spill[] = []
+  if (th.spill) {
+    for (const p of l.pois) {
+      const sp = th.spill[`${p.def.kind}:${p.def.ref ?? ''}`] ?? th.spill[p.def.kind]
+      if (sp) spill.push({ x: p.x, y: p.y, color: new THREE.Color(sp.color), r: sp.r, k: sp.k })
+    }
+    for (let i = 0; i < l.w * l.h; i++) {
+      if (l.cells[i] !== Cell.Crate) continue
+      const c = i % l.w
+      const row = (i - c) / l.w
+      const sp = th.spill['x:' + roomType(c, row)]
+      if (sp) spill.push({ x: c + 0.5, y: l.h - row - 0.5, color: new THREE.Color(sp.color), r: sp.r, k: sp.k })
+    }
+  }
+  const fill = th.fill ? yield* bakeFillSteps(l, lights, th, hashId(st.id), ch.cuts, spill) : null
 
   // 走廊箭頭
   const arrowMat = new THREE.MeshBasicMaterial({ map: decalTex('arrow', '#ffc23d'), transparent: true, opacity: 0.4, depthWrite: false })
@@ -591,6 +632,8 @@ export function* buildStationSteps(st: StationDef, l: ParsedLayout): Steps<Stati
   // 漂浮塵埃（主題有設 dust 才撒；一個 Points、量很少）
   yield
   if (th.dust) buildDust(l, th.dust, group, hashId(st.id))
+  // 燈下光柱與光柱裡的浮塵（high 起；medium 只有少量浮塵；室外、有機腔室沒有）
+  if (!outdoor && th.fill && !th.dress?.off) dressLights(group, spots, tier, hashId(st.id), preset().particles)
 
   return {
     group,
@@ -810,7 +853,16 @@ function cellNoise(x: number, y: number, seed: number): number {
  * 每格只收同一間房的燈（牆擋光、不漏到隔壁）：整間房一層底光（房間燈色混一點環境色）＋每盞燈一圈平方衰減的光暈；
  * 門與窗格取兩側的平均。牆與虛空格為 0，牆頂因此維持暗色。
  */
-function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number, cuts: Map<number, Cut>): Steps<THREE.DataTexture> {
+/** 補光圖上的額外光暈（室外的重力裝置等）：不分房間，牆頂（岩頂）也收一點 */
+interface Spill {
+  x: number
+  y: number
+  color: THREE.Color
+  r: number
+  k: number
+}
+
+function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: number, cuts: Map<number, Cut>, spill: Spill[] = []): Steps<THREE.DataTexture> {
   const W = l.w * FILL_RES
   const H = l.h * FILL_RES
   const out = new Float32Array(W * H * 3)
@@ -854,6 +906,14 @@ function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: n
         out[o] = fallback.r * wk
         out[o + 1] = fallback.g * wk
         out[o + 2] = fallback.b * wk
+        for (const sp of spill) {
+          const t = ((x - sp.x) ** 2 + (y - sp.y) ** 2) / (sp.r * sp.r)
+          if (t >= 1) continue
+          const w = (1 - t) * (1 - t) * sp.k * k * 0.6
+          out[o] += sp.color.r * w
+          out[o + 1] += sp.color.g * w
+          out[o + 2] += sp.color.b * w
+        }
         continue
       }
       if (c === Cell.Door || c === Cell.Window) {
@@ -876,6 +936,14 @@ function* bakeFillSteps(l: ParsedLayout, lights: RoomLight[], th: Theme, seed: n
         r += li.color.r * w
         g += li.color.g * w
         b += li.color.b * w
+      }
+      for (const sp of spill) {
+        const t = ((x - sp.x) ** 2 + (y - sp.y) ** 2) / (sp.r * sp.r)
+        if (t >= 1) continue
+        const w = (1 - t) * (1 - t) * sp.k
+        r += sp.color.r * w
+        g += sp.color.g * w
+        b += sp.color.b * w
       }
       const n = th.fillNoise ? 1 - th.fillNoise * cellNoise(x / 5, y / 5, seed) : 1
       out[o] = r * k * n

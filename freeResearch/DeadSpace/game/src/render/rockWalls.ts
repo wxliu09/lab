@@ -10,7 +10,7 @@ import * as THREE from 'three'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { Cell, type ParsedLayout } from '../shared/layout'
 import { Batcher, box } from './batch'
-import { Mat } from './materials'
+import { Mat, withFog, withRim } from './materials'
 import type { Theme } from './themes'
 import type { Steps } from './steps'
 
@@ -69,6 +69,35 @@ function cellRnd(c: number, r: number, k: number, s: number): number {
 const smooth01 = (t: number) => {
   const k = Math.max(0, Math.min(1, t))
   return k * k * (3 - 2 * k)
+}
+
+// ───── 岩石邊光 ─────
+
+const rimCache = new Map<string, THREE.MeshStandardMaterial>()
+/**
+ * 岩石材質加上 fresnel 邊光的版本（主題的 rockRim；不改動材質庫裡的共用材質）：暗色岩地在全景鏡頭下讀得出岩壁與巨石的輪廓。
+ * 快取共用、不 dispose。
+ */
+export function rimmed(m: THREE.MeshStandardMaterial, rim: { color: string; k: number } | undefined): THREE.MeshStandardMaterial {
+  if (!rim) return m
+  const key = `${m.uuid}:${rim.color}:${rim.k}`
+  let r = rimCache.get(key)
+  if (!r) {
+    r = new THREE.MeshStandardMaterial({
+      map: m.map,
+      roughnessMap: m.roughnessMap,
+      normalMap: m.normalMap,
+      normalScale: m.normalScale.clone(),
+      roughness: m.roughness,
+      metalness: m.metalness,
+      vertexColors: m.vertexColors,
+      color: m.color.clone(),
+    })
+    r = withFog(withRim(r, rim.color, rim.k))
+    r.userData.keep = true
+    rimCache.set(key, r)
+  }
+  return r
 }
 
 // ───── 分類：人造牆／自然岩壁、與邊緣的距離 ─────
@@ -508,13 +537,13 @@ export function* buildRockWallsSteps(o: RockWallOpts): Steps {
   yield
   yield* side.smoothNormals()
   yield
-  const sideMesh = yield* side.build(Mat.wall(th.wall, th.wallAccent), true)
+  const sideMesh = yield* side.build(rimmed(Mat.wall(th.wall, th.wallAccent), th.rockRim), true)
   if (sideMesh) group.add(sideMesh)
   yield
 
   // ── 3. 頂面（高度場，邊緣接到牆面最上層）＋岩帽＋碎石 ──
   const capTint = th.hull.startsWith('rock:') ? th.hull.slice(5) : '#5a5860'
-  const topMat = Mat.rock(capTint, 'cap', true)
+  const topMat = rimmed(Mat.rock(capTint, 'cap', true), th.rockRim)
   const top = new Geo()
   const exposedEdge = new Set<string>()
   for (const f of faces) exposedEdge.add(`${f.col},${f.row},${f.nx},${f.nr}`)
