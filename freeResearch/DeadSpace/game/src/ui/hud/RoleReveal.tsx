@@ -1,13 +1,19 @@
-// 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）
+// 開局角色揭露：全螢幕、陣營色、背景故事打字機效果（美術聖經 §12）。
+// 第 7 輪：中央加上自己身分的 3D 模型慢慢轉、邊緣一圈陣營色光暈（只給自己看自己的身分；模型是每種單位一張通用圖）
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
 import { signal } from '@preact/signals'
-import { endResult, lastEnd, snapTick, world } from '../../client/session'
+import { endResult, lastEnd, snapTick, startInfo, world } from '../../client/session'
 import { BIOS, OBJECTIVES, ROLE_TITLES, type Identity } from '../strings/bios'
 import { lang, t } from '../i18n'
 import { sfx } from '../../audio/sfx'
 import { modalChecks } from '../../client/input'
+import { PLAYER_COLORS } from '../../shared/constants'
+import type { PortraitSpec } from '../../render/portrait'
 import { gitMinutes, phdText } from './Guide'
+import { Spin3D, factionSpec } from './Codex'
+import { Icon } from '../icons'
 import '../ui4.css'
+import '../screens7.css'
 
 // [主色（光暈）, 輔色, 文字色]：異形、變種人的主色在深色底上對比不到 4.5:1，文字改用亮色
 const COL: Record<Identity, [string, string, string]> = {
@@ -15,6 +21,15 @@ const COL: Record<Identity, [string, string, string]> = {
   xeno: ['#7a3cff', '#33ffd1', '#b28cff'],
   mutant: ['#c8323c', '#e8b04a', '#ff6b72'],
   android: ['#ffb000', '#e6e6e6', '#ffb000'],
+}
+
+/** 模型還沒準備好（或沒有 WebGL）時的線條圖示 */
+const ICON: Record<Identity, string> = { human: 'human', xeno: 'claw', mutant: 'dna', android: 'gear' }
+
+/** 自己身分的模型：人類用自己的職業與玩家色；異類用該陣營第一階的形態（通用的單位圖）*/
+export function revealSpec(role: Identity, classId?: string, color?: string): PortraitSpec {
+  if (role === 'human') return { model: 'human', ...(classId ? { cls: classId } : {}), ...(color ? { color } : {}), framing: 'full' }
+  return factionSpec(role)
 }
 
 /** 揭露畫面蓋著時，遊戲快捷鍵不處理；單機練習也暫停（Hud 的 pauseUiOpen 讀這個 signal：讀背景故事不會被偷走遊戲時間）*/
@@ -84,6 +99,8 @@ export function RoleReveal() {
   const obj = OBJECTIVES[role]
   const L = lang.value === 'en' ? 'en' : 'zh'
   const phd = phdText(world.me, 'play1.reveal.phd')
+  const myColor = PLAYER_COLORS[startInfo.value?.players.find((p) => p.slot === world.me.slot)?.color ?? -1]?.hex
+  const spec = revealSpec(role, world.me.classId, myColor)
   // 基因檢測開放的分鐘數依這一局的設定（簡單難度較早）
   const gitM = String(gitMinutes(world.w))
   return (
@@ -96,6 +113,9 @@ export function RoleReveal() {
       onClick={() => setOpen(false)}
     >
       <div style={{ width: 'min(760px, 92vw)', textAlign: 'center' }}>
+        <Spin3D spec={spec} glow={c1} cls="r7-reveal-model" testid="reveal-model">
+          <Icon name={ICON[role]} color={c1} size={72} />
+        </Spin3D>
         <div class="reveal-head" data-testid="reveal-head">
           <div class="dim" style={{ letterSpacing: '0.4em', fontFamily: 'var(--title)' }}>
             {t('class.' + (world.me.classId ?? ''))}

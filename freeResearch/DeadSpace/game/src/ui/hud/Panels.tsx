@@ -1,11 +1,11 @@
 // 進化選單、旁觀列、死亡模式投票、結算畫面
-import { useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 import { FORMS, UNITS } from '../../shared/content/registry'
 import { PLAYER_COLORS } from '../../shared/constants'
 import type { EndResult } from '../../shared/protocol/messages'
 import { currentRoom, endResult, isHost, lastEnd, leave, leaveGame, returnToLobby, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
 import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
-import { addStrings, loc, sysText, t } from '../i18n'
+import { addStrings, listJoin, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
 import { localizeName } from '../names'
 import { stationDefOf } from '../../render/gameScene'
@@ -17,6 +17,9 @@ import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import { classLabel, promotedSlots } from './Guide'
 import { againTip, inPractice, replayPractice } from '../screens/practiceRun'
 import { tipProps } from '../tooltip'
+import { Spin3D, factionSpec } from './Codex'
+import '../strings/set7'
+import '../screens7.css'
 
 addStrings(PLAY1_ZH, PLAY1_EN)
 
@@ -334,8 +337,39 @@ function AfterEndBar() {
   )
 }
 
+/** 結算的勝方 → [模型的陣營, 光暈色, 退回用的線條圖示]；平手、中止沒有 */
+const WINNER: Record<string, [string, string, string]> = {
+  crew: ['human', '#9fe7ff', 'human'],
+  xeno: ['xeno', FACTION_COLOR.xeno, 'claw'],
+  mutant: ['mutant', FACTION_COLOR.mutant, 'dna'],
+}
+
+/** 翻牌爆光的顏色（人類青、異形紫、變種人紅、仿生人琥珀）*/
+const BURST_COL: Record<string, string> = { human: '#9fe7ff', ...FACTION_COLOR }
+
+/**
+ * 結算卡翻牌的順序（第 7 輪）：版面照原本的順序，翻開的先後是人類先、異類（含眷屬）最後，留到最後揭曉。
+ * 回傳每個玩家的名次（0 起算），和 players 同序
+ */
+export function flipOrder(players: readonly { role: string }[]): number[] {
+  const idx = players.map((_, i) => i)
+  const rank = [...idx.filter((i) => players[i].role === 'human'), ...idx.filter((i) => players[i].role !== 'human')]
+  const out = new Array<number>(players.length)
+  rank.forEach((i, k) => (out[i] = k))
+  return out
+}
+
+/** 結算卡翻牌：同一份結算只翻一次（按「繼續觀看」再打開不重播）*/
+const flipped = new WeakSet<EndResult>()
+function firstShow(r: EndResult): boolean {
+  if (flipped.has(r)) return false
+  flipped.add(r)
+  return true
+}
+
 export function EndScreen() {
   const r = endResult.value
+  const anim = useMemo(() => (r ? firstShow(r) : false), [r])
   if (!r) return <AfterEndBar />
   // 標題下一行：主機中止、平手的原因（見 endNoteKey）
   const why = endNoteKey(r)
@@ -344,45 +378,85 @@ export function EndScreen() {
   const host = isHost.value
   // 晉升過的政委顯示「特務」（sim 不改 classId，見 promotedSlots）
   const promoted = promotedSlots(r)
+  // 只主持不參戰的主機（sim 標 spectator）：不是參戰者，不列成「人類 死亡」的卡片，另外一行寫在下面
+  const players = r.players.filter((p) => !p.spectator)
+  const specs = r.players.filter((p) => p.spectator)
+  const order = flipOrder(players)
+  const win = WINNER[r.winner]
   return (
     <div class="modal-back" style={{ background: 'rgba(0,0,0,0.75)' }}>
-      <div class="panel modal end-card" data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
-        <div class="logo" style={{ fontSize: '30px', marginBottom: '6px' }}>
-          {t('end.' + r.winner)}
-        </div>
-        {why && (
-          <div class="end-why" data-testid={why === 'ui5.end.aborted' ? 'end-aborted' : 'end-why'}>
-            {t(why)}
+      <div class={'panel modal end-card' + (anim ? ' r7e-anim' : '')} data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
+        {/* 標題列：勝方陣營的模型慢慢轉（平手、中止沒有）*/}
+        <div class="r7e-head">
+          {win && (
+            <Spin3D spec={factionSpec(win[0])} glow={win[1]} cls="r7e-winner" testid="end-winner-model">
+              <Icon name={win[2]} color={win[1]} size={56} />
+            </Spin3D>
+          )}
+          <div class="r7e-title">
+            <div class="logo" style={{ fontSize: '30px', marginBottom: '6px' }}>
+              {t('end.' + r.winner)}
+            </div>
+            {why && (
+              <div class="end-why" data-testid={why === 'ui5.end.aborted' ? 'end-aborted' : 'end-why'}>
+                {t(why)}
+              </div>
+            )}
+            <div class="dim mono">
+              {t('end.duration')} {Math.floor(r.duration / 60)}:{String(r.duration % 60).padStart(2, '0')}
+            </div>
           </div>
-        )}
-        <div class="dim mono">
-          {t('end.duration')} {Math.floor(r.duration / 60)}:{String(r.duration % 60).padStart(2, '0')}
         </div>
         <div class="sep" />
+        {/* 玩家卡：依序翻開揭曉身分（人類先、異類最後），翻開時一圈陣營色的爆光；減少動態效果時直接顯示（screens7.css）*/}
         <div class="pgrid">
-          {r.players.map((p) => (
-            <div class="pcard" key={p.slot} style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
-              <div class="pname">{localizeName(p.name)}</div>
-              <div class="row end-role">
-                <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
-                <span class="dim">{classLabel(p.classId, promoted.has(p.slot))}</span>
-                <span class="grow" />
-                <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
+          {players.map((p, i) => (
+            <div
+              class={'r7e-slot' + (p.role !== 'human' ? ' r7e-foe' : '')}
+              key={p.slot}
+              data-testid="end-player"
+              style={{ '--d': `${350 + order[i] * 170}ms`, '--fc': BURST_COL[p.role] ?? '#9fe7ff' }}
+            >
+              <div class="r7e-flip">
+                <div class="pcard r7e-face" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
+                  <div class="pname">{localizeName(p.name)}</div>
+                  <div class="row end-role">
+                    <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
+                    <span class="dim">{classLabel(p.classId, promoted.has(p.slot))}</span>
+                    <span class="grow" />
+                    <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
+                  </div>
+                  <div class="mono dim end-stats">
+                    <span>
+                      {t('end.kills')} {p.kills}
+                    </span>
+                    <span>
+                      {t('end.infections')} {p.infections}
+                    </span>
+                    <span>
+                      {t('end.tests')} {p.tests}
+                    </span>
+                  </div>
+                </div>
+                {anim && (
+                  <div class="pcard r7e-cover" aria-hidden="true" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
+                    <div class="pname">{localizeName(p.name)}</div>
+                    <div class="r7e-unknown">
+                      <span class="r7e-q">?</span>
+                      {t('set7.end.unknown')}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div class="mono dim end-stats">
-                <span>
-                  {t('end.kills')} {p.kills}
-                </span>
-                <span>
-                  {t('end.infections')} {p.infections}
-                </span>
-                <span>
-                  {t('end.tests')} {p.tests}
-                </span>
-              </div>
+              {anim && <div class="r7e-burst" aria-hidden="true" />}
             </div>
           ))}
         </div>
+        {specs.length > 0 && (
+          <div class="dim r7e-spec" data-testid="end-spectators">
+            {t('set7.end.spectators', { names: listJoin(specs.map((p) => localizeName(p.name))) })}
+          </div>
+        )}
         <div class="sep" />
         <h3>{t('end.timeline')}</h3>
         <div class="col end-timeline" data-testid="end-timeline">

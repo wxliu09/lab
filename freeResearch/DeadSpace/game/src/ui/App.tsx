@@ -59,7 +59,8 @@ export function App() {
     <>
       {s !== 'game' && <MenuBackdrop />}
       {/* 背景彩蛋：還沒開始遊戲時在太空背景裡彈來彈去，開局就消失 */}
-      {s !== 'game' && <SpaceMascot />}
+      {/* 大廳（不含單機練習的準備中）：縮小、只在大廳面板左右的空白邊漂，不會從半透明的面板後面透出來 */}
+      {s !== 'game' && <SpaceMascot lobby={s === 'lobby' && lobby.value?.code !== PRACTICE_ROOM} />}
       {(s === 'menu' || s === 'connecting') && <Menu />}
       {/* 單機練習會直接開局：不顯示大廳（裡面「人數不足」的提示會誤導），改顯示準備中 */}
       {s === 'lobby' && lobby.value?.code === PRACTICE_ROOM && (

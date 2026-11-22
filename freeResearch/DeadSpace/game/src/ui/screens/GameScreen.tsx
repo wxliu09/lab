@@ -7,7 +7,8 @@ import type { FxEvent } from '../../shared/protocol/messages'
 import { getEngine } from '../../render/engine'
 import { GameScene } from '../../render/gameScene'
 import { Overlay } from '../../render/overlay'
-import { Banner, Chat, CommandCard, InvDragGhost, Inventory, Minimap, Portrait, TargetHint, TopBar } from '../hud/Hud'
+import { Banner, Chat, CommandCard, HudHiddenHint, InvDragGhost, Inventory, Minimap, Portrait, SpecDock, TargetHint, TopBar } from '../hud/Hud'
+import { hudHidden } from '../../client/viewPrefs'
 import { bindFx } from '../../render/fxBinding'
 import '../../render/fxHandlers'
 import { setListener } from '../../audio/sfx'
@@ -194,8 +195,21 @@ export function GameScreen() {
   useEffect(() => {
     if (scene && zones) scene.setZones(zones)
   }, [scene, zones])
+  // 隱藏介面（F9，截圖／實況用）：整層 HUD 藏起來，3D 畫面與名稱疊加層照常（hud7.css）。
+  // 掛在 body 上的東西（tooltip、拖曳中的道具）看 <html> 上的 class
+  const hidden = hudHidden.value
+  useEffect(() => {
+    document.documentElement.classList.toggle('xc-hud-hidden', hidden)
+  }, [hidden])
+  useEffect(
+    () => () => {
+      document.documentElement.classList.remove('xc-hud-hidden')
+      hudHidden.value = false
+    },
+    [],
+  )
   return (
-    <div class="layer" ref={wrap}>
+    <div class={'layer' + (hidden ? ' hud-hidden' : '')} ref={wrap}>
       <canvas class="view" ref={ref} data-testid="view" />
       {/* 開局建場景、以及局中第一次進某站時的分段建站（GameScene.loading）：同一個「載入中」覆蓋層 */}
       {(loading || scene?.loading.value) && <SceneLoading block={!loading} />}
@@ -203,7 +217,10 @@ export function GameScreen() {
       <Banner />
       <TargetHint />
       <VendorPanel />
-      <SpectatorBar />
+      {/* 觀戰站點清單：外面包一層可收成右上角小標籤（Hud.tsx SpecDock）*/}
+      <SpecDock>
+        <SpectatorBar />
+      </SpecDock>
       <NotesPanel />
       <FeedsPanel />
       <ReplayPanel />
@@ -227,11 +244,12 @@ export function GameScreen() {
         {scene && <Minimap scene={scene} />}
         <Portrait />
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-          <Inventory input={input} />
+          <Inventory input={input} scene={scene} />
           <CommandCard input={input} />
         </div>
       </div>
       <InvDragGhost />
+      <HudHiddenHint />
     </div>
   )
 }

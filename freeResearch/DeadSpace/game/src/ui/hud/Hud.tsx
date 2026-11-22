@@ -1,6 +1,7 @@
 // 遊戲 HUD（致敬 WC3 版面）：上方資訊列、左下小地圖、中下頭像與數值、右下指令卡＋背包、左側聊天
 import { useEffect, useRef, useState, useLayoutEffect } from 'preact/hooks'
-import { effect } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
+import type { ComponentChildren } from 'preact'
 import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
@@ -10,13 +11,13 @@ import { itemTip } from '../itemTip'
 import { hitsBystanders } from '../aoe'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
-import type { ChatChannel, ChatLine } from '../../shared/protocol/messages'
+import { EntFlag, type ChatChannel, type ChatLine, type SnapEntity } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult, lastEnd, hostAbortEnd, hostConflictLive, hostLeaving } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
 import { quality, setQuality } from '../../render/quality'
 import { revealOpen } from './RoleReveal'
-import { aimAbility, aimSelfKey, chatOpen, evolveOpen, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
+import { aimAbility, aimSelfKey, chatOpen, evolveOpen, giveRefusalHere, isPiloting, localNotice, mapAim, mapPick, menuOpen, selected, targetMode, type AimMode, type Input } from '../../client/input'
 import { stationDefOf, type GameScene } from '../../render/gameScene'
 import { lang, listJoin, loc, sysText, t } from '../i18n'
 import { sampleName } from '../../shared/sysArgs'
@@ -44,10 +45,16 @@ import { pingBoard, pingColor, pingLines, pingTaps, sendMapPing } from '../../cl
 import { pingLook, type MapPing } from '../../client/pingBoard'
 import { pingFx } from '../../render/pingFx'
 import { feedView, notesOpen } from './Investigation'
+import { deny, lastDeny, type DenyEvent } from '../../client/feedback'
+import { followMode, hudHidden } from '../../client/viewPrefs'
+import { actionKey, itemKey, slotKey } from './abilityKeys'
+import { __portraitStats, mountSpin, portraitReady, portraitSpecOf, portraitUrl } from '../../render/portrait'
 import '../strings/art3'
 import '../ui4.css'
 import '../ui6.css'
+import '../hud7.css'
 import '../strings/ui6'
+import '../strings/vis7'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -240,7 +247,8 @@ export function TopBar() {
         </span>
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
-      <PauseBadge on={!!w.pz} />
+      {/* 開局身分揭露蓋著時不顯示「已暫停」大標（第 7 輪審查：蓋在揭露畫面上）；頂列的小字照常 */}
+      <PauseBadge on={!!w.pz && !revealOpen.value} />
       {/* 調查筆記：原本只能按 Tab 開，只用滑鼠的人找不到 */}
       <button
         class={'small ghost icon-btn notes-btn' + (notesOpen.value ? ' on' : '')}
@@ -567,6 +575,54 @@ export function Minimap(props: { scene: GameScene }) {
     const py = ((ev.clientY - r.top) / r.height) * c.height
     return { x: (px - ox) / k, y: l.h - (py - oy) / k }
   }
+  /** 小地圖座標夾在地圖範圍內（拖出小地圖時鏡頭停在邊上，不會飛到虛空）*/
+  const clampWorld = (p: { x: number; y: number }) => {
+    const scene = sceneRef.current
+    const l = scene && scene.zone !== 0 ? scene.zones.get(scene.zone)?.layout : null
+    if (l) return { x: Math.min(l.w, Math.max(0, p.x)), y: Math.min(l.h, Math.max(0, p.y)) }
+    return { x: Math.min(50, Math.max(-50, p.x)), y: Math.min(50, Math.max(-50, p.y)) }
+  }
+  /** 拖曳小地圖中（不跳房間說明）*/
+  const mmDrag = useRef(false)
+  /** 左鍵拖曳小地圖：按下時先移過去，之後跟著游標，放開（或視窗失焦）結束 */
+  const dragMinimap = (e0: MouseEvent) => {
+    const go = (ev: { clientX: number; clientY: number }) => {
+      const scene = sceneRef.current
+      const p = toWorld(ev)
+      if (!scene || !p) return
+      const q = clampWorld(p)
+      scene.rts.focus(q.x, q.y)
+    }
+    // 觀戰的「自動跟隨戰鬥」：自己動了鏡頭就停止跟隨，不然下一幀又被拉走
+    if (followMode.peek() === 'action') followMode.value = 'off'
+    go(e0)
+    showCursorTip(null, 0, 0)
+    mmDrag.current = true
+    let raf = 0
+    let last: { clientX: number; clientY: number } | null = null
+    const move = (ev: MouseEvent) => {
+      if (!(ev.buttons & 1)) return end()
+      last = { clientX: ev.clientX, clientY: ev.clientY }
+      if (!raf)
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          if (last) go(last)
+        })
+    }
+    const end = () => {
+      mmDrag.current = false
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', end)
+      window.removeEventListener('blur', end)
+      if (raf) cancelAnimationFrame(raf)
+      raf = 0
+      if (last) go(last)
+      last = null
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', end)
+    window.addEventListener('blur', end)
+  }
   /** 小地圖上的點擊容差（約 10 px）換算成公尺 */
   const mapTol = (ev: { clientX: number; clientY: number }, p: { x: number; y: number }) => {
     const q = toWorld({ clientX: ev.clientX + 10, clientY: ev.clientY })
@@ -586,6 +642,7 @@ export function Minimap(props: { scene: GameScene }) {
         ref={ref}
         onContextMenu={(e) => e.preventDefault()}
         onMouseMove={(e) => {
+          if (mmDrag.current) return
           // 懸停：顯示房間名稱與裡面的設施；瞄準單位時改說明左鍵會選到誰
           const scene = sceneRef.current
           const tm = targetMode.value
@@ -625,7 +682,11 @@ export function Minimap(props: { scene: GameScene }) {
             return
           }
           if (e.button === 2) minimapMove(scene, p, e.shiftKey)
-          else scene.rts.focus(p.x, p.y)
+          else if (e.button === 0) {
+            // 左鍵按住拖曳：鏡頭跟著游標連續移動（WC3 的習慣）；拖出小地圖也照樣跟著、夾在地圖範圍內
+            e.preventDefault()
+            dragMinimap(e)
+          }
         }}
       />
       {/* 圖例：滑鼠移上去看顏色與形狀的意思（完整的在 G 說明第 3 頁，點一下直接打開）*/}
@@ -861,8 +922,104 @@ function drawPings(x: CanvasRenderingContext2D, zone: number, at: (wx: number, w
   }
 }
 
+/** 觀戰中、沒有操控任何東西：頭像面板收成一條細列（觀戰說明、跟隨戰鬥、隱藏介面）*/
+function specView(): boolean {
+  const me = world.me
+  return !me.booted && (spectating() || me.role === 'spectator')
+}
+
+/** 隱藏介面的按鍵名稱（按鍵由輸入層綁定、可在設定改，預設 F9）*/
+export function hideHudKey(): string {
+  return actionKey('hideHud') || 'F9'
+}
+
+/** 外框色：玩家色；沒有玩家色時看得到的外觀（敵對紅、異形紫、變種紅、仿生琥珀），其餘中性灰藍。只用快照裡的外觀資訊 */
+export function portraitFrameColor(s: SnapEntity): string {
+  if ((s.c ?? -1) >= 0) return PLAYER_COLORS[s.c!]?.hex ?? '#9fb3c2'
+  if ((s.fl ?? 0) & EntFlag.Hostile) return '#ff5a4a'
+  const m = UNITS.get(s.d ?? '')?.model ?? ''
+  if (m.startsWith('xeno.')) return ROLE_COLOR.xeno
+  if (m.startsWith('mut.')) return ROLE_COLOR.mutant
+  if (m.startsWith('android.')) return ROLE_COLOR.android
+  return '#9fb3c2'
+}
+
+/**
+ * 頭像小圖要幾 px 高：CSS 高 × 介面縮放 × 螢幕密度 × 1.5（多算一點再縮小，邊緣比較乾淨），取 64 的倍數
+ * （快取不會因為一點點縮放差異就多算一張）
+ */
+function bustPx(cssH: number): number {
+  const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio || 1 : 1
+  return Math.min(384, Math.max(128, Math.ceil((cssH * uiZoom.value * dpr * 1.5) / 64) * 64))
+}
+
+/** 頭像框的圖示（小圖還沒算好、或環境不支援 WebGL 時）*/
+function bustIcon(s: SnapEntity): string {
+  const def = UNITS.get(s.d ?? '')
+  return def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'
+}
+
+/**
+ * 頭像框：選取單位的 3D 半身像（render/portrait.ts，和場景裡的單位同一套模型、同一組快照欄位），玩家色／陣營色外框。
+ * 小圖還沒算好、或環境不支援 WebGL 時顯示原本的線條圖示。只吃基本型別的 props（不讀 signal）：父元件換了什麼就跟著重繪
+ */
+function Bust({ url, icon, color, dead, small }: { url: string | null; icon: string; color: string; dead: boolean; small?: boolean }) {
+  return (
+    <div
+      class={'pframe' + (small ? ' small' : '') + (dead ? ' dead' : '') + (url ? ' has-img' : '')}
+      data-testid="portrait-frame"
+      style={{ '--pc': color, '--pc-a': color + '66', '--pc-b': color + '24' }}
+    >
+      {url ? <img src={url} alt="" draggable={false} data-testid="portrait-img" /> : <Icon name={icon} color={color} size={small ? 40 : 56} />}
+      <i class="pf-band" />
+    </div>
+  )
+}
+
+/** 觀戰細列：觀戰中、提示、自動跟隨戰鬥、隱藏介面 */
+function SpecStrip({ hint }: { hint: boolean }) {
+  const follow = followMode.value === 'action'
+  const k = hideHudKey()
+  return (
+    <div class="spec-row">
+      <span class="spec-live">
+        <i aria-hidden="true" />
+        {t('vis7.spec.live')}
+      </span>
+      {hint && <span class="dim spec-hint">{t('vis7.spec.hint')}</span>}
+      <button
+        class={'small ghost spec-btn' + (follow ? ' on' : '')}
+        data-testid="follow-action"
+        aria-pressed={follow}
+        onClick={(e) => {
+          followMode.value = follow ? 'off' : 'action'
+          ;(e.currentTarget as HTMLElement).blur()
+        }}
+        {...tipProps(() => ({ title: t('vis7.follow'), body: t('vis7.follow.tip') }))}
+      >
+        <i class="spec-dot" aria-hidden="true" />
+        {t('vis7.follow')}
+      </button>
+      <button
+        class="small ghost spec-btn"
+        data-testid="hide-hud"
+        onClick={(e) => {
+          hudHidden.value = true
+          ;(e.currentTarget as HTMLElement).blur()
+        }}
+        {...tipProps(() => ({ title: t('vis7.hide'), tag: k, body: t('vis7.hide.tip', { k }) }))}
+      >
+        {t('vis7.hide')} <span class="mono dim">{k}</span>
+      </button>
+    </div>
+  )
+}
+
 export function Portrait() {
   void snapTick.value
+  // 3D 小圖畫好了：重繪換上（render/portrait.ts 的 portraitReady；不在 Bust 裡用 onPortraitReady＋useState：
+  // 讀了 signal 的元件在 props 沒變時，hooks 的 setState 會被 @preact/signals 擋掉，頭像會一直停在圖示）
+  void portraitReady.value
   // 出局者（死亡即退出）不能觀戰也不能點選單位：只寫「已出局」
   if (world.me.booted)
     return (
@@ -876,19 +1033,16 @@ export function Portrait() {
   const sel = selected.value && world.ents.has(selected.value) ? selected.value : 0
   const id = sel || world.me.control || world.me.unit || 0
   const e = world.ents.get(id)
+  const spec = specView()
   if (!e) {
-    // 觀戰中沒有選取任何單位：說明可以點選，而不是留一塊空白
-    const dead = world.me.alive === false || world.me.role === 'spectator'
-    return (
-      <div class="panel portrait portrait-empty">
-        {dead && (
-          <div class="dim">
-            <b>{t('spec3.portraitDead')}</b>
-            <div>{t('spec3.portraitHint')}</div>
-          </div>
-        )}
-      </div>
-    )
+    // 觀戰中沒有選取任何單位：收成一條細列（原本整片 1280×180 只寫「觀戰中」，擋住三分之一個畫面）
+    if (spec)
+      return (
+        <div class="panel portrait spec-strip" data-testid="spec-strip">
+          <SpecStrip hint />
+        </div>
+      )
+    return <div class="panel portrait portrait-empty" />
   }
   const s = e.s
   const def = UNITS.get(s.d ?? '')
@@ -898,10 +1052,14 @@ export function Portrait() {
   const color = (s.c ?? -1) >= 0 ? PLAYER_COLORS[s.c!].hex : '#9fb3c2'
   const name = localizeName(s.n) || loc(defName)
   return (
-    <div class="panel portrait" data-testid="portrait">
-      <div style={{ width: '96px', height: '128px', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `radial-gradient(circle at 50% 40%, ${color}33, transparent 70%)` }}>
-        <Icon name={def?.tags.includes('personnel') ? 'human' : def?.tags.includes('structure') ? 'gear' : 'claw'} color={color} size={56} />
-      </div>
+    <div class={'panel portrait' + (spec ? ' spec-strip spec-unit' : '')} data-testid="portrait">
+      <Bust
+        url={portraitUrl(portraitSpecOf(s, 'bust'), bustPx(spec ? 84 : 128))}
+        icon={bustIcon(s)}
+        color={portraitFrameColor(s)}
+        dead={s.st === 4 || ((s.fl ?? 0) & EntFlag.Corpse) !== 0}
+        small={spec}
+      />
       <div class="bars">
         {/* 第一列只放名字（e2e ux.spec 讀 .bars > div 的第一個）*/}
         <div class="pname" style={{ color: textColorOf(color) }}>
@@ -931,6 +1089,7 @@ export function Portrait() {
         ) : null}
         <BuffRow ids={s.b ?? []} />
       </div>
+      {spec && <SpecStrip hint={false} />}
     </div>
   )
 }
@@ -993,7 +1152,8 @@ function abilityTip(id: string, key: string, st?: { cd: number; disabled?: boole
   const hints = [
     instant && ab.cast ? t('tip3.target.cast', { s: ab.cast }) : instant && ab.channel ? t('tip3.target.channel', { s: ab.channel }) : t(TARGET_HINT[ab.target] ?? 'tip.target.none'),
   ]
-  if (!passive) hints.push(t('tip.ability.use', { k: key }))
+  // 沒有快捷鍵（第 7 格以後、或玩家把鍵拿掉）就不寫「按 … 施放」
+  if (!passive && key) hints.push(t('tip.ability.use', { k: key }))
   if (ab.autocast) hints.push(t('tip.ability.auto'))
   // 範圍傷害不分敵我：會波及身旁的 NPC 船員（被打傷的會反擊）
   if (hitsBystanders(id)) hints.push(t('ui6.tip.aoeCrew'))
@@ -1014,27 +1174,61 @@ function spectating(): boolean {
   return me.alive === false && (!me.control || me.control === me.unit)
 }
 
+/** 拒絕回饋（client/feedback.ts 的 lastDeny）多久內還要畫閃爍（毫秒）*/
+const DENY_MS = 900
+
+/** 測試用：不依時間收掉閃爍（e2e／截圖放慢 CSS 動畫時用；正式版 __TEST_HOOKS__ 為 false，整段拿掉）*/
+let denyHold = false
+
+/** 這一格現在要不要閃「不能用」：match = 這個事件是不是針對這一格 */
+function recentDeny(match: (d: DenyEvent) => boolean): DenyEvent | null {
+  const d = lastDeny.value
+  if (!d || !match(d)) return null
+  if (__TEST_HOOKS__ && denyHold) return d
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  return now - d.t < DENY_MS ? d : null
+}
+
+/**
+ * 技能格／背包格的拒絕閃爍：紅框一閃（輕微左右晃）＋冷卻中時把剩餘秒數放大彈一下（能量不足彈需要的能量）。
+ * key 用事件時間：同一格連按每次都重播動畫
+ */
+function DenyFx({ d, cd, mana }: { d: DenyEvent; cd: number; mana?: number }) {
+  const pop = cd > 0 ? fmtSecs(cd) : d.kind === 'noMana' && mana ? String(mana) : d.kind === 'disabled' ? '✕' : ''
+  return (
+    <>
+      <span key={'f' + d.t} class={'deny-fx k-' + d.kind} data-testid="deny-fx" aria-hidden="true" />
+      {pop && (
+        <span key={'p' + d.t} class={'deny-pop k-' + (cd > 0 ? 'cooldown' : d.kind)} aria-hidden="true">
+          {pop}
+        </span>
+      )}
+    </>
+  )
+}
+
 export function CommandCard({ input }: { input: Input | null }) {
   void snapTick.value
+  // 訂閱拒絕事件（按下冷卻中的技能時閃那一格）
+  void lastDeny.value
   if (spectating()) return null
   const abs = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target !== 'passive')
   const passives = (world.me.abilities ?? []).filter((a) => abilityDef(a.id)?.target === 'passive')
-  const keys = ['Q', 'W', 'E', 'R', 'D', 'F']
   const basic = [
-    { key: 'A', icon: 'attack', name: t('cmd.attack'), desc: t('cmd.attack.desc'), run: () => (targetMode.value = { kind: 'attack' }) },
-    { key: 'S', icon: 'stop', name: t('cmd.stop'), desc: t('cmd.stop.desc'), run: () => sendCmd({ k: 'stop' }) },
-    { key: 'H', icon: 'hold', name: t('cmd.hold'), desc: t('cmd.hold.desc'), run: () => sendCmd({ k: 'hold' }) },
+    { key: actionKey('attack'), icon: 'attack', name: t('cmd.attack'), desc: t('cmd.attack.desc'), run: () => (targetMode.value = { kind: 'attack' }) },
+    { key: actionKey('stop'), icon: 'stop', name: t('cmd.stop'), desc: t('cmd.stop.desc'), run: () => sendCmd({ k: 'stop' }) },
+    { key: actionKey('hold'), icon: 'hold', name: t('cmd.hold'), desc: t('cmd.hold.desc'), run: () => sendCmd({ k: 'hold' }) },
   ]
   return (
     <div class="panel cmdcard">
       {isPiloting() && (
-        <button class="unpilot" data-testid="unpilot" onClick={() => sendCmd({ k: 'unpilot' })} {...tipProps(() => ({ title: t('cmd.unpilot'), tag: 'B', body: t('cmd.unpilot.desc') }))}>
-          {t('cmd.unpilot')} <span class="mono dim">B</span>
+        <button class="unpilot" data-testid="unpilot" onClick={() => sendCmd({ k: 'unpilot' })} {...tipProps(() => ({ title: t('cmd.unpilot'), tag: actionKey('unpilot') || undefined, body: t('cmd.unpilot.desc') }))}>
+          {t('cmd.unpilot')} <span class="mono dim">{actionKey('unpilot')}</span>
         </button>
       )}
       <div class="cmdgrid">
         {basic.map((b) => (
-          <div class="cmd" key={b.key} onClick={b.run} {...tipProps(() => ({ title: b.name, tag: b.key, body: b.desc }))}>
+          <div class="cmd" key={b.icon} onClick={b.run} {...tipProps(() => ({ title: b.name, tag: b.key || undefined, body: b.desc }))}>
             <span class="key">{b.key}</span>
             <Icon name={b.icon} size={28} />
           </div>
@@ -1058,6 +1252,7 @@ export function CommandCard({ input }: { input: Input | null }) {
           const mp = world.ents.get(world.me.control || world.me.unit || 0)?.s.mp
           const noMana = !st.cd && st.mana > 0 && mp !== undefined && mp < st.mana
           const cls = 'cmd' + (st.cd > 0 ? ' cooling' : '') + (noMana ? ' nomana' : '') + (st.disabled ? ' locked' : '')
+          const denied = recentDeny((d) => d.ability === st.id)
           return (
             <div
               class={cls}
@@ -1069,14 +1264,15 @@ export function CommandCard({ input }: { input: Input | null }) {
                 e.preventDefault()
                 if (ab.autocast) sendCmd({ k: 'autocast', a: ab.id })
               }}
-              {...tipProps(() => abilityTip(st.id, keys[i] ?? '', st))}
+              {...tipProps(() => abilityTip(st.id, slotKey(i), st))}
             >
-              <span class="key">{keys[i] ?? ''}</span>
+              <span class="key">{slotKey(i)}</span>
               <Icon name={ab.icon} size={30} color={st.disabled ? '#666' : '#9fe7ff'} />
               <CdFace cd={st.cd} total={st.maxCd} />
               {noMana && <span class="cd-mana">{st.mana}</span>}
               {st.charges !== undefined && <span class="cdtxt charges">{st.charges}</span>}
               {st.disabled && <span class="cd-lock">✕</span>}
+              {denied && <DenyFx d={denied} cd={st.cd} mana={st.mana} />}
             </div>
           )
         })}
@@ -1095,23 +1291,65 @@ function slotAt(x: number, y: number): number {
   return el ? Number(el.getAttribute('data-inv-slot')) : -1
 }
 
-/** 放開：另一格＝交換位置；場景上的單位＝給予；其他地方＝取消 */
-function finishDrag(input: Input | null, from: number, x: number, y: number, queue: boolean): void {
+/** 拖曳中游標下的東西：放開時會發生什麼（TargetHint 顯示「放開：…」）*/
+export type DragAim = { k: 'swap' } | { k: 'give'; name: string } | { k: 'drop' } | { k: 'no'; why: string } | { k: 'cancel' }
+const dragAim = signal<DragAim | null>(null)
+
+/**
+ * 地上的東西（物品、屍體、設施、販賣機、站點）：不是能收東西的人，放開在它上面就當作放在地上（丟掉）。
+ * 和 client/give.ts 的 giveRefusal 判斷「無效的目標」用同一組外觀欄位
+ */
+function groundLike(s: SnapEntity): boolean {
+  const d = s.d ?? ''
+  if (d.startsWith('item:') || d === 'groundItem' || d.startsWith('vendor.') || d.startsWith('station.')) return true
+  if ((s.fl ?? 0) & EntFlag.Corpse || s.st === 4) return true
+  const tags = UNITS.get(d)?.tags ?? []
+  return tags.includes('structure') || tags.includes('noTarget')
+}
+
+/** 游標下（螢幕座標）放開會發生什麼：另一格＝交換；場景上的人＝給予；場景的地面（或地上的東西、自己）＝丟在腳邊；其他 HUD＝取消 */
+function aimAt(scene: GameScene | null, from: number, x: number, y: number): DragAim {
+  const to = slotAt(x, y)
+  if (to >= 0) return to === from ? { k: 'cancel' } : { k: 'swap' }
+  const el = document.elementFromPoint(x, y)
+  if (!(el instanceof HTMLCanvasElement) || !el.classList.contains('view') || !scene) return { k: 'cancel' }
+  const r = el.getBoundingClientRect()
+  const id = scene.pick(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1)
+  const e = id ? world.ents.get(id) : undefined
+  if (!e) return { k: 'drop' }
+  const why = giveRefusalHere(e.s)
+  // '' = 自己（或不算對象）：當作丟在地上
+  if (why === '' || (why === 'cast.target' && groundLike(e.s))) return { k: 'drop' }
+  if (why) return { k: 'no', why }
+  return { k: 'give', name: localizeName(e.s.n) || loc(entDefName(e.s.d)) }
+}
+
+/** 放開：另一格＝交換位置；場景上的人＝給予；場景的地面＝丟在腳邊（sim 的 drop 放在單位腳下）；其他地方＝取消 */
+function finishDrag(input: Input | null, scene: GameScene | null, from: number, x: number, y: number, queue: boolean): void {
   const to = slotAt(x, y)
   if (to >= 0) {
     if (to !== from) sendCmd({ k: 'swapItem', s: from, x: to })
     return
   }
-  const el = document.elementFromPoint(x, y)
-  if (el instanceof HTMLCanvasElement && el.classList.contains('view')) input?.dropItemOn(from, x, y, queue)
+  const aim = aimAt(scene, from, x, y)
+  if (aim.k === 'drop') {
+    sendCmd({ k: 'drop', s: from })
+    const me = world.ents.get(world.me.control || world.me.unit || 0)
+    if (me && scene) scene.fx.clickMarker(scene.zone, me.x, me.y, '#ffc23d')
+    return
+  }
+  // 給予（或給不了：dropItemOn 顯示原因）
+  if (aim.k === 'give' || aim.k === 'no') input?.dropItemOn(from, x, y, queue)
 }
 
-/** 背包格按下：超過門檻才開始拖；放開時決定交換或給予；Esc、視窗失焦取消 */
-function startInvDrag(e: PointerEvent, slot: number, input: Input | null): void {
+/** 背包格按下：超過門檻才開始拖；放開時決定交換、給予或丟在地上；Esc、視窗失焦取消 */
+function startInvDrag(e: PointerEvent, slot: number, input: Input | null, scene: GameScene | null): void {
   if (e.button !== 0 || !world.me.inv?.[slot]) return
   const x0 = e.clientX
   const y0 = e.clientY
   let dragging = false
+  /** 游標下的單位用射線挑：最多每 60 ms 算一次 */
+  let aimAtT = 0
   const cleanup = () => {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
@@ -1120,17 +1358,26 @@ function startInvDrag(e: PointerEvent, slot: number, input: Input | null): void 
     window.removeEventListener('blur', cancel)
     if (dragging) dragEndedAt = performance.now()
     invDrag.value = null
+    dragAim.value = null
   }
   const move = (ev: PointerEvent) => {
     if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_START) return
     if (!dragging) hideTip()
     dragging = true
-    invDrag.value = { slot, x: ev.clientX, y: ev.clientY, over: slotAt(ev.clientX, ev.clientY) }
+    const over = slotAt(ev.clientX, ev.clientY)
+    invDrag.value = { slot, x: ev.clientX, y: ev.clientY, over }
+    const now = performance.now()
+    if (over >= 0 || now - aimAtT > 60) {
+      aimAtT = now
+      const a = aimAt(scene, slot, ev.clientX, ev.clientY)
+      const p = dragAim.peek()
+      if (!p || JSON.stringify(p) !== JSON.stringify(a)) dragAim.value = a
+    }
   }
   const up = (ev: PointerEvent) => {
     const was = dragging
     cleanup()
-    if (was) finishDrag(input, slot, ev.clientX, ev.clientY, ev.shiftKey)
+    if (was) finishDrag(input, scene, slot, ev.clientX, ev.clientY, ev.shiftKey)
   }
   const cancel = () => cleanup()
   const key = (ev: KeyboardEvent) => {
@@ -1163,8 +1410,9 @@ export function InvDragGhost() {
   )
 }
 
-export function Inventory({ input }: { input: Input | null }) {
+export function Inventory({ input, scene }: { input: Input | null; scene?: GameScene | null }) {
   void snapTick.value
+  void lastDeny.value
   if (spectating()) return null
   const inv = world.me.inv ?? []
   const drag = invDrag.value
@@ -1174,13 +1422,14 @@ export function Inventory({ input }: { input: Input | null }) {
         const it = inv[i]
         const def = it ? itemDef(it.item) : undefined
         const cls = 'cmd' + (it && it.cd > 0 ? ' cooling' : '') + (drag?.slot === i ? ' drag-src' : '') + (drag && drag.over === i && drag.slot !== i ? ' drag-over' : '')
+        const denied = recentDeny((d) => d.inv === i)
         return (
           <div
             class={cls}
             key={i}
             data-testid={'inv-' + i}
             data-inv-slot={i}
-            onPointerDown={(e) => startInvDrag(e, i, input)}
+            onPointerDown={(e) => startInvDrag(e, i, input, scene ?? null)}
             onClick={() => {
               if (performance.now() - dragEndedAt < 250) return
               input?.useItem(i)
@@ -1196,15 +1445,16 @@ export function Inventory({ input }: { input: Input | null }) {
               const rows: [string, string][] = []
               if (it.charges) rows.push([t('tip.charges'), String(it.charges)])
               if (it.item === 'geneSampler' || it.item === 'gitResolver') rows.push([t('tip.samples'), `${it.samples?.length ?? 0}/3` + (it.samples?.length ? ' · ' + listJoin(it.samples.map((n) => localizeName(sampleName(n, lang.value)))) : '')])
-              const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: i + 1 }), t('ui4.tip.drag')].filter(Boolean)
-              return itemTip(it.item, { rows, hint: hints.join('\n'), tag: String(i + 1) })
+              const hints = [it.cd > 0 ? t('tip.item.cooling', { s: fmtSecs(it.cd) }) : '', def.suit ? t('tip.item.suit') : '', t('tip.item.use', { n: itemKey(i) || '—' }), t('vis7.tip.drag')].filter(Boolean)
+              return itemTip(it.item, { rows, hint: hints.join('\n'), tag: itemKey(i) || undefined })
             })}
           >
-            <span class="key">{i + 1}</span>
+            <span class="key">{itemKey(i)}</span>
             {def && <Icon name={def.icon} size={30} color={def.suit ? suitColor(def.id) : '#9fe7ff'} />}
             {it && it.charges > 0 && <span class="cdtxt charges">{it.charges}</span>}
             {it?.item === 'geneSampler' && <span class="cdtxt charges">{it.samples?.length ?? 0}/3</span>}
             {it && <CdFace cd={it.cd} total={abilityDef(def?.use ?? '')?.cd ?? 0} />}
+            {denied && <DenyFx d={denied} cd={it?.cd ?? 0} />}
           </div>
         )
       })}
@@ -1390,12 +1640,23 @@ function PingChatLine({ name, color, z, faded }: { name: string; color: number; 
   )
 }
 
+/** 拖曳提示：放開時會發生什麼（還沒移到任何東西上時列出全部玩法）*/
+function dragAimText(a: DragAim | null): string {
+  if (!a) return t('vis7.drag.idle')
+  if (a.k === 'swap') return t('vis7.drag.swap')
+  if (a.k === 'give') return t('vis7.drag.give', { name: a.name })
+  if (a.k === 'drop') return t('vis7.drag.drop')
+  if (a.k === 'no') return t('vis7.drag.no', { why: t(a.why) })
+  return t('vis7.drag.cancel')
+}
+
 export function TargetHint() {
   const tm = targetMode.value
   const drag = invDrag.value
   if (!tm && !drag) return null
   let name: string
-  if (!tm) name = loc(ITEMS.get(world.me.inv?.[drag!.slot]?.item ?? '')?.name) + t('sep.colon') + t('ui4.drag.hint')
+  // 拖曳背包格：「道具名 · 放開：…」（還沒移到任何東西上時「道具名：玩法說明」）
+  if (!tm) name = loc(ITEMS.get(world.me.inv?.[drag!.slot]?.item ?? '')?.name) + (dragAim.value ? ' · ' : t('sep.colon')) + dragAimText(dragAim.value)
   else if (tm.kind === 'attack') name = t('target.attack')
   else if (tm.kind === 'ability') name = loc(ABILITIES.get(tm.id)?.name) + t('target.pick')
   else name = loc(ITEMS.get(world.me.inv?.[tm.slot]?.item ?? '')?.name) + t('target.pick')
@@ -1406,9 +1667,100 @@ export function TargetHint() {
   if (tm && tm.kind !== 'attack' && world.ents.get(world.me.control || world.me.unit || 0)?.s.z === 0) name += t('art3.aim.mapHint')
   return (
     <TopSlot order={1}>
-      <div class="panel top-hint" data-testid="target-hint">
+      <div class={'panel top-hint' + (!tm && dragAim.value ? ' aim-' + dragAim.value.k : '')} data-testid="target-hint">
         {name}
       </div>
     </TopSlot>
   )
 }
+
+/** 右上觀戰站點清單收起／展開（本機偏好）*/
+const K_SPEC_LIST = 'xc.specList'
+function lsRead(k: string): string | null {
+  try {
+    return localStorage.getItem(k)
+  } catch {
+    return null
+  }
+}
+export const specListOpen = signal(lsRead(K_SPEC_LIST) !== '0')
+function setSpecListOpen(on: boolean): void {
+  specListOpen.value = on
+  try {
+    localStorage.setItem(K_SPEC_LIST, on ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 觀戰中正在看的地方（同型的船加編號，同 Panels.tsx 的觀戰清單）*/
+function specPlace(z: number | undefined): string {
+  if (!z) return t('spec.space')
+  const zones = startInfo.value?.zones ?? []
+  const i = zones.findIndex(([id]) => id === z)
+  if (i < 0) return t('spec.space')
+  const names = zones.map(([, , st]) => loc(stationDefOf(st)?.name))
+  const n = names[i]
+  const same = names.filter((x) => x === n).length
+  if (same < 2) return n
+  const k = names.slice(0, i + 1).filter((x) => x === n).length
+  return t('spec3.nth', { name: n, n: k })
+}
+
+/**
+ * 觀戰站點清單（Panels.tsx 的 SpectatorBar）外面包一層：右上角加一個標籤「觀戰：目前的站 ▾」，點一下把清單收起來／展開
+ * （實況主切站要用，不能拿掉；收起來時只剩標籤）。單機練習的「再來一局」收起時照樣留著。
+ * 版面在 hud7.css（.spec-dock）：清單面板往下讓出標籤的高度、收起時藏起清單本身。
+ */
+export function SpecDock({ children }: { children: ComponentChildren }) {
+  void snapTick.value
+  const me = world.me
+  const list = (me.alive === false || me.role === 'spectator') && !me.coreWait && !me.booted
+  const open = specListOpen.value
+  return (
+    <div class={'spec-dock' + (list ? ' has-list' : '') + (list && !open ? ' closed' : '')} data-testid="spec-dock">
+      {list && (
+        <button
+          class="spec-tab"
+          data-testid="spec-tab"
+          aria-expanded={open}
+          onClick={(e) => {
+            setSpecListOpen(!open)
+            ;(e.currentTarget as HTMLElement).blur()
+          }}
+          {...tipProps(() => ({ title: t(open ? 'vis7.list.fold' : 'vis7.list.unfold') }))}
+        >
+          <span class="spec-tab-l">{t('vis7.list.tab', { place: specPlace(me.specZone) })}</span>
+          <span class="spec-tab-c" aria-hidden="true">
+            {open ? '▴' : '▾'}
+          </span>
+        </button>
+      )}
+      {children}
+    </div>
+  )
+}
+
+/** 隱藏介面時的小提示：「按 F9 顯示介面」約 2 秒淡出（每次隱藏都重新掛上，CSS 動畫重播）*/
+export function HudHiddenHint() {
+  if (!hudHidden.value) return null
+  return (
+    <div class="hud-hint7" role="status" data-testid="hud-hidden-hint">
+      {t('vis7.hudHint', { k: hideHudKey() })}
+    </div>
+  )
+}
+
+// 測試用：e2e 直接觸發拒絕回饋、隱藏介面、跟隨模式（輸入層的按鍵另外綁）、看 3D 小圖的狀態
+if (__TEST_HOOKS__ && typeof window !== 'undefined')
+  (window as unknown as Record<string, unknown>).__xcHud = {
+    deny,
+    hudHidden,
+    followMode,
+    specListOpen,
+    portraitUrl,
+    portraitSpecOf,
+    mountSpin,
+    portraitStats: __portraitStats,
+    holdDeny: (on: boolean) => void (denyHold = on),
+  }

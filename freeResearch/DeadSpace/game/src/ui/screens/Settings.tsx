@@ -1,23 +1,31 @@
 import { useLayoutEffect, useState } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
 import { signal } from '@preact/signals'
 import { lang, setLang, t, type Lang } from '../i18n'
 import { loadNetSettings, saveNetSettings, type SignalStrategy } from '../../net/trystero'
-import { quality, setQuality, type Quality } from '../../render/quality'
+import { DETAIL_CHOICES, RES_MAX, RES_MIN, detailValue, isCustom, quality, resetDetail, setDetail, setQuality, type Quality } from '../../render/quality'
 import { audioPrefs, setAudioPref, sfx, type AudioPrefs } from '../../audio/sfx'
 import { setUiScale, uiScalePref, uiZoom } from '../uiScale'
 import { uiScaleTexts } from './uiScaleText'
-import { edgeScrollOn, edgeSpeed, setEdgeScroll, setEdgeSpeed } from '../../client/controlPrefs'
+import { edgeScrollOn, edgeSpeed, keySpeed, setEdgeScroll, setEdgeSpeed, setKeySpeed, setWheelInvert, setWheelSpeed, wheelInvert, wheelSpeed } from '../../client/controlPrefs'
+import { FPS_CAPS, flashOn, followPilot, fpsCap, hiContrast, setFlashOn, setFollowPilot, setFpsCap, setHiContrast, setShakeOn, shakeOn, type FpsCap } from '../../client/viewPrefs'
+import { reducedMotion } from '../../client/hitAlert'
 import { modalChecks } from '../../client/input'
 import { hintsEnabled, resetHints } from '../hud/Guide'
+import { KeybindPanel } from './KeybindPanel'
+import { keyCapturing } from '../../client/keymap'
 import '../strings/art2'
 import '../ui6.css'
 import '../strings/ui6'
+import '../strings/set7'
+import '../screens7.css'
 
 /** 0–100 之類的滑桿＋數值；fmt = 自訂數值的寫法（預設「數值＋單位」）*/
-function Slider({ id, min, max, value, onInput, onChange, unit = '', fmt }: { id: string; min: number; max: number; value: number; onInput: (v: number) => void; onChange?: () => void; unit?: string; fmt?: (v: number) => string }) {
+function Slider({ id, min, max, step, value, onInput, onChange, unit = '', fmt }: { id: string; min: number; max: number; step?: number; value: number; onInput: (v: number) => void; onChange?: (v: number) => void; unit?: string; fmt?: (v: number) => string }) {
+  const val = (e: Event) => Number((e.target as HTMLInputElement).value)
   return (
     <div class="row" style={{ gap: '8px' }}>
-      <input type="range" min={min} max={max} value={value} style={{ width: '160px' }} data-testid={id} onInput={(e) => onInput(Number((e.target as HTMLInputElement).value))} onChange={onChange} />
+      <input type="range" id={'set-' + id} min={min} max={max} step={step} value={value} style={{ width: '160px' }} data-testid={id} onInput={(e) => onInput(val(e))} onChange={onChange && ((e) => onChange(val(e)))} />
       <span class="mono dim" style={{ width: '48px', textAlign: 'right' }} data-testid={id + '-value'}>
         {fmt ? fmt(value) : `${value}${unit}`}
       </span>
@@ -34,6 +42,122 @@ const VOL_PREVIEW: Record<(typeof VOL_KEYS)[number], [string, Parameters<typeof 
   sfx: ['pistol', 'sfx'],
   ui: ['notify', undefined],
   ambient: ['previewAmbient', 'ambient'],
+}
+
+/**
+ * 一列設定：左邊名稱＋（不直觀的選項）一行說明，右邊控制項。forId = 控制項的 id（點名稱就能勾選核取方塊、聚焦下拉選單）
+ */
+function Row({ label, hint, forId, testid, children }: { label: string; hint?: string; forId?: string; testid?: string; children: ComponentChildren }) {
+  return (
+    <div class="setrow" data-testid={testid}>
+      <label for={forId}>
+        {label}
+        {hint && <div class="dim set7-hint">{hint}</div>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+/** 核取方塊一列（id 同時是 data-testid）*/
+function Check({ id, label, hint, checked, onChange }: { id: string; label: string; hint?: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <Row label={label} hint={hint} forId={'set-' + id}>
+      <input type="checkbox" id={'set-' + id} data-testid={id} checked={checked} onChange={(e) => onChange((e.target as HTMLInputElement).checked)} />
+    </Row>
+  )
+}
+
+/** 倍率滑桿（40–250%，邊緣捲動、方向鍵捲動、滾輪縮放共用）*/
+function SpeedRow({ id, label, value, set }: { id: string; label: string; value: number; set: (v: number) => void }) {
+  return (
+    <Row label={label} forId={'set-' + id}>
+      <Slider id={id} min={40} max={250} value={Math.round(value * 100)} unit="%" onInput={(v) => set(v / 100)} />
+    </Row>
+  )
+}
+
+type ChoiceKey = keyof typeof DETAIL_CHOICES
+
+/** 進階畫質的下拉選單：選項 = DETAIL_CHOICES[k]，名稱依序 = labels */
+function DetailSelect({ k, labels }: { k: ChoiceKey; labels: string[] }) {
+  const list: readonly number[] = DETAIL_CHOICES[k]
+  const v = detailValue(k)
+  // 理論上一定在清單裡（存檔有驗證）；萬一不在，顯示最接近的那一項
+  const cur = list.includes(v) ? v : list.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a))
+  return (
+    <select id={'set-gfx-' + k} data-testid={'gfx-' + k} value={String(cur)} onChange={(e) => setDetail(k, Number((e.target as HTMLSelectElement).value))}>
+      {list.map((x, i) => (
+        <option key={x} value={String(x)}>
+          {labels[i]}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * 解析度滑桿：拖曳時只更新顯示的數字，放開才套用（改 dpr 目前會讓 engine.ts 整條後處理重建，拖曳中每一格都重建會卡）。
+ * 鍵盤方向鍵每按一下就是一次 change，照樣即時套用（值從事件讀，不靠還沒重繪的 state）
+ */
+function ResSlider() {
+  const cur = Math.round(detailValue('res') * 100)
+  const [drag, setDrag] = useState<number | null>(null)
+  return (
+    <Slider
+      id="gfx-res"
+      min={RES_MIN * 100}
+      max={RES_MAX * 100}
+      step={5}
+      value={drag ?? cur}
+      unit="%"
+      onInput={(v) => setDrag(v)}
+      onChange={(v) => {
+        setDetail('res', v / 100)
+        setDrag(null)
+      }}
+    />
+  )
+}
+
+/** 進階畫質（預設收合）：陰影、環境光遮蔽、泛光、粒子密度、解析度；在所選預設之上覆寫，存檔 */
+function AdvancedGraphics() {
+  const custom = isCustom()
+  const base = t('q.' + quality.value)
+  const n = (k: string, c: number) => Array.from({ length: c }, (_, i) => t(`set7.${k}.${i}`))
+  return (
+    <details class="settings-adv set7-adv" data-testid="settings-gfx">
+      <summary>
+        {t('set7.adv')}
+        {custom && (
+          <span class="set7-badge" data-testid="gfx-custom">
+            {t('set7.adv.custom')}
+          </span>
+        )}
+      </summary>
+      <div class="dim settings-adv-note">{t('set7.adv.note')}</div>
+      <Row label={t('set7.shadows')} hint={t('set7.shadows.hint')} forId="set-gfx-shadows">
+        <DetailSelect k="shadows" labels={n('shadows', 3)} />
+      </Row>
+      <Row label={t('set7.ssao')} hint={t('set7.ssao.hint')} forId="set-gfx-ssao">
+        <DetailSelect k="ssao" labels={n('ssao', 3)} />
+      </Row>
+      <Row label={t('set7.bloom')} hint={t('set7.bloom.hint')} forId="set-gfx-bloom">
+        <DetailSelect k="bloom" labels={n('bloom', 4)} />
+      </Row>
+      <Row label={t('set7.particles')} hint={t('set7.particles.hint')} forId="set-gfx-particles">
+        <DetailSelect k="particles" labels={(['low', 'medium', 'high', 'ultra'] as const).map((q) => t('q.' + q))} />
+      </Row>
+      <Row label={t('set7.res')} hint={t('set7.res.hint')} forId="set-gfx-res">
+        <ResSlider />
+      </Row>
+      <div class="set7-adv-foot">
+        <button class="small ghost" data-testid="gfx-reset" disabled={!custom} onClick={() => resetDetail()}>
+          {t('set7.adv.reset', { base })}
+        </button>
+      </div>
+    </details>
+  )
 }
 
 /** 對局中的設定視窗（頂列齒輪）：掛在 GameScreen 的根層，不能放在頂列裡面（會被頂列的定位困住）*/
@@ -120,6 +244,8 @@ export function Settings({ onClose, net = true }: { onClose: () => void; net?: b
   useLayoutEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.code !== 'Escape') return
+      // 按鍵設定正在等新鍵：Esc 是取消等待（KeybindPanel 處理），不是關掉設定
+      if (keyCapturing.value) return
       e.stopImmediatePropagation()
       onClose()
     }
@@ -127,32 +253,51 @@ export function Settings({ onClose, net = true }: { onClose: () => void; net?: b
     return () => window.removeEventListener('keydown', k, true)
   }, [onClose])
   const [hintMsg, setHintMsg] = useState('')
+  const custom = isCustom()
   return (
     <div class="modal-back" onClick={onClose}>
       {/* 內容區可捲動、按鈕列固定在底部：小視窗也一定看得到「關閉」*/}
-      <div class="panel modal settings-modal" data-testid="settings" onClick={(e) => e.stopPropagation()}>
+      <div class="panel modal settings-modal set7" data-testid="settings" onClick={(e) => e.stopPropagation()}>
         <h2>{t('settings.title')}</h2>
         <div class="col settings-body" data-testid="settings-body">
+          {/* 語言要是第一個下拉選單（e2e 以「第一個 select」切語言）*/}
           <div class="setrow">
-            <label>
+            <label for="set-lang">
               {t('settings.lang')}
-              <div class="dim" style={{ fontSize: '13px' }} data-testid="lang-note">
+              <div class="dim set7-hint" data-testid="lang-note">
                 {t('art2.labelLang')}
               </div>
             </label>
-            <select value={lang.value} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
+            <select id="set-lang" value={lang.value} onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}>
               <option value="zh">繁體中文</option>
               <option value="en">English</option>
             </select>
           </div>
+
+          {/* ── 畫面：畫質預設＋進階畫質（個別覆寫）── */}
+          <h3>{t('set7.grp.graphics')}</h3>
           <div class="setrow">
-            <label>
+            <label for="set-quality">
               {t('settings.quality')}
-              <div class="dim" style={{ fontSize: '13px' }} data-testid="quality-note">
+              <div class="dim set7-hint" data-testid="quality-note">
                 {t('art1.qualityNote')}
               </div>
             </label>
-            <select value={quality.value} onChange={(e) => setQuality((e.target as HTMLSelectElement).value as Quality)}>
+            {/* 有個別覆寫時顯示「自訂（以某預設為基礎）」（隱藏選項：清單裡只列四個預設）；再選一個預設 = 清掉覆寫 */}
+            <select
+              id="set-quality"
+              data-testid="quality"
+              value={custom ? 'custom' : quality.value}
+              onChange={(e) => {
+                const v = (e.target as HTMLSelectElement).value
+                if (v !== 'custom') setQuality(v as Quality)
+              }}
+            >
+              {custom && (
+                <option value="custom" disabled hidden>
+                  {t('set7.q.custom', { base: t('q.' + quality.value) })}
+                </option>
+              )}
               {(['low', 'medium', 'high', 'ultra'] as const).map((q) => (
                 <option key={q} value={q}>
                   {t('q.' + q)}
@@ -160,11 +305,34 @@ export function Settings({ onClose, net = true }: { onClose: () => void; net?: b
               ))}
             </select>
           </div>
-          <h3 style={{ margin: '8px 0 2px' }}>{t('settings.ui')}</h3>
+          <AdvancedGraphics />
+
+          {/* ── 顯示與輔助：鏡頭震動、閃光、駕駛跟隨、高對比、FPS 上限（client/viewPrefs.ts）── */}
+          <h3>{t('set7.grp.display')}</h3>
+          {reducedMotion() && (
+            <div class="dim set7-note" data-testid="reduced-motion-note">
+              {t('set7.reduced')}
+            </div>
+          )}
+          <Check id="shake-on" label={t('set7.shake')} hint={t('set7.shake.hint')} checked={shakeOn.value} onChange={setShakeOn} />
+          <Check id="flash-on" label={t('set7.flash')} hint={t('set7.flash.hint')} checked={flashOn.value} onChange={setFlashOn} />
+          <Check id="follow-pilot" label={t('set7.follow')} hint={t('set7.follow.hint')} checked={followPilot.value} onChange={setFollowPilot} />
+          <Check id="hi-contrast" label={t('set7.hiContrast')} hint={t('set7.hiContrast.hint')} checked={hiContrast.value} onChange={setHiContrast} />
+          <Row label={t('set7.fps')} hint={t('set7.fps.hint')} forId="set-fps-cap">
+            <select id="set-fps-cap" data-testid="fps-cap" value={String(fpsCap.value)} onChange={(e) => setFpsCap(Number((e.target as HTMLSelectElement).value) as FpsCap)}>
+              {FPS_CAPS.map((c) => (
+                <option key={c} value={String(c)}>
+                  {c === 0 ? t('set7.fps.0') : t('set7.fps.n', { n: c })}
+                </option>
+              ))}
+            </select>
+          </Row>
+
+          <h3>{t('settings.ui')}</h3>
           <div class="setrow">
-            <label>
+            <label for="set-ui-scale">
               {t('settings.uiScale')}
-              <div class="dim" style={{ fontSize: '13px' }} data-testid="ui-scale-note">
+              <div class="dim set7-hint" data-testid="ui-scale-note">
                 {t('ui5.settings.uiScaleNote', { pct: uiScaleTexts(uiScalePref.value, uiZoom.value).actual })}
               </div>
             </label>
@@ -179,15 +347,22 @@ export function Settings({ onClose, net = true }: { onClose: () => void; net?: b
               <input type="checkbox" data-testid="hints-on" checked={hintsEnabled.value} onChange={(e) => (hintsEnabled.value = (e.target as HTMLInputElement).checked)} />
             </div>
           </div>
-          <h3 style={{ margin: '8px 0 2px' }}>{t('settings.controls')}</h3>
-          <div class="setrow">
-            <label>{t('settings.edgeScroll')}</label>
-            <input type="checkbox" data-testid="edge-scroll" checked={edgeScrollOn.value} onChange={(e) => setEdgeScroll((e.target as HTMLInputElement).checked)} />
+
+          {/* ── 操作：視野捲動與縮放（client/controlPrefs.ts）、按鍵設定（KeybindPanel，輸入那邊負責內容）── */}
+          <h3>{t('settings.controls')}</h3>
+          <Check id="edge-scroll" label={t('settings.edgeScroll')} checked={edgeScrollOn.value} onChange={setEdgeScroll} />
+          <SpeedRow id="edge-speed" label={t('settings.edgeSpeed')} value={edgeSpeed.value} set={setEdgeSpeed} />
+          <SpeedRow id="key-speed" label={t('set7.keySpeed')} value={keySpeed.value} set={setKeySpeed} />
+          <SpeedRow id="wheel-speed" label={t('set7.wheelSpeed')} value={wheelSpeed.value} set={setWheelSpeed} />
+          <Check id="wheel-invert" label={t('set7.wheelInvert')} hint={t('set7.wheelInvert.hint')} checked={wheelInvert.value} onChange={setWheelInvert} />
+          {/* 按鍵設定面板沒有內容時（還沒實作）連小標題一起藏起來（screens7.css 的 :empty）*/}
+          <div class="set7-keys" data-testid="keybinds">
+            <h4>{t('set7.keys')}</h4>
+            <div class="set7-keys-host">
+              <KeybindPanel />
+            </div>
           </div>
-          <div class="setrow">
-            <label>{t('settings.edgeSpeed')}</label>
-            <Slider id="edge-speed" min={40} max={250} value={Math.round(edgeSpeed.value * 100)} unit="%" onInput={(v) => setEdgeSpeed(v / 100)} />
-          </div>
+
           <h3 style={{ margin: '8px 0 2px' }}>{t('settings.audio')}</h3>
           {VOL_KEYS.map((k) => (
             <div class="setrow" key={k}>

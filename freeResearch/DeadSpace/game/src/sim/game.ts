@@ -808,6 +808,8 @@ export class Game {
         ...(p.data.promoted ? { promoted: true } : {}),
         spawn: !!p.spawnOf,
         alive: p.alive,
+        // 只主持不參戰的主機：結算畫面另外列成「觀戰」，不顯示成「人類 死亡」
+        ...(p.spectator ? { spectator: true } : {}),
         kills: p.stats.kills,
         infections: p.stats.infections,
         tests: p.stats.tests,

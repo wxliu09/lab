@@ -461,6 +461,8 @@ export interface EndResult {
     promoted?: boolean
     spawn: boolean
     alive: boolean
+    /** 只主持不參戰的主機（大廳設定 hostSpectate）：不是參戰者，結算畫面不列成玩家卡（role 仍是預設的 human、alive = false）*/
+    spectator?: boolean
     kills: number
     infections: number
     tests: number
