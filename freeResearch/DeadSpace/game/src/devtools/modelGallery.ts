@@ -4,6 +4,8 @@
 // 太空層：/models.html?ids=station.*（全部站點與行星）、ids=ship.*,space.*；space=1／0 強制開關太空背景
 // （ids 全是 station.／ship.／space. 時預設開：星空＋跟遊戲一樣的頂光，間距與鏡頭距離也換成太空層的尺度）
 // t=秒：固定動畫時間（閃燈、火光要截到特定一格時用）
+// 第 7 輪補上的模型：ids=@vivarium（活體庫號標本）、@fauna（動物、雪原生物、畸人）、@npc（海盜、綏靖機器人、防禦無人機）、
+// @fleet（艦隊主力艦，自動切太空背景）；可以混用，例如 ids=@vivarium,@fauna,human
 import * as THREE from 'three'
 import '../shared/content'
 import '../render/units'
@@ -31,10 +33,34 @@ interface Slot {
   height: number
 }
 
+/** 具名清單（ids=@名稱）：用單位 id（不是 model id），船長／船員、兩艘巡洋艦這種同模型不同外觀的才分得開 */
+const SETS: Record<string, string[]> = {
+  vivarium: [
+    'creature.skitter',
+    'creature.skitterOverseer',
+    'creature.slugling',
+    'creature.elderSlug',
+    'creature.murmaw',
+    'creature.anomaly',
+    'creature.anomalyRich',
+    'creature.failed',
+    'creature.failedSheep',
+    'creature.failedHostile',
+    'creature.failedBrute',
+    'creature.failedSwift',
+    'rig.monstrosity',
+    'creature.entity',
+  ],
+  fauna: ['creature.chicken', 'creature.frog', 'creature.rabbit', 'creature.sheep', 'creature.stag', 'creature.greyFox', 'creature.snowgle', 'creature.snowgleWarden', 'creature.freakman'],
+  npc: ['pirate.captain', 'pirate.crew', 'npc.pacifier', 'npc.defenseDrone'],
+  fleet: ['fleet.censure', 'fleet.erstfall', 'fleet.hydra'],
+}
+
 function expand(list: string[]): string[] {
   const out: string[] = []
   for (const s of list) {
-    if (s.endsWith('*') && s.startsWith('item:')) {
+    if (s.startsWith('@')) out.push(...(SETS[s.slice(1)] ?? []))
+    else if (s.endsWith('*') && s.startsWith('item:')) {
       // 地上道具：item:* = 全部道具（item:suit.* = 某個前綴）
       const p = s.slice(5, -1)
       out.push(...[...ITEMS.keys()].filter((k) => k.startsWith(p)).map((k) => 'item:' + k))
@@ -60,7 +86,7 @@ function tris(o: THREE.Object3D): [number, number] {
 }
 
 const ids = expand((q.get('ids') ?? 'xeno.*').split(','))
-const spaceIds = ids.length > 0 && ids.every((s) => /^(station|ship|space)\./.test(s))
+const spaceIds = ids.length > 0 && ids.every((s) => /^(station|ship|space|fleet)\./.test(s))
 const space = q.has('space') ? q.get('space') !== '0' : spaceIds
 const cols = num('cols', space ? 4 : 6)
 const sp = num('sp', space ? 13 : 4.5)

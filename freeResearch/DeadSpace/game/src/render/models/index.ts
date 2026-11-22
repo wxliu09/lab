@@ -4,22 +4,18 @@ import type { UnitDef } from '../../shared/content/types'
 import type { SnapEntity } from '../../shared/protocol/messages'
 import { capsule, sphere } from '../batch'
 import { Mat } from '../materials'
+import { MODELS, type ModelView } from './registry'
+// 第 7 輪：活體庫號標本、翠原星動物、雪原生物、海盜（這些檔案從 registry.ts 拿 regModel，不會跟本檔循環）
+import './vivarium'
+import './fauna'
+import './pirates'
 
-export interface ModelView {
-  root: THREE.Group
-  height: number
-  update(t: number, dt: number, speed: number, state: number): void
-}
+export { MODELS, regModel, type ModelBuilder, type ModelView } from './registry'
 
-export type ModelBuilder = (def: UnitDef | undefined, s: SnapEntity) => ModelView
-
-export const MODELS = new Map<string, ModelBuilder>()
-
-export function regModel(id: string, b: ModelBuilder): void {
-  MODELS.set(id, b)
-}
-
-/** 未知模型：有機膠囊＋脈動核心（至少有材質層次，不是灰盒子）*/
+/**
+ * 未知模型：有機膠囊＋脈動核心（至少有材質層次，不是灰盒子）。
+ * 只是安全網：內容表裡每個 UnitDef.model 都要有登錄（tests/unit/r7m-models.test.ts 會擋）。
+ */
 function fallback(def: UnitDef | undefined): ModelView {
   const root = new THREE.Group()
   const r = def?.radius ?? 0.4

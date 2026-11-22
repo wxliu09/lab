@@ -165,7 +165,9 @@ describe('站體合併', () => {
     const skip = () => false
     layer.sync(ents as never, 1, skip, 0.016, 10)
     const n0 = meshes(1)
-    expect(n0).toBeGreaterThan(20)
+    // 前提：是完整的人形骨架。第 7 輪人形重做後，骨架本身已經依「骨頭 × 材質」合併（約 15 個 mesh＋選取圈／光暈，舊版約 30 個），
+    // 所以門檻從 20 降到 12；真正要守的是下面「烘焙後少於 70%」與烘焙 mesh 帶實體 id、復活重建、釋放幾何
+    expect(n0).toBeGreaterThan(12)
     // 倒地動畫期間不烘焙
     layer.sync(ents as never, 1, skip, 0.016, 10.3)
     expect(layer.views.get(1)!.baked).toBe(false)

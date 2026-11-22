@@ -284,6 +284,297 @@ function shipModel(id: string): ModelView {
 
 for (const id of Object.keys(LOOKS)) regModel('ship.' + id, () => shipModel(id))
 
+// ───────── 艦隊主力艦：譴責號／舊往號（巡洋艦）、九頭蛇號（主力艦）─────────
+// 一般船艇長 1–2.5 m；艦隊的碰撞半徑 2–3，模型要撐到 5–8 m 長才「像一艘大船」：
+// 層層的甲板、艦橋塔、舷窗燈列、成排的引擎噴口與可轉動的砲塔。
+// 巡洋艦：楔形艦艏＋兩側艦舷＋艦橋塔，4 座砲塔；舊往號的識別色是琥珀、譴責號是紅。
+// 九頭蛇號：三叉戟似的三根前伸艦艏（各頂一門主砲）＋寬大的翼段＋6 座砲塔＝九個「頭」。
+// 靜態船殼依船型合併一次、所有實例共用幾何（不隨單位 dispose）。
+
+/** 任意水平朝向（yaw）的前向圓柱：Euler 順序 YXZ，先把圓柱轉成朝 +z 再繞 y 轉 */
+const aimM = new THREE.Matrix4()
+const aimQ = new THREE.Quaternion()
+const aimE = new THREE.Euler()
+function aimCyl(b: Batcher, rt: number, rb: number, len: number, m: THREE.Material, x: number, y: number, z: number, yaw: number, seg = 12): void {
+  aimQ.setFromEuler(aimE.set(HALF_PI, yaw, 0, 'YXZ'))
+  aimM.compose(new THREE.Vector3(x, y, z), aimQ, new THREE.Vector3(1, 1, 1))
+  b.addMatrix(cyl(rt, rb, len, seg), m, aimM)
+}
+
+interface FleetLook {
+  hull: string
+  engine: string
+  /** 引擎噴口（x, y, z, 半徑）*/
+  engines: [number, number, number, number][]
+  /** 砲塔（x, y, z, 縮放）*/
+  turrets: [number, number, number, number][]
+  /** 前方主砲口（x, y, z, yaw）*/
+  heads: [number, number, number, number][]
+  height: number
+  build: (b: Batcher, m: Record<'hull' | 'dark' | 'stripe' | 'win' | 'red', THREE.Material>) => void
+}
+
+const FLEET: Record<'cruiser' | 'capital', FleetLook> = {
+  cruiser: {
+    hull: '#7a848e',
+    engine: '#9fe7ff',
+    engines: [
+      [-0.5, 0.5, -2.95, 0.26],
+      [0, 0.5, -2.95, 0.26],
+      [0.5, 0.5, -2.95, 0.26],
+    ],
+    turrets: [
+      [0, 0.79, 1.45, 1],
+      [0, 0.97, 0.35, 0.9],
+      [-0.82, 0.6, 0.45, 0.7],
+      [0.82, 0.6, 0.45, 0.7],
+    ],
+    heads: [],
+    height: 1.9,
+    build: (b, m) => {
+      // 主船體、龍骨、四面錐的楔形艦艏
+      b.add(rbox(1.3, 0.55, 3.8, 0.12), m.hull, 0, 0.5, 0)
+      b.add(rbox(0.8, 0.3, 3.2, 0.08), m.dark, 0, 0.2, -0.1)
+      b.add(rbox(1.0, 0.42, 1.0, 0.1), m.hull, 0, 0.58, 1.6)
+      fwdCyl(b, 0.06, 0.66, 1.35, m.hull, 0, 0.5, 2.55, 4)
+      b.add(box(0.55, 0.1, 0.03), m.win, 0, 0.34, 2.0)
+      // 兩側艦舷：識別色條、外掛艙、舷窗燈列
+      for (const sd of [-1, 1]) {
+        b.add(rbox(0.42, 0.36, 2.6, 0.08), m.hull, sd * 0.82, 0.42, -0.3)
+        b.add(box(0.04, 0.07, 2.3), m.stripe, sd * 1.04, 0.5, -0.3)
+        for (let i = 0; i < 6; i++) b.add(box(0.07, 0.12, 0.2), m.dark, sd * 1.05, 0.33, -1.35 + i * 0.4)
+        for (let i = 0; i < 9; i++) b.add(box(0.02, 0.035, 0.07), m.win, sd * 0.66, 0.67, -1.6 + i * 0.36)
+        b.add(box(0.03, 0.05, 0.05), m.red, sd * 1.04, 0.62, 0.95)
+        // 斜切的艦艏側板
+        b.add(rbox(0.06, 0.34, 1.2, 0.02), m.dark, sd * 0.52, 0.48, 2.3, -sd * 0.42)
+      }
+      // 甲板層、艦橋塔、雷達桁、天線
+      b.add(rbox(0.92, 0.22, 2.2, 0.06), m.hull, 0, 0.86, -0.4)
+      b.add(rbox(0.62, 0.2, 1.3, 0.05), m.hull, 0, 1.05, -0.8)
+      b.add(rbox(0.5, 0.42, 0.5, 0.06), m.hull, 0, 1.36, -1.05)
+      b.add(box(0.46, 0.05, 0.02), m.win, 0, 1.45, -0.79)
+      for (const sd of [-1, 1]) b.add(box(0.02, 0.05, 0.36), m.win, sd * 0.255, 1.45, -1.02)
+      b.add(box(0.6, 0.03, 0.1), m.dark, 0, 1.62, -1.1)
+      b.add(cyl(0.015, 0.015, 0.6, 4), m.dark, 0.12, 1.88, -1.12)
+      b.add(cyl(0.012, 0.012, 0.42, 4), m.dark, -0.15, 1.78, -1.15)
+      b.add(box(0.05, 0.05, 0.05), m.red, 0.12, 2.2, -1.12)
+      for (let i = 0; i < 4; i++) b.add(box(0.74, 0.04, 0.07), m.dark, 0, 0.99, -0.95 - i * 0.14)
+      b.add(box(0.95, 0.04, 0.05), m.stripe, 0, 0.97, 0.69)
+      // 艦尾引擎座
+      b.add(rbox(1.62, 0.74, 0.72, 0.1), m.hull, 0, 0.5, -2.2)
+      b.add(box(1.64, 0.06, 0.1), m.stripe, 0, 0.86, -2.2)
+      for (const x of [-0.5, 0, 0.5]) fwdCyl(b, 0.27, 0.32, 0.36, m.dark, x, 0.5, -2.72, 14)
+    },
+  },
+  capital: {
+    hull: '#58616c',
+    engine: '#7fd8ff',
+    engines: [
+      [-0.9, 0.7, -4.0, 0.3],
+      [-0.45, 0.7, -4.0, 0.32],
+      [0, 0.7, -4.0, 0.36],
+      [0.45, 0.7, -4.0, 0.32],
+      [0.9, 0.7, -4.0, 0.3],
+      [-1.85, 0.55, -2.05, 0.22],
+      [1.85, 0.55, -2.05, 0.22],
+    ],
+    turrets: [
+      [-0.95, 0.61, -0.25, 0.9],
+      [0.95, 0.61, -0.25, 0.9],
+      [-0.95, 0.61, -1.45, 0.9],
+      [0.95, 0.61, -1.45, 0.9],
+      [0, 1.4, 0.05, 1.1],
+      [0, 0.98, 2.45, 1],
+    ],
+    heads: [
+      [0, 0.72, 4.62, 0],
+      [-1.28, 0.6, 3.6, -0.12],
+      [1.28, 0.6, 3.6, 0.12],
+    ],
+    height: 2.5,
+    build: (b, m) => {
+      // 脊樑、寬大的翼段、翼尖垂直艦舷
+      b.add(rbox(1.7, 0.8, 5.2, 0.15), m.hull, 0, 0.72, -0.6)
+      b.add(rbox(3.6, 0.32, 2.6, 0.12), m.hull, 0, 0.45, -0.9)
+      b.add(rbox(1.2, 0.3, 4.6, 0.08), m.dark, 0, 0.28, -0.4)
+      for (const sd of [-1, 1]) {
+        b.add(rbox(0.5, 0.62, 1.9, 0.1), m.hull, sd * 1.85, 0.55, -1.0)
+        b.add(box(0.04, 0.08, 1.8), m.stripe, sd * 2.11, 0.62, -1.0)
+        b.add(box(0.06, 0.06, 0.06), m.red, sd * 2.12, 0.9, -0.1)
+        for (let i = 0; i < 5; i++) b.add(box(0.07, 0.14, 0.22), m.dark, sd * 2.12, 0.42, -1.75 + i * 0.38)
+        for (let i = 0; i < 10; i++) b.add(box(0.02, 0.035, 0.07), m.win, sd * 0.86, 0.92, -2.6 + i * 0.4)
+        // 翼段前緣的燈列
+        for (let i = 0; i < 4; i++) b.add(box(0.12, 0.03, 0.03), m.win, sd * (0.95 + i * 0.22), 0.5, 0.41)
+        // 側艦艏：略往外張，用橫樑接回主體
+        b.add(rbox(0.5, 0.45, 2.0, 0.08), m.hull, sd * 1.15, 0.6, 2.1, sd * 0.12)
+        b.add(box(0.05, 0.06, 1.7), m.stripe, sd * 1.4, 0.68, 2.1, sd * 0.12)
+        b.add(rbox(0.36, 0.3, 0.5, 0.06), m.dark, sd * 1.27, 0.6, 3.15, sd * 0.12)
+      }
+      b.add(rbox(2.6, 0.3, 0.6, 0.08), m.hull, 0, 0.6, 1.2)
+      // 中央艦艏（最長的那根）
+      b.add(rbox(0.62, 0.52, 2.4, 0.1), m.hull, 0, 0.72, 2.9)
+      b.add(box(0.05, 0.05, 2.0), m.stripe, 0, 0.99, 2.9)
+      b.add(rbox(0.44, 0.36, 0.5, 0.06), m.dark, 0, 0.72, 4.15)
+      // 上層建築：三層台階＋高聳的艦橋塔
+      b.add(rbox(1.2, 0.3, 2.6, 0.08), m.hull, 0, 1.25, -1.0)
+      b.add(rbox(0.8, 0.3, 1.4, 0.06), m.hull, 0, 1.52, -1.5)
+      b.add(rbox(0.6, 0.62, 0.6, 0.08), m.hull, 0, 1.95, -1.85)
+      b.add(box(0.56, 0.06, 0.02), m.win, 0, 2.08, -1.54)
+      for (const sd of [-1, 1]) b.add(box(0.02, 0.06, 0.46), m.win, sd * 0.305, 2.08, -1.85)
+      b.add(box(0.9, 0.04, 0.12), m.dark, 0, 2.3, -1.9)
+      b.add(cyl(0.018, 0.018, 0.8, 4), m.dark, 0.18, 2.65, -1.95)
+      b.add(box(0.06, 0.06, 0.06), m.red, 0.18, 3.06, -1.95)
+      for (let i = 0; i < 5; i++) b.add(box(1.0, 0.04, 0.08), m.dark, 0, 1.42, -1.95 - i * 0.14 + 0.9)
+      b.add(box(1.22, 0.05, 0.06), m.stripe, 0, 1.4, 0.31)
+      // 艦尾引擎座
+      b.add(rbox(2.5, 0.95, 0.95, 0.12), m.hull, 0, 0.7, -3.35)
+      b.add(box(2.52, 0.07, 0.12), m.stripe, 0, 1.12, -3.35)
+      for (const [x, y, z, r] of FLEET.capital.engines) fwdCyl(b, r, r * 1.2, 0.4, m.dark, x, y, z + 0.25, 14)
+      // 三門主砲（九頭蛇的三顆大頭）
+      for (const [x, y, z, yaw] of FLEET.capital.heads) {
+        aimCyl(b, 0.13, 0.2, 0.7, m.dark, x - Math.sin(yaw) * 0.3, y, z - Math.cos(yaw) * 0.3, yaw, 12)
+        aimCyl(b, 0.2, 0.2, 0.08, m.stripe, x - Math.sin(yaw) * 0.6, y, z - Math.cos(yaw) * 0.6, yaw, 12)
+      }
+    },
+  },
+}
+
+/** 合併好的靜態船殼（每種船型＋識別色一份，實例共用幾何與材質）*/
+const fleetTpl = new Map<string, THREE.Mesh[]>()
+function fleetMeshes(key: string, build: (b: Batcher) => void): THREE.Mesh[] {
+  let list = fleetTpl.get(key)
+  if (!list) {
+    const b = new Batcher()
+    build(b)
+    list = b.build(new THREE.Group())
+    for (const m of list) m.geometry.userData.shared = true
+    fleetTpl.set(key, list)
+  }
+  return list.map((m) => {
+    const c = new THREE.Mesh(m.geometry, m.material)
+    c.castShadow = true
+    c.receiveShadow = true
+    return c
+  })
+}
+
+let flameCone: THREE.BufferGeometry | null = null
+
+function fleetModel(kind: 'cruiser' | 'capital', stripeCol: string): ModelView {
+  const L = FLEET[kind]
+  const root = new THREE.Group()
+  const ship = new THREE.Group()
+  root.add(ship)
+  const m = {
+    hull: Mat.hull(L.hull, L.engine),
+    dark: Mat.metal('#2a3036', 0.7),
+    stripe: Mat.emissive(stripeCol, 1.8),
+    win: Mat.emissive('#ffd2a0', 2.2),
+    red: Mat.emissive('#ff3b3b', 3),
+  }
+  for (const o of fleetMeshes(`${kind}:${stripeCol}`, (b) => L.build(b, m))) ship.add(o)
+  // 砲塔：底座＋砲罩＋雙管（共用一份幾何），各自轉動
+  const turretTpl = fleetMeshes(`turret:${L.hull}`, (b) => {
+    b.add(cyl(0.2, 0.24, 0.1, 14), m.dark, 0, 0.05, 0)
+    b.add(rbox(0.34, 0.16, 0.38, 0.05), m.hull, 0, 0.17, -0.02)
+    for (const sd of [-1, 1]) fwdCyl(b, 0.03, 0.036, 0.52, m.dark, sd * 0.07, 0.17, 0.4, 8)
+  })
+  const flashMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe0b0').multiplyScalar(3), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
+  const turrets: { g: THREE.Group; base: number; flash: THREE.Mesh }[] = []
+  L.turrets.forEach(([x, y, z, k], i) => {
+    const g = new THREE.Group()
+    g.position.set(x, y, z)
+    g.scale.setScalar(k)
+    for (const o of turretTpl) g.add(new THREE.Mesh(o.geometry, o.material))
+    const f = new THREE.Mesh(sphere(0.09, 8, 6), flashMat)
+    f.position.set(0, 0.17, 0.7)
+    f.visible = false
+    g.add(f)
+    ship.add(g)
+    // 側舷砲塔平常朝外、艦艏的朝前
+    turrets.push({ g, base: x === 0 ? 0 : Math.sign(x) * 0.9 + (i % 2 ? 0.1 : -0.1), flash: f })
+  })
+  const heads = L.heads.map(([x, y, z]) => {
+    const f = new THREE.Mesh(sphere(0.16, 8, 6), flashMat)
+    f.position.set(x, y, z + 0.1)
+    f.visible = false
+    ship.add(f)
+    return f
+  })
+  // 引擎尾焰（每具噴口一支）
+  flameCone ??= new THREE.ConeGeometry(1, 1, 12).rotateX(-HALF_PI).translate(0, 0, -0.5)
+  // 外層：引擎色的長尾焰（不飽和成白色，看得出是藍色的噴流）；內層：短而亮的白芯
+  const flames: THREE.Mesh[] = []
+  const plume = new THREE.MeshBasicMaterial({ color: new THREE.Color(L.engine).multiplyScalar(1.5), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  const core = new THREE.MeshBasicMaterial({ color: new THREE.Color('#e8f8ff').multiplyScalar(1.6), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })
+  for (const [x, y, z, r] of L.engines) {
+    for (const [m, w, l] of [
+      [plume, 0.9, 5],
+      [core, 0.5, 2],
+    ] as const) {
+      const f = new THREE.Mesh(flameCone, m)
+      f.position.set(x, y, z - 0.05)
+      f.scale.set(r * w, r * w, r * l)
+      f.userData.len = r * l
+      ship.add(f)
+      flames.push(f)
+    }
+  }
+  // 導航燈（翼尖紅綠、艦尾白色頻閃）
+  const nav: THREE.Mesh[] = []
+  const wid = kind === 'capital' ? 2.15 : 1.08
+  for (const [x, c] of [
+    [-wid, '#ff3b3b'],
+    [wid, '#5cf2a5'],
+  ] as const) {
+    const n = new THREE.Mesh(sphere(0.07, 6, 4), Mat.emissive(c, 5))
+    n.position.set(x, 0.75, -0.6)
+    ship.add(n)
+    nav.push(n)
+  }
+  let deadAt = -1
+  let shot = 0
+  return {
+    root,
+    height: L.height,
+    update(t, dt, speed, state) {
+      const alive = state !== 4
+      const k = Math.min(1, 0.35 + speed * 0.8)
+      for (const f of flames) {
+        f.visible = alive
+        f.scale.z = (f.userData.len as number) * k * (0.88 + Math.random() * 0.24)
+      }
+      plume.opacity = 0.3 + k * 0.3
+      nav.forEach((n, i) => (n.visible = alive && Math.sin(t * 3 + i * Math.PI) > 0.2))
+      // 砲塔：平時慢慢掃視，交戰時輪流開火
+      const fighting = state === 2
+      shot += dt * (fighting ? (kind === 'capital' ? 10 : 4) : 0)
+      const fire = Math.floor(shot) % Math.max(1, turrets.length + heads.length)
+      turrets.forEach((tu, i) => {
+        const sweep = Math.sin(t * 0.4 + i * 1.7) * (fighting ? 0.25 : 0.7)
+        tu.g.rotation.y = tu.base * (fighting ? 0.3 : 1) + sweep
+        tu.flash.visible = alive && fighting && fire === i && shot % 1 < 0.35
+      })
+      heads.forEach((h, i) => (h.visible = alive && fighting && fire === turrets.length + i && shot % 1 < 0.4))
+      // 船身微微起伏；擊沉時橫滾、下沉
+      if (!alive) {
+        if (deadAt < 0) deadAt = t
+        const d = Math.min(1, (t - deadAt) / 6)
+        ship.rotation.z = d * 0.6
+        ship.rotation.x = d * 0.15
+        ship.position.y = -d * 0.8
+      } else {
+        deadAt = -1
+        ship.rotation.set(Math.sin(t * 0.5) * 0.01, 0, Math.sin(t * 0.37) * 0.02)
+        ship.position.y = Math.sin(t * 0.6) * 0.06
+      }
+    },
+  }
+}
+
+regModel('fleet.cruiser', (_def, s) => fleetModel('cruiser', s.d === 'fleet.erstfall' ? '#ffb000' : '#ff3b3b'))
+regModel('fleet.capital', () => fleetModel('capital', '#ff7a2a'))
+
 /**
  * 小行星幾何：icosphere 以位置為函數做 fbm 起伏＋十來個隕石坑（碗狀凹陷＋隆起的坑緣），
  * 跨三角形共用位置的平滑法線、依坑底／坑緣與起伏算頂點色、依面法線選投影軸的方塊 UV（配岩石 PBR 貼圖）。
