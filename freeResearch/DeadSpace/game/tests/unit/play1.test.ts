@@ -119,13 +119,17 @@ describe('停泊的船', () => {
     u.data.boardCd = g.time + 8
     run(h, 20 * 30, () => u.zone !== inst.zone)
     expect(u.zone).toBe(nyx.id)
-    // 開局 6 分鐘內沒有 AI 留在船艙裡
+    // 開局 6 分鐘內沒有 AI 誤入、留在船艙裡（換站中的不算：拿著檢測器找不到人就開船去別的站是刻意的；
+    // 第 8 輪起偽裝中的異類 AI 也會這樣做，例如開局就帶著檢測器的醫官。到站後走回艙門下船的那幾秒也不算：連續 15 秒以上才算留在船艙）
     let inCabin = 0
+    const streak = new Map<number, number>()
     run(h, 20 * 60 * 6, () => {
       if (g.world.tick % 100) return
       for (const q of g.allPlayers()) {
         const m = q.bot && q.alive ? g.mainOf(q) : undefined
-        if (m && g.world.zones[m.zone].data.ship) inCabin++
+        const stay = !!m && !!g.world.zones[m.zone].data.ship && !(q.data.brain as { trip?: unknown } | undefined)?.trip
+        streak.set(q.slot, stay ? (streak.get(q.slot) ?? 0) + 1 : 0)
+        if ((streak.get(q.slot) ?? 0) >= 3) inCabin++
       }
     })
     expect(inCabin).toBe(0)

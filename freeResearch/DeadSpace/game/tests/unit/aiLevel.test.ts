@@ -206,6 +206,10 @@ describe('練習難度：AI 異類的開局寬限期', () => {
     g.setRole(bot, 'xeno')
     u.data.extraAbilities = [...((u.data.extraAbilities as string[]) ?? []), 'xeno.form']
     morph(g, u, u.def.id)
+    // 第 8 輪：異類 AI 會偽裝（和人類方一樣去販賣機拿防護服）；固定成「很晚才穿」、不去販賣機，免得走遠了打牠的人看不到
+    g.data.botSuitPlans = new Map([[bot.slot, 'late']])
+    bot.data.botSuitLateAt = 1e9
+    bot.data.botSuitTried = true
     const m = g.mainOf(people[0])!
     place(g, m, zone, spot.x + 2, spot.y)
     // 先確定沒被打時不動手
