@@ -65,13 +65,22 @@ describe('EP', () => {
     expect(x.ep).toBeGreaterThan(38)
     expect(x.ep).toBeLessThan(42)
   })
-  it('仿生人每秒 1.5', () => {
-    const { h } = Harness.started(7, 3)
+  // 第 8 輪：仿生人 EP 依末日時間換算（shared/pacing.ts）；原作末日 55–70 分照原作每秒 1.5，本作預設 30–40 分約 2.38
+  it('仿生人每秒 1.5（原作末日時間）', () => {
+    const { h } = Harness.started(7, 3, { apocalypse: [55, 70] })
     const g = h.server.game!
     const a = byRole(g, 'android')[0]
     h.ticks(20 * 10)
     expect(a.ep).toBeGreaterThan(14)
     expect(a.ep).toBeLessThan(16)
+  })
+  it('仿生人每秒 EP：本作預設末日 30–40 分約 2.38', () => {
+    const { h } = Harness.started(7, 3)
+    const g = h.server.game!
+    const a = byRole(g, 'android')[0]
+    h.ticks(20 * 10)
+    expect(a.ep).toBeGreaterThan(22.5)
+    expect(a.ep).toBeLessThan(25)
   })
 })
 

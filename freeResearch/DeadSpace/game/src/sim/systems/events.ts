@@ -8,11 +8,14 @@ import { fmtKey, shownBase, type Game, type GamePlayer } from '../game'
 import { addStation, markersOf } from '../setup'
 import { SPACE_HALF, SPACE_ZONE, type Zone } from '../world'
 import { populateZone, spawnCreature } from '../ai/creatures'
-import { DEATH_HOOKS, damage } from './damage'
+import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from './damage'
 import { EXTRA_COMMANDS } from './orders'
 import { dropOnGround, giveItem, makeItem } from './items'
 import { restockAll } from './vendors'
-import { destroyInterior, spaceOf } from './space'
+import { SUN_ENTER, destroyInterior, spaceOf, zoneLabel } from './space'
+import type { StationsState } from './stations'
+import type { WorldPublic } from '../../shared/protocol/messages'
+import { locArgs } from '../../shared/sysArgs'
 import { recomputeStats } from './buffs'
 import { isEasy } from '../ai/level'
 import { cycleOpen, doorCycle, inDoorGap, untilOpen } from './movement'
@@ -82,6 +85,20 @@ export interface EventState {
   enhancer: boolean
   /** 未識別物體的啟用碼（蟲洞閉合後仍有效，用一次就失效）*/
   code: string
+  /** 中段張力下限（本作新增，見 stepTensionFloor）：最後一次有玩家死亡、或有事件生效的時刻 */
+  lastStir: number
+  /** 中段張力下限把下一個事件提前了幾次（測試、統計用）*/
+  pulls: number
+  /** 子艦隊轉向砲擊翠原星的全場公告：上次公告的時刻（0 = 還沒有）、上次看到「正在砲擊」的時刻 */
+  fleetPlanetSaid: number
+  fleetPlanetSeen: number
+  /** 軌道失效：翠原星快進入恆星灼燒範圍的公告已發、已經進入範圍的公告已發 */
+  burnWarned: boolean
+  burnEntered: boolean
+  /** 無人機群圍攻中的站：zone id → 最後一次被胡蜂戰機打到的時刻 */
+  siege: Map<number, number>
+  /** 已經公告過「先撤離」的站（zone id；每座站一次）*/
+  siegeWarned: Set<number>
 }
 
 export function eventsOf(g: Game): EventState {
@@ -529,6 +546,7 @@ function fire(g: Game, id: string, forced: boolean): boolean {
   }
   // failNext：沒有生效也算用掉（原作政委晉升）
   if ((ran || def.failNext !== undefined) && def.once) ev.used.add(id)
+  if (ran && !FLAVOR_EVENTS.has(id)) ev.lastStir = g.time
   return ran
 }
 
@@ -628,7 +646,7 @@ function stepApocalypse(g: Game, ev: EventState): void {
         const dy = sun.y - e.y
         const d = Math.hypot(dx, dy)
         if (d < 0.05) continue
-        const v = e.tags.has('ship') || e.owner >= 0 ? e.stats.speed + 0.15 : 0.25
+        const v = e.tags.has('ship') || e.owner >= 0 ? e.stats.speed + ORBIT_PULL_SHIP : ORBIT_PULL
         const step = Math.min(d, v * dt)
         e.x += (dx / d) * step
         e.y += (dy / d) * step
@@ -667,6 +685,163 @@ export function publicEvents(g: Game): string[] {
   // 門控制器故障：全場公告過、修好也會公告
   if (ev.doorsUntil > 0) out.push('doors')
   return out
+}
+
+// ───────── 末日的公開狀態與公告（worldPublic.rad／fleetPlanet／burnIn／siege；第 8 輪）─────────
+
+/** 軌道失效：站、行星、逃生艙以外的東西被拉向恆星的速度（原作 vlv 18182：每 0.04 秒 1 單位 = 0.25 m/s）*/
+export const ORBIT_PULL = 0.25
+/** 軌道失效：船與太空形態的拉力是自身移速再加這麼多（原作 (移速 + 15) / 25 每 0.04 秒）*/
+export const ORBIT_PULL_SHIP = 0.15
+/** 翠原星還剩這麼多秒進入恆星灼燒範圍時全場公告（本作新增的提醒）*/
+export const BURN_WARN_S = 30
+/** 子艦隊多久沒打到翠原星就不算「正在砲擊」（秒）*/
+const FLEET_HIT_HOLD = 3
+/** 兩次「艦隊轉向砲擊翠原星」公告之間至少隔多久（秒；中間要有一段沒在砲擊）*/
+const FLEET_SAY_GAP = 90
+/** 被胡蜂戰機打到後多久內算「圍攻中」（秒）*/
+const SIEGE_HOLD = 5
+/** 圍攻中的站生命低於這個比例：全場公告先撤離（每座站一次）*/
+export const SIEGE_EVAC = 0.5
+const WASP = 'ship.wasp'
+
+const verdanceEnt = (g: Game): Ent | undefined => {
+  const z = zoneByKey(g, 'verdance')
+  const e = z ? g.world.get(z.spaceEnt) : undefined
+  return e && e.alive ? e : undefined
+}
+const sunEnt = (g: Game): Ent | undefined => g.world.inZone(SPACE_ZONE).find((e) => e.def.id === 'space.sun')
+
+/** 子艦隊正在砲擊翠原星：有艦隊艦艇把它當成目標（只剩它可打，見 ai/creatures.ts fleetGoal），而且剛剛打到了它 */
+export function fleetOnPlanet(g: Game): boolean {
+  const ev = eventsOf(g)
+  if (!ev || ev.apoc !== 'fleet') return false
+  const v = verdanceEnt(g)
+  const S = g.data.stations as StationsState | undefined
+  if (!v || !S?.fleetHitAt || g.time - S.fleetHitAt > FLEET_HIT_HOLD) return false
+  return g.world.inZone(SPACE_ZONE).some((e) => e.alive && e.def.ai === 'fleet' && e.data.fleetGoal === v.id)
+}
+
+/**
+ * 軌道失效：翠原星還要幾秒被拉進恆星的灼燒範圍（中心距離扣掉行星半徑 ≤ 6 公尺；原作 XS 的 600 範圍）。
+ * 行星以 0.25 m/s 直直被拉向恆星，所以就是剩下的距離 ÷ 0.25。已經在範圍裡、不是軌道失效、行星不在 → null
+ */
+export function burnInSec(g: Game): number | null {
+  const ev = eventsOf(g)
+  if (!ev || ev.apoc !== 'orbit') return null
+  const v = verdanceEnt(g)
+  const sun = sunEnt(g)
+  if (!v || !sun) return null
+  const gap = Math.hypot(v.x - sun.x, v.y - sun.y) - v.radius - SUN_ENTER
+  return gap > 0 ? Math.ceil(gap / ORBIT_PULL) : null
+}
+
+/** 無人機群圍攻中的站：[站 key, 剩餘生命比例（0.05 一格）]，依站的順序 */
+function siegeList(g: Game, ev: EventState): [string, number][] {
+  const out: [string, number][] = []
+  for (const [zid, at] of ev.siege) {
+    const z = g.world.zones[zid]
+    const e = z?.alive ? g.world.get(z.spaceEnt) : undefined
+    if (!e || !e.alive || g.time - at > SIEGE_HOLD) {
+      ev.siege.delete(zid)
+      continue
+    }
+    out.push([z.key, Math.max(0.05, Math.round((e.hp / Math.max(1, e.maxHp)) * 20) / 20)])
+  }
+  return out
+}
+
+const doomCache = new WeakMap<Game, { tick: number; v: Partial<WorldPublic> }>()
+
+/**
+ * 末日與災害的公開狀態（worldPublic 的 rad／fleetPlanet／burnIn／siege）：每一項只在條件成立時有值，否則是 undefined
+ * （快照差量只在出現、改變、消失時送一次；消失時送 undefined，client 的 Object.assign 就清掉）。
+ * 全是所有人本來就知道的事：地表殘留輻射是公開現象（每次隕擊都對全體 ping）、太空層對所有人可見、
+ * 末日類型本來就在 w.apo、無人機群有全場公告。不分觀看者，同一個 tick 只算一次
+ */
+export function publicDoom(g: Game): Partial<WorldPublic> {
+  const c = doomCache.get(g)
+  if (c && c.tick === g.world.tick) return c.v
+  const ev = g.data.events as EventState | undefined
+  const S = g.data.stations as StationsState | undefined
+  const rad = S && S.rad >= 0.5 ? Math.round(S.rad) : 0
+  const burn = ev ? burnInSec(g) : null
+  const siege = ev ? siegeList(g, ev) : []
+  const v: Partial<WorldPublic> = {
+    rad: rad > 0 ? rad : undefined,
+    fleetPlanet: ev && fleetOnPlanet(g) ? true : undefined,
+    burnIn: burn ?? undefined,
+    siege: siege.length ? siege : undefined,
+  }
+  doomCache.set(g, { tick: g.world.tick, v })
+  return v
+}
+
+/**
+ * 末日與圍攻的全場公告（每秒檢查一次；本作新增的提醒，規則不變）：
+ * - 子艦隊轉向砲擊翠原星（太空中已經沒有別的目標）
+ * - 軌道失效：翠原星再 30 秒就進入恆星灼燒範圍、已經進入
+ * - 無人機群圍攻的站生命低於一半：先撤離
+ */
+function stepDoomNotices(g: Game, ev: EventState): void {
+  const t = g.time
+  if (ev.apoc === 'fleet' && fleetOnPlanet(g)) {
+    if (!ev.fleetPlanetSaid || t - ev.fleetPlanetSeen > FLEET_SAY_GAP) {
+      ev.fleetPlanetSaid = t
+      g.systemAll('rule8.fleet.planet')
+    }
+    ev.fleetPlanetSeen = t
+  }
+  if (ev.apoc === 'orbit' && !ev.burnEntered && verdanceEnt(g)) {
+    const s = burnInSec(g)
+    if (s === null) {
+      ev.burnEntered = true
+      ev.burnWarned = true
+      g.systemAll('rule8.orbit.burnNow')
+    } else if (!ev.burnWarned && s <= BURN_WARN_S) {
+      ev.burnWarned = true
+      g.systemAll('rule8.orbit.burnSoon', { s })
+    }
+  }
+  for (const [zid, at] of ev.siege) {
+    if (ev.siegeWarned.has(zid) || t - at > SIEGE_HOLD) continue
+    const z = g.world.zones[zid]
+    const e = z?.alive ? g.world.get(z.spaceEnt) : undefined
+    if (!e || e.hp / Math.max(1, e.maxHp) >= SIEGE_EVAC) continue
+    ev.siegeWarned.add(zid)
+    g.systemAll('rule8.siege.evac', locArgs(zoneLabel(g, z)))
+  }
+}
+
+// ───────── 中段張力下限（本作新增；大廳 extraEvents = false 的原作模式不啟用）─────────
+
+/** 只是氛圍、不算「有事發生」的事件：新聞頭條、帽子廣告 */
+const FLAVOR_EVENTS: ReadonlySet<string> = new Set(['news', 'ad'])
+/** 開局這麼多秒以後才啟用 */
+export const TENSION_AFTER = 12 * 60
+/** 這麼多秒沒有玩家死亡、也沒有事件生效 */
+export const TENSION_QUIET = 6 * 60
+/** 就把下一個事件提前到這段時間內（秒）*/
+export const TENSION_PULL: Range = [30, 90]
+
+/** 這一局有沒有中段張力下限：本作的額外事件開著（原作模式關掉）、事件沒有被關掉（事件倍率 > 0）*/
+export function tensionFloorOn(g: Game): boolean {
+  return !originalEventsOnly(g) && g.settings.eventMult > 0
+}
+
+/**
+ * 中段張力下限：第 8 輪審查 D 統計 15–30 分這一段每 5 分鐘只死 0.17–0.56 人，最長「沒人死、也沒事件」的空檔中位數 10.9 分。
+ * 開局 12 分鐘以後，6 分鐘沒有玩家死亡、也沒有事件生效，就把下一個隨機事件提前到 30–90 秒內（只動排程，不改事件本身）。
+ * 原作的排程照舊是各事件自己的 90–1200 秒等（研究 03 §6.1）；原作模式（extraEvents = false）不啟用，連亂數用量都不變
+ */
+function stepTensionFloor(g: Game, ev: EventState): void {
+  if (!tensionFloorOn(g) || ev.apoc || ev.chain > 0) return
+  const t = g.time
+  if (t < TENSION_AFTER || t - ev.lastStir < TENSION_QUIET) return
+  const lim = t + TENSION_PULL[1]
+  if (!Number.isFinite(ev.next) || ev.next <= lim) return
+  ev.next = t + R(g, TENSION_PULL)
+  ev.pulls++
 }
 
 // ───────── 持續中的事件 ─────────
@@ -954,6 +1129,14 @@ export function installEvents(g: Game): void {
     tenshuUntil: 0,
     enhancer: false,
     code: '',
+    lastStir: 0,
+    pulls: 0,
+    fleetPlanetSaid: 0,
+    fleetPlanetSeen: -1e9,
+    burnWarned: false,
+    burnEntered: false,
+    siege: new Map(),
+    siegeWarned: new Set(),
   }
   g.data.events = ev
 
@@ -979,9 +1162,25 @@ export function installEvents(g: Game): void {
         // 沒有可抽的事件時每 60 秒再看一次（例如新聞用完、條件都不成立）；抽到沒生效、要馬上再抽的事件照它的 failNext
         ev.next = t + (!r ? 60 / mult : !r.ran && r.d.failNext !== undefined ? r.d.failNext : R(gg, r.d.next) / mult)
       }
+      stepTensionFloor(gg, ev)
       stepOngoing(gg, ev)
       stepApocalypse(gg, ev)
+      if (gg.world.tick % 20 === 0) stepDoomNotices(gg, ev)
     },
+  })
+
+  // 玩家死亡：中段張力下限的計時歸零
+  DEATH_HOOKS.push((g2, u) => {
+    if (g2 === g && u.isMain && u.owner >= 0) ev.lastStir = g.time
+  })
+
+  // 無人機群圍攻：胡蜂戰機打到站點（太空中的站體）就記下來（worldPublic.siege、撤離公告）
+  DAMAGE_HOOKS.push((g2, src, t, amount) => {
+    if (g2 !== g || amount <= 0 || src?.def.id !== WASP || t.zone !== SPACE_ZONE) return
+    const zid = t.data.interior as number | undefined
+    const z = zid !== undefined ? g.world.zones[zid] : undefined
+    if (!z?.alive || !z.station || z.data.ship || z.key === 'verdance') return
+    ev.siege.set(z.id, g.time)
   })
 
   g.onGroupChat = (p, text) => blackHoleEgg(g, p, text)

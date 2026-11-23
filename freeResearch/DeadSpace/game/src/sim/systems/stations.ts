@@ -105,7 +105,7 @@ export interface StationsState {
   nextRepair: number
   /** 翠原星累積承受的傷害（滿 30000 隕擊一次）*/
   bombard: number
-  /** 翠原星地表殘留輻射（每秒傷害）*/
+  /** 翠原星地表殘留輻射（每秒傷害；地表各處相同，worldPublic.rad 公開的就是它，見 events.ts publicDoom）*/
   rad: number
   /** 餘燼衛星大氣護盾已失效（暴風雪）*/
   storm: boolean
@@ -114,6 +114,8 @@ export interface StationsState {
    * AI 用來躲開，和真人看到紅圈跑開一樣
    */
   warns?: { zone: number; x: number; y: number; at: number }[]
+  /** 末日子艦隊最後一次打到翠原星的時刻（worldPublic.fleetPlanet、全場公告用；艦隊的目標見 ai/creatures.ts fleetGoal）*/
+  fleetHitAt?: number
 }
 
 /** 預警中、還沒落下的隕擊落點（AI 躲避用；公開資訊）*/
@@ -884,8 +886,9 @@ export function installStations(g: Game): void {
     },
   })
   // 翠原星承受的傷害累積成隕擊（原作的轟炸進度以 Minertha 的 mana 顯示，本作不顯示）
-  DAMAGE_HOOKS.push((g2, _src, t, amount) => {
+  DAMAGE_HOOKS.push((g2, src, t, amount) => {
     if (g2 !== g || amount <= 0 || t.zone !== SPACE_ZONE || t.data.station !== 'verdance') return
+    if (src?.def.ai === 'fleet') stationsOf(g).fleetHitAt = g.time
     bombardHit(g, amount)
   })
   DEATH_HOOKS.push((g2, u, killer) => {

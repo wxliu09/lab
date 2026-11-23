@@ -11,6 +11,7 @@ import { dropOnGround, giveItem, makeItem, morph, takePackExtra } from './items'
 import { EXTRA_COMMANDS, issue } from './orders'
 import { LAST_WORDS, bootIfOut } from './chat'
 import { timelineCause } from './death'
+import { androidEpPerSec } from '../../shared/pacing'
 
 /** 結算時間軸用真實身分的名字（職稱＋本名）：通訊病毒換掉的名字只影響對局中，不能讓結算紀錄記錯人 */
 function tlName(p: GamePlayer): string {
@@ -429,9 +430,11 @@ export function installRoles(g: Game): void {
     fn: () => {
       if (g.world.tick % 20 !== 0) return
       const players = g.allPlayers()
+      const epRate = androidEpPerSec(g.settings.apocalypse)
       for (const p of players) {
         if (p.spawnOf) continue
-        if (p.role === 'android') g.addEp(p.slot, 1.5)
+        // 仿生人：原作固定每秒 1.5（研究 02 §6.1）；本作依大廳末日時間換算（shared/pacing.ts：滿 2000 EP 約在預期末日時刻的 40%，不低於 1.5，原作末日時間就是 1.5）
+        if (p.role === 'android') g.addEp(p.slot, epRate)
         else if (p.role === 'xeno' && !p.data.lostMaster) {
           // 存活的異形 spawn 玩家（原作 oVv／oEv 19359–19366：lv 且不在死者名單 ke），被遙控器改寫成異形 spawn 的仿生人也算
           const spawns = players.filter((q) => q.spawnOf === 'xeno' && q.alive).length

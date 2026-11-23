@@ -490,16 +490,50 @@ export function stepSpace(g: Game): void {
     }
     e.order = { k: 'move', x: te.x, y: te.y }
   }
-  // 恆星灼燒
-  if (w.tick % 10 === 0) {
+  // 恆星灼燒（每 0.5 秒結算半秒份）
+  if (w.tick % SUN_TICKS === 0) {
     for (const sun of w.inZone(SPACE_ZONE)) {
       if (sun.def.id !== 'space.sun') continue
-      for (const e of w.query(SPACE_ZONE, sun.x, sun.y, 6)) {
-        if (e === sun || !e.alive) continue
-        damage(g, null, e, 750 * sp.sunFactor, { kind: 'fire', pure: true, env: 'sun' })
+      for (const e of w.query(SPACE_ZONE, sun.x, sun.y, SUN_LEAVE)) {
+        if (e === sun || !e.alive || e.tags.has('noTarget')) continue
+        const d = Math.hypot(e.x - sun.x, e.y - sun.y)
+        if (!sunBurning(g, e, d)) continue
+        damage(g, null, e, sunBurnDps(d, sp.sunFactor) * (SUN_TICKS / 20), { kind: 'fire', pure: true, env: 'sun' })
       }
     }
   }
+}
+
+// ───────── 恆星灼燒（還原原作 fG，war3map.j 4370–4393；觸發 XS 10100）─────────
+
+/** 進入恆星這麼近（公尺；原作 600 單位，含單位的碰撞半徑）開始灼燒 */
+export const SUN_ENTER = 6
+/** 灼燒到中心距離超過這麼遠（原作 850 單位）才停 */
+export const SUN_LEAVE = 8.5
+/** 灼燒係數 po（原作 1.7；太陽活動增強後 6，見 events.ts 的 solar：sunFactor = 6 / 1.7）*/
+export const SUN_PO = 1.7
+const SUN_TICKS = 10
+
+/**
+ * 恆星灼燒每秒傷害：原作 po × (850 − 中心距離)，距離以 WC3 單位計（1 公尺 = 100 單位）。
+ * po 1.7 時進入範圍的邊緣（600）每秒 425、越靠近越痛、貼著中心 1445；太陽活動增強後乘 6 / 1.7。
+ * 舊版是 6 公尺內固定每秒 1500（第 8 輪審查 D）
+ */
+export function sunBurnDps(d: number, sunFactor = 1): number {
+  return Math.max(0, SUN_PO * sunFactor * (SUN_LEAVE - d) * 100)
+}
+
+/**
+ * 這個單位現在在不在灼燒中：原作進入 600 範圍才開始（進入範圍事件看碰撞半徑）、之後一直燒到中心距離超過 850 為止，
+ * 所以從 6 公尺邊緣退到 8.5 公尺之間仍然會燒。d = 中心距離。
+ * data.sunBurnT = 上一次灼燒的時刻：上一輪（0.5 秒前）還在燒才算「一直在燒」，離開過範圍再回來要重新進入 6 公尺
+ */
+function sunBurning(g: Game, e: Ent, d: number): boolean {
+  if (d > SUN_LEAVE) return false
+  const was = g.time - ((e.data.sunBurnT as number | undefined) ?? -1e9) <= (SUN_TICKS / 20) * 1.5
+  if (!was && d - e.radius > SUN_ENTER) return false
+  e.data.sunBurnT = g.time
+  return true
 }
 
 function canTravel(g: Game, u: Ent): boolean {

@@ -10,6 +10,7 @@ import { markersOf, type Marker } from '../setup'
 import { SPACE_ZONE, type Zone } from '../world'
 import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from '../systems/damage'
 import { issue } from '../systems/orders'
+import { isHostile } from '../systems/combat'
 import { carries, dropOnGround, giveItem, hasItem } from '../systems/items'
 import { createShip, launchTo } from '../systems/space'
 
@@ -335,6 +336,9 @@ function think(g: Game, u: Ent): void {
       thinkCrew(g, u)
       return
     case 'fleet':
+      if (u.zone !== SPACE_ZONE || u.pilot) return
+      thinkFleet(g, u)
+      return
     case 'spaceHunter': {
       if (u.zone !== SPACE_ZONE || u.pilot) return
       if (u.order?.k === 'attack' || u.order?.k === 'amove') return
@@ -352,6 +356,80 @@ function think(g: Game, u: Ent): void {
       if (!u.order) u.order = { k: 'hold' }
       return
   }
+}
+
+// ───────── 末日子艦隊（原作 LG，war3map.j 4463–4484）─────────
+
+/** 子艦隊每隔這麼多秒重選一次目標（原作 LG 的 eD(10.)）*/
+export const FLEET_REPICK_S = 10
+
+/** 翠原星（原作 Minertha，hc）：999999 生命、每秒回 9999，打不死 */
+export function isPlanet(e: Ent): boolean {
+  return e.def.id === 'station.verdance'
+}
+
+/** 子艦隊打得動的太空目標：站或船，活著、不是敵對方自己人、不是打不動的（無敵、降落中的豪勇號）*/
+function fleetCandidate(u: Ent, o: Ent): boolean {
+  if (!o.alive || o === u || o.owner === HOSTILE || o.tags.has('noTarget') || o.stats.invuln) return false
+  return o.tags.has('station') || o.tags.has('ship')
+}
+
+/**
+ * 子艦隊要往哪裡推進（還原原作 LG）：原作每 10 秒列出太空中所有不屬於 Player 12 的活單位，
+ * 名單裡有翠原星（hc）就把它拿掉，只有它一個時才留下（並拿掉它的 SAPPER 分類讓它能被攻擊）。
+ * 本作照樣排除翠原星、只剩它時才打它；原作取 FirstOfGroup（列舉順序），本作沿用原本的「最近的站或船」。
+ * 舊版直接攻擊移動到最近的站或船，翠原星常常就是最近的那個，艦隊從此停在行星上空打一顆打不死的行星，
+ * 隕石與殘留輻射一兩分鐘內就把撤到地表的人清光（第 8 輪審查 D）
+ */
+export function fleetGoal(g: Game, u: Ent): Ent | null {
+  let best: Ent | null = null
+  let planet: Ent | null = null
+  for (const o of g.world.inZone(SPACE_ZONE)) {
+    if (!fleetCandidate(u, o)) continue
+    if (isPlanet(o)) {
+      planet = o
+      continue
+    }
+    if (!best || dist2(u, o) < dist2(u, best)) best = o
+  }
+  return best ?? planet
+}
+
+/**
+ * 沿路開火：射程內最近的敵對單位（同 combat.ts 的自動索敵：敵意、隱形、索敵距離），但不含翠原星
+ * （除非它就是艦隊的目標）。原作是攻擊移動，路上碰到的船、逃生艙、太空形態都會打；這裡用明確的攻擊命令做同一件事，
+ * 才不會被戰鬥系統的自動索敵拉去打行星（攻擊行星的自動命令永遠不會結束：行星不會死）
+ */
+function fleetFireAt(g: Game, u: Ent, goal: Ent | null): Ent | null {
+  const r = Math.max(u.stats.range + 1, Math.min(u.stats.sight, 12))
+  let best: Ent | null = null
+  let bestD = Infinity
+  for (const o of g.world.query(SPACE_ZONE, u.x, u.y, r)) {
+    if (o === goal) continue
+    if (isPlanet(o) || o.stats.invuln || o.stats.stealth || !isHostile(g, u, o)) continue
+    const d = dist2(u, o)
+    if (d < bestD) {
+      bestD = d
+      best = o
+    }
+  }
+  return best
+}
+
+function thinkFleet(g: Game, u: Ent): void {
+  const t = g.time
+  let goal = u.data.fleetGoal ? g.world.get(u.data.fleetGoal as number) : undefined
+  if (!goal || !goal.alive || t >= ((u.data.fleetPickAt as number | undefined) ?? 0)) {
+    goal = fleetGoal(g, u) ?? undefined
+    u.data.fleetGoal = goal?.id ?? 0
+    u.data.fleetPickAt = t + FLEET_REPICK_S
+  }
+  const want = fleetFireAt(g, u, goal ?? null) ?? goal
+  if (!want) {
+    if (u.order) issue(u, null)
+    return
+  }
+  if (u.order?.k !== 'attack' || u.order.e !== want.id) issue(u, { k: 'attack', e: want.id })
 }
 
 function wander(g: Game, u: Ent, home: { x: number; y: number }, r: number, attackMove = false): void {

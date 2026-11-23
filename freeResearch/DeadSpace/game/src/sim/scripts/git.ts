@@ -4,11 +4,15 @@
 import { regScript } from '../systems/effects'
 import { DEATH_HOOKS } from '../systems/damage'
 import { makeItem } from '../systems/items'
-import { sampleListArgs, sampleUnitToken } from '../../shared/sysArgs'
+import { EXTRA_COMMANDS, type CommandHandler } from '../systems/orders'
+import { zoneLabel } from '../systems/space'
+import { locArgs, sampleListArgs, sampleUnitToken } from '../../shared/sysArgs'
+import { roomAt } from '../../shared/layout'
 import { UNITS } from '../../shared/content/registry'
 import type { Ent, ItemInst } from '../ent'
-import type { Game, GamePlayer } from '../game'
+import { fmtKey, type Game, type GamePlayer } from '../game'
 import { entView } from '../systems/snapshot'
+import { SPACE_ZONE } from '../world'
 
 /** 一份樣本：真正提供血液的玩家槽位、抽血者眼中的身分 key（判定「已抽過」用）、顯示名稱、結果（1 乾淨、2 感染、3 錯誤）*/
 export interface Sample {
@@ -161,7 +165,8 @@ regScript('git.results', (g, ctx) => {
     return true
   }
   const result = s.r === 1 ? 'clean' : s.r === 2 ? 'infected' : 'error'
-  g.privateLine(p.slot, 'git.report.' + result, sampleListArgs(s.names))
+  // 錯誤：照原作規則直說（研究 02 §7.4：仿生人讓結果變成錯誤並鎖定），樣本三人之中有一名仿生人；有沒有感染者就判讀不出來了
+  g.privateLine(p.slot, result === 'error' ? 'rule8.git.report.error' : 'git.report.' + result, sampleListArgs(s.names))
   p.gitReports.push({ time: Math.round(g.time), names: [...s.names], result })
   return true
 })
@@ -172,3 +177,72 @@ DEATH_HOOKS.push((g, u) => {
   g.data.gitDead = true
   g.systemAll('git.destroyed')
 })
+
+// ───────── 抽血集合（本作新增；第 8 輪）─────────
+// 朋友局的人常常散在各站，小局很難湊到三個人驗血。對地面（不是對人）使用基因檢測器 → 全場活著的人收到
+// 「〈名字〉在〈站・房間〉抽血，60 秒內」，並在那裡打一個地圖信號。驗血規則本身完全不變（照樣要貼身抽三人份）。
+
+/** 同一個人兩次抽血集合之間至少隔多久（秒）*/
+export const RALLY_CD = 60
+/** 公告裡說的「60 秒內」，也是地圖信號持續的秒數 */
+export const RALLY_WINDOW = 60
+
+/** 最近一次抽血集合（AI 想回應時可以讀；公開資訊：全場都收到了公告與信號）*/
+export interface GitRally {
+  slot: number
+  zone: number
+  x: number
+  y: number
+  until: number
+}
+
+/** 這個 use 指令是「對地面使用基因檢測器」（沒有指定單位、有指定地點）*/
+function isRallyUse(u: Ent, c: { s?: number; e?: number; x?: number; y?: number }): boolean {
+  return c.e === undefined && c.x !== undefined && c.y !== undefined && c.s !== undefined && u.inv?.[c.s]?.id === 'geneSampler'
+}
+
+/**
+ * 發起抽血集合：名字用別人眼中的樣子（偽裝就是偽裝對象，見 shownName），地點是發起者此刻所在的站與房間。
+ * 公告只給活著的人（死者、旁觀者幫不上忙）；冷卻、在太空中、匿名形態都只私訊發起者本人
+ */
+export function gitRally(g: Game, p: GamePlayer, u: Ent): boolean {
+  const z = g.world.zones[u.zone]
+  if (!u.alive || !z || u.zone === SPACE_ZONE || !z.layout || !z.station) {
+    g.privateLine(p.slot, 'rule8.git.rallySpace')
+    return false
+  }
+  if (u.anon) {
+    g.privateLine(p.slot, 'rule8.git.rallyAnon')
+    return false
+  }
+  const last = (p.data.gitRallyAt as number | undefined) ?? -1e9
+  if (g.time < last + RALLY_CD) {
+    g.privateLine(p.slot, 'rule8.git.rallyCd', { s: Math.ceil(last + RALLY_CD - g.time) })
+    return false
+  }
+  p.data.gitRallyAt = g.time
+  const room = roomAt(z.layout, u.x, u.y)
+  const args = {
+    name: shownName(g, u),
+    s: RALLY_WINDOW,
+    ...locArgs(zoneLabel(g, z), 'sz', 'se'),
+    ...(room ? locArgs(room.spec.name, 'rz', 're') : {}),
+  }
+  const to = g.allPlayers().filter((q) => q.alive && !q.spectator).map((q) => q.slot)
+  g.sysLines.push({ line: { from: '', color: -1, ch: 'sys', text: fmtKey(room ? 'rule8.git.rally' : 'rule8.git.rallyHall', args), time: g.time }, to })
+  g.emitFx({ k: 'ping', z: u.zone, x: u.x, y: u.y, v: RALLY_WINDOW, s: 'rally' }, to)
+  g.data.gitRally = { slot: p.slot, zone: u.zone, x: u.x, y: u.y, until: g.time + RALLY_WINDOW } satisfies GitRally
+  return true
+}
+
+// 接在道具的 use 指令前面（systems/items.ts 在這個模組之前就註冊好了：本檔 import 了它）：
+// 對地面使用基因檢測器 = 抽血集合，其他照舊交給原本的處理（對人使用 = 抽血）
+const baseUse = EXTRA_COMMANDS.get('use')
+const rallyUse: CommandHandler = (g, p, u, c) => {
+  if (isRallyUse(u, c)) {
+    gitRally(g, p, u)
+    return
+  }
+  baseUse?.(g, p, u, c)
+}
+if (baseUse) EXTRA_COMMANDS.set('use', rallyUse)

@@ -306,7 +306,11 @@ export const ITEM_ABILITIES: AbilityDef[] = [
   A({
     id: 'ab.item.geneSampler',
     name: L('抽血', 'Draw Blood'),
-    desc: L('花 3 秒從一名船員（可以是自己）身上取樣。同一個人只能抽一次，湊滿三份樣本後裝置會轉成 GIT 解析器。', 'Spend 3 s taking a sample from a crew member (yourself included). Each person can only be sampled once; three samples turn the device into a GIT resolver.'),
+    // 對地面使用＝抽血集合（本作新增，scripts/git.ts gitRally）：全場活著的人收到你在哪裡抽血，60 秒冷卻
+    desc: L(
+      '花 3 秒從一名船員（可以是自己）身上取樣。同一個人只能抽一次，湊滿三份樣本後裝置會轉成 GIT 解析器。對地面使用：通知所有人你在哪裡抽血（60 秒冷卻）。',
+      'Spend 3 s taking a sample from a crew member (yourself included). Each person can only be sampled once; three samples turn the device into a GIT resolver. Use it on the ground to tell everyone where you’re drawing blood (60 s cooldown).',
+    ),
     icon: 'dna',
     target: 'unit',
     range: 1.4,
