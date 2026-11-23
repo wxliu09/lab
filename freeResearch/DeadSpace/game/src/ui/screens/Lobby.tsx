@@ -12,6 +12,7 @@ import { localizeName, textColorOf } from '../names'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
 import { SeasonStats } from '../hud/SeasonStats'
 import '../strings/ui8'
+import '../strings/fix9t'
 import '../lobby2.css'
 import '../ui4.css'
 import '../ui8.css'
@@ -498,6 +499,42 @@ export function lobbyChatLines(lines: readonly ChatLine[]): ChatLine[] {
  * 視窗矮到放不下時整個左欄捲動，玩家名單照樣完整
  */
 export const LOBBY_CHAT_MAX_PX = 360
+
+/** 踢出要在這麼多毫秒內再按一次才生效（第 9 輪：以前一鍵就踢、沒有確認）*/
+export const KICK_CONFIRM_MS = 3000
+
+/**
+ * 踢出按鈕按一下的結果（純函式，單元測試用）：armedAt = 上次按下、等待確認的時間（0 = 沒在等）。
+ * 第一下只「上膛」（按鈕改寫「再按一次確認」），KICK_CONFIRM_MS 內再按一次才送出踢人；超過時間再按就重新上膛
+ */
+export function kickClick(armedAt: number, now: number): { kick: boolean; armedAt: number } {
+  if (armedAt > 0 && now - armedAt <= KICK_CONFIRM_MS) return { kick: true, armedAt: 0 }
+  return { kick: false, armedAt: now }
+}
+
+function KickButton({ slot }: { slot: number }) {
+  const [armedAt, setArmedAt] = useState(0)
+  // 沒有再按：時間到就恢復成「踢出」
+  useEffect(() => {
+    if (!armedAt) return
+    const id = setTimeout(() => setArmedAt(0), KICK_CONFIRM_MS)
+    return () => clearTimeout(id)
+  }, [armedAt])
+  return (
+    <button
+      type="button"
+      class={'small ghost kick-btn' + (armedAt ? ' armed' : '')}
+      data-testid={'kick-' + slot}
+      onClick={() => {
+        const r = kickClick(armedAt, performance.now())
+        setArmedAt(r.armedAt)
+        if (r.kick) send({ t: 'kick', slot })
+      }}
+    >
+      {armedAt ? t('fix9t.kick.confirm') : t('lobby.kick')}
+    </button>
+  )
+}
 const LEFT_STYLE = { overflowY: 'auto' } as const
 const PLAYERS_STYLE = { flex: '0 0 auto' } as const
 const CHATBOX_STYLE = { flex: '1 1 0px', maxHeight: LOBBY_CHAT_MAX_PX + 'px' } as const
@@ -583,19 +620,24 @@ export function Lobby() {
                   {p.ready && <span class="tag ready">{t('lobby.ready')}</span>}
                   {!p.connected && <span class="tag">{t('lobby.offline')}</span>}
                   <span class="grow" />
-                  {isHost.value && !p.host && (
-                    <button class="small ghost" onClick={() => send({ t: 'kick', slot: p.slot })}>
-                      {t('lobby.kick')}
-                    </button>
-                  )}
+                  {isHost.value && !p.host && <KickButton slot={p.slot} />}
                 </div>
               </div>
             ))}
-            {Array.from({ length: Math.max(0, MAX_PLAYERS - L.players.length) }, (_, i) => (
-              <div class="pcard empty" key={'e' + i}>
-                —
-              </div>
-            ))}
+            {/* 開局時由 AI 補上的位置（第 9 輪：以前只在身分預覽寫「含 AI」，名單上看不到）。
+                仍是 .empty（e2e 用 .pcard:not(.empty) 數真人），格子總數不變，1280×720 的版面不受影響 */}
+            {Array.from({ length: Math.max(0, MAX_PLAYERS - L.players.length) }, (_, i) =>
+              i < bots ? (
+                <div class="pcard empty ai-fill" key={'e' + i} data-testid="ai-fill" {...tipProps(() => ({ title: t('fix9t.lobby.aiFill'), body: t('fix9t.lobby.aiFillTip', { set: t('lobby.set.bots') }) }))}>
+                  <span class="tag">{t('lobby.bot')}</span>
+                  <span>{t('fix9t.lobby.aiFill')}</span>
+                </div>
+              ) : (
+                <div class="pcard empty" key={'e' + i}>
+                  —
+                </div>
+              ),
+            )}
           </div>
           <div class="sep" />
           <div class="row lobby-color">

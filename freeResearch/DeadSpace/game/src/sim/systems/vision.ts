@@ -146,6 +146,10 @@ export function computeVision(g: Game): Map<number, VisionResult> {
         if (z) r.doors.set(zid, new Set(z.doors.map((d) => d.index)))
       }
       if (!p.alive || p.spectator) {
+        // 附身的蛞蝓仔（-slug）：自己操控的單位，觀戰視角切到別站時也照樣看得到（頭像、空白鍵跟到牠身上）。
+        // 只加這一隻；牠能指揮的目標仍照原作用旁觀者視野（上面的 specZone 整站）判斷
+        const slug = p.data.slug ? w.get(p.data.slug as number) : undefined
+        if (slug && slug.alive && slug.owner === p.slot && !inPodHidden(p, slug)) r.ents.add(slug)
         p.view.visible = new Set([...r.ents].map((e) => e.id))
         continue
       }

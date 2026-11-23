@@ -9,6 +9,7 @@ import {
   refreshSeason,
   resetSeason,
   season,
+  shownStreak,
   standings,
   watchSeasonStats,
   type Faction,
@@ -57,10 +58,11 @@ export function lastWinnersText(l: LastGame): string {
   return listJoin(names) + (more > 0 ? ' ' + t('ui8.season.last.more', { n: more }) : '')
 }
 
-/** 連勝欄：「3 連勝」「2 連敗」；0 = 空白 */
+/** 連勝欄：「3 連勝」「2 連敗」；不到 2 場（0、±1）= 空白（seasonStats.ts shownStreak）*/
 export function streakText(n: number): string {
-  if (n > 0) return t('ui8.season.win', { n })
-  if (n < 0) return t('ui8.season.loss', { n: -n })
+  const k = shownStreak(n)
+  if (k > 0) return t('ui8.season.win', { n: k })
+  if (k < 0) return t('ui8.season.loss', { n: -k })
   return ''
 }
 
@@ -72,8 +74,9 @@ function rowTip(r: StandingRow): string {
     t('ui8.season.row.season', { w: r.wins, g: r.games }),
     ...by(r.by),
   ]
-  if (r.streak > 0) lines.push(t('ui8.season.row.win', { n: r.streak }))
-  if (r.streak < 0) lines.push(t('ui8.season.row.loss', { n: -r.streak }))
+  const k = shownStreak(r.streak)
+  if (k > 0) lines.push(t('ui8.season.row.win', { n: k }))
+  if (k < 0) lines.push(t('ui8.season.row.loss', { n: -k }))
   return lines.join('\n')
 }
 
@@ -157,7 +160,7 @@ function Table({ rows, factions }: { rows: StandingRow[]; factions: boolean }) {
                   {r.by[f][1]}
                 </td>
               ))}
-            <td class={'mono u8s-streak' + (r.streak > 0 ? ' up' : r.streak < 0 ? ' down' : '')}>{streakText(r.streak)}</td>
+            <td class={'mono u8s-streak' + (shownStreak(r.streak) > 0 ? ' up' : shownStreak(r.streak) < 0 ? ' down' : '')}>{streakText(r.streak)}</td>
           </tr>
         ))}
       </tbody>
@@ -210,7 +213,7 @@ export function SeasonStats({ compact = false, present, practice }: { compact?: 
               <span class="mono dim">
                 {t('ui8.season.col.season')} {t('ui8.season.wg', { w: r.wins, g: r.games })}
               </span>
-              {r.streak !== 0 && <span class={'mono u8s-streak ' + (r.streak > 0 ? 'up' : 'down')}>{streakText(r.streak)}</span>}
+              {shownStreak(r.streak) !== 0 && <span class={'mono u8s-streak ' + (r.streak > 0 ? 'up' : 'down')}>{streakText(r.streak)}</span>}
             </div>
           ))}
         </div>

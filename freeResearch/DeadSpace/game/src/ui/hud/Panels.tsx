@@ -5,7 +5,7 @@ import { PLAYER_COLORS } from '../../shared/constants'
 import type { EndResult, ProphecyWin } from '../../shared/protocol/messages'
 import { PROPHECY_WINS } from '../../shared/protocol/messages'
 import { currentRoom, endResult, isHost, lastEnd, leave, leaveGame, mySlot, returnToLobby, send, sendCmd, snapTick, startInfo, world } from '../../client/session'
-import { boardRows, inCombat, onSpectateEnd, onSpectateStart, pinZone, sortByActivity, type BoardRow } from '../../client/spectate'
+import { boardRows, inCombat, onPossess, onSpectateEnd, onSpectateStart, pinZone, possessedId, sortByActivity, type BoardRow } from '../../client/spectate'
 import { chatPassChecks, evolveOpen, modalChecks, mutePassChecks } from '../../client/input'
 import { addStrings, listJoin, loc, sysText, t } from '../i18n'
 import { Icon } from '../icons'
@@ -18,9 +18,10 @@ import { isHostAbort } from '../../client/hostAbort'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
 import { classLabel, promotedSlots } from './Guide'
 import { againTip, inPractice, replayPractice } from '../screens/practiceRun'
-import { tipProps } from '../tooltip'
+import { resetTips, tipProps } from '../tooltip'
 import { Spin3D, factionSpec } from './Codex'
 import { SeasonStats } from './SeasonStats'
+import { atkText } from '../itemTip'
 import '../strings/set7'
 import '../strings/ghost8'
 import '../screens7.css'
@@ -131,7 +132,7 @@ export function EvolveMenu() {
                 </div>
                 {u && (
                   <div class="mono dim" style={{ fontSize: '13px', marginTop: '6px' }}>
-                    {t('tip.hp')} {u.hp} · {t('tip.atk')} {u.attack?.dmg[0] ?? 0} · {t('tip.speed')} {u.speed}
+                    {t('tip.hp')} {u.hp} · {t('tip.atk')} {u.attack ? atkText(u.attack) : '—'} · {t('tip.speed')} {u.speed}
                   </div>
                 )}
               </div>
@@ -388,6 +389,9 @@ export function SpectatorBar() {
     if (watching) onSpectateStart()
     else onSpectateEnd()
   }, [watching])
+  // 附身蛞蝓仔（-slug）：暫停自動跟隨戰鬥、改成跟著蛞蝓仔；牠死了恢復（第 9 輪 P2-1，client/spectate.ts onPossess）
+  const possessed = watching ? possessedId(me) : 0
+  useEffect(() => onPossess(possessed), [possessed])
   const [shipsOpen, setShipsOpen] = useState(shipsPref)
   if (!dead) return null
   // 等記憶核心復活的仿生人：只能透過核心觀看，不能切換觀戰（練習局仍可直接再來一局）
@@ -568,13 +572,24 @@ function ToLobbyButton({ cls }: { cls: string }) {
 }
 
 /**
- * 按「繼續觀看」關掉結算畫面之後（多人局）：上方一條小列，可以重新打開結算；主機在這裡也能回到大廳，
- * 客人看到「主機回到大廳時你會一起回去」。練習局照舊（觀戰列上的「再來一局」）
+ * 關掉結算畫面（按「繼續觀看」）之後上方小列的按鈕（第 9 輪 P2-2：活著看到結束的人、練習局也要有）：
+ * 一律可以重新打開結算；練習局「再來一局」；多人局主機「回到大廳（同一房號）」、客人看到「主機回到大廳時你會一起回去」。
+ * 主機中止的局只有「查看結算」（主機接著就會關掉房間）
+ */
+export function afterEndActions(r: EndResult | null, practice: boolean, host: boolean): { again: boolean; lobby: boolean; guestHint: boolean } | null {
+  if (!r) return null
+  const lobby = lobbyAgain(r, practice)
+  return { again: practice, lobby: lobby && host, guestHint: lobby && !host }
+}
+
+/**
+ * 按「繼續觀看」關掉結算畫面之後：上方一條小列，可以重新打開結算；練習局可以直接再來一局（活著看到結束的人也是）；
+ * 多人局主機在這裡也能回到大廳，客人看到「主機回到大廳時你會一起回去」
  */
 function AfterEndBar() {
   const r = lastEnd.value
-  if (!lobbyAgain(r, inPractice())) return null
-  const host = isHost.value
+  const a = afterEndActions(r, inPractice(), isHost.value)
+  if (!r || !a) return null
   return (
     <TopSlot order={3}>
       <div class="panel top-vote" data-testid="end-after">
@@ -583,9 +598,10 @@ function AfterEndBar() {
           <button class="small" data-testid="end-reopen" onClick={() => (endResult.value = r)}>
             {t('room6.after.results')}
           </button>
-          {host && <ToLobbyButton cls="small primary" />}
+          {a.again && <PracticeAgain cls="small primary" />}
+          {a.lobby && <ToLobbyButton cls="small primary" />}
         </div>
-        {!host && (
+        {a.guestHint && (
           <div class="dim" style={{ marginTop: '6px', fontSize: '13px' }}>
             {t('room6.after.guest')}
           </div>
@@ -658,6 +674,10 @@ function firstShow(r: EndResult): boolean {
 export function EndScreen() {
   const r = endResult.value
   const anim = useMemo(() => (r ? firstShow(r) : false), [r])
+  // 結算卡出現：收起留在原地的 tooltip（滑鼠沒動時，觀戰清單的「依動靜排序…」會一直疊在結算卡上，第 9 輪 P3）
+  useEffect(() => {
+    if (r) resetTips()
+  }, [r])
   if (!r) return <AfterEndBar />
   // 標題下一行：主機中止、平手的原因（見 endNoteKey）
   const why = endNoteKey(r)
@@ -675,7 +695,7 @@ export function EndScreen() {
   const seers = new Set((r.prophecies ?? []).filter((x) => x.ok).map((x) => x.slot))
   return (
     <div class="modal-back" style={{ background: 'rgba(0,0,0,0.75)' }}>
-      <div class={'panel modal end-card' + (anim ? ' r7e-anim' : '')} data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
+      <div class={'panel modal end-card r9s-end' + (anim ? ' r7e-anim' : '')} data-testid="end" style={{ width: 'min(900px, 94vw)' }}>
         {/* 標題列：勝方陣營的模型慢慢轉（平手、中止沒有）*/}
         <div class="r7e-head">
           {win && (
@@ -698,99 +718,104 @@ export function EndScreen() {
           </div>
         </div>
         <div class="sep" />
-        {/* 玩家卡：依序翻開揭曉身分（人類先、異類最後），翻開時一圈陣營色的爆光；減少動態效果時直接顯示（screens7.css）*/}
-        <div class="pgrid">
-          {players.map((p, i) => (
-            <div
-              class={'r7e-slot' + (p.role !== 'human' ? ' r7e-foe' : '')}
-              key={p.slot}
-              data-testid="end-player"
-              style={{ '--d': `${350 + order[i] * 170}ms`, '--fc': BURST_COL[p.role] ?? '#9fe7ff' }}
-            >
-              <div class="r7e-flip">
-                <div class="pcard r7e-face" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
-                  <div class="pname">
-                    {localizeName(p.name)}
-                    {seers.has(p.slot) && (
-                      <span class="g8-seer" data-testid="end-seer">
-                        {t('ghost8.end.seer')}
+        {/* 第 9 輪 P1：標題與按鈕列固定，中間（玩家卡、預言、戰績、時間軸）捲動，1280×720 以下也一定看得到按鈕（screens7.css）*/}
+        <div class="r9s-end-body" data-testid="end-body">
+          {/* 玩家卡：依序翻開揭曉身分（人類先、異類最後），翻開時一圈陣營色的爆光；減少動態效果時直接顯示（screens7.css）*/}
+          <div class="pgrid">
+            {players.map((p, i) => (
+              <div
+                class={'r7e-slot' + (p.role !== 'human' ? ' r7e-foe' : '')}
+                key={p.slot}
+                data-testid="end-player"
+                style={{ '--d': `${350 + order[i] * 170}ms`, '--fc': BURST_COL[p.role] ?? '#9fe7ff' }}
+              >
+                <div class="r7e-flip">
+                  <div class="pcard r7e-face" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
+                    <div class="pname">
+                      {localizeName(p.name)}
+                      {seers.has(p.slot) && (
+                        <span class="g8-seer" data-testid="end-seer">
+                          {t('ghost8.end.seer')}
+                        </span>
+                      )}
+                    </div>
+                    <div class="row end-role">
+                      <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
+                      <span class="dim">{classLabel(p.classId, promoted.has(p.slot))}</span>
+                      <span class="grow" />
+                      <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
+                    </div>
+                    <div class="mono dim end-stats">
+                      <span>
+                        {t('end.kills')} {p.kills}
                       </span>
-                    )}
-                  </div>
-                  <div class="row end-role">
-                    <span style={{ color: ROLE_COL[p.role] }}>{t('role.' + p.role)}{p.spawn ? t('ui4.end.spawn') : ''}</span>
-                    <span class="dim">{classLabel(p.classId, promoted.has(p.slot))}</span>
-                    <span class="grow" />
-                    <span class="dim">{p.alive ? t('end.alive') : t('end.dead')}</span>
-                  </div>
-                  <div class="mono dim end-stats">
-                    <span>
-                      {t('end.kills')} {p.kills}
-                    </span>
-                    <span>
-                      {t('end.infections')} {p.infections}
-                    </span>
-                    <span>
-                      {t('end.tests')} {p.tests}
-                    </span>
-                  </div>
-                </div>
-                {anim && (
-                  <div class="pcard r7e-cover" aria-hidden="true" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
-                    <div class="pname">{localizeName(p.name)}</div>
-                    <div class="r7e-unknown">
-                      <span class="r7e-q">?</span>
-                      {t('set7.end.unknown')}
+                      <span>
+                        {t('end.infections')} {p.infections}
+                      </span>
+                      <span>
+                        {t('end.tests')} {p.tests}
+                      </span>
                     </div>
                   </div>
-                )}
+                  {anim && (
+                    <div class="pcard r7e-cover" aria-hidden="true" style={{ '--pc': PLAYER_COLORS[p.color]?.hex }}>
+                      <div class="pname">{localizeName(p.name)}</div>
+                      <div class="r7e-unknown">
+                        <span class="r7e-q">?</span>
+                        {t('set7.end.unknown')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {anim && <div class="r7e-burst" aria-hidden="true" />}
               </div>
-              {anim && <div class="r7e-burst" aria-hidden="true" />}
-            </div>
-          ))}
-        </div>
-        {specs.length > 0 && (
-          <div class="dim r7e-spec" data-testid="end-spectators">
-            {t('set7.end.spectators', { names: listJoin(specs.map((p) => localizeName(p.name))) })}
+            ))}
           </div>
-        )}
-        <EndProphecies r={r} />
-        {/* 跨局戰績精簡版（第 8 輪）：練習局寫「不列入」；這局沒記到（主機中止、沒有真人）時不顯示 */}
-        <SeasonStats compact />
-        <div class="sep" />
-        <h3>{t('end.timeline')}</h3>
-        <div class="col end-timeline" data-testid="end-timeline">
-          {r.timeline.length === 0 && <div class="dim">{t('end.timelineEmpty')}</div>}
-          {r.timeline.map((e, i) => (
-            <div key={i}>
-              <span class="mono dim">
-                {Math.floor(e.t / 60)}:{String(e.t % 60).padStart(2, '0')}
-              </span>{' '}
-              {/* sim 以 `@key|k=v` 傳來（fmtKey）；結局本身是裸 key 'end.xxx' */}
-              {e.text.startsWith('end.') ? t(e.text) : sysText(e.text)}
+          {specs.length > 0 && (
+            <div class="dim r7e-spec" data-testid="end-spectators">
+              {t('set7.end.spectators', { names: listJoin(specs.map((p) => localizeName(p.name))) })}
             </div>
-          ))}
-        </div>
-        {again && !host && (
-          <div class="end-why" data-testid="end-lobby-hint" style={{ marginTop: '12px', fontSize: '14px' }}>
-            {t('room6.end.guestHint')}
+          )}
+          <EndProphecies r={r} />
+          {/* 跨局戰績精簡版（第 8 輪）：練習局寫「不列入」；這局沒記到（主機中止、沒有真人）時不顯示 */}
+          <SeasonStats compact />
+          <div class="sep" />
+          <h3>{t('end.timeline')}</h3>
+          <div class="col end-timeline" data-testid="end-timeline">
+            {r.timeline.length === 0 && <div class="dim">{t('end.timelineEmpty')}</div>}
+            {r.timeline.map((e, i) => (
+              <div key={i}>
+                <span class="mono dim">
+                  {Math.floor(e.t / 60)}:{String(e.t % 60).padStart(2, '0')}
+                </span>{' '}
+                {/* sim 以 `@key|k=v` 傳來（fmtKey）；結局本身是裸 key 'end.xxx' */}
+                {e.text.startsWith('end.') ? t(e.text) : sysText(e.text)}
+              </div>
+            ))}
           </div>
-        )}
-        <div class="row" style={{ marginTop: '14px' }}>
-          <PracticeAgain cls="primary" />
-          {again && host && <ToLobbyButton cls="primary" />}
-          {/* 多人局可以回到大廳時，「回到主選單」不再是主要按鈕（主機按了會關掉房間：說明裡提醒）*/}
-          <button
-            class={inPractice() || again ? '' : 'primary'}
-            data-testid="end-back"
-            onClick={() => leave()}
-            {...(again && host ? tipProps(() => ({ title: t('end.back'), body: t('room6.end.hostLeaveTip') })) : {})}
-          >
-            {t('end.back')}
-          </button>
-          <button class="ghost" onClick={() => (endResult.value = null)}>
-            {t('end.stay')}
-          </button>
+        </div>
+        <div class="r9s-end-foot" data-testid="end-foot">
+          {again && !host && (
+            <div class="end-why" data-testid="end-lobby-hint" style={{ fontSize: '14px' }}>
+              {t('room6.end.guestHint')}
+            </div>
+          )}
+          <div class="row r9s-end-btns">
+            <PracticeAgain cls="primary" />
+            {again && host && <ToLobbyButton cls="primary" />}
+            {/* 多人局可以回到大廳時，「回到主選單」不再是主要按鈕（主機按了會關掉房間：說明裡提醒）*/}
+            <button
+              class={inPractice() || again ? '' : 'primary'}
+              data-testid="end-back"
+              onClick={() => leave()}
+              {...(again && host ? tipProps(() => ({ title: t('end.back'), body: t('room6.end.hostLeaveTip') })) : {})}
+            >
+              {t('end.back')}
+            </button>
+            <button class="ghost" data-testid="end-stay" onClick={() => (endResult.value = null)}>
+              {t('end.stay')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

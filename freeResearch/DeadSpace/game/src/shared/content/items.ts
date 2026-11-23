@@ -753,7 +753,8 @@ export const ITEM_LIST: ItemDef[] = [
   {
     id: 'verdictPistol',
     name: L('處決手槍', 'Verdict Pistol'),
-    desc: L('政委的配槍。射得慢、打得重，專門用來終結爭論。', 'The commissar\'s sidearm. Slow, heavy, and made for ending arguments.'),
+    // 數字對照 ab.item.verdict（cast 1.5、damage 125；r9t 測試檢查），目標面板與圖鑑的職業說明也是這兩個數字
+    desc: L('政委的配槍：瞄準 1.5 秒，造成 125 傷害。射得慢、打得重，專門用來終結爭論。', 'The commissar’s sidearm: 1.5 s aim, 125 damage. Slow, heavy, and made for ending arguments.'),
     icon: 'gun',
     charges: 0,
     use: 'ab.item.verdict',
@@ -1033,7 +1034,8 @@ export const ITEM_LIST: ItemDef[] = [
   {
     id: 'escapePass',
     name: L('救生艙憑證', 'Escape Pod Pass'),
-    desc: L('領取後原地準備 4 秒（不能移動、不能受重傷），然後搭救生艙離開這座站。每人 100 秒只能用一次。', 'Once taken, hold still for 4 s without taking heavy damage, then you launch off this station in a pod. Once per 100 s per person.'),
+    // 升空後要自己設定航線（pod.trajectory 的名稱；不寫鍵名，鍵位可以改）
+    desc: L('領取後原地準備 4 秒（不能移動、不能受重傷），然後搭救生艙離開這座站；升空後對要去的站施放「設定航線」，救生艙就會自己飛過去。每人 100 秒只能用一次。', 'Once taken, hold still for 4 s without taking heavy damage, then you launch off this station in a pod. Once in space, cast Set Trajectory on the station you want and the pod flies there on its own. Once per 100 s per person.'),
     icon: 'pod',
     charges: 0,
     cat: 'utility',

@@ -15,6 +15,8 @@ import { UI4_EN, UI4_ZH } from './strings/ui4'
 import { UI5_EN, UI5_ZH } from './strings/ui5'
 import { ITEMS, UNITS } from '../shared/content/registry'
 import { localizeName, localizeNameList } from './names'
+// 按鍵佔位符（withKeys）：keymap 只依賴 signals，不會循環 import
+import { ABILITY_ACTIONS, ACTION_BY_ID, CAM_KEYS, ITEM_ACTIONS, actionLabel, codeFor, type ActionId } from '../client/keymap'
 
 export type Lang = 'zh' | 'en'
 
@@ -161,7 +163,7 @@ const zh: Dict = {
   'cast.space': '這裡不能使用',
   'cast.once': '每局只能使用一次',
   'cast.dead': '',
-  'death.innocent': '{name} 遇害了——一名無辜者',
+  'death.innocent': '{name} 身亡——是一名無辜的船員',
 }
 
 const en: Dict = {
@@ -277,7 +279,7 @@ const en: Dict = {
   'cast.space': 'Cannot use that here',
   'cast.once': 'Only once per game',
   'cast.dead': '',
-  'death.innocent': '{name} is dead: an innocent',
+  'death.innocent': '{name} has died. They were an innocent crew member.',
 }
 
 const dicts: Record<Lang, Dict> = { zh, en }
@@ -306,7 +308,40 @@ export function t(key: string, args?: Record<string, string | number>): string {
   const k = args && Number(args.n) === 1 && key + '.one' in d ? key + '.one' : key
   let s = d[k] ?? dicts.zh[key] ?? key
   if (args) for (const [a, v] of Object.entries(args)) s = s.replaceAll(`{${a}}`, String(v))
+  if (s.includes('{key')) s = withKeys(s, d)
   return s
+}
+
+// ───────── 按鍵佔位符（第 9 輪：改鍵後說明、提示、目標面板跟著按鍵設定）─────────
+
+/** 一整組按鍵的佔位符：{keys_item} 背包 1–6、{keys_ability} 技能 Q W E R D F、{keys_cam} 鏡頭捲動（方向鍵）*/
+const KEY_GROUPS: Record<string, (d: Dict) => string> = {
+  item: () => {
+    const l = ITEM_ACTIONS.map((id) => actionLabel(id))
+    // 預設的 1–6 照舊寫成範圍；改過就逐一列出（沒有按鍵的略過）
+    if (l.every((x, i) => x === String(i + 1))) return `1–${l.length}`
+    return l.filter(Boolean).join(' ')
+  },
+  ability: () => ABILITY_ACTIONS.map((id) => actionLabel(id)).filter(Boolean).join(' '),
+  cam: (d) => {
+    const ids = Object.keys(CAM_KEYS) as ActionId[]
+    if (ids.every((id) => codeFor(id) === CAM_KEYS[id])) return d['fix9k.keys.arrows'] ?? dicts.zh['fix9k.keys.arrows'] ?? '←→↑↓'
+    return ids.map((id) => actionLabel(id)).filter(Boolean).join(' ')
+  },
+}
+
+/**
+ * 把字串裡的按鍵佔位符換成按鍵設定目前的鍵（client/keymap.ts，依鍵盤配置顯示）：
+ * {key_<動作 id>}（例如 {key_attack}、{key_evolve}、{key_unpilot}）是單一動作，{keys_<組>} 見 KEY_GROUPS。
+ * 固定鍵（Esc、G、Tab、F1、Shift、Alt）照舊直接寫在字串裡。動作沒有按鍵時寫「未設定按鍵」（fix9k.key.unset）。
+ * 在元件裡呼叫 t() 會讀 keymap 與 layoutMap 兩個 signal：改鍵、換鍵盤配置後自動重畫。
+ */
+function withKeys(s: string, d: Dict): string {
+  return s.replace(/\{(keys?)_(\w+)\}/g, (m, kind: string, id: string) => {
+    const v = kind === 'keys' ? KEY_GROUPS[id]?.(d) : ACTION_BY_ID.has(id as ActionId) ? actionLabel(id as ActionId) : undefined
+    if (v === undefined) return m
+    return v || (d['fix9k.key.unset'] ?? dicts.zh['fix9k.key.unset'] ?? '—')
+  })
 }
 
 /** 依目前語言串接清單（中文「、」，英文「, 」）*/

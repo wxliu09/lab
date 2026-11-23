@@ -108,8 +108,19 @@ export class RtsCamera {
   }
 
   mouseAt(x: number, y: number, inside: boolean): void {
+    // 滑鼠真的移動了（不是版面變動時瀏覽器補發的同一個位置）：恢復邊緣捲動
+    if (this.edgeHeld && (x !== this.mouse.x || y !== this.mouse.y)) this.edgeHeld = false
     this.mouse = { x, y, inside }
   }
+
+  /**
+   * 暫停邊緣捲動，直到滑鼠真的移動（第 9 輪 P2-5）：鏡頭剛自動對準自己（換 zone、下船、換操控對象）時，
+   * 游標若停在畫面邊緣（右下角的指令卡、左下的小地圖），鏡頭會在玩家沒碰滑鼠的情況下被一路捲到地圖角落
+   */
+  holdEdge(): void {
+    this.edgeHeld = true
+  }
+  private edgeHeld = false
 
   wheel(dy: number): void {
     this.zoom = Math.max(0, Math.min(1, this.zoom + dy * 0.0009))
@@ -135,7 +146,7 @@ export class RtsCamera {
     if (this.keys.has('ArrowRight')) mx += this.keySpeed
     if (this.keys.has('ArrowUp')) my += this.keySpeed
     if (this.keys.has('ArrowDown')) my -= this.keySpeed
-    if (this.edgeScroll && this.mouse.inside) {
+    if (this.edgeScroll && this.mouse.inside && !this.edgeHeld) {
       // 邊緣 22px 內開始捲動，越靠邊越快（瀏覽器視窗邊緣很容易滑出去，判定區不能太窄）
       const m = 22
       const ramp = (d: number) => this.edgeSpeed * (0.45 + 0.55 * (1 - Math.max(0, Math.min(m, d)) / m))

@@ -79,7 +79,7 @@ export const UI8_ZH: Record<string, string> = {
   // ───── 目標面板：末日與圍攻（WorldPublic.rad／fleetPlanet／burnIn／siege）─────
   'ui8.guide.rad': '翠原星地表輻射 {n}／秒（會慢慢衰減）',
   'ui8.guide.radHere': '翠原星地表輻射 {n}／秒：你在地表會一直掉血，躲進停泊的船艙，或用急救包撐到它衰減',
-  'ui8.guide.fleetPlanet': '艦隊正在砲擊翠原星：地表隕石不斷；發射船艇或逃生艙能把艦隊引開',
+  'ui8.guide.fleetPlanet': '艦隊正在砲擊翠原星：地表隕石不斷；發射船艇或救生艙能把艦隊引開',
   'ui8.guide.fleetPlanetHere': '艦隊正在砲擊翠原星：隕石接連落下，看到紅色警戒圈就跑開',
   'ui8.guide.burnIn': '翠原星 {t}後進入恆星灼燒範圍，之後地表會開始落隕石',
   'ui8.guide.burnNow': '翠原星在恆星灼燒範圍內：地表不斷落隕石，躲開紅色警戒圈',

@@ -146,9 +146,9 @@ describe('被寄生、感染朊毒：目標面板最前面的紅色「!」待辦
     const o = (b: string[], items: PrivateState['inv'] = [], role: PrivateState['role'] = 'human', w: Partial<WorldPublic> = { t: 100 }) =>
       G.objectiveFor({ ...view({ role, inv: items, abilities: [] }, { self: { d: 'personnel', hp: 300, mhp: 400, b } }), w })!
     expect(o(['bf.parasite']).steps[0]).toEqual({ key: 'guide.s.infectParasiteGet', danger: true })
-    expect(o(['bf.parasite'], inv('traumaKit', null, 'antibodyKit')).steps[0]).toEqual({ key: 'guide.s.infectParasite', args: { k: 3 }, danger: true })
+    expect(o(['bf.parasite'], inv('traumaKit', null, 'antibodyKit')).steps[0]).toEqual({ key: 'guide.s.infectParasite', args: { k: '3' }, danger: true })
     for (const b of ['bf.prion', 'bf.prionStrong', 'bf.prionCarrier']) expect(o([b]).steps[0].key, b).toBe('guide.s.infectPrionGet')
-    expect(o(['bf.prion'], inv('antibodyKit')).steps[0]).toEqual({ key: 'guide.s.infectPrion', args: { k: 1 }, danger: true })
+    expect(o(['bf.prion'], inv('antibodyKit')).steps[0]).toEqual({ key: 'guide.s.infectPrion', args: { k: '1' }, danger: true })
     expect(o(['bf.containedParasite', 'bf.antibody']).steps[0]).toEqual({ key: 'guide.s.infectHeldParasite', danger: true })
     expect(o(['bf.containedPrion']).steps[0].key).toBe('guide.s.infectHeldPrion')
     // 沒有感染：沒有紅色待辦
@@ -189,7 +189,7 @@ describe('被寄生、感染朊毒：目標面板最前面的紅色「!」待辦
     expect(u.hp).toBeLessThan(hp0)
     const slot = giveItem(g, u, makeItem('antibodyKit'))
     h.ticks(2)
-    expect(G.objectiveFor(clientView(c))!.steps[0]).toEqual({ key: 'guide.s.infectParasite', args: { k: slot + 1 }, danger: true })
+    expect(G.objectiveFor(clientView(c))!.steps[0]).toEqual({ key: 'guide.s.infectParasite', args: { k: String(slot + 1) }, danger: true })
     g.handleCommand(p.slot, { k: 'use', s: slot })
     h.ticks(5)
     expect(G.objectiveFor(clientView(c))!.steps[0]).toEqual({ key: 'guide.s.infectHeldParasite', danger: true })

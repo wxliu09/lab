@@ -11,6 +11,7 @@ import { modalChecks, typingInField } from '../../client/input'
 import { hasString, lang, listJoin, loc, t } from '../i18n'
 import { Icon } from '../icons'
 import { hitsBystanders } from '../aoe'
+import { atkText, dpsText } from '../itemTip'
 import { mountSpin, portraitReady, portraitUrl, type PortraitSpec } from '../../render/portrait'
 import { THEMES } from '../../render/themes'
 import '../strings/ui6'
@@ -128,7 +129,8 @@ function unitStats(u: UnitDef | undefined): [string, string][] {
   const out: [string, string][] = [[t('codex.hp'), String(u.hp)]]
   if (u.mp) out.push([t('codex.mp'), String(u.mp)])
   out.push([t('codex.speed'), u.speed.toFixed(2) + ' m/s'])
-  if (u.attack) out.push([t('codex.attack'), `${u.attack.dmg[0]}–${u.attack.dmg[1]} / ${u.attack.cd}s · ${u.attack.range} m`])
+  // 攻擊的寫法和販賣機 tooltip、頭像一樣（itemTip.ts atkText／dpsText）
+  if (u.attack) out.push([t('codex.attack'), atkText(u.attack)], [t('fix9t.tip.dps'), dpsText(u.attack)])
   if (u.armor) out.push([t('codex.armor'), String(u.armor)])
   return out
 }

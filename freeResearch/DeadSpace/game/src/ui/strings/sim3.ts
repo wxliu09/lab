@@ -7,8 +7,8 @@ export const SIM3_ZH: Record<string, string> = {
   'space.launchGrounded': '豪勇號正降落在翠原星上：停在它上面的船現在不能發射，等它升空再試。',
   // ───── 強行登艦：只能登艦的站 ─────
   'space.boardOnly': '{nz}沒有停機坪，不能停靠：請對它施放「強行登艦」，連結期間走到船艙的艙門就會進入它的登艦氣閘。',
-  'space.linkedSt': '登艦連結建立（{s} 秒）：走到船艙的艙門就會進入對方站點的登艦氣閘；駕駛者先按 B 離開控制台。',
-  'space.linkedAirlock': '登艦連結建立（{s} 秒）：走到登艦氣閘的出入口就會進入對方；駕駛者先按 B 離開控制台。',
+  'space.linkedSt': '登艦連結建立（{s} 秒）：走到船艙的艙門就會進入對方站點的登艦氣閘；駕駛者先按 {key_unpilot} 離開控制台。',
+  'space.linkedAirlock': '登艦連結建立（{s} 秒）：走到登艦氣閘的出入口就會進入對方；駕駛者先按 {key_unpilot} 離開控制台。',
   'space.linkEndAirlock': '登艦連結已中斷：登艦氣閘的出入口關閉了。',
   // ───── 翠原星轟炸 ─────
   'st.impactWarn': '軌道殘骸正墜向翠原星地表：{s} 秒後撞擊，快離開紅色警戒圈！撞擊點會留下輻射。',
@@ -23,8 +23,8 @@ export const SIM3_ZH: Record<string, string> = {
 export const SIM3_EN: Record<string, string> = {
   'space.launchGrounded': 'The Bravado is landed on Verdance: craft docked on it cannot launch until it lifts off again.',
   'space.boardOnly': '{ne} has no landing pads and cannot be docked with. Use Board on it, then walk to your cabin airlock while linked to cross into its boarding airlock.',
-  'space.linkedSt': "Boarding link established ({s}s): walk to your cabin airlock to cross into the station's boarding airlock. Pilots, press B to leave the console first.",
-  'space.linkedAirlock': 'Boarding link established ({s}s): walk to the boarding airlock exit to cross over. Pilots, press B to leave the console first.',
+  'space.linkedSt': "Boarding link established ({s}s): walk to your cabin airlock to cross into the station's boarding airlock. Pilots, press {key_unpilot} to leave the console first.",
+  'space.linkedAirlock': 'Boarding link established ({s}s): walk to the boarding airlock exit to cross over. Pilots, press {key_unpilot} to leave the console first.',
   'space.linkEndAirlock': 'Boarding link ended: the boarding airlock exit is sealed again.',
   'st.impactWarn': 'Orbital debris is falling toward the surface of Verdance: impact in {s}s. Get out of the red warning circle! The crater will be left irradiated.',
   'st.bravadoImpact': "The turbulence from every impact is tearing at the landed Bravado's hull: about {n} more impacts and it breaks apart, killing everyone aboard. Lift off from the console (the launch sequence takes 45 s), or take the landing portal in the Drop Bay down to the surface.",

@@ -12,7 +12,7 @@ import { DAMAGE_HOOKS, DEATH_HOOKS, damage } from '../systems/damage'
 import { issue } from '../systems/orders'
 import { isHostile } from '../systems/combat'
 import { carries, dropOnGround, giveItem, hasItem } from '../systems/items'
-import { createShip, launchTo } from '../systems/space'
+import { createShip, launchTo, zoneLabel } from '../systems/space'
 
 /** 由 AI 決定敵意、平時中立的類型 */
 const HOSTILE_AI = new Set(['hostile', 'fox', 'turret', 'fleet', 'spaceHunter'])
@@ -595,6 +595,13 @@ export function possessSlugling(g: Game, slot: number): boolean {
   p.control = s.id
   p.data.slug = s.id
   issue(s, null)
+  // 第 9 輪（上架前總評 P2-1）：觀戰視角換到蛞蝓仔所在的站（附身後用旁觀者視野判斷可指揮的目標，原作行為；
+  // 視野停在原站的話，牠在那一站什麼都指揮不了），並私訊本人附身在哪個站、哪個房間（死者本來就看得到全場，不多給資訊）
+  p.specZone = s.zone
+  const z = g.world.zones[s.zone]
+  const loc = zoneLabel(g, z)
+  const room = z.layout ? roomAt(z.layout, s.x, s.y)?.spec.name : undefined
+  g.privateLine(p.slot, 'fix9s.slug.ok', { sz: loc.zh, se: loc.en, rz: room ? '的' + room.zh : '', re: room ? ', ' + room.en : '' })
   return true
 }
 

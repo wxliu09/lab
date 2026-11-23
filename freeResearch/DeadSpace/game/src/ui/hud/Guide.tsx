@@ -3,10 +3,13 @@
 // 不顯示、也不暗示別人的身分。規則細節的出處見 strings/guide.ts 開頭。
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { PRACTICE_ROOM, type AiLevel, type EndResult, type PrivateState, type WorldPublic } from '../../shared/protocol/messages'
+import { DEFAULT_SETTINGS, PRACTICE_ROOM, type AiLevel, type ChatLine, type EndResult, type PrivateState, type WorldPublic } from '../../shared/protocol/messages'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
-import { lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import { chatLog, chatTaps, endResult, isHost, lastEnd, lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
+import { isHostAbort } from '../../client/hostAbort'
+import { inPractice } from '../screens/practiceRun'
+import { CabinTracker, stationDockable } from '../../client/hatch'
 import { chatOpen, dialogOpen, evolveOpen, localNotice, modalChecks, typingInField } from '../../client/input'
 import { DEFAULT_BODY_R } from '../../render/moveTargets'
 import { isPrey, navKindOf, navTarget, preyTarget, stationHas, stationLayout, type NavKind, type SeenEnt } from './facilityNav'
@@ -21,11 +24,15 @@ import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide
 import { sampleName } from '../../shared/sysArgs'
 import { SIM_AGENT_TITLE, localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
-import { abilityKey, actionKey } from './abilityKeys'
+import { abilityKey, actionKey, itemKey } from './abilityKeys'
 import { aoeDamage } from '../aoe'
 import { guideBelow } from './topLayout'
 import '../strings/ui6'
 import '../strings/ui8'
+// 第 9 輪：船艙、附身蛞蝓仔、站點耐久、依身分的提示；按鍵佔位符沒有按鍵時的說法
+import '../strings/fix9k'
+// 結算後的按鈕名稱（room6.after.results、room6.end.toLobby）
+import '../strings/room6'
 // 觀戰「下一個熱點」的按鍵說明（feel7.kb.a.nextHotspot，死者組第 8 輪）
 import '../strings/ghost8'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
@@ -141,7 +148,7 @@ export const HINT_LIFE = 12
 export const MAX_HINTS = 2
 
 /** 警告類提示（樣式：黃框）*/
-const WARN_HINTS = new Set(['lowHp', 'lowHpNoKit', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
+const WARN_HINTS = new Set(['lowHp', 'lowHpNoKit', 'lowHpSolo', 'lowHpSoloNoKit', 'death', 'deathAndroid', 'stab', 'androidFf', 'parasited', 'prioned'])
 /** 不等空位的提示：警告，和「身在哪裡」的提示（船艙裡的下船方法：排在教學提示後面就等於下船之後才出現）*/
 export const URGENT_HINTS = new Set([...WARN_HINTS, 'shipInside'])
 /**
@@ -156,11 +163,15 @@ export const TRANSIENT_HINTS = new Set([
   'androidFull',
   'lowHp',
   'lowHpNoKit',
+  'lowHpSolo',
+  'lowHpSoloNoKit',
   'parasited',
   'prioned',
   'shipInside',
   'suit',
   'sampler',
+  'samplerAndroid',
+  'samplerHidden',
   'rally',
   'resolver',
   'core',
@@ -295,6 +306,49 @@ export interface GuideView {
   practice?: AiLevel
   /** 大廳設定「死者看見真實身分」（開著時死者不能附身蛞蝓仔）*/
   ghostSight?: boolean
+  /** 這一局自己做過站內監控掃描（sim 只把掃描結果私訊給施放者）：「先做：」不再叫他去掃描 */
+  swept?: boolean
+  /**
+   * 自己（主單位，沒在駕駛）站在船艇的船艙裡：docked = 停泊中／在太空中／不確定（client/hatch.ts CabinTracker 的推斷），
+   * launchIn = 發射倒數的剩餘秒數（私有狀態 launchIn；0 = 沒在倒數）
+   */
+  cabin?: { docked: boolean | null; launchIn: number }
+  /** 死者附身蛞蝓仔：on = 正在操控那隻蛞蝓仔，used = 這局附身過、牠已經死了（每人一次）*/
+  slug?: 'on' | 'used'
+  /**
+   * 自己所在站點的耐久（太空層的站點實體，所有人都看得到；翠原星與船艙不算）：st = 站名，n = 剩幾 %，
+   * falling = 最近 HULL_WINDOW 秒內掉了 HULL_FALL 以上（HullWatch）
+   */
+  hull?: { st: string; n: number; falling: boolean }
+  /**
+   * 這局已經結算（session 的 lastEnd／endResult）：上方小列有哪些按鈕（同 Panels.tsx afterEndActions 的規則，見 endActionsOf）。
+   * 有這個欄位時目標面板不再列進行中的目標，只說「這局已結束」與小列的按鈕
+   */
+  ended?: EndActions
+}
+
+/** 結算後上方小列（Panels.tsx AfterEndBar）的按鈕：練習局「再來一局」、多人局主機「回到大廳」、客人「主機回到大廳時你會一起回去」*/
+export interface EndActions {
+  again: boolean
+  lobby: boolean
+  guestHint: boolean
+}
+
+/**
+ * 結算後小列的按鈕（規則和 Panels.tsx 的 afterEndActions／lobbyAgain 一樣，tests 對照兩邊一致；
+ * Guide 不 import Panels：Panels 會 import Guide，還會載入 3D 場景）。主機中止的局只有「查看結算」
+ */
+export function endActionsOf(r: EndResult | null, practice: boolean, host: boolean): EndActions | null {
+  if (!r) return null
+  const lobby = !practice && !isHostAbort(r)
+  return { again: practice, lobby: lobby && host, guestHint: lobby && !host }
+}
+
+/** 結算後目標面板唯一的一條：指向上方小列的「查看結算」，練習局再提「再來一局」、多人局提「回到大廳」*/
+export function endStep(a: EndActions): Step {
+  const args = { res: t('room6.after.results'), again: t('ui5.practice.again'), lobby: t('room6.end.toLobby') }
+  const key = a.again ? 'fix9k.guide.s.endPractice' : a.lobby ? 'fix9k.guide.s.endHost' : a.guestHint ? 'fix9k.guide.s.endGuest' : 'fix9k.guide.s.endOnly'
+  return { key, args }
 }
 
 export function identityOf(me: Partial<PrivateState>): Identity | null {
@@ -325,6 +379,14 @@ function samplerInStock(): boolean {
 
 export function invSlot(me: Partial<PrivateState>, pred: (item: string) => boolean): number {
   return (me.inv ?? []).findIndex((s) => !!s && pred(s.item))
+}
+
+/**
+ * 背包第 i 格（0 起算）的快捷鍵，照按鍵設定（第 9 輪：以前直接寫格子編號，改鍵後仍寫「按 1」）；
+ * 那一格沒有按鍵時寫「背包第 N 格」（點格子也能用）
+ */
+export function slotText(i: number): string {
+  return itemKey(i) || t('fix9k.key.slot', { n: i + 1 })
 }
 
 function isSuitItem(id: string): boolean {
@@ -512,12 +574,118 @@ export function rotate<T>(list: readonly T[], time: number): T {
   return list[Math.floor(Math.max(0, time) / ALT_PERIOD) % list.length]
 }
 
-function altTask(me: Partial<PrivateState>, time: number): Step {
+function altTask(me: Partial<PrivateState>, time: number, swept = false): Step {
   const list: Step[] = []
   const kr = abilityKey(me, 'cls.rummage')
   if (kr !== null) list.push({ key: 'guide.s.altRummage', args: { k: keyText(kr) } })
-  list.push({ key: 'guide.s.altScan' }, { key: 'guide.s.altGear' }, { key: 'guide.s.altGroup' })
+  // 已經做過站內監控掃描就不再叫他去掃（第 9 輪審查：掃完了還一直顯示）
+  if (!swept) list.push({ key: 'guide.s.altScan' })
+  list.push({ key: 'guide.s.altGear' }, { key: 'guide.s.altGroup' })
   return rotate(list, time)
+}
+
+// ───────── 船艙、站點耐久、附身蛞蝓仔（第 9 輪）─────────
+
+/** 船艙裡（還沒駕駛）的那一條：發射倒數中、停泊中、在太空中、不確定 */
+export function cabinStep(c: NonNullable<GuideView['cabin']>): Step {
+  if (c.launchIn > 0) return { key: 'fix9k.guide.s.cabinLaunching', args: { s: Math.max(1, Math.ceil(c.launchIn)) } }
+  if (c.docked === true) return { key: 'fix9k.guide.s.cabinLaunch' }
+  if (c.docked === false) return { key: 'fix9k.guide.s.cabinFlying' }
+  return { key: 'fix9k.guide.s.cabinUnknown' }
+}
+
+/** 所在站點耐久低於這個比例：目標面板最上面警告（並指向救生艙裝置）*/
+export const HULL_WARN = 0.5
+/** 最近 HULL_WINDOW 秒內掉了這麼多（滿耐久的比例）也算「正在快速受損」 */
+export const HULL_FALL = 0.08
+export const HULL_WINDOW = 10
+
+/** 自己所在站點的耐久警告（紅色、排最前面）；耐久還高、也沒在快速掉就沒有 */
+export function hullStep(h: GuideView['hull']): Step | null {
+  if (!h) return null
+  if (h.n <= HULL_WARN * 100) return { key: 'fix9k.guide.s.hull', args: { st: h.st, n: h.n }, danger: true }
+  if (h.falling) return { key: 'fix9k.guide.s.hullFall', args: { st: h.st, n: h.n }, danger: true }
+  return null
+}
+
+/** client 看到的實體（ClientWorld.ents 的值）裡用到的欄位 */
+interface EntLike {
+  s: { d?: string; z?: number; hp?: number; mhp?: number }
+}
+
+/**
+ * 所在站點的耐久：太空層（zone 0）上那座站的實體（def id 'station.<站點 id>'，sim setup.ts stationUnitId）的 hp／mhp，
+ * 所有人都看得到（sim vision.ts：太空層的實體全場可見）。記下最近 HULL_WINDOW 秒（遊戲時間）的比例，算出是不是正在快速掉。
+ * 翠原星是行星（地表的人撤到這裡），船艙不是站點：都不算
+ */
+export class HullWatch {
+  private station = ''
+  private samples: [t: number, r: number][] = []
+
+  update(station: string | undefined, ents: Iterable<EntLike>, time: number): GuideView['hull'] {
+    if (!station || station === SURFACE_STATION || station.startsWith('ship:')) return this.reset()
+    const def = 'station.' + station
+    let e: EntLike | undefined
+    for (const x of ents)
+      if (x.s.z === 0 && x.s.d === def) {
+        e = x
+        break
+      }
+    const hp = finite(e?.s.hp)
+    const mhp = finite(e?.s.mhp)
+    if (hp === null || mhp === null || mhp <= 0 || hp <= 0) return this.reset()
+    const r = Math.min(1, hp / mhp)
+    // 換了站、或時間倒退（新的一局）：重新記
+    const last = this.samples[this.samples.length - 1]
+    if (station !== this.station || (last && time < last[0])) {
+      this.station = station
+      this.samples = []
+    }
+    const prev = this.samples[this.samples.length - 1]
+    if (prev && prev[0] === time) prev[1] = Math.min(prev[1], r)
+    else this.samples.push([time, r])
+    while (this.samples.length > 1 && this.samples[0][0] < time - HULL_WINDOW) this.samples.shift()
+    const peak = Math.max(...this.samples.map((s) => s[1]))
+    const st = loc(STATION_BY_ID.get(station)?.name) || station
+    return { st, n: Math.max(1, Math.min(100, Math.round(r * 100))), falling: peak - r >= HULL_FALL }
+  }
+
+  private reset(): undefined {
+    this.station = ''
+    this.samples = []
+    return undefined
+  }
+}
+
+/** 掃描結果的私訊（sim space.ts sweepReport：space.sweepResult／space.sweepNone 只給施放者）*/
+export function isSweepReport(l: { ch: string; text: string }): boolean {
+  return l.ch === 'private' && /^@space\.sweep(Result|None)(\||$)/.test(l.text)
+}
+
+/** 蛞蝓仔的 def id（sim creatures.ts possessSlugling 附身的就是這種）*/
+const SLUG_DEF = 'creature.slugling'
+
+/**
+ * 死者是不是正在操控附身的蛞蝓仔：死後 sim 把 control 清成 0（roleSystem.ts onMainDeath），
+ * 之後唯一會讓死者的 control 指向別的單位的是附身蛞蝓仔（creatures.ts possessSlugling）；牠在快照裡看得到時再確認一次外觀
+ */
+export function possessingSlug(me: Partial<PrivateState>, ctl: EntLike | undefined): boolean {
+  if (me.alive !== false || me.role === 'spectator') return false
+  if (!me.control || me.control === me.unit) return false
+  return !ctl || ctl.s.d === SLUG_DEF
+}
+
+/** 練習局開局時 sim 用的末日時間（sim/systems/events.ts PRACTICE_APOCALYPSE；UI 不 import sim，tests 對照兩邊一致）*/
+export const PRACTICE_APOCALYPSE_UI: readonly [number, number] = [20, 25]
+
+/**
+ * 這一局實際的末日時間（仿生人 EP 速度要用它，shared/pacing.ts）：練習局的主機沒改過末日時間時，
+ * sim 開局改用練習局的設定（server.ts：practice && !apoCustom），大廳設定仍是預設值，所以 client 要自己換
+ */
+export function effectiveApocalypse(apo: readonly [number, number] | undefined, practice: boolean): readonly [number, number] | undefined {
+  if (!apo) return practice ? PRACTICE_APOCALYPSE_UI : undefined
+  const d = DEFAULT_SETTINGS.apocalypse
+  return practice && apo[0] === d[0] && apo[1] === d[1] ? PRACTICE_APOCALYPSE_UI : apo
 }
 
 // ───────── 職業名稱（晉升）─────────
@@ -576,7 +744,7 @@ function androidBlend(v: GuideView, time: number): Step {
   const smp = invSlot(me, (i) => i === 'geneSampler')
   const sample: Step =
     smp >= 0
-      ? { key: 'guide.s.androidSample', args: { k: smp + 1 } }
+      ? { key: 'guide.s.androidSample', args: { k: slotText(smp) } }
       : (v.w.t ?? 0) >= gitAtOf(v.w) || samplerInStock()
         ? { key: 'guide.s.androidSampleGet' }
         : { key: 'guide.s.androidSampleWait', args: { t: fmtTime(gitAtOf(v.w) - (v.w.t ?? 0)) } }
@@ -598,7 +766,7 @@ export function infectionStep(v: GuideView): Step | null {
   if (live) {
     const who = live === 'parasite' ? 'Parasite' : 'Prion'
     const kit = invSlot(v.me, (i) => i === 'antibodyKit')
-    return kit >= 0 ? { key: 'guide.s.infect' + who, args: { k: kit + 1 }, danger: true } : { key: 'guide.s.infect' + who + 'Get', danger: true }
+    return kit >= 0 ? { key: 'guide.s.infect' + who, args: { k: slotText(kit) }, danger: true } : { key: 'guide.s.infect' + who + 'Get', danger: true }
   }
   const held = kinds.find((k) => k === 'containedParasite' || k === 'containedPrion')
   if (held)
@@ -626,6 +794,9 @@ export function pilotStep(me: Partial<PrivateState>, ctrl: string | undefined): 
   if (ctrl === 'npc.defenseDrone') return { key: 'ui6.guide.s.pilotDrone' }
   return null
 }
+
+/** 仿生人升級機體的鑄造台所在的站（裁決者號）*/
+export const FORGE_STATION = 'adjudicatrix'
 
 /** 仿生人每秒自動得到的 EP 的下限（原作的 1.5；實際速度隨末日時間縮放，見 shared/pacing.ts androidEpPerSec）*/
 export const ANDROID_EP_PER_SEC = 1.5
@@ -658,6 +829,8 @@ export function objectiveFor(v: GuideView): Objective | null {
   const me = v.me
   const id = identityOf(me)
   if (!id) return null
+  // 這局已經結算（第 9 輪）：不再列進行中的目標（例如「子艦隊來襲…」「按 1 穿上防護服」），只說這局結束了、上方小列能做什麼
+  if (v.ended) return { id, goal: 'room6.after.title', steps: [endStep(v.ended)] }
   const steps: Step[] = []
   const add = (key: string, args?: Step['args']) => steps.push({ key, args })
   // 正在進化（結繭、肉團）時不再顯示「可以進化」
@@ -673,7 +846,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       sub = classLabel(me.classId, promoted)
       const suitAt = invSlot(me, isSuitItem)
       if (!suited(v)) {
-        if (suitAt >= 0) add('guide.s.suitWear', { k: suitAt + 1 })
+        if (suitAt >= 0) add('guide.s.suitWear', { k: slotText(suitAt) })
         else add('guide.s.suitGet')
       }
       const res = invSlot(me, (i) => i === 'gitResolver')
@@ -681,23 +854,23 @@ export function objectiveFor(v: GuideView): Objective | null {
       const gitAt = gitAtOf(v.w)
       const toNyx = wantsNyx(v)
       let waiting = false
-      if (res >= 0) add('guide.s.resolverUse', { k: res + 1 })
+      if (res >= 0) add('guide.s.resolverUse', { k: slotText(res) })
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
         if (names.length)
           add('guide.s.samplerProgress', {
-            k: smp + 1,
+            k: slotText(smp),
             n: names.length,
             names: listJoin(names.map((x) => localizeName(sampleName(x, lang.value)))),
           })
-        else add('guide.s.samplerUse', { k: smp + 1 })
+        else add('guide.s.samplerUse', { k: slotText(smp) })
       } else if (time < gitAt && !samplerInStock()) {
         // 基因檢測開放前：倒數＋一條可以先做的事（不然整段空窗只有「等」）
         waiting = true
         add('guide.s.samplerWait', { t: fmtTime(gitAt - time) })
         // 豪勇號上的空窗任務改成指路（下面的 guide.s.bravadoPod）：在這裡用站內監控掃描只會掃到自己
-        if (!toNyx) steps.push(altTask(me, altT))
+        if (!toNyx) steps.push(altTask(me, altT, v.swept))
       } else add('guide.s.samplerGet')
       if (toNyx) add('guide.s.bravadoPod')
       if (!waiting || time < ATTACK_STEP_UNTIL) add('guide.s.attack')
@@ -754,7 +927,8 @@ export function objectiveFor(v: GuideView): Objective | null {
       // 「協助人類」只是重述目標，放最後（通常擠不進 4 條）
       if (ep) {
         if (ready) add('guide.s.androidPick')
-        else if (ep.ep >= ep.next) add('guide.s.androidReady')
+        // 已經在裁決者號：站上鑄造平台；在別處：先說怎麼過去（救生艙或開船，第 9 輪休閒玩家審查）
+        else if (ep.ep >= ep.next) add(v.zoneStation === FORGE_STATION ? 'guide.s.androidReady' : 'fix9k.guide.s.androidGo')
         else add('guide.s.androidEp', androidEpRate(ep.ep, ep.next, v.epMult, v.apocalypse))
       }
       add('guide.s.ff')
@@ -791,10 +965,18 @@ export function objectiveFor(v: GuideView): Objective | null {
         add('guide3.s.bootedLeave')
         break
       }
+      // 正在操控附身的蛞蝓仔：換成牠的操作說明（鏡頭跟著牠，右上角選站用不到）
+      if (v.slug === 'on') {
+        add('fix9k.guide.s.slugMove')
+        add('fix9k.guide.s.slugLife')
+        add('guide.s.deadChat')
+        add('guide.s.endReveal')
+        break
+      }
       add('guide.s.specPick')
       add('guide.s.deadChat')
-      // 「死者看見真實身分」開著：不能附身蛞蝓仔，改提醒語音的默契
-      add(v.ghostSight ? 'ui8.guide.s.ghostSight' : 'guide.s.slug')
+      // 「死者看見真實身分」開著：不能附身蛞蝓仔，改提醒語音的默契；附身過了（牠已經死了）就說機會用掉了
+      add(v.ghostSight ? 'ui8.guide.s.ghostSight' : v.slug === 'used' ? 'fix9k.guide.s.slugUsed' : 'guide.s.slug')
       add('guide.s.endReveal')
       break
     case 'deadAndroid':
@@ -818,13 +1000,17 @@ export function objectiveFor(v: GuideView): Objective | null {
   // 駕駛船艇／站點／防禦無人機（第 6 輪審查 P2：發射後不知道怎麼開、怎麼停靠、怎麼離開）
   const pilot = EVENT_IDS.has(id) ? pilotStep(me, v.ctrl) : null
   if (pilot) steps.unshift(pilot)
+  // 站在船艙裡、還沒駕駛：怎麼發射、怎麼下船（第 9 輪審查：要開始駕駛後才有說明）
+  else if (EVENT_IDS.has(id) && v.cabin && !v.ctrl) steps.unshift(cabinStep(v.cabin))
   const live = id === 'xeno' || id === 'mutant' || id === 'android'
   const goal = id === 'dead' && me.booted ? 'guide3.goal.booted' : 'guide.goal.' + id
   // 攸關性命的感染（紅色）最前面，接著是重大事件（無人機群、小行星、天守、海盜、末日）的對策；
   // 本身的任務最多 4 條（含感染與事件），職業短句另外附在最後
   const inf = infectionStep(v)
-  const ev = EVENT_IDS.has(id) ? eventLines(v) : []
-  const main = [...(inf ? [inf] : []), ...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
+  // 所在站點快毀了（第 9 輪休閒玩家審查 P1）：紅色、排最前面；已經寫了耐久就不再列同一站的圍攻現況
+  const hull = EVENT_IDS.has(id) ? hullStep(v.hull) : null
+  const ev = EVENT_IDS.has(id) ? eventLines(v).filter((s) => !(hull && s.key === 'ui8.guide.siegeHere')) : []
+  const main = [...(hull ? [hull] : []), ...(inf ? [inf] : []), ...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
   const dim = steps.filter((s) => s.dim).slice(0, 1)
   return { id, goal, sub, steps: [...main, ...dim], ep: live ? ep : undefined }
 }
@@ -900,24 +1086,32 @@ export function detectHints(v: GuideView): Hint[] {
   if (me.canEvolve?.length && !me.evolving && (id === 'xeno' || id === 'mutant' || id === 'android')) add(id === 'xeno' ? 'evolveXeno' : id === 'mutant' ? 'evolveMutant' : 'evolveAndroid', 3)
   // 背包
   if ((me.inv ?? []).some(Boolean)) add('item', 25)
+  // 依自己現在的樣子給（第 9 輪休閒玩家審查：提示不分身分）：防護服只有人員穿得上（sim items.ts canWearSuit）、
+  // 醫護兵的治療術只治人員（cls.mend 的 filter）；異形形態、進化後的變種人、仿生人機體都不是人員
+  const selfDef = UNITS.get(v.self?.d ?? '')
+  const personnel = !selfDef || selfDef.tags.includes('personnel')
   const suitAt = invSlot(me, isSuitItem)
-  if (suitAt >= 0 && !suited(v)) add('suit', 22, { k: suitAt + 1 })
+  if (suitAt >= 0 && !suited(v) && personnel) add('suit', 22, { k: slotText(suitAt) })
   const smp = invSlot(me, (i) => i === 'geneSampler')
   if (smp >= 0) {
-    add('sampler', 21, { k: smp + 1 })
+    // 「可以抽自己」只對人類成立：仿生人的血讓報告變「錯誤」，異類（人形）的血會被驗出來
+    add(id === 'android' ? 'samplerAndroid' : id === 'human' ? 'sampler' : 'samplerHidden', 21, { k: slotText(smp) })
     // 對地面使用＝召集大家來驗血（規則：sim/scripts/git.ts gitRally）
     add('rally', 22)
   }
   const res = invSlot(me, (i) => i === 'gitResolver')
-  if (res >= 0) add('resolver', 21, { k: res + 1 })
+  if (res >= 0) add('resolver', 21, { k: slotText(res) })
   const core = invSlot(me, (i) => i === 'memoryCore')
-  if (core >= 0) add('core', 21, { k: core + 1 })
+  if (core >= 0) add('core', 21, { k: slotText(core) })
   if ((me.gitReports?.length ?? 0) > 0) add('report', 15)
   // 狀態
   const hp = v.self?.hp ?? 0
   const mhp = v.self?.mhp ?? 0
-  // 低血量：背包有醫療品才叫他用背包裡的，沒有就指向醫療補給／醫護兵
-  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) add(invSlot(me, (i) => itemDef(i)?.cat === 'medical') >= 0 ? 'lowHp' : 'lowHpNoKit', 1)
+  // 低血量：背包有醫療品才叫他用背包裡的，沒有就指向醫療補給／醫護兵；醫護兵治不了的樣子（不是人員）不提醫護兵
+  if (mhp > 0 && hp > 0 && hp / mhp < 0.35 && !me.evolving) {
+    const kit = invSlot(me, (i) => itemDef(i)?.cat === 'medical') >= 0
+    add(personnel ? (kit ? 'lowHp' : 'lowHpNoKit') : kit ? 'lowHpSolo' : 'lowHpSoloNoKit', 1)
+  }
   // 感染朊毒（自己的狀態清單本來就看得到）：人類死時會被轉化，教他用抗體包。
   // 被寄生不再另外跳提示（第 6 輪審查：同一段說明出現在 3 個地方）：sim 每次寄生都私訊完整說明（小提示顯示第一句、
   // 全文在聊天紀錄），目標面板最上面的紅色待辦（infectionStep）一直留著說怎麼處理；朊毒沒有私訊，照舊提示
@@ -960,10 +1154,27 @@ function viewFromWorld(): GuideView {
       if (dist <= 5) near.push({ d: e.s.d, dist })
     }
   }
-  const zs = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
+  const info = startInfo.value
+  const zs = info?.zones?.find((z) => z[0] === me.zone)?.[2]
   const altT = altFreeze.value
   const ctrl = me.control && me.control !== me.unit && me.alive !== false ? world.ents.get(me.control)?.s.d : undefined
   const set = lobby.value?.settings
+  const practice = !!set && lobby.value?.code === PRACTICE_ROOM
+  const apocalypse = effectiveApocalypse(set?.apocalypse, practice)
+  // 自己的身體所在的站（駕駛站點時 me.zone 是太空層，身體還在站裡）
+  const alive = !!self && me.alive !== false
+  const bodyStation = alive ? info?.zones?.find((z) => z[0] === self.s.z)?.[2] : undefined
+  const hull = hullWatch.update(bodyStation, world.ents.values(), world.w.t ?? 0)
+  // 船艙：每次都更新追蹤（駕駛中也要，才記得住駕駛的是哪一艘），沒在駕駛時才列出
+  const dock = alive ? cabinTrack.update(world, cabinZones(info), stationDockable) : null
+  const cabin = dock && !ctrl ? { docked: dock.docked, launchIn: me.launchIn ?? 0 } : undefined
+  // 死者附身蛞蝓仔：記下這一局附身過（牠死了之後 -slug 也不能再用）
+  const slugNow = possessingSlug(me, world.ents.get(me.control ?? 0))
+  if (slugNow) slugIn = info
+  const slug = slugNow ? 'on' : me.alive === false && thisGame(slugIn) ? 'used' : undefined
+  const swept = thisGame(sweptIn)
+  // 結算過了：關掉結算畫面（繼續觀看）之後 lastEnd 還在，結算畫面開著時 endResult 有值
+  const ended = endActionsOf(lastEnd.value ?? endResult.value, inPractice(), isHost.value)
   return {
     me,
     w: world.w,
@@ -971,12 +1182,42 @@ function viewFromWorld(): GuideView {
     near,
     zoneStation: zs,
     epMult: set?.epMult,
-    ...(set?.apocalypse ? { apocalypse: set.apocalypse } : {}),
-    ...(set && lobby.value?.code === PRACTICE_ROOM ? { practice: set.aiLevel } : {}),
+    ...(apocalypse ? { apocalypse } : {}),
+    ...(set && practice ? { practice: set.aiLevel } : {}),
     ...(set?.ghostSight ? { ghostSight: true } : {}),
     ...(altT !== null ? { altT } : {}),
     ...(ctrl ? { ctrl } : {}),
+    ...(swept ? { swept } : {}),
+    ...(cabin ? { cabin } : {}),
+    ...(slug ? { slug } : {}),
+    ...(hull ? { hull } : {}),
+    ...(ended ? { ended } : {}),
   }
+}
+
+/** 所在站點的耐久追蹤（viewFromWorld 每次都更新）*/
+const hullWatch = new HullWatch()
+/** 自己所在船艙的停靠狀態（client/hatch.ts；和艙門提示用的是不同的追蹤器，只看自己的觀察）*/
+const cabinTrack = new CabinTracker()
+/** 船艙追蹤需要的 zone 清單（站點 id；艙門位置用不到，給一個佔位）：每局開始時建一次 */
+let cabinZoneCache: { info: unknown; map: Map<number, { id: number; station: string; layout: { exits: { x: number; y: number }[] } }> } | null = null
+function cabinZones(info: { zones?: [number, string, string][] } | null): NonNullable<typeof cabinZoneCache>['map'] {
+  if (cabinZoneCache?.info !== info) {
+    const map: NonNullable<typeof cabinZoneCache>['map'] = new Map()
+    for (const [id, , station] of info?.zones ?? []) map.set(id, { id, station, layout: { exits: [{ x: 0, y: 0 }] } })
+    cabinZoneCache = { info, map }
+  }
+  return cabinZoneCache.map
+}
+
+/**
+ * 這一局發生過的事（記下當時的 startInfo，換局就失效）：自己做過站內監控掃描（Guide 掛上時看聊天紀錄、之後看新訊息）、
+ * 附身過蛞蝓仔（viewFromWorld 看到就記）
+ */
+let sweptIn: unknown = null
+let slugIn: unknown = null
+function thisGame(ref: unknown): boolean {
+  return ref !== null && ref === startInfo.value
 }
 
 // ───────── 目標面板的「點一下走過去」（facilityNav.ts）─────────
@@ -1043,14 +1284,29 @@ function zoomOf(el: HTMLElement): number {
   return parseFloat(getComputedStyle(el).zoom) || 1
 }
 
-/** 目標面板＋提示能用的高度（CSS px）：不超過 40vh，也不壓到聊天紀錄（聊天由下往上長，量它目前的頂端）*/
+/** 目標面板＋提示最多用到視窗高度的這個比例（guide.css 的 .guide-dock max-height 同一個值）*/
+export const DOCK_VH = 0.62
+
+/**
+ * 目標面板＋提示能用的高度（CSS px）：不超過 DOCK_VH，不超過聊天紀錄的底邊（下面是頭像與指令卡），
+ * 也不壓到看得到的聊天行（聊天由下往上長，量最上面那一行還看得到的頂端）。
+ * 第 9 輪休閒玩家審查：淡出的聊天行只是變透明、還佔著位置，以前量整個聊天框的頂端，開局一堆系統訊息把聊天框撐高，
+ * 加上 40vh 的上限，一跳提示就把目標面板的步驟全收起來（只剩總目標）
+ */
 function dockMax(dock: HTMLElement): number {
   const z = zoomOf(dock)
   const top = dock.getBoundingClientRect().top
-  let limit = window.innerHeight * 0.4
+  let limit = window.innerHeight * DOCK_VH
   const chat = document.querySelector('.chat') as HTMLElement | null
-  const r = chat?.getBoundingClientRect()
-  if (r && r.height > 0) limit = Math.min(limit, r.top - top - 10 * z)
+  if (chat) {
+    limit = Math.min(limit, chat.getBoundingClientRect().bottom - top - 10 * z)
+    for (const line of chat.querySelectorAll('.line:not(.faded)')) {
+      const r = line.getBoundingClientRect()
+      if (r.height <= 0) continue
+      limit = Math.min(limit, r.top - top - 10 * z)
+      break
+    }
+  }
   return Math.max(48, Math.floor(limit / z))
 }
 
@@ -1087,6 +1343,8 @@ const HINT_ICON: Record<string, string> = {
   item: 'info',
   suit: 'suit',
   sampler: 'dna',
+  samplerAndroid: 'dna',
+  samplerHidden: 'dna',
   rally: 'dna',
   resolver: 'dna',
   androidRole: 'gear',
@@ -1108,6 +1366,8 @@ const HINT_ICON: Record<string, string> = {
   rummage: 'gear',
   lowHp: 'heal',
   lowHpNoKit: 'heal',
+  lowHpSolo: 'heal',
+  lowHpSoloNoKit: 'heal',
   parasited: 'infect',
   prioned: 'infect',
   death: 'skull',
@@ -1164,8 +1424,16 @@ export function Guide() {
       guideOpen.value = !guideOpen.value
     }
     window.addEventListener('keydown', onKey, true)
+    // 自己做過站內監控掃描（掃描結果只私訊給施放者）：「先做：」不再叫他去掃。重連回同一局時聊天紀錄還在，先看一次
+    if (chatLog.value.some(isSweepReport)) sweptIn = startInfo.value
+    const tap = (lines: ChatLine[]) => {
+      if (lines.some(isSweepReport)) sweptIn = startInfo.value
+    }
+    chatTaps.push(tap)
     return () => {
       window.removeEventListener('keydown', onKey, true)
+      const i = chatTaps.indexOf(tap)
+      if (i >= 0) chatTaps.splice(i, 1)
       guideOpen.value = false
       altFreeze.value = null
     }
@@ -1188,7 +1456,8 @@ export function Guide() {
         changed = true
       }
       // 關掉提示、或已出局（死亡即退出：什麼都不能做了）：情境提示全部停止並清掉
-      if (!hintsEnabled.value || world.me.booted) {
+      // 結算之後（第 9 輪）也停：目標面板已經換成「這局已結束」，教學提示沒有意義了
+      if (!hintsEnabled.value || world.me.booted || lastEnd.value || endResult.value) {
         if (q.active.length || q.queue.length) {
           q.clear()
           changed = true
@@ -1598,7 +1867,8 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
   // 仿生人的 EP 速度依大廳的 EP 倍率（guide.r.android.4 的 {r}）
   const rate = { r: androidEpRate(0, 0, v.epMult, v.apocalypse).r }
   // 「死者看見真實身分」開著：「可以附身蛞蝓仔」換成這個設定的說明
-  const ghost = (k: string) => (v.ghostSight && k === 'guide.r.dead.3' ? 'ui8.guide.r.dead.ghost' : k)
+  // 正在附身蛞蝓仔：「可以附身」換成牠的操作說明（第 9 輪）
+  const ghost = (k: string) => (k !== 'guide.r.dead.3' ? k : v.ghostSight ? 'ui8.guide.r.dead.ghost' : v.slug === 'on' ? 'fix9k.guide.r.dead.slug' : k)
   const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => ghost('guide.r.' + k))).map((k) => t(k, rate))
   const c = CLASSES.get(me.classId ?? '')
   if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {

@@ -77,9 +77,11 @@ describe('通訊病毒', () => {
     g.triggerEvent!('virus', true)
     sec(h, 10.2)
     expect(ps.some((p) => shownBase(p) !== p.baseName)).toBe(true)
+    // 第 9 輪：只私訊名字真的換掉的人（洗牌抽回自己本名的人不收；死者也不收，r9t-sim 檢查）
+    const changed = new Set(ps.filter((p) => shownBase(p) !== p.baseName).map((p) => p.slot))
     for (const p of ps) {
       const mine = privOf(clientOf(h, p)).filter((l) => l.startsWith('@event.virus'))
-      expect(mine).toEqual([fmtKey('event.virusYou', { name: p.name, s: VIRUS_SWAP_S })])
+      expect(mine).toEqual(changed.has(p.slot) ? [fmtKey('event.virusYou', { name: p.name, s: VIRUS_SWAP_S })] : [])
     }
     expect(chatOf(clientOf(h, ps[0]))).toContain(fmtKey('event.virusDone', { s: VIRUS_SWAP_S }))
     for (const c of h.clients.values()) c.inbox.length = 0
@@ -92,7 +94,7 @@ describe('通訊病毒', () => {
     })
     for (const p of ps) {
       const priv = privOf(clientOf(h, p))
-      expect(priv.filter((l) => l.startsWith('@event.virus'))).toEqual([fmtKey('event.virusRestored', { name: p.name })])
+      expect(priv.filter((l) => l.startsWith('@event.virus'))).toEqual(changed.has(p.slot) ? [fmtKey('event.virusRestored', { name: p.name })] : [])
       // 私訊裡不會出現別人的名字
       for (const q of ps) if (q !== p) expect(priv.some((l) => l.includes(q.baseName))).toBe(false)
     }

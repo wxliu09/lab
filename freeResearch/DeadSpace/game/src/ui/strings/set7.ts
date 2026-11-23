@@ -46,7 +46,7 @@ export const SET7_ZH: Record<string, string> = {
   'set7.fps.n': '{n} FPS',
   'set7.reduced': '系統設定了「減少動態效果」：鏡頭震動與閃光一律不播',
   // ── 操作 ──
-  'set7.keySpeed': '方向鍵捲動速度',
+  'set7.keySpeed': '鏡頭鍵捲動速度',
   'set7.wheelSpeed': '滾輪縮放速度',
   'set7.wheelInvert': '反轉滾輪縮放',
   'set7.wheelInvert.hint': '打勾後往前滾＝拉遠',
@@ -100,7 +100,7 @@ export const SET7_EN: Record<string, string> = {
   'set7.fps.0': 'Unlimited',
   'set7.fps.n': '{n} FPS',
   'set7.reduced': 'Your system asks for reduced motion: camera shake and flashes stay off',
-  'set7.keySpeed': 'Arrow-key scroll speed',
+  'set7.keySpeed': 'Camera-key scroll speed',
   'set7.wheelSpeed': 'Wheel zoom speed',
   'set7.wheelInvert': 'Invert wheel zoom',
   'set7.wheelInvert.hint': 'When ticked, scrolling up zooms out',

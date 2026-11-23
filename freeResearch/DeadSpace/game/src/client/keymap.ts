@@ -281,7 +281,8 @@ export function refreshLayout(): void {
   }
 }
 
-if (typeof window !== 'undefined') {
+// 測試的假 window 可能沒有 addEventListener（i18n 的 t() 會 import 這裡帶出目前的鍵名，第 9 輪）
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   refreshLayout()
   window.addEventListener('focus', refreshLayout)
 }

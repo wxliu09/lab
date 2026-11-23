@@ -20,8 +20,8 @@ export const SIM7_ZH: Record<string, string> = {
   'replace.none.mutant': '變種人在開局不久就離開了，但已經沒有人可以接任。',
   'replace.none.android': '仿生人在開局不久就離開了，但已經沒有人可以接任。',
   // 補位者本人（只有他收到）
-  'replace.you.xeno': '原本的異形離開了，你被選中接任：你現在是異形。消滅所有敵人；按 Q 可以變成異形形態。沒有人知道是你接任的。',
-  'replace.you.mutant': '原本的變種人離開了，你被選中接任：你現在是變種人。消滅所有敵人；按 Q 可以吞噬小生物與失敗實驗體來累積 EP。沒有人知道是你接任的。',
+  'replace.you.xeno': '原本的異形離開了，你被選中接任：你現在是異形。消滅所有敵人；用指令卡上的「褪去人皮」可以變成異形形態。沒有人知道是你接任的。',
+  'replace.you.mutant': '原本的變種人離開了，你被選中接任：你現在是變種人。消滅所有敵人；用指令卡上的「吞噬」吞下小生物與失敗實驗體來累積 EP。沒有人知道是你接任的。',
   'replace.you.android': '原本的仿生人離開了，你被選中接任：你現在是仿生人。保護船員、找出異類。沒有人知道是你接任的。',
   // 結算時間軸
   'tl.replace.xeno': '{name} 接任異形（原本的異形開局不久就離開了）',
@@ -49,8 +49,8 @@ export const SIM7_EN: Record<string, string> = {
   'replace.none.xeno': 'The xeno left early in the game, but no one is left to take over.',
   'replace.none.mutant': 'The mutant left early in the game, but no one is left to take over.',
   'replace.none.android': 'The android left early in the game, but no one is left to take over.',
-  'replace.you.xeno': 'The original xeno left and you were chosen to take over: you are now the xeno. Destroy all enemies; press Q to take xeno form. No one knows it was you.',
-  'replace.you.mutant': 'The original mutant left and you were chosen to take over: you are now the mutant. Destroy all enemies; press Q to devour small creatures and failed experiments for EP. No one knows it was you.',
+  'replace.you.xeno': 'The original xeno left and you were chosen to take over: you are now the xeno. Destroy all enemies; use Shed the Skin on your command card to take xeno form. No one knows it was you.',
+  'replace.you.mutant': 'The original mutant left and you were chosen to take over: you are now the mutant. Destroy all enemies; use Devour on your command card to swallow small creatures and failed experiments for EP. No one knows it was you.',
   'replace.you.android': 'The original android left and you were chosen to take over: you are now the android. Protect the crew and find the hidden factions. No one knows it was you.',
   'tl.replace.xeno': '{name} took over as the xeno (the original xeno left early)',
   'tl.replace.mutant': '{name} took over as the mutant (the original mutant left early)',

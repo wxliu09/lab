@@ -11,12 +11,12 @@ export const UI6_ZH: Record<string, string> = {
   'ui6.settings.turnBad': 'JSON 格式錯誤：這段 TURN 設定還沒有儲存，目前沿用上一次的設定。',
   'ui6.settings.autoSaved': '所有設定都會立即生效並自動儲存',
   // ───── 目標面板（Guide.tsx）─────
-  // 駕駛中（pilotStep）：按鍵照實際綁定（右鍵移動、停靠技能的快捷鍵、B 離開控制台）
-  'ui6.guide.s.pilotShip': '駕船：右鍵移動・按 {k}「{name}」再點站點（畫面或小地圖都可以）停靠・B 離開控制台',
-  'ui6.guide.s.pilotShipNoDock': '駕船：右鍵移動・B 離開控制台',
-  'ui6.guide.s.pilotStation': '駕駛站點：右鍵移動整座站・指令卡換成站點的技能・B 離開控制台',
-  'ui6.guide.s.pilotFixed': '駕駛中：指令卡換成載具的技能・B 離開控制台',
-  'ui6.guide.s.pilotDrone': '操控防禦無人機：右鍵移動・B 交回自己的角色（離開圈子也會斷線）',
+  // 駕駛中（pilotStep）：按鍵照實際綁定（右鍵移動、停靠技能的快捷鍵、{key_unpilot} 離開控制台；第 9 輪起也跟著按鍵設定）
+  'ui6.guide.s.pilotShip': '駕船：右鍵移動・按 {k}「{name}」再點站點（畫面或小地圖都可以）停靠・{key_unpilot} 離開控制台',
+  'ui6.guide.s.pilotShipNoDock': '駕船：右鍵移動・{key_unpilot} 離開控制台',
+  'ui6.guide.s.pilotStation': '駕駛站點：右鍵移動整座站・指令卡換成站點的技能・{key_unpilot} 離開控制台',
+  'ui6.guide.s.pilotFixed': '駕駛中：指令卡換成載具的技能・{key_unpilot} 離開控制台',
+  'ui6.guide.s.pilotDrone': '操控防禦無人機：右鍵移動・{key_unpilot} 交回自己的角色（離開圈子也會斷線）',
   // EP 已達標但還不能選（epLeftText）
   'ui6.guide.epEvolving': '進化中',
   'ui6.guide.epEnough': 'EP 已足夠',
@@ -38,13 +38,13 @@ export const UI6_EN: Record<string, string> = {
     'Invalid JSON: this TURN setting has not been saved; the previous one stays in use.',
   'ui6.settings.autoSaved': 'Changes apply right away and are saved automatically',
   'ui6.guide.s.pilotShip':
-    'Flying: right-click to move · press {k} ({name}) then click a station (in view or on the minimap) to dock · B to leave the console',
-  'ui6.guide.s.pilotShipNoDock': 'Flying: right-click to move · B to leave the console',
+    'Flying: right-click to move · press {k} ({name}) then click a station (in view or on the minimap) to dock · {key_unpilot} to leave the console',
+  'ui6.guide.s.pilotShipNoDock': 'Flying: right-click to move · {key_unpilot} to leave the console',
   'ui6.guide.s.pilotStation':
-    'Piloting the station: right-click to move it · the command card holds its skills · B to leave the console',
-  'ui6.guide.s.pilotFixed': 'Piloting: the command card holds the vehicle’s skills · B to leave the console',
+    'Piloting the station: right-click to move it · the command card holds its skills · {key_unpilot} to leave the console',
+  'ui6.guide.s.pilotFixed': 'Piloting: the command card holds the vehicle’s skills · {key_unpilot} to leave the console',
   'ui6.guide.s.pilotDrone':
-    'Defense drone: right-click to move · B to return to your character (stepping out of the ring also cuts the link)',
+    'Defense drone: right-click to move · {key_unpilot} to return to your character (stepping out of the ring also cuts the link)',
   'ui6.guide.epEvolving': 'Evolving',
   'ui6.guide.epEnough': 'Enough EP',
   'ui6.tip.aoeCrew':

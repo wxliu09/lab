@@ -66,7 +66,7 @@ describe('仿生人：前期的「先做：」', () => {
     expect(at(500)).toContain('guide.s.androidSampleGet')
     expect(N.navKindOf('guide.s.androidSampleGet', 'nyx')).toBe('sampler')
     const withSampler = G.objectiveFor({ ...android({}, { inv: inv('traumaKit', 'geneSampler') }), w: { t: 540, stab: 1 } })!.steps
-    expect(withSampler.find((s) => s.key === 'guide.s.androidSample')?.args).toEqual({ k: 2 })
+    expect(withSampler.find((s) => s.key === 'guide.s.androidSample')?.args).toEqual({ k: '2' })
     // 「先做：」都是可以馬上做的事，文字以「先做：」開頭
     for (const k of ['guide.s.androidGroup', 'guide.s.androidSample', 'guide.s.androidSampleGet', 'guide.s.androidSampleWait']) {
       expect(GUIDE_ZH[k], k).toMatch(/^先做：/)
@@ -103,12 +103,12 @@ describe('仿生人：前期的「先做：」', () => {
   it('誤傷規則照 sim（roleSystem.ts）：打過的人類 5 分鐘內死掉才記點，累計超過 2.7 份滿血就強制關機', () => {
     lang.value = 'zh'
     expect(t('guide.s.ff')).toMatch(/5 分鐘/)
-    expect(t('guide.s.ff')).toContain('2.7')
     expect(GUIDE_EN['guide.s.ff']).toMatch(/5 min/)
-    expect(GUIDE_EN['guide.s.ff']).toContain('2.7')
-    for (const k of ['guide.h.androidFf', 'guide.r.android.2']) {
-      expect(GUIDE_ZH[k], k).toContain('2.7')
-      expect(GUIDE_EN[k], k).toContain('2.7')
+    // 第 9 輪：對玩家說成「將近 3 名船員的一整條血」（不寫工程化的「2.7 份」，同 game.ts role.androidShutdown 的說法）
+    for (const k of ['guide.s.ff', 'guide.h.androidFf', 'guide.r.android.2']) {
+      expect(GUIDE_ZH[k], k).toContain('將近 3 名船員的一整條血')
+      expect(GUIDE_EN[k], k).toContain('nearly three crew members’ full health')
+      expect(GUIDE_ZH[k] + GUIDE_EN[k], k).not.toContain('2.7')
     }
     const run = (victims: number, frac: number) => {
       const { h } = Harness.started(6, 4141, { eventMult: 0 })

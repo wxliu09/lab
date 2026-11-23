@@ -22,6 +22,9 @@ import '../../src/ui/strings/ai8'
 import '../../src/ui/strings/rule8'
 import '../../src/ui/strings/ghost8'
 import '../../src/ui/strings/ui8'
+import '../../src/ui/strings/fix9k'
+import '../../src/ui/strings/fix9s'
+import '../../src/ui/strings/fix9t'
 
 function files(dir: string): string[] {
   const out: string[] = []

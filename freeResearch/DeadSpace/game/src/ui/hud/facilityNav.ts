@@ -70,6 +70,11 @@ export const STEP_NAV: Readonly<Record<string, NavKind>> = {
   'guide.ev.doom': 'escapePod',
   'guide.ev.doom.orbit': 'escapePod',
   'guide.ev.doom.fleet': 'escapePod',
+  // 第 9 輪：所在站點快毀了、被無人機群圍攻中、仿生人要去裁決者號升級：走到救生艙裝置
+  'fix9k.guide.s.hull': 'escapePod',
+  'fix9k.guide.s.hullFall': 'escapePod',
+  'ui8.guide.siegeHere': 'escapePod',
+  'fix9k.guide.s.androidGo': 'escapePod',
 }
 
 /** 只在某一站才指得到的步驟：天守收容失效要駕駛的是天守砲台的控制台，在別站點了會走去錯的控制台 */

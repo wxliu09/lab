@@ -235,6 +235,12 @@ function isInnocent(g: Game, p: GamePlayer): boolean {
 
 // ───────── 安裝 ─────────
 
+/**
+ * 仿生人誤傷懲罰的門檻（原作 Rf 2443–2452：uo > 2.7 就殺死機器人）。單位是「船員的一整條血」：
+ * 給玩家看的文字寫成「將近 3 名船員的一整條血」（game.ts role.androidShutdown、bios.ts；r9t 測試對照）
+ */
+export const ANDROID_FF_LIMIT = 2.7
+
 export function installRoles(g: Game): void {
   const tk = new Map<string, { v: number; t: number }>()
   let androidPenalty = 0
@@ -360,7 +366,7 @@ export function installRoles(g: Game): void {
       const fp = g.faction(p)
       if (fp === 'crew' && !p.spawnOf && fwd && g.time - fwd.t <= 300) {
         androidPenalty += fwd.v - (back?.v ?? 0)
-        if (androidPenalty > 2.7) {
+        if (androidPenalty > ANDROID_FF_LIMIT) {
           androidPenalty = 0
           const am = g.mainOf(andr)
           if (am) {

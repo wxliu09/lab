@@ -97,9 +97,10 @@ describe('通訊病毒：命名規則與私訊', () => {
       // 真名沒變（結算時間軸用）
       expect(p.baseName).toBe(bases[ps.indexOf(p)])
     }
+    // 第 9 輪：私訊只給活著、名字真的換掉的人（洗牌抽回自己本名的人不收「你現在顯示為『自己的名字』」）
     for (const p of ps.filter((q) => !q.bot)) {
       const mine = chatOf(clientOf(h, p)).filter((l) => l.startsWith('@event.virusYou'))
-      expect(mine).toEqual([fmtKey('event.virusYou', { name: p.name, s: VIRUS_SWAP_S })])
+      expect(mine).toEqual(shownBase(p) !== p.baseName ? [fmtKey('event.virusYou', { name: p.name, s: VIRUS_SWAP_S })] : [])
     }
     // client 依語言換掉前綴（name 參數由 sysText 在地化）
     const dr = ps.find((p) => prefixOf(p) === 'Dr. ')

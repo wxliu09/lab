@@ -211,12 +211,13 @@ const A = (a: AbilityDef) => a
 regAbilities([
   A({ id: 'ship.dock', name: L('停靠', 'Dock'), desc: L('停靠到附近的站點，船艇會落在對方的停機坪上。', 'Dock with a nearby station; the craft lands on one of its pads.'), icon: 'ship', target: 'unit', range: 2, cd: 30, mana: 0, filter: { station: true }, effects: [{ k: 'script', fn: 'space.dock' }] }),
   // 強行登艦（原作 A02J）：對象是「探索船」——各艘船艇，以及不能停靠、只能登艦的火口號、擺渡號（研究 03 §2.3）
+  // 說明不寫鍵名（loc() 顯示、不經 t() 的佔位符；鍵位可以改）：寫指令卡上方按鈕的名字（cmd.unpilot）
   A({
     id: 'ship.board',
     name: L('強行登艦', 'Board'),
     desc: L(
-      '鎖住另一艘船（或火口號、擺渡號）20 秒，期間雙方的艙門互通：按 B 離開控制台、走到船艙的艙門（站上是登艦氣閘的出入口），就會進入對方那裡（對方也能過來）。',
-      'Latch onto another craft (or the Caldera or Portage) for 20 s; the airlocks connect. Press B to leave the console and walk to your cabin airlock (on a station, the boarding airlock exit) to cross over (they can cross to you too).',
+      '鎖住另一艘船（或火口號、擺渡號）20 秒，期間雙方的艙門互通：按「離開控制台」、走到船艙的艙門（站上是登艦氣閘的出入口），就會進入對方那裡（對方也能過來）。',
+      'Latch onto another craft (or the Caldera or Portage) for 20 s; the airlocks connect. Click Leave console, then walk to your cabin airlock (on a station, the boarding airlock exit) to cross over (they can cross to you too).',
     ),
     icon: 'door',
     target: 'unit',

@@ -5,6 +5,9 @@
 //   沒有人的空站換到人多的站；站內沒有新戰鬥時鏡頭對準看板的交戰焦點或人群（gameScene 的戰鬥跟隨呼叫 actionTick）。
 //   手動點清單選站＝釘住這一站（只在站內跟，不自動換站），按「下一個熱點」或重新打開跟隨才解除。
 // - 亡者之眼（settings.ghostSight）：快照的 gf（真實陣營）→ 名牌顏色。
+// - 第 9 輪（上架前總評）：站內人群焦點一直找不到任何看得到的人（看板寫有人，但他隱形、在救生艙裡）BLIND_S 秒就換站；
+//   挑站時優先已經建好場景的站（換站不必等「載入中」），還沒建好的站要停得更久才換；
+//   附身蛞蝓仔（-slug）時暫停自動跟隨、改成跟著蛞蝓仔（空白鍵跳到牠所在的站）。
 // 純邏輯函式不碰 session（單元測試直接呼叫）；用到 session 的只在函式裡面取用（有些單元測試的 session mock 不完整）。
 import type { CEnt, ClientWorld } from './world'
 import type { GhostKind, PrivateState, SnapEntity, SpecBoard } from '../shared/protocol/messages'
@@ -25,6 +28,12 @@ const QUIET = 6
 const HOT_FRESH = 4
 /** 戰鬥跟隨的焦點這麼久（秒，畫面時間）沒有新事件：改用看板焦點或人群 */
 export const ACTION_IDLE = 12
+/** 要換去的站還沒建好場景（換過去會「載入中」）：上次換站之後至少停這麼久（遊戲秒數）才換 */
+export const SWITCH_DWELL_LOAD = 15
+/** 站內一直找不到任何看得到的人（人群焦點是空的、也沒有交戰焦點）這麼久（遊戲秒數）：換到別站 */
+export const BLIND_S = 7
+/** 因為「看不到人」離開的站，這麼久（遊戲秒數）之內不會因為人多又被選回來（剛交戰的照樣可以）*/
+const BLIND_FORGET = 90
 
 export interface BoardRow {
   id: number
@@ -90,23 +99,58 @@ export function nextHotZone(rows: Map<number, BoardRow>, cur: number | undefined
   return list.length > 1 ? list[(i + 1) % list.length].id : null
 }
 
+/** 這個 zone 的場景已經建好了嗎（GameScene 提供；沒有＝都當成建好，維持原本的選法）*/
+export type ZoneReady = (id: number) => boolean
+
 /**
  * 自動換站的決定（純邏輯）：這一站還在打就不換；別站剛打起來就過去（挑最熱的）；
- * 這一站沒人也沒剛死人就換到人最多的站。回傳要換去的 zone，不換回傳 null
+ * 這一站沒人也沒剛死人就換到人最多的站。回傳要換去的 zone，不換回傳 null。
+ * ready（第 9 輪）：剛打起來的站有好幾個時先挑場景已經建好的（一樣看得到戰鬥，不必等「載入中」）；
+ * 挑人多的站時，建好的站人數加倍計（人數差不多就去不用載入的那一站）
  */
-export function autoZone(rows: Map<number, BoardRow>, cur: number | undefined, now: number): number | null {
+export function autoZone(rows: Map<number, BoardRow>, cur: number | undefined, now: number, ready?: ZoneReady): number | null {
   const here = cur === undefined ? undefined : rows.get(cur)
   if (here && here.combat >= 0 && now - here.combat <= QUIET) return null
+  const ok = (id: number) => (ready ? ready(id) : true)
   let best: BoardRow | null = null
   for (const r of rows.values()) {
     if (r.id === cur || r.combat < 0 || now - r.combat > HOT_FRESH) continue
-    if (!best || r.heat > best.heat) best = r
+    if (!best || (ok(r.id) && !ok(best.id)) || (ok(r.id) === ok(best.id) && r.heat > best.heat)) best = r
   }
   if (best) return best.id
   if (here && (here.living > 0 || (here.death && now - here.death.t <= 15))) return null
+  return crowdZone(rows, cur, ok)
+}
+
+/** 人最多的站（不含 cur、skip）；建好場景的站人數加倍計 */
+function crowdZone(rows: Map<number, BoardRow>, cur: number | undefined, ok: ZoneReady, skip?: (id: number) => boolean): number | null {
   let crowd: BoardRow | null = null
-  for (const r of rows.values()) if (r.id !== cur && r.living > 0 && (!crowd || r.living > crowd.living)) crowd = r
+  let cs = 0
+  for (const r of rows.values()) {
+    if (r.id === cur || r.living <= 0 || skip?.(r.id)) continue
+    const sc = r.living * (ok(r.id) ? 2 : 1)
+    if (!crowd || sc > cs) {
+      crowd = r
+      cs = sc
+    }
+  }
   return crowd ? crowd.id : null
+}
+
+/**
+ * 這一站看不到人（第 9 輪 P2-6：看板寫「有 1 人」，但他隱形或在救生艙裡，畫面是空的）要換去哪：
+ * 先挑最近交戰過的站（2 分鐘內，越新越優先；建好場景的優先），其次人最多的站；skip = 最近也是因為看不到人才離開的站。
+ * 都沒有回傳 null（留著）
+ */
+export function blindZone(rows: Map<number, BoardRow>, cur: number | undefined, now: number, ready?: ZoneReady, skip?: (id: number) => boolean): number | null {
+  const ok = (id: number) => (ready ? ready(id) : true)
+  let best: BoardRow | null = null
+  for (const r of rows.values()) {
+    if (r.id === cur || r.combat < 0 || now - r.combat > 120) continue
+    if (!best || (ok(r.id) && !ok(best.id)) || (ok(r.id) === ok(best.id) && r.combat > best.combat)) best = r
+  }
+  if (best) return best.id
+  return crowdZone(rows, cur, ok, skip)
 }
 
 /** 這位 client 正在觀戰（看得到全場的死者或旁觀者；出局、等記憶核心的仿生人不算）*/
@@ -116,19 +160,74 @@ export function spectatingMe(me: Partial<PrivateState>): boolean {
 
 // ───────── 自動跟隨戰鬥的狀態（每個分頁一份）─────────
 
-const follow = { lastSwitch: -1e9, pinned: false, decideAt: 0 }
+const follow = { lastSwitch: -1e9, pinned: false, decideAt: 0, possessed: 0, possessAt: -1e9 }
+/** 看不到人的計時：zone、從什麼時候（遊戲秒數）開始找不到；因為看不到人而離開的站 → 離開的時間 */
+const blind = { zone: -1, since: -1, left: new Map<number, number>() }
 
 /** 開始觀戰（死亡、旁觀者開局）：預設打開自動跟隨戰鬥，馬上可以換站 */
 export function onSpectateStart(): void {
   follow.pinned = false
   follow.lastSwitch = -1e9
+  blind.zone = -1
+  blind.left.clear()
   followMode.value = 'action'
 }
 
 /** 不再觀戰（復活、新的一局）：活人的鏡頭不能還在自動跟著戰鬥跑 */
 export function onSpectateEnd(): void {
   follow.pinned = false
+  follow.possessed = 0
   if (followMode.peek() === 'action') followMode.value = 'off'
+}
+
+/** 死者附身的蛞蝓仔（-slug，sim 把 control 換成牠）的 id；沒有附身是 0 */
+export function possessedId(me: Partial<PrivateState>): number {
+  return spectatingMe(me) && me.role !== 'spectator' && me.control && me.control !== me.unit ? me.control : 0
+}
+
+/**
+ * 附身開始／結束（Panels 的觀戰列依 possessedId 呼叫）：開始時釘住目前的站（sim 已經把觀戰視角換到蛞蝓仔那一站）、
+ * 鏡頭改成跟著蛞蝓仔（暫停自動跟隨戰鬥）；蛞蝓仔死了就恢復自動跟隨戰鬥（還開著「跟著自己」才換，使用者自己關掉的不動）
+ */
+export function onPossess(id: number): void {
+  if (id === follow.possessed) return
+  const was = follow.possessed
+  follow.possessed = id
+  if (id) {
+    follow.pinned = true
+    followMode.value = 'self'
+  } else if (was) {
+    follow.pinned = false
+    follow.lastSwitch = -1e9
+    if (followMode.peek() === 'self') followMode.value = 'action'
+  }
+}
+
+/**
+ * 空白鍵（回到自己）時自己操控的單位在別的站（附身的蛞蝓仔、觀戰視角停在別處）：送 spec 換站並釘住，
+ * 換過去之後 GameScene 換 zone 時就會對準牠。回傳 true = 處理了（呼叫端不要再對準目前畫面上的座標）
+ */
+export function specGoTo(u: CEnt | undefined, w: ClientWorld = sessionWorld): boolean {
+  const me = w.me
+  if (!u || !spectatingMe(me) || u.s.i !== possessedId(me) || u.s.z === undefined || u.s.z === me.specZone) return false
+  follow.pinned = true
+  // 自動跟隨戰鬥還開著的話，換過去之後會又被拉走：改成跟著自己（蛞蝓仔）
+  if (followMode.peek() === 'action') followMode.value = 'self'
+  sendCmd({ k: 'spec', s: u.s.z })
+  return true
+}
+
+/**
+ * 附身中、鏡頭跟著蛞蝓仔（followMode = self）時牠換了站（搭船、被傳送）：觀戰視角跟過去（每秒最多送一次）。
+ * GameScene 每幀呼叫；now = performance.now() 秒
+ */
+export function possessFollowTick(w: ClientWorld, now: number): void {
+  const id = possessedId(w.me)
+  if (!id || followMode.peek() !== 'self' || now - follow.possessAt < 1) return
+  const u = w.ents.get(id)
+  if (!u || u.s.z === undefined || u.s.z === w.me.specZone) return
+  follow.possessAt = now
+  sendCmd({ k: 'spec', s: u.s.z })
 }
 
 /** 手動在清單上選站：釘住這一站（站內照樣跟戰鬥，但不自動換站）*/
@@ -200,30 +299,18 @@ const pt = { x: 0, y: 0 }
 
 /**
  * 戰鬥跟隨的每幀補充（render/gameScene.ts 的 action 跟隨呼叫；now = performance.now() 秒）：
- * 1. 觀戰中、沒有釘住站：每 0.5 秒看一次看板，需要時換站（autoZone；換站後至少停 SWITCH_DWELL 秒）；
- * 2. 回傳這一站沒有新戰鬥時鏡頭要對準的地方：看板的交戰焦點（剛打過），否則人群。沒有就 null
+ * 1. 觀戰中、沒有釘住站：每 0.5 秒看一次看板，需要時換站（autoZone；換站後至少停 SWITCH_DWELL 秒，
+ *    要去的站還沒建好場景時至少停 SWITCH_DWELL_LOAD 秒）；站內 BLIND_S 秒都找不到任何看得到的人也換（blindZone）；
+ * 2. 回傳這一站沒有新戰鬥時鏡頭要對準的地方：看板的交戰焦點（剛打過），否則人群。沒有就 null。
+ * ready = 場景已經建好的 zone（GameScene 提供）；busy = 鏡頭正跟著畫面上看得到的戰鬥特效（不算「看不到人」）
  */
-export function actionTick(w: ClientWorld, zone: number, now: number): { x: number; y: number } | null {
+export function actionTick(w: ClientWorld, zone: number, now: number, ready?: ZoneReady, busy = false): { x: number; y: number } | null {
   const me = w.me
   if (!spectatingMe(me)) return null
   const rows = boardRows(me.spec)
   const gt = w.serverTime
-  if (!follow.pinned && now >= follow.decideAt && rows.size) {
-    follow.decideAt = now + 0.5
-    if (gt - follow.lastSwitch >= SWITCH_DWELL) {
-      const z = autoZone(rows, me.specZone, gt)
-      if (z !== null && z !== me.specZone) {
-        sendCmd({ k: 'spec', s: z })
-        follow.lastSwitch = gt
-      }
-    }
-  }
   const r = rows.get(zone)
-  if (r && r.combat >= 0 && gt - r.combat <= COMBAT_RECENT) {
-    pt.x = r.hx
-    pt.y = r.hy
-    return pt
-  }
+  const hot = !!r && r.combat >= 0 && gt - r.combat <= COMBAT_RECENT
   if (crowd.zone !== zone || now - crowd.at > 1.5) {
     const c = crowdSpot(w.ents.values(), zone)
     if (!c) crowd.ok = false
@@ -234,6 +321,38 @@ export function actionTick(w: ClientWorld, zone: number, now: number): { x: numb
     }
     crowd.zone = zone
     crowd.at = now
+  }
+  // 看不到人的計時：畫面上的站就是觀戰視角的站、沒有交戰焦點、沒有正在跟的戰鬥特效、人群也是空的
+  const empty = zone === me.specZone && !hot && !busy && !crowd.ok
+  if (!empty) blind.zone = -1
+  else if (blind.zone !== zone) {
+    blind.zone = zone
+    blind.since = gt
+  }
+  if (!follow.pinned && now >= follow.decideAt && rows.size) {
+    follow.decideAt = now + 0.5
+    const since = gt - follow.lastSwitch
+    if (since >= SWITCH_DWELL) {
+      let z = autoZone(rows, me.specZone, gt, ready)
+      let why: 'auto' | 'blind' = 'auto'
+      if (z === null && blind.zone === zone && gt - blind.since >= BLIND_S) {
+        const left = blind.left
+        z = blindZone(rows, me.specZone, gt, ready, (id) => gt - (left.get(id) ?? -1e9) < BLIND_FORGET)
+        why = 'blind'
+      }
+      // 還沒建好場景的站：換過去要「載入中」，停久一點才去（剛打起來的戰鬥通常還會持續）
+      if (z !== null && z !== me.specZone && (!ready || ready(z) || since >= SWITCH_DWELL_LOAD)) {
+        if (why === 'blind' && me.specZone !== undefined) blind.left.set(me.specZone, gt)
+        sendCmd({ k: 'spec', s: z })
+        follow.lastSwitch = gt
+        blind.zone = -1
+      }
+    }
+  }
+  if (hot && r) {
+    pt.x = r.hx
+    pt.y = r.hy
+    return pt
   }
   if (!crowd.ok) return null
   pt.x = crowd.x

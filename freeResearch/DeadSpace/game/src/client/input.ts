@@ -25,7 +25,7 @@ import { sweepPeek } from './sweepPeek'
 import { cabinHatch } from './hatch'
 import { deny, lastDeny, type DenyKind } from './feedback'
 import { followMode, hudHidden } from './viewPrefs'
-import { nextHotspot } from './spectate'
+import { nextHotspot, specGoTo } from './spectate'
 import { ABILITY_ACTIONS, CAM_KEYS, ITEM_ACTIONS, actionFor, actionLabel, keyCapturing, type ActionId } from './keymap'
 import { CursorSetter, cursorState } from './cursors'
 import '../ui/strings/ux6'
@@ -1023,7 +1023,8 @@ export class Input {
     }
     c.tap = true
     const u = this.scene.myUnit()
-    if (u) this.scene.rts.focus(u.x, u.y)
+    // 附身的蛞蝓仔在別站（觀戰視角停在別處）：先把觀戰視角換過去，GameScene 切站時會對準牠（第 9 輪 P2-1）
+    if (u && !specGoTo(u)) this.scene.rts.focus(u.x, u.y)
     c.timer = setTimeout(() => {
       c.timer = 0
       if (!c.down || followMode.value !== 'off' || !this.scene.myUnit()) return

@@ -10,7 +10,7 @@ export const GHOST8_ZH: Record<string, string> = {
   'ghost8.proph.locked': '預言已經封死，不能再改。',
   // ── 觀戰清單 ──
   'ghost8.list.living': '{n} 人',
-  'ghost8.list.livingTip': '這裡活著的玩家（不含隱形中、躲在逃生艙裡的）',
+  'ghost8.list.livingTip': '這裡活著的玩家（不含隱形中、躲在救生艙裡的）',
   'ghost8.list.empty': '無人',
   'ghost8.list.combat': '交戰中',
   'ghost8.list.ships': '船艇',

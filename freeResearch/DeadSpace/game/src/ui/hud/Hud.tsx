@@ -5,13 +5,14 @@ import type { ComponentChildren } from 'preact'
 import { Stability } from './Events'
 import { audioPrefs, setAudioPref } from '../../audio/sfx'
 import { PLAYER_COLORS } from '../../shared/constants'
-import { ABILITIES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
+import { ABILITIES, CLASSES, ITEMS, UNITS, VENDORS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
+import type { BuffDef, UnitDef } from '../../shared/content/types'
 import { entDefName, localizeName, suitColor, textColorOf } from '../names'
-import { itemTip } from '../itemTip'
+import { atkText, dpsText, fmtNum, itemTip } from '../itemTip'
 import { hitsBystanders } from '../aoe'
 import { CdFace, fmtSecs } from './CdFace'
 import { Cell } from '../../shared/layout'
-import { EntFlag, type ChatChannel, type ChatLine, type SnapEntity } from '../../shared/protocol/messages'
+import { EntFlag, type ChatChannel, type ChatLine, type PrivateState, type SnapEntity } from '../../shared/protocol/messages'
 import { chatLog, isHost, send, sendCmd, snapTick, startInfo, world, connLost, hostStall, leave, notice, noticeKey, selfInLoadWait, hostGone, endResult, lastEnd, hostAbortEnd, hostConflictLive, hostLeaving } from '../../client/session'
 import { SIM_ERROR_KEY } from '../../net/hostRelay'
 import { gpuLost } from '../../render/engine'
@@ -57,6 +58,7 @@ import '../ui6.css'
 import '../hud7.css'
 import '../strings/ui6'
 import '../strings/vis7'
+import '../strings/fix9t'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -193,6 +195,22 @@ function tipContext(): string {
   return [me.zone, me.control, c?.s.z, me.alive, fv ? fv.id : '', menuOpen.value, settingsOpen.value, guideOpen.value, codexOpen.value, notesOpen.value, evolveOpen.value].join('|')
 }
 
+/**
+ * 頂列的 EP（第 9 輪）。原作的 EP 沒有上限、死後也照算（研究 02 §6.1：仿生人 Qo 每秒 +1.5、異形 Kx 每秒 +0.4 不看死活，
+ * war3map.j oGv 19414–19416），sim 照原作，這裡只改顯示：
+ * - 死了不顯示（死者用不到；頂列還寫「EP 442/660」只會誤導）。仿生人等記憶核心復活時照常顯示
+ * - 已經達到下一個門檻：不寫「/門檻」（「EP 2585 / 2000」看起來像溢位），改成「可進化」（仿生人「可升級」）
+ * 回傳 null = 不顯示
+ */
+export function epShown(me: Partial<PrivateState>): { ep: number; next: number; ready: string } | null {
+  if (!(me.role === 'xeno' || me.role === 'mutant' || me.role === 'android' || me.spawn)) return null
+  if (me.alive === false && !me.coreWait) return null
+  const ep = me.ep ?? 0
+  const next = me.epNext ?? 0
+  const ready = next > 0 && ep >= next ? (me.role === 'android' ? 'fix9t.ep.readyAndroid' : 'fix9t.ep.ready') : ''
+  return { ep, next, ready }
+}
+
 export function TopBar() {
   void snapTick.value
   // 單機練習：打開遊戲選單、說明、圖鑑、設定時請主機暫停，全部關掉時繼續（practicePause.ts）
@@ -212,6 +230,7 @@ export function TopBar() {
   const me = world.me
   const w = world.w
   const rl = roleLabel(me)
+  const epv = epShown(me)
   const fs = !!document.fullscreenElement
   return (
     <div ref={bar} class={'panel hud-top' + (place.compact ? ' compact' : '')} data-testid="game" style={place.left === null ? undefined : { left: `${place.left}px`, transform: 'none' }}>
@@ -242,10 +261,16 @@ export function TopBar() {
       >
         {rl.text}
       </span>
-      {(me.role === 'xeno' || me.role === 'mutant' || me.role === 'android' || me.spawn) && (
-        <span style={{ cursor: 'pointer' }} data-testid="ep" onClick={() => (evolveOpen.value = !evolveOpen.value)} {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body'), tag: 'V' }))}>
-          {t('hud.ep')} <b>{me.ep ?? 0}</b>
-          {me.epNext ? <span class="dim">/{me.epNext}</span> : null}
+      {epv && (
+        <span style={{ cursor: 'pointer' }} data-testid="ep" onClick={() => (evolveOpen.value = !evolveOpen.value)} {...tipProps(() => ({ title: t('tip.ep.title'), body: t('tip.ep.body'), tag: actionKey('evolve') || undefined }))}>
+          {t('hud.ep')} <b>{epv.ep}</b>
+          {epv.ready ? (
+            <span class="ep-ready" data-testid="ep-ready" style={{ color: 'var(--good)', marginLeft: '6px' }}>
+              {t(epv.ready)}
+            </span>
+          ) : epv.next ? (
+            <span class="dim">/{epv.next}</span>
+          ) : null}
         </span>
       )}
       {w.pz && <span style={{ color: 'var(--warn)' }}>{t('hud.paused')}</span>}
@@ -1066,6 +1091,7 @@ export function Portrait() {
   }
   const s = e.s
   const def = UNITS.get(s.d ?? '')
+  const pn = def ? portraitNums(s, def, s.i === world.me.unit ? world.me : undefined) : null
   const defName = entDefName(s.d)
   const hp = s.hp ?? 0
   const mhp = s.mhp ?? 1
@@ -1087,9 +1113,17 @@ export function Portrait() {
         </div>
         <div class="psub dim">
           {name !== loc(defName) && <span class="psub-def">{loc(defName)}</span>}
-          {def && (
-            <span class="mono psub-stat">
-              {def.attack ? `ATK ${def.attack.dmg[0]}–${def.attack.dmg[1]} · ${def.attack.range}m · ` : ''}SPD {def.speed}
+          {pn && (
+            <span
+              class="mono psub-stat"
+              data-testid="portrait-stat"
+              {...tipProps(() => ({
+                title: t('fix9t.portrait.title'),
+                rows: [...(pn.atk ? ([[t('tip.atk'), pn.atk], [t('fix9t.tip.dps'), pn.dps ?? '']] as [string, string][]) : []), [t('tip.speed'), pn.speed]],
+                hint: pn.mods.length ? t('fix9t.portrait.mods', { list: listJoin(pn.mods) }) : t('fix9t.portrait.base'),
+              }))}
+            >
+              {pn.atk ? `ATK ${pn.atk} · ` : ''}SPD {pn.speed}
             </span>
           )}
         </div>
@@ -1112,6 +1146,57 @@ export function Portrait() {
       {spec && <SpecStrip hint={false} />}
     </div>
   )
+}
+
+/** 頭像能力值要算進去的加成欄位（照 sim recomputeStats：移速先加 moveAdd 再乘 move，攻擊乘 dmgMult、攻速乘 atkSpeed、射程加 rangeAdd）*/
+const statMod = (b: BuffDef) => b.move !== undefined || b.moveAdd !== undefined || b.dmgMult !== undefined || b.atkSpeed !== undefined || b.rangeAdd !== undefined
+
+/**
+ * 頭像的能力值（第 9 輪：以前直接讀 def，下士的老兵 +15%、強化護腿的移速都沒算進去，和政委一模一樣）。
+ * 單位基礎值＋這個 client 本來就看得到的加成：
+ * - 職業被動：別人的看快照的職業 s.cl（公開資訊；匿名形態是空的），而且外觀是人形（船員、防護服、偽裝）才算——
+ *   被轉化成眷屬的怪物沒有職業被動；自己的主單位看自己的職業（眷屬除外）
+ * - 快照裡的狀態效果 s.b（別人的只有公開的那些）；會疊層的狀態看不到層數，不算
+ * - 自己的主單位（mine）：背包道具的被動（強化護腿…）、博士專長（只在自己的私有狀態）
+ * 別人背包裡的道具、看不到的狀態、身分專屬的加成一律不算，不會因此露出來。
+ */
+export function portraitNums(
+  s: SnapEntity,
+  def: UnitDef,
+  mine?: Partial<Pick<PrivateState, 'inv' | 'phd' | 'classId' | 'spawn'>>,
+): { atk: string | null; dps: string | null; speed: string; mods: string[] } {
+  const mods: BuffDef[] = []
+  const add = (id: string | undefined) => {
+    const b = id ? buffDef(id) : undefined
+    if (b && statMod(b) && !mods.includes(b)) mods.push(b)
+  }
+  const cls = mine ? (mine.spawn ? '' : (mine.classId ?? '')) : def.tags.includes('personnel') ? (s.cl ?? '') : ''
+  for (const id of CLASSES.get(cls)?.passives ?? []) add(id)
+  if (mine && cls === 'researcher' && mine.phd) add('cls.phd.' + mine.phd)
+  for (const id of s.b ?? []) {
+    const b = buffDef(id)
+    if (b && !((b.stacks ?? 1) > 1)) add(id)
+  }
+  if (mine) for (const it of mine.inv ?? []) add(it ? itemDef(it.item)?.passive : undefined)
+  let moveAdd = 0
+  let move = 1
+  let dmgMult = 1
+  let atkSpeed = 1
+  let rangeAdd = 0
+  for (const b of mods) {
+    moveAdd += b.moveAdd ?? 0
+    move *= b.move ?? 1
+    dmgMult *= b.dmgMult ?? 1
+    atkSpeed *= b.atkSpeed ?? 1
+    rangeAdd += b.rangeAdd ?? 0
+  }
+  const m = { dmgMult, atkSpeed, rangeAdd }
+  return {
+    atk: def.attack ? atkText(def.attack, m) : null,
+    dps: def.attack ? dpsText(def.attack, m) : null,
+    speed: fmtNum(Math.max(0, (def.speed + moveAdd) * move)),
+    mods: mods.map((b) => loc(b.name)),
+  }
 }
 
 /** 頭像一列最多放幾個狀態標籤（多的收成「+N」，滑鼠移上去列出其餘的）*/

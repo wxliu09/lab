@@ -418,7 +418,8 @@ const EVENTS: EventDef[] = [
       }
       g.systemAll('event.virus')
       g.after(VIRUS_BLANK_S, () => {
-        const names = g.world.rng.shuffle(ps.map((p) => shownBase(p)))
+        const before = ps.map((p) => shownBase(p))
+        const names = g.world.rng.shuffle([...before])
         const colors = g.world.rng.shuffle(ps.map((p) => p.color))
         ps.forEach((p, i) => {
           const title = (p.data.virusTitle as string | undefined) ?? ''
@@ -427,7 +428,10 @@ const EVENTS: EventDef[] = [
           setShownName(g, p, title + names[i], colors[i])
         })
         g.systemAll('event.virusDone', { s: VIRUS_SWAP_S })
-        for (const p of ps) g.privateLine(p.slot, 'event.virusYou', { name: p.name, s: VIRUS_SWAP_S })
+        // 私訊只給活著、而且名字真的換掉的人（第 9 輪：以前死者、洗牌後抽回自己名字的人也收到「你現在顯示為『（自己的名字）』」）
+        ps.forEach((p, i) => {
+          if (p.alive && names[i] !== before[i]) g.privateLine(p.slot, 'event.virusYou', { name: p.name, s: VIRUS_SWAP_S })
+        })
         g.after(VIRUS_SWAP_S, () => endVirus(g, ps))
       })
       return true
@@ -493,6 +497,8 @@ function nameTitle(p: GamePlayer): string {
 /** 通訊病毒結束：每個人的名字（頭銜照目前的，例如期間晉升的「特務·」）與顏色恢復原狀，私訊各自恢復後的名字 */
 function endVirus(g: Game, ps: GamePlayer[]): void {
   if (g.ended) return
+  // 恢復的私訊同樣只給活著、名字真的被換過的人（名字沒換過，「恢復成『自己的名字』」沒有意義）
+  const changed = new Set(ps.filter((p) => shownBase(p) !== p.baseName).map((p) => p.slot))
   for (const p of ps) {
     const title = nameTitle(p)
     p.data.shownBase = undefined
@@ -501,7 +507,7 @@ function endVirus(g: Game, ps: GamePlayer[]): void {
     setShownName(g, p, title + p.baseName, color)
   }
   g.systemAll('event.virusEnd')
-  for (const p of ps) g.privateLine(p.slot, 'event.virusRestored', { name: p.name })
+  for (const p of ps) if (p.alive && changed.has(p.slot)) g.privateLine(p.slot, 'event.virusRestored', { name: p.name })
 }
 
 /** 名字與顏色（通訊病毒）：玩家、主單位、聊天、執行長的管家都跟著變（name 空字串 = 清空中）*/

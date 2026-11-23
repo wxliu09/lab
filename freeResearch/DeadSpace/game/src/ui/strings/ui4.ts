@@ -36,7 +36,7 @@ export const UI4_ZH: Record<string, string> = {
 
   // ───── 雜物箱：右鍵翻找（自己有翻找技能時）、沒有技能的人只能打破 ─────
   'ui4.hover.rummage': '右鍵：走過去翻找（箱子會報銷）',
-  'ui4.hover.crate': '有翻找技能的職業可以翻找；其他人可以打破（按 A 攻擊）',
+  'ui4.hover.crate': '有翻找技能的職業可以翻找；其他人可以打破（按 {key_attack} 攻擊）',
   'ui4.prompt.rummage': '右鍵 翻找',
 
   // ───── 說明面板（G）分頁：一頁放得下、不用捲動 ─────
@@ -87,7 +87,7 @@ export const UI4_EN: Record<string, string> = {
   'ui4.lobby.hostHint': 'You are the host: any lag on the host computer reaches every player, so host from your fastest machine.',
 
   'ui4.hover.rummage': 'Right-click: walk over and rummage (the crate is ruined)',
-  'ui4.hover.crate': 'Classes with Rummage can search it; anyone else can break it (press A to attack)',
+  'ui4.hover.crate': 'Classes with Rummage can search it; anyone else can break it (press {key_attack} to attack)',
   'ui4.prompt.rummage': 'Right-click to rummage',
 
   'ui4.help.tabs': 'Guide pages',

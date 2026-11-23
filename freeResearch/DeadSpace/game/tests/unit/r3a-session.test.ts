@@ -266,7 +266,9 @@ describe('文字：保全的頭銜、仿生人的誤傷', () => {
     expect(t('class.security')).toContain('列兵')
     expect(CLASSES.get('security')!.desc.zh).toContain('列兵')
     const zh = t('role.androidShutdown')
-    expect(zh).toContain('2.7')
+    // 第 9 輪：門檻（sim 的 2.7 份）對玩家寫成「將近 3 名船員」，不再寫小數
+    expect(zh).toContain('將近 3 名船員')
+    expect(zh).not.toContain('2.7')
     expect(zh).toContain('5 分鐘')
     expect(zh).toContain('一整條血')
     lang.value = 'en'

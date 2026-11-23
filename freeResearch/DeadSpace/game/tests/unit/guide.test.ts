@@ -79,11 +79,11 @@ describe('目標面板', () => {
   it('人類：背包裡的防護服、檢測器、解析器會換成「按幾號」', () => {
     const me = { role: 'human' as const, classId: 'medic', inv: inv('traumaKit', 'suit.plasma', 'geneSampler') }
     const o = G.objectiveFor(view(me))!
-    expect(o.steps[0]).toEqual({ key: 'guide.s.suitWear', args: { k: 2 } })
-    expect(o.steps[1]).toEqual({ key: 'guide.s.samplerUse', args: { k: 3 } })
+    expect(o.steps[0]).toEqual({ key: 'guide.s.suitWear', args: { k: '2' } })
+    expect(o.steps[1]).toEqual({ key: 'guide.s.samplerUse', args: { k: '3' } })
     const r = G.objectiveFor(view({ ...me, inv: inv('gitResolver') }, { self: { d: 'suit.plasma', hp: 1, mhp: 1 } }))!
     // 已經穿著防護服：不再提防護服
-    expect(r.steps[0]).toEqual({ key: 'guide.s.resolverUse', args: { k: 1 } })
+    expect(r.steps[0]).toEqual({ key: 'guide.s.resolverUse', args: { k: '1' } })
     expect(r.steps.map((s) => s.key)).not.toContain('guide.s.suitGet')
     // 420 秒後改成去領
     expect(keysOf({ ...view({ role: 'human', classId: 'ceo' }), w: { t: 500 } })).toContain('guide.s.samplerGet')
@@ -196,7 +196,9 @@ describe('目標面板', () => {
     // EP 從哪裡來排第一（重大事件的對策會佔掉前幾條；第 2 輪審查）
     // 第 3 輪：誤傷規則之後加一條「先做：」混進船員的做法（t = 100 輪到「等基因檢測開放」），「協助人類」擠到第 5 條
     expect(keysOf(view({ role: 'android', classId: 'ace', ep: 100, epNext: 2000 }))).toEqual(['guide.s.androidEp', 'guide.s.ff', 'guide.s.androidSampleWait', 'guide.s.core'])
-    expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000 }))).toContain('guide.s.androidReady')
+    // 第 9 輪：人在裁決者號才叫他站上鑄造平台；在別處先說怎麼過去（fix9k.guide.s.androidGo）
+    expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000 }, { zoneStation: 'adjudicatrix' }))).toContain('guide.s.androidReady')
+    expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000 }, { zoneStation: 'nyx' }))).toContain('fix9k.guide.s.androidGo')
     expect(keysOf(view({ role: 'android', ep: 2000, epNext: 2000, canEvolve: ['android.gale'] }))).toContain('guide.s.androidPick')
   })
 
@@ -249,7 +251,7 @@ describe('情境提示的觸發條件', () => {
     const ids = hintIds(view({ role: 'human', inv: inv('suit.cryo', 'geneSampler', 'memoryCore') }))
     expect(ids).toEqual(expect.arrayContaining(['item', 'suit', 'sampler', 'core']))
     const h = G.detectHints(view({ role: 'human', inv: inv(null, 'suit.cryo') })).find((x) => x.id === 'suit')!
-    expect(h.args).toEqual({ k: 2 })
+    expect(h.args).toEqual({ k: '2' })
     // 已經穿著就不提示穿上
     expect(hintIds(view({ role: 'human', inv: inv('suit.cryo') }, { self: { d: 'suit.plasma', hp: 1, mhp: 1 } }))).not.toContain('suit')
     expect(hintIds(view({ role: 'human', inv: inv('gitResolver') }))).toContain('resolver')

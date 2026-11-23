@@ -866,7 +866,8 @@ suit({
   speed: 2.75,
   attack: { dmg: atk(1), cd: 0.05, range: 5, kind: 'beam', fx: 'pulse', dmgKind: 'pierce', windup: 0, onHit: [S('pulse.beam', { bonus: 2, heat: 3, cool: 1.5, cost: 0.2 })] },
   abilities: ['ab.pulse.bank', 'ab.pulse.siphon'],
-  item: L('射出駭人的連續雷射。剛開火時最痛，持續射擊會過熱而變弱；雷射的增幅要吃能量，所以得自己找電。', 'Fires a fearsome continuous laser. It hits hardest when you first open up and weakens as it overheats; the boost runs on energy, so you will need to find power.'),
+  // 第 9 輪：寫出實際數字（tooltip 的攻擊只列基礎的「1 / 0.05s」，看起來像壞掉）；數字對照上面 attack 與 pulse.beam 的參數（r9t 測試檢查）
+  item: L('射出駭人的連續雷射：每秒 20 發、每發 1 傷害。剛開火時每發另加 2 傷害，連續射擊 3 秒內逐漸過熱、追加降到 0，停火約 2 秒散熱完畢；追加傷害每發耗 0.2 能量，所以得自己找電。', 'Fires a fearsome continuous laser: 20 shots a second at 1 damage each. Fresh off the trigger each shot deals 2 extra damage, fading to nothing as it overheats over 3 s of firing; about 2 s off the trigger cools it down. The boost costs 0.2 energy per shot, so you will need to find power.'),
 })
 ABILITIES.push(
   ab(

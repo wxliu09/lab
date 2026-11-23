@@ -21,6 +21,13 @@ export const MAX_SEEN = 40
 export const MAX_BYTES = 32 * 1024
 /** 名字最多留幾個字 */
 export const NAME_MAX = 32
+/** 連勝／連敗要連續幾場以上才顯示（第 9 輪：「1 連勝」「1 連敗」只是上一局的勝負，不算連）；存檔照常記 ±1 */
+export const STREAK_SHOW_MIN = 2
+
+/** 要顯示的連勝（正）／連敗（負）場數；不到 STREAK_SHOW_MIN 場回傳 0（不顯示）*/
+export function shownStreak(n: number): number {
+  return Math.abs(n) >= STREAK_SHOW_MIN ? n : 0
+}
 
 export type Faction = 'human' | 'xeno' | 'mutant' | 'android'
 export const FACTIONS: readonly Faction[] = ['human', 'xeno', 'mutant', 'android']

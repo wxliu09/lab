@@ -7,6 +7,8 @@ import { loadAiLevel, loadPracticePrefs, runPractice, saveAiLevel, savePracticeP
 import { Settings } from './Settings'
 import { codexOpen } from '../hud/Codex'
 import { RoleMixView, roleOutcomes } from './Lobby'
+import { tipProps } from '../tooltip'
+import '../strings/fix9t'
 import '../lobby2.css'
 
 /** 單機練習對話框：選自己的身分、AI 數量與難度（只有單機練習有這個入口；多人房間的身分一律照規則抽）*/
@@ -31,74 +33,79 @@ function PracticeDialog({ onClose, onStart }: { onClose: () => void; onStart: (r
   return (
     <div class="modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div class="panel modal practice-modal" data-testid="practice-dialog" role="dialog" aria-modal="true" aria-labelledby="practice-title">
-        <h2 id="practice-title">{t('practice.title')}</h2>
-        <div class="practice-sub">{t('practice.sub')}</div>
-        <h3>{t('practice.role')}</h3>
-        <div class="role-pick" role="radiogroup">
-          {PRACTICE_ROLES.map((r) => (
-            <button
-              key={r}
-              type="button"
-              role="radio"
-              aria-checked={role === r}
-              class={'role-opt r-' + r + (role === r ? ' on' : '')}
-              data-testid={'practice-role-' + r}
-              onClick={() => setRole(r)}
-            >
-              <b>{t('practice.r.' + r)}</b>
-              <span>{t('practice.r.' + r + '.d')}</span>
+        {/* 內容區可捲動、按鈕列固定在底部（同設定頁）：1024×600 英文時「開始練習」不會被擠出畫面 */}
+        <div class="practice-body" data-testid="practice-body">
+          <h2 id="practice-title">{t('practice.title')}</h2>
+          <div class="practice-sub">{t('practice.sub')}</div>
+          <h3>{t('practice.role')}</h3>
+          <div class="role-pick" role="radiogroup">
+            {PRACTICE_ROLES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                role="radio"
+                aria-checked={role === r}
+                class={'role-opt r-' + r + (role === r ? ' on' : '')}
+                data-testid={'practice-role-' + r}
+                onClick={() => setRole(r)}
+              >
+                <b>{t('practice.r.' + r)}</b>
+                <span>{t('practice.r.' + r + '.d')}</span>
+              </button>
+            ))}
+          </div>
+          <h3>{t('practice.bots')}</h3>
+          <div class="bots-row">
+            <button type="button" class="small ghost" aria-label="−" disabled={bots <= 1} onClick={() => setBots(Math.max(1, bots - 1))}>
+              −
             </button>
-          ))}
-        </div>
-        <h3>{t('practice.bots')}</h3>
-        <div class="bots-row">
-          <button type="button" class="small ghost" aria-label="−" disabled={bots <= 1} onClick={() => setBots(Math.max(1, bots - 1))}>
-            −
-          </button>
-          <input
-            type="range"
-            data-testid="practice-bots"
-            min={1}
-            max={MAX_PLAYERS - 1}
-            value={bots}
-            onInput={(e) => setBots(Number((e.target as HTMLInputElement).value))}
-          />
-          <button type="button" class="small ghost" aria-label="+" disabled={bots >= MAX_PLAYERS - 1} onClick={() => setBots(Math.min(MAX_PLAYERS - 1, bots + 1))}>
-            +
-          </button>
-          <span class="bots-n">{t('practice.botsN', { n: bots })}</span>
-        </div>
-        <h3>{t('ui4.practice.ai')}</h3>
-        <div class="ai-pick" role="radiogroup" aria-label={t('ui4.practice.ai')}>
-          {AI_LEVELS.map((a) => (
-            <button
-              key={a}
-              type="button"
-              role="radio"
-              aria-checked={ai === a}
-              class={'role-opt ai-opt ai-' + a + (ai === a ? ' on' : '')}
-              data-testid={'practice-ai-' + a}
-              onClick={() => setAi(a)}
-            >
-              <b>{t('ui4.practice.ai.' + a)}</b>
-              <span>{t('ui4.practice.ai.' + a + '.d')}</span>
+            <input
+              type="range"
+              data-testid="practice-bots"
+              min={1}
+              max={MAX_PLAYERS - 1}
+              value={bots}
+              onInput={(e) => setBots(Number((e.target as HTMLInputElement).value))}
+            />
+            <button type="button" class="small ghost" aria-label="+" disabled={bots >= MAX_PLAYERS - 1} onClick={() => setBots(Math.min(MAX_PLAYERS - 1, bots + 1))}>
+              +
             </button>
-          ))}
-        </div>
-        <div class="practice-mix" data-testid="practice-mix">
-          {role === 'random' ? (
-            <>
-              <span class="mix-self">{t('practice.mix.all', { n })}</span>
-              <RoleMixView outcomes={roleOutcomes(n, DEFAULT_SETTINGS)} total={n} />
-            </>
-          ) : (
-            <>
-              <span class="mix-self">{t('practice.mix.self', { role: t('practice.r.' + role) })}</span>
-              <span class="dim">·</span>
-              <span class="dim">{t('practice.mix.others')}</span>
-              <RoleMixView outcomes={roleOutcomes(n, DEFAULT_SETTINGS, role)} total={n - 1} />
-            </>
-          )}
+            <span class="bots-n">{t('practice.botsN', { n: bots })}</span>
+          </div>
+          <h3>{t('ui4.practice.ai')}</h3>
+          <div class="ai-pick" role="radiogroup" aria-label={t('ui4.practice.ai')}>
+            {AI_LEVELS.map((a) => (
+              <button
+                key={a}
+                type="button"
+                role="radio"
+                aria-checked={ai === a}
+                class={'role-opt ai-opt ai-' + a + (ai === a ? ' on' : '')}
+                data-testid={'practice-ai-' + a}
+                onClick={() => setAi(a)}
+                {...tipProps(() => ({ title: t('ui4.practice.ai.' + a), body: t('ui4.practice.ai.' + a + '.d') }))}
+              >
+                <b>{t('ui4.practice.ai.' + a)}</b>
+                {/* 卡片上只寫一兩句玩家在意的事；完整的差異（AI 何時動手、事件與驗血的時間）放 tooltip */}
+                <span>{t('fix9t.practice.ai.' + a + '.d')}</span>
+              </button>
+            ))}
+          </div>
+          <div class="practice-mix" data-testid="practice-mix">
+            {role === 'random' ? (
+              <>
+                <span class="mix-self">{t('practice.mix.all', { n })}</span>
+                <RoleMixView outcomes={roleOutcomes(n, DEFAULT_SETTINGS)} total={n} />
+              </>
+            ) : (
+              <>
+                <span class="mix-self">{t('practice.mix.self', { role: t('practice.r.' + role) })}</span>
+                <span class="dim">·</span>
+                <span class="dim">{t('practice.mix.others')}</span>
+                <RoleMixView outcomes={roleOutcomes(n, DEFAULT_SETTINGS, role)} total={n - 1} />
+              </>
+            )}
+          </div>
         </div>
         <div class="practice-foot">
           <button type="button" class="ghost" onClick={onClose}>

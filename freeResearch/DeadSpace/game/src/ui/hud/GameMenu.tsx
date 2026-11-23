@@ -3,16 +3,37 @@
 // 離開對局用遊戲內的確認對話框（不用瀏覽器原生 confirm）：Esc 取消、回到選單；練習局用單機的說法。
 // 關分頁時的 beforeunload 原生確認在 App.tsx，不歸這裡管。
 // 主機在多人對局中離開（第 5 輪）：session.ts 的 leaveGame 先叫 worker 中止這局（所有人的身分揭曉、結算送給客人），約 0.3 秒後才關掉。
+// 對局結束後（第 9 輪）：多出「查看結算」，練習局「再來一局」、多人局主機「回到大廳」，和結算後上方小列（Panels.tsx AfterEndBar）同一套規則與動作。
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { evolveOpen, menuOpen } from '../../client/input'
-import { currentRoom, hostLeaving, isHost, leaveGame, world } from '../../client/session'
-import { PRACTICE_ROOM } from '../../shared/protocol/messages'
+import { currentRoom, endResult, hostLeaving, isHost, lastEnd, leaveGame, returnToLobby, world } from '../../client/session'
+import { PRACTICE_ROOM, type EndResult } from '../../shared/protocol/messages'
 import { t } from '../i18n'
+import { tipProps } from '../tooltip'
+import { againTip, inPractice, replayPractice } from '../screens/practiceRun'
+import { afterEndActions } from './Panels'
+import '../strings/room6'
 import { guideOpen } from './Guide'
 import { codexOpen } from './Codex'
 import { notesOpen } from './Investigation'
 import { settingsOpen } from '../screens/Settings'
 import { leaveText } from './textRules'
+
+/** 對局結束後選單多出的按鈕 */
+export type EndMenuItem = 'results' | 'again' | 'lobby'
+
+/**
+ * 對局結束後（r = 這局的結算）選單多出哪些按鈕：規則直接用結算後小列的 afterEndActions（Panels.tsx）。
+ * 一律「查看結算」；練習局「再來一局」；多人局的主機「回到大廳（同一房號）」（主機中止的局只有「查看結算」）。還沒結束 = 沒有
+ */
+export function endMenuItems(r: EndResult | null, practice: boolean, host: boolean): EndMenuItem[] {
+  const a = afterEndActions(r, practice, host)
+  if (!a) return []
+  const out: EndMenuItem[] = ['results']
+  if (a.again) out.push('again')
+  if (a.lobby) out.push('lobby')
+  return out
+}
 
 export function GameMenu() {
   const open = menuOpen.value
@@ -42,7 +63,10 @@ export function GameMenu() {
   }, [confirming])
   if (!open) return null
   const me = world.me
-  const canEvolve = me.role === 'xeno' || me.role === 'mutant' || me.role === 'android'
+  // 這局的結算：關掉結算畫面（繼續觀看）之後 lastEnd 還在
+  const ended = lastEnd.value ?? endResult.value
+  const after = endMenuItems(ended, inPractice(), isHost.value)
+  const canEvolve = !ended && (me.role === 'xeno' || me.role === 'mutant' || me.role === 'android')
   const go = (f: () => void) => () => {
     menuOpen.value = false
     f()
@@ -82,7 +106,23 @@ export function GameMenu() {
       <div class="panel modal gmenu" onClick={(e) => e.stopPropagation()}>
         <h2>{t('gmenu.title')}</h2>
         <div class="col" style={{ gap: '8px' }}>
-          <button class="primary" onClick={() => (menuOpen.value = false)}>
+          {/* 結算後：重新打開結算（同上方小列的「查看結算」）、練習局再來一局、多人局主機回到大廳 */}
+          {after.includes('results') && (
+            <button class="primary" data-testid="gmenu-results" onClick={go(() => (endResult.value = ended))}>
+              {t('room6.after.results')}
+            </button>
+          )}
+          {after.includes('again') && (
+            <button data-testid="gmenu-again" onClick={go(() => void replayPractice())} {...tipProps(() => ({ title: t('ui5.practice.again'), body: againTip() }))}>
+              {t('ui5.practice.again')}
+            </button>
+          )}
+          {after.includes('lobby') && (
+            <button data-testid="gmenu-lobby" onClick={go(() => returnToLobby())} {...tipProps(() => ({ title: t('room6.end.toLobby'), body: t('room6.end.toLobbyTip', { code: currentRoom() }) }))}>
+              {t('room6.end.toLobby')}
+            </button>
+          )}
+          <button class={after.length ? '' : 'primary'} data-testid="gmenu-resume" onClick={() => (menuOpen.value = false)}>
             {t('gmenu.resume')}
           </button>
           {canEvolve && me.alive !== false && <button onClick={go(() => (evolveOpen.value = true))}>{t('gmenu.evolve')}</button>}

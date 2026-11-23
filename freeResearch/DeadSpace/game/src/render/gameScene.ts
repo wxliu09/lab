@@ -21,7 +21,7 @@ import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from '.
 import { autoDropState, autoDropStep } from './autoDrop'
 import { isPiloting, localNotice, modalChecks } from '../client/input'
 import { followMode, followPilot, hiContrast } from '../client/viewPrefs'
-import { ACTION_IDLE, actionTick } from '../client/spectate'
+import { ACTION_IDLE, actionTick, possessFollowTick } from '../client/spectate'
 import '../ui/strings/art2'
 import '../ui/strings/cam7'
 import { effect, signal } from '@preact/signals'
@@ -364,6 +364,9 @@ export class GameScene implements SceneLike {
   centeredOnce = false
   /** 上次對準時的操控對象與 zone（變了就重新對準）*/
   private lastCtlKey = ''
+  /** 活著時自己操控的單位與它所在的 zone（快照的 z；變了＝換 zone，recenter 到畫面切過去那一幀對準它）*/
+  private mineZoneKey = ''
+  private recenter = false
   /** 本幀受到的傷害脈衝（0..1）*/
   damage = 0
   /**
@@ -451,12 +454,20 @@ export class GameScene implements SceneLike {
     if (m === 'action') {
       // 第 8 輪：這一站好一陣子沒有新的戰鬥特效（或根本還沒打）→ 看板的交戰焦點或人群；
       // 換站（這站安靜了、別站在打、空站）也由 client/spectate.ts 的 actionTick 決定
+      // 第 9 輪：換站時優先挑場景已經建好的站（zoneReady）；正跟著看得到的戰鬥特效時不算「站內看不到人」
       const now = performance.now() / 1000
       const f = this.action.pick(this.zone, now)
-      const alt = actionTick(this.world, this.zone, now)
-      return f && now - this.action.focus.hit < ACTION_IDLE ? f : (alt ?? f)
+      const fresh = !!f && now - this.action.focus.hit < ACTION_IDLE
+      const alt = actionTick(this.world, this.zone, now, this.zoneReady, fresh)
+      return fresh ? f : (alt ?? f)
     }
     return null
+  }
+  /** 這個 zone 的場景已經建好、切過去不必分段載入（「載入中」）：觀戰自動換站優先挑這些站（ensureZone 的 need 反過來）*/
+  private readonly zoneReady = (id: number): boolean => {
+    if (!this.host || this.host.renderer.getContext().isContextLost()) return true
+    if (id === 0) return this.spaceWarm && this.loader?.id !== 0
+    return this.views.has(id) && this.loader?.id !== id
   }
   /** 上一幀在駕駛（駕駛開始時自動跟隨）；這次的跟隨是自動開的（離開駕駛時自動關）*/
   private wasPiloting = false
@@ -1226,14 +1237,27 @@ export class GameScene implements SceneLike {
     // 第一次進場、或換了操控對象／所在 zone（開始或離開駕駛、登艇、逃生艙、轉觀戰）：鏡頭對準自己
     const mine = this.myUnit()
     const ctlKey = `${this.world.me.control || this.world.me.unit || 0}@${zid}`
-    if (mine && (!this.centeredOnce || ctlKey !== this.lastCtlKey) && mine.s.z === zid) {
+    // 第 9 輪 P2-5：活著時自己操控的單位換了 zone（下船、傳送、逃生艙抵達）一定要對準它，畫面晚幾幀才切過去
+    //（分段建站）也一樣；觀戰（死者、旁觀者）換的是觀戰視角，不在這裡跳（附身的蛞蝓仔由 ctlKey 處理）
+    const pm = this.world.me
+    const mz = pm.alive !== false && pm.role !== 'spectator' && mine ? `${mine.s.i}@${mine.s.z}` : ''
+    if (mz !== this.mineZoneKey) {
+      this.mineZoneKey = mz
+      this.recenter = !!mz
+    }
+    if (mine && (!this.centeredOnce || ctlKey !== this.lastCtlKey || this.recenter) && mine.s.z === zid) {
       // 換操控對象（開始／離開駕駛、登艇、逃生艙）：鏡頭跳遠時淡入，不要硬切（換 zone 在 switchZone 已經開始淡入；
       // 原地換實體的變身、進化、結繭鏡頭幾乎不動，不淡）
       if (this.centeredOnce && Math.hypot(mine.x - this.rts.tx, mine.y - this.rts.ty) > 8) this.startFade()
       this.rts.jump(mine.x, mine.y)
+      // 游標停在畫面邊緣（例如右下角的指令卡）時，滑鼠真的動之前不要邊緣捲動：否則一進站鏡頭就被捲到角落
+      this.rts.holdEdge()
       this.centeredOnce = true
       this.lastCtlKey = ctlKey
+      this.recenter = false
     }
+    // 附身的蛞蝓仔換了站、鏡頭正跟著牠：觀戰視角跟過去（client/spectate.ts）
+    possessFollowTick(w, performance.now() / 1000)
     // 門
     if (view) {
       for (const d of view.doors) {

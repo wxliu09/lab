@@ -25,9 +25,9 @@ export const UX6_ZH: Record<string, string> = {
   'ux6.hatch.cat': '船艙出入口',
   'ux6.hatch.body': '停靠在站上時，走到這裡就會下船；強行登艦連結期間會通往對方那裡。在太空中飛行時走過來不會發生任何事。',
   'ux6.hatch.hint.docked': '右鍵：走過去下船',
-  'ux6.hatch.hint.flying': '現在在太空中：先駕駛停靠（按 D 再點站點）才能下船',
+  'ux6.hatch.hint.flying': '現在在太空中：先駕駛這艘船，對站點使用「停靠」才能下船',
   // 駕駛中用站內監控掃描：暫時切到站內畫面
-  'ux6.sweep.peek': '監控掃描：暫時顯示站內畫面 {s} 秒 · 點一下畫面或按空白鍵回到駕駛',
+  'ux6.sweep.peek': '監控掃描：暫時顯示站內畫面 {s} 秒 · 點一下畫面或按 {key_camSelf} 回到駕駛',
   // 覆寫 ux.ts 的 r3b.pause.sub：單機練習切到背景、局中載入場景時也會自動暫停
   'r3b.pause.sub': '關掉選單、說明、圖鑑或設定就繼續（切到其他分頁、載入場景時也會自動暫停）',
 }
@@ -47,8 +47,8 @@ export const UX6_EN: Record<string, string> = {
   'ux6.hatch.cat': 'Cabin exit',
   'ux6.hatch.body': 'While docked at a station, walk here to disembark; during a boarding link it leads to the other side. In open space nothing happens.',
   'ux6.hatch.hint.docked': 'Right-click: walk over to disembark',
-  'ux6.hatch.hint.flying': 'You are in space: dock first (pilot, press D and click a station) to disembark',
-  'ux6.sweep.peek': 'Surveillance sweep: showing the station interior for {s}s · click the view or press Space to return to piloting',
+  'ux6.hatch.hint.flying': 'You are in space: pilot the craft and use Dock on a station first to disembark',
+  'ux6.sweep.peek': 'Surveillance sweep: showing the station interior for {s}s · click the view or press {key_camSelf} to return to piloting',
   'r3b.pause.sub': 'Close the menu, help, codex or settings to resume (also pauses automatically while in another tab or loading a scene)',
 }
 
