@@ -3,6 +3,7 @@
 // 異類陣營（主腦＋spawn）共享視野，人類各自獨立；隱形單位只有擁有者與其陣營看得到。
 import type { Game, GamePlayer } from '../game'
 import type { Ent } from '../ent'
+import type { GhostKind } from '../../shared/protocol/messages'
 import { SPACE_ZONE } from '../world'
 import { bootIfOut } from './chat'
 import { carries } from './items'
@@ -23,12 +24,35 @@ export interface VisionResult {
   fullZones: Set<number>
 }
 
+/**
+ * 亡者之眼（大廳設定 ghostSight，第 8 輪）：這位觀看者看得見真實身分嗎。
+ * 只有「再也回不到活人那邊」的人：只主持不參戰的旁觀者，或亡者之眼已經開啟的死者（systems/spectate.ts：
+ * 死後過了所有復活窗口才開，開的同時設 stayDead，急救、時滯喚回都救不回來）。出局的人什麼都看不到，也不算。
+ * 活人永遠是 false：活人的快照和設定關閉時一模一樣（洩漏測試逐位元組比對）
+ */
+export function ghostSees(g: Game, viewer: GamePlayer): boolean {
+  if (!g.settings.ghostSight || viewer.alive || viewer.data.booted) return false
+  return viewer.spectator || (!!viewer.data.ghostEye && viewer.stayDead)
+}
+
+/** 亡者之眼看到的真實陣營（只在 ghostSees 時才會放進快照）*/
+export function ghostKind(g: Game, slot: number): GhostKind | undefined {
+  const p = g.players[slot]
+  if (!p) return undefined
+  if (p.spawnOf) return p.spawnOf === 'xeno' ? 'xs' : 'ms'
+  if (p.role === 'xeno') return 'x'
+  if (p.role === 'mutant') return 'm'
+  return p.role === 'android' ? 'a' : 'h'
+}
+
 /** 這位觀看者能不能知道某單位的真正擁有者 */
 export function knowsOwner(g: Game, viewer: GamePlayer, e: Ent): boolean {
   if (!e.anon) return true
   if (e.owner < 0) return false
   if (e.owner === viewer.slot) return true
   if (viewer.flags.reveal) return true
+  // 亡者之眼：匿名形態、偽裝都標出真正的主人
+  if (ghostSees(g, viewer)) return true
   const owner = g.players[e.owner]
   if (!owner) return false
   const fo = g.faction(owner)

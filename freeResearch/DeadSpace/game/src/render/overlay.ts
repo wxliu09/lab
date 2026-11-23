@@ -18,6 +18,8 @@ import { meCtx, promptKey } from '../client/interactKind'
 import { aimAbility, aimSelfKey, cursorWorld, lastInteract, targetMode } from '../client/input'
 import { cmdTaps } from '../client/session'
 import { hiContrast } from '../client/viewPrefs'
+import { ghostColor } from '../client/spectate'
+import '../ui/strings/ghost8'
 import { DEVOUR, devourable } from '../client/devourInfo'
 import { cabinHatch } from '../client/hatch'
 import { isMuted } from '../client/mute'
@@ -323,7 +325,10 @@ export class Overlay {
       }
       // 名稱：先收集，最後統一做避讓再畫。中立單位用灰藍（和腳下光圈、太空小地圖同色），和白色玩家（#eff0f3）分得開
       const name = localizeName(e.s.n) || (hot ? loc(def?.name) : '')
-      if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name, sx, sy: sy - 5, color: e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#9fb3c2', pri: hot ? 2 : mine ? 1 : 0 })
+      // 亡者之眼（只有死者／旁觀者的快照才有 gf）：名牌依真實陣營上色，不是人類的再加陣營名（不只靠顏色分辨）
+      const gc = ghostColor(e.s)
+      const shown = gc && e.s.gf !== 'h' ? name + t('ghost8.gf.tag', { k: t('ghost8.gf.' + e.s.gf) }) : name
+      if (name && (hot || (e.s.o ?? -1) >= 0)) labels.push({ name: shown, sx, sy: sy - 5, color: gc ?? (e.s.c !== undefined && e.s.c >= 0 ? PLAYER_COLORS[e.s.c].hex : '#9fb3c2'), pri: hot ? 2 : mine ? 1 : 0 })
       const b = bubbles.get(id)
       if (b) pendingBubbles.push({ sx, bottom: sy - 24 * z, text: b.text })
     }

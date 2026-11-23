@@ -7,7 +7,7 @@ import type { Ent } from '../ent'
 import type { Game, GamePlayer } from '../game'
 import { EntFlag, type PrivateState, type SnapEntity, type Snapshot } from '../../shared/protocol/messages'
 import { buffDef } from '../../shared/content/registry'
-import { knowsOwner, pointVisible, type VisionResult, type VisionSource } from './vision'
+import { ghostKind, ghostSees, knowsOwner, pointVisible, type VisionResult, type VisionSource } from './vision'
 import { privateState } from './private'
 
 export interface ViewState {
@@ -90,10 +90,15 @@ export function entView(g: Game, viewer: GamePlayer, e: Ent): SnapEntity {
   // 動作目標：只在攻擊／施法中、且觀看者看得到目標時送出（否則會洩漏過去或看不見的目標）
   if (e.animTarget && (e.anim === 2 || e.anim === 3 || e.anim === 5) && viewer.view.visible.has(e.animTarget)) s.tg = e.animTarget
   if (e.x2) s.x2 = e.x2
+  // 亡者之眼（只給 ghostSees 的死者／旁觀者）：玩家主單位的真實陣營，client 依此給名牌上色
+  if (e.isMain && e.owner >= 0 && ghostSees(g, viewer)) {
+    const k = ghostKind(g, e.owner)
+    if (k) s.gf = k
+  }
   return s
 }
 
-const KEYS: (keyof SnapEntity)[] = ['d', 'z', 'x', 'y', 'f', 'hp', 'mhp', 'mp', 'mmp', 'o', 'n', 'c', 'cl', 'st', 'fl', 'tg']
+const KEYS: (keyof SnapEntity)[] = ['d', 'z', 'x', 'y', 'f', 'hp', 'mhp', 'mp', 'mmp', 'o', 'n', 'c', 'cl', 'st', 'fl', 'tg', 'gf']
 
 function diff(prev: SnapEntity | undefined, cur: SnapEntity): SnapEntity | null {
   if (!prev) return cur

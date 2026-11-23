@@ -95,7 +95,8 @@ export function flashAllowed(): boolean {
 
 /**
  * 鏡頭跟隨模式（不存檔）：off = 自由鏡頭；self = 跟著自己的單位（駕駛時跟著站點）；
- * action = 觀戰用，自動跟著最近發生戰鬥的地方
+ * action = 觀戰用，自動跟著最近發生戰鬥的地方（第 8 輪：開始觀戰時預設打開，這一站安靜了會自動換到別站在打的地方，
+ * 見 client/spectate.ts onSpectateStart／actionTick）
  */
 export type FollowMode = 'off' | 'self' | 'action'
 export const followMode = signal<FollowMode>('off')

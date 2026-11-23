@@ -164,6 +164,16 @@ export type ClientMsg =
    * 再送 HostMsg backToLobby ＋ lobbyState 給每位在線的人
    */
   | { t: 'backToLobby' }
+  /**
+   * 亡靈預言（第 8 輪，本作新增）：死者（或旁觀者）私下預言哪一方會贏，可以順便猜誰是主腦（mind = 槽位；異形或變種人的原始主腦）。
+   * 只有看得到全場的死者／旁觀者能預言（sim/systems/spectate.ts canProphesy），第一次之後最多改一次。
+   * 預言只回給預言者本人（PrivateState.proph），結算時才公開（EndResult.prophecies）；活人永遠收不到
+   */
+  | { t: 'prophecy'; win: ProphecyWin; mind?: Slot }
+
+/** 亡靈預言可以押的勝方 */
+export type ProphecyWin = 'crew' | 'xeno' | 'mutant'
+export const PROPHECY_WINS: readonly ProphecyWin[] = ['crew', 'xeno', 'mutant']
 
 export type ChatChannel = 'all' | 'team' | 'group' | 'dead'
 export type NoteMark = 'none' | 'trust' | 'suspect' | 'confirmedEvil' | 'confirmedClean'
@@ -255,7 +265,15 @@ export interface SnapEntity {
   x2?: Record<string, number | string | boolean>
   /** 動作目標點或目標實體（攻擊動畫、施法方向）*/
   tg?: number
+  /**
+   * 亡者之眼（settings.ghostSight）：這個玩家主單位的真實陣營。只送給亡者之眼已經開啟的死者與旁觀者
+   * （sim/systems/vision.ts ghostSees），活人的快照永遠沒有這個欄位（洩漏測試把關）
+   */
+  gf?: GhostKind
 }
+
+/** 亡者之眼看到的真實陣營：h 人類、a 仿生人、x 異形主腦、xs 異形眷屬、m 變種人主腦、ms 變種眷屬 */
+export type GhostKind = 'h' | 'a' | 'x' | 'xs' | 'm' | 'ms'
 
 export const EntFlag = {
   Invuln: 1,
@@ -380,6 +398,54 @@ export interface PrivateState {
   enh: boolean
   /** 站在可操作的設施旁：操作面板（M7）*/
   fac: FacilityView | null
+  /**
+   * 觀戰看板（第 8 輪）：只給看得到全場的死者與旁觀者（sim/systems/spectate.ts seesBoard），活人永遠沒有這個欄位。
+   * 約每秒更新一次；只放死者切站就看得到、或全場公告過的東西
+   */
+  spec?: SpecBoard
+  /** 自己的亡靈預言（只給死者／旁觀者本人；null = 還沒預言）*/
+  proph?: ProphecyView | null
+  /** 亡者之眼（大廳設定 ghostSight 開著時才有）：0 = 已開啟；正數 = 還要幾秒開啟 */
+  ghost?: number
+}
+
+/**
+ * 觀戰看板一列：[zone id, 活人數（不含隱形中、躲在逃生艙裡的）, 最近一次有玩家參與的交戰（遊戲秒數，-1 = 沒有）,
+ * 交戰熱度 0..99（約 8 秒衰減）, 交戰焦點 x, y（公尺）]
+ */
+export type SpecRow = [number, number, number, number, number, number]
+/** 觀戰看板的一筆死亡：[zone id, 死亡時刻（遊戲秒數）, 名字, 公告的身分（death.* 公告的 key 尾巴：innocent、xeno…）] */
+export type SpecDeath = [number, number, string, string]
+
+export interface SpecBoard {
+  /** 每個存活地點一列（太空 zone 0 在最前面）*/
+  z: SpecRow[]
+  /** 最近的死亡（新的在前，最多 12 筆）*/
+  d: SpecDeath[]
+}
+
+/** 自己的亡靈預言：mind = -1 表示沒猜主腦；left = 還能改幾次；t = 最後一次預言的遊戲秒數 */
+export interface ProphecyView {
+  win: ProphecyWin
+  mind: number
+  t: number
+  left: number
+}
+
+/** 結算時公開的一筆亡靈預言 */
+export interface ProphecyResult {
+  slot: Slot
+  win: ProphecyWin
+  /** 猜的主腦（沒猜就沒有）*/
+  mind?: Slot
+  /** 最後一次預言的遊戲秒數 */
+  t: number
+  /** 改過預言 */
+  changed: boolean
+  /** 勝方猜中（預言家）*/
+  ok: boolean
+  /** 主腦猜中（猜的人確實是異形或變種人的原始主腦）*/
+  mindOk?: boolean
 }
 
 /** 設施操作面板（只給站在旁邊的本人）*/
@@ -485,4 +551,6 @@ export interface EndResult {
   }[]
   timeline: { t: number; text: string }[]
   duration: number
+  /** 亡靈預言（第 8 輪；沒有人預言就沒有這個欄位）*/
+  prophecies?: ProphecyResult[]
 }

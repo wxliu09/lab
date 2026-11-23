@@ -30,6 +30,7 @@ export const ACTION_IDS = [
   'camRight',
   'camUp',
   'camDown',
+  'nextHotspot',
   'chat',
   'mute',
   'hideHud',
@@ -70,6 +71,8 @@ export const ACTIONS: readonly ActionDef[] = [
   ACT('camRight', 'camera', 'ArrowRight'),
   ACT('camUp', 'camera', 'ArrowUp'),
   ACT('camDown', 'camera', 'ArrowDown'),
+  // 第 8 輪：觀戰時跳到下一個熱點（活著的時候這個鍵不做事）
+  ACT('nextHotspot', 'camera', 'KeyN'),
   ACT('chat', 'ui', 'Enter'),
   ACT('mute', 'ui', 'KeyM'),
   ACT('hideHud', 'ui', 'F9'),

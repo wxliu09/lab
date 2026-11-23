@@ -1,6 +1,6 @@
 // peer 訊息白名單：型別、長度、數值範圍都要合法，否則整則丟棄。
 // 這裡是不信任邊界：任何 peer 都可能送出任意位元組。
-import { AI_LEVELS, PRACTICE_ROLES, type AiLevel, type ChatChannel, type ClientMsg, type Command, type CommandKind, type LobbySettings, type NoteMark, type PracticeRole } from './messages'
+import { AI_LEVELS, PRACTICE_ROLES, PROPHECY_WINS, type AiLevel, type ChatChannel, type ClientMsg, type Command, type CommandKind, type LobbySettings, type NoteMark, type PracticeRole, type ProphecyWin } from './messages'
 import { MAX_CLIENT_MSG_BYTES, decode } from './codec'
 import { MAX_PLAYERS, PLAYER_COLORS } from '../constants'
 
@@ -197,6 +197,11 @@ export function validateClientMsg(raw: unknown): ClientMsg | null {
     case 'backToLobby':
       // 同上：誰送的、對局是否已經正常結算由 server 檢查（只接受本機 peer）；多餘的欄位丟掉
       return { t: 'backToLobby' }
+    case 'prophecy':
+      // 亡靈預言：勝方三選一；主腦（mind）可省略，給了就要是合法槽位。誰能預言由 sim 判斷（spectate.ts canProphesy）
+      if (!PROPHECY_WINS.includes(raw.win as ProphecyWin)) return null
+      if (raw.mind !== undefined && !isInt(raw.mind, 0, MAX_PLAYERS - 1)) return null
+      return { t: 'prophecy', win: raw.win as ProphecyWin, ...(raw.mind !== undefined ? { mind: raw.mind as number } : {}) }
     case 'mapPing':
       return isInt(raw.z, 0, 4095) && isNum(raw.x, -1000, 1000) && isNum(raw.y, -1000, 1000) ? { t: 'mapPing', z: raw.z, x: raw.x, y: raw.y } : null
     case 'Tune':

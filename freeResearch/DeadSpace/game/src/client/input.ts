@@ -25,10 +25,12 @@ import { sweepPeek } from './sweepPeek'
 import { cabinHatch } from './hatch'
 import { deny, lastDeny, type DenyKind } from './feedback'
 import { followMode, hudHidden } from './viewPrefs'
+import { nextHotspot } from './spectate'
 import { ABILITY_ACTIONS, CAM_KEYS, ITEM_ACTIONS, actionFor, actionLabel, keyCapturing, type ActionId } from './keymap'
 import { CursorSetter, cursorState } from './cursors'
 import '../ui/strings/ux6'
 import '../ui/strings/feel7'
+import '../ui/strings/ghost8'
 
 export type TargetMode =
   | null
@@ -70,6 +72,8 @@ export function exposeWarn(key: string): boolean {
 
 /** 點擊標記的顏色：移動（預設綠）、互動（黃）、攻擊（紅）、技能（紫）*/
 const MARK = { interact: '#ffc23d', follow: '#5cf2a5', attack: '#ff5a4a', aim: '#b28cff' }
+/** 基因檢測器的抽血技能：點地面＝抽血集合（第 8 輪；sim 的 scripts/git.ts 接在 use 指令前面處理）*/
+const GIT_DRAW = 'ab.item.geneSampler'
 /** 空白鍵：放開到再按下在這個時間內＝連按兩下（切換鏡頭跟隨）*/
 const DOUBLE_TAP_MS = 300
 /** 空白鍵：按住超過這個時間＝暫時跟隨自己，放開就停 */
@@ -786,6 +790,12 @@ export class Input {
     if (tm.target === 'unit') {
       const id = this.aimChoice(tm, ent, mx, my)
       const e = id ? world.ents.get(id) : undefined
+      // 基因檢測器點在地面（附近也沒有可抽血的人）：抽血集合（sim 的 scripts/git.ts gitRally），不是點空
+      if (!e && pt && tm.kind === 'item' && tm.ability === GIT_DRAW) {
+        sendAim(tm, { x: pt.x, y: pt.y }, q)
+        this.scene.fx.clickMarker(zone, pt.x, pt.y, MARK.aim)
+        return true
+      }
       // 只能對站點放的（停靠、設定航線）點到自己的船、恆星：sim 只會回「無效的目標」，改成說明要點在站點上
       if (!e || (f?.station && !targetOk(e.s, f, casterId()))) {
         aimMiss(this.missKey(tm))
@@ -963,6 +973,9 @@ export class Input {
         // 隱藏介面（截圖、實況）；HUD 依 hudHidden 收起，再按一次顯示
         hudHidden.value = !hudHidden.value
         return true
+      case 'nextHotspot':
+        // 觀戰：跳到下一個熱點（client/spectate.ts）；活著的時候不處理，讓按鍵照常通過
+        return nextHotspot()
       case 'selectSelf': {
         const id = world.me.control || world.me.unit || 0
         if (id) {

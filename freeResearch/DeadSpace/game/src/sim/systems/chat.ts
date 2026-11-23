@@ -305,6 +305,11 @@ function chatCommand(g: Game, p: GamePlayer, cmd: string): void {
         g.privateLine(p.slot, 'chat.booted')
         return
       }
+      // 亡者之眼（大廳設定 ghostSight）：死者看得見真實身分，附身蛞蝓仔（唯一能碰到活人的管道）整局停用
+      if (g.settings.ghostSight) {
+        g.privateLine(p.slot, 'ghost8.slugOff')
+        return
+      }
       if (!g.possessSlug?.(p.slot)) g.privateLine(p.slot, 'chat.noSlug')
       break
     case 'allow':

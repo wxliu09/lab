@@ -47,6 +47,8 @@ import { pingFx } from '../../render/pingFx'
 import { feedView, notesOpen } from './Investigation'
 import { deny, lastDeny, type DenyEvent } from '../../client/feedback'
 import { followMode, hudHidden } from '../../client/viewPrefs'
+import { boardRows, inCombat, nextHotspot, unpinZone } from '../../client/spectate'
+import '../strings/ghost8'
 import { actionKey, itemKey, slotKey } from './abilityKeys'
 import { __portraitStats, mountSpin, portraitReady, portraitSpecOf, portraitUrl } from '../../render/portrait'
 import '../strings/art3'
@@ -976,10 +978,13 @@ function Bust({ url, icon, color, dead, small }: { url: string | null; icon: str
   )
 }
 
-/** 觀戰細列：觀戰中、提示、自動跟隨戰鬥、隱藏介面 */
+/** 觀戰細列：觀戰中、提示、自動跟隨戰鬥、下一個熱點（第 8 輪）、隱藏介面 */
 function SpecStrip({ hint }: { hint: boolean }) {
   const follow = followMode.value === 'action'
   const k = hideHudKey()
+  const nk = actionKey('nextHotspot')
+  // 等記憶核心復活的仿生人只能透過核心看：沒有觀戰看板，不能跳站
+  const canHop = !world.me.coreWait
   return (
     <div class="spec-row">
       <span class="spec-live">
@@ -992,14 +997,29 @@ function SpecStrip({ hint }: { hint: boolean }) {
         data-testid="follow-action"
         aria-pressed={follow}
         onClick={(e) => {
+          // 重新打開：解除手動選站的釘住，可以自動換站去找戰鬥（client/spectate.ts）
+          if (!follow) unpinZone()
           followMode.value = follow ? 'off' : 'action'
           ;(e.currentTarget as HTMLElement).blur()
         }}
-        {...tipProps(() => ({ title: t('vis7.follow'), body: t('vis7.follow.tip') }))}
+        {...tipProps(() => ({ title: t('vis7.follow'), body: canHop ? t('ghost8.follow.tip') : t('vis7.follow.tip') }))}
       >
         <i class="spec-dot" aria-hidden="true" />
         {t('vis7.follow')}
       </button>
+      {canHop && (
+        <button
+          class="small ghost spec-btn g8-next"
+          data-testid="next-hotspot"
+          onClick={(e) => {
+            nextHotspot()
+            ;(e.currentTarget as HTMLElement).blur()
+          }}
+          {...tipProps(() => ({ title: t('ghost8.next'), tag: nk || undefined, body: t('ghost8.next.tip') }))}
+        >
+          {t('ghost8.next')} {nk && <span class="mono dim">{nk}</span>}
+        </button>
+      )}
       <button
         class="small ghost spec-btn"
         data-testid="hide-hud"
@@ -1717,6 +1737,8 @@ export function SpecDock({ children }: { children: ComponentChildren }) {
   const me = world.me
   const list = (me.alive === false || me.role === 'spectator') && !me.coreWait && !me.booted
   const open = specListOpen.value
+  // 正在看的這一站在打（觀戰看板，第 8 輪）：標籤上一個紅點，收起清單時也看得到
+  const hot = list && inCombat(boardRows(me.spec).get(me.specZone ?? -1), world.serverTime)
   return (
     <div class={'spec-dock' + (list ? ' has-list' : '') + (list && !open ? ' closed' : '')} data-testid="spec-dock">
       {list && (
@@ -1730,6 +1752,7 @@ export function SpecDock({ children }: { children: ComponentChildren }) {
           }}
           {...tipProps(() => ({ title: t(open ? 'vis7.list.fold' : 'vis7.list.unfold') }))}
         >
+          {hot && <i class="g8-dot" aria-hidden="true" />}
           <span class="spec-tab-l">{t('vis7.list.tab', { place: specPlace(me.specZone) })}</span>
           <span class="spec-tab-c" aria-hidden="true">
             {open ? '▴' : '▾'}

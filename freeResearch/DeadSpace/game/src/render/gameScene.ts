@@ -21,6 +21,7 @@ import { autoLowerQuality, canPrebuild, preset, quality, qualityChosen } from '.
 import { autoDropState, autoDropStep } from './autoDrop'
 import { isPiloting, localNotice, modalChecks } from '../client/input'
 import { followMode, followPilot, hiContrast } from '../client/viewPrefs'
+import { ACTION_IDLE, actionTick } from '../client/spectate'
 import '../ui/strings/art2'
 import '../ui/strings/cam7'
 import { effect, signal } from '@preact/signals'
@@ -447,7 +448,14 @@ export class GameScene implements SceneLike {
       this.followPt.y = u.y
       return this.followPt
     }
-    if (m === 'action') return this.action.pick(this.zone, performance.now() / 1000)
+    if (m === 'action') {
+      // 第 8 輪：這一站好一陣子沒有新的戰鬥特效（或根本還沒打）→ 看板的交戰焦點或人群；
+      // 換站（這站安靜了、別站在打、空站）也由 client/spectate.ts 的 actionTick 決定
+      const now = performance.now() / 1000
+      const f = this.action.pick(this.zone, now)
+      const alt = actionTick(this.world, this.zone, now)
+      return f && now - this.action.focus.hit < ACTION_IDLE ? f : (alt ?? f)
+    }
     return null
   }
   /** 上一幀在駕駛（駕駛開始時自動跟隨）；這次的跟隨是自動開的（離開駕駛時自動關）*/

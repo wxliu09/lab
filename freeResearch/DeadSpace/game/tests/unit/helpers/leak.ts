@@ -4,6 +4,10 @@ import type { HostMsg, SnapEntity } from '../../../src/shared/protocol/messages'
 import type { Game, GamePlayer } from '../../../src/sim/game'
 import type { Ent } from '../../../src/sim/ent'
 import { SPACE_ZONE } from '../../../src/sim/world'
+import { ghostSees } from '../../../src/sim/systems/vision'
+
+/** 第 8 輪：只給死者／旁觀者的私有狀態欄位（觀戰看板、亡靈預言、亡者之眼），活人收到就是洩漏 */
+const DEAD_ONLY_ME = ['spec', 'proph', 'ghost'] as const
 
 const FORBIDDEN_KEYS = new Set(['role', 'faction', 'spawnOf', 'android', 'isSpawn', 'trueOwner', 'phd'])
 
@@ -60,7 +64,7 @@ export function oracleVisible(g: Game, slot: number): Set<number> {
  * 顯示擁有者不算洩漏（反而在變身時改成匿名才會露餡）。
  */
 export function anonChildProblems(g: Game, viewer: GamePlayer, ent: Ent, sv: SnapEntity): string[] {
-  if (ent.isMain || ent.owner < 0 || ent.owner === viewer.slot || viewer.flags.reveal) return []
+  if (ent.isMain || ent.owner < 0 || ent.owner === viewer.slot || viewer.flags.reveal || ghostSees(g, viewer)) return []
   const O = g.players[ent.owner]
   if (!O) return []
   const fo = g.faction(O)
@@ -97,7 +101,8 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
         if (ent && !vis.has(e.i)) problems.push(`slot${slot} 看到不可見實體 ${ent.def.id}`)
         if (ent && ent.anon) {
           const o = ent.owner >= 0 ? g.players[ent.owner] : null
-          const allowed = ent.owner === slot || viewer.flags.reveal || (o && fv !== 'crew' && g.faction(o) === fv && viewer.alive)
+          // 亡者之眼（ghostSight，第 8 輪）：只有再也回不到活人那邊的死者／旁觀者
+          const allowed = ent.owner === slot || viewer.flags.reveal || ghostSees(g, viewer) || (o && fv !== 'crew' && g.faction(o) === fv && viewer.alive)
           if (!allowed) {
             // 偽裝（data.fake）或偽裝期間放下的子物件（data.maskOf）會顯示偽裝對象：只要不是真正的擁有者就行
             const masked = !!ent.data.fake || typeof ent.data.maskOf === 'number'
@@ -111,6 +116,11 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
           }
         }
         if (ent) problems.push(...anonChildProblems(g, viewer, ent, e))
+        // 真實陣營（gf）只給亡者之眼已開啟的死者／旁觀者
+        if ('gf' in e && (viewer.alive || (e.gf != null && !ghostSees(g, viewer)))) problems.push(`slot${slot} 收到真實陣營 gf（${String(e.gf)}）`)
+      }
+      if (s.me && viewer.alive && !viewer.spectator) {
+        for (const k of DEAD_ONLY_ME) if (k in s.me) problems.push(`活人 slot${slot} 收到死者專屬欄位 me.${k}`)
       }
       if (s.me && s.me.slot !== undefined && s.me.slot !== slot) problems.push(`slot${slot} 收到別人的私有狀態`)
       if (s.me?.mates?.length && fv === 'crew') problems.push(`人類 slot${slot} 收到同陣營名單`)
@@ -120,6 +130,8 @@ export function checkMessages(g: Game, slot: number, raws: Uint8Array[]): string
         if (l.ch === 'dead' && viewer.alive && !viewer.flags.listen) problems.push(`活人 slot${slot} 收到死者聊天`)
         if (l.ch === 'team' && fv === 'crew' && !viewer.flags.listen) problems.push(`人類 slot${slot} 收到陣營私頻`)
         if (l.ch === 'group' && !viewer.flags.listen && viewer.alive && !l.group) problems.push(`slot${slot} 收到不明群組訊息`)
+        // 亡靈預言的回覆、亡者之眼的通知只給死者本人
+        if (viewer.alive && /^@ghost8\.(proph|eye)/.test(l.text)) problems.push(`活人 slot${slot} 收到 ${l.text}`)
       }
     }
     if (m.t === 'lobbyState' || m.t === 'start') {

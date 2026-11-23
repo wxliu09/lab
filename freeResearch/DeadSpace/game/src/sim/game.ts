@@ -10,6 +10,7 @@ import type {
   LobbySettings,
   NoteEntry,
   NoteMark,
+  ProphecyWin,
   StartInfo,
 } from '../shared/protocol/messages'
 import { RECONNECT_GRACE_S, TICK_DT } from '../shared/constants'
@@ -22,6 +23,7 @@ import { handleCommand } from './systems/orders'
 import { stepMovement, stepDoors } from './systems/movement'
 import { computeVision } from './systems/vision'
 import { buildSnapshot, type ViewState, newViewState } from './systems/snapshot'
+import { prophecyResults, prophesy, specSnap, stepSpectate } from './systems/spectate'
 import { bootIfOut, hearsDead, inLastWords, routeChat, routeMapPing } from './systems/chat'
 import { clearDeparture, earlySeat, noteDeparture, replaceSeat } from './systems/replace'
 import { Tuning } from './systems/tuning'
@@ -45,7 +47,7 @@ import { placePoi } from './setup'
 import { installCreatureAi } from './ai/creatures'
 import { installXenoSystems } from './scripts/xeno'
 import { itemRuntime } from './scripts/items'
-import { installEvents, publicEvents, type EventState } from './systems/events'
+import { installEvents, publicDoom, publicEvents, type EventState } from './systems/events'
 import { installStations } from './systems/stations'
 import { installFacilities } from './systems/facilities'
 import { installRegen } from './systems/regen'
@@ -475,6 +477,13 @@ export class Game {
     routeChat(this, p, ch, text, to)
   }
 
+  /** 亡靈預言（第 8 輪；規則見 systems/spectate.ts prophesy）*/
+  handleProphecy(slot: number, win: ProphecyWin, mind?: number): void {
+    const p = this.players[slot]
+    if (!p || this.ended) return
+    prophesy(this, p, win, mind)
+  }
+
   /** 死亡模式投票（開局 180 秒內一次；本作修正原作只算單方票數的 bug）與禁言投票 */
   handleVote(slot: number, v: string, arg?: number): void {
     const p = this.players[slot]
@@ -632,6 +641,8 @@ export class Game {
       gitAt: samplerOpenAt(this),
       // 進行中的重大事件（events.ts publicEvents：都是全場公告過、所有人本來就看得到的事）
       ev: this.publicEventsNow(),
+      // 末日與災害的公開狀態（events.ts publicDoom：rad／fleetPlanet／burnIn／siege，只在條件成立時有值）
+      ...publicDoom(this),
     }
   }
 
@@ -815,6 +826,9 @@ export class Game {
         tests: p.stats.tests,
       })),
     }
+    // 亡靈預言：結算時才公開（之前只有預言者本人知道自己押了什麼）
+    const proph = prophecyResults(this, winner)
+    if (proph.length) this.ended.prophecies = proph
     for (const p of this.allPlayers()) if (p.connected && !p.bot) this.send(p.slot, { t: 'end', result: this.ended })
   }
 
@@ -951,6 +965,8 @@ export class Game {
 
   /** 每次 server tick 都送快照（暫停時也送，讓畫面維持）*/
   private flush(): void {
+    // 觀戰看板、亡者之眼（systems/spectate.ts）：要在清掉這次的特效之前記下交戰
+    stepSpectate(this)
     const vis = computeVision(this)
     for (const p of this.allPlayers()) {
       if (p.bot || !p.connected) {
@@ -959,6 +975,8 @@ export class Game {
         continue
       }
       const snap = buildSnapshot(this, p, vis.get(p.slot)!)
+      // 死者／旁觀者專屬的欄位（觀戰看板、自己的預言、亡者之眼）；活人什麼都不加
+      specSnap(this, p, snap)
       this.send(p.slot, { t: 'snap', s: snap })
     }
     this.flushChat()

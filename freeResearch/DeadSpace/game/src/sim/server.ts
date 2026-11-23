@@ -258,6 +258,11 @@ export class GameServer {
         if (this.phase !== 'game' || !ps.ping.take(this.now)) return
         this.game?.handleMapPing(slot, msg.z, msg.x, msg.y)
         break
+      case 'prophecy':
+        // 亡靈預言（第 8 輪）：誰能預言、能改幾次由 sim 判斷（systems/spectate.ts）
+        if (this.phase !== 'game') return
+        this.game?.handleProphecy(slot, msg.win, msg.mind)
+        break
       case 'abort': {
         // 主機中止對局：只接受本機（主機分頁自己）送來的，其他 peer 一律忽略
         if (peer !== LOCAL_PEER) return
