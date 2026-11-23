@@ -3,7 +3,7 @@
 // 不顯示、也不暗示別人的身分。規則細節的出處見 strings/guide.ts 開頭。
 import { effect, signal } from '@preact/signals'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { EndResult, PrivateState, WorldPublic } from '../../shared/protocol/messages'
+import { PRACTICE_ROOM, type AiLevel, type EndResult, type PrivateState, type WorldPublic } from '../../shared/protocol/messages'
 import { CLASSES, UNITS, abilityDef, buffDef, itemDef } from '../../shared/content/registry'
 import '../../shared/content/index'
 import { lobby, sendCmd, snapTick, startInfo, world } from '../../client/session'
@@ -21,11 +21,15 @@ import { GUIDE_EN, GUIDE_ZH, HELP_CONTROLS, HELP_THINGS } from '../strings/guide
 import { sampleName } from '../../shared/sysArgs'
 import { SIM_AGENT_TITLE, localizeName } from '../names'
 import { PLAY1_EN, PLAY1_ZH } from '../strings/play1'
-import { abilityKey } from './abilityKeys'
+import { abilityKey, actionKey } from './abilityKeys'
 import { aoeDamage } from '../aoe'
 import { guideBelow } from './topLayout'
 import '../strings/ui6'
+import '../strings/ui8'
+// 觀戰「下一個熱點」的按鍵說明（feel7.kb.a.nextHotspot，死者組第 8 輪）
+import '../strings/ghost8'
 import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { androidEpPerSec } from '../../shared/pacing'
 import '../guide.css'
 
 export { abilityKey }
@@ -157,6 +161,7 @@ export const TRANSIENT_HINTS = new Set([
   'shipInside',
   'suit',
   'sampler',
+  'rally',
   'resolver',
   'core',
   'xenoShed',
@@ -284,6 +289,12 @@ export interface GuideView {
   altT?: number
   /** 正在操控、不是自己主單位的載具（船艇、站點、救生艙、防禦無人機）的 def id */
   ctrl?: string
+  /** 大廳設定的末日時間（仿生人的 EP 速度隨它縮放，shared/pacing.ts）*/
+  apocalypse?: readonly [number, number]
+  /** 單機練習的 AI 難度（不是練習局就沒有）*/
+  practice?: AiLevel
+  /** 大廳設定「死者看見真實身分」（開著時死者不能附身蛞蝓仔）*/
+  ghostSight?: boolean
 }
 
 export function identityOf(me: Partial<PrivateState>): Identity | null {
@@ -380,6 +391,76 @@ export function eventSteps(w: Partial<WorldPublic>): Step[] {
       const key = k === 'doom' && (w.apo === 'orbit' || w.apo === 'fleet') ? 'guide.ev.doom.' + w.apo : 'guide.ev.' + k
       return { key, warn: true }
     })
+}
+
+// ───────── 末日與圍攻的現況（第 8 輪：WorldPublic 的 rad／fleetPlanet／burnIn／siege）─────────
+
+/** 翠原星（地表）的站點 id */
+export const SURFACE_STATION = 'verdance'
+/** 地表輻射至少這麼高才列出來（衰減到很低的殘值不必再吵）*/
+export const RAD_SHOW_MIN = 0.5
+
+const finite = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+
+/** 秒數的說法：100 秒以內寫「N 秒」，更久寫「M 分 S 秒」*/
+export function secText(sec: number): string {
+  const v = Math.max(0, Math.ceil(sec))
+  return v < 100 ? t('ui8.guide.sec', { n: v }) : t('ui8.guide.minSec', { m: Math.floor(v / 60), s: v % 60 })
+}
+
+/** 每秒輻射傷害的寫法：10 以下留一位小數 */
+export function radText(r: number): string {
+  return r >= 10 ? String(Math.round(r)) : String(Math.round(r * 10) / 10)
+}
+
+/**
+ * 末日與圍攻的現況（黃色，和事件對策排在一起）。資料都是全場公告過的公開狀態（sim 的 worldPublic），不看任何人的身分。
+ * here = 和自己所在位置有關的（被圍攻的就是自己這站、人在翠原星地表、翠原星的灼燒倒數），away = 別處的現況
+ */
+export function crisisSteps(v: GuideView): { here: Step[]; away: Step[] } {
+  const w = v.w
+  const here: Step[] = []
+  const away: Step[] = []
+  const onSurface = v.zoneStation === SURFACE_STATION
+  // 無人機群圍攻：自己這站優先，否則列剩最少的那一站
+  const raw: unknown = w.siege
+  const siege = Array.isArray(raw) ? raw.filter((e): e is [string, number] => Array.isArray(e) && typeof e[0] === 'string' && finite(e[1]) !== null) : []
+  if (siege.length) {
+    const mine = siege.find(([id]) => id === v.zoneStation)
+    const pick = mine ?? [...siege].sort((a, b) => a[1] - b[1])[0]
+    const args = {
+      st: loc(STATION_BY_ID.get(pick[0])?.name) || pick[0],
+      n: Math.max(1, Math.min(100, Math.round(pick[1] * 100))),
+    }
+    ;(mine ? here : away).push({ key: mine ? 'ui8.guide.siegeHere' : 'ui8.guide.siege', args, warn: true })
+  }
+  // 軌道失效：翠原星被拉進恆星灼燒範圍的倒數（大家都撤到地表，所以一律算「自己有關」）
+  const burn = finite(w.burnIn)
+  if (burn !== null) here.push(burn > 0 ? { key: 'ui8.guide.burnIn', args: { t: secText(burn) }, warn: true } : { key: 'ui8.guide.burnNow', warn: true })
+  if (w.fleetPlanet === true)
+    (onSurface ? here : away).push({
+      key: onSurface ? 'ui8.guide.fleetPlanetHere' : 'ui8.guide.fleetPlanet',
+      warn: true,
+    })
+  const rad = finite(w.rad)
+  if (rad !== null && rad >= RAD_SHOW_MIN)
+    (onSurface ? here : away).push({
+      key: onSurface ? 'ui8.guide.radHere' : 'ui8.guide.rad',
+      args: { n: radText(rad) },
+      warn: true,
+    })
+  return { here, away }
+}
+
+/**
+ * 目標面板的事件行：和自己所在位置有關的現況最前面，接著是重大事件的對策（eventSteps），最後是別處的現況；最多 MAX_EVENT_STEPS 條。
+ * 已經列出圍攻的現況（哪一站、剩多少）時，不再列一般的無人機群對策
+ */
+export function eventLines(v: GuideView): Step[] {
+  const { here, away } = crisisSteps(v)
+  const sieged = [...here, ...away].some((s) => s.key.startsWith('ui8.guide.siege'))
+  const ev = eventSteps(v.w).filter((s) => !(sieged && s.key === 'guide.ev.drones'))
+  return [...here, ...ev, ...away].slice(0, MAX_EVENT_STEPS)
 }
 
 /** 會進入目標面板事件對策的身分（活著、還能行動的）*/
@@ -520,7 +601,11 @@ export function infectionStep(v: GuideView): Step | null {
     return kit >= 0 ? { key: 'guide.s.infect' + who, args: { k: kit + 1 }, danger: true } : { key: 'guide.s.infect' + who + 'Get', danger: true }
   }
   const held = kinds.find((k) => k === 'containedParasite' || k === 'containedPrion')
-  if (held) return { key: held === 'containedParasite' ? 'guide.s.infectHeldParasite' : 'guide.s.infectHeldPrion', danger: true }
+  if (held)
+    return {
+      key: held === 'containedParasite' ? 'guide.s.infectHeldParasite' : 'guide.s.infectHeldPrion',
+      danger: true,
+    }
   return null
 }
 
@@ -542,14 +627,20 @@ export function pilotStep(me: Partial<PrivateState>, ctrl: string | undefined): 
   return null
 }
 
-/** 仿生人每秒自動得到的 EP（sim 的 roleSystem.ts「EP 每秒結算」；大廳的 EP 倍率會再乘上去）*/
+/** 仿生人每秒自動得到的 EP 的下限（原作的 1.5；實際速度隨末日時間縮放，見 shared/pacing.ts androidEpPerSec）*/
 export const ANDROID_EP_PER_SEC = 1.5
 
-/** 仿生人 EP 的速度與還要幾分鐘滿（目標面板、說明面板用）：r = 每秒幾點，m = 分鐘（至少 1）*/
-export function androidEpRate(ep: number, next: number, epMult = 1): { r: string; m: number } {
+/**
+ * 仿生人 EP 的速度與還要幾分鐘滿（目標面板、說明面板用）：r = 每秒幾點，m = 分鐘（至少 1）。
+ * 速度和 sim 同一個公式（shared/pacing.ts：依大廳的末日時間，sim 的 roleSystem.ts「EP 每秒結算」），再乘大廳的 EP 倍率
+ */
+export function androidEpRate(ep: number, next: number, epMult = 1, apocalypse?: readonly [number, number]): { r: string; m: number } {
   const mult = Number.isFinite(epMult) && epMult > 0 ? epMult : 1
-  const rate = ANDROID_EP_PER_SEC * mult
-  return { r: String(Math.round(rate * 100) / 100), m: Math.max(1, Math.ceil(Math.max(0, next - ep) / rate / 60)) }
+  const rate = androidEpPerSec(apocalypse) * mult
+  return {
+    r: String(Math.round(rate * 100) / 100),
+    m: Math.max(1, Math.ceil(Math.max(0, next - ep) / rate / 60)),
+  }
 }
 
 /**
@@ -594,7 +685,12 @@ export function objectiveFor(v: GuideView): Objective | null {
       else if (smp >= 0) {
         // 抽血進度：已抽的人（自己的資訊）
         const names = me.inv?.[smp]?.samples ?? []
-        if (names.length) add('guide.s.samplerProgress', { k: smp + 1, n: names.length, names: listJoin(names.map((x) => localizeName(sampleName(x, lang.value)))) })
+        if (names.length)
+          add('guide.s.samplerProgress', {
+            k: smp + 1,
+            n: names.length,
+            names: listJoin(names.map((x) => localizeName(sampleName(x, lang.value)))),
+          })
         else add('guide.s.samplerUse', { k: smp + 1 })
       } else if (time < gitAt && !samplerInStock()) {
         // 基因檢測開放前：倒數＋一條可以先做的事（不然整段空窗只有「等」）
@@ -659,7 +755,7 @@ export function objectiveFor(v: GuideView): Objective | null {
       if (ep) {
         if (ready) add('guide.s.androidPick')
         else if (ep.ep >= ep.next) add('guide.s.androidReady')
-        else add('guide.s.androidEp', androidEpRate(ep.ep, ep.next, v.epMult))
+        else add('guide.s.androidEp', androidEpRate(ep.ep, ep.next, v.epMult, v.apocalypse))
       }
       add('guide.s.ff')
       const sp = splashGear(v)
@@ -697,7 +793,8 @@ export function objectiveFor(v: GuideView): Objective | null {
       }
       add('guide.s.specPick')
       add('guide.s.deadChat')
-      add('guide.s.slug')
+      // 「死者看見真實身分」開著：不能附身蛞蝓仔，改提醒語音的默契
+      add(v.ghostSight ? 'ui8.guide.s.ghostSight' : 'guide.s.slug')
       add('guide.s.endReveal')
       break
     case 'deadAndroid':
@@ -713,7 +810,11 @@ export function objectiveFor(v: GuideView): Objective | null {
   }
   // 搭救生艙飄在太空中（操控的是救生艙）：要先設定航線才會降落，任何身分都可能搭
   const kpod = EVENT_IDS.has(id) ? abilityKey(me, 'pod.trajectory') : null
-  if (kpod !== null) steps.unshift({ key: 'guide.s.podAim', args: { k: keyText(kpod), name: loc(abilityDef('pod.trajectory')?.name) } })
+  if (kpod !== null)
+    steps.unshift({
+      key: 'guide.s.podAim',
+      args: { k: keyText(kpod), name: loc(abilityDef('pod.trajectory')?.name) },
+    })
   // 駕駛船艇／站點／防禦無人機（第 6 輪審查 P2：發射後不知道怎麼開、怎麼停靠、怎麼離開）
   const pilot = EVENT_IDS.has(id) ? pilotStep(me, v.ctrl) : null
   if (pilot) steps.unshift(pilot)
@@ -722,7 +823,7 @@ export function objectiveFor(v: GuideView): Objective | null {
   // 攸關性命的感染（紅色）最前面，接著是重大事件（無人機群、小行星、天守、海盜、末日）的對策；
   // 本身的任務最多 4 條（含感染與事件），職業短句另外附在最後
   const inf = infectionStep(v)
-  const ev = EVENT_IDS.has(id) ? eventSteps(v.w) : []
+  const ev = EVENT_IDS.has(id) ? eventLines(v) : []
   const main = [...(inf ? [inf] : []), ...ev, ...steps.filter((s) => !s.dim)].slice(0, 4)
   const dim = steps.filter((s) => s.dim).slice(0, 1)
   return { id, goal, sub, steps: [...main, ...dim], ep: live ? ep : undefined }
@@ -790,14 +891,23 @@ export function detectHints(v: GuideView): Hint[] {
   if (id === 'android') {
     add('androidFf', 20)
     if ((me.epNext ?? 0) > 0 && (me.ep ?? 0) >= (me.epNext ?? 0) && !me.canEvolve?.length) add('androidFull', 5)
+    // 第 8 輪：仿生人的長處（開局一陣子後）；驗血開放、拿到檢測器或看到「錯誤」報告時說明「錯誤」的意思（排在檢測器用法之後、召集驗血之前）
+    if (time >= 45) add('androidRole', 29)
+    if (time >= gitAtOf(v.w) || invSlot(me, (i) => i === 'geneSampler') >= 0 || (me.gitReports ?? []).some((r) => r.result === 'error')) add('androidError', 21.5)
   }
+  // 練習一般難度：AI 異類會挑落單的人下手，開局就提醒（第 8 輪）
+  if (v.practice === 'normal' && (id === 'human' || id === 'android') && time >= 3 && time < 300) add('practiceAlone', 12)
   if (me.canEvolve?.length && !me.evolving && (id === 'xeno' || id === 'mutant' || id === 'android')) add(id === 'xeno' ? 'evolveXeno' : id === 'mutant' ? 'evolveMutant' : 'evolveAndroid', 3)
   // 背包
   if ((me.inv ?? []).some(Boolean)) add('item', 25)
   const suitAt = invSlot(me, isSuitItem)
   if (suitAt >= 0 && !suited(v)) add('suit', 22, { k: suitAt + 1 })
   const smp = invSlot(me, (i) => i === 'geneSampler')
-  if (smp >= 0) add('sampler', 21, { k: smp + 1 })
+  if (smp >= 0) {
+    add('sampler', 21, { k: smp + 1 })
+    // 對地面使用＝召集大家來驗血（規則：sim/scripts/git.ts gitRally）
+    add('rally', 22)
+  }
   const res = invSlot(me, (i) => i === 'gitResolver')
   if (res >= 0) add('resolver', 21, { k: res + 1 })
   const core = invSlot(me, (i) => i === 'memoryCore')
@@ -853,13 +963,17 @@ function viewFromWorld(): GuideView {
   const zs = startInfo.value?.zones?.find((z) => z[0] === me.zone)?.[2]
   const altT = altFreeze.value
   const ctrl = me.control && me.control !== me.unit && me.alive !== false ? world.ents.get(me.control)?.s.d : undefined
+  const set = lobby.value?.settings
   return {
     me,
     w: world.w,
     self: self ? { d: self.s.d, hp: self.s.hp, mhp: self.s.mhp, b: self.s.b, n: self.s.n } : undefined,
     near,
     zoneStation: zs,
-    epMult: lobby.value?.settings.epMult,
+    epMult: set?.epMult,
+    ...(set?.apocalypse ? { apocalypse: set.apocalypse } : {}),
+    ...(set && lobby.value?.code === PRACTICE_ROOM ? { practice: set.aiLevel } : {}),
+    ...(set?.ghostSight ? { ghostSight: true } : {}),
     ...(altT !== null ? { altT } : {}),
     ...(ctrl ? { ctrl } : {}),
   }
@@ -973,7 +1087,11 @@ const HINT_ICON: Record<string, string> = {
   item: 'info',
   suit: 'suit',
   sampler: 'dna',
+  rally: 'dna',
   resolver: 'dna',
+  androidRole: 'gear',
+  androidError: 'dna',
+  practiceAlone: 'eye',
   report: 'scan',
   vendor: 'vendor',
   git: 'dna',
@@ -998,13 +1116,12 @@ const HINT_ICON: Record<string, string> = {
   stab: 'clock',
 }
 
-
 /** 說明面板：各身分的玩法要點 */
 export const ROLE_TIPS: Record<Identity, string[]> = {
   human: ['human.1', 'human.2', 'human.3', 'human.4'],
   xeno: ['xeno.1', 'xeno.2', 'xeno.3', 'xeno.4', 'xeno.5', 'xeno.6'],
   mutant: ['mutant.1', 'mutant.2', 'mutant.3', 'mutant.4', 'mutant.5', 'mutant.6'],
-  android: ['android.1', 'android.2', 'android.3', 'android.4', 'android.5'],
+  android: ['android.1', 'android.guard', 'android.2', 'android.3', 'android.error', 'android.4', 'android.5'],
   spawnXeno: ['spawn.1', 'spawn.2', 'spawn.3', 'spawnXeno.4'],
   spawnMutant: ['spawn.1', 'spawn.2', 'spawn.3'],
   dead: ['dead.1', 'dead.2', 'dead.3', 'dead.4'],
@@ -1131,7 +1248,14 @@ export function Guide() {
     <>
       {obj && !notesOpen.value && (
         // 極窄視窗：頂列的精簡版也放不下時，目標面板移到頂列下方（topLayout.ts 的 guideBelow）
-        <div class="guide-dock" ref={dock} style={{ ...(maxH ? { maxHeight: `${maxH}px` } : {}), ...(below !== null ? { top: `${below}px` } : {}) }}>
+        <div
+          class="guide-dock"
+          ref={dock}
+          style={{
+            ...(maxH ? { maxHeight: `${maxH}px` } : {}),
+            ...(below !== null ? { top: `${below}px` } : {}),
+          }}
+        >
           <Objectives obj={obj} fold={fold} squeeze={squeeze.current} onFold={toggleFold} />
           {q.active.length > 0 && (
             <div class="guide-toasts" data-testid="guide-toasts">
@@ -1194,7 +1318,10 @@ function StepItem({ s, station }: { s: Step; station: string | null }) {
             ;(e.currentTarget as HTMLElement).blur()
             goToFacility(kind)
           }}
-          {...tipProps(() => ({ title: t('guide.nav.tip'), body: kind === 'prey' ? t('guide.nav.preyBody') : t('guide.nav.body', { name: t('guide.nav.' + kind) }) }))}
+          {...tipProps(() => ({
+            title: t('guide.nav.tip'),
+            body: kind === 'prey' ? t('guide.nav.preyBody') : t('guide.nav.body', { name: t('guide.nav.' + kind) }),
+          }))}
         >
           {text}
           <span class="guide-nav-go" aria-hidden="true">
@@ -1246,7 +1373,13 @@ function Objectives({ obj, fold, squeeze, onFold }: { obj: Objective; fold: bool
         <button class="small ghost guide-btn" data-testid="guide-help-btn" onClick={() => (guideOpen.value = !guideOpen.value)} {...tipProps(() => ({ title: t('guide.btn.helpTip'), tag: 'G' }))}>
           {t('guide.btn.help')}
         </button>
-        <button class="small ghost guide-btn guide-fold" data-testid="guide-fold" aria-expanded={!fold} onClick={onFold} {...tipProps(() => ({ title: t(fold ? 'guide.btn.unfold' : 'guide.btn.fold') }))}>
+        <button
+          class="small ghost guide-btn guide-fold"
+          data-testid="guide-fold"
+          aria-expanded={!fold}
+          onClick={onFold}
+          {...tipProps(() => ({ title: t(fold ? 'guide.btn.unfold' : 'guide.btn.fold') }))}
+        >
           {fold ? '▸' : '▾'}
         </button>
       </div>
@@ -1439,15 +1572,7 @@ function HelpPanel({ id, v }: { id: Identity | null; v: GuideView }) {
             {t('guide.btn.close')} ✕
           </button>
         </div>
-        <div
-          class={'guide-help-body page-' + cur}
-          ref={body}
-          onScroll={check}
-          role="tabpanel"
-          id="guide-help-page"
-          aria-labelledby={'guide-help-tab-' + cur}
-          data-testid={'guide-help-page-' + cur}
-        >
+        <div class={'guide-help-body page-' + cur} ref={body} onScroll={check} role="tabpanel" id="guide-help-page" aria-labelledby={'guide-help-tab-' + cur} data-testid={'guide-help-page-' + cur}>
           {cur === 'role' && id && <RolePage id={id} v={v} />}
           {cur === 'controls' && <ControlsPage />}
           {cur === 'things' && <ThingsPage />}
@@ -1471,14 +1596,21 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
   const me = v.me
   const booted = id === 'dead' && !!me.booted
   // 仿生人的 EP 速度依大廳的 EP 倍率（guide.r.android.4 的 {r}）
-  const rate = { r: androidEpRate(0, 0, v.epMult).r }
-  const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => 'guide.r.' + k)).map((k) => t(k, rate))
+  const rate = { r: androidEpRate(0, 0, v.epMult, v.apocalypse).r }
+  // 「死者看見真實身分」開著：「可以附身蛞蝓仔」換成這個設定的說明
+  const ghost = (k: string) => (v.ghostSight && k === 'guide.r.dead.3' ? 'ui8.guide.r.dead.ghost' : k)
+  const tips = (booted ? ['guide3.r.booted.1', 'guide3.r.booted.2'] : ROLE_TIPS[id].map((k) => ghost('guide.r.' + k))).map((k) => t(k, rate))
   const c = CLASSES.get(me.classId ?? '')
   if (c && (id === 'human' || id === 'xeno' || id === 'mutant' || id === 'android')) {
     // 配發防護服的職業：直接寫出實際拿到的那一套（內容表的說明只說「隨機一套」）
     const suit = SUIT_CLASSES.has(c.id) ? startSuitName(me, v, c.items) : ''
     const desc = suit && hasString(lang.value, 'guide.cls.' + c.id + 'Suit') ? t('guide.cls.' + c.id + 'Suit', { suit }) + t('guide.r.period') : loc(c.desc)
-    tips.push(t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', { cls: classLabel(c.id, isPromoted(v.self?.n)), desc }))
+    tips.push(
+      t(id === 'human' ? 'guide.r.class' : 'guide.r.cover', {
+        cls: classLabel(c.id, isPromoted(v.self?.n)),
+        desc,
+      }),
+    )
     const phd = phdText(me, 'play1.help.phd')
     if (phd) tips.push(phd)
   }
@@ -1518,6 +1650,16 @@ function RolePage({ id, v }: { id: Identity; v: GuideView }) {
   )
 }
 
+/** 「操作」頁額外的一列：按鍵跟著按鍵設定（可改鍵）；after = 排在哪一列後面 */
+interface ExtraKeyRow {
+  id: string
+  after: string
+  key: () => string
+  text: () => string
+}
+/** 觀戰（死者、旁觀者）的「下一個熱點」（keymap 動作 nextHotspot，預設 N）：排在「視野回到自己」後面 */
+export const HELP_EXTRA_KEYS: readonly ExtraKeyRow[] = [{ id: 'nextHotspot', after: 'space', key: () => actionKey('nextHotspot'), text: () => t('feel7.kb.a.nextHotspot') }]
+
 /** 「操作」：按鍵表分兩欄 */
 function ControlsPage() {
   const cols: [string, readonly string[]][] = [
@@ -1531,12 +1673,18 @@ function ControlsPage() {
           <section>
             <h3>{t(h)}</h3>
             <div class="guide-keys">
-              {keys.map((k) => (
+              {keys.map((k) => [
                 <div class="guide-key-row" key={k}>
                   <span class="guide-kbd">{t('guide.ctl.' + k + '.k')}</span>
                   <span>{t('guide.ctl.' + k)}</span>
-                </div>
-              ))}
+                </div>,
+                ...HELP_EXTRA_KEYS.filter((x) => x.after === k && x.key()).map((x) => (
+                  <div class="guide-key-row" key={x.id} data-testid={'guide-key-' + x.id}>
+                    <span class="guide-kbd">{x.key()}</span>
+                    <span>{x.text()}</span>
+                  </div>
+                )),
+              ])}
             </div>
           </section>
         </div>
@@ -1558,7 +1706,8 @@ function ThingsPage() {
             {HELP_THINGS.map((k) => (
               <div key={k}>
                 <b>{t('guide.th.' + k + '.t')}</b>
-                <span>{t('guide.th.' + k, args)}</span>
+                {/* 驗血流程後面補上召集驗血（第 8 輪：對地面使用基因檢測器）*/}
+                <span>{t('guide.th.' + k, args) + (k === 'gitflow' ? t('ui8.guide.th.rally') : '')}</span>
               </div>
             ))}
           </div>

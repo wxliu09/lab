@@ -3,12 +3,12 @@
 // 收到：主機轉來的信號（活人的只給活人、死者的只給死者）→ 小地圖閃圈（Minimap 每幀畫 pingBoard.active）、
 // 場景地面畫圈（pingTaps，由 Minimap 掛上 render/pingFx.ts）、提示音、聊天紀錄加一行本機訊息（不經網路）。
 // 被本機封鎖的人（mute.ts）發的信號整個不顯示。
-import type { ChatLine } from '../shared/protocol/messages'
+import type { ChatLine, FxEvent } from '../shared/protocol/messages'
 import { PLAYER_COLORS } from '../shared/constants'
 import { fm, playSynth, tone } from '../audio/sfx'
 import { chatLog, mySlot, onHost, send, startInfo, world } from './session'
 import { altClick, localNotice } from './input'
-import { PingBoard, type MapPing } from './pingBoard'
+import { PING_LIFE_MS, PingBoard, type MapPing } from './pingBoard'
 
 export const pingBoard = new PingBoard()
 /** 有信號要顯示（含自己送出的那一筆）：場景地面的圈由 Minimap 掛上（它手上有場景）*/
@@ -37,12 +37,7 @@ const SPACE_PING_HALF = 49
  * 信號座標夾進主機接受的範圍（主機丟掉範圍外的信號，本機先顯示的那一筆就變成只有自己看得到）：
  * 太空層 ±SPACE_PING_HALF；站內 = 版面範圍（bounds = 版面寬高，不知道就不夾）
  */
-export function clampPing(
-  z: number,
-  x: number,
-  y: number,
-  bounds: { w: number; h: number } | null | undefined,
-): { x: number; y: number } {
+export function clampPing(z: number, x: number, y: number, bounds: { w: number; h: number } | null | undefined): { x: number; y: number } {
   const c = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   if (z === 0) return { x: c(x, -SPACE_PING_HALF, SPACE_PING_HALF), y: c(y, -SPACE_PING_HALF, SPACE_PING_HALF) }
   if (!bounds) return { x, y }
@@ -53,13 +48,7 @@ export function clampPing(
  * Alt＋左鍵：在 zone z 的 (x, y) 發信號（bounds = 站內版面的寬高）。太頻繁就提示稍等、不送。回傳是否送出了。
  * 主機不會轉回給自己：自己的這一筆本機先顯示（不加聊天紀錄）
  */
-export function sendMapPing(
-  z: number,
-  x: number,
-  y: number,
-  bounds?: { w: number; h: number } | null,
-  now = performance.now(),
-): boolean {
+export function sendMapPing(z: number, x: number, y: number, bounds?: { w: number; h: number } | null, now = performance.now()): boolean {
   // 出局者（死亡即退出）不能和任何人溝通，主機也不會轉送
   if (world.me.booted) return false
   const at = clampPing(z, x, y, bounds)
@@ -77,10 +66,7 @@ export function sendMapPing(
 }
 
 /** 收到主機轉來的信號 */
-export function receivePing(
-  m: { z: number; x: number; y: number; name: string; color: number },
-  now = performance.now(),
-): void {
+export function receivePing(m: { z: number; x: number; y: number; name: string; color: number }, now = performance.now()): void {
   const p = pingBoard.receive(m, now)
   if (!p) return
   // 本機訊息：不經 receiveChat（不跳公告、不播聊天音效，提示音下面另外播）。text 給沒有特別處理的地方（大廳聊天）照樣讀得懂
@@ -121,8 +107,46 @@ function pingSound(): void {
   )
 }
 
+// ───────── 抽血集合（第 8 輪）─────────
+
+/** 集合期間小地圖每隔多久再閃一次（ms）：一個信號只亮 4 秒，集合有 60 秒 */
+export const RALLY_PULSE_MS = 10000
+let rallyTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * 抽血集合（規則：sim/scripts/git.ts gitRally，對地面使用基因檢測器）：主機對活著的人送 ping 特效（s = 'rally'，v = 集合秒數）。
+ * 特效本身只在那一區的場景畫圈、響一聲；這裡把集合點加進小地圖的信號（同一區時看得到），集合期間每 RALLY_PULSE_MS 再閃一次。
+ * 不加聊天紀錄、不另外響（主機已經送了一行公告，特效也響過了）。回傳是不是集合信號
+ */
+export function onRallyFx(f: FxEvent, now = performance.now()): boolean {
+  if (f.k !== 'ping' || f.s !== 'rally') return false
+  const until = now + Math.max(1, Math.min(120, f.v ?? 60)) * 1000
+  const mark = (t: number) => pingBoard.receive({ z: f.z, x: f.x, y: f.y, name: '', color: -1 }, t)
+  mark(now)
+  if (rallyTimer) clearInterval(rallyTimer)
+  rallyTimer = null
+  if (typeof setInterval !== 'function') return true
+  rallyTimer = setInterval(() => {
+    const t = performance.now()
+    // 閃完這一次就過了集合時間：不再閃
+    if (t + PING_LIFE_MS > until) {
+      if (rallyTimer) clearInterval(rallyTimer)
+      rallyTimer = null
+      return
+    }
+    mark(t)
+  }, RALLY_PULSE_MS)
+  return true
+}
+
 onHost((m) => {
   if (m.t === 'mapPing') receivePing(m)
 })
+// 特效（快照帶來的）：抽血集合。測試替 session 換上的假模組可能沒有 world，接不上就算了
+try {
+  world.fxTaps.push((f) => void onRallyFx(f))
+} catch {
+  /* ignore */
+}
 // 場景裡 Alt＋左鍵點地面（input.ts）
 altClick.ping = (z, x, y, bounds) => sendMapPing(z, x, y, bounds)

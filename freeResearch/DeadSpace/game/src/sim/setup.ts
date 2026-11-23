@@ -88,7 +88,8 @@ export const QR_MIN_PLAYERS = 7
 export function chooseStations(g: Game): StationDef[] {
   const s = g.settings.stations
   const pool = ALL_STATIONS.filter((st) => st.enable !== 'event')
-  if (s !== 'auto') return pool.filter((st) => st.enable === 'core' || s.includes(st.id))
+  // 指定清單：列出的站打開；核心站預設一律打開，清單裡寫「-站名」才關掉（大廳的小隊地圖用 '-hulk7' 關掉七號廢站）
+  if (s !== 'auto') return pool.filter((st) => (st.enable === 'core' && !s.includes('-' + st.id)) || s.includes(st.id))
   const n = g.allPlayers().filter((p) => !p.spectator).length
   // qr 走秘密的遊戲流（World.rng），不走公開的版面流：地圖種子可能公開（主機在大廳指定），qr 若推得出來，
   // 「qr==1 卻沒有火口號」就等於公開「這局沒有工程師」（職業組成是秘密，第 5 輪 P0 的亂數盤點，見 game.ts）

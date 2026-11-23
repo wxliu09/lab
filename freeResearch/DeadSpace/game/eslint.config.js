@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 import globals from 'globals'
 
 export default tseslint.config(
-  { ignores: ['node_modules', '.tsbuild', '.e2e-dist', 'test-results', 'playwright-report'] },
+  { ignores: ['node_modules', '.tsbuild', '.e2e-dist', '.e2e-dist-*', 'test-results', 'playwright-report'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

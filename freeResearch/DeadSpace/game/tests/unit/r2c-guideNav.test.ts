@@ -2,6 +2,7 @@
 // 目標面板的文字要和 sim／內容表的實際規則一致：這裡同時用真的 sim 驗證那些說法。
 import { describe, expect, it, vi } from 'vitest'
 import type { PrivateState, StartInfo, WorldPublic } from '../../src/shared/protocol/messages'
+import { androidEpPerSec } from '../../src/shared/pacing'
 
 // node 沒有 localStorage：Guide 模組載入時會讀寫
 vi.hoisted(() => {
@@ -326,16 +327,20 @@ describe('仿生人：目標面板說明 EP 怎麼來', () => {
     expect(busy.steps.map((x) => x.key)).toContain('guide.s.androidEp')
   })
 
-  it('真的 sim：仿生人 10 秒得到 15 EP（EP 倍率 2 時 30）', () => {
-    for (const mult of [1, 2]) {
-      const { h } = Harness.started(4, 99, { eventMult: 0, epMult: mult })
-      const g = h.server.game!
-      const p = g.allPlayers()[1]
-      g.setRole(p, 'android')
-      h.ticks(20)
-      const e0 = p.ep
-      h.ticks(20 * 10)
-      expect(p.ep - e0, String(mult)).toBeCloseTo(G.ANDROID_EP_PER_SEC * 10 * mult, 5)
+  // 第 8 輪 S8：仿生人每秒 EP 依末日時間換算（shared/pacing.ts androidEpPerSec）；原作末日 55–70 分照原作 1.5（10 秒 15 EP）
+  it('真的 sim：仿生人 10 秒得到 15 EP（原作末日時間；EP 倍率 2 時 30）；本作預設末日照 androidEpPerSec', () => {
+    for (const apocalypse of [[55, 70], [30, 40]] as [number, number][]) {
+      for (const mult of [1, 2]) {
+        const { h } = Harness.started(4, 99, { eventMult: 0, epMult: mult, apocalypse })
+        const g = h.server.game!
+        const p = g.allPlayers()[1]
+        g.setRole(p, 'android')
+        h.ticks(20)
+        const e0 = p.ep
+        h.ticks(20 * 10)
+        const rate = apocalypse[0] === 55 ? G.ANDROID_EP_PER_SEC : androidEpPerSec(apocalypse)
+        expect(p.ep - e0, `${apocalypse} ×${mult}`).toBeCloseTo(rate * 10 * mult, 5)
+      }
     }
   })
 })

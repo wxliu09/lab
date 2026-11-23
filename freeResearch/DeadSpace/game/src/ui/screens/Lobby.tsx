@@ -5,12 +5,16 @@ import { AI_LEVELS, DEFAULT_SETTINGS, type AiLevel, type ChatLine, type LobbySet
 import { roleOutcomes, type RoleMix, type RoleRules } from '../../shared/roleRules'
 import { chatLog, hostConflict, isHost, leave, lobby, mySlot, send } from '../../client/session'
 import { hiddenByMute } from '../../client/chatFilter'
-import { sysText, t } from '../i18n'
+import { listJoin, loc, sysText, t } from '../i18n'
 import { tipProps } from '../tooltip'
 import { Icon } from '../icons'
 import { localizeName, textColorOf } from '../names'
+import { STATION_BY_ID } from '../../shared/content/stations/index'
+import { SeasonStats } from '../hud/SeasonStats'
+import '../strings/ui8'
 import '../lobby2.css'
 import '../ui4.css'
+import '../ui8.css'
 
 // 身分預覽：規則在 shared/roleRules.ts（與 sim 共用）
 export { roleOutcomes, type RoleMix } from '../../shared/roleRules'
@@ -34,7 +38,12 @@ export function RoleMixView({ outcomes, total }: { outcomes: RoleMix[]; total: n
         {t('lobby2.roles.either')} <small>{t('lobby2.roles.eitherNote')}</small>
       </Chip>,
     )
-    if (a.android) chips.push(<Chip key="a" r="android">{t('role.android')} {a.android}</Chip>)
+    if (a.android)
+      chips.push(
+        <Chip key="a" r="android">
+          {t('role.android')} {a.android}
+        </Chip>,
+      )
   } else {
     for (const [k, r] of [
       ['xeno', 'xeno'],
@@ -116,12 +125,7 @@ function Num({ k, s, min, max, step = 1 }: { k: keyof LobbySettings; s: LobbySet
 /** NPC 船員：自動（-1）或 0–8 名 */
 function NpcSelect({ s, auto }: { s: LobbySettings; auto: number }) {
   return (
-    <select
-      data-testid="set-npc"
-      disabled={!isHost.value}
-      value={String(s.npcCrew)}
-      onChange={(e) => send({ t: 'settings', s: { npcCrew: Number((e.target as HTMLSelectElement).value) } })}
-    >
+    <select data-testid="set-npc" disabled={!isHost.value} value={String(s.npcCrew)} onChange={(e) => send({ t: 'settings', s: { npcCrew: Number((e.target as HTMLSelectElement).value) } })}>
       <option value="-1">{t('lobby2.npcAuto', { n: auto })}</option>
       {Array.from({ length: 9 }, (_, i) => (
         <option key={i} value={String(i)}>
@@ -133,11 +137,13 @@ function NpcSelect({ s, auto }: { s: LobbySettings; auto: number }) {
 }
 
 /**
- * 末日時間的兩種節奏（[最早, 最晚] 分鐘）：
- * fast＝本作的預設（DEFAULT_SETTINGS.apocalypse）；classic＝原作（研究 03 §6.3：末日計時器 GetRandomReal(3300, 4200) 秒）。
+ * 末日時間的節奏（[最早, 最晚] 分鐘），選單照這個順序（短到長）：
+ * fast＝本作的預設（DEFAULT_SETTINGS.apocalypse）；veteran＝老手節奏（第 8 輪：介於兩者之間，給熟悉規則、想多一點中後期的人）；
+ * classic＝原作（研究 03 §6.3：末日計時器 GetRandomReal(3300, 4200) 秒）。
  */
 export const APO_PRESETS = {
   fast: [30, 40],
+  veteran: [40, 50],
   classic: [55, 70],
 } as const satisfies Record<string, readonly [number, number]>
 export type ApoPreset = keyof typeof APO_PRESETS
@@ -148,14 +154,21 @@ export function apoPresetOf(a: readonly [number, number]): ApoPreset | null {
   return APO_KEYS.find((k) => APO_PRESETS[k][0] === a[0] && APO_PRESETS[k][1] === a[1]) ?? null
 }
 
+/** 一種節奏在選單、說明裡的名稱（老手節奏的字串是第 8 輪加的）*/
+export function apoLabel(k: ApoPreset): string {
+  const [a, b] = APO_PRESETS[k]
+  return t(k === 'veteran' ? 'ui8.lobby.apo.veteran' : 'ui5.lobby.apo.' + k, { a, b })
+}
+
 /** 末日時間的說明：數字跟著 APO_PRESETS，不在字串裡寫死 */
 export function apoTip(): string {
   const [fa, fb] = APO_PRESETS.fast
   const [ca, cb] = APO_PRESETS.classic
-  return t('ui5.lobby.tip.apo', { fa, fb, ca, cb })
+  const [a, b] = APO_PRESETS.veteran
+  return t('ui5.lobby.tip.apo', { fa, fb, ca, cb }) + '\n' + t('ui8.lobby.tip.apoVeteran', { a, b })
 }
 
-/** 末日時間：二選一（主機可改，客人唯讀）*/
+/** 末日時間：快節奏／老手節奏／原作三選一（主機可改，客人唯讀）*/
 function ApoSelect({ s }: { s: LobbySettings }) {
   const cur = apoPresetOf(s.apocalypse)
   return (
@@ -171,10 +184,10 @@ function ApoSelect({ s }: { s: LobbySettings }) {
     >
       {APO_KEYS.map((k) => (
         <option key={k} value={k}>
-          {t('ui5.lobby.apo.' + k, { a: APO_PRESETS[k][0], b: APO_PRESETS[k][1] })}
+          {apoLabel(k)}
         </option>
       ))}
-      {/* 不是兩種節奏之一時照實顯示目前的數字（選不到，只能改成上面兩種）*/}
+      {/* 不是這幾種節奏之一時照實顯示目前的數字（選不到，只能改成上面幾種）*/}
       {!cur && (
         <option value="custom" disabled>
           {t('ui5.lobby.apo.custom', { a: s.apocalypse[0], b: s.apocalypse[1] })}
@@ -203,9 +216,20 @@ export const MODE_KEYS: readonly ModePreset[] = ['modern', 'classic']
  * 每次都回傳新的物件（陣列不和設定表共用）。
  */
 export function presetValues(k: ModePreset): PresetValues {
-  if (k === 'classic') return { apocalypse: [APO_PRESETS.classic[0], APO_PRESETS.classic[1]], extraEvents: false, npcCrew: 0, stations: 'auto' }
+  if (k === 'classic')
+    return {
+      apocalypse: [APO_PRESETS.classic[0], APO_PRESETS.classic[1]],
+      extraEvents: false,
+      npcCrew: 0,
+      stations: 'auto',
+    }
   const d = DEFAULT_SETTINGS
-  return { apocalypse: [d.apocalypse[0], d.apocalypse[1]], extraEvents: d.extraEvents, npcCrew: d.npcCrew, stations: d.stations === 'auto' ? 'auto' : [...d.stations] }
+  return {
+    apocalypse: [d.apocalypse[0], d.apocalypse[1]],
+    extraEvents: d.extraEvents,
+    npcCrew: d.npcCrew,
+    stations: d.stations === 'auto' ? 'auto' : [...d.stations],
+  }
 }
 
 function sameStations(a: LobbySettings['stations'], b: LobbySettings['stations']): boolean {
@@ -229,7 +253,7 @@ function presetRow(k: PresetKey, v: PresetValues): [string, string] {
     case 'apocalypse': {
       const [a, b] = v.apocalypse
       const p = apoPresetOf(v.apocalypse)
-      return [t('ui5.lobby.apo'), t(p ? 'ui5.lobby.apo.' + p : 'ui5.lobby.apo.custom', { a, b })]
+      return [t('ui5.lobby.apo'), p ? apoLabel(p) : t('ui5.lobby.apo.custom', { a, b })]
     }
     case 'extraEvents':
       return [t('ui5.lobby.extra'), t(v.extraEvents ? 'ui5.lobby.preset.on' : 'ui5.lobby.preset.off')]
@@ -255,10 +279,9 @@ export function presetMsg(k: ModePreset): { t: 'settings'; s: Partial<LobbySetti
   return { t: 'settings', s: presetValues(k) }
 }
 
-/** 房間設定標題列右側的兩個按鈕：只有主機能按；目前的設定剛好是某個模式時，那個按鈕顯示已選取（客人也看得到）*/
+/** 房間設定標題列右側的兩個按鈕（只有主機看得到；客人看到的是 ReadonlyBadge）：目前的設定剛好是某個模式時，那個按鈕顯示已選取 */
 function PresetButtons({ s }: { s: LobbySettings }) {
   const cur = modePresetOf(s)
-  const host = isHost.value
   return (
     <div class="mode-presets" role="group" aria-label={t('ui5.lobby.preset')} data-testid="mode-presets">
       {MODE_KEYS.map((k) => (
@@ -268,20 +291,141 @@ function PresetButtons({ s }: { s: LobbySettings }) {
           class={'small mode-preset' + (cur === k ? ' on' : '')}
           data-testid={'preset-' + k}
           aria-pressed={cur === k}
-          // 客人：用 aria-disabled 而不是 disabled，懸停說明照樣出得來（看得到這個模式會改什麼）
-          aria-disabled={!host}
           {...tipProps(() => ({
             title: t('ui5.lobby.preset.' + k),
             body: presetTip(k),
-            hint: cur === k ? t('ui5.lobby.preset.current') : host ? undefined : t('ui5.lobby.preset.hostOnly'),
+            hint: cur === k ? t('ui5.lobby.preset.current') : undefined,
           }))}
           onClick={() => {
-            if (host && cur !== k) send(presetMsg(k))
+            if (isHost.value && cur !== k) send(presetMsg(k))
           }}
         >
           {t('ui5.lobby.preset.' + k)}
         </button>
       ))}
+    </div>
+  )
+}
+
+// ───────── 一鍵設定：小隊地圖、老手節奏（第 8 輪）─────────
+
+/**
+ * 小隊地圖關掉的站：活體庫號、擺渡號（auto 規則下兩站每局都開，見 sim/setup.ts ALWAYS_ON_EXTRA）、七號廢站。
+ * 用的是站點指定（settings.stations：列出核心站以外要開的站，「-站名」關掉核心站），
+ * 所以送 ['-hulk7']＝只開核心站、再拿掉七號廢站（核心站裡唯一純搜刮、沒有任務設施的廢船）；
+ * 火口號在 auto 規則下 7 人以上才可能出現，小隊局本來就不會有。
+ */
+export const SMALL_MAP_OFF: readonly string[] = ['vivarium', 'portage', 'hulk7']
+/** 小隊地圖建議的人數上限 */
+export const SMALL_MAP_MAX = 6
+
+/** 小隊地圖送出的站點指定（每次給新的陣列）*/
+export function smallMapStations(): string[] {
+  // 自動站不列就是關掉；核心站要寫「-站名」才會關（sim/setup.ts chooseStations）
+  return ['-hulk7']
+}
+
+export type ExtraPreset = 'small' | 'veteran'
+export const EXTRA_KEYS: readonly ExtraPreset[] = ['small', 'veteran']
+
+/** 這個加選目前開著嗎：小隊地圖＝站點指定剛好是小隊清單；老手節奏＝末日時間剛好是老手節奏 */
+export function extraOn(k: ExtraPreset, s: Pick<LobbySettings, 'stations' | 'apocalypse'>): boolean {
+  if (k === 'small') return s.stations !== 'auto' && sameStations(s.stations, smallMapStations())
+  return apoPresetOf(s.apocalypse) === 'veteran'
+}
+
+/**
+ * 按下加選送出的設定：關著就打開；開著就關掉（小隊地圖回到自動選站，老手節奏回到快節奏）。
+ * 只改自己那一項，其他設定不動
+ */
+export function extraMsg(k: ExtraPreset, s: Pick<LobbySettings, 'stations' | 'apocalypse'>): { t: 'settings'; s: Partial<LobbySettings> } {
+  const on = extraOn(k, s)
+  if (k === 'small') return { t: 'settings', s: { stations: on ? 'auto' : smallMapStations() } }
+  const [a, b] = on ? APO_PRESETS.fast : APO_PRESETS.veteran
+  return { t: 'settings', s: { apocalypse: [a, b] } }
+}
+
+/** 加選按鈕上的字 */
+export function extraLabel(k: ExtraPreset): string {
+  if (k === 'small') return t('ui8.lobby.small', { n: SMALL_MAP_MAX })
+  const [a, b] = APO_PRESETS.veteran
+  return t('ui8.lobby.veteran', { a, b })
+}
+
+/** 加選的說明：會改什麼（站名、分鐘數跟著設定表）、適合誰、怎麼關掉；n = 目前的參戰人數（小隊地圖人太多時提醒）*/
+export function extraTip(k: ExtraPreset, n = 0): string {
+  if (k === 'small') {
+    const names = listJoin(SMALL_MAP_OFF.map((id) => loc(STATION_BY_ID.get(id)?.name) || id))
+    const lines = [t('ui8.lobby.small.intro', { names }), t('ui8.lobby.small.best', { n: SMALL_MAP_MAX }), t('ui8.lobby.small.undo'), t('ui8.lobby.extra.rest')]
+    if (n > SMALL_MAP_MAX) lines.splice(2, 0, t('ui8.lobby.small.crowd', { n }))
+    return lines.join('\n')
+  }
+  const [a, b] = APO_PRESETS.veteran
+  const [fa, fb] = APO_PRESETS.fast
+  const [ca, cb] = APO_PRESETS.classic
+  return [t('ui8.lobby.veteran.intro', { a, b, fa, fb, ca, cb }), t('ui8.lobby.veteran.why'), t('ui8.lobby.veteran.undo', { a: fa, b: fb }), t('ui8.lobby.extra.rest')].join('\n')
+}
+
+/** 標題列第二排：小隊地圖、老手節奏兩個開關（只有主機看得到）*/
+function ExtraPresets({ s, n }: { s: LobbySettings; n: number }) {
+  return (
+    <div class="u8-extras" role="group" aria-label={t('ui5.lobby.preset')} data-testid="extra-presets">
+      {EXTRA_KEYS.map((k) => {
+        const on = extraOn(k, s)
+        // 小隊地圖開著、人卻太多：按鈕換成警告色
+        const crowd = k === 'small' && on && n > SMALL_MAP_MAX
+        return (
+          <button
+            key={k}
+            type="button"
+            class={'small u8-extra' + (on ? ' on' : '') + (crowd ? ' crowd' : '')}
+            data-testid={'preset-' + k}
+            aria-pressed={on}
+            {...tipProps(() => ({
+              title: extraLabel(k),
+              body: extraTip(k, n),
+              hint: on ? t('ui8.lobby.extra.on') : undefined,
+            }))}
+            onClick={() => {
+              if (isHost.value) send(extraMsg(k, s))
+            }}
+          >
+            {extraLabel(k)}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** 標題列的摘要：符合的模式＋開著的加選（「本作預設・小隊地圖」）；都沒有就是「自訂」*/
+export function presetSummary(s: LobbySettings): string {
+  const mode = modePresetOf(s)
+  const parts = [...(mode ? [t('ui5.lobby.preset.' + mode)] : []), ...EXTRA_KEYS.filter((k) => extraOn(k, s)).map(extraLabel)]
+  return parts.length ? parts.join('・') : t('ui8.lobby.custom')
+}
+
+/**
+ * 客人：一鍵設定按不了，標題列改成唯讀標示（鎖頭＋目前的模式）；取代原本另佔一行的「設定由主機決定」說明（第 8 輪：
+ * 1280×720 客人的設定欄多那一行就放不下最後一列）。懸停看完整說明
+ */
+function ReadonlyBadge({ s }: { s: LobbySettings }) {
+  const sum = presetSummary(s)
+  return (
+    <div
+      class="u8-readonly"
+      data-testid="settings-readonly"
+      {...tipProps(() => {
+        // 符合某個模式時附上那個模式的內容（客人看不到按鈕的說明了）
+        const mode = modePresetOf(s)
+        return {
+          title: t('ui8.lobby.readonlyTitle'),
+          body: [t('ui5.lobby.readonly'), ...(mode ? [presetTip(mode)] : [])].join('\n\n'),
+        }
+      })}
+    >
+      <Icon name="key" size={13} color="currentColor" />
+      <span>{t('ui8.lobby.hostSets', { list: sum })}</span>
     </div>
   )
 }
@@ -468,47 +612,46 @@ export function Lobby() {
             </div>
           </div>
         </div>
-        <div class="panel lobby-chatbox" data-testid="lobby-chatbox" style={CHATBOX_STYLE}>
-          <h3>{t('lobby.chat')}</h3>
-          <div class="lobby-chat" data-testid="lobby-chat" ref={chatRef} style={CHAT_STYLE}>
-            {lines.length === 0 && <div class="dim">{t('lobby2.chatEmpty')}</div>}
-            {lines.map((l, i) =>
-              l.from === '' ? (
-                // 給自己的系統提示（訊息送太快、重複）：沒有發話者，不寫「: 」
-                <div key={i} class="dim">
-                  {sysText(l.text)}
-                </div>
-              ) : (
-                <div key={i}>
-                  <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{localizeName(l.from)}</b>: {sysText(l.text)}
-                </div>
-              ),
-            )}
+        {/* 聊天與本季戰績並排（還沒有戰績時聊天佔滿整列；SeasonStats 自己不顯示）*/}
+        <div class="u8-lower" style={CHATBOX_STYLE}>
+          <div class="panel lobby-chatbox" data-testid="lobby-chatbox">
+            <h3>{t('lobby.chat')}</h3>
+            <div class="lobby-chat" data-testid="lobby-chat" ref={chatRef} style={CHAT_STYLE}>
+              {lines.length === 0 && <div class="dim">{t('lobby2.chatEmpty')}</div>}
+              {lines.map((l, i) =>
+                l.from === '' ? (
+                  // 給自己的系統提示（訊息送太快、重複）：沒有發話者，不寫「: 」
+                  <div key={i} class="dim">
+                    {sysText(l.text)}
+                  </div>
+                ) : (
+                  <div key={i}>
+                    <b style={{ color: textColorOf(PLAYER_COLORS[l.color]?.hex) }}>{localizeName(l.from)}</b>: {sysText(l.text)}
+                  </div>
+                ),
+              )}
+            </div>
+            <input
+              data-testid="lobby-chat-input"
+              value={msg}
+              maxLength={200}
+              placeholder={t('lobby2.chatHint')}
+              onInput={(e) => setMsg((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') sendChat()
+              }}
+            />
           </div>
-          <input
-            data-testid="lobby-chat-input"
-            value={msg}
-            maxLength={200}
-            placeholder={t('lobby2.chatHint')}
-            onInput={(e) => setMsg((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') sendChat()
-            }}
-          />
+          <SeasonStats present={L.players.filter((p) => !p.bot).map((p) => p.name)} />
         </div>
       </div>
-      {/* 客人看到的設定是唯讀的：降低對比、拿掉下拉箭頭，並說明由主機設定（lobby2.css 的 .readonly）*/}
+      {/* 客人看到的設定是唯讀的：降低對比、拿掉下拉箭頭；標題列的一鍵設定換成唯讀標示（lobby2.css 的 .readonly、ui8.css）*/}
       <div class={'panel settings-panel' + (isHost.value ? '' : ' readonly')} data-testid="lobby-settings">
         <div class="settings-head">
           <h2>{t('lobby.settings')}</h2>
-          <PresetButtons s={s} />
+          {isHost.value ? <PresetButtons s={s} /> : <ReadonlyBadge s={s} />}
+          {isHost.value && <ExtraPresets s={s} n={n} />}
         </div>
-        {!isHost.value && (
-          <div class="settings-note" data-testid="settings-readonly">
-            <Icon name="key" size={14} color="currentColor" />
-            {t('ui5.lobby.readonly')}
-          </div>
-        )}
         <Row label={t('lobby.set.aliens')} tip="lobby2.tip.aliens.body">
           <Tri k="aliens" s={s} />
         </Row>
@@ -533,22 +676,29 @@ export function Lobby() {
         <Row label={t('lobby.set.events')} tip="lobby2.tip.events.body">
           <Num k="eventMult" s={s} min={0.25} max={4} step={0.25} />
         </Row>
-        {/* 第 4 輪：原作沒有的事件可關掉（給想玩原汁原味的老玩家）；末日時間二選一：快節奏（預設）或原作 */}
-        <Row label={t('ui5.lobby.extra')} tip="ui5.lobby.tip.extra">
-          <Check k="extraEvents" s={s} testId="set-extra" />
-        </Row>
+        {/* 末日時間：快節奏（預設）、老手節奏、原作三選一 */}
         <Row label={t('ui5.lobby.apo')} tip={apoTip}>
           <ApoSelect s={s} />
         </Row>
-        <Row label={t('lobby.set.localChat')} tip="lobby2.tip.localChat.body">
-          <Check k="localChat" s={s} />
-        </Row>
-        <Row label={t('lobby.set.boot')} tip="lobby2.tip.boot.body">
-          <Check k="bootOnDeath" s={s} />
-        </Row>
-        <Row label={t('lobby.set.spectate')} tip="lobby2.tip.spectate.body">
-          <Check k="hostSpectate" s={s} />
-        </Row>
+        {/* 規則開關排成兩欄（第 8 輪：多了「死者看見真實身分」，1280×720 一欄放不下）*/}
+        <div class="u8-toggles" data-testid="set-toggles">
+          {/* 第 4 輪：原作沒有的事件可關掉（給想玩原汁原味的老玩家）*/}
+          <Row label={t('ui5.lobby.extra')} tip="ui5.lobby.tip.extra">
+            <Check k="extraEvents" s={s} testId="set-extra" />
+          </Row>
+          <Row label={t('lobby.set.localChat')} tip="lobby2.tip.localChat.body">
+            <Check k="localChat" s={s} />
+          </Row>
+          <Row label={t('lobby.set.boot')} tip="lobby2.tip.boot.body">
+            <Check k="bootOnDeath" s={s} />
+          </Row>
+          <Row label={t('lobby.set.spectate')} tip="lobby2.tip.spectate.body">
+            <Check k="hostSpectate" s={s} />
+          </Row>
+          <Row label={t('ui8.lobby.ghostSight')} tip="ui8.lobby.tip.ghostSight">
+            <Check k="ghostSight" s={s} testId="set-ghost-sight" />
+          </Row>
+        </div>
       </div>
       <div class="panel lobby-foot">
         <button class="ghost" onClick={() => leave()}>
