@@ -56,6 +56,8 @@ import { markersOf } from '../setup'
 interface Brain {
   next: number
   goal: Goal | null
+  /** 走不到的點（goto／flee 卡住放棄的目標）：until 之前躲隕擊、輻射區時不再選這附近 */
+  badPt: { x: number; y: number; until: number } | null
   /** 不能再試的目標（指令失敗）*/
   skip: Map<number, number>
   evolveAt: number
@@ -147,6 +149,9 @@ interface Brain {
   chatted: Set<string>
   /** 異形 AI：什麼時候假裝看到怪物喊一聲（0 = 沒有要喊）*/
   fakeMonsterAt: number
+  /** 異形主腦築巢中（找沒人的地方變身、下滿卵再變回人形）；下一次可以再去築巢的時刻 */
+  nest: boolean
+  nestAt: number
   /** 閒話用的亂數狀態（和遊戲的 rng 分開：說不說閒話不該改變之後的遊戲決策）*/
   chatRng: number
   /** 第一次發現身上有寄生私訊的時間（沒有 = -1）、自己的反應時間（秒；還沒決定 = -1）*/
@@ -230,9 +235,9 @@ type SuitPlan = 'always' | 'casual' | 'late'
 // sent = 這個目標的移動命令已經下過（之前留下來的舊移動命令不算：要改走向這個目標）
 type Goal =
   | { k: 'buy'; vendor: number; item: string; until: number; sent?: boolean }
-  | { k: 'goto'; x: number; y: number; until: number; sent?: boolean; stalk?: boolean }
+  | { k: 'goto'; x: number; y: number; until: number; sent?: boolean; stalk?: boolean; px?: number; py?: number; pt?: number }
   | { k: 'hunt'; e: number; until: number }
-  | { k: 'flee'; x: number; y: number; until: number; sent?: boolean }
+  | { k: 'flee'; x: number; y: number; until: number; sent?: boolean; px?: number; py?: number; pt?: number }
   | { k: 'cast'; a: string; e: number; until: number; slot?: number }
   | { k: 'results'; vendor: number; until: number; sent?: boolean }
 
@@ -247,7 +252,7 @@ const SUIT_VENDORS = new Set(['suitA', 'suitB', 'suitC', 'suitD'])
 // 有硬證據時指認 AI 異類、最多複驗一次（真人新手照舊不會被 AI 指認、追打）。多人房的 easy 照舊（分真人、AI 會讓人看出誰是真人）
 // 第 8 輪（審查 B）：異形可進化到第二階（EASY_MAX_TIER）；末日開始 EASY_DOOM_ALLOUT 秒後雙方都全力出手（平手太多）；
 // 單機練習的真人在親眼看到他傷人、或 EASY_SPARE_UNTIL 秒後不再被放過，硬證據指向他時照樣指認（主機真人當異類整局不動，他那方贏 62%）；
-// 人類方 AI 收到寄生私訊後慢半拍（EASY_ANTIBODY_DELAY）才去打抗體包；一般難度也有七成的人反應慢（ABS_SLOW）
+// 人類方 AI 收到寄生私訊後慢半拍（EASY_ANTIBODY_DELAY）才去打抗體包；一般難度也有八成五的人反應慢（ABS_SLOW）
 
 const easy = isEasy
 /** 簡單難度：開局多久之後才去買第一支檢測器（秒）；一局最多拿幾支（第二支只用來複驗）*/
@@ -266,7 +271,7 @@ export const EASY_SPARE_UNTIL = 900
 const EASY_DRAW_GAP = 12
 const EASY_DRAW_R = 10
 /** 簡單難度：AI 異類開局多久之後才會感染、攻擊（秒），兩次出手之間隔多久 */
-const EASY_EVIL_START = 420
+export const EASY_EVIL_START = 420
 const EASY_STRIKE_GAP = 90
 /** 一般難度：AI 異類（異形、變種人）開局多久之後才會感染、主動變身攻擊、主動攻擊玩家（秒）；被打照樣還手 */
 export const NORMAL_EVIL_START = 120
@@ -284,6 +289,7 @@ function brainOf(g: Game, p: GamePlayer): Brain {
   return (p.data.brain ??= {
     next: g.time + g.world.rng.range(1, 3),
     goal: null,
+    badPt: null,
     skip: new Map(),
     evolveAt: 0,
     suspects: new Map(),
@@ -335,8 +341,11 @@ function brainOf(g: Game, p: GamePlayer): Brain {
     hitSaidAt: -1e9,
     monsterSaidAt: -1e9,
     chatted: new Set(),
-    chatRng: (p.slot + 1) * 0x9e3779b1,
+    // 每局不同（第 9 輪審查：以前只看槽位，同一個槽位每局開口說同一句、同一個時間）：用這一局的秘密閒話種子，不從遊戲流取值
+    chatRng: (g.chatSeed ^ Math.imul(p.slot + 1, 0x9e3779b1)) | 0,
     fakeMonsterAt: 0,
+    nest: false,
+    nestAt: 0,
     drawSwap: false,
     parasiteAt: -1,
     abDelay: -1,
@@ -590,6 +599,9 @@ function randomRoomPoint(g: Game, u: Ent, types?: Set<string>): { x: number; y: 
 
 // ───────── 目標執行 ─────────
 
+/** goto／flee 幾乎沒動多久（秒）就當成走不到、放棄 */
+const GOAL_STUCK_S = 4
+
 function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
   const goal = b.goal
   if (!goal) return false
@@ -620,6 +632,19 @@ function pursue(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
     case 'goto':
     case 'flee': {
       if (Math.hypot(u.x - goal.x, u.y - goal.y) < 1.2) return (b.goal = null), false
+      // 躲避、找人途中卡住（GOAL_STUCK_S 秒幾乎沒動：目標點走不到）就放棄，讓下一輪重選（第 9 輪：末日時躲輻射區選到牆另一邊的點，
+      // 每 0.7 秒重送同一個移動命令直到末日結束，怪物形態整場沒出手，以平手收場）。換站、登船這類流程自己有逾時處理，不在這裡判斷
+      if (goal.k === 'flee' || goal.stalk) {
+        if (goal.pt === undefined || Math.hypot(u.x - (goal.px ?? 0), u.y - (goal.py ?? 0)) > 0.6) {
+          goal.px = u.x
+          goal.py = u.y
+          goal.pt = g.time
+        } else if (g.time - goal.pt > GOAL_STUCK_S) {
+          b.badPt = { x: goal.x, y: goal.y, until: g.time + 30 }
+          b.goal = null
+          return false
+        }
+      }
       if (!goal.sent || !u.order || u.order.k !== 'move') {
         cmd(g, p, { k: 'move', x: goal.x, y: goal.y })
         goal.sent = true
@@ -823,13 +848,14 @@ function antibodyStep(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
 
 /**
  * 收到寄生私訊後多久（秒）才去處理（每位 AI 各自的反應快慢，第一次被寄生時決定）：
- * 一般難度三成的人馬上處理、其餘 ABS_SLOW 秒；簡單難度一半的人不理、其餘 EASY_ANTIBODY_DELAY 秒（像新手一樣）。
+ * 一般難度 ABS_PROMPT_P 的人馬上處理、其餘 ABS_SLOW 秒（身上沒有抗體包得走去醫療補給；第 9 輪整合版量測人類方仍六成以上，從三成／20–60 秒放慢）；
+ * 簡單難度一半的人不理、其餘 EASY_ANTIBODY_DELAY 秒（像新手一樣）。
  * 第 8 輪：每個人一收到就馬上打抗體包，寄生幾乎全部失效，一般難度 10–12 人局人類方贏九成，異形一局都贏不了
  */
 export const EASY_ANTIBODY_DELAY: readonly [number, number] = [25, 50]
 const EASY_ANTIBODY_IGNORE_P = 0.5
-const ABS_SLOW: readonly [number, number] = [20, 60]
-const ABS_PROMPT_P = 0.3
+const ABS_SLOW: readonly [number, number] = [30, 90]
+const ABS_PROMPT_P = 0.15
 
 /**
  * 收到了「你被寄生了」的私訊、該去處理了：寄生 buff 上有 told（parasiteNotice 已經私下告訴他本人），而且過了自己的反應時間
@@ -1561,6 +1587,12 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     if (u.order?.k === 'follow') cmd(g, p, { k: 'stop' })
     // 末日期間直接變身開打
     if (doom && crew.length && form && shift(g, p, u, b, form)) return
+    // 築巢：沒有任何人看得到、附近也沒有人時變身，下滿卵再變回人形（要先脫防護服時，下一輪接著變身）
+    if (b.nest && (!form || watchers.length || crew.length)) b.nest = false
+    if (form && (b.nest || nestTime(g, p, u, b, near, watchers, crew, holdOff)) && shift(g, p, u, b, form)) {
+      b.nest = true
+      return
+    }
     // 和人類方 AI 一樣打怪物形態、敵對生物（另一方的異類、野生生物；隊友不打）
     if (fightFoes(g, p, u, b, near.filter((e) => crewFoe(p, e) && !mate(g, f, e)))) return
     // 偽裝：和人類方 AI 一樣驗血（跟蹤期也照樣抽身邊的人：檢測器不會比人類方拿得久，抽血也是接近人的好理由）、
@@ -1595,17 +1627,20 @@ function thinkEvil(g: Game, p: GamePlayer, u: Ent, b: Brain): void {
     }
   }
   // 變回人形：只在沒有人看得到的時候（第 8 輪審查 B：以前在三個人面前變回人形＝當眾露餡）
-  if (back && !doom && !hit && !watchers.length && g.time - ((p.data.botShiftAt as number) ?? 0) > REVERT_AFTER) {
+  // 築巢中被看到、或卵已經下滿：結束築巢（之後照平常的規則變回人形）
+  if (b.nest && (watchers.length || hit || eggsOf(g, p) >= NEST_EGGS || g.time - ((p.data.botShiftAt as number) ?? 0) > NEST_MAX_S)) b.nest = false
+  if (back && !b.nest && !doom && !hit && !watchers.length && g.time - ((p.data.botShiftAt as number) ?? 0) > REVERT_AFTER) {
     cmd(g, p, { k: 'cast', a: back })
     // 之後假裝看到怪物喊一聲（chatter；人類方看得到怪物才會喊，異形自己看不到自己）。一局最多一次（多了反而比人類方喊得多）
-    if (!b.chatted.has('fakeMonster') && chatRng(b).chance(FAKE_MONSTER_P)) {
+    // 一局只擲一次（第 9 輪：每次變回人形都擲，整局下來異形 100% 喊過「怪物」、人類方只有 36%，反而成了破綻）
+    if (!b.chatted.has('fakeMonster')) {
       b.chatted.add('fakeMonster')
-      b.fakeMonsterAt = g.time + 8 + chatRng(b).int(0, 20)
+      if (chatRng(b).chance(FAKE_MONSTER_P)) b.fakeMonsterAt = g.time + 8 + chatRng(b).int(0, 20)
     }
     return
   }
   // 沒人時下蛋
-  if (!watchers.length && ready('xeno.egg') && rng.chance(0.3)) {
+  if (!watchers.length && ready('xeno.egg') && (b.nest || rng.chance(0.3))) {
     cmd(g, p, { k: 'cast', a: 'xeno.egg', x: u.x + 0.8, y: u.y })
     return
   }
@@ -1698,6 +1733,31 @@ function shift(g: Game, p: GamePlayer, u: Ent, b: Brain, form: string): boolean 
   return true
 }
 
+
+/** 築巢下滿幾顆卵（卵的上限是 3）、築巢最多待多久（秒）、沒築成要隔多久再試（秒）*/
+const NEST_EGGS = 3
+const NEST_MAX_S = 60
+const NEST_RETRY_S = 60
+
+function eggsOf(g: Game, p: GamePlayer): number {
+  let n = 0
+  for (const e of g.world.ents.values()) if (e.alive && e.owner === p.slot && e.tags.has('egg')) n++
+  return n
+}
+
+/**
+ * 該去築巢了嗎（第 9 輪）：一般難度的異形主腦，寬限期過後、還沒下滿卵、看得到的範圍內沒有任何玩家與 NPC 船員／無人機。
+ * 卵每顆每秒 +0.12 EP，下滿三顆約是基本 EP 的 1.9 倍；以前只在怪物形態碰巧沒人時才下（一局約 1.3 顆），
+ * 主腦七成以上整局停在第一階，到第二階的局異形勝率 55%、沒到的只有 9%。真人異形也會找沒人的地方下卵。
+ * 簡單難度不築巢（新手對手不要太快進化）
+ */
+function nestTime(g: Game, p: GamePlayer, u: Ent, b: Brain, near: Ent[], watchers: Ent[], crew: Ent[], holdOff: boolean): boolean {
+  if (easy(g) || holdOff || b.nest || g.time < b.nestAt || p.role !== 'xeno' || p.spawnOf || u.id !== p.main) return false
+  if (watchers.length || crew.length || u.zone === SPACE_ZONE || g.world.zones[u.zone]?.data.ship) return false
+  if (near.some((e) => e.alive && e.owner === NEUTRAL && (e.def.ai === 'crew' || e.def.ai === 'drone'))) return false
+  b.nestAt = g.time + NEST_RETRY_S
+  return eggsOf(g, p) < NEST_EGGS
+}
 
 /** 異類 AI 現在還不主動出手（開局寬限期、簡單難度兩次出手之間）；一般難度末日開始後不再等 */
 function evilHoldOff(g: Game, b: Brain): boolean {
@@ -2105,21 +2165,31 @@ function dodgeSurface(g: Game, p: GamePlayer, u: Ent, b: Brain): boolean {
   const goalBad = !!goal && bad(goal.x, goal.y)
   if (!bad(u.x, u.y) && !goalBad) return false
   if (goal?.k === 'flee' && !goalBad) return pursue(g, p, u, b)
+  // 安全點：直線走得過去的優先（隔著牆的點常常繞不過去）；剛放棄過的點附近不選
+  const stale = b.badPt && b.badPt.until > g.time ? b.badPt : null
   let best: { x: number; y: number } | null = null
   let bd = Infinity
+  let far: { x: number; y: number } | null = null
+  let fd = Infinity
   for (const r of [4, 8, 12, 17, 23]) {
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2
       const q = z.nav.nearestOpen(u.x + Math.cos(a) * r, u.y + Math.sin(a) * r)
-      if (!q || bad(q.x, q.y)) continue
+      if (!q || bad(q.x, q.y) || (stale && Math.hypot(q.x - stale.x, q.y - stale.y) < 2)) continue
       const d = Math.hypot(q.x - u.x, q.y - u.y)
-      if (d < bd) {
-        bd = d
-        best = q
+      if (z.nav.walkable(u.x, u.y, q.x, q.y, u.radius)) {
+        if (d < bd) {
+          bd = d
+          best = q
+        }
+      } else if (d < fd) {
+        fd = d
+        far = q
       }
     }
     if (best) break
   }
+  best ??= far
   if (!best) return false
   b.goal = { k: 'flee', ...best, until: g.time + 10 }
   return pursue(g, p, u, b)
@@ -2657,8 +2727,8 @@ const CHAT_GAP_ALL = 8
 /** 開局打招呼的機率、看到怪物喊一聲的機率 */
 const HI_P = 0.35
 const MONSTER_P = 0.35
-/** 異形 AI 在沒人看到的地方變回人形後，過一會兒假裝看到怪物、喊一聲的機率（一局最多一次；把自己演成受害者，真人冒充者也常這樣做）*/
-const FAKE_MONSTER_P = 0.5
+/** 異形 AI 在沒人看到的地方變回人形後，過一會兒假裝看到怪物、喊一聲的機率（一局只擲一次；把自己演成受害者，真人冒充者也常這樣做）*/
+const FAKE_MONSTER_P = 0.3
 /** 收到寄生私訊、要去拿抗體包時說一聲的機率 */
 const PARASITE_SAY_P = 0.3
 

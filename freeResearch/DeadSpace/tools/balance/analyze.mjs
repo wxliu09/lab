@@ -1,11 +1,11 @@
 // 讀 data/*.jsonl，輸出各項統計（Markdown 表格）到 stdout。
-// 用法：node analyze.mjs [檔名前綴過濾，例如 A_] > report.md
+// 用法：node analyze.mjs [檔名前綴過濾，例如 A_] > report.md（XC_DATA=data/r9 讀別的資料夾）
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const dir = path.join(here, 'data')
+const dir = process.env.XC_DATA ? path.resolve(process.env.XC_DATA) : path.join(here, 'data')
 const filt = process.argv[2] ?? ''
 const games = []
 const perfGames = []

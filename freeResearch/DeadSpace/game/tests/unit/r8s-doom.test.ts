@@ -117,6 +117,30 @@ describe('子艦隊選目標（還原原作 LG：翠原星不在候選內，除�
     expect(isPlanet(fleetGoal(g, f)!)).toBe(true)
   })
 
+  it('胡蜂無人戰機（原作也跑 LG）：翠原星就在旁邊也不選它、不停下來打它；只剩翠原星時才打', () => {
+    const { h, g } = setup()
+    const v = planetOf(g)
+    let onPlanet = 0
+    const hook = (g2: Game, src: Ent | null, t: Ent, amount: number) => {
+      if (g2 === g && t === v && src?.def.id === 'ship.wasp') onPlanet += amount
+    }
+    DAMAGE_HOOKS.push(hook)
+    try {
+      const ws = [0, 1, 2].map((i) => spawnCreature(g, 'ship.wasp', SPACE_ZONE, v.x + v.radius + 3, v.y + i - 1)!)
+      for (let i = 0; i < 25; i++) {
+        sec(h, 1)
+        for (const w of ws) if (w.alive) expect(w.data.fleetGoal).not.toBe(v.id)
+      }
+      expect(onPlanet).toBeLessThan(BOMBARD_EVERY)
+      expect(stationsOf(g).rad).toBe(0)
+      // 其他站、船全部不能當目標 → 只剩翠原星
+      for (const e of g.world.inZone(SPACE_ZONE)) if (!isPlanet(e) && (e.tags.has('station') || e.tags.has('ship')) && e.def.id !== 'ship.wasp') e.stats.invuln = true
+      expect(isPlanet(fleetGoal(g, ws[0])!)).toBe(true)
+    } finally {
+      DAMAGE_HOOKS.splice(DAMAGE_HOOKS.indexOf(hook), 1)
+    }
+  }, 60000)
+
   it('太空中只剩翠原星：艦隊轉向砲擊它，fleetPlanet 公開、全場公告一次；洩漏檢查', () => {
     const { h, g, cs } = setup()
     evacuate(g)

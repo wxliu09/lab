@@ -11,7 +11,7 @@ node tools/balance/build.mjs                 # → tools/balance/dist/harness.mj
 cd tools/balance
 node dist/harness.mjs --n 8 --level normal --host bot --room mp --seed0 0 --count 10 --out data/r9/A_mp_bot_8_normal.jsonl
 node run.mjs jobs-example.txt 3              # 一次跑一批，3 個並行；log 在 logs/
-node analyze.mjs data/r9                     # 單一資料夾的完整報表
+XC_DATA=data/r9 node analyze.mjs             # 單一資料夾的完整報表（第一個參數可以過濾檔名前綴，例如 A_）
 node mycompare.mjs pre r9                    # 同 seed 配對比較（data/pre 對 data/r9）
 ```
 

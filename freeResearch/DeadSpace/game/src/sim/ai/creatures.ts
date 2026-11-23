@@ -339,19 +339,12 @@ function think(g: Game, u: Ent): void {
       if (u.zone !== SPACE_ZONE || u.pilot) return
       thinkFleet(g, u)
       return
-    case 'spaceHunter': {
+    case 'spaceHunter':
+      // 胡蜂無人戰機（無人機艦隊事件）：原作生成後一樣跑 mG → LG（S8，war3map.j 17832），和末日子艦隊同一套選目標，
+      // 翠原星不在候選內、只剩它時才打。舊版「往最近的站或船攻擊移動」會停在翠原星上空一直打（第 8 輪 S8 發現）
       if (u.zone !== SPACE_ZONE || u.pilot) return
-      if (u.order?.k === 'attack' || u.order?.k === 'amove') return
-      // 往最近的站或船推進（沿路自動開火）
-      let best: Ent | null = null
-      for (const o of g.world.inZone(SPACE_ZONE)) {
-        if (!o.alive || o === u || o.owner === HOSTILE || o.tags.has('noTarget')) continue
-        if (!o.tags.has('station') && !o.tags.has('ship')) continue
-        if (!best || dist2(u, o) < dist2(u, best)) best = o
-      }
-      if (best) issue(u, { k: 'amove', x: best.x, y: best.y })
+      thinkFleet(g, u)
       return
-    }
     case 'turret':
       if (!u.order) u.order = { k: 'hold' }
       return

@@ -17,7 +17,7 @@ import { FORMS } from '../../src/shared/content/registry'
 import { XENO_T2_EP } from '../../src/shared/content/forms'
 import { hasString } from '../../src/ui/i18n'
 import '../../src/ui/strings/ai8'
-import { ALIBI_N, EASY_DOOM_ALLOUT, EASY_SPARE_UNTIL, HIT_N, HI_N, MONSTER_N, NORMAL_EVIL_START, STALK_AFTER, evilAllOut } from '../../src/sim/ai/bots'
+import { ALIBI_N, EASY_DOOM_ALLOUT, EASY_EVIL_START, EASY_SPARE_UNTIL, HIT_N, HI_N, MONSTER_N, NORMAL_EVIL_START, STALK_AFTER, evilAllOut } from '../../src/sim/ai/bots'
 import type { Ent } from '../../src/sim/ent'
 import type { Game, GamePlayer } from '../../src/sim/game'
 
@@ -272,6 +272,8 @@ describe('第 8 輪：異類偽裝', () => {
     const skip = (bot.data.brain as { skip: Map<number, number> }).skip
     skip.set(a.id, 1e9)
     skip.set(b.id, 1e9)
+    // 只看跟蹤距離：跟丟的那一下四下無人時會去築巢（第 9 輪），這裡關掉
+    ;(bot.data.brain as { nestAt: number }).nestAt = 1e9
     run(h, 20 * Math.max(NORMAL_EVIL_START, STALK_AFTER) + 20 * 5)
     const ds: number[] = []
     run(h, 20 * 40, () => {
@@ -524,4 +526,63 @@ describe('第 8 輪：身分破綻（審查 B 的觀察者規則，小樣本）'
     const caught = all.filter((t) => !t.vendor)
     if (caught.length >= 3) expect(caught.filter((t) => t.role !== 'crew').length / caught.length).toBeLessThan(0.75)
   }, 300000)
+})
+
+describe('第 9 輪：異形築巢', () => {
+  const eggs = (g: Game, bot: GamePlayer) => [...g.world.ents.values()].filter((e) => e.alive && e.owner === bot.slot && e.tags.has('egg')).length
+
+  it('一般難度、寬限期過後、四下無人：變身下滿 3 顆卵，再變回人形', () => {
+    const { h, g, bot, people, zone } = setup('xeno')
+    for (const p of people) {
+      const at = elsewhere(g, zone)
+      place(g, g.mainOf(p)!, at.zone, at.x, at.y)
+    }
+    run(h, 20 * (NORMAL_EVIL_START + 5))
+    let n = 0
+    run(h, 20 * 120, () => (n = eggs(g, bot)) >= 3)
+    expect(n).toBe(3)
+    let human = false
+    run(h, 20 * 60, () => (human = g.mainOf(bot)!.tags.has('personnel')))
+    expect(human).toBe(true)
+  })
+
+  it('旁邊一直有人：不築巢（不在別人面前變身下卵）', () => {
+    const { h, g, bot, people, zone } = setup('xeno')
+    run(h, 20 * (NORMAL_EVIL_START + 5))
+    for (let k = 0; k < 12; k++) {
+      const me = g.mainOf(bot)!
+      for (const [i, p] of people.entries()) place(g, g.mainOf(p)!, me.zone === zone ? zone : me.zone, me.x + 3 + i, me.y + i)
+      run(h, 20 * 5)
+    }
+    expect(eggs(g, bot)).toBe(0)
+    expect(g.mainOf(bot)!.tags.has('personnel')).toBe(true)
+  })
+
+  it('簡單難度不築巢', () => {
+    const { h, g, bot, people, zone } = setup('xeno', { aiLevel: 'easy' })
+    for (const p of people) {
+      const at = elsewhere(g, zone)
+      place(g, g.mainOf(p)!, at.zone, at.x, at.y)
+    }
+    run(h, 20 * (EASY_EVIL_START + 90))
+    expect(eggs(g, bot)).toBe(0)
+  })
+})
+
+describe('第 9 輪：AI 閒話每局不同', () => {
+  it('同一個槽位、不同局的閒話亂數種子不同；同一局（同 secret）可重現', () => {
+    // Harness 的種子同時是這一局的 secret（數字 secret = 測試可重現的路徑）
+    const seedOf = (secret: number) => {
+      const { h } = Harness.started(2, secret, { bots: 1, eventMult: 0, npcCrew: 0 })
+      const g = h.server.game!
+      h.ticks(20 * 4)
+      const bot = g.allPlayers().find((p) => p.bot)!
+      return { chat: g.chatSeed, brain: (bot.data.brain as { chatRng: number } | undefined) !== undefined }
+    }
+    const a = seedOf(11)
+    const b = seedOf(12)
+    expect(a.brain && b.brain).toBe(true)
+    expect(a.chat).not.toBe(b.chat)
+    expect(seedOf(11).chat).toBe(a.chat)
+  })
 })

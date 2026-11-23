@@ -179,6 +179,16 @@ export interface SecretSeeds {
  * - 數字 = 舊測試的明確種子（Harness 等）：身分流、id 流沿用改版前的推法，遊戲流和版面流共用（world: 'map'），
  *   既有測試調好的亂數序列（AI 行為、事件、落點）一個都不變。這只是測試相容，不是正式路徑的行為
  */
+/** 把種子摺成一個 32 bit 整數（不可逆的混合；只拿來衍生不影響任何亂數流的小種子）*/
+function mixSeed(s: RngSeed): number {
+  let h = 0x2545f491
+  for (const v of typeof s === 'number' ? [s] : s) {
+    h = Math.imul(h ^ (v | 0), 0x9e3779b1)
+    h ^= h >>> 15
+  }
+  return h | 0 || 0x6d2b79f5
+}
+
 export function secretSeeds(secret?: number | SecretSeeds): SecretSeeds {
   if (secret === undefined) return { roles: cryptoSeed(), world: cryptoSeed(), ids: 'crypto' }
   if (typeof secret !== 'number') return secret
@@ -191,6 +201,11 @@ export class Game {
   readonly secret: Rng
   /** 這一局的識別碼（獨立的密碼學亂數，不是亂數流，推不出任何秘密）：client 重連時用來判斷是不是同一局 */
   readonly gid = cryptoId31()
+  /**
+   * AI 閒話的亂數種子（第 9 輪：以前只看槽位，同一個槽位每局開口說同一句）：由身分流的種子混出來、不從任何亂數流取值，
+   * 所以遊戲流、身分流的序列都不變；正式對局是密碼學亂數（不公開），測試的數字 secret 照樣可重現
+   */
+  readonly chatSeed: number
   readonly players: GamePlayer[] = []
   readonly settings: LobbySettings
   readonly send: GameInit['send']
@@ -275,6 +290,7 @@ export class Game {
     // 地圖種子只進公開的版面流；三條秘密流的種子各自獨立（正式對局是密碼學亂數）
     const seeds = secretSeeds(init.secret)
     this.secret = new Rng(seeds.roles)
+    this.chatSeed = mixSeed(seeds.roles)
     this.world = new World(init.seed, { world: seeds.world, ids: seeds.ids })
     for (const p of init.players) {
       this.players[p.slot] = {
