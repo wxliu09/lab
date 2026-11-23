@@ -37,6 +37,11 @@ export interface LobbySettings {
    * false = 只出原作有的事件（給想玩原汁原味的老玩家）
    */
   extraEvents: boolean
+  /**
+   * 死者看見真實身分（第 8 輪，本作選項，預設關）：死者與旁觀者的名牌依真實陣營上色、匿名形態標出主人。
+   * 只影響已經出局的人；活人的快照不變（洩漏測試把關）
+   */
+  ghostSight: boolean
 }
 
 export type AiLevel = 'easy' | 'normal'
@@ -58,6 +63,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   seed: 0,
   aiLevel: 'normal',
   extraEvents: true,
+  ghostSight: false,
 }
 
 /** 單機練習的房號（正式房號字母表沒有 O 和 0，不會撞號）*/
@@ -443,6 +449,16 @@ export interface WorldPublic {
    * 順序固定如上（client 自己排顯示優先順序）
    */
   ev: string[]
+  /**
+   * 翠原星地表目前的殘留輻射（每秒傷害，取地表最高值；0 或沒有 = 沒有）。公開現象：地表的人、全星區都看得到警報
+   */
+  rad?: number
+  /** 艦隊正在砲擊翠原星（艦隊末日；全場公告過的事）*/
+  fleetPlanet?: boolean
+  /** 軌道失效末日：翠原星還要幾秒進入恆星灼燒範圍（沒有就不送）*/
+  burnIn?: number
+  /** 正被無人機群圍攻的站：[站 id, 剩餘生命比例 0..1]（全場公告過的事件）*/
+  siege?: [string, number][]
 }
 
 export interface EndResult {

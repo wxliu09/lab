@@ -18,6 +18,10 @@ import '../../src/ui/strings/feel7'
 import '../../src/ui/strings/set7'
 import '../../src/ui/strings/fx7'
 import '../../src/ui/strings/cam7'
+import '../../src/ui/strings/ai8'
+import '../../src/ui/strings/rule8'
+import '../../src/ui/strings/ghost8'
+import '../../src/ui/strings/ui8'
 
 function files(dir: string): string[] {
   const out: string[] = []

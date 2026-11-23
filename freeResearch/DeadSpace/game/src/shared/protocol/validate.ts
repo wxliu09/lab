@@ -105,6 +105,7 @@ function validSettings(s: unknown): Partial<LobbySettings> | null {
       case 'bootOnDeath':
       case 'hostSpectate':
       case 'extraEvents':
+      case 'ghostSight':
         if (!isBool(v)) return null
         out[k] = v
         break
